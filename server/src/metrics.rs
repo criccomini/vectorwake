@@ -417,7 +417,10 @@ pub fn render() -> String {
         ROLE.get().map(|s| s.as_str()).unwrap_or("unknown"),
         ZONE.lock().map(|z| z.clone()).unwrap_or_default(),
     );
-    let up = START.get().map(|t| t.elapsed().as_secs_f64()).unwrap_or(0.0);
+    let up = START
+        .get()
+        .map(|t| t.elapsed().as_secs_f64())
+        .unwrap_or(0.0);
     let _ = writeln!(
         &mut out,
         "# HELP vw_uptime_seconds Seconds since this process started serving.\n\
@@ -428,33 +431,103 @@ pub fn render() -> String {
 
     TICK.render(&mut out, "vw_tick_seconds", "Wall time for one arena tick.");
 
-    gauge(&mut out, "vw_players", "Humans in this arena.", PLAYERS.get());
-    gauge(&mut out, "vw_bots", "Declared bots in this arena.", BOTS.get());
-    gauge(&mut out, "vw_rooms", "Rooms this instance is running.", ROOMS.get());
-    gauge(&mut out, "vw_connections", "Sockets held.", CONNECTIONS.get());
-    gauge(&mut out, "vw_bot_pilots", "Pilots the bot server flies.", BOT_PILOTS.get());
-    gauge(&mut out, "vw_wt_listening",
-          "1 when this arena's WebTransport endpoint is bound and accepting.",
-          WT_LISTENING.get());
+    gauge(
+        &mut out,
+        "vw_players",
+        "Humans in this arena.",
+        PLAYERS.get(),
+    );
+    gauge(
+        &mut out,
+        "vw_bots",
+        "Declared bots in this arena.",
+        BOTS.get(),
+    );
+    gauge(
+        &mut out,
+        "vw_rooms",
+        "Rooms this instance is running.",
+        ROOMS.get(),
+    );
+    gauge(
+        &mut out,
+        "vw_connections",
+        "Sockets held.",
+        CONNECTIONS.get(),
+    );
+    gauge(
+        &mut out,
+        "vw_bot_pilots",
+        "Pilots the bot server flies.",
+        BOT_PILOTS.get(),
+    );
+    gauge(
+        &mut out,
+        "vw_wt_listening",
+        "1 when this arena's WebTransport endpoint is bound and accepting.",
+        WT_LISTENING.get(),
+    );
 
-    counter(&mut out, "vw_connections_total", "Sockets accepted.", CONNECTIONS_TOTAL.get());
-    counter(&mut out, "vw_snapshot_bytes_total", "Snapshot bytes queued to clients.", SNAPSHOT_BYTES.get());
-    counter(&mut out, "vw_snapshot_bytes_out_total",
-            "Snapshot bytes queued to seats that are not our own bots.",
-            SNAPSHOT_BYTES_OUT.get());
-    gauge(&mut out, "vw_seats_out",
-          "Seats a snapshot is filtered for, which is every seat not on loopback.",
-          SEATS_OUT.get());
-    counter(&mut out, "vw_send_dropped_total", "Messages dropped on a full client queue.", SEND_DROPPED.get());
-    counter(&mut out, "vw_wt_attempts_total",
-            "QUIC connection attempts that reached this arena, handshake or not.",
-            WT_ATTEMPTS.get());
-    counter(&mut out, "vw_wt_sessions_total",
-            "WebTransport sessions accepted, against vw_connections_total for the sockets.",
-            WT_SESSIONS.get());
-    counter(&mut out, "vw_bot_connects_total", "Arena connections the bot server has opened.", BOT_CONNECTS.get());
-    counter(&mut out, "vw_registrations_total", "Arenas registered with this directory.", REGISTRATIONS.get());
-    counter(&mut out, "vw_refusals_total", "Registrations this directory turned away.", REFUSALS.get());
+    counter(
+        &mut out,
+        "vw_connections_total",
+        "Sockets accepted.",
+        CONNECTIONS_TOTAL.get(),
+    );
+    counter(
+        &mut out,
+        "vw_snapshot_bytes_total",
+        "Snapshot bytes queued to clients.",
+        SNAPSHOT_BYTES.get(),
+    );
+    counter(
+        &mut out,
+        "vw_snapshot_bytes_out_total",
+        "Snapshot bytes queued to seats that are not our own bots.",
+        SNAPSHOT_BYTES_OUT.get(),
+    );
+    gauge(
+        &mut out,
+        "vw_seats_out",
+        "Seats a snapshot is filtered for, which is every seat not on loopback.",
+        SEATS_OUT.get(),
+    );
+    counter(
+        &mut out,
+        "vw_send_dropped_total",
+        "Messages dropped on a full client queue.",
+        SEND_DROPPED.get(),
+    );
+    counter(
+        &mut out,
+        "vw_wt_attempts_total",
+        "QUIC connection attempts that reached this arena, handshake or not.",
+        WT_ATTEMPTS.get(),
+    );
+    counter(
+        &mut out,
+        "vw_wt_sessions_total",
+        "WebTransport sessions accepted, against vw_connections_total for the sockets.",
+        WT_SESSIONS.get(),
+    );
+    counter(
+        &mut out,
+        "vw_bot_connects_total",
+        "Arena connections the bot server has opened.",
+        BOT_CONNECTS.get(),
+    );
+    counter(
+        &mut out,
+        "vw_registrations_total",
+        "Arenas registered with this directory.",
+        REGISTRATIONS.get(),
+    );
+    counter(
+        &mut out,
+        "vw_refusals_total",
+        "Registrations this directory turned away.",
+        REFUSALS.get(),
+    );
     out
 }
 
@@ -463,7 +536,10 @@ fn gauge(out: &mut String, name: &str, help: &str, v: i64) {
 }
 
 fn counter(out: &mut String, name: &str, help: &str, v: u64) {
-    let _ = writeln!(out, "# HELP {name} {help}\n# TYPE {name} counter\n{name} {v}");
+    let _ = writeln!(
+        out,
+        "# HELP {name} {help}\n# TYPE {name} counter\n{name} {v}"
+    );
 }
 
 // --- the endpoint -----------------------------------------------------------
@@ -566,7 +642,10 @@ mod tests {
         set_zone("chaos");
         assert!(render().contains("zone=\"chaos\""));
         set_zone("war");
-        assert!(render().contains("zone=\"war\""), "a second change must take");
+        assert!(
+            render().contains("zone=\"war\""),
+            "a second change must take"
+        );
     }
 
     #[test]
@@ -577,8 +656,15 @@ mod tests {
             let _b = ConnGuard::new();
             assert_eq!(CONNECTIONS.get(), before + 2);
         }
-        assert_eq!(CONNECTIONS.get(), before, "a closed socket must be given up");
-        assert!(CONNECTIONS_TOTAL.get() >= 2, "and still be counted as having happened");
+        assert_eq!(
+            CONNECTIONS.get(),
+            before,
+            "a closed socket must be given up"
+        );
+        assert!(
+            CONNECTIONS_TOTAL.get() >= 2,
+            "and still be counted as having happened"
+        );
     }
 
     #[test]

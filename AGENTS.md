@@ -83,6 +83,9 @@ build locally and run a server next to it.
 - Do not preserve backward compatibility.
 - Choose the simplest implementation that fully meets the current requirements.
 - Prefer established, well-maintained libraries over custom implementations.
+- Run `cargo fmt --manifest-path server/Cargo.toml` after every Rust edit.
+  `cargo fmt --manifest-path server/Cargo.toml -- --check` must pass before any
+  push that touches Rust.
 
 ## Writing
 

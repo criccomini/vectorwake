@@ -99,7 +99,10 @@ impl Maps {
         }
         let m = sim::unpack_map(packed)?;
         let n = Arc::new(nav::Nav::build(&m));
-        self.0.lock().ok()?.insert(key, (Arc::clone(&m), Arc::clone(&n)));
+        self.0
+            .lock()
+            .ok()?
+            .insert(key, (Arc::clone(&m), Arc::clone(&n)));
         Some((m, n))
     }
 }
@@ -198,7 +201,9 @@ impl Rig {
     /// Take a seat, or refuse it because a live pilot already has it, which is
     /// the second-room signal described on `crew`.
     fn claim(&self, ship: u8, seat: Seat) -> bool {
-        let Ok(mut c) = self.crew.lock() else { return false };
+        let Ok(mut c) = self.crew.lock() else {
+            return false;
+        };
         if let Some(held) = c.get(&ship) {
             if held.id != seat.id {
                 return false;
@@ -218,13 +223,18 @@ impl Rig {
                 self.buttons[ship as usize].store(0, Ordering::Relaxed);
             }
         }
-        let _ = self.pen.compare_exchange(id, 0, Ordering::Relaxed, Ordering::Relaxed);
+        let _ = self
+            .pen
+            .compare_exchange(id, 0, Ordering::Relaxed, Ordering::Relaxed);
     }
 
     /// One tick of shared prediction: every seated pilot's last buttons, one
     /// step. The driver calls this with both locks already held.
     fn advance(&self, w: &mut sim::World, crew: &HashMap<u8, Seat>) {
-        let mut inputs = [sim::sim_input { ship: 0, buttons: 0 }; sim::MAX_SHIPS];
+        let mut inputs = [sim::sim_input {
+            ship: 0,
+            buttons: 0,
+        }; sim::MAX_SHIPS];
         let mut n = 0;
         for &ship in crew.keys() {
             inputs[n] = sim::sim_input {
@@ -251,7 +261,9 @@ async fn drive(rig: std::sync::Weak<Rig>) {
     loop {
         ticker.tick().await;
         let Some(rig) = rig.upgrade() else { return };
-        let Ok(mut crew) = rig.crew.lock() else { return };
+        let Ok(mut crew) = rig.crew.lock() else {
+            return;
+        };
         if crew.is_empty() {
             continue;
         }
@@ -276,18 +288,21 @@ async fn drive(rig: std::sync::Weak<Rig>) {
         }
         let mut gone: Vec<u8> = Vec::new();
         for (ship, own, fresh, tick, crowd) in views {
-            let Some(seat) = crew.get_mut(&ship) else { continue };
+            let Some(seat) = crew.get_mut(&ship) else {
+                continue;
+            };
             if let Some(crowd) = crowd {
-                seat.brain.refuge(seat.route.refuge(
-                    (own.x, own.y), &crowd, ai::REFUGE_PX, true));
+                seat.brain.refuge(
+                    seat.route
+                        .refuge((own.x, own.y), &crowd, ai::REFUGE_PX, true),
+                );
             }
             // Asked to stand down. The endings and their names are unchanged
             // from when every pilot judged its own: they are not equally
             // good, and nothing else can tell them apart.
             if seat.yielding.load(Ordering::Relaxed) {
                 seat.brain.stand_down();
-                let since = *seat.asked
-                    .get_or_insert_with(std::time::Instant::now);
+                let since = *seat.asked.get_or_insert_with(std::time::Instant::now);
                 let how = if !own.alive {
                     Some("died")
                 } else if seat.brain.departed() {
@@ -298,8 +313,12 @@ async fn drive(rig: std::sync::Weak<Rig>) {
                     None
                 };
                 if let Some(how) = how {
-                    println!("{}: {} left ({how}, {:.1}s)",
-                             seat.addr, seat.name, since.elapsed().as_secs_f32());
+                    println!(
+                        "{}: {} left ({how}, {:.1}s)",
+                        seat.addr,
+                        seat.name,
+                        since.elapsed().as_secs_f32()
+                    );
                     // The seat outlives a full channel: removal waits for the
                     // Leave to be accepted, so a pilot is never marooned with
                     // a mind already gone.
@@ -342,7 +361,10 @@ impl Rigs {
             return Some(rig);
         }
         g.retain(|_, w| w.strong_count() > 0);
-        let rig = Arc::new(Rig::new(sim::World::on_shared_map(key as u32, Arc::clone(map))));
+        let rig = Arc::new(Rig::new(sim::World::on_shared_map(
+            key as u32,
+            Arc::clone(map),
+        )));
         tokio::spawn(drive(Arc::downgrade(&rig)));
         g.insert((addr.to_string(), key), Arc::downgrade(&rig));
         Some(rig)
@@ -397,7 +419,11 @@ pub async fn run() {
         return;
     }
     if !direct.is_empty() {
-        println!("flying at {} arena(s) directly: {}", direct.len(), direct.join(", "));
+        println!(
+            "flying at {} arena(s) directly: {}",
+            direct.len(),
+            direct.join(", ")
+        );
     }
 
     let mut ticker = tokio::time::interval(std::time::Duration::from_millis(POLL_MS));
@@ -426,9 +452,7 @@ pub async fn run() {
         // fixed: two dead addresses in the list turned a one second cycle into
         // a ten second one.
         let mut want: HashMap<String, u32> = HashMap::new();
-        let asked = futures_util::future::join_all(
-            dirs.iter().map(|u| browse(u))
-        ).await;
+        let asked = futures_util::future::join_all(dirs.iter().map(|u| browse(u))).await;
         for (addr, n) in asked.into_iter().flatten() {
             // The most any directory says, because a directory relays only what
             // it observed itself and one may have heard more recently than
@@ -437,8 +461,11 @@ pub async fn run() {
             *e = (*e).max(n);
         }
         let asked = futures_util::future::join_all(
-            direct.iter().map(|a| async move { (a.clone(), ask(a).await) })
-        ).await;
+            direct
+                .iter()
+                .map(|a| async move { (a.clone(), ask(a).await) }),
+        )
+        .await;
         for (addr, n) in asked {
             if let Some(n) = n {
                 want.insert(addr, n);
@@ -547,7 +574,8 @@ fn claim(taken: &Arc<Mutex<HashSet<String>>>) -> Option<ai::RosterEntry> {
 
 /// Ask a directory what is running, and how many bots each instance wants.
 async fn browse(url: &str) -> Vec<(String, u32)> {
-    let Some(body) = directory::request(url, directory::STATUS_REQUEST, directory::STATUS_REPLY).await
+    let Some(body) =
+        directory::request(url, directory::STATUS_REQUEST, directory::STATUS_REPLY).await
     else {
         return Vec::new();
     };
@@ -635,7 +663,6 @@ async fn bot_token(who: &str, secrets: &Mutex<HashMap<String, String>>) -> Optio
     Some(reply.get("token")?.as_str()?.to_string())
 }
 
-
 /// The join a bot sends, built where something can check it.
 ///
 /// It was written inline and it went stale: the header grew a room byte, this
@@ -662,8 +689,14 @@ fn join_msg(class: u8, name: &str, session: &str) -> Vec<u8> {
     join
 }
 
-async fn fly(addr: String, who: ai::RosterEntry, maps: Arc<Maps>, rigs: Arc<Rigs>,
-             yielding: Arc<AtomicBool>, secrets: Arc<Mutex<HashMap<String, String>>>) {
+async fn fly(
+    addr: String,
+    who: ai::RosterEntry,
+    maps: Arc<Maps>,
+    rigs: Arc<Rigs>,
+    yielding: Arc<AtomicBool>,
+    secrets: Arc<Mutex<HashMap<String, String>>>,
+) {
     let cfg = tokio_tungstenite::tungstenite::protocol::WebSocketConfig {
         max_message_size: Some(2 * 1024 * 1024),
         max_frame_size: Some(2 * 1024 * 1024),
@@ -956,15 +989,17 @@ mod tests {
         let zlen = msg[4] as usize;
         let nlen = msg[5] as usize;
         let h = 7;
-        String::from_utf8_lossy(msg.get(h + zlen..h + zlen + nlen).unwrap_or_default())
-            .to_string()
+        String::from_utf8_lossy(msg.get(h + zlen..h + zlen + nlen).unwrap_or_default()).to_string()
     }
 
     #[test]
     fn a_bot_arrives_under_its_own_name() {
         let msg = join_msg(3, "vX-9", "");
-        assert_eq!(name_as_the_arena_reads_it(&msg), "vX-9",
-                   "a bot with no meta-layer behind it still has a name");
+        assert_eq!(
+            name_as_the_arena_reads_it(&msg),
+            "vX-9",
+            "a bot with no meta-layer behind it still has a name"
+        );
     }
 
     #[test]
@@ -978,7 +1013,10 @@ mod tests {
     #[test]
     fn the_header_is_the_length_the_arena_expects() {
         let msg = join_msg(0, "", "");
-        assert_eq!(msg.len(), crate::C2S_JOIN_HEADER,
-                   "an empty name and no token is the header alone");
+        assert_eq!(
+            msg.len(),
+            crate::C2S_JOIN_HEADER,
+            "an empty name and no token is the header alone"
+        );
     }
 }

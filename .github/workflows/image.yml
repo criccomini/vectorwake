@@ -37,6 +37,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: server
+      - name: Rust formatting
+        run: cargo fmt --manifest-path server/Cargo.toml -- --check
       # The determinism gate, repeated here rather than depended on across
       # workflows. sim.yml proves the same property on three ABIs and is the
       # real authority; this is the cheap version, thirty seconds, so that this

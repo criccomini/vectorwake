@@ -220,7 +220,11 @@ impl Directory {
                     capped: r.status.capped,
                     verified: r.verified,
                     age_ms: now.saturating_sub(r.seen_ms),
-                    intent: if r.intent_until_ms > now { r.intent.clone() } else { String::new() },
+                    intent: if r.intent_until_ms > now {
+                        r.intent.clone()
+                    } else {
+                        String::new()
+                    },
                     intent_ms: r.intent_until_ms.saturating_sub(now),
                     pool: r.pool.clone(),
                     metrics: r.status.metrics.clone(),
@@ -335,7 +339,11 @@ impl Directory {
             verb: verb.to_string(),
             target: instance.to_string(),
             args: args.to_string(),
-            outcome: if sent { "sent".into() } else { "no such instance".into() },
+            outcome: if sent {
+                "sent".into()
+            } else {
+                "no such instance".into()
+            },
         });
         sent
     }
@@ -364,7 +372,10 @@ pub async fn ask_with(url: &str, frame: Vec<u8>, expect: u8) -> Option<String> {
     let (mut ws, _) = dial.await.ok()?.ok()?;
     ws.send(Message::Binary(frame)).await.ok()?;
     loop {
-        let msg = tokio::time::timeout(deadline, ws.next()).await.ok()??.ok()?;
+        let msg = tokio::time::timeout(deadline, ws.next())
+            .await
+            .ok()??
+            .ok()?;
         if let Message::Binary(b) = msg {
             if b.first() == Some(&expect) && b.len() > 1 {
                 let _ = ws.close(None).await;
@@ -484,7 +495,10 @@ async fn serve_registration(
                     break;
                 }
                 if r.instance.is_empty() || r.address.is_empty() {
-                    let _ = tx.send(Message::Binary(reject("bad_address", "instance and address are required")));
+                    let _ = tx.send(Message::Binary(reject(
+                        "bad_address",
+                        "instance and address are required",
+                    )));
                     break;
                 }
                 let (pool, cap, region_default) = {
@@ -515,7 +529,11 @@ async fn serve_registration(
                         )));
                         break;
                     }
-                    let region = if r.region.is_empty() { region_default } else { r.region.clone() };
+                    let region = if r.region.is_empty() {
+                        region_default
+                    } else {
+                        r.region.clone()
+                    };
                     // Newest registration for an instance wins: a half-open
                     // socket outliving a restart must not lock an arena out.
                     d.regs.insert(
@@ -544,7 +562,10 @@ async fn serve_registration(
                         verified: false,
                     };
                     crate::metrics::REGISTRATIONS.inc();
-                    let _ = tx.send(Message::Binary(fleet::frame(fleet::D2A_ACCEPTED, &accepted)));
+                    let _ = tx.send(Message::Binary(fleet::frame(
+                        fleet::D2A_ACCEPTED,
+                        &accepted,
+                    )));
                 }
                 println!(
                     "registered {} at {} (pool {pool:?}, willing {:?})",
@@ -589,8 +610,7 @@ async fn serve_registration(
                                 _ => return,
                             }
                         }
-                        tokio::time::sleep(std::time::Duration::from_millis(VERIFY_EVERY_MS))
-                            .await;
+                        tokio::time::sleep(std::time::Duration::from_millis(VERIFY_EVERY_MS)).await;
                     }
                 });
             }
@@ -618,7 +638,9 @@ async fn serve_registration(
                 }
             }
             Some(fleet::A2D_ACK) => {
-                let Some(a) = fleet::parse::<fleet::Ack>(&data, fleet::A2D_ACK) else { continue };
+                let Some(a) = fleet::parse::<fleet::Ack>(&data, fleet::A2D_ACK) else {
+                    continue;
+                };
                 let id = instance.clone().unwrap_or_default();
                 let mut d = dir.lock().await;
                 println!("ack from {id}: command {} {}", a.command_id, a.outcome);
@@ -636,7 +658,9 @@ async fn serve_registration(
                 let d = dir.lock().await;
                 let mut m = vec![STATUS_REPLY];
                 m.extend_from_slice(
-                    serde_json::to_string(&d.browse()).unwrap_or_default().as_bytes(),
+                    serde_json::to_string(&d.browse())
+                        .unwrap_or_default()
+                        .as_bytes(),
                 );
                 let _ = tx.send(Message::Binary(m));
             }
@@ -731,7 +755,11 @@ async fn serve_registration(
 
     if let Some(id) = instance {
         let mut d = dir.lock().await;
-        if d.regs.get(&id).map(|r| r.tx.same_channel(&tx)).unwrap_or(false) {
+        if d.regs
+            .get(&id)
+            .map(|r| r.tx.same_channel(&tx))
+            .unwrap_or(false)
+        {
             d.regs.remove(&id);
             println!("{id} disconnected");
         }
@@ -774,7 +802,12 @@ async fn push_views(dir: Arc<Mutex<Directory>>) {
                 .map(|i| {
                     format!(
                         "{}:{}:{}:{}:{}:{}|",
-                        i.instance, i.zone, i.players, i.rooms.len(), i.capped, i.intent
+                        i.instance,
+                        i.zone,
+                        i.players,
+                        i.rooms.len(),
+                        i.capped,
+                        i.intent
                     )
                 })
                 .collect();
@@ -971,7 +1004,10 @@ mod tests {
                 status: fleet::Status {
                     zone: zone.into(),
                     players,
-                    rooms: vec![fleet::RoomView { number: 1, ..Default::default() }],
+                    rooms: vec![fleet::RoomView {
+                        number: 1,
+                        ..Default::default()
+                    }],
                     max_rooms: 1,
                     ..Default::default()
                 },
@@ -994,17 +1030,31 @@ mod tests {
         assert_eq!(b.catalog_version, 7);
         assert_eq!(b.zones.len(), 2, "every catalog zone appears, busy or not");
         let chaos = b.zones.iter().find(|z| z.name == "chaos").unwrap();
-        assert_eq!(chaos.players, 7, "per-zone total needs no arithmetic by the client");
+        assert_eq!(
+            chaos.players, 7,
+            "per-zone total needs no arithmetic by the client"
+        );
         assert_eq!(chaos.instances.len(), 2);
-        assert_eq!(chaos.instances[0].players, 5, "fullest first concentrates by default");
+        assert_eq!(
+            chaos.instances[0].players, 5,
+            "fullest first concentrates by default"
+        );
     }
 
     #[test]
     fn an_unverified_instance_is_seen_by_an_operator_and_not_by_a_player() {
         let mut d = Directory::new(cat());
         reg(&mut d, "a", "chaos", 5, false);
-        let chaos = d.browse().zones.into_iter().find(|z| z.name == "chaos").unwrap();
-        assert!(chaos.instances.is_empty(), "an unproven address is not offered");
+        let chaos = d
+            .browse()
+            .zones
+            .into_iter()
+            .find(|z| z.name == "chaos")
+            .unwrap();
+        assert!(
+            chaos.instances.is_empty(),
+            "an unproven address is not offered"
+        );
         assert_eq!(chaos.players, 0);
         assert_eq!(d.view().instances.len(), 1, "but the admin view shows it");
         assert!(!d.view().instances[0].verified);
@@ -1033,9 +1083,17 @@ mod tests {
         let mut d = Directory::new(cat());
         reg(&mut d, "packed", "chaos", 8, true); // at max_players, one room of one
         reg(&mut d, "roomy", "chaos", 3, true);
-        let chaos = d.browse().zones.into_iter().find(|z| z.name == "chaos").unwrap();
+        let chaos = d
+            .browse()
+            .zones
+            .into_iter()
+            .find(|z| z.name == "chaos")
+            .unwrap();
         assert_eq!(chaos.instances.len(), 2, "the full one is still shown");
-        assert_eq!(chaos.instances[0].players, 3, "but the one with room is first");
+        assert_eq!(
+            chaos.instances[0].players, 3,
+            "but the one with room is first"
+        );
         assert!(chaos.instances[1].full);
         assert_eq!(chaos.players, 11, "and both count toward the zone's total");
     }
@@ -1057,8 +1115,11 @@ mod tests {
         d.regs.get_mut("a").unwrap().intent_until_ms = now_ms() + 5_000;
         assert_eq!(d.view().instances[0].intent, "war");
         d.regs.get_mut("a").unwrap().intent_until_ms = now_ms() - 1;
-        assert_eq!(d.view().instances[0].intent, "",
-                   "a crashed announcer releases its claim on a timer");
+        assert_eq!(
+            d.view().instances[0].intent,
+            "",
+            "a crashed announcer releases its claim on a timer"
+        );
     }
 
     #[test]
@@ -1070,7 +1131,10 @@ mod tests {
         assert_eq!(w.zones[0].name, "chaos", "declared order survives the wire");
         let json = serde_json::to_string(&w).unwrap();
         assert!(!json.contains("secret"), "no raw token");
-        assert!(!json.contains("sha256"), "not even the digest: an arena cannot register others");
+        assert!(
+            !json.contains("sha256"),
+            "not even the digest: an arena cannot register others"
+        );
     }
 
     #[test]
@@ -1087,7 +1151,11 @@ mod tests {
         for _ in 0..AUDIT_MAX + 50 {
             d.command("nobody", "drain", "", "chris");
         }
-        assert_eq!(d.audit.len(), AUDIT_MAX, "a log that grows forever is an outage waiting");
+        assert_eq!(
+            d.audit.len(),
+            AUDIT_MAX,
+            "a log that grows forever is an outage waiting"
+        );
     }
 
     #[test]
@@ -1096,7 +1164,10 @@ mod tests {
         reg(&mut d, "a", "chaos", 5, true);
         let v = d.view();
         assert_eq!(v.catalog_version, 7, "which version this directory serves");
-        assert_eq!(v.meta_key, d.catalog.meta.key, "and the key it says to check tokens with");
+        assert_eq!(
+            v.meta_key, d.catalog.meta.key,
+            "and the key it says to check tokens with"
+        );
     }
 
     /// The fleet view is the one thing on this port a stranger may not have,
@@ -1126,7 +1197,9 @@ mod tests {
 
         // Ask one question and wait briefly for the tag that answers it.
         async fn ask(port: u16, forwarded: bool, tag: u8, want: u8) -> Option<String> {
-            let mut req = format!("ws://127.0.0.1:{port}/").into_client_request().unwrap();
+            let mut req = format!("ws://127.0.0.1:{port}/")
+                .into_client_request()
+                .unwrap();
             if forwarded {
                 req.headers_mut()
                     .insert("x-forwarded-for", "203.0.113.9".parse().unwrap());
@@ -1145,14 +1218,19 @@ mod tests {
         }
 
         let direct = ask(port, false, fleet::O2D_FLEET, fleet::D2O_FLEET).await;
-        assert!(direct.is_some(), "a process on the box reads the fleet view");
+        assert!(
+            direct.is_some(),
+            "a process on the box reads the fleet view"
+        );
         assert!(
             direct.unwrap().contains("unproven"),
             "including the unverified instance no browse reply carries"
         );
 
         assert!(
-            ask(port, true, fleet::O2D_FLEET, fleet::D2O_FLEET).await.is_none(),
+            ask(port, true, fleet::O2D_FLEET, fleet::D2O_FLEET)
+                .await
+                .is_none(),
             "a request that came through a proxy is refused the fleet view"
         );
 

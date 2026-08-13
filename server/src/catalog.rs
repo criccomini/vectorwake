@@ -130,7 +130,10 @@ impl ZoneDef {
     /// this is what "as many as there can be" means. A zone that wants only
     /// its own sides writes their count here instead.
     pub fn max_teams(&self) -> u8 {
-        self.max_teams.unwrap_or(255).max(self.teams.len().min(255) as u8).max(1)
+        self.max_teams
+            .unwrap_or(255)
+            .max(self.teams.len().min(255) as u8)
+            .max(1)
     }
     /// No cap by default, in both directions: a room's real ceiling is its
     /// seats, and a zone that wants a tighter one says so.
@@ -249,9 +252,9 @@ impl Catalog {
     }
 
     pub fn has_capability(&self, name: &str, cap: &str) -> bool {
-        self.staff.iter().any(|s| {
-            s.name.eq_ignore_ascii_case(name) && s.capabilities.iter().any(|c| c == cap)
-        })
+        self.staff
+            .iter()
+            .any(|s| s.name.eq_ignore_ascii_case(name) && s.capabilities.iter().any(|c| c == cap))
     }
 
     /// The pool a token belongs to, compared without leaking timing. The token
@@ -298,7 +301,10 @@ impl Catalog {
 /// a local run should have if it ever tries to check a signature with it.
 #[cfg(any(test, debug_assertions))]
 pub fn set_placeholder_identity() {
-    std::env::set_var("VW_POOL_DIGEST", format!("sha256:{}", sha256_hex(b"placeholder")));
+    std::env::set_var(
+        "VW_POOL_DIGEST",
+        format!("sha256:{}", sha256_hex(b"placeholder")),
+    );
     std::env::set_var("VW_META_VERIFY", "0".repeat(64));
 }
 
@@ -332,8 +338,8 @@ fn indirect(v: &str) -> Result<String, String> {
 pub fn load(dir: impl AsRef<Path>) -> Result<Catalog, String> {
     let dir = dir.as_ref();
     let head_path = dir.join("catalog.toml");
-    let text = std::fs::read_to_string(&head_path)
-        .map_err(|e| format!("{}: {e}", head_path.display()))?;
+    let text =
+        std::fs::read_to_string(&head_path).map_err(|e| format!("{}: {e}", head_path.display()))?;
     let mut head: Head =
         toml::from_str(&text).map_err(|e| format!("{}: {e}", head_path.display()))?;
 
@@ -380,17 +386,19 @@ pub fn load(dir: impl AsRef<Path>) -> Result<Catalog, String> {
     // A key that is present and wrong is worse than one that is absent: absent
     // means a deployment without accounts, which works, and wrong means every
     // token in the fleet fails to verify at the door.
-    if !head.meta.key.is_empty()
-        && crate::token::verifying_key_from_hex(&head.meta.key).is_none()
-    {
-        return Err("[meta] key must be 64 hex characters of Ed25519 verifying key; \
+    if !head.meta.key.is_empty() && crate::token::verifying_key_from_hex(&head.meta.key).is_none() {
+        return Err(
+            "[meta] key must be 64 hex characters of Ed25519 verifying key; \
                     'vectorwake-server metakey' prints one"
-            .into());
+                .into(),
+        );
     }
     if head.meta.key.is_empty() && !head.meta.url.is_empty() {
-        return Err("[meta] url is set without a key, so no arena could check a \
+        return Err(
+            "[meta] url is set without a key, so no arena could check a \
                     token minted by it"
-            .into());
+                .into(),
+        );
     }
 
     let mut cat = Catalog {
@@ -650,9 +658,11 @@ mod tests {
         let d = tmp("indirect");
         good(&d);
         let pool = |tok: &str| {
-            format!("version = 3\nname = \"t\"\ndefault_zone = \"war\"\n\
+            format!(
+                "version = 3\nname = \"t\"\ndefault_zone = \"war\"\n\
                      [[zone]]\nname = \"war\"\n\
-                     [[pool]]\nname = \"p\"\ntoken = \"{tok}\"\n")
+                     [[pool]]\nname = \"p\"\ntoken = \"{tok}\"\n"
+            )
         };
 
         write(&d, "catalog.toml", &pool("env:VW_TEST_POOL"));
@@ -664,7 +674,10 @@ mod tests {
         // is a real digest loads exactly as an inline one does.
         std::env::set_var("VW_TEST_POOL", format!("sha256:{}", sha256_hex(b"letmein")));
         let c = load(&d).expect("loads");
-        assert_eq!(c.pool_for_token("letmein").map(|p| p.name.as_str()), Some("p"));
+        assert_eq!(
+            c.pool_for_token("letmein").map(|p| p.name.as_str()),
+            Some("p")
+        );
 
         // And an unset variable names itself, since that is what an operator
         // has to go and set.
@@ -675,9 +688,15 @@ mod tests {
         // The same for the meta key, whose absence means something specific
         // and so must not be reachable by forgetting a variable.
         std::env::set_var("VW_TEST_POOL", format!("sha256:{}", sha256_hex(b"letmein")));
-        write(&d, "catalog.toml", &format!("{}\n[meta]\nurl = \"https://x/meta\"\n\
+        write(
+            &d,
+            "catalog.toml",
+            &format!(
+                "{}\n[meta]\nurl = \"https://x/meta\"\n\
                                             key = \"env:VW_TEST_VERIFY\"\n",
-                                           pool("env:VW_TEST_POOL")));
+                pool("env:VW_TEST_POOL")
+            ),
+        );
         let e = load(&d).unwrap_err();
         assert!(e.contains("VW_TEST_VERIFY"), "{e}");
         std::env::set_var("VW_TEST_VERIFY", "0".repeat(64));
@@ -715,7 +734,10 @@ mod tests {
             }],
             ..Default::default()
         };
-        assert_eq!(cat.pool_for_token("letmein").map(|p| p.name.as_str()), Some("us-east"));
+        assert_eq!(
+            cat.pool_for_token("letmein").map(|p| p.name.as_str()),
+            Some("us-east")
+        );
         assert!(cat.pool_for_token("letmeout").is_none());
         assert!(cat.pool_for_token("").is_none());
     }
@@ -729,12 +751,23 @@ mod tests {
     /// A catalog that loads, in a temp directory, so the rejection tests below
     /// can each break exactly one thing.
     fn good(dir: &Path) {
-        write(dir, "catalog.toml", "version = 3\nname = \"t\"\n\
+        write(
+            dir,
+            "catalog.toml",
+            "version = 3\nname = \"t\"\n\
                                     default_zone = \"war\"\n\
-                                    [[zone]]\nname = \"war\"\n");
-        write(dir, "zones/war/zone.toml",
-              "mode = \"warzone\"\nmap = \"war.vwmap\"\nfill_target = 8\n");
-        write(dir, "zones/war/war.vwmap", "not really a map, but it exists");
+                                    [[zone]]\nname = \"war\"\n",
+        );
+        write(
+            dir,
+            "zones/war/zone.toml",
+            "mode = \"warzone\"\nmap = \"war.vwmap\"\nfill_target = 8\n",
+        );
+        write(
+            dir,
+            "zones/war/war.vwmap",
+            "not really a map, but it exists",
+        );
     }
 
     fn tmp(tag: &str) -> PathBuf {
@@ -748,19 +781,35 @@ mod tests {
     fn a_good_catalog_loads_and_keeps_its_order() {
         let d = tmp("good");
         good(&d);
-        write(&d, "catalog.toml", "version = 3\n\
+        write(
+            &d,
+            "catalog.toml",
+            "version = 3\n\
                                    [[zone]]\nname = \"war\"\n\
-                                   [[zone]]\nname = \"duel\"\n");
-        write(&d, "zones/duel/zone.toml", "mode = \"duel\"\nmap = \"d.vwmap\"\n\
+                                   [[zone]]\nname = \"duel\"\n",
+        );
+        write(
+            &d,
+            "zones/duel/zone.toml",
+            "mode = \"duel\"\nmap = \"d.vwmap\"\n\
                                            max_rooms = 100\nfill_target = 2\n\
-                                           max_players = 2\n");
+                                           max_players = 2\n",
+        );
         write(&d, "zones/duel/d.vwmap", "x");
         let c = load(&d).expect("loads");
         assert_eq!(c.version, 3);
-        assert_eq!(c.order, vec!["war", "duel"], "declared order is the tie-break");
+        assert_eq!(
+            c.order,
+            vec!["war", "duel"],
+            "declared order is the tie-break"
+        );
         assert_eq!(c.zone("duel").unwrap().max_rooms(), 100);
         assert_eq!(c.zone("war").unwrap().max_rooms(), 1, "absent means one");
-        assert_eq!(c.fallback_zone().as_deref(), Some("war"), "first when none is named");
+        assert_eq!(
+            c.fallback_zone().as_deref(),
+            Some("war"),
+            "first when none is named"
+        );
     }
 
     #[test]
@@ -768,58 +817,140 @@ mod tests {
         // Each case breaks one thing and asserts the message names it, because
         // the reason is the entire value of refusing.
         let cases: Vec<(&str, Box<dyn Fn(&Path)>, &str)> = vec![
-            ("noversion", Box::new(|d: &Path| {
-                write(d, "catalog.toml", "[[zone]]\nname = \"war\"\n")
-            }), "version"),
-            ("badmode", Box::new(|d: &Path| {
-                write(d, "zones/war/zone.toml", "mode = \"soccer\"\nmap = \"war.vwmap\"\n")
-            }), "no implementation"),
-            ("nomap", Box::new(|d: &Path| {
-                write(d, "zones/war/zone.toml", "mode = \"warzone\"\nmap = \"gone.vwmap\"\n")
-            }), "missing"),
-            ("bigships", Box::new(|d: &Path| {
-                write(d, "zones/war/zone.toml",
-                      "mode = \"warzone\"\nmap = \"war.vwmap\"\nmax_ships = 300\n")
-            }), "300"),
-            ("zerorooms", Box::new(|d: &Path| {
-                write(d, "zones/war/zone.toml",
-                      "mode = \"warzone\"\nmap = \"war.vwmap\"\nmax_rooms = 0\n")
-            }), "max_rooms"),
-            ("fill", Box::new(|d: &Path| {
-                write(d, "zones/war/zone.toml", "mode = \"warzone\"\nmap = \"war.vwmap\"\n\
-                                                 fill_target = 40\nmax_players = 8\n")
-            }), "fill_target"),
-            ("dupe", Box::new(|d: &Path| {
-                write(d, "catalog.toml", "version = 1\n\
+            (
+                "noversion",
+                Box::new(|d: &Path| write(d, "catalog.toml", "[[zone]]\nname = \"war\"\n")),
+                "version",
+            ),
+            (
+                "badmode",
+                Box::new(|d: &Path| {
+                    write(
+                        d,
+                        "zones/war/zone.toml",
+                        "mode = \"soccer\"\nmap = \"war.vwmap\"\n",
+                    )
+                }),
+                "no implementation",
+            ),
+            (
+                "nomap",
+                Box::new(|d: &Path| {
+                    write(
+                        d,
+                        "zones/war/zone.toml",
+                        "mode = \"warzone\"\nmap = \"gone.vwmap\"\n",
+                    )
+                }),
+                "missing",
+            ),
+            (
+                "bigships",
+                Box::new(|d: &Path| {
+                    write(
+                        d,
+                        "zones/war/zone.toml",
+                        "mode = \"warzone\"\nmap = \"war.vwmap\"\nmax_ships = 300\n",
+                    )
+                }),
+                "300",
+            ),
+            (
+                "zerorooms",
+                Box::new(|d: &Path| {
+                    write(
+                        d,
+                        "zones/war/zone.toml",
+                        "mode = \"warzone\"\nmap = \"war.vwmap\"\nmax_rooms = 0\n",
+                    )
+                }),
+                "max_rooms",
+            ),
+            (
+                "fill",
+                Box::new(|d: &Path| {
+                    write(
+                        d,
+                        "zones/war/zone.toml",
+                        "mode = \"warzone\"\nmap = \"war.vwmap\"\n\
+                                                 fill_target = 40\nmax_players = 8\n",
+                    )
+                }),
+                "fill_target",
+            ),
+            (
+                "dupe",
+                Box::new(|d: &Path| {
+                    write(
+                        d,
+                        "catalog.toml",
+                        "version = 1\n\
                                           [[zone]]\nname = \"war\"\n\
-                                          [[zone]]\nname = \"war\"\n")
-            }), "twice"),
-            ("plaintoken", Box::new(|d: &Path| {
-                write(d, "catalog.toml", "version = 1\n\
+                                          [[zone]]\nname = \"war\"\n",
+                    )
+                }),
+                "twice",
+            ),
+            (
+                "plaintoken",
+                Box::new(|d: &Path| {
+                    write(
+                        d,
+                        "catalog.toml",
+                        "version = 1\n\
                                           [[pool]]\nname = \"p\"\ntoken = \"hunter2\"\n\
-                                          [[zone]]\nname = \"war\"\n")
-            }), "sha256"),
-            ("namelessteam", Box::new(|d: &Path| {
-                write(d, "zones/war/zone.toml", "mode = \"warzone\"\nmap = \"war.vwmap\"\n\
-                                                 teams = [\"Keel\", \"\"]\n")
-            }), "no name"),
-            ("teamsovercap", Box::new(|d: &Path| {
-                write(d, "zones/war/zone.toml", "mode = \"warzone\"\nmap = \"war.vwmap\"\n\
+                                          [[zone]]\nname = \"war\"\n",
+                    )
+                }),
+                "sha256",
+            ),
+            (
+                "namelessteam",
+                Box::new(|d: &Path| {
+                    write(
+                        d,
+                        "zones/war/zone.toml",
+                        "mode = \"warzone\"\nmap = \"war.vwmap\"\n\
+                                                 teams = [\"Keel\", \"\"]\n",
+                    )
+                }),
+                "no name",
+            ),
+            (
+                "teamsovercap",
+                Box::new(|d: &Path| {
+                    write(
+                        d,
+                        "zones/war/zone.toml",
+                        "mode = \"warzone\"\nmap = \"war.vwmap\"\n\
                                                  teams = [\"Keel\", \"Vantage\"]\n\
-                                                 max_teams = 1\n")
-            }), "max_teams"),
-            ("baddefault", Box::new(|d: &Path| {
-                write(d, "catalog.toml", "version = 1\ndefault_zone = \"nope\"\n\
-                                          [[zone]]\nname = \"war\"\n")
-            }), "default_zone"),
+                                                 max_teams = 1\n",
+                    )
+                }),
+                "max_teams",
+            ),
+            (
+                "baddefault",
+                Box::new(|d: &Path| {
+                    write(
+                        d,
+                        "catalog.toml",
+                        "version = 1\ndefault_zone = \"nope\"\n\
+                                          [[zone]]\nname = \"war\"\n",
+                    )
+                }),
+                "default_zone",
+            ),
         ];
         for (tag, break_it, wanted) in cases {
             let d = tmp(tag);
             good(&d);
             break_it(&d);
             let err = load(&d).expect_err(&format!("{tag} must be rejected"));
-            assert!(err.contains(wanted),
-                    "{tag}: message {err:?} does not name {wanted:?}");
+            assert!(
+                err.contains(wanted),
+                "{tag}: message {err:?} does not name {wanted:?}"
+            );
         }
     }
 
@@ -829,8 +960,11 @@ mod tests {
         // cheapest possible enforcement of the wire's 255.
         let d = tmp("ceiling");
         good(&d);
-        write(&d, "zones/war/zone.toml",
-              "mode = \"warzone\"\nmap = \"war.vwmap\"\nmax_ships = 255\n");
+        write(
+            &d,
+            "zones/war/zone.toml",
+            "mode = \"warzone\"\nmap = \"war.vwmap\"\nmax_ships = 255\n",
+        );
         assert_eq!(load(&d).unwrap().zone("war").unwrap().max_ships, Some(255));
     }
 
@@ -838,15 +972,22 @@ mod tests {
     fn bans_and_capabilities_are_deployment_wide() {
         let d = tmp("staff");
         good(&d);
-        write(&d, "catalog.toml", "version = 1\nbans = [\"griefer\"]\n\
+        write(
+            &d,
+            "catalog.toml",
+            "version = 1\nbans = [\"griefer\"]\n\
                                    [[staff]]\nname = \"chris\"\n\
                                    capabilities = [\"ban\", \"drain\"]\n\
-                                   [[zone]]\nname = \"war\"\n");
+                                   [[zone]]\nname = \"war\"\n",
+        );
         let c = load(&d).unwrap();
         assert!(c.is_banned("GRIEFER"), "bans ignore case");
         assert!(!c.is_banned("chris"));
         assert!(c.has_capability("chris", "drain"));
-        assert!(!c.has_capability("chris", "catalog"), "capabilities are explicit");
+        assert!(
+            !c.has_capability("chris", "catalog"),
+            "capabilities are explicit"
+        );
         assert!(!c.has_capability("nobody", "ban"));
     }
 }
@@ -862,18 +1003,29 @@ pub fn run_check() {
         }
         Ok(c) => {
             println!("catalog {dir}: {:?} version {}", c.name, c.version);
-            println!("  {} pools, {} staff, {} bans", c.pools.len(), c.staff.len(),
-                     c.bans.len());
+            println!(
+                "  {} pools, {} staff, {} bans",
+                c.pools.len(),
+                c.staff.len(),
+                c.bans.len()
+            );
             for name in &c.order {
                 let z = &c.zones[name];
                 let map = c.map_bytes(name).map(|b| b.len()).unwrap_or(0);
                 println!(
                     "  zone {name:<10} mode {:<8} {} ships / {} players, fill {}, \
                      bots {:.0}%, {} room(s), teams {}, map {map} B",
-                    z.mode, z.max_ships.unwrap_or(64), z.max_players(),
-                    z.fill_target(), z.bot_fill() * 100.0, z.max_rooms(),
-                    if z.teams.is_empty() { "free-for-all".to_string() }
-                    else { z.teams.join("/") }
+                    z.mode,
+                    z.max_ships.unwrap_or(64),
+                    z.max_players(),
+                    z.fill_target(),
+                    z.bot_fill() * 100.0,
+                    z.max_rooms(),
+                    if z.teams.is_empty() {
+                        "free-for-all".to_string()
+                    } else {
+                        z.teams.join("/")
+                    }
                 );
             }
             println!("  default {:?}", c.fallback_zone().unwrap_or_default());

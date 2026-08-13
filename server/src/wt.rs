@@ -66,8 +66,7 @@ const IDLE: Duration = Duration::from_secs(90);
 /// dead, so WebSocket players get their hangup for free, but a WebTransport
 /// session left unclosed is discovered by the browser's idle timer, tens of
 /// seconds a player spends in a ghost room. Set once when the endpoint binds.
-static LIVE: std::sync::OnceLock<Arc<Endpoint<endpoint_side::Server>>> =
-    std::sync::OnceLock::new();
+static LIVE: std::sync::OnceLock<Arc<Endpoint<endpoint_side::Server>>> = std::sync::OnceLock::new();
 
 /// Close every WebTransport session, for the SIGTERM path. The close frame
 /// leaves on the endpoint's own driver, so the bounded wait afterwards is
@@ -271,12 +270,13 @@ async fn session(incoming: IncomingSession, zone: Arc<Mutex<ArenaServer>>) {
     let Ok(request) = incoming.await else { return };
     // Any path on this authority is this arena; the address a client dials
     // already picked the process, the same way the WebSocket port does.
-    let Ok(conn) = request.accept().await else { return };
+    let Ok(conn) = request.accept().await else {
+        return;
+    };
     // Counted here rather than at the handshake: a session is a client that
     // got through, which is the number worth having against the sockets.
     crate::metrics::WT_SESSIONS.inc();
-    let Ok(Ok((reliable_tx, reliable_rx))) =
-        tokio::time::timeout(HELLO, conn.accept_bi()).await
+    let Ok(Ok((reliable_tx, reliable_rx))) = tokio::time::timeout(HELLO, conn.accept_bi()).await
     else {
         conn.close(VarInt::from_u32(0), b"open a stream first");
         return;
@@ -357,7 +357,9 @@ async fn write_loop(conn: Connection, mut reliable: SendStream, mut rx: mpsc::Re
                 let conn = conn.clone();
                 tokio::spawn(async move {
                     let _permit = permit;
-                    let Ok(opening) = conn.open_uni().await else { return };
+                    let Ok(opening) = conn.open_uni().await else {
+                        return;
+                    };
                     let Ok(mut s) = opening.await else { return };
                     let _ = s.write_all(&b).await;
                     let _ = s.finish().await;
@@ -517,7 +519,9 @@ mod tests {
             name.len() as u8,
         ];
         join.extend_from_slice(name);
-        write_frame(&mut reliable_tx, &join).await.expect("the join sends");
+        write_frame(&mut reliable_tx, &join)
+            .await
+            .expect("the join sends");
 
         // Everything reliable rides the stream, and the welcome closes the
         // door sequence: map and settings must already have passed by then,
@@ -533,7 +537,10 @@ mod tests {
                 break msg;
             }
         };
-        assert!(seen.contains(&crate::S2C_MAP), "no map before the welcome: {seen:?}");
+        assert!(
+            seen.contains(&crate::S2C_MAP),
+            "no map before the welcome: {seen:?}"
+        );
         assert!(
             seen.contains(&crate::S2C_SETTINGS),
             "no settings before the welcome: {seen:?}"

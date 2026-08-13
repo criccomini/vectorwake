@@ -77,12 +77,22 @@ fn bout(r: &mut rating::Rating, a: &ai::RosterEntry, b: &ai::RosterEntry, salt: 
 
     for _ in 0..MATCH_TICKS {
         let inputs = [
-            sim::sim_input { ship: s1, buttons: bot1.think(
-                &ai::own(&world, s1), &route,
-                bot1.looks_due().then(|| ai::scan(&world, s1))) },
-            sim::sim_input { ship: s2, buttons: bot2.think(
-                &ai::own(&world, s2), &route,
-                bot2.looks_due().then(|| ai::scan(&world, s2))) },
+            sim::sim_input {
+                ship: s1,
+                buttons: bot1.think(
+                    &ai::own(&world, s1),
+                    &route,
+                    bot1.looks_due().then(|| ai::scan(&world, s1)),
+                ),
+            },
+            sim::sim_input {
+                ship: s2,
+                buttons: bot2.think(
+                    &ai::own(&world, s2),
+                    &route,
+                    bot2.looks_due().then(|| ai::scan(&world, s2)),
+                ),
+            },
         ];
         world.step(&inputs);
 
@@ -194,11 +204,26 @@ impl Stage {
 /// to: shrapnel is a bomber's, and asking a hull to wear it on its gun would
 /// measure a refusal rather than an add-on.
 pub const STAGES: &[Stage] = &[
-    Stage { name: "bare", kit: &[] },
-    Stage { name: "gun 1", kit: &[(sim::prize_level(sim::TRIG_GUN), 1)] },
-    Stage { name: "gun 2", kit: &[(sim::prize_level(sim::TRIG_GUN), 2)] },
-    Stage { name: "bomb 1", kit: &[(sim::prize_level(sim::TRIG_BOMB), 1)] },
-    Stage { name: "bomb 2", kit: &[(sim::prize_level(sim::TRIG_BOMB), 2)] },
+    Stage {
+        name: "bare",
+        kit: &[],
+    },
+    Stage {
+        name: "gun 1",
+        kit: &[(sim::prize_level(sim::TRIG_GUN), 1)],
+    },
+    Stage {
+        name: "gun 2",
+        kit: &[(sim::prize_level(sim::TRIG_GUN), 2)],
+    },
+    Stage {
+        name: "bomb 1",
+        kit: &[(sim::prize_level(sim::TRIG_BOMB), 1)],
+    },
+    Stage {
+        name: "bomb 2",
+        kit: &[(sim::prize_level(sim::TRIG_BOMB), 2)],
+    },
     Stage {
         name: "stats",
         kit: &[
@@ -209,12 +234,30 @@ pub const STAGES: &[Stage] = &[
             (sim::prize_stat(4), TO_CEILING),
         ],
     },
-    Stage { name: "multifire", kit: &[(sim::prize_mod(sim::TRIG_GUN, sim::MOD_MULTI), 1)] },
-    Stage { name: "bouncing gun", kit: &[(sim::prize_mod(sim::TRIG_GUN, sim::MOD_BOUNCE), 1)] },
-    Stage { name: "freezing gun", kit: &[(sim::prize_mod(sim::TRIG_GUN, sim::MOD_FREEZE), 1)] },
-    Stage { name: "shrapnel", kit: &[(sim::prize_mod(sim::TRIG_BOMB, sim::MOD_SHRAPNEL), 1)] },
-    Stage { name: "proximity", kit: &[(sim::prize_mod(sim::TRIG_BOMB, sim::MOD_PROX), 1)] },
-    Stage { name: "shoving bomb", kit: &[(sim::prize_mod(sim::TRIG_BOMB, sim::MOD_PUSH), 1)] },
+    Stage {
+        name: "multifire",
+        kit: &[(sim::prize_mod(sim::TRIG_GUN, sim::MOD_MULTI), 1)],
+    },
+    Stage {
+        name: "bouncing gun",
+        kit: &[(sim::prize_mod(sim::TRIG_GUN, sim::MOD_BOUNCE), 1)],
+    },
+    Stage {
+        name: "freezing gun",
+        kit: &[(sim::prize_mod(sim::TRIG_GUN, sim::MOD_FREEZE), 1)],
+    },
+    Stage {
+        name: "shrapnel",
+        kit: &[(sim::prize_mod(sim::TRIG_BOMB, sim::MOD_SHRAPNEL), 1)],
+    },
+    Stage {
+        name: "proximity",
+        kit: &[(sim::prize_mod(sim::TRIG_BOMB, sim::MOD_PROX), 1)],
+    },
+    Stage {
+        name: "shoving bomb",
+        kit: &[(sim::prize_mod(sim::TRIG_BOMB, sim::MOD_PUSH), 1)],
+    },
     // A second bare hull, and the most useful row in the table.
     //
     // It is `bare` under another name, so the gap between the two is a
@@ -224,7 +267,10 @@ pub const STAGES: &[Stage] = &[
     // control gap is wider than the finding you came for has not found
     // anything. Unwearable stages land here too and widen the estimate, which
     // is right: they are also bare.
-    Stage { name: "control", kit: &[] },
+    Stage {
+        name: "control",
+        kit: &[],
+    },
 ];
 
 /// What one side did in one bout.
@@ -270,7 +316,11 @@ pub struct Bout {
 fn wear(world: &mut sim::World, ship: usize, stage: &Stage) -> u32 {
     let mut worn = 0;
     for &(prize, n) in stage.kit {
-        let want = if n == TO_CEILING { GRANT_LIMIT } else { n as u32 };
+        let want = if n == TO_CEILING {
+            GRANT_LIMIT
+        } else {
+            n as u32
+        };
         for _ in 0..want {
             if !world.grant(ship, prize) {
                 break;
@@ -314,8 +364,13 @@ fn spec_triggers(cfg: &sim::sim_settings, class: u8) -> std::collections::HashMa
 /// routing, corridors and a thousand tiles of separation into a measurement
 /// that exists to isolate the kit, and two pilots on Alpha's map would spend
 /// most of a bout looking for each other.
-pub fn stage_bout(kits: [&Stage; 2], class: u8, skill: f32, salt: u32,
-                  tuning: Option<&config::ArenaConfig>) -> Bout {
+pub fn stage_bout(
+    kits: [&Stage; 2],
+    class: u8,
+    skill: f32,
+    salt: u32,
+    tuning: Option<&config::ArenaConfig>,
+) -> Bout {
     let mut world = sim::World::with_map(0x5ea1 ^ salt, sim::build_pit);
     let route = nav::Nav::build(&world.map);
     if let Some(c) = tuning {
@@ -341,7 +396,11 @@ pub fn stage_bout(kits: [&Stage; 2], class: u8, skill: f32, salt: u32,
 
     // Sides alternate, so the pit's own geometry cannot turn into a result.
     let flip = salt % 2 == 1;
-    let seats: [&Stage; 2] = if flip { [kits[1], kits[0]] } else { [kits[0], kits[1]] };
+    let seats: [&Stage; 2] = if flip {
+        [kits[1], kits[0]]
+    } else {
+        [kits[0], kits[1]]
+    };
 
     let ships = [
         world.spawn(class, 0, 505, 522, 0) as u8,
@@ -366,13 +425,19 @@ pub fn stage_bout(kits: [&Stage; 2], class: u8, skill: f32, salt: u32,
         let inputs = [
             sim::sim_input {
                 ship: ships[0],
-                buttons: bots[0].think(&ai::own(&world, ships[0]), &route,
-                                       bots[0].looks_due().then(|| ai::scan(&world, ships[0]))),
+                buttons: bots[0].think(
+                    &ai::own(&world, ships[0]),
+                    &route,
+                    bots[0].looks_due().then(|| ai::scan(&world, ships[0])),
+                ),
             },
             sim::sim_input {
                 ship: ships[1],
-                buttons: bots[1].think(&ai::own(&world, ships[1]), &route,
-                                       bots[1].looks_due().then(|| ai::scan(&world, ships[1]))),
+                buttons: bots[1].think(
+                    &ai::own(&world, ships[1]),
+                    &route,
+                    bots[1].looks_due().then(|| ai::scan(&world, ships[1])),
+                ),
             },
         ];
         world.step(&inputs);
@@ -520,8 +585,13 @@ impl StageRow {
 /// counting it would drag every rate toward a half and hide the thing it is
 /// actually good for: a mirror that does not come out even says the harness is
 /// biased, and a mirror that never resolves says the pair is too dull to score.
-pub fn run_stages(class: u8, skill: f32, bouts: u32, tuning: Option<&config::ArenaConfig>,
-                  verbose: bool) -> Vec<StageRow> {
+pub fn run_stages(
+    class: u8,
+    skill: f32,
+    bouts: u32,
+    tuning: Option<&config::ArenaConfig>,
+    verbose: bool,
+) -> Vec<StageRow> {
     let n = STAGES.len();
     let mut rows: Vec<StageRow> = STAGES
         .iter()
@@ -603,8 +673,13 @@ pub fn run_stages(class: u8, skill: f32, bouts: u32, tuning: Option<&config::Are
 }
 
 /// Print the tournament, and hand back the document worth keeping.
-pub fn report_stages(rows: &[StageRow], hull: &str, skill: f32, bouts: u32,
-                     zone: &str) -> serde_json::Value {
+pub fn report_stages(
+    rows: &[StageRow],
+    hull: &str,
+    skill: f32,
+    bouts: u32,
+    zone: &str,
+) -> serde_json::Value {
     // Whose numbers these are, said at the top. A price for multifire is a
     // price under some zone's `multi_energy` and `mod_spread`, and a report
     // that did not name the tuning would invite being carried to a room that
@@ -643,8 +718,7 @@ pub fn report_stages(rows: &[StageRow], hull: &str, skill: f32, bouts: u32,
             r.damage as f64 / r.hits.max(1) as f64,
             // The share of everything this stage dealt that it dealt to
             // itself.
-            100.0 * r.self_damage as f64
-                / (r.damage + r.self_damage).max(1) as f64,
+            100.0 * r.self_damage as f64 / (r.damage + r.self_damage).max(1) as f64,
             100.0 * r.mirror,
         );
     }
@@ -695,8 +769,14 @@ pub fn report_stages(rows: &[StageRow], hull: &str, skill: f32, bouts: u32,
     // is a question this line cannot answer and should not look like it can.
     let flat: Vec<&StageRow> = rows.iter().filter(|r| r.worn == 0).collect();
     let kitless_spread = if flat.len() > 1 {
-        let lo = flat.iter().map(|r| r.win_rate()).fold(f64::INFINITY, f64::min);
-        let hi = flat.iter().map(|r| r.win_rate()).fold(f64::NEG_INFINITY, f64::max);
+        let lo = flat
+            .iter()
+            .map(|r| r.win_rate())
+            .fold(f64::INFINITY, f64::min);
+        let hi = flat
+            .iter()
+            .map(|r| r.win_rate())
+            .fold(f64::NEG_INFINITY, f64::max);
         let widest = flat.iter().map(|r| r.margin()).fold(0.0, f64::max);
         println!(
             "\n{} rows are wearing nothing at all and spread {:.1} points, against \
@@ -911,15 +991,33 @@ fn green(world: &mut sim::World, ship: usize, greens: u32, rng: &mut u32) -> u32
 ///
 /// Returns the bout and how many greens each side was offered over it, which is
 /// `greens` times the number of lives it had rather than a constant.
-pub fn hull_bout(classes: [u8; 2], skill: f32, greens: u32, salt: u32,
-                 tuning: Option<&config::ArenaConfig>,
-                 map: &Arena) -> (Bout, [u32; 2]) {
+pub fn hull_bout(
+    classes: [u8; 2],
+    skill: f32,
+    greens: u32,
+    salt: u32,
+    tuning: Option<&config::ArenaConfig>,
+    map: &Arena,
+) -> (Bout, [u32; 2]) {
     // Sides alternate, so the room's geometry cannot turn into a result. The
     // seats keep their places and their bot seeds; it is the hulls that move.
     let flip = salt % 2 == 1;
-    let seats: [u8; 2] = if flip { [classes[1], classes[0]] } else { classes };
-    let dead = (Bout { sides: [Side::default(); 2], ticks: 0, decided: false }, [0, 0]);
-    let Some(mut world) = map.build(salt) else { return dead };
+    let seats: [u8; 2] = if flip {
+        [classes[1], classes[0]]
+    } else {
+        classes
+    };
+    let dead = (
+        Bout {
+            sides: [Side::default(); 2],
+            ticks: 0,
+            decided: false,
+        },
+        [0, 0],
+    );
+    let Some(mut world) = map.build(salt) else {
+        return dead;
+    };
     let route = nav::Nav::build(&world.map);
     if let Some(c) = tuning {
         crate::Room::apply_config(&mut world, c);
@@ -939,7 +1037,9 @@ pub fn hull_bout(classes: [u8; 2], skill: f32, greens: u32, salt: u32,
     world.cfg.spawn_radius = 0;
 
     // Seated last, so both hulls open with the settings this room actually has.
-    let Some(ships) = map.seat(&mut world, salt, seats) else { return dead };
+    let Some(ships) = map.seat(&mut world, salt, seats) else {
+        return dead;
+    };
 
     // Nonzero, because xorshift stays at zero forever once it arrives there and
     // a bout whose greens all rolled the same thing is not obvious from a
@@ -974,13 +1074,19 @@ pub fn hull_bout(classes: [u8; 2], skill: f32, greens: u32, salt: u32,
         let inputs = [
             sim::sim_input {
                 ship: ships[0],
-                buttons: bots[0].think(&ai::own(&world, ships[0]), &route,
-                                       bots[0].looks_due().then(|| ai::scan(&world, ships[0]))),
+                buttons: bots[0].think(
+                    &ai::own(&world, ships[0]),
+                    &route,
+                    bots[0].looks_due().then(|| ai::scan(&world, ships[0])),
+                ),
             },
             sim::sim_input {
                 ship: ships[1],
-                buttons: bots[1].think(&ai::own(&world, ships[1]), &route,
-                                       bots[1].looks_due().then(|| ai::scan(&world, ships[1]))),
+                buttons: bots[1].think(
+                    &ai::own(&world, ships[1]),
+                    &route,
+                    bots[1].looks_due().then(|| ai::scan(&world, ships[1])),
+                ),
             },
         ];
         world.step(&inputs);
@@ -1044,14 +1150,23 @@ pub fn hull_bout(classes: [u8; 2], skill: f32, greens: u32, salt: u32,
             ticks,
             decided,
         },
-        if flip { [offered[1], offered[0]] } else { offered },
+        if flip {
+            [offered[1], offered[0]]
+        } else {
+            offered
+        },
     )
 }
 
 /// Every hull against every other, `bouts` times each, at one bounty.
-pub fn run_hulls(skill: f32, greens: u32, bouts: u32,
-                 tuning: Option<&config::ArenaConfig>, map: &Arena,
-                 verbose: bool) -> Vec<HullRow> {
+pub fn run_hulls(
+    skill: f32,
+    greens: u32,
+    bouts: u32,
+    tuning: Option<&config::ArenaConfig>,
+    map: &Arena,
+    verbose: bool,
+) -> Vec<HullRow> {
     let n = ai::CLASS_NAMES.len();
     let mut rows: Vec<HullRow> = (0..n)
         .map(|i| HullRow {
@@ -1132,8 +1247,14 @@ pub fn run_hulls(skill: f32, greens: u32, bouts: u32,
 }
 
 /// The cross-hull report: a line per ship, then the matrix.
-pub fn report_hulls(rows: &[HullRow], skill: f32, greens: u32, bouts: u32,
-                    zone: &str, map: &str) -> serde_json::Value {
+pub fn report_hulls(
+    rows: &[HullRow],
+    skill: f32,
+    greens: u32,
+    bouts: u32,
+    zone: &str,
+    map: &str,
+) -> serde_json::Value {
     let n = rows.len();
     println!(
         "\nhull tournament: {zone} tuning on the {map}, skill {skill:.2}, {greens} greens \
@@ -1333,11 +1454,18 @@ pub struct Seat {
 /// runs to twenty, or when the clock does. A match that ran out of clock is
 /// still scored on kills, because a team ahead on the board when time expires
 /// has out-fought the other one whether or not it finished the job.
-pub fn team_match(lineup: &[u8], skill: f32, greens: u32, salt: u32,
-                  tuning: Option<&config::ArenaConfig>, map: &Arena)
-                  -> (Vec<Seat>, bool) {
+pub fn team_match(
+    lineup: &[u8],
+    skill: f32,
+    greens: u32,
+    salt: u32,
+    tuning: Option<&config::ArenaConfig>,
+    map: &Arena,
+) -> (Vec<Seat>, bool) {
     let per_side = lineup.len() / 2;
-    let Some(mut world) = map.build(salt) else { return (Vec::new(), false) };
+    let Some(mut world) = map.build(salt) else {
+        return (Vec::new(), false);
+    };
     let route = nav::Nav::build(&world.map);
     if let Some(c) = tuning {
         crate::Room::apply_config(&mut world, c);
@@ -1357,9 +1485,18 @@ pub fn team_match(lineup: &[u8], skill: f32, greens: u32, salt: u32,
             return (Vec::new(), false);
         }
         ships.push(id as u8);
-        prng.push((salt.wrapping_mul(2654435761).wrapping_add(i as u32 * 2246822519)
-                   ^ 0x9E37_79B9) | 1);
-        seats.push(Seat { class: cls, team, ..Default::default() });
+        prng.push(
+            (salt
+                .wrapping_mul(2654435761)
+                .wrapping_add(i as u32 * 2246822519)
+                ^ 0x9E37_79B9)
+                | 1,
+        );
+        seats.push(Seat {
+            class: cls,
+            team,
+            ..Default::default()
+        });
     }
     for i in 0..ships.len() {
         seats[i].converted += green(&mut world, ships[i] as usize, greens, &mut prng[i]);
@@ -1376,7 +1513,10 @@ pub fn team_match(lineup: &[u8], skill: f32, greens: u32, salt: u32,
         })
         .collect();
 
-    let trig_of: Vec<_> = lineup.iter().map(|&c| spec_triggers(&world.cfg, c)).collect();
+    let trig_of: Vec<_> = lineup
+        .iter()
+        .map(|&c| spec_triggers(&world.cfg, c))
+        .collect();
     let mut alive_was = vec![true; ships.len()];
     let target = KILL_TARGET as u32 * per_side as u32;
     let mut decided = false;
@@ -1452,15 +1592,31 @@ pub fn team_match(lineup: &[u8], skill: f32, greens: u32, salt: u32,
 }
 
 /// Fill both sides at random, `matches` times, and read each hull off its seats.
-pub fn run_teams(per_side: usize, matches: u32, greens: u32, skill: f32,
-                 tuning: Option<&config::ArenaConfig>, map: &Arena,
-                 verbose: bool) -> Vec<TeamRow> {
+pub fn run_teams(
+    per_side: usize,
+    matches: u32,
+    greens: u32,
+    skill: f32,
+    tuning: Option<&config::ArenaConfig>,
+    map: &Arena,
+    verbose: bool,
+) -> Vec<TeamRow> {
     let n = ai::CLASS_NAMES.len();
     let mut rows: Vec<TeamRow> = (0..n)
         .map(|i| TeamRow {
-            name: ai::CLASS_NAMES[i], class: i as u8, seats: 0, won: 0, drawn: 0,
-            kills: 0, deaths: 0, shots: [0; sim::TRIG_COUNT], hits: 0,
-            damage: 0, self_damage: 0, greens: 0, converted: 0,
+            name: ai::CLASS_NAMES[i],
+            class: i as u8,
+            seats: 0,
+            won: 0,
+            drawn: 0,
+            kills: 0,
+            deaths: 0,
+            shots: [0; sim::TRIG_COUNT],
+            hits: 0,
+            damage: 0,
+            self_damage: 0,
+            greens: 0,
+            converted: 0,
         })
         .collect();
 
@@ -1472,7 +1628,9 @@ pub fn run_teams(per_side: usize, matches: u32, greens: u32, skill: f32,
     for m in 0..matches {
         let mut lineup = Vec::with_capacity(per_side * 2);
         for _ in 0..per_side * 2 {
-            rng ^= rng << 13; rng ^= rng >> 17; rng ^= rng << 5;
+            rng ^= rng << 13;
+            rng ^= rng >> 17;
+            rng ^= rng << 5;
             lineup.push((rng % n as u32) as u8);
         }
         let (seats, decided) = team_match(&lineup, skill, greens, m, tuning, map);
@@ -1521,15 +1679,25 @@ pub fn run_teams(per_side: usize, matches: u32, greens: u32, skill: f32,
         // score is the kill difference when it stops. Printed because a run
         // where matches suddenly start finishing early is a run whose lethality
         // moved, and that is worth noticing rather than averaging over.
-        println!("{} of {matches} matches reached the kill target; the rest were \
-scored on the difference when the clock stopped", matches - undecided);
+        println!(
+            "{} of {matches} matches reached the kill target; the rest were \
+scored on the difference when the clock stopped",
+            matches - undecided
+        );
     }
     rows
 }
 
 /// The team report: a line per hull, read off the seats it filled.
-pub fn report_teams(rows: &[TeamRow], per_side: usize, skill: f32, greens: u32,
-                    matches: u32, zone: &str, map: &str) -> serde_json::Value {
+pub fn report_teams(
+    rows: &[TeamRow],
+    per_side: usize,
+    skill: f32,
+    greens: u32,
+    matches: u32,
+    zone: &str,
+    map: &str,
+) -> serde_json::Value {
     println!(
         "\nteam tournament: {per_side} a side, {zone} tuning on the {map}, skill \
 {skill:.2}, {greens} greens a life, {matches} matches, lineups drawn at random"
@@ -1608,9 +1776,21 @@ mod tests {
     #[ignore = "skill does not decide a duel yet; see the numbers above"]
     fn skill_decides_a_match_between_equal_hulls() {
         let roster = vec![
-            ai::RosterEntry { name: "low".into(), class: 0, skill: 0.15 },
-            ai::RosterEntry { name: "mid".into(), class: 0, skill: 0.50 },
-            ai::RosterEntry { name: "high".into(), class: 0, skill: 0.95 },
+            ai::RosterEntry {
+                name: "low".into(),
+                class: 0,
+                skill: 0.15,
+            },
+            ai::RosterEntry {
+                name: "mid".into(),
+                class: 0,
+                skill: 0.50,
+            },
+            ai::RosterEntry {
+                name: "high".into(),
+                class: 0,
+                skill: 0.95,
+            },
         ];
         let r = run_roster(&roster, 60, false);
         let (lo, hi) = (r.rating_of("low"), r.rating_of("high"));
@@ -1625,9 +1805,21 @@ mod tests {
     #[test]
     fn a_calibration_run_rates_everybody_near_the_anchor() {
         let roster = vec![
-            ai::RosterEntry { name: "low".into(), class: 0, skill: 0.15 },
-            ai::RosterEntry { name: "mid".into(), class: 0, skill: 0.50 },
-            ai::RosterEntry { name: "high".into(), class: 0, skill: 0.95 },
+            ai::RosterEntry {
+                name: "low".into(),
+                class: 0,
+                skill: 0.15,
+            },
+            ai::RosterEntry {
+                name: "mid".into(),
+                class: 0,
+                skill: 0.50,
+            },
+            ai::RosterEntry {
+                name: "high".into(),
+                class: 0,
+                skill: 0.95,
+            },
         ];
         let r = run_roster(&roster, 8, false);
         for name in ["low", "mid", "high"] {
@@ -1650,11 +1842,7 @@ mod tests {
     fn every_pilot_actually_fought() {
         let r = run(1, false);
         for e in ai::roster() {
-            assert!(
-                r.games_of(&e.name) > 0,
-                "{} sat out the tournament",
-                e.name
-            );
+            assert!(r.games_of(&e.name) > 0, "{} sat out the tournament", e.name);
         }
     }
 
@@ -1703,7 +1891,10 @@ mod tests {
             "384 bouts should be worth about 5, got {:.1}",
             large.margin()
         );
-        assert!(large.margin() < small.margin(), "more bouts, tighter interval");
+        assert!(
+            large.margin() < small.margin(),
+            "more bouts, tighter interval"
+        );
 
         // Wilson and not the textbook normal, so a row that won nothing gets an
         // interval it could actually live in rather than plus or minus zero.
@@ -1740,10 +1931,24 @@ mod tests {
         let anvil = ai::class_index("Anvil").unwrap() as u8;
         const GREENS: u32 = 8;
         for salt in 0..4 {
-            let (_, offered) = hull_bout([cipher, anvil], 0.5, GREENS, salt, None, &Arena::Built(sim::build_pit));
+            let (_, offered) = hull_bout(
+                [cipher, anvil],
+                0.5,
+                GREENS,
+                salt,
+                None,
+                &Arena::Built(sim::build_pit),
+            );
             for k in 0..2 {
-                assert!(offered[k] >= GREENS, "salt {salt}: side {k} never got its opening");
-                assert_eq!(offered[k] % GREENS, 0, "salt {salt}: greens arrive a life at a time");
+                assert!(
+                    offered[k] >= GREENS,
+                    "salt {salt}: side {k} never got its opening"
+                );
+                assert_eq!(
+                    offered[k] % GREENS,
+                    0,
+                    "salt {salt}: greens arrive a life at a time"
+                );
             }
         }
 
@@ -1764,7 +1969,10 @@ mod tests {
             let mut rng = 0x1234_5678u32;
             let offered = 60;
             let converted = green(&mut world, ship, offered, &mut rng);
-            assert!(converted <= offered, "{name} converted more than it was handed");
+            assert!(
+                converted <= offered,
+                "{name} converted more than it was handed"
+            );
             if converted < offered {
                 short += 1;
             }
@@ -1799,8 +2007,14 @@ the ceilings the matched-bounty argument turns on"
         // cannot kill each other.
         let mut kills = 0;
         for salt in 0..6 {
-            let (b, _) = hull_bout([cipher, cipher], 0.5, 10, salt, Some(&scattered),
-                                   &Arena::Built(sim::build_pit));
+            let (b, _) = hull_bout(
+                [cipher, cipher],
+                0.5,
+                10,
+                salt,
+                Some(&scattered),
+                &Arena::Built(sim::build_pit),
+            );
             kills += b.sides[0].kills + b.sides[1].kills;
         }
         // Measured both ways rather than guessed: held, six bouts come to 50
@@ -1828,10 +2042,9 @@ the room"
     #[test]
     fn a_zones_ship_settings_reach_the_opening_bar() {
         let cipher = ai::class_index("Cipher").unwrap() as u8;
-        let thin: config::ArenaConfig = toml::from_str(
-            "[[ships]]\nname = \"Cipher\"\ninitial_energy = 250\nenergy = 400\n",
-        )
-        .expect("a zone that thins one hull");
+        let thin: config::ArenaConfig =
+            toml::from_str("[[ships]]\nname = \"Cipher\"\ninitial_energy = 250\nenergy = 400\n")
+                .expect("a zone that thins one hull");
 
         let arena = Arena::Built(sim::build_pit);
 
@@ -1923,15 +2136,24 @@ which is the pit talking",
         const ONE: &[(u8, u8)] = &[(sim::prize_level(sim::TRIG_GUN), 1)];
         const NINE: &[(u8, u8)] = &[(sim::prize_level(sim::TRIG_GUN), 9)];
 
-        let one = Stage { name: "t", kit: ONE };
+        let one = Stage {
+            name: "t",
+            kit: ONE,
+        };
         assert_eq!(wear(&mut world, ship, &one), 1);
         assert_eq!(world.state.ships[ship].level[sim::TRIG_GUN], 1);
 
         // Asking for more rungs than the ladder has is answered honestly: an
         // Apex climbs to rung 2 and the rest of the ask does not land.
-        let greedy = Stage { name: "t", kit: NINE };
+        let greedy = Stage {
+            name: "t",
+            kit: NINE,
+        };
         let worn = wear(&mut world, ship, &greedy);
-        assert!(worn < 9, "a nine-rung gun ladder does not exist; wore {worn}");
+        assert!(
+            worn < 9,
+            "a nine-rung gun ladder does not exist; wore {worn}"
+        );
         assert_eq!(world.state.ships[ship].level[sim::TRIG_GUN], 2);
 
         // And a ceiling reached is not a bounty paid, which is the one way a
@@ -1953,18 +2175,25 @@ which is the pit talking",
         assert_eq!((a.name, b.name), ("gun 2", "gun 1"), "the stage list moved");
         let bout = stage_bout([a, b], 0, 0.5, 3, None);
 
-        assert!(bout.sides[0].regrants + bout.sides[1].regrants > 0,
-                "nobody was re-outfitted in a bout with {} deaths in it",
-                bout.sides[0].kills + bout.sides[1].kills);
+        assert!(
+            bout.sides[0].regrants + bout.sides[1].regrants > 0,
+            "nobody was re-outfitted in a bout with {} deaths in it",
+            bout.sides[0].kills + bout.sides[1].kills
+        );
         for k in 0..2 {
-            let (died, worn, again) =
-                (bout.sides[1 - k].kills, bout.sides[k].worn, bout.sides[k].regrants);
+            let (died, worn, again) = (
+                bout.sides[1 - k].kills,
+                bout.sides[k].worn,
+                bout.sides[k].regrants,
+            );
             assert!(worn > 0, "an Apex wears both of these");
             // Every life after the first is one whole kit. The last death does
             // not get one, because the bout ends on it and the pilot never
             // comes back, so the count sits in that one-kit band.
-            assert!(again >= died.saturating_sub(1) * worn && again <= died * worn,
-                    "side {k} died {died} times wearing {worn} and was re-issued {again}");
+            assert!(
+                again >= died.saturating_sub(1) * worn && again <= died * worn,
+                "side {k} died {died} times wearing {worn} and was re-issued {again}"
+            );
         }
     }
 
@@ -1980,13 +2209,18 @@ which is the pit talking",
         c.respawn_delay = Some(123);
 
         let mut world = sim::World::with_map(1, sim::build_pit);
-        assert_ne!(world.cfg.respawn_delay, 123, "pick a value the baseline lacks");
+        assert_ne!(
+            world.cfg.respawn_delay, 123,
+            "pick a value the baseline lacks"
+        );
         let spread_before = world.cfg.mod_spread;
 
         crate::Room::apply_config(&mut world, &c);
         assert_eq!(world.cfg.respawn_delay, 123);
-        assert_ne!(world.cfg.mod_spread, spread_before,
-                   "a five-degree fan is not a fifteen-degree one");
+        assert_ne!(
+            world.cfg.mod_spread, spread_before,
+            "a five-degree fan is not a fifteen-degree one"
+        );
 
         // And the harness still overrides the two it must, whatever the zone
         // asked for: Alpha ships thirty spawn greens, which is exactly the
@@ -1995,8 +2229,11 @@ which is the pit talking",
         c.prize_max = Some(42);
         let b = stage_bout([&STAGES[1], &STAGES[0]], 0, 0.5, 1, Some(&c));
         assert!(b.ticks > 0, "the bout ran");
-        assert_eq!(b.sides[1].worn, 0, "the bare side stayed bare under a zone \
-                                        that hands out thirty greens");
+        assert_eq!(
+            b.sides[1].worn, 0,
+            "the bare side stayed bare under a zone \
+                                        that hands out thirty greens"
+        );
     }
 
     /// The matrix has to agree with itself: if one stage took three of eight,
@@ -2011,14 +2248,21 @@ which is the pit talking",
                     None => assert_eq!(i, j, "only the diagonal goes unplayed"),
                     Some(v) => {
                         let back = rows[j].vs[i].expect("played one way, not the other");
-                        assert!((v + back - 1.0).abs() < 1e-9,
-                                "{} vs {} reads {v:.3} and {back:.3}", r.name, rows[j].name);
+                        assert!(
+                            (v + back - 1.0).abs() < 1e-9,
+                            "{} vs {} reads {v:.3} and {back:.3}",
+                            r.name,
+                            rows[j].name
+                        );
                     }
                 }
             }
-            assert_eq!(r.bouts(), (rows.len() as u32 - 1) * 2,
-                       "{} played the wrong number of bouts", r.name);
+            assert_eq!(
+                r.bouts(),
+                (rows.len() as u32 - 1) * 2,
+                "{} played the wrong number of bouts",
+                r.name
+            );
         }
     }
 }
-

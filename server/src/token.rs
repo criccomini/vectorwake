@@ -192,9 +192,20 @@ pub fn verify(key: &VerifyingKey, token: &str, now: u64) -> Result<Claims, Bad> 
 
     let kind = Kind::from_byte(payload[1]).ok_or(Bad::Malformed)?;
     let claimed = payload[2] != 0;
-    let account = u64::from_le_bytes(payload.get(3..11).ok_or(Bad::Malformed)?.try_into().unwrap());
-    let expires =
-        u64::from_le_bytes(payload.get(11..19).ok_or(Bad::Malformed)?.try_into().unwrap());
+    let account = u64::from_le_bytes(
+        payload
+            .get(3..11)
+            .ok_or(Bad::Malformed)?
+            .try_into()
+            .unwrap(),
+    );
+    let expires = u64::from_le_bytes(
+        payload
+            .get(11..19)
+            .ok_or(Bad::Malformed)?
+            .try_into()
+            .unwrap(),
+    );
     let mut at = 19;
     let name = take_str(payload, &mut at).ok_or(Bad::Malformed)?;
     let n = *payload.get(at).ok_or(Bad::Malformed)? as usize;
@@ -203,12 +214,20 @@ pub fn verify(key: &VerifyingKey, token: &str, now: u64) -> Result<Claims, Bad> 
     for _ in 0..n {
         let class = take_str(payload, &mut at).ok_or(Bad::Malformed)?;
         let r = i16::from_le_bytes(
-            payload.get(at..at + 2).ok_or(Bad::Malformed)?.try_into().unwrap(),
+            payload
+                .get(at..at + 2)
+                .ok_or(Bad::Malformed)?
+                .try_into()
+                .unwrap(),
         );
         at += 2;
         let games = *payload.get(at).ok_or(Bad::Malformed)? as u32;
         at += 1;
-        ratings.push(ClassRating { class, rating: r as f64, games });
+        ratings.push(ClassRating {
+            class,
+            rating: r as f64,
+            games,
+        });
     }
 
     // Expiry last. A signature check on an expired token still tells us the
@@ -217,7 +236,14 @@ pub fn verify(key: &VerifyingKey, token: &str, now: u64) -> Result<Claims, Bad> 
     if now >= expires {
         return Err(Bad::Expired);
     }
-    Ok(Claims { account, kind, claimed, name, expires, ratings })
+    Ok(Claims {
+        account,
+        kind,
+        claimed,
+        name,
+        expires,
+        ratings,
+    })
 }
 
 pub fn now_secs() -> u64 {
@@ -264,7 +290,9 @@ fn b64_encode(data: &[u8]) -> String {
 
 fn b64_decode(s: &str) -> Option<Vec<u8>> {
     use base64::Engine;
-    base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(s).ok()
+    base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(s)
+        .ok()
 }
 
 #[cfg(test)]
@@ -284,8 +312,16 @@ mod tests {
             name: "Vesper 47".into(),
             expires: 1000,
             ratings: vec![
-                ClassRating { class: "arena".into(), rating: 1337.0, games: 42 },
-                ClassRating { class: "warzone".into(), rating: 1100.0, games: 3 },
+                ClassRating {
+                    class: "arena".into(),
+                    rating: 1337.0,
+                    games: 42,
+                },
+                ClassRating {
+                    class: "warzone".into(),
+                    rating: 1100.0,
+                    games: 3,
+                },
             ],
         }
     }
@@ -307,7 +343,10 @@ mod tests {
         let mut raw = b64_decode(&t).unwrap();
         raw[5] ^= 1;
         let forged = b64_encode(&raw);
-        assert_eq!(verify(&k.verifying_key(), &forged, 999), Err(Bad::Signature));
+        assert_eq!(
+            verify(&k.verifying_key(), &forged, 999),
+            Err(Bad::Signature)
+        );
     }
 
     #[test]
@@ -340,7 +379,11 @@ mod tests {
         c.claimed = false;
         assert_eq!(c.label(), Label::Unknown, "a guest is unknown, not human");
         c.kind = Kind::HouseBot;
-        assert_eq!(c.label(), Label::HouseBot, "a bot is a bot whether or not it claimed");
+        assert_eq!(
+            c.label(),
+            Label::HouseBot,
+            "a bot is a bot whether or not it claimed"
+        );
         c.kind = Kind::ThirdPartyBot;
         assert_eq!(c.label(), Label::ThirdPartyBot);
     }
@@ -351,7 +394,10 @@ mod tests {
         let got = verify(&k.verifying_key(), &mint(&k, &claims()), 999).unwrap();
         assert_eq!(got.rating_in("arena").unwrap().rating, 1337.0);
         assert_eq!(got.rating_in("warzone").unwrap().games, 3);
-        assert!(got.rating_in("hockey").is_none(), "a class never played has no rating");
+        assert!(
+            got.rating_in("hockey").is_none(),
+            "a class never played has no rating"
+        );
     }
 
     #[test]

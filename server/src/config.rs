@@ -47,8 +47,12 @@ pub struct ZoneConfig {
 /// They are named here once and read from both directions: serde uses them
 /// for a file that leaves the key out, and ZoneConfig for a file with no
 /// `[arena]` table at all.
-fn default_mode() -> String { "warzone".into() }
-fn default_flags() -> u8 { 4 }
+fn default_mode() -> String {
+    "warzone".into()
+}
+fn default_flags() -> u8 {
+    4
+}
 
 /// Everything the core calls a setting, in the units an operator thinks in:
 /// px, px/s/10, energy, ticks, degrees.
@@ -312,7 +316,9 @@ impl Default for ZoneConfig {
             // of flags; everything else in there is absent, which the core
             // reads as its own baseline.
             arena: ArenaConfig {
-                mode: default_mode(), flags: default_flags(), ..Default::default()
+                mode: default_mode(),
+                flags: default_flags(),
+                ..Default::default()
             },
             bans: Vec::new(),
         }
@@ -337,12 +343,21 @@ impl ConfigWatcher {
         let path = path.as_ref().to_path_buf();
         let (current, err) = read(&path);
         let mtime = std::fs::metadata(&path).and_then(|m| m.modified()).ok();
-        (ConfigWatcher { path, mtime, current }, err)
+        (
+            ConfigWatcher {
+                path,
+                mtime,
+                current,
+            },
+            err,
+        )
     }
 
     /// Returns Some(message) when the file changed and was re-read.
     pub fn poll(&mut self) -> Option<String> {
-        let m = std::fs::metadata(&self.path).and_then(|m| m.modified()).ok();
+        let m = std::fs::metadata(&self.path)
+            .and_then(|m| m.modified())
+            .ok();
         if m == self.mtime {
             return None;
         }
@@ -401,7 +416,10 @@ speed = 5200
     #[test]
     fn omitted_settings_keep_their_defaults() {
         let c: ZoneConfig = toml::from_str("name = \"bare\"").unwrap();
-        assert_eq!(c.arena.bounce, None, "an unset setting is absent, so the core's own");
+        assert_eq!(
+            c.arena.bounce, None,
+            "an unset setting is absent, so the core's own"
+        );
         assert_eq!(c.arena.mode, "warzone");
         assert_eq!(c.max_players, 16);
     }
@@ -415,7 +433,11 @@ speed = 5200
         let c: ZoneConfig = toml::from_str("[arena]\nbounce = 0\n").unwrap();
         assert_eq!(c.arena.mode, "warzone");
         assert_eq!(c.arena.flags, 4);
-        assert_eq!(c.arena.bounce, Some(0), "a wall that gives nothing back is a setting");
+        assert_eq!(
+            c.arena.bounce,
+            Some(0),
+            "a wall that gives nothing back is a setting"
+        );
     }
 
     #[test]
@@ -430,8 +452,10 @@ name = "z"
 name = "Apex"
 bans = ["griefer"]
 "#;
-        assert!(toml::from_str::<ZoneConfig>(misplaced).is_err(),
-                "a misplaced key must be reported");
+        assert!(
+            toml::from_str::<ZoneConfig>(misplaced).is_err(),
+            "a misplaced key must be reported"
+        );
     }
 
     /// The zone we ship is the documentation for this format, and unknown

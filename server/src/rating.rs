@@ -187,16 +187,26 @@ impl Rating {
         Some(tier(self.rating_of(who)))
     }
 
-    pub fn damage(&mut self, tick: u32, victim: &str, attacker: &str, amount: i32, same_team: bool) {
+    pub fn damage(
+        &mut self,
+        tick: u32,
+        victim: &str,
+        attacker: &str,
+        amount: i32,
+        same_team: bool,
+    ) {
         // Self damage and teammate damage never earn credit.
         if attacker == victim || same_team || amount <= 0 {
             return;
         }
         let hl = self.half_life;
-        let l = self.ledgers.entry(victim.to_string()).or_insert_with(|| Ledger {
-            credit: HashMap::new(),
-            last_tick: tick,
-        });
+        let l = self
+            .ledgers
+            .entry(victim.to_string())
+            .or_insert_with(|| Ledger {
+                credit: HashMap::new(),
+                last_tick: tick,
+            });
         // Decay everything to now, then add.
         let dt = (tick.saturating_sub(l.last_tick)) as f64;
         if dt > 0.0 {
@@ -395,7 +405,10 @@ mod tests {
         r.damage(100, "victim", "killer", 1000, false);
         let ev = r.death(101, "victim").expect("rated");
         assert_eq!(ev.credits.len(), 1);
-        assert!((ev.credits[0].1 - 1.0).abs() < 1e-9, "sole contributor holds all credit");
+        assert!(
+            (ev.credits[0].1 - 1.0).abs() < 1e-9,
+            "sole contributor holds all credit"
+        );
         assert!(r.rating_of("killer") > 1200.0, "killer gains");
         assert!(r.rating_of("victim") < 1200.0, "victim loses");
     }
@@ -408,15 +421,21 @@ mod tests {
         let ev = r.death(100, "v").expect("rated");
         let mut w: Vec<(String, f64)> = ev.credits.iter().map(|c| (c.0.clone(), c.1)).collect();
         w.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
-        assert!((w[0].1 - 0.75).abs() < 1e-6, "three quarters to the heavy hitter");
+        assert!(
+            (w[0].1 - 0.75).abs() < 1e-6,
+            "three quarters to the heavy hitter"
+        );
         assert!((w[1].1 - 0.25).abs() < 1e-6);
-        assert!(r.rating_of("heavy") > r.rating_of("light"), "more damage, more rating");
+        assert!(
+            r.rating_of("heavy") > r.rating_of("light"),
+            "more damage, more rating"
+        );
     }
 
     #[test]
     fn healed_damage_stops_counting() {
         let mut r = Rating::new();
-        r.damage(0, "v", "old", 1000, false);       // long ago
+        r.damage(0, "v", "old", 1000, false); // long ago
         r.damage(2000, "v", "recent", 1000, false); // five half-lives later
         let ev = r.death(2000, "v").expect("rated");
         let recent = ev.credits.iter().find(|c| c.0 == "recent").unwrap().1;
@@ -426,9 +445,12 @@ mod tests {
     #[test]
     fn teammate_and_self_damage_earn_nothing() {
         let mut r = Rating::new();
-        r.damage(10, "v", "v", 500, false);        // self
-        r.damage(10, "v", "mate", 500, true);      // teammate
-        assert!(r.death(11, "v").is_none(), "an unassisted death rates nothing");
+        r.damage(10, "v", "v", 500, false); // self
+        r.damage(10, "v", "mate", 500, true); // teammate
+        assert!(
+            r.death(11, "v").is_none(),
+            "an unassisted death rates nothing"
+        );
     }
 
     #[test]
@@ -440,7 +462,10 @@ mod tests {
         r.damage(20, "v", "k", 1000, false);
         r.death(21, "v").unwrap();
         let second = r.rating_of("k") - 1200.0 - first;
-        assert!(second < first, "the second kill on the same victim pays less");
+        assert!(
+            second < first,
+            "the second kill on the same victim pays less"
+        );
     }
 
     #[test]
@@ -463,8 +488,15 @@ mod tests {
         assert_eq!(r.rating_of("reference"), 1200.0, "anchor holds after a win");
         r.damage(20, "reference", "challenger", 1000, false);
         r.death(21, "reference").unwrap();
-        assert_eq!(r.rating_of("reference"), 1200.0, "anchor holds after a loss");
-        assert!(r.rating_of("challenger") != 1200.0, "the challenger still moves");
+        assert_eq!(
+            r.rating_of("reference"),
+            1200.0,
+            "anchor holds after a loss"
+        );
+        assert!(
+            r.rating_of("challenger") != 1200.0,
+            "the challenger still moves"
+        );
     }
 
     #[test]
@@ -475,8 +507,10 @@ mod tests {
         r.death(11, "human").unwrap();
         let human_moved = (r.rating_of("human") - 1200.0).abs();
         let bot_moved = (r.rating_of("bot") - 1200.0).abs();
-        assert!(human_moved > bot_moved * 4.0,
-                "human moved {human_moved}, bot moved {bot_moved}");
+        assert!(
+            human_moved > bot_moved * 4.0,
+            "human moved {human_moved}, bot moved {bot_moved}"
+        );
     }
 
     #[test]
@@ -535,8 +569,10 @@ mod tests {
         r.score.insert("farmer".into(), 1500.0);
         r.games.insert("farmer".into(), 100);
         let gained = farm(&mut r, "farmer", 200);
-        assert!(gained <= AI_GAIN_PER_DAY + 1e-6,
-                "a day of grinding paid {gained}, cap is {AI_GAIN_PER_DAY}");
+        assert!(
+            gained <= AI_GAIN_PER_DAY + 1e-6,
+            "a day of grinding paid {gained}, cap is {AI_GAIN_PER_DAY}"
+        );
         assert!(gained > 0.0, "and it is a cap rather than a wall");
     }
 
@@ -548,8 +584,10 @@ mod tests {
         let mut r = Rating::new();
         r.score.insert("newcomer".into(), 1200.0);
         let gained = farm(&mut r, "newcomer", 200);
-        assert!(gained > AI_GAIN_PER_DAY,
-                "a placing pilot took only {gained} from a full day of bots");
+        assert!(
+            gained > AI_GAIN_PER_DAY,
+            "a placing pilot took only {gained} from a full day of bots"
+        );
     }
 
     #[test]
@@ -586,8 +624,10 @@ mod tests {
             r.death(i * 100 + 1, &foe);
         }
         gained += r.rating_of("ace") - 1500.0;
-        assert!(gained > AI_GAIN_PER_DAY * 3.0,
-                "a day of beating people paid {gained}, which the brake should not touch");
+        assert!(
+            gained > AI_GAIN_PER_DAY * 3.0,
+            "a day of beating people paid {gained}, which the brake should not touch"
+        );
     }
 
     #[test]
@@ -599,8 +639,10 @@ mod tests {
         r.mark_bot("hunter");
         r.score.insert("hunter".into(), 1500.0);
         let gained = farm(&mut r, "hunter", 200);
-        assert!(gained > AI_GAIN_PER_DAY,
-                "the calibration ladder was capped at {gained}");
+        assert!(
+            gained > AI_GAIN_PER_DAY,
+            "the calibration ladder was capped at {gained}"
+        );
     }
 
     #[test]
@@ -608,7 +650,10 @@ mod tests {
         // Two numbers that have to agree, in two places that cannot see each
         // other. The brake is explainable to a player as "the AI stops paying
         // once you make Ace", and that sentence is only true while this holds.
-        let ace = TIERS.iter().find(|(n, _)| *n == "Ace").expect("an Ace band");
+        let ace = TIERS
+            .iter()
+            .find(|(n, _)| *n == "Ace")
+            .expect("an Ace band");
         assert_eq!(AI_FARM_FLOOR, ace.1);
     }
 
@@ -619,6 +664,9 @@ mod tests {
         r.score.insert("dog".into(), 1100.0);
         r.damage(10, "dog", "fav", 1000, false);
         r.death(11, "dog").unwrap();
-        assert!(r.rating_of("fav") - 1900.0 < 1.0, "the favorite gains almost nothing");
+        assert!(
+            r.rating_of("fav") - 1900.0 < 1.0,
+            "the favorite gains almost nothing"
+        );
     }
 }

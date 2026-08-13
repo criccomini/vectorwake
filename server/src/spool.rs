@@ -146,7 +146,10 @@ impl<T: Serialize + DeserializeOwned + Clone> Spool<T> {
             })
             .unwrap_or_default();
         if !pending.is_empty() {
-            println!("spool: {} {noun}s carried over from a previous run", pending.len());
+            println!(
+                "spool: {} {noun}s carried over from a previous run",
+                pending.len()
+            );
         }
         Spool {
             path,
@@ -200,7 +203,11 @@ impl<T: Serialize + DeserializeOwned + Clone> Spool<T> {
             return;
         }
         self.pending.push(ev.clone());
-        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&self.path) {
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&self.path)
+        {
             if let Ok(line) = serde_json::to_string(&ev) {
                 let _ = writeln!(f, "{line}");
             }
@@ -289,7 +296,12 @@ mod tests {
             victim_kind: 0,
             victim_before: 1200.0,
             victim_after: 1184.0,
-            credits: vec![Credit { account: 7, weight: 1.0, before: 1200.0, after: 1216.0 }],
+            credits: vec![Credit {
+                account: 7,
+                weight: 1.0,
+                before: 1200.0,
+                after: 1216.0,
+            }],
             bots_only: false,
         }
     }
@@ -320,7 +332,11 @@ mod tests {
         let s = Spool::rated(d.to_str().unwrap());
         assert_eq!(s.len(), 2, "a restart does not forgive a debt");
         assert_eq!(s.pending[0].tick, 10, "oldest first");
-        assert_eq!(s.pending[0].id, ev(10, 1).id, "the same event, not a reminted one");
+        assert_eq!(
+            s.pending[0].id,
+            ev(10, 1).id,
+            "the same event, not a reminted one"
+        );
         let _ = std::fs::remove_dir_all(&d);
     }
 
@@ -347,7 +363,11 @@ mod tests {
         let mut s = Spool::rated(d.to_str().unwrap());
         assert!(!s.armed());
         s.push(ev(1, 1));
-        assert_eq!(s.len(), 0, "a deployment without accounts writes nothing durable");
+        assert_eq!(
+            s.len(),
+            0,
+            "a deployment without accounts writes nothing durable"
+        );
         assert!(!d.join("spool.jsonl").exists());
         let _ = std::fs::remove_dir_all(&d);
     }
@@ -394,7 +414,11 @@ mod tests {
         for i in 0..(BATCH as u32 + 50) {
             s.push(ev(i, 1));
         }
-        assert_eq!(s.batch().len(), BATCH, "one post does not carry an unbounded backlog");
+        assert_eq!(
+            s.batch().len(),
+            BATCH,
+            "one post does not carry an unbounded backlog"
+        );
         let _ = std::fs::remove_dir_all(&d);
     }
 

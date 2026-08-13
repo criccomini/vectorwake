@@ -55,13 +55,45 @@ pub const CALIBRATED: [(&str, u8, f32); 9] = [
 /// `client/arena/callsign.lua`, so a scoreboard never leaves you wondering
 /// which of the three a name came from.
 pub(crate) const FILL_NAMES: [&str; 39] = [
-    "Aperture", "Bellwether", "Carrack", "Downdraft", "Escarpment", "Foxglove",
-    "Gantry", "Hollow", "Isobar", "Jackstay", "Keelson", "Longshore",
-    "Mackerel", "Nightjar", "Oxbow", "Palisade", "Quicksilver", "Ravine",
-    "Saltmarsh", "Tideline", "Undertow", "Vellum", "Windrow", "Xenolith",
-    "Yardarm", "Zenith", "Alluvium", "Bracken", "Coppice", "Dunelight",
-    "Estuary", "Fernbrake", "Glasswort", "Headland", "Inlet", "Junco",
-    "Kittiwake", "Limestone", "Moraine",
+    "Aperture",
+    "Bellwether",
+    "Carrack",
+    "Downdraft",
+    "Escarpment",
+    "Foxglove",
+    "Gantry",
+    "Hollow",
+    "Isobar",
+    "Jackstay",
+    "Keelson",
+    "Longshore",
+    "Mackerel",
+    "Nightjar",
+    "Oxbow",
+    "Palisade",
+    "Quicksilver",
+    "Ravine",
+    "Saltmarsh",
+    "Tideline",
+    "Undertow",
+    "Vellum",
+    "Windrow",
+    "Xenolith",
+    "Yardarm",
+    "Zenith",
+    "Alluvium",
+    "Bracken",
+    "Coppice",
+    "Dunelight",
+    "Estuary",
+    "Fernbrake",
+    "Glasswort",
+    "Headland",
+    "Inlet",
+    "Junco",
+    "Kittiwake",
+    "Limestone",
+    "Moraine",
 ];
 
 /// The zone's standing roster. Long-lived individuals rather than template
@@ -69,7 +101,11 @@ pub(crate) const FILL_NAMES: [&str; 39] = [
 pub fn roster() -> Vec<RosterEntry> {
     CALIBRATED
         .iter()
-        .map(|&(name, class, skill)| RosterEntry { name: name.into(), class, skill })
+        .map(|&(name, class, skill)| RosterEntry {
+            name: name.into(),
+            class,
+            skill,
+        })
         .collect()
 }
 
@@ -87,12 +123,20 @@ pub fn roster() -> Vec<RosterEntry> {
 /// runs out of list takes a numeral, which is what the client does for a player.
 pub fn individual(n: usize) -> RosterEntry {
     if let Some(&(name, class, skill)) = CALIBRATED.get(n) {
-        return RosterEntry { name: name.into(), class, skill };
+        return RosterEntry {
+            name: name.into(),
+            class,
+            skill,
+        };
     }
     let i = n - CALIBRATED.len();
     let word = FILL_NAMES[i % FILL_NAMES.len()];
     let lap = i / FILL_NAMES.len();
-    let name = if lap == 0 { word.to_string() } else { format!("{word} {}", lap + 1) };
+    let name = if lap == 0 {
+        word.to_string()
+    } else {
+        format!("{word} {}", lap + 1)
+    };
     // A hash of the index rather than a counter, so neighbours in the list are
     // not neighbours in skill and a room filled in order is not a ladder.
     let h = (i as u32).wrapping_mul(2654435761) ^ 0x9e3779b9;
@@ -123,7 +167,9 @@ pub const CLASS_NAMES: [&str; 7] = [
 ];
 
 pub fn class_index(name: &str) -> Option<usize> {
-    CLASS_NAMES.iter().position(|n| n.eq_ignore_ascii_case(name))
+    CLASS_NAMES
+        .iter()
+        .position(|n| n.eq_ignore_ascii_case(name))
 }
 
 /// How far a pilot can see, in world pixels.
@@ -309,9 +355,7 @@ fn whisker(w: &World, x: f32, y: f32, dx: f32, dy: f32, r: f32) -> f32 {
         if d == 8.0 {
             side_a = !wall(cx + px, cy + py);
             side_b = !wall(cx - px, cy - py);
-        } else if (side_a && wall(cx + px, cy + py))
-            || (side_b && wall(cx - px, cy - py))
-        {
+        } else if (side_a && wall(cx + px, cy + py)) || (side_b && wall(cx - px, cy - py)) {
             return d;
         }
         d += 8.0;
@@ -887,8 +931,7 @@ impl Bot {
     /// once it has parked somewhere quiet and stayed sure of it, which is the
     /// graceful ending; the caller's own ceiling is what covers the rest.
     pub fn departed(&self) -> bool {
-        self.parked_for >= PARKED_LOOKS
-            && (self.exit == Exit::Parked || self.went_far)
+        self.parked_for >= PARKED_LOOKS && (self.exit == Exit::Parked || self.went_far)
     }
 
     /// Vary this pilot's luck. Two bots with the same hull and skill would
@@ -1009,10 +1052,7 @@ impl Bot {
         // The bookkeeping runs on whatever is actually being flown, the
         // escape included: an escape that is itself pinned has to be noticed,
         // or one bad direction choice becomes a hole a bot never leaves.
-        if o.alive
-            && out & sim::BTN_THRUST != 0
-            && (o.vx * o.vx + o.vy * o.vy).sqrt() < 0.4
-        {
+        if o.alive && out & sim::BTN_THRUST != 0 && (o.vx * o.vx + o.vy * o.vy).sqrt() < 0.4 {
             self.pinned += 1;
             if self.pinned > 35 {
                 self.pinned = 0;
@@ -1035,8 +1075,7 @@ impl Bot {
                 let chained = self.timer < self.detour_until;
                 self.detour_chain = if chained { self.detour_chain + 1 } else { 1 };
                 let spread = 0.5 + 0.7 * (self.detour_chain - 1) as f32;
-                self.detour_dir = best as f32 * std::f32::consts::TAU
-                    / WHISKERS as f32
+                self.detour_dir = best as f32 * std::f32::consts::TAU / WHISKERS as f32
                     + (self.rand() - 0.5) * spread.min(2.4);
                 // Long enough to turn fully round and then actually fly:
                 // half a rotation alone is most of a second.
@@ -1161,8 +1200,7 @@ impl Bot {
             self.at += 1;
         }
         let w = self.path[self.at];
-        ((w.0 - me.0) * (w.0 - me.0) + (w.1 - me.1) * (w.1 - me.1)).sqrt()
-            + self.suffix[self.at]
+        ((w.0 - me.0) * (w.0 - me.0) + (w.1 - me.1) * (w.1 - me.1)).sqrt() + self.suffix[self.at]
     }
 
     fn drop_route(&mut self) {
@@ -1186,8 +1224,8 @@ impl Bot {
         self.corner = vec![f32::INFINITY; n];
         for i in (0..n.saturating_sub(1)).rev() {
             let (a, b) = (self.path[i], self.path[i + 1]);
-            self.suffix[i] = self.suffix[i + 1]
-                + ((b.0 - a.0) * (b.0 - a.0) + (b.1 - a.1) * (b.1 - a.1)).sqrt();
+            self.suffix[i] =
+                self.suffix[i + 1] + ((b.0 - a.0) * (b.0 - a.0) + (b.1 - a.1) * (b.1 - a.1)).sqrt();
         }
         for i in 0..n.saturating_sub(1) {
             let prev = if i == 0 { me } else { self.path[i - 1] };
@@ -1525,12 +1563,22 @@ impl Bot {
         // Hold a working range; weaker pilots misjudge it. Break off and
         // rebuild rather than trade at the floor.
         let ideal = 130.0 + (1.0 - self.skill) * 90.0;
-        let range = if o.energy < self.reserve() * 0.6 { ideal * 2.2 } else { ideal };
+        let range = if o.energy < self.reserve() * 0.6 {
+            ideal * 2.2
+        } else {
+            ideal
+        };
         // Inside that range the pilot has arrived and is fighting, so closing no
         // further is the plan working rather than a wall. Only the run in counts
         // as an approach.
         let (ddx, ddy) = (fx - o.x, fy - o.y);
-        self.approaching(Goal::Foe, fx, fy, (ddx * ddx + ddy * ddy).sqrt(), ideal * 1.15);
+        self.approaching(
+            Goal::Foe,
+            fx,
+            fy,
+            (ddx * ddx + ddy * ddy).sqrt(),
+            ideal * 1.15,
+        );
         self.mode = Mode::Fight(range);
     }
 
@@ -1568,7 +1616,11 @@ impl Bot {
                     }
                 }
                 let (steer, cap, rest) = if self.at < self.path.len() {
-                    (self.path[self.at], self.corner[self.at], self.suffix[self.at])
+                    (
+                        self.path[self.at],
+                        self.corner[self.at],
+                        self.suffix[self.at],
+                    )
                 } else {
                     ((dx, dy), f32::INFINITY, 0.0)
                 };
@@ -1582,7 +1634,11 @@ impl Bot {
                     .top
                     .min((vend * vend + 2.0 * o.accel * room).sqrt())
                     .min((cap * cap + 2.0 * o.accel * d).sqrt());
-                let want = if d > 1e-3 { (sx / d * v, sy / d * v) } else { (0.0, 0.0) };
+                let want = if d > 1e-3 {
+                    (sx / d * v, sy / d * v)
+                } else {
+                    (0.0, 0.0)
+                };
                 self.seek(o, want, (sx, sy))
             }
             Mode::Fight(range) => {
@@ -1645,7 +1701,9 @@ impl Bot {
     /// composes with whatever the pilot was already doing rather than
     /// interrupting it.
     fn sidestep(&self, o: &Own, wx: f32, wy: f32) -> (f32, f32) {
-        let Some(t) = self.seen.threat else { return (wx, wy) };
+        let Some(t) = self.seen.threat else {
+            return (wx, wy);
+        };
         let age = self.timer.saturating_sub(self.seen_at) as f32;
         if t.eta - age > 45.0 {
             return (wx, wy);
@@ -1989,11 +2047,16 @@ mod tests {
             println!("  {n:6} ticks near tile ({}, {})", cx * 4 + 2, cy * 4 + 2);
         }
         let share = grinding as f64 / alive_ticks.max(1) as f64;
-        println!("grinding {grinding} of {alive_ticks} alive bot-ticks \
-                  ({:.1}%)", share * 100.0);
-        assert!(share < 0.02,
-                "bots spend {:.1}% of their lives pushing into walls",
-                share * 100.0);
+        println!(
+            "grinding {grinding} of {alive_ticks} alive bot-ticks \
+                  ({:.1}%)",
+            share * 100.0
+        );
+        assert!(
+            share < 0.02,
+            "bots spend {:.1}% of their lives pushing into walls",
+            share * 100.0
+        );
     }
 
     /// A safe patch in the middle of open ground, to duck into.
@@ -2012,8 +2075,10 @@ mod tests {
         let them = w.spawn(0, 1, 520, 505, 0);
         assert!(me >= 0 && them >= 0, "two seats");
 
-        assert!(scan(&w, me as u8).foe.is_some(),
-                "somebody on open ground is a target");
+        assert!(
+            scan(&w, me as u8).foe.is_some(),
+            "somebody on open ground is a target"
+        );
 
         // The same pilot, one tile inside the safe. Nothing can be shot into
         // one, so a bot that kept them selected would hold station outside the
@@ -2021,8 +2086,10 @@ mod tests {
         let s = &mut w.state.ships[them as usize];
         s.x = 505 * 16 * 256;
         s.y = 505 * 16 * 256;
-        assert!(scan(&w, me as u8).foe.is_none(),
-                "somebody standing in a safe zone is not");
+        assert!(
+            scan(&w, me as u8).foe.is_none(),
+            "somebody standing in a safe zone is not"
+        );
 
         // And the moment they step out again they are.
         let s = &mut w.state.ships[them as usize];
@@ -2064,8 +2131,10 @@ mod tests {
         // Long enough that the room is a going concern and the pilot being
         // sent home is in the middle of something.
         let mut inputs = Vec::new();
-        let mut run = |w: &mut sim::World, bots: &mut Vec<Bot>,
-                       inputs: &mut Vec<sim::sim_input>, ticks: u32,
+        let mut run = |w: &mut sim::World,
+                       bots: &mut Vec<Bot>,
+                       inputs: &mut Vec<sim::sim_input>,
+                       ticks: u32,
                        mut watch: Option<&mut dyn FnMut(&Bot, u16)>| {
             for _ in 0..ticks {
                 inputs.clear();
@@ -2115,16 +2184,24 @@ mod tests {
             }
         }
 
-        let done_at = done_at.expect(
-            &format!("salt {salt:#x}: a pilot told to leave never finished leaving"));
+        let done_at = done_at.expect(&format!(
+            "salt {salt:#x}: a pilot told to leave never finished leaving"
+        ));
         // 40 seconds is the bot server's ceiling. Reaching it is the backstop
         // firing, not the ordinary way out, so this asserts the ordinary way
         // out actually happens.
-        assert!(done_at < 4_000, "salt {salt:#x}: left after {done_at} ticks");
-        assert!(going_ticks > 100,
-                "salt {salt:#x}: it flew somewhere: only {going_ticks} ticks spent leaving");
-        assert_eq!(shot_while_going, 0,
-                   "salt {salt:#x}: the trigger stays shut once a pilot is on its way out");
+        assert!(
+            done_at < 4_000,
+            "salt {salt:#x}: left after {done_at} ticks"
+        );
+        assert!(
+            going_ticks > 100,
+            "salt {salt:#x}: it flew somewhere: only {going_ticks} ticks spent leaving"
+        );
+        assert_eq!(
+            shot_while_going, 0,
+            "salt {salt:#x}: the trigger stays shut once a pilot is on its way out"
+        );
 
         // And it ended up somewhere nobody is. Sight is 960 px, so clearing it
         // is the whole point: a pilot that logs off inside somebody's radar
@@ -2147,8 +2224,10 @@ mod tests {
             let (dx, dy) = (o.x as f32 / 256.0 - mx, o.y as f32 / 256.0 - my);
             nearest = nearest.min((dx * dx + dy * dy).sqrt());
         }
-        assert!(nearest > SIGHT,
-                "salt {salt:#x}: logged off {nearest:.0} px from somebody, inside their sight");
+        assert!(
+            nearest > SIGHT,
+            "salt {salt:#x}: logged off {nearest:.0} px from somebody, inside their sight"
+        );
     }
 
     /// Leaving, end to end, on a real map: told to stand down, seeing out the
@@ -2170,10 +2249,6 @@ mod tests {
             a_departure(salt);
         }
     }
-
-
-
-
 
     /// The failure a player reports as "bots sit still until I shoot at
     /// them", measured as the longest run of ticks any bot spends alive, in
@@ -2214,7 +2289,9 @@ mod tests {
                 let (vx, vy) = (s.vx as f32 / 65536.0, s.vy as f32 / 65536.0);
                 // Stationary while alive and trying to travel: the shape a
                 // player reads as a bot sitting still.
-                if s.active != 0 && s.alive != 0 && b.doing() == 1
+                if s.active != 0
+                    && s.alive != 0
+                    && b.doing() == 1
                     && (vx * vx + vy * vy).sqrt() < 0.4
                 {
                     streak[bi] += 1;
@@ -2225,9 +2302,11 @@ mod tests {
             }
         }
         let bad = worst.iter().copied().max().unwrap_or(0);
-        assert!(bad < 1_200,
-                "a bot stood still in travel for {bad} ticks; the pin loop \
-is back");
+        assert!(
+            bad < 1_200,
+            "a bot stood still in travel for {bad} ticks; the pin loop \
+is back"
+        );
     }
 
     /// Two enemies at the same coordinate, which is what a shared spawn point
@@ -2282,13 +2361,14 @@ is back");
             let dy = (p.y - q.y) as f32 / 256.0;
             (dx * dx + dy * dy).sqrt()
         };
-        assert!(idle < 400,
-                "both pilots pressed nothing on {idle} of 600 ticks");
-        assert!(apart > 32.0,
-                "two pilots stacked on one spawn never separated: {apart:.0} px \
-apart after six seconds");
+        assert!(
+            idle < 400,
+            "both pilots pressed nothing on {idle} of 600 ticks"
+        );
+        assert!(
+            apart > 32.0,
+            "two pilots stacked on one spawn never separated: {apart:.0} px \
+apart after six seconds"
+        );
     }
-
-
 }
-

@@ -189,8 +189,7 @@ impl Nav {
                 }
                 let touching = (-1i32..=1).any(|dy| {
                     (-1i32..=1).any(|dx| {
-                        cost[(cy as i32 + dy) as usize * W + (cx as i32 + dx) as usize]
-                            == BLOCKED
+                        cost[(cy as i32 + dy) as usize * W + (cx as i32 + dx) as usize] == BLOCKED
                     })
                 });
                 if touching {
@@ -332,7 +331,11 @@ impl Nav {
                         near = near.min(ex * ex + ey * ey);
                     }
                     let score = near.sqrt()
-                        + if calm && self.safe[c] { SAFE_WORTH } else { 0.0 };
+                        + if calm && self.safe[c] {
+                            SAFE_WORTH
+                        } else {
+                            0.0
+                        };
                     let at = best.partition_point(|(_, b)| *b > score);
                     if at < Self::REFUGE_KEEP {
                         best.insert(at, ((x, y), score));
@@ -467,7 +470,14 @@ struct Scratch {
 
 /// The eight ways into a cell, and the index each is stored as.
 const STEPS: [(i32, i32); 8] = [
-    (1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (1, -1), (-1, 1), (-1, -1),
+    (1, 0),
+    (-1, 0),
+    (0, 1),
+    (0, -1),
+    (1, 1),
+    (1, -1),
+    (-1, 1),
+    (-1, -1),
 ];
 
 thread_local! {
@@ -623,8 +633,14 @@ mod tests {
         let n = Nav::build(&walled());
         let above = (200.0 * 16.0, 240.0 * 16.0);
         let below = (200.0 * 16.0, 262.0 * 16.0);
-        assert!(!n.clear(above, below), "a line through the wall is not clear");
-        assert!(n.clear(above, (210.0 * 16.0, 240.0 * 16.0)), "and open ground is");
+        assert!(
+            !n.clear(above, below),
+            "a line through the wall is not clear"
+        );
+        assert!(
+            n.clear(above, (210.0 * 16.0, 240.0 * 16.0)),
+            "and open ground is"
+        );
     }
 
     #[test]
@@ -638,12 +654,17 @@ mod tests {
         // matters: a path that clips a corner is a pilot pressed against one.
         let mut at = above;
         for step in &path {
-            assert!(n.clear(at, *step), "leg from {at:?} to {step:?} crosses a wall");
+            assert!(
+                n.clear(at, *step),
+                "leg from {at:?} to {step:?} crosses a wall"
+            );
             at = *step;
         }
         // And it goes through the doorway rather than round the map, which the
         // x range of the path is enough to show.
-        let far = path.iter().any(|p| p.0 / 16.0 > 236.0 && p.0 / 16.0 < 252.0);
+        let far = path
+            .iter()
+            .any(|p| p.0 / 16.0 > 236.0 && p.0 / 16.0 < 252.0);
         assert!(far, "the route did not use the gap");
     }
 
@@ -662,7 +683,10 @@ mod tests {
         let n = Nav::build(&m);
         let inside = (305.0 * 16.0, 305.0 * 16.0);
         let outside = (500.0 * 16.0, 500.0 * 16.0);
-        assert!(n.route(inside, outside).is_empty(), "no way out is no route");
+        assert!(
+            n.route(inside, outside).is_empty(),
+            "no way out is no route"
+        );
     }
 
     #[test]
@@ -674,7 +698,9 @@ mod tests {
         let crowd: Vec<(f32, f32)> = (0..6)
             .map(|i| ((490 - i) as f32 * 16.0, 500.0 * 16.0))
             .collect();
-        let spot = n.refuge(me, &crowd, 1_400.0, true).expect("open ground has corners");
+        let spot = n
+            .refuge(me, &crowd, 1_400.0, true)
+            .expect("open ground has corners");
         let (dx, dy) = (spot.0 - me.0, spot.1 - me.1);
         assert!(
             (dx * dx + dy * dy).sqrt() <= 1_400.0,
@@ -684,7 +710,10 @@ mod tests {
             .iter()
             .map(|&(x, y)| ((spot.0 - x).powi(2) + (spot.1 - y).powi(2)).sqrt())
             .fold(f32::INFINITY, f32::min);
-        assert!(nearest > 1_000.0, "it picked {nearest:.0} px from the crowd");
+        assert!(
+            nearest > 1_000.0,
+            "it picked {nearest:.0} px from the crowd"
+        );
     }
 
     #[test]
@@ -704,7 +733,9 @@ mod tests {
         let n = Nav::build(&m);
         let me = (310.0 * 16.0, 340.0 * 16.0); // outside the pocket
         let crowd = vec![me];
-        let spot = n.refuge(me, &crowd, 1_400.0, true).expect("open ground has corners");
+        let spot = n
+            .refuge(me, &crowd, 1_400.0, true)
+            .expect("open ground has corners");
         assert!(
             !n.route(me, spot).is_empty() || n.clear(me, spot),
             "it picked {spot:?}, which cannot be flown to"
@@ -739,12 +770,13 @@ mod tests {
         let range = 800.0;
         let safe_at = (center(scx), center(scy));
         let d = ((safe_at.0 - me.0).powi(2) + (safe_at.1 - me.1).powi(2)).sqrt();
-        assert!(d < range && d + SAFE_WORTH > range,
-                "the safe patch has to be the nearer option and still win: \
-                 {d:.0} px against a {range:.0} px range");
+        assert!(
+            d < range && d + SAFE_WORTH > range,
+            "the safe patch has to be the nearer option and still win: \
+                 {d:.0} px against a {range:.0} px range"
+        );
 
         let spot = n.refuge(me, &[me], range, true).expect("somewhere to go");
         assert_eq!(spot, safe_at, "picked open ground over a safe zone");
     }
-
 }

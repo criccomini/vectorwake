@@ -62,9 +62,21 @@ impl Drill {
         let mins = self.ticks as f64 / (HZ as f64 * 60.0);
         let per = |n: u32| n as f64 / mins / self.bots as f64;
         println!("drill {zone}: {} bots, {:.1} min", self.bots, mins);
-        println!("  kills   {:6.2} per bot-minute  ({} total)", per(self.kills), self.kills);
-        println!("  bounces {:6.2} per bot-minute  ({} total)", per(self.bounces), self.bounces);
-        println!("  shots   {:6.2} per bot-minute  ({} total)", per(self.shots), self.shots);
+        println!(
+            "  kills   {:6.2} per bot-minute  ({} total)",
+            per(self.kills),
+            self.kills
+        );
+        println!(
+            "  bounces {:6.2} per bot-minute  ({} total)",
+            per(self.bounces),
+            self.bounces
+        );
+        println!(
+            "  shots   {:6.2} per bot-minute  ({} total)",
+            per(self.shots),
+            self.shots
+        );
         println!(
             "  hits    {:6.2} per bot-minute  ({} total, {:.1}% of shots)",
             per(self.hits),
@@ -118,8 +130,18 @@ pub fn run_on(map: std::sync::Arc<sim::sim_map>, bots: usize, ticks: u32, seed: 
     }
 
     let mut d = Drill {
-        ticks, bots, kills: 0, bounces: 0, shots: 0, hits: 0,
-        crawling: 0, flying: 0, speed: 0.0, cells: 0, doing: [0; 4], crawl_by: [0; 4],
+        ticks,
+        bots,
+        kills: 0,
+        bounces: 0,
+        shots: 0,
+        hits: 0,
+        crawling: 0,
+        flying: 0,
+        speed: 0.0,
+        cells: 0,
+        doing: [0; 4],
+        crawl_by: [0; 4],
     };
     let mut seen: std::collections::HashSet<u32> = std::collections::HashSet::new();
     let brains_first = brains[0].ship;
@@ -127,8 +149,10 @@ pub fn run_on(map: std::sync::Arc<sim::sim_map>, bots: usize, ticks: u32, seed: 
     // which is a getenv and an allocation five thousand times a second to
     // answer a question whose answer cannot change mid-run.
     let tracing = std::env::var("DRILL_TRACE").is_ok();
-    let trace_from: u32 = std::env::var("DRILL_FROM").ok()
-        .and_then(|v| v.parse().ok()).unwrap_or(0);
+    let trace_from: u32 = std::env::var("DRILL_FROM")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
     let mut inputs = Vec::with_capacity(bots);
 
     for _ in 0..ticks {
@@ -138,10 +162,22 @@ pub fn run_on(map: std::sync::Arc<sim::sim_map>, bots: usize, ticks: u32, seed: 
             let fresh = b.looks_due().then(|| ai::scan(&w, ship));
             let o = ai::own(&w, ship);
             let buttons = b.think(&o, &route, fresh);
-            if tracing && ship == brains_first && w.state.tick >= trace_from && w.state.tick < trace_from + 120 {
+            if tracing
+                && ship == brains_first
+                && w.state.tick >= trace_from
+                && w.state.tick < trace_from + 120
+            {
                 let v = (o.vx * o.vx + o.vy * o.vy).sqrt();
-                println!("t{:>4} mode {} v {:.2} head {:.3} btn {:>3} pos {:.0},{:.0}",
-                         w.state.tick, b.doing(), v, o.heading, buttons, o.x, o.y);
+                println!(
+                    "t{:>4} mode {} v {:.2} head {:.3} btn {:>3} pos {:.0},{:.0}",
+                    w.state.tick,
+                    b.doing(),
+                    v,
+                    o.heading,
+                    buttons,
+                    o.x,
+                    o.y
+                );
             }
             inputs.push(sim::sim_input { ship, buttons });
         }

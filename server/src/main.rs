@@ -49,8 +49,12 @@ fn fair_contains_xy(cx: i32, cy: i32, x: i32, y: i32) -> bool {
 }
 
 fn fair_contains(world: &sim::World, center: u8, subject: u8) -> bool {
-    let Some(center) = world.state.ships.get(center as usize) else { return false };
-    let Some(subject) = world.state.ships.get(subject as usize) else { return false };
+    let Some(center) = world.state.ships.get(center as usize) else {
+        return false;
+    };
+    let Some(subject) = world.state.ships.get(subject as usize) else {
+        return false;
+    };
     center.active != 0
         && subject.active != 0
         && fair_contains_xy(center.x, center.y, subject.x, subject.y)
@@ -511,8 +515,7 @@ fn ingest_damage(
             sim::EV_HIT => {
                 let (victim, attacker) = (e.a as usize, e.b as usize);
                 if victim < sim::MAX_SHIPS && attacker < sim::MAX_SHIPS {
-                    let same =
-                        world.state.ships[victim].team == world.state.ships[attacker].team;
+                    let same = world.state.ships[victim].team == world.state.ships[attacker].team;
                     rating.damage(tick, &name_of(e.a), &name_of(e.b), e.v, same);
                 }
             }
@@ -736,30 +739,66 @@ impl Room {
         // is a legal value for most of them: a bounce of zero is a wall that
         // eats everything that hits it, and a door period of zero is a zone
         // whose doors never open.
-        if let Some(v) = c.bounce { world.cfg.bounce = v; }
-        if let Some(v) = c.friction { world.cfg.friction = v; }
-        if let Some(v) = c.respawn_delay { world.cfg.respawn_delay = v; }
-        if let Some(v) = c.spawn_radius { world.cfg.spawn_radius = v; }
-        if let Some(v) = c.show_spawns { world.cfg.show_spawns = v as u8; }
-        if let Some(v) = c.safe_limit { world.cfg.safe_limit = v; }
+        if let Some(v) = c.bounce {
+            world.cfg.bounce = v;
+        }
+        if let Some(v) = c.friction {
+            world.cfg.friction = v;
+        }
+        if let Some(v) = c.respawn_delay {
+            world.cfg.respawn_delay = v;
+        }
+        if let Some(v) = c.spawn_radius {
+            world.cfg.spawn_radius = v;
+        }
+        if let Some(v) = c.show_spawns {
+            world.cfg.show_spawns = v as u8;
+        }
+        if let Some(v) = c.safe_limit {
+            world.cfg.safe_limit = v;
+        }
         // The core clamps this to SIM_MAX_SHIPS and reads zero as the ceiling,
         // so a zone asking for more than the array holds gets the array rather
         // than an overflow.
-        if let Some(v) = c.max_ships { world.cfg.max_ships = v; }
-        if let Some(v) = c.prize_delay { world.cfg.prize_delay = v; }
-        if let Some(v) = c.prize_max { world.cfg.prize_max = v; }
-        if let Some(v) = c.prize_life { world.cfg.prize_life = v; }
-        if let Some(v) = c.prize_radius { world.cfg.prize_radius = v * 256; }
-        if let Some(v) = c.prize_lo { world.cfg.prize_lo = v; }
-        if let Some(v) = c.prize_hi { world.cfg.prize_hi = v; }
-        if let Some(v) = c.flag_radius { world.cfg.flag_radius = v * 256; }
-        if let Some(v) = c.flag_drop_cooldown { world.cfg.flag_drop_cooldown = v; }
-        if let Some(v) = c.door_period { world.cfg.door_period = v; }
-        if let Some(v) = c.door_open { world.cfg.door_open = v; }
+        if let Some(v) = c.max_ships {
+            world.cfg.max_ships = v;
+        }
+        if let Some(v) = c.prize_delay {
+            world.cfg.prize_delay = v;
+        }
+        if let Some(v) = c.prize_max {
+            world.cfg.prize_max = v;
+        }
+        if let Some(v) = c.prize_life {
+            world.cfg.prize_life = v;
+        }
+        if let Some(v) = c.prize_radius {
+            world.cfg.prize_radius = v * 256;
+        }
+        if let Some(v) = c.prize_lo {
+            world.cfg.prize_lo = v;
+        }
+        if let Some(v) = c.prize_hi {
+            world.cfg.prize_hi = v;
+        }
+        if let Some(v) = c.flag_radius {
+            world.cfg.flag_radius = v * 256;
+        }
+        if let Some(v) = c.flag_drop_cooldown {
+            world.cfg.flag_drop_cooldown = v;
+        }
+        if let Some(v) = c.door_period {
+            world.cfg.door_period = v;
+        }
+        if let Some(v) = c.door_open {
+            world.cfg.door_open = v;
+        }
         if let Some(v) = c.wormhole_pull {
             world.cfg.wormhole_pull = unsafe { sim::sim_units_speed(v) };
         }
-        if let Some(v) = c.wormhole_range { world.cfg.wormhole_range = v * 256; }
+        if let Some(v) = c.wormhole_range {
+            world.cfg.wormhole_range = v * 256;
+        }
 
         // Weapons are named here and numbered in the core. The baseline
         // built one gun and one bomb per hull, so those get the names an
@@ -774,7 +813,9 @@ impl Room {
             let cls = world.cfg.classes[i];
             for (t, trig) in ["gun", "bomb"].iter().enumerate() {
                 for (rung, &pat) in cls.trigger[t].iter().enumerate() {
-                    if pat == sim::NO_PATTERN { break }
+                    if pat == sim::NO_PATTERN {
+                        break;
+                    }
                     let n = if rung == 0 {
                         format!("{}-{trig}", hull.to_lowercase())
                     } else {
@@ -790,14 +831,28 @@ impl Room {
         // operator could not touch -- the repel's own radius was ours and
         // nobody else's.
         for (name, pat) in Room::slots(world) {
-            if pat != sim::NO_PATTERN { named.push((name, pat)); }
+            if pat != sim::NO_PATTERN {
+                named.push((name, pat));
+            }
         }
-        if let Some(v) = c.rust { world.cfg.rust_chance = v.min(1000); }
-        if let Some(v) = c.spawn_prizes { world.cfg.spawn_prizes = v; }
-        if let Some(v) = c.bounty_per_kill { world.cfg.bounty_per_kill = v; }
-        if let Some(v) = c.points_per_flag { world.cfg.points_per_flag = v; }
-        if let Some(v) = c.multi_energy { world.cfg.mod_multi_energy = v; }
-        if let Some(v) = c.multi_delay { world.cfg.mod_multi_delay = v; }
+        if let Some(v) = c.rust {
+            world.cfg.rust_chance = v.min(1000);
+        }
+        if let Some(v) = c.spawn_prizes {
+            world.cfg.spawn_prizes = v;
+        }
+        if let Some(v) = c.bounty_per_kill {
+            world.cfg.bounty_per_kill = v;
+        }
+        if let Some(v) = c.points_per_flag {
+            world.cfg.points_per_flag = v;
+        }
+        if let Some(v) = c.multi_energy {
+            world.cfg.mod_multi_energy = v;
+        }
+        if let Some(v) = c.multi_delay {
+            world.cfg.mod_multi_delay = v;
+        }
         for (name, v) in &c.prize_weight {
             match Room::prize_index(name) {
                 Some(i) => world.cfg.prize_weight[i] = *v,
@@ -808,25 +863,37 @@ impl Room {
         // ones it may hold.
         for (name, v) in &c.mod_step {
             match Room::mod_index(name) {
-                Some(m) => world.cfg.mod_step[m] = match m {
-                    sim::MOD_PROX => v * 256,               // px
-                    sim::MOD_PUSH => unsafe { sim::sim_units_speed(*v) },
-                    _ => *v,
-                },
+                Some(m) => {
+                    world.cfg.mod_step[m] = match m {
+                        sim::MOD_PROX => v * 256, // px
+                        sim::MOD_PUSH => unsafe { sim::sim_units_speed(*v) },
+                        _ => *v,
+                    }
+                }
                 None => warn.push(format!("\"{name}\" is not an add-on")),
             }
         }
         if let Some(v) = c.mod_spread {
             world.cfg.mod_spread = ((v as i64 * 65536 / 360) & 0xffff) as u16;
         }
-        if let Some(v) = c.prox_step { world.cfg.prox_step = v * 256; }
-        if let Some(v) = c.prox_delay { world.cfg.prox_delay = v; }
-        if let Some(v) = c.bomb_safety { world.cfg.bomb_safety = v as u8; }
-        if let Some(v) = c.bbomb_damage { world.cfg.bbomb_damage = v; }
+        if let Some(v) = c.prox_step {
+            world.cfg.prox_step = v * 256;
+        }
+        if let Some(v) = c.prox_delay {
+            world.cfg.prox_delay = v;
+        }
+        if let Some(v) = c.bomb_safety {
+            world.cfg.bomb_safety = v as u8;
+        }
+        if let Some(v) = c.bbomb_damage {
+            world.cfg.bbomb_damage = v;
+        }
         if let Some(v) = c.shrap_inactive {
             world.cfg.shrap_inactive = unsafe { sim::sim_units_energy(v) };
         }
-        if let Some(v) = c.shrap_inactive_ticks { world.cfg.shrap_inactive_ticks = v; }
+        if let Some(v) = c.shrap_inactive_ticks {
+            world.cfg.shrap_inactive_ticks = v;
+        }
         // Two passes, because a splinter may name a weapon written later in
         // the file, or one that does not exist until this pass makes it.
         for w in &c.weapons {
@@ -834,7 +901,9 @@ impl Room {
                 warn.push("a weapon with no name is a weapon nothing can point at".into());
                 continue;
             }
-            if named.iter().any(|(n, _)| *n == w.name) { continue; }
+            if named.iter().any(|(n, _)| *n == w.name) {
+                continue;
+            }
             match world.add_weapon() {
                 Some(p) => {
                     // A slot name the baseline left empty -- `charge-3`, say
@@ -848,7 +917,9 @@ impl Room {
             }
         }
         for w in &c.weapons {
-            let Some(&(_, pat)) = named.iter().find(|(n, _)| *n == w.name) else { continue };
+            let Some(&(_, pat)) = named.iter().find(|(n, _)| *n == w.name) else {
+                continue;
+            };
             Room::apply_weapon(world, &named, pat, w, &mut warn);
         }
 
@@ -857,13 +928,15 @@ impl Room {
                 warn.push(format!("no hull called \"{}\"", s.name));
                 continue;
             };
-            for (t, (field, want)) in [("gun", &s.gun), ("bomb", &s.bomb)]
-                .into_iter().enumerate()
-            {
+            for (t, (field, want)) in [("gun", &s.gun), ("bomb", &s.bomb)].into_iter().enumerate() {
                 let Some(want) = want else { continue };
                 if want.len() > sim::MAX_RUNGS {
-                    warn.push(format!("{}'s {field} ladder is {} rungs and {} is the ceiling",
-                                      s.name, want.len(), sim::MAX_RUNGS));
+                    warn.push(format!(
+                        "{}'s {field} ladder is {} rungs and {} is the ceiling",
+                        s.name,
+                        want.len(),
+                        sim::MAX_RUNGS
+                    ));
                     continue;
                 }
                 // The whole ladder, first rung first, and an empty list takes
@@ -879,15 +952,21 @@ impl Room {
                         Some(&(_, p)) => ladder[rung] = p,
                         None => {
                             warn.push(format!(
-                                "{} has no weapon called \"{n}\" to put on its {field}", s.name));
+                                "{} has no weapon called \"{n}\" to put on its {field}",
+                                s.name
+                            ));
                             ok = false;
                         }
                     }
                 }
-                if ok { world.cfg.classes[idx].trigger[t] = ladder; }
+                if ok {
+                    world.cfg.classes[idx].trigger[t] = ladder;
+                }
             }
             for (t, mods) in [&s.gun_mods, &s.bomb_mods].into_iter().enumerate() {
-                if mods.is_empty() { continue }
+                if mods.is_empty() {
+                    continue;
+                }
                 let mut packed = 0u16;
                 for (name, rungs) in mods {
                     match Room::mod_index(name) {
@@ -901,13 +980,19 @@ impl Room {
                 world.cfg.classes[idx].mod_max[t] = packed;
             }
             if s.charges.len() > sim::MAX_CHARGES {
-                warn.push(format!("{} names {} charge slots and there are {}",
-                                  s.name, s.charges.len(), sim::MAX_CHARGES));
+                warn.push(format!(
+                    "{} names {} charge slots and there are {}",
+                    s.name,
+                    s.charges.len(),
+                    sim::MAX_CHARGES
+                ));
             }
             for (k, &n) in s.charges.iter().take(sim::MAX_CHARGES).enumerate() {
                 world.cfg.classes[idx].charge_max[k] = n.min(sim::CHARGE_MAX);
             }
-            if let Some(n) = s.mine_max { world.cfg.classes[idx].mine_max = n; }
+            if let Some(n) = s.mine_max {
+                world.cfg.classes[idx].mine_max = n;
+            }
             let cls = &mut world.cfg.classes[idx];
             // Raise the ceiling and the ladder under it moves with it, in
             // proportion. A zone that says nothing keeps the baseline's own
@@ -958,14 +1043,30 @@ impl Room {
                 // zone can say what the original's files say -- InitialSpeed,
                 // UpgradeSpeed and MaximumSpeed as three independent numbers
                 // -- rather than only being able to move all three together.
-                if let Some(v) = s.initial_speed { cls.init_speed = sim::sim_units_speed(v); }
-                if let Some(v) = s.upgrade_speed { cls.up_speed = sim::sim_units_speed(v); }
-                if let Some(v) = s.initial_thrust { cls.init_thrust = sim::sim_units_thrust(v); }
-                if let Some(v) = s.upgrade_thrust { cls.up_thrust = sim::sim_units_thrust(v); }
-                if let Some(v) = s.initial_rotation { cls.init_rot = sim::sim_units_rotation(v); }
-                if let Some(v) = s.upgrade_rotation { cls.up_rot = sim::sim_units_rotation(v); }
-                if let Some(v) = s.initial_energy { cls.init_energy = sim::sim_units_energy(v); }
-                if let Some(v) = s.upgrade_energy { cls.up_energy = sim::sim_units_energy(v); }
+                if let Some(v) = s.initial_speed {
+                    cls.init_speed = sim::sim_units_speed(v);
+                }
+                if let Some(v) = s.upgrade_speed {
+                    cls.up_speed = sim::sim_units_speed(v);
+                }
+                if let Some(v) = s.initial_thrust {
+                    cls.init_thrust = sim::sim_units_thrust(v);
+                }
+                if let Some(v) = s.upgrade_thrust {
+                    cls.up_thrust = sim::sim_units_thrust(v);
+                }
+                if let Some(v) = s.initial_rotation {
+                    cls.init_rot = sim::sim_units_rotation(v);
+                }
+                if let Some(v) = s.upgrade_rotation {
+                    cls.up_rot = sim::sim_units_rotation(v);
+                }
+                if let Some(v) = s.initial_energy {
+                    cls.init_energy = sim::sim_units_energy(v);
+                }
+                if let Some(v) = s.upgrade_energy {
+                    cls.up_energy = sim::sim_units_energy(v);
+                }
                 if let Some(v) = s.initial_recharge {
                     cls.init_recharge = sim::sim_units_recharge(v);
                 }
@@ -973,9 +1074,15 @@ impl Room {
                     cls.up_recharge = sim::sim_units_recharge(v);
                 }
             }
-            if let Some(v) = s.fore { cls.fore = v * 256; }
-            if let Some(v) = s.aft { cls.aft = v * 256; }
-            if let Some(v) = s.width { cls.halfw = v * 256 / 2; }
+            if let Some(v) = s.fore {
+                cls.fore = v * 256;
+            }
+            if let Some(v) = s.aft {
+                cls.aft = v * 256;
+            }
+            if let Some(v) = s.width {
+                cls.halfw = v * 256 / 2;
+            }
         }
         warn
     }
@@ -1006,11 +1113,15 @@ impl Room {
     fn fill_slot(world: &mut sim::World, name: &str, pat: u8) {
         if let Some(n) = name.strip_prefix("charge-") {
             if let Ok(k) = n.parse::<usize>() {
-                if k >= 1 && k <= sim::MAX_CHARGES { world.cfg.charge[k - 1] = pat; }
+                if k >= 1 && k <= sim::MAX_CHARGES {
+                    world.cfg.charge[k - 1] = pat;
+                }
             }
         } else if let Some(n) = name.strip_prefix("shrapnel-") {
             if let Ok(k) = n.parse::<usize>() {
-                if k >= 1 && k < sim::MAX_RUNGS { world.cfg.mod_splinter[k] = pat; }
+                if k >= 1 && k < sim::MAX_RUNGS {
+                    world.cfg.mod_splinter[k] = pat;
+                }
             }
         } else if name == "mine" {
             world.cfg.mine = pat;
@@ -1021,8 +1132,7 @@ impl Room {
     /// stats keep the names the panel shows; a level and an add-on are named
     /// for the trigger they belong to, because both are per trigger.
     fn prize_index(name: &str) -> Option<usize> {
-        const STATS: [&str; sim::UP_COUNT] =
-            ["energy", "recharge", "speed", "thrust", "rotation"];
+        const STATS: [&str; sim::UP_COUNT] = ["energy", "recharge", "speed", "thrust", "rotation"];
         if let Some(i) = STATS.iter().position(|n| n.eq_ignore_ascii_case(name)) {
             return Some(i);
         }
@@ -1032,8 +1142,9 @@ impl Room {
         if let Some(n) = name.strip_prefix("charge-") {
             let k: usize = n.parse().ok()?;
             if k >= 1 && k <= sim::MAX_CHARGES {
-                return Some(sim::UP_COUNT + sim::TRIG_COUNT
-                            + sim::TRIG_COUNT * sim::MOD_COUNT + k - 1);
+                return Some(
+                    sim::UP_COUNT + sim::TRIG_COUNT + sim::TRIG_COUNT * sim::MOD_COUNT + k - 1,
+                );
             }
             return None;
         }
@@ -1061,31 +1172,61 @@ impl Room {
     /// One weapon block, over whatever that weapon already was. The units are
     /// the ones the rest of the file uses -- px, px/s/10, energy, ticks --
     /// and degrees, because nobody thinks in sixty-five thousandths of a turn.
-    fn apply_weapon(world: &mut sim::World, named: &[(String, u8)], pat: u8,
-                    w: &config::WeaponConfig, warn: &mut Vec<String>) {
+    fn apply_weapon(
+        world: &mut sim::World,
+        named: &[(String, u8)],
+        pat: u8,
+        w: &config::WeaponConfig,
+        warn: &mut Vec<String>,
+    ) {
         let spec_idx = world.cfg.patterns[pat as usize].spec as usize;
         let sp = &mut world.cfg.specs[spec_idx];
         unsafe {
-            if let Some(v) = w.speed { sp.speed = sim::sim_units_speed(v); }
-            if let Some(v) = w.push { sp.push = sim::sim_units_speed(v); }
-            if let Some(v) = w.damage { sp.damage = sim::sim_units_energy(v); }
+            if let Some(v) = w.speed {
+                sp.speed = sim::sim_units_speed(v);
+            }
+            if let Some(v) = w.push {
+                sp.push = sim::sim_units_speed(v);
+            }
+            if let Some(v) = w.damage {
+                sp.damage = sim::sim_units_energy(v);
+            }
         }
-        if let Some(v) = w.push_time { sp.push_time = v; }
-        if let Some(v) = w.life { sp.life = v; }
-        if let Some(v) = w.bounces { sp.bounces = v; }
-        if let Some(v) = w.trigger { sp.trigger = v * 256; }
-        if let Some(v) = w.blast { sp.blast = v * 256; }
-        if let Some(v) = w.blast_up { sp.blast_up = v * 256; }
-        if let Some(v) = w.stall { sp.stall = v; }
-        if let Some(v) = w.expire_ends { sp.expire_ends = v as u8; }
-        if let Some(v) = w.still { sp.still = v as u8; }
+        if let Some(v) = w.push_time {
+            sp.push_time = v;
+        }
+        if let Some(v) = w.life {
+            sp.life = v;
+        }
+        if let Some(v) = w.bounces {
+            sp.bounces = v;
+        }
+        if let Some(v) = w.trigger {
+            sp.trigger = v * 256;
+        }
+        if let Some(v) = w.blast {
+            sp.blast = v * 256;
+        }
+        if let Some(v) = w.blast_up {
+            sp.blast_up = v * 256;
+        }
+        if let Some(v) = w.stall {
+            sp.stall = v;
+        }
+        if let Some(v) = w.expire_ends {
+            sp.expire_ends = v as u8;
+        }
+        if let Some(v) = w.still {
+            sp.still = v as u8;
+        }
         if let Some(rule) = &w.on_wall {
             match rule.as_str() {
                 "end" => sp.on_wall = 0,
                 "bounce" => sp.on_wall = 1,
                 "pass" => sp.on_wall = 2,
                 other => warn.push(format!(
-                    "\"{other}\" is not a wall rule: end, bounce or pass")),
+                    "\"{other}\" is not a wall rule: end, bounce or pass"
+                )),
             }
         }
         if let Some(name) = &w.splinter {
@@ -1095,17 +1236,29 @@ impl Room {
                 Some(&(_, p)) => world.cfg.specs[spec_idx].splinter = p,
                 None if name.is_empty() => world.cfg.specs[spec_idx].splinter = sim::NO_PATTERN,
                 None => warn.push(format!(
-                    "\"{}\" splinters into \"{name}\", which is not a weapon", w.name)),
+                    "\"{}\" splinters into \"{name}\", which is not a weapon",
+                    w.name
+                )),
             }
         }
         let p = &mut world.cfg.patterns[pat as usize];
         unsafe {
-            if let Some(v) = w.recoil { p.recoil = sim::sim_units_speed(v); }
-            if let Some(v) = w.energy { p.energy = sim::sim_units_energy(v); }
-            if let Some(v) = w.energy_up { p.energy_up = sim::sim_units_energy(v); }
+            if let Some(v) = w.recoil {
+                p.recoil = sim::sim_units_speed(v);
+            }
+            if let Some(v) = w.energy {
+                p.energy = sim::sim_units_energy(v);
+            }
+            if let Some(v) = w.energy_up {
+                p.energy_up = sim::sim_units_energy(v);
+            }
         }
-        if let Some(v) = w.count { p.count = v; }
-        if let Some(v) = w.delay { p.delay = v; }
+        if let Some(v) = w.count {
+            p.count = v;
+        }
+        if let Some(v) = w.delay {
+            p.delay = v;
+        }
         if let Some(v) = w.spread {
             p.spacing = ((v as i64 * 65536 / 360) & 0xffff) as u16;
         }
@@ -1123,13 +1276,18 @@ impl Room {
         // for more is told so rather than quietly given four.
         let placed = a.world.state.flag_count;
         if cfg.arena.flags > placed {
-            println!("zone: this map places {placed} flags and the file asks for {}",
-                     cfg.arena.flags);
+            println!(
+                "zone: this map places {placed} flags and the file asks for {}",
+                cfg.arena.flags
+            );
         }
         a.world.state.flag_count = cfg.arena.flags.min(placed);
         a.mode = match cfg.arena.mode.as_str() {
             "arena" | "ffa" => Box::new(modes::FreeForAll),
-            _ => Box::new(modes::Warzone::new(a.world.state.flag_count, a.public_teams)),
+            _ => Box::new(modes::Warzone::new(
+                a.world.state.flag_count,
+                a.public_teams,
+            )),
         };
         for w in Room::apply_config(&mut a.world, &cfg.arena) {
             println!("zone: {w}");
@@ -1264,8 +1422,13 @@ impl Room {
 
     /// An arrival with nothing to say about which side they land on, which is
     /// every arrival that did not just get up out of a chair in this room.
-    fn join(&mut self, seat: Seat, class: u8, max_players: usize,
-            tx: mpsc::Sender<Message>) -> Option<u64> {
+    fn join(
+        &mut self,
+        seat: Seat,
+        class: u8,
+        max_players: usize,
+        tx: mpsc::Sender<Message>,
+    ) -> Option<u64> {
         let logged = seat.clone();
         let id = self.join_on(seat, class, max_players, None, tx)?;
         // After the seat is real, so the log never claims an arrival the caps
@@ -1296,8 +1459,14 @@ impl Room {
     /// a hull has and nobody else does. It is honoured while the side exists and
     /// has room, and ignored otherwise rather than refused: a watcher whose side
     /// filled up while they sat out is still a player who wants to fly.
-    fn join_on(&mut self, seat: Seat, class: u8, max_players: usize,
-               prefer: Option<u8>, tx: mpsc::Sender<Message>) -> Option<u64> {
+    fn join_on(
+        &mut self,
+        seat: Seat,
+        class: u8,
+        max_players: usize,
+        prefer: Option<u8>,
+        tx: mpsc::Sender<Message>,
+    ) -> Option<u64> {
         let name = seat.name.clone();
         let bot = seat.bot;
         // The cap is on people. A declared bot passes it by, which is the whole
@@ -1337,8 +1506,7 @@ impl Room {
         // where the zone names none. Moving is then one selection away in the
         // team list, and only a full side can refuse it.
         let team = match prefer {
-            Some(t) if self.teams.contains_key(&t)
-                && self.team_has_room(t, bot, Some(ship)) => t,
+            Some(t) if self.teams.contains_key(&t) && self.team_has_room(t, bot, Some(ship)) => t,
             _ => self.seat_team(ship, seat.bot),
         };
         // Where a fresh pilot starts, worked out before anything about them is
@@ -1497,7 +1665,10 @@ impl Room {
         // its own socket rather than work out from an empty simulation that it
         // is gone; the seat is taken either way.
         if let Some(p) = self.players.get(&id) {
-            println!("seat {ship} taken back from {} for an arriving pilot", p.name);
+            println!(
+                "seat {ship} taken back from {} for an arriving pilot",
+                p.name
+            );
             let _ = p.tx.try_send(Message::Binary(vec![S2C_YIELD]));
         }
         self.leave(id, pilot::why::EVICTED);
@@ -1542,7 +1713,13 @@ impl Room {
     fn set_teams(&mut self, def: &catalog::ZoneDef) {
         self.teams.clear();
         for (i, name) in def.teams.iter().take(254).enumerate() {
-            self.teams.insert(i as u8, Team { name: name.clone(), public: true });
+            self.teams.insert(
+                i as u8,
+                Team {
+                    name: name.clone(),
+                    public: true,
+                },
+            );
         }
         self.public_teams = self.teams.len() as u8;
         self.max_teams = def.max_teams();
@@ -1564,7 +1741,11 @@ impl Room {
             if sh.active == 0 || sh.team != team {
                 continue;
             }
-            if seat.bot { bots += 1 } else { humans += 1 }
+            if seat.bot {
+                bots += 1
+            } else {
+                humans += 1
+            }
         }
         (humans, bots)
     }
@@ -1572,13 +1753,19 @@ impl Room {
     /// Whether one more of this kind fits on this side.
     fn team_has_room(&self, team: u8, bot: bool, skip: Option<u8>) -> bool {
         let (humans, bots) = self.team_census(team, skip);
-        if bot { bots < self.max_bots_per_team } else { humans < self.max_humans_per_team }
+        if bot {
+            bots < self.max_bots_per_team
+        } else {
+            humans < self.max_humans_per_team
+        }
     }
 
     /// Whether this ship may enter this side: it has to exist, have room, and
     /// either be the zone's own or have invited them.
     fn may_join(&self, ship: u8, team: u8, bot: bool) -> bool {
-        let Some(t) = self.teams.get(&team) else { return false };
+        let Some(t) = self.teams.get(&team) else {
+            return false;
+        };
         if self.world.state.ships[ship as usize].team == team {
             return true;
         }
@@ -1644,7 +1831,13 @@ impl Room {
     fn found_team(&mut self, founder: u8) -> Option<u8> {
         let byte = self.free_team_byte()?;
         let name = self.fresh_team_name();
-        self.teams.insert(byte, Team { name, public: false });
+        self.teams.insert(
+            byte,
+            Team {
+                name,
+                public: false,
+            },
+        );
         // The founder is invited to their own team, which is what makes the
         // move that follows legal without a special case for it.
         self.invites.entry(founder).or_default().insert(byte);
@@ -1667,12 +1860,30 @@ impl Room {
     /// twenty-five bots flying for Anvil Watch 30 by the afternoon.
     fn fresh_team_name(&mut self) -> String {
         const WORDS: [&str; 24] = [
-            "Anvil Watch", "Black Sill", "Cold Harbour", "Deep Keel",
-            "Ember Line", "Far Reach", "Gray Span", "High Trestle",
-            "Iron Weir", "Long Lintel", "Mill Race", "North Gantry",
-            "Old Causeway", "Pale Arch", "Quarry Gate", "Red Culvert",
-            "Salt Pier", "Stone Chord", "Tall Derrick", "Under Span",
-            "Verge Works", "West Buttress", "Yard Bell", "Zinc Landing",
+            "Anvil Watch",
+            "Black Sill",
+            "Cold Harbour",
+            "Deep Keel",
+            "Ember Line",
+            "Far Reach",
+            "Gray Span",
+            "High Trestle",
+            "Iron Weir",
+            "Long Lintel",
+            "Mill Race",
+            "North Gantry",
+            "Old Causeway",
+            "Pale Arch",
+            "Quarry Gate",
+            "Red Culvert",
+            "Salt Pier",
+            "Stone Chord",
+            "Tall Derrick",
+            "Under Span",
+            "Verge Works",
+            "West Buttress",
+            "Yard Bell",
+            "Zinc Landing",
         ];
         for step in 0..WORDS.len() {
             let i = (self.name_cursor + step) % WORDS.len();
@@ -1744,8 +1955,16 @@ impl Room {
             // carried out. A side appearing with one member on it is also the
             // shape of somebody hiding from a team game.
             if let Some(seat) = self.names.get(&ship).cloned() {
-                let name = self.teams.get(&byte).map(|t| t.name.clone()).unwrap_or_default();
-                self.note(pilot::FOUND, &seat, serde_json::json!({ "team": byte, "name": name }));
+                let name = self
+                    .teams
+                    .get(&byte)
+                    .map(|t| t.name.clone())
+                    .unwrap_or_default();
+                self.note(
+                    pilot::FOUND,
+                    &seat,
+                    serde_json::json!({ "team": byte, "name": name }),
+                );
             }
             return true;
         }
@@ -1772,7 +1991,11 @@ impl Room {
         // shooting. Recorded for that reason rather than for the side change,
         // which the invitee's own `team` row covers if they accept.
         if let Some(seat) = self.names.get(&from).cloned() {
-            self.note(pilot::INVITE, &seat, serde_json::json!({ "to": to, "team": team }));
+            self.note(
+                pilot::INVITE,
+                &seat,
+                serde_json::json!({ "to": to, "team": team }),
+            );
         }
         // The invitee's list is the one that changed, but the inviter wants to
         // see that it went, so everybody gets the new one.
@@ -1801,10 +2024,12 @@ impl Room {
             let (humans, bots) = self.team_census(team, None);
             count.push((team, humans + bots, bots));
         }
-        let Some(&(fullest, most, bots_there)) =
-            count.iter().max_by_key(|(_, n, _)| *n) else { return };
-        let Some(&(emptiest, fewest, _)) =
-            count.iter().min_by_key(|(_, n, _)| *n) else { return };
+        let Some(&(fullest, most, bots_there)) = count.iter().max_by_key(|(_, n, _)| *n) else {
+            return;
+        };
+        let Some(&(emptiest, fewest, _)) = count.iter().min_by_key(|(_, n, _)| *n) else {
+            return;
+        };
         // Two is the smallest gap worth moving for: one is what an odd number
         // of pilots looks like, and chasing it would move a bot every clock.
         if fullest == emptiest || most < fewest + 2 || bots_there == 0 {
@@ -1829,7 +2054,12 @@ impl Room {
     /// left out: a mode never scores over one, so it never has to name one.
     fn public_team_names(&self) -> Vec<String> {
         (0..self.public_teams)
-            .map(|b| self.teams.get(&b).map(|t| t.name.clone()).unwrap_or_default())
+            .map(|b| {
+                self.teams
+                    .get(&b)
+                    .map(|t| t.name.clone())
+                    .unwrap_or_default()
+            })
             .collect()
     }
 
@@ -1953,8 +2183,7 @@ impl Room {
             let losing = why != pilot::why::RESTART && {
                 let sh = &self.world.state.ships[p.ship as usize];
                 let ceiling = self.world.eff_max_energy(p.ship as usize).max(1);
-                sh.alive != 0
-                    && (sh.energy as f64) < QUIT_ENERGY * ceiling as f64
+                sh.alive != 0 && (sh.energy as f64) < QUIT_ENERGY * ceiling as f64
             };
             let rated = if losing {
                 self.rating.quit(tick, &p.rid)
@@ -2061,9 +2290,7 @@ impl Room {
             return WatchMode::Follow(want);
         }
         match team {
-            Some(t) if self.world.state.ships[want as usize].team == t => {
-                WatchMode::Follow(want)
-            }
+            Some(t) if self.world.state.ships[want as usize].team == t => WatchMode::Follow(want),
             _ => WatchMode::Channel,
         }
     }
@@ -2102,7 +2329,13 @@ impl Room {
         let mode = self.watch_mode(Some(team), any, want);
         self.watchers.insert(
             id,
-            Watcher { seat, team: Some(team), any, mode, tx: tx.clone() },
+            Watcher {
+                seat,
+                team: Some(team),
+                any,
+                mode,
+                tx: tx.clone(),
+            },
         );
         // The client learns which of its two lives this is from the welcome:
         // 255 is a watcher's ship.
@@ -2145,12 +2378,7 @@ impl Room {
     /// hull as an enemy's and offered no live sight of any of them, while the
     /// same person joining in a hull and then sitting out kept their side and
     /// everything that came with it.
-    fn watch_join(
-        &mut self,
-        seat: Seat,
-        any: bool,
-        tx: mpsc::Sender<Message>,
-    ) -> Option<u64> {
+    fn watch_join(&mut self, seat: Seat, any: bool, tx: mpsc::Sender<Message>) -> Option<u64> {
         if self.watchers.len() >= self.max_watchers {
             return None;
         }
@@ -2168,7 +2396,13 @@ impl Room {
         );
         self.watchers.insert(
             id,
-            Watcher { seat, team, any, mode: WatchMode::Channel, tx },
+            Watcher {
+                seat,
+                team,
+                any,
+                mode: WatchMode::Channel,
+                tx,
+            },
         );
         // The room feed is still what they open on, since they have asked to
         // watch nobody in particular yet. Their side is what makes the asking
@@ -2256,11 +2490,7 @@ impl Room {
         self.score_events();
         self.sweep_safe();
 
-        let seats: Vec<(u8, bool)> = self
-            .names
-            .iter()
-            .map(|(s, seat)| (*s, seat.bot))
-            .collect();
+        let seats: Vec<(u8, bool)> = self.names.iter().map(|(s, seat)| (*s, seat.bot)).collect();
         let names = self.public_team_names();
         let mut ctx = modes::ModeCtx {
             world: &mut self.world,
@@ -2335,7 +2565,9 @@ impl Room {
                     let _ = p.tx.try_send(Message::Binary(vec![S2C_PRIZE, e.b, delta]));
                 }
             } else if e.etype == sim::EV_CHARGE {
-                let Some(sh) = self.world.state.ships.get(e.a as usize) else { continue };
+                let Some(sh) = self.world.state.ships.get(e.a as usize) else {
+                    continue;
+                };
                 let mut m = vec![S2C_CHARGE, e.a, e.b];
                 m.extend_from_slice(&sh.x.to_le_bytes());
                 m.extend_from_slice(&sh.y.to_le_bytes());
@@ -2460,7 +2692,12 @@ impl Room {
             .filter_map(|(who, w, before, after)| {
                 let account = *self.accounts.get(who)?;
                 all_bots = all_bots && self.rating.is_bot(who);
-                Some(spool::Credit { account, weight: *w, before: *before, after: *after })
+                Some(spool::Credit {
+                    account,
+                    weight: *w,
+                    before: *before,
+                    after: *after,
+                })
             })
             .collect();
         if credits.is_empty() {
@@ -2553,9 +2790,9 @@ impl Room {
             // them they are. That is the minefield: everything else a pilot
             // fires is spent within seconds and inside the radius anyway.
             let options = if house { sim::PACK_PRIVATE_ALL } else { 0 };
-            let n = self.world.pack_around(
-                buf, sh.x, sh.y, radius, p.ship, p.ship, options,
-            );
+            let n = self
+                .world
+                .pack_around(buf, sh.x, sh.y, radius, p.ship, p.ship, options);
             if n <= 0 {
                 continue;
             }
@@ -2589,7 +2826,9 @@ impl Room {
         // does not disclose their energy, inventory, cooldowns or upgrades.
         let mut fallen: Vec<u64> = Vec::new();
         for (id, w) in self.watchers.iter() {
-            let WatchMode::Follow(t) = w.mode else { continue };
+            let WatchMode::Follow(t) = w.mode else {
+                continue;
+            };
             let lawful = self.names.contains_key(&t)
                 && (w.any || w.team == Some(self.world.state.ships[t as usize].team));
             if !lawful {
@@ -2597,7 +2836,9 @@ impl Room {
                 continue;
             }
             let sh = &self.world.state.ships[t as usize];
-            let n = self.world.pack_around(buf, sh.x, sh.y, FAIR_INTEREST, t, 255, 0);
+            let n = self
+                .world
+                .pack_around(buf, sh.x, sh.y, FAIR_INTEREST, t, 255, 0);
             if n <= 0 {
                 continue;
             }
@@ -2642,9 +2883,7 @@ impl Room {
             let mut pool: Vec<u8> = self
                 .names
                 .iter()
-                .filter(|(s, k)| {
-                    !k.bot && self.world.state.ships[**s as usize].alive == 1
-                })
+                .filter(|(s, k)| !k.bot && self.world.state.ships[**s as usize].alive == 1)
                 .map(|(s, _)| *s)
                 .collect();
             if pool.is_empty() {
@@ -2683,7 +2922,9 @@ impl Room {
                 (mid, mid, 255u8)
             }
         };
-        let n = self.world.pack_around(buf, cx, cy, FAIR_INTEREST, subject, 255, 0);
+        let n = self
+            .world
+            .pack_around(buf, cx, cy, FAIR_INTEREST, subject, 255, 0);
         if n > 0 {
             let mut msg = Vec::with_capacity(n as usize + 6);
             msg.push(S2C_SNAPSHOT);
@@ -2718,7 +2959,11 @@ impl Room {
             // What the channel is showing, whether or not anybody is on it:
             // the ring runs regardless so an arriving watcher lands in a warm
             // picture, and this follows the picture rather than the audience.
-            self.channel.showing = if f.subject == 255 { None } else { Some(f.subject) };
+            self.channel.showing = if f.subject == 255 {
+                None
+            } else {
+                Some(f.subject)
+            };
             for w in self.watchers.values() {
                 if w.mode != WatchMode::Channel {
                     continue;
@@ -2874,9 +3119,7 @@ impl Room {
             .teams
             .iter()
             .filter(|(b, t)| {
-                t.public
-                    || **b == mine
-                    || self.invites.get(&ship).is_some_and(|s| s.contains(b))
+                t.public || **b == mine || self.invites.get(&ship).is_some_and(|s| s.contains(b))
             })
             .map(|(b, _)| *b)
             .collect();
@@ -3061,10 +3304,8 @@ impl RatedLease {
         account: u64,
         session: String,
     ) -> Result<Option<RatedLease>, String> {
-        let claimed = meta::claim_rated_session(
-            &base, &pool_token, account, &session, &instance,
-        )
-        .await?;
+        let claimed =
+            meta::claim_rated_session(&base, &pool_token, account, &session, &instance).await?;
         Ok(claimed.then(|| RatedLease {
             base,
             pool_token,
@@ -3088,15 +3329,14 @@ impl RatedLease {
     }
 
     async fn release(self) {
-        if let Err(e) = meta::release_rated_session(
-            &self.base,
-            &self.pool_token,
-            self.account,
-            &self.session,
-        )
-        .await
+        if let Err(e) =
+            meta::release_rated_session(&self.base, &self.pool_token, self.account, &self.session)
+                .await
         {
-            println!("rated session release failed for account {}: {e}", self.account);
+            println!(
+                "rated session release failed for account {}: {e}",
+                self.account
+            );
         }
     }
 }
@@ -3342,10 +3582,13 @@ impl ArenaServer {
     /// written for them.
     /// `session` is this connection's, minted before the first refusal so that
     /// a pilot who never gets in still has their door events tied together.
-    fn identify(&self, presented: &str, fallback_name: &str, declared_bot: bool,
-                session: &pilot::Session)
-        -> Result<Seat, String>
-    {
+    fn identify(
+        &self,
+        presented: &str,
+        fallback_name: &str,
+        declared_bot: bool,
+        session: &pilot::Session,
+    ) -> Result<Seat, String> {
         let guest = |name: &str| Seat {
             name: name.to_string(),
             bot: declared_bot,
@@ -3474,17 +3717,26 @@ impl ArenaServer {
         // VW_META overrides it the same way VW_ARENAS does for the bot server.
         let url = match std::env::var("VW_META") {
             Ok(v) if !v.is_empty() => v,
-            _ => self.catalog.as_ref().map(|c| c.meta_url.clone()).unwrap_or_default(),
+            _ => self
+                .catalog
+                .as_ref()
+                .map(|c| c.meta_url.clone())
+                .unwrap_or_default(),
         };
         let token = std::env::var("VW_TOKEN").unwrap_or_default();
-        let (zone, class, instance) =
-            (self.zone_name.clone(), self.rating_class(), self.fleet.instance.clone());
+        let (zone, class, instance) = (
+            self.zone_name.clone(),
+            self.rating_class(),
+            self.fleet.instance.clone(),
+        );
         self.spools.aim(&url, &token, &zone, &class, &instance);
     }
 
     /// Whether this zone admits only pilots who have claimed their account.
     fn wants_claimed(&self) -> bool {
-        self.wire_zone().map(|z| z.admission == "claimed").unwrap_or(false)
+        self.wire_zone()
+            .map(|z| z.admission == "claimed")
+            .unwrap_or(false)
     }
 
     /// The class this zone rates into. One number per kind of game, per
@@ -3511,7 +3763,11 @@ impl ArenaServer {
     fn rated_lease_args(&self) -> Result<(String, String, String), String> {
         let base = match std::env::var("VW_META") {
             Ok(v) if !v.is_empty() => v,
-            _ => self.catalog.as_ref().map(|c| c.meta_url.clone()).unwrap_or_default(),
+            _ => self
+                .catalog
+                .as_ref()
+                .map(|c| c.meta_url.clone())
+                .unwrap_or_default(),
         };
         let pool_token = std::env::var("VW_TOKEN").unwrap_or_default();
         if base.is_empty() || pool_token.is_empty() {
@@ -3599,7 +3855,11 @@ impl ArenaServer {
             }
             return;
         }
-        println!("catalog: v{} from {from} ({} zones)", c.version, c.zones.len());
+        println!(
+            "catalog: v{} from {from} ({} zones)",
+            c.version,
+            c.zones.len()
+        );
         self.fleet.catalog_from = from.to_string();
 
         // A running room does not change zone because the catalog changed: it
@@ -3616,10 +3876,8 @@ impl ArenaServer {
                         if let Some(m) = def.max_ships {
                             r.world.cfg.max_ships = m;
                         }
-                        r.max_watchers =
-                            def.max_watchers.unwrap_or(DEFAULT_MAX_WATCHERS);
-                        r.channel.delay =
-                            def.channel_delay_ticks.unwrap_or(DEFAULT_CHANNEL_DELAY);
+                        r.max_watchers = def.max_watchers.unwrap_or(DEFAULT_MAX_WATCHERS);
+                        r.channel.delay = def.channel_delay_ticks.unwrap_or(DEFAULT_CHANNEL_DELAY);
                         r.broadcast_settings();
                     }
                 }
@@ -3702,11 +3960,21 @@ impl ArenaServer {
         match c.verb.as_str() {
             "drain" => {
                 let bots = self.begin_drain();
-                ("done", format!("draining {} player(s), {bots} bot(s) sent home",
-                                 self.total_players()))
+                (
+                    "done",
+                    format!(
+                        "draining {} player(s), {bots} bot(s) sent home",
+                        self.total_players()
+                    ),
+                )
             }
             "pin" => {
-                if self.catalog.as_ref().and_then(|k| k.zone(&c.args)).is_none() {
+                if self
+                    .catalog
+                    .as_ref()
+                    .and_then(|k| k.zone(&c.args))
+                    .is_none()
+                {
                     return ("refused", format!("no zone {:?} in the catalog", c.args));
                 }
                 self.pinned = Some((c.args.clone(), c.actor.clone(), fleet::now_ms()));
@@ -3754,8 +4022,10 @@ impl ArenaServer {
                 }
             }
             "restart" => {
-                println!("restart asked for by {:?}; exiting so the supervisor restarts us",
-                         c.actor);
+                println!(
+                    "restart asked for by {:?}; exiting so the supervisor restarts us",
+                    c.actor
+                );
                 self.file_departures();
                 // The container platform owns restarts. Exiting is the whole
                 // implementation, and it is the honest one.
@@ -3776,7 +4046,10 @@ impl ArenaServer {
     }
 
     fn max_rooms(&self) -> usize {
-        self.wire_zone().map(|z| z.max_rooms as usize).unwrap_or(1).max(1)
+        self.wire_zone()
+            .map(|z| z.max_rooms as usize)
+            .unwrap_or(1)
+            .max(1)
     }
 
     fn max_players(&self) -> usize {
@@ -3846,7 +4119,10 @@ impl ArenaServer {
         self.draining = false;
         println!(
             "serving zone {:?}: mode {}, {} ships, {} players, teams {}",
-            z.name, z.mode, z.max_ships, z.max_players,
+            z.name,
+            z.mode,
+            z.max_ships,
+            z.max_players,
             if self.rooms[0].public_teams == 0 {
                 "free-for-all".to_string()
             } else {
@@ -3981,8 +4257,11 @@ impl ArenaServer {
     ///
     /// A standalone arena is the exception and says so out loud: see
     /// `serve_local`.
-    fn new(cfg: config::ConfigWatcher, spools: spool::Spools,
-           ladder: HashMap<String, f64>) -> Self {
+    fn new(
+        cfg: config::ConfigWatcher,
+        spools: spool::Spools,
+        ladder: HashMap<String, f64>,
+    ) -> Self {
         ArenaServer {
             rooms: Vec::new(),
             cfg,
@@ -4068,8 +4347,16 @@ impl ArenaServer {
             // Said out loud, because a pinned instance is one policy has
             // stopped applying to, and that is invisible from every other
             // number here.
-            pinned: self.pinned.as_ref().map(|p| p.0.clone()).unwrap_or_default(),
-            pinned_by: self.pinned.as_ref().map(|p| p.1.clone()).unwrap_or_default(),
+            pinned: self
+                .pinned
+                .as_ref()
+                .map(|p| p.0.clone())
+                .unwrap_or_default(),
+            pinned_by: self
+                .pinned
+                .as_ref()
+                .map(|p| p.1.clone())
+                .unwrap_or_default(),
             pinned_at_ms: self.pinned.as_ref().map(|p| p.2).unwrap_or(0),
             metrics: fleet::Metrics {
                 tick_us: self.tick_us,
@@ -4147,7 +4434,10 @@ fn run_calibration() {
     println!("calibrating: {rounds} rounds of round-robin matches");
     let r = calibrate::run(rounds, true);
 
-    println!("\n{:<12} {:>7}  {:>6}  {}", "pilot", "rating", "games", "tier");
+    println!(
+        "\n{:<12} {:>7}  {:>6}  {}",
+        "pilot", "rating", "games", "tier"
+    );
     let mut ladder = std::collections::HashMap::new();
     for (name, score, games, tier) in calibrate::table(&r) {
         let pin = if name == ai::ANCHOR { " (anchor)" } else { "" };
@@ -4178,12 +4468,18 @@ fn run_calibration() {
 /// you point it rather than in the zone directory beside `ladder.json`: that
 /// file is an input, and a reader should not have to work out which is which.
 fn run_stage_tournament() {
-    let bouts: u32 = std::env::args().nth(3).and_then(|s| s.parse().ok()).unwrap_or(6);
+    let bouts: u32 = std::env::args()
+        .nth(3)
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(6);
     let hull = std::env::args().nth(4).unwrap_or_else(|| "Apex".into());
     let zone = std::env::args().nth(5).unwrap_or_else(|| "baseline".into());
     let dir = std::env::args().nth(6).unwrap_or_else(|| ".".into());
     let Some(class) = ai::class_index(&hull) else {
-        println!("no hull named {hull:?}; the roster is {}", ai::CLASS_NAMES.join(", "));
+        println!(
+            "no hull named {hull:?}; the roster is {}",
+            ai::CLASS_NAMES.join(", ")
+        );
         std::process::exit(1);
     };
 
@@ -4221,7 +4517,10 @@ fn run_stage_tournament() {
     let doc = calibrate::report_stages(&rows, &hull, SKILL, bouts, &zone);
 
     let path = format!("{dir}/stages.json");
-    match std::fs::write(&path, serde_json::to_string_pretty(&doc).expect("serialize")) {
+    match std::fs::write(
+        &path,
+        serde_json::to_string_pretty(&doc).expect("serialize"),
+    ) {
         Ok(()) => println!("\nwrote {path}"),
         Err(e) => println!("\ncould not write {path}: {e}"),
     }
@@ -4243,8 +4542,14 @@ fn run_stage_tournament() {
 /// Writes `hulls.json`, which nothing loads. Same reasoning as `stages.json`:
 /// it is a measurement to diff a change against, and `ladder.json` is an input.
 fn run_hull_tournament() {
-    let bouts: u32 = std::env::args().nth(3).and_then(|s| s.parse().ok()).unwrap_or(24);
-    let greens: u32 = std::env::args().nth(4).and_then(|s| s.parse().ok()).unwrap_or(0);
+    let bouts: u32 = std::env::args()
+        .nth(3)
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(24);
+    let greens: u32 = std::env::args()
+        .nth(4)
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
     let zone = std::env::args().nth(5).unwrap_or_else(|| "baseline".into());
     let dir = std::env::args().nth(6).unwrap_or_else(|| ".".into());
     let map = std::env::args().nth(7).unwrap_or_else(|| "pit".into());
@@ -4299,7 +4604,10 @@ fn run_hull_tournament() {
     let doc = calibrate::report_hulls(&rows, SKILL, greens, bouts, &zone, &map);
 
     let path = format!("{dir}/hulls.json");
-    match std::fs::write(&path, serde_json::to_string_pretty(&doc).expect("serialize")) {
+    match std::fs::write(
+        &path,
+        serde_json::to_string_pretty(&doc).expect("serialize"),
+    ) {
         Ok(()) => println!("\nwrote {path}"),
         Err(e) => println!("\ncould not write {path}: {e}"),
     }
@@ -4316,9 +4624,18 @@ fn run_hull_tournament() {
 ///
 /// Writes `teams.json`, which nothing loads.
 fn run_team_tournament() {
-    let matches: u32 = std::env::args().nth(3).and_then(|s| s.parse().ok()).unwrap_or(200);
-    let per_side: usize = std::env::args().nth(4).and_then(|s| s.parse().ok()).unwrap_or(4);
-    let greens: u32 = std::env::args().nth(5).and_then(|s| s.parse().ok()).unwrap_or(30);
+    let matches: u32 = std::env::args()
+        .nth(3)
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(200);
+    let per_side: usize = std::env::args()
+        .nth(4)
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(4);
+    let greens: u32 = std::env::args()
+        .nth(5)
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(30);
     let zone = std::env::args().nth(6).unwrap_or_else(|| "baseline".into());
     let dir = std::env::args().nth(7).unwrap_or_else(|| ".".into());
     let map = std::env::args().nth(8).unwrap_or_else(|| "arena".into());
@@ -4353,7 +4670,10 @@ fn run_team_tournament() {
     } else {
         let cat = match catalog::load("catalog") {
             Ok(c) => c,
-            Err(e) => { println!("teams: {e}"); std::process::exit(1); }
+            Err(e) => {
+                println!("teams: {e}");
+                std::process::exit(1);
+            }
         };
         let Some(def) = cat.zone(&zone) else {
             println!("teams: no zone named {zone:?} in the catalog");
@@ -4367,12 +4687,22 @@ fn run_team_tournament() {
         "{per_side} a side under {zone} tuning on the {map}: {matches} matches at \
 {greens} greens a life"
     );
-    let rows = calibrate::run_teams(per_side, matches, greens, SKILL,
-                                   tuning.as_ref(), &builder, true);
+    let rows = calibrate::run_teams(
+        per_side,
+        matches,
+        greens,
+        SKILL,
+        tuning.as_ref(),
+        &builder,
+        true,
+    );
     let doc = calibrate::report_teams(&rows, per_side, SKILL, greens, matches, &zone, &map);
 
     let path = format!("{dir}/teams.json");
-    match std::fs::write(&path, serde_json::to_string_pretty(&doc).expect("serialize")) {
+    match std::fs::write(
+        &path,
+        serde_json::to_string_pretty(&doc).expect("serialize"),
+    ) {
         Ok(()) => println!("\nwrote {path}"),
         Err(e) => println!("\ncould not write {path}: {e}"),
     }
@@ -4580,9 +4910,16 @@ async fn main() {
     println!(
         "seeded {} bot ratings from {}",
         ladder.len(),
-        if local { "ladder.json" } else { "the compiled ladder" }
+        if local {
+            "ladder.json"
+        } else {
+            "the compiled ladder"
+        }
     );
-    println!("zone \"{}\": {}", watcher.current.name, watcher.current.description);
+    println!(
+        "zone \"{}\": {}",
+        watcher.current.name, watcher.current.description
+    );
     // The command line wins over the zone file, so an operator can move a
     // zone to another port without editing its configuration.
     let addr = addr_arg.unwrap_or_else(|| watcher.current.listen.clone());
@@ -4643,12 +4980,7 @@ async fn main() {
     let wt_cert = env_or("VW_WT_CERT", cfg_wt.1);
     let wt_key = env_or("VW_WT_KEY", cfg_wt.2);
     if !wt_listen.is_empty() {
-        tokio::spawn(wt::run(
-            wt_listen.clone(),
-            wt_cert,
-            wt_key,
-            zone.clone(),
-        ));
+        tokio::spawn(wt::run(wt_listen.clone(), wt_cert, wt_key, zone.clone()));
     }
     // The zone name is empty here and filled in by the tick loop, which is
     // where it is actually known. See metrics::set_zone.
@@ -4665,8 +4997,8 @@ async fn main() {
         z.fleet.region = std::env::var("VW_REGION").unwrap_or_else(|_| "local".into());
         // What a client should dial. Defaults to the listen address, which is
         // right for a single host and wrong behind NAT, so it is overridable.
-        z.fleet.address = std::env::var("VW_ADDRESS")
-            .unwrap_or_else(|_| format!("{scheme}://{addr}"));
+        z.fleet.address =
+            std::env::var("VW_ADDRESS").unwrap_or_else(|_| format!("{scheme}://{addr}"));
         // The WebTransport address rides beside it whenever that door is
         // configured. Advertised even before the certificate exists: a client
         // that cannot raise it falls back to the address above on its own, so
@@ -5041,17 +5373,14 @@ pub(crate) async fn serve_client(
                 // is what every arrival that has not been shown a list says.
                 let want_room = data.get(6).copied().unwrap_or(0) as u32;
                 let h = C2S_JOIN_HEADER;
-                let want = String::from_utf8_lossy(
-                    data.get(h..h + zlen).unwrap_or_default(),
-                )
-                .to_string();
+                let want =
+                    String::from_utf8_lossy(data.get(h..h + zlen).unwrap_or_default()).to_string();
                 let claimed_name = sanitize_name(&String::from_utf8_lossy(
                     data.get(h + zlen..h + zlen + nlen).unwrap_or_default(),
                 ));
-                let presented = String::from_utf8_lossy(
-                    data.get(h + zlen + nlen..).unwrap_or_default(),
-                )
-                .to_string();
+                let presented =
+                    String::from_utf8_lossy(data.get(h + zlen + nlen..).unwrap_or_default())
+                        .to_string();
                 let mut z = zone.lock().await;
 
                 // A refusal has to say which of six things went wrong,
@@ -5132,10 +5461,7 @@ pub(crate) async fn serve_client(
                 if !want.is_empty() && want != z.zone_name {
                     let _ = tx.try_send(Message::Binary(deny(
                         DENY_WRONG_ZONE,
-                        &format!(
-                            "this instance serves {:?} now; re-browse",
-                            z.zone_name
-                        ),
+                        &format!("this instance serves {:?} now; re-browse", z.zone_name),
                         None,
                     )));
                     break;
@@ -5242,7 +5568,11 @@ pub(crate) async fn serve_client(
                         if z.draining || z.is_banned(&name) {
                             rated_lease = Some(lease);
                             let _ = tx.try_send(Message::Binary(deny(
-                                if z.draining { DENY_DRAINING } else { DENY_BANNED },
+                                if z.draining {
+                                    DENY_DRAINING
+                                } else {
+                                    DENY_BANNED
+                                },
                                 if z.draining {
                                     "this arena began draining while the rated seat was checked"
                                 } else {
@@ -5279,8 +5609,7 @@ pub(crate) async fn serve_client(
                     // whoever it turned away and cannot, once the seat has
                     // gone into the room.
                     let refused = seat_of.clone();
-                    let joined =
-                        z.rooms[idx].watch_join(seat_of, watch_any, tx.clone());
+                    let joined = z.rooms[idx].watch_join(seat_of, watch_any, tx.clone());
                     match joined {
                         Some(id) => {
                             watch = Some((idx, id));
@@ -5441,7 +5770,9 @@ pub(crate) async fn serve_client(
                             Ok(v) => v,
                             Err(e) => {
                                 let mut m = vec![S2C_DENIED, DENY_RATED_SESSION];
-                                m.extend_from_slice(format!("cannot open a rated session: {e}").as_bytes());
+                                m.extend_from_slice(
+                                    format!("cannot open a rated session: {e}").as_bytes(),
+                                );
                                 let _ = tx.try_send(Message::Binary(m));
                                 continue;
                             }
@@ -5661,7 +5992,6 @@ pub(crate) async fn serve_client(
     if let Some(lease) = rated_lease {
         lease.release().await;
     }
-
 }
 
 #[cfg(test)]
@@ -5856,7 +6186,11 @@ mod tests {
         for t in 1..=(INPUT_QUEUE_MAX as u32 * 3) {
             p.schedule(100 + t, sim::BTN_FIRE, 100);
         }
-        assert!(p.pending.len() <= INPUT_QUEUE_MAX, "queue grew to {}", p.pending.len());
+        assert!(
+            p.pending.len() <= INPUT_QUEUE_MAX,
+            "queue grew to {}",
+            p.pending.len()
+        );
     }
 
     /// The compiled ladder has to name the roster this binary actually flies,
@@ -5893,14 +6227,14 @@ mod tests {
         std::fs::create_dir_all(&dir).expect("temp dir");
         std::fs::write(dir.join("ladder.json"), r#"{"Kestrel": 1777.5}"#).expect("write");
         let ladder = load_ladder(dir.to_str().unwrap());
-        assert_eq!(ladder.get("Kestrel").copied(), Some(1777.5), "the file wins");
+        assert_eq!(
+            ladder.get("Kestrel").copied(),
+            Some(1777.5),
+            "the file wins"
+        );
 
         let (cfg, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
-        let mut z = ArenaServer::new(
-            cfg,
-            test_spool(),
-            ladder,
-        );
+        let mut z = ArenaServer::new(cfg, test_spool(), ladder);
         let def = wire_zone(4, 2, 8);
         z.catalog = Some(fleet::WireCatalog {
             version: 1,
@@ -5911,7 +6245,12 @@ mod tests {
         });
         z.serve_zone(&def).expect("a room");
         let room = z.open_room().expect("a second room");
-        let seeded = z.rooms[room].rating.score.get("Kestrel").copied().unwrap_or_default();
+        let seeded = z.rooms[room]
+            .rating
+            .score
+            .get("Kestrel")
+            .copied()
+            .unwrap_or_default();
         let _ = std::fs::remove_dir_all(&dir);
         assert_eq!(
             seeded, 1777.5,
@@ -5962,29 +6301,47 @@ mod tests {
         z
     }
 
-    fn a_token(kind: token::Kind, claimed: bool, name: &str, ratings: Vec<token::ClassRating>)
-        -> String
-    {
+    fn a_token(
+        kind: token::Kind,
+        claimed: bool,
+        name: &str,
+        ratings: Vec<token::ClassRating>,
+    ) -> String {
         a_token_for(4242, kind, claimed, name, ratings)
     }
 
-    fn a_token_for(account: u64, kind: token::Kind, claimed: bool, name: &str,
-                   ratings: Vec<token::ClassRating>) -> String {
-        token::mint(&meta_key(), &token::Claims {
-            account,
-            kind,
-            claimed,
-            name: name.into(),
-            expires: token::now_secs() + 600,
-            ratings,
-        })
+    fn a_token_for(
+        account: u64,
+        kind: token::Kind,
+        claimed: bool,
+        name: &str,
+        ratings: Vec<token::ClassRating>,
+    ) -> String {
+        token::mint(
+            &meta_key(),
+            &token::Claims {
+                account,
+                kind,
+                claimed,
+                name: name.into(),
+                expires: token::now_secs() + 600,
+                ratings,
+            },
+        )
     }
 
     #[test]
     fn a_signed_token_names_the_pilot_and_their_account() {
         let z = serving_with_accounts();
         let t = a_token(token::Kind::Human, true, "Vesper 47", vec![]);
-        let seat = z.identify(&t, "whatever the client typed", false, &pilot::Session::new("ws")).expect("verifies");
+        let seat = z
+            .identify(
+                &t,
+                "whatever the client typed",
+                false,
+                &pilot::Session::new("ws"),
+            )
+            .expect("verifies");
         // The name comes from the token, not from the client. A pilot cannot
         // wear somebody else's call sign by asking to.
         assert_eq!(seat.name, "Vesper 47");
@@ -5997,26 +6354,47 @@ mod tests {
     fn a_guest_is_unknown_rather_than_human() {
         let z = serving_with_accounts();
         let t = a_token(token::Kind::Human, false, "Talon 3", vec![]);
-        let seat = z.identify(&t, "", false, &pilot::Session::new("ws")).expect("verifies");
-        assert_eq!(seat.label, token::Label::Unknown.to_byte(),
-                   "an unclaimed account is somebody we cannot vouch for");
-        assert_eq!(seat.account, Some(4242), "which does not make them anonymous");
+        let seat = z
+            .identify(&t, "", false, &pilot::Session::new("ws"))
+            .expect("verifies");
+        assert_eq!(
+            seat.label,
+            token::Label::Unknown.to_byte(),
+            "an unclaimed account is somebody we cannot vouch for"
+        );
+        assert_eq!(
+            seat.account,
+            Some(4242),
+            "which does not make them anonymous"
+        );
     }
 
     #[test]
     fn a_house_bot_and_a_third_party_bot_are_told_apart() {
         let z = serving_with_accounts();
         let house = z
-            .identify(&a_token(token::Kind::HouseBot, true, "Nine", vec![]), "", true, &pilot::Session::new("ws"))
+            .identify(
+                &a_token(token::Kind::HouseBot, true, "Nine", vec![]),
+                "",
+                true,
+                &pilot::Session::new("ws"),
+            )
             .expect("verifies");
         assert_eq!(house.label, token::Label::HouseBot.to_byte());
         let theirs = z
-            .identify(&a_token(token::Kind::ThirdPartyBot, true, "Someone", vec![]), "", true, &pilot::Session::new("ws"))
+            .identify(
+                &a_token(token::Kind::ThirdPartyBot, true, "Someone", vec![]),
+                "",
+                true,
+                &pilot::Session::new("ws"),
+            )
             .expect("verifies");
         assert_eq!(theirs.label, token::Label::ThirdPartyBot.to_byte());
         // And a bot flying with no account at all is somebody else's by
         // definition, since ours all have one.
-        let undeclared = z.identify("", "Anon", true, &pilot::Session::new("ws")).expect("no token is still a seat");
+        let undeclared = z
+            .identify("", "Anon", true, &pilot::Session::new("ws"))
+            .expect("no token is still a seat");
         assert_eq!(undeclared.label, token::Label::ThirdPartyBot.to_byte());
         assert_eq!(undeclared.account, None);
     }
@@ -6027,29 +6405,56 @@ mod tests {
         // A bot account that stayed quiet would sit in a human seat wearing a
         // human's label, which is the one thing the declaration exists to stop.
         let quiet_bot = a_token(token::Kind::HouseBot, true, "Nine", vec![]);
-        assert!(z.identify(&quiet_bot, "", false, &pilot::Session::new("ws")).is_err());
+        assert!(z
+            .identify(&quiet_bot, "", false, &pilot::Session::new("ws"))
+            .is_err());
         // And a human account claiming the bot exemption takes a seat that the
         // cap was supposed to protect.
         let loud_human = a_token(token::Kind::Human, true, "Vesper 47", vec![]);
-        assert!(z.identify(&loud_human, "", true, &pilot::Session::new("ws")).is_err());
+        assert!(z
+            .identify(&loud_human, "", true, &pilot::Session::new("ws"))
+            .is_err());
     }
 
     #[test]
     fn a_forged_or_expired_token_does_not_get_in() {
         let z = serving_with_accounts();
         let other = ed25519_dalek::SigningKey::from_bytes(&[9u8; 32]);
-        let forged = token::mint(&other, &token::Claims {
-            account: 1, kind: token::Kind::Human, claimed: true,
-            name: "Impostor".into(), expires: token::now_secs() + 600, ratings: vec![],
-        });
-        assert!(z.identify(&forged, "", false, &pilot::Session::new("ws")).is_err(), "another key is not our key");
+        let forged = token::mint(
+            &other,
+            &token::Claims {
+                account: 1,
+                kind: token::Kind::Human,
+                claimed: true,
+                name: "Impostor".into(),
+                expires: token::now_secs() + 600,
+                ratings: vec![],
+            },
+        );
+        assert!(
+            z.identify(&forged, "", false, &pilot::Session::new("ws"))
+                .is_err(),
+            "another key is not our key"
+        );
 
-        let stale = token::mint(&meta_key(), &token::Claims {
-            account: 1, kind: token::Kind::Human, claimed: true,
-            name: "Yesterday".into(), expires: token::now_secs() - 1, ratings: vec![],
-        });
-        let why = z.identify(&stale, "", false, &pilot::Session::new("ws")).expect_err("expired");
-        assert!(why.contains("log in again"), "an expired token is a login, not an accusation");
+        let stale = token::mint(
+            &meta_key(),
+            &token::Claims {
+                account: 1,
+                kind: token::Kind::Human,
+                claimed: true,
+                name: "Yesterday".into(),
+                expires: token::now_secs() - 1,
+                ratings: vec![],
+            },
+        );
+        let why = z
+            .identify(&stale, "", false, &pilot::Session::new("ws"))
+            .expect_err("expired");
+        assert!(
+            why.contains("log in again"),
+            "an expired token is a login, not an accusation"
+        );
     }
 
     #[test]
@@ -6058,8 +6463,13 @@ mod tests {
         // like from inside a room: play continues, nothing durable is written.
         let z = serving(1, 6, 16);
         let t = a_token(token::Kind::Human, true, "Vesper 47", vec![]);
-        let seat = z.identify(&t, "Local Name", false, &pilot::Session::new("ws")).expect("a seat regardless");
-        assert_eq!(seat.account, None, "no key in the catalog, so no token is read");
+        let seat = z
+            .identify(&t, "Local Name", false, &pilot::Session::new("ws"))
+            .expect("a seat regardless");
+        assert_eq!(
+            seat.account, None,
+            "no key in the catalog, so no token is read"
+        );
         assert_eq!(seat.name, "Local Name");
         assert_eq!(seat.label, token::Label::Unknown.to_byte());
     }
@@ -6067,24 +6477,53 @@ mod tests {
     #[test]
     fn a_carried_rating_seeds_the_room_and_a_new_class_does_not() {
         let mut z = serving_with_accounts();
-        let t = a_token(token::Kind::Human, true, "Veteran", vec![
-            token::ClassRating { class: "arena".into(), rating: 1640.0, games: 40 },
-            token::ClassRating { class: "hockey".into(), rating: 1000.0, games: 5 },
-        ]);
-        let seat = z.identify(&t, "", false, &pilot::Session::new("ws")).expect("verifies");
+        let t = a_token(
+            token::Kind::Human,
+            true,
+            "Veteran",
+            vec![
+                token::ClassRating {
+                    class: "arena".into(),
+                    rating: 1640.0,
+                    games: 40,
+                },
+                token::ClassRating {
+                    class: "hockey".into(),
+                    rating: 1000.0,
+                    games: 5,
+                },
+            ],
+        );
+        let seat = z
+            .identify(&t, "", false, &pilot::Session::new("ws"))
+            .expect("verifies");
         let rid = seat.rid.clone();
         z.restore_pilot(0, &seat);
         // The zone's mode is the class, and this one is an arena.
         assert_eq!(z.rating_class(), "arena");
         assert_eq!(z.rooms[0].rating.rating_of(&rid), 1640.0);
-        assert_eq!(z.rooms[0].rating.games_of(&rid), 40, "a rating without its count places again");
+        assert_eq!(
+            z.rooms[0].rating.games_of(&rid),
+            40,
+            "a rating without its count places again"
+        );
 
         // A pilot who has never played this zone's class arrives unrated,
         // which is what a first game in a new class is supposed to be.
-        let fresh = a_token_for(99, token::Kind::Human, true, "Newcomer", vec![
-            token::ClassRating { class: "hockey".into(), rating: 1900.0, games: 99 },
-        ]);
-        let fresh = z.identify(&fresh, "", false, &pilot::Session::new("ws")).expect("verifies");
+        let fresh = a_token_for(
+            99,
+            token::Kind::Human,
+            true,
+            "Newcomer",
+            vec![token::ClassRating {
+                class: "hockey".into(),
+                rating: 1900.0,
+                games: 99,
+            }],
+        );
+        let fresh = z
+            .identify(&fresh, "", false, &pilot::Session::new("ws"))
+            .expect("verifies");
         z.restore_pilot(0, &fresh);
         assert_eq!(z.rooms[0].rating.games_of(&fresh.rid), 0);
     }
@@ -6100,8 +6539,7 @@ mod tests {
     /// catalog-served arena runs on anyway.
     fn serving(rooms: u32, target: u32, cap: u32) -> ArenaServer {
         let (cfg, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
-        let mut z = ArenaServer::new(cfg, test_spool(),
-                              HashMap::new());
+        let mut z = ArenaServer::new(cfg, test_spool(), HashMap::new());
         let def = wire_zone(rooms, target, cap);
         z.catalog = Some(fleet::WireCatalog {
             version: 1,
@@ -6171,13 +6609,17 @@ mod tests {
         for i in 0..4 {
             let (tx, _rx) = mpsc::channel(OUT_QUEUE);
             assert!(
-                z.rooms[0].join(Seat::guest(format!("h{i}"), false), 0, 4, tx).is_some(),
+                z.rooms[0]
+                    .join(Seat::guest(format!("h{i}"), false), 0, 4, tx)
+                    .is_some(),
                 "human {i} was refused a seat a bot was not holding"
             );
         }
         // And the cap is still a cap.
         let (tx, _rx) = mpsc::channel(OUT_QUEUE);
-        assert!(z.rooms[0].join(Seat::guest("overflow", false), 0, 4, tx).is_none());
+        assert!(z.rooms[0]
+            .join(Seat::guest("overflow", false), 0, 4, tx)
+            .is_none());
     }
 
     #[test]
@@ -6196,7 +6638,11 @@ mod tests {
             .join(Seat::guest("latecomer", false), 0, 32, tx)
             .expect("a room of bots is not full");
         assert_eq!(z.rooms[0].humans(), 1);
-        assert_eq!(z.rooms[0].bot_count(), seats - 1, "exactly one bot gave way");
+        assert_eq!(
+            z.rooms[0].bot_count(),
+            seats - 1,
+            "exactly one bot gave way"
+        );
         // Everybody here spawned on top of everybody else, so every bot is in
         // somebody's sight and the ordering falls through to its tie-break,
         // which is still the newest. Which bot is chosen when they are not all
@@ -6293,10 +6739,17 @@ mod tests {
     fn an_arena_with_no_zone_is_not_a_game() {
         let (cfg, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
         let mut z = ArenaServer::new(cfg, test_spool(), HashMap::new());
-        assert!(z.rooms.is_empty(), "a process nobody has named a zone to holds no room");
+        assert!(
+            z.rooms.is_empty(),
+            "a process nobody has named a zone to holds no room"
+        );
         assert_eq!(z.bots_wanted(), 0, "and so asks the bot server for nobody");
         assert_eq!(z.room_for_bot(), None);
-        assert_eq!(z.room_for_join(), None, "and has nowhere to seat an arrival");
+        assert_eq!(
+            z.room_for_join(),
+            None,
+            "and has nowhere to seat an arrival"
+        );
         assert_eq!(z.room_to_watch(), None, "nor anything to show a watcher");
 
         // Told what it is, it becomes a game.
@@ -6315,7 +6768,10 @@ mod tests {
         let mut z = ArenaServer::new(cfg, test_spool(), HashMap::new());
         z.serve_local();
         assert_eq!(z.rooms.len(), 1, "standalone opens the file's room");
-        assert!(z.zone_name.is_empty(), "and takes no name, having chosen nothing");
+        assert!(
+            z.zone_name.is_empty(),
+            "and takes no name, having chosen nothing"
+        );
     }
 
     #[test]
@@ -6330,16 +6786,23 @@ mod tests {
 
         for i in 0..3 {
             let (tx, _rx) = mpsc::channel(OUT_QUEUE);
-            z.rooms[0].join(Seat::guest(format!("h{i}"), false), 0, 32, tx).expect("a seat");
-            assert_eq!(z.rooms[0].bots_wanted(), 51 - (i + 1),
-                       "one human in is one bot out");
+            z.rooms[0]
+                .join(Seat::guest(format!("h{i}"), false), 0, 32, tx)
+                .expect("a seat");
+            assert_eq!(
+                z.rooms[0].bots_wanted(),
+                51 - (i + 1),
+                "one human in is one bot out"
+            );
         }
 
         // Past the target the answer is zero rather than a negative number
         // wrapping into an enormous one, which is what `saturating_sub` is for.
         for i in 3..32 {
             let (tx, _rx) = mpsc::channel(OUT_QUEUE);
-            z.rooms[0].join(Seat::guest(format!("h{i}"), false), 0, 32, tx).expect("a seat");
+            z.rooms[0]
+                .join(Seat::guest(format!("h{i}"), false), 0, 32, tx)
+                .expect("a seat");
         }
         assert_eq!(z.rooms[0].humans(), 32);
         assert_eq!(z.rooms[0].bots_wanted(), 19);
@@ -6418,10 +6881,15 @@ mod tests {
         let mut z = serving(1, 4, 16);
         let ship = seat_bots(&mut z.rooms[0], 1)[0];
         let (tx, _rx) = mpsc::channel(OUT_QUEUE);
-        z.rooms[0].join(Seat::guest("Person", false), 0, 16, tx).expect("a seat");
+        z.rooms[0]
+            .join(Seat::guest("Person", false), 0, 16, tx)
+            .expect("a seat");
 
         let a = &z.rooms[0];
-        assert_eq!(a.names[&ship].bot, true, "the bot says so on the scoreboard");
+        assert_eq!(
+            a.names[&ship].bot, true,
+            "the bot says so on the scoreboard"
+        );
         let human = a.names.iter().find(|(_, k)| k.name == "Person").unwrap();
         assert_eq!(human.1.bot, false);
         // A generated pilot is as much a bot as a calibrated one. `Aperture` is
@@ -6429,11 +6897,16 @@ mod tests {
         let tenth = ai::individual(9);
         assert!(!ai::CALIBRATED.iter().any(|(n, _, _)| *n == tenth.name));
         let (tx, _rx) = mpsc::channel(OUT_QUEUE);
-        z.rooms[0].join(Seat::guest(tenth.name.clone(), true), 0, 16, tx).expect("a seat");
+        z.rooms[0]
+            .join(Seat::guest(tenth.name.clone(), true), 0, 16, tx)
+            .expect("a seat");
         // Marked, which is what holds its K down so a human who kills it moves
         // further than it does.
-        assert!(z.rooms[0].rating.is_bot(&tenth.name),
-                "{} rates as a human", tenth.name);
+        assert!(
+            z.rooms[0].rating.is_bot(&tenth.name),
+            "{} rates as a human",
+            tenth.name
+        );
         assert!(!z.rooms[0].rating.is_bot("Person"));
     }
 
@@ -6449,7 +6922,12 @@ mod tests {
             assert!(seen.insert(e.name.clone()), "individual {n} repeats a name");
             assert!(e.class < 8, "{} flies a hull that does not exist", e.name);
             assert!(e.skill > 0.0 && e.skill <= 1.0, "{} has no skill", e.name);
-            assert_eq!(e.name, sanitize_name(&e.name), "{} needs sanitising", e.name);
+            assert_eq!(
+                e.name,
+                sanitize_name(&e.name),
+                "{} needs sanitising",
+                e.name
+            );
         }
         // The calibrated nine come first, because they are the pilots whose
         // ratings mean anything.
@@ -6467,10 +6945,10 @@ mod tests {
         let mut def = wire_zone(1, 16, 32);
         def.mode = "warzone".into();
         def.zone_toml = "description = \"war\"\nteams = [\"Keel\", \"Vantage\"]\n\
-                         [arena]\nflags = 4\n".into();
+                         [arena]\nflags = 4\n"
+            .into();
         let (cfg, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
-        let mut z = ArenaServer::new(cfg, test_spool(),
-                              HashMap::new());
+        let mut z = ArenaServer::new(cfg, test_spool(), HashMap::new());
         z.serve_zone(&def).expect("a room");
         // The bot server would put these here. A round needs a population and
         // this test is about how long one takes, so it seats its own rather
@@ -6480,8 +6958,14 @@ mod tests {
             brains.push(ai::Bot::new(ship, ai::individual(i).skill));
         }
         let route = nav::Nav::build(&z.rooms[0].world.map);
-        let sides: Vec<u8> = z.rooms[0].world.state.ships.iter()
-            .filter(|s| s.active != 0).map(|s| s.team).collect();
+        let sides: Vec<u8> = z.rooms[0]
+            .world
+            .state
+            .ships
+            .iter()
+            .filter(|s| s.active != 0)
+            .map(|s| s.team)
+            .collect();
         let a = sides.iter().filter(|t| **t == 0).count();
         println!("roster sides: {a} against {}", sides.len() - a);
 
@@ -6542,9 +7026,11 @@ mod tests {
             let f = a.world.state.flags[i];
             let (fx, fy) = (f.x as f32 / 256.0, f.y as f32 / 256.0);
             let d = ((fx - mid).powi(2) + (fy - mid).powi(2)).sqrt();
-            assert!(d <= ai::SIGHT,
-                    "flag {i} is {d:.0} px from the middle, and a pilot sees {}",
-                    ai::SIGHT);
+            assert!(
+                d <= ai::SIGHT,
+                "flag {i} is {d:.0} px from the middle, and a pilot sees {}",
+                ai::SIGHT
+            );
             for k in 0..i {
                 let g = a.world.state.flags[k];
                 let (gx, gy) = (g.x as f32 / 256.0, g.y as f32 / 256.0);
@@ -6554,8 +7040,10 @@ mod tests {
         // And not a scrum: neighbours far enough apart that one pilot cannot sit
         // on the whole set. They were four tiles apart once, which was one fight
         // in one room and the reason they were flung to the corners.
-        assert!(spacing >= 40.0 * 16.0,
-                "flags are {spacing:.0} px apart, which one pilot covers at once");
+        assert!(
+            spacing >= 40.0 * 16.0,
+            "flags are {spacing:.0} px apart, which one pilot covers at once"
+        );
     }
 
     #[test]
@@ -6596,7 +7084,9 @@ mod tests {
         // And a joining human is their own side too, not folded in with the
         // pilot whose seat they took.
         let (tx, _rx) = mpsc::channel(OUT_QUEUE);
-        let id = z.rooms[0].join(Seat::guest("human", false), 0, 16, tx).expect("a seat");
+        let id = z.rooms[0]
+            .join(Seat::guest("human", false), 0, 16, tx)
+            .expect("a seat");
         let ship = z.rooms[0].players[&id].ship;
         let mine = z.rooms[0].world.state.ships[ship as usize].team;
         for (i, s) in z.rooms[0].world.state.ships.iter().enumerate() {
@@ -6623,14 +7113,20 @@ mod tests {
         for _ in 0..400 {
             let fresh = bot.looks_due().then(|| ai::scan(&a.world, keep));
             let buttons = bot.think(&ai::own(&a.world, keep), &route, fresh);
-            a.world.step(&[sim::sim_input { ship: keep, buttons }]);
+            a.world.step(&[sim::sim_input {
+                ship: keep,
+                buttons,
+            }]);
             let sh = &a.world.state.ships[keep as usize];
             if sh.vx != 0 || sh.vy != 0 {
                 moved = true;
                 break;
             }
         }
-        assert!(moved, "a pilot with nobody in sight sat still instead of looking");
+        assert!(
+            moved,
+            "a pilot with nobody in sight sat still instead of looking"
+        );
     }
 
     /// Put one green on the map, wherever asked, and nothing else.
@@ -6689,7 +7185,13 @@ mod tests {
         let px = |t: i32| (t * 16 + 8) as f32;
         let stuck_on = ai::Scan {
             prize: Some((px(511), px(506))),
-            foe: Some(ai::Foe { x: px(503), y: px(517), vx: 0.0, vy: 0.0, clear: true }),
+            foe: Some(ai::Foe {
+                x: px(503),
+                y: px(517),
+                vx: 0.0,
+                vy: 0.0,
+                clear: true,
+            }),
             company: true,
             flag: None,
             threat: None,
@@ -6744,16 +7246,21 @@ mod tests {
         let room = &mut z.rooms[0];
 
         let (tx, _rx) = mpsc::channel(OUT_QUEUE);
-        let hunter = room.join(Seat::guest("hunter", false), 0, 16, tx).expect("a seat");
+        let hunter = room
+            .join(Seat::guest("hunter", false), 0, 16, tx)
+            .expect("a seat");
         let (tx, _rx) = mpsc::channel(OUT_QUEUE);
-        let prey = room.join(Seat::guest("prey", false), 0, 16, tx).expect("a seat");
+        let prey = room
+            .join(Seat::guest("prey", false), 0, 16, tx)
+            .expect("a seat");
         let hunter_rid = room.players[&hunter].rid.clone();
         let prey_rid = room.players[&prey].rid.clone();
         let ship = room.players[&prey].ship;
 
         // Shot to a quarter tank this instant, then the tab closes.
         let tick = room.world.state.tick;
-        room.rating.damage(tick, &prey_rid, &hunter_rid, 1000, false);
+        room.rating
+            .damage(tick, &prey_rid, &hunter_rid, 1000, false);
         let ceiling = room.world.eff_max_energy(ship as usize);
         room.world.state.ships[ship as usize].energy = ceiling / 4;
         room.leave(prey, pilot::why::LEFT);
@@ -6778,9 +7285,13 @@ mod tests {
         let room = &mut z.rooms[0];
 
         let (tx, _rx) = mpsc::channel(OUT_QUEUE);
-        let hunter = room.join(Seat::guest("hunter", false), 0, 16, tx).expect("a seat");
+        let hunter = room
+            .join(Seat::guest("hunter", false), 0, 16, tx)
+            .expect("a seat");
         let (tx, _rx) = mpsc::channel(OUT_QUEUE);
-        let prey = room.join(Seat::guest("prey", false), 0, 16, tx).expect("a seat");
+        let prey = room
+            .join(Seat::guest("prey", false), 0, 16, tx)
+            .expect("a seat");
         let hunter_rid = room.players[&hunter].rid.clone();
         let prey_rid = room.players[&prey].rid.clone();
 
@@ -6807,12 +7318,13 @@ mod tests {
         let mut def = wire_zone(1, 6, 16);
         def.zone_toml = "description = \"no kit\"\n[arena]\nspawn_prizes = 0\n".into();
         let (cfg, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
-        let mut z = ArenaServer::new(cfg, test_spool(),
-                              HashMap::new());
+        let mut z = ArenaServer::new(cfg, test_spool(), HashMap::new());
         z.serve_zone(&def).expect("a room");
 
         let (tx, _rx) = mpsc::channel(OUT_QUEUE);
-        let id = z.rooms[0].join(Seat::guest("first", false), 0, 16, tx).expect("a seat");
+        let id = z.rooms[0]
+            .join(Seat::guest("first", false), 0, 16, tx)
+            .expect("a seat");
         let ship = z.rooms[0].players[&id].ship;
         {
             let sh = &mut z.rooms[0].world.state.ships[ship as usize];
@@ -6829,19 +7341,28 @@ mod tests {
         z.rooms[0].leave(id, pilot::why::LEFT);
 
         let (tx, _rx) = mpsc::channel(OUT_QUEUE);
-        let id2 = z.rooms[0].join(Seat::guest("second", false), 0, 16, tx).expect("a seat");
+        let id2 = z.rooms[0]
+            .join(Seat::guest("second", false), 0, 16, tx)
+            .expect("a seat");
         let ship2 = z.rooms[0].players[&id2].ship;
         assert_eq!(ship2, ship, "the vacated seat is the one handed back");
 
         let sh = z.rooms[0].world.state.ships[ship2 as usize];
-        assert_eq!(sh.level, [0; sim::TRIG_COUNT], "weapon levels are not inherited");
+        assert_eq!(
+            sh.level,
+            [0; sim::TRIG_COUNT],
+            "weapon levels are not inherited"
+        );
         assert_eq!(sh.mods, [0; sim::TRIG_COUNT], "nor add-ons");
         assert_eq!(sh.charge, [0; sim::MAX_CHARGES], "nor charges");
         assert_eq!(sh.up, [0; sim::UP_COUNT], "nor stat upgrades");
         assert_eq!(sh.earned, 0, "nor bounty somebody else earned");
         assert_eq!(sh.points, 0, "nor their score");
         assert_eq!(sh.vx, 0, "and it arrives at rest");
-        assert_ne!(sh.x, flown_to, "at a start, not where the last one left off");
+        assert_ne!(
+            sh.x, flown_to,
+            "at a start, not where the last one left off"
+        );
     }
 
     /// The other half of not inheriting a seat: what the arriving pilot gets
@@ -6856,21 +7377,26 @@ mod tests {
     fn an_arriving_pilot_gets_the_zones_spawn_kit() {
         let mut def = wire_zone(1, 6, 16);
         def.zone_toml = "description = \"a zone with a kit\"\n\
-                         [arena]\nspawn_prizes = 30\n".into();
+                         [arena]\nspawn_prizes = 30\n"
+            .into();
         let (cfg, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
-        let mut z = ArenaServer::new(cfg, test_spool(),
-                              HashMap::new());
+        let mut z = ArenaServer::new(cfg, test_spool(), HashMap::new());
         z.serve_zone(&def).expect("a room");
 
         let (tx, _rx) = mpsc::channel(OUT_QUEUE);
-        let id = z.rooms[0].join(Seat::guest("arrival", false), 0, 16, tx).expect("a seat");
+        let id = z.rooms[0]
+            .join(Seat::guest("arrival", false), 0, 16, tx)
+            .expect("a seat");
         let ship = z.rooms[0].players[&id].ship as usize;
         let sh = z.rooms[0].world.state.ships[ship];
         // One green is one bounty, whatever it turned out to be, so thirty
         // rolls is a bounty near thirty. Near rather than exactly: rust takes
         // one back now and then, which is the zone's own setting doing its job.
         let bounty = unsafe { sim::sim_bounty(&sh) };
-        assert!(bounty > 20, "an arrival carries the kit, not nothing: {bounty}");
+        assert!(
+            bounty > 20,
+            "an arrival carries the kit, not nothing: {bounty}"
+        );
         // And the bar is full of the energy those greens just bought, rather
         // than of the ceiling the ship had before them.
         let full = z.rooms[0].world.eff_max_energy(ship);
@@ -6880,14 +7406,18 @@ mod tests {
         let mut bare = wire_zone(1, 6, 16);
         bare.zone_toml = "description = \"bare\"\n[arena]\nspawn_prizes = 0\n".into();
         let (cfg, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
-        let mut z2 = ArenaServer::new(cfg, test_spool(),
-                               HashMap::new());
+        let mut z2 = ArenaServer::new(cfg, test_spool(), HashMap::new());
         z2.serve_zone(&bare).expect("a room");
         let (tx, _rx) = mpsc::channel(OUT_QUEUE);
-        let id = z2.rooms[0].join(Seat::guest("arrival", false), 0, 16, tx).expect("a seat");
+        let id = z2.rooms[0]
+            .join(Seat::guest("arrival", false), 0, 16, tx)
+            .expect("a seat");
         let ship = z2.rooms[0].players[&id].ship as usize;
-        assert_eq!(z2.rooms[0].world.state.ships[ship].up, [0; sim::UP_COUNT],
-                   "and a zone with no kit hands out no kit");
+        assert_eq!(
+            z2.rooms[0].world.state.ships[ship].up,
+            [0; sim::UP_COUNT],
+            "and a zone with no kit hands out no kit"
+        );
     }
 
     /// A room built from a zone with named sides, for the team tests below.
@@ -6918,8 +7448,7 @@ mod tests {
         let one = seat_human(&mut a, "one");
         let two = seat_human(&mut a, "two");
         assert_ne!(
-            a.world.state.ships[one as usize].team,
-            a.world.state.ships[two as usize].team,
+            a.world.state.ships[one as usize].team, a.world.state.ships[two as usize].team,
             "the second arrival lands on the emptier side"
         );
     }
@@ -6928,9 +7457,7 @@ mod tests {
     fn a_full_side_is_the_only_thing_that_refuses_a_join() {
         // The whole team policy is three caps, so this is the whole of what a
         // player can be told no about.
-        let mut a = room_with_teams(
-            "teams = [\"Keel\", \"Vantage\"]\nmax_humans_per_team = 1\n",
-        );
+        let mut a = room_with_teams("teams = [\"Keel\", \"Vantage\"]\nmax_humans_per_team = 1\n");
         let one = seat_human(&mut a, "one");
         let two = seat_human(&mut a, "two");
         let (first, second) = (
@@ -6938,7 +7465,10 @@ mod tests {
             a.world.state.ships[two as usize].team,
         );
         assert!(!a.join_team(two, first), "one a side means one a side");
-        assert_eq!(a.world.state.ships[two as usize].team, second, "and no move");
+        assert_eq!(
+            a.world.state.ships[two as usize].team, second,
+            "and no move"
+        );
         // The cap counts people, not seats: a bot on that side is not in the
         // way of a human.
         seat_bots(&mut a, 2);
@@ -6985,7 +7515,10 @@ mod tests {
         // kick, and the side stops existing behind them.
         assert!(a.join_team(founder, 0));
         assert!(a.join_team(guest, 0));
-        assert!(!a.teams.contains_key(&team), "an empty private side is gone");
+        assert!(
+            !a.teams.contains_key(&team),
+            "an empty private side is gone"
+        );
     }
 
     #[test]
@@ -7006,7 +7539,11 @@ mod tests {
         let mut sorted = seen.clone();
         sorted.sort();
         sorted.dedup();
-        assert_eq!(sorted.len(), seen.len(), "four founds, four names: {seen:?}");
+        assert_eq!(
+            sorted.len(),
+            seen.len(),
+            "four founds, four names: {seen:?}"
+        );
 
         // The cursor wraps rather than climbing, so the words come back round
         // instead of turning into Anvil Watch 30 in a room that churns.
@@ -7023,9 +7560,7 @@ mod tests {
     fn a_zone_can_say_there_is_no_third_side() {
         // max_teams at the count of its own is how a flag round refuses to
         // seat a side its mode cannot score.
-        let mut a = room_with_teams(
-            "teams = [\"Keel\", \"Vantage\"]\nmax_teams = 2\n",
-        );
+        let mut a = room_with_teams("teams = [\"Keel\", \"Vantage\"]\nmax_teams = 2\n");
         let ship = seat_human(&mut a, "one");
         assert!(a.free_team_byte().is_none(), "no room for another");
         assert!(!a.found_and_move(ship), "so nobody may found one");
@@ -7039,7 +7574,9 @@ mod tests {
         // asks whether two sides differ, so the zone ran with combat off.
         let mut a = room_with_teams("teams = []\nmax_humans_per_team = 3\n");
         assert!(a.free_for_all());
-        let ships: Vec<u8> = (0..4).map(|i| seat_human(&mut a, &format!("p{i}"))).collect();
+        let ships: Vec<u8> = (0..4)
+            .map(|i| seat_human(&mut a, &format!("p{i}")))
+            .collect();
         let sides: std::collections::HashSet<u8> = ships
             .iter()
             .map(|s| a.world.state.ships[*s as usize].team)
@@ -7056,7 +7593,10 @@ mod tests {
             assert!(a.join_team(*guest, team));
         }
         assert!(a.invite(host, ships[3]));
-        assert!(!a.join_team(ships[3], team), "three is the pact this zone allows");
+        assert!(
+            !a.join_team(ships[3], team),
+            "three is the pact this zone allows"
+        );
     }
 
     #[test]
@@ -7065,7 +7605,9 @@ mod tests {
         // that from a stomp into a raid, so it has to move after them.
         let mut a = room_with_teams("teams = [\"Keel\", \"Vantage\"]\n");
         seat_bots(&mut a, 6);
-        let humans: Vec<u8> = (0..4).map(|i| seat_human(&mut a, &format!("p{i}"))).collect();
+        let humans: Vec<u8> = (0..4)
+            .map(|i| seat_human(&mut a, &format!("p{i}")))
+            .collect();
         for h in &humans {
             a.join_team(*h, 0);
         }
@@ -7086,8 +7628,11 @@ mod tests {
         for _ in 0..12 {
             a.rebalance_bots();
         }
-        assert_eq!((a.team_census(0, None), a.team_census(1, None)), settled,
-                   "a balanced room stops moving");
+        assert_eq!(
+            (a.team_census(0, None), a.team_census(1, None)),
+            settled,
+            "a balanced room stops moving"
+        );
     }
 
     #[test]
@@ -7117,7 +7662,10 @@ mod tests {
         seat_bots(&mut a, 2);
         let m = a.teams_msg(ship);
         assert_eq!(m[0], S2C_TEAMS);
-        assert_eq!(m[1], a.world.state.ships[ship as usize].team, "where you are");
+        assert_eq!(
+            m[1], a.world.state.ships[ship as usize].team,
+            "where you are"
+        );
         assert_eq!(m[2], 1, "and whether you may found one");
         let count = m[3] as usize;
         assert_eq!(count, 2);
@@ -7151,8 +7699,7 @@ mod tests {
         def.mode = "warzone".into();
         def.zone_toml = "teams = [\"Keel\", \"Vantage\"]\n".into();
         let (cfg, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
-        let mut z = ArenaServer::new(cfg, test_spool(),
-                              HashMap::new());
+        let mut z = ArenaServer::new(cfg, test_spool(), HashMap::new());
         z.serve_zone(&def).expect("a room");
         assert!(!z.rooms[0].free_for_all());
         seat_bots(&mut z.rooms[0], 6);
@@ -7212,7 +7759,10 @@ mod tests {
             let name = String::from_utf8(m[o + HEAD..o + HEAD + len].to_vec())
                 .expect("names are sanitised to printable ascii before they get here");
             o += HEAD + len;
-            assert!(read.insert(ship, (name, label)).is_none(), "ship {ship} twice");
+            assert!(
+                read.insert(ship, (name, label)).is_none(),
+                "ship {ship} twice"
+            );
         }
         // The watcher section: count, then label and name per watcher. Walked
         // even when empty, because the count byte is part of the wire and a
@@ -7240,7 +7790,8 @@ mod tests {
             "the human we seated is in it, and not labeled a bot"
         );
         assert!(
-            read.values().any(|(_, l)| *l == token::Label::ThirdPartyBot.to_byte()),
+            read.values()
+                .any(|(_, l)| *l == token::Label::ThirdPartyBot.to_byte()),
             "a bot that declared itself without an account is somebody else's"
         );
     }
@@ -7303,11 +7854,18 @@ mod tests {
 
         let mut w = sim::World::new(1);
         assert!(w.apply_snapshot(&last[6..]), "the snapshot unpacks");
-        assert_eq!(w.state.ship_count, a.world.state.ship_count,
-                   "the seat count is still the arena's, so indices keep meaning");
-        assert!(w.state.ships[near as usize].active != 0, "I am in my own snapshot");
-        assert_eq!(w.state.ships[far as usize].active, 0,
-                   "and the far seat is not");
+        assert_eq!(
+            w.state.ship_count, a.world.state.ship_count,
+            "the seat count is still the arena's, so indices keep meaning"
+        );
+        assert!(
+            w.state.ships[near as usize].active != 0,
+            "I am in my own snapshot"
+        );
+        assert_eq!(
+            w.state.ships[far as usize].active, 0,
+            "and the far seat is not"
+        );
         assert_eq!(
             (w.state.ships[far as usize].x, w.state.ships[far as usize].y),
             (0, 0),
@@ -7335,8 +7893,14 @@ mod tests {
             .find(|m| m.first() == Some(&S2C_PRIZE))
             .expect("the collector receives the authoritative outcome");
         assert_eq!(prize.len(), 3);
-        assert!(prize[1] < sim::PRIZE_COUNT as u8, "the rolled type is on the tree");
-        assert!(prize[2] == 1 || prize[2] == 0xff, "the sign is grant or rust");
+        assert!(
+            prize[1] < sim::PRIZE_COUNT as u8,
+            "the rolled type is on the tree"
+        );
+        assert!(
+            prize[2] == 1 || prize[2] == 0xff,
+            "the sign is grant or rust"
+        );
     }
 
     #[test]
@@ -7354,7 +7918,10 @@ mod tests {
         drain(&mut far_rx);
 
         a.world.state.ships[shooter as usize].charge[0] = 3;
-        a.world.step(&[sim::sim_input { ship: shooter, buttons: sim::BTN_USE }]);
+        a.world.step(&[sim::sim_input {
+            ship: shooter,
+            buttons: sim::BTN_USE,
+        }]);
         a.score_events();
 
         let near_messages = drain(&mut near_rx);
@@ -7369,11 +7936,15 @@ mod tests {
             a.world.state.ships[shooter as usize].x,
         );
         assert!(
-            drain(&mut shooter_rx).iter().all(|m| m.first() != Some(&S2C_CHARGE)),
+            drain(&mut shooter_rx)
+                .iter()
+                .all(|m| m.first() != Some(&S2C_CHARGE)),
             "the owner already predicts the action",
         );
         assert!(
-            drain(&mut far_rx).iter().all(|m| m.first() != Some(&S2C_CHARGE)),
+            drain(&mut far_rx)
+                .iter()
+                .all(|m| m.first() != Some(&S2C_CHARGE)),
             "the action does not leak beyond fair sight",
         );
         assert_eq!(charge.len(), 11, "no remaining inventory count travels");
@@ -7399,7 +7970,10 @@ mod tests {
         let (me, _, mut rx) = seat_rx(&mut a, "layer");
 
         let laid = a.world.state.ships[me as usize];
-        a.world.step(&[sim::sim_input { ship: me, buttons: sim::BTN_MINE }]);
+        a.world.step(&[sim::sim_input {
+            ship: me,
+            buttons: sim::BTN_MINE,
+        }]);
         assert_eq!(a.world.state.weapon_count, 1, "a mine is in the world");
         let mine = a.world.state.weapons[0];
         assert_eq!(mine.owner, me, "and it is this pilot's");
@@ -7408,7 +7982,10 @@ mod tests {
         send_far(&mut a, me);
         let sh = &a.world.state.ships[me as usize];
         let gap = ((sh.x - laid.x) as i64).abs();
-        assert!(gap > FAIR_INTEREST as i64, "the pilot is outside fair sight");
+        assert!(
+            gap > FAIR_INTEREST as i64,
+            "the pilot is outside fair sight"
+        );
 
         let mut buf = vec![0u8; sim::PACK_MAX];
         a.broadcast_snapshot(&mut buf);
@@ -7417,9 +7994,15 @@ mod tests {
         let mut w = sim::World::new(1);
         assert!(w.apply_snapshot(&last[6..]), "the snapshot unpacks");
         assert_eq!(w.state.weapon_count, 1, "their own mine is still in it");
-        assert_eq!((w.state.weapons[0].x, w.state.weapons[0].y), (mine.x, mine.y),
-                   "at the pixel they left it on");
-        assert_eq!(w.state.weapons[0].life, mine.life, "and on the clock it has");
+        assert_eq!(
+            (w.state.weapons[0].x, w.state.weapons[0].y),
+            (mine.x, mine.y),
+            "at the pixel they left it on"
+        );
+        assert_eq!(
+            w.state.weapons[0].life, mine.life,
+            "and on the clock it has"
+        );
 
         // And it is theirs that travels, not everybody's: the pilot next to
         // them, equally far from the mine, is told nothing about it.
@@ -7430,8 +8013,10 @@ mod tests {
         let last = got.last().expect("a snapshot for the stranger");
         let mut w2 = sim::World::new(1);
         assert!(w2.apply_snapshot(&last[6..]));
-        assert_eq!(w2.state.weapon_count, 0,
-                   "somebody else's mine that far off is not their business");
+        assert_eq!(
+            w2.state.weapon_count, 0,
+            "somebody else's mine that far off is not their business"
+        );
     }
 
     #[test]
@@ -7444,7 +8029,12 @@ mod tests {
         let (_, _, mut rx) = seat_rx(&mut a, "claims-to-be-a-bot");
         // Same shape as a third-party bot: declared, and labelled by the token
         // rather than by the claim.
-        let id = *a.players.iter().find(|(_, p)| p.name == "claims-to-be-a-bot").unwrap().0;
+        let id = *a
+            .players
+            .iter()
+            .find(|(_, p)| p.name == "claims-to-be-a-bot")
+            .unwrap()
+            .0;
         let ship = a.players[&id].ship;
         a.players.get_mut(&id).unwrap().bot = true;
         if let Some(seat) = a.names.get_mut(&ship) {
@@ -7460,8 +8050,10 @@ mod tests {
         let last = got.last().expect("a snapshot arrived");
         let mut w = sim::World::new(1);
         assert!(w.apply_snapshot(&last[6..]));
-        assert_eq!(w.state.ships[far as usize].active, 0,
-                   "a declared bot is filtered exactly like the person running it");
+        assert_eq!(
+            w.state.ships[far as usize].active, 0,
+            "a declared bot is filtered exactly like the person running it"
+        );
     }
 
     #[test]
@@ -7484,8 +8076,10 @@ mod tests {
         let last = got.last().expect("a snapshot arrived");
         let mut w = sim::World::new(1);
         assert!(w.apply_snapshot(&last[6..]));
-        assert!(w.state.ships[far as usize].active != 0,
-                "ours sees the whole room");
+        assert!(
+            w.state.ships[far as usize].active != 0,
+            "ours sees the whole room"
+        );
     }
 
     #[test]
@@ -7510,7 +8104,9 @@ mod tests {
             let kills = u16::from_le_bytes([m[o + 6], m[o + 7]]);
             let deaths = u16::from_le_bytes([m[o + 8], m[o + 9]]);
             let len = m[o + 16] as usize;
-            if ship == far { found = Some((kills, deaths)); }
+            if ship == far {
+                found = Some((kills, deaths));
+            }
             o += 17 + len;
         }
         assert_eq!(found, Some((7, 3)), "the far seat's score is on the roster");
@@ -7540,9 +8136,9 @@ mod tests {
 
         let sh = &a.world.state.ships[target as usize];
         let mut fresh = vec![0u8; sim::PACK_MAX];
-        let n = a.world.pack_around(
-            &mut fresh, sh.x, sh.y, FAIR_INTEREST, target, 255, 0,
-        );
+        let n = a
+            .world
+            .pack_around(&mut fresh, sh.x, sh.y, FAIR_INTEREST, target, 255, 0);
         assert!(n > 0);
         assert_eq!(&last[6..], &fresh[..n as usize], "byte for byte");
     }
@@ -7565,8 +8161,7 @@ mod tests {
         let mut view = sim::World::new(1);
         assert!(view.apply_snapshot(&last[6..]));
         assert_eq!(
-            view.state.ships[hidden as usize].active,
-            0,
+            view.state.ships[hidden as usize].active, 0,
             "a ship inside the old 160-tile ceiling but outside fair sight stays hidden",
         );
     }
@@ -7589,9 +8184,9 @@ mod tests {
         let last = got.last().expect("a follow snapshot");
         let sh = &a.world.state.ships[bots[0] as usize];
         let mut fresh = vec![0u8; sim::PACK_MAX];
-        let n = a.world.pack_around(
-            &mut fresh, sh.x, sh.y, FAIR_INTEREST, bots[0], 255, 0,
-        );
+        let n = a
+            .world
+            .pack_around(&mut fresh, sh.x, sh.y, FAIR_INTEREST, bots[0], 255, 0);
         assert_eq!(&last[6..], &fresh[..n as usize], "human radius, always");
     }
 
@@ -7604,8 +8199,7 @@ mod tests {
         let keel = seat_human(&mut a, "keel");
         let (vantage, wid, _rx) = seat_rx(&mut a, "vantage");
         assert_ne!(
-            a.world.state.ships[keel as usize].team,
-            a.world.state.ships[vantage as usize].team,
+            a.world.state.ships[keel as usize].team, a.world.state.ships[vantage as usize].team,
             "the arrivals spread over the two sides"
         );
         assert!(a.sit_out(wid, keel, false, false), "sitting out succeeds");
@@ -7619,7 +8213,11 @@ mod tests {
         a.set_watch(wid, keel);
         let mut buf = vec![0u8; sim::PACK_MAX];
         a.broadcast_snapshot(&mut buf);
-        assert_eq!(a.watchers[&wid].mode, WatchMode::Channel, "asked again, same floor");
+        assert_eq!(
+            a.watchers[&wid].mode,
+            WatchMode::Channel,
+            "asked again, same floor"
+        );
         assert_eq!(a.world.hash(), h0, "watching is read-only on the world");
     }
 
@@ -7632,7 +8230,11 @@ mod tests {
         let (tx2, mut rx2) = mpsc::channel(OUT_QUEUE);
         let w1 = a.watch_join(Seat::guest("one", false), false, tx1).unwrap();
         let _w2 = a.watch_join(Seat::guest("two", false), false, tx2).unwrap();
-        assert_eq!(a.watchers[&w1].mode, WatchMode::Channel, "arrivals get the channel");
+        assert_eq!(
+            a.watchers[&w1].mode,
+            WatchMode::Channel,
+            "arrivals get the channel"
+        );
 
         let mut buf = vec![0u8; sim::PACK_MAX];
         for _ in 0..12 {
@@ -7665,7 +8267,8 @@ mod tests {
         let humans = a.humans();
         let bots_wanted = a.bots_wanted();
         let (tx, _rx) = mpsc::channel(OUT_QUEUE);
-        a.watch_join(Seat::guest("gallery", false), false, tx).unwrap();
+        a.watch_join(Seat::guest("gallery", false), false, tx)
+            .unwrap();
         assert_eq!(a.humans(), humans, "not a human in the cap's sense");
         assert_eq!(a.bots_wanted(), bots_wanted, "and no ballast moves for one");
         assert_eq!(z.total_players(), 2, "the directory count is people flying");
@@ -7676,7 +8279,10 @@ mod tests {
         let mut a = room_with_teams("teams = [\"Keel\"]\n");
         let (ship, id, mut rx) = seat_rx(&mut a, "pilot");
         assert!(a.sit_out(id, 255, false, false));
-        assert_eq!(a.world.state.ships[ship as usize].active, 0, "the hull despawned");
+        assert_eq!(
+            a.world.state.ships[ship as usize].active, 0,
+            "the hull despawned"
+        );
         assert_eq!(a.humans(), 0);
         assert!(a.names.is_empty(), "the seat is genuinely empty");
 
@@ -7811,12 +8417,18 @@ mod tests {
         let (ship, id, _rx) = seat_rx(&mut a, "wounded");
         let full = a.world.eff_max_energy(ship as usize);
         a.world.state.ships[ship as usize].energy = full - 1;
-        assert!(!a.sit_out(id, 255, false, false), "a wounded pilot keeps the hull");
+        assert!(
+            !a.sit_out(id, 255, false, false),
+            "a wounded pilot keeps the hull"
+        );
         assert!(a.players.contains_key(&id));
         assert!(!a.watchers.contains_key(&id));
 
         a.world.state.ships[ship as usize].energy = full;
-        assert!(a.sit_out(id, 255, false, false), "a whole pilot may sit out");
+        assert!(
+            a.sit_out(id, 255, false, false),
+            "a whole pilot may sit out"
+        );
     }
 
     #[test]
@@ -7824,10 +8436,14 @@ mod tests {
         let mut a = room_with_teams("teams = [\"Keel\"]\n");
         a.max_watchers = 1;
         let (tx, _keep) = mpsc::channel(OUT_QUEUE);
-        a.watch_join(Seat::guest("gallery", false), false, tx).unwrap();
+        a.watch_join(Seat::guest("gallery", false), false, tx)
+            .unwrap();
         let (_, id, _rx) = seat_rx(&mut a, "pilot");
         assert!(!a.sit_out(id, 255, false, false));
-        assert!(a.players.contains_key(&id), "the cap refuses without despawning");
+        assert!(
+            a.players.contains_key(&id),
+            "the cap refuses without despawning"
+        );
         assert_eq!(a.watchers.len(), 1);
     }
 
@@ -7848,30 +8464,36 @@ mod tests {
         // than waits, so a test that only looked at the end would be reading
         // whatever survived instead of what was sent.
         let mut said: Vec<u8> = Vec::new();
-        let mut run = |a: &mut Room, rx: &mut mpsc::Receiver<Message>,
-                       said: &mut Vec<u8>, n: usize| {
-            for _ in 0..n {
-                for _ in 0..SNAPSHOT_EVERY {
-                    a.tick();
-                }
-                a.broadcast_snapshot(&mut buf);
-                for m in drain(rx) {
-                    if m.first() == Some(&S2C_ONAIR) {
-                        said.push(m[1]);
+        let mut run =
+            |a: &mut Room, rx: &mut mpsc::Receiver<Message>, said: &mut Vec<u8>, n: usize| {
+                for _ in 0..n {
+                    for _ in 0..SNAPSHOT_EVERY {
+                        a.tick();
+                    }
+                    a.broadcast_snapshot(&mut buf);
+                    for m in drain(rx) {
+                        if m.first() == Some(&S2C_ONAIR) {
+                            said.push(m[1]);
+                        }
                     }
                 }
-            }
-        };
+            };
 
         run(&mut a, &mut rx, &mut said, 20);
         assert_eq!(a.channel.subject, Some(ship), "the camera did pick them");
-        assert_eq!(a.channel.showing, Some(ship), "and the ring is serving them");
+        assert_eq!(
+            a.channel.showing,
+            Some(ship),
+            "and the ring is serving them"
+        );
         assert!(a.on_air.is_empty(), "but there is no audience");
         assert!(said.is_empty(), "so they were told nothing: {said:?}");
 
         // Somebody arrives on the channel.
         let (tx, _keep) = mpsc::channel(OUT_QUEUE);
-        let w = a.watch_join(Seat::guest("gallery", false), false, tx).unwrap();
+        let w = a
+            .watch_join(Seat::guest("gallery", false), false, tx)
+            .unwrap();
         run(&mut a, &mut rx, &mut said, 5);
         assert!(a.on_air.contains(&ship), "now somebody is looking");
         assert_eq!(said, vec![1], "told once, on the edge");
@@ -7910,7 +8532,9 @@ mod tests {
         // And somebody who arrived to watch gets the same message with a real
         // side in it, because they were seated on one at the door.
         let (tx, _keep) = mpsc::channel(OUT_QUEUE);
-        let w = a.watch_join(Seat::guest("stranger", false), false, tx).unwrap();
+        let w = a
+            .watch_join(Seat::guest("stranger", false), false, tx)
+            .unwrap();
         let theirs = a.watcher_teams_msg(&a.watchers[&w])[1];
         assert!(a.teams.get(&theirs).is_some_and(|t| t.public));
     }
@@ -7927,10 +8551,20 @@ mod tests {
         let taken = a.world.state.ships[one as usize].team;
 
         let (tx, _keep) = mpsc::channel(OUT_QUEUE);
-        let w = a.watch_join(Seat::guest("gallery", false), false, tx).unwrap();
-        let side = a.watchers[&w].team.expect("a side, the same as any arrival");
-        assert!(a.teams[&side].public, "one of the zone's own, not a private one");
-        assert_ne!(side, taken, "the emptier one, which is how a pilot lands too");
+        let w = a
+            .watch_join(Seat::guest("gallery", false), false, tx)
+            .unwrap();
+        let side = a.watchers[&w]
+            .team
+            .expect("a side, the same as any arrival");
+        assert!(
+            a.teams[&side].public,
+            "one of the zone's own, not a private one"
+        );
+        assert_ne!(
+            side, taken,
+            "the emptier one, which is how a pilot lands too"
+        );
         // And they weigh nothing while they sit there: a watcher holds no seat,
         // so the balance the caps measure cannot see them.
         assert_eq!(a.team_census(side, None), (0, 0));
@@ -7952,7 +8586,9 @@ mod tests {
         assert!(a.free_for_all());
         let target = seat_human(&mut a, "flying");
         let (tx, _keep) = mpsc::channel(OUT_QUEUE);
-        let w = a.watch_join(Seat::guest("gallery", false), false, tx).unwrap();
+        let w = a
+            .watch_join(Seat::guest("gallery", false), false, tx)
+            .unwrap();
         assert_eq!(a.watchers[&w].team, None);
         assert_eq!(a.watcher_teams_msg(&a.watchers[&w])[1], 255);
         a.set_watch(w, target);
@@ -7973,7 +8609,11 @@ mod tests {
 
         assert!(a.sit_out(id, 255, false, false));
         assert_eq!(a.watchers[&id].team, Some(1));
-        assert_eq!(a.seat_team(ship, false), 0, "what a re-pick would have said");
+        assert_eq!(
+            a.seat_team(ship, false),
+            0,
+            "what a re-pick would have said"
+        );
 
         let new_id = a.fly(id, 0, 16).expect("a seat was free");
         let back = a.players[&new_id].ship;
@@ -7986,19 +8626,23 @@ mod tests {
         // permitted pilot while they sat there is still somebody who wants to
         // fly, so the seating falls back to the ordinary rule rather than
         // holding them in the gallery.
-        let mut a = room_with_teams(
-            "teams = [\"Keel\", \"Vantage\"]\nmax_humans_per_team = 1\n",
-        );
+        let mut a = room_with_teams("teams = [\"Keel\", \"Vantage\"]\nmax_humans_per_team = 1\n");
         let (ship, id, _rx) = seat_rx(&mut a, "pilot");
         let mine = a.world.state.ships[ship as usize].team;
         assert!(a.sit_out(id, 255, false, false));
 
         let taker = seat_human(&mut a, "taker");
-        assert_eq!(a.world.state.ships[taker as usize].team, mine, "their chair");
+        assert_eq!(
+            a.world.state.ships[taker as usize].team, mine,
+            "their chair"
+        );
 
         let new_id = a.fly(id, 0, 16).expect("a seat was free");
         let back = a.players[&new_id].ship;
-        assert_ne!(a.world.state.ships[back as usize].team, mine, "the other side");
+        assert_ne!(
+            a.world.state.ships[back as usize].team, mine,
+            "the other side"
+        );
     }
 
     #[test]
@@ -8015,7 +8659,9 @@ mod tests {
         a.broadcast_snapshot(&mut buf);
         assert!(a.on_air.contains(&target));
         assert!(
-            drain(&mut rx).iter().any(|m| m.as_slice() == [S2C_ONAIR, 1]),
+            drain(&mut rx)
+                .iter()
+                .any(|m| m.as_slice() == [S2C_ONAIR, 1]),
             "a teammate on your shoulder is somebody looking at you"
         );
 
@@ -8023,13 +8669,18 @@ mod tests {
         a.set_watch(wid, 255);
         a.broadcast_snapshot(&mut buf);
         assert!(!a.on_air.contains(&target));
-        assert!(drain(&mut rx).iter().any(|m| m.as_slice() == [S2C_ONAIR, 0]));
+        assert!(drain(&mut rx)
+            .iter()
+            .any(|m| m.as_slice() == [S2C_ONAIR, 0]));
     }
 
     #[test]
     fn a_ladder_zone_can_ask_for_claimed_pilots() {
         let mut z = serving_with_accounts();
-        assert!(!z.wants_claimed(), "a public room admits anybody, which is the default");
+        assert!(
+            !z.wants_claimed(),
+            "a public room admits anybody, which is the default"
+        );
         if let Some(c) = z.catalog.as_mut() {
             c.zones[0].admission = "claimed".into();
         }
@@ -8039,11 +8690,21 @@ mod tests {
         // The bar is on the label, so it is on the account rather than on
         // anything the client said about itself.
         let guest = z
-            .identify(&a_token(token::Kind::Human, false, "Talon 3", vec![]), "", false, &pilot::Session::new("ws"))
+            .identify(
+                &a_token(token::Kind::Human, false, "Talon 3", vec![]),
+                "",
+                false,
+                &pilot::Session::new("ws"),
+            )
             .expect("verifies");
         assert_eq!(guest.label, token::Label::Unknown.to_byte());
         let claimed = z
-            .identify(&a_token(token::Kind::Human, true, "Vesper 47", vec![]), "", false, &pilot::Session::new("ws"))
+            .identify(
+                &a_token(token::Kind::Human, true, "Vesper 47", vec![]),
+                "",
+                false,
+                &pilot::Session::new("ws"),
+            )
             .expect("verifies");
         assert_eq!(claimed.label, token::Label::Human.to_byte());
     }
@@ -8078,17 +8739,29 @@ mod tests {
         // the token rather than from a file beside the process, so the same
         // property is asserted against the thing that carries it.
         let mut z = serving_with_accounts();
-        let t = a_token_for(77, token::Kind::Human, true, "Veteran", vec![
-            token::ClassRating { class: "arena".into(), rating: 1640.0, games: 40 },
-        ]);
-        let seat = z.identify(&t, "", false, &pilot::Session::new("ws")).expect("verifies");
+        let t = a_token_for(
+            77,
+            token::Kind::Human,
+            true,
+            "Veteran",
+            vec![token::ClassRating {
+                class: "arena".into(),
+                rating: 1640.0,
+                games: 40,
+            }],
+        );
+        let seat = z
+            .identify(&t, "", false, &pilot::Session::new("ws"))
+            .expect("verifies");
         let rid = seat.rid.clone();
         assert_eq!(z.rooms[0].rating.games_of(&rid), 0, "not until they join");
         z.restore_pilot(0, &seat);
         assert_eq!(z.rooms[0].rating.rating_of(&rid), 1640.0);
         assert_eq!(z.rooms[0].rating.games_of(&rid), 40);
-        assert!(z.rooms[0].rating.tier_of(&rid).is_some(),
-                "a settled pilot is shown a tier, not 'placing'");
+        assert!(
+            z.rooms[0].rating.tier_of(&rid).is_some(),
+            "a settled pilot is shown a tier, not 'placing'"
+        );
     }
 
     #[test]
@@ -8107,13 +8780,16 @@ mod tests {
         a.accounts.insert("a1".into(), 1);
         a.accounts.insert("a2".into(), 2);
 
-        a.hand_off(&rating::RatedEvent {
-            tick: 100,
-            victim: "a2".into(),
-            victim_before: 1200.0,
-            victim_after: 1184.0,
-            credits: vec![("a1".into(), 1.0, 1200.0, 1216.0)],
-        }, Some("a1"));
+        a.hand_off(
+            &rating::RatedEvent {
+                tick: 100,
+                victim: "a2".into(),
+                victim_before: 1200.0,
+                victim_after: 1184.0,
+                credits: vec![("a1".into(), 1.0, 1200.0, 1216.0)],
+            },
+            Some("a1"),
+        );
         {
             let s = sp.lock().unwrap();
             assert_eq!(s.len(), 1, "both had accounts, so the event travels");
@@ -8122,23 +8798,33 @@ mod tests {
 
         // A guest contributes nothing durable, because there is nobody to file
         // it against. The event is dropped rather than sent half-formed.
-        a.hand_off(&rating::RatedEvent {
-            tick: 200,
-            victim: "a2".into(),
-            victim_before: 1184.0,
-            victim_after: 1170.0,
-            credits: vec![("some guest".into(), 1.0, 1200.0, 1214.0)],
-        }, Some("some guest"));
+        a.hand_off(
+            &rating::RatedEvent {
+                tick: 200,
+                victim: "a2".into(),
+                victim_before: 1184.0,
+                victim_after: 1170.0,
+                credits: vec![("some guest".into(), 1.0, 1200.0, 1214.0)],
+            },
+            Some("some guest"),
+        );
         // And a guest victim is not an event at all: the negative half of the
         // exchange has nowhere to land.
-        a.hand_off(&rating::RatedEvent {
-            tick: 300,
-            victim: "another guest".into(),
-            victim_before: 1200.0,
-            victim_after: 1184.0,
-            credits: vec![("a1".into(), 1.0, 1200.0, 1216.0)],
-        }, Some("a1"));
-        assert_eq!(sp.lock().unwrap().len(), 1, "neither half-formed event travelled");
+        a.hand_off(
+            &rating::RatedEvent {
+                tick: 300,
+                victim: "another guest".into(),
+                victim_before: 1200.0,
+                victim_after: 1184.0,
+                credits: vec![("a1".into(), 1.0, 1200.0, 1216.0)],
+            },
+            Some("a1"),
+        );
+        assert_eq!(
+            sp.lock().unwrap().len(),
+            1,
+            "neither half-formed event travelled"
+        );
         let _ = std::fs::remove_dir_all(&d);
     }
 
@@ -8179,24 +8865,33 @@ mod tests {
         assert!(flag_of(&sp), "machines all the way down, so it may expire");
 
         a.hand_off(&ev("bot2", "human"), Some("human"));
-        assert!(!flag_of(&sp), "a person did the killing, so the row is a career");
+        assert!(
+            !flag_of(&sp),
+            "a person did the killing, so the row is a career"
+        );
 
         a.hand_off(&ev("human", "bot1"), Some("bot1"));
-        assert!(!flag_of(&sp), "a person did the dying, which counts the same");
+        assert!(
+            !flag_of(&sp),
+            "a person did the dying, which counts the same"
+        );
 
         // The case the loop could get wrong: one human buried in a crowd of
         // machines is still a human, and an `all` that stopped at the first
         // bot would drop the row that proves it.
-        a.hand_off(&rating::RatedEvent {
-            tick: 400,
-            victim: "bot2".into(),
-            victim_before: 1200.0,
-            victim_after: 1184.0,
-            credits: vec![
-                ("bot1".into(), 0.5, 1200.0, 1208.0),
-                ("human".into(), 0.5, 1200.0, 1208.0),
-            ],
-        }, Some("human"));
+        a.hand_off(
+            &rating::RatedEvent {
+                tick: 400,
+                victim: "bot2".into(),
+                victim_before: 1200.0,
+                victim_after: 1184.0,
+                credits: vec![
+                    ("bot1".into(), 0.5, 1200.0, 1208.0),
+                    ("human".into(), 0.5, 1200.0, 1208.0),
+                ],
+            },
+            Some("human"),
+        );
         assert!(!flag_of(&sp), "one person among the machines keeps the row");
         let _ = std::fs::remove_dir_all(&d);
     }
@@ -8208,7 +8903,11 @@ mod tests {
     /// spool to read back.
     fn logging_arena(
         name: &str,
-    ) -> (ArenaServer, std::sync::Arc<std::sync::Mutex<spool::Spool<pilot::Event>>>, std::path::PathBuf) {
+    ) -> (
+        ArenaServer,
+        std::sync::Arc<std::sync::Mutex<spool::Spool<pilot::Event>>>,
+        std::path::PathBuf,
+    ) {
         let d = std::env::temp_dir().join(format!("vw-pilotlog-{}-{name}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
@@ -8222,13 +8921,9 @@ mod tests {
     }
 
     /// Every row filed so far, oldest first.
-    fn rows(
-        p: &std::sync::Arc<std::sync::Mutex<spool::Spool<pilot::Event>>>,
-    ) -> Vec<pilot::Event> {
+    fn rows(p: &std::sync::Arc<std::sync::Mutex<spool::Spool<pilot::Event>>>) -> Vec<pilot::Event> {
         let s = p.lock().unwrap();
-        (0..s.len())
-            .filter_map(|i| s.nth(i).cloned())
-            .collect()
+        (0..s.len()).filter_map(|i| s.nth(i).cloned()).collect()
     }
 
     fn kinds(evs: &[pilot::Event]) -> Vec<&str> {
@@ -8300,7 +8995,13 @@ mod tests {
         let filed = rows(&pilots);
         assert_eq!(
             kinds(&filed),
-            vec![pilot::JOIN, pilot::SIT_OUT, pilot::LEAVE, pilot::FLY, pilot::LEAVE],
+            vec![
+                pilot::JOIN,
+                pilot::SIT_OUT,
+                pilot::LEAVE,
+                pilot::FLY,
+                pilot::LEAVE
+            ],
             "the sit-out files its own row and the departure it is made of",
         );
         let one: std::collections::HashSet<&str> =
@@ -8326,10 +9027,17 @@ mod tests {
         a.world.state.ships[ship as usize].energy = 1;
         let was = a.world.state.ships[ship as usize].cls;
         a.world.set_ship_class(ship, 3);
-        assert_eq!(a.world.state.ships[ship as usize].cls, was, "refused, as set up");
+        assert_eq!(
+            a.world.state.ships[ship as usize].cls, was,
+            "refused, as set up"
+        );
 
         let filed = rows(&pilots);
-        assert_eq!(kinds(&filed), vec![pilot::JOIN], "the refusal is not an event");
+        assert_eq!(
+            kinds(&filed),
+            vec![pilot::JOIN],
+            "the refusal is not an event"
+        );
         let _ = std::fs::remove_dir_all(&d);
     }
 
@@ -8347,8 +9055,15 @@ mod tests {
         assert_eq!(filed.len(), 1);
         assert_eq!(filed[0].pilot, None, "no account to file it against");
         assert_eq!(filed[0].name, "Pilot 12");
-        assert_eq!(filed[0].room, Some(a.number), "the number, not the list position");
-        assert!(filed[0].at > 1_700_000_000_000, "stamped by the arena, in millis");
+        assert_eq!(
+            filed[0].room,
+            Some(a.number),
+            "the number, not the list position"
+        );
+        assert!(
+            filed[0].at > 1_700_000_000_000,
+            "stamped by the arena, in millis"
+        );
         let _ = std::fs::remove_dir_all(&d);
     }
 
@@ -8425,12 +9140,16 @@ mod tests {
         let id = a.join(Seat::guest("Bystander", false), 0, cap, tx).unwrap();
         let ship = a.players[&id].ship;
         // Mid-fight when the deploy lands: alive, nearly dead, ledger hot.
-        a.rating.damage(a.world.state.tick, "Bystander", "Somebody", 500, false);
+        a.rating
+            .damage(a.world.state.tick, "Bystander", "Somebody", 500, false);
         a.world.state.ships[ship as usize].energy = 1;
 
         z.file_departures();
         let filed = rows(&pilots);
-        let end = filed.iter().find(|e| e.kind == pilot::LEAVE).expect("a departure on file");
+        let end = filed
+            .iter()
+            .find(|e| e.kind == pilot::LEAVE)
+            .expect("a departure on file");
         assert_eq!(end.detail["why"], pilot::why::RESTART);
         assert_eq!(
             end.detail["quit_loss"], false,
@@ -8471,7 +9190,10 @@ mod tests {
         assert_eq!(z.rooms.len(), 1, "one room to start");
         for _ in 0..6 {
             let i = z.room_for_join().expect("room");
-            assert_eq!(i, 0, "everything lands in the first room until it hits target");
+            assert_eq!(
+                i, 0,
+                "everything lands in the first room until it hits target"
+            );
             seat(&mut z, i, 1);
         }
         assert_eq!(z.rooms.len(), 1, "still one room at exactly the target");
@@ -8481,7 +9203,6 @@ mod tests {
         assert_eq!(i, 1, "so a second room opens for them");
         assert_eq!(z.rooms.len(), 2);
     }
-
 
     /// A room's number is its own, and it keeps it while it lives.
     ///
@@ -8494,9 +9215,17 @@ mod tests {
             let i = z.room_for_join().expect("room");
             seat(&mut z, i, 1);
         }
-        assert_eq!(numbers(&z), vec![1, 2, 3], "dense, in the order they opened");
+        assert_eq!(
+            numbers(&z),
+            vec![1, 2, 3],
+            "dense, in the order they opened"
+        );
         // Empty the middle one and let it go.
-        let mid = z.rooms.iter().position(|r| r.number == 2).expect("room two");
+        let mid = z
+            .rooms
+            .iter()
+            .position(|r| r.number == 2)
+            .expect("room two");
         let ids: Vec<u64> = z.rooms[mid].players.keys().copied().collect();
         for id in ids {
             z.rooms[mid].leave(id, pilot::why::LEFT);
@@ -8521,7 +9250,11 @@ mod tests {
             let i = z.room_for_join().expect("room");
             seat(&mut z, i, 1);
         }
-        let mid = z.rooms.iter().position(|r| r.number == 2).expect("room two");
+        let mid = z
+            .rooms
+            .iter()
+            .position(|r| r.number == 2)
+            .expect("room two");
         let ids: Vec<u64> = z.rooms[mid].players.keys().copied().collect();
         for id in ids {
             z.rooms[mid].leave(id, pilot::why::LEFT);
@@ -8549,7 +9282,10 @@ mod tests {
         let i = z.room_wanted(3).expect("somewhere");
         assert_ne!(z.rooms[i].number, 3, "room three is full");
         // A number nothing here holds is the same kind of miss.
-        assert!(z.room_wanted(99).is_some(), "a stale number still seats you");
+        assert!(
+            z.room_wanted(99).is_some(),
+            "a stale number still seats you"
+        );
         // And zero is what an arrival that was never shown a list says.
         assert!(z.room_wanted(0).is_some());
     }
@@ -8575,8 +9311,14 @@ mod tests {
                     instance: "aaaa".into(),
                     zone: z.zone_name.clone(),
                     rooms: vec![
-                        fleet::RoomView { number: 1, ..Default::default() },
-                        fleet::RoomView { number: 2, ..Default::default() },
+                        fleet::RoomView {
+                            number: 1,
+                            ..Default::default()
+                        },
+                        fleet::RoomView {
+                            number: 2,
+                            ..Default::default()
+                        },
                     ],
                     ..Default::default()
                 }],
@@ -8600,8 +9342,14 @@ mod tests {
                     instance: "bbbb".into(),
                     zone: y.zone_name.clone(),
                     rooms: vec![
-                        fleet::RoomView { number: 1, ..Default::default() },
-                        fleet::RoomView { number: 2, ..Default::default() },
+                        fleet::RoomView {
+                            number: 1,
+                            ..Default::default()
+                        },
+                        fleet::RoomView {
+                            number: 2,
+                            ..Default::default()
+                        },
                     ],
                     ..Default::default()
                 }],
@@ -8622,7 +9370,10 @@ mod tests {
                 instances: vec![fleet::Observed {
                     instance: "aaaa".into(),
                     zone: z.zone_name.clone(),
-                    rooms: vec![fleet::RoomView { number: 2, ..Default::default() }],
+                    rooms: vec![fleet::RoomView {
+                        number: 2,
+                        ..Default::default()
+                    }],
                     ..Default::default()
                 }],
                 ..Default::default()
@@ -8648,7 +9399,11 @@ mod tests {
             seat(&mut z, i, 1);
         }
         // Fill the first, so one row says full and the other does not.
-        let first = z.rooms.iter().position(|r| r.number == 1).expect("room one");
+        let first = z
+            .rooms
+            .iter()
+            .position(|r| r.number == 1)
+            .expect("room one");
         seat(&mut z, first, 1);
         let st = z.status();
         assert_eq!(st.rooms.len(), 2);
@@ -8710,10 +9465,15 @@ mod tests {
         seat(&mut z, 0, 1);
         let i = z.room_for_join().expect("a second room");
         assert_eq!(i, 1);
-        assert_eq!(z.rooms[0].world.cfg.max_ships, z.rooms[1].world.cfg.max_ships);
+        assert_eq!(
+            z.rooms[0].world.cfg.max_ships,
+            z.rooms[1].world.cfg.max_ships
+        );
         assert_eq!(z.rooms[0].public_teams, z.rooms[1].public_teams);
-        assert_eq!(z.rooms[0].bot_fill, z.rooms[1].bot_fill,
-                   "including how full of bots each is meant to be");
+        assert_eq!(
+            z.rooms[0].bot_fill, z.rooms[1].bot_fill,
+            "including how full of bots each is meant to be"
+        );
         assert_eq!(z.rooms[0].world.packed_map(), z.rooms[1].world.packed_map());
         // The same tiles, not a copy of them. A megabyte per room would make
         // `max_rooms` a memory limit rather than the blast-radius limit it is
@@ -8739,7 +9499,10 @@ mod tests {
         assert_eq!(z.total_players(), 100);
         let map = z.rooms[0].world.map.clone();
         for (n, r) in z.rooms.iter().enumerate() {
-            assert!(std::sync::Arc::ptr_eq(&map, &r.world.map), "room {n} shares it");
+            assert!(
+                std::sync::Arc::ptr_eq(&map, &r.world.map),
+                "room {n} shares it"
+            );
         }
     }
 
@@ -8751,7 +9514,10 @@ mod tests {
             seat(&mut z, i, 1);
         }
         assert_eq!(z.rooms.len(), 3);
-        let other = fleet::WireZone { name: "elsewhere".into(), ..wire_zone(3, 1, 16) };
+        let other = fleet::WireZone {
+            name: "elsewhere".into(),
+            ..wire_zone(3, 1, 16)
+        };
         z.serve_zone(&other).expect("it builds");
         assert_eq!(z.zone_name, "elsewhere");
         assert_eq!(z.rooms.len(), 1, "the old rooms served the old game");
@@ -8782,15 +9548,20 @@ mod tests {
         // a whole state pack, so dropping one is correct: the next supersedes it.
         let mut z = serving(1, 2, 4);
         let (tx, rx) = mpsc::channel(OUT_QUEUE);
-        let id = z.rooms[0].join(Seat::guest("stalled", false), 0, 4, tx).expect("a seat");
+        let id = z.rooms[0]
+            .join(Seat::guest("stalled", false), 0, 4, tx)
+            .expect("a seat");
         let mut buf = vec![0u8; sim::PACK_MAX];
         for _ in 0..OUT_QUEUE * 10 {
             z.rooms[0].tick();
             z.rooms[0].broadcast_snapshot(&mut buf);
         }
         assert_eq!(rx.len(), OUT_QUEUE, "the queue stops at the bound");
-        assert_eq!(z.status().metrics.queue_depth, OUT_QUEUE as u32,
-                   "and an operator can see which connection is drowning");
+        assert_eq!(
+            z.status().metrics.queue_depth,
+            OUT_QUEUE as u32,
+            "and an operator can see which connection is drowning"
+        );
         // Still in the room, still simulated: falling behind is not an eviction.
         assert!(z.rooms[0].players.contains_key(&id));
     }
@@ -8820,7 +9591,9 @@ mod tests {
             let cap = z.max_players();
             for i in 0..(bots0 + 5) {
                 let (tx, _rx) = mpsc::channel(OUT_QUEUE);
-                if let Some(id) = z.rooms[0].join(Seat::guest(format!("churn{i}"), false), 0, cap, tx) {
+                if let Some(id) =
+                    z.rooms[0].join(Seat::guest(format!("churn{i}"), false), 0, cap, tx)
+                {
                     seated.push(id);
                 }
             }
@@ -8829,15 +9602,20 @@ mod tests {
             }
         }
 
-        assert_eq!(z.rooms[0].bot_count(), bots0,
-                   "the bots that were here stayed, and nobody made more");
+        assert_eq!(
+            z.rooms[0].bot_count(),
+            bots0,
+            "the bots that were here stayed, and nobody made more"
+        );
         assert_eq!(z.rooms[0].humans(), 0);
         // The count is a high-water mark and may have risen once to hold the
         // extra concurrent players, but it must not climb every round: the core
         // hands an inactive slot to the next arrival.
         let ships1 = z.rooms[0].world.state.ship_count;
-        assert!(u16::from(ships1) <= u16::from(ships0) + (bots0 + 5) as u16,
-                "ship_count {ships1} grew past one peak from {ships0}");
+        assert!(
+            u16::from(ships1) <= u16::from(ships0) + (bots0 + 5) as u16,
+            "ship_count {ships1} grew past one peak from {ships0}"
+        );
         let active = (0..ships1 as usize)
             .filter(|&i| z.rooms[0].world.state.ships[i].active != 0)
             .count();
@@ -8849,7 +9627,11 @@ mod tests {
         // The wire hands us arbitrary bytes and a name travels further than
         // anything else a client controls: rosters, logs, the ratings file,
         // an operator's kick argument.
-        assert_eq!(sanitize_name("Kestrel"), "Kestrel", "a normal name is untouched");
+        assert_eq!(
+            sanitize_name("Kestrel"),
+            "Kestrel",
+            "a normal name is untouched"
+        );
         assert_eq!(sanitize_name("two  words"), "two words");
         assert_eq!(sanitize_name("  padded\t"), "padded");
         assert_eq!(
@@ -8862,10 +9644,17 @@ mod tests {
         // matters when a name is printed into a log.
         assert_eq!(sanitize_name("a\u{1b}[2Jb\u{0}c"), "a[2Jbc");
         assert_eq!(sanitize_name("").as_str(), "pilot");
-        assert_eq!(sanitize_name("\u{200b}\u{202e}").as_str(), "pilot",
-                   "invisible unicode cannot be a whole name");
+        assert_eq!(
+            sanitize_name("\u{200b}\u{202e}").as_str(),
+            "pilot",
+            "invisible unicode cannot be a whole name"
+        );
         let huge = "x".repeat(10_000_000);
-        assert_eq!(sanitize_name(&huge).len(), 24, "10 MB of name stores 24 bytes");
+        assert_eq!(
+            sanitize_name(&huge).len(),
+            24,
+            "10 MB of name stores 24 bytes"
+        );
         // The cap matches the roster wire format, so what is stored is what
         // every other player is shown.
         assert_eq!(sanitize_name(&huge).len(), 24usize.min(24));
@@ -8877,7 +9666,12 @@ mod tests {
         let (tx, _rx) = mpsc::channel(OUT_QUEUE);
         let cap = z.max_players();
         let id = z.rooms[0]
-            .join(Seat::guest(sanitize_name("bad\r\nguy\u{7f}"), false), 0, cap, tx)
+            .join(
+                Seat::guest(sanitize_name("bad\r\nguy\u{7f}"), false),
+                0,
+                cap,
+                tx,
+            )
             .expect("a seat");
         assert_eq!(z.rooms[0].players[&id].name, "bad guy");
     }
@@ -8895,12 +9689,14 @@ mod tests {
 
     #[test]
     fn a_named_baseline_weapon_is_tuned_in_place() {
-        let (w, warn) = tuned(r#"
+        let (w, warn) = tuned(
+            r#"
             [[arena.weapons]]
             name = "anvil-bomb"
             on_wall = "bounce"
             bounces = 3
-        "#);
+        "#,
+        );
         assert!(warn.is_empty(), "{warn:?}");
         let anvil = ai::class_index("Anvil").unwrap();
         let p = w.cfg.patterns[w.cfg.classes[anvil].trigger[1][0] as usize];
@@ -8914,7 +9710,8 @@ mod tests {
 
     #[test]
     fn an_unknown_name_is_a_new_weapon_a_hull_can_carry() {
-        let (w, warn) = tuned(r#"
+        let (w, warn) = tuned(
+            r#"
             [[arena.weapons]]
             name = "burst"
             speed = 1500
@@ -8927,14 +9724,19 @@ mod tests {
             [[arena.ships]]
             name = "Cipher"
             bomb = ["burst"]
-        "#);
+        "#,
+        );
         assert!(warn.is_empty(), "{warn:?}");
         let spire = ai::class_index("Cipher").unwrap();
         let p = w.cfg.patterns[w.cfg.classes[spire].trigger[1][0] as usize];
         let sp = w.cfg.specs[p.spec as usize];
         assert_eq!(p.count, 16);
         assert_eq!(sp.life, 60);
-        assert_eq!(sp.splinter, sim::NO_PATTERN, "a new weapon splinters into nothing");
+        assert_eq!(
+            sp.splinter,
+            sim::NO_PATTERN,
+            "a new weapon splinters into nothing"
+        );
         // Degrees, because nobody thinks in sixty-five thousandths of a turn.
         assert_eq!(p.spacing, (22 * 65536 / 360) as u16);
         // Every hull carries a rack in the baseline now, the way every one
@@ -8942,12 +9744,16 @@ mod tests {
         // weapon replaced the rack rather than sat beside it.
         let fresh = sim::World::new(1);
         let base = fresh.cfg.patterns[fresh.cfg.classes[spire].trigger[1][0] as usize];
-        assert_ne!(base.count, p.count, "the zone's weapon is not the baseline's");
+        assert_ne!(
+            base.count, p.count,
+            "the zone's weapon is not the baseline's"
+        );
     }
 
     #[test]
     fn a_weapon_can_splinter_into_one_written_after_it() {
-        let (w, warn) = tuned(r#"
+        let (w, warn) = tuned(
+            r#"
             [[arena.weapons]]
             name = "anvil-bomb"
             splinter = "shrapnel"
@@ -8959,29 +9765,39 @@ mod tests {
             damage = 50
             count = 8
             spread = 45
-        "#);
+        "#,
+        );
         assert!(warn.is_empty(), "{warn:?}");
         let anvil = ai::class_index("Anvil").unwrap();
         let bomb = w.cfg.patterns[w.cfg.classes[anvil].trigger[1][0] as usize];
         let into = w.cfg.specs[bomb.spec as usize].splinter;
         assert_ne!(into, sim::NO_PATTERN, "the bomb splinters");
-        assert_eq!(w.cfg.patterns[into as usize].count, 8, "into eight fragments");
+        assert_eq!(
+            w.cfg.patterns[into as usize].count, 8,
+            "into eight fragments"
+        );
     }
 
     #[test]
     fn an_empty_name_takes_the_rack_away() {
-        let (w, warn) = tuned(r#"
+        let (w, warn) = tuned(
+            r#"
             [[arena.ships]]
             name = "Anvil"
             bomb = []
-        "#);
+        "#,
+        );
         assert!(warn.is_empty(), "{warn:?}");
-        assert_eq!(w.cfg.classes[ai::class_index("Anvil").unwrap()].trigger[1][0], sim::NO_PATTERN);
+        assert_eq!(
+            w.cfg.classes[ai::class_index("Anvil").unwrap()].trigger[1][0],
+            sim::NO_PATTERN
+        );
     }
 
     #[test]
     fn what_the_file_cannot_have_is_reported_rather_than_guessed() {
-        let (_, warn) = tuned(r#"
+        let (_, warn) = tuned(
+            r#"
             [[arena.weapons]]
             name = "odd"
             on_wall = "sideways"
@@ -8993,7 +9809,8 @@ mod tests {
             [[arena.ships]]
             name = "Apex"
             gun = ["also-not-a-weapon"]
-        "#);
+        "#,
+        );
         assert_eq!(warn.len(), 4, "{warn:?}");
         assert!(warn.iter().any(|w| w.contains("sideways")));
         assert!(warn.iter().any(|w| w.contains("nothing-called-this")));
@@ -9003,11 +9820,13 @@ mod tests {
 
     #[test]
     fn a_rung_above_the_first_is_named_for_its_level() {
-        let (w, warn) = tuned(r#"
+        let (w, warn) = tuned(
+            r#"
             [[arena.weapons]]
             name = "anvil-bomb-3"
             blast = 96
-        "#);
+        "#,
+        );
         assert!(warn.is_empty(), "{warn:?}");
         let anvil = ai::class_index("Anvil").unwrap();
         let rungs = w.cfg.classes[anvil].trigger[1];
@@ -9026,32 +9845,40 @@ mod tests {
 
     #[test]
     fn a_hull_holds_the_add_ons_its_row_allows() {
-        let (w, warn) = tuned(r#"
+        let (w, warn) = tuned(
+            r#"
             [arena.mod_step]
             freeze = 250
 
             [[arena.ships]]
             name = "Cipher"
             gun_mods = { freeze = 3, multi = 1 }
-        "#);
+        "#,
+        );
         assert!(warn.is_empty(), "{warn:?}");
-        assert_eq!(w.cfg.mod_step[4], 250, "a rung of freeze is two and a half seconds");
+        assert_eq!(
+            w.cfg.mod_step[4], 250,
+            "a rung of freeze is two and a half seconds"
+        );
         let spire = ai::class_index("Cipher").unwrap();
         let m = w.cfg.classes[spire].mod_max[0];
         assert_eq!((m >> 8) & 3, 3, "three rungs of freeze");
         assert_eq!(m & 3, 1, "and one of multifire");
         // Named add-ons are checked, not guessed at.
-        let (_, warn) = tuned(r#"
+        let (_, warn) = tuned(
+            r#"
             [[arena.ships]]
             name = "Cipher"
             gun_mods = { sideways = 1 }
-        "#);
+        "#,
+        );
         assert!(warn.iter().any(|w| w.contains("sideways")), "{warn:?}");
     }
 
     #[test]
     fn naming_one_weapon_replaces_the_whole_ladder() {
-        let (w, warn) = tuned(r#"
+        let (w, warn) = tuned(
+            r#"
             [[arena.weapons]]
             name = "repel"
             speed = 0
@@ -9064,13 +9891,17 @@ mod tests {
             [[arena.ships]]
             name = "Anvil"
             bomb = ["repel"]
-        "#);
+        "#,
+        );
         assert!(warn.is_empty(), "{warn:?}");
         let anvil = ai::class_index("Anvil").unwrap();
         let rungs = w.cfg.classes[anvil].trigger[1];
         assert_ne!(rungs[0], sim::NO_PATTERN, "the repel is on the trigger");
-        assert_eq!(rungs[1], sim::NO_PATTERN,
-                   "and there is nothing to level into");
+        assert_eq!(
+            rungs[1],
+            sim::NO_PATTERN,
+            "and there is nothing to level into"
+        );
     }
 
     #[test]
@@ -9086,7 +9917,8 @@ mod tests {
 
     #[test]
     fn a_zone_sets_the_odds_and_the_rust() {
-        let (w, warn) = tuned(r#"
+        let (w, warn) = tuned(
+            r#"
             [arena]
             rust = 250
 
@@ -9094,7 +9926,8 @@ mod tests {
             speed = 5
             gun-level = 400
             bomb-shrapnel = 90
-        "#);
+        "#,
+        );
         assert!(warn.is_empty(), "{warn:?}");
         assert_eq!(w.cfg.rust_chance, 250);
         assert_eq!(w.cfg.prize_weight[2], 5, "speed is the third stat");
@@ -9102,12 +9935,17 @@ mod tests {
         let bomb_shrap = sim::UP_COUNT + sim::TRIG_COUNT + sim::MOD_COUNT + 3;
         assert_eq!(w.cfg.prize_weight[bomb_shrap], 90);
         // Everything unnamed keeps the baseline's odds.
-        assert_eq!(w.cfg.prize_weight[0], 40, "energy keeps the original's odds");
+        assert_eq!(
+            w.cfg.prize_weight[0], 40,
+            "energy keeps the original's odds"
+        );
 
-        let (w, warn) = tuned(r#"
+        let (w, warn) = tuned(
+            r#"
             [arena.prize_weight]
             luck = 10
-        "#);
+        "#,
+        );
         assert!(warn.iter().any(|x| x.contains("luck")), "{warn:?}");
         assert_eq!(w.cfg.rust_chance, 10, "and rust keeps its default");
     }
@@ -9133,11 +9971,13 @@ mod tests {
 
     #[test]
     fn a_zone_prices_a_kill() {
-        let (w, warn) = tuned(r#"
+        let (w, warn) = tuned(
+            r#"
             [arena]
             bounty_per_kill = 9
             points_per_flag = 25
-        "#);
+        "#,
+        );
         assert!(warn.is_empty(), "{warn:?}");
         assert_eq!(w.cfg.bounty_per_kill, 9);
         assert_eq!(w.cfg.points_per_flag, 25);
@@ -9146,10 +9986,12 @@ mod tests {
         // the check that catches a mirror drifting out of step with the C
         // struct -- the reason this reads a field two along from the ones it
         // set.
-        let (w, _) = tuned(r#"
+        let (w, _) = tuned(
+            r#"
             [arena]
             mode = "warzone"
-        "#);
+        "#,
+        );
         assert_eq!(w.cfg.bounty_per_kill, 3);
         assert_eq!(w.cfg.points_per_flag, 100);
         assert_eq!(w.cfg.rust_chance, 10);
@@ -9157,19 +9999,23 @@ mod tests {
 
     #[test]
     fn a_zone_sets_the_opening_loadout() {
-        let (w, warn) = tuned(r#"
+        let (w, warn) = tuned(
+            r#"
             [arena]
             spawn_prizes = 0
-        "#);
+        "#,
+        );
         assert!(warn.is_empty(), "{warn:?}");
         assert_eq!(w.cfg.spawn_prizes, 0, "a zone can start pilots plain");
 
         // Untouched it is thirty. Reading the field on either side too,
         // because a u16 landing in the wrong place is how this mirror drifts.
-        let (w, _) = tuned(r#"
+        let (w, _) = tuned(
+            r#"
             [arena]
             mode = "warzone"
-        "#);
+        "#,
+        );
         assert_eq!(w.cfg.spawn_prizes, 30);
         assert_eq!(w.cfg.rust_chance, 10, "and the field before it");
         assert_eq!(w.cfg.mod_step[0], 2, "and the one after");
@@ -9177,11 +10023,13 @@ mod tests {
 
     #[test]
     fn a_zone_prices_multifire() {
-        let (w, warn) = tuned(r#"
+        let (w, warn) = tuned(
+            r#"
             [arena]
             multi_energy = 200
             multi_delay = 25
-        "#);
+        "#,
+        );
         assert!(warn.is_empty(), "{warn:?}");
         assert_eq!(w.cfg.mod_multi_energy, 200);
         assert_eq!(w.cfg.mod_multi_delay, 25);
@@ -9190,10 +10038,12 @@ mod tests {
         // BulletFireEnergy 20, and MultiFireDelay 50 against BulletFireDelay
         // 25. Reading the fields on either side too, because two u16s landing
         // in the wrong place is exactly how this mirror drifts.
-        let (w, _) = tuned(r#"
+        let (w, _) = tuned(
+            r#"
             [arena]
             mode = "warzone"
-        "#);
+        "#,
+        );
         assert_eq!(w.cfg.mod_multi_energy, 50);
         assert_eq!(w.cfg.mod_multi_delay, 100);
         assert_eq!(w.cfg.mod_spread, 2730, "fifteen degrees, still");
@@ -9212,7 +10062,11 @@ mod tests {
 
         let cfg: config::ZoneConfig = toml::from_str("name = \"bare\"").unwrap();
         let a = Room::new_from(&cfg);
-        assert_eq!(a.mode.name(), "warzone", "and a file that says nothing is a warzone");
+        assert_eq!(
+            a.mode.name(),
+            "warzone",
+            "and a file that says nothing is a warzone"
+        );
         assert_eq!(a.world.state.flag_count, 4);
     }
 
@@ -9230,13 +10084,15 @@ mod tests {
     /// numbers compiled into the baseline.
     #[test]
     fn a_zone_writes_its_own_bomb_rules() {
-        let (w, warn) = tuned(r#"
+        let (w, warn) = tuned(
+            r#"
             [arena]
             prox_step = 32
             shrap_inactive = 100
             shrap_inactive_ticks = 5
             mod_spread = 30
-        "#);
+        "#,
+        );
         assert!(warn.is_empty(), "{warn:?}");
         assert_eq!(w.cfg.prox_step, 32 * 256, "two tiles wider a bomb level");
         assert_eq!(w.cfg.shrap_inactive, unsafe { sim::sim_units_energy(100) });
@@ -9256,7 +10112,8 @@ mod tests {
     /// and the fragments a bomb breaks into were ours and nobody else's.
     #[test]
     fn a_zone_tunes_the_charges_and_the_shrapnel() {
-        let (w, warn) = tuned(r#"
+        let (w, warn) = tuned(
+            r#"
             [[arena.weapons]]
             name = "charge-1"
             blast = 200
@@ -9266,15 +10123,18 @@ mod tests {
             name = "shrapnel-2"
             count = 12
             damage = 30
-        "#);
+        "#,
+        );
         assert!(warn.is_empty(), "{warn:?}");
         let repel = w.cfg.specs[w.cfg.patterns[w.cfg.charge[0] as usize].spec as usize];
         assert_eq!(repel.blast, 200 * 256, "a shorter shove");
         assert_eq!(repel.push, unsafe { sim::sim_units_speed(1000) });
         let shell = w.cfg.patterns[w.cfg.mod_splinter[2] as usize];
         assert_eq!(shell.count, 12, "a second rung of shrapnel is twelve now");
-        assert_eq!(w.cfg.patterns[w.cfg.mod_splinter[1] as usize].count, 2,
-                   "and the rung below it is untouched");
+        assert_eq!(
+            w.cfg.patterns[w.cfg.mod_splinter[1] as usize].count, 2,
+            "and the rung below it is untouched"
+        );
     }
 
     /// How long a mine sits there, which is the setting a zone is most likely
@@ -9287,18 +10147,18 @@ mod tests {
     /// touches nothing else about the weapon.
     #[test]
     fn a_zone_sets_how_long_a_mine_lives() {
-        let mine = |w: &sim::World| {
-            w.cfg.specs[w.cfg.patterns[w.cfg.mine as usize].spec as usize]
-        };
+        let mine = |w: &sim::World| w.cfg.specs[w.cfg.patterns[w.cfg.mine as usize].spec as usize];
         let (base, warn) = tuned("");
         assert!(warn.is_empty(), "{warn:?}");
         assert_eq!(mine(&base).life, 12_000, "two minutes, out of the box");
 
-        let (w, warn) = tuned(r#"
+        let (w, warn) = tuned(
+            r#"
             [[arena.weapons]]
             name = "mine"
             life = 30000
-        "#);
+        "#,
+        );
         assert!(warn.is_empty(), "{warn:?}");
         let m = mine(&w);
         assert_eq!(m.life, 30_000, "five minutes, because the zone said so");
@@ -9323,10 +10183,13 @@ mod tests {
         let (base, warn) = tuned("");
         assert!(warn.is_empty(), "{warn:?}");
         let anvil = ai::class_index("Anvil").unwrap();
-        assert_eq!(base.cfg.classes[anvil].mine_max, 5,
-                   "five, which is the original's own MaxMines");
+        assert_eq!(
+            base.cfg.classes[anvil].mine_max, 5,
+            "five, which is the original's own MaxMines"
+        );
 
-        let (w, warn) = tuned(r#"
+        let (w, warn) = tuned(
+            r#"
             [[arena.ships]]
             name = "Anvil"
             mine_max = 9
@@ -9334,15 +10197,22 @@ mod tests {
             [[arena.ships]]
             name = "Apex"
             mine_max = 0
-        "#);
+        "#,
+        );
         assert!(warn.is_empty(), "{warn:?}");
         assert_eq!(w.cfg.classes[anvil].mine_max, 9, "the heavy mines heavily");
-        assert_eq!(w.cfg.classes[ai::class_index("Apex").unwrap()].mine_max, 0,
-                   "and a zone can take a hull out of the business");
+        assert_eq!(
+            w.cfg.classes[ai::class_index("Apex").unwrap()].mine_max,
+            0,
+            "and a zone can take a hull out of the business"
+        );
         // Hulls the file did not name keep the baseline's, the way every other
         // per-ship number here does.
-        assert_eq!(w.cfg.classes[ai::class_index("Wedge").unwrap()].mine_max, 5,
-                   "a hull the file passed over is untouched");
+        assert_eq!(
+            w.cfg.classes[ai::class_index("Wedge").unwrap()].mine_max,
+            5,
+            "a hull the file passed over is untouched"
+        );
     }
 
     /// Alpha's own file, applied the way a room applies it.
@@ -9365,8 +10235,7 @@ mod tests {
     fn the_alpha_zone_file_says_what_it_means() {
         let src = std::fs::read_to_string("../catalog/zones/alpha/zone.toml")
             .expect("the alpha zone ships in this repository");
-        let z: crate::catalog::ZoneDef =
-            toml::from_str(&src).expect("alpha's zone file parses");
+        let z: crate::catalog::ZoneDef = toml::from_str(&src).expect("alpha's zone file parses");
         let mut w = sim::World::new(1);
         let warn = Room::apply_config(&mut w, &z.arena);
         assert!(warn.is_empty(), "alpha's own file warns: {warn:?}");
@@ -9378,8 +10247,11 @@ mod tests {
         // baseline would then pass on a file that never applied. The burst's
         // damage is alpha's own and the baseline's is 700.
         let burst = w.cfg.specs[w.cfg.patterns[w.cfg.charge[1] as usize].spec as usize];
-        assert_eq!(burst.damage, unsafe { sim::sim_units_energy(515) },
-                   "alpha's file reached the weapon table at all");
+        assert_eq!(
+            burst.damage,
+            unsafe { sim::sim_units_energy(515) },
+            "alpha's file reached the weapon table at all"
+        );
 
         let mine = w.cfg.specs[w.cfg.patterns[w.cfg.mine as usize].spec as usize];
         assert_eq!(mine.life, 12_000, "alpha's mines sit for two minutes");
@@ -9393,8 +10265,10 @@ mod tests {
         // zone -- which is the only way this number can change without
         // somebody meaning to.
         for c in 0..w.cfg.class_count as usize {
-            assert_eq!(w.cfg.classes[c].mine_max, 5,
-                       "hull {c} may have five mines out");
+            assert_eq!(
+                w.cfg.classes[c].mine_max, 5,
+                "hull {c} may have five mines out"
+            );
         }
     }
 
@@ -9406,7 +10280,8 @@ mod tests {
         // The fourth slot, because the baseline now fills the first three: a
         // repel, a burst and a mine. This test is about a slot the zone finds
         // empty, so it has to name one that actually is.
-        let (w, warn) = tuned(r#"
+        let (w, warn) = tuned(
+            r#"
             [[arena.weapons]]
             name = "charge-4"
             speed = 0
@@ -9423,21 +10298,33 @@ mod tests {
             [[arena.ships]]
             name = "Anvil"
             charges = [3, 3, 3, 2]
-        "#);
+        "#,
+        );
         assert!(warn.is_empty(), "{warn:?}");
         assert_ne!(w.cfg.charge[3], sim::NO_PATTERN, "the slot is filled");
         let sp = w.cfg.specs[w.cfg.patterns[w.cfg.charge[3] as usize].spec as usize];
         assert_eq!(sp.blast, 400 * 256);
-        assert_eq!(w.cfg.prize_weight[sim::PRIZE_COUNT - 1], 40, "and greens can be it");
+        assert_eq!(
+            w.cfg.prize_weight[sim::PRIZE_COUNT - 1],
+            40,
+            "and greens can be it"
+        );
         let anvil = ai::class_index("Anvil").unwrap();
-        assert_eq!(w.cfg.classes[anvil].charge_max[3], 2, "the Anvil carries two");
-        assert_eq!(w.cfg.classes[ai::class_index("Apex").unwrap()].charge_max[3], 0,
-                   "and nobody else carries any");
+        assert_eq!(
+            w.cfg.classes[anvil].charge_max[3], 2,
+            "the Anvil carries two"
+        );
+        assert_eq!(
+            w.cfg.classes[ai::class_index("Apex").unwrap()].charge_max[3],
+            0,
+            "and nobody else carries any"
+        );
     }
 
     #[test]
     fn a_zone_builds_a_ladder_rather_than_a_single_weapon() {
-        let (w, warn) = tuned(r#"
+        let (w, warn) = tuned(
+            r#"
             [[arena.weapons]]
             name = "spike"
             damage = 300
@@ -9445,7 +10332,8 @@ mod tests {
             [[arena.ships]]
             name = "Cipher"
             gun = ["spike", "apex-gun-2", "apex-gun-3"]
-        "#);
+        "#,
+        );
         assert!(warn.is_empty(), "{warn:?}");
         let spire = ai::class_index("Cipher").unwrap();
         let rungs = w.cfg.classes[spire].trigger[0];
@@ -9457,11 +10345,13 @@ mod tests {
         // A rung that names nothing leaves the hull alone rather than
         // half-applying: a ladder silently shortened is a hull that stops
         // levelling for a reason no log would show.
-        let (w, warn) = tuned(r#"
+        let (w, warn) = tuned(
+            r#"
             [[arena.ships]]
             name = "Cipher"
             gun = ["apex-gun", "not-a-weapon"]
-        "#);
+        "#,
+        );
         assert!(warn.iter().any(|x| x.contains("not-a-weapon")), "{warn:?}");
         let rungs = w.cfg.classes[spire].trigger[0];
         assert_ne!(rungs[1], sim::NO_PATTERN, "the hull kept its own ladder");
@@ -9471,7 +10361,8 @@ mod tests {
     /// and MaximumSpeed -- and a zone can write all three.
     #[test]
     fn a_zone_sets_a_floor_and_a_step_as_well_as_a_ceiling() {
-        let (w, warn) = tuned(r#"
+        let (w, warn) = tuned(
+            r#"
             [[arena.ships]]
             name = "Apex"
             speed = 4000
@@ -9482,12 +10373,17 @@ mod tests {
             fore = 20
             aft = 12
             width = 18
-        "#);
+        "#,
+        );
         assert!(warn.is_empty(), "{warn:?}");
         let apex = w.cfg.classes[ai::class_index("Apex").unwrap()];
         unsafe {
             assert_eq!(apex.max_speed, sim::sim_units_speed(4000));
-            assert_eq!(apex.init_speed, sim::sim_units_speed(1000), "written, not scaled");
+            assert_eq!(
+                apex.init_speed,
+                sim::sim_units_speed(1000),
+                "written, not scaled"
+            );
             assert_eq!(apex.up_speed, sim::sim_units_speed(600));
             assert_eq!(apex.init_energy, sim::sim_units_energy(500));
             assert_eq!(apex.up_recharge, sim::sim_units_recharge(200));
@@ -9499,14 +10395,20 @@ mod tests {
         // A ceiling on its own still moves the floor and the step with it, so
         // raising a hull's top speed does not make it start slower relative to
         // where it can get.
-        let (w, _) = tuned(r#"
+        let (w, _) = tuned(
+            r#"
             [[arena.ships]]
             name = "Apex"
             speed = 6500
-        "#);
+        "#,
+        );
         let apex = w.cfg.classes[ai::class_index("Apex").unwrap()];
         let base = sim::World::new(1).cfg.classes[0];
-        assert_eq!(apex.init_speed, base.init_speed * 2, "doubling the ceiling doubled it");
+        assert_eq!(
+            apex.init_speed,
+            base.init_speed * 2,
+            "doubling the ceiling doubled it"
+        );
     }
 
     /// Absent and zero are different things. Every setting the core owns is
@@ -9514,7 +10416,8 @@ mod tests {
     /// gives nothing back, doors that never open, a room with no greens in it.
     #[test]
     fn zero_is_a_setting_rather_than_a_missing_one() {
-        let (w, warn) = tuned(r#"
+        let (w, warn) = tuned(
+            r#"
             [arena]
             bounce = 0
             prize_max = 0
@@ -9528,7 +10431,8 @@ mod tests {
             door_open = 100
             wormhole_pull = 40
             wormhole_range = 500
-        "#);
+        "#,
+        );
         assert!(warn.is_empty(), "{warn:?}");
         assert_eq!(w.cfg.bounce, 0, "a wall that eats everything that hits it");
         assert_eq!(w.cfg.prize_max, 0, "and a room with no greens in it");
@@ -9572,8 +10476,11 @@ mod tests {
         for _ in 0..5 {
             Room::apply_config(&mut w, &parse(src));
         }
-        assert_eq!((w.cfg.spec_count, w.cfg.pattern_count), (specs, patterns),
-                   "a reload does not append a row every time");
+        assert_eq!(
+            (w.cfg.spec_count, w.cfg.pattern_count),
+            (specs, patterns),
+            "a reload does not append a row every time"
+        );
     }
 
     /// The zones we ship are the worked example of this format, and the half of
@@ -9588,7 +10495,10 @@ mod tests {
         for name in &cat.order {
             let mut w = sim::World::new(1);
             let warn = Room::apply_config(&mut w, &cat.zones[name].arena);
-            assert!(warn.is_empty(), "zone {name:?} applies with warnings: {warn:?}");
+            assert!(
+                warn.is_empty(),
+                "zone {name:?} applies with warnings: {warn:?}"
+            );
         }
     }
 
@@ -9596,14 +10506,22 @@ mod tests {
     #[test]
     fn removing_a_line_removes_its_effect() {
         let mut w = sim::World::new(1);
-        Room::apply_config(&mut w, &parse(r#"
+        Room::apply_config(
+            &mut w,
+            &parse(
+                r#"
             [[arena.ships]]
             name = "Apex"
             speed = 6000
-        "#));
+        "#,
+            ),
+        );
         let tuned_speed = w.cfg.classes[0].max_speed;
         Room::apply_config(&mut w, &parse("[arena]\nmode = \"warzone\""));
-        assert!(w.cfg.classes[0].max_speed < tuned_speed, "back to the baseline");
+        assert!(
+            w.cfg.classes[0].max_speed < tuned_speed,
+            "back to the baseline"
+        );
     }
 }
 
@@ -9636,7 +10554,10 @@ mod one_tick_weapons {
         let mut carried = Vec::new();
         for t in 0..12 {
             let buttons = if t == 0 { sim::BTN_USE } else { 0 };
-            w.step(&[sim::sim_input { ship: a as u8, buttons }]);
+            w.step(&[sim::sim_input {
+                ship: a as u8,
+                buttons,
+            }]);
             let n = w.pack(&mut buf);
             let mut view = sim::World::new(1);
             view.apply_snapshot(&buf[..n as usize]);
@@ -9644,7 +10565,10 @@ mod one_tick_weapons {
                 carried.push(t);
             }
         }
-        assert_eq!(carried, vec![0],
-                   "a repel should be packable on exactly the tick it is fired");
+        assert_eq!(
+            carried,
+            vec![0],
+            "a repel should be packable on exactly the tick it is fired"
+        );
     }
 }

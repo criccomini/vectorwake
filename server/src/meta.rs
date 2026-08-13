@@ -27,7 +27,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use crate::catalog::sha256_hex;
 use crate::pilot;
 use crate::rating;
-use crate::token::{self, ClassRating, Claims, Kind};
+use crate::token::{self, Claims, ClassRating, Kind};
 
 /// The default mode class. A zone declares which class it rates into, and a
 /// pilot carries one rating per class, per docs/design/rating.md.
@@ -296,7 +296,10 @@ pub struct Meta {
 
 impl Meta {
     async fn db(&self) -> Result<Client, String> {
-        self.pool.get().await.map_err(|e| format!("no database connection: {e}"))
+        self.pool
+            .get()
+            .await
+            .map_err(|e| format!("no database connection: {e}"))
     }
 }
 
@@ -319,27 +322,22 @@ fn new_secret() -> String {
 /// you wondering which of the three a word came from; the test at the bottom
 /// of this file holds all four lists apart.
 const CALL_WORDS: [&str; 148] = [
-    "Vesper", "Talon", "Corvid", "Ember", "Quill", "Solstice", "Zephyr",
-    "Harrow", "Lumen", "Basalt", "Nimbus", "Cobalt", "Fathom", "Verge",
-    "Auric", "Sleet", "Pike", "Marrow", "Torrent", "Beacon", "Cinder",
-    "Drift", "Halyard", "Ingot", "Jetty", "Kiln", "Lantern", "Mistral",
-    "Noctis", "Orbit", "Plume", "Quarry", "Rill", "Sextant", "Thistle",
-    "Umber", "Aster", "Auriga", "Ballast", "Bantam", "Bearing", "Bight",
-    "Bowline", "Breaker", "Brine", "Bulwark", "Cairn", "Caldera", "Calyx",
-    "Cascade", "Chevron", "Chicane", "Corona", "Crag", "Culvert", "Cutlass",
-    "Cyclone", "Dapple", "Delta", "Dorado", "Dynamo", "Eclipse", "Eddy",
-    "Ellipse", "Epoch", "Equinox", "Fennel", "Ferrite", "Firth", "Fjord",
-    "Flint", "Flux", "Forge", "Fresnel", "Furrow", "Gale", "Galena",
-    "Garnet", "Gimbal", "Glacier", "Gnomon", "Granite", "Gulch", "Gyre",
-    "Halite", "Haven", "Helix", "Hemlock", "Icefall", "Jasper", "Karst",
-    "Knoll", "Lagoon", "Lapis", "Leeward", "Lichen", "Lyra", "Mesa", "Mica",
-    "Monsoon", "Morrow", "Nadir", "Nebula", "Nickel", "Onyx", "Opal",
-    "Outcrop", "Pewter", "Pharos", "Pinion", "Polaris", "Pumice", "Pylon",
-    "Quartz", "Quasar", "Radian", "Rampart", "Reef", "Rime", "Riptide",
-    "Rudder", "Scoria", "Shale", "Shoal", "Sickle", "Skerry", "Sonar",
-    "Spinel", "Squall", "Strand", "Stratus", "Summit", "Sundial", "Talus",
-    "Tarn", "Tempest", "Tether", "Thermal", "Tiller", "Topaz", "Trellis",
-    "Tundra", "Turbine", "Vortex", "Willow", "Wren", "Yonder", "Zircon",
+    "Vesper", "Talon", "Corvid", "Ember", "Quill", "Solstice", "Zephyr", "Harrow", "Lumen",
+    "Basalt", "Nimbus", "Cobalt", "Fathom", "Verge", "Auric", "Sleet", "Pike", "Marrow", "Torrent",
+    "Beacon", "Cinder", "Drift", "Halyard", "Ingot", "Jetty", "Kiln", "Lantern", "Mistral",
+    "Noctis", "Orbit", "Plume", "Quarry", "Rill", "Sextant", "Thistle", "Umber", "Aster", "Auriga",
+    "Ballast", "Bantam", "Bearing", "Bight", "Bowline", "Breaker", "Brine", "Bulwark", "Cairn",
+    "Caldera", "Calyx", "Cascade", "Chevron", "Chicane", "Corona", "Crag", "Culvert", "Cutlass",
+    "Cyclone", "Dapple", "Delta", "Dorado", "Dynamo", "Eclipse", "Eddy", "Ellipse", "Epoch",
+    "Equinox", "Fennel", "Ferrite", "Firth", "Fjord", "Flint", "Flux", "Forge", "Fresnel",
+    "Furrow", "Gale", "Galena", "Garnet", "Gimbal", "Glacier", "Gnomon", "Granite", "Gulch",
+    "Gyre", "Halite", "Haven", "Helix", "Hemlock", "Icefall", "Jasper", "Karst", "Knoll", "Lagoon",
+    "Lapis", "Leeward", "Lichen", "Lyra", "Mesa", "Mica", "Monsoon", "Morrow", "Nadir", "Nebula",
+    "Nickel", "Onyx", "Opal", "Outcrop", "Pewter", "Pharos", "Pinion", "Polaris", "Pumice",
+    "Pylon", "Quartz", "Quasar", "Radian", "Rampart", "Reef", "Rime", "Riptide", "Rudder",
+    "Scoria", "Shale", "Shoal", "Sickle", "Skerry", "Sonar", "Spinel", "Squall", "Strand",
+    "Stratus", "Summit", "Sundial", "Talus", "Tarn", "Tempest", "Tether", "Thermal", "Tiller",
+    "Topaz", "Trellis", "Tundra", "Turbine", "Vortex", "Willow", "Wren", "Yonder", "Zircon",
 ];
 
 /// One draw: a word and three digits. 148 words against 900 numbers is
@@ -393,7 +391,11 @@ fn hash_password(password: &str) -> Result<String, String> {
 fn verify_password(password: &str, stored: &str) -> bool {
     use argon2::password_hash::{PasswordHash, PasswordVerifier};
     PasswordHash::new(stored)
-        .map(|h| argon2::Argon2::default().verify_password(password.as_bytes(), &h).is_ok())
+        .map(|h| {
+            argon2::Argon2::default()
+                .verify_password(password.as_bytes(), &h)
+                .is_ok()
+        })
         .unwrap_or(false)
 }
 
@@ -498,7 +500,10 @@ fn clean_client_text(given: &str, limit: usize, multiline: bool) -> String {
         .chars()
         .filter(|c| !c.is_control() || (multiline && (*c == '\n' || *c == '\t')))
         .collect();
-    redact_long_hex(cleaned.trim()).chars().take(limit).collect()
+    redact_long_hex(cleaned.trim())
+        .chars()
+        .take(limit)
+        .collect()
 }
 
 fn client_error_of(body: &serde_json::Value) -> Result<ClientError, &'static str> {
@@ -514,7 +519,10 @@ fn client_error_of(body: &serde_json::Value) -> Result<ClientError, &'static str
     if message.is_empty() {
         return Err("an error report needs a message");
     }
-    let page = field("page").split(|c| c == '?' || c == '#').next().unwrap_or("");
+    let page = field("page")
+        .split(|c| c == '?' || c == '#')
+        .next()
+        .unwrap_or("");
     Ok(ClientError {
         kind,
         message,
@@ -523,7 +531,10 @@ fn client_error_of(body: &serde_json::Value) -> Result<ClientError, &'static str
         origin: clean_client_text(field("origin"), 120, false),
         page: clean_client_text(page, 240, false),
         user_agent: clean_client_text(field("user_agent"), 256, false),
-        account: body.get("account").and_then(|v| v.as_i64()).filter(|v| *v > 0),
+        account: body
+            .get("account")
+            .and_then(|v| v.as_i64())
+            .filter(|v| *v > 0),
     })
 }
 
@@ -586,7 +597,6 @@ async fn admin_for(db: &Client, secret: &str) -> Option<i64> {
     .map(|r| r.get::<_, i64>(0))
 }
 
-
 /// Give an account a name somebody chose. The unique index on
 /// `lower(call_sign)` is the arbiter, exactly as it is for a dealt name, and
 /// a collision comes back as `TAKEN` rather than as Postgres prose: a caller
@@ -615,7 +625,10 @@ async fn set_name(db: &Client, account: i64, name: &str) -> Result<(), String> {
 /// Everything a token needs about an account, in one round trip each.
 async fn claims_for(db: &Client, account: i64) -> Result<Claims, String> {
     let row = db
-        .query_opt("select kind, banned from accounts where id = $1", &[&account])
+        .query_opt(
+            "select kind, banned from accounts where id = $1",
+            &[&account],
+        )
         .await
         .map_err(|e| format!("cannot read account: {e}"))?
         .ok_or_else(|| "no such account".to_string())?;
@@ -628,7 +641,10 @@ async fn claims_for(db: &Client, account: i64) -> Result<Claims, String> {
     }
 
     let name: String = db
-        .query_opt("select call_sign from names where account = $1", &[&account])
+        .query_opt(
+            "select call_sign from names where account = $1",
+            &[&account],
+        )
         .await
         .map_err(|e| format!("cannot read name: {e}"))?
         .map(|r| r.get(0))
@@ -646,7 +662,10 @@ async fn claims_for(db: &Client, account: i64) -> Result<Claims, String> {
         .get(0);
 
     let rows = db
-        .query("select class, rating, games from ratings where account = $1", &[&account])
+        .query(
+            "select class, rating, games from ratings where account = $1",
+            &[&account],
+        )
         .await
         .map_err(|e| format!("cannot read ratings: {e}"))?;
     let ratings = rows
@@ -673,19 +692,32 @@ async fn claims_for(db: &Client, account: i64) -> Result<Claims, String> {
 /// Every route takes JSON and answers JSON. Hand-rolled HTTP for the same
 /// reason `admin.rs` hand-rolls it: the surface is small and a framework
 /// would be the larger change.
-async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (u16, serde_json::Value) {
+async fn route(
+    meta: &Meta,
+    path: &str,
+    body: &serde_json::Value,
+    ip: &str,
+) -> (u16, serde_json::Value) {
     let hour = std::time::Duration::from_secs(3600);
     if path == "/v1/client-error"
         && (!meta.throttle.allow(&format!("client-error:{ip}"), 30, hour)
             || !meta.throttle.allow("client-error:all", 2000, hour))
     {
-        return (429, serde_json::json!({ "error": "too many error reports; wait a while" }));
+        return (
+            429,
+            serde_json::json!({ "error": "too many error reports; wait a while" }),
+        );
     }
     let db = match meta.db().await {
         Ok(d) => d,
         Err(e) => return (503, serde_json::json!({ "error": e })),
     };
-    let s = |v: &str| body.get(v).and_then(|x| x.as_str()).unwrap_or("").to_string();
+    let s = |v: &str| {
+        body.get(v)
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string()
+    };
     let quarter = std::time::Duration::from_secs(900);
 
     match path {
@@ -745,22 +777,36 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
         // only means something if nobody can aim the birth.
         "/v1/guest" => {
             if !meta.throttle.allow(&format!("guest:{ip}"), 20, hour) {
-                return (429, serde_json::json!({ "error": "too many new pilots from here; wait a while" }));
+                return (
+                    429,
+                    serde_json::json!({ "error": "too many new pilots from here; wait a while" }),
+                );
             }
             let account = match create_account(&db, KIND_HUMAN, None).await {
                 Ok(a) => a,
                 Err(e) => return (500, serde_json::json!({ "error": e })),
             };
             let secret = new_secret();
-            if let Err(e) = add_credential(&db, account, "secret", &sha256_hex(secret.as_bytes())).await {
+            if let Err(e) =
+                add_credential(&db, account, "secret", &sha256_hex(secret.as_bytes())).await
+            {
                 return (500, serde_json::json!({ "error": e }));
             }
             let name = match christen(&db, account).await {
                 Ok(n) => n,
                 Err(e) => return (500, serde_json::json!({ "error": e })),
             };
-            note_account(&db, pilot::ACCOUNT, account, serde_json::json!({ "name": name })).await;
-            (200, serde_json::json!({ "secret": secret, "account": account, "name": name }))
+            note_account(
+                &db,
+                pilot::ACCOUNT,
+                account,
+                serde_json::json!({ "name": name }),
+            )
+            .await;
+            (
+                200,
+                serde_json::json!({ "secret": secret, "account": account, "name": name }),
+            )
         }
 
         // The only route a client calls in the normal case, once a session:
@@ -768,12 +814,16 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
         // where an account proves it is alive, which is the whole meaning of
         // last_seen and the only clock the guest sweeper reads.
         "/v1/session" => {
-            let Some(account) = account_for(&db, "secret", &sha256_hex(s("secret").as_bytes())).await
+            let Some(account) =
+                account_for(&db, "secret", &sha256_hex(s("secret").as_bytes())).await
             else {
                 return (403, serde_json::json!({ "error": "no such account" }));
             };
             let _ = db
-                .execute("update accounts set last_seen = now() where id = $1", &[&account])
+                .execute(
+                    "update accounts set last_seen = now() where id = $1",
+                    &[&account],
+                )
                 .await;
             match claims_for(&db, account).await {
                 Ok(c) => {
@@ -789,18 +839,21 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
                         .await
                         .map(|r| r.get(0))
                         .unwrap_or(false);
-                    (200, serde_json::json!({
-                        "token": token,
-                        "account": c.account,
-                        "name": c.name,
-                        "claimed": c.claimed,
-                        "admin": admin,
-                        "bot": c.kind.is_bot(),
-                        "expires": c.expires,
-                        "ratings": c.ratings.iter().map(|r| serde_json::json!({
-                            "class": r.class, "rating": r.rating, "games": r.games,
-                        })).collect::<Vec<_>>(),
-                    }))
+                    (
+                        200,
+                        serde_json::json!({
+                            "token": token,
+                            "account": c.account,
+                            "name": c.name,
+                            "claimed": c.claimed,
+                            "admin": admin,
+                            "bot": c.kind.is_bot(),
+                            "expires": c.expires,
+                            "ratings": c.ratings.iter().map(|r| serde_json::json!({
+                                "class": r.class, "rating": r.rating, "games": r.games,
+                            })).collect::<Vec<_>>(),
+                        }),
+                    )
                 }
                 Err(e) if e == "banned" => (403, serde_json::json!({ "error": "banned" })),
                 Err(e) => (500, serde_json::json!({ "error": e })),
@@ -813,7 +866,8 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
         // With a valid secret this also serves as changing the password,
         // which is why the old row is dropped rather than accumulated.
         "/v1/claim" => {
-            let Some(account) = account_for(&db, "secret", &sha256_hex(s("secret").as_bytes())).await
+            let Some(account) =
+                account_for(&db, "secret", &sha256_hex(s("secret").as_bytes())).await
             else {
                 return (403, serde_json::json!({ "error": "no such account" }));
             };
@@ -854,11 +908,21 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
         "/v1/login" => {
             let name = s("name");
             if !meta.throttle.allow(&format!("login:{ip}"), 10, quarter)
-                || !meta.throttle.allow(&format!("login:{}", name.to_lowercase()), 10, quarter)
+                || !meta
+                    .throttle
+                    .allow(&format!("login:{}", name.to_lowercase()), 10, quarter)
             {
-                return (429, serde_json::json!({ "error": "too many tries; wait a while" }));
+                return (
+                    429,
+                    serde_json::json!({ "error": "too many tries; wait a while" }),
+                );
             }
-            let miss = || (403, serde_json::json!({ "error": "that name and password do not match" }));
+            let miss = || {
+                (
+                    403,
+                    serde_json::json!({ "error": "that name and password do not match" }),
+                )
+            };
             let Ok(Some(row)) = db
                 .query_opt(
                     "select n.account, c.hash from names n
@@ -880,11 +944,16 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
                 return miss();
             }
             let secret = new_secret();
-            if let Err(e) = add_credential(&db, account, "secret", &sha256_hex(secret.as_bytes())).await {
+            if let Err(e) =
+                add_credential(&db, account, "secret", &sha256_hex(secret.as_bytes())).await
+            {
                 return (500, serde_json::json!({ "error": e }));
             }
             let _ = db
-                .execute("update accounts set last_seen = now() where id = $1", &[&account])
+                .execute(
+                    "update accounts set last_seen = now() where id = $1",
+                    &[&account],
+                )
                 .await;
             // A new device holding this account. One of these is somebody
             // moving to a phone; a run of them is the shape worth being able
@@ -892,19 +961,26 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
             // address and per name already, and a row per guess would let a
             // guessing script size the table.
             note_account(&db, pilot::LOGIN, account, serde_json::json!({})).await;
-            (200, serde_json::json!({ "secret": secret, "account": account }))
+            (
+                200,
+                serde_json::json!({ "secret": secret, "account": account }),
+            )
         }
 
         // The reroll, server-side because the name is server-side now. Works
         // the same for a guest and a claimed pilot: the account number never
         // moves, so the rating and the history ride through the rename.
         "/v1/rename" => {
-            let Some(account) = account_for(&db, "secret", &sha256_hex(s("secret").as_bytes())).await
+            let Some(account) =
+                account_for(&db, "secret", &sha256_hex(s("secret").as_bytes())).await
             else {
                 return (403, serde_json::json!({ "error": "no such account" }));
             };
             if !meta.throttle.allow(&format!("rename:{ip}"), 30, hour) {
-                return (429, serde_json::json!({ "error": "that is plenty of rerolling. Try again later" }));
+                return (
+                    429,
+                    serde_json::json!({ "error": "that is plenty of rerolling. Try again later" }),
+                );
             }
             match christen(&db, account).await {
                 Ok(name) => {
@@ -965,10 +1041,15 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
                 },
             };
             let secret = new_secret();
-            if let Err(e) = add_credential(&db, account, "secret", &sha256_hex(secret.as_bytes())).await {
+            if let Err(e) =
+                add_credential(&db, account, "secret", &sha256_hex(secret.as_bytes())).await
+            {
                 return (500, serde_json::json!({ "error": e }));
             }
-            (200, serde_json::json!({ "secret": secret, "account": account }))
+            (
+                200,
+                serde_json::json!({ "secret": secret, "account": account }),
+            )
         }
 
         // Somebody else's bot, registered by the person who answers for it.
@@ -987,12 +1068,18 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
                 Err(e) => return (500, serde_json::json!({ "error": e })),
             };
             if claims.kind.is_bot() {
-                return (400, serde_json::json!({ "error": "a bot cannot own a bot" }));
+                return (
+                    400,
+                    serde_json::json!({ "error": "a bot cannot own a bot" }),
+                );
             }
             if !claims.claimed {
-                return (403, serde_json::json!({
-                    "error": "claim your own account first; a bot needs an owner who can be found"
-                }));
+                return (
+                    403,
+                    serde_json::json!({
+                        "error": "claim your own account first; a bot needs an owner who can be found"
+                    }),
+                );
             }
             let name = clean_name(&s("name"));
             if name.is_empty() {
@@ -1006,10 +1093,15 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
                 return (500, serde_json::json!({ "error": e }));
             }
             let secret = new_secret();
-            if let Err(e) = add_credential(&db, account, "secret", &sha256_hex(secret.as_bytes())).await {
+            if let Err(e) =
+                add_credential(&db, account, "secret", &sha256_hex(secret.as_bytes())).await
+            {
                 return (500, serde_json::json!({ "error": e }));
             }
-            (200, serde_json::json!({ "secret": secret, "account": account, "owner": owner }))
+            (
+                200,
+                serde_json::json!({ "secret": secret, "account": account, "owner": owner }),
+            )
         }
 
         // The cross-fleet seat lock for rated play. A claim is also a renewal
@@ -1019,13 +1111,22 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
             if meta.catalog.pool_for_token(&s("pool_token")).is_none() {
                 return (403, serde_json::json!({ "error": "unknown pool token" }));
             }
-            let Some(account) = body.get("account").and_then(|v| v.as_i64()).filter(|v| *v > 0)
+            let Some(account) = body
+                .get("account")
+                .and_then(|v| v.as_i64())
+                .filter(|v| *v > 0)
             else {
-                return (400, serde_json::json!({ "error": "a rated session needs an account" }));
+                return (
+                    400,
+                    serde_json::json!({ "error": "a rated session needs an account" }),
+                );
             };
             let session = s("session");
             if session.is_empty() {
-                return (400, serde_json::json!({ "error": "a rated session needs an id" }));
+                return (
+                    400,
+                    serde_json::json!({ "error": "a rated session needs an id" }),
+                );
             }
             let instance = s("instance");
             let row = db
@@ -1052,9 +1153,15 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
             if meta.catalog.pool_for_token(&s("pool_token")).is_none() {
                 return (403, serde_json::json!({ "error": "unknown pool token" }));
             }
-            let Some(account) = body.get("account").and_then(|v| v.as_i64()).filter(|v| *v > 0)
+            let Some(account) = body
+                .get("account")
+                .and_then(|v| v.as_i64())
+                .filter(|v| *v > 0)
             else {
-                return (400, serde_json::json!({ "error": "a rated session needs an account" }));
+                return (
+                    400,
+                    serde_json::json!({ "error": "a rated session needs an account" }),
+                );
             };
             let session = s("session");
             match db
@@ -1078,12 +1185,19 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
             }
             let class = {
                 let c = s("class");
-                if c.is_empty() { DEFAULT_CLASS.to_string() } else { c }
+                if c.is_empty() {
+                    DEFAULT_CLASS.to_string()
+                } else {
+                    c
+                }
             };
             let zone = s("zone");
             let instance = s("instance");
             let empty = Vec::new();
-            let events = body.get("events").and_then(|v| v.as_array()).unwrap_or(&empty);
+            let events = body
+                .get("events")
+                .and_then(|v| v.as_array())
+                .unwrap_or(&empty);
             let mut db = db;
             let mut stored = 0usize;
             let mut failed = Vec::new();
@@ -1100,8 +1214,16 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
             if failed.is_empty() {
                 (200, serde_json::json!({ "stored": stored }))
             } else {
-                println!("meta: {} of {} events refused: {}", failed.len(), events.len(), failed[0]);
-                (500, serde_json::json!({ "stored": stored, "failed": failed.len(), "error": failed[0] }))
+                println!(
+                    "meta: {} of {} events refused: {}",
+                    failed.len(),
+                    events.len(),
+                    failed[0]
+                );
+                (
+                    500,
+                    serde_json::json!({ "stored": stored, "failed": failed.len(), "error": failed[0] }),
+                )
             }
         }
 
@@ -1117,7 +1239,10 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
             let zone = s("zone");
             let instance = s("instance");
             let empty = Vec::new();
-            let events = body.get("events").and_then(|v| v.as_array()).unwrap_or(&empty);
+            let events = body
+                .get("events")
+                .and_then(|v| v.as_array())
+                .unwrap_or(&empty);
             let mut stored = 0usize;
             let mut failed: Vec<String> = Vec::new();
             for ev in events {
@@ -1135,7 +1260,10 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
                     events.len(),
                     failed[0]
                 );
-                (500, serde_json::json!({ "stored": stored, "failed": failed.len(), "error": failed[0] }))
+                (
+                    500,
+                    serde_json::json!({ "stored": stored, "failed": failed.len(), "error": failed[0] }),
+                )
             }
         }
 
@@ -1146,12 +1274,23 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
         // routes below. Banned accounts are omitted rather than marked.
         "/v1/pilots" => {
             if !meta.throttle.allow(&format!("pilots:{ip}"), 600, hour) {
-                return (429, serde_json::json!({ "error": "too many pilot lookups; wait a while" }));
+                return (
+                    429,
+                    serde_json::json!({ "error": "too many pilot lookups; wait a while" }),
+                );
             }
             let q: String = s("q").trim().chars().take(40).collect();
             let provisional = rating::PROVISIONAL_GAMES as i32;
-            let limit = body.get("limit").and_then(|v| v.as_i64()).unwrap_or(50).clamp(1, 100);
-            let offset = body.get("offset").and_then(|v| v.as_i64()).unwrap_or(0).max(0);
+            let limit = body
+                .get("limit")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(50)
+                .clamp(1, 100);
+            let offset = body
+                .get("offset")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0)
+                .max(0);
             let rows = db
                 .query(
                     "with visible as (
@@ -1196,48 +1335,54 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
                 .map(|r| r.get(0))
                 .unwrap_or(0);
             match rows {
-                Ok(rs) => (200, serde_json::json!({
-                    "total": total,
-                    "offset": offset,
-                    "limit": limit,
-                    "default_class": DEFAULT_CLASS,
-                    "pilots": rs.iter().map(|r| {
-                        let kind: i16 = r.get(2);
-                        let score: Option<f64> = r.get(4);
-                        let games: Option<i32> = r.get(5);
-                        let tier = match (score, games) {
-                            (Some(s), Some(g)) if g as u32 >= rating::PROVISIONAL_GAMES => {
-                                Some(rating::tier(s))
-                            }
-                            _ => None,
-                        };
-                        serde_json::json!({
-                            "account": r.get::<_, i64>(0),
-                            "name": r.get::<_, String>(1),
-                            "kind": match kind_of(kind) {
-                                Kind::Human => "human",
-                                Kind::HouseBot => "house bot",
-                                Kind::ThirdPartyBot => "third-party bot",
-                            },
-                            "class": r.get::<_, Option<String>>(3),
-                            "rating": score,
-                            "games": games,
-                            "tier": tier,
-                            "rank": r.get::<_, Option<i64>>(6),
-                            "of": r.get::<_, Option<i64>>(7),
-                            "kills": r.get::<_, i64>(8),
-                            "deaths": r.get::<_, i64>(9),
-                            "assists": r.get::<_, i64>(10),
-                        })
-                    }).collect::<Vec<_>>(),
-                })),
+                Ok(rs) => (
+                    200,
+                    serde_json::json!({
+                        "total": total,
+                        "offset": offset,
+                        "limit": limit,
+                        "default_class": DEFAULT_CLASS,
+                        "pilots": rs.iter().map(|r| {
+                            let kind: i16 = r.get(2);
+                            let score: Option<f64> = r.get(4);
+                            let games: Option<i32> = r.get(5);
+                            let tier = match (score, games) {
+                                (Some(s), Some(g)) if g as u32 >= rating::PROVISIONAL_GAMES => {
+                                    Some(rating::tier(s))
+                                }
+                                _ => None,
+                            };
+                            serde_json::json!({
+                                "account": r.get::<_, i64>(0),
+                                "name": r.get::<_, String>(1),
+                                "kind": match kind_of(kind) {
+                                    Kind::Human => "human",
+                                    Kind::HouseBot => "house bot",
+                                    Kind::ThirdPartyBot => "third-party bot",
+                                },
+                                "class": r.get::<_, Option<String>>(3),
+                                "rating": score,
+                                "games": games,
+                                "tier": tier,
+                                "rank": r.get::<_, Option<i64>>(6),
+                                "of": r.get::<_, Option<i64>>(7),
+                                "kills": r.get::<_, i64>(8),
+                                "deaths": r.get::<_, i64>(9),
+                                "assists": r.get::<_, i64>(10),
+                            })
+                        }).collect::<Vec<_>>(),
+                    }),
+                ),
                 Err(e) => (500, serde_json::json!({ "error": format!("{e}") })),
             }
         }
 
         "/v1/pilot" => {
             if !meta.throttle.allow(&format!("pilots:{ip}"), 600, hour) {
-                return (429, serde_json::json!({ "error": "too many pilot lookups; wait a while" }));
+                return (
+                    429,
+                    serde_json::json!({ "error": "too many pilot lookups; wait a while" }),
+                );
             }
             let account = body.get("account").and_then(|v| v.as_i64()).unwrap_or(0);
             let pilot = db
@@ -1281,37 +1426,40 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
             match ratings {
                 Ok(rs) => {
                     let kind: i16 = pilot.get(2);
-                    (200, serde_json::json!({
-                        "default_class": DEFAULT_CLASS,
-                        "pilot": {
-                            "account": pilot.get::<_, i64>(0),
-                            "name": pilot.get::<_, String>(1),
-                            "kind": match kind_of(kind) {
-                                Kind::Human => "human",
-                                Kind::HouseBot => "house bot",
-                                Kind::ThirdPartyBot => "third-party bot",
-                            },
-                            "kills": pilot.get::<_, i64>(3),
-                            "deaths": pilot.get::<_, i64>(4),
-                            "assists": pilot.get::<_, i64>(5),
-                            "ratings": rs.iter().map(|r| {
-                                let score: f64 = r.get(1);
-                                let games: i32 = r.get(2);
-                                serde_json::json!({
-                                    "class": r.get::<_, String>(0),
-                                    "rating": score,
-                                    "games": games,
-                                    "tier": if games as u32 >= rating::PROVISIONAL_GAMES {
-                                        Some(rating::tier(score))
-                                    } else {
-                                        None
-                                    },
-                                    "rank": r.get::<_, Option<i64>>(3),
-                                    "of": r.get::<_, Option<i64>>(4),
-                                })
-                            }).collect::<Vec<_>>(),
-                        }
-                    }))
+                    (
+                        200,
+                        serde_json::json!({
+                            "default_class": DEFAULT_CLASS,
+                            "pilot": {
+                                "account": pilot.get::<_, i64>(0),
+                                "name": pilot.get::<_, String>(1),
+                                "kind": match kind_of(kind) {
+                                    Kind::Human => "human",
+                                    Kind::HouseBot => "house bot",
+                                    Kind::ThirdPartyBot => "third-party bot",
+                                },
+                                "kills": pilot.get::<_, i64>(3),
+                                "deaths": pilot.get::<_, i64>(4),
+                                "assists": pilot.get::<_, i64>(5),
+                                "ratings": rs.iter().map(|r| {
+                                    let score: f64 = r.get(1);
+                                    let games: i32 = r.get(2);
+                                    serde_json::json!({
+                                        "class": r.get::<_, String>(0),
+                                        "rating": score,
+                                        "games": games,
+                                        "tier": if games as u32 >= rating::PROVISIONAL_GAMES {
+                                            Some(rating::tier(score))
+                                        } else {
+                                            None
+                                        },
+                                        "rank": r.get::<_, Option<i64>>(3),
+                                        "of": r.get::<_, Option<i64>>(4),
+                                    })
+                                }).collect::<Vec<_>>(),
+                            }
+                        }),
+                    )
                 }
                 Err(e) => (500, serde_json::json!({ "error": format!("{e}") })),
             }
@@ -1345,9 +1493,7 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
                                     where c.account = a.id and c.method <> 'secret')
                      from accounts a left join names n on n.account = a.id";
             let row = match by_id {
-                Some(id) => {
-                    db.query_opt(&format!("{q} where a.id = $1"), &[&id]).await
-                }
+                Some(id) => db.query_opt(&format!("{q} where a.id = $1"), &[&id]).await,
                 None => {
                     db.query_opt(
                         &format!("{q} where lower(n.call_sign) = lower($1)"),
@@ -1359,21 +1505,24 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
             match row {
                 Ok(Some(r)) => {
                     let kind: i16 = r.get(2);
-                    (200, serde_json::json!({
-                        "account": r.get::<_, i64>(0),
-                        "name": r.get::<_, String>(1),
-                        "kind": match kind_of(kind) {
-                            Kind::Human => "human",
-                            Kind::HouseBot => "house bot",
-                            Kind::ThirdPartyBot => "third-party bot",
-                        },
-                        "banned": r.get::<_, bool>(3),
-                        "reason": r.get::<_, String>(4),
-                        "admin": r.get::<_, bool>(5),
-                        "created": r.get::<_, String>(6),
-                        "last_seen": r.get::<_, String>(7),
-                        "claimed": r.get::<_, bool>(8),
-                    }))
+                    (
+                        200,
+                        serde_json::json!({
+                            "account": r.get::<_, i64>(0),
+                            "name": r.get::<_, String>(1),
+                            "kind": match kind_of(kind) {
+                                Kind::Human => "human",
+                                Kind::HouseBot => "house bot",
+                                Kind::ThirdPartyBot => "third-party bot",
+                            },
+                            "banned": r.get::<_, bool>(3),
+                            "reason": r.get::<_, String>(4),
+                            "admin": r.get::<_, bool>(5),
+                            "created": r.get::<_, String>(6),
+                            "last_seen": r.get::<_, String>(7),
+                            "claimed": r.get::<_, bool>(8),
+                        }),
+                    )
                 }
                 Ok(None) => (404, serde_json::json!({ "error": "no such pilot" })),
                 Err(e) => (500, serde_json::json!({ "error": format!("{e}") })),
@@ -1401,16 +1550,17 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
                 )
                 .await;
             match r {
-                Ok(0) => (400, serde_json::json!({
-                    "error": "no such account, or it holds the admin flag; \
-                              revoke that in the database first"
-                })),
+                Ok(0) => (
+                    400,
+                    serde_json::json!({
+                        "error": "no such account, or it holds the admin flag; \
+                                  revoke that in the database first"
+                    }),
+                ),
                 Ok(_) => {
                     // Actions get no audit trail from the catalog, so say it
                     // here, the way the directory notes its commands.
-                    println!(
-                        "meta: admin {actor} set banned={banned} on {account}: {reason:?}"
-                    );
+                    println!("meta: admin {actor} set banned={banned} on {account}: {reason:?}");
                     // Beside the stdout line, because a moderation record that
                     // lives only in a container's logs is one nobody can look
                     // up. The actor is the account the secret resolved to, not
@@ -1422,7 +1572,10 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
                         serde_json::json!({ "by": actor, "reason": reason }),
                     )
                     .await;
-                    (200, serde_json::json!({ "account": account, "banned": banned }))
+                    (
+                        200,
+                        serde_json::json!({ "account": account, "banned": banned }),
+                    )
                 }
                 Err(e) => (500, serde_json::json!({ "error": format!("{e}") })),
             }
@@ -1462,9 +1615,12 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
             let Some(body) =
                 crate::directory::ask_with(&url, frame, crate::fleet::D2O_COMMAND).await
             else {
-                return (503, serde_json::json!({
-                    "error": format!("no answer from the directory at {url}")
-                }));
+                return (
+                    503,
+                    serde_json::json!({
+                        "error": format!("no answer from the directory at {url}")
+                    }),
+                );
             };
             let Ok(sent) = serde_json::from_str::<crate::fleet::CommandSent>(&body) else {
                 return (502, serde_json::json!({ "error": "unreadable reply" }));
@@ -1522,10 +1678,13 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
             // looked up by it, so renaming one would leave the scoreboard
             // disagreeing with the roster that seeded its rating.
             if kind_of(kind).is_bot() {
-                return (400, serde_json::json!({
-                    "error": "a bot's name is how its roster identity is found; \
-                              renaming it would split the two"
-                }));
+                return (
+                    400,
+                    serde_json::json!({
+                        "error": "a bot's name is how its roster identity is found; \
+                                  renaming it would split the two"
+                    }),
+                );
             }
 
             let asked = s("name");
@@ -1547,9 +1706,12 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
             // database and not the screen; that is the operator's to judge.
             let name = clean_name(&asked);
             if name.is_empty() {
-                return (400, serde_json::json!({
-                    "error": "a call sign needs printable characters"
-                }));
+                return (
+                    400,
+                    serde_json::json!({
+                        "error": "a call sign needs printable characters"
+                    }),
+                );
             }
             match set_name(&db, account, &name).await {
                 Ok(()) => {
@@ -1564,9 +1726,12 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
                     (200, serde_json::json!({ "account": account, "name": name }))
                 }
                 // The index is the arbiter, and it says this one is held.
-                Err(e) if e == TAKEN => (409, serde_json::json!({
-                    "error": format!("{name:?} is already somebody's call sign")
-                })),
+                Err(e) if e == TAKEN => (
+                    409,
+                    serde_json::json!({
+                        "error": format!("{name:?} is already somebody's call sign")
+                    }),
+                ),
                 Err(e) => (500, serde_json::json!({ "error": e })),
             }
         }
@@ -1622,7 +1787,11 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
                 .and_then(|v| v.as_i64())
                 .unwrap_or(25)
                 .clamp(1, 200);
-            let offset = body.get("offset").and_then(|v| v.as_i64()).unwrap_or(0).max(0);
+            let offset = body
+                .get("offset")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0)
+                .max(0);
             let rows = db
                 .query(
                     "with ladder as (
@@ -1672,54 +1841,57 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
                 .map(|r| r.get(0))
                 .unwrap_or(0);
             match rows {
-                Ok(rs) => (200, serde_json::json!({
-                    "total": total,
-                    "offset": offset,
-                    "limit": limit,
-                    // The two constants the page would otherwise have to keep
-                    // a copy of to draw a standing: how many games place a
-                    // pilot, and which class needs no naming. Sent once per
-                    // reply rather than once per row, and sent at all so that
-                    // moving either one in rating.rs moves it everywhere.
-                    "provisional": rating::PROVISIONAL_GAMES,
-                    "default_class": DEFAULT_CLASS,
-                    "pilots": rs.iter().map(|r| {
-                        let kind: i16 = r.get(2);
-                        // The band, computed here rather than on the page: the
-                        // thresholds live in rating.rs and a second copy of
-                        // them in JavaScript is a second copy to forget when
-                        // they move. Null while a pilot is still placing,
-                        // which is a different thing from Green and reads as
-                        // one.
-                        let games: Option<i32> = r.get(9);
-                        let score: Option<f64> = r.get(8);
-                        let tier = match (score, games) {
-                            (Some(s), Some(g)) if g as u32 >= rating::PROVISIONAL_GAMES => {
-                                Some(rating::tier(s))
-                            }
-                            _ => None,
-                        };
-                        serde_json::json!({
-                            "account": r.get::<_, i64>(0),
-                            "name": r.get::<_, String>(1),
-                            "kind": match kind_of(kind) {
-                                Kind::Human => "human",
-                                Kind::HouseBot => "house bot",
-                                Kind::ThirdPartyBot => "third-party bot",
-                            },
-                            "banned": r.get::<_, bool>(3),
-                            "admin": r.get::<_, bool>(4),
-                            "claimed": r.get::<_, bool>(5),
-                            "last_seen": r.get::<_, String>(6),
-                            "class": r.get::<_, Option<String>>(7),
-                            "rating": score,
-                            "games": games,
-                            "tier": tier,
-                            "rank": r.get::<_, Option<i64>>(10),
-                            "of": r.get::<_, Option<i64>>(11),
-                        })
-                    }).collect::<Vec<_>>(),
-                })),
+                Ok(rs) => (
+                    200,
+                    serde_json::json!({
+                        "total": total,
+                        "offset": offset,
+                        "limit": limit,
+                        // The two constants the page would otherwise have to keep
+                        // a copy of to draw a standing: how many games place a
+                        // pilot, and which class needs no naming. Sent once per
+                        // reply rather than once per row, and sent at all so that
+                        // moving either one in rating.rs moves it everywhere.
+                        "provisional": rating::PROVISIONAL_GAMES,
+                        "default_class": DEFAULT_CLASS,
+                        "pilots": rs.iter().map(|r| {
+                            let kind: i16 = r.get(2);
+                            // The band, computed here rather than on the page: the
+                            // thresholds live in rating.rs and a second copy of
+                            // them in JavaScript is a second copy to forget when
+                            // they move. Null while a pilot is still placing,
+                            // which is a different thing from Green and reads as
+                            // one.
+                            let games: Option<i32> = r.get(9);
+                            let score: Option<f64> = r.get(8);
+                            let tier = match (score, games) {
+                                (Some(s), Some(g)) if g as u32 >= rating::PROVISIONAL_GAMES => {
+                                    Some(rating::tier(s))
+                                }
+                                _ => None,
+                            };
+                            serde_json::json!({
+                                "account": r.get::<_, i64>(0),
+                                "name": r.get::<_, String>(1),
+                                "kind": match kind_of(kind) {
+                                    Kind::Human => "human",
+                                    Kind::HouseBot => "house bot",
+                                    Kind::ThirdPartyBot => "third-party bot",
+                                },
+                                "banned": r.get::<_, bool>(3),
+                                "admin": r.get::<_, bool>(4),
+                                "claimed": r.get::<_, bool>(5),
+                                "last_seen": r.get::<_, String>(6),
+                                "class": r.get::<_, Option<String>>(7),
+                                "rating": score,
+                                "games": games,
+                                "tier": tier,
+                                "rank": r.get::<_, Option<i64>>(10),
+                                "of": r.get::<_, Option<i64>>(11),
+                            })
+                        }).collect::<Vec<_>>(),
+                    }),
+                ),
                 Err(e) => (500, serde_json::json!({ "error": format!("{e}") })),
             }
         }
@@ -1762,31 +1934,46 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
                 Err(e) => return (500, serde_json::json!({ "error": format!("{e}") })),
             };
             if admin && kind_of(kind).is_bot() {
-                return (400, serde_json::json!({
-                    "error": "a bot cannot open the panel; it has no password to sign in with"
-                }));
+                return (
+                    400,
+                    serde_json::json!({
+                        "error": "a bot cannot open the panel; it has no password to sign in with"
+                    }),
+                );
             }
             if admin && !has_password {
-                return (400, serde_json::json!({
-                    "error": "that account has no password, so it could not sign in. \
-                              It has to claim one first"
-                }));
+                return (
+                    400,
+                    serde_json::json!({
+                        "error": "that account has no password, so it could not sign in. \
+                                  It has to claim one first"
+                    }),
+                );
             }
             if !admin && held {
                 let others: i64 = db
-                    .query_one("select count(*) from accounts where admin and id <> $1", &[&account])
+                    .query_one(
+                        "select count(*) from accounts where admin and id <> $1",
+                        &[&account],
+                    )
                     .await
                     .map(|r| r.get(0))
                     .unwrap_or(0);
                 if others == 0 {
-                    return (409, serde_json::json!({
-                        "error": "that is the last admin; granting somebody else first \
-                                  keeps this deployment out of the database"
-                    }));
+                    return (
+                        409,
+                        serde_json::json!({
+                            "error": "that is the last admin; granting somebody else first \
+                                      keeps this deployment out of the database"
+                        }),
+                    );
                 }
             }
             let r = db
-                .execute("update accounts set admin = $2 where id = $1", &[&account, &admin])
+                .execute(
+                    "update accounts set admin = $2 where id = $1",
+                    &[&account, &admin],
+                )
                 .await;
             match r {
                 Ok(0) => (404, serde_json::json!({ "error": "no such account" })),
@@ -1799,7 +1986,10 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
                         serde_json::json!({ "by": actor }),
                     )
                     .await;
-                    (200, serde_json::json!({ "account": account, "admin": admin }))
+                    (
+                        200,
+                        serde_json::json!({ "account": account, "admin": admin }),
+                    )
                 }
                 Err(e) => (500, serde_json::json!({ "error": format!("{e}") })),
             }
@@ -1822,14 +2012,17 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
                 )
                 .await;
             match rows {
-                Ok(rs) => (200, serde_json::json!({
-                    "bans": rs.iter().map(|r| serde_json::json!({
-                        "account": r.get::<_, i64>(0),
-                        "name": r.get::<_, String>(1),
-                        "reason": r.get::<_, String>(2),
-                        "last_seen": r.get::<_, String>(3),
-                    })).collect::<Vec<_>>(),
-                })),
+                Ok(rs) => (
+                    200,
+                    serde_json::json!({
+                        "bans": rs.iter().map(|r| serde_json::json!({
+                            "account": r.get::<_, i64>(0),
+                            "name": r.get::<_, String>(1),
+                            "reason": r.get::<_, String>(2),
+                            "last_seen": r.get::<_, String>(3),
+                        })).collect::<Vec<_>>(),
+                    }),
+                ),
                 Err(e) => (500, serde_json::json!({ "error": format!("{e}") })),
             }
         }
@@ -1869,41 +2062,51 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
                      left join names n on n.account = pe.pilot";
             let rows = if !session.is_empty() {
                 db.query(
-                    &format!("{q} where pe.session = $1 order by pe.at desc, pe.id desc \
-                              limit $2 offset $3"),
+                    &format!(
+                        "{q} where pe.session = $1 order by pe.at desc, pe.id desc \
+                              limit $2 offset $3"
+                    ),
                     &[&session, &probe, &offset],
                 )
                 .await
             } else if let Some(id) = account {
                 db.query(
-                    &format!("{q} where pe.pilot = $1 order by pe.at desc, pe.id desc \
-                              limit $2 offset $3"),
+                    &format!(
+                        "{q} where pe.pilot = $1 order by pe.at desc, pe.id desc \
+                              limit $2 offset $3"
+                    ),
                     &[&id, &probe, &offset],
                 )
                 .await
             } else {
-                return (400, serde_json::json!({ "error": "an account or a session" }));
+                return (
+                    400,
+                    serde_json::json!({ "error": "an account or a session" }),
+                );
             };
             match rows {
                 Ok(rs) => {
                     let more = rs.len() as i64 > limit;
-                    (200, serde_json::json!({
-                        "events": rs.iter().take(limit as usize).map(|r| serde_json::json!({
-                            "at": r.get::<_, String>(0),
-                            "session": r.get::<_, String>(1),
-                            "kind": r.get::<_, String>(2),
-                            "name": r.get::<_, String>(3),
-                            "bot": r.get::<_, bool>(4),
-                            "zone": r.get::<_, String>(5),
-                            "instance": r.get::<_, String>(6),
-                            "room": r.get::<_, Option<i32>>(7),
-                            "tick": r.get::<_, i64>(8),
-                            "detail": r.get::<_, serde_json::Value>(9),
-                        })).collect::<Vec<_>>(),
-                        "offset": offset,
-                        "limit": limit,
-                        "more": more,
-                    }))
+                    (
+                        200,
+                        serde_json::json!({
+                            "events": rs.iter().take(limit as usize).map(|r| serde_json::json!({
+                                "at": r.get::<_, String>(0),
+                                "session": r.get::<_, String>(1),
+                                "kind": r.get::<_, String>(2),
+                                "name": r.get::<_, String>(3),
+                                "bot": r.get::<_, bool>(4),
+                                "zone": r.get::<_, String>(5),
+                                "instance": r.get::<_, String>(6),
+                                "room": r.get::<_, Option<i32>>(7),
+                                "tick": r.get::<_, i64>(8),
+                                "detail": r.get::<_, serde_json::Value>(9),
+                            })).collect::<Vec<_>>(),
+                            "offset": offset,
+                            "limit": limit,
+                            "more": more,
+                        }),
+                    )
                 }
                 Err(e) => (500, serde_json::json!({ "error": format!("{e}") })),
             }
@@ -1947,32 +2150,33 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
             match (summary, rows) {
                 (Ok(summary), Ok(rows)) => {
                     let more = rows.len() as i64 > limit;
-                    (200, serde_json::json!({
-                        "groups_1h": summary.get::<_, i64>(0),
-                        "groups_24h": summary.get::<_, i64>(1),
-                        "groups": summary.get::<_, i64>(2),
-                        "occurrences": summary.get::<_, i64>(3),
-                        "offset": offset,
-                        "limit": limit,
-                        "more": more,
-                        "errors": rows.iter().take(limit as usize).map(|r| serde_json::json!({
-                            "first_at": r.get::<_, String>(0),
-                            "last_at": r.get::<_, String>(1),
-                            "occurrences": r.get::<_, i64>(2),
-                            "kind": r.get::<_, String>(3),
-                            "message": r.get::<_, String>(4),
-                            "stack": r.get::<_, String>(5),
-                            "build": r.get::<_, String>(6),
-                            "origin": r.get::<_, String>(7),
-                            "page": r.get::<_, String>(8),
-                            "user_agent": r.get::<_, String>(9),
-                            "account": r.get::<_, Option<i64>>(10),
-                        })).collect::<Vec<_>>(),
-                    }))
+                    (
+                        200,
+                        serde_json::json!({
+                            "groups_1h": summary.get::<_, i64>(0),
+                            "groups_24h": summary.get::<_, i64>(1),
+                            "groups": summary.get::<_, i64>(2),
+                            "occurrences": summary.get::<_, i64>(3),
+                            "offset": offset,
+                            "limit": limit,
+                            "more": more,
+                            "errors": rows.iter().take(limit as usize).map(|r| serde_json::json!({
+                                "first_at": r.get::<_, String>(0),
+                                "last_at": r.get::<_, String>(1),
+                                "occurrences": r.get::<_, i64>(2),
+                                "kind": r.get::<_, String>(3),
+                                "message": r.get::<_, String>(4),
+                                "stack": r.get::<_, String>(5),
+                                "build": r.get::<_, String>(6),
+                                "origin": r.get::<_, String>(7),
+                                "page": r.get::<_, String>(8),
+                                "user_agent": r.get::<_, String>(9),
+                                "account": r.get::<_, Option<i64>>(10),
+                            })).collect::<Vec<_>>(),
+                        }),
+                    )
                 }
-                (Err(e), _) | (_, Err(e)) => {
-                    (500, serde_json::json!({ "error": format!("{e}") }))
-                }
+                (Err(e), _) | (_, Err(e)) => (500, serde_json::json!({ "error": format!("{e}") })),
             }
         }
 
@@ -2005,8 +2209,11 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
             // and the page says so.
             let who: Vec<bool> = match body.get("who").and_then(|v| v.as_array()) {
                 Some(a) => {
-                    let mut v: Vec<bool> =
-                        a.iter().filter_map(|x| x.as_str()).map(|s| s == "bots").collect();
+                    let mut v: Vec<bool> = a
+                        .iter()
+                        .filter_map(|x| x.as_str())
+                        .map(|s| s == "bots")
+                        .collect();
                     v.sort_unstable();
                     v.dedup();
                     v
@@ -2028,7 +2235,12 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
             let kinds: Vec<String> = body
                 .get("kinds")
                 .and_then(|v| v.as_array())
-                .map(|a| a.iter().filter_map(|x| x.as_str()).map(String::from).collect())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|x| x.as_str())
+                        .map(String::from)
+                        .collect()
+                })
                 .unwrap_or_default();
             // The call sign falls back to the account's current one. A row
             // the arena filed carries the name as it read at the time, which
@@ -2055,8 +2267,10 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
                 .await
             } else {
                 db.query(
-                    &format!("{q} and pe.kind = any($3) order by pe.at desc, pe.id desc \
-                              limit $4 offset $5"),
+                    &format!(
+                        "{q} and pe.kind = any($3) order by pe.at desc, pe.id desc \
+                              limit $4 offset $5"
+                    ),
                     &[&who, &hours, &kinds, &probe, &offset],
                 )
                 .await
@@ -2093,24 +2307,27 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
             match rows {
                 Ok(rs) => {
                     let more = rs.len() as i64 > limit;
-                    (200, serde_json::json!({
-                        "events": rs.iter().take(limit as usize).map(|r| serde_json::json!({
-                            "at": r.get::<_, String>(0),
-                            "session": r.get::<_, String>(1),
-                            "kind": r.get::<_, String>(2),
-                            "name": r.get::<_, String>(3),
-                            "pilot": r.get::<_, Option<i64>>(4),
-                            "zone": r.get::<_, String>(5),
-                            "instance": r.get::<_, String>(6),
-                            "room": r.get::<_, Option<i32>>(7),
-                            "detail": r.get::<_, serde_json::Value>(8),
-                        })).collect::<Vec<_>>(),
-                        "offset": offset,
-                        "limit": limit,
-                        "more": more,
-                        "hours": hours,
-                        "newest": newest,
-                    }))
+                    (
+                        200,
+                        serde_json::json!({
+                            "events": rs.iter().take(limit as usize).map(|r| serde_json::json!({
+                                "at": r.get::<_, String>(0),
+                                "session": r.get::<_, String>(1),
+                                "kind": r.get::<_, String>(2),
+                                "name": r.get::<_, String>(3),
+                                "pilot": r.get::<_, Option<i64>>(4),
+                                "zone": r.get::<_, String>(5),
+                                "instance": r.get::<_, String>(6),
+                                "room": r.get::<_, Option<i32>>(7),
+                                "detail": r.get::<_, serde_json::Value>(8),
+                            })).collect::<Vec<_>>(),
+                            "offset": offset,
+                            "limit": limit,
+                            "more": more,
+                            "hours": hours,
+                            "newest": newest,
+                        }),
+                    )
                 }
                 Err(e) => (500, serde_json::json!({ "error": format!("{e}") })),
             }
@@ -2136,11 +2353,15 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
             }
             let url = directory_url();
             let Some(body) =
-                crate::directory::request(&url, crate::fleet::O2D_FLEET, crate::fleet::D2O_FLEET).await
+                crate::directory::request(&url, crate::fleet::O2D_FLEET, crate::fleet::D2O_FLEET)
+                    .await
             else {
-                return (503, serde_json::json!({
-                    "error": format!("no answer from the directory at {url}")
-                }));
+                return (
+                    503,
+                    serde_json::json!({
+                        "error": format!("no answer from the directory at {url}")
+                    }),
+                );
             };
             let Ok(view) = serde_json::from_str::<crate::fleet::View>(&body) else {
                 return (502, serde_json::json!({ "error": "unreadable fleet view" }));
@@ -2153,58 +2374,61 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
                 .and_then(|v| v.get("audit").cloned())
                 .unwrap_or_else(|| serde_json::json!([]));
             let mine = token::to_hex(meta.signing.verifying_key().as_bytes());
-            (200, serde_json::json!({
-                "catalog_version": view.catalog_version,
-                "audit": audit,
-                // Three builds to hold against each other: this process, the
-                // directory that answered, and each arena below. A converge
-                // that lands on one and not another leaves a fleet that
-                // works and disagrees, which is invisible from every other
-                // number here.
-                "build": crate::metrics::commit(),
-                "directory_build": view.build,
-                // Said as an answer rather than as two keys to compare by eye,
-                // because the whole value of the check is that nobody is
-                // looking when it matters.
-                "key_agrees": view.meta_key.eq_ignore_ascii_case(&mine),
-                "meta_key": mine,
-                "instances": view.instances.iter().map(|i| serde_json::json!({
-                    "instance": i.instance,
-                    "zone": i.zone,
-                    "address": i.address,
-                    "region": i.region,
-                    "pool": i.pool,
-                    "players": i.players,
-                    "bots": i.bots,
-                    "bots_wanted": i.bots_wanted,
-                    // The rooms themselves, not a count of them. An instance
-                    // holding one room of twenty and an instance holding
-                    // four of five are the same number and different
-                    // situations, and the fill ladder is the thing an
-                    // operator is judging when they look here.
-                    "rooms": i.rooms.iter().map(|r| serde_json::json!({
-                        "number": r.number,
-                        "players": r.players,
-                        "bots": r.bots,
-                        "full": r.full,
+            (
+                200,
+                serde_json::json!({
+                    "catalog_version": view.catalog_version,
+                    "audit": audit,
+                    // Three builds to hold against each other: this process, the
+                    // directory that answered, and each arena below. A converge
+                    // that lands on one and not another leaves a fleet that
+                    // works and disagrees, which is invisible from every other
+                    // number here.
+                    "build": crate::metrics::commit(),
+                    "directory_build": view.build,
+                    // Said as an answer rather than as two keys to compare by eye,
+                    // because the whole value of the check is that nobody is
+                    // looking when it matters.
+                    "key_agrees": view.meta_key.eq_ignore_ascii_case(&mine),
+                    "meta_key": mine,
+                    "instances": view.instances.iter().map(|i| serde_json::json!({
+                        "instance": i.instance,
+                        "zone": i.zone,
+                        "address": i.address,
+                        "region": i.region,
+                        "pool": i.pool,
+                        "players": i.players,
+                        "bots": i.bots,
+                        "bots_wanted": i.bots_wanted,
+                        // The rooms themselves, not a count of them. An instance
+                        // holding one room of twenty and an instance holding
+                        // four of five are the same number and different
+                        // situations, and the fill ladder is the thing an
+                        // operator is judging when they look here.
+                        "rooms": i.rooms.iter().map(|r| serde_json::json!({
+                            "number": r.number,
+                            "players": r.players,
+                            "bots": r.bots,
+                            "full": r.full,
+                        })).collect::<Vec<_>>(),
+                        "max_rooms": i.max_rooms,
+                        "build": i.build,
+                        "host_id": i.host_id,
+                        "capped": i.capped,
+                        "verified": i.verified,
+                        "age_ms": i.age_ms,
+                        "intent": i.intent,
+                        "pinned": i.pinned,
+                        "pinned_by": i.pinned_by,
+                        "pinned_at_ms": i.pinned_at_ms,
+                        "tick_us": i.metrics.tick_us,
+                        "bw_per_player": i.metrics.bw_per_player,
+                        "snapshot_bytes": i.metrics.snapshot_bytes,
+                        "queue_depth": i.metrics.queue_depth,
+                        "lag_actions": i.metrics.lag_actions,
                     })).collect::<Vec<_>>(),
-                    "max_rooms": i.max_rooms,
-                    "build": i.build,
-                    "host_id": i.host_id,
-                    "capped": i.capped,
-                    "verified": i.verified,
-                    "age_ms": i.age_ms,
-                    "intent": i.intent,
-                    "pinned": i.pinned,
-                    "pinned_by": i.pinned_by,
-                    "pinned_at_ms": i.pinned_at_ms,
-                    "tick_us": i.metrics.tick_us,
-                    "bw_per_player": i.metrics.bw_per_player,
-                    "snapshot_bytes": i.metrics.snapshot_bytes,
-                    "queue_depth": i.metrics.queue_depth,
-                    "lag_actions": i.metrics.lag_actions,
-                })).collect::<Vec<_>>(),
-            }))
+                }),
+            )
         }
 
         // Who holds the flag, so the panel can show the set it cannot change.
@@ -2222,13 +2446,16 @@ async fn route(meta: &Meta, path: &str, body: &serde_json::Value, ip: &str) -> (
                 )
                 .await;
             match rows {
-                Ok(rs) => (200, serde_json::json!({
-                    "admins": rs.iter().map(|r| serde_json::json!({
-                        "account": r.get::<_, i64>(0),
-                        "name": r.get::<_, String>(1),
-                        "last_seen": r.get::<_, String>(2),
-                    })).collect::<Vec<_>>(),
-                })),
+                Ok(rs) => (
+                    200,
+                    serde_json::json!({
+                        "admins": rs.iter().map(|r| serde_json::json!({
+                            "account": r.get::<_, i64>(0),
+                            "name": r.get::<_, String>(1),
+                            "last_seen": r.get::<_, String>(2),
+                        })).collect::<Vec<_>>(),
+                    }),
+                ),
                 Err(e) => (500, serde_json::json!({ "error": format!("{e}") })),
             }
         }
@@ -2272,16 +2499,28 @@ async fn ingest(
     let Some(event_id) = ev.get("id").and_then(|v| v.as_i64()) else {
         return Err("no event id".into());
     };
-    let before = ev.get("victim_before").and_then(|v| v.as_f64()).unwrap_or(0.0);
-    let after = ev.get("victim_after").and_then(|v| v.as_f64()).unwrap_or(0.0);
+    let before = ev
+        .get("victim_before")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.0);
+    let after = ev
+        .get("victim_after")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.0);
     let tick = ev.get("tick").and_then(|v| v.as_i64()).unwrap_or(0);
     let victim_kind = ev.get("victim_kind").and_then(|v| v.as_i64()).unwrap_or(0) as i16;
     let killer = ev.get("killer").and_then(|v| v.as_i64());
     // Absent means keep, which is the safe direction: an arena too old to
     // send this is not one whose events should quietly expire.
-    let bots_only = ev.get("bots_only").and_then(|v| v.as_bool()).unwrap_or(false);
+    let bots_only = ev
+        .get("bots_only")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
     let empty = Vec::new();
-    let credits = ev.get("credits").and_then(|v| v.as_array()).unwrap_or(&empty);
+    let credits = ev
+        .get("credits")
+        .and_then(|v| v.as_array())
+        .unwrap_or(&empty);
 
     let db = db
         .transaction()
@@ -2389,7 +2628,10 @@ async fn ingest_pilot(
     // Milliseconds on the wire, a timestamp in the column. The arena has no
     // date library and does not need one to say when something happened.
     let at = ev.get("at").and_then(|v| v.as_u64()).unwrap_or(0) as f64 / 1000.0;
-    let session = ev.get("session").and_then(|v| v.as_str()).filter(|s| !s.is_empty());
+    let session = ev
+        .get("session")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty());
     let pilot = ev.get("pilot").and_then(|v| v.as_i64());
     let name = ev.get("name").and_then(|v| v.as_str()).unwrap_or_default();
     let bot = ev.get("bot").and_then(|v| v.as_bool()).unwrap_or(false);
@@ -2405,8 +2647,8 @@ async fn ingest_pilot(
                  $10, $11, $12)
          on conflict (event_id) do nothing",
         &[
-            &event_id, &at, &session, &pilot, &name, &bot, &kind, &zone,
-            &instance, &room, &tick, &detail,
+            &event_id, &at, &session, &pilot, &name, &bot, &kind, &zone, &instance, &room, &tick,
+            &detail,
         ],
     )
     .await
@@ -2467,8 +2709,16 @@ async fn apply(
 /// everything, because a page that has to draw its way out of a slow answer
 /// has already lost.
 fn page_of(body: &serde_json::Value) -> (i64, i64) {
-    let limit = body.get("limit").and_then(|v| v.as_i64()).unwrap_or(50).clamp(1, 200);
-    let offset = body.get("offset").and_then(|v| v.as_i64()).unwrap_or(0).max(0);
+    let limit = body
+        .get("limit")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(50)
+        .clamp(1, 200);
+    let offset = body
+        .get("offset")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0)
+        .max(0);
     (limit, offset)
 }
 
@@ -2520,7 +2770,13 @@ fn endpoint(base: &str) -> Endpoint {
     } else {
         format!("{authority}:{}", if tls { 443 } else { 80 })
     };
-    Endpoint { tls, addr, authority: authority.to_string(), server_name, prefix }
+    Endpoint {
+        tls,
+        addr,
+        authority: authority.to_string(),
+        server_name,
+        prefix,
+    }
 }
 
 /// The roots and the cipher suite for an outbound https call, built once.
@@ -2567,7 +2823,9 @@ where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
 {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    s.write_all(req.as_bytes()).await.map_err(|e| format!("{e}"))?;
+    s.write_all(req.as_bytes())
+        .await
+        .map_err(|e| format!("{e}"))?;
     let mut out = Vec::new();
     if let Err(e) = s.read_to_end(&mut out).await {
         // A peer that closes a TLS connection without close_notify is a
@@ -2625,7 +2883,11 @@ pub async fn call(base: &str, path: &str, body: &str) -> Result<serde_json::Valu
         // down, and both arrive as a non-200.
         let why = serde_json::from_str::<serde_json::Value>(payload)
             .ok()
-            .and_then(|v| v.get("error").and_then(|e| e.as_str()).map(|s| s.to_string()))
+            .and_then(|v| {
+                v.get("error")
+                    .and_then(|e| e.as_str())
+                    .map(|s| s.to_string())
+            })
             .unwrap_or(status);
         return Err(why);
     }
@@ -2648,7 +2910,10 @@ pub async fn claim_rated_session(
     })
     .to_string();
     let reply = call(base, "/v1/rated-session/claim", &body).await?;
-    Ok(reply.get("claimed").and_then(|v| v.as_bool()).unwrap_or(false))
+    Ok(reply
+        .get("claimed")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false))
 }
 
 /// Release a rated seat. The route is idempotent, so cleanup can call it
@@ -2665,7 +2930,9 @@ pub async fn release_rated_session(
         "session": session,
     })
     .to_string();
-    call(base, "/v1/rated-session/release", &body).await.map(|_| ())
+    call(base, "/v1/rated-session/release", &body)
+        .await
+        .map(|_| ())
 }
 
 // ------------------------------------------------------------------ server
@@ -2697,7 +2964,9 @@ async fn serve(mut s: tokio::net::TcpStream, meta: Arc<Meta>) -> std::io::Result
         })
         .filter(|v| !v.is_empty())
         .unwrap_or_else(|| {
-            s.peer_addr().map(|a| a.ip().to_string()).unwrap_or_default()
+            s.peer_addr()
+                .map(|a| a.ip().to_string())
+                .unwrap_or_default()
         });
 
     // A body can outrun one read. Everything here is small, so the fix is to
@@ -2706,7 +2975,8 @@ async fn serve(mut s: tokio::net::TcpStream, meta: Arc<Meta>) -> std::io::Result
         .split("\r\n")
         .find_map(|l| {
             let l = l.to_ascii_lowercase();
-            l.strip_prefix("content-length:").map(|v| v.trim().parse().unwrap_or(0))
+            l.strip_prefix("content-length:")
+                .map(|v| v.trim().parse().unwrap_or(0))
         })
         .unwrap_or(0);
     let mut body = body.to_string();
@@ -2777,7 +3047,9 @@ pub async fn run() {
     // So an empty database is a hard failure unless somebody said they meant
     // it, the same shape as VW_REPORT=0 meaning "do not file rated events".
     let url = std::env::var("VW_META_DATABASE").unwrap_or_default();
-    let declared_off = std::env::var("VW_ACCOUNTS").map(|v| v == "0").unwrap_or(false);
+    let declared_off = std::env::var("VW_ACCOUNTS")
+        .map(|v| v == "0")
+        .unwrap_or(false);
     if url.is_empty() {
         if declared_off {
             println!("meta: VW_ACCOUNTS=0, so this deployment keeps no accounts");
@@ -2791,7 +3063,9 @@ pub async fn run() {
         }
         return;
     }
-    let Some(signing) = std::env::var("VW_META_KEY").ok().and_then(|k| token::signing_key_from_hex(&k))
+    let Some(signing) = std::env::var("VW_META_KEY")
+        .ok()
+        .and_then(|k| token::signing_key_from_hex(&k))
     else {
         eprintln!("meta: VW_META_KEY must be 64 hex characters; make one with 'vectorwake-server metakey'");
         eprintln!("  Its other half is the catalog's [meta] verifying key, so the pair");
@@ -3018,7 +3292,12 @@ pub async fn run() {
     }
 
     let verifying = token::to_hex(signing.verifying_key().as_bytes());
-    let meta = Arc::new(Meta { pool, signing, catalog, throttle: Throttle::default() });
+    let meta = Arc::new(Meta {
+        pool,
+        signing,
+        catalog,
+        throttle: Throttle::default(),
+    });
     let listener = match tokio::net::TcpListener::bind(&addr).await {
         Ok(l) => l,
         Err(e) => {
@@ -3030,7 +3309,9 @@ pub async fn run() {
     println!("  verifying key {verifying}");
     println!("  put that in the catalog's [meta] block so arenas can check tokens");
     loop {
-        let Ok((stream, _)) = listener.accept().await else { continue };
+        let Ok((stream, _)) = listener.accept().await else {
+            continue;
+        };
         let meta = meta.clone();
         tokio::spawn(async move {
             let _ = serve(stream, meta).await;
@@ -3070,7 +3351,9 @@ mod tests {
             let (word, digits) = n.rsplit_once(' ').expect("a space in every name");
             assert!(CALL_WORDS.contains(&word), "{n} draws from the list");
             assert_eq!(digits.len(), 3, "{n} carries three digits");
-            assert!(digits.parse::<u32>().is_ok_and(|d| (100..1000).contains(&d)));
+            assert!(digits
+                .parse::<u32>()
+                .is_ok_and(|d| (100..1000).contains(&d)));
             // The scoreboard's widest column: nothing generated may outgrow it.
             assert!(n.len() <= 12, "{n} is wider than the scoreboard");
         }
@@ -3084,7 +3367,10 @@ mod tests {
         // rated events, pilot events and every bot account at once.
         let e = endpoint("https://play.vectorwake.net/meta");
         assert!(e.tls, "https is TLS");
-        assert_eq!(e.addr, "play.vectorwake.net:443", "443 is implied by the scheme");
+        assert_eq!(
+            e.addr, "play.vectorwake.net:443",
+            "443 is implied by the scheme"
+        );
         assert_eq!(e.server_name, "play.vectorwake.net");
         assert_eq!(e.authority, "play.vectorwake.net");
         assert_eq!(e.prefix, "/meta", "the base's own path leads the route's");
@@ -3095,11 +3381,18 @@ mod tests {
         // What a host running both writes, in all three spellings that have
         // ever appeared in a .env. None of them is TLS and none of them
         // acquires a port it did not ask for.
-        for base in ["http://127.0.0.1:9400", "127.0.0.1:9400", "http://127.0.0.1:9400/"] {
+        for base in [
+            "http://127.0.0.1:9400",
+            "127.0.0.1:9400",
+            "http://127.0.0.1:9400/",
+        ] {
             let e = endpoint(base);
             assert!(!e.tls, "{base} is plaintext");
             assert_eq!(e.addr, "127.0.0.1:9400", "{base}");
-            assert_eq!(e.authority, "127.0.0.1:9400", "{base} keeps its port in the header");
+            assert_eq!(
+                e.authority, "127.0.0.1:9400",
+                "{base} keeps its port in the header"
+            );
             assert_eq!(e.prefix, "", "{base} has no path of its own");
         }
     }
@@ -3111,8 +3404,14 @@ mod tests {
         // checked against the name alone.
         let e = endpoint("https://play.localhost:8443/meta");
         assert!(e.tls);
-        assert_eq!(e.addr, "play.localhost:8443", "the written port wins over 443");
-        assert_eq!(e.server_name, "play.localhost", "a cert name carries no port");
+        assert_eq!(
+            e.addr, "play.localhost:8443",
+            "the written port wins over 443"
+        );
+        assert_eq!(
+            e.server_name, "play.localhost",
+            "a cert name carries no port"
+        );
         assert_eq!(e.authority, "play.localhost:8443");
     }
 
@@ -3133,7 +3432,10 @@ mod tests {
             assert!(!w.is_empty() && w.len() <= 8, "{w} outgrows the column");
         }
         for (name, _, _) in crate::ai::CALIBRATED {
-            assert!(!seen.contains(&name.to_lowercase()), "{name} is an AI regular");
+            assert!(
+                !seen.contains(&name.to_lowercase()),
+                "{name} is an AI regular"
+            );
         }
         for name in crate::ai::FILL_NAMES {
             assert!(!seen.contains(&name.to_lowercase()), "{name} is AI fill");
@@ -3142,7 +3444,10 @@ mod tests {
             assert!(!seen.contains(&name.to_lowercase()), "{name} is a hull");
         }
         for (name, _) in crate::rating::TIERS {
-            assert!(!seen.contains(&name.to_lowercase()), "{name} is a rating tier");
+            assert!(
+                !seen.contains(&name.to_lowercase()),
+                "{name} is a rating tier"
+            );
         }
     }
 
@@ -3228,5 +3533,4 @@ mod tests {
         assert_eq!(error.kind, "error");
         assert_eq!(error.account, None);
     }
-
 }

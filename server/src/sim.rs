@@ -123,15 +123,27 @@ pub struct sim_fire_pattern {
 #[derive(Clone, Copy)]
 #[allow(dead_code)]
 pub struct sim_ship_class {
-    pub max_speed: i32, pub init_speed: i32, pub up_speed: i32,
-    pub thrust: i32, pub init_thrust: i32, pub up_thrust: i32,
-    pub rot: i32, pub init_rot: i32, pub up_rot: i32,
-    pub max_energy: i32, pub init_energy: i32, pub up_energy: i32,
-    pub recharge: i32, pub init_recharge: i32, pub up_recharge: i32,
+    pub max_speed: i32,
+    pub init_speed: i32,
+    pub up_speed: i32,
+    pub thrust: i32,
+    pub init_thrust: i32,
+    pub up_thrust: i32,
+    pub rot: i32,
+    pub init_rot: i32,
+    pub up_rot: i32,
+    pub max_energy: i32,
+    pub init_energy: i32,
+    pub up_energy: i32,
+    pub recharge: i32,
+    pub init_recharge: i32,
+    pub up_recharge: i32,
     /// The hull's footprint: reach past the nose, behind the tail, and to
     /// either side, Q8 px. The core builds the collision box from these at
     /// the ship's current heading.
-    pub fore: i32, pub aft: i32, pub halfw: i32,
+    pub fore: i32,
+    pub aft: i32,
+    pub halfw: i32,
     /// A ladder of patterns per trigger, climbed by the pilot's level, with
     /// 255 ending it. The ladder's length is the hull's ceiling for that
     /// weapon; a hull with no bomb rack has 255 at rung zero.
@@ -407,15 +419,23 @@ extern "C" {
         cfg: *const sim_settings,
         ev: *mut sim_events,
     );
-    pub fn sim_set_ship_class(s: *mut sim_state, cfg: *const sim_settings, i: u8,
-                              cls: u8) -> c_int;
+    pub fn sim_set_ship_class(s: *mut sim_state, cfg: *const sim_settings, i: u8, cls: u8)
+        -> c_int;
     pub fn sim_hash(s: *const sim_state) -> u64;
     /// What a pilot is worth to whoever kills them: a sum over what they hold
     /// plus what killing has earned. Derived, never stored.
     pub fn sim_bounty(sh: *const sim_ship) -> i32;
-    pub fn sim_pack_around(s: *const sim_state, out: *mut u8, cap: c_int,
-                           cx: i32, cy: i32, radius: i32, viewer: u8,
-                           owner: u8, options: u8) -> c_int;
+    pub fn sim_pack_around(
+        s: *const sim_state,
+        out: *mut u8,
+        cap: c_int,
+        cx: i32,
+        cy: i32,
+        radius: i32,
+        viewer: u8,
+        owner: u8,
+        options: u8,
+    ) -> c_int;
     pub fn sim_sizeof_state() -> u32;
     pub fn sim_offsetof_settings_max_ships() -> u32;
     pub fn sim_eff_max_ships(cfg: *const sim_settings) -> u8;
@@ -427,22 +447,36 @@ extern "C" {
     pub fn sim_in_safe(map: *const sim_map, x: i32, y: i32) -> i32;
     pub fn sim_map_pack(map: *const sim_map, out: *mut u8, cap: i32) -> i32;
     pub fn sim_map_unpack(map: *mut sim_map, inp: *const u8, len: i32) -> i32;
-    pub fn sim_set_ship_team(s: *mut sim_state, cfg: *const sim_settings,
-                             i: u8, team: u8) -> c_int;
-    pub fn sim_attach(s: *mut sim_state, cfg: *const sim_settings,
-                      i: u8, target: u8) -> c_int;
-    pub fn sim_map_spawn(map: *const sim_map, team: u8, nth: u32,
-                         tx: *mut u16, ty: *mut u16) -> i32;
-    pub fn sim_spawn_point(s: *mut sim_state, cfg: *const sim_settings,
-                           team: u8, cls: u8, nth: u32,
-                           x: *mut i32, y: *mut i32);
+    pub fn sim_set_ship_team(s: *mut sim_state, cfg: *const sim_settings, i: u8, team: u8)
+        -> c_int;
+    pub fn sim_attach(s: *mut sim_state, cfg: *const sim_settings, i: u8, target: u8) -> c_int;
+    pub fn sim_map_spawn(
+        map: *const sim_map,
+        team: u8,
+        nth: u32,
+        tx: *mut u16,
+        ty: *mut u16,
+    ) -> i32;
+    pub fn sim_spawn_point(
+        s: *mut sim_state,
+        cfg: *const sim_settings,
+        team: u8,
+        cls: u8,
+        nth: u32,
+        x: *mut i32,
+        y: *mut i32,
+    );
     pub fn sim_map_arena(map: *mut sim_map);
     pub fn sim_map_pit(map: *mut sim_map);
     pub fn sim_eff_max_energy(c: *const sim_ship_class, s: *const sim_ship) -> i32;
     pub fn sim_eff_speed(c: *const sim_ship_class, s: *const sim_ship) -> i32;
     pub fn sim_eff_thrust(c: *const sim_ship_class, s: *const sim_ship) -> i32;
-    pub fn sim_take_prize(sh: *mut sim_ship, cfg: *const sim_settings, rng: *mut u32,
-                          delta: *mut c_int) -> u8;
+    pub fn sim_take_prize(
+        sh: *mut sim_ship,
+        cfg: *const sim_settings,
+        rng: *mut u32,
+        delta: *mut c_int,
+    ) -> u8;
     /// A green's grant without a green's roll, for a harness that needs to
     /// hand two pilots the same kit. Returns whether the count moved.
     pub fn sim_grant(sh: *mut sim_ship, cfg: *const sim_settings, ty: u8) -> c_int;
@@ -480,8 +514,7 @@ pub const MAX_RUNGS: usize = 4;
 pub const MOD_MAX: u8 = 3;
 pub const MAX_CHARGES: usize = 4;
 pub const CHARGE_MAX: u8 = 15;
-pub const PRIZE_COUNT: usize =
-    UP_COUNT + TRIG_COUNT + TRIG_COUNT * MOD_COUNT + MAX_CHARGES;
+pub const PRIZE_COUNT: usize = UP_COUNT + TRIG_COUNT + TRIG_COUNT * MOD_COUNT + MAX_CHARGES;
 pub const MOD_MULTI: usize = 0;
 pub const MOD_BOUNCE: usize = 1;
 pub const MOD_PROX: usize = 2;
@@ -572,7 +605,11 @@ impl World {
     pub fn from_packed(seed: u32, bytes: &[u8]) -> Result<Self, String> {
         let mut map: Box<sim_map> = zeroed_box();
         let r = unsafe {
-            sim_map_unpack(&mut *map as *mut sim_map, bytes.as_ptr(), bytes.len() as i32)
+            sim_map_unpack(
+                &mut *map as *mut sim_map,
+                bytes.as_ptr(),
+                bytes.len() as i32,
+            )
         };
         match r {
             0 => Ok(Self::on_map(seed, std::sync::Arc::from(map))),
@@ -593,12 +630,27 @@ impl World {
     /// second and stops at walls, because a zeroed row would splinter into
     /// pattern zero -- a real weapon, and never the one anybody meant.
     pub fn add_weapon(&mut self) -> Option<u8> {
-        let spec = sim_weapon_spec { life: 100, splinter: NO_PATTERN, ..Default::default() };
+        let spec = sim_weapon_spec {
+            life: 100,
+            splinter: NO_PATTERN,
+            ..Default::default()
+        };
         let s = unsafe { sim_add_spec(&mut *self.cfg, &spec) };
-        if s < 0 { return None }
-        let pattern = sim_fire_pattern { spec: s as u8, count: 1, delay: 25, ..Default::default() };
+        if s < 0 {
+            return None;
+        }
+        let pattern = sim_fire_pattern {
+            spec: s as u8,
+            count: 1,
+            delay: 25,
+            ..Default::default()
+        };
         let p = unsafe { sim_add_pattern(&mut *self.cfg, &pattern) };
-        if p < 0 { None } else { Some(p as u8) }
+        if p < 0 {
+            None
+        } else {
+            Some(p as u8)
+        }
     }
 
     /// Back to the numbers the core ships with, keeping the map. Applying a
@@ -616,8 +668,11 @@ impl World {
     pub fn packed_settings(&self) -> Vec<u8> {
         let mut buf = vec![0u8; SETTINGS_PACK_MAX];
         let n = unsafe {
-            sim_settings_pack(&*self.cfg as *const sim_settings,
-                              buf.as_mut_ptr(), buf.len() as i32)
+            sim_settings_pack(
+                &*self.cfg as *const sim_settings,
+                buf.as_mut_ptr(),
+                buf.len() as i32,
+            )
         };
         buf.truncate(if n > 0 { n as usize } else { 0 });
         buf
@@ -627,7 +682,11 @@ impl World {
     pub fn packed_map(&self) -> Vec<u8> {
         let mut buf = vec![0u8; MAP_PACK_MAX];
         let n = unsafe {
-            sim_map_pack(&*self.map as *const sim_map, buf.as_mut_ptr(), buf.len() as i32)
+            sim_map_pack(
+                &*self.map as *const sim_map,
+                buf.as_mut_ptr(),
+                buf.len() as i32,
+            )
         };
         buf.truncate(if n > 0 { n as usize } else { 0 });
         buf
@@ -666,10 +725,13 @@ impl World {
     /// `nth` walks the map's starts and wraps, so a roster spreads out.
     pub fn map_spawn(&self, team: u8, nth: u32) -> Option<(i32, i32)> {
         let (mut tx, mut ty) = (0u16, 0u16);
-        let ok = unsafe {
-            sim_map_spawn(&*self.map as *const sim_map, team, nth, &mut tx, &mut ty)
-        };
-        if ok != 0 { Some((tx as i32, ty as i32)) } else { None }
+        let ok =
+            unsafe { sim_map_spawn(&*self.map as *const sim_map, team, nth, &mut tx, &mut ty) };
+        if ok != 0 {
+            Some((tx as i32, ty as i32))
+        } else {
+            None
+        }
     }
 
     /// Where a ship of this team goes now, as a Q8 world position: the map's
@@ -679,8 +741,7 @@ impl World {
     pub fn spawn_point(&mut self, team: u8, cls: u8, nth: u32) -> (i32, i32) {
         let (mut x, mut y) = (0i32, 0i32);
         unsafe {
-            sim_spawn_point(&mut *self.state, &*self.cfg, team, cls, nth,
-                            &mut x, &mut y);
+            sim_spawn_point(&mut *self.state, &*self.cfg, team, cls, nth, &mut x, &mut y);
         }
         (x, y)
     }
@@ -689,8 +750,7 @@ impl World {
     /// `tile_x`/`tile_y` are gone: a map that names no starts and a zone that
     /// sets no radius both land on the same fallback inside the core now,
     /// instead of on whatever tile each caller happened to have in mind.
-    pub fn spawn_on_map(&mut self, cls: u8, team: u8, nth: u32,
-                        heading: u16) -> i32 {
+    pub fn spawn_on_map(&mut self, cls: u8, team: u8, nth: u32, heading: u16) -> i32 {
         let (x, y) = self.spawn_point(team, cls, nth);
         self.spawn_at(cls, team, x, y, heading)
     }
@@ -714,7 +774,15 @@ impl World {
     /// tile size only for `spawn` to multiply it straight back.
     pub fn spawn_at(&mut self, cls: u8, team: u8, x: i32, y: i32, heading: u16) -> i32 {
         unsafe {
-            sim_spawn(&mut *self.state, cls, team, x / 256, y / 256, heading, &*self.cfg)
+            sim_spawn(
+                &mut *self.state,
+                cls,
+                team,
+                x / 256,
+                y / 256,
+                heading,
+                &*self.cfg,
+            )
         }
     }
 
@@ -764,11 +832,28 @@ impl World {
     /// A snapshot carrying only what is within `radius` of a point, plus
     /// `viewer`'s own rounds wherever they are. Pass 255 for nobody's. See the
     /// note on `sim_pack_around` in sim/include/sim/pack.h.
-    pub fn pack_around(&self, out: &mut [u8], cx: i32, cy: i32, radius: i32,
-                       viewer: u8, owner: u8, options: u8) -> i32 {
+    pub fn pack_around(
+        &self,
+        out: &mut [u8],
+        cx: i32,
+        cy: i32,
+        radius: i32,
+        viewer: u8,
+        owner: u8,
+        options: u8,
+    ) -> i32 {
         unsafe {
-            sim_pack_around(&*self.state, out.as_mut_ptr(), out.len() as c_int,
-                            cx, cy, radius, viewer, owner, options)
+            sim_pack_around(
+                &*self.state,
+                out.as_mut_ptr(),
+                out.len() as c_int,
+                cx,
+                cy,
+                radius,
+                viewer,
+                owner,
+                options,
+            )
         }
     }
 
@@ -776,17 +861,13 @@ impl World {
     /// whatever this world had predicted since the last one is discarded
     /// rather than reconciled: a bot flies on the arena's answer.
     pub fn apply_snapshot(&mut self, bytes: &[u8]) -> bool {
-        unsafe {
-            sim_unpack(&mut *self.state, bytes.as_ptr(), bytes.len() as c_int) == 0
-        }
+        unsafe { sim_unpack(&mut *self.state, bytes.as_ptr(), bytes.len() as c_int) == 0 }
     }
 
     /// Take the tuning the zone sent. The map is untouched, which is why it has
     /// to have arrived first.
     pub fn apply_settings(&mut self, bytes: &[u8]) -> bool {
-        unsafe {
-            sim_settings_unpack(&mut *self.cfg, bytes.as_ptr(), bytes.len() as c_int) == 0
-        }
+        unsafe { sim_settings_unpack(&mut *self.cfg, bytes.as_ptr(), bytes.len() as c_int) == 0 }
     }
 
     /// A fresh simulation on geometry somebody else already unpacked. The bot
@@ -878,7 +959,11 @@ impl World {
 pub fn unpack_map(bytes: &[u8]) -> Option<std::sync::Arc<sim_map>> {
     let mut map: Box<sim_map> = zeroed_box();
     let ok = unsafe {
-        sim_map_unpack(&mut *map as *mut sim_map, bytes.as_ptr(), bytes.len() as i32)
+        sim_map_unpack(
+            &mut *map as *mut sim_map,
+            bytes.as_ptr(),
+            bytes.len() as i32,
+        )
     };
     (ok == 0).then(|| std::sync::Arc::from(map))
 }
@@ -892,7 +977,6 @@ pub fn build_arena(map: &mut sim_map) {
 pub fn build_pit(map: &mut sim_map) {
     unsafe { sim_map_pit(map as *mut sim_map) }
 }
-
 
 #[cfg(test)]
 mod layout {
@@ -913,12 +997,21 @@ mod layout {
     #[test]
     fn mirrors_are_the_size_of_what_they_mirror() {
         unsafe {
-            assert_eq!(std::mem::size_of::<sim_state>(), sim_sizeof_state() as usize,
-                       "sim_state mirror is the wrong size");
-            assert_eq!(std::mem::size_of::<sim_settings>(), sim_sizeof_settings() as usize,
-                       "sim_settings mirror is the wrong size");
-            assert_eq!(std::mem::size_of::<sim_ship>(), sim_sizeof_ship() as usize,
-                       "sim_ship mirror is the wrong size");
+            assert_eq!(
+                std::mem::size_of::<sim_state>(),
+                sim_sizeof_state() as usize,
+                "sim_state mirror is the wrong size"
+            );
+            assert_eq!(
+                std::mem::size_of::<sim_settings>(),
+                sim_sizeof_settings() as usize,
+                "sim_settings mirror is the wrong size"
+            );
+            assert_eq!(
+                std::mem::size_of::<sim_ship>(),
+                sim_sizeof_ship() as usize,
+                "sim_ship mirror is the wrong size"
+            );
         }
     }
 
@@ -947,12 +1040,18 @@ mod layout {
     #[test]
     fn a_zone_sets_its_own_room_size() {
         let mut w = World::new(0x5eed);
-        assert_eq!(unsafe { sim_eff_max_ships(&*w.cfg) }, 64,
-                   "the baseline ships a 64-pilot room");
+        assert_eq!(
+            unsafe { sim_eff_max_ships(&*w.cfg) },
+            64,
+            "the baseline ships a 64-pilot room"
+        );
         w.cfg.max_ships = 200;
         assert_eq!(unsafe { sim_eff_max_ships(&*w.cfg) }, 200);
         w.cfg.max_ships = 0;
-        assert_eq!(unsafe { sim_eff_max_ships(&*w.cfg) }, MAX_SHIPS as u8,
-                   "unset means the ceiling");
+        assert_eq!(
+            unsafe { sim_eff_max_ships(&*w.cfg) },
+            MAX_SHIPS as u8,
+            "unset means the ceiling"
+        );
     }
 }

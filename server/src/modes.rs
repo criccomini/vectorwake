@@ -95,7 +95,7 @@ pub struct Warzone {
     pub teams: u8,
     pub round: u16,
     pub wins: Vec<u16>,
-    hold: Option<(u8, u32)>,   // team and the tick they completed the set
+    hold: Option<(u8, u32)>, // team and the tick they completed the set
     /// Where each flag belongs, learned on the first tick and put back on a
     /// reset. Flags travel: the core moves one with whoever is carrying it and
     /// drops it where they die, so a round that reset only their ownership left
@@ -176,8 +176,12 @@ impl Mode for Warzone {
                     self.reset_at = Some(self.clock + 500);
                     ctx.banner = format!("{} wins round {}", ctx.team_name(t), self.round);
                 } else {
-                    ctx.banner = format!("{} holds all {} flags: {}",
-                                        ctx.team_name(t), self.flags, left / 100 + 1);
+                    ctx.banner = format!(
+                        "{} holds all {} flags: {}",
+                        ctx.team_name(t),
+                        self.flags,
+                        left / 100 + 1
+                    );
                 }
             }
             (Some(t), _) => {
@@ -217,8 +221,13 @@ mod warzone_tests {
     }
 
     fn ctx(world: &mut World) -> ModeCtx<'_> {
-        ModeCtx { world, seats: &[], team_names: &[], banner: String::new(),
-                  finished: false }
+        ModeCtx {
+            world,
+            seats: &[],
+            team_names: &[],
+            banner: String::new(),
+            finished: false,
+        }
     }
 
     #[test]
@@ -247,7 +256,7 @@ mod warzone_tests {
         for _ in 0..100 {
             m.tick(&mut ctx(&mut w));
         }
-        w.state.flags[2].team = 1;           // stolen back
+        w.state.flags[2].team = 1; // stolen back
         for _ in 0..1_100 {
             m.tick(&mut ctx(&mut w));
         }
@@ -265,10 +274,10 @@ mod warzone_tests {
         // sides.
         let mut w = arena_with_flags(2);
         let mut m = Warzone::new(2, 2);
-        m.tick(&mut ctx(&mut w));            // learns where they belong
-        let home: Vec<(i32, i32)> = (0..2).map(|i| {
-            (w.state.flags[i].x, w.state.flags[i].y)
-        }).collect();
+        m.tick(&mut ctx(&mut w)); // learns where they belong
+        let home: Vec<(i32, i32)> = (0..2)
+            .map(|i| (w.state.flags[i].x, w.state.flags[i].y))
+            .collect();
 
         // Carried across the map and held to a win.
         for i in 0..2 {
@@ -281,8 +290,11 @@ mod warzone_tests {
         }
         assert_eq!(m.round, 2, "the round ended");
         for i in 0..2 {
-            assert_eq!((w.state.flags[i].x, w.state.flags[i].y), home[i],
-                       "flag {i} did not go home");
+            assert_eq!(
+                (w.state.flags[i].x, w.state.flags[i].y),
+                home[i],
+                "flag {i} did not go home"
+            );
             assert_eq!(w.state.flags[i].team, sim::TEAM_NONE);
         }
     }
@@ -316,6 +328,10 @@ mod warzone_tests {
             m.tick(&mut ctx(&mut w));
         }
         assert_eq!(m.round, 2, "a new round starts");
-        assert_eq!(w.state.flags[0].team, sim::TEAM_NONE, "flags go neutral again");
+        assert_eq!(
+            w.state.flags[0].team,
+            sim::TEAM_NONE,
+            "flags go neutral again"
+        );
     }
 }

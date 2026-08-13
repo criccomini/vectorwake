@@ -396,9 +396,9 @@ impl WireCatalog {
         self.bans.iter().any(|b| b.eq_ignore_ascii_case(name))
     }
     pub fn has_capability(&self, name: &str, cap: &str) -> bool {
-        self.staff.iter().any(|s| {
-            s.name.eq_ignore_ascii_case(name) && s.capabilities.iter().any(|c| c == cap)
-        })
+        self.staff
+            .iter()
+            .any(|s| s.name.eq_ignore_ascii_case(name) && s.capabilities.iter().any(|c| c == cap))
     }
 }
 
@@ -435,8 +435,16 @@ pub fn b64(data: &[u8]) -> String {
         let n = ((b[0] as u32) << 16) | ((b[1] as u32) << 8) | b[2] as u32;
         s.push(T[(n >> 18) as usize & 63] as char);
         s.push(T[(n >> 12) as usize & 63] as char);
-        s.push(if c.len() > 1 { T[(n >> 6) as usize & 63] as char } else { '=' });
-        s.push(if c.len() > 2 { T[n as usize & 63] as char } else { '=' });
+        s.push(if c.len() > 1 {
+            T[(n >> 6) as usize & 63] as char
+        } else {
+            '='
+        });
+        s.push(if c.len() > 2 {
+            T[n as usize & 63] as char
+        } else {
+            '='
+        });
     }
     s
 }
@@ -502,9 +510,14 @@ mod tests {
         assert_eq!(bytes[0], 0x40);
         let back: Register = parse(&bytes, A2D_REGISTER).expect("parses");
         assert_eq!(back.instance, "i");
-        assert!(parse::<Register>(&bytes, A2D_STATUS).is_none(),
-                "a message read as the wrong tag is refused, not misread");
-        assert!(parse::<Register>(&[0x40], A2D_REGISTER).is_none(), "a tag alone is not a body");
+        assert!(
+            parse::<Register>(&bytes, A2D_STATUS).is_none(),
+            "a message read as the wrong tag is refused, not misread"
+        );
+        assert!(
+            parse::<Register>(&[0x40], A2D_REGISTER).is_none(),
+            "a tag alone is not a body"
+        );
         assert!(parse::<Register>(&[], A2D_REGISTER).is_none());
     }
 
@@ -512,9 +525,21 @@ mod tests {
     fn the_tag_spaces_do_not_overlap() {
         // The client protocol is 1..=10. Nothing here may collide with it, or a
         // message on the wrong socket becomes plausible instead of obvious.
-        for t in [A2D_REGISTER, A2D_STATUS, A2D_INTENT, A2D_ACK,
-                  D2A_ACCEPTED, D2A_REJECTED, D2A_VIEW, D2A_CATALOG, D2A_COMMAND] {
-            assert!(t >= 0x40, "tag {t:#x} is inside the client protocol's range");
+        for t in [
+            A2D_REGISTER,
+            A2D_STATUS,
+            A2D_INTENT,
+            A2D_ACK,
+            D2A_ACCEPTED,
+            D2A_REJECTED,
+            D2A_VIEW,
+            D2A_CATALOG,
+            D2A_COMMAND,
+        ] {
+            assert!(
+                t >= 0x40,
+                "tag {t:#x} is inside the client protocol's range"
+            );
         }
     }
 
@@ -538,7 +563,10 @@ mod tests {
         // register. Asserted here because the omission is easy to undo when
         // somebody adds a field.
         let json = serde_json::to_string(&WireCatalog::default()).unwrap();
-        assert!(!json.contains("token"), "wire catalog must not carry tokens: {json}");
+        assert!(
+            !json.contains("token"),
+            "wire catalog must not carry tokens: {json}"
+        );
         assert!(!json.contains("pool"), "nor the pool table: {json}");
     }
 }

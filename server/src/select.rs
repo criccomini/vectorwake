@@ -195,8 +195,10 @@ mod tests {
         assert_eq!(retry_ceiling_ms(&outage), RETRY_MAX_MS);
         assert_eq!(retry_ceiling_ms(&clean), RETRY_MAX_MS);
         assert_eq!(retry_ceiling_ms(&refused), REFUSED_MAX_MS);
-        assert!(REFUSED_MAX_MS >= RETRY_MAX_MS * 10,
-                "a refusal should not be retried at anything like outage pace");
+        assert!(
+            REFUSED_MAX_MS >= RETRY_MAX_MS * 10,
+            "a refusal should not be retried at anything like outage pace"
+        );
         // Still retried at all: a token can be added to a catalog while an
         // arena is running, so this must not become "give up".
         assert!(REFUSED_MAX_MS < 10 * 60 * 1000);
@@ -224,7 +226,10 @@ mod tests {
             instance: inst.into(),
             zone: zone.into(),
             players,
-            rooms: vec![fleet::RoomView { number: 1, ..Default::default() }],
+            rooms: vec![fleet::RoomView {
+                number: 1,
+                ..Default::default()
+            }],
             max_rooms: 1,
             capped,
             verified: true,
@@ -235,7 +240,10 @@ mod tests {
 
     fn union(list: Vec<fleet::Observed>) -> Union {
         let mut u = Union::default();
-        u.absorb(&fleet::View { instances: list, ..Default::default() });
+        u.absorb(&fleet::View {
+            instances: list,
+            ..Default::default()
+        });
         u
     }
 
@@ -265,7 +273,10 @@ mod tests {
     fn a_capped_zone_needs_another_instance() {
         let c = cat(&["chaos"]);
         let u = union(vec![obs("a", "chaos", 8, true)]);
-        assert_eq!(pick(&c, &u, "me", "local", &[]), Choice::Take("chaos".into()));
+        assert_eq!(
+            pick(&c, &u, "me", "local", &[]),
+            Choice::Take("chaos".into())
+        );
     }
 
     #[test]
@@ -314,7 +325,10 @@ mod tests {
         // zone would make a drained instance decline to re-take it.
         let c = cat(&["chaos"]);
         let u = union(vec![obs("me", "chaos", 1, false)]);
-        assert_eq!(pick(&c, &u, "me", "local", &[]), Choice::Take("chaos".into()));
+        assert_eq!(
+            pick(&c, &u, "me", "local", &[]),
+            Choice::Take("chaos".into())
+        );
     }
 
     #[test]
@@ -344,9 +358,15 @@ mod tests {
         let mut far = obs("b", "war", 8, true);
         far.region = "eu-west".into();
         let u = union(vec![here, far]);
-        assert_eq!(pick(&c, &u, "me", "us-east", &[]), Choice::Take("war".into()));
+        assert_eq!(
+            pick(&c, &u, "me", "us-east", &[]),
+            Choice::Take("war".into())
+        );
         // And from the other side the answer flips, which is the whole point.
-        assert_eq!(pick(&c, &u, "me", "eu-west", &[]), Choice::Take("chaos".into()));
+        assert_eq!(
+            pick(&c, &u, "me", "eu-west", &[]),
+            Choice::Take("chaos".into())
+        );
     }
 
     #[test]
@@ -355,7 +375,10 @@ mod tests {
         // from the file, or the announce step has no collision to detect.
         let c = cat(&["chaos", "war"]);
         let u = Union::default();
-        assert_eq!(pick(&c, &u, "me", "us-east", &[]), Choice::Take("chaos".into()));
+        assert_eq!(
+            pick(&c, &u, "me", "us-east", &[]),
+            Choice::Take("chaos".into())
+        );
     }
 
     #[test]
@@ -380,8 +403,14 @@ mod tests {
         fresh.age_ms = 100;
         let mut stale = obs("a", "war", 1, false);
         stale.age_ms = 9_000;
-        u.absorb(&fleet::View { instances: vec![stale], ..Default::default() });
-        u.absorb(&fleet::View { instances: vec![fresh], ..Default::default() });
+        u.absorb(&fleet::View {
+            instances: vec![stale],
+            ..Default::default()
+        });
+        u.absorb(&fleet::View {
+            instances: vec![fresh],
+            ..Default::default()
+        });
         assert_eq!(u.by_instance["a"].zone, "chaos", "the newer report wins");
         assert_eq!(u.by_instance.len(), 1, "deduplicated by instance id");
 
@@ -392,8 +421,14 @@ mod tests {
         fresh.age_ms = 100;
         let mut stale = obs("a", "war", 1, false);
         stale.age_ms = 9_000;
-        u.absorb(&fleet::View { instances: vec![fresh], ..Default::default() });
-        u.absorb(&fleet::View { instances: vec![stale], ..Default::default() });
+        u.absorb(&fleet::View {
+            instances: vec![fresh],
+            ..Default::default()
+        });
+        u.absorb(&fleet::View {
+            instances: vec![stale],
+            ..Default::default()
+        });
         assert_eq!(u.by_instance["a"].zone, "chaos");
     }
 
@@ -423,8 +458,10 @@ mod tests {
         // Four zones get covered, and the remaining six decline rather than
         // piling on. Without the intent rule all ten would have taken "a".
         assert_eq!(&taken[..4], &["a", "b", "c", "d"]);
-        assert!(taken[4..].iter().all(|t| t == "none"),
-                "the rest should stay put, got {taken:?}");
+        assert!(
+            taken[4..].iter().all(|t| t == "none"),
+            "the rest should stay put, got {taken:?}"
+        );
     }
 }
 
@@ -645,8 +682,7 @@ async fn run_one(
                 if tx.send(msg).is_err() {
                     return;
                 }
-                tokio::time::sleep(std::time::Duration::from_millis(fleet::HEARTBEAT_MS / 2))
-                    .await;
+                tokio::time::sleep(std::time::Duration::from_millis(fleet::HEARTBEAT_MS / 2)).await;
             }
         })
     };
@@ -683,8 +719,8 @@ async fn run_one(
                 z.take_catalog(a.catalog, url);
             }
             Some(fleet::D2A_REJECTED) => {
-                let r = fleet::parse::<fleet::Rejected>(&data, fleet::D2A_REJECTED)
-                    .unwrap_or_default();
+                let r =
+                    fleet::parse::<fleet::Rejected>(&data, fleet::D2A_REJECTED).unwrap_or_default();
                 // A rejection is terminal for this attempt and never for the
                 // process: an arena keeps serving whoever already reached it.
                 return Err(format!("rejected: {} {}", r.reason, r.detail));
@@ -702,8 +738,7 @@ async fn run_one(
                 z.settle_room_numbers();
             }
             Some(fleet::D2A_CATALOG) => {
-                let Some(c) = fleet::parse::<fleet::WireCatalog>(&data, fleet::D2A_CATALOG)
-                else {
+                let Some(c) = fleet::parse::<fleet::WireCatalog>(&data, fleet::D2A_CATALOG) else {
                     continue;
                 };
                 let mut z = zone.lock().await;
@@ -770,7 +805,13 @@ pub async fn decide_loop(zone: std::sync::Arc<tokio::sync::Mutex<crate::ArenaSer
             }
             let cat = z.catalog.clone().unwrap();
             let u = z.fleet.union();
-            match pick(&cat, &u, &z.fleet.instance, &z.fleet.region, &z.fleet.willing) {
+            match pick(
+                &cat,
+                &u,
+                &z.fleet.instance,
+                &z.fleet.region,
+                &z.fleet.willing,
+            ) {
                 Choice::Take(n) if n == z.zone_name => continue, // already right
                 Choice::Take(n) => n,
                 Choice::Stay(_) => continue,
@@ -801,7 +842,9 @@ pub async fn decide_loop(zone: std::sync::Arc<tokio::sync::Mutex<crate::ArenaSer
             z.fleet.announced = None;
             continue;
         }
-        let Some(def) = cat.zone(&want).cloned() else { continue };
+        let Some(def) = cat.zone(&want).cloned() else {
+            continue;
+        };
         match z.serve_zone(&def) {
             Ok(()) => {
                 z.fleet.last_commit_ms = now_ms();
@@ -824,7 +867,10 @@ mod commit_tests {
             intent: intent.into(),
             intent_ms: if intent.is_empty() { 0 } else { INTENT_TTL_MS },
             players: if capped { 8 } else { 1 },
-            rooms: vec![fleet::RoomView { number: 1, ..Default::default() }],
+            rooms: vec![fleet::RoomView {
+                number: 1,
+                ..Default::default()
+            }],
             max_rooms: 1,
             capped,
             verified: true,
@@ -833,7 +879,10 @@ mod commit_tests {
     }
     fn union(list: Vec<fleet::Observed>) -> Union {
         let mut u = Union::default();
-        u.absorb(&fleet::View { instances: list, ..Default::default() });
+        u.absorb(&fleet::View {
+            instances: list,
+            ..Default::default()
+        });
         u
     }
 
@@ -845,13 +894,19 @@ mod commit_tests {
     #[test]
     fn somebody_already_serving_it_with_room_wins() {
         let u = union(vec![obs("a", "war", "", false)]);
-        assert!(may_commit(&u, "war", "b").is_err(), "no second instance needed");
+        assert!(
+            may_commit(&u, "war", "b").is_err(),
+            "no second instance needed"
+        );
     }
 
     #[test]
     fn somebody_serving_it_full_does_not_block_us() {
         let u = union(vec![obs("a", "war", "", true)]);
-        assert!(may_commit(&u, "war", "b").is_ok(), "a capped zone wants capacity");
+        assert!(
+            may_commit(&u, "war", "b").is_ok(),
+            "a capped zone wants capacity"
+        );
     }
 
     /// The deadlock this rule exists to break: two instances announce the same
@@ -861,8 +916,14 @@ mod commit_tests {
         let a = obs("aaa", "", "war", false);
         let b = obs("bbb", "", "war", false);
         let u = union(vec![a.clone(), b.clone()]);
-        assert!(may_commit(&u, "war", "aaa").is_ok(), "the lower id proceeds");
-        assert!(may_commit(&u, "war", "bbb").is_err(), "the higher id stands down");
+        assert!(
+            may_commit(&u, "war", "aaa").is_ok(),
+            "the lower id proceeds"
+        );
+        assert!(
+            may_commit(&u, "war", "bbb").is_err(),
+            "the higher id stands down"
+        );
     }
 
     #[test]
@@ -885,8 +946,10 @@ mod commit_tests {
         let mut rival = obs("aaa", "", "war", false);
         rival.intent_ms = 0;
         let u = union(vec![rival]);
-        assert!(may_commit(&u, "war", "bbb").is_ok(),
-                "a crashed announcer must not hold a zone forever");
+        assert!(
+            may_commit(&u, "war", "bbb").is_ok(),
+            "a crashed announcer must not hold a zone forever"
+        );
     }
 
     #[test]
