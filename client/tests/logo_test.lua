@@ -208,6 +208,35 @@ check("the colored face reaches fully sideways",
       face_x1 - face_x0 < 0.000001,
       string.format("face span %.6f", face_x1 - face_x0))
 
+tris = {}
+ui.begin(layer, 512, 512, 1, false, math.pi / 1.7)
+ui.logo(256, 256, 104)
+ui.finish()
+local back_orange = {pal.LOGO_ORANGE[1] * 0.30,
+                     pal.LOGO_ORANGE[2] * 0.30,
+                     pal.LOGO_ORANGE[3] * 0.30, 1}
+local back_cyan = {pal.LOGO_CYAN[1] * 0.30,
+                   pal.LOGO_CYAN[2] * 0.30,
+                   pal.LOGO_CYAN[3] * 0.30, 1}
+local back_orange_n, back_cyan_n, bright_n = 0, 0, 0
+for _, tri in ipairs(tris) do
+    if same_color(tri.col, back_orange) then
+        back_orange_n = back_orange_n + 1
+    end
+    if same_color(tri.col, back_cyan) then
+        back_cyan_n = back_cyan_n + 1
+    end
+    if same_color(tri.col, pal.LOGO_ORANGE)
+       or same_color(tri.col, pal.LOGO_CYAN) then
+        bright_n = bright_n + 1
+    end
+end
+check("the back half of the turn shows the dark rear face",
+      #tris == 18 and back_orange_n == 4 and back_cyan_n == 6
+      and bright_n == 0,
+      string.format("triangles %d, dark %d/%d, bright %d",
+                    #tris, back_orange_n, back_cyan_n, bright_n))
+
 local ui_source = read_file("client/arena/ui.lua")
 check("the game mesh stores the canonical colored outlines",
       has(ui_source, "42, 0, 84, 67, 66, 78, 42, 53, 18, 78, 0, 67")

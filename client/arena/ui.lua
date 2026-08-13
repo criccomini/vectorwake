@@ -4091,6 +4091,15 @@ local function logo_sides(points, bx, fx, oy, k, squash, col)
     end
 end
 
+local function logo_face(ox, oy, k, squash, orange, cyan, alpha)
+    logo_poly(MK_ORANGE, MK_ORANGE_TRI, ox, oy, k, squash,
+              pal.a(orange, alpha))
+    logo_poly(MK_CYAN, MK_CYAN_TRI, ox, oy, k, squash,
+              pal.a(cyan, alpha))
+    logo_poly(MK_GAP, MK_GAP_TRI, ox, oy, k, squash,
+              pal.a(pal.LOGO_GAP, alpha))
+end
+
 function M.logo_width(h)
     return h * MK_W / MK_H
 end
@@ -4099,22 +4108,25 @@ function M.logo(cx, cy, h, alpha, still)
     alpha = alpha or 1
     local k = h / MK_H
     -- Match the selected hull's turn speed, then separate a dark rear face
-    -- from the colored front face as it turns. Unlike the small hull buttons,
-    -- the solid edge gives this mark enough to show at a true 90 degrees, so
-    -- its face can collapse all the way to a line. `still` keeps asset tests
-    -- and non-menu callers front-on.
+    -- from the colored front face as it turns. The face nearest the viewer is
+    -- drawn last: bright for the front half of the turn and dark for the back
+    -- half. The solid edge keeps the mark visible at a true 90 degrees, when
+    -- both faces collapse to a line. `still` keeps asset tests and non-menu
+    -- callers front-on.
     local turn = not still and F.now * 1.7 or nil
     local squash = turn and math.cos(turn) or 1
     local depth = turn and math.sin(turn) * MK_DEPTH * k / 2 or 0
     local bx, fx = cx - depth, cx + depth
     local oy = cy - MK_H * k / 2
+    local front_facing = squash >= 0
     if math.abs(depth) > 0.001 then
-        logo_poly(MK_ORANGE, MK_ORANGE_TRI, bx, oy, k, squash,
-                  pal.a(MK_ORANGE_BACK, alpha))
-        logo_poly(MK_CYAN, MK_CYAN_TRI, bx, oy, k, squash,
-                  pal.a(MK_CYAN_BACK, alpha))
-        logo_poly(MK_GAP, MK_GAP_TRI, bx, oy, k, squash,
-                  pal.a(pal.LOGO_GAP, alpha))
+        if front_facing then
+            logo_face(bx, oy, k, squash,
+                      MK_ORANGE_BACK, MK_CYAN_BACK, alpha)
+        else
+            logo_face(fx, oy, k, squash,
+                      pal.LOGO_ORANGE, pal.LOGO_CYAN, alpha)
+        end
         logo_sides(MK_ORANGE, bx, fx, oy, k, squash,
                    pal.a(MK_ORANGE_SIDE, alpha))
         logo_sides(MK_CYAN, bx, fx, oy, k, squash,
@@ -4122,12 +4134,13 @@ function M.logo(cx, cy, h, alpha, still)
         logo_sides(MK_GAP, bx, fx, oy, k, squash,
                    pal.a(pal.LOGO_GAP, alpha))
     end
-    logo_poly(MK_ORANGE, MK_ORANGE_TRI, fx, oy, k, squash,
-              pal.a(pal.LOGO_ORANGE, alpha))
-    logo_poly(MK_CYAN, MK_CYAN_TRI, fx, oy, k, squash,
-              pal.a(pal.LOGO_CYAN, alpha))
-    logo_poly(MK_GAP, MK_GAP_TRI, fx, oy, k, squash,
-              pal.a(pal.LOGO_GAP, alpha))
+    if front_facing then
+        logo_face(fx, oy, k, squash,
+                  pal.LOGO_ORANGE, pal.LOGO_CYAN, alpha)
+    else
+        logo_face(bx, oy, k, squash,
+                  MK_ORANGE_BACK, MK_CYAN_BACK, alpha)
+    end
 end
 
 -- The mark and the name, and nothing under them.
