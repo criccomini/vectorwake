@@ -136,6 +136,10 @@ M.volume = 3            -- index into VOLUMES
 M.music = 3             -- index into MUSICS
 M.cap = 1               -- index into CAPS
 M.can_cap = false       -- whether this engine can be asked to cap frames
+-- The first successful zone join offers the keyboard help once. This belongs
+-- with the saved pilot rather than the current connection, so a reload cannot
+-- bring the offer back after it has been dismissed.
+M.help_prompt_seen = false
 
 -- Whether the ship page's answer is currently "no hull". In a game that is
 -- what the connection says you are; on the home screen it is what you have
@@ -193,6 +197,7 @@ function M.save_identity()
     pcall(sys.save, SAVE, {
         name = M.name, class = M.class, volume = M.volume, music = M.music,
         cap = M.cap, zone = M.zone, spectate = M.spectate,
+        help_prompt_seen = M.help_prompt_seen,
         -- Only the keys that have been moved, so a stock keyboard writes
         -- nothing here at all and a control this build stops carrying does
         -- not leave a line behind it. See arena/binds.lua.
@@ -204,6 +209,7 @@ end
 -- player who is somebody new on every reload has no record to build.
 function M.load_identity()
     callsign.seed(os.time() + math.floor(os.clock() * 100000))
+    M.help_prompt_seen = false
     local ok, d = pcall(sys.load, SAVE)
     if ok and type(d) == "table" and type(d.name) == "string" and d.name ~= "" then
         M.name = d.name
@@ -221,6 +227,7 @@ function M.load_identity()
         -- What you last chose to arrive as. Saved beside the hull because it
         -- is an answer to the same question the hull answers.
         M.spectate = d.spectate == true
+        M.help_prompt_seen = d.help_prompt_seen == true
         -- Whatever survives being read against this build's key list. A
         -- missing table is a stock keyboard, which is what `load` does with
         -- nothing.
@@ -230,6 +237,16 @@ function M.load_identity()
         M.save_identity()
     end
     M.apply_settings()
+end
+
+function M.needs_help_prompt()
+    return not M.help_prompt_seen
+end
+
+function M.dismiss_help_prompt()
+    if M.help_prompt_seen then return end
+    M.help_prompt_seen = true
+    M.save_identity()
 end
 
 -- Sound and frame rate are the two settings that reach outside this file.

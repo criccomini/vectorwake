@@ -100,13 +100,13 @@ local function glyphs(s)
     return #s - cont
 end
 
-local function frame(w, h, dens, open)
+local function frame(w, h, dens, open, now, touching, menu_open)
     ui.help = open
     ui.map = false
     layer.rects = {}
-    ui.begin(layer, w, h, dens, false)
+    ui.begin(layer, w, h, dens, touching or false, now or 0)
     ui.hud({
-        me = 0, menu_open = false,
+        me = 0, menu_open = menu_open or false,
         class_names = {"Apex"},
         pilots = {[0] = {name = "you"}, [1] = {name = "someone"}},
         teams = {}, feed = {}, hurt = 0,
@@ -126,7 +126,8 @@ local function frame(w, h, dens, open)
         local left = t.x
         if t.pivot == "right" then left = t.x - tw
         elseif t.pivot == "center" then left = t.x - tw / 2 end
-        out[#out + 1] = {s = t.s, y = h - t.y, left = left, right = left + tw}
+        out[#out + 1] = {s = t.s, y = h - t.y, left = left,
+                         right = left + tw, col = t.col}
     end
     return out
 end
@@ -141,6 +142,48 @@ local function says(f, s)
     end
     return nil
 end
+
+-- --- the first-zone offer is quiet, dismissible, and keyboard-only --------
+
+local function hit_box(action)
+    for i, r in ipairs(ui.hits) do
+        if r.action == action then return r, i end
+    end
+    return nil
+end
+
+ui.help_prompt = true
+local prompt_dim = frame(1280, 800, 1, false, 0)
+local dim_label = says(prompt_dim, "PRESS H FOR HELP")
+local close_box, close_i = hit_box("help_prompt_close")
+local open_box, open_i = hit_box("help_prompt_open")
+check("the first-zone offer names the help key", dim_label ~= nil)
+check("the offer sits at the bottom of the screen",
+      dim_label and dim_label.y > 740, dim_label and dim_label.y)
+check("the offer has a close target", close_box ~= nil)
+check("the offer itself opens help", open_box ~= nil)
+check("the close target wins inside the button",
+      close_i and open_i and close_i < open_i)
+
+local prompt_bright = frame(1280, 800, 1, false, 1.5)
+local bright_label = says(prompt_bright, "PRESS H FOR HELP")
+local function luminance(t)
+    if not t or not t.col then return 0 end
+    return t.col[1] + t.col[2] + t.col[3]
+end
+check("the help label slowly brightens",
+      luminance(bright_label) > luminance(dim_label) + 0.5)
+
+frame(1280, 800, 1, false, 0, true)
+check("a touchscreen is not offered a keyboard key",
+      hit_box("help_prompt_open") == nil)
+local menu_frame = frame(1280, 800, 1, false, 0, false, true)
+check("the offer stays out from under the menu",
+      says(menu_frame, "PRESS H FOR HELP") == nil)
+local help_frame = frame(1280, 800, 1, true, 0)
+check("opening the controls replaces the offer",
+      says(help_frame, "PRESS H FOR HELP") == nil)
+ui.help_prompt = false
 
 -- The same word, on the row that carries it.
 --

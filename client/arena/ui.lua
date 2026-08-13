@@ -2271,6 +2271,9 @@ local binds = require("arena.binds")
 
 -- Whether the table is up. The arena owns the key; this owns the drawing.
 M.help = false
+-- The first-zone offer is separate from the table it opens. The arena raises
+-- and dismisses it; this module only draws it and publishes its two targets.
+M.help_prompt = false
 
 -- How wide a string draws, counting glyphs rather than bytes.
 --
@@ -2345,6 +2348,38 @@ local function help_table()
         txt(r.what, dx, ty, fs, pal.a(pal.PANEL_INK, 0.85))
     end
     case = was
+end
+
+local function help_prompt()
+    -- The controls table is keyboard-only, so its offer is too. A touchscreen
+    -- gets the controls page in the menu, written for thumbs rather than keys.
+    if M.touching or M.help then return end
+
+    local label = "PRESS H FOR HELP"
+    local fs = (M.compact and 11 or 13) * S
+    local h = 32 * S
+    local close_w = 34 * S
+    local w = text_w(label, fs) + 28 * S + close_w
+    local x = (W - w) / 2
+    local y = H - h - 18 * S
+    local cut = x + w - close_w
+
+    rect(x, y, w, h, pal.a(pal.BTN_BG, 0.82))
+    u:frame(x, ry(y, h), w, h, 1.0 * S, pal.a(pal.DIM, 0.48))
+    u:seg(cut, ry(y + 6 * S), cut, ry(y + h - 6 * S), 0.8 * S,
+          pal.a(pal.DIM, 0.38))
+
+    -- One slow breath every three seconds. The hue stays neutral while the
+    -- label moves from the interface gray to white and back.
+    local pulse = 0.5 - 0.5 * math.cos((M.now or 0) * math.pi * 2 / 3)
+    txt(label, x + 14 * S, y + h / 2, fs,
+        pal.hot(pal.DIM, pulse, 0.98), "left", nil, true)
+    close_mark(cut + close_w / 2, y + h / 2, pal.a(pal.DIM, 0.88), 10 * S)
+
+    -- First published wins. The close mark sits inside the full button, so its
+    -- smaller target has to come first or every click would open help.
+    hit(cut, y, close_w, h, "help_prompt_close")
+    hit(x, y, w, h, "help_prompt_open")
 end
 
 local function safe_note(spent, limit)
@@ -2809,7 +2844,11 @@ function M.hud(o)
     -- Over the arena and under nothing, since it is the thing being read. The
     -- game carries on behind it: nothing is paused here, and a player who
     -- opens this in a fight can still be shot while they read.
-    if M.help then help_table() end
+    if M.help then
+        help_table()
+    elseif M.help_prompt then
+        help_prompt()
+    end
     flag_strip(me)
     if o.banner and o.banner ~= "" then
         txt(o.banner, W / 2, 64 * S, (M.compact and 15 or 24) * S,

@@ -49,12 +49,13 @@ package.loaded["arena.sfx"] = {ui = function() end, master_gain = function() end
 
 -- The saved file under test, swapped per case.
 local saved = {}
+local last_saved = nil
 _G.sys = {get_config_string = function(_, d) return d end,
           get_config_int = function(_, d) return d end,
           get_engine_info = function() return {version = "test"} end,
           get_save_file = function() return "/tmp/vw-save-guard-test" end,
           load = function() return saved end,
-          save = function() return true end,
+          save = function(_, d) last_saved = d return true end,
           set_update_frequency = function() return true end,
           get_sys_info = function() return {system_name = "Linux"} end}
 _G.sound = setmetatable({}, {__index = function() return function() end end})
@@ -125,6 +126,20 @@ if load_with({name = "Keeper", class = 2, volume = 2, music = 2, cap = 2},
     check("the saved volume is kept", menu.volume == 2, tostring(menu.volume))
     check("the saved name is kept", menu.name == "Keeper", menu.name)
 end
+
+-- The first-zone help offer is part of the saved pilot. A missing key is a
+-- pilot who has not answered it, while a dismissal survives the next load.
+if load_with({name = "New Pilot"}, "a pilot with no help answer") then
+    check("a missing help answer needs the offer", menu.needs_help_prompt())
+end
+if load_with({name = "Returning Pilot", help_prompt_seen = true},
+             "a pilot who dismissed help") then
+    check("a saved dismissal suppresses the offer", not menu.needs_help_prompt())
+end
+last_saved = nil
+menu.help_prompt_seen = false
+menu.dismiss_help_prompt()
+check("dismissing the offer saves it", last_saved and last_saved.help_prompt_seen)
 
 if fails > 0 then
     print(fails .. " failed")
