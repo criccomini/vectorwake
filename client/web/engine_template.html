@@ -526,10 +526,9 @@
 		// which matters because assigning canvas.width, even unchanged,
 		// clears the frame.
 		//
-		// visualViewport where it exists, because on iOS window.innerHeight
-		// answers for the layout viewport while the toolbar collapses and
-		// expands over the visual one; the game should fill what is actually
-		// visible.
+		// visualViewport says what is available for controls and the keyboard.
+		// The layout viewport says where the world may paint behind Safari's
+		// translucent chrome. The reconciler below keeps those two jobs apart.
 		(function() {
 			var is_iOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
 			function apply() {
@@ -543,29 +542,6 @@
 				var vp = window.visualViewport;
 				var layoutH = document.documentElement.clientHeight || 0;
 				var width = Math.round(vp ? vp.width : window.innerWidth);
-				// The viewport, and nothing larger, whatever else the window
-				// says about itself.
-				//
-				// Two rounds of this file grew the canvas past it: first to
-				// the layout viewport, then to outerHeight, both aimed at a
-				// strip of screen the interface was not reaching. Installed on
-				// a 402x874 point iPhone the second one sized the canvas 874
-				// tall inside an 812 point viewport, and the bottom 62 points
-				// are where the menu's rail is: the installed app had no
-				// navigation on it at all, while the same build in a tab was
-				// correct.
-				//
-				// Whichever end of the screen that strip is at, the page
-				// cannot draw into it. A canvas taller than the viewport is
-				// not a canvas reaching further down the glass, it is a canvas
-				// whose bottom nobody can see and nobody can press. Reproduced
-				// at the phone's exact geometry, standalone with outerHeight
-				// 874 against a viewport of 812: canvas 874, and the rail
-				// under the edge of it.
-				//
-				// What is left over is painted the interface's own ground by
-				// the page, which is why the band reads as a slightly darker
-				// black rather than as a hole.
 				var visible = Math.round(vp ? vp.height : window.innerHeight);
 				var standalone = window.navigator.standalone === true
 					|| (window.matchMedia
@@ -576,7 +552,20 @@
 				var scr = window.screen || {};
 				var innerH = Math.round(window.innerHeight || 0);
 				var outerH = Math.round(window.outerHeight || 0);
-				var height = visible - buttonHeight;
+				var active_form = document.getElementById('vw-ask');
+				var editing = active_form && active_form.contains(document.activeElement);
+				// In an iPhone tab, the visual viewport ends above Safari's
+				// lower toolbar while the page continues behind it. Draw the
+				// world through that covered strip so translucent browser chrome
+				// still has the starfield and the fight beneath it. The covered
+				// amount is published below so tappable furniture stays visible.
+				//
+				// A standalone app has no browser strip. It keeps the visual
+				// height because a larger canvas hides its bottom rail. A focused
+				// game input also keeps the visual height while the keyboard is up.
+				var pageH = is_iOS && !standalone && !editing
+					? Math.max(visible, layoutH, innerH) : visible;
+				var height = pageH - buttonHeight;
 				if (width < 1 || height < 1) {
 					return;
 				}
@@ -588,19 +577,12 @@
 				// screen. A rail belongs above a toolbar and can run under
 				// the home indicator, so that one bit decides where it sits.
 				if (cs) {
-					// The bottom one is published net of whatever the canvas
-					// already fails to cover. env() answers for the screen,
-					// and the canvas is not always the screen: under a
-					// browser's bottom toolbar the strip is spoken for
-					// already, and furniture stepping up by the inset as well
-					// would be stepping over something twice.
-					//
-					// How much of the page the canvas does not cover at the
-					// bottom, which in a tab is the toolbar and installed is
-					// nothing. An inset with a toolbar already over it is a
-					// strip nothing needs to step around twice.
-					var uncovered = Math.max(0, layoutH - visible);
-					var bottom = Math.max(0, padB - uncovered);
+					// The canvas now includes Safari's covered strip. Keep edge
+					// furniture above it. The CSS inset may describe the same
+					// obstruction, so take the larger value instead of adding both.
+					var viewportTop = Math.round(vp ? vp.offsetTop : 0);
+					var covered = Math.max(0, pageH - visible - viewportTop);
+					var bottom = Math.max(padB, covered);
 					// Asked of the geometry rather than of the browser. The
 					// question the rail has is "is there anything between me
 					// and the glass", and a hardware inset with nothing
@@ -611,7 +593,7 @@
 					// layout bug rather than a detection one. This also
 					// follows a browser that has scrolled its toolbar away,
 					// which is the same screen by then.
-					var bare = standalone || (padB > 0 && uncovered < 1);
+					var bare = standalone || (padB > 0 && covered < 1);
 					// And the four numbers this whole reconciler is derived
 					// from, published so a phone can be asked what it thinks
 					// its own screen is. They are how the 62 points above were

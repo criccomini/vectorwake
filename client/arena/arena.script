@@ -1958,6 +1958,9 @@ function update(self, dt)
             self.installed)
     touch.safe_l = (self.safe_l or 0) * density
     touch.safe_r = (self.safe_r or 0) * density
+    -- Browser chrome covers part of the extended canvas, so glass controls
+    -- step above it. A bare home indicator keeps the old full-screen layout.
+    touch.safe_b = self.installed and 0 or (self.safe_b or 0) * density
     -- The same four numbers, kept for the about page to print. Every device
     -- that has ever got this wrong has been a phone, and a phone is exactly
     -- where they cannot be read off a console: the emulator answers zero to

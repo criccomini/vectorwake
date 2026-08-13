@@ -59,13 +59,14 @@ M.has_bomb = true
 M.has_fan = false
 M.multi_off = false
 
--- What an iPhone's island or notch covers at the sides, in drawable pixels,
--- set by the caller from what the page measures. The pads and the stick's
--- resting mark step inside them; the bottom is deliberately not represented,
--- because the home indicator overlays every full-screen game's controls and
--- lifting the whole row past it bought nothing but reach.
+-- What an iPhone's island, notch, or browser toolbar covers, in drawable
+-- pixels, set by the caller from what the page measures. The pads and the
+-- stick's resting mark step inside them. The caller leaves the bottom at zero
+-- for a bare home indicator, which may overlay the controls, and supplies it
+-- only when browser chrome would swallow the row.
 M.safe_l = 0
 M.safe_r = 0
+M.safe_b = 0
 
 -- Which ship is yours, so a pad can read its own weapon out of the core
 -- rather than have every fact about it copied into a field here. nil before
@@ -143,9 +144,11 @@ function M.layout(w, h, s)
     -- Far enough in that the rim clears the edge of the screen with a thumb's
     -- worth of margin: a control hard against the bezel is one a hand has to
     -- curl round to reach.
-    local gun_pad  = {x = w - M.safe_r - r * 1.4, y = r * 1.4, r = r}
+    local gun_pad  = {x = w - M.safe_r - r * 1.4,
+                      y = M.safe_b + r * 1.4, r = r}
     local bomb_pad = {x = gun_pad.x - r - br - r * 0.34, y = gun_pad.y, r = br}
-    local home  = {x = M.safe_l + r * 1.6, y = r * 1.8, r = r * 1.15}
+    local home  = {x = M.safe_l + r * 1.6,
+                   y = M.safe_b + r * 1.8, r = r * 1.15}
 
     -- The charges, as square cells: which class a control belongs to reads
     -- before the picture inside it does, and a round trigger beside a square

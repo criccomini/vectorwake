@@ -178,6 +178,7 @@ local function reset(w, h, s)
     touch.charges = {0, 1}
     touch.counts = {[0] = 2, [1] = 1}
     touch.maxes = {[0] = 3, [1] = 3}
+    touch.safe_l, touch.safe_r, touch.safe_b = 0, 0, 0
     -- What the dial leaves: ui.radar_span() is two pads of 14 points plus
     -- 168 of dial. Written out rather than imported, because ui.lua drags
     -- the whole interface in and this is one number.
@@ -191,6 +192,19 @@ end
 -- two pixels per point, held either way.
 local LAND = {1688, 780, 2}
 local PORT = {780, 1688, 2}
+
+-- A browser toolbar covers the bottom of the extended world canvas. Every
+-- control a thumb needs moves above it by the measured amount, while their
+-- spacing stays unchanged.
+do
+    local w, h, s = reset(unpack(PORT))
+    local ordinary = touch.layout(w, h, s)
+    touch.safe_b = 156
+    local covered = touch.layout(w, h, s)
+    check("browser chrome lifts both touch corners clear",
+          covered.guns.y - ordinary.guns.y == 156
+          and covered.home.y - ordinary.home.y == 156)
+end
 
 -- --- every control is drawn ------------------------------------------------
 

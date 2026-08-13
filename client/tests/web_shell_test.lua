@@ -27,6 +27,7 @@ end
 
 local landing = read("deploy/site/index.html")
 local game = read("client/web/engine_template.html")
+local arena = read("client/arena/arena.script")
 local account = read("client/arena/account.lua")
 local admin = read("deploy/admin/admin.js")
 
@@ -46,6 +47,11 @@ check("the game page reports bounded browser failures",
       has(game, "'/meta/v1/client-error'")
       and has(game, "sent >= 8")
       and has(game, "keepalive: true"))
+check("the iPhone canvas continues behind Safari's lower toolbar",
+      has(game, "var pageH = is_iOS && !standalone && !editing")
+      and has(game, "Math.max(visible, layoutH, innerH)")
+      and has(game, "var bottom = Math.max(padB, covered)")
+      and has(arena, "touch.safe_b = self.installed and 0"))
 check("the reported account crosses the Lua page boundary",
       has(account, "window.vwAccount=")
       and has(game, "account: Number(window.vwAccount) || 0"))
