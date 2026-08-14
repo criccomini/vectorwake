@@ -304,9 +304,10 @@ local DEBUG_CORRECTION_PX = 64
 local DEBUG_REPORT_MAX = 10
 local debug_reports, last_debug_tick, last_frame_ms = 0, nil, 0
 -- A snapshot further behind than the input history can faithfully replay is
--- stale state, not authority. Give a recovering QUIC session one second to
--- produce current state before replacing it with its WebSocket door.
-local REPLAY_MAX_TICKS = 100
+-- stale state, not authority. Half a second is already ten ordinary snapshots
+-- or twenty-five combat snapshots. Give QUIC one more second to produce
+-- current state, then leave normally rather than moving the seat to a new wire.
+local REPLAY_MAX_TICKS = 50
 local STALE_RECOVERY_SECONDS = 1
 local stale_snapshot_wait = nil
 -- The room channel trails live play by five seconds by default. Twenty seconds
@@ -841,32 +842,6 @@ end
 -- supposed to prevent, wearing the one disguise it cannot catch.
 local SNAP_UNREADABLE = "the zone sent a snapshot this client cannot read"
 
--- Prepare for a fresh welcome without blanking the old world. The frame loop
--- sees `have_snapshot` false and freezes that picture while the replacement
--- socket joins, so it cannot send old tick-stamped inputs into the new seat.
-local function reset_reconciliation()
-    lifecycle = 0
-    settings_generation = 0
-    input_log = {}
-    receipts:reset()
-    death_candidates = {}
-    M.stats.death_pending = 0
-    predicted_tick = 0
-    snap_tick = 0
-    have_snapshot = false
-    stale_snapshot_wait = nil
-    pending_kills, pending_charges = {}, {}
-    seen_kills, seen_charges = {}, {}
-    M.kills = {}
-    M.prizes = {}
-    M.charge_events = {}
-    M.snap_deaths = {}
-    M.snap_blasts = {}
-    M.stats.input_margin, M.stats.rtt, M.stats.lead = 0, 0, 0
-    last_snap_at = nil
-    sim.smooth_reset()
-end
-
 local function adopt_lifecycle(epoch, watching, subject)
     if lifecycle ~= 0 and epoch ~= lifecycle and not serial_after(epoch, lifecycle) then
         return false
@@ -1378,9 +1353,9 @@ function M.tick(dt)
         -- tenth so the recovery window is real time after the stale stream was
         -- observed, not time the page spent asleep before observing it.
         stale_snapshot_wait = stale_snapshot_wait + math.min(dt, 0.1)
-        if stale_snapshot_wait >= STALE_RECOVERY_SECONDS
-            and transport:restart_on_socket("stale snapshot stream") then
-            reset_reconciliation()
+        if stale_snapshot_wait >= STALE_RECOVERY_SECONDS then
+            stale_snapshot_wait = nil
+            lost("the snapshot stream stalled")
         end
     end
 end

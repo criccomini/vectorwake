@@ -635,15 +635,15 @@ rate-limited at the meta-layer; the admin-only read keeps reports separate and
 expires them after thirty days. Deaths, respawns and attachment changes do not
 file because their discontinuity is expected rather than evidence of rollback.
 
-The replay ceiling is also an admission rule. A snapshot more than one hundred
-ticks behind the client's predicted clock is discarded before it can replace
-the world; applying it and replaying only the final hundred ticks would erase
-the older inputs and manufacture a rewind. Oversized WebTransport snapshots
-use reliable streams, so a stalled stream can complete after its state is old.
-The client gives that session one second to deliver a current snapshot, then
-closes it and presents the same join to the zone over WebSocket after a short
-seat-cleanup delay. The old world stays frozen until the replacement snapshot
-lands, and no input stamped for the abandoned clock crosses into the new seat.
+The replay ceiling is also an admission rule. A snapshot more than fifty ticks,
+or half a second, behind the client's predicted clock is discarded before it
+can replace the world. Applying it and replaying only the final fifty ticks
+would erase the older inputs and manufacture a rewind. Oversized WebTransport
+snapshots use reliable streams, so a stalled stream can complete after its
+state is old. The client gives that session one second to deliver a current
+snapshot, then closes the connection and reports the stall. The server handles
+that closure like any other departure, including combat and rating settlement.
+An established session never changes to WebSocket behind the player's back.
 
 ## Open questions
 

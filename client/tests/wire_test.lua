@@ -758,13 +758,36 @@ check("and reports its reason once", why == "that address is not a zone URL",
       tostring(why))
 websocket.connect = ws_connect
 
+-- Fifty ticks can still be replayed without throwing away local inputs. The
+-- next tick crosses the half-second ceiling and must leave the world alone.
+net = fresh_net()
+net.connect("wss://zone/a1", 0, "pilot", function() end, "chaos", false,
+            "https://zone:9443", 2)
+wt.cb(nil, {event = webtransport.EVENT_CONNECTED})
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
+            message = welcome(3, nil, nil, 2)})
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = snapshot(3, 7000)})
+for _ = 1, 43 do net.step(0) end
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = snapshot(3, 7001)})
+check("a snapshot exactly half a second behind still replays",
+      net.stats.snaps == 2 and net.stats.replay == 50 and tick == 7051,
+      "tick " .. tick .. ", replay " .. net.stats.replay)
+for _ = 1, 2 do net.step(0) end
+local before_ceiling = tick
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = snapshot(3, 7002)})
+check("a snapshot beyond half a second is discarded",
+      net.stats.snaps == 2 and net.stats.snap_stale == 1
+      and tick == before_ceiling,
+      "tick " .. tick .. ", stale " .. net.stats.snap_stale)
+
 -- A reliable QUIC snapshot stream may finish seconds after the world inside
 -- it was current. It cannot be reconciled once the client has predicted past
 -- the replay ceiling: applying it would throw away the older inputs and move
 -- the ship backward. Give that session a moment to produce something current,
--- then carry the same join over the socket if it cannot.
+-- then close it normally if it cannot.
 net = fresh_net()
-net.connect("wss://zone/a1", 0, "pilot", function() end, "chaos", false,
+why = nil
+net.connect("wss://zone/a1", 0, "pilot", function(w) why = w end, "chaos", false,
             "https://zone:9443", 2)
 wt.cb(nil, {event = webtransport.EVENT_CONNECTED})
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
@@ -779,21 +802,13 @@ check("a snapshot beyond the replay ceiling changes no world state",
       and net.stats.snap_stale == 1,
       "tick " .. tick .. ", snaps " .. net.stats.snaps)
 for _ = 1, 11 do net.tick(0.1) end
-check("a stale stream gets one second to recover",
-      wt.disconnects == disconnects_before_stale + 1 and ws.dialled == 0)
+check("a stale stream gets one second to recover, then disconnects",
+      wt.disconnects == disconnects_before_stale + 1 and ws.dialled == 0
+      and not net.connected and why == "the snapshot stream stalled",
+      tostring(why))
 for _ = 1, 6 do net.tick(0.1) end
-check("then the same join moves to the socket",
-      ws.dialled == 1 and net.stats.wire == "ws"
-      and net.transport().reason == "stale snapshot stream")
-ws.cb(nil, ws.handle, {event = websocket.EVENT_CONNECTED})
-check("the replacement socket sends a fresh join", #ws.sent == 1
-      and string.byte(ws.sent[1], 1) == 1)
-ws.cb(nil, ws.handle, {event = websocket.EVENT_MESSAGE,
-                       message = welcome(3, nil, nil, 2)})
-ws.cb(nil, ws.handle, {event = websocket.EVENT_MESSAGE,
-                       message = snapshot(3, 7160)})
-check("the replacement starts from its own fresh snapshot",
-      net.connected and net.stats.snaps == 2 and tick == 7168)
+check("an established stale session never falls back to the socket",
+      ws.dialled == 0 and net.transport().kind == nil)
 
 -- A correction larger than the local snap threshold is evidence only while
 -- the same living hull continues across it. File the state around that moment

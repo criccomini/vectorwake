@@ -2101,10 +2101,13 @@ The server still owns movement, energy, cooldowns, collisions, damage, prize
 results, and objectives. Sending an input packet does not make an illegal action
 legal. It only proves that the client is still supplying current controls.
 
-**Cost:** downlink trouble no longer removes a pilot from a match. That pilot is
-already playing from an older view of the world, and the authoritative server
-still rejects actions the simulation does not allow. The loss numbers remain in
-the debug readout for diagnosing transport and presentation problems.
+**Cost:** reported snapshot loss does not remove a pilot from a match. The loss
+numbers remain in the debug readout for diagnosing transport and presentation
+problems. The client does close an established WebTransport session when every
+usable snapshot is more than half a second behind for a full second. At that
+point it cannot reconcile its view without erasing inputs, and the server
+settles the closed connection like any other departure. This uses state the
+client needs for presentation, not client telemetry as gameplay authority.
 
 **Reconsider if:** a concrete exploit survives server validation and depends on
 a stale downstream view. Fix that exploit at the authoritative rule it crosses,
