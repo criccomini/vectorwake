@@ -335,6 +335,9 @@ pub struct sim_weapon {
     /// The add-ons of the trigger that fired it: a shot is what it was when
     /// it left, not what its owner is carrying now.
     pub mods: u16,
+    /// Nonzero rounds with the same link belong to one gun volley. A hull hit
+    /// spends the remaining rounds in that volley, while a wall hit does not.
+    pub link: u32,
     pub x: i32,
     pub y: i32,
     pub vx: i32,

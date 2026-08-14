@@ -117,8 +117,10 @@ spawn_radius = 60
 # reach the end is to sit still for the whole minute.
 safe_limit = 6000
 
-# One green every thirty ticks.
-prize_delay = 30
+# SVS placed one green every seven seconds. The field grows slowly enough that
+# upgrades are earned by moving through the map instead of arriving under
+# every active fight almost as quickly as they can be collected.
+prize_delay = 700
 # Forty-two greens on the field at once. The room also carries bots, so the
 # field is a little thinner per pilot than the number suggests. It is read off
 # the player cap, so raising that raises this.
@@ -126,16 +128,10 @@ prize_max = 42
 prize_life = 6000
 # One green in three hundred is a bad one.
 rust = 3
-# Thirty greens in hand the moment a ship spawns, which is criccomini's call
-# and worth explaining because it is doing a job nothing else can.
-#
-# A fresh hull here is bare: one gun, no bombs, no charges. Bounty in this core
-# is a sum over what a pilot holds rather than a number of its own, so a spawn
-# worth nothing is a spawn nobody has any reason to shoot. Greens are the only
-# lever, and one green is one bounty: thirty measures 29.5 at spawn, fifty
-# measures 49.4 and hands over every stat, ladder and add-on at once, which
-# leaves nothing to fly for.
-spawn_prizes = 30
+# SVS started ships bare. A pilot earns the tree by collecting greens and loses
+# it on death, which makes survival matter and keeps multifire from appearing
+# on nearly every first life.
+spawn_prizes = 0
 
 # Twice what our other zones pay, so a streak in here is visible from further
 # away.

@@ -367,6 +367,11 @@ and an item, one mechanic.
 does. The rest change a weapon's character; this one hands you more bullets,
 and more bullets for the same price is the whole of the balance problem.
 
+The rounds in one gun pull are linked. The first one that touches a hull spends
+the rest of the volley, so a tight three-round fan cannot deal three hits to one
+pilot. A wall only removes the round that reached it. The other sides of the fan
+keep flying, which preserves multifire's ability to cover a corner.
+
 The original priced it as two separate settings rather than per round:
 
 | | plain | multifire |
@@ -385,13 +390,23 @@ Ours is those two ratios as a percentage per rung (`mod_multi_energy = 50`,
 `mod_multi_delay = 100`), because we have rungs and the original did not. A
 second rung is a second helping of both, linear like every other add-on here.
 
+The base gun energy is also multiplied by its gun level, as SVS does. Before
+multifire or hull barrels, a level-one shot costs 20, level two costs 40, and
+level three costs 60. The harder bullet therefore asks for more of the same bar
+it is trying to take from its target.
+
+The damage number is a ceiling. SVS left exact damage off for bullets, burst
+rounds, and shrapnel, and Vectorwake follows it. Each hit uses the same
+square-root random curve and averages near two thirds of the listed value. Bomb
+damage stays exact before blast-distance falloff.
+
 **Barrels are the hull's own, and they are the one thing paid for by the
 round.** `DoubleBarrel` was a per-ship setting and the Terrier alone carried
 it: two rounds abreast for one pull where every other ship sent one. The Facet
 has it here. It is not an add-on, so it is never picked up and never dropped,
 and that is exactly why it can be priced per barrel without the objection that
 sinks the idea everywhere else. A shot costs what pulling the trigger costs,
-so that a burst of sixteen or a wide fan stays affordable to use; those are
+so that a burst of twenty-four or a wide fan stays affordable to use; those are
 bought once and then carried. A barrel is welded on at spawn. The original
 priced it the same way, since `BulletFireEnergy` was per ship and the
 Terrier's gun ate the bar about twice as fast as anyone's.

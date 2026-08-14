@@ -2642,6 +2642,11 @@ mod tests {
     fn nobody_stands_still_for_twelve_seconds() {
         let bytes = std::fs::read("../catalog/zones/alpha/alpha.vwmap").unwrap();
         let mut w = sim::World::from_packed(0x5eed, &bytes).unwrap();
+        // Match the two Alpha settings that reshape this drill. The map alone
+        // builds baseline settings, whose thirty-item opening kit produces a
+        // different sequence of fights and deaths than the shipped room.
+        w.cfg.spawn_prizes = 0;
+        w.cfg.prize_delay = 700;
         let mut bots = Vec::new();
         for i in 0..24usize {
             let e = individual(i);

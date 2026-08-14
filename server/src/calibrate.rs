@@ -2217,8 +2217,8 @@ which is the pit talking",
         );
 
         // And the harness still overrides the two it must, whatever the zone
-        // asked for: Alpha ships thirty spawn greens, which is exactly the
-        // thing that would erase what is being measured.
+        // asks for. A zone can hand out thirty spawn greens, which is exactly
+        // the thing that would erase what is being measured.
         c.spawn_prizes = Some(30);
         c.prize_max = Some(42);
         let b = stage_bout([&STAGES[1], &STAGES[0]], 0, 0.5, 1, Some(&c));

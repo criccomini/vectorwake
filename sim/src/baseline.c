@@ -654,7 +654,8 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
          *
          * Costs are absolute rather than a share of the bar, which they can
          * be now that every hull carries the same 1700 the original gives
-         * them all. */
+         * them all. A gun rung also multiplies BulletFireEnergy by its level,
+         * which is the original's `(weapon level + 1)` rule. */
         for (int k = 0; k < r->gun_rungs && k < SIM_MAX_RUNGS; k++) {
             sim_weapon_spec bolt;
             memset(&bolt, 0, sizeof bolt);
@@ -700,7 +701,8 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
              * The rate is everyone's. The original slowed that ship's gun
              * too, and the number is not in anything we have, so it is not
              * guessed at here. */
-            gun.energy = sim_units_energy(BULLET_ENERGY * r->gun_barrels);
+            gun.energy = sim_units_energy(BULLET_ENERGY * r->gun_barrels
+                                          * (k + 1));
             gun.delay = BULLET_DELAY;
             c->trigger[SIM_TRIG_GUN][k] = (uint8_t)sim_add_pattern(cfg, &gun);
         }

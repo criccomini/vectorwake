@@ -205,6 +205,7 @@ int sim_pack_around(const sim_state *s, uint8_t *out, int cap,
         w8(&w, p->left);
         w8(&w, p->depth);
         w16(&w, p->mods);
+        w32(&w, p->link);
         w8(&w, p->owner);
         w8(&w, p->team);
         w32(&w, (uint32_t)p->x);
@@ -397,6 +398,7 @@ int sim_unpack(sim_state *out, const uint8_t *in, int len) {
         if (p->depth > SIM_MAX_SPLINTER_DEPTH) return -1;
         p->mods = (uint16_t)r16(&r);
         if ((p->mods >> (SIM_MOD_COUNT * 2)) != 0) return -1;
+        p->link = r32(&r);
         p->owner = (uint8_t)r8(&r);
         if (p->owner >= ships) return -1;
         p->team = (uint8_t)r8(&r);

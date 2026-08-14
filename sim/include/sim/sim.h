@@ -757,6 +757,10 @@ typedef struct {
      * when it left rather than what its owner is carrying now. A bomb thrown
      * while you had shrapnel still breaks up after you are dead. */
     uint16_t mods;
+    /* Nonzero rounds with the same link left on one gun pull. The first one
+     * to hit a hull spends the whole volley, as SVS multifire does. Walls do
+     * not: one side of a fan may end while the rest carries on. */
+    uint32_t link;
     int32_t x, y;
     int32_t vx, vy;
     uint16_t life; /* ticks remaining */

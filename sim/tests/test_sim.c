@@ -177,12 +177,13 @@ static ev_counts step_counting(sim_state *s, const sim_settings *cfg,
  * apart -- reading the drop directly makes every shot look a recharge
  * cheaper than it is. Energy is dropped below full first so that neither
  * tick clamps at the ceiling and hides part of the answer. */
-static int32_t gun_cost(const sim_settings *cfg, uint8_t cls, uint16_t mods,
-                        uint16_t *wait) {
+static int32_t gun_cost(const sim_settings *cfg, uint8_t cls, uint8_t level,
+                        uint16_t mods, uint16_t *wait) {
     sim_state a, b;
     sim_init(&a, 1);
     sim_spawn(&a, cls, 0, 8192, 8192, 0, cfg);
     a.ships[0].energy /= 2;
+    a.ships[0].level[SIM_TRIG_GUN] = level;
     a.ships[0].mods[SIM_TRIG_GUN] = mods;
     b = a;
     step_n(&a, cfg, 0, 0, 1);
@@ -325,8 +326,9 @@ int main(void) {
 
     /* Sustained unanswered fire kills. Energy is the whole economy: it is the
      * health pool and the ammunition at once, and a ship that is being hit
-     * faster than it recharges dies. Roughly five bullets does it, which is
-     * where the original sat too -- 200 damage against 1000 starting energy.
+     * faster than it recharges dies. The listed 200 is a ceiling and the SVS
+     * random curve averages near two thirds of it, so a fresh 1000-energy
+     * hull usually takes around eight hits rather than exactly five.
      *
      * This asserted the opposite until the firing costs were corrected. A
      * bullet used to cost 35% of a full bar, so an attacker ran itself dry
@@ -2331,8 +2333,8 @@ int main(void) {
          * Most of the price is in the rate, which is the half a pilot cannot
          * out-recharge. */
         uint16_t plain_wait = 0, multi_wait = 0;
-        int32_t plain = gun_cost(&cfg, (uint8_t)APEX, 0, &plain_wait);
-        int32_t multi = gun_cost(&cfg, (uint8_t)APEX,
+        int32_t plain = gun_cost(&cfg, (uint8_t)APEX, 0, 0, &plain_wait);
+        int32_t multi = gun_cost(&cfg, (uint8_t)APEX, 0,
                                  sim_mod_set(0, SIM_MOD_MULTI, 1), &multi_wait);
         CHECK(multi == plain * 3 / 2, "multifire costs half again the energy");
         CHECK(multi_wait == plain_wait * 2, "and twice the wait");
@@ -2341,7 +2343,7 @@ int main(void) {
          * add-on here is linear in its rung and this one has no reason not
          * to be. */
         uint16_t two_wait = 0;
-        int32_t two = gun_cost(&cfg, (uint8_t)APEX,
+        int32_t two = gun_cost(&cfg, (uint8_t)APEX, 0,
                                sim_mod_set(0, SIM_MOD_MULTI, 2), &two_wait);
         CHECK(two == plain * 2, "two rungs, twice the energy");
         CHECK(two_wait == plain_wait * 3, "and three times the wait");
@@ -2406,11 +2408,11 @@ int main(void) {
          * BulletFireEnergy, and the multifire surcharge still lands on top of
          * the doubled figure rather than instead of it. */
         uint16_t facet_wait = 0, apex_wait = 0;
-        int32_t facet_plain = gun_cost(&cfg, (uint8_t)FACET, 0, &facet_wait);
-        int32_t apex_plain = gun_cost(&cfg, (uint8_t)APEX, 0, &apex_wait);
+        int32_t facet_plain = gun_cost(&cfg, (uint8_t)FACET, 0, 0, &facet_wait);
+        int32_t apex_plain = gun_cost(&cfg, (uint8_t)APEX, 0, 0, &apex_wait);
         CHECK(facet_plain == apex_plain * 2, "two barrels cost two bullets");
         CHECK(facet_wait == apex_wait, "at everybody else's rate of fire");
-        int32_t facet_multi = gun_cost(&cfg, (uint8_t)FACET,
+        int32_t facet_multi = gun_cost(&cfg, (uint8_t)FACET, 0,
                                        sim_mod_set(0, SIM_MOD_MULTI, 1), NULL);
         CHECK(facet_multi == facet_plain * 3 / 2,
               "and multifire is half again on top of that");
@@ -2418,7 +2420,7 @@ int main(void) {
 
     {
         /* Climbing a rung swaps which pattern the trigger fires, and the one
-         * above hits harder. */
+         * above hits harder and costs its level's multiple of base energy. */
         sim_state s;
         sim_init(&s, 1);
         sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
@@ -2431,6 +2433,115 @@ int main(void) {
         CHECK(s.weapon_count == 1, "fired");
         CHECK(cfg.specs[s.weapons[0].spec].damage == l2,
               "and what left the ship is the rung it is on");
+
+        int32_t c1 = gun_cost(&cfg, (uint8_t)APEX, 0, 0, NULL);
+        int32_t c2 = gun_cost(&cfg, (uint8_t)APEX, 1, 0, NULL);
+        int32_t c3 = gun_cost(&cfg, (uint8_t)APEX, 2, 0, NULL);
+        CHECK(c2 == c1 * 2, "a level-two gun costs twice the base energy");
+        CHECK(c3 == c1 * 3, "and a level-three gun costs three times the base");
+    }
+
+    {
+        /* ExactDamage is off in SVS. A bullet's table damage is the ceiling,
+         * not the amount every hit removes. Drive rounds directly into a
+         * stationary hull so flight and recharge cannot muddy the sample. */
+        sim_settings w = cfg;
+        w.classes[APEX].recharge = 0;
+        sim_state s;
+        sim_init(&s, 0x5eed1234u);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &w);
+        sim_spawn(&s, APEX, 1, 8200, 8192, 0, &w);
+        uint8_t bullet = gun_of(&w, APEX)->spec;
+        int32_t ceiling = w.specs[bullet].damage;
+        int32_t lo = ceiling, hi = 0;
+        int64_t total = 0;
+        for (int n = 0; n < 128; n++) {
+            sim_weapon *round = &s.weapons[s.weapon_count++];
+            memset(round, 0, sizeof *round);
+            round->spec = bullet;
+            round->owner = 0;
+            round->team = 0;
+            round->x = s.ships[1].x;
+            round->y = s.ships[1].y;
+            round->life = 10;
+            round->fuse_target = 255;
+            s.ships[1].energy = sim_eff_max_energy(&w.classes[APEX],
+                                                    &s.ships[1]);
+            int32_t before = s.ships[1].energy;
+            step_n(&s, &w, 0, 0, 1);
+            int32_t dealt = before - s.ships[1].energy;
+            if (dealt < lo) lo = dealt;
+            if (dealt > hi) hi = dealt;
+            total += dealt;
+        }
+        CHECK(lo >= 0 && hi <= ceiling,
+              "random bullet damage stays inside its listed ceiling");
+        CHECK(lo < ceiling / 2 && hi > ceiling * 9 / 10,
+              "the damage curve reaches both ends of the range");
+        CHECK(total > (int64_t)ceiling * 128 * 3 / 5
+              && total < (int64_t)ceiling * 128 * 3 / 4,
+              "and averages near two thirds of the ceiling");
+    }
+
+    {
+        /* Every round from one gun pull shares a link. The first hull hit
+         * spends the siblings without letting a tight multifire fan stack
+         * three hits on the same target. */
+        sim_settings w = cfg;
+        uint8_t bullet = gun_of(&w, APEX)->spec;
+        w.specs[bullet].stall = 1; /* even a zero-damage roll reports the hit */
+        sim_state s;
+        sim_init(&s, 1);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &w);
+        sim_spawn(&s, APEX, 1, 8200, 8192, 0, &w);
+        for (int n = 0; n < 3; n++) {
+            sim_weapon *round = &s.weapons[s.weapon_count++];
+            memset(round, 0, sizeof *round);
+            round->spec = bullet;
+            round->owner = 0;
+            round->team = 0;
+            round->link = 77;
+            round->x = s.ships[1].x;
+            round->y = s.ships[1].y;
+            round->life = 10;
+            round->fuse_target = 255;
+        }
+        sim_state next;
+        sim_events ev;
+        sim_input in[2] = {{0, 0}, {1, 0}};
+        sim_step(&next, &s, in, 2, &w, &ev);
+        int hits = 0, expires = 0;
+        for (uint16_t e = 0; e < ev.count; e++) {
+            hits += ev.e[e].type == SIM_EV_HIT;
+            expires += ev.e[e].type == SIM_EV_EXPIRE;
+        }
+        CHECK(hits == 1, "one linked volley can hit a hull only once");
+        CHECK(expires == 3 && next.weapon_count == 0,
+              "and the remaining rounds are spent with it");
+
+        /* A wall is not a hull. Put one linked round a tick from the top wall
+         * and its sibling in open space. Only the one that reaches masonry
+         * should end. */
+        sim_state wall;
+        sim_init(&wall, 1);
+        sim_spawn(&wall, APEX, 0, 8192, 100, 0, &w);
+        for (int n = 0; n < 2; n++) {
+            sim_weapon *round = &wall.weapons[wall.weapon_count++];
+            memset(round, 0, sizeof *round);
+            round->spec = bullet;
+            round->owner = 0;
+            round->team = 0;
+            round->link = 88;
+            round->x = 8192 * 256;
+            round->y = (n == 0 ? 17 : 100) * 256;
+            round->vy = n == 0 ? -2 * 256 : 0;
+            round->life = 10;
+            round->fuse_target = 255;
+        }
+        sim_input idle = {0, 0};
+        sim_step(&next, &wall, &idle, 1, &w, &ev);
+        CHECK(next.weapon_count == 1 && next.weapons[0].link == 88,
+              "a wall ends one linked round without spending its sibling");
     }
 
     {
@@ -3222,7 +3333,8 @@ int main(void) {
                 if (ev.e[e].type == SIM_EV_HIT && ev.e[e].v > worst)
                     worst = ev.e[e].v;
         }
-        CHECK(worst == l2, "a dead pilot's shot lands for what it was worth");
+        CHECK(worst > 0 && worst <= l2,
+              "a dead pilot's shot keeps its level-two damage ceiling");
     }
 
     {
@@ -3564,11 +3676,29 @@ int main(void) {
         for (int i = 0; i < SIM_MAX_PRIZES; i++) live += s.prizes[i].active;
         CHECK(live > 10, "the state under test carries a prize field");
 
+        /* Keep a known linked round in the state. A zero would let the new
+         * snapshot field be omitted on both sides while this broad round-trip
+         * test still looked healthy. */
+        if (s.weapon_count == 0) {
+            sim_weapon *round = &s.weapons[s.weapon_count++];
+            memset(round, 0, sizeof *round);
+            round->spec = gun_of(&cfg, APEX)->spec;
+            round->owner = 0;
+            round->team = s.ships[0].team;
+            round->x = s.ships[0].x;
+            round->y = s.ships[0].y;
+            round->life = 10;
+            round->fuse_target = 255;
+        }
+        s.weapons[0].link = 0xa1b2c3d4u;
+
         static uint8_t buf[SIM_PACK_MAX];
         int n = sim_pack(&s, buf, sizeof buf);
         CHECK(n > 0, "a snapshot packs");
         CHECK(sim_unpack(&back, buf, n) == 0, "a snapshot unpacks");
         CHECK(sim_hash(&back) == sim_hash(&s), "the round trip is exact");
+        CHECK(back.weapons[0].link == 0xa1b2c3d4u,
+              "a gun-volley link survives the snapshot");
 
         /* Network snapshots never reveal the prize stream. Two otherwise
          * identical states with different future prize decisions produce the

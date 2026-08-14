@@ -47,6 +47,26 @@ static uint32_t xorshift32(uint32_t x) {
     return x ? x : 0x9e3779b9u;
 }
 
+/* SVS's non-exact bullet damage, with a roll local to this impact.
+ *
+ * Using the arena generator here would make an off-screen hit advance the
+ * server's RNG without advancing a filtered client's. The next nearby hit
+ * would then predict a different amount. The impact already has enough
+ * deterministic entropy to make the same curve without coupling fights that
+ * cannot see each other. */
+static int32_t random_bullet_damage(const sim_state *s, const sim_weapon *w,
+                                    int32_t ceiling) {
+    uint32_t maximum = (uint32_t)(ceiling / 1024);
+    uint64_t span = (uint64_t)maximum * maximum + 1;
+    uint32_t roll = s->tick ^ (uint32_t)w->x ^ ((uint32_t)w->y << 7)
+                    ^ ((uint32_t)w->vx << 13) ^ ((uint32_t)w->vy << 19)
+                    ^ ((uint32_t)w->life << 16) ^ w->link
+                    ^ ((uint32_t)w->owner << 24) ^ ((uint32_t)w->spec << 28);
+    roll = xorshift32(roll);
+    uint64_t square = ((uint64_t)roll * 1000u) % span;
+    return (int32_t)(isqrt64((int64_t)square) * 1024);
+}
+
 /* A whole-pixel position squeezed into an event's one payload word, with the
  * round's rung in two of the bits left over. The map is 16384 px on a side,
  * so fourteen bits hold a coordinate exactly and the pair fits with four to
@@ -483,7 +503,8 @@ int sim_add_pattern(sim_settings *cfg, const sim_fire_pattern *pattern) {
 static void spawn_weapon(sim_state *s, uint8_t spec, uint8_t owner,
                          uint8_t team, int32_t x, int32_t y, int32_t vx,
                          int32_t vy, uint16_t life, uint8_t left,
-                         uint8_t depth, uint16_t mods, uint8_t level,
+                         uint8_t depth, uint16_t mods, uint32_t link,
+                         uint8_t level,
                          uint8_t shrap_level, uint8_t shrap_bounce) {
     if (s->weapon_count >= SIM_MAX_WEAPONS) return; /* silently dropped */
     sim_weapon *w = &s->weapons[s->weapon_count++];
@@ -493,6 +514,7 @@ static void spawn_weapon(sim_state *s, uint8_t spec, uint8_t owner,
     w->left = left;
     w->depth = depth;
     w->mods = mods;
+    w->link = link;
     w->level = level;
     w->shrap_level = shrap_level;
     w->shrap_bounce = shrap_bounce;
@@ -632,7 +654,7 @@ static void spawn_pattern(sim_state *s, const sim_settings *cfg, uint8_t pat,
                           int32_t vx0, int32_t vy0, uint16_t heading,
                           uint8_t depth, uint16_t mods, uint8_t level,
                           uint8_t shrap_level, uint8_t shrap_bounce,
-                          sim_events *ev);
+                          uint32_t link, sim_events *ev);
 
 /* Remove a weapon by swapping the last one into its slot. Order is
  * deterministic because it depends only on state, never on time. */
@@ -840,6 +862,13 @@ static void weapon_end(sim_state *s, const sim_settings *cfg,
         && (uint16_t)(spec->life - w->life) < cfg->shrap_inactive_ticks) {
         damage = cfg->shrap_inactive;
     }
+    /* ExactDamage is off in SVS. Bullets, burst rounds, and shrapnel draw
+     * from a square distribution, then take its square root. That makes the
+     * listed damage a ceiling, with an average near two thirds of it. Bombs
+     * stay exact and continue through their distance falloff below. */
+    if (spec->blast == 0 && damage > 0) {
+        damage = random_bullet_damage(s, w, damage);
+    }
     if (spec->blast > 0) {
         int64_t rad = spec->blast;
         /* BBombDamagePercent. A hull whose bombs bounce pays for the trick on
@@ -882,7 +911,7 @@ static void weapon_end(sim_state *s, const sim_settings *cfg,
             if (dmg > 0 || spec->stall > 0)
                 apply_damage(s, cfg, (uint8_t)i, w->owner, dmg, spec->stall, ev);
         }
-    } else if (hit_ship >= 0 && (spec->damage > 0 || spec->stall > 0)) {
+    } else if (hit_ship >= 0 && (damage > 0 || spec->stall > 0)) {
         apply_damage(s, cfg, (uint8_t)hit_ship, w->owner, damage,
                      spec->stall, ev);
     }
@@ -988,7 +1017,7 @@ static void weapon_end(sim_state *s, const sim_settings *cfg,
                 ? sim_mod_set(0, SIM_MOD_BOUNCE, 1) : 0;
             spawn_pattern(s, cfg, spec->splinter, w->owner, w->team, w->x, w->y,
                           0, 0, 0, (uint8_t)(w->depth + 1), fm,
-                          w->shrap_level, 0, 0, ev);
+                          w->shrap_level, 0, 0, 0, ev);
         }
     }
 }
@@ -998,7 +1027,7 @@ static void spawn_pattern(sim_state *s, const sim_settings *cfg, uint8_t pat,
                           int32_t vx0, int32_t vy0, uint16_t heading,
                           uint8_t depth, uint16_t mods, uint8_t level,
                           uint8_t shrap_level, uint8_t shrap_bounce,
-                          sim_events *ev) {
+                          uint32_t link, sim_events *ev) {
     sim_fire_pattern fp;
     sim_weapon_spec sp;
     if (!resolve(cfg, pat, mods, level, &fp, &sp)) return;
@@ -1034,7 +1063,7 @@ static void spawn_pattern(sim_state *s, const sim_settings *cfg, uint8_t pat,
         int32_t vx = bx + (int32_t)(((int64_t)spec->speed * dx) >> 15);
         int32_t vy = by + (int32_t)(((int64_t)spec->speed * dy) >> 15);
         spawn_weapon(s, p->spec, owner, team, x, y, vx, vy, spec->life,
-                     spec->bounces, depth, mods, level,
+                     spec->bounces, depth, mods, link, level,
                      shrap_level, shrap_bounce);
     }
     /* A fire event is a trigger being pulled, so shrapnel is not one: nobody
@@ -1799,7 +1828,8 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
                  * a repel that inherited shrapnel would be a surprise nobody
                  * asked for. Nor a rung: neither of the two scales with one. */
                 spawn_pattern(next, cfg, pat, (uint8_t)i, sh->team, mx, my,
-                              sh->vx, sh->vy, sh->heading, 0, 0, 0, 0, 0, ev);
+                              sh->vx, sh->vy, sh->heading, 0, 0, 0, 0, 0, 0,
+                              ev);
                 sh->charge[k]--;
                 sh->energy -= cp.energy;
                 /* A charge rides the bomb's clock and locks both, which
@@ -1869,7 +1899,7 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
                                   sh->level[SIM_TRIG_GUN],
                                   (uint8_t)(sim_mod_get(sh->mods[SIM_TRIG_GUN],
                                                         SIM_MOD_BOUNCE) != 0),
-                                  ev);
+                                  0, ev);
                     sh->energy -= mp.energy;
                     /* It rides the bomb's clock and locks both, the way every
                      * other thing that leaves this hull does. No recoil: it is
@@ -1930,13 +1960,17 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
                      * pilot's gun rung, and whether their bullets bounce.
                      * Taken here, at the throw, so it is what they were
                      * carrying then and not what they hold when it lands. */
+                    uint32_t link = trig == SIM_TRIG_GUN
+                        ? ((next->tick & 0x01ffffffu) << 7)
+                              | ((uint32_t)i + 1u)
+                        : 0;
                     spawn_pattern(next, cfg, pat, (uint8_t)i, sh->team, mx, my,
                                   sh->vx, sh->vy, sh->heading, 0,
                                   use_mods, sh->level[trig],
                                   sh->level[SIM_TRIG_GUN],
                                   sim_mod_get(sh->mods[SIM_TRIG_GUN],
                                               SIM_MOD_BOUNCE) != 0,
-                                  ev);
+                                  link, ev);
                     sh->energy -= fp.energy;
                     /* Every trigger locks every other for its own delay, so
                      * one clock is what a pilot feels almost always. The
@@ -2432,11 +2466,27 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
          * wall, so the renderer can pin the detonation to the ship the
          * player is looking at. */
         if (ended) {
+            uint32_t link = w->link;
             weapon_end(next, cfg, spec, w, hit_ship, ev);
             emit(ev, SIM_EV_EXPIRE, w->spec,
                  hit_ship >= 0 ? (uint8_t)hit_ship : 255,
                  pack_pos(w->x, w->y, w->level));
             kill_weapon(next, wi);
+            /* SVS links every round made by one gun pull. Once one touches a
+             * player, the rest disappear without dealing damage. A wall hit
+             * leaves its siblings alone, so a spread can wrap a corner. */
+            if (hit_ship >= 0 && link != 0) {
+                for (uint16_t li = 0; li < next->weapon_count;) {
+                    sim_weapon *sibling = &next->weapons[li];
+                    if (sibling->link != link) {
+                        li++;
+                        continue;
+                    }
+                    emit(ev, SIM_EV_EXPIRE, sibling->spec, 255,
+                         pack_pos(sibling->x, sibling->y, sibling->level));
+                    kill_weapon(next, li);
+                }
+            }
             continue;
         }
         wi++;
@@ -2528,6 +2578,7 @@ uint64_t sim_hash(const sim_state *s) {
                             | ((uint32_t)w->team << 16));
         h = hash_u32(h, (uint32_t)w->left | ((uint32_t)w->depth << 8)
                             | ((uint32_t)w->mods << 16));
+        h = hash_u32(h, w->link);
         h = hash_u32(h, (uint32_t)w->x);
         h = hash_u32(h, (uint32_t)w->y);
         h = hash_u32(h, (uint32_t)w->vx);
