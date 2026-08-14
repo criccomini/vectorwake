@@ -551,6 +551,13 @@ presentation therefore cannot turn the pilot's own reconciliation into camera
 judder. Detonations remain pinned to the corrected hull so the blast and target
 move together.
 
+An enemy repel is the one large local correction that is continuous flight,
+not a teleport. The client cannot predict an enemy charge, so the next snapshot
+may introduce up to a replay window of shove at once. A newly increased repel
+timer gives that correction a separate 128 px budget and a 45 ms half-life.
+Ordinary corrections keep the 64 px snap threshold, and a repel correction over
+192 px still snaps rather than hiding a broken world behind presentation.
+
 Prediction pacing does not ride in this mechanism. A live client-debug sample
 showed 2.5 px of local correction at 2.51 px per tick, followed by 0.7 px at
 0.68 px per tick, with unchanged velocity and no repel. The old clock steering

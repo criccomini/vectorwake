@@ -22,6 +22,8 @@
 
 #include <math.h>
 
+#include "smoothing.h"
+
 // The vertex writer, which lives in vwbuf.cpp and is registered from here.
 void VwBufInit(lua_State* L);
 void VwBufFinal();
@@ -225,17 +227,18 @@ float g_off_h[SIM_MAX_SHIPS];
 int32_t g_held_x[SIM_MAX_SHIPS];
 int32_t g_held_y[SIM_MAX_SHIPS];
 uint16_t g_held_h[SIM_MAX_SHIPS];
+uint16_t g_held_repel[SIM_MAX_SHIPS];
 uint8_t g_held[SIM_MAX_SHIPS];
+// A correction caused by an enemy repel is continuous flight the client could
+// not predict, not a teleport. Keep that presentation debt on its own faster
+// decay until it has been paid.
+uint8_t g_repel_debt[SIM_MAX_SHIPS];
 
 // Local clock steering moves the camera, while a remote correction moves one
 // target against truthful projectiles. They need different limits. The local
 // envelope keeps the measured camera stability. The remote envelope stops an
 // opponent being drawn more than one tile away from the server's position and
 // clears large discontinuities sooner.
-const double LOCAL_POS_SNAP = 64.0;
-const double REMOTE_POS_SNAP = 48.0;
-const double LOCAL_POS_MAX = 40.0;
-const double REMOTE_POS_MAX = 16.0;
 const double LOCAL_TURN_SNAP = 65536.0 * 90.0 / 360.0;
 const double REMOTE_TURN_SNAP = 65536.0 * 45.0 / 360.0;
 const double LOCAL_TURN_MAX = 65536.0 * 30.0 / 360.0;
@@ -1050,8 +1053,12 @@ int SmoothCapture(lua_State* L) {
         g_held_x[i] = c->x;
         g_held_y[i] = c->y;
         g_held_h[i] = c->heading;
+        g_held_repel[i] = c->repel;
     }
-    for (int i = g_cur->ship_count; i < SIM_MAX_SHIPS; i++) g_held[i] = 0;
+    for (int i = g_cur->ship_count; i < SIM_MAX_SHIPS; i++) {
+        g_held[i] = 0;
+        g_held_repel[i] = 0;
+    }
     return 0;
 }
 
@@ -1067,26 +1074,25 @@ int SmoothSettle(lua_State* L) {
         const sim_ship* c = &g_cur->ships[i];
         if (!g_held[i] || !c->active || !c->alive) {
             g_off_x[i] = g_off_y[i] = g_off_h[i] = 0.0f;
+            g_repel_debt[i] = 0;
             continue;
         }
         double ox = g_off_x[i] + (g_held_x[i] - c->x) / 256.0;
         double oy = g_off_y[i] + (g_held_y[i] - c->y) / 256.0;
-        double d2 = ox * ox + oy * oy;
         const bool local = i == g_mortal_ship;
-        const double pos_snap = local ? LOCAL_POS_SNAP : REMOTE_POS_SNAP;
-        const double pos_max = local ? LOCAL_POS_MAX : REMOTE_POS_MAX;
-        if (d2 > pos_snap * pos_snap) {
-            // A teleport. Nothing to smooth: a respawn or a wormhole is
-            // supposed to look instant, and easing one reads as a ship being
-            // dragged rather than arriving.
-            ox = oy = 0.0;
-        } else if (d2 > pos_max * pos_max) {
-            double k = pos_max / sqrt(d2);
-            ox *= k;
-            oy *= k;
+        const bool repel_started =
+            local && vw_smoothing::authoritative_repel(g_held_repel[i],
+                                                        c->repel);
+        const bool repel = local && (repel_started || g_repel_debt[i]);
+        const vw_smoothing::Position pos =
+            vw_smoothing::settle_position(ox, oy, local, repel);
+        g_off_x[i] = (float)pos.x;
+        g_off_y[i] = (float)pos.y;
+        if (pos.snapped || (pos.x == 0.0 && pos.y == 0.0)) {
+            g_repel_debt[i] = 0;
+        } else if (repel) {
+            g_repel_debt[i] = 1;
         }
-        g_off_x[i] = (float)ox;
-        g_off_y[i] = (float)oy;
 
         // The heading's owed turn, by the short way round the circle, since
         // an angle has no long way worth easing through.
@@ -1117,18 +1123,22 @@ int SmoothDecay(lua_State* L) {
     double local_half = luaL_optnumber(L, 2, LOCAL_HALF_LIFE);
     double remote_half = luaL_optnumber(L, 3, REMOTE_HALF_LIFE);
     if (dt <= 0.0 || local_half <= 0.0 || remote_half <= 0.0) return 0;
-    float local_k = (float)pow(0.5, dt / local_half);
-    float remote_k = (float)pow(0.5, dt / remote_half);
+    float local_k = (float)vw_smoothing::decay_factor(dt, local_half);
+    float remote_k = (float)vw_smoothing::decay_factor(dt, remote_half);
+    float repel_k =
+        (float)vw_smoothing::decay_factor(dt, vw_smoothing::REPEL_HALF_LIFE);
     for (int i = 0; i < SIM_MAX_SHIPS; i++) {
         float k = i == g_mortal_ship ? local_k : remote_k;
-        g_off_x[i] *= k;
-        g_off_y[i] *= k;
+        float position_k = g_repel_debt[i] ? repel_k : k;
+        g_off_x[i] *= position_k;
+        g_off_y[i] *= position_k;
         g_off_h[i] *= k;
         // Under a hundredth of a pixel it is arithmetic nobody can see, and
         // leaving it running means every hull carries a decaying number for the
         // rest of the session.
         if (g_off_x[i] * g_off_x[i] + g_off_y[i] * g_off_y[i] < 0.0001f) {
             g_off_x[i] = g_off_y[i] = 0.0f;
+            g_repel_debt[i] = 0;
         }
         // Two turn units is a hundredth of a degree.
         if (g_off_h[i] < 2.0f && g_off_h[i] > -2.0f) g_off_h[i] = 0.0f;
@@ -1143,6 +1153,8 @@ int SmoothReset(lua_State* L) {
     for (int i = 0; i < SIM_MAX_SHIPS; i++) {
         g_off_x[i] = g_off_y[i] = g_off_h[i] = 0.0f;
         g_held[i] = 0;
+        g_held_repel[i] = 0;
+        g_repel_debt[i] = 0;
     }
     g_alpha = 0.0f;
     return 0;

@@ -85,12 +85,11 @@ jobs:
       - name: websocket status formatting
         run: make -C client/websocket check
 
-      # The one client test that cannot be Lua, because the thing it measures is
-      # C: whether a pilot can hear which rung fired. It renders the kit with
-      # the same synth the browser runs and fails if two rungs have collapsed
-      # into one sound. Building the synth as C here is also what catches the
-      # dialect drift, since Defold's build server compiles it as C++.
-      - name: the weapon ladders can be told apart
+      # The client tests that cannot be Lua: whether a pilot can hear which
+      # rung fired, and how the native presentation smoother treats a repel.
+      # Building the synth as C here also catches dialect drift, since Defold's
+      # build server compiles it as C++.
+      - name: native client behavior
         run: make -C client/tools check
 
   bundle:

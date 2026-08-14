@@ -28,6 +28,7 @@ sandbox-ca.crt
 # `make -C client/tools check` when CI wants to measure it.
 client/tools/sfxdump
 client/tools/sfxladder
+client/tools/smoothcheck
 # Whatever any Python next to it leaves behind. This named client/tools alone
 # until deploy/discord grew a script and left one of these too.
 __pycache__/

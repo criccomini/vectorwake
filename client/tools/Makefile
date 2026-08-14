@@ -5,6 +5,7 @@
 # building it this way is what catches the drift.
 
 CFLAGS ?= -O2 -Wall -Wextra -std=c99
+CXXFLAGS ?= -O2 -Wall -Wextra -Werror -std=c++11
 LDLIBS ?= -lm
 
 sfx: sfxdump
@@ -15,13 +16,16 @@ sfxdump: sfxdump.c ../ext/simcore/src/sfx.c ../ext/simcore/src/sfx.h
 sfxladder: sfxladder.c ../ext/simcore/src/sfx.c ../ext/simcore/src/sfx.h
 	$(CC) $(CFLAGS) -o $@ sfxladder.c ../ext/simcore/src/sfx.c $(LDLIBS)
 
-# Whether a pilot can hear which rung fired. The client's Lua tests cannot
-# reach this: the kit is C, and what it renders is the only honest evidence
-# about what it sounds like.
-check: sfxladder
+# Native behavior the Lua tests cannot reach: the synth's rendered samples and
+# the extension's correction envelope.
+smoothcheck: smoothing_test.cpp ../ext/simcore/src/smoothing.h
+	$(CXX) $(CXXFLAGS) -o $@ smoothing_test.cpp $(LDLIBS)
+
+check: sfxladder smoothcheck
 	./sfxladder
+	./smoothcheck
 
 clean:
-	rm -f sfxdump sfxladder
+	rm -f sfxdump sfxladder smoothcheck
 
 .PHONY: sfx check clean
