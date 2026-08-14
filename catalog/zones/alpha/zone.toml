@@ -128,10 +128,10 @@ prize_max = 42
 prize_life = 6000
 # One green in three hundred is a bad one.
 rust = 3
-# SVS started ships bare. A pilot earns the tree by collecting greens and loses
-# it on death, which makes survival matter and keeps multifire from appearing
-# on nearly every first life.
-spawn_prizes = 0
+# Thirty greens in hand the moment a ship spawns, which is Alpha's intended
+# opening kit. The slower SVS field cadence still makes later upgrades worth
+# earning, but a fresh ship should not arrive with zero bounty.
+spawn_prizes = 30
 
 # Twice what our other zones pay, so a streak in here is visible from further
 # away.

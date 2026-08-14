@@ -6152,6 +6152,10 @@ mod tests {
         let mine = w.cfg.specs[w.cfg.patterns[w.cfg.mine as usize].spec as usize];
         assert_eq!(mine.life, 12_000, "alpha's mines sit for two minutes");
         assert_eq!(mine.still, 1, "and are still mines");
+        assert_eq!(
+            w.cfg.spawn_prizes, 30,
+            "alpha starts every life with its thirty-green opening kit"
+        );
 
         // Five apiece, on every hull in the room. Alpha does not write this
         // out: its ships section says in as many words that what is uniform
