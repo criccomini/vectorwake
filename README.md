@@ -6,7 +6,7 @@
 
 vectorwake is a top-down space MMO built around frictionless, inertial combat. Energy is both health and ammunition. Pilots fight over flags in rooms whose physics, weapons, and rules come from configuration.
 
-The physics model comes from [Subspace Continuum](https://store.steampowered.com/app/352700/Subspace_Continuum/). vectorwake has its own ships, art, sounds, maps, names, interface, and fiction.
+The physics model is inspired by [Subspace Continuum](https://store.steampowered.com/app/352700/Subspace_Continuum/). vectorwake has its own ships, art, sounds, maps, names, interface, and so on.
 
 The browser client and live fleet work today. They include seven hulls, keyboard and touch controls, AI pilots, configurable rooms, accounts, and ratings. The game is still under active development and does not preserve backward compatibility.
 
