@@ -21,22 +21,24 @@ int main() {
     vw_smoothing::Position ordinary =
         vw_smoothing::settle_position(91.0, 0.0, true, false);
     check("an ordinary 91 px correction still snaps",
-          ordinary.snapped && ordinary.x == 0.0);
+          ordinary.snapped && ordinary.limited && ordinary.x == 0.0);
 
     vw_smoothing::Position repel =
         vw_smoothing::settle_position(91.0, 0.0, true, true);
     check("a confirmed 91 px repel becomes presentation debt",
-          !repel.snapped && fabs(repel.x - 91.0) < 0.001);
+          !repel.snapped && !repel.limited
+              && fabs(repel.x - 91.0) < 0.001);
 
     vw_smoothing::Position capped =
         vw_smoothing::settle_position(150.0, 0.0, true, true);
     check("repel debt has a bounded allowance",
-          !capped.snapped && fabs(capped.x - 128.0) < 0.001);
+          !capped.snapped && capped.limited
+              && fabs(capped.x - 128.0) < 0.001);
 
     vw_smoothing::Position teleport =
         vw_smoothing::settle_position(193.0, 0.0, true, true);
     check("an implausible repel correction still snaps",
-          teleport.snapped && teleport.x == 0.0);
+          teleport.snapped && teleport.limited && teleport.x == 0.0);
 
     check("repel debt halves in 45 ms",
           fabs(vw_smoothing::decay_factor(0.045,

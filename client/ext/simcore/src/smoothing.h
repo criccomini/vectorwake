@@ -17,6 +17,7 @@ struct Position {
     double x;
     double y;
     bool snapped;
+    bool limited;
 };
 
 inline bool authoritative_repel(unsigned before, unsigned after) {
@@ -29,14 +30,16 @@ inline Position settle_position(double x, double y, bool local, bool repel) {
     const double limit = repel ? REPEL_POS_MAX
                                : (local ? LOCAL_POS_MAX : REMOTE_POS_MAX);
     const double d2 = x * x + y * y;
-    Position out = {x, y, false};
+    Position out = {x, y, false, false};
     if (d2 > snap * snap) {
         out.x = out.y = 0.0;
         out.snapped = true;
+        out.limited = true;
     } else if (d2 > limit * limit) {
         const double k = limit / sqrt(d2);
         out.x *= k;
         out.y *= k;
+        out.limited = true;
     }
     return out;
 }

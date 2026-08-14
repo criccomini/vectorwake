@@ -32,6 +32,7 @@ local own_x, own_y, own_alive = 0, 0, 1
 local next_x, next_y, next_alive = nil, nil, nil
 local own_vx, own_vy, own_repel_ticks, own_repel_speed = 0, 0, 0, 0
 local next_vx, next_vy, next_repel_ticks, next_repel_speed = nil, nil, nil, nil
+local smooth_repel_started, smooth_correction_absorbed = false, false
 local sim_events = {}
 _G.sim = {
     EV_PRIZE_TOUCH = 14,
@@ -61,7 +62,9 @@ _G.sim = {
         return 0
     end,
     smooth_capture = function() end,
-    smooth_settle = function() end,
+    smooth_settle = function()
+        return smooth_repel_started, smooth_correction_absorbed
+    end,
     smooth_debt = function() return 1.5, 0.25 end,
     smooth_reset = function() end,
     set_mortal = function() end,
@@ -881,32 +884,43 @@ end
 net.tick(0.025)
 own_x, own_y = 100, 50
 own_vx, own_vy, own_repel_ticks, own_repel_speed = 1, -0.5, 0, 0
-next_x, next_y = 98, 50
+next_x, next_y = 0, 50
 next_vx, next_vy, next_repel_ticks, next_repel_speed = 5, 0.25, 212, 5
+smooth_repel_started, smooth_correction_absorbed = true, true
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
             message = snapshot(3, 6004, 6007, 4294967295)})
+check("a fully smoothed authoritative repel files no diagnostic",
+      #debug_reports == 0, tostring(#debug_reports))
+
+own_x, next_x = 100, 98
+own_vx, own_vy, next_vx, next_vy = 1, -0.5, 5, 0.25
+own_repel_ticks, next_repel_ticks = 80, 220
+smooth_repel_started, smooth_correction_absorbed = true, false
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
+            message = snapshot(3, 6005, 6008, 4294967295)})
 local report = debug_reports[1]
-check("a small continuous local correction files a diagnostic",
+check("a repel that cannot be fully smoothed files a diagnostic",
       #debug_reports == 1 and report and report.kind == "local_correction")
 check("the diagnostic captures the correction and its clocks",
       report.correction_px == 2 and report.predicted_x == 100
       and report.reconciled_x == 98 and report.frame_ms == 25
-      and report.snapshot_tick == 6004 and report.wire == "wt"
+      and report.snapshot_tick == 6005 and report.wire == "wt"
       and report.account == 7 and report.zone == "chaos" and report.room == 2)
 check("the diagnostic captures motion, smoothing, clock and repel state",
       report.predicted_vx == 1 and report.predicted_vy == -0.5
       and report.reconciled_vx == 5 and report.reconciled_vy == 0.25
       and report.local_debt_px == 1.5 and report.local_debt_deg == 0.25
-      and report.clock_adjust == 0 and report.repel_before_ticks == 0
-      and report.repel_before_speed == 0 and report.repel_after_ticks == 212
+      and report.clock_adjust == 0 and report.repel_before_ticks == 80
+      and report.repel_before_speed == 5 and report.repel_after_ticks == 220
       and report.repel_after_speed == 5)
 
 own_x, next_x = 100, 98
-wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = snapshot(3, 6005)})
+smooth_repel_started, smooth_correction_absorbed = false, false
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = snapshot(3, 6006)})
 check("small correction reports have a five-second cooldown",
       #debug_reports == 1, tostring(#debug_reports))
 own_x, next_x = 100, 0
-wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = snapshot(3, 6006)})
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = snapshot(3, 6007)})
 check("the small-report cooldown does not hide a large correction",
       #debug_reports == 2 and debug_reports[2].correction_px == 100,
       tostring(#debug_reports))

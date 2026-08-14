@@ -1069,7 +1069,8 @@ int SmoothCapture(lua_State* L) {
 // the client's lead by a tick moves every hull by a tick of flight, which is
 // exactly the kind of jump worth hiding rather than snapping through.
 int SmoothSettle(lua_State* L) {
-    (void)L;
+    bool local_repel_started = false;
+    bool local_correction_absorbed = false;
     for (int i = 0; i < SIM_MAX_SHIPS; i++) {
         const sim_ship* c = &g_cur->ships[i];
         if (!g_held[i] || !c->active || !c->alive) {
@@ -1086,6 +1087,13 @@ int SmoothSettle(lua_State* L) {
         const bool repel = local && (repel_started || g_repel_debt[i]);
         const vw_smoothing::Position pos =
             vw_smoothing::settle_position(ox, oy, local, repel);
+        if (local) {
+            local_repel_started = repel_started;
+            // With no cap or snap, the offset preserves the exact position the
+            // player saw before reconciliation. The correction is real, but
+            // it does not produce an immediate jump on screen.
+            local_correction_absorbed = !pos.limited;
+        }
         g_off_x[i] = (float)pos.x;
         g_off_y[i] = (float)pos.y;
         if (pos.snapped || (pos.x == 0.0 && pos.y == 0.0)) {
@@ -1113,7 +1121,9 @@ int SmoothSettle(lua_State* L) {
         }
         g_off_h[i] = (float)oh;
     }
-    return 0;
+    lua_pushboolean(L, local_repel_started);
+    lua_pushboolean(L, local_correction_absorbed);
+    return 2;
 }
 
 // Bleed the offsets away. Exponential on a half-life, so the pull is strongest

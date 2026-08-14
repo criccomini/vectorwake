@@ -1115,7 +1115,7 @@ local function on_snapshot(s)
 
     -- Everything the snapshot and the replay moved is now owed to the drawing,
     -- which pays it off over the next tenth of a second.
-    sim.smooth_settle()
+    local repel_started, correction_absorbed = sim.smooth_settle()
 
     local local_debt_px, local_debt_deg = 0, 0
     if sim.smooth_debt then
@@ -1143,6 +1143,10 @@ local function on_snapshot(s)
     local alive_after = sim.ship_alive(M.me) == 1
     local carrier_after = sim.ship_carrier and sim.ship_carrier(M.me) or 255
     local large = err > DEBUG_LARGE_CORRECTION_PX
+    -- An enemy repel is absent from local prediction, so its authoritative
+    -- correction is expected. If the smoother preserved the whole position
+    -- the player was already seeing, there was no visible jump to investigate.
+    local expected_repel = repel_started and correction_absorbed
     local last_report = last_debug_tick
     if large then last_report = last_large_debug_tick end
     local cooldown = large and DEBUG_LARGE_COOLDOWN or DEBUG_SMALL_COOLDOWN
@@ -1152,6 +1156,7 @@ local function on_snapshot(s)
     if not first_flying_snapshot and M.stats.snaps > 3
         and err > DEBUG_CORRECTION_PX
         and alive_before and alive_after and carrier_before == carrier_after
+        and not expected_repel
         and debug_reports < DEBUG_REPORT_MAX
         and (large or debug_small_reports < DEBUG_SMALL_REPORT_MAX) and cooled
         and account.report_debug then

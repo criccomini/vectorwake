@@ -557,6 +557,8 @@ may introduce up to a replay window of shove at once. A newly increased repel
 timer gives that correction a separate 128 px budget and a 45 ms half-life.
 Ordinary corrections keep the 64 px snap threshold, and a repel correction over
 192 px still snaps rather than hiding a broken world behind presentation.
+Client-debug omits an authoritative repel when that budget absorbs the whole
+correction. It still records a repel that must be capped or snapped.
 
 Prediction pacing does not ride in this mechanism. A live client-debug sample
 showed 2.5 px of local correction at 2.51 px per tick, followed by 0.7 px at
