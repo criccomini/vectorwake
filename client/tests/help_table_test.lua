@@ -292,7 +292,7 @@ do
     -- Wearing no label a player can read, so a phone learns them here or not
     -- at all. The dial is a picture, the pads are marks, and ATTACH and DROP
     -- are behind the pilot cards they act on.
-    local MUST_SAY = {"turn left", "thrust", "guns", "bombs", "repel",
+    local MUST_SAY = {"turn left", "thrust", "reverse", "guns", "bombs", "repel",
                       "burst", "mine", "multifire", "map",
                       "attach / drop off",
                       "players"}
@@ -306,12 +306,11 @@ do
     check("every unlabeled control has a sentence for a thumb", #silent == 0,
           table.concat(silent, ", "))
 
-    -- The ones that say nothing, and why. Reverse has no gesture at all, by
-    -- decision; the controls page is the page being read; turn right shares
-    -- the stick with turn left and is named by it. Page Up and Page Down are
-    -- replaced by tapping the pilot row. Anything else arriving with no `pad`
-    -- is a control a phone has quietly lost.
-    local QUIET = {reverse = true, controls = true, ["turn right"] = true,
+    -- The ones that say nothing, and why. The controls page is the page being
+    -- read; turn right shares the stick with turn left and is named by it.
+    -- Page Up and Page Down are replaced by tapping the pilot row. Anything
+    -- else arriving with no `pad` is a control a phone has quietly lost.
+    local QUIET = {controls = true, ["turn right"] = true,
                    ["previous player"] = true, ["next player"] = true}
     local mute = {}
     for _, r in ipairs(ROWS) do

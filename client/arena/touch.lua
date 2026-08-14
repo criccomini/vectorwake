@@ -32,6 +32,7 @@ local pal = require("arena.palette")
 
 local DEAD_PX = 14        -- ignore a thumb that has barely moved
 local THRUST_PX = 46      -- push past this and the engine lights
+local FAN_SWIPE_PX = 32   -- deliberate upward pull while holding the gun
 
 M.used = false            -- has this device ever reported a touch?
 M.scale = 1               -- drawable pixels per point
@@ -52,10 +53,8 @@ M.has_bomb = true
 --
 -- False until told otherwise, which is the opposite of `has_bomb` and the safe
 -- direction for each: a rack is the ordinary case and a missing update must not
--- take the bomb pad away, while a fan is something you pick up, and a cell for
--- an add-on nobody holds is a control that toggles a mode it has no barrels
--- for. Multifire is the one gun mode with no key on glass, so this cell is the
--- only way to decline it there at all.
+-- take the bomb pad away, while a fan is something you pick up. Multifire is
+-- worked as an upward pull from the gun pad, so it adds no target to the rail.
 M.has_fan = false
 M.multi_off = false
 
@@ -73,8 +72,8 @@ M.safe_b = 0
 -- the first frame, and the marks fall back to a plain gun and a plain bomb.
 M.me = nil
 
--- How high the rail may climb, in drawable pixels from the bottom. The dial
--- owns the top right corner and a pad that reaches it is a pad over an
+-- How high the utility row may climb, in drawable pixels from the bottom. The
+-- dial owns the top right corner and a pad that reaches it is a pad over an
 -- instrument, so the caller hands down where the dial ends. Passed rather
 -- than asked for: this file knows where a thumb goes and ui.lua knows where
 -- the instruments go, and neither reaching into the other is what let the two
@@ -83,7 +82,10 @@ M.ceiling = math.huge
 
 local stick = nil         -- {id, ox, oy, x, y}
 local guns = nil          -- touch id holding the guns pad
+local gun_ox, gun_oy = nil, nil
+local gun_fanned = false
 local bombs = nil
+local reverse = nil       -- touch id holding the reverse pad
 -- Which charge a tap asked for, latched and read once.
 --
 -- One pad per kind rather than a use pad and a swap pad. The simulation takes
@@ -97,14 +99,10 @@ local bombs = nil
 -- three.
 local fired = nil
 
--- Whether the fan cell was tapped since it was last asked. Latched the same
--- way and for a related reason: the core toggles multifire on the rising edge
--- of the button, so what a control owes it is one edge per press. A held cell
--- would hold the bit down, which is what the key does and is harmless, but a
--- thumb resting on a control it has already used should not be the difference
--- between one toggle and none.
+-- Whether an upward gun pull happened since it was last asked. The core toggles
+-- multifire on a rising edge, so one gun hold may produce at most one edge.
 local fanned = false
--- And the mine cell, latched the same way: one tap is one mine.
+-- And the mine tab, latched the same way: one tap is one mine.
 local mined = false
 
 -- The charge slots this hull can carry, newest set by the caller. Empty until
@@ -125,18 +123,10 @@ M.has_mine = false
 -- plate on a monitor, with the limits in points rather than pixels: a phone
 -- at two pixels per point would otherwise get pads half the size it needs.
 --
--- The two triggers keep the corner, side by side along the bottom, and the
--- charges go above them rather than beside them. They used to continue the
--- triggers' own row leftward, which put a tap-once control inside the arc the
--- trigger thumb sweeps and spent the whole width of the screen doing it.
---
--- Above means a column climbing the edge, and it stays a column for as long
--- as there is edge to climb. On a phone held upright there is plenty. Held
--- sideways the dial takes better than half the height and the answer is one
--- cell, so the rail steps left and starts again -- which packs a full rack
--- into the block over the triggers instead of stringing it along the bottom.
--- Either way every cell is over the triggers and none is beside them, which
--- is the part that matters: reaching the gun never crosses a charge.
+-- The two triggers keep the corner, side by side along the bottom. Their
+-- secondary actions form one fixed row above them: mine over bomb, then charge
+-- slots in stable positions around it. Empty slots disappear but never pull a
+-- neighbor into their place. Reverse mirrors that row above the flight stick.
 function M.layout(w, h, s)
     s = s or 1
     local r = math.max(30 * s, math.min(math.min(w, h) * 0.11, 62 * s))
@@ -150,71 +140,45 @@ function M.layout(w, h, s)
     local home  = {x = M.safe_l + r * 1.6,
                    y = M.safe_b + r * 1.8, r = r * 1.15}
 
-    -- The charges, as square cells: which class a control belongs to reads
-    -- before the picture inside it does, and a round trigger beside a square
-    -- charge can never be mistaken for another trigger. Smaller than the
-    -- triggers, because they are tapped once in a while and a target the size
-    -- of a trigger would crowd the one control a thumb must never miss.
-    --
-    -- Sized to fit two of them under the dial on a phone held sideways, which
-    -- is the tightest case and the ordinary loadout. The drawing is a little
-    -- under the forty-odd points a finger wants; what answers a tap is not,
-    -- since `within` grows the cell by a third on every side.
+    -- Secondary controls are square, smaller on screen than the triggers but
+    -- enlarged to a full thumb target by `within`. Their row clears the
+    -- triggers' enlarged hit circles, not merely their visible rims.
     local cw = r * 0.82
-    local x0 = gun_pad.x
-    -- Clear of the rim with a gap you can see. It used to have to clear the
-    -- energy arc riding a fifth of a radius outside the gun as well, and the
-    -- first build of this cleared neither, which took a screenshot to see.
-    local y0 = gun_pad.y + r * 1.08 + cw * 0.75
-    local x, y = x0, y0
-    -- The fan takes the first cell, nearest the trigger whose mode it is, and
-    -- keeps it. The rest of the rail closes up as charges are spent, and a
-    -- mode that slid down the column every time somebody used a charge would
-    -- be a control that moved while a thumb was reaching for it. This one only
-    -- ever appears or goes, and it goes by being lost rather than by being
-    -- spent.
-    local fan = nil
-    if M.has_fan then
-        fan = {x = x, y = y, w = cw, r = cw / 2}
-        y = y + cw * 1.14
-    end
-    -- The mine takes the next fixed cell, for the same reason the fan takes
-    -- the first: it is a mode of the bomb trigger rather than a thing in a
-    -- slot, so it is always there or never, and it must not slide down the
-    -- rail when a charge is spent. On glass there is no shift to hold, so a
-    -- cell is the whole of the control.
+    local cell_reach = cw * 0.65
+    local step = cell_reach * 2 + s
+    local wanted_y = gun_pad.y + gun_pad.r * 1.3 + cell_reach + 4 * s
+    local y0 = math.min(wanted_y, M.ceiling - cw / 2)
+
+    -- The mine is physically tied to the bomb. It is present for the whole
+    -- life of a mining hull and never moves as charges are spent.
     local mine = nil
     if M.has_mine then
-        mine = {x = x, y = y, w = cw, r = cw / 2}
-        y = y + cw * 1.14
+        mine = {x = bomb_pad.x, y = y0, w = cw, r = cw / 2}
     end
+
+    -- Charge slots keep their configured identity. The first two sit over the
+    -- weapons. The next two continue left after the mine, leaving a full
+    -- target's gap on either side of it.
     local charge = {}
-    for _, k in ipairs(M.charges) do
-        -- Only what is in hand. A cell for a slot you have spent out is a
-        -- control that does nothing when pressed, and glass gives no way to
-        -- tell that before pressing it: there is no travel, no resistance and
-        -- no cursor that could have hovered first. The rail closes up as they
-        -- go, so what is under a thumb is always something it can spend.
+    for i, k in ipairs(M.charges) do
         if (M.counts and M.counts[k] or 0) > 0 then
-            -- Past the dial the rail steps left and starts again, which is
-            -- what a hull carrying four kinds on a short window does. A limit
-            -- rather than an assumption the height is always there.
-            if y + cw / 2 > M.ceiling then
-                x, y = x - cw * 1.14, y0
-            end
-            charge[#charge + 1] = {slot = k, x = x, y = y, w = cw,
-                                   r = cw / 2}
-            y = y + cw * 1.14
+            local x
+            if i <= 2 then x = gun_pad.x - (i - 1) * step
+            else x = bomb_pad.x - (i - 2) * step end
+            charge[#charge + 1] = {slot = k, x = x, y = y0,
+                                   w = cw, r = cw / 2}
         end
     end
 
+    local reverse_pad = {x = home.x, y = y0, w = cw, r = cw / 2}
+
     return {r = r, guns = gun_pad, bombs = bomb_pad, home = home,
-            charge = charge, fan = fan, mine = mine}
+            charge = charge, mine = mine, reverse = reverse_pad}
 end
 
 local function near(pad, x, y, slack)
     local dx, dy = x - pad.x, y - pad.y
-    local reach = pad.r * (slack or 1.3)
+    local reach = pad.r * (slack or 1.18)
     return dx * dx + dy * dy <= reach * reach
 end
 
@@ -235,14 +199,11 @@ local function zone(x, y, w, h, s)
     -- Not tested when the hull has no rack, so the space falls through to the
     -- stick rather than being eaten by a control that is not drawn.
     if M.has_bomb and near(L.bombs, x, y) then return "bombs" end
-    -- Tested in the order the rail is drawn in, and only when it is there, so
-    -- a hull with no fan leaves the space to the stick rather than to a cell
-    -- nobody can see.
-    if L.fan and within(L.fan, x, y) then return "multi" end
     if L.mine and within(L.mine, x, y) then return "mine" end
     for _, c in ipairs(L.charge) do
         if within(c, x, y) then return c.slot end   -- a number, not a name
     end
+    if within(L.reverse, x, y) then return "reverse" end
     if x < w * 0.55 then return "stick" end
     return nil
 end
@@ -288,10 +249,12 @@ function M.on_touch(action, w, h, s, claimed)
                 stick = {id = t.id, ox = tx, oy = ty, x = tx, y = ty}
             elseif z == "guns" then
                 guns = t.id
+                gun_ox, gun_oy = tx, ty
+                gun_fanned = false
             elseif z == "bombs" then
                 bombs = t.id
-            elseif z == "multi" then
-                fanned = true
+            elseif z == "reverse" then
+                reverse = t.id
             elseif z == "mine" then
                 mined = true
             elseif type(z) == "number" then
@@ -299,8 +262,17 @@ function M.on_touch(action, w, h, s, claimed)
             end
         elseif t.released then
             M.release(t.id)
-        elseif stick and stick.id == t.id then
-            stick.x, stick.y = tx, ty
+        else
+            if stick and stick.id == t.id then
+                stick.x, stick.y = tx, ty
+            elseif guns == t.id and M.has_fan and not gun_fanned then
+                local dx, dy = tx - gun_ox, ty - gun_oy
+                if dy >= FAN_SWIPE_PX * M.scale
+                    and math.abs(dx) <= dy * 1.25 then
+                    fanned = true
+                    gun_fanned = true
+                end
+            end
         end
     end
 end
@@ -311,14 +283,18 @@ end
 -- keeps the panel's early return from leaving the other control held.
 function M.release(id)
     if stick and stick.id == id then stick = nil end
-    if guns == id then guns = nil end
+    if guns == id then
+        guns, gun_ox, gun_oy, gun_fanned = nil, nil, nil, false
+    end
     if bombs == id then bombs = nil end
+    if reverse == id then reverse = nil end
 end
 
 -- Lifting a finger outside the window does not always produce a release, so
 -- a lost touch has to be forgettable.
 function M.release_all()
-    stick, guns, bombs = nil, nil, nil
+    stick, guns, bombs, reverse = nil, nil, nil, nil
+    gun_ox, gun_oy, gun_fanned = nil, nil, false
 end
 
 -- Which charge slot was tapped since this was last asked, or nil. Consumed by
@@ -329,16 +305,15 @@ function M.fired_charge()
     return k
 end
 
--- Whether the fan cell was tapped since this was last asked. Consumed by the
--- read, like a charge, so one tap is one toggle however many frames pass
--- before the step loop gets to it.
+-- Whether an upward gun pull happened since this was last asked. Consumed by
+-- the read so one gesture is one toggle however many frames pass first.
 function M.fired_multi()
     local hit = fanned
     fanned = false
     return hit
 end
 
--- Whether the mine cell was tapped since this was last asked, consumed by the
+-- Whether the mine tab was tapped since this was last asked, consumed by the
 -- read like the others: one tap lays one mine however many frames pass before
 -- the step loop gets to it.
 function M.fired_mine()
@@ -356,6 +331,7 @@ function M.bits(heading)
     local out = {}
     if guns then out[#out + 1] = sim.BTN_FIRE end
     if bombs then out[#out + 1] = sim.BTN_BOMB end
+    if reverse then out[#out + 1] = sim.BTN_REVERSE end
     if not stick then return out end
 
     local dx, dy = stick.x - stick.ox, stick.y - stick.oy
@@ -449,6 +425,18 @@ function M.draw(u, w, h, s)
     local gcol = pal.rung(marks.level(M.me, sim.TRIG_GUN))
     pad_ring(L.guns, gcol, guns)
     pad_mark(L.guns, sim.TRIG_GUN)
+    -- Multifire stays attached to the gun instead of becoming another button.
+    -- The short arrow teaches the upward pull; the weapon mark itself still
+    -- shows whether the fan is equipped and whether it is declined.
+    if M.has_fan then
+        local ay = L.guns.y + L.guns.r + 5 * s
+        local col = pal.a(gcol, M.multi_off and 0.32 or 0.72)
+        u:seg(L.guns.x, ay - 6 * s, L.guns.x, ay + 3 * s, 1.8 * s, col)
+        u:seg(L.guns.x, ay + 3 * s,
+              L.guns.x - 4 * s, ay - 1 * s, 1.8 * s, col)
+        u:seg(L.guns.x, ay + 3 * s,
+              L.guns.x + 4 * s, ay - 1 * s, 1.8 * s, col)
+    end
     -- The gun wore its energy on a second arc outside the rim for a while.
     -- Every hull in the game already carries a bar above it saying the same
     -- thing, yours included, and that one is where you are looking: at the
@@ -462,29 +450,8 @@ function M.draw(u, w, h, s)
         pad_mark(L.bombs, sim.TRIG_BOMB)
     end
 
-    -- The fan, in the rail's first cell.
-    --
-    -- The same square as a charge, because it sits in the same column and a
-    -- rail of two shapes reads as two rails. What tells it from a charge is
-    -- the gun's own color instead of the charge hue, and the absence of pips:
-    -- pips are a count of what is left, and a mode has no stock to run out of.
-    -- Dimmed while it is declined, which is the treatment the same add-on
-    -- already gets on a weapon mark.
-    if L.fan then
-        local c = L.fan
-        local half = c.w / 2
-        local lit = not M.multi_off
-        u:rect(c.x - half, c.y - half, c.w, c.w,
-               pal.a(gcol, lit and 0.07 or 0.03))
-        u:frame(c.x - half, c.y - half, c.w, c.w, 2.2 * s,
-                pal.a(gcol, lit and 0.6 or 0.26))
-        marks.fan(c.x, c.y, c.w * 0.30,
-                  pal.a(gcol, lit and 0.92 or 0.42), M.multi_off)
-    end
-
-    -- The mine, in the cell after the fan and drawn like it: the same square,
-    -- the bomb's own color rather than the charge hue, because it is the bomb
-    -- trigger's other posture and not something found in a slot.
+    -- The mine is a tab attached to the bomb rather than another loose button.
+    -- It keeps the bomb color because it is that trigger's other posture.
     --
     -- Its pips are the room left rather than the stock in hand, which is the
     -- one place a mine differs from everything else on this rail. A pilot
@@ -499,6 +466,8 @@ function M.draw(u, w, h, s)
         local room = cap - (M.mines_out or 0)
         local lit = room > 0
         local bcol = pal.rung(marks.level(M.me, sim.TRIG_BOMB))
+        u:seg(L.bombs.x, L.bombs.y + L.bombs.r,
+              c.x, c.y - half, 1.6 * s, pal.a(bcol, 0.34))
         u:rect(c.x - half, c.y - half, c.w, c.w,
                pal.a(bcol, lit and 0.07 or 0.03))
         u:frame(c.x - half, c.y - half, c.w, c.w, 2.2 * s,
@@ -518,7 +487,8 @@ function M.draw(u, w, h, s)
         end
     end
 
-    -- A cell per charge in hand, and none for one that is spent out. What
+    -- A cell per charge in hand, and none for one that is spent out. Its slot
+    -- keeps the same position when a neighbor empties. What
     -- says how many is pips along the cell's floor rather than a numeral above
     -- it: a charge is one of three, and three marks is a quantity read without
     -- counting, where the numeral sat in the gap between two pads and belonged
@@ -542,6 +512,27 @@ function M.draw(u, w, h, s)
                 u:ring(at, c.y - c.w * 0.33, 2.4 * s, 1.4 * s, 8,
                        pal.a(pal.CHARGE_COL, 0.3))
             end
+        end
+    end
+
+    -- Reverse belongs to flight, directly above the stick. It is a held pad,
+    -- not a direction inferred from the stick, so backing up never changes how
+    -- pointing the ship works.
+    do
+        local c = L.reverse
+        local half = c.w / 2
+        local col = pal.THRUST
+        u:rect(c.x - half, c.y - half, c.w, c.w,
+               pal.a(col, reverse and 0.10 or 0.04))
+        u:frame(c.x - half, c.y - half, c.w, c.w, 2.2 * s,
+                pal.a(col, reverse and 0.88 or 0.42))
+        local span = c.w * 0.20
+        for i = -1, 1, 2 do
+            local cy = c.y + i * c.w * 0.12
+            u:seg(c.x - span, cy + span * 0.55,
+                  c.x, cy - span * 0.45, 2 * s, pal.a(col, 0.86))
+            u:seg(c.x, cy - span * 0.45,
+                  c.x + span, cy + span * 0.55, 2 * s, pal.a(col, 0.86))
         end
     end
 

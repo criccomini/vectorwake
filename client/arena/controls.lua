@@ -26,10 +26,8 @@
 -- say which of them is which.
 --
 -- `pad` is how the control is worked by a thumb, or nil where a touchscreen
--- has no way to work it at all. Nil is a real answer and not a gap to fill in
--- later: reverse is deliberately absent on glass, and the controls table is
--- opened by a key that a phone does not have, since on a phone this list *is*
--- the page you are already reading.
+-- has no way to work it at all. The controls table is opened by a key that a
+-- phone does not have, since on a phone this list is the page already open.
 
 return {
     -- The rudder is two controls and one gesture. Splitting it is what
@@ -46,11 +44,9 @@ return {
     {id = "thrust", name = "thrust", cat = "fly", keys = {"up"},
      what = "Drives your ship forward.",
      pad = "left thumb: push it away from the middle"},
-    -- No thumb for this one. The stick points the nose, and a control that
-    -- meant "the way you are not facing" would need a second gesture for a
-    -- thing a pilot can do by turning round.
     {id = "reverse", name = "reverse", cat = "fly", keys = {"down"},
-     what = "Drives your ship backward."},
+     what = "Drives your ship backward.",
+     pad = "hold the reverse pad above the left stick"},
     {id = "guns", name = "guns", cat = "gun", keys = {"space"},
      what = "Fires your rapid weapon.",
      pad = "the big pad on the right"},
@@ -68,7 +64,7 @@ return {
     -- Shift+Tab until it is moved as well, which the page shows.
     {id = "mine", name = "mine", cat = "bomb", keys = {"shift", "tab"},
      what = "Lays a mine instead of throwing a bomb.",
-     pad = "tap the mine cell above the guns"},
+     pad = "tap the mine tab attached to bombs"},
     -- The charge keys are positions under the skin: each spends the next slot
     -- the hull you are in actually carries, so on a ship with no repel the
     -- first key spends the burst. They are named for what the slots hold,
@@ -82,13 +78,13 @@ return {
     -- hull can carry is a row on this page that does nothing when pressed.
     {id = "charge_1", name = "repel", cat = "charge", keys = {"q"},
      what = "Pushes enemy fire and ships away from you.",
-     pad = "tap its cell above the guns"},
+     pad = "tap its fixed cell above the weapons"},
     {id = "charge_2", name = "burst", cat = "charge", keys = {"w"},
      what = "Fires bullets in every direction at once.",
-     pad = "tap its cell above the guns"},
+     pad = "tap its fixed cell above the weapons"},
     {id = "multi", name = "multifire", cat = "multi", keys = {"tick"},
      what = "Fans your gun wider for more energy per shot.",
-     pad = "tap the fan cell to switch it off"},
+     pad = "hold guns and slide up to toggle the fan"},
     {id = "drone", name = "attach / drop off", cat = "drone", keys = {"d"},
      what = "Attaches to the selected teammate in Players, or drops you off your carrier.",
      pad = "a teammate's card carries ATTACH; your carrier's card carries DROP"},

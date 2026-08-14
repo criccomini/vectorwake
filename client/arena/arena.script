@@ -319,11 +319,11 @@ local charge_tap = nil
 -- function written above the `local` it uses reads a nil global instead. That
 -- exact mistake is the reason the lint job exists.
 local enter_game
--- Whether this step carries a press of the fan cell. Beside `charge_tap`
--- because it is the same shape of thing: a control's tap, latched by the
--- interface and spent by exactly one simulation step.
+-- Whether this step carries an upward gun pull. Beside `charge_tap` because it
+-- is the same shape of thing: a gesture latched by the interface and spent by
+-- exactly one simulation step.
 local multi_tap = false
--- The mine cell's tap, latched the same way as the fan's.
+-- The mine tab's tap, latched the same way as the gun gesture.
 local mine_tap = false
 -- The same latch for a charge key, filled where taps are read and drained
 -- into `charge_tap` by the step loop.
@@ -370,9 +370,8 @@ local function my_buttons()
     -- to read back or to have forgotten to move. The control you pressed is
     -- the thing you get.
     if charge_tap then bits[sim.BTN_USE] = true end
-    -- The fan cell, which is the only way to decline multifire on glass. It
-    -- lands in the same bit the key holds down, so the core sees one press
-    -- however it was made.
+    -- The upward gun pull declines or restores multifire on glass. It lands in
+    -- the same bit the key holds down, so the core sees one press either way.
     if multi_tap then bits[sim.BTN_MULTI] = true end
 
     -- The mine pad on glass, which is the only way to lay one without a
@@ -422,6 +421,12 @@ end
 local function pad_reach(w, h, s)
     local L = touch.layout(w, h, s)
     local reach = L.guns.y + L.guns.r
+    if L.mine and L.mine.y + L.mine.r > reach then
+        reach = L.mine.y + L.mine.r
+    end
+    if L.reverse and L.reverse.y + L.reverse.r > reach then
+        reach = L.reverse.y + L.reverse.r
+    end
     for _, c in ipairs(L.charge or {}) do
         local top = c.y + (c.w and c.w / 2 or c.r)
         if top > reach then reach = top end

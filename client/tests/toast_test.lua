@@ -83,6 +83,12 @@ local pal = require("arena.palette")
 local function pad_reach(w, h, s)
     local L = touch.layout(w, h, s)
     local reach = L.guns.y + L.guns.r
+    if L.mine and L.mine.y + L.mine.r > reach then
+        reach = L.mine.y + L.mine.r
+    end
+    if L.reverse and L.reverse.y + L.reverse.r > reach then
+        reach = L.reverse.y + L.reverse.r
+    end
     for _, c in ipairs(L.charge or {}) do
         local top = c.y + (c.w and c.w / 2 or c.r)
         if top > reach then reach = top end
@@ -149,7 +155,7 @@ check("and so is a kill you made", shown("you killed other") ~= nil)
 -- A refusal, which is the one line here that reports something *not*
 -- happening. It is a bare string rather than a table of named parts, because
 -- nobody is named in it -- the same shape a green's line takes -- and it has
--- to survive the same filter: told on a phone, where the mine cell's pips
+-- to survive the same filter: told on a phone, where the mine tab's pips
 -- would otherwise be the only sign, and told to the pilot who pressed the key
 -- rather than to the room.
 local FULL = {text = "no room for another mine", col = pal.BOMB, t = 0,

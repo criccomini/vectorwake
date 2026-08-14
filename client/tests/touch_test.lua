@@ -7,9 +7,8 @@
 -- turns toward it, and a course behind the nose is a turn like any other.
 -- That last one is a decision, not an accident. A rear cone that held the
 -- nose and backed up shipped and was taken out within the day because it
--- did not feel good under a thumb, so glass has no reverse at all, and
--- this test is where that stays true on purpose rather than by nobody
--- having touched the file.
+-- did not feel good under a thumb. Reverse therefore has its own held pad and
+-- never changes what a course on the stick means.
 
 package.path = "client/?.lua;" .. package.path
 
@@ -90,7 +89,7 @@ b = ask(180, 8)
 check("a thumb that barely moved does nothing", #b == 0, #b .. " bits")
 
 -- Courses behind the nose, at and around dead astern: every one is a turn
--- toward the ask, and none is a reverse. Glass has no reverse.
+-- toward the ask, and none silently becomes reverse.
 for _, deg in ipairs({150, 170, 179, -170, -150}) do
     b = ask(deg, 60)
     local turning = has(b, sim.BTN_LEFT) or has(b, sim.BTN_RIGHT)
@@ -101,12 +100,32 @@ end
 -- Lifting the thumb clears the ask.
 check("after the lift the stick is quiet", #touch.bits(0) == 0)
 
--- --- the fan cell -----------------------------------------------------------
+-- --- explicit reverse -------------------------------------------------------
 --
--- Multifire is the one gun mode with no key on glass, so this cell is the only
--- way to decline it there. It behaves like a charge and is not one: latched
--- rather than held, but a toggle rather than a spend, and present only while
--- the hull is carrying barrels to turn off.
+-- Reverse is held like thrust and independent of the aiming stick. A second
+-- thumb can fire at the same time.
+
+local L = touch.layout(W, H, 1)
+touch.on_touch({touch = {{id = 8, pressed = true,
+                          screen_x = L.reverse.x, screen_y = L.reverse.y}}},
+               W, H, 1)
+check("the reverse pad backs up while held",
+      has(touch.bits(0), sim.BTN_REVERSE))
+touch.on_touch({touch = {{id = 9, pressed = true,
+                          screen_x = L.guns.x, screen_y = L.guns.y}}}, W, H, 1)
+local held = touch.bits(0)
+check("reverse and guns work together",
+      has(held, sim.BTN_REVERSE) and has(held, sim.BTN_FIRE))
+touch.release(8)
+held = touch.bits(0)
+check("lifting reverse leaves the gun held",
+      not has(held, sim.BTN_REVERSE) and has(held, sim.BTN_FIRE))
+touch.release(9)
+
+-- --- the gun's multifire gesture -------------------------------------------
+--
+-- Multifire stays part of the gun. One deliberate upward pull toggles it while
+-- the trigger remains held, and no standalone cell can overlap the gun.
 
 local function tap(x, y)
     touch.on_touch({touch = {{id = 3, pressed = true,
@@ -115,42 +134,42 @@ local function tap(x, y)
                               screen_x = x, screen_y = y}}}, W, H, 1)
 end
 
-touch.has_fan = false
-check("no fan, no cell", touch.layout(W, H, 1).fan == nil)
-
-touch.has_fan = true
-local L = touch.layout(W, H, 1)
-check("a fan puts a cell in the rail", L.fan ~= nil)
--- Above the triggers rather than on them. A cell overlapping the gun would
--- swallow a pull, which is the one press that must never be eaten.
-check("clear of the trigger it belongs to",
-      L.fan and L.fan.y > L.guns.y + L.guns.r,
-      L.fan and (L.fan.y .. " against " .. (L.guns.y + L.guns.r)))
-
 check("nothing latched before a tap", touch.fired_multi() == false)
-tap(L.fan.x, L.fan.y)
-check("a tap latches one press", touch.fired_multi() == true)
-check("and the read spends it", touch.fired_multi() == false)
-
--- Two taps between two reads collapse into one, which the charge latch does
--- as well. Harmless here: the step loop reads this every simulation tick, so
--- the two would have to land inside a hundredth of a second.
-tap(L.fan.x, L.fan.y)
-tap(L.fan.x, L.fan.y)
-check("taps between reads collapse rather than queue",
-      touch.fired_multi() == true and touch.fired_multi() == false)
-
--- The triggers keep their own space, in both directions.
+touch.has_fan = true
+L = touch.layout(W, H, 1)
 tap(L.guns.x, L.guns.y)
-check("a pull of the gun is not a toggle", touch.fired_multi() == false)
-touch.release_all()
+check("a gun tap is not a toggle", touch.fired_multi() == false)
 
--- And a hull that lost its fan has no cell there, so the space falls through
--- rather than answering to a control that is no longer drawn.
+touch.on_touch({touch = {{id = 3, pressed = true,
+                          screen_x = L.guns.x, screen_y = L.guns.y}}}, W, H, 1)
+touch.on_touch({touch = {{id = 3,
+                          screen_x = L.guns.x + 42,
+                          screen_y = L.guns.y + 8}}}, W, H, 1)
+check("a sideways gun pull is not a toggle", touch.fired_multi() == false)
+touch.on_touch({touch = {{id = 3,
+                          screen_x = L.guns.x,
+                          screen_y = L.guns.y + 40}}}, W, H, 1)
+check("an upward gun pull toggles once", touch.fired_multi() == true)
+check("the toggle is consumed once", touch.fired_multi() == false)
+check("the gun keeps firing through the gesture",
+      has(touch.bits(0), sim.BTN_FIRE))
+touch.on_touch({touch = {{id = 3,
+                          screen_x = L.guns.x,
+                          screen_y = L.guns.y + 60}}}, W, H, 1)
+check("one gun hold cannot toggle twice", touch.fired_multi() == false)
+touch.release(3)
+check("lifting after the gesture releases the gun",
+      not has(touch.bits(0), sim.BTN_FIRE))
+
+-- Losing the fan disables the gesture without changing the gun.
 touch.has_fan = false
-tap(L.fan.x, L.fan.y)
-check("with the fan gone the cell is not there to press",
-      touch.fired_multi() == false)
+touch.on_touch({touch = {{id = 3, pressed = true,
+                          screen_x = L.guns.x, screen_y = L.guns.y}}}, W, H, 1)
+touch.on_touch({touch = {{id = 3,
+                          screen_x = L.guns.x,
+                          screen_y = L.guns.y + 50}}}, W, H, 1)
+check("without a fan the upward pull only fires",
+      touch.fired_multi() == false and has(touch.bits(0), sim.BTN_FIRE))
 touch.release_all()
 
 -- A UI press can consume a whole multitouch batch. The arena forwards releases

@@ -143,6 +143,7 @@ local ENERGY, CAP = 700, 1000
 _G.sim = setmetatable({
     TRIG_GUN = 0, TRIG_BOMB = 1,
     BTN_FIRE = 1, BTN_BOMB = 2, BTN_LEFT = 4, BTN_RIGHT = 8, BTN_THRUST = 16,
+    BTN_REVERSE = 32,
     ship_mod = function(_, t, i) return (MODS[t] or {})[i] or 0 end,
     ship_level = function(_, t) return LEVEL[t] or 0 end,
     ship_energy = function() return ENERGY end,
@@ -247,6 +248,8 @@ check("the gun pad wears a mark", marked(L.guns) > 0,
       "nothing inside the gun's rim")
 check("the bomb pad wears a mark", marked(L.bombs) > 0,
       "nothing inside the bomb's rim")
+check("the reverse pad wears a mark", marked(L.reverse) > 0,
+      "nothing inside the reverse pad")
 -- The fault this whole layout exists to fix. Both triggers were bare rings
 -- telling each other apart by being slightly different sizes, so this is the
 -- one check that must never come back green for the wrong reason: it asks how
@@ -420,27 +423,23 @@ end
 -- that reached the rail above it; the hull's own bar says energy, so the arc
 -- went and the rim is the whole of the gun again.
 local function controls(L2)
-    local out = {{n = "guns", x = L2.guns.x, y = L2.guns.y, r = L2.guns.r},
-                 {n = "home", x = L2.home.x, y = L2.home.y, r = L2.home.r}}
+    -- Interactive reach rather than visible ink. A layout can look separated
+    -- while two enlarged thumb targets answer the same point.
+    local out = {{n = "guns", x = L2.guns.x, y = L2.guns.y,
+                  r = L2.guns.r * 1.18},
+                 {n = "reverse", x = L2.reverse.x, y = L2.reverse.y,
+                  r = L2.reverse.w * 0.65}}
     if touch.has_bomb then
         out[#out + 1] = {n = "bombs", x = L2.bombs.x, y = L2.bombs.y,
-                         r = L2.bombs.r}
+                         r = L2.bombs.r * 1.18}
     end
-    -- The fan sits in the same rail and answers the same way, so it belongs in
-    -- the same sweep. It is the one cell that is a mode rather than a stock,
-    -- which changes what it draws and nothing about where it may sit.
-    if L2.fan then
-        out[#out + 1] = {n = "fan", x = L2.fan.x, y = L2.fan.y, r = L2.fan.r}
-    end
-    -- The mine is the rail's other fixed cell and sits under the same rules.
-    -- It is not a charge -- there is no stock to spend, only room on the
-    -- floor -- but where it may sit is exactly a charge's question.
     if L2.mine then
         out[#out + 1] = {n = "mine", x = L2.mine.x, y = L2.mine.y,
-                         r = L2.mine.r}
+                         r = L2.mine.w * 0.65}
     end
     for i, c in ipairs(L2.charge) do
-        out[#out + 1] = {n = "charge" .. i, x = c.x, y = c.y, r = c.r}
+        out[#out + 1] = {n = "charge" .. i, x = c.x, y = c.y,
+                         r = c.w * 0.65}
     end
     return out
 end
@@ -477,28 +476,22 @@ for _, win in ipairs({LAND, PORT}) do
           tostring(off) .. " leaves the window")
 end
 
--- --- the rail keeps clear of the dial --------------------------------------
+-- --- the fixed utility row keeps clear of the dial --------------------------
 
--- The dial is what bounds the rail, and how much it bounds it is the whole
--- difference between the two orientations: on a phone held upright there is
--- most of a screen of edge to climb, and held sideways the dial takes better
--- than half the height and leaves room for one cell. Both are measured,
--- because the wrap is not an edge case on a landscape phone -- it is the
--- ordinary behavior there, and it is the arithmetic that has to produce a
--- column in one window and a block in the other.
+-- The row sits below the dial in either orientation. It never wraps because a
+-- wrap would make a slot's position depend on the available height.
 local TIGHT, ROOMY = 352, 1262      -- what ui.radar_span() leaves, either way
 
-local function columns(l)
+local function rows(l)
     local seen, n = {}, 0
     for _, c in ipairs(l.charge) do
-        local k = string.format("%.0f", c.x)
+        local k = string.format("%.0f", c.y)
         if not seen[k] then seen[k] = true n = n + 1 end
     end
     return n
 end
 
 local function under_ceiling(l, ceil)
-    if l.fan and l.fan.y + l.fan.r > ceil then return false end
     if l.mine and l.mine.y + l.mine.r > ceil then return false end
     for _, c in ipairs(l.charge) do
         if c.y + c.r > ceil then return false end
@@ -510,33 +503,32 @@ do
     local w, h, s = reset(unpack(PORT))
     touch.ceiling = ROOMY
     touch.charges = {0, 1, 2, 3}
+    touch.counts = {[0] = 3, [1] = 3, [2] = 3, [3] = 3}
     local l = touch.layout(w, h, s)
-    check("upright, a full rack is one column", columns(l) == 1,
-          columns(l) .. " columns with a screen of edge to climb")
+    check("upright, a full rack is one fixed row", rows(l) == 1,
+          rows(l) .. " rows")
     check("and all of it clears the dial", under_ceiling(l, ROOMY))
+    check("and its thumb targets do not overlap", not worst_overlap(l),
+          tostring(worst_overlap(l)))
 end
 
 do
     local w, h, s = reset(unpack(LAND))
     touch.ceiling = TIGHT
     touch.charges = {0, 1, 2, 3}
+    touch.counts = {[0] = 3, [1] = 3, [2] = 3, [3] = 3}
     local l = touch.layout(w, h, s)
-    check("sideways, a full rack steps sideways instead",
-          columns(l) == #l.charge,
-          columns(l) .. " columns where only one cell fits under the dial")
+    check("sideways, a full rack stays on one row", rows(l) == 1,
+          rows(l) .. " rows")
     check("and still clears the dial", under_ceiling(l, TIGHT),
           "a cell drawn into the dial's corner")
-    check("with nothing overlapping after the wrap", not worst_overlap(l),
+    check("with no overlapping thumb targets", not worst_overlap(l),
           tostring(worst_overlap(l)))
-    -- The bound that makes the wrap acceptable. Stepping left is fine while
-    -- the rack stays in the block over the triggers; walking into the middle
-    -- of the screen is the row this layout replaced, drawn one cell higher.
     local left = w
     for _, c in ipairs(l.charge) do left = math.min(left, c.x - c.r) end
-    check("and the rack stays over the triggers", left > w * 0.75,
+    check("and the rack stays in the right third", left > w * 0.66,
           string.format("reaches %.2f of the way across", left / w))
-    -- Above them, never beside them: a thumb going for the gun crosses no
-    -- cell on the way.
+    -- Above them, never beside them: a thumb going for the gun crosses no cell.
     local low = math.huge
     for _, c in ipairs(l.charge) do low = math.min(low, c.y - c.r) end
     check("and sits above them", low > l.guns.y + l.guns.r,
@@ -550,6 +542,7 @@ end
 -- reach the wrong one.
 do
     local w, h, s = reset(unpack(LAND))
+    touch.has_mine = true
     local l = touch.layout(w, h, s)
     local got = {}
     local function tap(x, y)
@@ -559,17 +552,28 @@ do
                                   screen_x = x, screen_y = y}}}, w, h, s)
         local k = touch.fired_charge()
         if k then out = k
-        elseif touch.bits(0)[1] == sim.BTN_FIRE then out = "guns"
-        elseif touch.bits(0)[1] == sim.BTN_BOMB then out = "bombs"
-        elseif touch.steering() then out = "stick" end
+        elseif touch.fired_mine() then out = "mine"
+        else
+            for _, bit in ipairs(touch.bits(0)) do
+                if bit == sim.BTN_FIRE then out = "guns"
+                elseif bit == sim.BTN_BOMB then out = "bombs"
+                elseif bit == sim.BTN_REVERSE then out = "reverse" end
+            end
+        end
+        if not out and touch.steering() then out = "stick" end
         touch.release_all()
         return out
     end
     got.guns = tap(l.guns.x, l.guns.y)
     got.bombs = tap(l.bombs.x, l.bombs.y)
+    got.reverse = tap(l.reverse.x, l.reverse.y)
+    got.mine = tap(l.mine.x, l.mine.y)
     check("the gun pad fires the gun", got.guns == "guns", tostring(got.guns))
     check("the bomb pad drops a bomb", got.bombs == "bombs",
           tostring(got.bombs))
+    check("the reverse pad backs up", got.reverse == "reverse",
+          tostring(got.reverse))
+    check("the mine tab lays a mine", got.mine == "mine", tostring(got.mine))
     local ok = true
     for _, c in ipairs(l.charge) do
         if tap(c.x, c.y) ~= c.slot then ok = false end
@@ -710,16 +714,18 @@ do
     -- the middle of a fight and get nothing back.
     check("and a spent slot draws no cell", #l.charge == 1,
           #l.charge .. " cells for one charge in hand")
-    -- The rail closes up rather than leaving the gap. Two in hand puts the
-    -- second cell where the first sits when only one is held, which is the
-    -- shrink that keeps the block over the triggers the same shape.
-    local low = l.charge[1].y
     touch.counts = {[0] = 2, [1] = 1}
     local both = draw(w, h, s)
-    check("and the rail closes the gap", #both.charge == 2
-          and math.abs(both.charge[1].y - low) < 1,
-          #both.charge .. " cells, first at " ..
-          string.format("%.0f against %.0f", both.charge[1].y, low))
+    local second
+    for _, c in ipairs(both.charge) do
+        if c.slot == 1 then second = {c.x, c.y} end
+    end
+    touch.counts = {[0] = 0, [1] = 1}
+    local one = draw(w, h, s)
+    check("and a surviving slot does not slide into the gap",
+          #one.charge == 1 and one.charge[1].slot == 1 and second
+          and one.charge[1].x == second[1] and one.charge[1].y == second[2],
+          #one.charge .. " cells after its neighbor emptied")
 
     -- A hull holding nothing draws no rail, and nothing above the triggers
     -- answers a tap.
@@ -730,13 +736,10 @@ do
           #none.charge .. " cells with an empty hand")
 end
 
--- --- the fan, in the rail that was already the tight one --------------------
+-- --- multifire stays on the gun ---------------------------------------------
 --
--- Multifire's cell is the fifth thing in a column that had four at its worst,
--- and the worst is a phone held sideways, where the dial takes better than
--- half the height and the rail is already stepping left to fit. Adding to that
--- column is exactly where a rail runs into the dial or off the edge, so the
--- full rack plus a fan is checked rather than assumed.
+-- Equipping a fan adds an upward gesture affordance to the gun, not another
+-- control. The layout and every charge target stay exactly where they were.
 do
     local w, h, s = reset(unpack(LAND))
     touch.ceiling = TIGHT
@@ -745,14 +748,21 @@ do
     -- tight case under test is not the tight case.
     touch.counts = {[0] = 3, [1] = 3, [2] = 3, [3] = 3}
     touch.maxes = {[0] = 3, [1] = 3, [2] = 3, [3] = 3}
+    touch.has_fan = false
+    local bare = touch.layout(w, h, s)
     touch.has_fan = true
     local l = touch.layout(w, h, s)
-    check("the fan takes a cell of its own beside a full rack",
-          l.fan ~= nil and #l.charge == 4,
-          tostring(l.fan ~= nil) .. ", " .. #l.charge .. " charges")
-    check("and nothing overlaps once it is there", not worst_overlap(l),
+    check("a fan adds no standalone control",
+          l.fan == nil and #l.charge == 4,
+          tostring(l.fan) .. ", " .. #l.charge .. " charges")
+    local same = #bare.charge == #l.charge
+    for i, c in ipairs(l.charge) do
+        same = same and c.x == bare.charge[i].x and c.y == bare.charge[i].y
+    end
+    check("equipping it moves no utility target", same)
+    check("the full rack still has no overlap", not worst_overlap(l),
           worst_overlap(l))
-    check("and the whole rail still clears the dial", under_ceiling(l, TIGHT),
+    check("and the row still clears the dial", under_ceiling(l, TIGHT),
           "something is drawn into the dial's corner")
     for _, c in ipairs(controls(l)) do
         check(c.n .. " is on the screen",
@@ -760,46 +770,32 @@ do
                   and c.y - c.r >= 0 and c.y + c.r <= h,
               string.format("%s at %.0f,%.0f r%.0f", c.n, c.x, c.y, c.r))
     end
-    -- The fan is nearest the trigger, and it stays there as charges are spent.
-    -- A mode that walked down the column every time a charge went would be a
-    -- control that moved while a thumb was reaching for it.
-    local first = {l.fan.x, l.fan.y}
-    touch.counts = {[0] = 0, [1] = 0, [2] = 0, [3] = 1}
-    local fewer = touch.layout(w, h, s)
-    check("and it holds its cell as the rack empties",
-          fewer.fan.x == first[1] and fewer.fan.y == first[2],
-          string.format("%.0f,%.0f then %.0f,%.0f", first[1], first[2],
-                        fewer.fan.x, fewer.fan.y))
 end
 
--- --- the mine cell -----------------------------------------------------------
+-- --- the mine tab ------------------------------------------------------------
 --
--- A mine is not a charge and the rail has to hold it anyway. It has no stock,
--- so it can never be spent out of the column the way a charge is; it appears
--- with the hull and stays. What is tested here is that adding a second fixed
--- cell did not push the rack into the dial or the triggers, which is the
--- failure a new cell in a column causes and the only one worth a test.
+-- A mine is not a charge. Its tab stays attached to the bomb while every charge
+-- keeps its own fixed slot around it.
 do
     local w, h, s = reset(unpack(PORT))
     touch.ceiling = ROOMY
     touch.has_fan = true
     touch.has_mine = true
-    touch.charges = {0, 1}
-    touch.counts = {[0] = 3, [1] = 3}
+    touch.charges = {0, 1, 2, 3}
+    touch.counts = {[0] = 3, [1] = 3, [2] = 3, [3] = 3}
     local l = touch.layout(w, h, s)
-    check("a mining hull gets a mine cell", l.mine ~= nil)
-    check("nothing on the rail overlaps", worst_overlap(l) == nil,
+    check("a mining hull gets a mine tab", l.mine ~= nil)
+    check("nothing in the utility row overlaps", worst_overlap(l) == nil,
           tostring(worst_overlap(l)))
-    check("and the rail clears the dial", under_ceiling(l, ROOMY))
+    check("and the utility row clears the dial", under_ceiling(l, ROOMY))
     for _, c in ipairs(controls(l)) do
-        check(c.n .. " is on the screen with a mine cell",
+        check(c.n .. " is on the screen with a mine tab",
               c.x - c.r >= 0 and c.x + c.r <= w
                   and c.y - c.r >= 0 and c.y + c.r <= h,
               string.format("%s at %.0f,%.0f r%.0f", c.n, c.x, c.y, c.r))
     end
 
-    -- Fixed like the fan, and for the same reason: spending a charge must not
-    -- slide the control a thumb is already reaching for.
+    -- Spending a charge must not slide the mine a thumb is already reaching for.
     local at = {l.mine.x, l.mine.y}
     touch.counts = {[0] = 0, [1] = 1}
     local fewer = touch.layout(w, h, s)
@@ -811,7 +807,7 @@ do
     -- A hull the zone allows none gets no cell at all, so the space falls
     -- through to the stick rather than to a control that does nothing.
     touch.has_mine = false
-    check("a hull that lays none gets no cell",
+    check("a hull that lays none gets no tab",
           touch.layout(w, h, s).mine == nil)
 end
 
