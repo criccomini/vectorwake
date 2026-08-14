@@ -1340,7 +1340,7 @@ rather than email.
 Every hull here answers to one of the original's ships, and seven of those
 answers came out of a preserved settings file: the Warbird's rotation and
 thrust, the Javelin's speed, the Spider's opening recharge, the Leviathan's
-three-rung rack, the Terrier's double barrel and slower bullet, the Weasel's
+three-rung rack, the Terrier's double barrel, the Weasel's
 EMP and its bombs that never break up, the Lancaster's wall bounce. Each is a
 line in that file and each is a line in a zone here.
 

@@ -241,20 +241,6 @@ life = 12000
 # the mining one with `mine_max = 9` in its block, or take it out of the
 # business with 0.
 
-# Facet fires slower than everything else, which is the price of its second
-# barrel. A ladder is a weapon per rung, so all three rungs say it.
-[[arena.weapons]]
-name = "facet-gun"
-delay = 30
-
-[[arena.weapons]]
-name = "facet-gun-2"
-delay = 30
-
-[[arena.weapons]]
-name = "facet-gun-3"
-delay = 30
-
 # Cipher's bombs stop a hit pilot recharging for four seconds, which is what
 # makes them a different weapon rather than a better one.
 [[arena.weapons]]

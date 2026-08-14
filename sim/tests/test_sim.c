@@ -2402,16 +2402,14 @@ int main(void) {
         step_n(&m, &cfg, SIM_BTN_FIRE, 0, 1);
         CHECK(m.weapon_count == 4, "and four with a rung of multifire, not six");
 
-        /* Paid for by the barrel, which is where a round costs anything on
-         * its own: a shot is otherwise priced once however many things leave
-         * the tube. The original did the same with a per-ship
-         * BulletFireEnergy, and the multifire surcharge still lands on top of
-         * the doubled figure rather than instead of it. */
+        /* DoubleBarrel changes the rounds, not the trigger price. The SVS
+         * Terrier pays the same BulletFireEnergy and BulletFireDelay as the
+         * Warbird, and the multifire surcharge lands on that one-pull cost. */
         uint16_t facet_wait = 0, apex_wait = 0;
         int32_t facet_plain = gun_cost(&cfg, (uint8_t)FACET, 0, 0, &facet_wait);
         int32_t apex_plain = gun_cost(&cfg, (uint8_t)APEX, 0, 0, &apex_wait);
-        CHECK(facet_plain == apex_plain * 2, "two barrels cost two bullets");
-        CHECK(facet_wait == apex_wait, "at everybody else's rate of fire");
+        CHECK(facet_plain == apex_plain, "two barrels cost one trigger");
+        CHECK(facet_wait == apex_wait, "and use the same trigger delay");
         int32_t facet_multi = gun_cost(&cfg, (uint8_t)FACET, 0,
                                        sim_mod_set(0, SIM_MOD_MULTI, 1), NULL);
         CHECK(facet_multi == facet_plain * 3 / 2,

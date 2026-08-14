@@ -689,20 +689,11 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
             gun.spec = (uint8_t)sim_add_spec(cfg, &bolt);
             gun.count = r->gun_barrels;
             gun.spacing = r->gun_barrels > 1 ? BARREL_SPREAD : 0;
-            /* Barrels are paid for by the barrel, which is the one place a
-             * round costs anything on its own. `fire` prices a shot and not
-             * its projectiles, so that a burst of sixteen or a multifire fan
-             * stays affordable to use; that rule is about add-ons, which are
-             * bought once and then carried. A barrel is the hull, welded on
-             * at spawn and never dropped, and the original priced it the same
-             * way: BulletFireEnergy was per ship, and the Terrier's guns ate
-             * the bar about twice as fast as anyone else's.
-             *
-             * The rate is everyone's. The original slowed that ship's gun
-             * too, and the number is not in anything we have, so it is not
-             * guessed at here. */
-            gun.energy = sim_units_energy(BULLET_ENERGY * r->gun_barrels
-                                          * (k + 1));
+            /* DoubleBarrel changes what one pull sends, not what the pull
+             * costs. The SVS Terrier and Warbird both use
+             * BulletFireEnergy=20 and BulletFireDelay=25; DoubleBarrel is the
+             * setting that differs. Gun level still scales the trigger cost. */
+            gun.energy = sim_units_energy(BULLET_ENERGY * (k + 1));
             gun.delay = BULLET_DELAY;
             c->trigger[SIM_TRIG_GUN][k] = (uint8_t)sim_add_pattern(cfg, &gun);
         }

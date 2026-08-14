@@ -400,16 +400,16 @@ rounds, and shrapnel, and Vectorwake follows it. Each hit uses the same
 square-root random curve and averages near two thirds of the listed value. Bomb
 damage stays exact before blast-distance falloff.
 
-**Barrels are the hull's own, and they are the one thing paid for by the
-round.** `DoubleBarrel` was a per-ship setting and the Terrier alone carried
-it: two rounds abreast for one pull where every other ship sent one. The Facet
-has it here. It is not an add-on, so it is never picked up and never dropped,
-and that is exactly why it can be priced per barrel without the objection that
-sinks the idea everywhere else. A shot costs what pulling the trigger costs,
-so that a burst of twenty-four or a wide fan stays affordable to use; those are
-bought once and then carried. A barrel is welded on at spawn. The original
-priced it the same way, since `BulletFireEnergy` was per ship and the
-Terrier's gun ate the bar about twice as fast as anyone's.
+**Barrels are the hull's own.** `DoubleBarrel` was a per-ship setting and the
+Terrier alone carried it: two rounds abreast for one pull where every other
+ship sent one. The Facet has it here. It is not an add-on, so it is never picked
+up and never dropped.
+
+The SVS Terrier pays the same price as the Warbird for that pull:
+`BulletFireEnergy=20` and `BulletFireDelay=25`. `DoubleBarrel` changes the two
+rounds that leave, not the trigger cost or its clock. Facet follows the same
+rule. Its gun level still multiplies the base cost, and multifire still adds its
+own energy and delay surcharge once per rung.
 
 The arithmetic is the part worth keeping. Multifire *adds* barrels rather than
 multiplying them, so two abreast plus a rung of multifire is four rather than
@@ -417,11 +417,7 @@ the six a pilot expects out of three times two. That was the Terrier's real
 behavior, and here it falls out of the model instead of being written down
 for one hull.
 
-The rest of that ship's bill is a zone call. It also fired slower, and the
-original's number is not in anything we have, so the baseline leaves the rate
-at everybody's 25 ticks rather than guess. The alpha zone has already made
-its own call there: its `facet-gun` overrides say 30, priced as playtest
-tuning rather than as history.
+The Terrier and Facet both use the baseline's 25-tick gun delay.
 
 ### A shot is what it was when it left
 
