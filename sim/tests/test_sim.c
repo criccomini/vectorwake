@@ -2207,10 +2207,14 @@ int main(void) {
               && memcmp(next.ships[0].mods, before.mods, sizeof before.mods) == 0
               && memcmp(next.ships[0].charge, before.charge, sizeof before.charge) == 0,
               "but applies no guessed outcome");
-        int announced = 0;
-        for (uint16_t i = 0; i < ev.count; i++)
+        int announced = 0, touched = 0;
+        for (uint16_t i = 0; i < ev.count; i++) {
             announced += ev.e[i].type == SIM_EV_PRIZE;
+            touched += ev.e[i].type == SIM_EV_PRIZE_TOUCH
+                       && ev.e[i].a == 0;
+        }
         CHECK(announced == 0, "and emits no guessed prize event");
+        CHECK(touched == 1, "and reports the touch without an outcome");
 
         w.spawn_prizes = 30;
         next.ships[0].alive = 0;

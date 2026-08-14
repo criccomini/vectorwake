@@ -1601,6 +1601,7 @@ static void update_prizes(sim_state *s, const sim_settings *cfg, sim_events *ev)
              * snapshot supplies the owner state and the server sends the
              * outcome as a reliable event. */
             if (cfg->deathless) {
+                emit(ev, SIM_EV_PRIZE_TOUCH, (uint8_t)k, 0, 0);
                 p->active = 0;
                 live--;
                 break;

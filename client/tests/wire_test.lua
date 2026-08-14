@@ -32,7 +32,9 @@ local own_x, own_y, own_alive = 0, 0, 1
 local next_x, next_y, next_alive = nil, nil, nil
 local own_vx, own_vy, own_repel_ticks, own_repel_speed = 0, 0, 0, 0
 local next_vx, next_vy, next_repel_ticks, next_repel_speed = nil, nil, nil, nil
+local sim_events = {}
 _G.sim = {
+    EV_PRIZE_TOUCH = 14,
     tick = function() return tick end,
     replay = function() tick = tick + 1 end,
     step = function() tick = tick + 1 end,
@@ -76,6 +78,11 @@ _G.sim = {
     weapon_at = function() end,
     spec_life = function() return 0 end,
     spec_blast = function() return 0 end,
+    event_count = function() return #sim_events end,
+    event_at = function(i)
+        local event = sim_events[i + 1]
+        return event[1], event[2], event[3], event[4]
+    end,
 }
 
 -- --- both wires, as stubs ---------------------------------------------------
@@ -133,6 +140,7 @@ local function fresh_net()
     wt.dialled, wt.disconnects, wt.sent, wt.unsent, wt.cb = 0, 0, {}, {}, nil
     own_x, own_y, own_alive = 0, 0, 1
     next_x, next_y, next_alive = nil, nil, nil
+    sim_events = {}
     debug_reports = {}
     return require("arena.net")
 end
@@ -232,6 +240,21 @@ check("inputs acknowledge the snapshot receipt window",
       string.byte(wt.unsent[#wt.unsent], 7) == 1
       and string.byte(wt.unsent[#wt.unsent], 11) == 1)
 check("and nothing leaks onto the socket", ws.dialled == 0)
+
+sim_events = {{sim.EV_PRIZE_TOUCH, 3, 0, 0}}
+net.step(0)
+sim_events = {}
+check("predicted green contact is ready on the collision tick",
+      #net.prize_touches == 1 and net.prize_touches[1] == 3)
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
+            message = string.char(14, 2, 1)})
+check("the authoritative result claims its local pickup sound",
+      #net.prizes == 1 and net.claim_prize_sound())
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
+            message = string.char(14, 2, 1)})
+check("a result without local contact still needs a sound",
+      #net.prizes == 2 and not net.claim_prize_sound())
+net.prizes, net.prize_touches = {}, {}
 
 local reliable_before, unreliable_before = #wt.sent, #wt.unsent
 check("focus loss can release held controls", net.release_controls())

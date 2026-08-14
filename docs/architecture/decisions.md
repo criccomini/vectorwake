@@ -1905,6 +1905,9 @@ The core keeps a public prediction generator and a private prize generator.
 Network snapshots omit the latter and its timer. A deathless prediction client
 removes a green it touched but applies no guessed grant; the arena sends the
 collector `S2C_PRIZE` and the next snapshot carries the resulting owner state.
+The local touch emits a result-free presentation event, which starts the pickup
+sound on contact without revealing the roll. A matched positive result does not
+play it again; a rust result still announces itself when the authority arrives.
 
 Rated exclusion is a renewable row in the meta-layer, keyed by account. The
 arena claims before seating an authenticated account, renews every thirty

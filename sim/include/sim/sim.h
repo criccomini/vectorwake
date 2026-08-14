@@ -825,7 +825,11 @@ typedef enum {
      *
      * Appended rather than slotted next to SIM_EV_BOUNCE where it belongs,
      * because the numbers are mirrored by hand in server/src/sim.rs. */
-    SIM_EV_RICOCHET  /* a: owner, b: weapon type, v: packed position */
+    SIM_EV_RICOCHET, /* a: owner, b: weapon type, v: packed position */
+    /* A deathless prediction client touched a green. It names no outcome,
+     * because the prize generator is server-private. Appended so every event
+     * number already mirrored outside the core stays put. */
+    SIM_EV_PRIZE_TOUCH /* a: ship */
 } sim_event_type;
 
 typedef struct {

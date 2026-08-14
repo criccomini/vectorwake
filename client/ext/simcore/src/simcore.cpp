@@ -1297,6 +1297,7 @@ void LuaInit(lua_State* L) {
     lua_pushnumber(L, SIM_EV_PRIZE);     lua_setfield(L, -2, "EV_PRIZE");
     lua_pushnumber(L, SIM_EV_FLAG_TAKE); lua_setfield(L, -2, "EV_FLAG_TAKE");
     lua_pushnumber(L, SIM_EV_FLAG_DROP); lua_setfield(L, -2, "EV_FLAG_DROP");
+    lua_pushnumber(L, SIM_EV_PRIZE_TOUCH); lua_setfield(L, -2, "EV_PRIZE_TOUCH");
     lua_pushnumber(L, SIM_UP_COUNT);     lua_setfield(L, -2, "UP_COUNT");
 
     // The tech tree's shape, so the panel never hard-codes a layout the core

@@ -792,9 +792,14 @@ local function drain_events()
     -- yours", the reading a watcher wants.
     local view = eye() or 255
     world.events(view, sfx.play)
+    for _, ship in ipairs(net.prize_touches) do
+        if not net.watching then world.prize_touch(ship, sfx.play) end
+    end
+    if #net.prize_touches > 0 then net.prize_touches = {} end
     for _, p in ipairs(net.prizes) do
         if not net.watching and me < sim.ship_count() then
-            world.prize(me, p.type, p.delta, sfx.play)
+            world.prize(me, p.type, p.delta, sfx.play,
+                        net.claim_prize_sound())
             local col, name = pal.prize(p.type)
             local up = p.delta >= 0
             if not up then col = pal.RUST end

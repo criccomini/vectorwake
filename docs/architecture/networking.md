@@ -612,7 +612,10 @@ carry the deterministic stream used for flight and projectiles, but never the
 stream used to place greens or roll their results. A prediction client may
 remove a green it touched; only the arena applies the result. `S2C_PRIZE`
 carries the rolled type and grant-or-rust sign to the collector, and the next
-snapshot carries the resulting private inventory.
+snapshot carries the resulting private inventory. The prediction core emits a
+result-free contact event so the client can play the ordinary pickup sound on
+the collision tick. The later positive result reuses that sound, while rust
+still plays its distinct authoritative warning.
 
 A filter has a ceiling worth stating: clients can pool their lawful sights,
 which is a scout team and is answered like one, with seats, visibility on

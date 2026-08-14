@@ -2663,10 +2663,17 @@ function M.events(me, sfx)
     end
 end
 
+-- Answer predicted contact immediately, without guessing what was collected.
+function M.prize_touch(ship, sfx)
+    if ship < 0 or ship >= sim.ship_count()
+        or sim.ship_active(ship) ~= 1 then return end
+    sfx("prize", sim.ship_x(ship), sim.ship_y(ship))
+end
+
 -- Draw one prize outcome the authority announced. Prediction may remove the
 -- green that was touched, but the type and whether it rusted come only from
 -- this event.
-function M.prize(ship, ty, delta, sfx)
+function M.prize(ship, ty, delta, sfx, already_sounded)
     if ship < 0 or ship >= sim.ship_count() or sim.ship_active(ship) ~= 1 then return end
     local x, y = sim.ship_x(ship), sim.ship_y(ship)
     local col = (delta < 0) and pal.RUST or pal.prize(ty)
@@ -2677,7 +2684,7 @@ function M.prize(ship, ty, delta, sfx)
     else
         fx.wave(x, y, 4, 26, 0.35, 3, col)
         fx.burst(x, y, 6, 60, 0.5, 1.4, col)
-        sfx("prize", x, y)
+        if not already_sounded then sfx("prize", x, y) end
     end
 end
 

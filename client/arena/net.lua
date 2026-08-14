@@ -116,6 +116,9 @@ M.kills = {}
 -- Authoritative prize rolls waiting for the frame that draws their effect and
 -- feed line. The prediction core removes a touched green but never rolls it.
 M.prizes = {}
+-- Result-free local contacts, emitted by prediction on the collision tick.
+-- They let presentation answer the touch without learning what the green was.
+M.prize_touches = {}
 -- Public charge actions inside the server's fairness circle. These name the
 -- charge that was used, never how many remain in the private inventory.
 M.charge_events = {}
@@ -252,6 +255,11 @@ local receipts = reconcile.new()
 -- censored rather than called wrong because the client no longer knows its fate.
 local death_candidates = {}
 local DEATH_CONFIRM_SNAPSHOTS = 6
+-- One token per locally predicted touch, paired in order with authoritative
+-- outcomes so their positive pickup sound is not played twice. A contested
+-- green can make prediction wrong, so unmatched tokens expire after a second.
+local pending_prize_touches = {}
+local PRIZE_TOUCH_WINDOW = 100
 
 local function note_predicted_deaths()
     -- Lightweight net.lua tests use a counter-only simulation stub. The real
@@ -263,6 +271,23 @@ local function note_predicted_deaths()
         if not death_candidates[victim] then
             death_candidates[victim] = {tick = sim.tick(), observations = 0}
             M.stats.death_pending = M.stats.death_pending + 1
+        end
+    end
+end
+
+local function note_prize_touches()
+    for i = #pending_prize_touches, 1, -1 do
+        pending_prize_touches[i] = pending_prize_touches[i] + 1
+        if pending_prize_touches[i] > PRIZE_TOUCH_WINDOW then
+            table.remove(pending_prize_touches, i)
+        end
+    end
+    if not sim.event_count or not sim.event_at then return end
+    for i = 0, sim.event_count() - 1 do
+        local ty, ship = sim.event_at(i)
+        if ty == sim.EV_PRIZE_TOUCH and ship == M.me then
+            pending_prize_touches[#pending_prize_touches + 1] = 0
+            M.prize_touches[#M.prize_touches + 1] = ship
         end
     end
 end
@@ -444,6 +469,8 @@ local function hangup()
     -- roster that has been emptied.
     M.kills = {}
     M.prizes = {}
+    M.prize_touches = {}
+    pending_prize_touches = {}
     M.charge_events = {}
     pending_kills, pending_charges = {}, {}
     seen_kills, seen_charges = {}, {}
@@ -866,6 +893,8 @@ local function adopt_lifecycle(epoch, watching, subject)
         input_log = {}
         receipts:reset()
         death_candidates = {}
+        pending_prize_touches = {}
+        M.prize_touches = {}
         M.stats.death_pending = 0
         predicted_tick = 0
         prediction_clock:reset()
@@ -1432,6 +1461,8 @@ function M.connect(url, class, name, on_lost, zone, watch, wt, room)
     M.ratings = {}
     M.kills = {}
     M.prizes = {}
+    M.prize_touches = {}
+    pending_prize_touches = {}
     M.charge_events = {}
     -- Back to knowing nobody, so the next room's first roster seeds rather
     -- than announcing everyone in it as having just walked in.
@@ -1661,7 +1692,17 @@ function M.step(buttons)
     end)
     send_input_records(records)
     sim.replay(M.me, buttons)
+    note_prize_touches()
     note_predicted_deaths()
+    return true
+end
+
+-- Match an authoritative result to the oldest local touch. Kept at the
+-- presentation boundary so a result and its touch can arrive in either order
+-- during one frame without playing the ordinary pickup sound twice.
+function M.claim_prize_sound()
+    if #pending_prize_touches == 0 then return false end
+    table.remove(pending_prize_touches, 1)
     return true
 end
 
