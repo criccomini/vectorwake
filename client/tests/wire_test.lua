@@ -822,6 +822,27 @@ for _ = 1, 6 do net.tick(0.1) end
 check("an established stale session never falls back to the socket",
       ws.dialled == 0 and net.transport().kind == nil)
 
+-- Snapshot margin is an observation, not permission to move the simulation
+-- clock. Both sides of the old threshold used to add or remove one replay
+-- tick here, which moved a coasting ship by exactly one tick of velocity.
+net = fresh_net()
+net.connect("wss://zone/a1", 0, "pilot", function() end, "chaos", false,
+            "https://zone:9443", 2)
+wt.cb(nil, {event = webtransport.EVENT_CONNECTED})
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
+            message = welcome(3, nil, nil, 2)})
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = snapshot(3, 8000)})
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
+            message = snapshot(3, 8001, 8004, 1)})
+check("one low-margin snapshot cannot add a replay tick",
+      tick == 8008 and net.stats.replay == 7,
+      "tick " .. tick .. ", replay " .. net.stats.replay)
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
+            message = snapshot(3, 8002, 8010, 1)})
+check("one high-margin snapshot cannot remove a replay tick",
+      tick == 8008 and net.stats.replay == 6,
+      "tick " .. tick .. ", replay " .. net.stats.replay)
+
 -- A small correction is evidence only while the same living hull continues
 -- across it. File the state around that moment once, outside the gameplay
 -- wire, so a later screenshot is not the first record of what happened.
@@ -853,7 +874,7 @@ check("the diagnostic captures motion, smoothing, clock and repel state",
       report.predicted_vx == 1 and report.predicted_vy == -0.5
       and report.reconciled_vx == 5 and report.reconciled_vy == 0.25
       and report.local_debt_px == 1.5 and report.local_debt_deg == 0.25
-      and report.clock_adjust == 1 and report.repel_before_ticks == 0
+      and report.clock_adjust == 0 and report.repel_before_ticks == 0
       and report.repel_before_speed == 0 and report.repel_after_ticks == 212
       and report.repel_after_speed == 5)
 

@@ -2566,7 +2566,8 @@ local function debug_hud(o, top)
     local lines = {
         {"fps", string.format("%.0f", o.fps or 0)},
         {"frame", string.format("%.1f ms", (o.frame_ms or 0))},
-        {"wire", st.wire or "ws"},
+        {"wire", string.format("%s / %.1f%% pace", st.wire or "ws",
+                                (st.clock_rate or 1) * 100)},
         {"margin", string.format("%+d ticks", st.input_margin or 0)},
         {"rtt", string.format("%d ms / %d jitter / ~%d est",
                                st.server_rtt_ms or 0, st.jitter_ms or 0,

@@ -1974,7 +1974,8 @@ reliable stream can pass a snapshot datagram without letting the feed spoil the
 result.
 
 The debug view now reports input margin, estimated round trip, snapshot gaps,
-rolling p95 remote corrections and the correction debt still visible.
+prediction pace, rolling p95 remote corrections and the correction debt still
+visible.
 
 **Cost:** steady input traffic grows from seven to fourteen bytes per tick,
 about 0.7 KB/s of uplink.
@@ -2029,8 +2030,8 @@ limits.
 but it could not identify an older hole after later inputs arrived. A selective
 32-tick receipt window can. The client sends the current input, any acknowledged
 holes that can still arrive in time, then the newest unacknowledged history.
-Four ticks of scheduling margin give each input several independent rides, and
-a detected hole temporarily widens that margin to seven.
+Four ticks of scheduling margin give each input several independent rides. A
+detected hole is repaired directly and does not steer the prediction clock.
 
 The server previously had no per-player lag measurement or gameplay response.
 Snapshot acknowledgements now provide round-trip samples using only server
@@ -2056,7 +2057,10 @@ than 31 ticks ahead. Flag pickup is denied silently before synchronization. If
 a partial input stream never becomes coherent, the lock becomes visible one
 path sample after its first packet. The client seeds eight idle prediction
 ticks with the first snapshot so an ordinary connection starts near its target
-lead instead of spending its first second chasing it.
+lead. Later snapshots never add or remove replay ticks. Margin must remain
+outside a three-tick dead band for a full second before the fixed-step
+accumulator runs at 99% or 101%. Missing snapshots or input holes reset that
+evidence.
 
 The live debug capture that prompted the change had an estimated 80 ms round
 trip, a 12-tick prediction lead, no local correction, and remote correction

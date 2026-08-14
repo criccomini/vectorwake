@@ -477,10 +477,13 @@ The client's lead from that same snapshot contains downlink age plus its clock
 offset. Input margin contains uplink age minus that offset. Adding the two
 cancels the offset, giving an estimated round trip in simulation ticks.
 
-The client steers on that number: one tick of lead added or given back per
-snapshot, aiming to keep four future input attempts in flight. A selective hole
-temporarily widens that margin to seven. From a cold start it settles without a
-clock jump, because a jump is itself the correction this exists to remove.
+The client seeds eight ticks of lead from the first snapshot and leaves the
+replay horizon alone when later snapshots arrive. Network margin is noisy, so
+one observation cannot change simulation time. If the margin remains outside a
+three-tick dead band for a full second, the fixed-step accumulator runs at 99%
+or 101% until the margin returns. That earns or gives back one tick over a
+second instead of moving the world by one tick on a snapshot callback. Missing
+snapshots and input holes reset the evidence rather than steering the clock.
 
 Measured against a local arena, three pilots for fifteen seconds. Without a
 lead, inputs ran a mean of 2.7 ticks late and never once arrived early. With the
@@ -544,13 +547,16 @@ is carried as a per-ship offset. The local camera keeps an 80 ms half-life, a
 40 px position budget, and a 30 degree heading budget. Remote hulls use a
 separate 50 ms half-life, a 16 px position budget, and a 15 degree heading
 budget. Large remote corrections snap sooner. Tightening an opponent's
-presentation therefore cannot turn the pilot's own clock steering into camera
+presentation therefore cannot turn the pilot's own reconciliation into camera
 judder. Detonations remain pinned to the corrected hull so the blast and target
 move together.
 
-The clock steering rides in the same mechanism, deliberately: a snapshot that
-trims the lead by a tick moves every hull by a tick of flight, which is exactly
-the kind of jump worth walking off rather than cutting to.
+Prediction pacing does not ride in this mechanism. A live client-debug sample
+showed 2.5 px of local correction at 2.51 px per tick, followed by 0.7 px at
+0.68 px per tick, with unchanged velocity and no repel. The old clock steering
+was alternately adding and removing one replay tick, then asking presentation
+smoothing to hide it. The accumulator now changes rate gradually, so a snapshot
+never changes how many ticks are replayed.
 
 Both live in the extension rather than at the twenty call sites that draw a
 position, because one of those being missed is worse than none of them being
@@ -661,8 +667,9 @@ optimization for the well-connected. `vw_wt_sessions_total` against
 `vw_wt_listening` beside it, because a door that never opened and a door
 nobody uses are the same zero otherwise.
 
-How to handle a client whose predicted tick drifts because its clock is bad,
-without giving it an advantage by letting it choose its own lead.
+How often real clients need sustained clock pacing, and whether the one-percent
+rate limit is tighter than necessary. The server still bounds scheduled input
+lead, so pacing cannot let a client choose an unbounded future.
 
 
 ## What head-of-line blocking actually costs

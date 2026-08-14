@@ -8,6 +8,7 @@
 -- and the server cannot disagree about what a snapshot means.
 
 local account = require("arena.account")
+local clock_pacer = require("arena.clock_pacer")
 local codec = require("arena.net_codec")
 local reconcile = require("arena.net_reconcile")
 local net_transport = require("arena.net_transport")
@@ -171,8 +172,8 @@ M.may_found = false
 -- there looking unpressed. It is not a claim that anybody accepted.
 M.invited = {}
 
--- What the connection is doing, for the debug readout and for the clock
--- steering. `rx` and `tx` are bytes since the socket opened; a rate is the
+-- What the connection is doing, for the debug readout and prediction pacing.
+-- `rx` and `tx` are bytes since the socket opened; a rate is the
 -- difference between two readings, which the reader takes rather than keeping
 -- a second clock here.
 local function fresh_stats(wire)
@@ -187,6 +188,7 @@ local function fresh_stats(wire)
         death_confirmed = 0, death_rejected = 0, death_pending = 0,
         death_censored = 0,
         input_margin = 0, input_holes = 0, rtt = 0, lead = 0,
+        clock_rate = 1,
         server_rtt_ms = 0, jitter_ms = 0,
         down_loss = 0, combat_loss = 0, up_loss = 0,
         lag_state = 0,
@@ -205,16 +207,21 @@ M.stats = fresh_stats("ws")
 -- which for an acceleration costs a fraction of a pixel and for the safe-zone
 -- brake costs a tick of speed every tick it is late.
 --
--- Two ticks of margin, with a dead band three wide so a clock that is
--- comfortably early is left alone rather than trimmed every snapshot. The
+-- Four ticks of margin, with a dead band three wide so a clock that is
+-- comfortably early stays at its natural rate. The
 -- ceiling is what a pathological link is allowed to cost everybody else: the
 -- further ahead we run, the longer remote ships coast between snapshots.
-local LAG_TARGET, LOSS_TARGET, LAG_SLACK, LEAD_MAX = -4, -7, 3, 40
+local LAG_TARGET, LAG_SLACK, LEAD_MAX = -4, 3, 40
 -- Seed a conservative lead near an ordinary round trip. The first snapshot is
--- not drawn until these idle ticks have been replayed, so startup does not
--- spend its first second speeding up the local clock one snapshot at a time.
+-- not drawn until these idle ticks have been replayed, so startup begins near
+-- its scheduling target.
 local START_LEAD = 8
 local INPUT_HISTORY = 4
+local prediction_clock = clock_pacer.new({
+    target = LAG_TARGET,
+    slack = LAG_SLACK,
+    max_lead = LEAD_MAX,
+})
 
 -- Set when a map arrives, so the arena knows to rebuild terrain it had
 -- already decided was static.
@@ -861,6 +868,7 @@ local function adopt_lifecycle(epoch, watching, subject)
         death_candidates = {}
         M.stats.death_pending = 0
         predicted_tick = 0
+        prediction_clock:reset()
         sim.smooth_reset()
         M.stats.input_margin, M.stats.rtt, M.stats.lead = 0, 0, 0
         snap_tick = 0
@@ -1040,34 +1048,23 @@ local function on_snapshot(s)
         M.stats.lead = START_LEAD
     end
 
-    -- Steer the clock, one tick per snapshot.
-    --
-    -- Twenty a second, so a cold start settles in under a second, and small
-    -- enough that the clock never jumps. A jump would be its own correction,
-    -- which is the thing this exists to remove.
-    --
-    -- Moving the clock is done by moving the target of the replay below rather
-    -- than by stepping anything here: raise it and the walk runs an extra tick,
-    -- lower it and it runs one fewer. A tick added past the end of the log
-    -- inherits the buttons we were already holding, because a key held through
-    -- the gap is what actually happened; filling it with zero would insert a
-    -- phantom frame of hands-off flying that the server never saw.
+    -- The startup lead stays on the simulation clock. Snapshot timing is noisy
+    -- and must not add or remove a replay tick, since either operation moves a
+    -- flying ship by exactly one tick of velocity. A separate pacer below waits
+    -- for sustained margin drift and changes elapsed-time accumulation by one
+    -- percent instead.
     local clock_adjust = 0
     if receipts.input_mask ~= 0 then
         local margin = serial_delta(from, acked)
         M.stats.input_margin = margin
-        local target = holes > 0 and LOSS_TARGET or LAG_TARGET
         local lead = serial_delta(predicted_tick, from)
-        if margin > target and lead < LEAD_MAX then
-            local prior_tick = predicted_tick
-            predicted_tick = next_tick(predicted_tick)
-            input_log[predicted_tick] = input_log[prior_tick] or 0
-            clock_adjust = 1
-        elseif margin < target - LAG_SLACK and lead > 0 then
-            predicted_tick = previous_tick(predicted_tick)
-            clock_adjust = -1
+        M.stats.lead = lead
+        if holes == 0 then
+            M.stats.clock_rate = prediction_clock:observe(net_clock, margin, lead)
+        else
+            prediction_clock:reset()
+            M.stats.clock_rate = 1
         end
-        M.stats.lead = serial_delta(predicted_tick, from)
         -- Lead contains downlink age and the clock offset; margin contains
         -- uplink age minus that offset. Their sum cancels the offset and is the
         -- round trip in simulation ticks.
@@ -1404,6 +1401,16 @@ function M.tick(dt)
     end
 end
 
+-- The arena's fixed-step accumulator reads this once per frame. A one-percent
+-- change takes a full second to gain or lose one simulation tick, and stale
+-- evidence returns the clock to its ordinary rate.
+function M.clock_rate()
+    if not M.connected or M.watching or not have_snapshot then return 1 end
+    local rate = prediction_clock:rate(net_clock)
+    M.stats.clock_rate = rate
+    return rate
+end
+
 -- A connection that never lands, or one that drops, has to be reportable:
 -- the player is looking at a start screen they just left, and "nothing
 -- happened" is the one thing the client must never say. `on_lost` is called
@@ -1438,10 +1445,9 @@ function M.connect(url, class, name, on_lost, zone, watch, wt, room)
     M.snap_deaths = {}
     M.snap_blasts = {}
     -- Built whole rather than cleared field by field, so a field added above
-    -- cannot be a field somebody forgot to reset here. The clock offset is
-    -- among them and is earned rather than remembered: a new arena's latency
-    -- is its own, so the lead starts at nothing and climbs into place over
-    -- the first second.
+    -- cannot be a field somebody forgot to reset here. Clock pacing is among
+    -- them and is earned rather than remembered: a new arena's latency and
+    -- clock drift are its own.
     M.stats = fresh_stats("ws")
     death_candidates = {}
     M.lost = nil
@@ -1478,6 +1484,7 @@ function M.connect(url, class, name, on_lost, zone, watch, wt, room)
     input_log = {}
     receipts:reset()
     predicted_tick = 0
+    prediction_clock:reset()
     -- And whatever the drawing was still owed in the last room. An offset is
     -- about a hull in an arena; carried across, it draws the next one beside
     -- itself on arrival.

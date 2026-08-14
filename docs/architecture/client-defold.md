@@ -90,10 +90,11 @@ the state tick forward.
 The replay is one ship's buttons over a handful of ticks, which is cheap enough
 to do inside a frame.
 
-The clock steers by one tick per snapshot rather than jumping, aiming to have
-inputs arrive just before the tick they belong to. An input that arrives early
-waits in the server's queue and is applied on the tick the client applied it, so
-both ends agree and there is nothing to correct.
+The first snapshot seeds eight ticks of prediction lead. Later snapshots do not
+change the replay horizon. If input margin stays outside its dead band for a
+full second, the fixed-step accumulator runs at 99% or 101% until it recovers.
+An input that arrives early waits in the server's queue and is applied on the
+tick the client applied it, so both ends agree and there is nothing to correct.
 
 Prediction runs the whole core, so the client shows its own hits and deaths
 immediately and those events drive the sparks and the sound. None of it is

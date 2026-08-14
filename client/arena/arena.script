@@ -1169,7 +1169,7 @@ function update(self, dt)
     end
 
     if self.online then
-        accum = accum + math.min(dt, 0.25)
+        accum = accum + math.min(dt, 0.25) * net.clock_rate()
         local steps = 0
         while accum >= TUNE.DT and steps < TUNE.MAX_CATCHUP do
             -- Read once, before anything asks for the buttons, and cleared
