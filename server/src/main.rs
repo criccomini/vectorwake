@@ -2176,6 +2176,33 @@ mod tests {
     // ---- bots as clients ---------------------------------------------------
 
     #[test]
+    fn sparse_bot_heartbeats_do_not_feed_human_input_telemetry() {
+        let mut a = room_with_teams("teams = [\"Keel\"]\n");
+        let ship = seat_bots(&mut a, 1)[0];
+        let id = *a
+            .players
+            .iter()
+            .find(|(_, p)| p.ship == ship)
+            .map(|(id, _)| id)
+            .expect("the bot remains seated");
+
+        for elapsed in 0..60 {
+            if elapsed % 50 == 0 {
+                let now = a.world.state.tick.wrapping_add(1);
+                a.players
+                    .get_mut(&id)
+                    .expect("the bot remains seated")
+                    .schedule(now, 0, now);
+            }
+            a.tick();
+        }
+
+        let lag = &a.players[&id].lag;
+        assert_eq!(lag.input_miss.sampled_ticks(), 0);
+        assert_eq!(lag.input_miss.percent(), 0);
+    }
+
+    #[test]
     fn a_bot_does_not_use_up_a_human_seat() {
         // The declaration's whole point. `max_players` bounds people, and a zone
         // that holds a wide room mostly full of AI has to keep admitting every

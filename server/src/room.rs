@@ -2649,7 +2649,7 @@ impl Room {
             if !p.lag.input_synchronized && p.input_window_ready(now) {
                 p.lag.synchronize_input();
             }
-            if p.lag.input_synchronized {
+            if !p.bot && p.lag.input_synchronized {
                 let missing = !p.received_input(now);
                 p.lag
                     .observe_input(missing, self.lag_policy.input_sample_ticks);
