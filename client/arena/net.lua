@@ -178,7 +178,7 @@ M.invited = {}
 local function fresh_stats(wire)
     return {
         snaps = 0, snap_hz = 0, snap_gap_ms = 0, snap_gap_max_ms = 0,
-        snap_missed = 0, snap_reordered = 0,
+        snap_missed = 0, snap_reordered = 0, snap_stale = 0,
         self_err = 0, self_err_max = 0,
         remote_pos = 0, remote_pos_p95 = 0, remote_pos_max = 0,
         remote_turn = 0, remote_turn_p95 = 0, remote_turn_max = 0,
@@ -303,6 +303,12 @@ local SNAP_TICKS = 5
 local DEBUG_CORRECTION_PX = 64
 local DEBUG_REPORT_MAX = 10
 local debug_reports, last_debug_tick, last_frame_ms = 0, nil, 0
+-- A snapshot further behind than the input history can faithfully replay is
+-- stale state, not authority. Give a recovering QUIC session one second to
+-- produce current state before replacing it with its WebSocket door.
+local REPLAY_MAX_TICKS = 100
+local STALE_RECOVERY_SECONDS = 1
+local stale_snapshot_wait = nil
 -- The room channel trails live play by five seconds by default. Twenty seconds
 -- keeps enough identity to reject that delayed copy without retaining every
 -- event for the life of the connection.
@@ -835,6 +841,32 @@ end
 -- supposed to prevent, wearing the one disguise it cannot catch.
 local SNAP_UNREADABLE = "the zone sent a snapshot this client cannot read"
 
+-- Prepare for a fresh welcome without blanking the old world. The frame loop
+-- sees `have_snapshot` false and freezes that picture while the replacement
+-- socket joins, so it cannot send old tick-stamped inputs into the new seat.
+local function reset_reconciliation()
+    lifecycle = 0
+    settings_generation = 0
+    input_log = {}
+    receipts:reset()
+    death_candidates = {}
+    M.stats.death_pending = 0
+    predicted_tick = 0
+    snap_tick = 0
+    have_snapshot = false
+    stale_snapshot_wait = nil
+    pending_kills, pending_charges = {}, {}
+    seen_kills, seen_charges = {}, {}
+    M.kills = {}
+    M.prizes = {}
+    M.charge_events = {}
+    M.snap_deaths = {}
+    M.snap_blasts = {}
+    M.stats.input_margin, M.stats.rtt, M.stats.lead = 0, 0, 0
+    last_snap_at = nil
+    sim.smooth_reset()
+end
+
 local function adopt_lifecycle(epoch, watching, subject)
     if lifecycle ~= 0 and epoch ~= lifecycle and not serial_after(epoch, lifecycle) then
         return false
@@ -909,6 +941,18 @@ local function on_snapshot(s)
         M.stats.snap_reordered = M.stats.snap_reordered + 1
         return
     end
+    -- Oversized WebTransport snapshots ride reliable unidirectional streams.
+    -- A stalled stream may finish seconds after the state inside it was true.
+    -- Applying it and replaying only the bounded tail is a rewind: build
+    -- c4931f4 caught debts of 505 and 290 ticks becoming 572 px and 469 px
+    -- jumps. Reject before `apply_snapshot` can mutate the world.
+    if not watching and have_snapshot
+        and serial_delta(predicted_tick, sent) > REPLAY_MAX_TICKS then
+        M.stats.snap_stale = M.stats.snap_stale + 1
+        if not stale_snapshot_wait then stale_snapshot_wait = 0 end
+        return
+    end
+    stale_snapshot_wait = nil
     local body = string.sub(s, 33)
 
     -- Watching. No prediction to reconcile, no clock to steer, no inputs to
@@ -1039,7 +1083,8 @@ local function on_snapshot(s)
         M.stats.rtt = math.max(0, M.stats.lead + margin)
     end
 
-    local steps = math.max(0, math.min(100, serial_delta(predicted_tick, from)))
+    local steps = math.max(0,
+        math.min(REPLAY_MAX_TICKS, serial_delta(predicted_tick, from)))
     local t = from
     for _ = 1, steps do
         t = next_tick(t)
@@ -1073,7 +1118,8 @@ local function on_snapshot(s)
     local cooled = not last_debug_tick
         or (serial_after(from, last_debug_tick)
             and u32n(from - last_debug_tick) >= 100)
-    if M.stats.snaps > 3 and err > DEBUG_CORRECTION_PX
+    if not first_flying_snapshot and M.stats.snaps > 3
+        and err > DEBUG_CORRECTION_PX
         and alive_before and alive_after and carrier_before == carrier_after
         and debug_reports < DEBUG_REPORT_MAX and cooled
         and account.report_debug then
@@ -1327,6 +1373,16 @@ function M.tick(dt)
     last_frame_ms = math.max(0, dt * 1000)
     net_clock = net_clock + dt
     transport:tick(dt, M.connected)
+    if stale_snapshot_wait and transport:is_webtransport() then
+        -- A resume frame may carry several seconds in one dt. Count at most a
+        -- tenth so the recovery window is real time after the stale stream was
+        -- observed, not time the page spent asleep before observing it.
+        stale_snapshot_wait = stale_snapshot_wait + math.min(dt, 0.1)
+        if stale_snapshot_wait >= STALE_RECOVERY_SECONDS
+            and transport:restart_on_socket("stale snapshot stream") then
+            reset_reconciliation()
+        end
+    end
 end
 
 -- A connection that never lands, or one that drops, has to be reportable:
@@ -1414,6 +1470,7 @@ function M.connect(url, class, name, on_lost, zone, watch, wt, room)
     -- of the connection belong to whoever this was at this moment.
     M.joined = {name = name, account = account.account or 0, zone = zone or ""}
     debug_reports, last_debug_tick, last_frame_ms = 0, nil, 0
+    stale_snapshot_wait = nil
 
     return transport:connect({
         url = url,

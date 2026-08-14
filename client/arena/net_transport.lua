@@ -8,6 +8,10 @@ M.__index = M
 local WT_PATIENCE = 3
 local WT_SETTLE = 5
 local QUIET_LIMIT = 8
+-- Give the arena that owned the abandoned QUIC session time to release its
+-- seat before the socket presents the same account again. Count frames rather
+-- than trusting one resume frame's dt, which may contain the whole suspension.
+local SOCKET_RESTART_DELAY = 0.5
 
 local function wtx()
     return rawget(_G, "webtransport")
@@ -26,6 +30,7 @@ function M.new()
         reason = nil,
         join = nil,
         generation = 0,
+        socket_restart = nil,
     }, M)
 end
 
@@ -73,6 +78,7 @@ function M:hangup()
     self.pending = nil
     self.settling = nil
     self.quiet = nil
+    self.socket_restart = nil
 end
 
 -- Make every callback still in flight stale before an explicit departure.
@@ -122,6 +128,7 @@ end
 -- Other zones still get their own attempt.
 function M:fall_back()
     if self.join and self.join.wt ~= "" then self.avoid[self.join.wt] = true end
+    self.socket_restart = nil
     self.pending = nil
     self.settling = nil
     self.wt_live = false
@@ -132,6 +139,27 @@ function M:fall_back()
     if not self:dial_ws() then
         self.callbacks.lost("that address is not a zone URL")
     end
+end
+
+-- An established QUIC session can keep completing old reliable snapshot
+-- streams after its datagram path has stopped being useful. Leave that
+-- session, remember not to choose its door again, and re-present the same join
+-- on the socket after a short cleanup window. The facade freezes prediction
+-- until the fresh welcome and snapshot arrive.
+function M:restart_on_socket(reason)
+    if not self.wt_live or not self.join then return false end
+    if self.join.wt ~= "" then self.avoid[self.join.wt] = true end
+    self.reason = reason or "stale WebTransport snapshots"
+    self.pending = nil
+    self.settling = nil
+    self.quiet = nil
+    self.wt_live = false
+    self.socket_restart = 0
+    self.callbacks.progress()
+    self.generation = self.generation + 1
+    local extension = wtx()
+    if extension then pcall(extension.disconnect) end
+    return true
 end
 
 function M:dial_wt(url)
@@ -172,6 +200,7 @@ end
 function M:connect(join)
     self.join = join
     self.tried = false
+    self.socket_restart = nil
     local extension = wtx()
     if join.wt and join.wt ~= "" and extension and extension.supported()
         and not self.avoid[join.wt] then
@@ -208,11 +237,21 @@ function M:info()
         offered = door ~= "",
         tried = self.tried,
         reason = self.reason,
-        trying = self.pending ~= nil or self.settling ~= nil,
+        trying = self.pending ~= nil or self.settling ~= nil
+            or self.socket_restart ~= nil,
     }
 end
 
 function M:tick(dt, connected)
+    if self.socket_restart then
+        self.socket_restart = self.socket_restart + math.min(dt, 0.1)
+        if self.socket_restart >= SOCKET_RESTART_DELAY then
+            self.socket_restart = nil
+            if not self:dial_ws() then
+                self.callbacks.lost("that address is not a zone URL")
+            end
+        end
+    end
     if self.pending then
         self.pending = self.pending + dt
         if self.pending >= WT_PATIENCE then self:fall_back() end

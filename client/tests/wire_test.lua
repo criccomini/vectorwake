@@ -86,7 +86,7 @@ _G.websocket = {
     send = function(_, data) ws.sent[#ws.sent + 1] = data end,
 }
 
-local wt = {dialled = 0, sent = {}, unsent = {}, on_connect = nil}
+local wt = {dialled = 0, disconnects = 0, sent = {}, unsent = {}, on_connect = nil}
 _G.webtransport = {
     EVENT_CONNECTED = 1,
     EVENT_MESSAGE = 2,
@@ -100,7 +100,7 @@ _G.webtransport = {
         if wt.on_connect then wt.on_connect(cb) end
         return true
     end,
-    disconnect = function() end,
+    disconnect = function() wt.disconnects = wt.disconnects + 1 end,
     send = function(data) wt.sent[#wt.sent + 1] = data end,
     send_unreliable = function(data) wt.unsent[#wt.unsent + 1] = data end,
 }
@@ -118,7 +118,7 @@ package.loaded["arena.account"] = account_stub
 local function fresh_net()
     package.loaded["arena.net"] = nil
     ws.dialled, ws.sent, ws.cb = 0, {}, nil
-    wt.dialled, wt.sent, wt.unsent, wt.cb = 0, {}, {}, nil
+    wt.dialled, wt.disconnects, wt.sent, wt.unsent, wt.cb = 0, 0, {}, {}, nil
     own_x, own_y, own_alive = 0, 0, 1
     next_x, next_y, next_alive = nil, nil, nil
     debug_reports = {}
@@ -757,6 +757,43 @@ check("a synchronous dial failure returns false", not started,
 check("and reports its reason once", why == "that address is not a zone URL",
       tostring(why))
 websocket.connect = ws_connect
+
+-- A reliable QUIC snapshot stream may finish seconds after the world inside
+-- it was current. It cannot be reconciled once the client has predicted past
+-- the replay ceiling: applying it would throw away the older inputs and move
+-- the ship backward. Give that session a moment to produce something current,
+-- then carry the same join over the socket if it cannot.
+net = fresh_net()
+net.connect("wss://zone/a1", 0, "pilot", function() end, "chaos", false,
+            "https://zone:9443", 2)
+wt.cb(nil, {event = webtransport.EVENT_CONNECTED})
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
+            message = welcome(3, nil, nil, 2)})
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = snapshot(3, 7000)})
+local disconnects_before_stale = wt.disconnects
+for _ = 1, 150 do net.step(0) end
+local before_stale = tick
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = snapshot(3, 7005)})
+check("a snapshot beyond the replay ceiling changes no world state",
+      tick == before_stale and net.stats.snaps == 1
+      and net.stats.snap_stale == 1,
+      "tick " .. tick .. ", snaps " .. net.stats.snaps)
+for _ = 1, 11 do net.tick(0.1) end
+check("a stale stream gets one second to recover",
+      wt.disconnects == disconnects_before_stale + 1 and ws.dialled == 0)
+for _ = 1, 6 do net.tick(0.1) end
+check("then the same join moves to the socket",
+      ws.dialled == 1 and net.stats.wire == "ws"
+      and net.transport().reason == "stale snapshot stream")
+ws.cb(nil, ws.handle, {event = websocket.EVENT_CONNECTED})
+check("the replacement socket sends a fresh join", #ws.sent == 1
+      and string.byte(ws.sent[1], 1) == 1)
+ws.cb(nil, ws.handle, {event = websocket.EVENT_MESSAGE,
+                       message = welcome(3, nil, nil, 2)})
+ws.cb(nil, ws.handle, {event = websocket.EVENT_MESSAGE,
+                       message = snapshot(3, 7160)})
+check("the replacement starts from its own fresh snapshot",
+      net.connected and net.stats.snaps == 2 and tick == 7168)
 
 -- A correction larger than the local snap threshold is evidence only while
 -- the same living hull continues across it. File the state around that moment
