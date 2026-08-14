@@ -189,7 +189,7 @@ local function fresh_stats(wire)
         input_margin = 0, input_holes = 0, rtt = 0, lead = 0,
         server_rtt_ms = 0, jitter_ms = 0,
         down_loss = 0, combat_loss = 0, up_loss = 0,
-        lag_state = 0, weapon_suppression = 0,
+        lag_state = 0,
         rx = 0, tx = 0, msgs = 0, wire = wire or "ws",
     }
 end
@@ -326,14 +326,13 @@ local function input_received(tick)
     return receipts:input_received(tick)
 end
 
-local function lag_telemetry(ping, jitter, down, combat, up, state, weapons)
+local function lag_telemetry(ping, jitter, down, combat, up, state)
     M.stats.server_rtt_ms = ping
     M.stats.jitter_ms = jitter
     M.stats.down_loss = down
     M.stats.combat_loss = combat
     M.stats.up_loss = up
     M.stats.lag_state = state
-    M.stats.weapon_suppression = weapons
     local parts = {}
     if math.floor(state / 4) % 2 == 1 then
         parts[#parts + 1] = "moving to spectator"
@@ -341,11 +340,8 @@ local function lag_telemetry(ping, jitter, down, combat, up, state, weapons)
     if state % 2 == 1 then
         parts[#parts + 1] = "objectives locked"
     end
-    if weapons > 0 then
-        parts[#parts + 1] = weapons .. "% weapons suppressed"
-    end
     M.lag_notice = #parts > 0
-        and ("CONNECTION QUALITY: " .. table.concat(parts, " / ")) or ""
+        and ("INPUT STREAM: " .. table.concat(parts, " / ")) or ""
 end
 
 local function note_snapshot(sent, seq)
@@ -951,8 +947,7 @@ local function on_snapshot(s)
         (string.byte(s, 24) or 0) + (string.byte(s, 25) or 0) * 256,
         (string.byte(s, 26) or 0) + (string.byte(s, 27) or 0) * 256,
         string.byte(s, 28) or 0, string.byte(s, 29) or 0,
-        string.byte(s, 30) or 0, string.byte(s, 31) or 0,
-        string.byte(s, 32) or 0)
+        string.byte(s, 30) or 0, string.byte(s, 31) or 0)
     local holes = 0
     for behind = 1, 31 do
         local tick = u32n(receipts.input_ack - behind)
@@ -1158,8 +1153,7 @@ local function on_message(s)
             (string.byte(s, 4) or 0) + (string.byte(s, 5) or 0) * 256,
             (string.byte(s, 6) or 0) + (string.byte(s, 7) or 0) * 256,
             string.byte(s, 8) or 0, string.byte(s, 9) or 0,
-            string.byte(s, 10) or 0, string.byte(s, 2) or 0,
-            string.byte(s, 3) or 0)
+            string.byte(s, 10) or 0, string.byte(s, 2) or 0)
     elseif kind == S2C_YIELD then
         -- A bot yields to make room, a watcher leaves with a draining arena,
         -- and a connection beyond the final lag threshold leaves when the

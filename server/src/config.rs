@@ -174,40 +174,21 @@ pub struct ArenaConfig {
     pub lag: LagConfig,
 }
 
-/// The lag thresholds used by the authoritative arena.
+/// Connection telemetry and stale-input limits used by the authoritative arena.
 ///
-/// A metric may first make objectives unavailable, then suppress a growing
-/// share of weapon inputs, and finally move a persistently unplayable pilot to
-/// the stands. Missed input deadlines never drive weapon suppression because
-/// those misses have already removed the player's actions before they reach
-/// the server.
+/// Round trip, jitter and snapshot loss are diagnostic. Gameplay restrictions
+/// depend only on input packets the server has or has not received.
 #[derive(Deserialize, Clone, Debug)]
 #[serde(default, deny_unknown_fields)]
 pub struct LagConfig {
+    /// Rolling window for diagnostic path measurements.
     pub sample_ticks: u32,
-    /// Exact current window for missed input deadlines. Kept short so a
-    /// recovered browser is judged by the stream it is sending now.
+    /// Exact current window reported as missed input deadlines.
     pub input_sample_ticks: u32,
-    pub recover_ticks: u32,
-    pub spectate_ticks: u32,
-    pub no_flags_ping_ms: u32,
-    pub weapon_start_ping_ms: u32,
-    pub weapon_full_ping_ms: u32,
-    pub spectate_ping_ms: u32,
-    pub no_flags_jitter_ms: u32,
-    pub weapon_start_jitter_ms: u32,
-    pub weapon_full_jitter_ms: u32,
-    pub spectate_jitter_ms: u32,
-    pub no_flags_down_loss_pct: u32,
-    pub weapon_start_down_loss_pct: u32,
-    pub weapon_full_down_loss_pct: u32,
-    pub spectate_down_loss_pct: u32,
-    pub no_flags_combat_loss_pct: u32,
-    pub weapon_start_combat_loss_pct: u32,
-    pub weapon_full_combat_loss_pct: u32,
-    pub spectate_combat_loss_pct: u32,
-    pub no_flags_up_loss_pct: u32,
-    pub spectate_up_loss_pct: u32,
+    /// Time outside the combat lane before its diagnostic loss sample expires.
+    pub combat_idle_ticks: u32,
+    /// Consecutive ticks without any input packet before a pilot sits out.
+    pub spectate_silence_ticks: u32,
 }
 
 impl Default for LagConfig {
@@ -215,26 +196,8 @@ impl Default for LagConfig {
         LagConfig {
             sample_ticks: 500,
             input_sample_ticks: 50,
-            recover_ticks: 500,
-            spectate_ticks: 1_500,
-            no_flags_ping_ms: 600,
-            weapon_start_ping_ms: 750,
-            weapon_full_ping_ms: 1_000,
-            spectate_ping_ms: 1_200,
-            no_flags_jitter_ms: 150,
-            weapon_start_jitter_ms: 200,
-            weapon_full_jitter_ms: 400,
-            spectate_jitter_ms: 500,
-            no_flags_down_loss_pct: 20,
-            weapon_start_down_loss_pct: 25,
-            weapon_full_down_loss_pct: 50,
-            spectate_down_loss_pct: 60,
-            no_flags_combat_loss_pct: 15,
-            weapon_start_combat_loss_pct: 20,
-            weapon_full_combat_loss_pct: 40,
-            spectate_combat_loss_pct: 50,
-            no_flags_up_loss_pct: 25,
-            spectate_up_loss_pct: 60,
+            combat_idle_ticks: 500,
+            spectate_silence_ticks: 1_500,
         }
     }
 }

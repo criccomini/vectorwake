@@ -129,37 +129,15 @@ spawn_prizes = 30
 bounty_per_kill = 3
 points_per_flag = 100
 
-# Connection quality is measured by the arena from selective receipt windows.
-# Ordinary and nearby-combat snapshot loss have separate thresholds because a
-# connection may carry the base stream while dropping the extra fight updates.
-# Missed input deadlines may deny flags or force spectating, but they never
-# suppress weapons because the missing input already did that. Path quality
-# uses the five-second sample below. Input deadlines use a current half-second
-# window so a recovered browser is not punished for an old pause. Times are
-# milliseconds or ticks; loss values are percentages.
+# Connection diagnostics come from selective receipt windows. They describe
+# round trip, jitter and snapshot delivery, but never restrict gameplay. The
+# arena releases stale controls after one second without an input packet and
+# moves the pilot to the stands after the longer silence below.
 [arena.lag]
 sample_ticks = 500
 input_sample_ticks = 50
-recover_ticks = 500
-spectate_ticks = 1500
-no_flags_ping_ms = 600
-weapon_start_ping_ms = 750
-weapon_full_ping_ms = 1000
-spectate_ping_ms = 1200
-no_flags_jitter_ms = 150
-weapon_start_jitter_ms = 200
-weapon_full_jitter_ms = 400
-spectate_jitter_ms = 500
-no_flags_down_loss_pct = 20
-weapon_start_down_loss_pct = 25
-weapon_full_down_loss_pct = 50
-spectate_down_loss_pct = 60
-no_flags_combat_loss_pct = 15
-weapon_start_combat_loss_pct = 20
-weapon_full_combat_loss_pct = 40
-spectate_combat_loss_pct = 50
-no_flags_up_loss_pct = 25
-spectate_up_loss_pct = 60
+combat_idle_ticks = 500
+spectate_silence_ticks = 1500
 
 # Per-hull tuning, in settings-file units. Name the hull and set only what you
 # want to change.

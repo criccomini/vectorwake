@@ -191,10 +191,9 @@ end
 check("the first snapshot seeds a coherent prediction lead", startup_complete,
       "packets " .. #wt.unsent .. ", lead " .. net.stats.lead)
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
-            message = string.char(16, 3, 50, 120, 0, 25, 0, 20, 30, 10)})
-check("server lag policy is visible to the pilot",
-      net.lag_notice:find("objectives locked", 1, true)
-      and net.lag_notice:find("50%% weapons suppressed"))
+            message = string.char(16, 1, 0, 120, 0, 25, 0, 20, 30, 10)})
+check("stale input policy is visible to the pilot",
+      net.lag_notice == "INPUT STREAM: objectives locked")
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
             message = string.char(16, 0, 0, 80, 0, 5, 0, 2, 3, 4)})
 check("the lag notice clears when policy recovers", net.lag_notice == "")

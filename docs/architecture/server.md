@@ -132,25 +132,20 @@ the read loop rather than anything structural.
 
 ## Lag response
 
-Lifted almost intact from ASSS, because it encodes operational experience we do
-not have. The server measures average round trip, jitter, ordinary snapshot loss,
-nearby-combat snapshot loss, and upstream input loss per player. Each zone sets
-thresholds for objective pickup, proportional weapon suppression, and forced
-spectating. The maximum weapon fraction across round trip and the two downlink
-loss classes wins. Upstream loss never suppresses weapons, since it already
-hurts the player who has it.
+The server measures average round trip, jitter, ordinary snapshot loss,
+nearby-combat snapshot loss, and missed input deadlines per player. These are
+diagnostics. A browser may discard an obsolete snapshot before the game reads
+it, and a modified client may forge a snapshot receipt, so none of these
+measurements decides whether a pilot may shoot or take an objective.
 
 The measurements use selective acknowledgement windows in both directions.
 Round trip compares a server snapshot tick with the server tick where its
-acknowledgement arrives, so no client clock enters the policy. A five-second
-sample floor, five-second recovery period, and fifteen-second severe hold are
-the defaults. A room with no spectator capacity disconnects a pilot who reaches
-the final threshold rather than leaving an unplayable hull in the match.
-
-One change from the original: when the server suppresses something, it tells the
-client. ASSS clears a player's antiwarp bit inside a no-antiwarp region while
-the player's own HUD still shows antiwarp active, and the manual admits this is
-confusing. Suppression here is visible.
+acknowledgement arrives, so no client clock enters the diagnostic. Gameplay
+uses a simpler fact that the server observes directly: when the last valid
+input packet arrived. After 250 ms of silence it releases weapon buttons. After
+one second it releases every held control and prevents objective pickup. A new
+packet clears the objective restriction immediately. Fifteen seconds of silence
+moves the pilot to the stands, or disconnects them if the stands are full.
 
 ## Zone modules
 
@@ -247,7 +242,7 @@ twenty-five seconds, measured, and the bound holds it to a tenth of that. Report
 depth is the worst-off connection in the process, because that is the one whose
 player is losing frames. Queue drops and gameplay lag actions are separate
 metrics: `vw_send_dropped_total` reports transport backpressure, while
-`vw_lag_actions_total` reports objective, weapon, and spectator restrictions.
+`vw_lag_actions_total` reports objective and spectator restrictions.
 
 ## Open questions
 

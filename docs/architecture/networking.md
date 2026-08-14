@@ -162,7 +162,7 @@ snapshot_header {
   u8  combat_loss_percent
   u8  upstream_loss_percent
   u8  lag_policy_state
-  u8  weapon_suppression_percent
+  u8  reserved_zero
 }
 simulation_pack {
   u32 tick
@@ -459,9 +459,13 @@ loss. Each observation is weighted by the server ticks it represents, so a
 five-tick ordinary snapshot, a two-tick combat snapshot, and a one-tick input
 all fill the configured sample window in the same wall-clock time.
 
-The response is the four-metric, four-threshold model described in
-[server.md](server.md). It stays in the server rather than in the simulation,
-because it is policy and policy is configuration.
+Those measurements are debug information, not authority. Browsers may coalesce
+obsolete snapshots before the game processes them, and the client writes the
+receipt bitmap, so using it for punishment hurts honest players without stopping
+a modified client. The server watches input arrival itself. It releases stale
+buttons, blocks objective pickup after one second without input, and eventually
+moves a silent pilot to the stands. A fresh input packet clears the objective
+restriction immediately.
 
 Clock sync is explicit, and it needs no wall-clock timestamps. Every snapshot
 header carries the newest input tick the server has received from that client.

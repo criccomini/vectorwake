@@ -745,7 +745,7 @@ frame({stats = {wire = "wt", down_loss = 0, combat_loss = 22, up_loss = 0}})
 check("the debug readout labels each snapshot path without overlap",
       says("D 0%  F 22%"), drawn())
 check("missed input deadlines are not labeled as packet loss",
-      says("INPUT MISS") and says("0 holes / 0% weapons"), drawn())
+      says("INPUT MISS") and says("0 holes"), drawn())
 ui.debug = false
 ui.inspect = nil
 

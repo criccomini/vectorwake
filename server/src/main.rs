@@ -1113,7 +1113,6 @@ mod tests {
             last_input_at: 100,
             combat_until: None,
             lag: LagTracker::waiting_for_input(),
-            lag_rng: 1,
             name: "probe".into(),
             rid: "probe".into(),
             bot: false,
@@ -1370,110 +1369,77 @@ mod tests {
     }
 
     #[test]
-    fn input_misses_wait_for_synchronization_and_a_full_window() {
+    fn input_misses_are_diagnostic_after_synchronization() {
         let cfg = config::LagConfig {
-            sample_ticks: 5,
             input_sample_ticks: 5,
-            no_flags_up_loss_pct: 10,
             ..Default::default()
         };
         let mut lag = LagTracker::waiting_for_input();
         assert!(
-            lag.tick(&cfg, false, 10_000).decision == LagDecision::default(),
+            lag.tick(&cfg, false, 10_000, 0).decision == LagDecision::default(),
             "seat age alone cannot turn loading time into input loss"
         );
-        lag.begin_input(0);
-
-        for now in 1..5 {
-            let update = lag.tick(&cfg, false, now);
-            assert!(update.decision == LagDecision::default());
-            assert_eq!(lag.input_miss.sampled_ticks(), 0);
-        }
-        assert!(lag.tick(&cfg, false, 5).decision.no_flags);
 
         lag.synchronize_input();
         assert!(lag.input_synchronized);
         assert_eq!(lag.input_miss.sampled_ticks(), 0);
-        assert!(lag.decision == LagDecision::default());
-
-        for now in 6..10 {
+        for now in 1..=5 {
             lag.observe_input(true, cfg.input_sample_ticks);
             assert!(
-                lag.tick(&cfg, false, now).decision == LagDecision::default(),
-                "a partial input window cannot restrict a fresh stream"
+                lag.tick(&cfg, false, now, 0).decision == LagDecision::default(),
+                "missed tick deadlines are telemetry, not punishment"
             );
         }
-        lag.observe_input(true, cfg.input_sample_ticks);
-        assert!(lag.tick(&cfg, false, 10).decision.no_flags);
-    }
-
-    #[test]
-    fn recovered_inputs_clear_their_own_restriction_without_path_delay() {
-        let cfg = config::LagConfig {
-            sample_ticks: 1,
-            input_sample_ticks: 4,
-            recover_ticks: 100,
-            no_flags_up_loss_pct: 25,
-            ..Default::default()
-        };
-        let mut lag = LagTracker::default();
-
-        for now in 1..=4 {
-            lag.observe_input(true, cfg.input_sample_ticks);
-            lag.tick(&cfg, false, now);
-        }
-        assert!(lag.decision.no_flags);
         assert_eq!(lag.input_miss.percent(), 100);
-
-        for now in 5..8 {
-            lag.observe_input(false, cfg.input_sample_ticks);
-            assert!(
-                lag.tick(&cfg, false, now).decision.no_flags,
-                "a current miss still holds the input restriction"
-            );
-        }
-        lag.observe_input(false, cfg.input_sample_ticks);
-        assert!(lag.tick(&cfg, false, 8).decision == LagDecision::default());
-        assert_eq!(lag.input_miss.percent(), 0);
-        assert_eq!(
-            lag.healthy_ticks, 8,
-            "input recovery does not wait for the path recovery timer"
-        );
     }
 
     #[test]
-    fn lag_policy_uses_downlink_quality_for_weapons_but_not_input_misses() {
-        let mut cfg = config::LagConfig {
-            sample_ticks: 1,
-            input_sample_ticks: 1,
-            weapon_start_down_loss_pct: 10,
-            weapon_full_down_loss_pct: 20,
-            weapon_start_combat_loss_pct: 10,
-            weapon_full_combat_loss_pct: 20,
-            no_flags_up_loss_pct: 10,
+    fn input_silence_restricts_then_recovers_immediately() {
+        let cfg = config::LagConfig {
+            spectate_silence_ticks: 1_500,
             ..Default::default()
         };
-        cfg.weapon_start_ping_ms = u32::MAX;
-        cfg.weapon_full_ping_ms = u32::MAX;
         let mut lag = LagTracker::default();
-        lag.observe_input(true, cfg.input_sample_ticks);
-        let upstream = lag.tick(&cfg, false, 1).decision;
-        assert!(
-            upstream.no_flags,
-            "missed input deadlines may deny objectives"
-        );
-        assert_eq!(upstream.weapon_percent, 0, "it must not suppress weapons");
 
-        lag.down_loss.value = 0.20;
-        let downstream = lag.tick(&cfg, false, 2).decision;
-        assert_eq!(downstream.weapon_percent, 100);
+        assert!(
+            lag.tick(&cfg, false, 1, INPUT_RELEASE_TICKS - 1).decision == LagDecision::default()
+        );
+        assert!(
+            lag.tick(&cfg, false, 2, INPUT_RELEASE_TICKS)
+                .decision
+                .no_flags
+        );
+        assert!(
+            lag.tick(&cfg, false, 3, 0).decision == LagDecision::default(),
+            "one fresh packet clears the stale-input restriction"
+        );
+        let severe = lag
+            .tick(&cfg, false, 4, cfg.spectate_silence_ticks)
+            .decision;
+        assert!(severe.no_flags && severe.spectate);
     }
 
     #[test]
-    fn combat_loss_applies_only_while_the_combat_lane_is_active() {
+    fn path_measurements_never_restrict_gameplay() {
+        let cfg = config::LagConfig::default();
+        let mut lag = LagTracker::default();
+        lag.rtt_ticks = 500.0;
+        lag.jitter_ticks = 500.0;
+        lag.down_loss.value = 1.0;
+        lag.combat_loss.value = 1.0;
+        lag.combat_active = true;
+
+        assert!(
+            lag.tick(&cfg, false, 1, 0).decision == LagDecision::default(),
+            "RTT, jitter and snapshot loss are diagnostics only"
+        );
+    }
+
+    #[test]
+    fn combat_loss_is_reported_only_while_the_combat_lane_is_active() {
         let cfg = config::LagConfig {
             sample_ticks: 1,
-            recover_ticks: 3,
+            combat_idle_ticks: 3,
             ..Default::default()
         };
         let mut lag = LagTracker::default();
@@ -1481,9 +1447,7 @@ mod tests {
         lag.combat_loss.sampled_ticks = 1;
         lag.sent_snapshot(1, true, cfg.sample_ticks);
 
-        let restricted = lag.tick(&cfg, false, 1).decision;
-        assert!(restricted.no_flags);
-        assert_eq!(restricted.weapon_percent, 8);
+        assert!(lag.tick(&cfg, false, 1, 0).decision == LagDecision::default());
         assert_eq!(lag.combat_percent(), 22);
 
         lag.sent_snapshot(2, false, cfg.sample_ticks);
@@ -1492,9 +1456,9 @@ mod tests {
             0,
             "idle combat loss is not current loss"
         );
-        assert!(lag.tick(&cfg, false, 2).decision == restricted);
-        assert!(lag.tick(&cfg, false, 3).decision == restricted);
-        assert!(lag.tick(&cfg, false, 4).decision == LagDecision::default());
+        assert!(lag.tick(&cfg, false, 2, 0).decision == LagDecision::default());
+        assert!(lag.tick(&cfg, false, 3, 0).decision == LagDecision::default());
+        assert!(lag.tick(&cfg, false, 4, 0).decision == LagDecision::default());
         assert_eq!(lag.combat_loss.percent(), 0, "the stale sample expires");
 
         for tick in 3..=34 {
@@ -1512,7 +1476,7 @@ mod tests {
     }
 
     #[test]
-    fn ordinary_loss_does_not_restrict_the_active_combat_lane() {
+    fn ordinary_loss_remains_diagnostic_on_both_lanes() {
         let cfg = config::LagConfig {
             sample_ticks: 1,
             ..Default::default()
@@ -1522,12 +1486,11 @@ mod tests {
         lag.down_loss.sampled_ticks = 3;
         lag.sent_snapshot(1, true, cfg.sample_ticks);
 
-        assert!(lag.tick(&cfg, false, 1).decision == LagDecision::default());
+        assert!(lag.tick(&cfg, false, 1, 0).decision == LagDecision::default());
 
         lag.sent_snapshot(2, false, cfg.sample_ticks);
-        let restricted = lag.tick(&cfg, false, 2).decision;
-        assert!(restricted.no_flags, "ordinary loss applies on its own lane");
-        assert_eq!(restricted.weapon_percent, 32);
+        assert_eq!(lag.down_loss.percent(), 33);
+        assert!(lag.tick(&cfg, false, 2, 0).decision == LagDecision::default());
     }
 
     #[test]
@@ -1569,40 +1532,34 @@ mod tests {
     }
 
     #[test]
-    fn full_lag_suppression_removes_weapon_inputs_before_the_step() {
+    fn downlink_diagnostics_do_not_suppress_weapon_inputs() {
         let mut a = room_with_teams("teams = [\"Keel\"]\n");
-        a.lag_policy.sample_ticks = 1;
-        a.lag_policy.weapon_start_down_loss_pct = 1;
-        a.lag_policy.weapon_full_down_loss_pct = 2;
-        a.lag_policy.spectate_ticks = u32::MAX;
         let (_ship, id, _rx) = seat_rx(&mut a, "lossy");
         let p = a.players.get_mut(&id).expect("pilot remains seated");
         p.lag.synchronize_input();
         p.lag.down_loss.value = 1.0;
+        p.lag.combat_loss.value = 1.0;
+        p.lag.rtt_ticks = 500.0;
+        p.lag.jitter_ticks = 500.0;
         p.buttons = sim::BTN_FIRE;
 
         a.tick();
 
         assert_eq!(
-            a.world.state.weapon_count, 0,
-            "the shot never enters the sim"
-        );
-        assert_eq!(
-            a.players[&id].buttons,
-            sim::BTN_FIRE,
-            "the held input survives"
+            a.world.state.weapon_count, 1,
+            "path diagnostics must not remove the shot"
         );
     }
 
     #[test]
     fn lagged_pilots_cannot_take_flags() {
         let mut a = room_with_teams("teams = [\"Keel\"]\n");
-        a.lag_policy.sample_ticks = 1;
-        a.lag_policy.input_sample_ticks = 1;
-        a.lag_policy.spectate_ticks = u32::MAX;
+        a.lag_policy.spectate_silence_ticks = u32::MAX;
         let (ship, id, _rx) = seat_rx(&mut a, "lossy");
+        let stale_at = a.world.state.tick.wrapping_sub(INPUT_RELEASE_TICKS);
         let p = a.players.get_mut(&id).unwrap();
         p.lag.synchronize_input();
+        p.last_input_at = stale_at;
         let sh = a.world.state.ships[ship as usize];
         let flag = &mut a.world.state.flags[0];
         flag.active = 1;
@@ -1624,12 +1581,9 @@ mod tests {
     }
 
     #[test]
-    fn sustained_severe_lag_moves_a_pilot_to_the_stands() {
+    fn sustained_input_silence_moves_a_pilot_to_the_stands() {
         let mut a = room_with_teams("teams = [\"Keel\"]\n");
-        a.lag_policy.sample_ticks = 1;
-        a.lag_policy.input_sample_ticks = 1;
-        a.lag_policy.spectate_ticks = 1;
-        a.lag_policy.spectate_up_loss_pct = 1;
+        a.lag_policy.spectate_silence_ticks = 1;
         let (_ship, id, _rx) = seat_rx(&mut a, "lossy");
         let p = a.players.get_mut(&id).unwrap();
         p.lag.synchronize_input();

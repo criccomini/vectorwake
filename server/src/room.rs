@@ -63,10 +63,6 @@ pub(crate) struct Player {
     /// This stops the cadence flipping at the exact distance boundary.
     pub(crate) combat_until: Option<u32>,
     pub(crate) lag: LagTracker,
-    /// Server-secret stream for proportional weapon suppression. It stays out
-    /// of the deterministic simulation and cannot be scheduled around by a
-    /// client that knows the room tick.
-    pub(crate) lag_rng: u64,
     pub(crate) name: String,
     /// What this pilot's rating movement is filed under. See `Seat::rid`.
     pub(crate) rid: rating::Id,
@@ -108,6 +104,12 @@ pub(crate) const INPUT_SYNC_LEAD: u32 = 2;
 /// under the cap this is never near full; it exists so a client that floods
 /// cannot grow the arena's memory.
 pub(crate) const INPUT_QUEUE_MAX: usize = 128;
+
+/// Silence limits for held controls. A brief gap keeps ordinary held movement
+/// intact, but a suspended client cannot keep firing or drift through an
+/// objective forever.
+const STALE_WEAPON_BUTTONS: u16 =
+    sim::BTN_FIRE | sim::BTN_BOMB | sim::BTN_USE | sim::BTN_MINE | sim::BTN_MULTI;
 
 /// What a watcher is looking at.
 /// A connection with a seat in the roster and no ship in the simulation.
@@ -244,15 +246,6 @@ impl Player {
         (0..=INPUT_SYNC_LEAD).all(|ahead| self.received_input(now.wrapping_add(ahead)))
     }
 
-    pub(crate) fn suppress_weapon(&mut self, percent: u8) -> bool {
-        let mut x = self.lag_rng;
-        x ^= x << 13;
-        x ^= x >> 7;
-        x ^= x << 17;
-        self.lag_rng = x;
-        x % 100 < percent as u64
-    }
-
     /// File an input for the tick it names.
     ///
     /// An input for a tick already simulated is applied now instead. That is
@@ -322,19 +315,23 @@ impl Player {
             self.applied_input = true;
             self.pending.remove(&t);
         }
-        let silent = if serial_at_or_before(self.last_input_at, now) {
-            serial_elapsed(now, self.last_input_at)
-        } else {
-            0
-        };
-        if silent >= 25 {
-            self.buttons &= !LAG_WEAPON_BUTTONS;
+        let silent = self.input_silence(now);
+        if silent >= INPUT_WEAPON_RELEASE_TICKS {
+            self.buttons &= !STALE_WEAPON_BUTTONS;
         }
-        if silent >= 100 {
+        if silent >= INPUT_RELEASE_TICKS {
             self.buttons = 0;
             self.pending.clear();
         }
         self.buttons
+    }
+
+    pub(crate) fn input_silence(&self, now: u32) -> u32 {
+        if serial_at_or_before(self.last_input_at, now) {
+            serial_elapsed(now, self.last_input_at)
+        } else {
+            0
+        }
     }
 }
 
@@ -1629,7 +1626,6 @@ impl Room {
                 } else {
                     LagTracker::waiting_for_input()
                 },
-                lag_rng: rand::random::<u64>().max(1),
                 name,
                 rid,
                 bot,
@@ -2650,9 +2646,6 @@ impl Room {
         let mut no_flags = [false; sim::MAX_SHIPS];
         let mut spectate = Vec::new();
         for (id, p) in self.players.iter_mut() {
-            if p.input_seen {
-                p.lag.begin_input(now);
-            }
             if !p.lag.input_synchronized && p.input_window_ready(now) {
                 p.lag.synchronize_input();
             }
@@ -2661,7 +2654,8 @@ impl Room {
                 p.lag
                     .observe_input(missing, self.lag_policy.input_sample_ticks);
             }
-            let update = p.lag.tick(&self.lag_policy, p.bot, now);
+            let input_silence = p.input_silence(now);
+            let update = p.lag.tick(&self.lag_policy, p.bot, now, input_silence);
             if update.notify {
                 let _ = p.tx.try_send(Message::Binary(p.lag.notice()));
             }
@@ -2672,13 +2666,7 @@ impl Room {
             if update.decision.spectate {
                 spectate.push(*id);
             }
-            let mut buttons = p.buttons_at(now);
-            if update.decision.weapon_percent > 0 && buttons & LAG_WEAPON_BUTTONS != 0 {
-                if p.suppress_weapon(update.decision.weapon_percent) {
-                    buttons &= !LAG_WEAPON_BUTTONS;
-                    metrics::LAG_ACTIONS.inc();
-                }
-            }
+            let buttons = p.buttons_at(now);
             inputs.push(sim::sim_input {
                 ship: p.ship,
                 buttons,

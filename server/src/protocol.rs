@@ -1,4 +1,4 @@
-use crate::{directory, sim};
+use crate::directory;
 
 // Client to server
 /// `[C2S_JOIN, class, protocol, flags, zone_len, name_len, room] zone name token`
@@ -36,8 +36,6 @@ pub(crate) const C2S_JOIN_HEADER: usize = 7;
 /// window gives the arena downlink loss and round-trip samples on its own clock.
 pub(crate) const C2S_INPUT: u8 = 2;
 pub(crate) const INPUT_HISTORY: usize = 4;
-pub(crate) const LAG_WEAPON_BUTTONS: u16 =
-    sim::BTN_FIRE | sim::BTN_BOMB | sim::BTN_USE | sim::BTN_MINE | sim::BTN_MULTI;
 
 pub(crate) fn input_message(
     lifecycle: u32,
@@ -222,7 +220,7 @@ pub(crate) const S2C_PRIZE: u8 = 14;
 /// inventory count. Sent only to views whose fixed fairness circle contains
 /// the firing ship; x and y are signed Q8 positions.
 pub(crate) const S2C_CHARGE: u8 = 15;
-/// `[S2C_LAG, state, weapon percent, ping, jitter, three loss rates]`.
+/// `[S2C_LAG, state, reserved zero, ping, jitter, three diagnostics]`.
 /// The arena sends it on policy changes and periodically while a restriction
 /// remains active, so a player is never left guessing why an action was denied.
 pub(crate) const S2C_LAG: u8 = 16;

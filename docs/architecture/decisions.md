@@ -2014,6 +2014,9 @@ rewriting coordinates outside the simulation.
 
 ## 48. Loss repair, lag policy, and combat presentation have separate budgets
 
+The gameplay enforcement in this decision was replaced by decision 49. The
+selective repair, measurements, and combat presentation remain.
+
 **Decided:** protocol 12 uses selective acknowledgements for input and snapshot
 delivery. The arena measures each pilot's round trip, ordinary snapshot loss,
 combat-lane loss, and missed input deadlines. Zone-defined thresholds may deny
@@ -2077,3 +2080,32 @@ metrics report the resulting egress.
 selection or add a state format that can apply partial updates without deleting
 the rest of the lawful view. Do not reduce the fairness circle or merge local
 camera smoothing back into the remote correction budget.
+
+## 49. Delivery receipts are diagnostics, not gameplay authority
+
+**Decided:** round trip, jitter, ordinary snapshot loss, combat snapshot loss,
+and missed input deadlines remain visible in telemetry. They do not suppress
+weapons, deny objectives, or force a pilot to spectate. Objective access and
+stale controls depend only on how long the server has gone without a valid
+input packet. Weapon holds release after 250 ms, every control and objective
+access release after one second, and fifteen seconds of silence moves the pilot
+to the stands. One fresh packet clears the objective restriction immediately.
+
+**Why:** the snapshot receipt bitmap comes from the client. An honest browser
+may discard an obsolete snapshot before Lua sees it, while a modified client can
+claim every snapshot arrived. That made the old policy both noisy and easy to
+evade. It punished healthy players for browser scheduling and gave dishonest
+clients control over the measurement used to punish them.
+
+The server still owns movement, energy, cooldowns, collisions, damage, prize
+results, and objectives. Sending an input packet does not make an illegal action
+legal. It only proves that the client is still supplying current controls.
+
+**Cost:** downlink trouble no longer removes a pilot from a match. That pilot is
+already playing from an older view of the world, and the authoritative server
+still rejects actions the simulation does not allow. The loss numbers remain in
+the debug readout for diagnosing transport and presentation problems.
+
+**Reconsider if:** a concrete exploit survives server validation and depends on
+a stale downstream view. Fix that exploit at the authoritative rule it crosses,
+not by trusting a client receipt bitmap again.
