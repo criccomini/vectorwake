@@ -497,8 +497,8 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
      * written, and the burst is sixteen rounds at a full turn's spacing --
      * the rosette that motivated `count` and `spacing` in the first place.
      *
-     * Both are deliberately expensive to fire and slow to follow up. A charge
-     * is a thing you spend, and spending it should be a decision. */
+     * Neither uses a firing delay. Inventory and energy are the limits, and a
+     * repel or burst remains available while the gun or bomb clock is shut. */
     {
         sim_weapon_spec rp;
         memset(&rp, 0, sizeof rp);
@@ -521,7 +521,6 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
         memset(&rf, 0, sizeof rf);
         rf.spec = (uint8_t)sim_add_spec(cfg, &rp);
         rf.count = 1;
-        rf.delay = 120;
         cfg->charge[0] = (uint8_t)sim_add_pattern(cfg, &rf);
 
         sim_weapon_spec bs;
@@ -550,7 +549,6 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
         bf.spec = (uint8_t)sim_add_spec(cfg, &bs);
         bf.count = 24;
         bf.spacing = 65536 / 24;
-        bf.delay = 120;
         cfg->charge[1] = (uint8_t)sim_add_pattern(cfg, &bf);
 
         cfg->charge[2] = SIM_NO_PATTERN;

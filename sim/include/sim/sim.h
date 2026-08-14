@@ -344,7 +344,7 @@ typedef struct {
      * this the rung that widens its blast costs nothing extra.
      * LandmineFireEnergyUpgrade. */
     int32_t energy_up;
-    uint16_t delay;       /* ticks of cooldown */
+    uint16_t delay;       /* trigger cooldown; carried charges ignore it */
     int32_t recoil;       /* Q16 px/tick backwards on the ship that fired */
 } sim_fire_pattern;
 

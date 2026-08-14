@@ -2776,17 +2776,59 @@ int main(void) {
         /* The slot rides in the buttons rather than on the ship: choosing
          * which charge is ready is the client's business. */
         uint16_t use = SIM_BTN_USE | (0u << SIM_BTN_SLOT_SHIFT);
-        ev_counts c = step_counting(&s, &cfg, use, 0, 3);
+        ev_counts c = step_counting(&s, &cfg, use, 0, 1);
         CHECK(s.ships[0].charge[0] == 1, "one repel is spent");
-        CHECK(s.ships[1].vy < vy0, "the neighbour is shoved away");
-        CHECK(s.ships[1].energy >= e1, "and not hurt");
         CHECK(c.fires > 0, "and it counts as a shot");
 
-        /* The cooldown holds, then it fires the last one and stops. */
-        step_n(&s, &cfg, use, 0, 200);
-        CHECK(s.ships[0].charge[0] == 0, "the second is spent too");
-        step_n(&s, &cfg, use, 0, 400);
+        /* Inventory, not a cooldown, is the limit. The next held tick spends
+         * the second charge while the first one lands. */
+        step_n(&s, &cfg, use, 0, 1);
+        CHECK(s.ships[0].charge[0] == 0, "the second follows immediately");
+        CHECK(s.ships[1].vy < vy0, "the neighbour is shoved away");
+        CHECK(s.ships[1].energy >= e1, "and not hurt");
+        step_n(&s, &cfg, use, 0, 10);
         CHECK(s.ships[0].charge[0] == 0, "and an empty slot fires nothing");
+    }
+
+    {
+        /* Repel and burst remain available during ordinary weapon delay and
+         * do not stop a weapon firing beside them. Mines keep the bomb rule. */
+        const int LATTICE = 6;
+        sim_state s;
+        sim_init(&s, 1);
+        sim_spawn(&s, LATTICE, 0, 8192, 8192, 0, &cfg);
+        s.ships[0].charge[0] = 1;
+
+        step_n(&s, &cfg, SIM_BTN_FIRE, 0, 1);
+        CHECK(s.ships[0].fire_cooldown[SIM_TRIG_BOMB] > 0,
+              "a gun shot locks the bomb clock");
+        step_n(&s, &cfg, SIM_BTN_USE, 0, 1);
+        CHECK(s.ships[0].charge[0] == 0,
+              "but a repel still fires during that delay");
+
+        sim_init(&s, 1);
+        sim_spawn(&s, LATTICE, 0, 8192, 8192, 0, &cfg);
+        s.ships[0].charge[1] = 1;
+        ev_counts c = step_counting(&s, &cfg,
+                                    SIM_BTN_USE | SIM_BTN_FIRE
+                                        | (1u << SIM_BTN_SLOT_SHIFT),
+                                    0, 1);
+        CHECK(s.ships[0].charge[1] == 0 && c.fires == 2,
+              "a burst and a gun may fire on the same tick");
+
+        sim_init(&s, 1);
+        sim_spawn(&s, LATTICE, 0, 8192, 8192, 0, &cfg);
+        step_n(&s, &cfg, SIM_BTN_FIRE, 0, 1);
+        CHECK(s.weapon_count == 1, "the gun fires before the mine check");
+        step_n(&s, &cfg, SIM_BTN_MINE, 0, 1);
+        CHECK(s.weapon_count == 1,
+              "a mine waits for the shared weapon delay like a bomb");
+        step_n(&s, &cfg, 0, 0, 30);
+        step_n(&s, &cfg, SIM_BTN_MINE, 0, 1);
+        CHECK(s.weapon_count == 2, "the mine lays when that delay clears");
+        CHECK(s.ships[0].fire_cooldown[SIM_TRIG_GUN] > 0
+              && s.ships[0].fire_cooldown[SIM_TRIG_BOMB] > 0,
+              "and the mine locks both weapon triggers");
     }
 
     {

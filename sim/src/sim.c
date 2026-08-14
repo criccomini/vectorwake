@@ -1814,8 +1814,7 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
          * choosing which one is ready is the client's business and costs the
          * simulation nothing -- no selection byte in a snapshot, and no edge
          * detection to get wrong when a shot is replayed. */
-        if (!in_safe && sh->fire_cooldown[SIM_TRIG_BOMB] == 0
-            && (b & SIM_BTN_USE)) {
+        if (!in_safe && (b & SIM_BTN_USE)) {
             int k = (int)SIM_BTN_SLOT(b);
             uint8_t pat = cfg->charge[k];
             sim_fire_pattern cp;
@@ -1833,10 +1832,10 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
                               ev);
                 sh->charge[k]--;
                 sh->energy -= cp.energy;
-                /* A charge rides the bomb's clock and locks both, which
-                 * is what the original does with every one of them. */
-                lock_trigger(sh, SIM_TRIG_GUN, cp.delay);
-                lock_trigger(sh, SIM_TRIG_BOMB, cp.delay);
+                /* A carried charge is independent of the gun and bomb
+                 * clocks. Repel and burst are defensive answers a pilot may
+                 * need while either trigger is still shut, and neither has a
+                 * fire-delay setting in the original. */
                 sh->vx -= (int32_t)(((int64_t)cp.recoil * dx) >> 15);
                 sh->vy -= (int32_t)(((int64_t)cp.recoil * dy) >> 15);
                 emit(ev, SIM_EV_CHARGE, (uint8_t)i, (uint8_t)k, sh->charge[k]);

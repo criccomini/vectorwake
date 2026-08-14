@@ -568,6 +568,11 @@ The cost is that you can only have one thing ready, so carrying a mixed
 inventory is a decision rather than a hotkey. That is slower than muscle
 memory on seven keys, and it is the trade.
 
+Repel and burst do not share the gun and bomb firing clock. A pilot may spend
+one during a weapon delay, on the same tick as a shot, or immediately after
+another charge. Their inventory and energy cost are the limits. Mines are not
+charges: they wait for the bomb clock and lock both weapon triggers when laid.
+
 ### A ship starts loaded
 
 `spawn_prizes`, default **30**. A ship is handed thirty greens the moment it

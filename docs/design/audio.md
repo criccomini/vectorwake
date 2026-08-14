@@ -208,11 +208,11 @@ beat the crack moves where the event happened. The crack is what says a
 detonation occurred at all, so the room climbs in delay and in number of
 arrivals and never in level.
 
-Nothing here outlasts what caused it. The two charges that do have rooms grew to
-220 and 440 milliseconds against a fire delay of 150 ticks, so no charge
-overlaps its own echo, and the detonations barely moved because a blast has to
-be finished while its own shockwave is on screen and the last spark of one is
-gone in 900 ms.
+Nothing here outlasts what caused it. The two charges that do have rooms run
+for 220 and 440 milliseconds. Charges have no firing delay, so consecutive
+ones may overlap their echoes; the dry attack still marks each use. The
+detonations barely moved because a blast has to be finished while its own
+shockwave is on screen and the last spark of one is gone in 900 ms.
 
 One thing had to be got right for any of this to be only an echo. Every envelope
 in this synth decays over the buffer's own length rather than over a span of
