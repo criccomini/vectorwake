@@ -76,6 +76,9 @@ jobs:
       - name: client tests
         run: for t in client/tests/*_test.lua; do echo "== $t"; lua5.1 "$t" || exit 1; done
 
+      - name: browser viewport tests
+        run: node client/tests/viewport_test.js
+
       # A failed native handshake formats the response into the same connection
       # buffer that held it. This pins the overlap and the length Lua may read,
       # without waiting for the remote extension builder to compile the client.

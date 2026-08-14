@@ -564,6 +564,40 @@
 		// translucent chrome. The reconciler below keeps those two jobs apart.
 		(function() {
 			var is_iOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+			// viewport-test:start
+			function vwPageHeight(extended, standalone, width, visible,
+					layoutH, innerH, outerH, largeH, screenW, screenH) {
+				if (!extended) return visible;
+
+				// iOS can leave the root, outer window, and large-viewport probe at
+				// their portrait height after the phone rotates. Once the root has
+				// that height it reports the same stale number on every pass, so a
+				// largest-value comparison can never recover. The display's short
+				// axis is the ceiling in landscape, even when screen.width and
+				// screen.height have not swapped yet.
+				var landscape = width > visible;
+				var screenAxisH = 0;
+				if (screenW > 0 && screenH > 0) {
+					screenAxisH = landscape
+						? Math.min(screenW, screenH)
+						: Math.max(screenW, screenH);
+				}
+				function currentHeight(h) {
+					if (h < 1) return 0;
+					if (landscape && screenAxisH > 0 && h > screenAxisH + 2) return 0;
+					return h;
+				}
+
+				// An installed app may stop its visible viewport at the safe-area
+				// inset. Its physical display axis restores that strip. A Safari tab
+				// uses the large viewport instead, since the browser may occupy part
+				// of the display itself.
+				return Math.max(visible,
+					currentHeight(layoutH), currentHeight(innerH),
+					currentHeight(outerH), currentHeight(largeH),
+					standalone ? screenAxisH : 0);
+			}
+			// viewport-test:end
 			function apply() {
 				var buttonHeight = 0;
 {{#html5.show_fullscreen_button}}
@@ -603,10 +637,11 @@
 				// the missing 62 points below the canvas. screen.height is the one
 				// value that still names the whole display in that case. A focused
 				// game input keeps the visual height while the keyboard is up.
+				var screenW = Math.round(scr.width || 0);
 				var screenH = Math.round(scr.height || 0);
-				var pageH = extended_page
-					? Math.max(visible, layoutH, innerH, outerH, largeH, screenH)
-					: visible;
+				var pageH = vwPageHeight(
+					extended_page, standalone, width, visible,
+					layoutH, innerH, outerH, largeH, screenW, screenH);
 				var height = pageH - buttonHeight;
 				if (width < 1 || height < 1) {
 					return;
