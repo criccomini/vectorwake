@@ -69,7 +69,10 @@ check("the admin page reads browser error groups",
 check("the admin page reads structured rollback reports",
       has(admin, 'post("/v1/admin/debug"')
       and has(admin, "report.correction_px.toFixed(1)")
-      and has(admin, "report.snapshot_gap_ms.toFixed(1)"))
+      and has(admin, "report.snapshot_gap_ms.toFixed(1)")
+      and has(admin, "report.local_debt_px.toFixed(2)")
+      and has(admin, "report.repel_after_speed.toFixed(2)")
+      and has(admin, "report.clock_adjust"))
 check("the admin page prints zero bandwidth instead of a blank cell",
       has(admin, "Number.isFinite(i.bw_per_player)"))
 

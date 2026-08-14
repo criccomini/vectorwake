@@ -355,6 +355,17 @@ int ShipVel(lua_State* L) {
     return 2;
 }
 
+// The authoritative shove still carried by this hull: ticks left and speed in
+// pixels per tick. Rendering has no use for it, but reconciliation diagnostics
+// need to tell a network correction from a repel the client could not foresee.
+int ShipRepel(lua_State* L) {
+    int i = CheckShip(L);
+    const sim_ship* s = &g_cur->ships[i];
+    lua_pushnumber(L, s->repel);
+    lua_pushnumber(L, s->repel_speed / 65536.0);
+    return 2;
+}
+
 // Upgrades held, by sim_upgrade index.
 int ShipUp(lua_State* L) {
     int i = CheckShip(L);
@@ -1155,6 +1166,18 @@ int SmoothStats(lua_State* L) {
     return 2;
 }
 
+// Presentation debt on one hull after a correction has settled. The public
+// smooth_stats intentionally excludes the local hull, so it cannot answer why
+// the camera is easing backward or forward after reconciliation.
+int SmoothDebt(lua_State* L) {
+    int i = CheckShip(L);
+    double pos = sqrt(g_off_x[i] * g_off_x[i] + g_off_y[i] * g_off_y[i]);
+    double turn = fabs(g_off_h[i]) * 360.0 / 65536.0;
+    lua_pushnumber(L, pos);
+    lua_pushnumber(L, turn);
+    return 2;
+}
+
 const luaL_reg kFunctions[] = {
     {"init", Init},
     {"spawn", Spawn},
@@ -1178,6 +1201,7 @@ const luaL_reg kFunctions[] = {
     {"ship_kills", ShipKills},
     {"ship_deaths", ShipDeaths},
     {"ship_vel", ShipVel},
+    {"ship_repel", ShipRepel},
     {"ship_up", ShipUp},
     {"ship_level", ShipLevel},
     {"ship_charge", ShipCharge},
@@ -1231,6 +1255,7 @@ const luaL_reg kFunctions[] = {
     {"smooth_decay", SmoothDecay},
     {"smooth_reset", SmoothReset},
     {"smooth_stats", SmoothStats},
+    {"smooth_debt", SmoothDebt},
     {"apply_map", ApplyMap},
     {"apply_settings", ApplySettings},
     {"set_mortal", SetMortal},

@@ -275,6 +275,17 @@ create table if not exists client_debug (
     predicted_y      double precision not null,
     reconciled_x     double precision not null,
     reconciled_y     double precision not null,
+    predicted_vx     double precision not null default 0,
+    predicted_vy     double precision not null default 0,
+    reconciled_vx    double precision not null default 0,
+    reconciled_vy    double precision not null default 0,
+    local_debt_px    double precision not null default 0,
+    local_debt_deg   double precision not null default 0,
+    clock_adjust     integer not null default 0,
+    repel_before_ticks integer not null default 0,
+    repel_before_speed double precision not null default 0,
+    repel_after_ticks integer not null default 0,
+    repel_after_speed double precision not null default 0,
     frame_ms         double precision not null,
     snapshot_gap_ms  double precision not null,
     input_ack        bigint not null,
@@ -284,6 +295,17 @@ create table if not exists client_debug (
     input_holes      integer not null,
     user_agent       text not null default ''
 );
+alter table client_debug add column if not exists predicted_vx double precision not null default 0;
+alter table client_debug add column if not exists predicted_vy double precision not null default 0;
+alter table client_debug add column if not exists reconciled_vx double precision not null default 0;
+alter table client_debug add column if not exists reconciled_vy double precision not null default 0;
+alter table client_debug add column if not exists local_debt_px double precision not null default 0;
+alter table client_debug add column if not exists local_debt_deg double precision not null default 0;
+alter table client_debug add column if not exists clock_adjust integer not null default 0;
+alter table client_debug add column if not exists repel_before_ticks integer not null default 0;
+alter table client_debug add column if not exists repel_before_speed double precision not null default 0;
+alter table client_debug add column if not exists repel_after_ticks integer not null default 0;
+alter table client_debug add column if not exists repel_after_speed double precision not null default 0;
 create index if not exists client_debug_by_at on client_debug (at desc);
 create index if not exists client_debug_by_account on client_debug (account, at desc);
 -- One live rated connection per account across the fleet. Arenas renew the row
@@ -539,6 +561,17 @@ struct ClientDebug {
     predicted_y: f64,
     reconciled_x: f64,
     reconciled_y: f64,
+    predicted_vx: f64,
+    predicted_vy: f64,
+    reconciled_vx: f64,
+    reconciled_vy: f64,
+    local_debt_px: f64,
+    local_debt_deg: f64,
+    clock_adjust: i32,
+    repel_before_ticks: i32,
+    repel_before_speed: f64,
+    repel_after_ticks: i32,
+    repel_after_speed: f64,
     frame_ms: f64,
     snapshot_gap_ms: f64,
     input_ack: i64,
@@ -661,9 +694,9 @@ fn client_debug_of(body: &serde_json::Value) -> Result<ClientDebug, &'static str
     if !matches!(wire.as_str(), "ws" | "wt") {
         return Err("unknown client wire");
     }
-    let correction_px = number("correction_px", 64.0, 20_000_000.0)?;
-    if correction_px <= 64.0 {
-        return Err("a client correction must exceed the snap threshold");
+    let correction_px = number("correction_px", 0.5, 20_000_000.0)?;
+    if correction_px <= 0.5 {
+        return Err("a client correction must exceed the diagnostic threshold");
     }
 
     Ok(ClientDebug {
@@ -688,6 +721,17 @@ fn client_debug_of(body: &serde_json::Value) -> Result<ClientDebug, &'static str
         predicted_y: number("predicted_y", -20_000_000.0, 20_000_000.0)?,
         reconciled_x: number("reconciled_x", -20_000_000.0, 20_000_000.0)?,
         reconciled_y: number("reconciled_y", -20_000_000.0, 20_000_000.0)?,
+        predicted_vx: number("predicted_vx", -1000.0, 1000.0)?,
+        predicted_vy: number("predicted_vy", -1000.0, 1000.0)?,
+        reconciled_vx: number("reconciled_vx", -1000.0, 1000.0)?,
+        reconciled_vy: number("reconciled_vy", -1000.0, 1000.0)?,
+        local_debt_px: number("local_debt_px", 0.0, 64.0)?,
+        local_debt_deg: number("local_debt_deg", 0.0, 180.0)?,
+        clock_adjust: integer("clock_adjust", -1, 1)?,
+        repel_before_ticks: integer("repel_before_ticks", 0, u16::MAX as i64)?,
+        repel_before_speed: number("repel_before_speed", 0.0, 1000.0)?,
+        repel_after_ticks: integer("repel_after_ticks", 0, u16::MAX as i64)?,
+        repel_after_speed: number("repel_after_speed", 0.0, 1000.0)?,
         frame_ms: number("frame_ms", 0.0, 3_600_000.0)?,
         snapshot_gap_ms: number("snapshot_gap_ms", 0.0, 3_600_000.0)?,
         input_ack: u32_field("input_ack")?,
@@ -947,9 +991,10 @@ async fn route(
             }
         }
 
-        // A large correction on a living local hull. These stay as individual
-        // rows because the sequence around a rollback is the evidence; error
-        // grouping would fold it into an occurrence count and throw that away.
+        // A sampled correction on a living local hull. These stay as
+        // individual rows because the sequence around a rollback is the
+        // evidence; error grouping would fold it into an occurrence count and
+        // throw that away.
         // Every field is bounded above before this public write reaches SQL,
         // and the reported account is context rather than authentication.
         "/v1/client-debug" => {
@@ -963,12 +1008,18 @@ async fn route(
                        (kind, build, account, zone, room, wire, client_tick,
                         snapshot_tick, snapshot_seq, correction_px,
                         predicted_x, predicted_y, reconciled_x,
-                        reconciled_y, frame_ms, snapshot_gap_ms, input_ack,
-                        input_mask, input_margin, input_lead, input_holes,
-                        user_agent)
+                        reconciled_y, predicted_vx, predicted_vy,
+                        reconciled_vx, reconciled_vy, local_debt_px,
+                        local_debt_deg, clock_adjust, repel_before_ticks,
+                        repel_before_speed, repel_after_ticks,
+                        repel_after_speed, frame_ms, snapshot_gap_ms,
+                        input_ack, input_mask, input_margin, input_lead,
+                        input_holes, user_agent)
                      values ($1, $2, (select id from accounts where id = $3),
                              $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
-                             $14, $15, $16, $17, $18, $19, $20, $21, $22)",
+                             $14, $15, $16, $17, $18, $19, $20, $21, $22,
+                             $23, $24, $25, $26, $27, $28, $29, $30, $31,
+                             $32, $33)",
                     &[
                         &report.kind,
                         &report.build,
@@ -984,6 +1035,17 @@ async fn route(
                         &report.predicted_y,
                         &report.reconciled_x,
                         &report.reconciled_y,
+                        &report.predicted_vx,
+                        &report.predicted_vy,
+                        &report.reconciled_vx,
+                        &report.reconciled_vy,
+                        &report.local_debt_px,
+                        &report.local_debt_deg,
+                        &report.clock_adjust,
+                        &report.repel_before_ticks,
+                        &report.repel_before_speed,
+                        &report.repel_after_ticks,
+                        &report.repel_after_speed,
                         &report.frame_ms,
                         &report.snapshot_gap_ms,
                         &report.input_ack,
@@ -2352,9 +2414,13 @@ async fn route(
                          kind, build, account, zone, room, wire, client_tick,
                          snapshot_tick, snapshot_seq, correction_px,
                          predicted_x, predicted_y, reconciled_x,
-                         reconciled_y, frame_ms, snapshot_gap_ms, input_ack,
-                         input_mask, input_margin, input_lead, input_holes,
-                         user_agent
+                         reconciled_y, predicted_vx, predicted_vy,
+                         reconciled_vx, reconciled_vy, local_debt_px,
+                         local_debt_deg, clock_adjust, repel_before_ticks,
+                         repel_before_speed, repel_after_ticks,
+                         repel_after_speed, frame_ms, snapshot_gap_ms,
+                         input_ack, input_mask, input_margin, input_lead,
+                         input_holes, user_agent
                      from client_debug
                      where at >= now() - make_interval(hours => $1)
                        and ($2::bigint is null or account = $2)
@@ -2388,14 +2454,25 @@ async fn route(
                                 "predicted_y": r.get::<_, f64>(12),
                                 "reconciled_x": r.get::<_, f64>(13),
                                 "reconciled_y": r.get::<_, f64>(14),
-                                "frame_ms": r.get::<_, f64>(15),
-                                "snapshot_gap_ms": r.get::<_, f64>(16),
-                                "input_ack": r.get::<_, i64>(17),
-                                "input_mask": r.get::<_, i64>(18),
-                                "input_margin": r.get::<_, i32>(19),
-                                "input_lead": r.get::<_, i32>(20),
-                                "input_holes": r.get::<_, i32>(21),
-                                "user_agent": r.get::<_, String>(22),
+                                "predicted_vx": r.get::<_, f64>(15),
+                                "predicted_vy": r.get::<_, f64>(16),
+                                "reconciled_vx": r.get::<_, f64>(17),
+                                "reconciled_vy": r.get::<_, f64>(18),
+                                "local_debt_px": r.get::<_, f64>(19),
+                                "local_debt_deg": r.get::<_, f64>(20),
+                                "clock_adjust": r.get::<_, i32>(21),
+                                "repel_before_ticks": r.get::<_, i32>(22),
+                                "repel_before_speed": r.get::<_, f64>(23),
+                                "repel_after_ticks": r.get::<_, i32>(24),
+                                "repel_after_speed": r.get::<_, f64>(25),
+                                "frame_ms": r.get::<_, f64>(26),
+                                "snapshot_gap_ms": r.get::<_, f64>(27),
+                                "input_ack": r.get::<_, i64>(28),
+                                "input_mask": r.get::<_, i64>(29),
+                                "input_margin": r.get::<_, i32>(30),
+                                "input_lead": r.get::<_, i32>(31),
+                                "input_holes": r.get::<_, i32>(32),
+                                "user_agent": r.get::<_, String>(33),
                             })).collect::<Vec<_>>(),
                             "offset": offset,
                             "limit": limit,
@@ -3808,6 +3885,17 @@ mod tests {
             "predicted_y": 828.5,
             "reconciled_x": 870.75,
             "reconciled_y": 750.0,
+            "predicted_vx": 1.25,
+            "predicted_vy": -0.5,
+            "reconciled_vx": 5.0,
+            "reconciled_vy": 0.25,
+            "local_debt_px": 40.0,
+            "local_debt_deg": 2.5,
+            "clock_adjust": -1,
+            "repel_before_ticks": 0,
+            "repel_before_speed": 0.0,
+            "repel_after_ticks": 212,
+            "repel_after_speed": 5.0,
             "frame_ms": 16.7,
             "snapshot_gap_ms": 240.0,
             "input_ack": 106,
@@ -3823,6 +3911,9 @@ mod tests {
         assert_eq!(report.account, Some(42));
         assert_eq!(report.client_tick, u32::MAX as i64);
         assert_eq!(report.wire, "wt");
+        assert_eq!(report.clock_adjust, -1);
+        assert_eq!(report.repel_after_ticks, 212);
+        assert_eq!(report.repel_after_speed, 5.0);
         assert_eq!(report.user_agent, "VectorWake");
     }
 
@@ -3834,11 +3925,22 @@ mod tests {
             "client_tick": 110,
             "snapshot_tick": 100,
             "snapshot_seq": 7,
-            "correction_px": 65.0,
+            "correction_px": 1.25,
             "predicted_x": 1.0,
             "predicted_y": 2.0,
             "reconciled_x": 3.0,
             "reconciled_y": 4.0,
+            "predicted_vx": 1.0,
+            "predicted_vy": 0.0,
+            "reconciled_vx": 0.5,
+            "reconciled_vy": 0.0,
+            "local_debt_px": 1.25,
+            "local_debt_deg": 0.0,
+            "clock_adjust": 0,
+            "repel_before_ticks": 0,
+            "repel_before_speed": 0.0,
+            "repel_after_ticks": 0,
+            "repel_after_speed": 0.0,
             "frame_ms": 17.0,
             "snapshot_gap_ms": 50.0,
             "input_ack": 106,
@@ -3852,7 +3954,7 @@ mod tests {
         assert!(client_debug_of(&valid).is_ok());
 
         let mut too_small = valid.clone();
-        too_small["correction_px"] = serde_json::json!(64.0);
+        too_small["correction_px"] = serde_json::json!(0.5);
         assert!(client_debug_of(&too_small).is_err());
 
         let mut respawn = valid.clone();

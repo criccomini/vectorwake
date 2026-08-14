@@ -966,6 +966,22 @@ function debugDetail(report) {
     `then reconciled ${report.reconciled_x.toFixed(1)},${report.reconciled_y.toFixed(1)}; ` +
     `snapshot sequence ${report.snapshot_seq}`;
   details.append(meta);
+
+  const motion = document.createElement("p");
+  motion.className = "error-meta";
+  motion.textContent = `velocity ${report.predicted_vx.toFixed(2)},${report.predicted_vy.toFixed(2)} ` +
+    `then ${report.reconciled_vx.toFixed(2)},${report.reconciled_vy.toFixed(2)} px/tick; ` +
+    `local debt ${report.local_debt_px.toFixed(2)} px / ` +
+    `${report.local_debt_deg.toFixed(2)} deg`;
+  details.append(motion);
+
+  const shove = document.createElement("p");
+  shove.className = "error-meta";
+  shove.textContent = `repel ${report.repel_before_ticks} ticks at ` +
+    `${report.repel_before_speed.toFixed(2)} px/tick, then ` +
+    `${report.repel_after_ticks} ticks at ` +
+    `${report.repel_after_speed.toFixed(2)} px/tick`;
+  details.append(shove);
   return details;
 }
 
@@ -999,7 +1015,8 @@ async function drawDebug() {
       `${where}${report.room == null ? "" : ` r${report.room}`}`,
       report.wire,
       [debugDetail(report), "wrap"],
-      [`frame ${report.frame_ms.toFixed(1)} ms; snapshots ${report.snapshot_gap_ms.toFixed(1)} ms`,
+      [`frame ${report.frame_ms.toFixed(1)} ms; snapshots ${report.snapshot_gap_ms.toFixed(1)} ms; ` +
+        `clock ${report.clock_adjust > 0 ? "+" : ""}${report.clock_adjust}`,
         "wrap"],
       [`ack ${report.input_ack}; margin ${report.input_margin}; lead ${report.input_lead}; ` +
         `${report.input_holes} holes`, "wrap"],

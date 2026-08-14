@@ -30,6 +30,8 @@ local reject_snapshot = false
 local settings_applied = 0
 local own_x, own_y, own_alive = 0, 0, 1
 local next_x, next_y, next_alive = nil, nil, nil
+local own_vx, own_vy, own_repel_ticks, own_repel_speed = 0, 0, 0, 0
+local next_vx, next_vy, next_repel_ticks, next_repel_speed = nil, nil, nil, nil
 _G.sim = {
     tick = function() return tick end,
     replay = function() tick = tick + 1 end,
@@ -42,6 +44,14 @@ _G.sim = {
         if next_x ~= nil then own_x, next_x = next_x, nil end
         if next_y ~= nil then own_y, next_y = next_y, nil end
         if next_alive ~= nil then own_alive, next_alive = next_alive, nil end
+        if next_vx ~= nil then own_vx, next_vx = next_vx, nil end
+        if next_vy ~= nil then own_vy, next_vy = next_vy, nil end
+        if next_repel_ticks ~= nil then
+            own_repel_ticks, next_repel_ticks = next_repel_ticks, nil
+        end
+        if next_repel_speed ~= nil then
+            own_repel_speed, next_repel_speed = next_repel_speed, nil
+        end
         return 0
     end,
     apply_settings = function()
@@ -50,12 +60,14 @@ _G.sim = {
     end,
     smooth_capture = function() end,
     smooth_settle = function() end,
+    smooth_debt = function() return 1.5, 0.25 end,
     smooth_reset = function() end,
     set_mortal = function() end,
     ship_count = function() return 2 end,
     ship_alive = function(i) return i == 3 and own_alive or 1 end,
     ship_active = function() return 1 end,
-    ship_vel = function() return 0, 0 end,
+    ship_vel = function() return own_vx, own_vy end,
+    ship_repel = function() return own_repel_ticks, own_repel_speed end,
     ship_x_raw = function(i) return i == 3 and own_x or 0 end,
     ship_y_raw = function(i) return i == 3 and own_y or 0 end,
     ship_heading_raw = function() return 0 end,
@@ -810,10 +822,9 @@ for _ = 1, 6 do net.tick(0.1) end
 check("an established stale session never falls back to the socket",
       ws.dialled == 0 and net.transport().kind == nil)
 
--- A correction larger than the local snap threshold is evidence only while
--- the same living hull continues across it. File the state around that moment
--- once, outside the gameplay wire, so a later screenshot is not the first
--- record of what happened.
+-- A small correction is evidence only while the same living hull continues
+-- across it. File the state around that moment once, outside the gameplay
+-- wire, so a later screenshot is not the first record of what happened.
 net = fresh_net()
 net.connect("wss://zone/a1", 0, "pilot", function() end, "chaos", false,
             "https://zone:9443", 2)
@@ -825,16 +836,36 @@ for sent = 6000, 6003 do
 end
 net.tick(0.025)
 own_x, own_y = 100, 50
-next_x, next_y = 0, 50
-wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = snapshot(3, 6004)})
+own_vx, own_vy, own_repel_ticks, own_repel_speed = 1, -0.5, 0, 0
+next_x, next_y = 98, 50
+next_vx, next_vy, next_repel_ticks, next_repel_speed = 5, 0.25, 212, 5
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
+            message = snapshot(3, 6004, 6007, 4294967295)})
 local report = debug_reports[1]
-check("a large continuous local correction files a diagnostic",
+check("a small continuous local correction files a diagnostic",
       #debug_reports == 1 and report and report.kind == "local_correction")
 check("the diagnostic captures the correction and its clocks",
-      report.correction_px == 100 and report.predicted_x == 100
-      and report.reconciled_x == 0 and report.frame_ms == 25
+      report.correction_px == 2 and report.predicted_x == 100
+      and report.reconciled_x == 98 and report.frame_ms == 25
       and report.snapshot_tick == 6004 and report.wire == "wt"
       and report.account == 7 and report.zone == "chaos" and report.room == 2)
+check("the diagnostic captures motion, smoothing, clock and repel state",
+      report.predicted_vx == 1 and report.predicted_vy == -0.5
+      and report.reconciled_vx == 5 and report.reconciled_vy == 0.25
+      and report.local_debt_px == 1.5 and report.local_debt_deg == 0.25
+      and report.clock_adjust == 1 and report.repel_before_ticks == 0
+      and report.repel_before_speed == 0 and report.repel_after_ticks == 212
+      and report.repel_after_speed == 5)
+
+own_x, next_x = 100, 98
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = snapshot(3, 6005)})
+check("small correction reports have a five-second cooldown",
+      #debug_reports == 1, tostring(#debug_reports))
+own_x, next_x = 100, 0
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = snapshot(3, 6006)})
+check("the small-report cooldown does not hide a large correction",
+      #debug_reports == 2 and debug_reports[2].correction_px == 100,
+      tostring(#debug_reports))
 
 if fails > 0 then os.exit(1) end
 print("all fine")

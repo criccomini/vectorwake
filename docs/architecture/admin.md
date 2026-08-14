@@ -202,10 +202,11 @@ Errors holds browser failures grouped by build, stack, and reported account.
 The summary says how many groups were active in the last hour and day, while an
 expanded row gives the bounded stack and user agent. The account number links
 to the pilot page, so a report and the pilot's recent activity are one click
-apart. Debug holds individual large local corrections reported by game clients,
-with filters for the account, build, zone, wire and time window. They stay
-individual because their clocks and positions are the evidence; grouping them
-would keep a count and lose the sequence. Access is bans and admins together,
+apart. Debug holds sampled local corrections above half a pixel, with filters
+for the account, build, zone, wire and time window. Each row keeps the two
+positions and velocities, local presentation debt, clock adjustment and repel
+state. They stay individual because that sequence is the evidence; grouping
+them would keep a count and lose the motion. Access is bans and admins together,
 since both answer one question about who may do what and they used to sit at
 opposite ends of a long page.
 

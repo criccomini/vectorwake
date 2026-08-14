@@ -297,12 +297,20 @@ local pending_kills, pending_charges = {}, {}
 local seen_kills, seen_charges = {}, {}
 local net_clock, last_snap_at = 0, nil
 local SNAP_TICKS = 5
--- Large corrections on a continuous local hull are filed for diagnosis. Ten
--- per connection and at most one a second is enough to catch a recurring
--- rollback without turning one bad session into a stream of database writes.
-local DEBUG_CORRECTION_PX = 64
-local DEBUG_REPORT_MAX = 10
-local debug_reports, last_debug_tick, last_frame_ms = 0, nil, 0
+-- Corrections on a continuous local hull are filed for diagnosis. Half a pixel
+-- catches the small camera wobble a pilot can feel without turning every
+-- fixed-point rounding difference into a report. Small reports get five
+-- seconds between them; a jump over the presentation snap threshold keeps a
+-- separate one-second lane, so an earlier wobble cannot hide it. The endpoint
+-- applies a second bound, but the client should not spend those requests first.
+local DEBUG_CORRECTION_PX = 0.5
+local DEBUG_LARGE_CORRECTION_PX = 64
+local DEBUG_REPORT_MAX = 20
+local DEBUG_SMALL_REPORT_MAX = 15
+local DEBUG_SMALL_COOLDOWN = 500
+local DEBUG_LARGE_COOLDOWN = 100
+local debug_reports, debug_small_reports = 0, 0
+local last_debug_tick, last_large_debug_tick, last_frame_ms = nil, nil, 0
 -- A snapshot further behind than the input history can faithfully replay is
 -- stale state, not authority. Half a second is already ten ordinary snapshots
 -- or twenty-five combat snapshots. Give QUIC one more second to produce
@@ -987,6 +995,11 @@ local function on_snapshot(s)
     -- into it measures the smoothing instead.
     local client_tick = sim.tick()
     local px, py = sim.ship_x_raw(M.me), sim.ship_y_raw(M.me)
+    local predicted_vx, predicted_vy = sim.ship_vel(M.me)
+    local repel_before_ticks, repel_before_speed = 0, 0
+    if sim.ship_repel then
+        repel_before_ticks, repel_before_speed = sim.ship_repel(M.me)
+    end
     local alive_before = sim.ship_alive(M.me) == 1
     local carrier_before = sim.ship_carrier and sim.ship_carrier(M.me) or 255
     -- What the screen is currently asserting about every hull, held across the
@@ -1039,6 +1052,7 @@ local function on_snapshot(s)
     -- inherits the buttons we were already holding, because a key held through
     -- the gap is what actually happened; filling it with zero would insert a
     -- phantom frame of hands-off flying that the server never saw.
+    local clock_adjust = 0
     if receipts.input_mask ~= 0 then
         local margin = serial_delta(from, acked)
         M.stats.input_margin = margin
@@ -1048,8 +1062,10 @@ local function on_snapshot(s)
             local prior_tick = predicted_tick
             predicted_tick = next_tick(predicted_tick)
             input_log[predicted_tick] = input_log[prior_tick] or 0
+            clock_adjust = 1
         elseif margin < target - LAG_SLACK and lead > 0 then
             predicted_tick = previous_tick(predicted_tick)
+            clock_adjust = -1
         end
         M.stats.lead = serial_delta(predicted_tick, from)
         -- Lead contains downlink age and the clock offset; margin contains
@@ -1075,11 +1091,21 @@ local function on_snapshot(s)
     -- which pays it off over the next tenth of a second.
     sim.smooth_settle()
 
+    local local_debt_px, local_debt_deg = 0, 0
+    if sim.smooth_debt then
+        local_debt_px, local_debt_deg = sim.smooth_debt(M.me)
+    end
+
     harvest_world(before)
     publish_timed_events()
 
     local reconciled_x, reconciled_y =
         sim.ship_x_raw(M.me), sim.ship_y_raw(M.me)
+    local reconciled_vx, reconciled_vy = sim.ship_vel(M.me)
+    local repel_after_ticks, repel_after_speed = 0, 0
+    if sim.ship_repel then
+        repel_after_ticks, repel_after_speed = sim.ship_repel(M.me)
+    end
     local dx, dy = reconciled_x - px, reconciled_y - py
     local err = math.sqrt(dx * dx + dy * dy)
     M.stats.self_err = err
@@ -1090,16 +1116,23 @@ local function on_snapshot(s)
 
     local alive_after = sim.ship_alive(M.me) == 1
     local carrier_after = sim.ship_carrier and sim.ship_carrier(M.me) or 255
-    local cooled = not last_debug_tick
-        or (serial_after(from, last_debug_tick)
-            and u32n(from - last_debug_tick) >= 100)
+    local large = err > DEBUG_LARGE_CORRECTION_PX
+    local last_report = last_debug_tick
+    if large then last_report = last_large_debug_tick end
+    local cooldown = large and DEBUG_LARGE_COOLDOWN or DEBUG_SMALL_COOLDOWN
+    local cooled = not last_report
+        or (serial_after(from, last_report)
+            and u32n(from - last_report) >= cooldown)
     if not first_flying_snapshot and M.stats.snaps > 3
         and err > DEBUG_CORRECTION_PX
         and alive_before and alive_after and carrier_before == carrier_after
-        and debug_reports < DEBUG_REPORT_MAX and cooled
+        and debug_reports < DEBUG_REPORT_MAX
+        and (large or debug_small_reports < DEBUG_SMALL_REPORT_MAX) and cooled
         and account.report_debug then
         debug_reports = debug_reports + 1
+        if not large then debug_small_reports = debug_small_reports + 1 end
         last_debug_tick = from
+        if large then last_large_debug_tick = from end
         account.report_debug({
             kind = "local_correction",
             account = M.joined and M.joined.account or 0,
@@ -1115,6 +1148,17 @@ local function on_snapshot(s)
             predicted_y = py,
             reconciled_x = reconciled_x,
             reconciled_y = reconciled_y,
+            predicted_vx = predicted_vx,
+            predicted_vy = predicted_vy,
+            reconciled_vx = reconciled_vx,
+            reconciled_vy = reconciled_vy,
+            local_debt_px = local_debt_px,
+            local_debt_deg = local_debt_deg,
+            clock_adjust = clock_adjust,
+            repel_before_ticks = repel_before_ticks,
+            repel_before_speed = repel_before_speed,
+            repel_after_ticks = repel_after_ticks,
+            repel_after_speed = repel_after_speed,
             frame_ms = last_frame_ms,
             snapshot_gap_ms = M.stats.snap_gap_ms,
             input_ack = acked,
@@ -1444,7 +1488,8 @@ function M.connect(url, class, name, on_lost, zone, watch, wt, room)
     -- either again: the roster, the ratings and every kill filed for the life
     -- of the connection belong to whoever this was at this moment.
     M.joined = {name = name, account = account.account or 0, zone = zone or ""}
-    debug_reports, last_debug_tick, last_frame_ms = 0, nil, 0
+    debug_reports, debug_small_reports = 0, 0
+    last_debug_tick, last_large_debug_tick, last_frame_ms = nil, nil, 0
     stale_snapshot_wait = nil
 
     return transport:connect({
