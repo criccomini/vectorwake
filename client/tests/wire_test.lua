@@ -28,6 +28,8 @@ end
 local tick = 1000
 local reject_snapshot = false
 local settings_applied = 0
+local own_x, own_y, own_alive = 0, 0, 1
+local next_x, next_y, next_alive = nil, nil, nil
 _G.sim = {
     tick = function() return tick end,
     replay = function() tick = tick + 1 end,
@@ -37,6 +39,9 @@ _G.sim = {
         tick = string.byte(body, 1) + string.byte(body, 2) * 256
             + string.byte(body, 3) * 65536
             + string.byte(body, 4) * 16777216
+        if next_x ~= nil then own_x, next_x = next_x, nil end
+        if next_y ~= nil then own_y, next_y = next_y, nil end
+        if next_alive ~= nil then own_alive, next_alive = next_alive, nil end
         return 0
     end,
     apply_settings = function()
@@ -48,12 +53,13 @@ _G.sim = {
     smooth_reset = function() end,
     set_mortal = function() end,
     ship_count = function() return 2 end,
-    ship_alive = function() return 1 end,
+    ship_alive = function(i) return i == 3 and own_alive or 1 end,
     ship_active = function() return 1 end,
     ship_vel = function() return 0, 0 end,
-    ship_x_raw = function() return 0 end,
-    ship_y_raw = function() return 0 end,
+    ship_x_raw = function(i) return i == 3 and own_x or 0 end,
+    ship_y_raw = function(i) return i == 3 and own_y or 0 end,
     ship_heading_raw = function() return 0 end,
+    ship_carrier = function() return 255 end,
     weapon_count = function() return 0 end,
     weapon_at = function() end,
     spec_life = function() return 0 end,
@@ -99,7 +105,12 @@ _G.webtransport = {
     send_unreliable = function(data) wt.unsent[#wt.unsent + 1] = data end,
 }
 
-local account_stub = {token = nil, account = 7}
+local debug_reports = {}
+local account_stub = {
+    token = nil,
+    account = 7,
+    report_debug = function(report) debug_reports[#debug_reports + 1] = report end,
+}
 package.loaded["arena.account"] = account_stub
 
 -- The module keeps its transport memory for the life of the client, which is
@@ -108,6 +119,9 @@ local function fresh_net()
     package.loaded["arena.net"] = nil
     ws.dialled, ws.sent, ws.cb = 0, {}, nil
     wt.dialled, wt.sent, wt.unsent, wt.cb = 0, {}, {}, nil
+    own_x, own_y, own_alive = 0, 0, 1
+    next_x, next_y, next_alive = nil, nil, nil
+    debug_reports = {}
     return require("arena.net")
 end
 
@@ -120,9 +134,9 @@ end
 local snapshot_seq = 0
 -- A snapshot as the wire carries it: subject, input receipt window, sequence,
 -- lag telemetry, then the pack, whose first field is the simulation tick.
-local function welcome(ship, lifecycle, settings)
+local function welcome(ship, lifecycle, settings, room)
     return string.char(1, ship) .. u32le(lifecycle or 1) .. u32le(0)
-        .. string.char(1, 0) .. u32le(settings or 0)
+        .. string.char(room or 1, 0) .. u32le(settings or 0)
 end
 
 local function snapshot(ship, sim_tick, input_ack, input_mask, watching, lifecycle,
@@ -743,6 +757,32 @@ check("a synchronous dial failure returns false", not started,
 check("and reports its reason once", why == "that address is not a zone URL",
       tostring(why))
 websocket.connect = ws_connect
+
+-- A correction larger than the local snap threshold is evidence only while
+-- the same living hull continues across it. File the state around that moment
+-- once, outside the gameplay wire, so a later screenshot is not the first
+-- record of what happened.
+net = fresh_net()
+net.connect("wss://zone/a1", 0, "pilot", function() end, "chaos", false,
+            "https://zone:9443", 2)
+wt.cb(nil, {event = webtransport.EVENT_CONNECTED})
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
+            message = welcome(3, nil, nil, 2)})
+for sent = 6000, 6003 do
+    wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = snapshot(3, sent)})
+end
+net.tick(0.025)
+own_x, own_y = 100, 50
+next_x, next_y = 0, 50
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = snapshot(3, 6004)})
+local report = debug_reports[1]
+check("a large continuous local correction files a diagnostic",
+      #debug_reports == 1 and report and report.kind == "local_correction")
+check("the diagnostic captures the correction and its clocks",
+      report.correction_px == 100 and report.predicted_x == 100
+      and report.reconciled_x == 0 and report.frame_ms == 25
+      and report.snapshot_tick == 6004 and report.wire == "wt"
+      and report.account == 7 and report.zone == "chaos" and report.room == 2)
 
 if fails > 0 then os.exit(1) end
 print("all fine")

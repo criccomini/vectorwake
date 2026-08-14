@@ -202,6 +202,26 @@ function M.online()
     return M.base ~= "" and secret ~= ""
 end
 
+-- File one bounded gameplay diagnostic without putting the device secret in
+-- it. The meta-layer treats the account number as context rather than proof,
+-- just like the page-level error reporter does. A report is best effort: a
+-- diagnostic endpoint must never become another dependency of flight.
+function M.report_debug(report)
+    if M.base == "" or type(report) ~= "table" then return false end
+    if not report.account or report.account <= 0 then
+        report.account = math.max(0, math.floor(M.account or 0))
+    end
+    if not report.build and sys and sys.get_config_string then
+        report.build = sys.get_config_string("project.version", "dev")
+    end
+    if not report.user_agent and html5 and html5.run then
+        local ok, value = pcall(html5.run, "navigator.userAgent")
+        if ok and type(value) == "string" then report.user_agent = value end
+    end
+    post("/v1/client-debug", report, function() end)
+    return true
+end
+
 -- Set the password, which is both claiming and changing: the caller holds a
 -- valid device secret either way, and the old password, if there was one,
 -- is replaced rather than joined.

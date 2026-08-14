@@ -76,7 +76,7 @@ const PAGE = 25;
 // Which page each table is on, by the name its pager and note line use. Reset
 // to zero whenever what is being paged changes, since page four of a filter
 // nobody typed yet is an empty table and a puzzle.
-const pages = { pilots: 0, recent: 0, errors: 0, events: 0 };
+const pages = { pilots: 0, recent: 0, errors: 0, debug: 0, events: 0 };
 
 // Draw one table's footer: which rows these are, out of how many, and whether
 // the two controls can go anywhere.
@@ -134,6 +134,7 @@ for (const [name, redraw] of [
   ["pilots", () => drawPilots(el("lookup-q").value.trim())],
   ["recent", () => drawRecent()],
   ["errors", () => drawErrors()],
+  ["debug", () => drawDebug()],
   ["events", () => drawEvents()],
 ]) {
   for (const b of document.querySelectorAll(`#${name}-pager button`)) {
@@ -146,15 +147,15 @@ for (const [name, redraw] of [
 
 // ----------------------------------------------------------------- routing
 
-// Five main views, one at a time, chosen by the hash.
+// Six main views, one at a time, chosen by the hash.
 //
-// The hash rather than five documents. Each would re-check the flag, re-fetch
+// The hash rather than six documents. Each would re-check the flag, re-fetch
 // everything and repeat the CSP, for navigation between parts of one session;
 // and the panel is served as static files from a directory, so a path per view
 // would need a rewrite rule in Caddy to survive a reload. A hash is still
 // somewhere you can bookmark, still what the back button walks, and costs
 // none of that.
-const VIEWS = ["fleet", "pilots", "activity", "errors", "access", "pilot"];
+const VIEWS = ["fleet", "pilots", "activity", "errors", "debug", "access", "pilot"];
 
 // The rail holds the main views; `pilot` is reached by link rather than
 // by nav, because there is no such thing as "the pilot page" until you have
@@ -197,6 +198,7 @@ addEventListener("hashchange", () => {
   if (panel.hidden) return;
   if (view === "activity") paint("recent", drawRecent);
   if (view === "errors") paint("errors", drawErrors);
+  if (view === "debug") paint("debug", drawDebug);
   if (view === "pilots") paint("pilots", () => drawPilots(el("lookup-q").value.trim()));
   if (view === "access") { paint("bans", drawBans); paint("admins", drawAdmins); }
   if (view === "pilot") paint("pilot", () => lookup(`#${onPilot}`));
@@ -244,6 +246,7 @@ const NOTES = {
   admins: "admins-note",
   activity: "activity-note",
   errors: "errors-note",
+  debug: "debug-note",
 };
 
 // Draw a table, and say so when it cannot be drawn.
@@ -288,6 +291,7 @@ function refresh() {
   paint("fleet", drawFleet);
   paint("recent", drawRecent);
   paint("errors", drawErrors);
+  paint("debug", drawDebug);
   paint("pilots", () => drawPilots(el("lookup-q").value.trim()));
   paint("bans", drawBans);
   paint("admins", drawAdmins);
@@ -943,6 +947,90 @@ async function drawErrors() {
     total: r.groups,
     more: Boolean(r.more),
     paged: r.offset != null,
+  });
+}
+
+// -------------------------------------------------------- rollback reports
+
+function debugDetail(report) {
+  const details = document.createElement("details");
+  details.className = "error-detail";
+  const summary = document.createElement("summary");
+  summary.textContent = `${report.correction_px.toFixed(1)} px at ticks ` +
+    `${report.snapshot_tick} server / ${report.client_tick} client`;
+  details.append(summary);
+
+  const meta = document.createElement("p");
+  meta.className = "error-meta";
+  meta.textContent = `predicted ${report.predicted_x.toFixed(1)},${report.predicted_y.toFixed(1)} ` +
+    `then reconciled ${report.reconciled_x.toFixed(1)},${report.reconciled_y.toFixed(1)}; ` +
+    `snapshot sequence ${report.snapshot_seq}`;
+  details.append(meta);
+  return details;
+}
+
+function debugAccount() {
+  const raw = el("debug-account").value.trim().replace(/^#/, "");
+  const account = Number(raw);
+  return Number.isSafeInteger(account) && account > 0 ? account : null;
+}
+
+async function drawDebug() {
+  const r = await post("/v1/admin/debug", {
+    secret,
+    hours: Number(el("debug-hours").value),
+    wire: el("debug-wire").value,
+    account: debugAccount(),
+    zone: el("debug-zone").value.trim(),
+    build: el("debug-build").value.trim(),
+    limit: PAGE,
+    offset: pages.debug * PAGE,
+  });
+  const list = r.debug || [];
+  fill("debug", list.map((report) => {
+    const at = document.createElement("time");
+    at.dateTime = report.at.replace(" ", "T") + "Z";
+    at.title = `${report.at} UTC${report.user_agent ? ` · ${report.user_agent}` : ""}`;
+    at.textContent = ago(report.at);
+    const where = report.zone || "(unknown)";
+    return [
+      at,
+      report.account ? pilotLink(report.account, `#${report.account}`) : "(unknown)",
+      `${where}${report.room == null ? "" : ` r${report.room}`}`,
+      report.wire,
+      [debugDetail(report), "wrap"],
+      [`frame ${report.frame_ms.toFixed(1)} ms; snapshots ${report.snapshot_gap_ms.toFixed(1)} ms`,
+        "wrap"],
+      [`ack ${report.input_ack}; margin ${report.input_margin}; lead ${report.input_lead}; ` +
+        `${report.input_holes} holes`, "wrap"],
+      report.build || "(unknown)",
+    ];
+  }));
+  el("debug").hidden = list.length === 0;
+  el("debug-empty").hidden = list.length > 0;
+  tell("debug-note", "");
+  pager("debug", {
+    empty: "no rollback reports match these filters",
+    noun: "report",
+    shown: list.length,
+    from: r.offset,
+    total: null,
+    more: Boolean(r.more),
+    paged: r.offset != null,
+  });
+}
+
+el("debug-filters").addEventListener("change", () => {
+  pages.debug = 0;
+  paint("debug", drawDebug);
+});
+
+let debugTyping = null;
+for (const id of ["debug-account", "debug-zone", "debug-build"]) {
+  el(id).addEventListener("input", () => {
+    pages.debug = 0;
+    clearTimeout(debugTyping);
+    debugTyping = setTimeout(() => paint("debug", drawDebug), 180);
   });
 }
 

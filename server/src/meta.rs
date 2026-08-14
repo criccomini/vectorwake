@@ -258,6 +258,34 @@ create table if not exists client_errors (
 );
 alter table client_errors add column if not exists account bigint;
 create index if not exists client_errors_by_last on client_errors (last_at desc);
+create table if not exists client_debug (
+    id               bigserial primary key,
+    at               timestamptz not null default now(),
+    kind             text not null,
+    build            text not null default '',
+    account          bigint references accounts(id) on delete set null,
+    zone             text not null default '',
+    room             integer,
+    wire             text not null,
+    client_tick      bigint not null,
+    snapshot_tick    bigint not null,
+    snapshot_seq     bigint not null,
+    correction_px    double precision not null,
+    predicted_x      double precision not null,
+    predicted_y      double precision not null,
+    reconciled_x     double precision not null,
+    reconciled_y     double precision not null,
+    frame_ms         double precision not null,
+    snapshot_gap_ms  double precision not null,
+    input_ack        bigint not null,
+    input_mask       bigint not null,
+    input_margin     integer not null,
+    input_lead       integer not null,
+    input_holes      integer not null,
+    user_agent       text not null default ''
+);
+create index if not exists client_debug_by_at on client_debug (at desc);
+create index if not exists client_debug_by_account on client_debug (account, at desc);
 -- One live rated connection per account across the fleet. Arenas renew the row
 -- while the socket lives and release it on a clean departure. The timestamp is
 -- a lease so a dead process cannot lock an account forever.
@@ -283,6 +311,9 @@ const BOT_EVENT_DAYS: i32 = 7;
 /// clock restarts when a grouped error happens again so a live fault remains
 /// visible while an old one falls away.
 const CLIENT_ERROR_DAYS: i32 = 30;
+/// Structured rollback traces have the same operational lifetime as browser
+/// errors. After a release cycle they describe code nobody is running.
+const CLIENT_DEBUG_DAYS: i32 = 30;
 /// Password hashing is deliberately expensive. Keep that work below the point
 /// where it can occupy Tokio's whole blocking pool or exhaust a small host.
 const PASSWORD_WORKERS: usize = 4;
@@ -493,6 +524,31 @@ struct ClientError {
     account: Option<i64>,
 }
 
+struct ClientDebug {
+    kind: String,
+    build: String,
+    account: Option<i64>,
+    zone: String,
+    room: Option<i32>,
+    wire: String,
+    client_tick: i64,
+    snapshot_tick: i64,
+    snapshot_seq: i64,
+    correction_px: f64,
+    predicted_x: f64,
+    predicted_y: f64,
+    reconciled_x: f64,
+    reconciled_y: f64,
+    frame_ms: f64,
+    snapshot_gap_ms: f64,
+    input_ack: i64,
+    input_mask: i64,
+    input_margin: i32,
+    input_lead: i32,
+    input_holes: i32,
+    user_agent: String,
+}
+
 /// Remove long hexadecimal runs before a browser diagnostic reaches durable
 /// storage. Device secrets and their hashes are 64 hexadecimal characters, so
 /// a report that accidentally quotes one keeps the shape of the error without
@@ -561,6 +617,85 @@ fn client_error_of(body: &serde_json::Value) -> Result<ClientError, &'static str
             .get("account")
             .and_then(|v| v.as_i64())
             .filter(|v| *v > 0),
+    })
+}
+
+fn client_debug_of(body: &serde_json::Value) -> Result<ClientDebug, &'static str> {
+    let text = |name: &str, limit: usize| {
+        clean_client_text(
+            body.get(name).and_then(|v| v.as_str()).unwrap_or(""),
+            limit,
+            false,
+        )
+    };
+    let u32_field = |name: &str| {
+        body.get(name)
+            .and_then(|v| v.as_u64())
+            .filter(|v| *v <= u32::MAX as u64)
+            .map(|v| v as i64)
+            .ok_or("a tick or mask is outside u32")
+    };
+    let integer = |name: &str, lo: i64, hi: i64| {
+        body.get(name)
+            .and_then(|v| v.as_i64())
+            .filter(|v| *v >= lo && *v <= hi)
+            .map(|v| v as i32)
+            .ok_or("an integer diagnostic field is outside its range")
+    };
+    let number = |name: &str, lo: f64, hi: f64| {
+        body.get(name)
+            .and_then(|v| v.as_f64())
+            .filter(|v| v.is_finite() && *v >= lo && *v <= hi)
+            .ok_or("a numeric diagnostic field is outside its range")
+    };
+
+    if body.get("kind").and_then(|v| v.as_str()) != Some("local_correction") {
+        return Err("unknown client diagnostic kind");
+    }
+    if body.get("alive_before").and_then(|v| v.as_bool()) != Some(true)
+        || body.get("alive_after").and_then(|v| v.as_bool()) != Some(true)
+    {
+        return Err("only continuous living corrections are diagnostics");
+    }
+    let wire = text("wire", 8);
+    if !matches!(wire.as_str(), "ws" | "wt") {
+        return Err("unknown client wire");
+    }
+    let correction_px = number("correction_px", 64.0, 20_000_000.0)?;
+    if correction_px <= 64.0 {
+        return Err("a client correction must exceed the snap threshold");
+    }
+
+    Ok(ClientDebug {
+        kind: "local_correction".to_string(),
+        build: text("build", 80),
+        account: body
+            .get("account")
+            .and_then(|v| v.as_i64())
+            .filter(|v| *v > 0),
+        zone: text("zone", 80),
+        room: body
+            .get("room")
+            .and_then(|v| v.as_i64())
+            .filter(|v| *v > 0 && *v <= u16::MAX as i64)
+            .map(|v| v as i32),
+        wire,
+        client_tick: u32_field("client_tick")?,
+        snapshot_tick: u32_field("snapshot_tick")?,
+        snapshot_seq: u32_field("snapshot_seq")?,
+        correction_px,
+        predicted_x: number("predicted_x", -20_000_000.0, 20_000_000.0)?,
+        predicted_y: number("predicted_y", -20_000_000.0, 20_000_000.0)?,
+        reconciled_x: number("reconciled_x", -20_000_000.0, 20_000_000.0)?,
+        reconciled_y: number("reconciled_y", -20_000_000.0, 20_000_000.0)?,
+        frame_ms: number("frame_ms", 0.0, 3_600_000.0)?,
+        snapshot_gap_ms: number("snapshot_gap_ms", 0.0, 3_600_000.0)?,
+        input_ack: u32_field("input_ack")?,
+        input_mask: u32_field("input_mask")?,
+        input_margin: integer("input_margin", -1000, 1000)?,
+        input_lead: integer("input_lead", 0, 1000)?,
+        input_holes: integer("input_holes", 0, 31)?,
+        user_agent: text("user_agent", 256),
     })
 }
 
@@ -734,6 +869,15 @@ async fn route(
             serde_json::json!({ "error": "too many error reports; wait a while" }),
         );
     }
+    if path == "/v1/client-debug"
+        && (!meta.throttle.allow(&format!("client-debug:{ip}"), 30, hour)
+            || !meta.throttle.allow("client-debug:all", 2000, hour))
+    {
+        return (
+            429,
+            serde_json::json!({ "error": "too many debug reports; wait a while" }),
+        );
+    }
     let mut db = match meta.db().await {
         Ok(d) => d,
         Err(e) => return (503, serde_json::json!({ "error": e })),
@@ -799,6 +943,60 @@ async fn route(
                 .await;
             match stored {
                 Ok(_) => (200, serde_json::json!({ "ok": true })),
+                Err(e) => (500, serde_json::json!({ "error": format!("{e}") })),
+            }
+        }
+
+        // A large correction on a living local hull. These stay as individual
+        // rows because the sequence around a rollback is the evidence; error
+        // grouping would fold it into an occurrence count and throw that away.
+        // Every field is bounded above before this public write reaches SQL,
+        // and the reported account is context rather than authentication.
+        "/v1/client-debug" => {
+            let report = match client_debug_of(body) {
+                Ok(report) => report,
+                Err(error) => return (400, serde_json::json!({ "error": error })),
+            };
+            let stored = db
+                .execute(
+                    "insert into client_debug
+                       (kind, build, account, zone, room, wire, client_tick,
+                        snapshot_tick, snapshot_seq, correction_px,
+                        predicted_x, predicted_y, reconciled_x,
+                        reconciled_y, frame_ms, snapshot_gap_ms, input_ack,
+                        input_mask, input_margin, input_lead, input_holes,
+                        user_agent)
+                     values ($1, $2, (select id from accounts where id = $3),
+                             $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
+                             $14, $15, $16, $17, $18, $19, $20, $21, $22)",
+                    &[
+                        &report.kind,
+                        &report.build,
+                        &report.account,
+                        &report.zone,
+                        &report.room,
+                        &report.wire,
+                        &report.client_tick,
+                        &report.snapshot_tick,
+                        &report.snapshot_seq,
+                        &report.correction_px,
+                        &report.predicted_x,
+                        &report.predicted_y,
+                        &report.reconciled_x,
+                        &report.reconciled_y,
+                        &report.frame_ms,
+                        &report.snapshot_gap_ms,
+                        &report.input_ack,
+                        &report.input_mask,
+                        &report.input_margin,
+                        &report.input_lead,
+                        &report.input_holes,
+                        &report.user_agent,
+                    ],
+                )
+                .await;
+            match stored {
+                Ok(_) => (200, serde_json::json!({ "stored": true })),
                 Err(e) => (500, serde_json::json!({ "error": format!("{e}") })),
             }
         }
@@ -2121,6 +2319,94 @@ async fn route(
             }
         }
 
+        // Individual client rollback reports, newest first. The same admin
+        // secret gate as the browser error list keeps positions and account
+        // context off the public surface. Filters are values in a fixed query,
+        // never fragments of SQL supplied by the panel.
+        "/v1/admin/debug" => {
+            if admin_for(&db, &s("secret")).await.is_none() {
+                return (403, serde_json::json!({ "error": "not an admin" }));
+            }
+            let (limit, offset) = page_of(body);
+            let probe = limit + 1;
+            let hours = body
+                .get("hours")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(24)
+                .clamp(1, 24 * 30) as i32;
+            let account = body
+                .get("account")
+                .and_then(|v| v.as_i64())
+                .filter(|v| *v > 0);
+            let build = clean_client_text(&s("build"), 80, false);
+            let zone = clean_client_text(&s("zone"), 80, false);
+            let wire = match s("wire").as_str() {
+                "ws" => "ws",
+                "wt" => "wt",
+                _ => "",
+            };
+            let rows = db
+                .query(
+                    "select
+                         to_char(at at time zone 'utc', 'YYYY-MM-DD HH24:MI:SS'),
+                         kind, build, account, zone, room, wire, client_tick,
+                         snapshot_tick, snapshot_seq, correction_px,
+                         predicted_x, predicted_y, reconciled_x,
+                         reconciled_y, frame_ms, snapshot_gap_ms, input_ack,
+                         input_mask, input_margin, input_lead, input_holes,
+                         user_agent
+                     from client_debug
+                     where at >= now() - make_interval(hours => $1)
+                       and ($2::bigint is null or account = $2)
+                       and ($3 = '' or build = $3)
+                       and ($4 = '' or zone = $4)
+                       and ($5 = '' or wire = $5)
+                     order by at desc
+                     limit $6 offset $7",
+                    &[&hours, &account, &build, &zone, &wire, &probe, &offset],
+                )
+                .await;
+            match rows {
+                Ok(rows) => {
+                    let more = rows.len() as i64 > limit;
+                    (
+                        200,
+                        serde_json::json!({
+                            "debug": rows.iter().take(limit as usize).map(|r| serde_json::json!({
+                                "at": r.get::<_, String>(0),
+                                "kind": r.get::<_, String>(1),
+                                "build": r.get::<_, String>(2),
+                                "account": r.get::<_, Option<i64>>(3),
+                                "zone": r.get::<_, String>(4),
+                                "room": r.get::<_, Option<i32>>(5),
+                                "wire": r.get::<_, String>(6),
+                                "client_tick": r.get::<_, i64>(7),
+                                "snapshot_tick": r.get::<_, i64>(8),
+                                "snapshot_seq": r.get::<_, i64>(9),
+                                "correction_px": r.get::<_, f64>(10),
+                                "predicted_x": r.get::<_, f64>(11),
+                                "predicted_y": r.get::<_, f64>(12),
+                                "reconciled_x": r.get::<_, f64>(13),
+                                "reconciled_y": r.get::<_, f64>(14),
+                                "frame_ms": r.get::<_, f64>(15),
+                                "snapshot_gap_ms": r.get::<_, f64>(16),
+                                "input_ack": r.get::<_, i64>(17),
+                                "input_mask": r.get::<_, i64>(18),
+                                "input_margin": r.get::<_, i32>(19),
+                                "input_lead": r.get::<_, i32>(20),
+                                "input_holes": r.get::<_, i32>(21),
+                                "user_agent": r.get::<_, String>(22),
+                            })).collect::<Vec<_>>(),
+                            "offset": offset,
+                            "limit": limit,
+                            "more": more,
+                        }),
+                    )
+                }
+                Err(e) => (500, serde_json::json!({ "error": format!("{e}") })),
+            }
+        }
+
         // The pilot log across the whole fleet, newest first.
         //
         // The other read of the same table, and a different question: the one
@@ -3151,6 +3437,34 @@ pub async fn run() {
         });
     }
 
+    // Rollback reports are useful across the release that produced them and
+    // no longer. Individual rows expire on their own timestamp because they
+    // are observations, not grouped faults whose lifetime refreshes.
+    {
+        let pool = pool.clone();
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(std::time::Duration::from_secs(3600));
+            loop {
+                tick.tick().await;
+                let Ok(db) = pool.get().await else { continue };
+                match db
+                    .execute(
+                        "delete from client_debug where ctid in (
+                           select ctid from client_debug
+                           where at < now() - make_interval(days => $1)
+                           limit 5000)",
+                        &[&CLIENT_DEBUG_DAYS],
+                    )
+                    .await
+                {
+                    Ok(n) if n > 0 => println!("meta: retired {n} client debug report(s)"),
+                    Err(e) => println!("meta: client debug retention pass failed: {e}"),
+                    _ => {}
+                }
+            }
+        });
+    }
+
     let verifying = token::to_hex(signing.verifying_key().as_bytes());
     let meta = Arc::new(Meta {
         pool,
@@ -3475,5 +3789,78 @@ mod tests {
         .expect("a message is enough");
         assert_eq!(error.kind, "error");
         assert_eq!(error.account, None);
+    }
+
+    #[test]
+    fn client_debug_reports_are_fixed_and_bounded() {
+        let report = client_debug_of(&serde_json::json!({
+            "kind": "local_correction",
+            "build": "abc123",
+            "account": 42,
+            "zone": "alpha",
+            "room": 3,
+            "wire": "wt",
+            "client_tick": u32::MAX,
+            "snapshot_tick": 100,
+            "snapshot_seq": 7,
+            "correction_px": 91.5,
+            "predicted_x": 917.25,
+            "predicted_y": 828.5,
+            "reconciled_x": 870.75,
+            "reconciled_y": 750.0,
+            "frame_ms": 16.7,
+            "snapshot_gap_ms": 240.0,
+            "input_ack": 106,
+            "input_mask": u32::MAX,
+            "input_margin": -6,
+            "input_lead": 13,
+            "input_holes": 0,
+            "alive_before": true,
+            "alive_after": true,
+            "user_agent": "Vector\u{1}Wake",
+        }))
+        .expect("a bounded living correction");
+        assert_eq!(report.account, Some(42));
+        assert_eq!(report.client_tick, u32::MAX as i64);
+        assert_eq!(report.wire, "wt");
+        assert_eq!(report.user_agent, "VectorWake");
+    }
+
+    #[test]
+    fn client_debug_rejects_noise_and_expected_discontinuities() {
+        let valid = serde_json::json!({
+            "kind": "local_correction",
+            "wire": "ws",
+            "client_tick": 110,
+            "snapshot_tick": 100,
+            "snapshot_seq": 7,
+            "correction_px": 65.0,
+            "predicted_x": 1.0,
+            "predicted_y": 2.0,
+            "reconciled_x": 3.0,
+            "reconciled_y": 4.0,
+            "frame_ms": 17.0,
+            "snapshot_gap_ms": 50.0,
+            "input_ack": 106,
+            "input_mask": 1,
+            "input_margin": -6,
+            "input_lead": 10,
+            "input_holes": 0,
+            "alive_before": true,
+            "alive_after": true,
+        });
+        assert!(client_debug_of(&valid).is_ok());
+
+        let mut too_small = valid.clone();
+        too_small["correction_px"] = serde_json::json!(64.0);
+        assert!(client_debug_of(&too_small).is_err());
+
+        let mut respawn = valid.clone();
+        respawn["alive_before"] = serde_json::json!(false);
+        assert!(client_debug_of(&respawn).is_err());
+
+        let mut bad_wire = valid;
+        bad_wire["wire"] = serde_json::json!("invented");
+        assert!(client_debug_of(&bad_wire).is_err());
     }
 }

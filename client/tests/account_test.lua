@@ -21,6 +21,7 @@ local saved = {secret = "old-secret", account = 1}
 
 _G.sys = {
     get_save_file = function() return "account.save" end,
+    get_config_string = function() return "test-build" end,
     load = function() return saved end,
     save = function(_, value) saved = value end,
 }
@@ -97,6 +98,14 @@ answer(requests[5], "claimed-session", {
 })
 check("claim completes with the current token", claimed and claimed.ok
       and account.token == "claimed-token")
+
+local report = {kind = "local_correction"}
+check("a gameplay diagnostic is accepted without a credential",
+      account.report_debug(report) and #requests == 6)
+check("the diagnostic carries public context only",
+      requests[6].url == "https://meta/v1/client-debug"
+      and requests[6].method == "POST"
+      and report.account == 2 and report.build == "test-build")
 
 if fails > 0 then os.exit(1) end
 print("all good")

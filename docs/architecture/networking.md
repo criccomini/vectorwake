@@ -625,6 +625,16 @@ shooter saw, is also out for now. It makes hitscan weapons feel better and it
 makes you die behind cover, and Subspace's slow projectiles do not need it.
 Revisit if the shooting feels wrong at 150 ms.
 
+## Rollback diagnostics
+
+A living local hull that corrects by more than 64 pixels files one structured
+report, with a one-second cooldown and a ten-report connection limit. It carries
+the positions before and after reconciliation, both tick clocks, snapshot timing,
+input receipts, build and wire. The public write contains no credential and is
+rate-limited at the meta-layer; the admin-only read keeps reports separate and
+expires them after thirty days. Deaths, respawns and attachment changes do not
+file because their discontinuity is expected rather than evidence of rollback.
+
 ## Open questions
 
 How large the corrections on a remote ship actually are at 150 ms and 3% loss.

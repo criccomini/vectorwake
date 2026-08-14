@@ -11,7 +11,7 @@
      client/arena/palette.lua and mean what they mean in the game, so cyan
      is the acting edge and orange is the destructive one.
 
-     Five main views rather than one scroll. Everything used to sit on a single
+     Six main views rather than one scroll. Everything used to sit on a single
      page in the order it was built, so an operator looking for a ban
      scrolled past the fleet, the feed, a pilot card and a command log to
      find it, and the page grew a section every time the panel did. The
@@ -66,6 +66,7 @@
   <a href="#pilots" id="nav-pilots" data-view="pilots">Pilots</a>
   <a href="#activity" id="nav-activity" data-view="activity">Activity</a>
   <a href="#errors" id="nav-errors" data-view="errors">Errors</a>
+  <a href="#debug" id="nav-debug" data-view="debug">Debug</a>
   <a href="#access" id="nav-access" data-view="access">Access</a>
 </nav>
 
@@ -382,6 +383,70 @@
         <button type="button" data-step="1" class="quiet">next</button>
       </div>
       <p id="errors-empty" class="dim" hidden>No browser errors have been reported.</p>
+    </section>
+
+    <!-- ----------------------------------------------------------- debug -->
+    <section class="view" id="view-debug" aria-labelledby="debug-head" hidden>
+      <h2 id="debug-head">Rollback reports</h2>
+
+      <p class="lede dim">A living local hull reports corrections over 64 pixels.
+        Reports are untrusted client observations and expire after 30 days.</p>
+      <div class="facets" id="debug-filters">
+        <fieldset class="facet">
+          <legend><label for="debug-hours">since</label></legend>
+          <select id="debug-hours">
+            <option value="1">an hour ago</option>
+            <option value="24" selected>a day ago</option>
+            <option value="168">a week ago</option>
+            <option value="720">a month ago</option>
+          </select>
+        </fieldset>
+        <fieldset class="facet">
+          <legend><label for="debug-wire">wire</label></legend>
+          <select id="debug-wire">
+            <option value="" selected>either</option>
+            <option value="wt">webtransport</option>
+            <option value="ws">websocket</option>
+          </select>
+        </fieldset>
+        <div class="field">
+          <label for="debug-account">account</label>
+          <input id="debug-account" inputmode="numeric" placeholder="#account">
+        </div>
+        <div class="field">
+          <label for="debug-zone">zone</label>
+          <input id="debug-zone" autocapitalize="off" spellcheck="false">
+        </div>
+        <div class="field grow">
+          <label for="debug-build">build</label>
+          <input id="debug-build" autocapitalize="off" spellcheck="false">
+        </div>
+      </div>
+
+      <p id="debug-note" class="note" role="status" aria-live="polite"></p>
+      <div class="scroller">
+        <table id="debug">
+          <caption class="sr">Large local corrections reported by game clients,
+            newest first</caption>
+          <thead><tr>
+            <th scope="col">at</th>
+            <th scope="col">account</th>
+            <th scope="col">where</th>
+            <th scope="col">wire</th>
+            <th scope="col" class="wrap">correction</th>
+            <th scope="col" class="wrap">timing</th>
+            <th scope="col" class="wrap">input</th>
+            <th scope="col">build</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="pager" id="debug-pager">
+        <button type="button" data-step="-1" class="quiet">previous</button>
+        <span id="debug-range" class="dim" role="status" aria-live="polite"></span>
+        <button type="button" data-step="1" class="quiet">next</button>
+      </div>
+      <p id="debug-empty" class="dim" hidden>No rollback reports match these filters.</p>
     </section>
 
     <!-- --------------------------------------------------------- access -->

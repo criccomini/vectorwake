@@ -169,12 +169,12 @@ the page and its API share an origin and nothing needs CORS. Static for the
 reason the top of this document gives: it wants tables, forms and text entry,
 which the game client refuses to draw on purpose.
 
-Five main views rather than one scroll: **Fleet**, **Pilots**, **Activity**,
-**Errors** and **Access**. Everything used to sit on a single page in the order it was built,
+Six main views rather than one scroll: **Fleet**, **Pilots**, **Activity**,
+**Errors**, **Debug** and **Access**. Everything used to sit on a single page in the order it was built,
 so finding a ban meant scrolling past the fleet, the feed, a pilot card and a
 command log, and the page grew a section every time the panel did.
 
-They are routed on the hash rather than served as five documents. Five
+They are routed on the hash rather than served as six documents. Six
 documents would each re-check the flag, re-fetch everything and repeat the CSP
 for navigation inside one session, and since the panel is a directory of static
 files, a path per view would need a rewrite rule in Caddy to survive a reload.
@@ -202,10 +202,14 @@ Errors holds browser failures grouped by build, stack, and reported account.
 The summary says how many groups were active in the last hour and day, while an
 expanded row gives the bounded stack and user agent. The account number links
 to the pilot page, so a report and the pilot's recent activity are one click
-apart. Access is bans and admins together, since both answer one question about
-who may do what and they used to sit at opposite ends of a long page.
+apart. Debug holds individual large local corrections reported by game clients,
+with filters for the account, build, zone, wire and time window. They stay
+individual because their clocks and positions are the evidence; grouping them
+would keep a count and lose the sequence. Access is bans and admins together,
+since both answer one question about who may do what and they used to sit at
+opposite ends of a long page.
 
-A sixth view, `#pilot/<account>`, is one pilot: their card, the controls that
+A separate route, `#pilot/<account>`, is one pilot: their card, the controls that
 act on them, and their history. It is reached by link rather than from the
 rail, because there is no such thing as the pilot page until you have picked
 one. It used to be a card at the bottom of the list, under whichever page of

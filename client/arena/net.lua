@@ -297,6 +297,12 @@ local pending_kills, pending_charges = {}, {}
 local seen_kills, seen_charges = {}, {}
 local net_clock, last_snap_at = 0, nil
 local SNAP_TICKS = 5
+-- Large corrections on a continuous local hull are filed for diagnosis. Ten
+-- per connection and at most one a second is enough to catch a recurring
+-- rollback without turning one bad session into a stream of database writes.
+local DEBUG_CORRECTION_PX = 64
+local DEBUG_REPORT_MAX = 10
+local debug_reports, last_debug_tick, last_frame_ms = 0, nil, 0
 -- The room channel trails live play by five seconds by default. Twenty seconds
 -- keeps enough identity to reject that delayed copy without retaining every
 -- event for the life of the connection.
@@ -960,7 +966,10 @@ local function on_snapshot(s)
     -- Raw, not what the screen is showing. This measures how far the
     -- prediction missed by, and a number that has had render smoothing folded
     -- into it measures the smoothing instead.
+    local client_tick = sim.tick()
     local px, py = sim.ship_x_raw(M.me), sim.ship_y_raw(M.me)
+    local alive_before = sim.ship_alive(M.me) == 1
+    local carrier_before = sim.ship_carrier and sim.ship_carrier(M.me) or 255
     -- What the screen is currently asserting about every hull, held across the
     -- correction so the drawing can be walked to the truth rather than cut to
     -- it. See the render section of simcore.cpp.
@@ -1049,12 +1058,52 @@ local function on_snapshot(s)
     harvest_world(before)
     publish_timed_events()
 
-    local dx, dy = sim.ship_x_raw(M.me) - px, sim.ship_y_raw(M.me) - py
+    local reconciled_x, reconciled_y =
+        sim.ship_x_raw(M.me), sim.ship_y_raw(M.me)
+    local dx, dy = reconciled_x - px, reconciled_y - py
     local err = math.sqrt(dx * dx + dy * dy)
     M.stats.self_err = err
     -- The first snapshots after joining are a teleport, not a misprediction.
     if M.stats.snaps > 3 and err > M.stats.self_err_max then
         M.stats.self_err_max = err
+    end
+
+    local alive_after = sim.ship_alive(M.me) == 1
+    local carrier_after = sim.ship_carrier and sim.ship_carrier(M.me) or 255
+    local cooled = not last_debug_tick
+        or (serial_after(from, last_debug_tick)
+            and u32n(from - last_debug_tick) >= 100)
+    if M.stats.snaps > 3 and err > DEBUG_CORRECTION_PX
+        and alive_before and alive_after and carrier_before == carrier_after
+        and debug_reports < DEBUG_REPORT_MAX and cooled
+        and account.report_debug then
+        debug_reports = debug_reports + 1
+        last_debug_tick = from
+        account.report_debug({
+            kind = "local_correction",
+            account = M.joined and M.joined.account or 0,
+            zone = M.zone ~= "" and M.zone
+                or (M.joined and M.joined.zone or ""),
+            room = M.room,
+            wire = M.stats.wire,
+            client_tick = client_tick,
+            snapshot_tick = from,
+            snapshot_seq = seq,
+            correction_px = err,
+            predicted_x = px,
+            predicted_y = py,
+            reconciled_x = reconciled_x,
+            reconciled_y = reconciled_y,
+            frame_ms = last_frame_ms,
+            snapshot_gap_ms = M.stats.snap_gap_ms,
+            input_ack = acked,
+            input_mask = receipts.input_mask,
+            input_margin = M.stats.input_margin,
+            input_lead = M.stats.lead,
+            input_holes = M.stats.input_holes,
+            alive_before = alive_before,
+            alive_after = alive_after,
+        })
     end
 
     for logged_tick in pairs(input_log) do
@@ -1275,6 +1324,7 @@ end
 -- the browser would notice on its own tens of seconds later, and a player
 -- staring at "joining" for that long has already given up.
 function M.tick(dt)
+    last_frame_ms = math.max(0, dt * 1000)
     net_clock = net_clock + dt
     transport:tick(dt, M.connected)
 end
@@ -1362,7 +1412,8 @@ function M.connect(url, class, name, on_lost, zone, watch, wt, room)
     -- exactly once, from this join's name and token, and never hears about
     -- either again: the roster, the ratings and every kill filed for the life
     -- of the connection belong to whoever this was at this moment.
-    M.joined = {name = name, account = account.account or 0}
+    M.joined = {name = name, account = account.account or 0, zone = zone or ""}
+    debug_reports, last_debug_tick, last_frame_ms = 0, nil, 0
 
     return transport:connect({
         url = url,
