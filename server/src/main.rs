@@ -354,9 +354,10 @@ fn run_team_tournament() {
     };
 
     const SKILL: f32 = 0.50;
+    let spawn_radius = tuning.as_ref().and_then(|c| c.spawn_radius).unwrap_or(0);
     println!(
         "{per_side} a side under {zone} tuning on the {map}: {matches} matches at \
-{greens} greens a life"
+{greens} greens a life, spawn radius {spawn_radius}"
     );
     let rows = calibrate::run_teams(
         per_side,
@@ -367,7 +368,16 @@ fn run_team_tournament() {
         &builder,
         true,
     );
-    let doc = calibrate::report_teams(&rows, per_side, SKILL, greens, matches, &zone, &map);
+    let doc = calibrate::report_teams(
+        &rows,
+        per_side,
+        SKILL,
+        greens,
+        matches,
+        &zone,
+        &map,
+        spawn_radius,
+    );
 
     let path = format!("{dir}/teams.json");
     match std::fs::write(
@@ -2806,6 +2816,7 @@ mod tests {
             vx: 0.0,
             vy: 0.0,
             energy: 1.0,
+            radius: 22.0,
             value: 0,
             carrying_flag: false,
             clear: true,

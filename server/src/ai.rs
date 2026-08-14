@@ -183,12 +183,10 @@ pub fn class_index(name: &str) -> Option<usize> {
 /// the one pilot in the room who could see all of it.
 pub const SIGHT: f32 = 60.0 * 16.0;
 
-/// One pull of a trigger, as the pilot holding it understands it: the damage
-/// it does per tick of the cooldown it imposes, what it costs as a share of
-/// the bar, and the blast it makes.
+/// One pull of a trigger, as the pilot holding it understands it: what it
+/// costs as a share of the bar, the blast it makes, and how fast it travels.
 #[derive(Clone, Copy)]
 pub struct Shot {
-    pub per_tick: f32,
     pub cost: f32,
     pub blast: f32,
     /// Muzzle speed in px a tick, which is what a lead has to be solved
@@ -198,10 +196,26 @@ pub struct Shot {
     pub speed: f32,
 }
 
+/// The mine rack as the pilot sees it. Mines are part of the bomb trigger,
+/// but they are limited by how many of this pilot's are already in the world.
+#[derive(Clone, Copy)]
+pub struct Mine {
+    pub cost: f32,
+    pub blast: f32,
+    pub out: u8,
+    pub max: u8,
+    pub ready: bool,
+    /// Whether another mine is already covering the pilot's current patch.
+    /// Clients retain all of their own mines in snapshots, so this is public
+    /// cockpit information rather than map-wide knowledge.
+    pub nearby: bool,
+}
+
 /// The cockpit: what a pilot knows about their own ship without looking
 /// anywhere. Exact, and current every tick.
 pub struct Own {
     pub alive: bool,
+    pub class: u8,
     pub x: f32,
     pub y: f32,
     /// Px a tick. This was missing, and its absence is most of why a bot flew
@@ -239,6 +253,8 @@ pub struct Own {
     /// settings table every client is sent.
     pub gun: Option<Shot>,
     pub bomb: Option<Shot>,
+    pub bomb_ready: bool,
+    pub mine: Option<Mine>,
 }
 
 #[derive(Clone, Copy)]
@@ -248,6 +264,7 @@ pub struct Foe {
     pub vx: f32,
     pub vy: f32,
     pub energy: f32,
+    pub radius: f32,
     pub value: u16,
     pub carrying_flag: bool,
     /// Whether the line to them is open. A player can see a wall in the way;
@@ -416,8 +433,12 @@ pub fn own(w: &World, ship: u8) -> Own {
     let carrying_flag = w.state.flags[..w.state.flag_count as usize]
         .iter()
         .any(|f| f.active != 0 && f.carried != 0 && f.carrier == ship);
+    let gun = shot_of(w, me, sim::TRIG_GUN, max_e);
+    let bomb = shot_of(w, me, sim::TRIG_BOMB, max_e);
+    let mine = mine_of(w, ship, max_e);
     Own {
         alive: me.active != 0 && me.alive != 0,
+        class: me.cls,
         x: me.x as f32 / 256.0,
         y: me.y as f32 / 256.0,
         vx: me.vx as f32 / 65536.0,
@@ -430,7 +451,7 @@ pub fn own(w: &World, ship: u8) -> Own {
         // big am I" is the nose-corner diagonal: the worst reach at any
         // orientation, which is the honest figure for both ducking a blast
         // and judging how wide a target stands.
-        radius: ((cls.fore * cls.fore + cls.halfw * cls.halfw) as f32).sqrt(),
+        radius: ((cls.fore * cls.fore + cls.halfw * cls.halfw) as f32).sqrt() / 256.0,
         heading: me.heading as f32 / 65536.0,
         energy: me.energy as f32 / max_e,
         in_safe: unsafe { sim::sim_in_safe(&*w.map, me.x, me.y) } != 0,
@@ -438,8 +459,10 @@ pub fn own(w: &World, ship: u8) -> Own {
         value: w.bounty(ship as usize).clamp(0, u16::MAX as i32) as u16,
         carrying_flag,
         charges: me.charge,
-        gun: shot_of(w, me, sim::TRIG_GUN, max_e),
-        bomb: shot_of(w, me, sim::TRIG_BOMB, max_e),
+        gun,
+        bomb,
+        bomb_ready: me.fire_cooldown[sim::TRIG_BOMB] == 0,
+        mine,
     }
 }
 
@@ -504,6 +527,7 @@ pub fn scan(w: &World, ship: u8) -> Scan {
             out.hostiles_near = out.hostiles_near.saturating_add(1);
         }
         let max_e = w.eff_max_energy(i).max(1) as f32;
+        let target_class = &w.cfg.classes[o.cls as usize];
         let carrying_flag = w.state.flags[..w.state.flag_count as usize]
             .iter()
             .any(|f| f.active != 0 && f.carried != 0 && f.carrier == i as u8);
@@ -513,6 +537,10 @@ pub fn scan(w: &World, ship: u8) -> Scan {
             vx: o.vx as f32 / 65536.0,
             vy: o.vy as f32 / 65536.0,
             energy: o.energy as f32 / max_e,
+            radius: ((target_class.fore * target_class.fore
+                + target_class.halfw * target_class.halfw) as f32)
+                .sqrt()
+                / 256.0,
             value: w.bounty(i).clamp(0, u16::MAX as i32) as u16,
             carrying_flag,
             clear: clear_line(w, mx, my, ox, oy),
@@ -546,7 +574,7 @@ pub fn scan(w: &World, ship: u8) -> Scan {
     // reach at any orientation: the nose-corner diagonal. A bot that probed
     // with its flank width would plan routes its own nose cannot take.
     let cls = &w.cfg.classes[me.cls as usize];
-    let (fore, halfw) = (cls.fore as f32, cls.halfw as f32);
+    let (fore, halfw) = (cls.fore as f32 / 256.0, cls.halfw as f32 / 256.0);
     let r = (fore * fore + halfw * halfw).sqrt();
     for k in 0..WHISKERS {
         let a = k as f32 / WHISKERS as f32 * std::f32::consts::TAU;
@@ -654,13 +682,55 @@ fn shot_of(w: &World, me: &sim::sim_ship, trig: usize, max_e: f32) -> Option<Sho
         let p = &w.cfg.patterns[pat as usize];
         let sp = &w.cfg.specs[p.spec as usize];
         return Some(Shot {
-            per_tick: (sp.damage as f32 * p.count as f32) / p.delay.max(1) as f32,
             cost: p.energy as f32 / max_e,
             blast: sp.blast as f32 / 256.0,
             speed: sp.speed as f32 / 65536.0,
         });
     }
     None
+}
+
+/// The mine this pilot would lay now, plus the state of its rack.
+fn mine_of(w: &World, ship: u8, max_e: f32) -> Option<Mine> {
+    let me = &w.state.ships[ship as usize];
+    let cls = &w.cfg.classes[me.cls as usize];
+    let pat = w.cfg.mine;
+    if cls.mine_max == 0
+        || pat == sim::NO_PATTERN
+        || pat as usize >= w.cfg.pattern_count as usize
+        || shot_of(w, me, sim::TRIG_BOMB, max_e).is_none()
+    {
+        return None;
+    }
+    let p = &w.cfg.patterns[pat as usize];
+    if p.spec as usize >= w.cfg.spec_count as usize {
+        return None;
+    }
+    let sp = &w.cfg.specs[p.spec as usize];
+    let level = me.level[sim::TRIG_BOMB] as i32;
+    let blast = (sp.blast + level * sp.blast_up) as f32 / 256.0;
+    let spacing = blast + 96.0;
+    let mut out = 0u8;
+    let mut nearby = false;
+    for weapon in &w.state.weapons[..w.state.weapon_count as usize] {
+        if weapon.owner != ship || w.cfg.specs[weapon.spec as usize].still == 0 {
+            continue;
+        }
+        out = out.saturating_add(1);
+        let dx = weapon.x as f32 / 256.0 - me.x as f32 / 256.0;
+        let dy = weapon.y as f32 / 256.0 - me.y as f32 / 256.0;
+        if dx * dx + dy * dy < spacing * spacing {
+            nearby = true;
+        }
+    }
+    Some(Mine {
+        cost: (p.energy + level * p.energy_up) as f32 / max_e,
+        blast,
+        out,
+        max: cls.mine_max,
+        ready: me.fire_cooldown[sim::TRIG_BOMB] == 0,
+        nearby,
+    })
 }
 
 /// When a shot fired now would arrive, in ticks, or None when the target
@@ -785,6 +855,44 @@ enum Mode {
     Recover(f32, f32, f32, f32),
     /// Hold station on the last foe seen, at this range, and shoot it.
     Fight(f32),
+    /// Lay one mine here, then return to the ordinary plan.
+    Mine,
+}
+
+/// The weapon the current engagement was planned around. Picking this before
+/// aiming matters because bombs and bullets travel at different speeds.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Weapon {
+    Gun,
+    Bomb,
+    BombApproach,
+    BombSetup,
+    Mine,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Doctrine {
+    Duelist,
+    Bombardier,
+    Skirmisher,
+    Heavy,
+    Ambusher,
+    Brawler,
+    Denier,
+}
+
+impl Doctrine {
+    fn for_class(class: u8) -> Self {
+        match class {
+            0 => Self::Duelist,
+            1 => Self::Bombardier,
+            2 => Self::Skirmisher,
+            3 => Self::Heavy,
+            4 => Self::Ambusher,
+            5 => Self::Brawler,
+            _ => Self::Denier,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -862,6 +970,9 @@ pub struct Bot {
     jitter: f32,
     timer: u32,
     mode: Mode,
+    weapon: Weapon,
+    last_bomb_at: Option<u32>,
+    last_mine_at: Option<u32>,
     posture: Posture,
     shelter: Option<(f32, f32)>,
     retreat_started: u32,
@@ -958,6 +1069,9 @@ impl Bot {
             jitter: 0.0,
             timer: ship as u32 * 7, // stagger so they do not all think at once
             mode: Mode::Idle,
+            weapon: Weapon::Gun,
+            last_bomb_at: None,
+            last_mine_at: None,
             posture: Posture::Normal,
             shelter: None,
             retreat_started: 0,
@@ -1070,8 +1184,20 @@ impl Bot {
         match self.mode {
             Mode::Idle => 0,
             Mode::Travel(..) => 1,
-            Mode::Fight(_) => 2,
+            Mode::Fight(_) | Mode::Mine => 2,
             Mode::Recover(..) => 3,
+        }
+    }
+
+    /// Current target range, sampled by the offline team tournament.
+    pub fn engagement_distance(&self) -> Option<f32> {
+        matches!(self.mode, Mode::Fight(_)).then_some(self.dist)
+    }
+
+    pub fn planned_engagement_range(&self) -> Option<f32> {
+        match self.mode {
+            Mode::Fight(range) => Some(range),
+            _ => None,
         }
     }
 
@@ -1378,9 +1504,202 @@ impl Bot {
         0.20
     }
 
+    fn selected_shot(&self, o: &Own) -> Option<Shot> {
+        match self.weapon {
+            Weapon::Gun | Weapon::BombApproach => o.gun,
+            Weapon::Bomb | Weapon::BombSetup => o.bomb,
+            Weapon::Mine => None,
+        }
+    }
+
+    /// A hull's working distance is part of its job, not a universal number.
+    /// Fast bombers want time for a bomb to travel, Facet wants its fan close,
+    /// and Lattice wants enough room to hold a lane.
+    fn engagement_range(&self, o: &Own, weapon: Weapon) -> f32 {
+        let doctrine = Doctrine::for_class(o.class);
+        if matches!(
+            weapon,
+            Weapon::Bomb | Weapon::BombApproach | Weapon::BombSetup
+        ) {
+            let blast = o.bomb.map_or(0.0, |b| b.blast);
+            let clearance = blast + o.radius + 160.0;
+            let floor = match doctrine {
+                Doctrine::Bombardier => 360.0,
+                Doctrine::Heavy => 400.0,
+                Doctrine::Denier => 360.0,
+                _ => 320.0,
+            };
+            return (clearance + 40.0).max(floor).min(560.0);
+        }
+        let base = match doctrine {
+            Doctrine::Duelist => 175.0,
+            Doctrine::Bombardier => 205.0,
+            Doctrine::Skirmisher => 240.0,
+            Doctrine::Heavy => 185.0,
+            Doctrine::Ambusher => 155.0,
+            Doctrine::Brawler => 105.0,
+            Doctrine::Denier => 260.0,
+        };
+        // Poor pilots overcommit a little. The range remains recognizably the
+        // hull's, while skill still has a visible positional mistake to make.
+        base * (0.90 + self.skill * 0.10)
+    }
+
+    fn bomb_cadence(&self, doctrine: Doctrine) -> u32 {
+        match doctrine {
+            Doctrine::Bombardier => 600,
+            Doctrine::Heavy => 600,
+            Doctrine::Denier => 1_200,
+            _ => 1_800,
+        }
+    }
+
+    /// How far from this pilot a bomb fired now is expected to meet its
+    /// target, measured in the pilot's moving frame. Current separation is
+    /// not enough: a target charging a slow bomb can bring the detonation
+    /// back inside its owner's blast before the round arrives.
+    fn bomb_impact_clearance(&self, o: &Own, foe: Foe, bomb: Shot) -> Option<f32> {
+        let relative_position = (foe.x - o.x, foe.y - o.y);
+        let relative_velocity = (foe.vx - o.vx, foe.vy - o.vy);
+        intercept(relative_position, relative_velocity, bomb.speed).map(|t| bomb.speed * t)
+    }
+
+    /// Pick the weapon before solving the lead. The old order always solved
+    /// with gun speed and only then sometimes substituted a slower bomb.
+    fn choose_weapon(&self, o: &Own, foe: Foe, dist: f32) -> Weapon {
+        let Some(bomb) = o.bomb else {
+            return Weapon::Gun;
+        };
+        if self.skill < 0.35 || o.energy - bomb.cost <= self.reserve() || !foe.clear {
+            return Weapon::Gun;
+        }
+        let doctrine = Doctrine::for_class(o.class);
+        if self
+            .last_bomb_at
+            .is_some_and(|last| self.timer.saturating_sub(last) < self.bomb_cadence(doctrine))
+        {
+            return Weapon::Gun;
+        }
+
+        let crowded = self.seen.hostiles_near >= 2;
+        let finisher = foe.energy < 0.38;
+        let outnumbered = self.seen.hostiles_near > self.seen.allies_near.saturating_add(1);
+        let purposeful = match doctrine {
+            // Wedge gets to initiate with its defining weapon when it has a
+            // healthy bar. Cadence, range and reserve keep that from becoming
+            // bomb spam.
+            Doctrine::Bombardier => crowded || finisher || o.energy > 0.45,
+            Doctrine::Heavy => crowded || finisher || outnumbered || o.energy > 0.48,
+            Doctrine::Denier => crowded || finisher,
+            _ => crowded || finisher,
+        };
+        if !purposeful {
+            return Weapon::Gun;
+        }
+
+        // Wedge creates the shot instead of abandoning it. It keeps gun
+        // pressure while opening the lane, then holds both triggers only after
+        // the geometry is safe so the shared cooldown can clear. Other hulls
+        // keep using the gun when their situational bomb is unavailable.
+        let approach = if doctrine == Doctrine::Bombardier {
+            Weapon::BombApproach
+        } else {
+            Weapon::Gun
+        };
+        // The pilot keeps closing while the bomb flies. Merely starting
+        // outside the blast is not safe if the plan immediately carries the
+        // hull back into it.
+        let near = bomb.blast + o.radius + 160.0;
+        let far = (near + 180.0).max(match doctrine {
+            Doctrine::Bombardier => 700.0,
+            Doctrine::Heavy => 650.0,
+            Doctrine::Denier => 560.0,
+            _ => 520.0,
+        });
+        if dist <= near || dist >= far {
+            return approach;
+        }
+        // Judge the expected meeting point as well as the distance at the
+        // moment of firing. This matters most to Anvil: its third-rung blast
+        // is wider than its gun posture, so a closing target can turn an
+        // apparently distant shot into an explosion beside the pilot.
+        let impact_clearance = self.bomb_impact_clearance(o, foe, bomb);
+        if impact_clearance.is_none_or(|d| d <= bomb.blast + o.radius + 96.0) {
+            return approach;
+        }
+        if !o.bomb_ready {
+            return if doctrine == Doctrine::Bombardier {
+                Weapon::BombSetup
+            } else {
+                Weapon::Gun
+            };
+        }
+        Weapon::Bomb
+    }
+
+    fn mine_corridor(&self) -> bool {
+        let short = self.seen.clear.iter().filter(|&&d| d < 88.0).count();
+        let through = (0..WHISKERS / 2)
+            .filter(|&k| self.seen.clear[k] > 144.0 && self.seen.clear[k + WHISKERS / 2] > 144.0)
+            .count();
+        short >= 4 && through >= 1
+    }
+
+    /// Mines defend ground. They are laid in lanes with room to pass through,
+    /// never in open space, on top of another mine, or while somebody already
+    /// has a point-blank shot.
+    fn should_mine(&self, o: &Own) -> bool {
+        let Some(mine) = o.mine else { return false };
+        if !mine.ready
+            || mine.out >= mine.max
+            || mine.nearby
+            || o.energy - mine.cost <= self.reserve() + 0.08
+            || !self.mine_corridor()
+        {
+            return false;
+        }
+
+        // A minefield is only useful if this hull can defend it without
+        // standing in its own blast. The mine grows with bomb level, so this
+        // has to use the current rack rather than a class name. It naturally
+        // rules out a built Anvil, Facet, or Cipher while leaving the long
+        // Lattice posture useful.
+        let defend_from = self.engagement_range(o, Weapon::Gun);
+        if defend_from <= mine.blast + o.radius + 24.0 {
+            return false;
+        }
+        if self
+            .seen
+            .threat
+            .is_some_and(|t| t.eta < 90.0 && t.miss < t.blast + o.radius)
+            || self.closest_contact(o).is_some_and(|d| d < 240.0)
+        {
+            return false;
+        }
+
+        let doctrine = Doctrine::for_class(o.class);
+        let cadence = match doctrine {
+            Doctrine::Denier => 700,
+            Doctrine::Heavy => 1_400,
+            Doctrine::Bombardier => 1_800,
+            _ => 2_600,
+        };
+        if self
+            .last_mine_at
+            .is_some_and(|last| self.timer.saturating_sub(last) < cadence)
+        {
+            return false;
+        }
+        match doctrine {
+            Doctrine::Denier => true,
+            Doctrine::Heavy | Doctrine::Bombardier => self.seen.company,
+            _ => self.skill >= 0.55 && self.seen.hostiles_near > 0,
+        }
+    }
+
     /// The reflex: fire when the shot is on and the reserve allows it.
     fn trigger(&mut self, o: &Own) -> u16 {
-        if !o.alive || self.aim == (0.0, 0.0) {
+        if !o.alive {
             return 0;
         }
         // In a safe zone the trigger is the brake. A bot crossing one with a
@@ -1391,6 +1710,27 @@ impl Bot {
         // Past breaking off, this pilot is not playing any more. Shooting on
         // the way out is how a departure stops reading as one.
         if matches!(self.exit, Exit::Leaving | Exit::Parked) {
+            return 0;
+        }
+        if self.weapon == Weapon::Mine && matches!(self.mode, Mode::Mine) {
+            // One press only. The core owns capacity, energy and cooldown, but
+            // the cockpit copy above keeps this ordinary attempt from being a
+            // held key that lays another mine as soon as the clock clears.
+            self.mode = Mode::Idle;
+            self.weapon = Weapon::Gun;
+            if let Some(mine) = o.mine {
+                if mine.ready
+                    && mine.out < mine.max
+                    && !mine.nearby
+                    && o.energy - mine.cost > self.reserve() + 0.08
+                {
+                    self.last_mine_at = Some(self.timer);
+                    return sim::BTN_MINE;
+                }
+            }
+            return 0;
+        }
+        if self.aim == (0.0, 0.0) {
             return 0;
         }
         // Energy is health and ammunition in one pool, so knowing when to
@@ -1415,7 +1755,12 @@ impl Bot {
         // actually has. A flat 0.16 radians was two ships wide at close range
         // and four ships wide at a hundred tiles, so a pilot at range fired
         // constantly and hit nothing.
-        let span = ((o.radius * 2.0) / self.dist.max(1.0)).atan();
+        let target = self.seen.foe.map_or(o.radius, |f| f.radius);
+        let reach = match self.weapon {
+            Weapon::Bomb => target + o.bomb.map_or(0.0, |b| b.blast * 0.45),
+            _ => target,
+        };
+        let span = (reach / self.dist.max(1.0)).atan();
         let tol = (span + (1.0 - self.skill) * 0.04).clamp(0.05, 0.32);
         if self.aim_diff(o, self.aim.0, self.aim.1).abs() >= tol {
             return 0;
@@ -1423,70 +1768,18 @@ impl Bot {
         if self.posture != Posture::Normal {
             return sim::BTN_FIRE;
         }
-        // A bomb instead of the burst of gunfire, never as well as it. The
-        // core reads a held gun as a gun -- `int trig = ((b & BTN_FIRE) == 0)
-        // ? TRIG_BOMB : TRIG_GUN` -- and one cooldown covers both, so asking
-        // for both at once fires a bomb precisely never.
-        if self.bomb_now(o) {
-            return sim::BTN_BOMB;
+        match self.weapon {
+            Weapon::Bomb if o.bomb_ready => {
+                let Some(bomb) = o.bomb else { return 0 };
+                if o.energy - bomb.cost <= self.reserve() {
+                    return 0;
+                }
+                self.last_bomb_at = Some(self.timer);
+                sim::BTN_BOMB
+            }
+            Weapon::Gun | Weapon::BombApproach => sim::BTN_FIRE,
+            _ => 0,
         }
-        sim::BTN_FIRE
-    }
-
-    /// Whether to throw a bomb instead of the gunfire it stands in for.
-    ///
-    /// Not a rate comparison. That is what stood here, and on the original's
-    /// numbers -- which every hull now carries -- the gun wins everywhere and
-    /// always will: 200 damage on a 25 tick cooldown is 8.0 a tick against the
-    /// bomb's 750 on 150, which is 5.0. Measured over a full round robin,
-    /// every ship at every rung threw zero bombs. A bomb is never the better
-    /// shot by that arithmetic, so that arithmetic was the wrong question.
-    ///
-    /// What a bomb buys is that it does not have to hit. It lands its damage
-    /// over a radius, so the question is range. Too close and the blast is on
-    /// the pilot who threw it: forcing bombs on regardless made 16% of all
-    /// deaths self-inflicted, which is a number no rate test would ever have
-    /// found. Too far and it is a fifth of the bar thrown across a room at
-    /// somebody who will simply move.
-    ///
-    /// So the band opens outside the pilot's own blast and closes where the
-    /// flight time stops being worth it, and both ends move with the bomb the
-    /// hull is actually carrying -- which is how a level 3 bomb becomes a
-    /// weapon you throw further rather than a bigger version of the same one.
-    fn bomb_now(&self, o: &Own) -> bool {
-        let Some(bomb) = o.bomb else { return false };
-        // A bomb is a judgement call, and the worst pilots do not make it.
-        if self.skill < 0.35 {
-            return false;
-        }
-        // It has to leave the reserve intact, or the pilot spends the fight
-        // recovering from having thrown one.
-        if o.energy - bomb.cost <= self.reserve() {
-            return false;
-        }
-        // Nothing in the way. A bomb ends on the first wall it touches and
-        // puts its blast there, so a bomb thrown down a corridor is a blast on
-        // the corridor. This is the condition that was missing, and its
-        // absence is measurable rather than theoretical: with the band alone,
-        // the pilots allowed to bomb rated 60 points *below* the one that was
-        // not, in a room small enough that every bomb found a wall.
-        if !self.seen.foe.map_or(false, |f| f.clear) {
-            return false;
-        }
-        // In a duel, a healthy target is better served by the gun. The bomb's
-        // cost buys area denial, a crowd hit, or a finish that prevents the
-        // target rebuilding its bar. Throwing it on cooldown at one healthy
-        // pilot was a skill penalty disguised as a skill feature.
-        let finisher = self.seen.foe.map_or(false, |f| f.energy < 0.38);
-        if self.seen.hostiles_near < 2 && !finisher {
-            return false;
-        }
-        // Clear of our own blast with room to close on it while it flies: a
-        // bomb covers about 2 px a tick and a hull up to 3, so the gap between
-        // them shuts in well under a second.
-        let near = bomb.blast + 120.0;
-        let far = 480.0f32.max(near + 160.0);
-        self.dist > near && self.dist < far
     }
 
     /// Whether this kind of approach is worth trying at all right now.
@@ -1720,6 +2013,7 @@ impl Bot {
         if self.posture == Posture::Normal && !self.should_disengage(o) {
             return false;
         }
+        self.weapon = Weapon::Gun;
         if self.posture == Posture::Normal {
             self.posture = Posture::Disengaging;
             self.retreat_started += 1;
@@ -1836,6 +2130,7 @@ impl Bot {
             self.aim = (0.0, 0.0);
             self.goal = None;
             self.mode = Mode::Idle;
+            self.weapon = Weapon::Gun;
             self.posture = Posture::Normal;
             self.shelter = None;
             return;
@@ -1857,9 +2152,18 @@ impl Bot {
         // there the trigger is the brake, so a bot that fires on its way
         // through stops dead in the one place nothing can shoot into.
         if o.in_safe {
+            self.weapon = Weapon::Gun;
             let c = (sim::MAP_TILES as f32 / 2.0) * 16.0;
             self.plot(o, nav, (c, c));
             self.mode = Mode::Travel(c, c, 0.0, f32::INFINITY);
+            return;
+        }
+
+        if self.should_mine(o) {
+            self.aim = (0.0, 0.0);
+            self.goal = None;
+            self.weapon = Weapon::Mine;
+            self.mode = Mode::Mine;
             return;
         }
 
@@ -1936,29 +2240,22 @@ impl Bot {
         // at them rather than holding a range against something that cannot be
         // shot, and let the trigger stay shut on the way.
         if !foe.clear {
+            self.weapon = Weapon::Gun;
             let d = self.plot(o, nav, (fx, fy));
             self.approaching(Goal::Foe, fx, fy, d, 48.0);
             self.mode = Mode::Travel(fx, fy, 0.0, 1.5);
             return;
         }
 
-        // Strong pilots preserve a useful firing lane instead of spending
-        // their better aim at knife range. Weak pilots overcommit, which is a
-        // visible mistake and gives the skill dial leverage in real matches.
-        let ideal = 175.0;
-        let range = ideal;
+        let (ddx, ddy) = (fx - o.x, fy - o.y);
+        let distance = (ddx * ddx + ddy * ddy).sqrt();
+        self.weapon = self.choose_weapon(o, foe, distance);
+        let ideal = self.engagement_range(o, self.weapon);
         // Inside that range the pilot has arrived and is fighting, so closing no
         // further is the plan working rather than a wall. Only the run in counts
         // as an approach.
-        let (ddx, ddy) = (fx - o.x, fy - o.y);
-        self.approaching(
-            Goal::Foe,
-            fx,
-            fy,
-            (ddx * ddx + ddy * ddy).sqrt(),
-            ideal * 1.15,
-        );
-        self.mode = Mode::Fight(range);
+        self.approaching(Goal::Foe, fx, fy, distance, ideal * 1.15);
+        self.mode = Mode::Fight(ideal);
     }
 
     /// The hands, every tick.
@@ -1968,6 +2265,10 @@ impl Bot {
         }
         match self.mode {
             Mode::Idle => {
+                self.aim = (0.0, 0.0);
+                0
+            }
+            Mode::Mine => {
                 self.aim = (0.0, 0.0);
                 0
             }
@@ -2060,7 +2361,11 @@ impl Bot {
                 // empty, and then the best a pilot can do is point at them and
                 // wait for the geometry to improve.
                 let rel = (foe.vx - o.vx, foe.vy - o.vy);
-                let muzzle = o.gun.or(o.bomb).map_or(2.0, |s| s.speed);
+                let muzzle = self
+                    .selected_shot(o)
+                    .or(o.gun)
+                    .or(o.bomb)
+                    .map_or(2.0, |s| s.speed);
                 let t = intercept((dx, dy), rel, muzzle).unwrap_or(0.0).min(200.0);
                 self.aim = (dx + rel.0 * t, dy + rel.1 * t);
 
@@ -2343,6 +2648,210 @@ fn nearest_prizes(w: &World, mx: f32, my: f32, within: f32, keep: usize) -> Vec<
 mod tests {
     use super::*;
     use crate::sim;
+
+    #[test]
+    fn hulls_fight_at_ranges_that_fit_their_jobs() {
+        let mut w = sim::World::with_map(0x5eed, |_| {});
+        let mut ranges = [0.0; 7];
+        for class in 0..7u8 {
+            let ship = w.spawn(class, 0, 500 + class as i32, 500, 0);
+            let o = own(&w, ship as u8);
+            ranges[class as usize] = Bot::new(ship as u8, 0.7).engagement_range(&o, Weapon::Gun);
+        }
+        assert!(ranges[5] < ranges[4], "Facet closes inside Cipher");
+        assert!(ranges[4] < ranges[0], "Cipher ambushes inside Apex");
+        assert!(ranges[0] < ranges[2], "Chord keeps a skirmisher's lane");
+        assert!(ranges[2] < ranges[6], "Lattice holds the longest gun lane");
+
+        let wedge = own(&w, 1);
+        let bot = Bot::new(1, 0.7);
+        let bomb_range = bot.engagement_range(&wedge, Weapon::Bomb);
+        assert!(
+            bomb_range > bot.engagement_range(&wedge, Weapon::Gun),
+            "a Wedge gives its bomb room to travel"
+        );
+        let bomb = wedge.bomb.expect("a bomb");
+        assert!(
+            bomb_range > bomb.blast + wedge.radius + 160.0,
+            "the bomb plan stays outside its own blast while it closes"
+        );
+    }
+
+    #[test]
+    fn a_bomb_engagement_is_led_with_bomb_speed() {
+        let mut w = sim::World::with_map(0x5eed, |_| {});
+        let ship = w.spawn(1, 0, 500, 500, 0) as u8;
+        let mut o = own(&w, ship);
+        o.gun.as_mut().expect("a gun").speed = 4.0;
+        o.bomb.as_mut().expect("a bomb").speed = 2.0;
+        let foe = Foe {
+            x: o.x + 300.0,
+            y: o.y,
+            vx: 0.0,
+            vy: 1.0,
+            energy: 1.0,
+            radius: 20.0,
+            value: 0,
+            carrying_flag: false,
+            clear: true,
+        };
+        let mut bot = Bot::new(ship, 0.8);
+        bot.seen.foe = Some(foe);
+        bot.weapon = Weapon::Bomb;
+        bot.mode = Mode::Fight(320.0);
+        bot.drive(&o);
+
+        let bomb_t = intercept((300.0, 0.0), (0.0, 1.0), 2.0).expect("bomb intercept");
+        let gun_t = intercept((300.0, 0.0), (0.0, 1.0), 4.0).expect("gun intercept");
+        assert!((bot.aim.1 - bomb_t).abs() < 0.01);
+        assert!((bot.aim.1 - gun_t).abs() > 20.0);
+    }
+
+    #[test]
+    fn a_healthy_wedge_uses_its_bomb_at_bomb_range() {
+        let mut w = sim::World::with_map(0x5eed, |_| {});
+        let ship = w.spawn(1, 0, 500, 500, 0) as u8;
+        let other = w.spawn(0, 1, 535, 500, 0) as u8;
+        let full = w.eff_max_energy(ship as usize);
+        w.state.ships[ship as usize].energy = full;
+        let o = own(&w, ship);
+        let mut bot = Bot::new(ship, 0.8);
+        bot.seen = scan(&w, ship);
+        let foe = bot.seen.foe.expect("a target");
+        let distance = (foe.x - o.x).hypot(foe.y - o.y);
+        assert_eq!(other, 1);
+        assert_eq!(bot.choose_weapon(&o, foe, distance), Weapon::Bomb);
+    }
+
+    #[test]
+    fn wedge_opens_a_bomb_lane_when_the_current_shot_is_unsafe() {
+        let mut w = sim::World::with_map(0x5eed, |_| {});
+        let ship = w.spawn(1, 0, 500, 500, 0) as u8;
+        w.spawn(0, 1, 535, 500, 0);
+        w.state.ships[ship as usize].energy = w.eff_max_energy(ship as usize);
+        let o = own(&w, ship);
+        let mut bot = Bot::new(ship, 0.8);
+        bot.seen = scan(&w, ship);
+        let foe = bot.seen.foe.expect("a target");
+        let mut closing = foe;
+        closing.vx = -4.5;
+        let distance = (foe.x - o.x).hypot(foe.y - o.y);
+
+        bot.weapon = bot.choose_weapon(&o, closing, distance);
+        assert_eq!(
+            bot.weapon,
+            Weapon::BombApproach,
+            "the bomb would meet too close, so Wedge opens the lane with its gun"
+        );
+        assert!(
+            bot.engagement_range(&o, bot.weapon) > bot.engagement_range(&o, Weapon::Gun),
+            "Wedge opens the lane instead of collapsing into gun range"
+        );
+
+        bot.last_bomb_at = Some(bot.timer);
+        assert_eq!(
+            bot.choose_weapon(&o, closing, distance),
+            Weapon::Gun,
+            "during bomb cadence Wedge returns to ordinary gun pressure"
+        );
+
+        bot.last_bomb_at = None;
+        let mut cooling = own(&w, ship);
+        cooling.bomb_ready = false;
+        assert_eq!(
+            bot.choose_weapon(&cooling, foe, distance),
+            Weapon::BombSetup,
+            "once the lane is safe Wedge holds fire to clear the shared cooldown"
+        );
+    }
+
+    #[test]
+    fn anvil_does_not_throw_a_bomb_that_a_closing_target_brings_back_into_its_blast() {
+        let mut w = sim::World::with_map(0x5eed, |_| {});
+        let ship = w.spawn(3, 0, 500, 500, 0) as u8;
+        let other = w.spawn(0, 1, 535, 500, 0) as u8;
+        w.state.ships[ship as usize].level[sim::TRIG_BOMB] = 2;
+        w.state.ships[ship as usize].energy = w.eff_max_energy(ship as usize);
+        let o = own(&w, ship);
+        let mut bot = Bot::new(ship, 0.8);
+        bot.seen = scan(&w, ship);
+        let mut foe = bot.seen.foe.expect("a target");
+        let distance = (foe.x - o.x).hypot(foe.y - o.y);
+        assert_eq!(other, 1);
+
+        assert_eq!(
+            bot.choose_weapon(&o, foe, distance),
+            Weapon::Bomb,
+            "Anvil may open on a target that holds its distance"
+        );
+        foe.vx = -3.5;
+        assert_eq!(
+            bot.choose_weapon(&o, foe, distance),
+            Weapon::Gun,
+            "the closing target would meet the slow bomb inside its owner's blast"
+        );
+    }
+
+    #[test]
+    fn a_hull_does_not_lay_a_mine_it_cannot_defend_safely() {
+        let mut w = sim::World::with_map(0x5eed, |_| {});
+        let ship = w.spawn(3, 0, 500, 500, 0) as u8;
+        w.state.ships[ship as usize].level[sim::TRIG_BOMB] = 2;
+        w.state.ships[ship as usize].energy = w.eff_max_energy(ship as usize);
+        let o = own(&w, ship);
+        let mut bot = Bot::new(ship, 0.8);
+        bot.seen.company = true;
+        bot.seen.clear.fill(48.0);
+        bot.seen.clear[0] = WHISKER_PX;
+        bot.seen.clear[8] = WHISKER_PX;
+
+        assert!(bot.mine_corridor());
+        assert_eq!(o.mine.expect("a mine rack").blast, 240.0);
+        assert!(
+            bot.engagement_range(&o, Weapon::Gun) < o.mine.expect("a mine rack").blast,
+            "a built Anvil fights inside its mine blast"
+        );
+        assert!(!bot.should_mine(&o));
+    }
+
+    #[test]
+    fn lattice_mines_a_lane_but_not_an_existing_minefield() {
+        let mut w = sim::World::with_map(0x5eed, |_| {});
+        let ship = w.spawn(6, 0, 500, 500, 0) as u8;
+        let full = w.eff_max_energy(ship as usize);
+        w.state.ships[ship as usize].energy = full;
+        let mut o = own(&w, ship);
+        let mut bot = Bot::new(ship, 0.8);
+        bot.seen.clear.fill(48.0);
+        bot.seen.clear[0] = WHISKER_PX;
+        bot.seen.clear[8] = WHISKER_PX;
+        assert!(bot.should_mine(&o), "Lattice posts a narrow through-lane");
+
+        o.mine.as_mut().expect("a mine rack").nearby = true;
+        assert!(!bot.should_mine(&o), "it does not stack a covered patch");
+    }
+
+    #[test]
+    fn the_cockpit_counts_its_own_mines() {
+        let mut w = sim::World::with_map(0x5eed, |_| {});
+        let ship = w.spawn(6, 0, 500, 500, 0) as u8;
+        assert_eq!(own(&w, ship).mine.expect("a rack").out, 0);
+        w.step(&[sim::sim_input {
+            ship,
+            buttons: sim::BTN_MINE,
+        }]);
+        let mine = own(&w, ship).mine.expect("a rack");
+        assert_eq!(mine.out, 1);
+        assert!(mine.nearby);
+    }
+
+    #[test]
+    fn cockpit_hull_radius_is_in_pixels() {
+        let mut w = sim::World::with_map(0x5eed, |_| {});
+        let ship = w.spawn(0, 0, 500, 500, 0) as u8;
+        let radius = own(&w, ship).radius;
+        assert!(radius > 20.0 && radius < 24.0, "Apex radius was {radius}");
+    }
 
     /// Bots on the shipped Chaos map, measured for the failure a player
     /// reports as "stuck in corners": thrust held while going nowhere.

@@ -1417,6 +1417,11 @@ pub struct TeamRow {
     /// their own life and it belongs in this number all the same.
     pub deaths: u32,
     pub shots: [u32; sim::TRIG_COUNT],
+    pub mines: u32,
+    pub engagement_distance: f64,
+    pub engagement_samples: u64,
+    pub planned_range: f64,
+    pub planned_range_samples: u64,
     pub hits: u32,
     pub damage: u64,
     pub self_damage: u64,
@@ -1441,6 +1446,11 @@ pub struct Seat {
     pub kills: u32,
     pub deaths: u32,
     pub shots: [u32; sim::TRIG_COUNT],
+    pub mines: u32,
+    pub engagement_distance: f64,
+    pub engagement_samples: u64,
+    pub planned_range: f64,
+    pub planned_range_samples: u64,
     pub hits: u32,
     pub damage: u64,
     pub self_damage: u64,
@@ -1454,6 +1464,18 @@ pub struct Seat {
 /// runs to twenty, or when the clock does. A match that ran out of clock is
 /// still scored on kills, because a team ahead on the board when time expires
 /// has out-fought the other one whether or not it finished the job.
+fn team_world(salt: u32, tuning: Option<&config::ArenaConfig>, map: &Arena) -> Option<sim::World> {
+    let mut world = map.build(salt)?;
+    if let Some(c) = tuning {
+        crate::Room::apply_config(&mut world, c);
+    }
+    world.cfg.spawn_prizes = 0;
+    world.cfg.prize_max = 0;
+    // Keep the zone's spawn scatter. This tournament uses the real map, so
+    // placement is part of the team game it measures.
+    Some(world)
+}
+
 pub fn team_match(
     lineup: &[u8],
     skill: f32,
@@ -1463,16 +1485,10 @@ pub fn team_match(
     map: &Arena,
 ) -> (Vec<Seat>, bool) {
     let per_side = lineup.len() / 2;
-    let Some(mut world) = map.build(salt) else {
+    let Some(mut world) = team_world(salt, tuning, map) else {
         return (Vec::new(), false);
     };
     let route = nav::Nav::build(&world.map);
-    if let Some(c) = tuning {
-        crate::Room::apply_config(&mut world, c);
-    }
-    world.cfg.spawn_prizes = 0;
-    world.cfg.prize_max = 0;
-    world.cfg.spawn_radius = 0;
 
     let mut seats: Vec<Seat> = Vec::with_capacity(lineup.len());
     let mut ships: Vec<u8> = Vec::with_capacity(lineup.len());
@@ -1529,9 +1545,18 @@ pub fn team_match(
         for i in 0..ships.len() {
             let own = ai::own(&world, ships[i]);
             let look = bots[i].looks_due().then(|| ai::scan(&world, ships[i]));
+            let buttons = bots[i].think(&own, &route, look);
+            if let Some(distance) = bots[i].engagement_distance() {
+                seats[i].engagement_distance += distance as f64;
+                seats[i].engagement_samples += 1;
+            }
+            if let Some(range) = bots[i].planned_engagement_range() {
+                seats[i].planned_range += range as f64;
+                seats[i].planned_range_samples += 1;
+            }
             inputs.push(sim::sim_input {
                 ship: ships[i],
-                buttons: bots[i].think(&own, &route, look),
+                buttons,
             });
         }
         world.step(&inputs);
@@ -1543,7 +1568,9 @@ pub fn team_match(
                 match e.etype {
                     sim::EV_FIRE => {
                         if let Some(i) = ships.iter().position(|&s| s == e.a) {
-                            if let Some(&t) = trig_of[i].get(&e.b) {
+                            if world.cfg.specs[e.b as usize].still != 0 {
+                                seats[i].mines += 1;
+                            } else if let Some(&t) = trig_of[i].get(&e.b) {
                                 seats[i].shots[t] += 1;
                             }
                         }
@@ -1612,6 +1639,11 @@ pub fn run_teams(
             kills: 0,
             deaths: 0,
             shots: [0; sim::TRIG_COUNT],
+            mines: 0,
+            engagement_distance: 0.0,
+            engagement_samples: 0,
+            planned_range: 0.0,
+            planned_range_samples: 0,
             hits: 0,
             damage: 0,
             self_damage: 0,
@@ -1662,6 +1694,11 @@ pub fn run_teams(
             r.hits += s.hits;
             r.damage += s.damage;
             r.self_damage += s.self_damage;
+            r.mines += s.mines;
+            r.engagement_distance += s.engagement_distance;
+            r.engagement_samples += s.engagement_samples;
+            r.planned_range += s.planned_range;
+            r.planned_range_samples += s.planned_range_samples;
             r.greens += s.greens;
             r.converted += s.converted;
             for t in 0..sim::TRIG_COUNT {
@@ -1697,20 +1734,34 @@ pub fn report_teams(
     matches: u32,
     zone: &str,
     map: &str,
+    spawn_radius: u16,
 ) -> serde_json::Value {
     println!(
         "\nteam tournament: {per_side} a side, {zone} tuning on the {map}, skill \
-{skill:.2}, {greens} greens a life, {matches} matches, lineups drawn at random"
+{skill:.2}, {greens} greens a life, spawn radius {spawn_radius}, {matches} matches, \
+lineups drawn at random"
     );
     println!(
-        "\n{:<10} {:>7} {:>7} {:>7} {:>8} {:>8} {:>8} {:>8} {:>7}",
-        "hull", "win%", "+-95%", "seats", "kills/s", "deaths/s", "K/D", "hit/pull", "conv%"
+        "\n{:<10} {:>7} {:>7} {:>7} {:>8} {:>8} {:>7} {:>8} {:>7} {:>7} {:>7} {:>7} {:>7}",
+        "hull",
+        "win%",
+        "+-95%",
+        "seats",
+        "kills/s",
+        "deaths/s",
+        "K/D",
+        "hit/pull",
+        "gun/s",
+        "bomb/s",
+        "mine/s",
+        "target",
+        "actual"
     );
     for r in rows {
         let fired: u32 = r.shots.iter().sum();
         let s = r.seats.max(1) as f64;
         println!(
-            "{:<10} {:>7.1} {:>7.1} {:>7} {:>8.2} {:>8.2} {:>8.2} {:>8.2} {:>7.1}",
+            "{:<10} {:>7.1} {:>7.1} {:>7} {:>8.2} {:>8.2} {:>7.2} {:>8.2} {:>7.1} {:>7.1} {:>7.2} {:>7.0} {:>7.0}",
             r.name,
             100.0 * r.win_rate(),
             r.margin(),
@@ -1719,7 +1770,11 @@ pub fn report_teams(
             r.deaths as f64 / s,
             r.kills as f64 / r.deaths.max(1) as f64,
             r.hits as f64 / fired.max(1) as f64,
-            100.0 * r.converted as f64 / r.greens.max(1) as f64,
+            r.shots[sim::TRIG_GUN] as f64 / s,
+            r.shots[sim::TRIG_BOMB] as f64 / s,
+            r.mines as f64 / s,
+            r.planned_range / r.planned_range_samples.max(1) as f64,
+            r.engagement_distance / r.engagement_samples.max(1) as f64,
         );
     }
     // A hull is only as measured as the seats it drew, and a random lineup does
@@ -1733,12 +1788,15 @@ is the one to read the board by."
 
     serde_json::json!({
         "per_side": per_side, "tuning": zone, "map": map, "skill": skill,
-        "greens_per_life": greens, "matches": matches,
+        "greens_per_life": greens, "spawn_radius": spawn_radius, "matches": matches,
         "hulls": rows.iter().map(|r| serde_json::json!({
             "name": r.name, "class": r.class, "seats": r.seats, "won": r.won,
             "drawn": r.drawn, "win_rate": r.win_rate(), "win_rate_margin": r.margin(),
             "kills": r.kills, "deaths": r.deaths,
             "gun_shots": r.shots[sim::TRIG_GUN], "bomb_shots": r.shots[sim::TRIG_BOMB],
+            "mines": r.mines,
+            "mean_planned_range": r.planned_range / r.planned_range_samples.max(1) as f64,
+            "mean_engagement_distance": r.engagement_distance / r.engagement_samples.max(1) as f64,
             "hits": r.hits, "damage": r.damage, "self_damage": r.self_damage,
             "greens_offered": r.greens, "greens_converted": r.converted,
         })).collect::<Vec<_>>(),
@@ -2022,6 +2080,20 @@ the ceilings the matched-bounty argument turns on"
 scatter is held and 19 when it is not, so it is still throwing pilots out of \
 the room"
         );
+    }
+
+    #[test]
+    fn a_team_tournament_keeps_the_zones_spawn_scatter() {
+        let scattered: config::ArenaConfig =
+            toml::from_str("spawn_radius = 60\nspawn_prizes = 30\nprize_max = 42\n")
+                .expect("a zone with scattered, prized spawns");
+
+        let world = team_world(0, Some(&scattered), &Arena::Built(sim::build_arena))
+            .expect("a tournament world");
+
+        assert_eq!(world.cfg.spawn_radius, 60);
+        assert_eq!(world.cfg.spawn_prizes, 0);
+        assert_eq!(world.cfg.prize_max, 0);
     }
 
     /// A hull opens the bout with the zone's numbers, not the baseline's.
