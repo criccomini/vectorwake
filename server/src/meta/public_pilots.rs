@@ -32,9 +32,9 @@ pub(super) async fn route(
     let reply = match path {
         // The public ladder carries only game facts. Account standing,
         // credentials, moderation state, and last activity stay on the admin
-        // routes. Banned accounts and bots are omitted rather than marked.
-        // The kind filter lives inside `visible` so ranks and field sizes are
-        // human-only too, without gaps left by hidden bots.
+        // routes. Banned accounts, guests, and bots are omitted rather than
+        // marked. The filters live inside `visible` so ranks and field sizes
+        // count claimed humans only, without gaps left by hidden pilots.
         "/v1/pilots" => {
             let query: String = body
                 .get("q")
@@ -61,6 +61,9 @@ pub(super) async fn route(
                          select a.id, n.call_sign, a.kind
                          from accounts a join names n on n.account = a.id
                          where not a.banned and a.kind = $5
+                           and exists (select 1 from credentials c
+                                       where c.account = a.id
+                                         and c.method = 'password')
                      ), ladder as (
                          select r.account, r.class,
                                 rank() over (partition by r.class order by r.rating desc) as pos,
@@ -92,6 +95,9 @@ pub(super) async fn route(
                 .query_one(
                     "select count(*) from accounts a join names n on n.account = a.id
                      where not a.banned and a.kind = $2
+                       and exists (select 1 from credentials c
+                                   where c.account = a.id
+                                     and c.method = 'password')
                        and ($1 = '' or strpos(lower(n.call_sign), lower($1)) > 0)",
                     &[&query, &KIND_HUMAN],
                 )
@@ -176,6 +182,11 @@ pub(super) async fn route(
                          from ratings r
                          join accounts a on a.id = r.account and not a.banned
                                                 and a.kind = $3
+                                                and exists (
+                                                    select 1 from credentials c
+                                                    where c.account = a.id
+                                                      and c.method = 'password'
+                                                )
                          join names n on n.account = a.id
                      ), ladder as (
                          select account, class,
