@@ -53,9 +53,9 @@ const CERT_RECHECK: Duration = Duration::from_secs(600);
 /// this is what stops each of those pinning a task open.
 const HELLO: Duration = Duration::from_secs(5);
 
-/// The QUIC idle timeout, above the handler's own 75 s quiet limit so the
+/// The QUIC idle timeout, above the handler's own 45 s quiet limit so the
 /// transport never hangs up on a client the game still considers alive.
-const IDLE: Duration = Duration::from_secs(90);
+const IDLE: Duration = Duration::from_secs(60);
 
 /// Serve WebTransport on `listen` until the process ends. Spawned beside the
 /// WebSocket listener when `wt_listen` is configured; never instead of it,
@@ -445,6 +445,13 @@ async fn read_frame(s: &mut RecvStream, cap: usize) -> Option<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn transport_idle_outlives_the_game_session() {
+        assert_eq!(crate::session::SESSION_QUIET, Duration::from_secs(45));
+        assert_eq!(IDLE, Duration::from_secs(60));
+        assert!(IDLE > crate::session::SESSION_QUIET);
+    }
 
     /// The whole door, exercised the way a browser will use it: handshake,
     /// open the reliable stream, join, watch the welcome arrive framed and the

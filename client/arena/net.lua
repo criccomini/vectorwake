@@ -1511,7 +1511,7 @@ function M.watch(ship)
 end
 
 -- How often a watcher repeats its ask, in steps. The server drops a socket
--- that says nothing for 75 seconds, because a flying client sends buttons
+-- that says nothing for 45 seconds, because a flying client sends buttons
 -- every frame and silence means the network ate it. A watcher has no buttons,
 -- so the ask itself is the heartbeat: it repeats what is already true, and
 -- the simulation does not move for it. Counted in this client's own steps

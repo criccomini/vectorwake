@@ -197,7 +197,7 @@ impl Default for LagConfig {
             sample_ticks: 500,
             input_sample_ticks: 50,
             combat_idle_ticks: 500,
-            spectate_silence_ticks: 1_500,
+            spectate_silence_ticks: 500,
         }
     }
 }

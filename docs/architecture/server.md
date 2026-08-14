@@ -144,8 +144,10 @@ acknowledgement arrives, so no client clock enters the diagnostic. Gameplay
 uses a simpler fact that the server observes directly: when the last valid
 input packet arrived. After 250 ms of silence it releases weapon buttons. After
 one second it releases every held control and prevents objective pickup. A new
-packet clears the objective restriction immediately. Fifteen seconds of silence
+packet clears the objective restriction immediately. Five seconds of silence
 moves the pilot to the stands, or disconnects them if the stands are full.
+A connection that sends nothing for forty-five seconds is closed. WebTransport's
+sixty-second idle timeout stays above that game-level decision.
 
 ## Zone modules
 

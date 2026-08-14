@@ -1395,10 +1395,8 @@ mod tests {
 
     #[test]
     fn input_silence_restricts_then_recovers_immediately() {
-        let cfg = config::LagConfig {
-            spectate_silence_ticks: 1_500,
-            ..Default::default()
-        };
+        let cfg = config::LagConfig::default();
+        assert_eq!(cfg.spectate_silence_ticks, 500);
         let mut lag = LagTracker::default();
 
         assert!(
@@ -1584,15 +1582,24 @@ mod tests {
     fn sustained_input_silence_moves_a_pilot_to_the_stands() {
         let mut a = room_with_teams("teams = [\"Keel\"]\n");
         a.lag_policy.spectate_silence_ticks = 1;
-        let (_ship, id, _rx) = seat_rx(&mut a, "lossy");
+        let (ship, id, _rx) = seat_rx(&mut a, "lossy");
+        let rid = a.players[&id].rid.clone();
         let p = a.players.get_mut(&id).unwrap();
         p.lag.synchronize_input();
+        a.rating
+            .damage(a.world.state.tick, &rid, "hunter", 500, false);
+        a.world.state.ships[ship as usize].energy = 1;
+        let before = a.rating.rating_of(&rid);
 
         a.tick();
 
         assert!(!a.players.contains_key(&id));
         assert!(a.watchers.contains_key(&id));
         assert_eq!(a.watchers[&id].lifecycle, 2);
+        assert!(
+            a.rating.rating_of(&rid) < before,
+            "lag spectating keeps the quit-under-fire consequence"
+        );
         a.fly(id, 0, 32).expect("the pilot may recover into a hull");
         assert_eq!(
             a.players[&id].lifecycle, 3,

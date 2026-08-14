@@ -9,6 +9,10 @@ use crate::protocol::*;
 use crate::room::{file_event, Seat};
 use crate::{fleet, metrics, pilot, token};
 
+/// A connection that sends nothing is gone. Watchers heartbeat every thirty
+/// seconds, so this leaves one half-interval of scheduling slack.
+pub(crate) const SESSION_QUIET: std::time::Duration = std::time::Duration::from_secs(45);
+
 /// One client from join to cleanup, fed by whichever transport carried it.
 ///
 /// `inbound` is complete messages, first byte the tag, however they travelled:
@@ -48,7 +52,6 @@ pub(crate) async fn serve_client(
     // a peer whose network vanished without an RST keeps its seat until
     // the kernel gives up on the socket, which on a full arena is a seat
     // nobody can have.
-    let quiet = std::time::Duration::from_secs(75);
     'connection: loop {
         // A watcher does not renew a rated lease, so its original token is the
         // last standing check this socket has made. Rated pilots are checked by
@@ -62,13 +65,13 @@ pub(crate) async fn serve_client(
                     let _ = tx.try_send(Message::Binary(m));
                     break;
                 }
-                Some(at) => quiet.min(std::time::Duration::from_secs(
+                Some(at) => SESSION_QUIET.min(std::time::Duration::from_secs(
                     at.saturating_sub(token::now_secs()),
                 )),
-                None => quiet,
+                None => SESSION_QUIET,
             }
         } else {
-            quiet
+            SESSION_QUIET
         };
         let received = tokio::select! {
             biased;

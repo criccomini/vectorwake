@@ -2088,8 +2088,10 @@ and missed input deadlines remain visible in telemetry. They do not suppress
 weapons, deny objectives, or force a pilot to spectate. Objective access and
 stale controls depend only on how long the server has gone without a valid
 input packet. Weapon holds release after 250 ms, every control and objective
-access release after one second, and fifteen seconds of silence moves the pilot
+access release after one second, and five seconds of silence moves the pilot
 to the stands. One fresh packet clears the objective restriction immediately.
+Forty-five seconds of complete silence closes the connection, below the
+transport's sixty-second QUIC idle timeout.
 
 **Why:** the snapshot receipt bitmap comes from the client. An honest browser
 may discard an obsolete snapshot before Lua sees it, while a modified client can

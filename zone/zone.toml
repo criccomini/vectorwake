@@ -137,7 +137,7 @@ points_per_flag = 100
 sample_ticks = 500
 input_sample_ticks = 50
 combat_idle_ticks = 500
-spectate_silence_ticks = 1500
+spectate_silence_ticks = 500
 
 # Per-hull tuning, in settings-file units. Name the hull and set only what you
 # want to change.
