@@ -1248,18 +1248,21 @@ local function seat_team(i, p)
     return seat_here(i) and sim.ship_team(i) or (p and p.team)
 end
 
--- Whether the selected pilot can take this ship as a gunner. This is shared by
--- the card's ATTACH button and the D key so the two controls never disagree
--- about which pilot is a target. The core still owns the changing gates, such
--- as a full bar and an open gunner seat, and answers those on the wire.
+-- Whether the selected pilot is a teammate this ship may ask to ride. This is
+-- shared by the card's ATTACH button and the D key so the two controls never
+-- disagree about which pilot is a target.
+--
+-- Do not ask the filtered simulation whether the target is active, alive, or
+-- already riding somebody. A teammate across the map is deliberately absent
+-- from this client's snapshot, but attaching across the map is the point of
+-- the action. The roster supplies the stable team fact. The server owns the
+-- changing gates, including life, capacity, carrier state, and a full bar.
 local function attachable(me, i, theirs, watch, riding)
     if watch or me == nil or i == nil or i == me then return false end
     if me < 0 or me >= sim.ship_count() then return false end
     if i < 0 or i >= sim.ship_count() then return false end
     if sim.ship_active(me) ~= 1 or sim.ship_alive(me) ~= 1 then return false end
-    return theirs == view_team and sim.ship_active(i) == 1
-        and sim.ship_alive(i) == 1 and sim.ship_carrier(i) == 255
-        and riding ~= i
+    return theirs == view_team and riding ~= i
 end
 
 -- Kills, deaths, points and bounty, whichever way round they have to be got.
@@ -2058,11 +2061,11 @@ local function inspect(o, top)
     -- seat, and a watcher pressing DROP on somebody else's carrier would be
     -- detaching a ship the button was not about.
     --
-    -- Offered on a living teammate who is not you and is not themselves
-    -- riding somebody, since the core refuses a chain. Every other condition
-    -- the core enforces is left to it: a bar that is not full and a hull with
-    -- no room refuse on the wire and say so by the button not taking. Testing
-    -- them here as well would be a second copy of the rules, drifting.
+    -- Offered on a teammate who is not you. Their current life, carrier, and
+    -- capacity are facts the filtered snapshot may not contain, so the core
+    -- owns every changing condition. A refused request leaves this ship where
+    -- it is. Testing those conditions here would hide valid distant targets
+    -- and make a second copy of the rules drift.
     local riding = (not o.watch) and sim.ship_carrier(o.me) or 255
     local drop = riding ~= 255 and i == riding
     local attach = attachable(o.me, i, theirs, o.watch, riding)

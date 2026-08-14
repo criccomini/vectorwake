@@ -57,7 +57,7 @@ end
 
 -- The room. Ship 0 is us; the rest are strangers, all on one other team so
 -- that the free-for-all test can hand out a team per seat instead.
-local room = {count = 4, teams = {[0] = 1, 1, 1, 1}, alive = {}}
+local room = {count = 4, teams = {[0] = 1, 1, 1, 1}, active = {}, alive = {}}
 local sim = {
     ship_count = function() return room.count end,
     -- Spread so that all three strangers land on screen at the extents the
@@ -69,7 +69,7 @@ local sim = {
     -- seats out entirely, so the board asks this before reading a score
     -- out of the simulation; in here every seat the room models is
     -- present.
-    ship_active = function() return 1 end,
+    ship_active = function(i) return room.active[i] == false and 0 or 1 end,
     ship_alive = function(i) return room.alive[i] == false and 0 or 1 end,
     ship_team = function(i) return room.teams[i] or 0 end,
     -- Nobody is riding anybody unless a test says so.
@@ -478,6 +478,23 @@ ui.inspect = 1
 frame()
 check("D attaches to the selected teammate", ui.drone_target(0, false) == 1)
 check("D cannot attach while spectating", ui.drone_target(0, true) == nil)
+
+-- A distant teammate is present in the roster and absent from the filtered
+-- combat snapshot. That is the normal use for an across-map attach, not proof
+-- that the pilot left. Both controls must trust the roster's team byte and let
+-- the authoritative simulation decide whether the current request succeeds.
+room.active[1] = false
+local distant_pilots = {
+    [0] = {name = "you", label = "human", team = 1},
+    [1] = {name = "distant", label = "bot", ai = true, team = 1},
+    [2] = {name = "enemy", label = "bot", ai = true, team = 9},
+    [3] = {name = "guest", label = "unknown", team = 9},
+}
+frame({pilots = distant_pilots})
+check("a distant teammate's card still offers ATTACH", box("attach", 1) ~= nil)
+check("D targets a distant teammate", ui.drone_target(0, false) == 1)
+room.active[1] = nil
+
 ui.inspect = nil
 check("D cannot attach without a selection", ui.drone_target(0, false) == nil)
 ui.inspect = 1
