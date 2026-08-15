@@ -1282,31 +1282,38 @@ local function refresh_players(pilots, watchers, side, viewer_name)
     if side ~= nil then view_team = side end
     local n = 0
     for i = 0, sim.ship_count() - 1 do
-        n = n + 1
-        local r = rows[n]
-        if not r then r = {} rows[n] = r end
-        r.i = i
         local p = pilots[i]
-        -- Bounty is the one number on this row about the next thirty seconds
-        -- rather than about the last hour.
-        r.k, r.d, r.p, r.b = seat_score(i, p)
-        r.name = (p and p.name) or ("ship " .. i)
-        r.lname = string.lower(r.name)
-        -- The roster's own flag. This used to look for a local bot object,
-        -- which the client no longer flies and the server never sends, so the
-        -- column was blank for every AI in a zone full of them.
-        r.ai = (p and p.ai) or false
-        -- What the zone is willing to say this seat is, which is a stronger
-        -- statement than "AI" and is what the counts below are made of.
-        r.label = (p and p.label) or "unknown"
-        -- Kept on the row, because the drawing wants it too: reading the
-        -- simulation again at draw time painted every out-of-sight name in
-        -- team zero's color, one shared violet that reshuffled as pilots
-        -- crossed into view.
-        r.team = seat_team(i, p)
-        r.mine = r.team == view_team
-        r.self = viewer_name ~= nil and r.name == viewer_name
-        r.watch = false
+        -- `ship_count` is a high-water mark. A departed pilot leaves an
+        -- inactive hole below it until somebody reuses that slot. The roster
+        -- still names distant pilots whose filtered snapshot is inactive, so
+        -- either source makes a row; an inactive slot named by neither is
+        -- nobody and must not become a made-up "ship 51" pilot.
+        if p or seat_here(i) then
+            n = n + 1
+            local r = rows[n]
+            if not r then r = {} rows[n] = r end
+            r.i = i
+            -- Bounty is the one number on this row about the next thirty seconds
+            -- rather than about the last hour.
+            r.k, r.d, r.p, r.b = seat_score(i, p)
+            r.name = (p and p.name) or ("ship " .. i)
+            r.lname = string.lower(r.name)
+            -- The roster's own flag. This used to look for a local bot object,
+            -- which the client no longer flies and the server never sends, so the
+            -- column was blank for every AI in a zone full of them.
+            r.ai = (p and p.ai) or false
+            -- What the zone is willing to say this seat is, which is a stronger
+            -- statement than "AI" and is what the counts below are made of.
+            r.label = (p and p.label) or "unknown"
+            -- Kept on the row, because the drawing wants it too: reading the
+            -- simulation again at draw time painted every out-of-sight name in
+            -- team zero's color, one shared violet that reshuffled as pilots
+            -- crossed into view.
+            r.team = seat_team(i, p)
+            r.mine = r.team == view_team
+            r.self = viewer_name ~= nil and r.name == viewer_name
+            r.watch = false
+        end
     end
     -- Then whoever is watching. They are in the room without being in the
     -- game, so they are in the list without being in the sort: no seat, no
@@ -2003,7 +2010,8 @@ local function inspect(o, top)
     if not i then return end
     -- A pilot who left while the box was open. The box goes with them rather
     -- than describing somebody who is not there.
-    if i < 0 or i >= sim.ship_count() then
+    if i < 0 or i >= sim.ship_count()
+        or (not o.pilots[i] and not seat_here(i)) then
         M.inspect = nil
         return
     end

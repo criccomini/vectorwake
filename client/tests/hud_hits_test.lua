@@ -495,6 +495,27 @@ check("a distant teammate's card still offers ATTACH", box("attach", 1) ~= nil)
 check("D targets a distant teammate", ui.drone_target(0, false) == 1)
 room.active[1] = nil
 
+-- `ship_count` is the highest slot the room has ever used, not the number of
+-- pilots still flying. Departures at the top leave inactive holes until the
+-- slots are reused. Those holes have no roster entries and are not mystery
+-- pilots named after their old seat numbers.
+room.count = 6
+room.active[4], room.active[5] = false, false
+room.alive[4], room.alive[5] = false, false
+ui.details = true
+ui.inspect = 4
+frame()
+local stale_row = false
+for i = 1, package.loaded["arena.state"].n do
+    local s = package.loaded["arena.state"].text[i].s
+    if s == "ship 4" or s == "ship 5" then stale_row = true break end
+end
+check("inactive high-water slots are absent from Players", not stale_row)
+check("a pilot card closes when its inactive slot leaves the roster", ui.inspect == nil)
+room.count = 4
+room.active[4], room.active[5] = nil, nil
+room.alive[4], room.alive[5] = nil, nil
+
 ui.inspect = nil
 check("D cannot attach without a selection", ui.drone_target(0, false) == nil)
 ui.inspect = 1
