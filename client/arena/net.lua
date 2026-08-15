@@ -107,11 +107,12 @@ M.denied = nil
 M.lost = nil
 M.pilots = {}
 M.ratings = {}
--- Kills the zone has announced and the arena has not yet turned into feed
--- lines. The feed reads these rather than the local simulation's death
--- events, because prediction re-kills the same victim after every rollback
--- that arrives from before the death: one kill printed once per snapshot.
--- The zone says each death exactly once, to everyone.
+-- Kills involving this pilot that the zone has announced and the arena has
+-- not yet turned into feed lines. The feed reads these rather than the local
+-- simulation's death events, because prediction re-kills the same victim
+-- after every rollback that arrives from before the death: one kill printed
+-- once per snapshot. The zone says every death to everyone; this queue keeps
+-- only the two kinds this pilot needs to read, their kills and their deaths.
 M.kills = {}
 -- Authoritative prize rolls waiting for the frame that draws their effect and
 -- feed line. The prediction core removes a touched green but never rolls it.
@@ -669,7 +670,13 @@ local function publish_kill(e)
     -- padded with `or 0`: the padding was there for a deploy window against a
     -- zone one image older, and a zone one image older cannot be reached at
     -- all, because the protocol number is checked before a join is answered.
-    M.kills[#M.kills + 1] = {victim = victim, killer = killer, paid = e.paid}
+    -- A watcher has no hull in the fight. In particular, its sentinel ship is
+    -- 255, which is also the killer on a wall death and must not make every
+    -- collision look personal. Ratings still move below for every death; only
+    -- the presentation queue is local.
+    if not M.watching and (victim == M.me or killer == M.me) then
+        M.kills[#M.kills + 1] = {victim = victim, killer = killer, paid = e.paid}
+    end
     M.ratings[victim] = vr
     M.ratings[killer] = kr
     -- A rated death is a game played, which is what decides whether the number

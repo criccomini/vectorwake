@@ -714,9 +714,9 @@ end
 -- in a sentence belongs here rather than in a second widget: it is already
 -- the place they look to find out what just happened.
 -- `mine` marks a line as being about this pilot rather than about the room.
--- A desktop shows the whole feed and does not care; a phone has room for one
--- line at a time and shows only these, because a stranger killing a stranger
--- is news a player reading it mid-fight cannot use.
+-- A phone has room for one line at a time and shows only these. A desktop also
+-- carries arena arrivals and departures, but kill lines have already been
+-- limited to this pilot's own kills and deaths by the network queue.
 local function notify(text, col, mine)
     table.insert(feed, 1, {text = text, col = col, t = 0, mine = mine})
     while #feed > ui.FEED_MAX do table.remove(feed) end
@@ -780,7 +780,7 @@ end
 -- worth taking the one line a thumb-sized screen has.
 local function drain_comings()
     for _, c in ipairs(net.comings) do
-        notify({{c.name}, c.joined and " joined" or " left"})
+        notify({{c.name}, c.joined and " joined the arena" or " left the arena"})
     end
     if #net.comings > 0 then net.comings = {} end
 end

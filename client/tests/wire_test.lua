@@ -316,22 +316,30 @@ check("snapshot sequences and world ticks cross rollover together",
 
 -- Reliable events can pass the datagram carrying the state that depicts them.
 -- They wait for that authoritative tick, then become visible together.
-local kill = string.char(4, 1, 0, 176, 4, 176, 4, 1, 5, 0) .. u32le(5010)
+local remote_kill = string.char(4, 1, 0, 176, 4, 176, 4, 1, 5, 0) .. u32le(5010)
+local my_kill = string.char(4, 1, 3, 176, 4, 176, 4, 1, 5, 0) .. u32le(5010)
+local my_death = string.char(4, 3, 0, 176, 4, 176, 4, 1, 5, 0) .. u32le(5010)
 local charge = string.char(15, 1, 0)
     .. string.char(0, 1, 0, 0, 0, 2, 0, 0) .. u32le(5010)
-wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = kill})
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = remote_kill})
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = my_kill})
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = my_death})
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = charge})
 check("combat news waits for its snapshot",
       #net.kills == 0 and #net.charge_events == 0)
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = snapshot(3, 5010)})
 check("combat news lands with its authoritative tick",
-      #net.kills == 1 and #net.charge_events == 1)
+      #net.kills == 2 and #net.charge_events == 1)
+check("a stranger killing a stranger is not a feed notice",
+      net.kills[1].killer == 3 and net.kills[2].victim == 3)
 -- The delayed room channel may carry the same event again. Tick identity keeps
 -- that second copy from printing twice when a pilot has just sat out.
-wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = kill})
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = remote_kill})
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = my_kill})
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = my_death})
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = charge})
 check("combat news is idempotent",
-      #net.kills == 1 and #net.charge_events == 1)
+      #net.kills == 2 and #net.charge_events == 1)
 
 -- A pack the core refuses has not happened. It is not counted, and the client
 -- reports that this build cannot read the zone rather than calling a broken
