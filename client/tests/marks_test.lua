@@ -336,8 +336,9 @@ end
 
 -- --- the machine is square -------------------------------------------------
 
--- The scoreboard's bot column, and the nameplate over the bot's own hull,
--- which is on screen in this room.
+-- The scoreboard's bot column, the nameplate over the bot's own hull, and the
+-- bot count beside PLAYERS are all on screen in this room. The PLAYERS count
+-- also draws one human helmet for the current pilot.
 ui.details = true
 local board_frame = frame(function()
     ui.hud({
@@ -354,10 +355,11 @@ local board_frame = frame(function()
 end)
 ui.details = false
 local board = boxes(board_frame)
-check("the scoreboard and the nameplate both box the bot", #board == 2,
+check("the scoreboard, nameplate, and player count box the bot", #board == 3,
       #board .. " boxes beside one bot")
-check("and neither of them is round", #crowns(board_frame) == 0,
-      #crowns(board_frame) .. " turns of glass on a screen with no people")
+check("the player count marks the human pilot with a round helmet",
+      #crowns(board_frame) == 1,
+      #crowns(board_frame) .. " round helmets beside one human pilot")
 
 -- The antenna is what the machine says with nothing beside it, so it has to
 -- reach above the crown, and the person must not.
