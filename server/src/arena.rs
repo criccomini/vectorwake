@@ -217,6 +217,10 @@ impl ArenaServer {
         self.rooms.iter().map(|r| r.bot_count()).sum()
     }
 
+    pub(crate) fn total_spectators(&self) -> usize {
+        self.rooms.iter().map(|r| r.human_spectators()).sum()
+    }
+
     /// Where the next arrival goes, per the fill ladder. Rung one is the fullest
     /// room below its player cap, which is most of the work and needs no
     /// coordination. Rung two is a new room here, when every room is at the
@@ -1215,6 +1219,7 @@ impl ArenaServer {
         fleet::Status {
             zone,
             players: self.total_players() as u32,
+            spectators: self.total_spectators() as u32,
             bots: self.total_bots() as u32,
             bots_wanted: self.bots_wanted() as u32,
             rooms: self

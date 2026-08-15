@@ -141,6 +141,10 @@ pub struct Status {
     /// every rule that reads this one, the fill target, the player cap and the
     /// drain, is a rule about people.
     pub players: u32,
+    /// Humans watching rather than flying. Kept outside `players` so a
+    /// spectator appears in public population without taking a ship seat.
+    #[serde(default)]
+    pub spectators: u32,
     pub bots: u32,
     /// How many bots this instance would like to have across all its rooms, so
     /// the bot server does no arithmetic about a zone it never reads the

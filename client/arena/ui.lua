@@ -458,16 +458,51 @@ end
 local KEY_H, KEY_PAD, KEY_GAP = 26, 9, 6
 local function key_size() return (FONT - 1) * F.scale end
 local function key_w(label) return text_w(label, key_size()) + 2 * KEY_PAD * F.scale end
-local function key_cap(x, y, w, label, on)
+local function key_frame(x, y, w, on)
     local col = on and pal.FRIEND or pal.DIM
     local h = KEY_H * F.scale
     rect(x, y, w, h, pal.a(col, on and 0.16 or 0.07))
     F.layer:frame(x, ry(y, h), w, h, 1.1 * F.scale, pal.a(col, on and 0.95 or 0.55))
+    return col, h
+end
+local function key_cap(x, y, w, label, on)
+    local col, h = key_frame(x, y, w, on)
     -- A key is shouted wherever it turns up, menu or corner: it is a thing to
     -- press rather than something the interface is saying, and the two of them
     -- are the same object.
     txt(string.upper(label), x + w / 2, y + h / 2, key_size(),
         pal.a(col, on and 1 or 0.85), "center", nil, true)
+end
+
+-- PLAYERS carries the room's composition with it. The helmet and machine are
+-- the same marks the directory and scoreboard already use, kept inside the
+-- one key rather than hung off it as another piece of HUD chrome.
+local function players_cap(x, y, on, humans, bots)
+    local size, count_size = key_size(), (FONT - 2) * F.scale
+    local label = "PLAYERS"
+    local human, bot = tostring(humans), tostring(bots)
+    local mark = 10 * F.scale
+    local label_gap, mark_gap, group_gap = 10 * F.scale, 4 * F.scale, 9 * F.scale
+    local w = 2 * KEY_PAD * F.scale + text_w(label, size) + label_gap
+        + mark + mark_gap + text_w(human, count_size) + group_gap
+        + mark + mark_gap + text_w(bot, count_size)
+    local col, h = key_frame(x, y, w, on)
+    local mid = y + h / 2
+    local at = x + KEY_PAD * F.scale
+    txt(label, at, mid, size, pal.a(col, on and 1 or 0.85), nil, nil, true)
+    at = at + text_w(label, size) + label_gap
+
+    local human_col = pal.a(pal.FRIEND, on and 1 or 0.82)
+    pilot_mark(at + mark / 2, mid, human_col, mark)
+    at = at + mark + mark_gap
+    txt(human, at, mid, count_size, human_col)
+    at = at + text_w(human, count_size) + group_gap
+
+    local bot_col = pal.a(pal.DIM, on and 0.95 or 0.74)
+    bot_mark(at, mid, bot_col, mark)
+    at = at + mark + mark_gap
+    txt(bot, at, mid, count_size, bot_col)
+    return w
 end
 
 -- Close, as a drawn mark rather than the letter x.
@@ -2412,7 +2447,7 @@ end
 --
 -- `KEY_H` and `KEY_SIZE` are the two of them a caller has to lay out around,
 -- so they live out here with it rather than being repeated at each call.
-local function menu_button(on_air, watch, room)
+local function menu_button(on_air, watch, room, pilots, watchers)
     -- Two keys, drawn the way the help page draws a key. They were two bare
     -- words over a shared rule, which asked a player to know that a word in
     -- that corner was a thing to press, and the board has taught the same hand
@@ -2425,9 +2460,22 @@ local function menu_button(on_air, watch, room)
     local x, y = F.safe_l + PAD * F.scale, F.safe_t + PAD * F.scale
     -- Each key is as wide as its own word. A slot cut for four letters is a
     -- slot the longer of the two runs out of.
+    local humans, bots = 0, 0
+    for _, p in pairs(pilots or {}) do
+        if p.ai then bots = bots + 1 else humans = humans + 1 end
+    end
+    -- A spectator is still in the room. Guests wear the unknown label until
+    -- they claim an account, but they are people unless they arrived with one
+    -- of the two bot labels.
+    for _, w in ipairs(watchers or {}) do
+        if w.label == "bot" or w.label == "bot?" then
+            bots = bots + 1
+        else
+            humans = humans + 1
+        end
+    end
     local cx = x
-    local keys = {{"MENU", "open", F.menu_up},
-                  {"PLAYERS", "details", M.details}}
+    local keys = {{"MENU", "open", F.menu_up}}
     -- Which copy of this game you are in, and the way to a different one.
     --
     -- Only when the zone is holding more than one, which is the caller's
@@ -2450,6 +2498,9 @@ local function menu_button(on_air, watch, room)
         hit(cx, y, ww, KEY_H * F.scale, c[2])
         cx = cx + ww + KEY_GAP * F.scale
     end
+    local players_w = players_cap(cx, y, M.details, humans, bots)
+    hit(cx, y, players_w, KEY_H * F.scale, "details")
+    cx = cx + players_w + KEY_GAP * F.scale
     -- The tally, when the room channel is pointed at you.
     --
     -- It sits on this row rather than at the top of the middle, which is where
@@ -2814,7 +2865,8 @@ function M.hud(o)
     -- which is the one place that decision is made; this reads it rather than
     -- making it again from a number.
     local several = o.rooms and #o.rooms > 1
-    menu_button(o.on_air and not o.watch, o.watch, several and o.room or nil)
+    menu_button(o.on_air and not o.watch, o.watch, several and o.room or nil,
+                o.pilots, o.watchers)
     vignette(o.hurt or 0)
     -- The two big centered lines are the only interface that sits where the
     -- menu does. The panels can share the screen with it; these cannot.

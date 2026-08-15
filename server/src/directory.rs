@@ -274,13 +274,14 @@ impl Directory {
                 .map(|z| z.max_players() as u32)
                 .unwrap_or(u32::MAX);
             if let Some(z) = zones.iter_mut().find(|z| z.name == r.status.zone) {
-                z.players += r.status.players;
+                let people = r.status.players.saturating_add(r.status.spectators);
+                z.players += people;
                 z.bots += r.status.bots;
                 z.instances.push(BrowseInstance {
                     address: r.address.clone(),
                     wt: r.wt.clone(),
                     region: r.region.clone(),
-                    players: r.status.players,
+                    players: people,
                     bots: r.status.bots,
                     bots_wanted: r.status.bots_wanted,
                     // Full means no seat and no headroom to make one.
@@ -1040,6 +1041,7 @@ mod tests {
     fn browse_lists_zones_with_instances_and_totals() {
         let mut d = Directory::new(cat());
         reg(&mut d, "a", "chaos", 5, true);
+        d.regs.get_mut("a").unwrap().status.spectators = 2;
         reg(&mut d, "b", "chaos", 2, true);
         reg(&mut d, "c", "war", 1, true);
         let b = d.browse();
@@ -1047,12 +1049,12 @@ mod tests {
         assert_eq!(b.zones.len(), 2, "every catalog zone appears, busy or not");
         let chaos = b.zones.iter().find(|z| z.name == "chaos").unwrap();
         assert_eq!(
-            chaos.players, 7,
-            "per-zone total needs no arithmetic by the client"
+            chaos.players, 9,
+            "the zone total includes people flying and watching"
         );
         assert_eq!(chaos.instances.len(), 2);
         assert_eq!(
-            chaos.instances[0].players, 5,
+            chaos.instances[0].players, 7,
             "fullest first concentrates by default"
         );
     }
@@ -1088,6 +1090,16 @@ mod tests {
         d.regs.get_mut("b").unwrap().status.max_rooms = 4;
         let inst = &d.browse().zones[0].instances[0];
         assert!(!inst.full, "room headroom means a seat can still be made");
+
+        let mut d = Directory::new(cat());
+        reg(&mut d, "c", "chaos", 7, true);
+        d.regs.get_mut("c").unwrap().status.spectators = 3;
+        let inst = &d.browse().zones[0].instances[0];
+        assert_eq!(inst.players, 10, "spectators are visible in the population");
+        assert!(
+            !inst.full,
+            "spectators do not consume the remaining ship seat"
+        );
     }
 
     #[test]

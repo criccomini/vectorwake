@@ -144,7 +144,7 @@ local function on_message(s)
             -- by wearing the dial that is looking for an arena where the busy
             -- rows carry their counts.
             count = up
-                and string.format("%d playing, %d AI", players, z.bots or 0)
+                and string.format("%d people, %d AI", players, z.bots or 0)
                 or "",
             -- The same two numbers unpacked, for a meter rather than a
             -- sentence: how full a game is reads faster as a row of pips than

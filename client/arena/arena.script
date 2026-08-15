@@ -764,7 +764,7 @@ local function drain_kills()
         elseif k.victim == me then
             col, mine = pal.HURT, true
         end
-        notify((k.victim == k.killer) and {vn, " was caught in it"}
+        notify((k.victim == k.killer) and {vn, " killed by self"}
             or (k.killer == 255) and {vn, " flew into the wall"}
             or {pilot_named(k.killer), " killed ", vn, paid}, col, mine)
     end

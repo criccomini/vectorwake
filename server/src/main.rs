@@ -3920,7 +3920,7 @@ mod tests {
     }
 
     #[test]
-    fn watchers_move_none_of_the_counts_the_room_polices() {
+    fn watchers_enter_presence_without_moving_the_counts_the_room_polices() {
         let mut z = serving(1, 9, 16);
         seat(&mut z, 0, 2);
         let a = &mut z.rooms[0];
@@ -3931,7 +3931,12 @@ mod tests {
             .unwrap();
         assert_eq!(a.humans(), humans, "not a human in the cap's sense");
         assert_eq!(a.bots_wanted(), bots_wanted, "and no ballast moves for one");
-        assert_eq!(z.total_players(), 2, "the directory count is people flying");
+        assert_eq!(z.total_players(), 2, "the flying count stays put");
+        assert_eq!(
+            z.status().spectators,
+            1,
+            "the public presence includes them"
+        );
     }
 
     #[test]

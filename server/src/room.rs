@@ -1261,6 +1261,13 @@ impl Room {
         self.players.values().filter(|p| p.bot).count()
     }
 
+    /// People in the stands. Guests count as people here because `Seat::bot`
+    /// is the admission decision, while the public label only says whether an
+    /// account has been claimed.
+    pub(crate) fn human_spectators(&self) -> usize {
+        self.watchers.values().filter(|w| !w.seat.bot).count()
+    }
+
     pub(crate) fn debug_assert_member(&self, id: u64, presence: &PresenceHandle) {
         #[cfg(debug_assertions)]
         {

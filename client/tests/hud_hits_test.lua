@@ -331,6 +331,38 @@ if #dbg == 2 then
 end
 ui.debug = false
 
+-- --- the Players key carries the whole room -------------------------------
+
+frame({pilots = {
+           [0] = {name = "you", label = "human"},
+           [1] = {name = "someone", label = "human"},
+           [2] = {name = "a bot", label = "bot", ai = true},
+           [3] = {name = "a guest", label = "unknown"},
+       },
+       watchers = {
+           {name = "gallery", label = "human"},
+           {name = "newcomer", label = "unknown"},
+           {name = "camera", label = "bot?"},
+       }})
+do
+    local chip = box("details")
+    local words = {}
+    if chip then
+        local st = package.loaded["arena.state"]
+        for k = 1, st.n do
+            local t = st.text[k]
+            local y = H - t.y
+            if t.x >= chip.x and t.x <= chip.x + chip.w
+                    and y >= chip.y and y <= chip.y + chip.h then
+                words[#words + 1] = t.s
+            end
+        end
+    end
+    check("the Players key carries human and bot counts",
+          table.concat(words, ",") == "PLAYERS,5,2",
+          table.concat(words, ","))
+end
+
 -- --- the menu takes the screen ---------------------------------------------
 
 frame({menu_open = true})
