@@ -45,6 +45,10 @@ services:
       # so when the basic_auth came off; flipping this back means putting the
       # auth back in the Caddyfile, not just editing the label.
       vw.metrics: open
+      # Portal copies of the client call the meta-layer from another origin.
+      # Naming that policy here makes a CORS change recreate Caddy, which reads
+      # the route file only when it starts.
+      vw.meta-cors: credentialless-any-origin
       # The public site is a second static root on the same Caddy. This label
       # makes adding that site part of the service config, which is what gets
       # an already-running proxy recreated once to read the new site block.
