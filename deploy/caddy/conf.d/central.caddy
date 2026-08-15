@@ -12,7 +12,24 @@ handle_path /dir* {
 
 # Where a client signs in. Local arenas do not come through here either: they
 # reach the meta-layer on loopback, the same way they reach the directory.
+#
+# Portal builds run from somebody else's origin. They keep their own account
+# secret and send it in JSON, never in a cookie, so any origin may read its own
+# replies without giving another site access to a player's live-site session.
+# The JSON content type makes every browser ask permission before the POST.
+@meta_preflight {
+	path /meta*
+	method OPTIONS
+}
+handle @meta_preflight {
+	header Access-Control-Allow-Origin "*"
+	header Access-Control-Allow-Methods "POST, OPTIONS"
+	header Access-Control-Allow-Headers "Content-Type"
+	header Access-Control-Max-Age "86400"
+	respond "" 204
+}
 handle_path /meta* {
+	header Access-Control-Allow-Origin "*"
 	reverse_proxy 127.0.0.1:9400
 }
 
