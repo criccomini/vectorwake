@@ -705,8 +705,14 @@ end
 -- The same name, wrapped so a feed line knows which of its parts is a name.
 -- The interface says its own words in capitals and quotes everybody else's:
 -- a call sign is upper, lower and numeric exactly as its owner has it.
-local function pilot_named(i)
-    return {pilot_name(i)}
+--
+-- A kill asks for the identity mark as well. Other notices keep their compact
+-- sentence, since a flag line already has a verb that explains why it is in
+-- the feed and an arrival is not a combat notification.
+local function pilot_named(i, marked)
+    local p = net.pilots[i]
+    return {pilot_name(i), identity = marked and p
+        and (p.ai and "bot" or "human") or nil}
 end
 
 -- One line in the notification feed. Kills are what it was built for and are
@@ -733,7 +739,7 @@ end
 -- paid, and that message is already how ratings arrive.
 local function drain_kills()
     for _, k in ipairs(net.kills) do
-        local vn = pilot_named(k.victim)
+        local vn = pilot_named(k.victim, true)
         -- Your own bomb counts as your kill in the ledger, which is correct
         -- and reads as nonsense in a feed line.
         -- The payout is shown when there is one. A pilot who was carrying
@@ -766,7 +772,7 @@ local function drain_kills()
         end
         notify((k.victim == k.killer) and {vn, " killed by self"}
             or (k.killer == 255) and {vn, " flew into the wall"}
-            or {pilot_named(k.killer), " killed ", vn, paid}, col, mine)
+            or {pilot_named(k.killer, true), " killed ", vn, paid}, col, mine)
     end
     if #net.kills > 0 then net.kills = {} end
 end

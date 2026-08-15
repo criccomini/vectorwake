@@ -127,10 +127,41 @@ end
 -- What the toast drew, found by its words. Returns the text entry, in the
 -- interface's own top-down coordinates.
 local function shown(words)
+    local rows = {}
     for k = 1, state.n do
         local t = state.text[k]
         if t.s == words then
-            return {x = t.x, y = H - t.y, px = t.px, pivot = t.pivot}
+            local w = #t.s * t.px * (1233 / 2048)
+            local x = t.pivot == "right" and t.x - w / 2
+                or t.pivot == "center" and t.x or t.x + w / 2
+            return {x = x, y = H - t.y, px = t.px, pivot = t.pivot}
+        end
+        rows[t.y] = rows[t.y] or {}
+        rows[t.y][#rows[t.y] + 1] = t
+    end
+    -- A kill is drawn in parts now, with a mark after each named pilot. Find
+    -- the run of text around those marks while leaving bare notices on their
+    -- original one-entry path above.
+    local advance = 1233 / 2048
+    for y, row in pairs(rows) do
+        table.sort(row, function(a, b) return a.x < b.x end)
+        for first = 1, #row do
+            local s = ""
+            local x0, x1
+            for last = first, #row do
+                local t = row[last]
+                local w = #t.s * t.px * advance
+                local left = t.pivot == "right" and t.x - w
+                    or t.pivot == "center" and t.x - w / 2 or t.x
+                s = s .. t.s
+                x0 = math.min(x0 or left, left)
+                x1 = math.max(x1 or left + w, left + w)
+                if s == words then
+                    return {x = (x0 + x1) / 2, y = H - y,
+                            px = t.px, pivot = "center"}
+                end
+                if #s >= #words then break end
+            end
         end
     end
     return nil

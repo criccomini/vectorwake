@@ -489,19 +489,18 @@ local function players_cap(x, y, on, humans, bots)
     local col, h = key_frame(x, y, w, on)
     local mid = y + h / 2
     local at = x + KEY_PAD * F.scale
-    txt(label, at, mid, size, pal.a(col, on and 1 or 0.85), nil, nil, true)
+    local cap_col = pal.a(col, on and 1 or 0.85)
+    txt(label, at, mid, size, cap_col, nil, nil, true)
     at = at + text_w(label, size) + label_gap
 
-    local human_col = pal.a(pal.FRIEND, on and 1 or 0.82)
-    pilot_mark(at + mark / 2, mid, human_col, mark)
+    pilot_mark(at + mark / 2, mid, cap_col, mark)
     at = at + mark + mark_gap
-    txt(human, at, mid, count_size, human_col)
+    txt(human, at, mid, count_size, cap_col)
     at = at + text_w(human, count_size) + group_gap
 
-    local bot_col = pal.a(pal.DIM, on and 0.95 or 0.74)
-    bot_mark(at, mid, bot_col, mark)
+    bot_mark(at, mid, cap_col, mark)
     at = at + mark + mark_gap
-    txt(bot, at, mid, count_size, bot_col)
+    txt(bot, at, mid, count_size, cap_col)
     return w
 end
 
@@ -1046,20 +1045,26 @@ local function nameplates(o)
                     -- case wherever it is drawn.
                     txt(nm, sx + 12 * F.scale, sy + 13 * F.scale, 11 * F.scale, pal.a(col, 0.7),
                         nil, nil, true)
-                    -- The same mark the scoreboard and the info box wear, on
-                    -- the hull itself: who is flying a ship is worth knowing
-                    -- while you are deciding whether to chase it, and that
-                    -- decision is made looking at the ship rather than at a
-                    -- panel. Dim and after the name, so it reads as a note
-                    -- about the label and never competes with the bounty
-                    -- under it.
-                    if p and p.ai then
+                    -- The same mark the scoreboard wears, on the hull itself:
+                    -- who is flying a ship is worth knowing while you are
+                    -- deciding whether to chase it, and that decision is made
+                    -- looking at the ship rather than at a panel. Dim and
+                    -- after the name, so it reads as a note about the label
+                    -- and never competes with the bounty under it.
+                    if p then
                         -- A mark set four points off the last letter reads as
                         -- the end of the name rather than as a thing beside
                         -- it, and a call sign is exactly the kind of string
                         -- somebody will end in a bracket or a dot.
-                        bot_mark(sx + 12 * F.scale + text_w(nm, 11 * F.scale) + 9 * F.scale,
-                                 sy + 13 * F.scale, pal.a(col, 0.45), 10 * F.scale)
+                        local mx = sx + 12 * F.scale
+                            + text_w(nm, 11 * F.scale) + 9 * F.scale
+                        if p.ai then
+                            bot_mark(mx, sy + 13 * F.scale,
+                                     pal.a(col, 0.45), 10 * F.scale)
+                        else
+                            pilot_mark(mx + 5 * F.scale, sy + 13 * F.scale,
+                                       pal.a(col, 0.45), 10 * F.scale)
+                        end
                     end
                     if bty > 0 then
                         -- In the side's color rather than the bounty gold,
@@ -1569,7 +1574,12 @@ local function scores(me, pilots, watchers, viewer_name)
         local cy = y + LINE * F.scale / 2
         txt(name, name_x, cy, num, pal.a(col, mine and 1.0 or 0.8),
             nil, nil, true)
-        if r.ai then bot_mark(mark_x, cy, pal.a(pal.DIM, 0.75)) end
+        if r.ai then
+            bot_mark(mark_x, cy, pal.a(pal.DIM, 0.75))
+        else
+            pilot_mark(mark_x + MARK_K * F.scale / 2, cy,
+                       pal.a(pal.DIM, 0.75))
+        end
         if r.watch then
             -- No seat, so no box to open about them, and no numbers: a
             -- watcher has not scored anything and three zeroes would say they
@@ -1677,13 +1687,45 @@ M.FEED_MAX = 5
 -- people, and "OZONE KILLED KESTREL" reads as an announcement rather than as
 -- something that happened. Lower case leaves the names as the only capitals
 -- on the line, which is also what the eye is looking for.
-local function line_text(t)
-    if type(t) == "string" then return t end
-    local out = {}
+--
+-- A combat line keeps its names as parts so each pilot can wear the same mark
+-- they wear in the Players list and beside their ship. The mark is part of the
+-- line's width, not an ornament hung outside it, so right alignment stays
+-- exact as names and payouts change.
+local FEED_MARK_K, FEED_MARK_GAP = 10, 4
+local function feed_line_w(t, size)
+    if type(t) == "string" then return text_w(t, size) end
+    local w = 0
     for _, part in ipairs(t) do
-        out[#out + 1] = type(part) == "table" and part[1] or part
+        local s = type(part) == "table" and part[1] or part
+        if type(part) == "table" and part.identity then
+            w = w + (FEED_MARK_K + FEED_MARK_GAP) * F.scale
+        end
+        w = w + text_w(s, size)
     end
-    return table.concat(out)
+    return w
+end
+
+local function draw_feed_line(t, x, y, size, col)
+    if type(t) == "string" then
+        txt(t, x, y, size, col, nil, nil, true)
+        return
+    end
+    local k = FEED_MARK_K * F.scale
+    for _, part in ipairs(t) do
+        local s = type(part) == "table" and part[1] or part
+        txt(s, x, y, size, col, nil, nil, true)
+        x = x + text_w(s, size)
+        if type(part) == "table" and part.identity then
+            x = x + FEED_MARK_GAP * F.scale
+            if part.identity == "bot" then
+                bot_mark(x, y, col, k)
+            else
+                pilot_mark(x + k / 2, y, col, k)
+            end
+            x = x + k
+        end
+    end
 end
 
 local function feed(lines, top)
@@ -1691,6 +1733,7 @@ local function feed(lines, top)
     if shown == 0 then return end
     local right = F.w - F.safe_r - PAD * F.scale - PANEL_X * F.scale
     local y = top + PANEL_Y * F.scale
+    local size = FONT * F.scale
     for i = 1, shown do
         local f = lines[i]
         -- Older lines sit further back, and the last second and a half of a
@@ -1698,8 +1741,9 @@ local function feed(lines, top)
         local a = 1 - (i - 1) * 0.07
         local left = M.FEED_LIFE - f.t
         if left < FEED_FADE then a = a * math.max(0, left / FEED_FADE) end
-        txt(line_text(f.text), right, y + LINE * F.scale / 2, FONT * F.scale,
-            pal.a(f.col or pal.DIM, a), "right", nil, true)
+        local w = feed_line_w(f.text, size)
+        draw_feed_line(f.text, right - w, y + LINE * F.scale / 2,
+                       size, pal.a(f.col or pal.DIM, a))
         y = y + LINE * F.scale
     end
     -- As wide as the widest line it drew rather than a guess, since a feed of
@@ -1707,7 +1751,7 @@ local function feed(lines, top)
     -- claim empty screen beside it.
     local wide = 0
     for i = 1, shown do
-        local w = text_w(line_text(lines[i].text), FONT * F.scale)
+        local w = feed_line_w(lines[i].text, size)
         if w > wide then wide = w end
     end
     local block_top = top + PANEL_Y * F.scale
@@ -1775,16 +1819,17 @@ local function toast(lines, reach)
     local a = 1
     local left = TOAST_LIFE - f.t
     if left < TOAST_FADE then a = math.max(0, left / TOAST_FADE) end
-    local words = line_text(f.text)
     local size = (FONT + 1) * F.scale
     local y = toast_y(reach)
     -- A wash under it rather than a box round it, the width of the words and
     -- no wider. Mid-screen over a starfield the type needs something to sit
     -- on; a border would be the one shape this interface does not draw.
-    local w = text_w(words, size) + 26 * F.scale
+    local line_w = feed_line_w(f.text, size)
+    local w = line_w + 26 * F.scale
     local h = LINE * F.scale + 6 * F.scale
     rect(F.w / 2 - w / 2, y - h / 2, w, h, pal.rgb(0x03050a, 0.62 * a))
-    txt(words, F.w / 2, y, size, pal.a(f.col or pal.INK, a), "center", nil, true)
+    draw_feed_line(f.text, F.w / 2 - line_w / 2, y, size,
+                   pal.a(f.col or pal.INK, a))
 end
 
 -- The corner stack: what the triggers do, what you carry and can spend, and

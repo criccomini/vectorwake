@@ -336,9 +336,9 @@ end
 
 -- --- the machine is square -------------------------------------------------
 
--- The scoreboard's bot column, the nameplate over the bot's own hull, and the
--- bot count beside PLAYERS are all on screen in this room. The PLAYERS count
--- also draws one human helmet for the current pilot.
+-- The scoreboard, nameplates, and PLAYERS count all answer the same question
+-- with the same pair of marks. This room has a human pilot and a bot, with the
+-- bot's hull on screen.
 ui.details = true
 local board_frame = frame(function()
     ui.hud({
@@ -357,9 +357,78 @@ ui.details = false
 local board = boxes(board_frame)
 check("the scoreboard, nameplate, and player count box the bot", #board == 3,
       #board .. " boxes beside one bot")
-check("the player count marks the human pilot with a round helmet",
-      #crowns(board_frame) == 1,
+check("the scoreboard and player count mark the human pilot",
+      #crowns(board_frame) == 2,
       #crowns(board_frame) .. " round helmets beside one human pilot")
+
+-- With the list shut, a human stranger's hull keeps the human mark beside its
+-- name. PLAYERS contributes the other helmet and its standing zero-bot mark.
+local human_plate = frame(function()
+    ui.hud({
+        me = 0, class_names = {"Apex"}, menu_open = false,
+        pilots = {[0] = {name = "you", label = "human"},
+                  [1] = {name = "someone", label = "human"}},
+        teams = {}, feed = {}, hurt = 0, charges = {},
+        cam_x = 100, cam_y = 100, half_w = W / 2, half_h = H / 2,
+        banner = "", lag = 4,
+        stats = {lag = 4, lead = 2, err = 1, err_max = 9, rewind = 0,
+                 snaps = 1, rx = 0, tx = 0},
+        zone = "chaos", fps = 60, frame_ms = 16, rx_rate = 0, tx_rate = 0,
+    })
+end)
+check("a human nameplate wears the pilot helmet", #crowns(human_plate) == 2,
+      #crowns(human_plate) .. " helmets across PLAYERS and one nameplate")
+
+-- A marked kill has one mark per named pilot. The room itself contributes the
+-- standing pair in PLAYERS, so the combat line doubles both totals.
+local kill_frame = frame(function()
+    ui.hud({
+        me = 0, class_names = {"Apex"}, menu_open = false,
+        pilots = {[0] = {name = "you", label = "human"}},
+        teams = {}, feed = {{
+            text = {{"you", identity = "human"}, " killed ",
+                    {"a bot", identity = "bot"}}, t = 0,
+        }}, hurt = 0, charges = {},
+        cam_x = 100, cam_y = 100, half_w = W / 2, half_h = H / 2,
+        banner = "", lag = 4,
+        stats = {lag = 4, lead = 2, err = 1, err_max = 9, rewind = 0,
+                 snaps = 1, rx = 0, tx = 0},
+        zone = "chaos", fps = 60, frame_ms = 16, rx_rate = 0, tx_rate = 0,
+    })
+end)
+check("a kill line marks its human pilot", #crowns(kill_frame) == 2,
+      #crowns(kill_frame) .. " helmets including PLAYERS")
+check("and marks its bot", #boxes(kill_frame) == 2,
+      #boxes(kill_frame) .. " bot marks including PLAYERS")
+
+-- In prose the mark is punctuation for the name, not a label leading into it.
+-- Keep it after the complete call sign while the line's measured width and
+-- right edge stay unchanged.
+local function text_entry(words)
+    for i = 1, state.n do
+        if state.text[i].s == words then return state.text[i] end
+    end
+end
+local function mark_on_line(list, text)
+    if not text then return nil end
+    local target, best, distance = H - text.y, nil, math.huge
+    for _, mark in ipairs(list) do
+        local cy = mark.cy or (mark.top + mark.h / 2)
+        local d = math.abs(cy - target)
+        if d < distance then best, distance = mark, d end
+    end
+    return best
+end
+local human_text, bot_text = text_entry("you"), text_entry("a bot")
+local human_mark = mark_on_line(crowns(kill_frame), human_text)
+local bot_feed_mark = mark_on_line(boxes(kill_frame), bot_text)
+local advance = 1233 / 2048
+local function follows(mark, text)
+    return mark and text
+        and mark.cx > text.x + #text.s * text.px * advance
+end
+check("the human mark follows its name", follows(human_mark, human_text))
+check("and the bot mark follows its name", follows(bot_feed_mark, bot_text))
 
 -- The antenna is what the machine says with nothing beside it, so it has to
 -- reach above the crown, and the person must not.

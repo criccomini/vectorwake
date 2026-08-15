@@ -333,7 +333,7 @@ ui.debug = false
 
 -- --- the Players key carries the whole room -------------------------------
 
-frame({pilots = {
+local counted_room = {pilots = {
            [0] = {name = "you", label = "human"},
            [1] = {name = "someone", label = "human"},
            [2] = {name = "a bot", label = "bot", ai = true},
@@ -343,10 +343,12 @@ frame({pilots = {
            {name = "gallery", label = "human"},
            {name = "newcomer", label = "unknown"},
            {name = "camera", label = "bot?"},
-       }})
+       }}
+frame(counted_room)
 do
     local chip = box("details")
     local words = {}
+    local colors = {}
     if chip then
         local st = package.loaded["arena.state"]
         for k = 1, st.n do
@@ -355,13 +357,52 @@ do
             if t.x >= chip.x and t.x <= chip.x + chip.w
                     and y >= chip.y and y <= chip.y + chip.h then
                 words[#words + 1] = t.s
+                colors[#colors + 1] = t.col
             end
         end
     end
     check("the Players key carries human and bot counts",
           table.concat(words, ",") == "PLAYERS,5,2",
           table.concat(words, ","))
+    check("an idle Players key uses one muted text color",
+          #colors == 3 and colors[1][1] == colors[2][1]
+              and colors[2][1] == colors[3][1]
+              and colors[1][2] == colors[2][2]
+              and colors[2][2] == colors[3][2]
+              and colors[1][3] == colors[2][3]
+              and colors[2][3] == colors[3][3]
+              and colors[1][4] == colors[2][4]
+              and colors[2][4] == colors[3][4])
 end
+
+ui.details = true
+frame(counted_room)
+do
+    local chip = box("details")
+    local st = package.loaded["arena.state"]
+    local colors = {}
+    for k = 1, st.n do
+        local t = st.text[k]
+        local y = H - t.y
+        if chip and t.x >= chip.x and t.x <= chip.x + chip.w
+                and y >= chip.y and y <= chip.y + chip.h then
+            colors[#colors + 1] = t.col
+        end
+    end
+    check("a selected Players key lights every label and count cyan",
+          #colors == 3 and colors[1][1] == pal.FRIEND[1]
+              and colors[2][1] == pal.FRIEND[1]
+              and colors[3][1] == pal.FRIEND[1]
+              and colors[1][2] == pal.FRIEND[2]
+              and colors[2][2] == pal.FRIEND[2]
+              and colors[3][2] == pal.FRIEND[2]
+              and colors[1][3] == pal.FRIEND[3]
+              and colors[2][3] == pal.FRIEND[3]
+              and colors[3][3] == pal.FRIEND[3]
+              and colors[1][4] == 1 and colors[2][4] == 1
+              and colors[3][4] == 1)
+end
+ui.details = false
 
 -- --- the menu takes the screen ---------------------------------------------
 
@@ -644,14 +685,23 @@ check("a long feed still draws something", lines > 0 and before ~= nil)
 -- because this is the one panel setting a sentence about people rather than
 -- labelling an instrument, and leaving the names as the only capitals on the
 -- line is what makes them findable.
-frame({feed = {{text = {{"Probe 7"}, " killed ", {"vX-9"}, " (+12)"}, t = 0}}})
+frame({feed = {{text = {{"Probe 7", identity = "human"}, " killed ",
+                        {"vX-9", identity = "bot"}, " (+12)"}, t = 0}}})
 local st_feed = package.loaded["arena.state"]
-local said_line
+local said_y
 for i = 1, st_feed.n do
-    if st_feed.text[i].s:lower():find("killed", 1, true) then
-        said_line = st_feed.text[i].s
+    if st_feed.text[i].s == " killed " then
+        said_y = st_feed.text[i].y
     end
 end
+local said_parts = {}
+for i = 1, st_feed.n do
+    local t = st_feed.text[i]
+    if t.y == said_y then said_parts[#said_parts + 1] = t end
+end
+table.sort(said_parts, function(a, b) return a.x < b.x end)
+local said_line = ""
+for _, t in ipairs(said_parts) do said_line = said_line .. t.s end
 check("a feed line quotes the names and does not shout its own words",
       said_line == "Probe 7 killed vX-9 (+12)", tostring(said_line))
 
