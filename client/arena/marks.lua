@@ -470,6 +470,15 @@ function M.level(me, t)
     return ship_lvl(me, t)
 end
 
+-- What a trigger is carrying of one add-on, for a caller that names the kit
+-- rather than drawing it. Exported for the same reason `level` is: the hover
+-- card in the corner reads what the mark beside it is showing, and a card
+-- reading the core while the mark read the held copy would name a loadout the
+-- drawing next to it was not wearing.
+function M.mod(me, t, i)
+    return ship_mod(me, t, i)
+end
+
 -- A trigger's mark: the round it fires, wearing what the greens did to it.
 --
 -- In the round's own color, which is the color it will be when it leaves the

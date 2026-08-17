@@ -2442,6 +2442,197 @@ local function help_prompt()
     hit(x, y, w, h, "help_prompt_open")
 end
 
+-- --- what a row of the corner stack is -------------------------------------
+--
+-- The stack is marks and counts. That is the right shape for reading in a
+-- fight, when a glance has to answer "what am I holding" without words, and
+-- it is no help at all to somebody who has not learned the marks yet: a
+-- drawing that means "shrapnel" means nothing until somebody says so once.
+--
+-- A hand already on the mouse can ask. Rest the pointer on a row and it says
+-- what the row is, what the greens have added to it, and which key spends it.
+-- Nothing appears until the pointer is on it, so the corner is unchanged for
+-- everybody flying, which is what the corner is for.
+--
+-- Keyboard only, like the controls table: a thumb has no pointer to rest, and
+-- the pads on glass carry their own names.
+M.hover_x, M.hover_y = nil, nil
+
+-- Which published row covers a point, as the rectangle rather than the name.
+-- `M.row_at` answers the name, which is what a test asking "where did this
+-- land" wants; a card has to be put somewhere, so it needs the box.
+local function zone_at(x, y)
+    if not x or not y then return nil end
+    local found = nil
+    for _, z in ipairs(F.zones) do
+        if x >= z.x and x <= z.x + z.w and y >= z.y and y <= z.y + z.h then
+            found = z
+        end
+    end
+    return found
+end
+
+-- Break a sentence to a width, on spaces. The one card that carries prose is
+-- the bounty's, and its sentence is wider than any corner should be.
+local function wrapped(s, px, max)
+    local out, line = {}, nil
+    for word in string.gmatch(s, "%S+") do
+        local try = line and (line .. " " .. word) or word
+        if line and glyph_w(try, px) > max then
+            out[#out + 1] = line
+            line = word
+        else
+            line = try
+        end
+    end
+    if line then out[#out + 1] = line end
+    return out
+end
+
+-- What the greens have put on a trigger, named the way the feed names them
+-- when one lands, so the card and the message that taught it agree.
+--
+-- A rung is only worth saying once it has moved: every hull flies on the
+-- bottom one, and a card that opened with "level 1" would be spending its
+-- first line on the absence of an upgrade. Counted where a rung is worth more
+-- than one of a thing, which is what a pilot holding two shrapnel wants to
+-- know that the mark alone does not say.
+local function trigger_kit(me, t)
+    local out = {}
+    local lvl = marks.level(me, t)
+    if lvl > 0 then out[#out + 1] = "level " .. (lvl + 1) end
+    for i = 1, #pal.MODS do
+        local n = marks.mod(me, t, i - 1)
+        if n > 0 then
+            local name = pal.MODS[i].name
+            -- Multifire is the one add-on a pilot can switch off, and a card
+            -- that listed it while the fan was folded would be naming a thing
+            -- the next shot will not do.
+            if i - 1 == (sim.MOD_MULTI or 0) and sim.ship_multi_off
+               and sim.ship_multi_off(me) then
+                name = name .. " (off)"
+            end
+            out[#out + 1] = (n > 1) and (name .. " x" .. n) or name
+        end
+    end
+    return out
+end
+
+-- The control this row answers to, as the controls list has it now rather
+-- than as it shipped: a pilot who moved their charge keys reads the keys they
+-- moved them to, and the name comes from the same row so the card and the
+-- table under H cannot call one thing two things.
+local function control(id)
+    for _, r in ipairs(binds.rows()) do
+        if r.id == id then return r end
+    end
+    return nil
+end
+
+-- What the row under the pointer is called, what it is carrying, and what
+-- spends it. Nil for a row with nothing to say.
+local function stack_card_lines(key, o, me)
+    if key == "bounty" then
+        -- Fixed words, because the number is the whole of what the row shows
+        -- and the question it raises is always the same one.
+        return "bounty", {}, nil,
+               "Your ship's bounty. Enemies get these points when you're destroyed."
+    end
+    if key == "gun" or key == "bomb" then
+        local t = (key == "gun") and sim.TRIG_GUN or sim.TRIG_BOMB
+        local id = (key == "gun") and "guns" or "bombs"
+        local c = control(id)
+        return (c and c.name) or key, trigger_kit(me, t), c and c.show, nil
+    end
+    local slot = string.match(key or "", "^charge:(.+)$")
+    if not slot then return nil end
+    -- Which key spends this row is a position rather than a name: the charge
+    -- keys are slots under the skin, and the first one spends whatever the
+    -- hull's first charge happens to be. So the row is found in the same list
+    -- the stack drew, and its place in that list is the key.
+    local nth = nil
+    for i, c in ipairs(o.charges or {}) do
+        if string.lower(c.name or c.short or "") == slot then nth = i break end
+    end
+    -- A charge is one thing the zone put in a slot and there is nothing to
+    -- upgrade about it, so the list is empty rather than saying "none": an
+    -- empty line would imply a kit this row can hold and does not.
+    local c = nth and control("charge_" .. nth)
+    return slot, {}, c and c.show, nil
+end
+
+-- The card itself, hung off the row it belongs to.
+local function stack_card(o, me)
+    if M.touching or M.help or not M.hover_x then return end
+    local z = zone_at(M.hover_x, M.hover_y)
+    if not z then return end
+    local name, kit, key, prose = stack_card_lines(z.key, o, me)
+    if not name then return end
+
+    local fs = (M.compact and 11 or 12) * F.scale
+    local pad = 9 * F.scale
+    local gap = 14 * F.scale
+    local rowh = fs * 1.5
+    local body = {}
+    if prose then
+        for _, l in ipairs(wrapped(prose, fs, 210 * F.scale)) do
+            body[#body + 1] = l
+        end
+    elseif #kit > 0 then
+        body[#body + 1] = table.concat(kit, ", ")
+    end
+
+    local head = glyph_w(string.upper(name), fs)
+    if key then head = head + gap + glyph_w(string.upper(key), fs) end
+    local w = head
+    for _, l in ipairs(body) do
+        w = math.max(w, glyph_w(l, fs))
+    end
+    w = w + pad * 2
+    local h = pad * 2 + rowh * (1 + #body)
+
+    -- Beside the stack rather than over it: the stack is what the pointer is
+    -- reading and a card on top of it would answer by hiding the question.
+    -- Clear of the widest row rather than of the hovered one, because the rows
+    -- are not the same width: a bounty of two figures is a good deal narrower
+    -- than a charge with three pips, and a card hung off the narrow one covers
+    -- the wide one above it.
+    --
+    -- Clamped to the window on both axes, since the stack sits in the corner a
+    -- short window has least of.
+    local right = z.x + z.w
+    for _, other in ipairs(F.zones) do
+        if other.x == z.x and other.x + other.w > right then
+            right = other.x + other.w
+        end
+    end
+    local x = right + 8 * F.scale
+    local y = z.y + z.h / 2 - h / 2
+    if x + w > F.w - 8 * F.scale then x = math.max(8 * F.scale, z.x - w - 8 * F.scale) end
+    if y + h > F.h - 8 * F.scale then y = F.h - 8 * F.scale - h end
+    if y < 8 * F.scale then y = 8 * F.scale end
+
+    rect(x, y, w, h, pal.rgb(0x03050a, 0.9))
+    F.layer:frame(x, ry(y, h), w, h, 1.0 * F.scale, pal.a(pal.DIM, 0.5))
+
+    local was = F.case
+    F.case = "upper"
+    txt(name, x + pad, y + pad + rowh * 0.5, fs, pal.a(pal.INK, 0.95))
+    if key then
+        txt(key, x + w - pad, y + pad + rowh * 0.5, fs,
+            pal.a(pal.FRIEND, 0.95), "right")
+    end
+    -- Quoted rather than set: these lines arrive in the case they are meant
+    -- to be read in. A sentence broken to the card's width is still one
+    -- sentence, and the interface's own rule would capitalize every line it
+    -- was broken into, which is three sentences that are not there.
+    for i, l in ipairs(body) do
+        txt(l, x + pad, y + pad + rowh * (i + 0.5), fs,
+            pal.a(pal.PANEL_INK, 0.85), nil, nil, true)
+    end
+    F.case = was
+end
+
 local function safe_note(spent, limit)
     local y = F.h * 0.62
     txt("SAFE ZONE", F.w / 2, y, (M.compact and 12 or 16) * F.scale,
@@ -2913,6 +3104,11 @@ function M.hud(o)
     menu_button(o.on_air and not o.watch, o.watch, several and o.room or nil,
                 o.pilots, o.watchers)
     vignette(o.hurt or 0)
+    -- After the stack, because it is hung off the rows the stack published,
+    -- and after the tint so a hurt frame does not wash out the words.
+    if not (o.watch or M.touching) then
+        stack_card(o, me)
+    end
     -- The two big centered lines are the only interface that sits where the
     -- menu does. The panels can share the screen with it; these cannot.
     if o.menu_open then return end

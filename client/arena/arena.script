@@ -1403,6 +1403,20 @@ function update(self, dt)
         if hover_menu(self.cursor_x, self.cursor_y, self.vh or 0) then
             sfx.ui("ui_move")
         end
+        -- And what the pointer is resting on in the corner stack, which is the
+        -- same question asked of the other set of boxes. Handed over in the
+        -- interface's own coordinates, which count down from the top while the
+        -- engine's count up, exactly as the menu's boxes are tested above.
+        --
+        -- Nil while the menu is open or a thumb is driving: a card explaining
+        -- the corner under a panel that covers it is a card nobody asked for,
+        -- and glass has no pointer to rest.
+        if menu.open or touch.used or not self.cursor_x then
+            ui.hover_x, ui.hover_y = nil, nil
+        else
+            ui.hover_x = self.cursor_x
+            ui.hover_y = (self.vh or 0) - self.cursor_y
+        end
         -- How wide the hull grid came out last frame, which is what its
         -- arrows are measured in. The drawing owns the number: how many
         -- columns fit is a fact about the window.
