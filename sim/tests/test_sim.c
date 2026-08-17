@@ -840,6 +840,110 @@ int main(void) {
             CHECK(s.ships[id].alive, "without killing it");
         }
         CHECK(crossed, "an open door lets the same ship through");
+
+        /* Nothing is left lying in a door.
+         *
+         * A door is a wall on a clock, so "is this tile solid" is a question
+         * about this tick, which is right for a hull crossing it and wrong for
+         * a green that will sit there for a minute: sown through an open one it
+         * is inside a wall for the third of every cycle the door is shut,
+         * unreachable while it is, and drawn embedded in it. On alpha that was
+         * about one green every ten minutes.
+         *
+         * A field of doors with one open lane through it, so a placement rule
+         * that reads the clock lands in a door almost every time and one that
+         * reads the tile can only ever land in the lane. */
+        {
+            sim_map *pm = walled_map();
+            const int LO = 500, HI = 540, LANE = 520;
+            for (int ty = LO; ty <= HI; ty++)
+                for (int tx = LO; tx <= HI; tx++)
+                    if (tx != LANE)
+                        pm->tile[(size_t)ty * SIM_MAP_TILES + tx] =
+                            SIM_TILE(SIM_TILE_DOOR, (uint8_t)(tx % 8));
+            sim_map_index(pm);
+            sim_settings pc;
+            memset(&pc, 0, sizeof pc);
+            sim_settings_baseline(&pc, pm);
+            pc.prize_lo = LO;
+            pc.prize_hi = HI;
+            pc.prize_delay = 1;
+            pc.prize_max = 60;
+            pc.prize_life = 60000;
+
+            sim_state s;
+            sim_init(&s, 7);
+            sim_spawn(&s, APEX, 0, LANE * 16, 520 * 16, 0, &pc);
+            step_n(&s, &pc, 0, 0, 4000);
+
+            int sown = 0;
+            for (int i = 0; i < SIM_MAX_PRIZES; i++) {
+                if (!s.prizes[i].active) continue;
+                sown++;
+                int32_t tx = s.prizes[i].x / (SIM_TILE_PX * 256);
+                int32_t ty = s.prizes[i].y / (SIM_TILE_PX * 256);
+                CHECK(SIM_TILE_CLASS(sim_tile_at(pm, tx, ty)) != SIM_TILE_DOOR,
+                      "no green is sown in a door");
+            }
+            CHECK(sown > 0, "and greens were sown at all");
+
+            free(pm);
+        }
+
+        /* The other two ways something is left on the map, and neither asked
+         * about the tile: the green a kill drops where the hull came apart,
+         * and the flag its carrier was holding. A pilot killed standing in an
+         * open doorway left both inside the door for it to shut on, and a flag
+         * nobody can reach is a round nobody can finish. */
+        {
+            sim_settings dc2 = dc;
+            dc2.prize_max = 8;
+            dc2.prize_delay = 0;       /* no ambient sowing to confuse the count */
+            sim_state s;
+            sim_init(&s, 3);
+            uint32_t t0 = 0;
+            while (!sim_door_open(&dc2, t0, 0)) t0++;
+            s.tick = t0;
+            int killer = sim_spawn(&s, APEX, 0, 505 * 16, 510 * 16, 0, &dc2);
+            int prey = sim_spawn(&s, APEX, 1, 505 * 16, 504 * 16, 0, &dc2);
+            CHECK(SIM_TILE_CLASS(sim_tile_at(dm, 505, 504)) == SIM_TILE_DOOR,
+                  "the victim is standing in the doorway");
+            (void)killer;
+            s.ships[prey].energy = 1;
+
+            /* Carrying, set on the state rather than flown for: what is under
+             * test is where a drop lands. */
+            int flag = sim_add_flag(&s, 505 * 16 + 8, 490 * 16 + 8);
+            s.flags[flag].carried = 1;
+            s.flags[flag].carrier = (uint8_t)prey;
+
+            ev_counts c = step_counting(&s, &dc2, SIM_BTN_FIRE, 0, 120);
+            CHECK(c.deaths == 1, "the pilot in the doorway is killed");
+            CHECK(!s.ships[prey].alive, "and is dead");
+
+            int found = 0;
+            for (int i = 0; i < SIM_MAX_PRIZES; i++) {
+                if (!s.prizes[i].active) continue;
+                found++;
+                int32_t tx = s.prizes[i].x / (SIM_TILE_PX * 256);
+                int32_t ty = s.prizes[i].y / (SIM_TILE_PX * 256);
+                int cls2 = SIM_TILE_CLASS(sim_tile_at(dm, tx, ty));
+                CHECK(cls2 != SIM_TILE_DOOR && cls2 != SIM_TILE_SOLID,
+                      "the green a death leaves is not left in a door");
+                int64_t gx = tx - 505, gy = ty - 504;
+                CHECK(gx * gx + gy * gy <= 9, "and it is near where they fell");
+            }
+            CHECK(found == 1, "a kill leaves exactly one green");
+
+            CHECK(!s.flags[flag].carried, "the flag is dropped");
+            int32_t fx = s.flags[flag].x / (SIM_TILE_PX * 256);
+            int32_t fy = s.flags[flag].y / (SIM_TILE_PX * 256);
+            int fcls = SIM_TILE_CLASS(sim_tile_at(dm, fx, fy));
+            CHECK(fcls != SIM_TILE_DOOR && fcls != SIM_TILE_SOLID,
+                  "and the flag is not left in the doorway either");
+            int64_t fgx = fx - 505, fgy = fy - 504;
+            CHECK(fgx * fgx + fgy * fgy <= 9, "near where it was dropped");
+        }
         free(dm);
     }
 

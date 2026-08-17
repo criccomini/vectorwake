@@ -92,6 +92,17 @@ the tile and the tick rather than a bit read out of an array. A door is solid
 for part of its cycle and not for the rest, which is why collision takes the
 settings and the tick at all. See [design/maps.md](../design/maps.md).
 
+Anything left lying on the map asks a second question, `ground`, and the door is
+the whole reason there are two. A hull crossing a doorway cares what the tile is
+doing this tick; a green that will sit there for a minute cares what the tile
+is. Sown through an open door it spends the shut third of every cycle inside a
+wall, out of reach and drawn embedded in it, which on alpha happened to about
+one green every ten minutes. The three places the core leaves something behind
+all ask `ground` now: the ambient green, the green a kill drops, and the flag
+its carrier was holding. The two drops move to the nearest tile that qualifies,
+searching outward three tiles, so an ordinary death still leaves its green
+underfoot.
+
 This is cheap, exact in fixed point, and reproduces Subspace's characteristic
 wall-hugging behavior, where you can hold thrust into a wall and slide along it.
 A general physics engine would give us friction, resting contacts, and rotation

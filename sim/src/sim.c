@@ -325,6 +325,48 @@ static int solid(const sim_map *m, const sim_settings *cfg, uint32_t tick,
     }
 }
 
+/* Whether a tile is ground: somewhere a thing may be left lying and still be
+ * there, and reachable, later.
+ *
+ * The door is the whole reason this is not `solid`. `solid` answers about a
+ * tick, which is the right question for something moving through and the
+ * wrong one for something staying put: a green sown through an open door is
+ * inside a wall for the third of every cycle the door is shut, unreachable
+ * while it is, and drawn embedded in it. Measured on alpha, about one green
+ * every ten minutes spent two seconds at a time in a shut door.
+ *
+ * A hull's own center is never inside a wall, so the door is the whole of what
+ * this catches today. It is written against the tile rather than against the
+ * door because the property wanted is "the map will not close over this". */
+static int ground(const sim_map *m, int32_t tx, int32_t ty) {
+    switch (SIM_TILE_CLASS(sim_tile_at(m, tx, ty))) {
+        case SIM_TILE_SOLID:
+        case SIM_TILE_DOOR: return 0;
+        default: return 1;
+    }
+}
+
+/* The nearest tile a dropped thing may rest in, searched outward from where it
+ * fell and giving up after three tiles, which leaves the caller's own tile.
+ *
+ * Deterministic, since the ring order is fixed and nothing here rolls: a
+ * client replaying a death puts the flag where the arena put it. */
+static void nearest_ground(const sim_map *m, int32_t *tx, int32_t *ty) {
+    if (ground(m, *tx, *ty)) return;
+    for (int32_t r = 1; r <= 3; r++) {
+        for (int32_t dy = -r; dy <= r; dy++) {
+            for (int32_t dx = -r; dx <= r; dx++) {
+                if (dx > -r && dx < r && dy > -r && dy < r) continue;
+                if (ground(m, *tx + dx, *ty + dy)) {
+                    *tx += dx;
+                    *ty += dy;
+                    return;
+                }
+            }
+        }
+    }
+}
+
 static int box_hits(const sim_map *m, const sim_settings *cfg, uint32_t tick,
                     int32_t x, int32_t y, int32_t rx, int32_t ry) {
     int32_t tx0 = (x - rx) >> 12, tx1 = (x + rx) >> 12;
@@ -711,10 +753,16 @@ static void drop_death_prize(sim_state *s, const sim_settings *cfg,
     }
     if (slot < 0) return;
 
+    /* Where the hull came apart, moved to the nearest tile the map will not
+     * close over. A pilot killed inside an open door used to leave their green
+     * in it for the door to shut on. */
+    int32_t tx = x / (SIM_TILE_PX * 256), ty = y / (SIM_TILE_PX * 256);
+    nearest_ground(cfg->map, &tx, &ty);
+
     sim_prize *p = &s->prizes[slot];
     p->active = 1;
-    p->x = tile_mid(x / (SIM_TILE_PX * 256));
-    p->y = tile_mid(y / (SIM_TILE_PX * 256));
+    p->x = tile_mid(tx);
+    p->y = tile_mid(ty);
     p->life = cfg->prize_life;
 }
 
@@ -1109,6 +1157,18 @@ static void drop_flags(sim_state *s, const sim_settings *cfg, uint8_t ship,
         f->carrier = 0;
         f->x = s->ships[ship].x;
         f->y = s->ships[ship].y;
+        /* Where they fell, unless the map is going to close over it. A carrier
+         * killed in an open door left the flag inside the door, and a flag
+         * nobody can reach is a round nobody can finish. Only then is it moved,
+         * so an ordinary drop still lands exactly where the hull was. */
+        if (!ground(cfg->map, f->x / (SIM_TILE_PX * 256),
+                    f->y / (SIM_TILE_PX * 256))) {
+            int32_t tx = f->x / (SIM_TILE_PX * 256);
+            int32_t ty = f->y / (SIM_TILE_PX * 256);
+            nearest_ground(cfg->map, &tx, &ty);
+            f->x = tile_mid(tx);
+            f->y = tile_mid(ty);
+        }
         f->cooldown = cfg->flag_drop_cooldown;
         emit(ev, SIM_EV_FLAG_DROP, (uint8_t)i, f->team, 0);
     }
@@ -1570,7 +1630,10 @@ static void spawn_prize(sim_state *s, const sim_settings *cfg) {
             s->prize_rng = xorshift32(s->prize_rng);
             ty = cfg->prize_lo + (int32_t)(s->prize_rng % (uint32_t)span);
         }
-        if (solid(cfg->map, cfg, s->tick, tx, ty)) continue;
+        /* Ground rather than `solid`, so a door is refused whatever it is
+         * doing this tick: a green is going to sit here for a minute and the
+         * door will shut on it. */
+        if (!ground(cfg->map, tx, ty)) continue;
         if (SIM_TILE_CLASS(sim_tile_at(cfg->map, tx, ty)) == SIM_TILE_SAFE)
             continue;
         sim_prize *p = &s->prizes[slot];
