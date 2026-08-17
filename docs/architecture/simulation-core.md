@@ -92,6 +92,20 @@ the tile and the tick rather than a bit read out of an array. A door is solid
 for part of its cycle and not for the rest, which is why collision takes the
 settings and the tick at all. See [design/maps.md](../design/maps.md).
 
+Where a hull is *placed* does not come off the room's generator. A client is
+sent the hulls inside its interest radius and no others, so every draw the
+arena makes for one it cannot see is a draw the client does not make, and the
+two streams part within a tick of the snapshot that synchronized them. Taking a
+spawn tile off that stream put a pilot's own respawn wherever their client's
+copy of it had reached: alphasmall reported a 9416 px correction, both
+positions exact tile centers with no velocity on either side, which is a
+respawn and can be nothing else. Respawns, wormhole trips and side changes seed
+their own draw from the hull being placed instead, so the answer is a function
+of that hull rather than of the room's history, and placing one hull no longer
+moves the stream under everything else. The scatter on a shrapnel fan is the
+one draw still taken from the shared stream; it costs a fan angle for the ticks
+between snapshots rather than a position.
+
 Anything left lying on the map asks a second question, `ground`, and the door is
 the whole reason there are two. A hull crossing a doorway cares what the tile is
 doing this tick; a green that will sit there for a minute cares what the tile

@@ -451,6 +451,31 @@ static int32_t tile_mid(int32_t t) {
  * `nth` chooses the point, on both paths. The room passes a counter so
  * arrivals walk the tiles rather than stacking; a respawn passes a roll, so a
  * death sends you to a different one. */
+/* The generator a placement draw runs on, which is not the room's.
+ *
+ * The shared stream cannot serve this. A client is sent the hulls inside its
+ * interest radius and no others, so every draw the arena makes for one it
+ * cannot see is a draw it does not make, and the two streams have parted
+ * before the first snapshot of a prediction is a tick old. Reading a spawn
+ * tile off that stream put a pilot's own respawn wherever their client's copy
+ * of it happened to be: reported from alphasmall as a 9416 px correction, both
+ * positions exact tile centers with no velocity on either side, which is a
+ * respawn and cannot be anything else.
+ *
+ * Seeded from what both ends know about the hull being placed, so the answer
+ * is a function of that hull rather than of the room's history, and so that
+ * placing one hull no longer moves the stream under everything else. The tick
+ * is in it because a pilot who dies twice should not come back to the same
+ * tile twice, and the seat because two hulls returning together should not
+ * land on top of each other. */
+static uint32_t placement_seed(uint32_t tick, uint8_t seat, uint8_t team,
+                               uint8_t cls) {
+    uint32_t h = 0x9e3779b9u ^ tick;
+    h ^= ((uint32_t)seat << 16) | ((uint32_t)team << 8) | (uint32_t)cls;
+    h = xorshift32(h);
+    return h ? h : 0x9e3779b9u;
+}
+
 static void pick_spawn(const sim_settings *cfg, uint32_t *rng, uint32_t tick,
                        uint8_t team, uint8_t cls, uint32_t nth,
                        int32_t *x, int32_t *y) {
@@ -1340,8 +1365,8 @@ int sim_set_ship_team(sim_state *s, const sim_settings *cfg, uint8_t i,
      * this team hands out somebody else's, which `sim_map_spawn` already does
      * and is the whole reason a team the map has never heard of -- a private
      * one, formed in a room mid-round -- works at all. */
-    s->rng = xorshift32(s->rng);
-    pick_spawn(cfg, &s->rng, s->tick, team, sh->cls, s->rng >> 8,
+    uint32_t seed = placement_seed(s->tick, i, team, sh->cls);
+    pick_spawn(cfg, &seed, s->tick, team, sh->cls, seed >> 8,
                &sh->spawn_x, &sh->spawn_y);
     sh->x = sh->spawn_x;
     sh->y = sh->spawn_y;
@@ -1795,9 +1820,10 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
                  * It also moves `spawn_x`, so the door-crush warp below keeps
                  * sending a ship somewhere it could currently arrive rather
                  * than to a tile it has not used since it walked in. */
-                next->rng = xorshift32(next->rng);
-                pick_spawn(cfg, &next->rng, next->tick, sh->team, sh->cls,
-                           next->rng >> 8, &sh->spawn_x, &sh->spawn_y);
+                uint32_t seed = placement_seed(next->tick, (uint8_t)i,
+                                               sh->team, sh->cls);
+                pick_spawn(cfg, &seed, next->tick, sh->team, sh->cls,
+                           seed >> 8, &sh->spawn_x, &sh->spawn_y);
                 sh->x = sh->spawn_x;
                 sh->y = sh->spawn_y;
                 sh->vx = sh->vy = 0;
@@ -2149,9 +2175,10 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
         if (sh->alive
             && SIM_TILE_CLASS(sim_tile_at(cfg->map, sh->x >> 12, sh->y >> 12))
                    == SIM_TILE_WORMHOLE) {
-            next->rng = xorshift32(next->rng);
-            pick_spawn(cfg, &next->rng, next->tick, sh->team, sh->cls,
-                       next->rng >> 8, &sh->x, &sh->y);
+            uint32_t seed = placement_seed(next->tick, (uint8_t)i, sh->team,
+                                           sh->cls);
+            pick_spawn(cfg, &seed, next->tick, sh->team, sh->cls, seed >> 8,
+                       &sh->x, &sh->y);
             /* Momentum does not survive the trip. Arriving at a spawn at four
              * hundred pixels a second is arriving inside whatever is next to
              * it. */

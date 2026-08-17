@@ -4080,6 +4080,64 @@ int main(void) {
             }
         }
 
+        /* A respawn lands on the same tile for the arena and for the client
+         * predicting it.
+         *
+         * The client is sent the ships inside its interest radius and no
+         * others, so every draw the arena makes for a hull it cannot see is a
+         * draw it does not make. Taken off the shared generator, a spawn tile
+         * is therefore whatever that client's copy of the stream happened to
+         * reach: a different tile, on a different side of the map. Reported
+         * from alphasmall as a 9416 px correction with both positions exact
+         * tile centers and no velocity either side, which is a respawn and
+         * nothing else.
+         *
+         * Two hulls far enough apart to filter, both about to come back. */
+        {
+            sim_settings rc = cfg;
+            rc.spawn_radius = 40;      /* a scatter, so the draw decides a tile */
+            rc.prize_delay = 0;
+            rc.respawn_delay = 2;
+
+            sim_state s;
+            sim_init(&s, 12345);
+            /* The unseen hull takes the lower seat, because the step walks
+             * seats in order: the arena's draw for it lands before the
+             * pilot's, and the client's does not happen at all. A room where
+             * every hull the client cannot see sits behind it in the roster
+             * would hide this. */
+            int far = sim_spawn(&s, APEX, 1, 900 * 16, 900 * 16, 0, &rc);
+            int near = sim_spawn(&s, APEX, 0, 300 * 16, 300 * 16, 0, &rc);
+            CHECK(far == 0 && near == 1, "two hulls, far apart");
+            /* Both dead and due back on the same tick. */
+            for (int k = 0; k < 2; k++) {
+                s.ships[k].alive = 0;
+                s.ships[k].energy = 0;
+                s.ships[k].respawn_at = 2;
+            }
+
+            /* What this pilot is actually sent, which leaves the far hull out. */
+            const int32_t R = 84 * 16 * 256;
+            int n = sim_pack_around(&s, buf, sizeof buf, s.ships[near].x,
+                                    s.ships[near].y, R, (uint8_t)near,
+                                    (uint8_t)near, SIM_PACK_SECRET);
+            sim_state client;
+            CHECK(n > 0 && sim_unpack(&client, buf, n) == 0, "the snapshot reads");
+            CHECK(!client.ships[far].active,
+                  "and the far hull is not in it, which is the whole point");
+            CHECK(client.rng == s.rng, "the generator arrives with it");
+
+            /* Both step the same two ticks: the arena with the room it has,
+             * the client with the room it was told about. */
+            step_n(&s, &rc, 0, 0, 2);
+            step_n(&client, &rc, 0, 0, 2);
+            CHECK(s.ships[near].alive && client.ships[near].alive,
+                  "the pilot is back on both sides");
+            CHECK(s.ships[near].x == client.ships[near].x
+                  && s.ships[near].y == client.ships[near].y,
+                  "and back on the same tile, whatever else the room did");
+        }
+
         /* Except a pilot's own, which travel however far off they are.
          *
          * This is the minefield. A mine sits for two minutes and the pilot who
