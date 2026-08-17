@@ -1651,6 +1651,22 @@ static void update_prizes(sim_state *s, const sim_settings *cfg, sim_events *ev)
         sim_prize *p = &s->prizes[i];
         if (!p->active) continue;
         if (p->life > 0 && --p->life == 0) { p->active = 0; continue; }
+        /* A green inside a wall is a green nobody can take, so it stops being
+         * one. Placement already refuses anything but ground, which makes this
+         * a second answer to a question that should already be answered, and
+         * it is here because the first answer is not the only thing that
+         * decides it: a green lives a minute and the map underneath it is not
+         * a constant. An operator reloading a zone moves walls under a field
+         * that is already sown, and any future hand that writes a prize
+         * without asking gets swept rather than believed.
+         *
+         * The client runs this loop too, so a green it has somehow put in a
+         * wall goes there as well rather than sitting on the screen. */
+        if (!ground(cfg->map, p->x / (SIM_TILE_PX * 256),
+                    p->y / (SIM_TILE_PX * 256))) {
+            p->active = 0;
+            continue;
+        }
         live++;
 
         for (int k = 0; k < s->ship_count; k++) {

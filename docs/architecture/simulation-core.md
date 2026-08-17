@@ -103,6 +103,15 @@ its carrier was holding. The two drops move to the nearest tile that qualifies,
 searching outward three tiles, so an ordinary death still leaves its green
 underfoot.
 
+Placement is the first answer and not the only one. A green found sitting in a
+tile that is not ground stops being a green, checked every tick it is alive.
+That is deliberately a second answer to a question the first one should already
+have settled, because a green lives a minute and the map under it is not a
+constant: an operator reloading a zone puts walls through a field that is
+already sown. It also holds for whatever writes a prize next without asking,
+and it runs on the client as well as the arena, so a green that ends up in a
+wall goes rather than sitting on the screen being unreachable.
+
 This is cheap, exact in fixed point, and reproduces Subspace's characteristic
 wall-hugging behavior, where you can hold thrust into a wall and slide along it.
 A general physics engine would give us friction, resting contacts, and rotation

@@ -887,6 +887,31 @@ int main(void) {
             }
             CHECK(sown > 0, "and greens were sown at all");
 
+            /* And one that is in a wall regardless goes, whoever put it
+             * there. Placement is the first answer and this is the second,
+             * because a green lives a minute and the map under it can move:
+             * an operator reloading a zone puts walls through a field that is
+             * already sown. Written by hand here for the same reason it
+             * exists at all, which is that the state is not only ever written
+             * by the sowing. */
+            sim_state g;
+            sim_init(&g, 5);
+            sim_spawn(&g, APEX, 0, LANE * 16, 520 * 16, 0, &pc);
+            for (int i = 0; i < SIM_MAX_PRIZES; i++) g.prizes[i].active = 0;
+            g.prizes[0].active = 1;
+            g.prizes[0].x = tile_center(LO + 1);   /* a door, and shut or not */
+            g.prizes[0].y = tile_center(LO + 1);
+            g.prizes[0].life = 60000;
+            g.prizes[1].active = 1;
+            g.prizes[1].x = tile_center(LANE);     /* the open lane */
+            g.prizes[1].y = tile_center(LO + 1);
+            g.prizes[1].life = 60000;
+            sim_settings quiet = pc;
+            quiet.prize_delay = 0;                 /* nothing sown over the top */
+            step_n(&g, &quiet, 0, 0, 1);
+            CHECK(!g.prizes[0].active, "a green found inside a wall stops being one");
+            CHECK(g.prizes[1].active, "and one on open ground is left alone");
+
             free(pm);
         }
 
