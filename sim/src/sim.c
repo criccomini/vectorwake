@@ -380,6 +380,28 @@ static int32_t tile_floor(int32_t v) {
     return (int32_t)((uint32_t)v & ~(uint32_t)0xFFF);
 }
 
+/* Is any tile under this box a door that is shut right now?
+ *
+ * `box_hits` answers "can a hull be here", which a wall and a shut door both
+ * refuse. This answers the narrower question the crush warp needs: whether
+ * what is refusing is something that just closed, so a hull standing legally a
+ * tick ago is now inside it. A wall does not move, so a box overlapping one is
+ * a different bug and not this rule's to paper over. */
+static int box_shut_door(const sim_map *m, const sim_settings *cfg,
+                         uint32_t tick, int32_t x, int32_t y,
+                         int32_t rx, int32_t ry) {
+    int32_t tx0 = (x - rx) >> 12, tx1 = (x + rx) >> 12;
+    int32_t ty0 = (y - ry) >> 12, ty1 = (y + ry) >> 12;
+    for (int32_t ty = ty0; ty <= ty1; ty++)
+        for (int32_t tx = tx0; tx <= tx1; tx++) {
+            uint8_t t = sim_tile_at(m, tx, ty);
+            if (SIM_TILE_CLASS(t) == SIM_TILE_DOOR
+                && !sim_door_open(cfg, tick, SIM_TILE_VARIANT(t)))
+                return 1;
+        }
+    return 0;
+}
+
 static int box_hits(const sim_map *m, const sim_settings *cfg, uint32_t tick,
                     int32_t x, int32_t y, int32_t rx, int32_t ry) {
     int32_t tx0 = (x - rx) >> 12, tx1 = (x + rx) >> 12;
@@ -2191,15 +2213,26 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
          * The alternative is a ship inside a wall, which the axis-by-axis
          * collision below cannot resolve: both axes are blocked, so it stays
          * stuck until something kills it. Warping keeps the door lethal to
-         * position without being lethal to the pilot. */
-        if (SIM_TILE_CLASS(sim_tile_at(cfg->map, sh->x >> 12, sh->y >> 12))
-                == SIM_TILE_DOOR
-            && box_hits(cfg->map, cfg, next->tick, sh->x, sh->y, 0, 0)) {
-            sh->x = sh->spawn_x;
-            sh->y = sh->spawn_y;
-            sh->vx = 0;
-            sh->vy = 0;
-            emit(ev, SIM_EV_WARP, (uint8_t)i, 0, 0);
+         * position without being lethal to the pilot.
+         *
+         * Asked of the hull's box, because that is what gets caught. This used
+         * to ask what the tile under the ship's center was, and a hull is
+         * wider than a tile: a pilot sitting in a blank spot inside a door
+         * structure has doors either side of a center standing on open ground,
+         * so the warp did not fire and the collision below could not move
+         * them. Reported from play as a ship frozen inside a laser wall until
+         * the wall opened again, which is exactly how long it lasts. */
+        if (!riding) {
+            int32_t dox, doy, dhx, dhy;
+            hull_box(cls, sh->heading, &dox, &doy, &dhx, &dhy);
+            if (box_shut_door(cfg->map, cfg, next->tick, sh->x + dox,
+                              sh->y + doy, dhx, dhy)) {
+                sh->x = sh->spawn_x;
+                sh->y = sh->spawn_y;
+                sh->vx = 0;
+                sh->vy = 0;
+                emit(ev, SIM_EV_WARP, (uint8_t)i, 0, 0);
+            }
         }
 
         /* 5. Integrate and collide, one axis at a time so a wall kills only

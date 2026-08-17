@@ -106,6 +106,14 @@ moves the stream under everything else. The scatter on a shrapnel fan is the
 one draw still taken from the shared stream; it costs a fan angle for the ticks
 between snapshots rather than a position.
 
+A hull caught by a door that shuts is warped home rather than swallowed, since
+the axis-by-axis collision has both sides blocked and cannot free it. That test
+asks about the hull's box, which is what gets caught: a hull is wider than a
+tile, so a pilot sitting in a blank spot inside a door structure has doors
+either side of a center standing on open ground. Asked of the center tile, as
+it was, the warp did not fire there and the pilot sat inside the laser wall
+until it opened again.
+
 Anything left lying on the map asks a second question, `ground`, and the door is
 the whole reason there are two. A hull crossing a doorway cares what the tile is
 doing this tick; a green that will sit there for a minute cares what the tile

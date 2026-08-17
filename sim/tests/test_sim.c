@@ -839,6 +839,54 @@ int main(void) {
                   "and puts it back where it started");
             CHECK(s.ships[id].alive, "without killing it");
         }
+        /* And caught in a blank spot *inside* the wall, where the tile under
+         * the hull's center is not a door at all.
+         *
+         * A hull is wider than a tile, so a pilot sitting in an open tile with
+         * doors either side has a box overlapping them, and when the doors come
+         * down the collision below has both axes blocked. The crush warp above
+         * asked what the tile under the center point was, which here is open
+         * ground, so it did not fire and the pilot sat inside the laser wall
+         * until it opened again. Reported from play: "rather than warping, my
+         * ship got frozen inside the laser wall".
+         *
+         * A door line two tiles thick with one tile of it left open, which is a
+         * gap a hull fits in and cannot leave. */
+        {
+            sim_map *gm = walled_map();
+            for (int ty = 503; ty <= 505; ty++)
+                for (int tx = 503; tx <= 507; tx++)
+                    gm->tile[(size_t)ty * SIM_MAP_TILES + tx] =
+                        SIM_TILE(SIM_TILE_DOOR, 0);
+            /* The blank spot. */
+            gm->tile[(size_t)504 * SIM_MAP_TILES + 505] =
+                SIM_TILE(SIM_TILE_EMPTY, 0);
+            sim_map_index(gm);
+            sim_settings gc;
+            memset(&gc, 0, sizeof gc);
+            sim_settings_baseline(&gc, gm);
+
+            sim_state s;
+            sim_init(&s, 1);
+            uint32_t t0 = 0;
+            while (!sim_door_open(&gc, t0, 0)) t0++;
+            s.tick = t0;
+            int id = sim_spawn(&s, APEX, 0, 505 * 16, 504 * 16, 0, &gc);
+            int32_t sx = s.ships[id].spawn_x, sy = s.ships[id].spawn_y;
+            CHECK(SIM_TILE_CLASS(sim_tile_at(gm, 505, 504)) == SIM_TILE_EMPTY,
+                  "the hull's own tile is open ground");
+            CHECK(SIM_TILE_CLASS(sim_tile_at(gm, 504, 504)) == SIM_TILE_DOOR
+                  && SIM_TILE_CLASS(sim_tile_at(gm, 506, 504)) == SIM_TILE_DOOR,
+                  "with a door either side of it");
+
+            ev_counts c = step_counting(&s, &gc, 0, 0, gc.door_period);
+            CHECK(c.warps > 0, "a door shutting around a ship warps it too");
+            CHECK(s.ships[id].x == sx && s.ships[id].y == sy,
+                  "and puts it back where it started");
+            CHECK(s.ships[id].alive, "without killing it");
+            free(gm);
+        }
+
         CHECK(crossed, "an open door lets the same ship through");
 
         /* Nothing is left lying in a door.
