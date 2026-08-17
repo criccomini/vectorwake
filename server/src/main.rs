@@ -3472,6 +3472,64 @@ mod tests {
         assert_eq!(FAIR_INTEREST, 84 * 16 * 256);
     }
 
+    /// A pilot with a crowd around them outgrows a datagram, so the stream
+    /// lane carries the ordinary snapshot rather than the rare oversized one.
+    ///
+    /// This is the fact `UNI_INFLIGHT` is sized against, and it is worth a test
+    /// because it changed underneath that constant rather than being decided:
+    /// the interest radius was measured when a snapshot was about 900 bytes,
+    /// and linked gun volleys put nearly forty rounds inside it. Two permits on
+    /// the stream lane then rationed the ordinary case, and a phone on alpha
+    /// was ejected every few seconds with "the snapshot stream stalled".
+    ///
+    /// 1200 bytes is the conservative floor for a QUIC datagram on the open
+    /// Internet. A browser usually offers a little more; nothing offers less.
+    #[test]
+    fn a_pilot_in_a_crowd_outgrows_a_datagram() {
+        const DATAGRAM: usize = 1200;
+        let mut a = room_with_teams("teams = [\"Keel\", \"Vantage\"]\n");
+        let (me, _, _rx) = seat_rx(&mut a, "crowded");
+
+        // Bare, the snapshot is nothing: this is the state the old bound was
+        // chosen in, and it still fits a datagram with room to spare.
+        let mut buf = vec![0u8; sim::PACK_MAX];
+        let sh = a.world.state.ships[me as usize];
+        let alone = a.world.pack_around(
+            &mut buf,
+            sh.x,
+            sh.y,
+            crate::delivery::FAIR_INTEREST,
+            me,
+            me,
+            0,
+        );
+        assert!(alone > 0, "a snapshot packs");
+        assert!(
+            (alone as usize) < DATAGRAM,
+            "an empty room already needs a stream: {alone} bytes"
+        );
+
+        // A crowd inside the radius, which is what a fight on alpha is.
+        let (btx, bty) = (sh.x / (sim::TILE_PX * 256), sh.y / (sim::TILE_PX * 256));
+        for i in 0..40i32 {
+            a.world.spawn(0, 1, btx + i % 7 - 3, bty + i / 7 - 3, 0);
+        }
+        let crowded = a.world.pack_around(
+            &mut buf,
+            sh.x,
+            sh.y,
+            crate::delivery::FAIR_INTEREST,
+            me,
+            me,
+            0,
+        );
+        assert!(
+            (crowded as usize) > DATAGRAM,
+            "a crowd still fits a datagram at {crowded} bytes, so this test no \
+             longer says what UNI_INFLIGHT is for"
+        );
+    }
+
     #[test]
     fn a_human_is_not_told_where_the_far_side_of_the_map_is() {
         // The cheating half, as bytes. A snapshot used to carry the position,

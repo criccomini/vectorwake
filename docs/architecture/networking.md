@@ -763,7 +763,21 @@ Three lanes, chosen per message. The client opens one bidirectional stream and
 speaks first on it; both directions carry every reliable message there,
 u32-framed. Snapshots leave as datagrams when one fits and on a fresh
 unidirectional stream each when it does not, so a loss delays the snapshot it
-hit and nothing else. Inputs are datagrams, sent once: a lost input costs a
+hit and nothing else.
+
+The stream half of that is the ordinary path now, not the exception it was
+written as. The interest radius was measured when a snapshot ran about 900
+bytes; linked gun volleys put nearly forty rounds inside it, and alpha packs a
+median 1.8 kB for a pilot in a fight, past any datagram a browser offers. Only
+a bound on concurrent streams stood behind that, and it was two, which cannot
+carry a lane running at 50 Hz across an ordinary round trip: measured on a
+phone at 86 ms, 21 snapshots a second arrived of 27 sent, a quarter were
+dropped at the bound, and the survivors aged past the client's rewind window
+until it ejected itself with "the snapshot stream stalled" every few seconds.
+The bound is sixteen, which covers a 320 ms round trip at that rate. Shrinking
+the snapshot is the other half and is not done: rounds are about seventy
+percent of its bytes and the least use at range, and giving them a tighter
+radius than hulls would put the median back under a datagram. Inputs are datagrams, sent once: a lost input costs a
 tick of held buttons, which is what the input model already does with silence,
 and a retransmitted one would arrive naming a tick the room has already run.
 

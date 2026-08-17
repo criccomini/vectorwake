@@ -324,17 +324,25 @@ async fn session(incoming: IncomingSession, zone: Arc<Mutex<ArenaServer>>) {
 ///
 /// Opening a stream needs the peer's permission, and the peer decides how
 /// freely to give it, so anything awaited here is a client's to stall and
-/// anything spawned here is a client's to accumulate. Two in the air is
-/// enough that a snapshot never waits on its predecessor, and a third means
-/// the first two are stuck, in which case the newest is worth more than a
-/// queue. Combat state is superseded 20 ms later, which is the same reason the
-/// out queue drops rather than blocks.
+/// anything spawned here is a client's to accumulate. Past this many, the
+/// newest snapshot is worth more than a queue of stale ones, which is the
+/// same reason the out queue drops rather than blocks.
 ///
-/// The permit ends once the bytes and FIN are in QUIC. `SendStream::finish`
-/// waits until the peer acknowledges every byte, so awaiting it here makes
-/// this limit a function of RTT. Two acknowledgement waits cannot carry a
-/// 50 Hz lane on an ordinary Internet connection.
-const UNI_INFLIGHT: usize = 2;
+/// Sized against the lane it carries rather than against the exception it
+/// used to be. This was two, chosen when a snapshot fit in a datagram and a
+/// stream was the rare oversized one. It is the ordinary path now: alpha packs
+/// a median 1.8 kB for a pilot with a crowd inside the interest radius, past
+/// any datagram a browser offers, which `a_pilot_in_a_crowd_outgrows_a_datagram`
+/// pins. A permit is held across the open and the write, which is a
+/// flow-control round trip on a poor link, so the bound has to cover the
+/// snapshot rate times that trip: the combat lane runs at 50 Hz, and sixteen
+/// covers a 320 ms round trip before anything is dropped.
+///
+/// Measured on a phone at 86 ms with two permits: 21 snapshots a second
+/// arriving of 27 sent, a quarter dropped here, and the client ejecting itself
+/// with "the snapshot stream stalled" once the survivors aged past its rewind
+/// bound.
+const UNI_INFLIGHT: usize = 16;
 
 /// Everything the arena says, sorted onto the lane it belongs on.
 async fn write_loop(
