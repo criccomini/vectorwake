@@ -367,6 +367,19 @@ static void nearest_ground(const sim_map *m, int32_t *tx, int32_t *ty) {
     }
 }
 
+/* Floor a Q8 coordinate to its tile boundary, defined over the whole range.
+ *
+ * The obvious spelling is `(v >> 12) << 12`, and it is what stood in the wall
+ * collision below until the fuzzer caught it: shifting a negative value left
+ * is undefined, and the unpacker admits hull positions the game itself never
+ * produces, such as a ship whose reach crosses the origin. Collision has to
+ * be defined for anything the unpacker accepts. Masking on the unsigned
+ * representation computes the same floor for every input the shifts ever
+ * answered, so behavior and the golden hashes do not move. */
+static int32_t tile_floor(int32_t v) {
+    return (int32_t)((uint32_t)v & ~(uint32_t)0xFFF);
+}
+
 static int box_hits(const sim_map *m, const sim_settings *cfg, uint32_t tick,
                     int32_t x, int32_t y, int32_t rx, int32_t ry) {
     int32_t tx0 = (x - rx) >> 12, tx1 = (x + rx) >> 12;
@@ -2218,9 +2231,9 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
             int32_t nx = sh->x + sh->vx / 256;
             if (box_hits(m, cfg, next->tick, nx + ox, sh->y + oy, hx, hy)) {
                 if (sh->vx > 0)
-                    nx = ((((sh->x + east) >> 12) + 1) << 12) - east - 1;
+                    nx = tile_floor(sh->x + east) + 4096 - east - 1;
                 else if (sh->vx < 0)
-                    nx = (((sh->x - west) >> 12) << 12) + west;
+                    nx = tile_floor(sh->x - west) + west;
                 else
                     nx = sh->x;
                 /* Reverse and damp the component that hit, and scrub some
@@ -2237,9 +2250,9 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
             int32_t ny = sh->y + sh->vy / 256;
             if (box_hits(m, cfg, next->tick, sh->x + ox, ny + oy, hx, hy)) {
                 if (sh->vy > 0)
-                    ny = ((((sh->y + south) >> 12) + 1) << 12) - south - 1;
+                    ny = tile_floor(sh->y + south) + 4096 - south - 1;
                 else if (sh->vy < 0)
-                    ny = (((sh->y - north) >> 12) << 12) + north;
+                    ny = tile_floor(sh->y - north) + north;
                 else
                     ny = sh->y;
                 int32_t impact = sh->vy < 0 ? -sh->vy : sh->vy;

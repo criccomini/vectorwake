@@ -129,7 +129,11 @@ fuzz: | $(B)
 	  fuzz/fuzz_unpack.c src/sim.c src/baseline.c src/pack.c $(LDFLAGS) -lm \
 	  -o $(B)/fuzz_unpack
 
+# Every input that ever crashed replays first, so a fixed bug stays fixed
+# whatever the random exploration finds this time. libFuzzer run on files
+# executes each one and exits rather than fuzzing.
 fuzz-smoke: fuzz
+	$(B)/fuzz_unpack fuzz/crashes/*
 	$(B)/fuzz_unpack -runs=10000
 
 # WebAssembly build of the harness (requires emsdk). NODERAWFS lets node
