@@ -1057,7 +1057,7 @@ pub struct Bot {
     /// Per-knob skill overrides for `Knob::Permission`, `Tolerance` and
     /// `Range`, which read the dial live. `None` everywhere in every real
     /// pilot; the ablation harness is the only thing that sets one.
-    dial_at: [Option<f32>; 4],
+    dial_at: [Option<f32>; 5],
     /// This pilot's current misjudgement, held rather than re-rolled. Rolled
     /// fresh on every look: a wrong estimate that changed a hundred times a
     /// second would average to a right one, which is the opposite of what an
@@ -1163,6 +1163,7 @@ pub enum Knob {
     Tolerance,
     Range,
     Greed,
+    Discipline,
 }
 
 impl Knob {
@@ -1174,6 +1175,7 @@ impl Knob {
             Knob::Tolerance => Some(1),
             Knob::Range => Some(2),
             Knob::Greed => Some(3),
+            Knob::Discipline => Some(4),
             _ => None,
         }
     }
@@ -1219,7 +1221,7 @@ impl Bot {
             aim_err: (1.0 - skill) * 0.42,
             lead_err: (1.0 - skill) * 0.85,
             lead_gain: 1.0,
-            dial_at: [None; 4],
+            dial_at: [None; 5],
             jitter: 0.0,
             timer: ship as u32 * 7, // stagger so they do not all think at once
             mode: Mode::Idle,
@@ -2125,6 +2127,17 @@ impl Bot {
     /// make the current life more expensive to gamble. Skill still matters:
     /// a quick pilot notices the crossing several reaction cycles sooner.
     fn retreat_at(&self, o: &Own) -> f32 {
+        // Discipline, which the design describes as noticing a bad trade late
+        // and wasting the escape window, against breaking contact promptly.
+        // Nothing here read the dial: every pilot in the game left a fight on
+        // the same sliver of bar.
+        //
+        // It is the trait most likely to decide a fight between two built
+        // ships, which is the economy the ablation found nothing working in.
+        // Aim carries a bare field and stops mattering once multifire and
+        // shrapnel are on the hull, because then nobody is aiming, they are
+        // spraying. What is left to be good at is knowing when the trade has
+        // gone and leaving with enough bar to come back.
         let value = (o.value as f32 / 60.0).min(1.0);
         let numbers = self
             .seen
@@ -2134,7 +2147,8 @@ impl Bot {
             .seen
             .threat
             .map_or(0.0, |t| if t.eta < 55.0 { 0.07 } else { 0.0 });
-        (0.30
+        (0.24
+            + self.dial(Knob::Discipline) * 0.13
             + value * 0.10
             + numbers.min(3.0) * 0.035
             + threat
