@@ -24,7 +24,6 @@ local state = require("arena.state")
 local ui_frame = require("arena.ui_frame")
 local ui_payouts = require("arena.ui_payouts")
 local world = require("arena.world")
-local camera = require("render.turn")
 
 local M = {}
 local F = ui_frame.new(state)
@@ -1005,19 +1004,11 @@ function M.clear_payouts()
     payouts:clear()
 end
 
--- Where a world position lands on the glass.
---
--- One formula, two callers: a pilot's nameplate and the bounty that drifts off
--- their wreck are the same conversion, and they were the same two lines twice.
---
--- `o.spin` is how far the view is turned, and nil in the ordinary north-up
--- game, where this is the plain offset it has always been. Turned, the offset
--- has to turn with it. Without that a name is drawn where its hull would have
--- been had nobody turned the camera, which on a phone that turns it every time
--- the pilot steers is reliably somewhere else.
+-- Where a world position lands on the glass. One formula, two callers: a
+-- pilot's nameplate and the bounty that drifts off their wreck are the same
+-- conversion, and they were the same two lines twice.
 local function on_glass(o, scale, x, y)
-    local dx, dy = camera.offset(o.spin, x - o.cam_x, y - o.cam_y)
-    return F.w / 2 + dx * scale, F.h / 2 + dy * scale
+    return F.w / 2 + (x - o.cam_x) * scale, F.h / 2 + (y - o.cam_y) * scale
 end
 
 local function nameplates(o)

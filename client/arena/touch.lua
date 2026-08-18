@@ -14,12 +14,15 @@
 -- ship still turns at its own rate, so nothing about the flight model changes.
 -- This only decides which way the turn is applied, exactly as the AI does it.
 --
--- With the turning view of decision 13's second amendment it is a d-pad, and
--- for the reason the stick exists rather than in spite of it. There, the nose
--- is always at the top of the screen, so there is no direction on the glass
--- left to point at: a thumb can only say which way it is pushing. That is a
--- d-pad, and it is what a turning view asks for anyway, since the turn you are
--- holding is the one you can watch happening.
+-- A player who would rather push than point gets a d-pad instead, which is a
+-- setting. Eight ways, so a diagonal thrusts and turns at once, and the turn
+-- runs for as long as the thumb is held. It is the older idiom and it is the
+-- one a thumb raised on other games arrives already knowing, which is worth
+-- more than the argument above to the player who wants it.
+--
+-- The pad takes reverse with it. Down on a pad is backwards, so the held pad
+-- above the stick is not drawn beside one: two controls for the same bit, one
+-- of them eating a corner of the screen the thumb is already using.
 --
 -- The simulation never learns any of this happened: it receives the same
 -- button bitfield a keyboard produces.
@@ -46,10 +49,10 @@ local THRUST_PX = 46      -- push past this and the engine lights
 local FAN_SWIPE_PX = 32   -- deliberate upward pull while holding the gun
 
 M.used = false            -- has this device ever reported a touch?
--- Whether the world is drawn turning under a ship that stays pointing up.
--- Set by the arena from the player's setting; it changes what a thumb
--- direction means, and nothing else here. See M.bits.
-M.shipup = false
+-- Whether the flying thumb gets a d-pad rather than the stick. Set by the
+-- arena from the player's setting. It decides what a thumb direction means,
+-- and whether the reverse pad is drawn at all.
+M.dpad = false
 M.scale = 1               -- drawable pixels per point
 -- How many of each charge slot are in hand, by slot. Set by the caller.
 M.counts = {}
@@ -185,7 +188,14 @@ function M.layout(w, h, s)
         end
     end
 
-    local reverse_pad = {x = home.x, y = y0, w = cw, r = cw / 2}
+    -- Nil under the pad, whose own down arm is reverse. Absent rather than
+    -- hidden, so the space falls through to the flying control below and a
+    -- thumb reaching for the bottom of the pad is not swallowed by a target
+    -- nothing is drawing.
+    local reverse_pad = nil
+    if not M.dpad then
+        reverse_pad = {x = home.x, y = y0, w = cw, r = cw / 2}
+    end
 
     return {r = r, guns = gun_pad, bombs = bomb_pad, home = home,
             charge = charge, mine = mine, reverse = reverse_pad}
@@ -218,7 +228,7 @@ local function zone(x, y, w, h, s)
     for _, c in ipairs(L.charge) do
         if within(c, x, y) then return c.slot end   -- a number, not a name
     end
-    if within(L.reverse, x, y) then return "reverse" end
+    if L.reverse and within(L.reverse, x, y) then return "reverse" end
     if x < w * 0.55 then return "stick" end
     return nil
 end
@@ -377,16 +387,11 @@ function M.bits(heading)
     if reverse then out[#out + 1] = sim.BTN_REVERSE end
     if not stick then return out end
 
-    -- With the world turning, this is a d-pad rather than a stick.
-    --
-    -- The two are not a matter of taste; they follow from what the screen is
-    -- doing. A stick works by naming a direction you can see: the nose goes
-    -- there and stops. Turn the world and there is no direction left to name,
-    -- because the nose is always at the top and it is everything else that
-    -- moves. What remains is which way you are pushing, held for as long as
-    -- you push it, and that is a d-pad. It is also what a turning view already
-    -- asks of a player: hold the turn until the world looks right, let go.
-    if M.shipup then
+    -- The pad says which way the thumb is pushing and holds it there. The
+    -- stick below says where the nose should end up and stops when it
+    -- arrives. Both come out as the same turn bits; what differs is who
+    -- decides when the turn ends, the player or the arithmetic.
+    if M.dpad then
         local left, right, fwd, back = pad_arms()
         if left then out[#out + 1] = sim.BTN_LEFT end
         if right then out[#out + 1] = sim.BTN_RIGHT end
@@ -578,8 +583,8 @@ function M.draw(u, w, h, s)
 
     -- Reverse belongs to flight, directly above the stick. It is a held pad,
     -- not a direction inferred from the stick, so backing up never changes how
-    -- pointing the ship works.
-    do
+    -- pointing the ship works. The pad has its own down arm and no need of it.
+    if L.reverse then
         local c = L.reverse
         local half = c.w / 2
         local col = pal.THRUST
@@ -597,7 +602,7 @@ function M.draw(u, w, h, s)
         end
     end
 
-    if M.shipup then
+    if M.dpad then
         -- The pad. Four chevrons pointing out of a middle, lit where the
         -- thumb is pushing, drawn where the thumb landed for the same reason
         -- the stick is: a control that only exists at one spot on the glass

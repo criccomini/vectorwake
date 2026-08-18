@@ -339,46 +339,26 @@ survives; it is the trade the whole amendment is, sharpness of one ship
 against sight of the room. The rule lives in `client/render/zoom.lua`, and
 `zoom_test.lua` pins what each kind of window sees.
 
-**Amended: a phone may keep its ship pointing up.** A second answer to the same
-screen, offered as a setting rather than taken. With it on, the view turns to
-the flying ship's heading, so the nose stays at the top and the world turns
-underneath. Off by default, and only offered where the device has reported a
-touch: a keyboard has a pair of turn keys with an edge to feel for, and every
-desktop pilot has learned to read a drift against a fixed north.
+**Tried and dropped: a phone keeping its ship pointing up.** The view turned to
+the flying ship's heading, so the nose stayed at the top of the screen and the
+world turned underneath. Built behind a setting, flown, removed.
 
-The case for it is that a thumb has no such edge. The case against is that this
-game is inertia, and a turning view does not turn the velocity with it: coast
-north, flick east to shoot, and the world slides across a nose that is not
-moving that way. That is the same information a fixed view shows as a nose
-swinging off a steady drift, and it is the harder of the two to read. Whether
-that costs more than the steadier aiming buys is a question about thumbs, not
-about geometry, which is why it ships as a setting and not as a change.
+What is wrong with it is not the turning, it is that a camera can turn the view
+and cannot turn the velocity. This game is inertia: coast north, flick east to
+line up a shot, and the world slides across a nose that is not moving that way.
+A fixed view shows the same fact as a nose swinging off a steady drift, which is
+the easier of the two to read, and reading it is most of the skill. The turning
+view also spends a phone held at face distance rotating the whole field every
+time the pilot steers, and it costs the arena the frame's circumcircle rather
+than the frame, since a turned frame reaches into corners its width and height
+do not describe.
 
-The thumb changes with it, from a stick to a d-pad. That is not a second
-preference bolted on, it follows from the same fact: with the nose pinned to the
-top of the screen there is no direction left on the glass to point at, so a
-thumb can only say which way it is pushing. Eight ways, so a diagonal thrusts
-and turns at once. The turn then runs for as long as the thumb is held rather
-than stopping at a named heading, which is what a turning view asks for anyway,
-since the turn being held is the one the player can watch happening.
+What survived is the control it was built with. The turning view had no
+direction left on the glass to point at, so it needed a d-pad, and the d-pad
+turned out to be worth having on its own: it is now the second of two steering
+settings, beside the stick, on a north-up screen like everybody else's. See
+`arena/touch.lua`.
 
-Two things it does not touch. The radar keeps north up, so there is always one
-stable picture of the room. And the simulation never learns the camera exists:
-both controls resolve to the same turn bits a keyboard sends.
-
-One thing it costs. A turned frame has to build the world its corners reach, so
-the arena is asked for the frame's circumcircle instead of the frame, which
-costs a portrait phone about two and a half times its starfield.
-
-**Cost:** two camera models in one game, and the phone one is the weaker place
-to learn momentum from. Anything drawn in screen space over a world position
-has to turn with the view or land beside the hull it belongs to, which is a
-second thing to remember for every future overlay. The rule is in
-`client/render/turn.lua` and `turn_test.lua` holds the camera turn and the
-overlay turn against each other, which is the pairing that would rot quietly.
-
-**Reconsider if:** phone players who tried it turned it off, or kept it on and
-stopped reading drift. Either answer settles it; the argument above does not.
 
 **Status:** accepted
 

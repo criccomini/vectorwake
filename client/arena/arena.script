@@ -1411,12 +1411,10 @@ function update(self, dt)
         -- rows depend on it: there is no board to draw on glass and no key
         -- column to fill in, so the same list comes out as gestures.
         menu.touching = touch.used
-        -- And whether the stick has to read its own direction against a
-        -- turning screen. Both halves of the setting are gated on there
-        -- being thumbs at all, so a desktop that never reports a touch
-        -- cannot end up flying a turned view because of a line in a save
-        -- file written on a phone.
-        touch.shipup = menu.shipup and touch.used
+        -- Which of the two flying controls the thumb gets. Gated on there
+        -- being thumbs at all, so a save written on a phone cannot put a
+        -- desktop on a control it has no way to press.
+        touch.dpad = menu.dpad and touch.used
         -- A card with lines to fill in is being typed into, and the trigger
         -- is the space bar. Every call sign has a space in it, so a card that
         -- still read the trigger as "send" answered itself partway through
@@ -1569,14 +1567,6 @@ function update(self, dt)
         net.stats.smooth_pos, net.stats.smooth_turn = sim.smooth_stats(me)
     end
     local cx, cy
-    -- Which way the view is turned, in radians, or nil for north up.
-    --
-    -- The drawn heading rather than the simulated one. The hull is drawn on a
-    -- heading eased between ticks, and a camera taking the raw value would
-    -- step in whole ticks around a ship that does not, which reads as the
-    -- world juddering while the ship is smooth. This is a picture, so it
-    -- follows the picture.
-    local spin
     if live then
         -- What the menu calls your hull is whatever you are flying, asked
         -- every frame rather than remembered: the server decides, and it can
@@ -1588,9 +1578,6 @@ function update(self, dt)
         local e = eye()
         if e then
             cx, cy = sim.ship_x(e), sim.ship_y(e)
-            if touch.shipup then
-                spin = sim.ship_heading(e) / 65536 * math.pi * 2
-            end
         else
             cx, cy = 512 * 16, 512 * 16
         end
@@ -1617,7 +1604,7 @@ function update(self, dt)
 
     local sx, sy = fx.shake_offset()
     msg.post("@render:", "camera",
-             {position = vmath.vector3(cx + sx, cy + sy, 0), spin = spin})
+             {position = vmath.vector3(cx + sx, cy + sy, 0)})
 
     -- A heartbeat, which is the only way to see anything in a headless
     -- build and cheap enough to leave in.
@@ -1653,13 +1640,13 @@ function update(self, dt)
     -- camera, so they cannot live in the mesh the walls are baked into. They
     -- are the whole of the home screen's backdrop and the bottom of the
     -- arena's, which is one routine either way.
-    world.stars(fill, glow, cx + sx, cy + sy, self.sw, self.sh)
+    world.stars(fill, glow, cx + sx, cy + sy, self.hw, self.hh)
 
     -- The home screen's own art, over the starfield and under the menu. Only
     -- there: with a game behind it the arena is the picture, and a hull
     -- nobody is flying crossing the middle of it would be a lie.
     if not live then
-        world.home_art(fill, glow, cx, cy, self.sw or 0, self.sh or 0,
+        world.home_art(fill, glow, cx, cy, self.hw or 0, self.hh or 0,
                        self.drift / 7)
     end
 
@@ -1742,8 +1729,8 @@ function update(self, dt)
         -- it overflows the layer and the primitives that fall past the cap
         -- simply vanish, which reads as hulls changing shape and energy bars
         -- blinking empty rather than as a slow frame.
-        local cull = {x0 = cx - self.sw - 96, x1 = cx + self.sw + 96,
-                      y0 = cy - self.sh - 96, y1 = cy + self.sh + 96}
+        local cull = {x0 = cx - self.hw - 96, x1 = cx + self.hw + 96,
+                      y0 = cy - self.hh - 96, y1 = cy + self.hh + 96}
         -- Before anything that flies. A rock's body is opaque and the fill
         -- layer composites in write order, so drawn later it would paint over
         -- a ship passing in front of one.
@@ -2010,9 +1997,6 @@ function update(self, dt)
             charges = charge_row(),
             cam_x = cx, cam_y = cy,
             half_w = self.hw, half_h = self.hh,
-            -- Which way the view is turned, so anything drawn over a hull
-            -- lands on the hull. Nil in the ordinary view.
-            spin = spin,
             -- Flags are drawn as flags now, so the banner is only for the
             -- things that are genuinely a sentence.
             banner = net.banner,
@@ -2259,12 +2243,6 @@ function on_message(self, message_id, message)
     if message_id == hash("viewport") then
         self.vw, self.vh = message.w, message.h
         self.hw, self.hh = message.hw, message.hh
-        -- How much world has to exist to fill the frame, which is the same
-        -- pair until the view is turned and larger after that. Everything
-        -- that builds or asks for world reads these; everything that places
-        -- something on the glass reads hw and hh above. See the note beside
-        -- the message in the render script.
-        self.sw, self.sh = message.sw or message.hw, message.sh or message.hh
         self.density = message.density
         -- How much world one screen pixel covers, which is what stops a
         -- stroke from being drawn thinner than the screen can hold one. Taken
@@ -2297,13 +2275,14 @@ function on_message(self, message_id, message)
             -- buffer swapped in here is filled before anything reads it. A
             -- capacity that has not changed is a no-op, and they move in
             -- steps, so dragging a window edge does not allocate per frame.
-            local fill_cap, glow_cap = world.world_budget(self.sw, self.sh)
+            local fill_cap, glow_cap = world.world_budget(message.hw,
+                                                          message.hh)
             layers.fill:resize(fill_cap)
             layers.glow:resize(glow_cap)
             -- The window the terrain has to cover, and the room the two
             -- static layers need to hold it. Both follow the view: see
             -- TUNE.STATIC_STEP.
-            local need = math.max(self.sw, self.sh) / 16
+            local need = math.max(message.hw, message.hh) / 16
             local want = math.ceil(need) + TUNE.STATIC_STEP + 1
             if want < TUNE.STATIC_MIN then want = TUNE.STATIC_MIN end
             if want > TUNE.STATIC_MAX then
