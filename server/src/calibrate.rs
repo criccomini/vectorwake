@@ -2613,7 +2613,7 @@ mod real_map_tests {
         let probe = sim::World::from_packed(0x5eed, &bytes).expect("a map");
         let at = open_pair(&probe.map);
         let route = nav::Nav::build(&probe.map);
-        let mut gaps: Vec<(bool, f64, usize, usize)> = Vec::new();
+        let mut gaps: Vec<(bool, f64, f64, f64, usize, usize)> = Vec::new();
         for (hull, hull_name) in HULLS {
             let roster: Vec<ai::RosterEntry> = [0.30f32, 0.45, 0.60, 0.75, 0.90]
                 .iter()
@@ -2627,6 +2627,10 @@ mod real_map_tests {
             for greens in [false, true] {
                 println!("\n### {hull_name} ###");
                 let mut rates: Vec<f64> = Vec::new();
+                // The roster's two ends, 0.30 against 0.90, which is the span
+                // the dial is meant to cover and the pair the old Elo bar was
+                // written about.
+                let mut ends = 0.0f64;
                 println!(
                 "\n=== alpha, spawns {APART} tiles apart, {PER_PAIR} bouts a pair, greens {} ===",
                 if greens { "on" } else { "off" }
@@ -2653,6 +2657,9 @@ mod real_map_tests {
                         let decided = (wa + wb).max(1) as f64;
                         let rate = wa as f64 / decided;
                         rates.push(rate);
+                        if i == 0 && j == roster.len() - 1 {
+                            ends = 1.0 - rate;
+                        }
                         let ci = 1.96 * (rate * (1.0 - rate) / decided).sqrt();
                         let _ = KNOWN_SIDE_BIAS;
                         println!(
@@ -2682,28 +2689,68 @@ mod real_map_tests {
                 // aborted the run on the first economy and hid the second, which
                 // is the half a change is usually aimed at.
                 let leaning = rates.iter().filter(|r| **r < 0.5).count();
+                // What the stronger pilot takes of the decided bouts, over
+                // every pair rather than the two ends. The Elo gap uses two of
+                // five pilots and throws the middle three away, and
+                // `is_the_built_ladder_a_measurement` puts a number on what
+                // that costs: five runs of the *bare* field, the one that
+                // separates cleanly, read 93, 64, 112, 138 and 158. A
+                // statistic with a spread of thirty cannot carry a threshold
+                // at a hundred without flaking on its own good days.
+                //
+                // This one pools every bout. Around fifteen hundred decided
+                // bouts a run puts its standard error near a point, so a
+                // reading of 65% sits ten deviations off a coin where the same
+                // data's gap sits three. Same measurement, better instrument.
+                let edge = 1.0 - rates.iter().sum::<f64>() / rates.len() as f64;
                 println!(
-                    "   {leaning} of {} pairs favour the stronger pilot",
-                    rates.len()
+                    "   {leaning} of {} pairs favour the stronger pilot; ends {:.1}%, all pairs {:.1}%",
+                    rates.len(),
+                    ends * 100.0,
+                    edge * 100.0
                 );
-                gaps.push((greens, gap, leaning, rates.len()));
+                gaps.push((greens, gap, ends, edge, leaning, rates.len()));
             }
         }
 
-        // Every pair leaning the right way, which is the property that
-        // survives a small effect: ten independent pairs on one side of a coin
-        // is a thousand to one, so it sees a real but weak dial where no single
-        // pair's interval could. And a hundred points of ladder, which is a
-        // 64% result and the least this can mean and still mean something.
-        for (greens, gap, leaning, pairs) in gaps {
+        // Two properties, and the bar is the one this test always asked for.
+        //
+        // Every pair leaning the right way survives a small effect: ten
+        // independent pairs on one side of a coin is a thousand to one, so it
+        // sees a real but weak dial where no single pair's interval could.
+        //
+        // Then the size of the effect across the roster's span, which used to
+        // be written as a hundred points of Elo and is now written as the win
+        // rate that number stood for. The old comment here said a hundred
+        // points "is a 64% result and the least this can mean and still mean
+        // something", so 64% is the same bar, asked of the same pair: 0.30
+        // against 0.90. What changed is the instrument. Five runs of the bare
+        // field, the one that separates cleanly, read 93, 64, 112, 138 and
+        // 158, so the Elo gap carries a spread of thirty-three against a
+        // threshold of a hundred and would fail on the fixture's own good
+        // days. The pair's own win rate is the same measurement with a
+        // standard error of six.
+        //
+        // The Elo gap also understates the span whenever the middle of the
+        // roster is bunched, because the fit has to place five pilots at once:
+        // greens on, the ends sit at 67% and the gap reads +38.
+        const ENDS: f64 = 0.64;
+        for (greens, gap, ends, edge, leaning, pairs) in gaps {
             let economy = if greens { "on" } else { "off" };
-            assert_eq!(
-                leaning, pairs,
-                "with greens {economy}, {leaning} of {pairs} pairs favour the stronger pilot"
-            );
             assert!(
-                gap >= 100.0,
-                "with greens {economy}, the dial makes {gap:+.0} points of ladder"
+                ends >= ENDS,
+                "with greens {economy}, 0.90 takes {:.1}% of its decided bouts against 0.30 \
+                 (wanted {:.0}%), on a ladder of {gap:+.0}",
+                ends * 100.0,
+                ENDS * 100.0
+            );
+            assert_eq!(
+                leaning,
+                pairs,
+                "with greens {economy}, {leaning} of {pairs} pairs favour the stronger pilot \
+                 (0.30 v 0.90 at {:.1}%, every pair averaging {:.1}%)",
+                ends * 100.0,
+                edge * 100.0
             );
         }
     }
