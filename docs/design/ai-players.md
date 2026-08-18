@@ -99,6 +99,40 @@ run the same code and differ in how well they execute:
 A single skill dial from 0 to 1 drives all of them, with per-archetype jitter, so
 a 0.7 Duelist and a 0.7 Ambusher are about equally hard and feel nothing alike.
 
+That is the intention. One parameter carries it, which is worth knowing before
+anybody tunes the other five.
+
+### Measuring it at all
+
+Three of the instruments that produced the numbers below were wrong, and each
+was wrong in the direction that flatters a change.
+
+The ladder was judged by the Elo gap between the roster's ends, and that gap
+carries about thirty points of run-to-run noise. Five tournaments of the same
+pilots on disjoint salts read 93, 64, 112, 138 and 158 with greens off, and 46,
+1, 24, -18 and 43 with them on, against a threshold of a hundred. The gap also
+understates the span whenever the middle of the roster bunches, because the fit
+has to place five pilots at once: a block whose ends sit at 67% can report +38.
+A win rate says the same thing with a fraction of the noise, so the bar is
+stated in one.
+
+The tournament had no null row. The ablation grew one, read 62% for two pilots
+identical in every respect, and that got written down as a side bias worth
+reading every table against. Four hundred bouts on independent salts then read
+54.2% and 47.2% in the two economies, and the Apex read 52.4% on the very salts
+where the Wedge read 62, so the 62 was one reading believed twice. `duel` deals
+each pilot the four combinations of start tile, facing and seat in equal
+numbers, and there was never anywhere for a positional bias to live. Each block
+measures its own coin and asserts on it rather than subtracting it, because
+taking a number with four points of noise off one with seven adds error instead
+of removing it.
+
+And every number came from one hull. Class 1 is the Wedge, whose doctrine is
+Bombardier, so a dial judged there was a dial judged on the bomb specialist. The
+tournament and the ablation both run the Apex too. The two hulls agree that aim
+is what separates pilots and disagree about the prize economy, where the Wedge
+flattens completely and the Apex does not.
+
 ### What the dial actually drove
 
 That table described an intention for a long time rather than the code. Three of
