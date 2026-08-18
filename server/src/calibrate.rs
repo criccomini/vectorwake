@@ -2834,6 +2834,74 @@ mod ablation {
 }
 
 #[cfg(test)]
+mod stability {
+    use super::real_map_tests::*;
+    use super::*;
+
+    /// Is the built field's ladder a small effect, or an unsteady number?
+    ///
+    ///     cargo test --release --manifest-path server/Cargo.toml \
+    ///       is_the_built_ladder_a_measurement -- --ignored --nocapture
+    ///
+    /// It has read -52, +4, +19, +28, +32, +39, +58 and +60 across
+    /// configurations, several of which could not touch it, while the bare
+    /// field's stayed inside a band of forty. Two readings are worth telling
+    /// apart, and they want opposite responses: a real gap estimated noisily,
+    /// which more bouts would settle, or an unsteady statistic, which more
+    /// bouts would not.
+    ///
+    /// So: the same pilots, the same map, five separate tournaments on
+    /// disjoint salts. If the gap is a measurement its five values sit near
+    /// each other whatever their mean; if it is weather, they do not.
+    #[test]
+    #[ignore]
+    fn is_the_built_ladder_a_measurement() {
+        const PER_PAIR: u32 = 120;
+        const RUNS: u32 = 5;
+        let (bytes, route, at) = real_map_fixture();
+        let roster: Vec<ai::RosterEntry> = [0.30f32, 0.60, 0.90]
+            .iter()
+            .map(|s| ai::RosterEntry {
+                name: format!("skill{:02}", (s * 100.0) as u32),
+                class: 1,
+                skill: *s,
+            })
+            .collect();
+
+        for greens in [false, true] {
+            let mut gaps: Vec<f64> = Vec::new();
+            for run in 0..RUNS {
+                let mut r = rating::Rating::new();
+                let mut salt = 3_000_000u32 + run * 100_000;
+                for i in 0..roster.len() {
+                    for j in (i + 1)..roster.len() {
+                        for _ in 0..PER_PAIR {
+                            duel(
+                                &bytes, &route, at, &mut r, &roster[i], &roster[j], salt, greens,
+                                None,
+                            );
+                            salt = salt.wrapping_add(1);
+                        }
+                    }
+                }
+                let lo = r.rating_of(&roster[0].name);
+                let hi = r.rating_of(&roster[roster.len() - 1].name);
+                gaps.push(hi - lo);
+            }
+            let mean = gaps.iter().sum::<f64>() / gaps.len() as f64;
+            let sd =
+                (gaps.iter().map(|g| (g - mean).powi(2)).sum::<f64>() / gaps.len() as f64).sqrt();
+            println!(
+                "\n  greens {}: gaps {:?}",
+                if greens { "on " } else { "off" },
+                gaps.iter().map(|g| g.round() as i64).collect::<Vec<_>>()
+            );
+            println!("  mean {mean:+.0}, spread {sd:.0}");
+        }
+    }
+}
+
+#[cfg(test)]
 mod draws {
     use super::real_map_tests::*;
     use super::*;
