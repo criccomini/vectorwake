@@ -1718,9 +1718,21 @@ impl Bot {
             Doctrine::Brawler => 105.0,
             Doctrine::Denier => 260.0,
         };
-        // Poor pilots overcommit a little. The range remains recognizably the
-        // hull's, while skill still has a visible positional mistake to make.
-        base * (0.90 + self.dial(Knob::Range) * 0.10)
+        // The hull's, and only the hull's.
+        //
+        // This used to lean on the dial, on the reasoning that poor pilots
+        // overcommit: `base * (0.90 + skill * 0.10)`, so a good pilot stood
+        // further off. Ablated against a null in the economy the game
+        // actually runs, that was worth seven points to the *worse* pilot,
+        // the largest wrong-way term left in the dial. Closing is not the
+        // mistake it was written as.
+        //
+        // Deleted rather than inverted, because docs/design/ai-players.md
+        // names what the dial drives -- reaction, aim, discipline, awareness,
+        // greed, map -- and standoff range is not among them. It is doctrine,
+        // which is a fact about the hull. A Brawler works at a hundred pixels
+        // and a Denier at two hundred and sixty whoever is flying them.
+        base
     }
 
     fn bomb_cadence(&self, doctrine: Doctrine) -> u32 {
