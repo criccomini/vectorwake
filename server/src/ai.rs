@@ -1047,6 +1047,13 @@ pub struct Bot {
     react: u32,
     look_every: u32,
     aim_err: f32,
+    /// How badly this pilot reads a target's motion, as a share of the lead
+    /// it should be taking. Held across a look rather than re-rolled per
+    /// tick, which is the whole point of it: see `lead_gain`.
+    lead_err: f32,
+    /// This look's misreading, as a multiplier on the lead. One is a pilot who
+    /// solves the intercept exactly.
+    lead_gain: f32,
     /// Per-knob skill overrides for `Knob::Permission`, `Tolerance` and
     /// `Range`, which read the dial live. `None` everywhere in every real
     /// pilot; the ablation harness is the only thing that sets one.
@@ -1177,7 +1184,10 @@ impl Bot {
         match knob {
             Knob::React => self.react = (38.0 - as_if * 30.0).max(3.0) as u32,
             Knob::Look => self.look_every = (10.0 - as_if * 5.0).max(5.0) as u32,
-            Knob::AimErr => self.aim_err = (1.0 - as_if) * 0.42,
+            Knob::AimErr => {
+                self.aim_err = (1.0 - as_if) * 0.42;
+                self.lead_err = (1.0 - as_if) * 0.85;
+            }
             _ => {
                 if let Some(i) = knob.slot() {
                     self.dial_at[i] = Some(as_if);
@@ -1205,6 +1215,8 @@ impl Bot {
             // world every tick, at a hundred hertz, which no client can.
             look_every: (10.0 - skill * 5.0).max(5.0) as u32,
             aim_err: (1.0 - skill) * 0.42,
+            lead_err: (1.0 - skill) * 0.85,
+            lead_gain: 1.0,
             dial_at: [None; 3],
             jitter: 0.0,
             timer: ship as u32 * 7, // stagger so they do not all think at once
@@ -1380,6 +1392,19 @@ impl Bot {
         if fresh.is_some() {
             // A fresh look is a fresh estimate, right or wrong.
             self.jitter = (self.rand() - 0.5) * self.aim_err;
+            // And a fresh reading of where the target is going, which is the
+            // one a poor pilot gets wrong in a way that matters.
+            //
+            // `jitter` is an angle drawn afresh around the correct bearing,
+            // so a burst of fire sprays a cone centred on the truth and the
+            // mean shot is a perfect one. Ablation found it inert for exactly
+            // that reason: at the range fights settle, the cone is narrower
+            // than the ship. This is a misread of the target's motion instead,
+            // so the error grows with how fast they are crossing and how far
+            // the round has to fly, is zero against something standing still,
+            // and holds for the length of the look rather than averaging out
+            // inside it. That is what "poor lead prediction" means.
+            self.lead_gain = 1.0 + (self.rand() - 0.5) * 2.0 * self.lead_err;
         }
         if let Some(s) = fresh {
             self.seen = s;
@@ -1523,15 +1548,16 @@ impl Bot {
         if !o.alive || o.in_safe {
             return 0;
         }
-        // The worst pilots never think of it, the same way they never bomb.
-        if self.dial(Knob::Permission) < 0.35 {
-            return 0;
-        }
+        let dial = self.dial(Knob::Permission);
         let threat = self.seen.threat;
         // A repel: something is arriving and there is no time to be elsewhere.
         // The push is hostile-only, so this costs the pilot nothing but the
         // charge.
-        let shoved = threat.map_or(false, |t| t.eta < 45.0 && t.miss < t.blast + 24.0);
+        // How late a pilot leaves the push. A good one reads the round coming
+        // and spends the charge on it; a poor one fires the moment anything is
+        // in the air, which is a charge gone and the round still arriving.
+        let notice = 45.0 + (1.0 - dial) * 90.0;
+        let shoved = threat.map_or(false, |t| t.eta < notice && t.miss < t.blast + 24.0);
         let crowded = self.dist < 150.0 && matches!(self.mode, Mode::Fight(_));
         if o.charges[0] > 0 && (shoved || (crowded && o.energy < 0.45)) {
             return sim::BTN_USE;
@@ -1640,8 +1666,18 @@ impl Bot {
     /// A small common floor keeps every pilot from shooting itself to death.
     /// Skill changes how quickly a pilot recognizes the need to disengage, not
     /// how long it refuses a good shot while still sitting in the fight.
+    /// How much of the bar a pilot will not spend attacking.
+    ///
+    /// Energy is health and ammunition at once, so this one number is most of
+    /// what separates a pilot who trades well from one who shoots itself flat
+    /// and dies to the next round that arrives. It scales with the dial: a
+    /// tenth of a bar at the bottom, a third at the top.
+    ///
+    /// This used to be a flat 0.20 for everybody, which is why the ablation
+    /// found five of the dial's six knobs inert. Skill decided who was allowed
+    /// to bomb and nothing at all about how well anybody fought.
     fn reserve(&self) -> f32 {
-        0.20
+        0.10 + self.dial(Knob::Permission) * 0.24
     }
 
     fn selected_shot(&self, o: &Own) -> Option<Shot> {
@@ -1710,16 +1746,27 @@ impl Bot {
         let Some(bomb) = o.bomb else {
             return Weapon::Gun;
         };
-        if self.dial(Knob::Permission) < 0.35
-            || o.energy - bomb.cost <= self.reserve()
-            || !foe.clear
-        {
+        // Everybody may bomb. What the dial decides is how well the moment is
+        // judged, which is the difference between a weapon and a way to spend
+        // a bar on nothing.
+        //
+        // It was a permission line at 0.35, and an ablation of all six knobs
+        // found it carrying the entire dial: holding it at 0.30 while the rest
+        // stayed at 0.90 won 96% of bouts in a bare field and lost 88% in a
+        // built one, while no other knob moved a win rate off a coin. A line
+        // that flips sign with the prize economy is not a skill parameter, it
+        // is two different games with a threshold between them.
+        if o.energy - bomb.cost <= self.reserve() || !foe.clear {
             return Weapon::Gun;
         }
         let doctrine = Doctrine::for_class(o.class);
+        // A poor pilot throws them closer together than the hull can afford,
+        // which in a fight is the same mistake as firing without aiming.
+        let cadence = (self.bomb_cadence(doctrine) as f32
+            * (0.45 + self.dial(Knob::Permission) * 0.55)) as u32;
         if self
             .last_bomb_at
-            .is_some_and(|last| self.timer.saturating_sub(last) < self.bomb_cadence(doctrine))
+            .is_some_and(|last| self.timer.saturating_sub(last) < cadence)
         {
             return Weapon::Gun;
         }
@@ -1766,8 +1813,12 @@ impl Bot {
         // moment of firing. This matters most to Anvil: its third-rung blast
         // is wider than its gun posture, so a closing target can turn an
         // apparently distant shot into an explosion beside the pilot.
+        // And leaves itself less room when it does. The margin a pilot wants
+        // beyond its own blast is the clearest thing skill can be: a bad one
+        // detonates its own round beside itself.
+        let margin = 24.0 + self.dial(Knob::Permission) * 120.0;
         let impact_clearance = self.bomb_impact_clearance(o, foe, bomb);
-        if impact_clearance.is_none_or(|d| d <= bomb.blast + o.radius + 96.0) {
+        if impact_clearance.is_none_or(|d| d <= bomb.blast + o.radius + margin) {
             return approach;
         }
         if !o.bomb_ready {
@@ -2551,7 +2602,8 @@ impl Bot {
                     .or(o.bomb)
                     .map_or(2.0, |s| s.speed);
                 let t = intercept((dx, dy), rel, muzzle).unwrap_or(0.0).min(200.0);
-                self.aim = (dx + rel.0 * t, dy + rel.1 * t);
+                let g = self.lead_gain;
+                self.aim = (dx + rel.0 * t * g, dy + rel.1 * t * g);
 
                 // Stand off at the working range along the line already flown,
                 // so closing and backing off are one instruction rather than a
