@@ -2408,22 +2408,28 @@ mod skill_tests {
 mod real_map_tests {
     use super::*;
 
-    /// A known asymmetry in this fixture, unexplained.
+    /// What this fixture's coin was thought to be weighted by, and was not.
     ///
-    /// Two identical pilots, nothing handicapped, sides alternating and now
-    /// facings alternating too, and one of them still takes about 62% of the
-    /// decided bouts. Which pilot draws which start, which team, which facing
-    /// and which seat index all alternate on the salt, so the obvious causes
-    /// are all accounted for and something else is doing it.
+    /// The ablation's null row kept printing 62% for two pilots identical in
+    /// every respect, and it was written down here as an unexplained
+    /// asymmetry worth reading every table against. It was neither.
     ///
-    /// It matters in a specific direction rather than generally, and the
-    /// direction is worth knowing before reading any table here. The ablation
-    /// prints a `none` row so every other row can be read as a distance from
-    /// it. The ladder tournament has no such row, and there the favoured side
-    /// is always `roster[i]`, which is the *weaker* pilot of the pair: so a
-    /// gap it reports is a floor, and the dial separates pilots by more than
-    /// the number printed, not less.
-    const KNOWN_SIDE_BIAS: f64 = 0.62;
+    /// `what_the_coin_is_weighted_by` ran the same control on four hundred
+    /// independent salts and read 54.2%, which on 286 decided bouts is a
+    /// coin. The 62% came from one two-hundred-salt window that both
+    /// ablations happened to share, so it was one reading believed twice.
+    /// Pooling the two puts the fixture near 57%, three points of which is
+    /// all the evidence there has ever been.
+    ///
+    /// The reasoning that tolerated it was wrong in the other direction too.
+    /// `duel` hands `a` the four combinations of start tile, facing and seat
+    /// in equal numbers and `b` the same four, so there is no positional
+    /// asymmetry left for a bias to live in, which is why the split by
+    /// `salt % 4` finds nothing consistent either. The tournament prints its
+    /// own null row now: a control is worth measuring per run and is not
+    /// worth a constant.
+    #[allow(dead_code)]
+    const KNOWN_SIDE_BIAS: f64 = 0.54;
 
     /// Tiles between the two pilots at the start of a bout.
     ///
