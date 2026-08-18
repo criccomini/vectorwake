@@ -1883,7 +1883,16 @@ impl Bot {
             Doctrine::Denier => 700,
             Doctrine::Heavy => 1_400,
             Doctrine::Bombardier => 1_800,
-            _ => 2_600,
+            // The three above mine because their doctrine says to, at a rate
+            // that was tuned, and this leaves those numbers alone. Everyone
+            // else mines opportunistically, and there the rate is the
+            // judgement: a poor pilot lays them closer together than the bar
+            // can afford, which is the same mistake the bomb cadence prices
+            // and is priced the same way. One-sided on purpose. The top of
+            // the dial sits exactly on 2600, so nothing tuned moves for a
+            // strong pilot, which is where greed, discipline and awareness
+            // all went wrong.
+            _ => (2_600.0 * (0.45 + self.dial(Knob::Permission) * 0.55)) as u32,
         };
         if self
             .last_mine_at
@@ -1894,7 +1903,14 @@ impl Bot {
         match doctrine {
             Doctrine::Denier => true,
             Doctrine::Heavy | Doctrine::Bombardier => self.seen.company,
-            _ => self.skill >= 0.55 && self.seen.hostiles_near > 0,
+            // A hostile close enough to walk into it and not yet close
+            // enough to be shooting, which the guards above have already
+            // established. This was a permission line at 0.55: the last step
+            // in the file, and the last read of `skill` that went around
+            // `dial`, where the ablation could not see it at all. A 0.54
+            // pilot never laid a mine in its life and a 0.56 pilot laid one
+            // every time the band was occupied.
+            _ => self.seen.hostiles_near > 0,
         }
     }
 
