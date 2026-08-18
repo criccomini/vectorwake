@@ -1054,17 +1054,10 @@ pub struct Bot {
     /// This look's misreading, as a multiplier on the lead. One is a pilot who
     /// solves the intercept exactly.
     lead_gain: f32,
-    /// How wrong this pilot is about when a trade has gone, as a share of the
-    /// bar. Drawn once and held: a pilot that changed its mind about this ten
-    /// times a second would average out to the right answer, which is the
-    /// mistake the aim error used to make.
-    leave_err: f32,
-    /// The spread it is drawn from, which is what the dial sets.
-    leave_spread: f32,
     /// Per-knob skill overrides for `Knob::Permission`, `Tolerance` and
     /// `Range`, which read the dial live. `None` everywhere in every real
     /// pilot; the ablation harness is the only thing that sets one.
-    dial_at: [Option<f32>; 5],
+    dial_at: [Option<f32>; 4],
     /// This pilot's current misjudgement, held rather than re-rolled. Rolled
     /// fresh on every look: a wrong estimate that changed a hundred times a
     /// second would average to a right one, which is the opposite of what an
@@ -1170,7 +1163,6 @@ pub enum Knob {
     Tolerance,
     Range,
     Greed,
-    Discipline,
 }
 
 impl Knob {
@@ -1182,7 +1174,6 @@ impl Knob {
             Knob::Tolerance => Some(1),
             Knob::Range => Some(2),
             Knob::Greed => Some(3),
-            Knob::Discipline => Some(4),
             _ => None,
         }
     }
@@ -1199,7 +1190,6 @@ impl Bot {
                 self.aim_err = (1.0 - as_if) * 0.42;
                 self.lead_err = (1.0 - as_if) * 0.85;
             }
-            Knob::Discipline => self.tune_leave(as_if),
             _ => {
                 if let Some(i) = knob.slot() {
                     self.dial_at[i] = Some(as_if);
@@ -1229,9 +1219,7 @@ impl Bot {
             aim_err: (1.0 - skill) * 0.42,
             lead_err: (1.0 - skill) * 0.85,
             lead_gain: 1.0,
-            leave_err: 0.0,
-            leave_spread: (1.0 - skill) * 0.16,
-            dial_at: [None; 5],
+            dial_at: [None; 4],
             jitter: 0.0,
             timer: ship as u32 * 7, // stagger so they do not all think at once
             mode: Mode::Idle,
@@ -1323,18 +1311,6 @@ impl Bot {
     pub fn reseed(&mut self, seed: u32) {
         self.seed = 0x9e3779b9 ^ seed.wrapping_mul(2654435761).max(1);
         self.timer = seed % 64;
-        // Where this pilot's idea of a lost trade sits, drawn from the spread
-        // the dial gave it. A good pilot draws from almost nothing and is
-        // right; a poor one is somewhere else and stays there.
-        let spread = self.leave_spread;
-        self.leave_err = (self.rand() - 0.5) * 2.0 * spread;
-    }
-
-    /// Set the spread this pilot's judgement is drawn from, as if it were of
-    /// another skill, and redraw. For the ablation.
-    fn tune_leave(&mut self, as_if: f32) {
-        self.leave_spread = (1.0 - as_if) * 0.16;
-        self.leave_err = (self.rand() - 0.5) * 2.0 * self.leave_spread;
     }
 
     /// Whether this pilot is due a look this tick. The caller asks, and only
@@ -2160,21 +2136,28 @@ impl Bot {
         // shrapnel are on the hull, because then nobody is aiming, they are
         // spraying.
         //
-        // Skill is the accuracy of this judgement rather than a different
-        // policy about it, and that took three tries to say. Leaving earlier
-        // with skill cost both ladders, +141 to +88 and +60 to +39. Leaving
-        // later cost them differently, +141 to +102 and +60 to -7.
+        // Deliberately flat, and it took three shapes and six tournaments to
+        // decide that.
         //
-        // Neither direction is the answer, because 0.30 is a tuned number.
-        // Spread pilots around a tuned number and the good ones stand as far
-        // from right as the bad ones: what comes out is not a ladder but a
-        // ladder with both ends bent down, which is exactly what the
-        // tournament printed twice.
+        // The design lists discipline among the traits the dial drives, and it
+        // is the obvious candidate for a built field, where the aim error is
+        // worth almost nothing because nobody aims a multifire. Measured
+        // against this flat number, which makes +141 of ladder in a bare field
+        // and +60 in a built one:
         //
-        // So the good pilot sits on it and the poor one is wrong about it, by
-        // an amount drawn once and held. That is the shape of the only
-        // parameter here that already worked: the aim error is a misread of
-        // where a target will be, not a preference for shooting behind them.
+        //     leaving earlier with skill      +88   +39
+        //     leaving later with skill       +102    -7
+        //     good pilot right, poor wrong    +80   +58
+        //
+        // All three are worse, the last included, and that is the shape that
+        // works for aim. The reason is not the shape. 0.30 is tuned, and the
+        // aim error already separates these pilots cleanly, so a second source
+        // of variance on both sides of every fight adds noise to a measurement
+        // that was working and takes the ladder down with it.
+        //
+        // Worth carrying to the next trait somebody wants on the dial: a
+        // parameter has to make the strong pilot better, not merely make the
+        // two of them differ.
         let value = (o.value as f32 / 60.0).min(1.0);
         let numbers = self
             .seen
@@ -2185,7 +2168,6 @@ impl Bot {
             .threat
             .map_or(0.0, |t| if t.eta < 55.0 { 0.07 } else { 0.0 });
         (0.30
-            + self.leave_err
             + value * 0.10
             + numbers.min(3.0) * 0.035
             + threat
