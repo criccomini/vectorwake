@@ -1047,6 +1047,10 @@ pub struct Bot {
     react: u32,
     look_every: u32,
     aim_err: f32,
+    /// Per-knob skill overrides for `Knob::Permission`, `Tolerance` and
+    /// `Range`, which read the dial live. `None` everywhere in every real
+    /// pilot; the ablation harness is the only thing that sets one.
+    dial_at: [Option<f32>; 3],
     /// This pilot's current misjudgement, held rather than re-rolled. Rolled
     /// fresh on every look: a wrong estimate that changed a hundred times a
     /// second would average to a right one, which is the opposite of what an
@@ -1138,7 +1142,58 @@ pub struct Bot {
 /// How far a destination may drift before the route to it is stale. One cell.
 const REROUTE_PX: f32 = 128.0;
 
+/// One parameter of the skill dial.
+///
+/// Named because the dial moves six things at once, which is why a tournament
+/// between two skills cannot say which of the six it measured. `Bot::tune`
+/// holds five still so a harness can ask.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Knob {
+    React,
+    Look,
+    AimErr,
+    Permission,
+    Tolerance,
+    Range,
+}
+
+impl Knob {
+    /// The three that read `skill` where they stand rather than caching a
+    /// number when the pilot is built.
+    fn slot(self) -> Option<usize> {
+        match self {
+            Knob::Permission => Some(0),
+            Knob::Tolerance => Some(1),
+            Knob::Range => Some(2),
+            _ => None,
+        }
+    }
+}
+
 impl Bot {
+    /// Set one parameter as if this pilot were of another skill, leaving the
+    /// other five where they are. For attribution, in the ablation harness.
+    pub fn tune(&mut self, knob: Knob, as_if: f32) {
+        match knob {
+            Knob::React => self.react = (38.0 - as_if * 30.0).max(3.0) as u32,
+            Knob::Look => self.look_every = (10.0 - as_if * 5.0).max(5.0) as u32,
+            Knob::AimErr => self.aim_err = (1.0 - as_if) * 0.42,
+            _ => {
+                if let Some(i) = knob.slot() {
+                    self.dial_at[i] = Some(as_if);
+                }
+            }
+        }
+    }
+
+    /// What `skill` reads as for one of the live parameters. The pilot's own
+    /// skill unless a harness has held it somewhere else.
+    fn dial(&self, knob: Knob) -> f32 {
+        knob.slot()
+            .and_then(|i| self.dial_at[i])
+            .unwrap_or(self.skill)
+    }
+
     pub fn new(ship: u8, skill: f32) -> Self {
         Bot {
             ship,
@@ -1150,6 +1205,7 @@ impl Bot {
             // world every tick, at a hundred hertz, which no client can.
             look_every: (10.0 - skill * 5.0).max(5.0) as u32,
             aim_err: (1.0 - skill) * 0.42,
+            dial_at: [None; 3],
             jitter: 0.0,
             timer: ship as u32 * 7, // stagger so they do not all think at once
             mode: Mode::Idle,
@@ -1468,7 +1524,7 @@ impl Bot {
             return 0;
         }
         // The worst pilots never think of it, the same way they never bomb.
-        if self.skill < 0.35 {
+        if self.dial(Knob::Permission) < 0.35 {
             return 0;
         }
         let threat = self.seen.threat;
@@ -1626,7 +1682,7 @@ impl Bot {
         };
         // Poor pilots overcommit a little. The range remains recognizably the
         // hull's, while skill still has a visible positional mistake to make.
-        base * (0.90 + self.skill * 0.10)
+        base * (0.90 + self.dial(Knob::Range) * 0.10)
     }
 
     fn bomb_cadence(&self, doctrine: Doctrine) -> u32 {
@@ -1654,7 +1710,10 @@ impl Bot {
         let Some(bomb) = o.bomb else {
             return Weapon::Gun;
         };
-        if self.skill < 0.35 || o.energy - bomb.cost <= self.reserve() || !foe.clear {
+        if self.dial(Knob::Permission) < 0.35
+            || o.energy - bomb.cost <= self.reserve()
+            || !foe.clear
+        {
             return Weapon::Gun;
         }
         let doctrine = Doctrine::for_class(o.class);
@@ -1845,7 +1904,7 @@ impl Bot {
             _ => target,
         };
         let span = (reach / self.dist.max(1.0)).atan();
-        let tol = (span + (1.0 - self.skill) * 0.04).clamp(0.05, 0.32);
+        let tol = (span + (1.0 - self.dial(Knob::Tolerance)) * 0.04).clamp(0.05, 0.32);
         if self.aim_diff(o, self.aim.0, self.aim.1).abs() >= tol {
             return 0;
         }

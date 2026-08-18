@@ -2432,6 +2432,16 @@ mod real_map_tests {
     /// most of it is open and a pair like this is easy to find; it is still
     /// worth finding rather than assuming, because a hard-coded tile that
     /// lands inside a cluster spawns nobody and the bout reads as a draw.
+    /// The map, its route and a place to put two pilots, built once.
+    pub(super) fn real_map_fixture() -> (Vec<u8>, nav::Nav, ((i32, i32), (i32, i32))) {
+        let bytes =
+            std::fs::read("../catalog/zones/alpha/alpha.vwmap").expect("the alpha map ships here");
+        let probe = sim::World::from_packed(0x5eed, &bytes).expect("a map");
+        let at = open_pair(&probe.map);
+        let route = nav::Nav::build(&probe.map);
+        (bytes, route, at)
+    }
+
     fn open_pair(map: &sim::sim_map) -> ((i32, i32), (i32, i32)) {
         let clear = |cx: usize, cy: usize| {
             (cy.saturating_sub(4)..=cy + 4).all(|y| {
@@ -2460,7 +2470,7 @@ mod real_map_tests {
     ///
     /// `calibrate::bout` cannot be reused: it builds the pit, and it builds a
     /// route per bout, which on a map this size is most of the cost.
-    fn duel(
+    pub(super) fn duel(
         bytes: &[u8],
         route: &nav::Nav,
         at: ((i32, i32), (i32, i32)),
@@ -2469,6 +2479,7 @@ mod real_map_tests {
         b: &ai::RosterEntry,
         salt: u32,
         greens: bool,
+        handicap: Option<(ai::Knob, f32)>,
     ) -> (u16, u16) {
         let mut world = sim::World::from_packed(0xd0e1 ^ salt, bytes).expect("a map");
         if !greens {
@@ -2490,6 +2501,14 @@ mod real_map_tests {
 
         let mut bot1 = ai::Bot::new(s1, first.skill);
         let mut bot2 = ai::Bot::new(s2, second.skill);
+        // The ablation's handicap always rides on `a`, whichever side it drew.
+        if let Some((knob, as_if)) = handicap {
+            if salt % 2 == 0 {
+                bot1.tune(knob, as_if);
+            } else {
+                bot2.tune(knob, as_if);
+            }
+        }
         bot1.reseed(salt.wrapping_mul(2246822519) ^ 0x1234);
         bot2.reseed(salt.wrapping_mul(3266489917) ^ 0x5678);
 
@@ -2590,7 +2609,7 @@ mod real_map_tests {
                     let (a, b) = (&roster[i], &roster[j]);
                     let (mut wa, mut wb, mut drew) = (0u32, 0u32, 0u32);
                     for _ in 0..PER_PAIR {
-                        let (ka, kb) = duel(&bytes, &route, at, &mut r, a, b, salt, greens);
+                        let (ka, kb) = duel(&bytes, &route, at, &mut r, a, b, salt, greens, None);
                         salt = salt.wrapping_add(1);
                         match ka.cmp(&kb) {
                             std::cmp::Ordering::Greater => wa += 1,
@@ -2651,7 +2670,9 @@ mod real_map_tests {
         let t = std::time::Instant::now();
         let mut kills = (0u32, 0u32);
         for salt in 0..10u32 {
-            let (a, b) = duel(&bytes, &route, at, &mut r, &weak, &strong, salt, false);
+            let (a, b) = duel(
+                &bytes, &route, at, &mut r, &weak, &strong, salt, false, None,
+            );
             kills.0 += a as u32;
             kills.1 += b as u32;
         }
@@ -2661,5 +2682,85 @@ mod real_map_tests {
             kills.0,
             kills.1
         );
+    }
+}
+
+#[cfg(test)]
+mod ablation {
+    use super::real_map_tests::*;
+    use super::*;
+
+    /// Which of the dial's six parameters is doing the work?
+    ///
+    ///     cargo test --release --manifest-path server/Cargo.toml \
+    ///       which_knob_carries_the_dial -- --ignored --nocapture
+    ///
+    /// Two pilots at 0.90 in every respect but one, where one of them is held
+    /// at 0.30. A knob that matters shows up as a win rate away from half; a
+    /// knob that does nothing shows up as a coin. The tournament could not ask
+    /// this, because moving the dial moves all six at once.
+    #[test]
+    #[ignore]
+    fn which_knob_carries_the_dial() {
+        const PER_KNOB: u32 = 200;
+        let (bytes, route, at) = real_map_fixture();
+        let strong = ai::RosterEntry {
+            name: "strong".into(),
+            class: 1,
+            skill: 0.90,
+        };
+        let same = ai::RosterEntry {
+            name: "same".into(),
+            class: 1,
+            skill: 0.90,
+        };
+
+        for greens in [false, true] {
+            println!(
+                "\n=== one knob at 0.30, the rest at 0.90, greens {} ===",
+                if greens { "on" } else { "off" }
+            );
+            println!("  knob          handicapped wins   rate      95% ci");
+            for knob in [
+                ai::Knob::React,
+                ai::Knob::Look,
+                ai::Knob::AimErr,
+                ai::Knob::Permission,
+                ai::Knob::Tolerance,
+                ai::Knob::Range,
+            ] {
+                let mut r = rating::Rating::new();
+                let (mut w, mut l, mut d) = (0u32, 0u32, 0u32);
+                let mut salt = 900_000u32;
+                for _ in 0..PER_KNOB {
+                    let (ka, kb) = duel(
+                        &bytes,
+                        &route,
+                        at,
+                        &mut r,
+                        &strong,
+                        &same,
+                        salt,
+                        greens,
+                        Some((knob, 0.30)),
+                    );
+                    salt = salt.wrapping_add(1);
+                    match ka.cmp(&kb) {
+                        std::cmp::Ordering::Greater => w += 1,
+                        std::cmp::Ordering::Less => l += 1,
+                        std::cmp::Ordering::Equal => d += 1,
+                    }
+                }
+                let decided = (w + l).max(1) as f64;
+                let rate = w as f64 / decided;
+                let ci = 1.96 * (rate * (1.0 - rate) / decided).sqrt();
+                println!(
+                    "  {:<12}  {w:>5} / {l:<5} {d:>4}d   {:>5.1}%   +/- {:>4.1}",
+                    format!("{knob:?}"),
+                    rate * 100.0,
+                    ci * 100.0
+                );
+            }
+        }
     }
 }
