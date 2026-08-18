@@ -2408,6 +2408,23 @@ mod skill_tests {
 mod real_map_tests {
     use super::*;
 
+    /// A known asymmetry in this fixture, unexplained.
+    ///
+    /// Two identical pilots, nothing handicapped, sides alternating and now
+    /// facings alternating too, and one of them still takes about 62% of the
+    /// decided bouts. Which pilot draws which start, which team, which facing
+    /// and which seat index all alternate on the salt, so the obvious causes
+    /// are all accounted for and something else is doing it.
+    ///
+    /// It matters in a specific direction rather than generally, and the
+    /// direction is worth knowing before reading any table here. The ablation
+    /// prints a `none` row so every other row can be read as a distance from
+    /// it. The ladder tournament has no such row, and there the favoured side
+    /// is always `roster[i]`, which is the *weaker* pilot of the pair: so a
+    /// gap it reports is a floor, and the dial separates pilots by more than
+    /// the number printed, not less.
+    const KNOWN_SIDE_BIAS: f64 = 0.62;
+
     /// Tiles between the two pilots at the start of a bout.
     ///
     /// Inside `ai::SIGHT`, which is sixty tiles, so they have each other from
@@ -2624,6 +2641,7 @@ mod real_map_tests {
                     let rate = wa as f64 / decided;
                     rates.push(rate);
                     let ci = 1.96 * (rate * (1.0 - rate) / decided).sqrt();
+                    let _ = KNOWN_SIDE_BIAS;
                     println!(
                         "  {:.2} v {:.2}   {wa:>5}  {wb:>5}  {drew:>5}   {:>5.1}%   +/- {:>4.1}",
                         a.skill,
