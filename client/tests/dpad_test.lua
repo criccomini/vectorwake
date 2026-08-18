@@ -4,10 +4,12 @@
 --
 -- It fails quietly. A wrong pad still flies the ship, it just answers a thumb
 -- with the wrong button, which reads as bad handling rather than as a bug and
--- gets blamed on the idea instead of on the code. The arithmetic is a pure
--- function of where the thumb is, so it is checked here as arithmetic: every
--- angle of push, what it presses, and what the stick still does when the
--- setting is off.
+-- gets blamed on the idea instead of on the code. The pad is anchored at the
+-- resting mark and fresh turns ramp up to the hull's rate, so what is checked
+-- here is every angle of press against the anchor, the share of frames a
+-- young turn is allowed, and what the stick still does when the setting is
+-- off. Frames advance only through touch.step, which the tests drive at
+-- sixty a second the way the arena does.
 
 package.path = "client/?.lua;" .. package.path
 
@@ -67,14 +69,43 @@ bits = held(touch.bits(heading_of(90)))
 check("north up: a thumb on the current heading turns nothing",
       not bits[sim_stub.BTN_RIGHT] and not bits[sim_stub.BTN_LEFT])
 
--- Switched to the pad, a thumb no longer names a heading. It names a push, and
--- the heading it is handed stops mattering at all: the same push has to give
--- the same buttons whatever the ship is doing.
+-- Switched to the pad, a thumb no longer names a heading. It names a push
+-- against the anchored pad, and the heading it is handed stops mattering at
+-- all: the same press has to give the same buttons whatever the ship is doing.
 touch.dpad = true
 
+-- The pad is anchored at the resting mark, so a press is already a direction:
+-- the anchor plus `distance` toward `degrees`, clockwise from straight up the
+-- screen. No drag, which is most of the point.
+local home = touch.layout(W, H, 1).home
+
+local function pad_press(degrees, distance)
+    touch.release_all()
+    local rad = degrees * math.pi / 180
+    touch.on_touch({touch = {{id = 1, pressed = true,
+                              x = home.x + math.sin(rad) * distance,
+                              y = home.y + math.cos(rad) * distance}}},
+                   W, H, 1, nil)
+end
+
 local function pad(degrees, heading)
-    steer(degrees, 60)
+    pad_press(degrees, 40)
     return held(touch.bits(heading_of(heading or 0)))
+end
+
+-- A held thumb, watched for `n` frames at sixty a second: how many carried a
+-- turn bit, and how many the engine.
+local function frames(n)
+    local turns, thrusts = 0, 0
+    for _ = 1, n do
+        touch.step(1 / 60)
+        local b = held(touch.bits(heading_of(0)))
+        if b[sim_stub.BTN_LEFT] or b[sim_stub.BTN_RIGHT] then
+            turns = turns + 1
+        end
+        if b[sim_stub.BTN_THRUST] then thrusts = thrusts + 1 end
+    end
+    return turns, thrusts
 end
 
 local function only(got, ...)
@@ -138,25 +169,71 @@ check("the pad answers a push from every angle", #silent == 0,
 check("and never thrusts and reverses at once", #contradictory == 0,
       table.concat(contradictory, ",", 1, math.min(#contradictory, 8)))
 
--- Held, it keeps turning. This is the whole difference from the stick: the
--- player decides when the turn ends by letting go, rather than the arithmetic
--- deciding by arriving.
-steer(90, 60)
-local still_turning = true
-for step = 0, 359, 10 do
-    if not held(touch.bits(heading_of(step)))[sim_stub.BTN_RIGHT] then
-        still_turning = false
-    end
-end
-check("the pad keeps turning for as long as it is held", still_turning)
+-- --- the anchor -----------------------------------------------------------
 
--- A thumb inside the dead zone does nothing, whichever way it leans.
-touch.release_all()
-touch.on_touch({touch = {{id = 1, pressed = true, x = 100, y = 200}}},
+-- A tap works, and works immediately. The accumulator seeds full so the first
+-- frame of a fresh turn always answers; a pad that waited a frame to say
+-- anything would read as broken exactly when a tap is quickest.
+pad_press(90, 40)
+check("a tap answers on the frame it lands",
+      held(touch.bits(heading_of(0)))[sim_stub.BTN_RIGHT])
+
+-- The direction is the thumb against the anchor, not against the press. A
+-- press on the right arm dragged to above the anchor is thrust, which is what
+-- lets a held thumb slide between arms without lifting.
+pad_press(90, 40)
+touch.on_touch({touch = {{id = 1, x = home.x, y = home.y + 40}}},
                W, H, 1, nil)
-touch.on_touch({touch = {{id = 1, x = 104, y = 203}}}, W, H, 1, nil)
-check("a thumb that has barely moved is not a push",
+bits = held(touch.bits(heading_of(0)))
+check("the thumb is read against the anchor, not the press",
+      only(bits, sim_stub.BTN_THRUST))
+
+-- The middle is inert: a thumb resting on the anchor is resting.
+pad_press(37, 5)
+check("a thumb on the anchor itself is not a push",
       not next(held(touch.bits(heading_of(0)))))
+
+-- --- the ramp --------------------------------------------------------------
+
+-- A fresh turn runs below the hull's rate: some early frames carry no turn
+-- bit. This is the tap becoming a nudge and the end of a swing arriving
+-- gently, and it must never touch the engine, which would read as mush.
+pad_press(45, 40)
+local young, young_thrusts = frames(12)
+check("a young turn is withheld from a share of frames",
+      young >= 4 and young <= 9, tostring(young))
+check("while thrust rides every frame", young_thrusts == 12,
+      tostring(young_thrusts))
+
+-- Held past the ramp, every frame turns: the player decides when the turn
+-- ends by letting go, at the hull's whole rate.
+frames(30)
+local grown = frames(10)
+check("a held turn reaches the hull's full rate", grown == 10,
+      tostring(grown))
+
+-- Reversing a held turn starts the ramp over, so correcting an overshoot is
+-- as gentle as the tap that caused it.
+pad_press(90, 40)
+frames(40)
+touch.on_touch({touch = {{id = 1, x = home.x - 40, y = home.y}}},
+               W, H, 1, nil)
+-- The frame that sees the reversal must answer on the spot: the reset seeds
+-- the accumulator full, the same as a fresh press, or the one moment a
+-- correction is most urgent would be the one moment the pad said nothing.
+touch.step(1 / 60)
+check("and the correction answers on its first frame",
+      held(touch.bits(heading_of(0)))[sim_stub.BTN_LEFT])
+local corrected = frames(12)
+check("reversing a held turn starts the ramp over",
+      corrected >= 3 and corrected <= 9, tostring(corrected))
+
+-- And a lifted thumb forgets everything: the next tap answers on its first
+-- frame however long the last turn ran.
+touch.release_all()
+pad_press(-90, 40)
+check("a lifted thumb resets the ramp",
+      held(touch.bits(heading_of(0)))[sim_stub.BTN_LEFT])
 
 -- And the stick is still the stick with the setting off, on the same push that
 -- the pad reads as a plain turn.
@@ -192,8 +269,6 @@ local where = touch.layout(W, H, 1).reverse
 touch.dpad = true
 touch.release_all()
 touch.on_touch({touch = {{id = 1, pressed = true, x = where.x, y = where.y}}},
-               W, H, 1, nil)
-touch.on_touch({touch = {{id = 1, x = where.x, y = where.y + 60}}},
                W, H, 1, nil)
 bits = held(touch.bits(0))
 check("and its space steers instead",

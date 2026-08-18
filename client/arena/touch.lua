@@ -20,6 +20,23 @@
 -- one a thumb raised on other games arrives already knowing, which is worth
 -- more than the argument above to the player who wants it.
 --
+-- The pad is anchored where the resting mark sits, unlike the stick, which
+-- appears wherever a thumb lands. Anchoring is what makes it tappable: a tap
+-- on the left arm is a nudge left, with no drag to perform first, and a fixed
+-- position is the closest glass gets to a tactile edge, because the thumb
+-- learns where left lives. It is also what pays for the pad's known cost. A
+-- held turn runs on until the thumb answers what the eye sees, which is a
+-- fifth of a second late, and at these hulls' turn rates that is thirty-odd
+-- degrees past wherever the player meant to stop; the correction has to be a
+-- tap, so taps have to exist.
+--
+-- Fresh turns also ramp: a turn starts at a fraction of the hull's rate and
+-- reaches full over a quarter second held, so a tap nudges a few degrees and
+-- a committed swing still spins. The simulation knows nothing of it. The rate
+-- is the hull's own and the client cannot change it, so the ramp is made by
+-- withholding the turn bit on a share of ticks, which the input path treats
+-- like any other buttons and the render smoothing hides.
+--
 -- The pad takes reverse with it. Down on a pad is backwards, so the held pad
 -- above the stick is not drawn beside one: two controls for the same bit, one
 -- of them eating a corner of the screen the thumb is already using.
@@ -45,6 +62,17 @@ local marks = require("arena.marks")
 local pal = require("arena.palette")
 
 local DEAD_PX = 14        -- ignore a thumb that has barely moved
+-- The pad's inert middle, as a share of its radius: a thumb resting on the
+-- anchor is resting, not steering. The stick needs no such gap because its
+-- center is wherever the thumb pressed, which cannot be pressed again.
+local PAD_GAP = 0.24
+-- What share of the hull's turn rate a fresh turn starts at, and how long it
+-- is held before the whole rate arrives. The floor is the tap: at these
+-- numbers a quick tap turns a few degrees. The window is the reaction time it
+-- exists to forgive, and matching it is what makes the end of a deliberate
+-- swing arrive gently instead of thirty degrees late.
+local RAMP_FLOOR = 0.4
+local RAMP_S = 0.25
 local THRUST_PX = 46      -- push past this and the engine lights
 local FAN_SWIPE_PX = 32   -- deliberate upward pull while holding the gun
 
@@ -116,6 +144,13 @@ local reverse = nil       -- touch id holding the reverse pad
 -- would spend a second one the moment the cooldown lapsed, and there are only
 -- three.
 local fired = nil
+
+-- The turn ramp: which way the pad is turning, how long it has been held, and
+-- the running remainder that decides which ticks get the turn bit. The
+-- accumulator starts at one so the first frame of any fresh turn always
+-- answers; a pad that waited a frame to say anything would read as broken in
+-- exactly the moment a tap is quickest.
+local ramp = {dir = 0, held = 0, acc = 1}
 
 -- Whether an upward gun pull happened since it was last asked. The core toggles
 -- multifire on a rising edge, so one gun hold may produce at most one edge.
@@ -271,7 +306,16 @@ function M.on_touch(action, w, h, s, claimed)
         elseif t.pressed then
             local z = zone(tx, ty, w, h, s)
             if z == "stick" and not stick then
-                stick = {id = t.id, ox = tx, oy = ty, x = tx, y = ty}
+                if M.dpad then
+                    -- Anchored: the pad's center is the resting mark, not the
+                    -- press, so the press itself already names a direction
+                    -- and a tap needs no drag to mean something.
+                    local hm = M.layout(w, h, s).home
+                    stick = {id = t.id, ox = hm.x, oy = hm.y, x = tx, y = ty,
+                             gap = hm.r * PAD_GAP}
+                else
+                    stick = {id = t.id, ox = tx, oy = ty, x = tx, y = ty}
+                end
             elseif z == "guns" then
                 guns = t.id
                 gun_ox, gun_oy = tx, ty
@@ -307,7 +351,10 @@ end
 -- batch that another leaves a pad. Passing that release through here first
 -- keeps the panel's early return from leaving the other control held.
 function M.release(id)
-    if stick and stick.id == id then stick = nil end
+    if stick and stick.id == id then
+        stick = nil
+        ramp.dir, ramp.held, ramp.acc = 0, 0, 1
+    end
     if guns == id then
         guns, gun_ox, gun_oy, gun_fanned = nil, nil, nil, false
     end
@@ -319,6 +366,7 @@ end
 -- a lost touch has to be forgettable.
 function M.release_all()
     stick, guns, bombs, reverse = nil, nil, nil, nil
+    ramp.dir, ramp.held, ramp.acc = 0, 0, 1
     gun_ox, gun_oy, gun_fanned = nil, nil, false
 end
 
@@ -364,7 +412,10 @@ end
 local function pad_arms()
     if not stick then return false, false, false, false end
     local dx, dy = stick.x - stick.ox, stick.y - stick.oy
-    local dead = DEAD_PX * M.scale
+    -- The inert middle. The anchored pad's is sized to the pad, because its
+    -- center can be pressed directly; the drag threshold is for a stick whose
+    -- center is wherever the press was.
+    local dead = stick.gap or (DEAD_PX * M.scale)
     if dx * dx + dy * dy < dead * dead then
         return false, false, false, false
     end
@@ -380,6 +431,25 @@ local function pad_arms()
            math.abs(oct) >= 3           -- backing up
 end
 
+-- The ramp's clock, run by the arena once a frame. Kept apart from M.bits so
+-- that reading the buttons never advances time: the drawing asks pad_arms the
+-- same question and must see the same answer.
+function M.step(dt)
+    if not M.dpad then
+        ramp.dir, ramp.held, ramp.acc = 0, 0, 1
+        return
+    end
+    local left, right = pad_arms()
+    local dir = (left and -1 or 0) + (right and 1 or 0)
+    if dir ~= ramp.dir then
+        -- A fresh turn, including a reversal mid-hold: the ramp starts over,
+        -- so correcting an overshoot is as gentle as the tap that made it.
+        ramp.dir, ramp.held, ramp.acc = dir, 0, 1
+    elseif dir ~= 0 then
+        ramp.held = ramp.held + (dt or 0)
+    end
+end
+
 function M.bits(heading)
     local out = {}
     if guns then out[#out + 1] = sim.BTN_FIRE end
@@ -393,8 +463,19 @@ function M.bits(heading)
     -- decides when the turn ends, the player or the arithmetic.
     if M.dpad then
         local left, right, fwd, back = pad_arms()
-        if left then out[#out + 1] = sim.BTN_LEFT end
-        if right then out[#out + 1] = sim.BTN_RIGHT end
+        -- Turning is pulsed by the ramp; thrust and reverse are not. The
+        -- overshoot this forgives is angular, and an engine that came up
+        -- softly would read as mush without buying anything for it.
+        if left or right then
+            local f = RAMP_FLOOR
+                + (1 - RAMP_FLOOR) * math.min(ramp.held / RAMP_S, 1)
+            ramp.acc = ramp.acc + f
+            if ramp.acc >= 1 then
+                ramp.acc = ramp.acc - 1
+                if left then out[#out + 1] = sim.BTN_LEFT end
+                if right then out[#out + 1] = sim.BTN_RIGHT end
+            end
+        end
         if fwd then out[#out + 1] = sim.BTN_THRUST end
         if back then out[#out + 1] = sim.BTN_REVERSE end
         return out
@@ -604,15 +685,12 @@ function M.draw(u, w, h, s)
 
     if M.dpad then
         -- The pad. Four chevrons pointing out of a middle, lit where the
-        -- thumb is pushing, drawn where the thumb landed for the same reason
-        -- the stick is: a control that only exists at one spot on the glass
-        -- is a control a player has to look down to find.
+        -- thumb is pushing.
+        -- At the anchor whether held or not: the pad's fixed position is
+        -- what a thumb learns, so it is never drawn anywhere else. Holding it
+        -- only brightens it.
         local cx, cy = L.home.x, L.home.y
-        local col = pal.a(pal.DIM, 0.35)
-        if stick then
-            cx, cy = stick.ox, stick.oy
-            col = dim
-        end
+        local col = stick and dim or pal.a(pal.DIM, 0.35)
         local reach, span = L.home.r * 0.92, L.home.r * 0.30
         local left, right, fwd, back = pad_arms()
         for _, arm in ipairs({{0, 1, fwd}, {0, -1, back},

@@ -1112,6 +1112,10 @@ function update(self, dt)
     local ww, wh, density, live = frame.begin(self, dt, net, sfx, menu, sim)
     if not ww then return end
 
+    -- The pad's turn ramp keeps time here because only the frame loop has dt;
+    -- reading the buttons deliberately does not advance it.
+    touch.step(dt)
+
     -- A control waiting for a key takes the whole keyboard, and takes it here,
     -- before anything else in this function has looked at a press. Every key
     -- on the board is an answer while this is up, including the ones that walk
