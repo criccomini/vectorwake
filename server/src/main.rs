@@ -2820,6 +2820,9 @@ mod tests {
             value: 0,
             carrying_flag: false,
             clear: true,
+            crowd: 0,
+            ship: 0,
+            standing: None,
         };
         let stuck_on = ai::Scan {
             prize: Some((px(511), px(506))),
@@ -3430,6 +3433,58 @@ mod tests {
             read.values()
                 .any(|(_, l)| *l == token::Label::ThirdPartyBot.to_byte()),
             "a bot that declared itself without an account is somebody else's"
+        );
+    }
+
+    /// The bot server reads the same roster, and reads it the same way.
+    ///
+    /// Held against the writer rather than against a copy of the layout,
+    /// because the failure mode is the one the test above is about: a field
+    /// added on one side and not the other shifts every row after it, and
+    /// the reader cannot tell a shifted row from a real one. A bot with a
+    /// scrambled roster would decline the wrong fights silently.
+    #[test]
+    fn the_bot_server_reads_the_roster_the_arena_writes() {
+        let mut z = serving(1, 9, 16);
+        let bots = seat_bots(&mut z.rooms[0], 3);
+        seat(&mut z, 0, 1);
+        let a = &z.rooms[0];
+
+        let mut st = crate::bots::Standings::default();
+        st.read(&a.roster_msg());
+
+        for (ship, seat) in &a.names {
+            let got = st
+                .of(*ship)
+                .unwrap_or_else(|| panic!("no row for ship {ship}"));
+            assert_eq!(
+                got.rating,
+                a.rating.rating_of(&seat.rid).round() as i16,
+                "the rating for ship {ship}"
+            );
+            assert_eq!(
+                got.games,
+                a.rating.games_of(&seat.rid).min(255) as u8,
+                "the games for ship {ship}"
+            );
+            assert_eq!(got.bot, seat.bot, "whether ship {ship} is somebody's AI");
+        }
+        assert!(
+            bots.iter().all(|b| st.of(*b).is_some_and(|s| s.bot)),
+            "every seated bot reads back as one"
+        );
+
+        // A seat that leaves takes its row with it rather than haunting the
+        // table, which is why the read builds fresh instead of merging.
+        let gone = *a.names.keys().next().expect("somebody in the room");
+        let mut trimmed = crate::bots::Standings::default();
+        trimmed.read(&a.roster_msg());
+        let mut short = a.roster_msg();
+        short[1] = 0;
+        trimmed.read(&short[..2]);
+        assert!(
+            trimmed.of(gone).is_none(),
+            "an empty roster empties the table"
         );
     }
 

@@ -244,6 +244,9 @@ pub struct Own {
     pub value: u16,
     /// A carried objective makes survival more important than another duel.
     pub carrying_flag: bool,
+    /// Where this pilot stands, for the one judgement that is a comparison
+    /// rather than an observation. Filled from the roster by whoever has one.
+    pub standing: Option<Standing>,
     /// What is left in each charge slot, so a repel can be spent rather than
     /// carried to the grave. Three of each, on every hull, and until now not
     /// one of them was ever used.
@@ -257,8 +260,46 @@ pub struct Own {
     pub mine: Option<Mine>,
 }
 
+/// Rated deaths before a rating is worth reading. Matches the client's own
+/// `PROVISIONAL_GAMES`, which is why a pilot under it is shown as "placing"
+/// rather than as a tier: the number exists, it has simply not been earned.
+pub const PLACING_GAMES: u8 = 10;
+
+/// Where a pilot stands, as the roster reports it.
+///
+/// This is the one thing in a bot's head that does not come from the
+/// simulation. It arrives in `S2C_ROSTER`, which the arena broadcasts to every
+/// client twice a second, and every human in the room is looking at the same
+/// numbers on their own scoreboard. A bot reading them is reading its own
+/// screen, which is the whole test decision 29 sets.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Standing {
+    pub rating: i16,
+    pub games: u8,
+    /// Whether this seat is somebody's AI. The roster labels it, and every
+    /// player list shows it, so this is not privileged either.
+    pub bot: bool,
+}
+
+impl Standing {
+    /// Whether the rating has been earned yet.
+    ///
+    /// Only asked of people. A bot's rating is seeded from its archetype's
+    /// calibrated prior rather than from nothing, so a young individual is
+    /// not an unknown quantity the way a new player is, and treating one as
+    /// such would have a roster of fresh bots politely declining to fight
+    /// each other in an empty room.
+    pub fn placing(&self) -> bool {
+        !self.bot && self.games < PLACING_GAMES
+    }
+}
+
 #[derive(Clone, Copy)]
 pub struct Foe {
+    /// Which seat this is, so a contact can be joined to the roster row that
+    /// names it. Everything else here is read off the simulation; this is the
+    /// only handle onto anything that is not.
+    pub ship: u8,
     pub x: f32,
     pub y: f32,
     pub vx: f32,
@@ -271,6 +312,18 @@ pub struct Foe {
     /// this is the same information, and it is what decides whether a bomb is
     /// a weapon or a way to kill yourself.
     pub clear: bool,
+    /// How many of this pilot's own side are already close to them.
+    ///
+    /// Proximity rather than intent, because intent is not on the wire: a
+    /// player can see where their team is and who they are standing on, and
+    /// cannot read a teammate's mind. It is the same information either way
+    /// for the only purpose it has, which is knowing when a fight is already
+    /// somebody else's.
+    pub crowd: u8,
+    /// What the roster last said about them, when a roster has been seen.
+    /// `None` wherever there is nobody to ask: a test, the calibration
+    /// harness, a deployment with no meta-layer.
+    pub standing: Option<Standing>,
 }
 
 #[derive(Clone, Copy)]
@@ -458,6 +511,7 @@ pub fn own(w: &World, ship: u8) -> Own {
         build,
         value: w.bounty(ship as usize).clamp(0, u16::MAX as i32) as u16,
         carrying_flag,
+        standing: None,
         charges: me.charge,
         gun,
         bomb,
@@ -489,7 +543,13 @@ pub fn scan(w: &World, ship: u8) -> Scan {
     let mut out = Scan::default();
 
     let mut best = SIGHT * SIGHT;
+    let mut best_at: Option<usize> = None;
+    let mut allies: Vec<(f32, f32)> = Vec::new();
     const LOCAL: f32 = 480.0;
+    /// How close a teammate has to be to a hostile to count as already on
+    /// them. Half the local radius: near enough to be shooting rather than
+    /// merely passing.
+    const ENGAGED: f32 = 240.0;
     for i in 0..w.state.ship_count as usize {
         let o = &w.state.ships[i];
         if i == ship as usize || o.active == 0 || o.alive == 0 {
@@ -508,6 +568,11 @@ pub fn scan(w: &World, ship: u8) -> Scan {
             if d2 < LOCAL * LOCAL {
                 out.allies_near = out.allies_near.saturating_add(1);
             }
+            // Where they are, for the crowd count below. Every living
+            // teammate in sight, not only the near ones: whether a fight is
+            // already covered is a question about who is standing on the
+            // target, not about who is standing near me.
+            allies.push((ox, oy));
             continue;
         }
         // Somebody standing in a safe zone is not a target. Nothing can be
@@ -532,6 +597,7 @@ pub fn scan(w: &World, ship: u8) -> Scan {
             .iter()
             .any(|f| f.active != 0 && f.carried != 0 && f.carrier == i as u8);
         let foe = Foe {
+            ship: i as u8,
             x: ox,
             y: oy,
             vx: o.vx as f32 / 65536.0,
@@ -544,13 +610,31 @@ pub fn scan(w: &World, ship: u8) -> Scan {
             value: w.bounty(i).clamp(0, u16::MAX as i32) as u16,
             carrying_flag,
             clear: clear_line(w, mx, my, ox, oy),
+            crowd: 0,
+            standing: None,
         };
         out.contacts.push(foe);
         if d2 < best {
             best = d2;
-            out.foe = Some(foe);
+            best_at = Some(out.contacts.len() - 1);
         }
     }
+
+    // Who is already busy with whom. A second pass, because it is a question
+    // about a contact and its neighbours rather than about one ship, and the
+    // pass above sees them one at a time.
+    for f in out.contacts.iter_mut() {
+        let mut n = 0u8;
+        for (ax, ay) in allies.iter() {
+            let dx = ax - f.x;
+            let dy = ay - f.y;
+            if dx * dx + dy * dy < ENGAGED * ENGAGED {
+                n = n.saturating_add(1);
+            }
+        }
+        f.crowd = n;
+    }
+    out.foe = best_at.map(|i| out.contacts[i]);
 
     // A flag nobody owns, or one the other side holds, is worth crossing the
     // room for. Flags decide the round; kills only clear the way.
@@ -1955,15 +2039,56 @@ impl Bot {
     /// Pick a target, rather than inheriting whichever hostile happened to be
     /// nearest. A wounded pilot, a flag carrier and a valuable life are better
     /// opportunities; walls and distance make a contact worse.
+    ///
+    /// Two of the terms are about the room rather than about the target, and
+    /// both are there because a zone runs fifty-odd of these at once. A crowd
+    /// of bots all solving the same scoring problem converges on the same
+    /// answer, and the answer arrives as four pilots on one hull, which is the
+    /// single worst thing a new player meets.
+    ///
+    /// So a fight somebody is already having is worth less to join, and a
+    /// pilot far below this one is worth less to pick on. Neither is a
+    /// handicap: both are the same pilot to everybody in the room, both read
+    /// only what a player reads off their own screen, and a flag carrier still
+    /// outscores the lot, so the swarm still happens where it should.
     fn select_foe(&self, o: &Own) -> Option<Foe> {
         self.seen.contacts.iter().copied().max_by(|a, b| {
             let score = |f: Foe| {
                 let d = (f.x - o.x).hypot(f.y - o.y);
+                // One teammate already on them is an ordinary push and costs
+                // nothing. It is the third and fourth arrival that is the
+                // problem, and they are the ones this turns away.
+                let piling = f.crowd.saturating_sub(1).min(3) as f32 * 0.35;
+                // How far under this pilot the target stands, in rating,
+                // where 400 points is the ten-to-one gap Elo defines and this
+                // scale therefore comes free rather than being invented.
+                //
+                // Gentle on purpose, and a penalty rather than a veto: a bot
+                // that meets somebody far below it would rather be elsewhere,
+                // and will still fight them for a flag, or when they shoot
+                // first, since defense is a different decision entirely.
+                //
+                // Somebody still placing gets the whole of it whatever their
+                // number says, because the number is a seed rather than a
+                // measurement until the games are on it. That is the case
+                // this exists for: a new player's first hour decides whether
+                // there is a second one.
+                let under = match (o.standing, f.standing) {
+                    (_, Some(them)) if them.placing() => 1.0,
+                    (Some(me), Some(them)) => {
+                        ((me.rating as f32 - them.rating as f32) / 400.0).clamp(0.0, 1.0)
+                    }
+                    // No roster, no opinion.
+                    _ => 0.0,
+                };
+                let outclassed = under * 0.30;
                 (if f.clear { 0.55 } else { 0.0 })
                     + (1.0 - f.energy.clamp(0.0, 1.0)) * 1.1
                     + if f.carrying_flag { 1.4 } else { 0.0 }
                     + (f.value as f32 / 60.0).min(1.0) * 0.25
                     - d / SIGHT * 0.8
+                    - piling
+                    - outclassed
             };
             score(*a).total_cmp(&score(*b))
         })
@@ -2694,6 +2819,9 @@ mod tests {
             value: 0,
             carrying_flag: false,
             clear: true,
+            crowd: 0,
+            ship: 0,
+            standing: None,
         };
         let mut bot = Bot::new(ship, 0.8);
         bot.seen.foe = Some(foe);
@@ -2983,6 +3111,186 @@ mod tests {
         let s = &mut w.state.ships[them as usize];
         s.x = 520 * 16 * 256;
         assert!(scan(&w, me as u8).foe.is_some(), "back out, back on");
+    }
+
+    /// A fight the team is already having is not the fight to join.
+    ///
+    /// Fifty-one bots run this same scoring against the same room, so without
+    /// a term for it they agree, and agreement arrives as four pilots on one
+    /// hull. The player it lands on is whoever is easiest, which is the newest.
+    ///
+    /// Both hostiles sit on the same bearing and only distance separates them,
+    /// so the near one is the pick until its fight is covered.
+    #[test]
+    fn a_target_the_team_is_already_on_is_worth_less() {
+        // Tiles, and inside SIGHT, which is sixty of them.
+        const HOME: i32 = 500;
+        let mut w = sim::World::new(0x5eed);
+        let me = w.spawn(0, 0, HOME, HOME, 0);
+        let near = w.spawn(0, 1, HOME, HOME - 10, 0);
+        let far = w.spawn(0, 1, HOME, HOME + 14, 0);
+        assert!(me >= 0 && near >= 0 && far >= 0, "three seats");
+
+        let pick = |w: &sim::World| {
+            let mut b = Bot::new(me as u8, 0.5);
+            b.seen = scan(w, me as u8);
+            b.select_foe(&own(w, me as u8)).map(|f| f.y)
+        };
+        let at = |w: &sim::World, ship: i32| w.state.ships[ship as usize].y as f32 / 256.0;
+
+        let before = pick(&w).expect("a target with the room empty");
+        assert!(
+            (before - at(&w, near)).abs() < 1.0,
+            "the near hostile while nobody is on them"
+        );
+
+        // Three teammates standing on the near one. Inside ENGAGED of it and
+        // well outside ENGAGED of the far one, so only one fight is covered.
+        for i in 0..3 {
+            assert!(w.spawn(0, 0, HOME + i, HOME - 10, 0) >= 0, "a teammate");
+        }
+        let after = pick(&w).expect("a target with the room crowded");
+        assert!(
+            (after - at(&w, far)).abs() < 1.0,
+            "and the far one once three teammates are on the near, picked {after} \
+             against near {} and far {}",
+            at(&w, near),
+            at(&w, far)
+        );
+    }
+
+    /// And a pilot rated far below this one is not the one to hunt.
+    ///
+    /// Four hundred points is the ten-to-one gap Elo defines, so the scale is
+    /// the rating system's rather than one invented here. Gentle: the near
+    /// pilot is only ten tiles closer, which is worth about 0.13 against the
+    /// 0.30 the mismatch can pay, so this turns a bot aside without ever
+    /// forbidding the fight.
+    #[test]
+    fn a_pilot_rated_far_below_this_one_is_worth_less() {
+        const HOME: i32 = 500;
+        let mut w = sim::World::new(0x5eed);
+        let me = w.spawn(0, 0, HOME, HOME, 0);
+        let beneath = w.spawn(0, 1, HOME, HOME - 10, 0);
+        let peer = w.spawn(0, 1, HOME, HOME + 20, 0);
+        assert!(me >= 0 && beneath >= 0 && peer >= 0, "three seats");
+
+        // What the roster would have said, hung on the look the way the bot
+        // server hangs it: `scan` reads the simulation and knows nothing of
+        // any of this.
+        let pick = |w: &sim::World, mine: Option<Standing>, rows: &[(i32, Standing)]| {
+            let mut b = Bot::new(me as u8, 0.5);
+            b.seen = scan(w, me as u8);
+            let mut o = own(w, me as u8);
+            o.standing = mine;
+            for f in b.seen.contacts.iter_mut() {
+                if let Some((_, st)) = rows.iter().find(|(ship, _)| *ship as u8 == f.ship) {
+                    f.standing = Some(*st);
+                }
+            }
+            b.select_foe(&o).map(|f| f.y)
+        };
+        let at = |w: &sim::World, ship: i32| w.state.ships[ship as usize].y as f32 / 256.0;
+        let rated = |rating: i16| Standing {
+            rating,
+            games: 50,
+            bot: false,
+        };
+
+        // With no roster there is no opinion, and the near one wins on
+        // distance. This is also every caller that has no meta-layer.
+        let blind = pick(&w, None, &[]).expect("a target with no roster");
+        assert!(
+            (blind - at(&w, beneath)).abs() < 1.0,
+            "the near hostile while nothing is known about anybody"
+        );
+
+        let after = pick(
+            &w,
+            Some(rated(1600)),
+            &[(beneath, rated(1200)), (peer, rated(1600))],
+        )
+        .expect("a target with a roster");
+        assert!(
+            (after - at(&w, peer)).abs() < 1.0,
+            "and the one at this pilot's own level once the roster says so, \
+             picked {after} against beneath {} and peer {}",
+            at(&w, beneath),
+            at(&w, peer)
+        );
+    }
+
+    /// Somebody still placing is left alone whatever their number says.
+    ///
+    /// A seeded 1200 is not a measurement, and the pilot carrying one is the
+    /// player this whole term exists for. The same seat with its games behind
+    /// it is an ordinary opponent again, which is what makes this the games
+    /// rather than the rating.
+    #[test]
+    fn a_pilot_still_placing_is_left_alone() {
+        const HOME: i32 = 500;
+        let mut w = sim::World::new(0x5eed);
+        let me = w.spawn(0, 0, HOME, HOME, 0);
+        let new_pilot = w.spawn(0, 1, HOME, HOME - 10, 0);
+        let regular = w.spawn(0, 1, HOME, HOME + 20, 0);
+        assert!(me >= 0 && new_pilot >= 0 && regular >= 0, "three seats");
+
+        let pick = |w: &sim::World, rows: &[(i32, Standing)]| {
+            let mut b = Bot::new(me as u8, 0.5);
+            b.seen = scan(w, me as u8);
+            let mut o = own(w, me as u8);
+            o.standing = Some(Standing {
+                rating: 1200,
+                games: 50,
+                bot: true,
+            });
+            for f in b.seen.contacts.iter_mut() {
+                if let Some((_, st)) = rows.iter().find(|(ship, _)| *ship as u8 == f.ship) {
+                    f.standing = Some(*st);
+                }
+            }
+            b.select_foe(&o).map(|f| f.y)
+        };
+        let at = |w: &sim::World, ship: i32| w.state.ships[ship as usize].y as f32 / 256.0;
+        let person = |games: u8| Standing {
+            rating: 1200,
+            games,
+            bot: false,
+        };
+
+        // Everybody level and everybody established: the near one, on distance.
+        let settled = pick(&w, &[(new_pilot, person(50)), (regular, person(50))])
+            .expect("a target among the established");
+        assert!(
+            (settled - at(&w, new_pilot)).abs() < 1.0,
+            "the near hostile when every rating has been earned"
+        );
+
+        // The same seat, same rating, three games in.
+        let placing = pick(&w, &[(new_pilot, person(3)), (regular, person(50))])
+            .expect("a target with a newcomer in the room");
+        assert!(
+            (placing - at(&w, regular)).abs() < 1.0,
+            "and the other one once the near seat is still placing, picked \
+             {placing} against placing {} and regular {}",
+            at(&w, new_pilot),
+            at(&w, regular)
+        );
+
+        // A young bot is not a newcomer. Its rating is seeded from its
+        // archetype rather than from nothing, and protecting it would have a
+        // roster of fresh individuals declining to fight each other.
+        let young_bot = Standing {
+            rating: 1200,
+            games: 3,
+            bot: true,
+        };
+        let bots = pick(&w, &[(new_pilot, young_bot), (regular, person(50))])
+            .expect("a target with a young bot in the room");
+        assert!(
+            (bots - at(&w, new_pilot)).abs() < 1.0,
+            "a bot with few games is an ordinary opponent"
+        );
     }
 
     /// Leaving, end to end, on a real map: told to stand down, seeing out the

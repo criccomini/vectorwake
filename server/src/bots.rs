@@ -178,6 +178,72 @@ struct Seat {
     tx: tokio::sync::mpsc::Sender<Ctl>,
 }
 
+/// What the roster last said about every seat in the room.
+///
+/// The arena broadcasts `S2C_ROSTER` to every client twice a second and this
+/// process used to drop it on the floor, which is why a bot could not tell a
+/// pilot on their first evening from one on their thousandth. Nothing here is
+/// privileged: it is the same message every scoreboard in the room is drawn
+/// from.
+pub(crate) struct Standings([Option<ai::Standing>; sim::MAX_SHIPS]);
+
+impl Default for Standings {
+    fn default() -> Self {
+        Standings(std::array::from_fn(|_| None))
+    }
+}
+
+impl Standings {
+    /// Read one roster message. Rows are seventeen bytes and a name: ship,
+    /// label, rating, games, team, kills, deaths, points, bounty, and the
+    /// name's length before it.
+    ///
+    /// Built fresh rather than merged, so a seat that has left the room takes
+    /// its row with it instead of haunting the table.
+    pub(crate) fn read(&mut self, m: &[u8]) {
+        let mut next: [Option<ai::Standing>; sim::MAX_SHIPS] = std::array::from_fn(|_| None);
+        let Some(&n) = m.get(1) else { return };
+        let mut o = 2usize;
+        for _ in 0..n {
+            // A short read keeps the rows already parsed and abandons the
+            // rest, which is what the client does with the same message.
+            let Some(&len) = m.get(o + 16) else { break };
+            if m.len() < o + 17 + len as usize {
+                break;
+            }
+            let ship = m[o] as usize;
+            let label = m[o + 1];
+            if ship < sim::MAX_SHIPS {
+                next[ship] = Some(ai::Standing {
+                    rating: i16::from_le_bytes([m[o + 2], m[o + 3]]),
+                    games: m[o + 4],
+                    bot: label == 2 || label == 3,
+                });
+            }
+            o += 17 + len as usize;
+        }
+        self.0 = next;
+    }
+
+    pub(crate) fn of(&self, ship: u8) -> Option<ai::Standing> {
+        self.0.get(ship as usize).copied().flatten()
+    }
+
+    /// Hang the roster on a look, which is otherwise entirely the
+    /// simulation's account of the room.
+    fn apply(&self, ship: u8, own: &mut ai::Own, seen: Option<&mut ai::Scan>) {
+        own.standing = self.of(ship);
+        if let Some(seen) = seen {
+            for f in seen.contacts.iter_mut() {
+                f.standing = self.of(f.ship);
+            }
+            if let Some(f) = seen.foe.as_mut() {
+                f.standing = self.of(f.ship);
+            }
+        }
+    }
+}
+
 struct Rig {
     world: Mutex<sim::World>,
     /// The last buttons each seat produced, read when the driver steps.
@@ -202,6 +268,11 @@ struct Rig {
     /// second clock beside the replacement.
     driver_beat: AtomicU64,
     driver_generation: AtomicU64,
+    /// One roster for the whole crew, since they share a room and are sent
+    /// the same message. Written by whichever connections happen to be
+    /// reading, which is all of them: the bytes are identical, so there is
+    /// nothing to arbitrate and no owner to lose.
+    standings: Mutex<Standings>,
 }
 
 impl Rig {
@@ -211,6 +282,7 @@ impl Rig {
             buttons: std::array::from_fn(|_| AtomicU16::new(0)),
             crew: Mutex::new(HashMap::new()),
             pen: AtomicU64::new(0),
+            standings: Mutex::new(Standings::default()),
             driver_beat: AtomicU64::new(0),
             driver_generation: AtomicU64::new(1),
         }
@@ -350,9 +422,15 @@ async fn drive(rig: std::sync::Weak<Rig>, generation: u64) {
                 }
             };
             rig.advance(&mut w, &crew);
+            // Locked once for the whole crew rather than once per pilot: they
+            // share a room, so they share a roster.
+            let standings = rig.standings.lock();
             for (&ship, seat) in crew.iter_mut() {
-                let own = ai::own(&w, ship);
-                let fresh = seat.brain.looks_due().then(|| ai::scan(&w, ship));
+                let mut own = ai::own(&w, ship);
+                let mut fresh = seat.brain.looks_due().then(|| ai::scan(&w, ship));
+                if let Ok(st) = standings.as_ref() {
+                    st.apply(ship, &mut own, fresh.as_mut());
+                }
                 let crowd = seat.brain.wants_refuge().then(|| {
                     let mut c = ai::crowd(&w, ship);
                     c.extend_from_slice(seat.brain.avoid());
@@ -1063,6 +1141,13 @@ async fn fly(
                             }
                         }
                     }
+                    Some(crate::S2C_ROSTER) => {
+                        if let Sight::Shared(rig) = &sight {
+                            if let Ok(mut st) = rig.standings.lock() {
+                                st.read(&data);
+                            }
+                        }
+                    }
                     Some(crate::S2C_YIELD) => break,
                     Some(crate::S2C_DENIED) => {
                         if data.get(1) == Some(&crate::DENY_RATED_SESSION) {
@@ -1101,6 +1186,8 @@ async fn fly(
         let mut sent: Option<u16> = None;
         let mut sent_at = 0u32;
         let mut lifecycle = 1u32;
+        // Its own copy, since a private world has no rig to share one with.
+        let mut standings = Standings::default();
         let mut asked: Option<std::time::Instant> = None;
         let mut ticker = tokio::time::interval(std::time::Duration::from_micros(10_000));
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -1125,6 +1212,7 @@ async fn fly(
                         Some(crate::S2C_SNAPSHOT) if data.len() > crate::SNAPSHOT_HEADER => {
                             w.apply_snapshot(&data[crate::SNAPSHOT_HEADER..]);
                         }
+                        Some(crate::S2C_ROSTER) => standings.read(&data),
                         Some(crate::S2C_YIELD) => break,
                         _ => {}
                     }
@@ -1136,8 +1224,9 @@ async fn fly(
                     if ship as usize >= sim::MAX_SHIPS {
                         break;
                     }
-                    let own = ai::own(&w, ship);
-                    let fresh = b.looks_due().then(|| ai::scan(&w, ship));
+                    let mut own = ai::own(&w, ship);
+                    let mut fresh = b.looks_due().then(|| ai::scan(&w, ship));
+                    standings.apply(ship, &mut own, fresh.as_mut());
                     if b.wants_refuge() {
                         let mut c = ai::crowd(&w, ship);
                         c.extend_from_slice(b.avoid());
