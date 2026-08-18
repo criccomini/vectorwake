@@ -2597,83 +2597,97 @@ mod real_map_tests {
     #[test]
     #[ignore]
     fn skill_on_a_real_map() {
-        const PER_PAIR: u32 = 300;
+        // Two hulls, because every number this printed before came from one.
+        //
+        // Class 1 is the Wedge, whose doctrine is Bombardier, and it is the
+        // hull this was measured on all night: the bomb specialist, judged on
+        // a fix to bomb judgement, in a built field where bombs and shrapnel
+        // together are the most stochastic thing this game does. Class 0 is
+        // the Apex, a Duelist, which fights with its gun and where the aim
+        // error should carry. If the built economy separates on one and not
+        // the other, that is a fact about a ship rather than about the dial.
+        const HULLS: [(u8, &str); 2] = [(1, "Wedge, Bombardier"), (0, "Apex, Duelist")];
+        const PER_PAIR: u32 = 200;
         let bytes =
             std::fs::read("../catalog/zones/alpha/alpha.vwmap").expect("the alpha map ships here");
         let probe = sim::World::from_packed(0x5eed, &bytes).expect("a map");
         let at = open_pair(&probe.map);
         let route = nav::Nav::build(&probe.map);
-        let roster: Vec<ai::RosterEntry> = [0.30f32, 0.45, 0.60, 0.75, 0.90]
-            .iter()
-            .map(|s| ai::RosterEntry {
-                name: format!("skill{:02}", (s * 100.0) as u32),
-                class: 1,
-                skill: *s,
-            })
-            .collect();
-
         let mut gaps: Vec<(bool, f64, usize, usize)> = Vec::new();
-        for greens in [false, true] {
-            let mut rates: Vec<f64> = Vec::new();
-            println!(
+        for (hull, hull_name) in HULLS {
+            let roster: Vec<ai::RosterEntry> = [0.30f32, 0.45, 0.60, 0.75, 0.90]
+                .iter()
+                .map(|s| ai::RosterEntry {
+                    name: format!("{hull}skill{:02}", (s * 100.0) as u32),
+                    class: hull,
+                    skill: *s,
+                })
+                .collect();
+
+            for greens in [false, true] {
+                println!("\n### {hull_name} ###");
+                let mut rates: Vec<f64> = Vec::new();
+                println!(
                 "\n=== alpha, spawns {APART} tiles apart, {PER_PAIR} bouts a pair, greens {} ===",
                 if greens { "on" } else { "off" }
             );
-            let mut r = rating::Rating::new();
-            let mut salt = if greens { 500_000u32 } else { 0 };
-            println!("   pair            won   lost   drew    rate      95% ci");
-            for i in 0..roster.len() {
-                for j in (i + 1)..roster.len() {
-                    let (a, b) = (&roster[i], &roster[j]);
-                    let (mut wa, mut wb, mut drew) = (0u32, 0u32, 0u32);
-                    for _ in 0..PER_PAIR {
-                        let (ka, kb) = duel(&bytes, &route, at, &mut r, a, b, salt, greens, None);
-                        salt = salt.wrapping_add(1);
-                        match ka.cmp(&kb) {
-                            std::cmp::Ordering::Greater => wa += 1,
-                            std::cmp::Ordering::Less => wb += 1,
-                            std::cmp::Ordering::Equal => drew += 1,
+                let mut r = rating::Rating::new();
+                let mut salt = if greens { 500_000u32 } else { 0 };
+                println!("   pair            won   lost   drew    rate      95% ci");
+                for i in 0..roster.len() {
+                    for j in (i + 1)..roster.len() {
+                        let (a, b) = (&roster[i], &roster[j]);
+                        let (mut wa, mut wb, mut drew) = (0u32, 0u32, 0u32);
+                        for _ in 0..PER_PAIR {
+                            let (ka, kb) =
+                                duel(&bytes, &route, at, &mut r, a, b, salt, greens, None);
+                            salt = salt.wrapping_add(1);
+                            match ka.cmp(&kb) {
+                                std::cmp::Ordering::Greater => wa += 1,
+                                std::cmp::Ordering::Less => wb += 1,
+                                std::cmp::Ordering::Equal => drew += 1,
+                            }
                         }
-                    }
-                    // The weaker pilot's share of the decided bouts. Half of
-                    // it is a dial that does nothing.
-                    let decided = (wa + wb).max(1) as f64;
-                    let rate = wa as f64 / decided;
-                    rates.push(rate);
-                    let ci = 1.96 * (rate * (1.0 - rate) / decided).sqrt();
-                    let _ = KNOWN_SIDE_BIAS;
-                    println!(
+                        // The weaker pilot's share of the decided bouts. Half of
+                        // it is a dial that does nothing.
+                        let decided = (wa + wb).max(1) as f64;
+                        let rate = wa as f64 / decided;
+                        rates.push(rate);
+                        let ci = 1.96 * (rate * (1.0 - rate) / decided).sqrt();
+                        let _ = KNOWN_SIDE_BIAS;
+                        println!(
                         "  {:.2} v {:.2}   {wa:>5}  {wb:>5}  {drew:>5}   {:>5.1}%   +/- {:>4.1}",
                         a.skill,
                         b.skill,
                         rate * 100.0,
                         ci * 100.0
                     );
+                    }
                 }
-            }
-            println!("\n   skill   rating   games");
-            for e in &roster {
-                println!(
-                    "    {:.2}   {:>6.1}   {:>5}",
-                    e.skill,
-                    r.rating_of(&e.name),
-                    r.games_of(&e.name)
-                );
-            }
-            let lo = r.rating_of(&roster[0].name);
-            let hi = r.rating_of(&roster[roster.len() - 1].name);
-            let gap = hi - lo;
-            println!("   weakest {lo:.0}, strongest {hi:.0}, gap {gap:+.0}");
+                println!("\n   skill   rating   games");
+                for e in &roster {
+                    println!(
+                        "    {:.2}   {:>6.1}   {:>5}",
+                        e.skill,
+                        r.rating_of(&e.name),
+                        r.games_of(&e.name)
+                    );
+                }
+                let lo = r.rating_of(&roster[0].name);
+                let hi = r.rating_of(&roster[roster.len() - 1].name);
+                let gap = hi - lo;
+                println!("   weakest {lo:.0}, strongest {hi:.0}, gap {gap:+.0}");
 
-            // Counted here, judged at the end. Asserting inside the loop
-            // aborted the run on the first economy and hid the second, which
-            // is the half a change is usually aimed at.
-            let leaning = rates.iter().filter(|r| **r < 0.5).count();
-            println!(
-                "   {leaning} of {} pairs favour the stronger pilot",
-                rates.len()
-            );
-            gaps.push((greens, gap, leaning, rates.len()));
+                // Counted here, judged at the end. Asserting inside the loop
+                // aborted the run on the first economy and hid the second, which
+                // is the half a change is usually aimed at.
+                let leaning = rates.iter().filter(|r| **r < 0.5).count();
+                println!(
+                    "   {leaning} of {} pairs favour the stronger pilot",
+                    rates.len()
+                );
+                gaps.push((greens, gap, leaning, rates.len()));
+            }
         }
 
         // Every pair leaning the right way, which is the property that
