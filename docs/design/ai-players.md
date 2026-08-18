@@ -99,8 +99,9 @@ run the same code and differ in how well they execute:
 A single skill dial from 0 to 1 drives all of them, with per-archetype jitter, so
 a 0.7 Duelist and a 0.7 Ambusher are about equally hard and feel nothing alike.
 
-That is the intention. One parameter carries it, which is worth knowing before
-anybody tunes the other five.
+That is the intention. Two of the six carry it, and which of the two depends on
+the hull and on whether there are greens on the map, which is worth knowing
+before anybody tunes the other four.
 
 ### Measuring it at all
 
@@ -162,15 +163,30 @@ reckless side won 64% of its bouts.
 Two findings from it are worth keeping, because they are facts about this game
 rather than about the code that was fixed.
 
-**Aim decides a bare field and almost nothing else.** A pilot that misreads a
-target's motion loses about 37 points of win rate with no greens on the map, and
-two and a half with them. Once multifire and shrapnel are on a hull nobody is
-aiming, they are spraying, and precision stops separating anybody. Whatever
-makes a pilot good in a built room is not marksmanship.
+**Aim decides a bare field.** A pilot that misreads a target's motion loses 37
+points of win rate on a bare Wedge and 28 on a bare Apex, against knobs that
+otherwise land inside their own intervals of a coin. With greens on the map it
+falls to two points on the Wedge and fourteen on the Apex: once multifire and
+shrapnel are on a hull nobody is aiming, they are spraying, and precision stops
+separating anybody.
+
+**Energy discipline decides a built Apex, and nothing decides a built Wedge.**
+Holding the permission knob at 0.30 costs a built Apex 24 points, which is more
+than aim costs it. That knob is the share of the bar a pilot will not spend
+attacking, plus the cadence and the margins that go with it, and a built hull
+firing multifire drains its bar fast enough for the question to decide fights. A
+built Wedge has no such knob: every one of the six lands inside a coin there, and
+so does the tournament, which puts 0.45 through 0.90 on 1224, 1223, 1221 and
+1216. Bombs and shrapnel together are the most stochastic thing in this game and
+they swamp the pilot flying behind them.
+
+So a change to reaction, look rate, tolerance or engagement range changes how
+the bots read rather than how hard they are. Difficulty lives in aim and in
+energy discipline.
 
 **Error has to persist to matter.** Aim error was an angle drawn fresh around
 the correct bearing ten to twenty times a second, so a burst sprayed a cone
-centred on the truth and the mean shot was a perfect one. It measured as doing
+centered on the truth and the mean shot was a perfect one. It measured as doing
 nothing, correctly. Error that survives being averaged is error that is held
 across a look and scaled by the thing being estimated: a misread of where the
 target will be, which grows with how fast they cross and how far the round must
