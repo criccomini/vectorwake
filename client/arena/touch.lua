@@ -35,6 +35,10 @@ local THRUST_PX = 46      -- push past this and the engine lights
 local FAN_SWIPE_PX = 32   -- deliberate upward pull while holding the gun
 
 M.used = false            -- has this device ever reported a touch?
+-- Whether the world is drawn turning under a ship that stays pointing up.
+-- Set by the arena from the player's setting; it changes what a thumb
+-- direction means, and nothing else here. See M.bits.
+M.shipup = false
 M.scale = 1               -- drawable pixels per point
 -- How many of each charge slot are in hand, by slot. Set by the caller.
 M.counts = {}
@@ -338,9 +342,29 @@ function M.bits(heading)
     local mag = math.sqrt(dx * dx + dy * dy)
     if mag < DEAD_PX * M.scale then return out end
 
+    -- Which way the screen was facing when the thumb committed.
+    --
+    -- Nothing at all in the ordinary view, where a screen direction and a
+    -- world heading are the same number and this is zero.
+    --
+    -- With the world turning it is the whole of the problem. The nose is
+    -- always at the top of the screen, so a thumb held to the right cannot
+    -- mean "face east", because east moves as you turn. Read plainly it would
+    -- mean "keep turning right", which is a rotate-right key with a thumb on
+    -- it, and the note at the top of this file says why that loses on glass.
+    --
+    -- So the frame is captured once, when the thumb passes the dead zone and
+    -- the player has committed to a direction they can see. The thumb then
+    -- names a fixed heading again: the ship turns to it and stops, the same
+    -- contract the ordinary view has. Lifting the thumb drops the stick and
+    -- the next press takes a fresh frame, which is what makes the top of the
+    -- screen mean "carry on as you are" every time you reach for it.
+    if M.shipup and not stick.frame then
+        stick.frame = (heading / 65536) * math.pi * 2
+    end
     -- Screen +y is up and the simulation's +y is down, which is why this is
     -- atan2(x, y) rather than the atan2(dx, -dy) the AI uses on sim vectors.
-    local want = math.atan2(dx, dy)
+    local want = math.atan2(dx, dy) + (stick.frame or 0)
     local head = (heading / 65536) * math.pi * 2
     local diff = want - head
     while diff > math.pi do diff = diff - math.pi * 2 end

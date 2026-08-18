@@ -140,6 +140,11 @@ M.can_cap = false       -- whether this engine can be asked to cap frames
 -- with the saved pilot rather than the current connection, so a reload cannot
 -- bring the offer back after it has been dismissed.
 M.help_prompt_seen = false
+-- Whether the world turns under a ship that stays pointing up, which is a
+-- phone answer to a phone problem and off until somebody says otherwise. The
+-- arena reads it and the render pipeline acts on it; nothing here draws with
+-- it. See the settings page below for why it is only offered on glass.
+M.shipup = false
 
 -- Whether the ship page's answer is currently "no hull". In a game that is
 -- what the connection says you are; on the home screen it is what you have
@@ -197,7 +202,7 @@ function M.save_identity()
     pcall(sys.save, SAVE, {
         name = M.name, class = M.class, volume = M.volume, music = M.music,
         cap = M.cap, zone = M.zone, spectate = M.spectate,
-        help_prompt_seen = M.help_prompt_seen,
+        help_prompt_seen = M.help_prompt_seen, ship_up = M.shipup,
         -- Only the keys that have been moved, so a stock keyboard writes
         -- nothing here at all and a control this build stops carrying does
         -- not leave a line behind it. See arena/binds.lua.
@@ -228,6 +233,10 @@ function M.load_identity()
         -- is an answer to the same question the hull answers.
         M.spectate = d.spectate == true
         M.help_prompt_seen = d.help_prompt_seen == true
+        -- Compared against true rather than read, so a save that carried
+        -- something else under this name lands on off rather than on a value
+        -- the camera would try to use.
+        M.shipup = d.ship_up == true
         -- Whatever survives being read against this build's key list. A
         -- missing table is a stock keyboard, which is what `load` does with
         -- nothing.
@@ -580,6 +589,24 @@ local NODES = {
             {label = "fullscreen", detail = "fill the screen",
              act = "fullscreen"},
         }
+        -- Only where there are thumbs. On a keyboard the pair of turn keys
+        -- gives fine control the glass stick cannot, and a north-up world is
+        -- what every desktop pilot has learned to read a drift against, so
+        -- this is not offered there at all rather than offered and discouraged.
+        --
+        -- One box, because it is one question. The detail says what changes
+        -- rather than "on", since the name of the setting is what stays still
+        -- and the interesting half is what moves instead.
+        if M.touching then
+            rows[#rows + 1] = {
+                label = "ship up",
+                detail = function()
+                    if M.shipup then return "the world turns" end
+                    return "the world holds still"
+                end,
+                choice = function() return M.shipup and 1 or 0, 1 end,
+                act = "shipup"}
+        end
         -- Only where there is somewhere to add it to and it is not there
         -- already. A row offering to install an app you are running inside is
         -- a row that makes the menu look like it is not paying attention.
@@ -1004,6 +1031,12 @@ local function settle(act, asked)
     elseif act == "cap" then
         M.cap = M.cap % #CAPS + 1
         M.apply_settings()
+        M.save_identity()
+    elseif act == "shipup" then
+        -- Nothing to apply: the arena reads this every frame and the camera
+        -- follows on the next one, so there is no engine state to keep in
+        -- step the way sound and frames have.
+        M.shipup = not M.shipup
         M.save_identity()
     else
         return act

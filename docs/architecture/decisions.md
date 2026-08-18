@@ -339,6 +339,38 @@ survives; it is the trade the whole amendment is, sharpness of one ship
 against sight of the room. The rule lives in `client/render/zoom.lua`, and
 `zoom_test.lua` pins what each kind of window sees.
 
+**Amended: a phone may keep its ship pointing up.** A second answer to the same
+screen, offered as a setting rather than taken. With it on, the view turns to
+the flying ship's heading, so the nose stays at the top and the world turns
+underneath. Off by default, and only offered where the device has reported a
+touch: a keyboard has a pair of turn keys with an edge to feel for, and every
+desktop pilot has learned to read a drift against a fixed north.
+
+The case for it is that a thumb has no such edge. The case against is that this
+game is inertia, and a turning view does not turn the velocity with it: coast
+north, flick east to shoot, and the world slides across a nose that is not
+moving that way. That is the same information a fixed view shows as a nose
+swinging off a steady drift, and it is the harder of the two to read. Whether
+that costs more than the steadier aiming buys is a question about thumbs, not
+about geometry, which is why it ships as a setting and not as a change.
+
+Three things it does not touch. The radar keeps north up, so there is always
+one stable picture of the room. The simulation never learns the camera exists:
+the thumb still names a heading and the client still resolves that into the
+same turn bits a keyboard sends. And a turned frame has to build the world its
+corners reach, so the arena is asked for the frame's circumcircle instead of the
+frame, which costs a portrait phone about two and a half times its starfield.
+
+**Cost:** two camera models in one game, and the phone one is the weaker place
+to learn momentum from. Anything drawn in screen space over a world position
+has to turn with the view or land beside the hull it belongs to, which is a
+second thing to remember for every future overlay. The rule is in
+`client/render/turn.lua` and `turn_test.lua` holds the camera turn and the
+overlay turn against each other, which is the pairing that would rot quietly.
+
+**Reconsider if:** phone players who tried it turned it off, or kept it on and
+stopped reading drift. Either answer settles it; the argument above does not.
+
 **Status:** accepted
 
 An empty arena is how a new multiplayer game dies. Bots fill arenas until humans

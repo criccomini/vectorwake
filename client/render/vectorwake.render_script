@@ -21,6 +21,7 @@
 -- where a test can reach it.
 
 local zoom = require("render.zoom")
+local turn = require("render.turn")
 
 -- Screen pixels per world pixel. One means the hulls draw at the size they
 -- were authored in, which is the reason for that default.
@@ -80,6 +81,22 @@ function update(self)
     local half_h = h * 0.5 / z
     local cam = self.camera or vmath.vector3(512 * 16, 512 * 16, 0)
 
+    -- Which way is up, and how much world the arena has to build to fill the
+    -- frame. Both follow the same number and both live in render/turn.lua,
+    -- where a test can reach them.
+    --
+    -- `spin` is the heading the view is turned to, in radians, and it is nil
+    -- for everybody else: absent from the message rather than zero, so the
+    -- ordinary north-up path is the one that runs when nothing said otherwise.
+    --
+    -- The turn is applied to the camera rather than to anything the game
+    -- draws. A hull is already drawn at its own heading in world space; turn
+    -- the view by that heading and the nose arrives at the top of the screen
+    -- with nothing holding a second opinion about where anything is.
+    local ux, uy = turn.up(self.spin)
+    local up = vmath.vector3(ux, uy, 0)
+    local see_w, see_h = turn.extent(half_w, half_h, self.spin)
+
     -- The eye sits well off the plane and the clip range is wide. With the
     -- eye one unit out and a range of exactly (-1, 1), everything the game
     -- draws lands on z_ndc = 1.0 -- precisely the far plane, where it is a
@@ -87,7 +104,7 @@ function update(self)
     render.set_view(vmath.matrix4_look_at(
         vmath.vector3(cam.x, cam.y, 10),
         vmath.vector3(cam.x, cam.y, 0),
-        vmath.vector3(0, 1, 0)))
+        up))
     -- Top and bottom are swapped so the simulation's +y renders downward.
     -- Tile coordinates then match the screen, and heading zero is north
     -- rather than south. Without it the whole world is drawn as a vertical
@@ -138,17 +155,32 @@ function update(self)
     -- told is deduplicated on the wire and resent from the welcome after a
     -- reconnect, and the rest are pure functions of these five.
     if self.vp_w ~= w or self.vp_h ~= h or self.vp_hw ~= half_w
-       or self.vp_hh ~= half_h or self.vp_density ~= density then
+       or self.vp_hh ~= half_h or self.vp_sw ~= see_w
+       or self.vp_density ~= density then
         self.vp_w, self.vp_h = w, h
         self.vp_hw, self.vp_hh = half_w, half_h
+        self.vp_sw, self.vp_sh = see_w, see_h
         self.vp_density = density
+        -- Two pairs, because they answer different questions and a turned
+        -- view makes them different numbers. `hw` and `hh` are the
+        -- projection's own half-extents: the scale that turns a world
+        -- position into a place on the glass, which is what a nameplate
+        -- needs. `sw` and `sh` are how much world has to exist to fill the
+        -- frame. They were one pair while the frame was always square to the
+        -- world, and reusing that pair for both is how the first cut of this
+        -- drew every pilot's name at two-fifths of the distance it belonged.
         msg.post("main:/arena#arena", "viewport",
-                 {w = w, h = h, hw = half_w, hh = half_h, density = density})
+                 {w = w, h = h, hw = half_w, hh = half_h,
+                  sw = see_w, sh = see_h, density = density})
     end
 end
 
 function on_message(self, message_id, message)
     if message_id == hash("camera") then
         self.camera = message.position
+        -- Absent unless the arena is turning the view, and assigning it away
+        -- again is what puts the camera back on north when the setting goes
+        -- off mid-flight.
+        self.spin = message.spin
     end
 end

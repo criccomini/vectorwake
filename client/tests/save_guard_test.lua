@@ -141,6 +141,73 @@ menu.help_prompt_seen = false
 menu.dismiss_help_prompt()
 check("dismissing the offer saves it", last_saved and last_saved.help_prompt_seen)
 
+-- The turning camera is a saved answer too, and the only one whose wrong value
+-- is a whole different game rather than a wrong volume. It is off unless a save
+-- says otherwise, and only a save that says exactly true counts: this key is
+-- new, so the builds that come after are the ones that have to survive a file
+-- where it means something else.
+if load_with({name = "Fresh Pilot"}, "a pilot who never answered ship up") then
+    check("a missing answer leaves the world holding still", menu.shipup == false)
+end
+if load_with({name = "Phone Pilot", ship_up = true}, "a pilot who turned it on") then
+    check("a saved yes turns the world", menu.shipup == true)
+end
+for _, bad in ipairs({1, 0, "yes", {}}) do
+    if load_with({name = "Odd Pilot", ship_up = bad},
+                 "ship_up " .. type(bad)) then
+        check("ship_up " .. type(bad) .. " is not a yes", menu.shipup == false,
+              tostring(menu.shipup))
+    end
+end
+-- Offered on glass and nowhere else. A desktop that grew the row would be a
+-- desktop offering to change a camera the arena will not turn for it.
+local function settings_rows()
+    menu.open = true
+    menu.stack = {"root", "settings"}
+    local v = menu.view()
+    menu.open = false
+    return v.rows
+end
+
+local function row_at(label)
+    for i, r in ipairs(settings_rows()) do
+        if r.label == label then return i, r end
+    end
+    return nil
+end
+
+menu.touching = false
+check("a keyboard is not offered the turning camera", row_at("ship up") == nil)
+menu.touching = true
+local at = row_at("ship up")
+check("a touchscreen is", at ~= nil, tostring(at))
+
+-- And the row works the way a thumb works it: through the same click the
+-- interface sends, rather than by calling the action behind it.
+if at then
+    menu.shipup = false
+    last_saved = nil
+    menu.open = true
+    menu.stack = {"root", "settings"}
+    menu.click(at)
+    check("pressing the row turns the world", menu.shipup == true)
+    check("and saves that", last_saved and last_saved.ship_up == true)
+    -- Read off the drawn row rather than off the setting, because the detail
+    -- is the only thing on screen that says which way round it now is. `view`
+    -- has already resolved it to a string by here.
+    local _, r = row_at("ship up")
+    check("the row says what it did", r and r.detail == "the world turns",
+          r and tostring(r.detail))
+
+    last_saved = nil
+    menu.open = true
+    menu.stack = {"root", "settings"}
+    menu.click(at)
+    check("pressing it again holds the world still", menu.shipup == false)
+    check("and saves that too", last_saved and last_saved.ship_up == false)
+    menu.open = false
+end
+
 if fails > 0 then
     print(fails .. " failed")
     os.exit(1)
