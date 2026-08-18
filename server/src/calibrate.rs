@@ -2484,9 +2484,19 @@ mod real_map_tests {
         world.cfg.spawn_radius = 0;
 
         // Sides alternate, so a corner cannot accumulate into a rating.
-        let (first, second) = if salt % 2 == 0 { (a, b) } else { (b, a) };
-        let s1 = world.spawn(first.class, 0, at.0 .0, at.0 .1, 0) as u8;
-        let s2 = world.spawn(second.class, 1, at.1 .0, at.1 .1, 32768) as u8;
+        // Sides alternate, and so does the heading each side is given.
+        //
+        // Alternating the pilots alone was not enough. A null run of this
+        // fixture, two identical pilots and nothing handicapped, came back at
+        // 63.6% to one of them: the two starts are not equivalent, and every
+        // row measured here was being read against a coin that was not one.
+        // Whatever the asymmetry is between these two tiles on this map, the
+        // pilot who draws each start also draws each facing now.
+        let flip = salt % 2 == 0;
+        let (first, second) = if flip { (a, b) } else { (b, a) };
+        let (h1, h2) = if salt % 4 < 2 { (0, 32768) } else { (32768, 0) };
+        let s1 = world.spawn(first.class, 0, at.0 .0, at.0 .1, h1) as u8;
+        let s2 = world.spawn(second.class, 1, at.1 .0, at.1 .1, h2) as u8;
 
         let mut bot1 = ai::Bot::new(s1, first.skill);
         let mut bot2 = ai::Bot::new(s2, second.skill);
