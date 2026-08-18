@@ -2612,7 +2612,7 @@ mod real_map_tests {
             })
             .collect();
 
-        let mut gaps: Vec<(bool, f64)> = Vec::new();
+        let mut gaps: Vec<(bool, f64, usize, usize)> = Vec::new();
         for greens in [false, true] {
             let mut rates: Vec<f64> = Vec::new();
             println!(
@@ -2665,29 +2665,31 @@ mod real_map_tests {
             let gap = hi - lo;
             println!("   weakest {lo:.0}, strongest {hi:.0}, gap {gap:+.0}");
 
-            // Every pair leaning the right way, which is the property that
-            // survives a small effect. Ten independent pairs all landing on
-            // one side of a coin is a thousand to one, so this catches a real
-            // but weak dial where any single pair's interval would not.
+            // Counted here, judged at the end. Asserting inside the loop
+            // aborted the run on the first economy and hid the second, which
+            // is the half a change is usually aimed at.
             let leaning = rates.iter().filter(|r| **r < 0.5).count();
-            assert_eq!(
-                leaning,
-                rates.len(),
-                "every pair should favour the stronger pilot, and {} of {} did",
-                leaning,
+            println!(
+                "   {leaning} of {} pairs favour the stronger pilot",
                 rates.len()
             );
-            gaps.push((greens, gap));
+            gaps.push((greens, gap, leaning, rates.len()));
         }
 
-        // And the ladder worth having, which is a separate question from
-        // pointing the right way. A hundred points is a 64% result: the least
-        // this could mean and still mean something.
-        for (greens, gap) in gaps {
+        // Every pair leaning the right way, which is the property that
+        // survives a small effect: ten independent pairs on one side of a coin
+        // is a thousand to one, so it sees a real but weak dial where no single
+        // pair's interval could. And a hundred points of ladder, which is a
+        // 64% result and the least this can mean and still mean something.
+        for (greens, gap, leaning, pairs) in gaps {
+            let economy = if greens { "on" } else { "off" };
+            assert_eq!(
+                leaning, pairs,
+                "with greens {economy}, {leaning} of {pairs} pairs favour the stronger pilot"
+            );
             assert!(
                 gap >= 100.0,
-                "with greens {}, the dial makes {gap:+.0} points of ladder",
-                if greens { "on" } else { "off" }
+                "with greens {economy}, the dial makes {gap:+.0} points of ladder"
             );
         }
     }
