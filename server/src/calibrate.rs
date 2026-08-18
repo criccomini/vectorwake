@@ -2408,29 +2408,6 @@ mod skill_tests {
 mod real_map_tests {
     use super::*;
 
-    /// What this fixture's coin was thought to be weighted by, and was not.
-    ///
-    /// The ablation's null row kept printing 62% for two pilots identical in
-    /// every respect, and it was written down here as an unexplained
-    /// asymmetry worth reading every table against. It was neither.
-    ///
-    /// `what_the_coin_is_weighted_by` ran the same control on four hundred
-    /// independent salts and read 54.2%, which on 286 decided bouts is a
-    /// coin. The 62% came from one two-hundred-salt window that both
-    /// ablations happened to share, so it was one reading believed twice.
-    /// Pooling the two puts the fixture near 57%, three points of which is
-    /// all the evidence there has ever been.
-    ///
-    /// The reasoning that tolerated it was wrong in the other direction too.
-    /// `duel` hands `a` the four combinations of start tile, facing and seat
-    /// in equal numbers and `b` the same four, so there is no positional
-    /// asymmetry left for a bias to live in, which is why the split by
-    /// `salt % 4` finds nothing consistent either. The tournament prints its
-    /// own null row now: a control is worth measuring per run and is not
-    /// worth a constant.
-    #[allow(dead_code)]
-    const KNOWN_SIDE_BIAS: f64 = 0.54;
-
     /// Tiles between the two pilots at the start of a bout.
     ///
     /// Inside `ai::SIGHT`, which is sixty tiles, so they have each other from
@@ -2656,19 +2633,26 @@ mod real_map_tests {
                 let mut salt = if greens { 500_000u32 } else { 0 };
 
                 // The coin this fixture actually deals, measured rather than
-                // assumed. The ablation grew one of these and reads 62% in a
-                // bare field for two pilots identical in every respect, which
-                // is a bias bigger than most of the effects on the table
-                // below; this tournament had no such row and every rate in it
-                // was being read against a half. It is not a side effect
-                // either, since sides, teams, facings and seats all alternate
-                // on the salt: something else about the fixture is doing it,
-                // and until it is found the honest thing is to print it.
+                // assumed, on the same salts the pairs use so it sees the same
+                // starts in the same order.
                 //
-                // It rides on the same salts the pairs use, so it sees the
-                // same starts in the same order. `roster[i]` is always the
-                // weaker pilot of a pair, and the row below says how much of
-                // a head start that seat gets for free.
+                // It is a control and not a correction, and the difference
+                // matters. The ablation's null row once read 62% and was
+                // written down as a side bias worth reading every table
+                // against; four hundred bouts on independent salts then read
+                // 54.2% and 47.2% in the two economies, and the Apex read
+                // 52.4% on the very salts where the Wedge read 62. One
+                // reading had been believed twice. `duel` deals each pilot the
+                // four combinations of start tile, facing and seat in equal
+                // numbers, so there was never anywhere for a positional bias
+                // to live.
+                //
+                // So this row is not subtracted from anything: subtracting a
+                // number with four points of noise from one with seven adds
+                // error rather than removing it. It is asserted on instead. A
+                // block whose identical pilots do not split near half is a
+                // block where `duel` has broken, and nothing else printed
+                // under it can be read.
                 let mut null = rating::Rating::new();
                 let (mut nw, mut nl, mut nd) = (0u32, 0u32, 0u32);
                 {
@@ -2731,7 +2715,6 @@ mod real_map_tests {
                             ends = 1.0 - rate;
                         }
                         let ci = 1.96 * (rate * (1.0 - rate) / decided).sqrt();
-                        let _ = KNOWN_SIDE_BIAS;
                         println!(
                         "  {:.2} v {:.2}   {wa:>5}  {wb:>5}  {drew:>5}   {:>5.1}%   +/- {:>4.1}",
                         a.skill,
