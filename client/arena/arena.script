@@ -22,6 +22,7 @@ local browser = require("arena.browser")
 local binds = require("arena.binds")
 local keys = require("arena.keys")
 local touch = require("arena.touch")
+local threat = require("arena.threat")
 local account = require("arena.account")
 local directory = require("arena.directory")
 local menu = require("arena.menu")
@@ -1115,6 +1116,10 @@ function update(self, dt)
     -- The pad's turn ramp keeps time here because only the frame loop has dt;
     -- reading the buttons deliberately does not advance it.
     touch.step(dt)
+    -- And whether the fight is ahead, which is half of what a rearward push
+    -- on the stick means. From the flying ship only: a watcher steers nobody.
+    touch.threat = (live and not watching and touch.used)
+        and threat.ahead(sim, me) or false
 
     -- A control waiting for a key takes the whole keyboard, and takes it here,
     -- before anything else in this function has looked at a press. Every key

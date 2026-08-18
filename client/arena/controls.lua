@@ -46,7 +46,7 @@ return {
      pad = "left thumb: push it away from the middle"},
     {id = "reverse", name = "reverse", cat = "fly", keys = {"down"},
      what = "Drives your ship backward.",
-     pad = "hold the reverse pad above the left stick"},
+     pad = "in a fight, push the stick away from it"},
     {id = "guns", name = "guns", cat = "gun", keys = {"space"},
      what = "Fires your rapid weapon.",
      pad = "the big pad on the right"},

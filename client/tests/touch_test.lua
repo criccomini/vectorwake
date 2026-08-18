@@ -100,27 +100,26 @@ end
 -- Lifting the thumb clears the ask.
 check("after the lift the stick is quiet", #touch.bits(0) == 0)
 
--- --- explicit reverse -------------------------------------------------------
+-- --- reverse from the stick -------------------------------------------------
 --
--- Reverse is held like thrust and independent of the aiming stick. A second
--- thumb can fire at the same time.
+-- Reverse has no pad. In a fight, a push behind the nose backs the ship out
+-- with the guns still on it; the trigger is what says fight here, and the
+-- hostile-ahead half has its own tests beside the d-pad's.
 
 local L = touch.layout(W, H, 1)
-touch.on_touch({touch = {{id = 8, pressed = true,
-                          screen_x = L.reverse.x, screen_y = L.reverse.y}}},
-               W, H, 1)
-check("the reverse pad backs up while held",
-      has(touch.bits(0), sim.BTN_REVERSE))
 touch.on_touch({touch = {{id = 9, pressed = true,
                           screen_x = L.guns.x, screen_y = L.guns.y}}}, W, H, 1)
+touch.on_touch({touch = {{id = 8, pressed = true,
+                          screen_x = 120, screen_y = 250}}}, W, H, 1)
+touch.on_touch({touch = {{id = 8, screen_x = 120, screen_y = 190}}}, W, H, 1)
 local held = touch.bits(0)
-check("reverse and guns work together",
+check("firing, a push behind the nose backs up",
       has(held, sim.BTN_REVERSE) and has(held, sim.BTN_FIRE))
-touch.release(8)
-held = touch.bits(0)
-check("lifting reverse leaves the gun held",
-      not has(held, sim.BTN_REVERSE) and has(held, sim.BTN_FIRE))
 touch.release(9)
+held = touch.bits(0)
+check("with the fight over the same push turns instead",
+      not has(held, sim.BTN_REVERSE) and not has(held, sim.BTN_FIRE))
+touch.release(8)
 
 -- --- the gun's multifire gesture -------------------------------------------
 --

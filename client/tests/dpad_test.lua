@@ -243,37 +243,209 @@ bits = held(touch.bits(heading_of(90)))
 check("with the setting off the same push is a heading, not a turn",
       not bits[sim_stub.BTN_RIGHT] and not bits[sim_stub.BTN_LEFT])
 
--- --- the reverse pad ------------------------------------------------------
+-- --- reverse -----------------------------------------------------------
 
--- Down on the pad is backwards, so the held reverse pad is not drawn beside
--- one. Two controls for the same bit would be the smaller problem; the real
--- one is a target sitting where the pad's own down arm has to be pushed.
-local function layout_has_reverse()
-    return touch.layout(W, H, 1).reverse ~= nil
+-- Nobody has a reverse pad any more. The d-pad's down arm is backwards, and
+-- the stick reads backing out of a fight from the thumb and the trigger
+-- together, so the held pad above the stick is gone from both layouts and its
+-- space belongs to steering.
+touch.dpad = false
+check("the stick has no reverse pad", touch.layout(W, H, 1).reverse == nil)
+touch.dpad = true
+check("the pad has none either", touch.layout(W, H, 1).reverse == nil)
+touch.dpad = false
+
+-- The stick's reverse is the kite, and it needs both hands: guns held, and a
+-- push far enough behind the nose. Either alone must change nothing.
+local L = touch.layout(W, H, 1)
+
+local function press_guns()
+    touch.on_touch({touch = {{id = 2, pressed = true,
+                              x = L.guns.x, y = L.guns.y}}}, W, H, 1, nil)
 end
 
-touch.dpad = false
-check("the stick keeps its reverse pad", layout_has_reverse())
-touch.dpad = true
-check("the pad does not carry one as well", not layout_has_reverse())
+-- Move only the flying thumb, keeping whatever the other holds.
+local function stick_to(degrees, distance)
+    touch.release(1)
+    local px, py = 100, 200
+    touch.on_touch({touch = {{id = 1, pressed = true, x = px, y = py}}},
+                   W, H, 1, nil)
+    local rad = degrees * math.pi / 180
+    touch.on_touch({touch = {{id = 1, x = px + math.sin(rad) * distance,
+                              y = py + math.cos(rad) * distance}}},
+                   W, H, 1, nil)
+end
 
--- Absent rather than merely undrawn: the space has to fall through to the
--- flying control, or a thumb reaching for the bottom of the pad is swallowed
--- by a target nothing is drawing any more.
---
--- Proved by pushing up from where the pad used to be. A thumb that still
--- landed on a reverse target would come back reversing; one that reached the
--- flying control comes back thrusting, and the two cannot be confused.
-touch.dpad = false
-local where = touch.layout(W, H, 1).reverse
-touch.dpad = true
+-- Not firing, a deep push behind the nose is a turn, exactly as it always
+-- was: no reverse, no thrust until the nose comes around.
 touch.release_all()
-touch.on_touch({touch = {{id = 1, pressed = true, x = where.x, y = where.y}}},
+stick_to(135, 60)
+bits = held(touch.bits(heading_of(0)))
+check("not firing, a rearward push turns toward it",
+      only(bits, sim_stub.BTN_RIGHT))
+
+-- Firing, the same push steers the tail. The error is mirrored, so the turn
+-- runs the other way, onto the thumb's opposite, and the engine runs
+-- backward once that end is close enough.
+touch.release_all()
+press_guns()
+stick_to(135, 60)
+bits = held(touch.bits(heading_of(0)))
+check("firing, the same push backs the ship out",
+      only(bits, sim_stub.BTN_FIRE, sim_stub.BTN_LEFT, sim_stub.BTN_REVERSE))
+
+-- Straight back while firing is the brake: tail already on the thumb, so no
+-- turn at all, just the engine in reverse under the guns.
+touch.release_all()
+press_guns()
+stick_to(180, 60)
+bits = held(touch.bits(heading_of(0)))
+check("firing, straight back is reverse without a turn",
+      only(bits, sim_stub.BTN_FIRE, sim_stub.BTN_REVERSE))
+
+-- Backing out waits for the tail the way thrusting waits for the nose. At a
+-- hundred and ten degrees the push is rearward enough to steer the tail, but
+-- the tail is still seventy degrees off the thumb, and an engine that fired
+-- before the ship was pointed would fling it sideways out of the fight it is
+-- trying to back out of.
+touch.release_all()
+press_guns()
+stick_to(110, 60)
+bits = held(touch.bits(heading_of(0)))
+check("firing, a rearward push waits for the tail to come around",
+      only(bits, sim_stub.BTN_FIRE, sim_stub.BTN_LEFT))
+
+-- A push in front of the nose while firing is untouched by all of this.
+touch.release_all()
+press_guns()
+stick_to(30, 60)
+bits = held(touch.bits(heading_of(0)))
+check("firing, a forward push is still thrust",
+      only(bits, sim_stub.BTN_FIRE, sim_stub.BTN_RIGHT, sim_stub.BTN_THRUST))
+
+-- A shallow rearward push while firing steers the retreat without engaging
+-- the engine, the same contract the nose has always had with thrust.
+touch.release_all()
+press_guns()
+stick_to(135, 30)
+bits = held(touch.bits(heading_of(0)))
+check("firing, a shallow rearward push aims the retreat only",
+      only(bits, sim_stub.BTN_FIRE, sim_stub.BTN_LEFT))
+
+-- The boundary is sticky. A thumb crossing a single threshold back and forth
+-- would flap the ship between its two ends several times a second, so the
+-- angle that begins backing out is past the one that ends it, and between
+-- them the stick keeps doing whichever it was doing.
+touch.release_all()
+press_guns()
+stick_to(95, 60)
+check("firing at ninety-five degrees still turns the nose",
+      held(touch.bits(heading_of(0)))[sim_stub.BTN_RIGHT])
+touch.on_touch({touch = {{id = 1,
+                          x = 100 + math.sin(math.rad(105)) * 60,
+                          y = 200 + math.cos(math.rad(105)) * 60}}},
                W, H, 1, nil)
-bits = held(touch.bits(0))
-check("and its space steers instead",
-      bits[sim_stub.BTN_THRUST] and not bits[sim_stub.BTN_REVERSE])
+check("pushed past a hundred, it backs out",
+      held(touch.bits(heading_of(0)))[sim_stub.BTN_LEFT])
+touch.on_touch({touch = {{id = 1,
+                          x = 100 + math.sin(math.rad(90)) * 60,
+                          y = 200 + math.cos(math.rad(90)) * 60}}},
+               W, H, 1, nil)
+check("back at ninety, it keeps backing",
+      held(touch.bits(heading_of(0)))[sim_stub.BTN_LEFT])
+touch.on_touch({touch = {{id = 1,
+                          x = 100 + math.sin(math.rad(75)) * 60,
+                          y = 200 + math.cos(math.rad(75)) * 60}}},
+               W, H, 1, nil)
+check("and inside eighty, the nose again",
+      held(touch.bits(heading_of(0)))[sim_stub.BTN_RIGHT])
+
+-- --- what counts as the fight ----------------------------------------------
+
+-- The trigger is half the answer; a hostile close ahead is the other half,
+-- and it is what keeps a kite whole between bursts. threat.lua reads the
+-- world through the same getters the interface draws from, so it is fed a
+-- fake world here and asked who counts.
+local threat = require("arena.threat")
+
+-- A world of two ships: mine at the middle facing north, and one other,
+-- placed per case. Headings are sim units; positions sim pixels; the sim's
+-- +y runs down, so north is negative y.
+local function world_with(other)
+    local ships = {
+        [0] = {x = 0, y = 0, team = 1, active = 1, alive = 1, heading = 0},
+        [1] = other,
+    }
+    return {
+        ship_count = function() return 2 end,
+        ship_x = function(i) return ships[i].x end,
+        ship_y = function(i) return ships[i].y end,
+        ship_team = function(i) return ships[i].team end,
+        ship_active = function(i) return ships[i].active end,
+        ship_alive = function(i) return ships[i].alive end,
+        ship_heading = function(i) return ships[i].heading end,
+    }
+end
+
+local NEAR = threat.RANGE * 0.5
+
+check("a hostile close ahead is the fight",
+      threat.ahead(world_with(
+          {x = 0, y = -NEAR, team = 2, active = 1, alive = 1}), 0))
+check("a teammate ahead is not",
+      not threat.ahead(world_with(
+          {x = 0, y = -NEAR, team = 1, active = 1, alive = 1}), 0))
+check("a hostile behind is not",
+      not threat.ahead(world_with(
+          {x = 0, y = NEAR, team = 2, active = 1, alive = 1}), 0))
+check("a hostile too far ahead is not",
+      not threat.ahead(world_with(
+          {x = 0, y = -threat.RANGE * 1.1, team = 2, active = 1, alive = 1}),
+          0))
+check("a dead hostile is not",
+      not threat.ahead(world_with(
+          {x = 0, y = -NEAR, team = 2, active = 1, alive = 0}), 0))
+check("an empty seat is not",
+      not threat.ahead(world_with(
+          {x = 0, y = -NEAR, team = 2, active = 0, alive = 1}), 0))
+check("a watcher has no fight",
+      not threat.ahead(world_with(
+          {x = 0, y = -NEAR, team = 2, active = 1, alive = 1}), nil))
+-- The cone's edge, from both sides: just inside AHEAD counts, just past it
+-- does not. Placed by angle off the nose at half range.
+local function at_angle(rad)
+    return {x = math.sin(rad) * NEAR, y = -math.cos(rad) * NEAR,
+            team = 2, active = 1, alive = 1}
+end
+check("a hostile just inside the cone counts",
+      threat.ahead(world_with(at_angle(threat.AHEAD - 0.05)), 0))
+check("and just outside it does not",
+      not threat.ahead(world_with(at_angle(threat.AHEAD + 0.05)), 0))
+
+-- What the fight-ahead signal buys the stick: the kite survives the trigger
+-- lifting. Same rearward push, guns released, hostile still ahead.
 touch.release_all()
+touch.threat = true
+stick_to(135, 60)
+bits = held(touch.bits(heading_of(0)))
+check("a threat ahead backs the ship out without the trigger",
+      only(bits, sim_stub.BTN_LEFT, sim_stub.BTN_REVERSE))
+touch.threat = false
+bits = held(touch.bits(heading_of(0)))
+check("the fight ending hands the stick back to the nose",
+      only(bits, sim_stub.BTN_RIGHT))
+
+-- Letting the trigger go with nothing ahead hands the stick back to the
+-- nose on the spot.
+touch.release_all()
+touch.threat = false
+press_guns()
+stick_to(135, 60)
+touch.bits(heading_of(0))
+touch.release(2)
+bits = held(touch.bits(heading_of(0)))
+check("releasing the guns hands the stick back to the nose",
+      only(bits, sim_stub.BTN_RIGHT))
 
 if fails > 0 then
     print(fails .. " failed")

@@ -37,9 +37,17 @@
 -- withholding the turn bit on a share of ticks, which the input path treats
 -- like any other buttons and the render smoothing hides.
 --
--- The pad takes reverse with it. Down on a pad is backwards, so the held pad
--- above the stick is not drawn beside one: two controls for the same bit, one
--- of them eating a corner of the screen the thumb is already using.
+-- Reverse has no pad of its own anywhere. On the d-pad, down is backwards.
+-- On the stick it is read from intent: in a fight, a push away from where the
+-- nose points backs the ship out with its guns still on it, which is the only
+-- moment backwards is worth a full-strength engine (and it is full strength:
+-- the simulation applies the same thrust either sign). "In a fight" is the
+-- trigger held, or a hostile close ahead, and the second half is what keeps a
+-- kite whole: guns lift between bursts to let the energy climb, and the ship
+-- must not wheel toward its own retreat every time they do. See
+-- arena/threat.lua for what counts and for the two signals deliberately not
+-- consulted. The held pad this replaces sat above the stick and went unused,
+-- because the thumb that could hold it was the thumb already steering.
 --
 -- The simulation never learns any of this happened: it receives the same
 -- button bitfield a keyboard produces.
@@ -62,6 +70,13 @@ local marks = require("arena.marks")
 local pal = require("arena.palette")
 
 local DEAD_PX = 14        -- ignore a thumb that has barely moved
+-- While firing, how far from the nose a push has to point before it means
+-- "back out" rather than "turn there", and how close it has to come back
+-- before it means turning again. Two numbers rather than one because a thumb
+-- resting near the boundary would otherwise flap between the ship's two ends
+-- several times a second.
+local REAR_ENTER = 1.75   -- radians past this, a firing push steers the tail
+local REAR_EXIT = 1.40    -- and back inside this, the nose again
 -- The pad's inert middle, as a share of its radius: a thumb resting on the
 -- anchor is resting, not steering. The stick needs no such gap because its
 -- center is wherever the thumb pressed, which cannot be pressed again.
@@ -78,9 +93,11 @@ local FAN_SWIPE_PX = 32   -- deliberate upward pull while holding the gun
 
 M.used = false            -- has this device ever reported a touch?
 -- Whether the flying thumb gets a d-pad rather than the stick. Set by the
--- arena from the player's setting. It decides what a thumb direction means,
--- and whether the reverse pad is drawn at all.
+-- arena from the player's setting; it decides what a thumb direction means.
 M.dpad = false
+-- Whether a hostile sits close ahead of the nose, set by the arena each
+-- frame from arena/threat.lua. Half of what "in a fight" means to the stick.
+M.threat = false
 M.scale = 1               -- drawable pixels per point
 -- How many of each charge slot are in hand, by slot. Set by the caller.
 M.counts = {}
@@ -127,11 +144,13 @@ M.me = nil
 M.ceiling = math.huge
 
 local stick = nil         -- {id, ox, oy, x, y}
+-- Whether the stick is currently steering the tail (firing, push rearward).
+-- Kept between reads for the hysteresis above, and dropped with the stick.
+local rear = false
 local guns = nil          -- touch id holding the guns pad
 local gun_ox, gun_oy = nil, nil
 local gun_fanned = false
 local bombs = nil
-local reverse = nil       -- touch id holding the reverse pad
 -- Which charge a tap asked for, latched and read once.
 --
 -- One pad per kind rather than a use pad and a swap pad. The simulation takes
@@ -223,17 +242,8 @@ function M.layout(w, h, s)
         end
     end
 
-    -- Nil under the pad, whose own down arm is reverse. Absent rather than
-    -- hidden, so the space falls through to the flying control below and a
-    -- thumb reaching for the bottom of the pad is not swallowed by a target
-    -- nothing is drawing.
-    local reverse_pad = nil
-    if not M.dpad then
-        reverse_pad = {x = home.x, y = y0, w = cw, r = cw / 2}
-    end
-
     return {r = r, guns = gun_pad, bombs = bomb_pad, home = home,
-            charge = charge, mine = mine, reverse = reverse_pad}
+            charge = charge, mine = mine}
 end
 
 local function near(pad, x, y, slack)
@@ -263,7 +273,6 @@ local function zone(x, y, w, h, s)
     for _, c in ipairs(L.charge) do
         if within(c, x, y) then return c.slot end   -- a number, not a name
     end
-    if L.reverse and within(L.reverse, x, y) then return "reverse" end
     if x < w * 0.55 then return "stick" end
     return nil
 end
@@ -322,8 +331,6 @@ function M.on_touch(action, w, h, s, claimed)
                 gun_fanned = false
             elseif z == "bombs" then
                 bombs = t.id
-            elseif z == "reverse" then
-                reverse = t.id
             elseif z == "mine" then
                 mined = true
             elseif type(z) == "number" then
@@ -353,19 +360,20 @@ end
 function M.release(id)
     if stick and stick.id == id then
         stick = nil
+        rear = false
         ramp.dir, ramp.held, ramp.acc = 0, 0, 1
     end
     if guns == id then
         guns, gun_ox, gun_oy, gun_fanned = nil, nil, nil, false
     end
     if bombs == id then bombs = nil end
-    if reverse == id then reverse = nil end
 end
 
 -- Lifting a finger outside the window does not always produce a release, so
 -- a lost touch has to be forgettable.
 function M.release_all()
-    stick, guns, bombs, reverse = nil, nil, nil, nil
+    stick, guns, bombs = nil, nil, nil
+    rear = false
     ramp.dir, ramp.held, ramp.acc = 0, 0, 1
     gun_ox, gun_oy, gun_fanned = nil, nil, false
 end
@@ -454,7 +462,6 @@ function M.bits(heading)
     local out = {}
     if guns then out[#out + 1] = sim.BTN_FIRE end
     if bombs then out[#out + 1] = sim.BTN_BOMB end
-    if reverse then out[#out + 1] = sim.BTN_REVERSE end
     if not stick then return out end
 
     -- The pad says which way the thumb is pushing and holds it there. The
@@ -493,13 +500,38 @@ function M.bits(heading)
     while diff > math.pi do diff = diff - math.pi * 2 end
     while diff < -math.pi do diff = diff + math.pi * 2 end
 
+    -- Which end of the ship the thumb is steering.
+    --
+    -- Not firing, always the nose: the stick points where the nose should go,
+    -- and a push behind you is a turn, exactly as it has always been.
+    --
+    -- Firing, a push far enough behind the nose steers the tail instead. The
+    -- intent it reads is the kite: guns on the fight, ship backing out of it,
+    -- which no pointing stick could say because pointing away is turning
+    -- away. Mirroring the error swings the tail onto the thumb, so small
+    -- moves of a rearward thumb steer the retreat while the guns stay
+    -- forward, and the engine below fires backward under the same alignment
+    -- gate thrust uses. The one thing this costs is a nose-first turn of
+    -- more than about a hundred degrees mid-burst; letting go of the trigger
+    -- for a beat buys it back.
+    if guns or M.threat then
+        rear = math.abs(diff) > (rear and REAR_EXIT or REAR_ENTER)
+    else
+        rear = false
+    end
+    if rear then
+        diff = diff > 0 and diff - math.pi or diff + math.pi
+    end
+
     if diff > 0.06 then out[#out + 1] = sim.BTN_RIGHT
     elseif diff < -0.06 then out[#out + 1] = sim.BTN_LEFT end
 
-    -- Thrust once the thumb is committed and the nose is roughly there, so a
-    -- hard turn does not fling the ship the way it used to be facing.
+    -- The engine once the thumb is committed and the steered end is roughly
+    -- there, so a hard turn does not fling the ship the way it used to be
+    -- facing. Backing out it is the same gate on the other end of the hull,
+    -- and the simulation's reverse is the same thrust with the sign flipped.
     if mag > THRUST_PX * M.scale and math.abs(diff) < 1.0 then
-        out[#out + 1] = sim.BTN_THRUST
+        out[#out + 1] = rear and sim.BTN_REVERSE or sim.BTN_THRUST
     end
     return out
 end
@@ -659,27 +691,6 @@ function M.draw(u, w, h, s)
                 u:ring(at, c.y - c.w * 0.33, 2.4 * s, 1.4 * s, 8,
                        pal.a(pal.CHARGE_COL, 0.3))
             end
-        end
-    end
-
-    -- Reverse belongs to flight, directly above the stick. It is a held pad,
-    -- not a direction inferred from the stick, so backing up never changes how
-    -- pointing the ship works. The pad has its own down arm and no need of it.
-    if L.reverse then
-        local c = L.reverse
-        local half = c.w / 2
-        local col = pal.THRUST
-        u:rect(c.x - half, c.y - half, c.w, c.w,
-               pal.a(col, reverse and 0.10 or 0.04))
-        u:frame(c.x - half, c.y - half, c.w, c.w, 2.2 * s,
-                pal.a(col, reverse and 0.88 or 0.42))
-        local span = c.w * 0.20
-        for i = -1, 1, 2 do
-            local cy = c.y + i * c.w * 0.12
-            u:seg(c.x - span, cy + span * 0.55,
-                  c.x, cy - span * 0.45, 2 * s, pal.a(col, 0.86))
-            u:seg(c.x, cy - span * 0.45,
-                  c.x + span, cy + span * 0.55, 2 * s, pal.a(col, 0.86))
         end
     end
 

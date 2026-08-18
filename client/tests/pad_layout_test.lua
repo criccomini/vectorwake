@@ -248,8 +248,6 @@ check("the gun pad wears a mark", marked(L.guns) > 0,
       "nothing inside the gun's rim")
 check("the bomb pad wears a mark", marked(L.bombs) > 0,
       "nothing inside the bomb's rim")
-check("the reverse pad wears a mark", marked(L.reverse) > 0,
-      "nothing inside the reverse pad")
 -- The fault this whole layout exists to fix. Both triggers were bare rings
 -- telling each other apart by being slightly different sizes, so this is the
 -- one check that must never come back green for the wrong reason: it asks how
@@ -426,9 +424,7 @@ local function controls(L2)
     -- Interactive reach rather than visible ink. A layout can look separated
     -- while two enlarged thumb targets answer the same point.
     local out = {{n = "guns", x = L2.guns.x, y = L2.guns.y,
-                  r = L2.guns.r * 1.18},
-                 {n = "reverse", x = L2.reverse.x, y = L2.reverse.y,
-                  r = L2.reverse.w * 0.65}}
+                  r = L2.guns.r * 1.18}}
     if touch.has_bomb then
         out[#out + 1] = {n = "bombs", x = L2.bombs.x, y = L2.bombs.y,
                          r = L2.bombs.r * 1.18}
@@ -566,13 +562,10 @@ do
     end
     got.guns = tap(l.guns.x, l.guns.y)
     got.bombs = tap(l.bombs.x, l.bombs.y)
-    got.reverse = tap(l.reverse.x, l.reverse.y)
     got.mine = tap(l.mine.x, l.mine.y)
     check("the gun pad fires the gun", got.guns == "guns", tostring(got.guns))
     check("the bomb pad drops a bomb", got.bombs == "bombs",
           tostring(got.bombs))
-    check("the reverse pad backs up", got.reverse == "reverse",
-          tostring(got.reverse))
     check("the mine tab lays a mine", got.mine == "mine", tostring(got.mine))
     local ok = true
     for _, c in ipairs(l.charge) do
