@@ -16,98 +16,25 @@ use crate::{ai, config, ingest_damage, nav, rating, sim};
 const KILL_TARGET: u16 = 5;
 const MATCH_TICKS: u32 = 30_000; // five minutes of arena time
 
-/// One match, fought to a result, with both pilots' credit going into `r`.
-fn bout(r: &mut rating::Rating, a: &ai::RosterEntry, b: &ai::RosterEntry, salt: u32) {
-    let mut world = sim::World::with_map(0xd0e1 ^ salt, sim::build_pit);
-    // The pit is one room and a pilot can see across it, so nothing here ever
-    // routes. Built anyway, because the brain takes one and a brain that took
-    // an Option would grow a branch nobody exercises.
-    let route = nav::Nav::build(&world.map);
-    // No opening loadout, whatever the zone ships. This is a measurement of
-    // the pilot, and thirty random greens at every spawn is not noise on that
-    // measurement -- it erases it. Over a 48-round round-robin the skill
-    // parameter moves kills 93 / 102 / 187 across the three bots with this at
-    // zero, and 313 / 290 / 299 with it at thirty: a two-to-one gap becomes
-    // flat, because everyone is firing multifire from the first second and
-    // the fight is decided before flying it matters.
-    //
-    // Which is a fact about the zone rather than about the pilots, and this
-    // harness already controls for the others -- one map, fixed spawns, sides
-    // alternated, one seed. The ladder has to rank pilots, so it holds the
-    // loadout still the same way it holds the hull still.
-    world.cfg.spawn_prizes = 0;
-    // And none on the floor either, for the same reason and by the same
-    // argument. This was true by accident until greens learned to appear near a
-    // pilot: they had been placed uniformly over a map 1024 tiles across, so a
-    // forty-tile pit almost never saw one, and the ladder has been ranking
-    // pilots in an empty room without ever saying so. Said now. With greens
-    // reachable the pit turns into a scavenger hunt and matches end with nobody
-    // having shot anybody, which is a fact about the prize economy rather than
-    // about who can fly.
-    world.cfg.prize_max = 0;
-    // And the zone's spawn scatter, for a reason the other two did not have to
-    // spell out. A radius drops a respawning ship on a random tile that far
-    // from the map's centre, and Alpha's is 250 against a pit thirty-two tiles
-    // wide: the first death throws both pilots out of the room and into the
-    // empty field around it, where they spend the rest of the bout not finding
-    // each other. It halved the kills in this tournament and I spent a while
-    // blaming a refactor for it. Zero puts them back on the map's own starts.
-    world.cfg.spawn_radius = 0;
-
-    // Alternate which pilot starts on which side, so a positional advantage
-    // in the pit cannot accumulate into a rating.
-    let (first, second) = if salt % 2 == 0 { (a, b) } else { (b, a) };
-    let s1 = world.spawn(first.class, 0, 505, 522, 0) as u8;
-    let s2 = world.spawn(second.class, 1, 519, 502, 32768) as u8;
-
-    let mut bot1 = ai::Bot::new(s1, first.skill);
-    let mut bot2 = ai::Bot::new(s2, second.skill);
-    bot1.reseed(salt.wrapping_mul(2246822519) ^ 0x1234);
-    bot2.reseed(salt.wrapping_mul(3266489917) ^ 0x5678);
-
-    let n1 = first.name.to_string();
-    let n2 = second.name.to_string();
-    let name_of = move |ship: u8| {
-        if ship == s1 {
-            n1.clone()
-        } else {
-            n2.clone()
-        }
-    };
-
-    for _ in 0..MATCH_TICKS {
-        let inputs = [
-            sim::sim_input {
-                ship: s1,
-                buttons: bot1.think(
-                    &ai::own(&world, s1),
-                    &route,
-                    bot1.looks_due().then(|| ai::scan(&world, s1)),
-                ),
-            },
-            sim::sim_input {
-                ship: s2,
-                buttons: bot2.think(
-                    &ai::own(&world, s2),
-                    &route,
-                    bot2.looks_due().then(|| ai::scan(&world, s2)),
-                ),
-            },
-        ];
-        world.step(&inputs);
-
-        let tick = world.state.tick;
-        for (victim, _killer, _paid) in ingest_damage(&world, r, &name_of) {
-            r.death(tick, &name_of(victim));
-        }
-
-        let k1 = world.state.ships[s1 as usize].kills;
-        let k2 = world.state.ships[s2 as usize].kills;
-        if k1 >= KILL_TARGET || k2 >= KILL_TARGET {
-            break;
-        }
-    }
-}
+/// What the ladder ranks pilots in.
+///
+/// It used to be an empty room, and the argument for that was good as far as
+/// it went: greens are the loudest thing in a fight, so holding them at zero
+/// holds the loadout still the way the hull is held still. Thirty of them
+/// flatten a two-to-one kill gap to nothing, which was measured here.
+///
+/// The argument was still wrong, because an empty room is not a place anybody
+/// plays and it is missing a whole mechanism. Charges are only ever bought
+/// with greens, so a pilot at zero holds none, and a branch of the AI that
+/// decides when to spend one is unreachable. A ladder measured there ranks
+/// pilots on a subset of the game and then seeds their careers in the whole
+/// of it.
+///
+/// So thirty, matched, the same figure Alpha hands out at every spawn. Held
+/// still the same way as before, which is what matters: both pilots draw the
+/// same kit off the same stream, and none of it is lying on the floor to be
+/// raced for.
+const LADDER_GREENS: u32 = 30;
 
 /// Run a full round-robin `rounds` times and return the resulting ladder.
 ///
@@ -124,11 +51,33 @@ pub fn run_roster(roster: &[ai::RosterEntry], rounds: u32, verbose: bool) -> rat
     let mut r = rating::Rating::new();
     r.set_anchor(ai::ANCHOR, ai::ANCHOR_RATING);
 
+    // Alpha, and the same bout every harness that ranks pilots fights.
+    //
+    // This was the pit, a room thirty-two tiles across, and the reason to
+    // leave is not taste. Aim is a gain on the lead, so what a misread costs
+    // grows with how far the round has to fly; at knife range there is no lead
+    // to get wrong and the trait that carries a fight cannot show up at all.
+    // Measured: 0.15, 0.50 and 0.95 came out of the pit on 1219, 1179 and
+    // 1203, a gap of minus sixteen across almost the whole dial, while the
+    // same three on this map separate ten pairs out of ten at a z of eight.
+    //
+    // A ladder is the prior a career starts from, and the careers happen here.
+    let (bytes, route, at) = real_map_fixture();
     let mut salt = 0u32;
     for round in 0..rounds {
         for i in 0..roster.len() {
             for j in (i + 1)..roster.len() {
-                bout(&mut r, &roster[i], &roster[j], salt);
+                duel(
+                    &bytes,
+                    &route,
+                    at,
+                    &mut r,
+                    &roster[i],
+                    &roster[j],
+                    salt,
+                    LADDER_GREENS,
+                    None,
+                );
                 salt = salt.wrapping_add(1);
             }
         }
@@ -1803,6 +1752,224 @@ is the one to read the board by."
     })
 }
 
+/* ---- the real-map fixture ------------------------------------------
+ *
+ * The ladder and every harness that ranks pilots share one room and one
+ * bout, because two of them drifting apart is how this file ended up
+ * with a tournament that measured something nobody plays.
+ */
+
+/// A comma-separated list from the environment, or the default.
+///
+/// Sharding, and nothing cleverer. Seven hulls at three economies is
+/// sixty-three thousand bouts, which is most of a day on one core and a
+/// couple of hours split seven ways, so the run has to be splittable
+/// without editing the test between shards.
+pub(crate) fn env_list(key: &str, fallback: &[u32]) -> Vec<u32> {
+    match std::env::var(key) {
+        Ok(s) if !s.trim().is_empty() => {
+            s.split(',').filter_map(|t| t.trim().parse().ok()).collect()
+        }
+        _ => fallback.to_vec(),
+    }
+}
+
+/// Tiles between the two pilots at the start of a bout.
+///
+/// Inside `ai::SIGHT`, which is sixty tiles, so they have each other from
+/// the first tick and the measurement is of fighting rather than of
+/// walking. A tournament where the pilots never meet measures the map.
+pub(crate) const APART: usize = 24;
+
+/// Somewhere two pilots can be put down with room to fly.
+///
+/// Alpha is three per cent wall in clusters with long lanes between, so
+/// most of it is open and a pair like this is easy to find; it is still
+/// worth finding rather than assuming, because a hard-coded tile that
+/// lands inside a cluster spawns nobody and the bout reads as a draw.
+/// The map, its route and a place to put two pilots, built once.
+pub(crate) fn alpha_map() -> Vec<u8> {
+    // Both the crate directory a test runs in and the repository root a binary
+    // is started from, because the ladder is generated by
+    // `vectorwake-server calibrate` and measured by `cargo test`.
+    const WHERE: [&str; 2] = [
+        "../catalog/zones/alpha/alpha.vwmap",
+        "catalog/zones/alpha/alpha.vwmap",
+    ];
+    WHERE
+        .iter()
+        .find_map(|p| std::fs::read(p).ok())
+        .unwrap_or_else(|| panic!("the alpha map ships here; looked in {WHERE:?}"))
+}
+
+pub(crate) fn real_map_fixture() -> (Vec<u8>, nav::Nav, ((i32, i32), (i32, i32))) {
+    let bytes = alpha_map();
+    let probe = sim::World::from_packed(0x5eed, &bytes).expect("a map");
+    let at = open_pair(&probe.map);
+    let route = nav::Nav::build(&probe.map);
+    (bytes, route, at)
+}
+
+fn open_pair(map: &sim::sim_map) -> ((i32, i32), (i32, i32)) {
+    let clear = |cx: usize, cy: usize| {
+        (cy.saturating_sub(4)..=cy + 4).all(|y| {
+            (cx.saturating_sub(4)..=cx + 4).all(|x| {
+                x < sim::MAP_TILES
+                    && y < sim::MAP_TILES
+                    && map.tile[y * sim::MAP_TILES + x] & 0x0f == 0
+            })
+        })
+    };
+    // Outward from the middle, so the pair sits in the part of the map a
+    // room actually uses rather than against the boundary.
+    for r in 0..400usize {
+        for (dx, dy) in [(1i32, 0i32), (0, 1), (-1, 0), (0, -1)] {
+            let cx = (512 + dx * r as i32) as usize;
+            let cy = (512 + dy * r as i32) as usize;
+            if clear(cx, cy) && clear(cx + APART, cy) {
+                return ((cx as i32, cy as i32), ((cx + APART) as i32, cy as i32));
+            }
+        }
+    }
+    panic!("no open pair on this map");
+}
+
+/// One bout on a real map, returning the kills each pilot took.
+///
+/// `calibrate::bout` cannot be reused: it builds the pit, and it builds a
+/// route per bout, which on a map this size is most of the cost.
+pub(crate) fn duel(
+    bytes: &[u8],
+    route: &nav::Nav,
+    at: ((i32, i32), (i32, i32)),
+    r: &mut rating::Rating,
+    a: &ai::RosterEntry,
+    b: &ai::RosterEntry,
+    salt: u32,
+    greens: u32,
+    handicap: Option<(ai::Knob, f32)>,
+) -> (u16, u16) {
+    let mut world = sim::World::from_packed(0xd0e1 ^ salt, bytes).expect("a map");
+    // The kit is handed out here rather than inherited from the zone, and
+    // the floor is empty, so both pilots carry exactly `greens` and the
+    // only thing left varying between them is the pilot.
+    //
+    // This used to be a bool that meant "let Alpha do what it does", which
+    // is `spawn_prizes = 30` and `prize_max = 42`. The thirty was matched
+    // and fine. The forty-two on the floor were not: whoever scavenged
+    // better carried a kit the other did not have, and that landed on top
+    // of every built number this harness ever printed. A tournament that
+    // ranks pilots cannot also be a race for the floor.
+    world.cfg.spawn_prizes = 0;
+    world.cfg.prize_max = 0;
+    // Always. A scatter of 250 on a map this size throws them apart on
+    // the first death and the rest of the bout is two pilots looking for
+    // each other.
+    world.cfg.spawn_radius = 0;
+
+    // Sides alternate, so a corner cannot accumulate into a rating.
+    // Sides alternate, and so does the heading each side is given.
+    //
+    // Alternating the pilots alone was not enough. A null run of this
+    // fixture, two identical pilots and nothing handicapped, came back at
+    // 63.6% to one of them: the two starts are not equivalent, and every
+    // row measured here was being read against a coin that was not one.
+    // Whatever the asymmetry is between these two tiles on this map, the
+    // pilot who draws each start also draws each facing now.
+    let flip = salt % 2 == 0;
+    let (first, second) = if flip { (a, b) } else { (b, a) };
+    let (h1, h2) = if salt % 4 < 2 { (0, 32768) } else { (32768, 0) };
+    let s1 = world.spawn(first.class, 0, at.0 .0, at.0 .1, h1) as u8;
+    let s2 = world.spawn(second.class, 1, at.1 .0, at.1 .1, h2) as u8;
+
+    let mut bot1 = ai::Bot::new(s1, first.skill);
+    let mut bot2 = ai::Bot::new(s2, second.skill);
+    // The ablation's handicap always rides on `a`, whichever side it drew.
+    if let Some((knob, as_if)) = handicap {
+        if salt % 2 == 0 {
+            bot1.tune(knob, as_if);
+        } else {
+            bot2.tune(knob, as_if);
+        }
+    }
+    bot1.reseed(salt.wrapping_mul(2246822519) ^ 0x1234);
+    bot2.reseed(salt.wrapping_mul(3266489917) ^ 0x5678);
+
+    // The same stream on both sides, so the two pilots draw the same kit
+    // on their first life, the same on their second, and so on.
+    //
+    // The hull tournament gives each side its own stream on purpose: it is
+    // measuring hulls at a matched bounty, and matched on the number while
+    // inexact on what it bought is the situation a player is in. This one
+    // ranks pilots, so kit luck is not realism here, it is the thing being
+    // controlled for. Identical draws cost nothing and take a whole source
+    // of variance out of a measurement that needs every bout it has.
+    //
+    // Nonzero because xorshift that reaches zero stays there, and would
+    // then hand out the same green for the rest of the bout.
+    let seed = (salt.wrapping_mul(2654435761) ^ 0x9E37_79B9) | 1;
+    let mut prng = [seed, seed];
+    let seats = [s1, s2];
+    for k in 0..2 {
+        green(&mut world, seats[k] as usize, greens, &mut prng[k]);
+    }
+    let mut alive_was = [true; 2];
+
+    let n1 = first.name.to_string();
+    let n2 = second.name.to_string();
+    let name_of = move |ship: u8| if ship == s1 { n1.clone() } else { n2.clone() };
+
+    for _ in 0..MATCH_TICKS {
+        let inputs = [
+            sim::sim_input {
+                ship: s1,
+                buttons: bot1.think(
+                    &ai::own(&world, s1),
+                    route,
+                    bot1.looks_due().then(|| ai::scan(&world, s1)),
+                ),
+            },
+            sim::sim_input {
+                ship: s2,
+                buttons: bot2.think(
+                    &ai::own(&world, s2),
+                    route,
+                    bot2.looks_due().then(|| ai::scan(&world, s2)),
+                ),
+            },
+        ];
+        world.step(&inputs);
+        let tick = world.state.tick;
+        for (victim, _killer, _paid) in crate::ingest_damage(&world, r, &name_of) {
+            r.death(tick, &name_of(victim));
+        }
+        // Death clears the tech tree, so the kit goes back on at the
+        // dead-to-alive edge. Without this a bout at sixty greens is one
+        // built exchange followed by four bare ones, which measures
+        // something nobody asked about.
+        for k in 0..2 {
+            let alive = world.state.ships[seats[k] as usize].alive != 0;
+            if alive && !alive_was[k] {
+                green(&mut world, seats[k] as usize, greens, &mut prng[k]);
+            }
+            alive_was[k] = alive;
+        }
+        let k1 = world.state.ships[s1 as usize].kills;
+        let k2 = world.state.ships[s2 as usize].kills;
+        if k1 >= KILL_TARGET || k2 >= KILL_TARGET {
+            break;
+        }
+    }
+    let k1 = world.state.ships[s1 as usize].kills;
+    let k2 = world.state.ships[s2 as usize].kills;
+    // Back into the caller's order, whichever side each started on.
+    if salt % 2 == 0 {
+        (k1, k2)
+    } else {
+        (k2, k1)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1822,9 +1989,15 @@ mod tests {
     /// ```
     ///
     /// The old implementation made strong pilots fire less and fight closer,
-    /// which canceled their better reactions and aim. Range and fire reserve
-    /// are now neutral, while reaction time, aim, awareness and loadout use
-    /// carry the skill difference. This long sample keeps them honest.
+    /// which canceled their better reactions and aim.
+    ///
+    /// What carries it now is aim, and in this room the charges as well. Both
+    /// facts arrived the same way. Ablating six knobs on two hulls left only
+    /// aim outside a coin, so the other four were retired; and this test then
+    /// failed at 1198 against 1202, because the pit was an empty room, a pilot
+    /// with no greens holds no charges, and the one surviving knob besides aim
+    /// had nothing to decide. The kit is matched at thirty now, which is what
+    /// the room a person plays in hands out.
     #[test]
     fn skill_decides_a_match_between_equal_hulls() {
         let roster = vec![
@@ -1845,8 +2018,29 @@ mod tests {
             },
         ];
         let r = run_roster(&roster, 60, false);
-        let (lo, hi) = (r.rating_of("low"), r.rating_of("high"));
-        assert!(hi > lo, "high {hi:.0} should outrank low {lo:.0}");
+        let (lo, mid, hi) = (r.rating_of("low"), r.rating_of("mid"), r.rating_of("high"));
+        println!("  0.15 {lo:.0}, 0.50 {mid:.0}, 0.95 {hi:.0}");
+        // What sixty rounds a pair can carry, and no more.
+        //
+        // A pair fought sixty times has an interval of thirteen points of win
+        // rate on it, and the Elo gap on top of that swings about thirty
+        // between runs, measured five times over in
+        // `is_the_built_ladder_a_measurement`. So `hi > lo` passes half the
+        // time on a dial that does nothing at all, and `hi > mid` cannot be
+        // resolved here whether it is true or not: this run reads 1226 and
+        // 1224 for 0.50 and 0.95, which is a tie in the same way a coin is.
+        //
+        // The claim that survives at this size is that the bottom of the dial
+        // is beaten, and it is worth guarding because it is exactly what broke:
+        // in the pit these three read 1219, 1179 and 1203, with the *worst*
+        // pilot on top. `skill_on_a_real_map` is the powered version of the
+        // same question, at three hundred bouts a pair over every hull, and it
+        // is where the ordering of the whole dial is settled.
+        assert!(
+            (mid - lo).min(hi - lo) >= 40.0,
+            "0.15 should be last by 40 or more, and reads {lo:.0} against \
+             {mid:.0} and {hi:.0}"
+        );
     }
 
     /// What the ladder does do, and a real regression guard: it runs, it
@@ -2408,204 +2602,6 @@ mod skill_tests {
 mod real_map_tests {
     use super::*;
 
-    /// A comma-separated list from the environment, or the default.
-    ///
-    /// Sharding, and nothing cleverer. Seven hulls at three economies is
-    /// sixty-three thousand bouts, which is most of a day on one core and a
-    /// couple of hours split seven ways, so the run has to be splittable
-    /// without editing the test between shards.
-    pub(super) fn env_list(key: &str, fallback: &[u32]) -> Vec<u32> {
-        match std::env::var(key) {
-            Ok(s) if !s.trim().is_empty() => {
-                s.split(',').filter_map(|t| t.trim().parse().ok()).collect()
-            }
-            _ => fallback.to_vec(),
-        }
-    }
-
-    /// Tiles between the two pilots at the start of a bout.
-    ///
-    /// Inside `ai::SIGHT`, which is sixty tiles, so they have each other from
-    /// the first tick and the measurement is of fighting rather than of
-    /// walking. A tournament where the pilots never meet measures the map.
-    const APART: usize = 24;
-
-    /// Somewhere two pilots can be put down with room to fly.
-    ///
-    /// Alpha is three per cent wall in clusters with long lanes between, so
-    /// most of it is open and a pair like this is easy to find; it is still
-    /// worth finding rather than assuming, because a hard-coded tile that
-    /// lands inside a cluster spawns nobody and the bout reads as a draw.
-    /// The map, its route and a place to put two pilots, built once.
-    pub(super) fn real_map_fixture() -> (Vec<u8>, nav::Nav, ((i32, i32), (i32, i32))) {
-        let bytes =
-            std::fs::read("../catalog/zones/alpha/alpha.vwmap").expect("the alpha map ships here");
-        let probe = sim::World::from_packed(0x5eed, &bytes).expect("a map");
-        let at = open_pair(&probe.map);
-        let route = nav::Nav::build(&probe.map);
-        (bytes, route, at)
-    }
-
-    fn open_pair(map: &sim::sim_map) -> ((i32, i32), (i32, i32)) {
-        let clear = |cx: usize, cy: usize| {
-            (cy.saturating_sub(4)..=cy + 4).all(|y| {
-                (cx.saturating_sub(4)..=cx + 4).all(|x| {
-                    x < sim::MAP_TILES
-                        && y < sim::MAP_TILES
-                        && map.tile[y * sim::MAP_TILES + x] & 0x0f == 0
-                })
-            })
-        };
-        // Outward from the middle, so the pair sits in the part of the map a
-        // room actually uses rather than against the boundary.
-        for r in 0..400usize {
-            for (dx, dy) in [(1i32, 0i32), (0, 1), (-1, 0), (0, -1)] {
-                let cx = (512 + dx * r as i32) as usize;
-                let cy = (512 + dy * r as i32) as usize;
-                if clear(cx, cy) && clear(cx + APART, cy) {
-                    return ((cx as i32, cy as i32), ((cx + APART) as i32, cy as i32));
-                }
-            }
-        }
-        panic!("no open pair on this map");
-    }
-
-    /// One bout on a real map, returning the kills each pilot took.
-    ///
-    /// `calibrate::bout` cannot be reused: it builds the pit, and it builds a
-    /// route per bout, which on a map this size is most of the cost.
-    pub(super) fn duel(
-        bytes: &[u8],
-        route: &nav::Nav,
-        at: ((i32, i32), (i32, i32)),
-        r: &mut rating::Rating,
-        a: &ai::RosterEntry,
-        b: &ai::RosterEntry,
-        salt: u32,
-        greens: u32,
-        handicap: Option<(ai::Knob, f32)>,
-    ) -> (u16, u16) {
-        let mut world = sim::World::from_packed(0xd0e1 ^ salt, bytes).expect("a map");
-        // The kit is handed out here rather than inherited from the zone, and
-        // the floor is empty, so both pilots carry exactly `greens` and the
-        // only thing left varying between them is the pilot.
-        //
-        // This used to be a bool that meant "let Alpha do what it does", which
-        // is `spawn_prizes = 30` and `prize_max = 42`. The thirty was matched
-        // and fine. The forty-two on the floor were not: whoever scavenged
-        // better carried a kit the other did not have, and that landed on top
-        // of every built number this harness ever printed. A tournament that
-        // ranks pilots cannot also be a race for the floor.
-        world.cfg.spawn_prizes = 0;
-        world.cfg.prize_max = 0;
-        // Always. A scatter of 250 on a map this size throws them apart on
-        // the first death and the rest of the bout is two pilots looking for
-        // each other.
-        world.cfg.spawn_radius = 0;
-
-        // Sides alternate, so a corner cannot accumulate into a rating.
-        // Sides alternate, and so does the heading each side is given.
-        //
-        // Alternating the pilots alone was not enough. A null run of this
-        // fixture, two identical pilots and nothing handicapped, came back at
-        // 63.6% to one of them: the two starts are not equivalent, and every
-        // row measured here was being read against a coin that was not one.
-        // Whatever the asymmetry is between these two tiles on this map, the
-        // pilot who draws each start also draws each facing now.
-        let flip = salt % 2 == 0;
-        let (first, second) = if flip { (a, b) } else { (b, a) };
-        let (h1, h2) = if salt % 4 < 2 { (0, 32768) } else { (32768, 0) };
-        let s1 = world.spawn(first.class, 0, at.0 .0, at.0 .1, h1) as u8;
-        let s2 = world.spawn(second.class, 1, at.1 .0, at.1 .1, h2) as u8;
-
-        let mut bot1 = ai::Bot::new(s1, first.skill);
-        let mut bot2 = ai::Bot::new(s2, second.skill);
-        // The ablation's handicap always rides on `a`, whichever side it drew.
-        if let Some((knob, as_if)) = handicap {
-            if salt % 2 == 0 {
-                bot1.tune(knob, as_if);
-            } else {
-                bot2.tune(knob, as_if);
-            }
-        }
-        bot1.reseed(salt.wrapping_mul(2246822519) ^ 0x1234);
-        bot2.reseed(salt.wrapping_mul(3266489917) ^ 0x5678);
-
-        // The same stream on both sides, so the two pilots draw the same kit
-        // on their first life, the same on their second, and so on.
-        //
-        // The hull tournament gives each side its own stream on purpose: it is
-        // measuring hulls at a matched bounty, and matched on the number while
-        // inexact on what it bought is the situation a player is in. This one
-        // ranks pilots, so kit luck is not realism here, it is the thing being
-        // controlled for. Identical draws cost nothing and take a whole source
-        // of variance out of a measurement that needs every bout it has.
-        //
-        // Nonzero because xorshift that reaches zero stays there, and would
-        // then hand out the same green for the rest of the bout.
-        let seed = (salt.wrapping_mul(2654435761) ^ 0x9E37_79B9) | 1;
-        let mut prng = [seed, seed];
-        let seats = [s1, s2];
-        for k in 0..2 {
-            green(&mut world, seats[k] as usize, greens, &mut prng[k]);
-        }
-        let mut alive_was = [true; 2];
-
-        let n1 = first.name.to_string();
-        let n2 = second.name.to_string();
-        let name_of = move |ship: u8| if ship == s1 { n1.clone() } else { n2.clone() };
-
-        for _ in 0..MATCH_TICKS {
-            let inputs = [
-                sim::sim_input {
-                    ship: s1,
-                    buttons: bot1.think(
-                        &ai::own(&world, s1),
-                        route,
-                        bot1.looks_due().then(|| ai::scan(&world, s1)),
-                    ),
-                },
-                sim::sim_input {
-                    ship: s2,
-                    buttons: bot2.think(
-                        &ai::own(&world, s2),
-                        route,
-                        bot2.looks_due().then(|| ai::scan(&world, s2)),
-                    ),
-                },
-            ];
-            world.step(&inputs);
-            let tick = world.state.tick;
-            for (victim, _killer, _paid) in crate::ingest_damage(&world, r, &name_of) {
-                r.death(tick, &name_of(victim));
-            }
-            // Death clears the tech tree, so the kit goes back on at the
-            // dead-to-alive edge. Without this a bout at sixty greens is one
-            // built exchange followed by four bare ones, which measures
-            // something nobody asked about.
-            for k in 0..2 {
-                let alive = world.state.ships[seats[k] as usize].alive != 0;
-                if alive && !alive_was[k] {
-                    green(&mut world, seats[k] as usize, greens, &mut prng[k]);
-                }
-                alive_was[k] = alive;
-            }
-            let k1 = world.state.ships[s1 as usize].kills;
-            let k2 = world.state.ships[s2 as usize].kills;
-            if k1 >= KILL_TARGET || k2 >= KILL_TARGET {
-                break;
-            }
-        }
-        let k1 = world.state.ships[s1 as usize].kills;
-        let k2 = world.state.ships[s2 as usize].kills;
-        // Back into the caller's order, whichever side each started on.
-        if salt % 2 == 0 {
-            (k1, k2)
-        } else {
-            (k2, k1)
-        }
-    }
-
     /// The same question the pit asks, asked on the map people play.
     ///
     ///     cargo test --release --manifest-path server/Cargo.toml \\
@@ -2671,8 +2667,7 @@ mod real_map_tests {
         // nothing either way. Buying resolution for an effect already known to
         // be small, not lowering a bar to meet it.
         let per_pair = env_list("VW_BOUTS", &[300])[0];
-        let bytes =
-            std::fs::read("../catalog/zones/alpha/alpha.vwmap").expect("the alpha map ships here");
+        let bytes = alpha_map();
         let probe = sim::World::from_packed(0x5eed, &bytes).expect("a map");
         let at = open_pair(&probe.map);
         let route = nav::Nav::build(&probe.map);
@@ -2927,8 +2922,7 @@ mod real_map_tests {
     #[test]
     #[ignore]
     fn time_one_real_map_bout() {
-        let bytes =
-            std::fs::read("../catalog/zones/alpha/alpha.vwmap").expect("the alpha map ships here");
+        let bytes = alpha_map();
         let probe = sim::World::from_packed(0x5eed, &bytes).expect("a map");
         let at = open_pair(&probe.map);
         println!("spawns at {:?} and {:?}", at.0, at.1);
@@ -3009,12 +3003,8 @@ mod ablation {
                     // than an assumption. Two identical pilots, alternating
                     // sides. Anything far from half here is the fixture talking.
                     None,
-                    Some(ai::Knob::React),
-                    Some(ai::Knob::Look),
                     Some(ai::Knob::AimErr),
                     Some(ai::Knob::Permission),
-                    Some(ai::Knob::Tolerance),
-                    Some(ai::Knob::Range),
                 ] {
                     let mut r = rating::Rating::new();
                     let (mut w, mut l, mut d) = (0u32, 0u32, 0u32);
