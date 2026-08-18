@@ -2648,12 +2648,18 @@ mod real_map_tests {
         .into_iter()
         .map(|c| (c as u8, ai::CLASS_NAMES[c as usize]))
         .collect();
-        // Bare, then the two kits a pilot in this zone actually fights in.
-        // Alpha hands out thirty at every spawn, so that is the game as it
-        // ships; sixty asks whether the flattening that greens do to a skill
-        // gap keeps going or levels off. Bare stays, because it is the only
-        // one of the three that separates flying from carrying.
-        let economies = env_list("VW_GREENS", &[0, 30, 60]);
+        // The two kits a pilot in this zone actually fights in. Alpha hands
+        // out thirty at every spawn, so that is the game as it ships, and
+        // sixty asks whether the flattening that greens do to a skill gap
+        // keeps going or levels off.
+        //
+        // Bare is not one of them. It was worth running while the dial was
+        // inverted, because it separates flying from carrying, but nobody
+        // plays it: a pilot with no greens holds no charges at all, so a
+        // whole branch of the AI is unreachable and a row of the skill table
+        // cannot be measured there. Ranking pilots in a room that does not
+        // exist was the habit worth dropping.
+        let economies = env_list("VW_GREENS", &[30, 60]);
         // Three hundred, which is what the doc comment above has always said
         // and what the constant drifted away from: the tables print an
         // interval of eight points, and six is what three hundred buys.
