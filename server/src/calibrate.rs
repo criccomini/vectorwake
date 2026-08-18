@@ -2613,7 +2613,17 @@ mod real_map_tests {
         // error should carry. If the built economy separates on one and not
         // the other, that is a fact about a ship rather than about the dial.
         const HULLS: [(u8, &str); 2] = [(1, "Wedge, Bombardier"), (0, "Apex, Duelist")];
-        const PER_PAIR: u32 = 200;
+        // Three hundred, which is what the doc comment above has always said
+        // and what the constant drifted away from: the tables print an
+        // interval of eight points, and six is what three hundred buys.
+        //
+        // It is also what the weakest block needs to be worth running. A built
+        // Wedge separates at about 54% pooled, and seeing 54% at z of 3 takes
+        // fourteen hundred decided bouts; two hundred a pair delivers eleven
+        // hundred once the draws are out, which lands on 2.7 and answers
+        // nothing either way. Buying resolution for an effect already known to
+        // be small, not lowering a bar to meet it.
+        const PER_PAIR: u32 = 300;
         let bytes =
             std::fs::read("../catalog/zones/alpha/alpha.vwmap").expect("the alpha map ships here");
         let probe = sim::World::from_packed(0x5eed, &bytes).expect("a map");
