@@ -2136,8 +2136,20 @@ impl Bot {
         // ships, which is the economy the ablation found nothing working in.
         // Aim carries a bare field and stops mattering once multifire and
         // shrapnel are on the hull, because then nobody is aiming, they are
-        // spraying. What is left to be good at is knowing when the trade has
-        // gone and leaving with enough bar to come back.
+        // spraying.
+        //
+        // The good pilot is the one that stays. Written the other way round
+        // first, on the reading that discipline is leaving early, and it cost
+        // both ladders: the bare field fell from +141 to +88 and the built one
+        // from +60 to +39. A pilot that breaks off at a third of a bar never
+        // converts the advantage it just won, and in a race to five kills the
+        // one who will not finish anybody loses to the one who will.
+        //
+        // Which is the second time tonight this game answered that question
+        // the same way, greed being the first. Committing is rewarded here and
+        // flinching is punished, so the poor pilot is the one that leaves with
+        // the fight still winnable, and "wastes its escape window" is about
+        // judging the moment rather than about caution.
         let value = (o.value as f32 / 60.0).min(1.0);
         let numbers = self
             .seen
@@ -2147,8 +2159,7 @@ impl Bot {
             .seen
             .threat
             .map_or(0.0, |t| if t.eta < 55.0 { 0.07 } else { 0.0 });
-        (0.24
-            + self.dial(Knob::Discipline) * 0.13
+        (0.37 - self.dial(Knob::Discipline) * 0.13
             + value * 0.10
             + numbers.min(3.0) * 0.035
             + threat
