@@ -2384,6 +2384,33 @@ mod skill_tests {
         }
         let lo = seen.first().expect("a roster").1;
         let hi = seen.last().expect("a roster").1;
-        println!("\n  weakest {lo:.0}, strongest {hi:.0}, gap {:+.0}", hi - lo);
+        let gap = hi - lo;
+        println!("\n  weakest {lo:.0}, strongest {hi:.0}, gap {gap:+.0}");
+
+        // Red on purpose, and this is what it reports today:
+        //
+        //     0.30  1215.3      0.75  1197.2
+        //     0.45  1206.7      0.90  1189.2
+        //     0.60  1190.4      gap    -26
+        //
+        // Which is inverted, r = -0.88, and small enough to be nothing: 26
+        // points is a 54% expected result, so the roster's worst pilot beats
+        // its best about as often as a coin. The design asks this dial to
+        // drive reaction, aim, discipline, awareness, greed and map use, and
+        // the population director rests on a 0.35 pilot being an easier
+        // evening than a 0.85 one.
+        //
+        // One caveat this cannot settle: the tournament is fought in the pit,
+        // a thirty-two tile room with no greens and no scatter, where three
+        // of the six traits have nothing to do. It is still the harness that
+        // produced zone/ladder.json, so the ratings every bot in production
+        // starts from are seeded by this measurement whatever it is measuring.
+        //
+        // A hundred points is a 64% result: the least this could mean and
+        // still mean something.
+        assert!(
+            gap >= 100.0,
+            "the skill dial should make a ladder, and makes {gap:+.0} points of one"
+        );
     }
 }
