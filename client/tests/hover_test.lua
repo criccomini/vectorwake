@@ -198,6 +198,13 @@ do
     check("an add-on is named", shows("bounce"))
     check("and a doubled one is counted", shows("shrapnel x2"))
 
+    -- Jargon is spelled out. The card is the one place explaining rather than
+    -- reporting, and a mark reading "prox" teaches nobody what the round does,
+    -- which is the whole reason the card exists.
+    kit.mods = {[0] = {[2] = 1}}
+    frame(point_on("gun"))
+    check("jargon gets its long form", shows("proximity detonation"))
+
     -- Multifire folded is multifire the next shot will not do, so the card
     -- says so rather than listing it flat.
     kit.mods = {[0] = {[0] = 1}}

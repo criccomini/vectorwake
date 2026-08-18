@@ -2503,8 +2503,9 @@ local function wrapped(s, px, max)
     return out
 end
 
--- What the greens have put on a trigger, named the way the feed names them
--- when one lands, so the card and the message that taught it agree.
+-- What the greens have put on a trigger, named at whatever length teaches
+-- best: `long` where a short name is jargon, and the feed's own name for the
+-- rest, so a pilot reading "bounce" here has already seen "gun bounce" go by.
 --
 -- A rung is only worth saying once it has moved: every hull flies on the
 -- bottom one, and a card that opened with "level 1" would be spending its
@@ -2518,7 +2519,7 @@ local function trigger_kit(me, t)
     for i = 1, #pal.MODS do
         local n = marks.mod(me, t, i - 1)
         if n > 0 then
-            local name = pal.MODS[i].name
+            local name = pal.MODS[i].long or pal.MODS[i].name
             -- Multifire is the one add-on a pilot can switch off, and a card
             -- that listed it while the fan was folded would be naming a thing
             -- the next shot will not do.

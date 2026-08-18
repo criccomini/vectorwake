@@ -116,10 +116,17 @@ M.UPGRADES = {
 -- a level: a green's color says what *kind* of thing it is, and its shape
 -- says nothing, so the eye sorts the map into "stat", "level", "add-on"
 -- rather than into nineteen things it has to learn.
+--
+-- Three lengths, for three places with three amounts of room. `short` is the
+-- mark's own letters, `name` is what the feed says as a green lands, and
+-- `long` is for somewhere that is explaining rather than reporting: the
+-- hover card in the corner, which exists because "prox" teaches nobody what
+-- the round does. Only the ones whose short name is jargon carry a `long`,
+-- and a caller that wants one falls back to `name`.
 M.MODS = {
     {name = "multi",    short = "MUL"},
     {name = "bounce",   short = "BNC"},
-    {name = "prox",     short = "PRX"},
+    {name = "prox",     short = "PRX", long = "proximity detonation"},
     {name = "shrapnel", short = "SHR"},
     {name = "freeze",   short = "FRZ"},
     {name = "repel",    short = "RPL"},
