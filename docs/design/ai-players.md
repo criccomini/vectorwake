@@ -99,6 +99,49 @@ run the same code and differ in how well they execute:
 A single skill dial from 0 to 1 drives all of them, with per-archetype jitter, so
 a 0.7 Duelist and a 0.7 Ambusher are about equally hard and feel nothing alike.
 
+### What the dial actually drove
+
+That table described an intention for a long time rather than the code. Three of
+its six rows were decisions no pilot varied: the share of the bar a pilot would
+not spend attacking, how it chose greens, and the energy at which it broke off a
+fight were the same numbers for everybody in the game. What the dial did vary
+was mostly a permission line at 0.35 deciding who was allowed to throw a bomb or
+spend a charge at all.
+
+A tournament on alpha found the consequence. Bots were held one tile class
+apart, spawned inside sight of each other so the measurement was of fighting
+rather than walking, and fought three hundred bouts a pair. The ladder came out
+*inverted*, the roster's weakest pilot on top, because the pilot forbidden to
+bomb keeps its bar and a bare bomb is a poor trade. With the prize economy
+running it inverted the other way, because a built bomb is an excellent one. A
+parameter whose sign depends on whether greens are on the map is two games with
+a threshold between them, not a difficulty setting.
+
+`calibrate`'s ablation is what settles which knob is doing what: two pilots
+identical but for one parameter, and a null row of two pilots identical in every
+parameter, so every reading is a distance from the coin this fixture actually
+deals rather than from the one it was assumed to deal. Anybody changing these
+numbers should run it, because the first three attempts here were all wrong in
+ways only it caught, including one where greed was tuned backwards and the
+reckless side won 64% of its bouts.
+
+Two findings from it are worth keeping, because they are facts about this game
+rather than about the code that was fixed.
+
+**Aim decides a bare field and almost nothing else.** A pilot that misreads a
+target's motion loses about 37 points of win rate with no greens on the map, and
+two and a half with them. Once multifire and shrapnel are on a hull nobody is
+aiming, they are spraying, and precision stops separating anybody. Whatever
+makes a pilot good in a built room is not marksmanship.
+
+**Error has to persist to matter.** Aim error was an angle drawn fresh around
+the correct bearing ten to twenty times a second, so a burst sprayed a cone
+centred on the truth and the mean shot was a perfect one. It measured as doing
+nothing, correctly. Error that survives being averaged is error that is held
+across a look and scaled by the thing being estimated: a misread of where the
+target will be, which grows with how fast they cross and how far the round must
+fly, and is zero against something standing still.
+
 ## Survival and greening
 
 Energy is both ammunition and health, so survival is part of weapon discipline.
