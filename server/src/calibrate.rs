@@ -2387,24 +2387,13 @@ mod skill_tests {
         let gap = hi - lo;
         println!("\n  weakest {lo:.0}, strongest {hi:.0}, gap {gap:+.0}");
 
-        // Red on purpose, and this is what it reports today:
-        //
-        //     0.30  1215.3      0.75  1197.2
-        //     0.45  1206.7      0.90  1189.2
-        //     0.60  1190.4      gap    -26
-        //
-        // Which is inverted, r = -0.88, and small enough to be nothing: 26
-        // points is a 54% expected result, so the roster's worst pilot beats
-        // its best about as often as a coin. The design asks this dial to
-        // drive reaction, aim, discipline, awareness, greed and map use, and
-        // the population director rests on a 0.35 pilot being an easier
-        // evening than a 0.85 one.
-        //
-        // One caveat this cannot settle: the tournament is fought in the pit,
-        // a thirty-two tile room with no greens and no scatter, where three
-        // of the six traits have nothing to do. It is still the harness that
-        // produced zone/ladder.json, so the ratings every bot in production
-        // starts from are seeded by this measurement whatever it is measuring.
+        // This read -26 once, inverted at r = -0.88, with the roster's worst
+        // pilot beating its best about as often as a coin lands. What it was
+        // measuring was a permission line at 0.35 deciding who was allowed to
+        // bomb, and in a pit with no greens the pilot forbidden to bomb keeps
+        // its bar and wins. See `skill_on_a_real_map` for the same question
+        // asked where people play, and the ablation next door for which of
+        // the dial's knobs was carrying it.
         //
         // A hundred points is a 64% result: the least this could mean and
         // still mean something.
@@ -2596,7 +2585,9 @@ mod real_map_tests {
             })
             .collect();
 
+        let mut gaps: Vec<(bool, f64)> = Vec::new();
         for greens in [false, true] {
+            let mut rates: Vec<f64> = Vec::new();
             println!(
                 "\n=== alpha, spawns {APART} tiles apart, {PER_PAIR} bouts a pair, greens {} ===",
                 if greens { "on" } else { "off" }
@@ -2621,6 +2612,7 @@ mod real_map_tests {
                     // it is a dial that does nothing.
                     let decided = (wa + wb).max(1) as f64;
                     let rate = wa as f64 / decided;
+                    rates.push(rate);
                     let ci = 1.96 * (rate * (1.0 - rate) / decided).sqrt();
                     println!(
                         "  {:.2} v {:.2}   {wa:>5}  {wb:>5}  {drew:>5}   {:>5.1}%   +/- {:>4.1}",
@@ -2642,7 +2634,33 @@ mod real_map_tests {
             }
             let lo = r.rating_of(&roster[0].name);
             let hi = r.rating_of(&roster[roster.len() - 1].name);
-            println!("   weakest {lo:.0}, strongest {hi:.0}, gap {:+.0}", hi - lo);
+            let gap = hi - lo;
+            println!("   weakest {lo:.0}, strongest {hi:.0}, gap {gap:+.0}");
+
+            // Every pair leaning the right way, which is the property that
+            // survives a small effect. Ten independent pairs all landing on
+            // one side of a coin is a thousand to one, so this catches a real
+            // but weak dial where any single pair's interval would not.
+            let leaning = rates.iter().filter(|r| **r < 0.5).count();
+            assert_eq!(
+                leaning,
+                rates.len(),
+                "every pair should favour the stronger pilot, and {} of {} did",
+                leaning,
+                rates.len()
+            );
+            gaps.push((greens, gap));
+        }
+
+        // And the ladder worth having, which is a separate question from
+        // pointing the right way. A hundred points is a 64% result: the least
+        // this could mean and still mean something.
+        for (greens, gap) in gaps {
+            assert!(
+                gap >= 100.0,
+                "with greens {}, the dial makes {gap:+.0} points of ladder",
+                if greens { "on" } else { "off" }
+            );
         }
     }
 
