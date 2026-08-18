@@ -2408,6 +2408,21 @@ mod skill_tests {
 mod real_map_tests {
     use super::*;
 
+    /// A comma-separated list from the environment, or the default.
+    ///
+    /// Sharding, and nothing cleverer. Seven hulls at three economies is
+    /// sixty-three thousand bouts, which is most of a day on one core and a
+    /// couple of hours split seven ways, so the run has to be splittable
+    /// without editing the test between shards.
+    pub(super) fn env_list(key: &str, fallback: &[u32]) -> Vec<u32> {
+        match std::env::var(key) {
+            Ok(s) if !s.trim().is_empty() => {
+                s.split(',').filter_map(|t| t.trim().parse().ok()).collect()
+            }
+            _ => fallback.to_vec(),
+        }
+    }
+
     /// Tiles between the two pilots at the start of a bout.
     ///
     /// Inside `ai::SIGHT`, which is sixty tiles, so they have each other from
@@ -2467,17 +2482,22 @@ mod real_map_tests {
         a: &ai::RosterEntry,
         b: &ai::RosterEntry,
         salt: u32,
-        greens: bool,
+        greens: u32,
         handicap: Option<(ai::Knob, f32)>,
     ) -> (u16, u16) {
         let mut world = sim::World::from_packed(0xd0e1 ^ salt, bytes).expect("a map");
-        if !greens {
-            // The same three the pit tournament holds still, for the same
-            // reason: this ranks pilots, so the loadout is held the way the
-            // hull is held.
-            world.cfg.spawn_prizes = 0;
-            world.cfg.prize_max = 0;
-        }
+        // The kit is handed out here rather than inherited from the zone, and
+        // the floor is empty, so both pilots carry exactly `greens` and the
+        // only thing left varying between them is the pilot.
+        //
+        // This used to be a bool that meant "let Alpha do what it does", which
+        // is `spawn_prizes = 30` and `prize_max = 42`. The thirty was matched
+        // and fine. The forty-two on the floor were not: whoever scavenged
+        // better carried a kit the other did not have, and that landed on top
+        // of every built number this harness ever printed. A tournament that
+        // ranks pilots cannot also be a race for the floor.
+        world.cfg.spawn_prizes = 0;
+        world.cfg.prize_max = 0;
         // Always. A scatter of 250 on a map this size throws them apart on
         // the first death and the rest of the bout is two pilots looking for
         // each other.
@@ -2511,6 +2531,26 @@ mod real_map_tests {
         bot1.reseed(salt.wrapping_mul(2246822519) ^ 0x1234);
         bot2.reseed(salt.wrapping_mul(3266489917) ^ 0x5678);
 
+        // The same stream on both sides, so the two pilots draw the same kit
+        // on their first life, the same on their second, and so on.
+        //
+        // The hull tournament gives each side its own stream on purpose: it is
+        // measuring hulls at a matched bounty, and matched on the number while
+        // inexact on what it bought is the situation a player is in. This one
+        // ranks pilots, so kit luck is not realism here, it is the thing being
+        // controlled for. Identical draws cost nothing and take a whole source
+        // of variance out of a measurement that needs every bout it has.
+        //
+        // Nonzero because xorshift that reaches zero stays there, and would
+        // then hand out the same green for the rest of the bout.
+        let seed = (salt.wrapping_mul(2654435761) ^ 0x9E37_79B9) | 1;
+        let mut prng = [seed, seed];
+        let seats = [s1, s2];
+        for k in 0..2 {
+            green(&mut world, seats[k] as usize, greens, &mut prng[k]);
+        }
+        let mut alive_was = [true; 2];
+
         let n1 = first.name.to_string();
         let n2 = second.name.to_string();
         let name_of = move |ship: u8| if ship == s1 { n1.clone() } else { n2.clone() };
@@ -2538,6 +2578,17 @@ mod real_map_tests {
             let tick = world.state.tick;
             for (victim, _killer, _paid) in crate::ingest_damage(&world, r, &name_of) {
                 r.death(tick, &name_of(victim));
+            }
+            // Death clears the tech tree, so the kit goes back on at the
+            // dead-to-alive edge. Without this a bout at sixty greens is one
+            // built exchange followed by four bare ones, which measures
+            // something nobody asked about.
+            for k in 0..2 {
+                let alive = world.state.ships[seats[k] as usize].alive != 0;
+                if alive && !alive_was[k] {
+                    green(&mut world, seats[k] as usize, greens, &mut prng[k]);
+                }
+                alive_was[k] = alive;
             }
             let k1 = world.state.ships[s1 as usize].kills;
             let k2 = world.state.ships[s2 as usize].kills;
@@ -2580,16 +2631,29 @@ mod real_map_tests {
     #[test]
     #[ignore]
     fn skill_on_a_real_map() {
-        // Two hulls, because every number this printed before came from one.
+        // Every hull, because the first two disagreed about nearly everything
+        // and there is no reason the other five agree with either. Class 1 is
+        // the Wedge, a Bombardier, and the hull this was measured on all
+        // night: the bomb specialist, judged on a fix to bomb judgement. Class
+        // 0 is the Apex, a Duelist that fights with its gun. Those two alone
+        // put the same knob at a coin and at twenty-four points.
         //
-        // Class 1 is the Wedge, whose doctrine is Bombardier, and it is the
-        // hull this was measured on all night: the bomb specialist, judged on
-        // a fix to bomb judgement, in a built field where bombs and shrapnel
-        // together are the most stochastic thing this game does. Class 0 is
-        // the Apex, a Duelist, which fights with its gun and where the aim
-        // error should carry. If the built economy separates on one and not
-        // the other, that is a fact about a ship rather than about the dial.
-        const HULLS: [(u8, &str); 2] = [(1, "Wedge, Bombardier"), (0, "Apex, Duelist")];
+        // Narrow it with VW_HULLS to shard across processes, which is how this
+        // is actually run: seven hulls times three economies is more bouts
+        // than one core should carry.
+        let hulls: Vec<(u8, &str)> = env_list(
+            "VW_HULLS",
+            &(0..ai::CLASS_NAMES.len() as u32).collect::<Vec<_>>(),
+        )
+        .into_iter()
+        .map(|c| (c as u8, ai::CLASS_NAMES[c as usize]))
+        .collect();
+        // Bare, then the two kits a pilot in this zone actually fights in.
+        // Alpha hands out thirty at every spawn, so that is the game as it
+        // ships; sixty asks whether the flattening that greens do to a skill
+        // gap keeps going or levels off. Bare stays, because it is the only
+        // one of the three that separates flying from carrying.
+        let economies = env_list("VW_GREENS", &[0, 30, 60]);
         // Three hundred, which is what the doc comment above has always said
         // and what the constant drifted away from: the tables print an
         // interval of eight points, and six is what three hundred buys.
@@ -2600,14 +2664,14 @@ mod real_map_tests {
         // hundred once the draws are out, which lands on 2.7 and answers
         // nothing either way. Buying resolution for an effect already known to
         // be small, not lowering a bar to meet it.
-        const PER_PAIR: u32 = 300;
+        let per_pair = env_list("VW_BOUTS", &[300])[0];
         let bytes =
             std::fs::read("../catalog/zones/alpha/alpha.vwmap").expect("the alpha map ships here");
         let probe = sim::World::from_packed(0x5eed, &bytes).expect("a map");
         let at = open_pair(&probe.map);
         let route = nav::Nav::build(&probe.map);
-        let mut gaps: Vec<(bool, f64, f64, f64, f64, f64, usize, usize)> = Vec::new();
-        for (hull, hull_name) in HULLS {
+        let mut gaps: Vec<(u32, f64, f64, f64, f64, f64, usize, usize)> = Vec::new();
+        for (hull, hull_name) in hulls {
             let roster: Vec<ai::RosterEntry> = [0.30f32, 0.45, 0.60, 0.75, 0.90]
                 .iter()
                 .map(|s| ai::RosterEntry {
@@ -2617,7 +2681,7 @@ mod real_map_tests {
                 })
                 .collect();
 
-            for greens in [false, true] {
+            for greens in economies.iter().copied() {
                 println!("\n### {hull_name} ###");
                 let mut rates: Vec<f64> = Vec::new();
                 // The roster's two ends, 0.30 against 0.90, which is the span
@@ -2626,11 +2690,13 @@ mod real_map_tests {
                 let mut ends = 0.0f64;
                 let (mut strong_wins, mut all_decided) = (0u64, 0u64);
                 println!(
-                "\n=== alpha, spawns {APART} tiles apart, {PER_PAIR} bouts a pair, greens {} ===",
-                if greens { "on" } else { "off" }
-            );
+                    "\n=== alpha, spawns {APART} tiles apart, {per_pair} bouts a pair, \
+                 {greens} greens a life ==="
+                );
                 let mut r = rating::Rating::new();
-                let mut salt = if greens { 500_000u32 } else { 0 };
+                // A window per economy, so two of them are never the same
+                // bouts wearing different kit.
+                let mut salt = greens * 500_000;
 
                 // The coin this fixture actually deals, measured rather than
                 // assumed, on the same salts the pairs use so it sees the same
@@ -2667,7 +2733,7 @@ mod real_map_tests {
                         skill: 0.60,
                     };
                     let mut s = salt;
-                    for _ in 0..PER_PAIR {
+                    for _ in 0..per_pair {
                         let (ka, kb) =
                             duel(&bytes, &route, at, &mut null, &mid, &same, s, greens, None);
                         s = s.wrapping_add(1);
@@ -2688,7 +2754,7 @@ mod real_map_tests {
                     for j in (i + 1)..roster.len() {
                         let (a, b) = (&roster[i], &roster[j]);
                         let (mut wa, mut wb, mut drew) = (0u32, 0u32, 0u32);
-                        for _ in 0..PER_PAIR {
+                        for _ in 0..per_pair {
                             let (ka, kb) =
                                 duel(&bytes, &route, at, &mut r, a, b, salt, greens, None);
                             salt = salt.wrapping_add(1);
@@ -2828,23 +2894,23 @@ mod real_map_tests {
         const ENDS: f64 = 0.64;
         const Z: f64 = 3.0;
         for (greens, gap, coin, ends, edge, z, leaning, pairs) in gaps {
-            let economy = if greens { "on" } else { "off" };
+            let economy = format!("{greens} greens");
             assert!(
                 (coin - 0.5).abs() <= 0.15,
-                "with greens {economy}, the fixture deals {:.1}% to two identical pilots, \
+                "at {economy}, the fixture deals {:.1}% to two identical pilots, \
                  so nothing else in this block can be read",
                 coin * 100.0
             );
             assert!(
                 ends >= ENDS,
-                "with greens {economy}, 0.90 takes {:.1}% of its decided bouts off 0.30 \
+                "at {economy}, 0.90 takes {:.1}% of its decided bouts off 0.30 \
                  (wanted {:.0}%), on a ladder of {gap:+.0}",
                 ends * 100.0,
                 ENDS * 100.0
             );
             assert!(
                 z >= Z,
-                "with greens {economy}, the stronger pilot takes {:.1}% of all decided bouts, \
+                "at {economy}, the stronger pilot takes {:.1}% of all decided bouts, \
                  z {z:.1} against a wanted {Z:.1} ({leaning} of {pairs} pairs beat the coin)",
                 edge * 100.0
             );
@@ -2875,9 +2941,7 @@ mod real_map_tests {
         let t = std::time::Instant::now();
         let mut kills = (0u32, 0u32);
         for salt in 0..10u32 {
-            let (a, b) = duel(
-                &bytes, &route, at, &mut r, &weak, &strong, salt, false, None,
-            );
+            let (a, b) = duel(&bytes, &route, at, &mut r, &weak, &strong, salt, 0, None);
             kills.0 += a as u32;
             kills.1 += b as u32;
         }
@@ -2926,10 +2990,10 @@ mod ablation {
                 skill: 0.90,
             };
 
-            for greens in [false, true] {
+            for greens in env_list("VW_GREENS", &[0, 30, 60]).iter().copied() {
                 println!(
-                    "\n=== {hull_name}: one knob at 0.30, the rest at 0.90, greens {} ===",
-                    if greens { "on" } else { "off" }
+                    "\n=== {hull_name}: one knob at 0.30, the rest at 0.90, \
+                     {greens} greens a life ==="
                 );
                 println!("  knob          handicapped wins   rate      95% ci");
                 for knob in [
@@ -3018,7 +3082,7 @@ mod stability {
             })
             .collect();
 
-        for greens in [false, true] {
+        for greens in env_list("VW_GREENS", &[0, 30]).iter().copied() {
             let mut gaps: Vec<f64> = Vec::new();
             for run in 0..RUNS {
                 let mut r = rating::Rating::new();
@@ -3042,8 +3106,7 @@ mod stability {
             let sd =
                 (gaps.iter().map(|g| (g - mean).powi(2)).sum::<f64>() / gaps.len() as f64).sqrt();
             println!(
-                "\n  greens {}: gaps {:?}",
-                if greens { "on " } else { "off" },
+                "\n  {greens} greens: gaps {:?}",
                 gaps.iter().map(|g| g.round() as i64).collect::<Vec<_>>()
             );
             println!("  mean {mean:+.0}, spread {sd:.0}");
@@ -3085,7 +3148,7 @@ mod draws {
         let mut tally: std::collections::BTreeMap<u16, u32> = Default::default();
         let mut decided = 0u32;
         for salt in 0..60u32 {
-            let (ka, kb) = duel(&bytes, &route, at, &mut r, &a, &b, salt, true, None);
+            let (ka, kb) = duel(&bytes, &route, at, &mut r, &a, &b, salt, 30, None);
             if ka == kb {
                 *tally.entry(ka).or_default() += 1;
             } else {
@@ -3136,7 +3199,7 @@ mod fixture {
             class: 1,
             skill: 0.60,
         };
-        for greens in [false, true] {
+        for greens in env_list("VW_GREENS", &[0, 30]).iter().copied() {
             // Indexed by salt % 4, which is what picks the start tile and the
             // facing between them.
             let mut won = [0u32; 4];
@@ -3151,10 +3214,7 @@ mod fixture {
                     std::cmp::Ordering::Equal => {}
                 }
             }
-            println!(
-                "\n=== two pilots at 0.60, nothing between them, greens {} ===",
-                if greens { "on" } else { "off" }
-            );
+            println!("\n=== two pilots at 0.60, nothing between them, {greens} greens a life ===");
             println!("   salt%4   a starts   a faces     a won   a lost    rate");
             for s in 0..4 {
                 let decided = (won[s] + lost[s]).max(1) as f64;
@@ -3182,6 +3242,75 @@ mod fixture {
             println!(
                 "   all      {w:>7}  {l:>7}   {:>5.1}%",
                 w as f64 / (w + l).max(1) as f64 * 100.0
+            );
+        }
+    }
+}
+
+mod kit {
+    use super::real_map_tests::*;
+    use super::*;
+
+    /// Does a pilot in this harness actually carry what it was handed?
+    ///
+    ///     cargo test --release --manifest-path server/Cargo.toml \
+    ///       the_kit_is_matched_and_real -- --ignored --nocapture
+    ///
+    /// A green count that silently grants nothing would make every economy in
+    /// the sweep the bare one and the tables would still look plausible, so
+    /// this counts what is on the hull rather than what was asked for. Rust
+    /// takes a small toll, so thirty greens buys fewer than thirty steps and
+    /// the interesting numbers are that the count rises with the offer, that
+    /// both sides get the same, and that the ceiling is reached at sixty.
+    #[test]
+    #[ignore]
+    fn the_kit_is_matched_and_real() {
+        let (bytes, route, at) = real_map_fixture();
+        let _ = route;
+        for greens in [0u32, 30, 60] {
+            let mut world = sim::World::from_packed(0xd0e1, &bytes).expect("a map");
+            world.cfg.spawn_prizes = 0;
+            world.cfg.prize_max = 0;
+            world.cfg.spawn_radius = 0;
+            let s1 = world.spawn(0, 0, at.0 .0, at.0 .1, 0) as u8;
+            let s2 = world.spawn(0, 1, at.1 .0, at.1 .1, 32768) as u8;
+            let seed = 0x9E37_79B9u32 | 1;
+            let mut prng = [seed, seed];
+            for (k, s) in [s1, s2].iter().enumerate() {
+                green(&mut world, *s as usize, greens, &mut prng[k]);
+            }
+            let held = |s: u8| {
+                let sh = &world.state.ships[s as usize];
+                let ups: u32 = sh.up.iter().map(|u| *u as u32).sum();
+                let lvl: u32 = sh.level.iter().map(|l| *l as u32).sum();
+                // Two bits a rung, six add-ons a trigger, which is the same
+                // packing `sim_mod_get` reads.
+                let mods: u32 = (0..sim::TRIG_COUNT)
+                    .flat_map(|t| (0..sim::MOD_COUNT).map(move |m| (t, m)))
+                    .map(|(t, m)| ((sh.mods[t] >> (m * 2)) & 3) as u32)
+                    .sum();
+                let ch: u32 = sh.charge.iter().map(|c| *c as u32).sum();
+                (ups, lvl, mods, ch)
+            };
+            let (u1, l1, m1, c1) = held(s1);
+            let (u2, l2, m2, c2) = held(s2);
+            println!(
+                "  {greens:>2} greens: a has {u1} stat steps, gun+bomb {l1}, {m1} add-ons, \
+                 {c1} charges; b has {u2}/{l2}/{m2}/{c2}"
+            );
+            if greens == 0 {
+                assert_eq!(
+                    (u1, l1, m1, c1),
+                    (0, 0, 0, 0),
+                    "a bare pilot should carry nothing"
+                );
+            } else {
+                assert!(u1 + l1 + m1 + c1 > 0, "{greens} greens bought nothing");
+            }
+            assert_eq!(
+                (u1, l1, m1, c1),
+                (u2, l2, m2, c2),
+                "at {greens} greens the two pilots drew different kit"
             );
         }
     }
