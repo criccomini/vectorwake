@@ -2637,7 +2637,52 @@ mod real_map_tests {
             );
                 let mut r = rating::Rating::new();
                 let mut salt = if greens { 500_000u32 } else { 0 };
+
+                // The coin this fixture actually deals, measured rather than
+                // assumed. The ablation grew one of these and reads 62% in a
+                // bare field for two pilots identical in every respect, which
+                // is a bias bigger than most of the effects on the table
+                // below; this tournament had no such row and every rate in it
+                // was being read against a half. It is not a side effect
+                // either, since sides, teams, facings and seats all alternate
+                // on the salt: something else about the fixture is doing it,
+                // and until it is found the honest thing is to print it.
+                //
+                // It rides on the same salts the pairs use, so it sees the
+                // same starts in the same order. `roster[i]` is always the
+                // weaker pilot of a pair, and the row below says how much of
+                // a head start that seat gets for free.
+                let mut null = rating::Rating::new();
+                let (mut nw, mut nl, mut nd) = (0u32, 0u32, 0u32);
+                {
+                    let mid = ai::RosterEntry {
+                        name: "null_a".into(),
+                        class: hull,
+                        skill: 0.60,
+                    };
+                    let same = ai::RosterEntry {
+                        name: "null_b".into(),
+                        class: hull,
+                        skill: 0.60,
+                    };
+                    let mut s = salt;
+                    for _ in 0..PER_PAIR {
+                        let (ka, kb) =
+                            duel(&bytes, &route, at, &mut null, &mid, &same, s, greens, None);
+                        s = s.wrapping_add(1);
+                        match ka.cmp(&kb) {
+                            std::cmp::Ordering::Greater => nw += 1,
+                            std::cmp::Ordering::Less => nl += 1,
+                            std::cmp::Ordering::Equal => nd += 1,
+                        }
+                    }
+                }
+                let coin = nw as f64 / (nw + nl).max(1) as f64;
                 println!("   pair            won   lost   drew    rate      95% ci");
+                println!(
+                    "  null, both 0.60 {nw:>5}  {nl:>5}  {nd:>5}   {:>5.1}%   <- the coin",
+                    coin * 100.0
+                );
                 for i in 0..roster.len() {
                     for j in (i + 1)..roster.len() {
                         let (a, b) = (&roster[i], &roster[j]);
@@ -2688,7 +2733,8 @@ mod real_map_tests {
                 // Counted here, judged at the end. Asserting inside the loop
                 // aborted the run on the first economy and hid the second, which
                 // is the half a change is usually aimed at.
-                let leaning = rates.iter().filter(|r| **r < 0.5).count();
+                // Against the coin the fixture deals, not against a half.
+                let leaning = rates.iter().filter(|r| **r < coin).count();
                 // What the stronger pilot takes of the decided bouts, over
                 // every pair rather than the two ends. The Elo gap uses two of
                 // five pilots and throws the middle three away, and
@@ -2704,10 +2750,11 @@ mod real_map_tests {
                 // data's gap sits three. Same measurement, better instrument.
                 let edge = 1.0 - rates.iter().sum::<f64>() / rates.len() as f64;
                 println!(
-                    "   {leaning} of {} pairs favour the stronger pilot; ends {:.1}%, all pairs {:.1}%",
+                    "   {leaning} of {} pairs beat the coin; ends {:.1}%, all pairs {:.1}%, coin {:.1}%",
                     rates.len(),
                     ends * 100.0,
-                    edge * 100.0
+                    edge * 100.0,
+                    100.0 - coin * 100.0
                 );
                 gaps.push((greens, gap, ends, edge, leaning, rates.len()));
             }
@@ -2999,6 +3046,94 @@ mod draws {
         println!("\n  decided {decided} of 60");
         for (kills, n) in &tally {
             println!("  drawn {n:>3} at {kills}-{kills}");
+        }
+    }
+}
+
+mod fixture {
+    use super::real_map_tests::*;
+    use super::*;
+
+    /// Where the twelve points the null row keeps reading actually come from.
+    ///
+    ///     cargo test --release --manifest-path server/Cargo.toml \
+    ///       what_the_coin_is_weighted_by -- --ignored --nocapture
+    ///
+    /// Two pilots identical in class, skill, tuning and everything else, and
+    /// one of them takes 62% of the decided bouts in a bare field. It has been
+    /// written down as unexplained since the ablation grew a null row, and
+    /// living with it was a mistake: it is larger than most of the effects
+    /// being measured against it, and it is the reason a pair reading 63.7%
+    /// cannot be told from a pair of equals.
+    ///
+    /// `duel` alternates four things on the salt, and the argument for the
+    /// bias being harmless was that all four cancel. So split the same bouts
+    /// by what the salt decided and see which slice is lopsided. A bias that
+    /// really is positional shows up as two halves at 62 and 38 that a caller
+    /// is folding wrongly; a bias in every slice is not positional at all and
+    /// the four alternations are beside the point.
+    #[test]
+    #[ignore]
+    fn what_the_coin_is_weighted_by() {
+        const BOUTS: u32 = 400;
+        let (bytes, route, at) = real_map_fixture();
+        let a = ai::RosterEntry {
+            name: "a".into(),
+            class: 1,
+            skill: 0.60,
+        };
+        let b = ai::RosterEntry {
+            name: "b".into(),
+            class: 1,
+            skill: 0.60,
+        };
+        for greens in [false, true] {
+            // Indexed by salt % 4, which is what picks the start tile and the
+            // facing between them.
+            let mut won = [0u32; 4];
+            let mut lost = [0u32; 4];
+            let mut r = rating::Rating::new();
+            for salt in 0..BOUTS {
+                let (ka, kb) = duel(&bytes, &route, at, &mut r, &a, &b, salt, greens, None);
+                let s = (salt % 4) as usize;
+                match ka.cmp(&kb) {
+                    std::cmp::Ordering::Greater => won[s] += 1,
+                    std::cmp::Ordering::Less => lost[s] += 1,
+                    std::cmp::Ordering::Equal => {}
+                }
+            }
+            println!(
+                "\n=== two pilots at 0.60, nothing between them, greens {} ===",
+                if greens { "on" } else { "off" }
+            );
+            println!("   salt%4   a starts   a faces     a won   a lost    rate");
+            for s in 0..4 {
+                let decided = (won[s] + lost[s]).max(1) as f64;
+                println!(
+                    "     {s}      {}      {}   {:>7}  {:>7}   {:>5.1}%",
+                    if s % 2 == 0 { "at.0" } else { "at.1" },
+                    if s < 2 {
+                        if s % 2 == 0 {
+                            "north"
+                        } else {
+                            "south"
+                        }
+                    } else if s % 2 == 0 {
+                        "south"
+                    } else {
+                        "north"
+                    },
+                    won[s],
+                    lost[s],
+                    won[s] as f64 / decided * 100.0
+                );
+            }
+            let w: u32 = won.iter().sum();
+            let l: u32 = lost.iter().sum();
+            println!(
+                "   all      {w:>7}  {l:>7}   {:>5.1}%",
+                w as f64 / (w + l).max(1) as f64 * 100.0
+            );
         }
     }
 }
