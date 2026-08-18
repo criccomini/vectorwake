@@ -2414,3 +2414,252 @@ mod skill_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod real_map_tests {
+    use super::*;
+
+    /// Tiles between the two pilots at the start of a bout.
+    ///
+    /// Inside `ai::SIGHT`, which is sixty tiles, so they have each other from
+    /// the first tick and the measurement is of fighting rather than of
+    /// walking. A tournament where the pilots never meet measures the map.
+    const APART: usize = 24;
+
+    /// Somewhere two pilots can be put down with room to fly.
+    ///
+    /// Alpha is three per cent wall in clusters with long lanes between, so
+    /// most of it is open and a pair like this is easy to find; it is still
+    /// worth finding rather than assuming, because a hard-coded tile that
+    /// lands inside a cluster spawns nobody and the bout reads as a draw.
+    fn open_pair(map: &sim::sim_map) -> ((i32, i32), (i32, i32)) {
+        let clear = |cx: usize, cy: usize| {
+            (cy.saturating_sub(4)..=cy + 4).all(|y| {
+                (cx.saturating_sub(4)..=cx + 4).all(|x| {
+                    x < sim::MAP_TILES
+                        && y < sim::MAP_TILES
+                        && map.tile[y * sim::MAP_TILES + x] & 0x0f == 0
+                })
+            })
+        };
+        // Outward from the middle, so the pair sits in the part of the map a
+        // room actually uses rather than against the boundary.
+        for r in 0..400usize {
+            for (dx, dy) in [(1i32, 0i32), (0, 1), (-1, 0), (0, -1)] {
+                let cx = (512 + dx * r as i32) as usize;
+                let cy = (512 + dy * r as i32) as usize;
+                if clear(cx, cy) && clear(cx + APART, cy) {
+                    return ((cx as i32, cy as i32), ((cx + APART) as i32, cy as i32));
+                }
+            }
+        }
+        panic!("no open pair on this map");
+    }
+
+    /// One bout on a real map, returning the kills each pilot took.
+    ///
+    /// `calibrate::bout` cannot be reused: it builds the pit, and it builds a
+    /// route per bout, which on a map this size is most of the cost.
+    fn duel(
+        bytes: &[u8],
+        route: &nav::Nav,
+        at: ((i32, i32), (i32, i32)),
+        r: &mut rating::Rating,
+        a: &ai::RosterEntry,
+        b: &ai::RosterEntry,
+        salt: u32,
+        greens: bool,
+    ) -> (u16, u16) {
+        let mut world = sim::World::from_packed(0xd0e1 ^ salt, bytes).expect("a map");
+        if !greens {
+            // The same three the pit tournament holds still, for the same
+            // reason: this ranks pilots, so the loadout is held the way the
+            // hull is held.
+            world.cfg.spawn_prizes = 0;
+            world.cfg.prize_max = 0;
+        }
+        // Always. A scatter of 250 on a map this size throws them apart on
+        // the first death and the rest of the bout is two pilots looking for
+        // each other.
+        world.cfg.spawn_radius = 0;
+
+        // Sides alternate, so a corner cannot accumulate into a rating.
+        let (first, second) = if salt % 2 == 0 { (a, b) } else { (b, a) };
+        let s1 = world.spawn(first.class, 0, at.0 .0, at.0 .1, 0) as u8;
+        let s2 = world.spawn(second.class, 1, at.1 .0, at.1 .1, 32768) as u8;
+
+        let mut bot1 = ai::Bot::new(s1, first.skill);
+        let mut bot2 = ai::Bot::new(s2, second.skill);
+        bot1.reseed(salt.wrapping_mul(2246822519) ^ 0x1234);
+        bot2.reseed(salt.wrapping_mul(3266489917) ^ 0x5678);
+
+        let n1 = first.name.to_string();
+        let n2 = second.name.to_string();
+        let name_of = move |ship: u8| if ship == s1 { n1.clone() } else { n2.clone() };
+
+        for _ in 0..MATCH_TICKS {
+            let inputs = [
+                sim::sim_input {
+                    ship: s1,
+                    buttons: bot1.think(
+                        &ai::own(&world, s1),
+                        route,
+                        bot1.looks_due().then(|| ai::scan(&world, s1)),
+                    ),
+                },
+                sim::sim_input {
+                    ship: s2,
+                    buttons: bot2.think(
+                        &ai::own(&world, s2),
+                        route,
+                        bot2.looks_due().then(|| ai::scan(&world, s2)),
+                    ),
+                },
+            ];
+            world.step(&inputs);
+            let tick = world.state.tick;
+            for (victim, _killer, _paid) in crate::ingest_damage(&world, r, &name_of) {
+                r.death(tick, &name_of(victim));
+            }
+            let k1 = world.state.ships[s1 as usize].kills;
+            let k2 = world.state.ships[s2 as usize].kills;
+            if k1 >= KILL_TARGET || k2 >= KILL_TARGET {
+                break;
+            }
+        }
+        let k1 = world.state.ships[s1 as usize].kills;
+        let k2 = world.state.ships[s2 as usize].kills;
+        // Back into the caller's order, whichever side each started on.
+        if salt % 2 == 0 {
+            (k1, k2)
+        } else {
+            (k2, k1)
+        }
+    }
+
+    /// The same question the pit asks, asked on the map people play.
+    ///
+    ///     cargo test --release --manifest-path server/Cargo.toml \\
+    ///       skill_on_a_real_map -- --ignored --nocapture
+    ///
+    /// Three things the pit run could not do, and the reasons it could not
+    /// are exactly the objections to believing it:
+    ///
+    /// Alpha rather than a thirty-two tile box, so map use, awareness and
+    /// route choice have somewhere to happen. Spawns twenty-four tiles apart
+    /// and a scatter of zero, so the pilots have each other from the first
+    /// tick and the tournament measures fighting instead of walking. And
+    /// enough bouts for the answer to be worth reading: three hundred a pair,
+    /// which puts the ninety-five per cent interval on a win rate at about
+    /// six points, so a real advantage cannot hide inside the noise and a
+    /// coin cannot look like one.
+    ///
+    /// Run twice over, without the prize economy and with it. The first is
+    /// the pit's own control, holding the loadout still the way the hull is
+    /// held. The second is the game as it ships, because greed and build
+    /// planning are two of the six traits the dial is supposed to drive and
+    /// a field with no greens on it cannot show either.
+    #[test]
+    #[ignore]
+    fn skill_on_a_real_map() {
+        const PER_PAIR: u32 = 300;
+        let bytes =
+            std::fs::read("../catalog/zones/alpha/alpha.vwmap").expect("the alpha map ships here");
+        let probe = sim::World::from_packed(0x5eed, &bytes).expect("a map");
+        let at = open_pair(&probe.map);
+        let route = nav::Nav::build(&probe.map);
+        let roster: Vec<ai::RosterEntry> = [0.30f32, 0.45, 0.60, 0.75, 0.90]
+            .iter()
+            .map(|s| ai::RosterEntry {
+                name: format!("skill{:02}", (s * 100.0) as u32),
+                class: 1,
+                skill: *s,
+            })
+            .collect();
+
+        for greens in [false, true] {
+            println!(
+                "\n=== alpha, spawns {APART} tiles apart, {PER_PAIR} bouts a pair, greens {} ===",
+                if greens { "on" } else { "off" }
+            );
+            let mut r = rating::Rating::new();
+            let mut salt = if greens { 500_000u32 } else { 0 };
+            println!("   pair            won   lost   drew    rate      95% ci");
+            for i in 0..roster.len() {
+                for j in (i + 1)..roster.len() {
+                    let (a, b) = (&roster[i], &roster[j]);
+                    let (mut wa, mut wb, mut drew) = (0u32, 0u32, 0u32);
+                    for _ in 0..PER_PAIR {
+                        let (ka, kb) = duel(&bytes, &route, at, &mut r, a, b, salt, greens);
+                        salt = salt.wrapping_add(1);
+                        match ka.cmp(&kb) {
+                            std::cmp::Ordering::Greater => wa += 1,
+                            std::cmp::Ordering::Less => wb += 1,
+                            std::cmp::Ordering::Equal => drew += 1,
+                        }
+                    }
+                    // The weaker pilot's share of the decided bouts. Half of
+                    // it is a dial that does nothing.
+                    let decided = (wa + wb).max(1) as f64;
+                    let rate = wa as f64 / decided;
+                    let ci = 1.96 * (rate * (1.0 - rate) / decided).sqrt();
+                    println!(
+                        "  {:.2} v {:.2}   {wa:>5}  {wb:>5}  {drew:>5}   {:>5.1}%   +/- {:>4.1}",
+                        a.skill,
+                        b.skill,
+                        rate * 100.0,
+                        ci * 100.0
+                    );
+                }
+            }
+            println!("\n   skill   rating   games");
+            for e in &roster {
+                println!(
+                    "    {:.2}   {:>6.1}   {:>5}",
+                    e.skill,
+                    r.rating_of(&e.name),
+                    r.games_of(&e.name)
+                );
+            }
+            let lo = r.rating_of(&roster[0].name);
+            let hi = r.rating_of(&roster[roster.len() - 1].name);
+            println!("   weakest {lo:.0}, strongest {hi:.0}, gap {:+.0}", hi - lo);
+        }
+    }
+
+    /// What one bout costs on the real map, so a run can be sized.
+    #[test]
+    #[ignore]
+    fn time_one_real_map_bout() {
+        let bytes =
+            std::fs::read("../catalog/zones/alpha/alpha.vwmap").expect("the alpha map ships here");
+        let probe = sim::World::from_packed(0x5eed, &bytes).expect("a map");
+        let at = open_pair(&probe.map);
+        println!("spawns at {:?} and {:?}", at.0, at.1);
+        let route = nav::Nav::build(&probe.map);
+        let mut r = rating::Rating::new();
+        let weak = ai::RosterEntry {
+            name: "weak".into(),
+            class: 1,
+            skill: 0.30,
+        };
+        let strong = ai::RosterEntry {
+            name: "strong".into(),
+            class: 1,
+            skill: 0.90,
+        };
+        let t = std::time::Instant::now();
+        let mut kills = (0u32, 0u32);
+        for salt in 0..10u32 {
+            let (a, b) = duel(&bytes, &route, at, &mut r, &weak, &strong, salt, false);
+            kills.0 += a as u32;
+            kills.1 += b as u32;
+        }
+        println!(
+            "10 bouts in {:.1}s, kills weak {} strong {}",
+            t.elapsed().as_secs_f32(),
+            kills.0,
+            kills.1
+        );
+    }
+}
