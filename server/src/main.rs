@@ -2820,7 +2820,6 @@ mod tests {
             value: 0,
             carrying_flag: false,
             clear: true,
-            crowd: 0,
         };
         let stuck_on = ai::Scan {
             prize: Some((px(511), px(506))),

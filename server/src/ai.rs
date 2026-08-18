@@ -271,14 +271,6 @@ pub struct Foe {
     /// this is the same information, and it is what decides whether a bomb is
     /// a weapon or a way to kill yourself.
     pub clear: bool,
-    /// How many of this pilot's own side are already close to them.
-    ///
-    /// Proximity rather than intent, because intent is not on the wire: a
-    /// player can see where their team is and who they are standing on, and
-    /// cannot read a teammate's mind. It is the same information either way
-    /// for the only purpose it has, which is knowing when a fight is already
-    /// somebody else's.
-    pub crowd: u8,
 }
 
 #[derive(Clone, Copy)]
@@ -497,13 +489,7 @@ pub fn scan(w: &World, ship: u8) -> Scan {
     let mut out = Scan::default();
 
     let mut best = SIGHT * SIGHT;
-    let mut best_at: Option<usize> = None;
-    let mut allies: Vec<(f32, f32)> = Vec::new();
     const LOCAL: f32 = 480.0;
-    /// How close a teammate has to be to a hostile to count as already on
-    /// them. Half the local radius: near enough to be shooting rather than
-    /// merely passing.
-    const ENGAGED: f32 = 240.0;
     for i in 0..w.state.ship_count as usize {
         let o = &w.state.ships[i];
         if i == ship as usize || o.active == 0 || o.alive == 0 {
@@ -522,11 +508,6 @@ pub fn scan(w: &World, ship: u8) -> Scan {
             if d2 < LOCAL * LOCAL {
                 out.allies_near = out.allies_near.saturating_add(1);
             }
-            // Where they are, for the crowd count below. Every living
-            // teammate in sight, not only the near ones: whether a fight is
-            // already covered is a question about who is standing on the
-            // target, not about who is standing near me.
-            allies.push((ox, oy));
             continue;
         }
         // Somebody standing in a safe zone is not a target. Nothing can be
@@ -563,30 +544,13 @@ pub fn scan(w: &World, ship: u8) -> Scan {
             value: w.bounty(i).clamp(0, u16::MAX as i32) as u16,
             carrying_flag,
             clear: clear_line(w, mx, my, ox, oy),
-            crowd: 0,
         };
         out.contacts.push(foe);
         if d2 < best {
             best = d2;
-            best_at = Some(out.contacts.len() - 1);
+            out.foe = Some(foe);
         }
     }
-
-    // Who is already busy with whom. A second pass, because it is a question
-    // about a contact and its neighbours rather than about one ship, and the
-    // pass above sees them one at a time.
-    for f in out.contacts.iter_mut() {
-        let mut n = 0u8;
-        for (ax, ay) in allies.iter() {
-            let dx = ax - f.x;
-            let dy = ay - f.y;
-            if dx * dx + dy * dy < ENGAGED * ENGAGED {
-                n = n.saturating_add(1);
-            }
-        }
-        f.crowd = n;
-    }
-    out.foe = best_at.map(|i| out.contacts[i]);
 
     // A flag nobody owns, or one the other side holds, is worth crossing the
     // room for. Flags decide the round; kills only clear the way.
@@ -1991,39 +1955,15 @@ impl Bot {
     /// Pick a target, rather than inheriting whichever hostile happened to be
     /// nearest. A wounded pilot, a flag carrier and a valuable life are better
     /// opportunities; walls and distance make a contact worse.
-    ///
-    /// Two of the terms are about the room rather than about the target, and
-    /// both are there because a zone runs fifty-odd of these at once. A crowd
-    /// of bots all solving the same scoring problem converges on the same
-    /// answer, and the answer arrives as four pilots on one hull, which is the
-    /// single worst thing a new player meets.
-    ///
-    /// So a fight somebody is already having is worth less to join, and a
-    /// pilot far below this one is worth less to pick on. Neither is a
-    /// handicap: both are the same pilot to everybody in the room, both read
-    /// only what a player reads off their own screen, and a flag carrier still
-    /// outscores the lot, so the swarm still happens where it should.
     fn select_foe(&self, o: &Own) -> Option<Foe> {
         self.seen.contacts.iter().copied().max_by(|a, b| {
             let score = |f: Foe| {
                 let d = (f.x - o.x).hypot(f.y - o.y);
-                // One teammate already on them is an ordinary push and costs
-                // nothing. It is the third and fourth arrival that is the
-                // problem, and they are the ones this turns away.
-                let piling = f.crowd.saturating_sub(1).min(3) as f32 * 0.35;
-                // How far under this pilot the target is, in the currency both
-                // of them wear on the hull. A fresh life is nobody's trophy,
-                // and a pilot who keeps dying stays fresh, which is exactly
-                // the player this is meant to leave alone.
-                let outclassed =
-                    ((o.value as f32 - f.value as f32).max(0.0) / 60.0).min(1.0) * 0.30;
                 (if f.clear { 0.55 } else { 0.0 })
                     + (1.0 - f.energy.clamp(0.0, 1.0)) * 1.1
                     + if f.carrying_flag { 1.4 } else { 0.0 }
                     + (f.value as f32 / 60.0).min(1.0) * 0.25
                     - d / SIGHT * 0.8
-                    - piling
-                    - outclassed
             };
             score(*a).total_cmp(&score(*b))
         })
@@ -2754,7 +2694,6 @@ mod tests {
             value: 0,
             carrying_flag: false,
             clear: true,
-            crowd: 0,
         };
         let mut bot = Bot::new(ship, 0.8);
         bot.seen.foe = Some(foe);
@@ -3044,97 +2983,6 @@ mod tests {
         let s = &mut w.state.ships[them as usize];
         s.x = 520 * 16 * 256;
         assert!(scan(&w, me as u8).foe.is_some(), "back out, back on");
-    }
-
-    /// A fight the team is already having is not the fight to join.
-    ///
-    /// Fifty-one bots run this same scoring against the same room, so without
-    /// a term for it they agree, and agreement arrives as four pilots on one
-    /// hull. The player it lands on is whoever is easiest, which is the newest.
-    ///
-    /// Both hostiles sit on the same bearing and only distance separates them,
-    /// so the near one is the pick until its fight is covered.
-    #[test]
-    fn a_target_the_team_is_already_on_is_worth_less() {
-        // Tiles, and inside SIGHT, which is sixty of them.
-        const HOME: i32 = 500;
-        let mut w = sim::World::new(0x5eed);
-        let me = w.spawn(0, 0, HOME, HOME, 0);
-        let near = w.spawn(0, 1, HOME, HOME - 10, 0);
-        let far = w.spawn(0, 1, HOME, HOME + 14, 0);
-        assert!(me >= 0 && near >= 0 && far >= 0, "three seats");
-
-        let pick = |w: &sim::World| {
-            let mut b = Bot::new(me as u8, 0.5);
-            b.seen = scan(w, me as u8);
-            b.select_foe(&own(w, me as u8)).map(|f| f.y)
-        };
-        let at = |w: &sim::World, ship: i32| w.state.ships[ship as usize].y as f32 / 256.0;
-
-        let before = pick(&w).expect("a target with the room empty");
-        assert!(
-            (before - at(&w, near)).abs() < 1.0,
-            "the near hostile while nobody is on them"
-        );
-
-        // Three teammates standing on the near one. Inside ENGAGED of it and
-        // well outside ENGAGED of the far one, so only one fight is covered.
-        for i in 0..3 {
-            assert!(w.spawn(0, 0, HOME + i, HOME - 10, 0) >= 0, "a teammate");
-        }
-        let after = pick(&w).expect("a target with the room crowded");
-        assert!(
-            (after - at(&w, far)).abs() < 1.0,
-            "and the far one once three teammates are on the near, picked {after} \
-             against near {} and far {}",
-            at(&w, near),
-            at(&w, far)
-        );
-    }
-
-    /// And a pilot with nothing on them is not the one to hunt.
-    ///
-    /// Bounty is what both of them wear on the hull, so this is the judgement
-    /// a player makes off the same number: somebody who keeps dying stays
-    /// cheap, and picking on them is not what a fight is for. The far one is
-    /// carrying about as much as this pilot, so it is the fight worth having.
-    #[test]
-    fn a_pilot_far_below_this_one_is_worth_less() {
-        const HOME: i32 = 500;
-        let mut w = sim::World::new(0x5eed);
-        let me = w.spawn(0, 0, HOME, HOME, 0);
-        // Twenty tiles of extra distance on the built one, worth about 0.27
-        // of score against the 0.13 the bounty attraction can pay on its own.
-        // So this cannot pass on that term alone, which it did at first: a
-        // hull is not worth nothing fresh, since `sim_bounty` counts the
-        // baseline kit, and that shrinks every difference here.
-        let fresh = w.spawn(0, 1, HOME, HOME - 10, 0);
-        let built = w.spawn(0, 1, HOME, HOME + 30, 0);
-        assert!(me >= 0 && fresh >= 0 && built >= 0, "three seats");
-
-        let pick = |w: &sim::World| {
-            let mut b = Bot::new(me as u8, 0.5);
-            b.seen = scan(w, me as u8);
-            b.select_foe(&own(w, me as u8)).map(|f| f.y)
-        };
-        let at = |w: &sim::World, ship: i32| w.state.ships[ship as usize].y as f32 / 256.0;
-
-        let before = pick(&w).expect("a target among equals");
-        assert!(
-            (before - at(&w, fresh)).abs() < 1.0,
-            "the near hostile while nobody has anything"
-        );
-
-        w.state.ships[me as usize].earned = 90;
-        w.state.ships[built as usize].earned = 80;
-        let after = pick(&w).expect("a target among unequals");
-        assert!(
-            (after - at(&w, built)).abs() < 1.0,
-            "and the built one once this pilot outclasses the fresh, picked \
-             {after} against fresh {} and built {}",
-            at(&w, fresh),
-            at(&w, built)
-        );
     }
 
     /// Leaving, end to end, on a real map: told to stand down, seeing out the
