@@ -2820,3 +2820,51 @@ mod ablation {
         }
     }
 }
+
+#[cfg(test)]
+mod draws {
+    use super::real_map_tests::*;
+    use super::*;
+
+    /// What a drawn bout in a built field actually looks like.
+    ///
+    ///     cargo test --release --manifest-path server/Cargo.toml \
+    ///       what_a_draw_is_made_of -- --ignored --nocapture
+    ///
+    /// Half the bouts with greens on end level, and a level bout carries no
+    /// information, so the built economy is measured on half the sample the
+    /// bare one gets. Whether that is worth fixing depends entirely on what
+    /// the draws are: nought-all means two pilots that never found each other,
+    /// which is the fixture's problem, and three-all means they found each
+    /// other and ran out of clock, which is the match length's.
+    #[test]
+    #[ignore]
+    fn what_a_draw_is_made_of() {
+        let (bytes, route, at) = real_map_fixture();
+        let a = ai::RosterEntry {
+            name: "a".into(),
+            class: 1,
+            skill: 0.90,
+        };
+        let b = ai::RosterEntry {
+            name: "b".into(),
+            class: 1,
+            skill: 0.30,
+        };
+        let mut r = rating::Rating::new();
+        let mut tally: std::collections::BTreeMap<u16, u32> = Default::default();
+        let mut decided = 0u32;
+        for salt in 0..60u32 {
+            let (ka, kb) = duel(&bytes, &route, at, &mut r, &a, &b, salt, true, None);
+            if ka == kb {
+                *tally.entry(ka).or_default() += 1;
+            } else {
+                decided += 1;
+            }
+        }
+        println!("\n  decided {decided} of 60");
+        for (kills, n) in &tally {
+            println!("  drawn {n:>3} at {kills}-{kills}");
+        }
+    }
+}
