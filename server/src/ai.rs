@@ -1675,13 +1675,17 @@ impl Bot {
     /// Energy is health and ammunition at once, so this one number is most of
     /// what separates a pilot who trades well from one who shoots itself flat
     /// and dies to the next round that arrives. It scales with the dial: a
-    /// tenth of a bar at the bottom, a third at the top.
+    /// a fifth of a bar at the top of the dial, an eleventh at the bottom.
+    ///
+    /// Downward from 0.20 rather than around it: that number is tuned, and a
+    /// pilot holding more back than it is not a better pilot, only a more
+    /// timid one.
     ///
     /// This used to be a flat 0.20 for everybody, which is why the ablation
     /// found five of the dial's six knobs inert. Skill decided who was allowed
     /// to bomb and nothing at all about how well anybody fought.
     fn reserve(&self) -> f32 {
-        0.10 + self.dial(Knob::Permission) * 0.24
+        0.20 - (1.0 - self.dial(Knob::Permission)) * 0.09
     }
 
     fn selected_shot(&self, o: &Own) -> Option<Shot> {
@@ -1832,7 +1836,7 @@ impl Bot {
         // And leaves itself less room when it does. The margin a pilot wants
         // beyond its own blast is the clearest thing skill can be: a bad one
         // detonates its own round beside itself.
-        let margin = 24.0 + self.dial(Knob::Permission) * 120.0;
+        let margin = 96.0 - (1.0 - self.dial(Knob::Permission)) * 66.0;
         let impact_clearance = self.bomb_impact_clearance(o, foe, bomb);
         if impact_clearance.is_none_or(|d| d <= bomb.blast + o.radius + margin) {
             return approach;
@@ -2712,11 +2716,15 @@ impl Bot {
         // aimed, and when every hull is carrying shrapnel the pilot who is
         // still alive is the one that was not standing where the round went.
         //
-        // Strictly better with the dial rather than merely different, which
-        // is what the retreat threshold got wrong three times: more warning is
-        // more room to move, at every skill, and the gate below still only
-        // bends for rounds that would actually land.
-        let notice = 18.0 + self.dial(Knob::Awareness) * 38.0;
+        // Downward from the tuned number rather than around it. Written as a
+        // spread first, 18 plus the dial, which put the best pilot on 52 ticks
+        // against the 45 this was tuned to and cost the built ladder half of
+        // itself: bending away earlier than the shot requires is time not
+        // spent shooting, so more warning is not better past the point it was
+        // set at. The rule the retreat threshold paid for, stated properly:
+        // the best pilot sits on the tuned number and worse ones fall short
+        // of it.
+        let notice = 45.0 - (1.0 - self.dial(Knob::Awareness)) * 24.0;
         let age = self.timer.saturating_sub(self.seen_at) as f32;
         if t.eta - age > notice {
             return (wx, wy);
