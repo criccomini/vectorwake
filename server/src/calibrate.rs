@@ -2728,6 +2728,7 @@ mod ablation {
                 ai::Knob::Permission,
                 ai::Knob::Tolerance,
                 ai::Knob::Range,
+                ai::Knob::Greed,
             ] {
                 let mut r = rating::Rating::new();
                 let (mut w, mut l, mut d) = (0u32, 0u32, 0u32);

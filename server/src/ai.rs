@@ -1057,7 +1057,7 @@ pub struct Bot {
     /// Per-knob skill overrides for `Knob::Permission`, `Tolerance` and
     /// `Range`, which read the dial live. `None` everywhere in every real
     /// pilot; the ablation harness is the only thing that sets one.
-    dial_at: [Option<f32>; 3],
+    dial_at: [Option<f32>; 4],
     /// This pilot's current misjudgement, held rather than re-rolled. Rolled
     /// fresh on every look: a wrong estimate that changed a hundred times a
     /// second would average to a right one, which is the opposite of what an
@@ -1162,6 +1162,7 @@ pub enum Knob {
     Permission,
     Tolerance,
     Range,
+    Greed,
 }
 
 impl Knob {
@@ -1172,6 +1173,7 @@ impl Knob {
             Knob::Permission => Some(0),
             Knob::Tolerance => Some(1),
             Knob::Range => Some(2),
+            Knob::Greed => Some(3),
             _ => None,
         }
     }
@@ -1217,7 +1219,7 @@ impl Bot {
             aim_err: (1.0 - skill) * 0.42,
             lead_err: (1.0 - skill) * 0.85,
             lead_gain: 1.0,
-            dial_at: [None; 3],
+            dial_at: [None; 4],
             jitter: 0.0,
             timer: ship as u32 * 7, // stagger so they do not all think at once
             mode: Mode::Idle,
@@ -2210,14 +2212,28 @@ impl Bot {
     /// than a two-hundred-pixel accident without turning every fight into a
     /// scavenger hunt.
     fn select_prize(&self, o: &Own) -> Option<(Prize, f32)> {
+        // Greed, which docs/design/ai-players.md lists among the six things
+        // the dial drives and which nothing here read until now: every pilot
+        // in the game chose greens by the same numbers.
+        //
+        // That is most of why an ablation found no knob worth anything once
+        // the prize economy is running. A built ship beats a bare one on any
+        // map with greens on it, so when fights are decided by who built
+        // faster and everybody builds alike, there is nothing left for skill
+        // to be.
+        let dial = self.dial(Knob::Greed);
         let build_need = (1.0 - o.build as f32 / 36.0).clamp(0.0, 1.0);
-        let reach = if o.build < 12 {
-            720.0
-        } else if o.energy < 0.55 {
-            380.0
-        } else {
-            480.0
-        };
+        // How far a pilot will leave a fight to fetch one. A poor pilot
+        // crosses the room for a green it does not need.
+        let stretch = 1.30 - dial * 0.40;
+        let reach = stretch
+            * if o.build < 12 {
+                720.0
+            } else if o.energy < 0.55 {
+                380.0
+            } else {
+                480.0
+            };
         self.seen
             .prizes
             .iter()
@@ -2231,9 +2247,14 @@ impl Bot {
                     .seen
                     .hostiles_near
                     .saturating_sub(self.seen.allies_near);
+                // And how much an enemy standing over it puts them off. This
+                // is the greed the design describes: a good pilot leaves a
+                // green that is being watched, a poor one flies into the open
+                // for it and pays with the kit it was carrying.
+                let caution = 0.05 + dial * 0.34;
                 let score = 0.25 + build_need * 1.45 + (1.0 - o.energy) * 0.75
                     - d / reach
-                    - pressure as f32 * 0.18
+                    - pressure as f32 * caution
                     - if p.clear { 0.0 } else { 0.25 };
                 Some((p, score))
             })
