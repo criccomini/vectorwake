@@ -1057,7 +1057,7 @@ pub struct Bot {
     /// Per-knob skill overrides for `Knob::Permission`, `Tolerance` and
     /// `Range`, which read the dial live. `None` everywhere in every real
     /// pilot; the ablation harness is the only thing that sets one.
-    dial_at: [Option<f32>; 4],
+    dial_at: [Option<f32>; 5],
     /// This pilot's current misjudgement, held rather than re-rolled. Rolled
     /// fresh on every look: a wrong estimate that changed a hundred times a
     /// second would average to a right one, which is the opposite of what an
@@ -1163,6 +1163,7 @@ pub enum Knob {
     Tolerance,
     Range,
     Greed,
+    Awareness,
 }
 
 impl Knob {
@@ -1174,6 +1175,7 @@ impl Knob {
             Knob::Tolerance => Some(1),
             Knob::Range => Some(2),
             Knob::Greed => Some(3),
+            Knob::Awareness => Some(4),
             _ => None,
         }
     }
@@ -1219,7 +1221,7 @@ impl Bot {
             aim_err: (1.0 - skill) * 0.42,
             lead_err: (1.0 - skill) * 0.85,
             lead_gain: 1.0,
-            dial_at: [None; 4],
+            dial_at: [None; 5],
             jitter: 0.0,
             timer: ship as u32 * 7, // stagger so they do not all think at once
             mode: Mode::Idle,
@@ -2701,8 +2703,22 @@ impl Bot {
         let Some(t) = self.seen.threat else {
             return (wx, wy);
         };
+        // How early this pilot sees it coming, which the design calls
+        // awareness and nothing here read: every pilot in the game bent away
+        // from an arriving round with the same third of a second to do it in.
+        //
+        // The trait that should matter most in a built field. Aim is worth
+        // almost nothing there because a multifire is sprayed rather than
+        // aimed, and when every hull is carrying shrapnel the pilot who is
+        // still alive is the one that was not standing where the round went.
+        //
+        // Strictly better with the dial rather than merely different, which
+        // is what the retreat threshold got wrong three times: more warning is
+        // more room to move, at every skill, and the gate below still only
+        // bends for rounds that would actually land.
+        let notice = 18.0 + self.dial(Knob::Awareness) * 38.0;
         let age = self.timer.saturating_sub(self.seen_at) as f32;
-        if t.eta - age > 45.0 {
+        if t.eta - age > notice {
             return (wx, wy);
         }
         let (rx, ry) = (t.x + t.vx * age - o.x, t.y + t.vy * age - o.y);
