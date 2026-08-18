@@ -2332,3 +2332,58 @@ which is the pit talking",
         }
     }
 }
+
+#[cfg(test)]
+mod skill_tests {
+    use super::*;
+
+    /// Does the skill dial separate pilots at all?
+    ///
+    ///     cargo test --manifest-path server/Cargo.toml \
+    ///       skill_alone_should_make_a_ladder -- --ignored --nocapture
+    ///
+    /// Ignored because it fights a few hundred five-kill matches and takes
+    /// minutes, not because the answer does not matter. It matters a great
+    /// deal: `docs/design/ai-players.md` promises "a single skill dial from 0
+    /// to 1" driving reaction, aim, discipline, awareness, greed and map use,
+    /// and the whole population director rests on a 0.35 pilot being an easier
+    /// evening than a 0.85 one.
+    ///
+    /// The committed ladder cannot answer it, because all eight calibrated
+    /// pilots fly different hulls, so `zone/ladder.json` measures hull and
+    /// skill together and cannot say which moved. This holds the hull still
+    /// and varies only the dial, which is the one arrangement that can.
+    #[test]
+    #[ignore]
+    fn skill_alone_should_make_a_ladder() {
+        // One hull for everybody. Class 1 is the anchor's own, so this is a
+        // shape the roster already flies.
+        const HULL: u8 = 1;
+        const ROUNDS: u32 = 8;
+        let roster: Vec<ai::RosterEntry> = [0.30f32, 0.45, 0.60, 0.75, 0.90]
+            .iter()
+            .map(|s| ai::RosterEntry {
+                name: format!("skill{:02}", (s * 100.0) as u32),
+                class: HULL,
+                skill: *s,
+            })
+            .collect();
+
+        let r = run_roster(&roster, ROUNDS, false);
+        println!("\n  skill   rating   games");
+        let mut seen: Vec<(f32, f64)> = Vec::new();
+        for e in &roster {
+            let score = r.rating_of(&e.name);
+            println!(
+                "   {:.2}   {:>6.1}   {:>5}",
+                e.skill,
+                score,
+                r.games_of(&e.name)
+            );
+            seen.push((e.skill, score));
+        }
+        let lo = seen.first().expect("a roster").1;
+        let hi = seen.last().expect("a roster").1;
+        println!("\n  weakest {lo:.0}, strongest {hi:.0}, gap {:+.0}", hi - lo);
+    }
+}
