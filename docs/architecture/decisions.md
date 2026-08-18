@@ -354,12 +354,21 @@ swinging off a steady drift, and it is the harder of the two to read. Whether
 that costs more than the steadier aiming buys is a question about thumbs, not
 about geometry, which is why it ships as a setting and not as a change.
 
-Three things it does not touch. The radar keeps north up, so there is always
-one stable picture of the room. The simulation never learns the camera exists:
-the thumb still names a heading and the client still resolves that into the
-same turn bits a keyboard sends. And a turned frame has to build the world its
-corners reach, so the arena is asked for the frame's circumcircle instead of the
-frame, which costs a portrait phone about two and a half times its starfield.
+The thumb changes with it, from a stick to a d-pad. That is not a second
+preference bolted on, it follows from the same fact: with the nose pinned to the
+top of the screen there is no direction left on the glass to point at, so a
+thumb can only say which way it is pushing. Eight ways, so a diagonal thrusts
+and turns at once. The turn then runs for as long as the thumb is held rather
+than stopping at a named heading, which is what a turning view asks for anyway,
+since the turn being held is the one the player can watch happening.
+
+Two things it does not touch. The radar keeps north up, so there is always one
+stable picture of the room. And the simulation never learns the camera exists:
+both controls resolve to the same turn bits a keyboard sends.
+
+One thing it costs. A turned frame has to build the world its corners reach, so
+the arena is asked for the frame's circumcircle instead of the frame, which
+costs a portrait phone about two and a half times its starfield.
 
 **Cost:** two camera models in one game, and the phone one is the weaker place
 to learn momentum from. Anything drawn in screen space over a world position

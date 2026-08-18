@@ -1,14 +1,25 @@
 -- Touch controls.
 --
 -- The question platforms.md asks is whether mobile is a playing client or a
--- spectating one. This is the playing answer: a thumbstick that points where
--- you want the nose to go, and pads for the weapons.
+-- spectating one. This is the playing answer: one thumb for flying, and pads
+-- for the weapons.
 --
--- Pointing beats a rotate-left/rotate-right pair on glass. There is no tactile
--- edge to feel for, so a player cannot hold a rotation and stop it on time;
--- they can put a thumb where they want to be facing. The ship still turns at
--- its own rate, so nothing about the flight model changes -- this only decides
--- which way the turn is applied, exactly as the AI does it.
+-- What the flying thumb reads depends on what the screen is doing, and the two
+-- answers come out opposite.
+--
+-- In the ordinary north-up view it is a thumbstick that points where you want
+-- the nose to go. Pointing beats a rotate-left/rotate-right pair on glass:
+-- there is no tactile edge to feel for, so a player cannot hold a rotation and
+-- stop it on time, but they can put a thumb where they want to be facing. The
+-- ship still turns at its own rate, so nothing about the flight model changes.
+-- This only decides which way the turn is applied, exactly as the AI does it.
+--
+-- With the turning view of decision 13's second amendment it is a d-pad, and
+-- for the reason the stick exists rather than in spite of it. There, the nose
+-- is always at the top of the screen, so there is no direction on the glass
+-- left to point at: a thumb can only say which way it is pushing. That is a
+-- d-pad, and it is what a turning view asks for anyway, since the turn you are
+-- holding is the one you can watch happening.
 --
 -- The simulation never learns any of this happened: it receives the same
 -- button bitfield a keyboard produces.
@@ -331,6 +342,34 @@ end
 -- A list rather than a bitfield, because the caller merges this with the
 -- keyboard and HTML5 builds run Lua 5.1, which has no bitwise or. Summing a
 -- set of distinct bits is exact and needs no library.
+-- Which way the pad is being pushed, as the four arms it lights.
+--
+-- Read by the input and by the drawing, so the arm that lights is the arm that
+-- is doing something rather than a second opinion about the same thumb. All
+-- four come back false while nothing is pushing it.
+--
+-- Eight ways, so a diagonal thrusts and turns at once. Sectors rather than a
+-- threshold on each axis, because independent thresholds leave a corner where
+-- a thumb pushed exactly between two of them does nothing at all.
+local function pad_arms()
+    if not stick then return false, false, false, false end
+    local dx, dy = stick.x - stick.ox, stick.y - stick.oy
+    local dead = DEAD_PX * M.scale
+    if dx * dx + dy * dy < dead * dead then
+        return false, false, false, false
+    end
+    -- Zero is straight up the screen and it runs clockwise: 1 is up and to the
+    -- right, 2 is right, 4 is straight down. The sweep runs from -4 to 4, so
+    -- straight down arrives under either sign depending on which side of it
+    -- the thumb sits. Backing up is therefore read off the magnitude, which is
+    -- what lets both ends mean the same thing without normalizing one away.
+    local oct = math.floor(math.atan2(dx, dy) / (math.pi / 4) + 0.5)
+    return oct <= -1 and oct >= -3,     -- turning left
+           oct >= 1 and oct <= 3,       -- turning right
+           oct >= -1 and oct <= 1,      -- thrusting
+           math.abs(oct) >= 3           -- backing up
+end
+
 function M.bits(heading)
     local out = {}
     if guns then out[#out + 1] = sim.BTN_FIRE end
@@ -338,33 +377,31 @@ function M.bits(heading)
     if reverse then out[#out + 1] = sim.BTN_REVERSE end
     if not stick then return out end
 
+    -- With the world turning, this is a d-pad rather than a stick.
+    --
+    -- The two are not a matter of taste; they follow from what the screen is
+    -- doing. A stick works by naming a direction you can see: the nose goes
+    -- there and stops. Turn the world and there is no direction left to name,
+    -- because the nose is always at the top and it is everything else that
+    -- moves. What remains is which way you are pushing, held for as long as
+    -- you push it, and that is a d-pad. It is also what a turning view already
+    -- asks of a player: hold the turn until the world looks right, let go.
+    if M.shipup then
+        local left, right, fwd, back = pad_arms()
+        if left then out[#out + 1] = sim.BTN_LEFT end
+        if right then out[#out + 1] = sim.BTN_RIGHT end
+        if fwd then out[#out + 1] = sim.BTN_THRUST end
+        if back then out[#out + 1] = sim.BTN_REVERSE end
+        return out
+    end
+
     local dx, dy = stick.x - stick.ox, stick.y - stick.oy
     local mag = math.sqrt(dx * dx + dy * dy)
     if mag < DEAD_PX * M.scale then return out end
 
-    -- Which way the screen was facing when the thumb committed.
-    --
-    -- Nothing at all in the ordinary view, where a screen direction and a
-    -- world heading are the same number and this is zero.
-    --
-    -- With the world turning it is the whole of the problem. The nose is
-    -- always at the top of the screen, so a thumb held to the right cannot
-    -- mean "face east", because east moves as you turn. Read plainly it would
-    -- mean "keep turning right", which is a rotate-right key with a thumb on
-    -- it, and the note at the top of this file says why that loses on glass.
-    --
-    -- So the frame is captured once, when the thumb passes the dead zone and
-    -- the player has committed to a direction they can see. The thumb then
-    -- names a fixed heading again: the ship turns to it and stops, the same
-    -- contract the ordinary view has. Lifting the thumb drops the stick and
-    -- the next press takes a fresh frame, which is what makes the top of the
-    -- screen mean "carry on as you are" every time you reach for it.
-    if M.shipup and not stick.frame then
-        stick.frame = (heading / 65536) * math.pi * 2
-    end
     -- Screen +y is up and the simulation's +y is down, which is why this is
     -- atan2(x, y) rather than the atan2(dx, -dy) the AI uses on sim vectors.
-    local want = math.atan2(dx, dy) + (stick.frame or 0)
+    local want = math.atan2(dx, dy)
     local head = (heading / 65536) * math.pi * 2
     local diff = want - head
     while diff > math.pi do diff = diff - math.pi * 2 end
@@ -560,14 +597,37 @@ function M.draw(u, w, h, s)
         end
     end
 
-    if stick then
+    if M.shipup then
+        -- The pad. Four chevrons pointing out of a middle, lit where the
+        -- thumb is pushing, drawn where the thumb landed for the same reason
+        -- the stick is: a control that only exists at one spot on the glass
+        -- is a control a player has to look down to find.
+        local cx, cy = L.home.x, L.home.y
+        local col = pal.a(pal.DIM, 0.35)
+        if stick then
+            cx, cy = stick.ox, stick.oy
+            col = dim
+        end
+        local reach, span = L.home.r * 0.92, L.home.r * 0.30
+        local left, right, fwd, back = pad_arms()
+        for _, arm in ipairs({{0, 1, fwd}, {0, -1, back},
+                              {-1, 0, left}, {1, 0, right}}) do
+            local ux, uy, on = arm[1], arm[2], arm[3]
+            local c = on and pal.a(pal.FRIEND, 0.9) or col
+            -- Tip out along the arm, arms swept back either side of it.
+            local tx, ty = cx + ux * reach, cy + uy * reach
+            local bx, by = cx + ux * (reach - span), cy + uy * (reach - span)
+            u:seg(bx - uy * span, by + ux * span, tx, ty, 2 * s, c)
+            u:seg(tx, ty, bx + uy * span, by - ux * span, 2 * s, c)
+        end
+    elseif stick then
         local live = pal.a(pal.FRIEND, 0.9)
         u:ring(stick.ox, stick.oy, L.home.r, 1.8 * s, 26, dim)
         u:ring(stick.x, stick.y, L.r * 0.42, 1.8 * s, 16, live)
         u:seg(stick.ox, stick.oy, stick.x, stick.y, 2 * s, live)
     else
         -- A resting mark where a thumb should go. The stick itself is
-        -- relative -- it appears wherever you press -- but a control that is
+        -- relative: it appears wherever you press, and a control that is
         -- invisible until you find it is a control nobody finds.
         u:ring(L.home.x, L.home.y, L.home.r, 1.8 * s, 26, pal.a(pal.DIM, 0.28))
         u:ring(L.home.x, L.home.y, L.r * 0.3, 1.8 * s, 16, pal.a(pal.DIM, 0.35))

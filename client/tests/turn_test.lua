@@ -4,9 +4,9 @@
 --
 -- Two halves of one setting, and both fail quietly. A wrong up vector is a
 -- world that turns the wrong way, which nobody sees in CI because CI never
--- draws a frame. A wrong stick frame is worse: the ship still flies, it just
--- turns for as long as a thumb is held instead of stopping where it was
--- pointed, which reads as bad handling rather than as a bug.
+-- draws a frame. A wrong pad is worse: the ship still flies, it just answers
+-- a thumb with the wrong button, which reads as bad handling rather than as a
+-- bug and gets blamed on the idea instead of on the code.
 --
 -- Both are arithmetic. So is the promise that a desktop is untouched, which is
 -- the first thing checked here.
@@ -208,54 +208,103 @@ bits = held(touch.bits(heading_of(90)))
 check("north up: a thumb on the current heading turns nothing",
       not bits[sim_stub.BTN_RIGHT] and not bits[sim_stub.BTN_LEFT])
 
--- With the world turning, the top of the screen is wherever the nose is, so
--- the same thumb means different things and the difference is the point.
+-- With the world turning the stick becomes a d-pad, so a thumb no longer names
+-- a heading. It names a push, and the heading it is handed stops mattering at
+-- all: the same push has to give the same buttons whatever the ship is doing.
 touch.shipup = true
-steer(0, 60)
-bits = held(touch.bits(heading_of(140)))
-check("world turning: a thumb at the top holds the heading",
-      not bits[sim_stub.BTN_RIGHT] and not bits[sim_stub.BTN_LEFT])
-check("world turning: a thumb at the top still thrusts",
-      bits[sim_stub.BTN_THRUST])
 
-steer(90, 60)
-bits = held(touch.bits(heading_of(140)))
-check("world turning: a thumb to the right turns right",
-      bits[sim_stub.BTN_RIGHT] and not bits[sim_stub.BTN_LEFT])
+local function pad(degrees, heading)
+    steer(degrees, 60)
+    return held(touch.bits(heading_of(heading or 0)))
+end
 
-steer(-90, 60)
-bits = held(touch.bits(heading_of(140)))
-check("world turning: a thumb to the left turns left",
-      bits[sim_stub.BTN_LEFT] and not bits[sim_stub.BTN_RIGHT])
+local function only(got, ...)
+    local want = {}
+    for _, b in ipairs({...}) do want[b] = true end
+    for _, b in pairs(sim_stub) do
+        if (got[b] or false) ~= (want[b] or false) then return false end
+    end
+    return true
+end
 
--- The one that decides whether this is a stick or a rotate key. Hold the thumb
--- still and walk the heading round to where it was pointed: the turn has to
--- stop there rather than carry on for as long as the thumb is down.
-steer(90, 60)
-local turned_at = nil
-for step = 0, 120 do
-    local b = held(touch.bits(heading_of(step)))
-    if not b[sim_stub.BTN_RIGHT] and not b[sim_stub.BTN_LEFT] then
-        turned_at = step
-        break
+bits = pad(0)
+check("the pad: up thrusts and turns nothing",
+      only(bits, sim_stub.BTN_THRUST))
+bits = pad(180)
+check("the pad: down backs up", only(bits, sim_stub.BTN_REVERSE))
+bits = pad(90)
+check("the pad: right turns right and does not thrust",
+      only(bits, sim_stub.BTN_RIGHT))
+bits = pad(-90)
+check("the pad: left turns left and does not thrust",
+      only(bits, sim_stub.BTN_LEFT))
+
+-- The diagonals are the reason for eight ways rather than four: a pilot who
+-- cannot thrust while turning cannot fly this game.
+bits = pad(45)
+check("the pad: up and right does both",
+      only(bits, sim_stub.BTN_THRUST, sim_stub.BTN_RIGHT))
+bits = pad(-45)
+check("the pad: up and left does both",
+      only(bits, sim_stub.BTN_THRUST, sim_stub.BTN_LEFT))
+bits = pad(135)
+check("the pad: down and right backs up while turning",
+      only(bits, sim_stub.BTN_REVERSE, sim_stub.BTN_RIGHT))
+bits = pad(-135)
+check("the pad: down and left backs up while turning",
+      only(bits, sim_stub.BTN_REVERSE, sim_stub.BTN_LEFT))
+
+-- Straight down arrives at either end of the sweep depending on which side of
+-- it the thumb sits, and both ends have to read the same. Pinned on its own
+-- because the two are far apart in the arithmetic and adjacent under a thumb.
+bits = pad(179.5)
+check("the pad: the bottom of the sweep backs up",
+      only(bits, sim_stub.BTN_REVERSE), "just right of straight down")
+bits = pad(-179.5)
+check("the pad: and so does the other end of it",
+      only(bits, sim_stub.BTN_REVERSE), "just left of straight down")
+
+-- No gap anywhere in the sweep. A thumb pushed at any angle at all has to be
+-- doing something, and never both thrusting and reversing.
+local silent, contradictory = {}, {}
+for deg = -179, 180 do
+    local b = pad(deg)
+    if not next(b) then silent[#silent + 1] = deg end
+    if b[sim_stub.BTN_THRUST] and b[sim_stub.BTN_REVERSE] then
+        contradictory[#contradictory + 1] = deg
     end
 end
-check("world turning: a held thumb stops on the heading it named",
-      turned_at ~= nil and math.abs(turned_at - 90) <= 4,
-      tostring(turned_at))
+check("the pad answers a push from every angle", #silent == 0,
+      table.concat(silent, ",", 1, math.min(#silent, 8)))
+check("and never thrusts and reverses at once", #contradictory == 0,
+      table.concat(contradictory, ",", 1, math.min(#contradictory, 8)))
 
--- Past it, the same held thumb turns back rather than round again.
+-- Held, it keeps turning. This is the difference from the stick and it is the
+-- whole point: a turning world is watched, not aimed at, so the turn runs for
+-- as long as the thumb is down rather than stopping at a heading.
 steer(90, 60)
-touch.bits(heading_of(0))
-bits = held(touch.bits(heading_of(120)))
-check("world turning: overshooting a named heading turns back",
-      bits[sim_stub.BTN_LEFT] and not bits[sim_stub.BTN_RIGHT])
+local still_turning = true
+for step = 0, 359, 10 do
+    if not held(touch.bits(heading_of(step)))[sim_stub.BTN_RIGHT] then
+        still_turning = false
+    end
+end
+check("the pad keeps turning for as long as it is held", still_turning)
 
--- Lifting and pressing again re-reads the screen, so the top of it means
--- "carry on" every time a thumb arrives, whatever the ship is doing.
-steer(0, 60)
-bits = held(touch.bits(heading_of(250)))
-check("world turning: a fresh press reads the screen it landed on",
+-- A thumb inside the dead zone does nothing, whichever way it leans.
+touch.release_all()
+touch.on_touch({touch = {{id = 1, pressed = true, x = 100, y = 200}}},
+               W, H, 1, nil)
+touch.on_touch({touch = {{id = 1, x = 104, y = 203}}}, W, H, 1, nil)
+check("a thumb that has barely moved is not a push",
+      not next(held(touch.bits(heading_of(0)))))
+
+-- And the stick is still the stick with the setting off, on the same push that
+-- the pad reads as a plain turn.
+touch.shipup = false
+steer(90, 60)
+bits = held(touch.bits(heading_of(90)))
+check("with the setting off the same push is a heading, not a turn",
       not bits[sim_stub.BTN_RIGHT] and not bits[sim_stub.BTN_LEFT])
 
 if fails > 0 then
