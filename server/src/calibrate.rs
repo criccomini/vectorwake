@@ -2613,7 +2613,7 @@ mod real_map_tests {
         let probe = sim::World::from_packed(0x5eed, &bytes).expect("a map");
         let at = open_pair(&probe.map);
         let route = nav::Nav::build(&probe.map);
-        let mut gaps: Vec<(bool, f64, f64, f64, usize, usize)> = Vec::new();
+        let mut gaps: Vec<(bool, f64, f64, f64, f64, usize, usize)> = Vec::new();
         for (hull, hull_name) in HULLS {
             let roster: Vec<ai::RosterEntry> = [0.30f32, 0.45, 0.60, 0.75, 0.90]
                 .iter()
@@ -2756,7 +2756,7 @@ mod real_map_tests {
                     edge * 100.0,
                     100.0 - coin * 100.0
                 );
-                gaps.push((greens, gap, ends, edge, leaning, rates.len()));
+                gaps.push((greens, gap, coin, ends, edge, leaning, rates.len()));
             }
         }
 
@@ -2781,21 +2781,30 @@ mod real_map_tests {
         // The Elo gap also understates the span whenever the middle of the
         // roster is bunched, because the fit has to place five pilots at once:
         // greens on, the ends sit at 67% and the gap reads +38.
-        const ENDS: f64 = 0.64;
-        for (greens, gap, ends, edge, leaning, pairs) in gaps {
+        // And the bar is read against the null row rather than against a half,
+        // for the reason the null row exists. Sixty-four per cent in a fair
+        // fixture is the weaker pilot on thirty-six, fourteen points below its
+        // coin; here it is fourteen points below whatever coin the fixture
+        // dealt this block. The same bar with one fewer assumption.
+        const EFFECT: f64 = 0.14;
+        for (greens, gap, coin, ends, edge, leaning, pairs) in gaps {
             let economy = if greens { "on" } else { "off" };
+            let effect = coin + ends - 1.0;
             assert!(
-                ends >= ENDS,
-                "with greens {economy}, 0.90 takes {:.1}% of its decided bouts against 0.30 \
-                 (wanted {:.0}%), on a ladder of {gap:+.0}",
-                ends * 100.0,
-                ENDS * 100.0
+                effect >= EFFECT,
+                "with greens {economy}, 0.90 costs 0.30 {:.1} points of win rate against a \
+                 coin of {:.1}% (wanted {:.0}); the pair reads {:.1}% and the ladder {gap:+.0}",
+                effect * 100.0,
+                coin * 100.0,
+                EFFECT * 100.0,
+                ends * 100.0
             );
             assert_eq!(
                 leaning,
                 pairs,
-                "with greens {economy}, {leaning} of {pairs} pairs favour the stronger pilot \
+                "with greens {economy}, {leaning} of {pairs} pairs beat a coin of {:.1}% \
                  (0.30 v 0.90 at {:.1}%, every pair averaging {:.1}%)",
+                coin * 100.0,
                 ends * 100.0,
                 edge * 100.0
             );
