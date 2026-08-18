@@ -251,6 +251,15 @@ pub struct Own {
     /// carried to the grave. Three of each, on every hull, and until now not
     /// one of them was ever used.
     pub charges: [u8; sim::MAX_CHARGES],
+    /// Rungs of multifire on the gun, and whether the fan is currently folded.
+    ///
+    /// A player toggles this and no bot ever has, which is the last decision
+    /// the game offers that nothing here was making. Each rung costs half
+    /// again the energy per shot and adds cooldown, so a pilot that never
+    /// folds pays for a wider pattern on every shot including the ones where
+    /// width buys nothing.
+    pub multi: u8,
+    pub multi_off: bool,
     /// What each trigger would do if pulled now, at the rung this pilot is on.
     /// A pilot knows their own loadout, and the numbers behind it are in the
     /// settings table every client is sent.
@@ -513,6 +522,9 @@ pub fn own(w: &World, ship: u8) -> Own {
         carrying_flag,
         standing: None,
         charges: me.charge,
+        // Two bits per add-on, the way the core packs them.
+        multi: ((me.mods[sim::TRIG_GUN] >> (sim::MOD_MULTI * 2)) & 3) as u8,
+        multi_off: me.multi_off != 0,
         gun,
         bomb,
         bomb_ready: me.fire_cooldown[sim::TRIG_BOMB] == 0,
@@ -1047,6 +1059,9 @@ pub struct Bot {
     react: u32,
     look_every: u32,
     aim_err: f32,
+    /// Whether the multifire toggle was pressed last tick, since the core
+    /// flips on the rising edge and a held button toggles once.
+    multi_held: bool,
     /// How badly this pilot reads a target's motion, as a share of the lead
     /// it should be taking. Held across a look rather than re-rolled per
     /// tick, which is the whole point of it: see `lead_gain`.
@@ -1217,6 +1232,7 @@ impl Bot {
             // world every tick, at a hundred hertz, which no client can.
             look_every: (10.0 - skill * 5.0).max(5.0) as u32,
             aim_err: (1.0 - skill) * 0.42,
+            multi_held: false,
             lead_err: (1.0 - skill) * 0.85,
             lead_gain: 1.0,
             dial_at: [None; 4],
@@ -1459,7 +1475,7 @@ impl Bot {
                 self.decide(o, nav);
                 self.breaking_off((o.x, o.y));
             }
-            self.drive(o) | self.trigger(o) | self.charge(o)
+            self.drive(o) | self.trigger(o) | self.charge(o) | self.fold_multi(o)
         };
         // The bookkeeping runs on whatever is actually being flown, the
         // escape included: an escape that is itself pinned has to be noticed,
@@ -1910,6 +1926,43 @@ impl Bot {
             Doctrine::Heavy | Doctrine::Bombardier => self.seen.company,
             _ => self.skill >= 0.55 && self.seen.hostiles_near > 0,
         }
+    }
+
+    /// Fold the fan when the bar cannot afford it.
+    ///
+    /// The last decision the game offers that nothing here was making. A rung
+    /// of multifire costs half again the energy per shot and adds cooldown, so
+    /// a pilot flying with it always open pays for a wider pattern on every
+    /// shot, including the ones at a range where width buys nothing and the
+    /// ones it cannot afford at all. Players fold it; no bot ever had.
+    ///
+    /// Worth trying where the rest of the dial cannot reach. Aim separates
+    /// pilots by 37 points of win rate in a bare field and two and a half in a
+    /// built one, and this is a decision that does not exist until a hull has
+    /// picked up the add-on, which is to say it only exists in the economy
+    /// that is short of a ladder.
+    ///
+    /// Graded rather than gated, and it cannot straddle a tuned number the way
+    /// the dodge window and the retreat threshold did, because there is no
+    /// number here to straddle: the behavior it degrades to at the bottom of
+    /// the dial is what every bot did until now, which is nothing.
+    fn fold_multi(&mut self, o: &Own) -> u16 {
+        if o.multi == 0 {
+            self.multi_held = false;
+            return 0;
+        }
+        // Below this share of the bar the fan is a luxury. A good pilot starts
+        // watching for it early; a poor one folds only when nearly dry, which
+        // is after the bar it was trying to keep has gone.
+        let thrift = self.dial(Knob::Permission) * 0.45;
+        let want_off = o.energy < thrift;
+        if want_off == o.multi_off || self.multi_held {
+            // Released, so the next disagreement has an edge to ride.
+            self.multi_held = false;
+            return 0;
+        }
+        self.multi_held = true;
+        sim::BTN_MULTI
     }
 
     /// The reflex: fire when the shot is on and the reserve allows it.
