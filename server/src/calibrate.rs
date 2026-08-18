@@ -3158,6 +3158,7 @@ mod draws {
     }
 }
 
+#[cfg(test)]
 mod fixture {
     use super::real_map_tests::*;
     use super::*;
@@ -3243,6 +3244,7 @@ mod fixture {
     }
 }
 
+#[cfg(test)]
 mod kit {
     use super::real_map_tests::*;
     use super::*;
