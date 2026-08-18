@@ -2740,13 +2740,19 @@ mod ablation {
             );
             println!("  knob          handicapped wins   rate      95% ci");
             for knob in [
-                ai::Knob::React,
-                ai::Knob::Look,
-                ai::Knob::AimErr,
-                ai::Knob::Permission,
-                ai::Knob::Tolerance,
-                ai::Knob::Range,
-                ai::Knob::Greed,
+                // Nothing handicapped at all, which this had no business
+                // running without: every other row is read against a coin,
+                // and whether this harness deals one is a question rather
+                // than an assumption. Two identical pilots, alternating
+                // sides. Anything far from half here is the fixture talking.
+                None,
+                Some(ai::Knob::React),
+                Some(ai::Knob::Look),
+                Some(ai::Knob::AimErr),
+                Some(ai::Knob::Permission),
+                Some(ai::Knob::Tolerance),
+                Some(ai::Knob::Range),
+                Some(ai::Knob::Greed),
             ] {
                 let mut r = rating::Rating::new();
                 let (mut w, mut l, mut d) = (0u32, 0u32, 0u32);
@@ -2761,7 +2767,7 @@ mod ablation {
                         &same,
                         salt,
                         greens,
-                        Some((knob, 0.30)),
+                        knob.map(|k| (k, 0.30)),
                     );
                     salt = salt.wrapping_add(1);
                     match ka.cmp(&kb) {
@@ -2775,7 +2781,7 @@ mod ablation {
                 let ci = 1.96 * (rate * (1.0 - rate) / decided).sqrt();
                 println!(
                     "  {:<12}  {w:>5} / {l:<5} {d:>4}d   {:>5.1}%   +/- {:>4.1}",
-                    format!("{knob:?}"),
+                    knob.map_or("none".to_string(), |k| format!("{k:?}")),
                     rate * 100.0,
                     ci * 100.0
                 );
