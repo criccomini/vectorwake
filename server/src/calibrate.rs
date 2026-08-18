@@ -2812,69 +2812,76 @@ mod ablation {
     #[ignore]
     fn which_knob_carries_the_dial() {
         const PER_KNOB: u32 = 200;
+        // Both hulls, for the reason the ladder tournament grew a second one:
+        // every row this printed came from the Wedge, and the Wedge is the
+        // bomb specialist. A knob read on one ship is a fact about that ship.
+        const HULLS: [(u8, &str); 2] = [(1, "Wedge, Bombardier"), (0, "Apex, Duelist")];
         let (bytes, route, at) = real_map_fixture();
-        let strong = ai::RosterEntry {
-            name: "strong".into(),
-            class: 1,
-            skill: 0.90,
-        };
-        let same = ai::RosterEntry {
-            name: "same".into(),
-            class: 1,
-            skill: 0.90,
-        };
 
-        for greens in [false, true] {
-            println!(
-                "\n=== one knob at 0.30, the rest at 0.90, greens {} ===",
-                if greens { "on" } else { "off" }
-            );
-            println!("  knob          handicapped wins   rate      95% ci");
-            for knob in [
-                // Nothing handicapped at all, which this had no business
-                // running without: every other row is read against a coin,
-                // and whether this harness deals one is a question rather
-                // than an assumption. Two identical pilots, alternating
-                // sides. Anything far from half here is the fixture talking.
-                None,
-                Some(ai::Knob::React),
-                Some(ai::Knob::Look),
-                Some(ai::Knob::AimErr),
-                Some(ai::Knob::Permission),
-                Some(ai::Knob::Tolerance),
-                Some(ai::Knob::Range),
-            ] {
-                let mut r = rating::Rating::new();
-                let (mut w, mut l, mut d) = (0u32, 0u32, 0u32);
-                let mut salt = 900_000u32;
-                for _ in 0..PER_KNOB {
-                    let (ka, kb) = duel(
-                        &bytes,
-                        &route,
-                        at,
-                        &mut r,
-                        &strong,
-                        &same,
-                        salt,
-                        greens,
-                        knob.map(|k| (k, 0.30)),
-                    );
-                    salt = salt.wrapping_add(1);
-                    match ka.cmp(&kb) {
-                        std::cmp::Ordering::Greater => w += 1,
-                        std::cmp::Ordering::Less => l += 1,
-                        std::cmp::Ordering::Equal => d += 1,
-                    }
-                }
-                let decided = (w + l).max(1) as f64;
-                let rate = w as f64 / decided;
-                let ci = 1.96 * (rate * (1.0 - rate) / decided).sqrt();
+        for (hull, hull_name) in HULLS {
+            let strong = ai::RosterEntry {
+                name: "strong".into(),
+                class: hull,
+                skill: 0.90,
+            };
+            let same = ai::RosterEntry {
+                name: "same".into(),
+                class: hull,
+                skill: 0.90,
+            };
+
+            for greens in [false, true] {
                 println!(
-                    "  {:<12}  {w:>5} / {l:<5} {d:>4}d   {:>5.1}%   +/- {:>4.1}",
-                    knob.map_or("none".to_string(), |k| format!("{k:?}")),
-                    rate * 100.0,
-                    ci * 100.0
+                    "\n=== {hull_name}: one knob at 0.30, the rest at 0.90, greens {} ===",
+                    if greens { "on" } else { "off" }
                 );
+                println!("  knob          handicapped wins   rate      95% ci");
+                for knob in [
+                    // Nothing handicapped at all, which this had no business
+                    // running without: every other row is read against a coin,
+                    // and whether this harness deals one is a question rather
+                    // than an assumption. Two identical pilots, alternating
+                    // sides. Anything far from half here is the fixture talking.
+                    None,
+                    Some(ai::Knob::React),
+                    Some(ai::Knob::Look),
+                    Some(ai::Knob::AimErr),
+                    Some(ai::Knob::Permission),
+                    Some(ai::Knob::Tolerance),
+                    Some(ai::Knob::Range),
+                ] {
+                    let mut r = rating::Rating::new();
+                    let (mut w, mut l, mut d) = (0u32, 0u32, 0u32);
+                    let mut salt = 900_000u32;
+                    for _ in 0..PER_KNOB {
+                        let (ka, kb) = duel(
+                            &bytes,
+                            &route,
+                            at,
+                            &mut r,
+                            &strong,
+                            &same,
+                            salt,
+                            greens,
+                            knob.map(|k| (k, 0.30)),
+                        );
+                        salt = salt.wrapping_add(1);
+                        match ka.cmp(&kb) {
+                            std::cmp::Ordering::Greater => w += 1,
+                            std::cmp::Ordering::Less => l += 1,
+                            std::cmp::Ordering::Equal => d += 1,
+                        }
+                    }
+                    let decided = (w + l).max(1) as f64;
+                    let rate = w as f64 / decided;
+                    let ci = 1.96 * (rate * (1.0 - rate) / decided).sqrt();
+                    println!(
+                        "  {:<12}  {w:>5} / {l:<5} {d:>4}d   {:>5.1}%   +/- {:>4.1}",
+                        knob.map_or("none".to_string(), |k| format!("{k:?}")),
+                        rate * 100.0,
+                        ci * 100.0
+                    );
+                }
             }
         }
     }
