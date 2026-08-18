@@ -1057,7 +1057,7 @@ pub struct Bot {
     /// Per-knob skill overrides for `Knob::Permission`, `Tolerance` and
     /// `Range`, which read the dial live. `None` everywhere in every real
     /// pilot; the ablation harness is the only thing that sets one.
-    dial_at: [Option<f32>; 5],
+    dial_at: [Option<f32>; 4],
     /// This pilot's current misjudgement, held rather than re-rolled. Rolled
     /// fresh on every look: a wrong estimate that changed a hundred times a
     /// second would average to a right one, which is the opposite of what an
@@ -1163,7 +1163,6 @@ pub enum Knob {
     Tolerance,
     Range,
     Greed,
-    Awareness,
 }
 
 impl Knob {
@@ -1175,7 +1174,6 @@ impl Knob {
             Knob::Tolerance => Some(1),
             Knob::Range => Some(2),
             Knob::Greed => Some(3),
-            Knob::Awareness => Some(4),
             _ => None,
         }
     }
@@ -1221,7 +1219,7 @@ impl Bot {
             aim_err: (1.0 - skill) * 0.42,
             lead_err: (1.0 - skill) * 0.85,
             lead_gain: 1.0,
-            dial_at: [None; 5],
+            dial_at: [None; 4],
             jitter: 0.0,
             timer: ship as u32 * 7, // stagger so they do not all think at once
             mode: Mode::Idle,
@@ -1675,17 +1673,20 @@ impl Bot {
     /// Energy is health and ammunition at once, so this one number is most of
     /// what separates a pilot who trades well from one who shoots itself flat
     /// and dies to the next round that arrives. It scales with the dial: a
-    /// a fifth of a bar at the top of the dial, an eleventh at the bottom.
+    /// a tenth of a bar at the bottom, a third at the top.
     ///
-    /// Downward from 0.20 rather than around it: that number is tuned, and a
-    /// pilot holding more back than it is not a better pilot, only a more
-    /// timid one.
+    /// This one does straddle the 0.20 it replaced, and it is kept because it
+    /// measures well where the others did not: the dial makes +141 and +60
+    /// with it, and rewriting it to fall from 0.20 instead took those to +68
+    /// and +32. Energy is health and ammunition at once, so how much of it a
+    /// pilot refuses to spend is not a preference the game has already
+    /// optimised, the way a dodge window or a retreat threshold is.
     ///
     /// This used to be a flat 0.20 for everybody, which is why the ablation
     /// found five of the dial's six knobs inert. Skill decided who was allowed
     /// to bomb and nothing at all about how well anybody fought.
     fn reserve(&self) -> f32 {
-        0.20 - (1.0 - self.dial(Knob::Permission)) * 0.09
+        0.10 + self.dial(Knob::Permission) * 0.24
     }
 
     fn selected_shot(&self, o: &Own) -> Option<Shot> {
@@ -1836,7 +1837,7 @@ impl Bot {
         // And leaves itself less room when it does. The margin a pilot wants
         // beyond its own blast is the clearest thing skill can be: a bad one
         // detonates its own round beside itself.
-        let margin = 96.0 - (1.0 - self.dial(Knob::Permission)) * 66.0;
+        let margin = 24.0 + self.dial(Knob::Permission) * 120.0;
         let impact_clearance = self.bomb_impact_clearance(o, foe, bomb);
         if impact_clearance.is_none_or(|d| d <= bomb.blast + o.radius + margin) {
             return approach;
@@ -2707,26 +2708,24 @@ impl Bot {
         let Some(t) = self.seen.threat else {
             return (wx, wy);
         };
-        // How early this pilot sees it coming, which the design calls
-        // awareness and nothing here read: every pilot in the game bent away
-        // from an arriving round with the same third of a second to do it in.
+        // Flat, and this was measured twice before being left alone.
         //
-        // The trait that should matter most in a built field. Aim is worth
-        // almost nothing there because a multifire is sprayed rather than
-        // aimed, and when every hull is carrying shrapnel the pilot who is
-        // still alive is the one that was not standing where the round went.
+        // Awareness is the obvious candidate for a built field, where the aim
+        // error is worth almost nothing because a multifire is sprayed rather
+        // than aimed, and the pilot still alive is the one that was not
+        // standing where the round went. It was tried as a spread, 18 plus the
+        // dial, and as a fall from this number, 45 less the dial. Against the
+        // +141 and +60 the dial makes without it:
         //
-        // Downward from the tuned number rather than around it. Written as a
-        // spread first, 18 plus the dial, which put the best pilot on 52 ticks
-        // against the 45 this was tuned to and cost the built ladder half of
-        // itself: bending away earlier than the shot requires is time not
-        // spent shooting, so more warning is not better past the point it was
-        // set at. The rule the retreat threshold paid for, stated properly:
-        // the best pilot sits on the tuned number and worse ones fall short
-        // of it.
-        let notice = 45.0 - (1.0 - self.dial(Knob::Awareness)) * 24.0;
+        //     18 + dial * 38     +123   +28
+        //     45 - dial * 24      +68   +32
+        //
+        // Both worse, and the second worse in the bare field than the first.
+        // Which is the same answer the retreat threshold gave three times: a
+        // number that is already tuned does not become a skill parameter by
+        // having pilots differ about it, whichever side of it they differ on.
         let age = self.timer.saturating_sub(self.seen_at) as f32;
-        if t.eta - age > notice {
+        if t.eta - age > 45.0 {
             return (wx, wy);
         }
         let (rx, ry) = (t.x + t.vx * age - o.x, t.y + t.vy * age - o.y);
