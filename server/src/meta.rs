@@ -3342,23 +3342,38 @@ pub async fn run() {
 
     let mut cfg = deadpool_postgres::Config::new();
     cfg.url = Some(url);
+    // A database that will not answer is a hard failure, for the same reason
+    // an empty connection string above is one, and it is the same mistake: a
+    // line printed and a return exits zero, and `restart: on-failure`
+    // correctly declines to restart a process that says it finished.
+    //
+    // The empty-string branch learned that and these three had not. A database
+    // that was unreachable for the half second this ran during a deploy left
+    // the meta-layer stopped with nothing to restart it, and the fleet looked
+    // healthy from outside: the page served, the games list filled, the arena
+    // ran its room. What it cost was alpha standing empty, because a house bot
+    // that cannot get a token holds itself out of the room rather than fly
+    // untokened, so fifty seats went unfilled and nothing anywhere was red.
+    //
+    // Exiting hands the retrying to docker's own backoff, which is the
+    // supervisor's job rather than this function's.
     let pool = match cfg.create_pool(Some(deadpool_postgres::Runtime::Tokio1), tls) {
         Ok(p) => p,
         Err(e) => {
-            println!("meta: cannot build a connection pool: {e}");
-            return;
+            eprintln!("meta: cannot build a connection pool: {e}");
+            std::process::exit(1);
         }
     };
     match pool.get().await {
         Ok(db) => {
             if let Err(e) = db.batch_execute(SCHEMA).await {
-                println!("meta: cannot apply schema: {e}");
-                return;
+                eprintln!("meta: cannot apply schema: {e}");
+                std::process::exit(1);
             }
         }
         Err(e) => {
-            println!("meta: cannot reach the database: {e}");
-            return;
+            eprintln!("meta: cannot reach the database: {e}");
+            std::process::exit(1);
         }
     }
 
@@ -3550,11 +3565,14 @@ pub async fn run() {
         throttle: Throttle::default(),
         password_work: Arc::new(tokio::sync::Semaphore::new(PASSWORD_WORKERS)),
     });
+    // And the same for the door itself. A meta-layer that got this far and
+    // cannot listen is no more use than one that never started, so it says so
+    // and leaves rather than sitting there having succeeded.
     let listener = match tokio::net::TcpListener::bind(&addr).await {
         Ok(l) => l,
         Err(e) => {
-            println!("meta: cannot bind {addr}: {e}");
-            return;
+            eprintln!("meta: cannot bind {addr}: {e}");
+            std::process::exit(1);
         }
     };
     println!("meta-layer on http://{addr}");
