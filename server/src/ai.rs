@@ -2223,9 +2223,18 @@ impl Bot {
         // to be.
         let dial = self.dial(Knob::Greed);
         let build_need = (1.0 - o.build as f32 / 36.0).clamp(0.0, 1.0);
-        // How far a pilot will leave a fight to fetch one. A poor pilot
-        // crosses the room for a green it does not need.
-        let stretch = 1.30 - dial * 0.40;
+        // How far a pilot will go to fetch one, and it is the good pilot who
+        // goes further. Written the other way round first, on the reasoning
+        // that greed is recklessness, and the ablation said otherwise: the
+        // reckless side won 64% of bouts, because a built ship beats a bare
+        // one and nothing else in this economy comes close.
+        //
+        // Which is what ai-players.md says too, in the sentence this should
+        // have been written from: a fresh life searches its radar for
+        // reachable greens and uses them to build a ship before taking a
+        // marginal fight. Greening is the skilled behavior. The pilot who
+        // stays bare is the one making the mistake.
+        let stretch = 0.80 + dial * 0.50;
         let reach = stretch
             * if o.build < 12 {
                 720.0
@@ -2247,11 +2256,13 @@ impl Bot {
                     .seen
                     .hostiles_near
                     .saturating_sub(self.seen.allies_near);
-                // And how much an enemy standing over it puts them off. This
-                // is the greed the design describes: a good pilot leaves a
-                // green that is being watched, a poor one flies into the open
-                // for it and pays with the kit it was carrying.
-                let caution = 0.05 + dial * 0.34;
+                // And how easily an enemy nearby talks them out of it. A poor
+                // pilot is the timid one here: it sees company, leaves the
+                // green, and spends the round bare against somebody who did
+                // not. Some weight stays on pressure at every skill, because
+                // flying into a covered green is a real way to die, but it is
+                // the bottom of the dial that is put off by it.
+                let caution = 0.06 + (1.0 - dial) * 0.30;
                 let score = 0.25 + build_need * 1.45 + (1.0 - o.energy) * 0.75
                     - d / reach
                     - pressure as f32 * caution
