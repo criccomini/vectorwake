@@ -145,10 +145,12 @@ M.help_prompt_seen = false
 -- reads it and arena/touch.lua acts on it; nothing here draws with it. See
 -- the settings page below for why it is only offered on glass.
 M.dpad = false
--- Whether the bright layer blooms. A picture setting like the frame cap: the
--- render pipeline reads it through the arena, and off is for the machine that
--- cannot afford it or the player who cannot stand it.
-M.bloom = true
+-- Whether the bright layer blooms. A picture setting like the frame cap,
+-- and off until asked: the first night out, an iPhone composited the blurred
+-- layer back at four times its size and wore the glow as wreckage, and a
+-- default has to be the rendering every driver gets right. On is opt-in
+-- until the pass has been proven on the devices that matter.
+M.bloom = false
 
 -- Whether the ship page's answer is currently "no hull". In a game that is
 -- what the connection says you are; on the home screen it is what you have
@@ -242,9 +244,9 @@ function M.load_identity()
         -- else under this name lands on the stick rather than on a value the
         -- touch layer would try to steer with.
         M.dpad = d.dpad == true
-        -- On unless the save says exactly off: the default is the effect,
-        -- and junk under this key should not quietly turn the lights down.
-        M.bloom = d.bloom ~= false
+        -- On only when the save says exactly on, matching the default above:
+        -- junk under this key must not quietly turn a broken pass back on.
+        M.bloom = d.bloom == true
         -- Whatever survives being read against this build's key list. A
         -- missing table is a stock keyboard, which is what `load` does with
         -- nothing.

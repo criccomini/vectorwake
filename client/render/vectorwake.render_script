@@ -105,9 +105,10 @@ function init(self)
     self.post_cb = render.constant_buffer()
     self.dir_add = vmath.vector4(0, 0, BLOOM_GAIN, 0)
     self.black = vmath.vector4(0, 0, 0, 0)
-    -- On until the player or a broken driver says otherwise. `bloom_ok` is
-    -- the latch bloom_source describes.
-    self.bloom = true
+    -- Off until the menu says otherwise, so the frames before the setting
+    -- arrives render the way every driver gets right. `bloom_ok` is the
+    -- latch bloom_source describes.
+    self.bloom = false
     self.bloom_ok = true
     self.gui_pred = render.predicate({"gui"})
     self.text_pred = render.predicate({"debug_text"})
