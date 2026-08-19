@@ -1050,6 +1050,10 @@ pub struct Bot {
     /// it should be taking. Held across a look rather than re-rolled per
     /// tick, which is the whole point of it: see `lead_gain`.
     lead_err: f32,
+    /// The skill the aim runs at: the pilot's own unless a harness holds it.
+    aim_skill: f32,
+    /// A wrong bearing held for the length of a look, zero above the floor.
+    bearing: f32,
     /// This look's misreading, as a multiplier on the lead. One is a pilot who
     /// solves the intercept exactly.
     lead_gain: f32,
@@ -1172,6 +1176,54 @@ impl Knob {
 /// The share of looks a poor pilot reads correctly anyway.
 const CLEAN_LOOKS: f32 = 0.25;
 
+/// Below this skill the dial keeps buying incompetence; above it, nothing
+/// here moves.
+///
+/// The floor exists because the dial saturates. Measured on Apex and Facet at
+/// thirty greens, a 0.05 pilot ties a 0.30 pilot at 47% and 52%: a sixty per
+/// cent lead misread and an eighty per cent one both miss at range and both
+/// connect up close, so past a point more of the same error stops costing
+/// anything. A game that is too hard for a new player needs a bot that is
+/// genuinely bad, and that takes a different kind of wrong, not a larger
+/// helping of the old one.
+///
+/// Everything gated on this ramp is a no-op at 0.30 and above, on purpose:
+/// the roster the tournaments were run on lives in 0.30 to 0.90, and a floor
+/// that leaked upward would invalidate every number measured there.
+const FLOOR: f32 = 0.30;
+
+/// How much of `CLEAN_LOOKS` this pilot keeps.
+///
+/// A quarter of a mid-roster pilot's looks come out clean; below the floor
+/// that share ramps away, to about one look in twenty-five at 0.05. The bad
+/// looks keep the magnitude they always had, anchored to the roster's own
+/// clean share, so the mean error grows as the clean looks vanish rather than
+/// the bad looks quietly shrinking to compensate.
+fn clean_share(skill: f32) -> f32 {
+    CLEAN_LOOKS * (skill / FLOOR).clamp(0.0, 1.0)
+}
+
+/// A bearing this pilot is simply wrong about, held for the length of a look.
+///
+/// The lead error scales with the target's crossing motion, which is correct
+/// and is also why it cannot make anybody truly bad: against a target flying
+/// straight at them, every pilot in the game was a perfect shot. Real bad play
+/// misses still targets too. So below the floor the whole aim is rotated by an
+/// angle drawn per look, up to a fifth of a turn's worth of wrong at the very
+/// bottom, and zero for the entire measured roster.
+fn bearing_err(skill: f32, u_mag: f32, u_sign: f32) -> f32 {
+    let deficit = ((FLOOR - skill) / FLOOR).clamp(0.0, 1.0);
+    if deficit <= 0.0 {
+        return 0.0;
+    }
+    let mag = deficit * 0.35 * (0.3 + 0.7 * u_mag);
+    if u_sign < 0.5 {
+        -mag
+    } else {
+        mag
+    }
+}
+
 /// How often a pilot re-plans, and how often it re-reads the world.
 ///
 /// These used to ride the dial and no longer do, along with the aim tolerance
@@ -1252,11 +1304,14 @@ const ENGAGE_SCALE: f32 = 0.96;
 /// also moved the mean would arrive in the next tournament as a difficulty
 /// change wearing a costume, and there is no way to tell those apart after the
 /// fact.
-fn lead_gain(err: f32, u1: f32, u2: f32, u3: f32) -> f32 {
-    if u1 < CLEAN_LOOKS {
+fn lead_gain(err: f32, clean: f32, u1: f32, u2: f32, u3: f32) -> f32 {
+    if u1 < clean {
         return 1.0;
     }
-    // What the bad looks have to average for the whole draw to average err/2.
+    // What the bad looks have to average for the roster's own clean share to
+    // put the whole draw at err/2. Anchored to the constant rather than to
+    // `clean`, so a pilot below the floor loses clean looks without the bad
+    // ones shrinking to compensate.
     let base = err * 0.5 / (1.0 - CLEAN_LOOKS);
     // Spread around it, so every bad look is bad but not identically so. Half
     // to one and a half of the base, which averages the base.
@@ -1270,7 +1325,10 @@ impl Bot {
     /// other five where they are. For attribution, in the ablation harness.
     pub fn tune(&mut self, knob: Knob, as_if: f32) {
         match knob {
-            Knob::AimErr => self.lead_err = (1.0 - as_if) * 0.85,
+            Knob::AimErr => {
+                self.lead_err = (1.0 - as_if) * 0.85;
+                self.aim_skill = as_if;
+            }
             Knob::Permission => {
                 if let Some(i) = knob.slot() {
                     self.dial_at[i] = Some(as_if);
@@ -1294,6 +1352,8 @@ impl Bot {
             react: REPLAN_TICKS,
             look_every: LOOK_TICKS,
             lead_err: (1.0 - skill) * 0.85,
+            aim_skill: skill,
+            bearing: 0.0,
             lead_gain: 1.0,
             dial_at: [None; 1],
             timer: ship as u32 * 7, // stagger so they do not all think at once
@@ -1481,7 +1541,9 @@ impl Bot {
             // and holds for the length of the look rather than averaging out
             // inside it. That is what "poor lead prediction" means.
             let (u1, u2, u3) = (self.rand(), self.rand(), self.rand());
-            self.lead_gain = lead_gain(self.lead_err, u1, u2, u3);
+            self.lead_gain = lead_gain(self.lead_err, clean_share(self.aim_skill), u1, u2, u3);
+            let (v1, v2) = (self.rand(), self.rand());
+            self.bearing = bearing_err(self.aim_skill, v1, v2);
         }
         if let Some(s) = fresh {
             self.seen = s;
@@ -2749,7 +2811,11 @@ impl Bot {
                     .map_or(2.0, |s| s.speed);
                 let t = intercept((dx, dy), rel, muzzle).unwrap_or(0.0).min(200.0);
                 let g = self.lead_gain;
-                self.aim = (dx + rel.0 * t * g, dy + rel.1 * t * g);
+                let (ax, ay) = (dx + rel.0 * t * g, dy + rel.1 * t * g);
+                // The held misjudgment of where they are, on top of the held
+                // misjudgment of where they are going. Zero above the floor.
+                let (s, c) = self.bearing.sin_cos();
+                self.aim = (ax * c - ay * s, ax * s + ay * c);
 
                 // Stand off at the working range along the line already flown,
                 // so closing and backing off are one instruction rather than a
@@ -3047,65 +3113,72 @@ fn nearest_prizes(w: &World, mx: f32, my: f32, within: f32, keep: usize) -> Vec<
 mod tests {
     use super::*;
 
-    /// The reshaped lead error has to leave difficulty where it found it.
+    /// The reshaped lead error leaves the measured roster where it was, and
+    /// the floor below it is strictly worse.
     ///
-    /// A poor pilot now misjudges the lead most of the time and reads it
-    /// cleanly a quarter of the time, instead of being spread evenly between
-    /// the two. That is a change to how a bad pilot looks. If it also moved the
-    /// average error it would be a change to how bad they are, and the next
-    /// tournament would report a difficulty shift with no way to tell which of
-    /// the two it had measured.
+    /// Above `FLOOR` the mean misread is exactly `err / 2`, the same as the
+    /// uniform it replaced, so no tournament result moved when the shape did.
+    /// Below it the clean looks ramp away while the bad looks keep their size,
+    /// so the mean grows, and a bearing error appears that the whole measured
+    /// roster never has. Both halves are asserted, because a floor that leaks
+    /// upward invalidates every number measured on 0.30 to 0.90.
     #[test]
-    fn the_reshaped_aim_is_mean_preserving() {
+    fn the_aim_floor_is_a_floor() {
         const N: u32 = 60_000;
-        for err in [0.0f32, 0.17, 0.51, 0.85] {
-            // A small xorshift rather than a lattice of strides. The first
-            // try here used 0.381966 and 0.618034, which sum to exactly one,
-            // so those two draws were perfectly anti-correlated and the mean
-            // came out twelve per cent low. The code was right and the test
-            // was wrong, which is the more embarrassing way round.
-            let mut s: u32 = 0x9E37_79B9;
-            let mut draw = move || {
-                s ^= s << 13;
-                s ^= s >> 17;
-                s ^= s << 5;
-                (s >> 8) as f32 / ((1u32 << 24) as f32)
-            };
-            let (mut sum, mut clean, mut small) = (0.0f64, 0u32, 0u32);
+        let mut s: u32 = 0x9E37_79B9;
+        let mut draw = move || {
+            s ^= s << 13;
+            s ^= s >> 17;
+            s ^= s << 5;
+            (s >> 8) as f32 / ((1u32 << 24) as f32)
+        };
+        // The measured band: mean preserved, no bearing error at all.
+        for skill in [0.30f32, 0.60, 0.90] {
+            let err = (1.0 - skill) * 0.85;
+            let mut sum = 0.0f64;
             for _ in 0..N {
-                let g = lead_gain(err, draw(), draw(), draw());
-                let mag = (g - 1.0).abs();
-                sum += mag as f64;
-                if mag < 1e-6 {
-                    clean += 1;
-                } else if mag < err / 4.0 {
-                    small += 1;
-                }
+                let g = lead_gain(err, clean_share(skill), draw(), draw(), draw());
+                sum += (g - 1.0).abs() as f64;
             }
             let mean = sum / N as f64;
             let want = (err / 2.0) as f64;
             assert!(
                 (mean - want).abs() < want * 0.02 + 1e-6,
-                "at err {err} the mean magnitude is {mean:.4}, wanted {want:.4}"
+                "at skill {skill} the mean misread is {mean:.4}, wanted {want:.4}"
             );
-            if err == 0.0 {
-                // A perfect pilot has nothing to misread, whatever it draws.
-                assert_eq!(clean, N, "a perfect pilot should never be off");
-                continue;
-            }
-            let share = clean as f32 / N as f32;
-            assert!(
-                (share - CLEAN_LOOKS).abs() < 0.01,
-                "at err {err}, {share:.3} of looks were clean, wanted {CLEAN_LOOKS}"
-            );
-            // And the rest are properly wrong rather than nearly right, which
-            // is the whole point of the mixture. The old uniform put a quarter
-            // of every pilot's looks inside this band.
             assert_eq!(
-                small, 0,
-                "at err {err}, {small} looks were off by less than a quarter of the error"
+                bearing_err(skill, 0.99, 0.99),
+                0.0,
+                "a {skill} pilot should hold no bearing error"
             );
         }
+        // Below the floor: clean looks ramp away, the mean grows, and the
+        // bearing error appears.
+        let clean_low = clean_share(0.05);
+        assert!(
+            clean_low < CLEAN_LOOKS * 0.2,
+            "a 0.05 pilot keeps {clean_low:.3} of its looks clean"
+        );
+        let err = (1.0 - 0.05f32) * 0.85;
+        let mut sum = 0.0f64;
+        for _ in 0..N {
+            let g = lead_gain(err, clean_low, draw(), draw(), draw());
+            sum += (g - 1.0).abs() as f64;
+        }
+        let mean = sum / N as f64;
+        let ceiling = (err / 2.0) as f64;
+        assert!(
+            mean > ceiling * 1.2,
+            "the floor should cost a 0.05 pilot at least 20% more misread \
+             ({mean:.4} against a band mean of {ceiling:.4})"
+        );
+        let b = bearing_err(0.05, 0.5, 0.9);
+        assert!(
+            b > 0.15 && b < 0.35,
+            "a 0.05 pilot's held bearing error reads {b:.3} rad"
+        );
+        // And the sign is a draw, or every bad pilot misses the same way.
+        assert!(bearing_err(0.05, 0.5, 0.1) < 0.0);
     }
 
     use super::*;
