@@ -2678,12 +2678,15 @@ mod real_map_tests {
         let route = nav::Nav::build(&probe.map);
         let mut gaps: Vec<(u32, f64, f64, f64, f64, f64, usize, usize)> = Vec::new();
         for (hull, hull_name) in hulls {
-            let roster: Vec<ai::RosterEntry> = [0.30f32, 0.45, 0.60, 0.75, 0.90]
+            // Percent, because env_list deals integers: VW_SKILLS=5,30,90
+            // fields a 0.05 pilot against the usual pair. The default is the
+            // roster the dial has always been judged on.
+            let roster: Vec<ai::RosterEntry> = env_list("VW_SKILLS", &[30, 45, 60, 75, 90])
                 .iter()
                 .map(|s| ai::RosterEntry {
-                    name: format!("{hull}skill{:02}", (s * 100.0) as u32),
+                    name: format!("{hull}skill{s:02}"),
                     class: hull,
-                    skill: *s,
+                    skill: *s as f32 / 100.0,
                 })
                 .collect();
 
