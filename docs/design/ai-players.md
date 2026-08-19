@@ -216,10 +216,17 @@ which contradicts the older finding that thirty greens turn a two-to-one gap
 flat. That finding came from a room where both pilots also raced for greens on
 the floor, so it was measuring who scavenged better as much as who flew better.
 
-And the spread across hulls is real. Cipher and Apex separate pilots twice as
+The spread across hulls is real. Cipher and Apex separate pilots twice as
 sharply as Chord does, so how much your skill matters depends on what you fly.
 Nobody designed that and it is not obviously wrong, but it is worth knowing
 before anybody tunes a hull.
+
+And separation is not even along the dial. Chord at sixty greens, the block
+with the most bouts behind it, has 0.05 losing to everybody and then almost
+nothing between 0.45, 0.70 and 0.90: those three pairs read 47.6%, 49.0% and
+53.9%, the last of them favoring the weaker pilot. A room stocked from the top
+half of the dial would feel uniform. The difficulty lives at the bottom of the
+range, which is the argument for fielding it.
 
 **Error has to persist to matter.** Aim error was an angle drawn fresh around
 the correct bearing ten to twenty times a second, so a burst sprayed a cone
