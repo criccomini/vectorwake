@@ -379,8 +379,10 @@ end)
 check("a human nameplate wears the pilot helmet", #crowns(human_plate) == 2,
       #crowns(human_plate) .. " helmets across PLAYERS and one nameplate")
 
--- A marked kill has one mark per named pilot. The room itself contributes the
--- standing pair in PLAYERS, so the combat line doubles both totals.
+-- A kill line marks nobody. It names two pilots in words, and hanging a
+-- helmet and a machine on them says the same thing twice in the one panel
+-- whose argument is that short lines need no chrome. The room still
+-- contributes the standing pair in PLAYERS, so that pair is the whole count.
 local kill_frame = frame(function()
     ui.hud({
         me = 0, class_names = {"Apex"}, menu_open = false,
@@ -396,39 +398,23 @@ local kill_frame = frame(function()
         zone = "chaos", fps = 60, frame_ms = 16, rx_rate = 0, tx_rate = 0,
     })
 end)
-check("a kill line marks its human pilot", #crowns(kill_frame) == 2,
-      #crowns(kill_frame) .. " helmets including PLAYERS")
-check("and marks its bot", #boxes(kill_frame) == 2,
-      #boxes(kill_frame) .. " bot marks including PLAYERS")
+check("a kill line hangs no helmet on its human", #crowns(kill_frame) == 1,
+      #crowns(kill_frame) .. " helmets, wanted only the one in PLAYERS")
+check("and none on its bot", #boxes(kill_frame) == 1,
+      #boxes(kill_frame) .. " bot marks, wanted only the one in PLAYERS")
 
--- In prose the mark is punctuation for the name, not a label leading into it.
--- Keep it after the complete call sign while the line's measured width and
--- right edge stay unchanged.
+-- The line still measures and right-aligns off its words alone, which is what
+-- the marks used to be folded into. A name keeps its own capitals.
 local function text_entry(words)
     for i = 1, state.n do
         if state.text[i].s == words then return state.text[i] end
     end
 end
-local function mark_on_line(list, text)
-    if not text then return nil end
-    local target, best, distance = H - text.y, nil, math.huge
-    for _, mark in ipairs(list) do
-        local cy = mark.cy or (mark.top + mark.h / 2)
-        local d = math.abs(cy - target)
-        if d < distance then best, distance = mark, d end
-    end
-    return best
-end
 local human_text, bot_text = text_entry("you"), text_entry("a bot")
-local human_mark = mark_on_line(crowns(kill_frame), human_text)
-local bot_feed_mark = mark_on_line(boxes(kill_frame), bot_text)
-local advance = 1233 / 2048
-local function follows(mark, text)
-    return mark and text
-        and mark.cx > text.x + #text.s * text.px * advance
-end
-check("the human mark follows its name", follows(human_mark, human_text))
-check("and the bot mark follows its name", follows(bot_feed_mark, bot_text))
+check("the kill line still draws both names",
+      human_text ~= nil and bot_text ~= nil)
+check("and sets them on one line",
+      human_text and bot_text and math.abs(human_text.y - bot_text.y) < 0.01)
 
 -- The antenna is what the machine says with nothing beside it, so it has to
 -- reach above the crown, and the person must not.

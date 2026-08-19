@@ -1693,20 +1693,20 @@ M.FEED_MAX = 5
 -- something that happened. Lower case leaves the names as the only capitals
 -- on the line, which is also what the eye is looking for.
 --
--- A combat line keeps its names as parts so each pilot can wear the same mark
--- they wear in the Players list and beside their ship. The mark is part of the
--- line's width, not an ornament hung outside it, so right alignment stays
--- exact as names and payouts change.
-local FEED_MARK_K, FEED_MARK_GAP = 10, 4
+-- A combat line keeps its names as parts even though nothing is hung on them
+-- any more, because the parts are what keep a call sign's own capitals: the
+-- feed sets a sentence about people and shouting a name back was wrong once.
+--
+-- Each name used to carry the mark its owner wears in the Players list, a
+-- helmet or a machine. Two marks on a line that already names two pilots is
+-- the same fact said twice, in the one panel whose whole argument is that a
+-- list of short lines needs no chrome. The marks stay where they answer a
+-- question: the Players list, the counts, a nameplate.
 local function feed_line_w(t, size)
     if type(t) == "string" then return text_w(t, size) end
     local w = 0
     for _, part in ipairs(t) do
-        local s = type(part) == "table" and part[1] or part
-        if type(part) == "table" and part.identity then
-            w = w + (FEED_MARK_K + FEED_MARK_GAP) * F.scale
-        end
-        w = w + text_w(s, size)
+        w = w + text_w(type(part) == "table" and part[1] or part, size)
     end
     return w
 end
@@ -1716,20 +1716,10 @@ local function draw_feed_line(t, x, y, size, col)
         txt(t, x, y, size, col, nil, nil, true)
         return
     end
-    local k = FEED_MARK_K * F.scale
     for _, part in ipairs(t) do
         local s = type(part) == "table" and part[1] or part
         txt(s, x, y, size, col, nil, nil, true)
         x = x + text_w(s, size)
-        if type(part) == "table" and part.identity then
-            x = x + FEED_MARK_GAP * F.scale
-            if part.identity == "bot" then
-                bot_mark(x, y, col, k)
-            else
-                pilot_mark(x + k / 2, y, col, k)
-            end
-            x = x + k
-        end
     end
 end
 
