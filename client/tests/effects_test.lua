@@ -46,23 +46,38 @@ local g = glow_stub()
 world.trail(g, 1, 100, 100, COL, 0)
 check("one sample draws nothing", g.fades == 0, tostring(g.fades))
 world.trail(g, 1, 104, 100, COL, 1 / 60)
-check("two samples draw one segment", g.fades == 1, tostring(g.fades))
-for i = 2, 30 do
+check("the very next frame draws a segment to the hull", g.fades == 1,
+      tostring(g.fades))
+-- Ninety frames of steady flight at four pixels a frame. Samples commit on
+-- the fifty-millisecond clock, so the ribbon holds its full dozen and its
+-- tail reaches well behind the hull: that reach is the whole reason the
+-- clock exists, and the check that would catch a cadence quietly becoming
+-- per-frame again, which is a ribbon a fifth as long drawn just as often.
+local tail = math.huge
+for i = 2, 90 do
     g = glow_stub()
+    g.seg_fade = function(self, x1, _, x2)
+        self.fades = self.fades + 1
+        tail = math.min(tail, math.min(x1, x2))
+    end
+    tail = math.huge
     world.trail(g, 1, 100 + i * 4, 100, COL, i / 60)
 end
 check("a long flight draws a full ribbon and no more",
       g.fades * 6 == world.TRAIL_VERTS, tostring(g.fades))
+check("and the ribbon reaches well behind the hull",
+      (100 + 90 * 4) - tail > 100,
+      string.format("tail %.0f behind", (100 + 90 * 4) - tail))
 
 -- A teleport is a jump with no gap in time; the ribbon must not cross it.
 g = glow_stub()
-world.trail(g, 1, 900, 900, COL, 31 / 60)
+world.trail(g, 1, 900, 900, COL, 91 / 60)
 check("a teleport resets the ribbon", g.fades == 0, tostring(g.fades))
 
 -- And a gap in time is a death, a respawn or a spell off screen.
-world.trail(g, 1, 904, 900, COL, 32 / 60)
+world.trail(g, 1, 904, 900, COL, 92 / 60)
 g = glow_stub()
-world.trail(g, 1, 908, 900, COL, 32 / 60 + 0.5)
+world.trail(g, 1, 908, 900, COL, 92 / 60 + 0.5)
 check("a gap in the record resets it too", g.fades == 0, tostring(g.fades))
 
 -- --- wall light -------------------------------------------------------------

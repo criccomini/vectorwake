@@ -444,10 +444,10 @@ M.STAR_VERTS, M.HALO_SEGS = STAR_VERTS, HALO_SEGS
 -- are made.
 local FILL_FIGHT = 3072
 -- Grown when the trails and the wall light arrived: sixty-four ribbons at
--- M.TRAIL_VERTS each and ten lights' worth of lit edges are about four and a
--- half thousand vertices on a bad frame, and a glow layer that runs out does
--- not report it, it just stops drawing whatever came last.
-local GLOW_FIGHT = 29696
+-- M.TRAIL_VERTS each and ten lights' worth of lit edges are about seven
+-- thousand vertices on a bad frame, and a glow layer that runs out does not
+-- report it, it just stops drawing whatever came last.
+local GLOW_FIGHT = 32768
 
 -- Capacities move in steps of this, so dragging a window edge does not
 -- allocate a new buffer on every frame of the drag.
@@ -2407,18 +2407,29 @@ end
 
 -- --- ship trails -----------------------------------------------------------
 --
--- A short ribbon behind every live hull, drawn from a ring of its last few
--- drawn positions. Client-side and cosmetic: the ribbon is where the picture
--- of the ship has been, so it follows the smoothed positions the hull is
--- drawn at rather than anything the simulation said.
-local TRAIL_LEN = 9
-M.TRAIL_VERTS = (TRAIL_LEN - 1) * 6
+-- A ribbon behind every live hull: the last dozen committed positions of the
+-- drawn ship, fading over about half a second. Client-side and cosmetic: it
+-- follows the smoothed positions the hull is drawn at, so it rides the same
+-- easing the hull does.
+--
+-- Samples commit on a clock, not per frame. The first cut kept one sample a
+-- frame in a nine-slot ring, which is a hundred and fifty milliseconds of
+-- path: thirty-odd pixels at flight speed, at thirty percent alpha, mostly
+-- under the hull and the engine plume. It drew every frame and nobody ever
+-- saw it. Fifty milliseconds a sample and twelve samples is six hundred
+-- milliseconds, which at flight speed is a ribbon long enough to be the
+-- point. The head still hugs the ship every frame, drawn live from the hull
+-- to the newest committed sample, so the cadence shapes the tail without
+-- ever detaching the front.
+local TRAIL_LEN = 12
+local TRAIL_STEP = 0.05
+M.TRAIL_VERTS = TRAIL_LEN * 6
 local trails = {}
 
 function M.trail(glow, i, x, y, col, t)
     local tr = trails[i]
     if not tr then
-        tr = {n = 0, at = 0, t = t}
+        tr = {n = 0, at = 0, t = t, pushed = -1e9}
         trails[i] = tr
     end
     -- A gap in the record is a death, a respawn, or time spent off screen,
@@ -2431,20 +2442,29 @@ function M.trail(glow, i, x, y, col, t)
         if dx * dx + dy * dy > 90 * 90 then tr.n = 0 end
     end
     tr.t = t
-    tr.at = tr.at % TRAIL_LEN + 1
-    tr[tr.at * 2 - 1], tr[tr.at * 2] = x, y
-    if tr.n < TRAIL_LEN then tr.n = tr.n + 1 end
-    -- Newest to oldest, fading and thinning as it goes. Alphas ride the
-    -- team color through seg_fade's own vertex alpha, so no color tables
-    -- are made here, at sixty a second, per hull.
+    if tr.n == 0 or t - tr.pushed >= TRAIL_STEP then
+        tr.at = tr.at % TRAIL_LEN + 1
+        tr[tr.at * 2 - 1], tr[tr.at * 2] = x, y
+        if tr.n < TRAIL_LEN then tr.n = tr.n + 1 end
+        tr.pushed = t
+    end
+    -- From the hull back through the committed samples, fading and thinning
+    -- as it goes. Alphas ride the team color through seg_fade's own vertex
+    -- alpha, so no color tables are made here, at sixty a second, per hull.
     local ax, ay = x, y
-    for back = 1, tr.n - 1 do
+    for back = 0, tr.n - 1 do
         local slot = (tr.at - back - 1) % TRAIL_LEN + 1
         local bx, by = tr[slot * 2 - 1], tr[slot * 2]
-        local a1 = 0.30 * (1 - (back - 1) / TRAIL_LEN)
-        local a2 = 0.30 * (1 - back / TRAIL_LEN)
-        glow:seg_fade(ax, ay, bx, by, 3.0 * a1 + 0.6, 3.0 * a2 + 0.6,
-                      a1, a2, col)
+        -- A resting ship commits the same point over and over, and the head
+        -- sits on the newest sample the frame it commits. Those segments
+        -- have no length and say nothing; skipping them here rather than in
+        -- the layer keeps the ribbon's cost equal to what it shows.
+        if ax ~= bx or ay ~= by then
+            local f1 = 1 - back / TRAIL_LEN
+            local f2 = 1 - (back + 1) / TRAIL_LEN
+            glow:seg_fade(ax, ay, bx, by, 0.5 + 2.9 * f1, 0.5 + 2.9 * f2,
+                          0.38 * f1, 0.38 * f2, col)
+        end
         ax, ay = bx, by
     end
 end
