@@ -56,6 +56,10 @@ TUNE.TICK_HZ = 100
 TUNE.DT = 1 / TUNE.TICK_HZ
 TUNE.MAX_CATCHUP = 8      -- ticks per frame; a long stall must not stampede
 TUNE.DETAIL_R2 = world.DETAIL_RANGE * world.DETAIL_RANGE
+-- Where a hull starts reading as damaged, as a fraction of full energy.
+-- The same threshold your own pip already grades at, so the outline and
+-- the bar do not disagree about when you are in trouble.
+TUNE.HURT_AT = 0.45
 
 TUNE.CLASS_NAMES = {"Apex", "Wedge", "Chord", "Anvil",
                      "Cipher", "Facet", "Lattice"}
@@ -1743,7 +1747,13 @@ function update(self, dt)
         -- Before anything that flies. A rock's body is opaque and the fill
         -- layer composites in write order, so drawn later it would paint over
         -- a ship passing in front of one.
+        -- Light is collected before anything is drawn, because a hull lit by
+        -- a blast has to know about it while drawing itself, and effects are
+        -- drawn last of all. The walls read the same list at the end of the
+        -- frame, by which point the weapons and the engines have added
+        -- theirs.
         world.lights_begin()
+        fx.gather_lights(world.light)
         world.draw_rocks(fill, glow, t, cull)
         world.prizes(fill, glow, t, cull)
         world.weapons(fill, glow, t, cull)
@@ -1795,6 +1805,13 @@ function update(self, dt)
                 -- the hull is drawn at rather than the one the core holds.
                 world.trail(glow, i, sim.ship_x(i), sim.ship_y(i), hdg,
                             sim.ship_class(i), col, t)
+                -- How hurt, on the same number the pip below reads. Nothing
+                -- until under a bar's worth of energy is gone, so a hull
+                -- that has been scratched once still draws clean and the
+                -- grading means something when it starts.
+                local frac = world.energy_fraction(i)
+                local wound = frac < TUNE.HURT_AT
+                    and (1 - frac / TUNE.HURT_AT) or 0
                 world.ship(fill, glow, sim.ship_class(i), sim.ship_x(i),
                            sim.ship_y(i), hdg, col, {
                     mine = i == me,
@@ -1803,6 +1820,8 @@ function update(self, dt)
                     reversing = burning(i, mine_buttons, sim.BTN_REVERSE),
                     flicker = (sim.tick() * 7 + i * 13) % 11 / 11,
                     roll = ship_roll(i, hdg, dt),
+                    hurt = wound,
+                    flash = world.hit_flash(i),
                 })
                 -- Only the wounded carry a pip. A bar over every hull in a
                 -- nine-ship room is noise; a bar over the one that is hurt is
@@ -1815,7 +1834,6 @@ function update(self, dt)
                 -- bar is gone: without this a pilot at eight percent and a
                 -- pilot at ninety would be told the same thing in the same
                 -- color, and the length of a 22-pixel bar is not a warning.
-                local frac = world.energy_fraction(i)
                 if frac < 0.995 then
                     local bar_col = col
                     if i == me then
@@ -1905,7 +1923,7 @@ function update(self, dt)
         -- Doors and wormholes: world geometry that moves, so it cannot live in
         -- the static mesh the way the walls do.
         world.draw_tiles(fill, glow, t, cull)
-        fx.draw(glow, world.light)
+        fx.draw(glow)
         world.wall_light(glow)
     else
         sfx.loop("thrust", false)

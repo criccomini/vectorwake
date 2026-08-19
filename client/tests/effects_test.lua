@@ -32,6 +32,8 @@ local COL = {1, 0.5, 0.2, 1}
 local function glow_stub()
     local g = {fades = 0, glows = 0, alphas = {}, xs = {}}
     function g:seg_fade() self.fades = self.fades + 1 end
+    function g:bloom() end
+    function g:ring_fade() end
     function g:seg_glow(x1, _, _, _, _, a)
         self.glows = self.glows + 1
         self.alphas[#self.alphas + 1] = a
@@ -340,8 +342,9 @@ local fx = require("arena.fx")
 fx.reset()
 fx.wave(300, 300, 4, 60, 0.4, 8, COL)
 local lit = nil
-fx.draw({ring_fade = function() end},
-        function(x, y, _, s, reach) lit = {x = x, y = y, s = s, r = reach} end)
+fx.gather_lights(function(x, y, _, s, reach)
+    lit = {x = x, y = y, s = s, r = reach}
+end)
 check("a shockwave declares itself a light", lit ~= nil)
 check("at its own place", lit and lit.x == 300 and lit.y == 300)
 check("with its strength tied to its fade", lit and lit.s > 0 and lit.s <= 0.9,

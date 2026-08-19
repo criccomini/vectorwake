@@ -18,6 +18,7 @@ local M = {}
 local MAX_PARTS = 320
 local MAX_WAVES = 48
 local MAX_DEBRIS = 96
+local MAX_FLASH = 24
 
 -- The ripple: a shockwave bending what it passes through.
 --
@@ -51,10 +52,14 @@ local rip = {n = 0}
 local parts = {}   -- {x, y, vx, vy, age, life, size, col, drag}
 local waves = {}   -- {x, y, r0, r1, age, life, width, col, kind}
 local debris = {}  -- {x, y, vx, vy, ang, spin, len, age, life, col}
-local np, nw, nd = 0, 0, 0
+local flash = {}   -- {x, y, r, age, life, a, col, str}
+local np, nw, nd, nf = 0, 0, 0, 0
 
 local shake = 0
 local shake_x, shake_y = 0, 0
+-- Where the camera is, set once a frame. Up here because the shake and
+-- `M.near` both read it, and a `local` is only in scope below itself.
+local lx, ly = 0, 0
 local seed = 20260801
 
 -- A deterministic-enough generator of our own. math.random is shared state,
@@ -66,7 +71,7 @@ local function rnd()
 end
 
 function M.reset()
-    np, nw, nd, shake = 0, 0, 0, 0
+    np, nw, nd, nf, shake = 0, 0, 0, 0, 0
 end
 
 -- --- emitters --------------------------------------------------------------
@@ -78,6 +83,32 @@ function M.wave(x, y, r0, r1, life, width, col)
     nw = nw + 1
     waves[nw] = {x = x, y = y, r0 = r0, r1 = r1, age = 0, life = life,
                  width = width, col = col}
+end
+
+-- A light that is over before it is looked at: a muzzle, a round breaking on
+-- rock, a hull taking one. Not a wave, which expands and therefore says how
+-- far something reached; this stays put and only dies, which is what a hit
+-- looks like. It draws as one bloom and it lends its color to the lights, so
+-- a gun going off in a corridor lights the corridor for a frame.
+--
+-- `a` is the alpha at its middle and `str` what it is worth as a light, both
+-- given rather than derived from the radius: a muzzle is small and fierce, a
+-- hull hit wide and soft, and one number cannot say both.
+function M.flash(x, y, r, life, a, col, str)
+    if nf >= MAX_FLASH then return end
+    nf = nf + 1
+    flash[nf] = {x = x, y = y, r = r, age = 0, life = life, a = a,
+                 col = col, str = str or a}
+end
+
+-- Is this close enough to whoever is watching to be worth drawing? The
+-- listener is already set every frame for the shake and the panning, so the
+-- answer is here for two multiplies. Effects fired by something happening
+-- across the arena ask it; sound does not, because sound is attenuated with
+-- distance rather than dropped at a line.
+function M.near(x, y, r)
+    local dx, dy = x - lx, y - ly
+    return dx * dx + dy * dy < r * r
 end
 
 function M.spark(x, y, vx, vy, life, size, col, drag)
@@ -157,7 +188,6 @@ end
 
 -- Camera shake, attenuated by distance from whoever is watching. Set the
 -- listener first; an explosion across the arena must not rattle the screen.
-local lx, ly = 0, 0
 function M.listener(x, y) lx, ly = x, y end
 
 function M.jolt(amount, x, y)
@@ -221,6 +251,19 @@ function M.update(dt)
             waves[i] = waves[nw]
             waves[nw] = nil
             nw = nw - 1
+        else
+            i = i + 1
+        end
+    end
+
+    i = 1
+    while i <= nf do
+        local f = flash[i]
+        f.age = f.age + dt
+        if f.age >= f.life then
+            flash[i] = flash[nf]
+            flash[nf] = nil
+            nf = nf - 1
         else
             i = i + 1
         end
@@ -320,7 +363,41 @@ function M.bend(x, y, k)
     return x, y
 end
 
-function M.draw(glow, light)
+-- Every live shockwave, as a light, handed to whatever collects them. Split
+-- out of draw because effects are drawn last and light has to be known
+-- first: a hull lit by a blast has to know about the blast while drawing
+-- itself, and it draws long before this does. `add` is world.light, passed
+-- by the arena rather than required here, since this file makes effects and
+-- owes the terrain nothing.
+function M.gather_lights(add)
+    for i = 1, nw do
+        local w = waves[i]
+        local fade = 1 - w.age / w.life
+        local r = w.r0 + (w.r1 - w.r0) * (1 - fade * fade)
+        add(w.x, w.y, w.col, fade * fade * 0.9, r + 30)
+    end
+    for i = 1, nf do
+        local f = flash[i]
+        local fade = 1 - f.age / f.life
+        add(f.x, f.y, f.col, f.str * fade, f.r * 2.4)
+    end
+end
+
+function M.draw(glow)
+    -- Flashes first: nothing else here is this brief, and whatever outlives
+    -- one should be drawn over it rather than under.
+    for i = 1, nf do
+        local f = flash[i]
+        local fade = 1 - f.age / f.life
+        -- Collapsing, not expanding. Growth is what a shockwave does and it
+        -- says how far the thing reached. A muzzle reached nowhere.
+        -- Linear, unlike the waves. A wave lives half a second and squaring
+        -- its fade is what stops it hanging around as a drawn circle; a
+        -- flash lives a tenth of one, and squared it is bright for a single
+        -- frame and gone, which is a flicker rather than a flash.
+        glow:bloom(f.x, f.y, f.r * (0.6 + 0.4 * fade), f.a * fade, f.col)
+    end
+
     for i = 1, nw do
         local w = waves[i]
         local t = w.age / w.life
@@ -329,9 +406,10 @@ function M.draw(glow, light)
         local col = w.col
         glow:ring_fade(w.x, w.y, r, w.width * (0.35 + fade * 0.65),
                        24, faded(col, col[4] * fade * fade))
-        if light then
-            light(w.x, w.y, col, fade * fade * 0.9, r + 30)
-        end
+        -- The light the blast throws, filling the ring rather than tracing
+        -- it. A shockwave that was only an outline read as a drawn circle;
+        -- this is what makes it read as something going off.
+        glow:bloom(w.x, w.y, r * 0.9, 0.30 * fade * fade * col[4], col)
     end
 
     for i = 1, np do

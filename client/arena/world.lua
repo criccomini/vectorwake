@@ -447,7 +447,10 @@ local FILL_FIGHT = 3072
 -- M.TRAIL_VERTS each and ten lights' worth of lit edges are about seven
 -- thousand vertices on a bad frame, and a glow layer that runs out does not
 -- report it, it just stops drawing whatever came last.
-local GLOW_FIGHT = 32768
+-- Raised again for the blooms: every bolt, bomb, hull, engine and shockwave
+-- now sheds a six-segment halo of its own, which is eighteen vertices each
+-- and a few thousand across a busy frame.
+local GLOW_FIGHT = 40960
 
 -- Capacities move in steps of this, so dragging a window edge does not
 -- allocate a new buffer on every frame of the drag.
@@ -1738,8 +1741,29 @@ end
 -- `thrusting` draws the flame, which is the only thing on screen that says a
 -- pilot is accelerating rather than coasting. `far` drops the detail that only
 -- reads up close; see M.DETAIL_RANGE.
+-- One hull's color, warmed by whatever is burning next to it. Held as a
+-- module scratch rather than made per ship per frame, and only ever read
+-- inside the call that filled it.
+local lit_col = {0, 0, 0, 1}
+-- The hot edge, graded. Same bargain as lit_col: read during the call and
+-- never kept, so one table serves every hull in the room.
+local edge_col = {0, 0, 0, 1}
+
 function M.ship(fill, glow, cls, x, y, heading, col, opts)
     local h = M.HULLS[cls + 1] or M.HULLS[1]
+    -- A blast beside a hull throws its color onto it. Half weight at most, so
+    -- a ship in the middle of a detonation is tinted rather than repainted:
+    -- the team read lives on this color, and a pink Apex nobody can place is
+    -- a worse bug than a flat one.
+    local lr, lg, lb, lw = M.light_at(x, y)
+    if lw > 0.02 then
+        local k = lw * 0.5
+        lit_col[1] = col[1] + (lr - col[1]) * k
+        lit_col[2] = col[2] + (lg - col[2]) * k
+        lit_col[3] = col[3] + (lb - col[3]) * k
+        lit_col[4] = col[4]
+        col = lit_col
+    end
     local a = heading / 65536 * TAU
     local ca, sa = math.cos(a), math.sin(a)
     -- Roll, handed in as radians of bank. Everything below that speaks a
@@ -1754,6 +1778,12 @@ function M.ship(fill, glow, cls, x, y, heading, col, opts)
     local mine = opts and opts.mine
     local dim = ((opts and opts.alpha) or 1) * (h.dim or 1)
     local near = not (opts and opts.far)
+    -- How badly this hull is hurt, and whether it was hit a moment ago. Both
+    -- come in from the arena rather than being read here, because this
+    -- function draws one ship and is given everything about it; the arena is
+    -- already holding the energy for the pip and the tick for the flare.
+    local hurt = (opts and opts.hurt) or 0
+    local flare = (opts and opts.flash) or 0
 
     -- The flame first, so the hull sits on top of it. Three parts: a bloom
     -- sitting in the nozzle, a soft cone, and a hot core down half its length.
@@ -1767,6 +1797,12 @@ function M.ship(fill, glow, cls, x, y, heading, col, opts)
             local len = 17 * flick
             local mx, my = jx + sa * 1.5, jy - ca * 1.5
             glow:halo(jx, jy, 5.4 * flick, 8, pal.a(pal.THRUST, 0.42 * dim))
+            glow:bloom(jx, jy, 19 * flick, 0.15 * dim, pal.THRUST)
+            -- An engine is a light like any other, which is what makes
+            -- flying down a corridor light the corridor. Weaker and shorter
+            -- than a blast, since a ship should warm a wall rather than
+            -- announce itself through one.
+            M.light(jx, jy, pal.THRUST, 0.28 * dim * flick, 60)
             glow:seg_fade(mx, my, jx - sa * len, jy + ca * len,
                           5.4, 0.6, 0.34 * dim, 0, pal.THRUST)
             glow:seg_fade(mx, my, jx - sa * len * 0.55, jy + ca * len * 0.55,
@@ -1861,15 +1897,46 @@ function M.ship(fill, glow, cls, x, y, heading, col, opts)
     -- skirt three to nine pixels deep: at the steepest bank the error is a
     -- few degrees on a gradient, which is nothing.
     local nrm = place_dir(h.nrm, h.ntmp, ca, sa)
+    -- What the hull throws into the dark around it, under the skirts rather
+    -- than instead of them: the skirts hug the silhouette and say what shape
+    -- this is, and this says there is something lit here.
+    glow:bloom(x, y, 30 + flare * 10, (0.085 + flare * 0.16) * dim, col)
     glow:glow_band(pts, nrm, 9.0, 0.105 * dim, col, h.wide)
     glow:glow_band(pts, nrm, 3.0, 0.32 * dim, col, h.band)
+    -- The hot edge, which is the team color pushed toward white. A hurt hull
+    -- pushes it toward HURT instead, so an outline that was cooling to white
+    -- runs red as the energy goes.
+    --
+    -- Only the edge. The fill, the wash, the canopy and the bloom all stay on
+    -- the team color, because the friend-or-foe read is the call a pilot
+    -- makes in a tenth of a second and nothing may put a second question
+    -- inside it. What this changes is the one stroke already carrying no
+    -- information: a rim that was there to say "lit" and now says how lit.
+    -- Enemies had nothing at all before this. Their pip only appears when
+    -- they are hurt, but a 22-pixel bar over a hull in a scrap is not a
+    -- reading, and an enemy at eight percent looked exactly like one at
+    -- ninety right up until it died.
+    --
+    -- The flare from a fresh hit rides on top, toward white and brighter,
+    -- which is the opposite direction and deliberately so: taking a round is
+    -- a moment and being wounded is a state, so they must not look alike.
     local edge = pal.hot(col, mine and 0.62 or 0.34, 1)
+    if hurt > 0 or flare > 0 then
+        local k = hurt * 0.7
+        for c = 1, 3 do
+            local v = edge[c] + (pal.HURT[c] - edge[c]) * k
+            edge_col[c] = v + (1 - v) * flare * 0.8
+        end
+        edge_col[4] = 1
+        edge = edge_col
+    end
+    local ea = dim * (1 + flare * 0.9)
     local n = #pts
     local e = 1
     for i = 1, n, 2 do
         local j = (i + 1 < n) and i + 2 or 1
-        glow:seg(pts[i], pts[i + 1], pts[j], pts[j + 1], 1.5,
-                 pal.a(edge, h.hot[e] * dim), true)
+        glow:seg(pts[i], pts[i + 1], pts[j], pts[j + 1], 1.5 + flare * 1.1,
+                 pal.a(edge, math.min(1, h.hot[e] * ea)), true)
         e = e + 1
     end
 
@@ -2010,6 +2077,48 @@ local charge_seen = {}
 
 -- What each pilot's trigger was last seen doing, by ship. See `M.shots`.
 local shot_seen = {}
+
+-- How far from the camera somebody else's muzzle is still drawn. A little
+-- over a phone's half-diagonal, so a shot just off the edge of the glass
+-- still throws its light onto what is on it.
+local MUZZLE_R = 900
+
+-- --- being hit -------------------------------------------------------------
+--
+-- The tick each hull last took damage on, so its outline can flare for a
+-- moment afterwards. Sparks at the point of impact say something landed;
+-- they do not say *who* it landed on, and in a four-way scrap that is the
+-- question. A hull that flashes when it is hit answers it on the hull.
+--
+-- Kept on the sim clock rather than on frame time because the events that
+-- write it are read off the core and the draw that reads it already has the
+-- tick to hand, so there is no second clock to keep in step.
+local HIT_TICKS = 12
+local hit_at = {}
+
+-- This hull took one, now.
+function M.note_hit(i)
+    hit_at[i] = sim.tick()
+end
+
+-- How lit this hull is by the hit it just took, from 1 down to 0. Falls to
+-- nothing once the window is spent, and clears itself on the way past so a
+-- room that has been running an hour is not carrying a number per seat that
+-- nobody will read again.
+--
+-- A negative age means the clock went backwards, which it does: prediction
+-- rewinds and re-runs on every correction. Treated as expired, because a
+-- flash that came back after the rewind would flash twice.
+function M.hit_flash(i)
+    local at = hit_at[i]
+    if not at then return 0 end
+    local age = sim.tick() - at
+    if age < 0 or age >= HIT_TICKS then
+        hit_at[i] = nil
+        return 0
+    end
+    return 1 - age / HIT_TICKS
+end
 
 -- A spec id means whatever the current settings say it means, and a zone
 -- sends its own -- so the answers cached here stop being true the moment a
@@ -2357,10 +2466,36 @@ function M.shots(me, sfx)
         local alive = sim.ship_alive(i) == 1
         if i ~= me and alive and seen.alive and cd > seen.cd then
             local x, y = sim.ship_x(i), sim.ship_y(i)
-            if b > seen.bomb then
+            local bombed = b > seen.bomb
+            if bombed then
                 sfx("bomb", x, y, spec_level(bomb_spec[i]))
             elseif g > seen.gun then
                 sfx("gun", x, y, spec_level(gun_spec[i]))
+            end
+            -- And the picture, which everyone else's guns did not have.
+            -- `M.events` puts a muzzle on every shot the core reports, and
+            -- the core reports the shots this client predicts: your own.
+            -- Somebody else opening up two hulls away was a sound and a
+            -- round already forty pixels out, with nothing at the barrel to
+            -- say where it came from.
+            --
+            -- Only within a screen or so of whoever is watching. A sound
+            -- from across the arena is attenuated and costs nothing; sixty
+            -- seats' worth of off-screen muzzle would spend the particle
+            -- budget on things nobody can see and crowd out an explosion
+            -- that is happening in front of them.
+            if fx.near(x, y, MUZZLE_R) then
+                local ang = sim.ship_heading(i) / 65536 * TAU
+                local col = bombed and pal.BOMB
+                    or (sim.ship_team(i) == team_of(me) and pal.FRIEND
+                        or pal.ENEMY)
+                local mx, my = x + math.sin(ang) * 10, y - math.cos(ang) * 10
+                fx.cone(mx, my, ang, bombed and 0.9 or 0.35,
+                        bombed and 7 or 3, bombed and 120 or 190, 0.14,
+                        bombed and 2.2 or 1.4, col)
+                fx.flash(mx, my, bombed and 26 or 15, bombed and 0.13 or 0.1,
+                         bombed and 0.7 or 0.5, pal.hot(col, 0.55, 1),
+                         bombed and 0.75 or 0.5)
             end
         end
         seen.cd, seen.gun, seen.bomb, seen.alive = cd, g, b, alive
@@ -2511,19 +2646,71 @@ function M.lights_begin()
     lights.n = 0
 end
 
+-- A full list keeps the loudest, rather than whatever arrived first.
+--
+-- Order here is draw order, which has nothing to do with what matters: the
+-- blasts are gathered before the frame starts and every thrusting engine
+-- adds one while its hull draws, so ten ships coasting past a corridor could
+-- fill the list with engine glow and drop the bomb that went off next to
+-- them. Ten entries is a short enough scan to just find the weakest and take
+-- its place, which makes the result depend on the fight instead of on the
+-- order the renderer happens to walk it in.
 function M.light(x, y, col, strength, reach)
     local n = lights.n
-    if n >= LIGHT_MAX then return end
-    local base = n * LIGHT_STRIDE
+    local base
+    if n >= LIGHT_MAX then
+        local worst, wi = strength, -1
+        for li = 0, LIGHT_MAX - 1 do
+            local s = lights[li * LIGHT_STRIDE + 4]
+            if s < worst then worst, wi = s, li end
+        end
+        if wi < 0 then return end
+        base = wi * LIGHT_STRIDE
+    else
+        base = n * LIGHT_STRIDE
+        lights.n = n + 1
+    end
     lights[base + 1], lights[base + 2] = x, y
     lights[base + 3] = col
     lights[base + 4], lights[base + 5] = strength, reach
-    lights.n = n + 1
 end
 
 local function dist(x0, y0, x1, y1)
     local dx, dy = x1 - x0, y1 - y0
     return math.sqrt(dx * dx + dy * dy)
+end
+
+-- What the lights add at one point, as a color and a strength.
+--
+-- The walls read the same list geometrically, edge by edge; a hull is small
+-- enough that one sample at its middle is the whole answer. Returned as three
+-- numbers and a weight rather than a table, because this is asked once per
+-- hull per frame and a fresh {r,g,b} apiece is garbage a fight cannot afford.
+function M.light_at(x, y)
+    local r, g, b, w = 0, 0, 0, 0
+    for li = 0, lights.n - 1 do
+        local base = li * LIGHT_STRIDE
+        local dx, dy = x - lights[base + 1], y - lights[base + 2]
+        local reach = lights[base + 5]
+        local d2 = dx * dx + dy * dy
+        if d2 < reach * reach then
+            local col = lights[base + 3]
+            local a = lights[base + 4] * (1 - math.sqrt(d2) / reach)
+            if a > 0 then
+                r = r + col[1] * a
+                g = g + col[2] * a
+                b = b + col[3] * a
+                w = w + a
+            end
+        end
+    end
+    if w > 1 then
+        r, g, b = r / w, g / w, b / w
+        w = 1
+    elseif w > 0 then
+        r, g, b = r / w, g / w, b / w
+    end
+    return r, g, b, w
 end
 
 -- Exposed wall edges near each light, brightened in the light's own color.
@@ -2621,6 +2808,7 @@ function M.weapons(fill, glow, t, cull)
             glow:seg_fade(x - vx * reach, y - vy * reach, x, y,
                           1.5, 5.5, 0, 0.55 * af, col)
             glow:halo(x, y, 13 * pulse, 10, pal.a(col, 0.5 * af))
+            glow:bloom(x, y, 38 * pulse, 0.20 * af, col)
             glow:ring(x, y, 4.6, 1.4, 10, pal.a(col, 0.95 * af))
             fill:disc(x, y, 3.6, 8, pal.a(pal.hot(col, 0.8, 1), 0.9 * af))
         else
@@ -2659,6 +2847,10 @@ function M.weapons(fill, glow, t, cull)
             glow:seg_fade(x - vx * 2, y - vy * 2, x, y, 0.6, 1.6, 0, af,
                           pal.hot(col, 0.9, 1))
             glow:halo(x, y, 7, 8, pal.a(col, 0.55 * af))
+            -- And the light it sheds. Wide and faint, so a stream of fire
+            -- brightens the space it crosses rather than staying a line of
+            -- separate dots.
+            glow:bloom(x, y, 24, 0.16 * af, col)
         end
     end
     -- Rounds that stopped existing take their fade state with them, or the
@@ -2775,9 +2967,16 @@ function M.events(me, sfx)
             local bomb = spec_blast(b) > 0
             local col = bomb and pal.BOMB
                 or (sim.ship_team(a) == team_of(me) and pal.FRIEND or pal.ENEMY)
-            fx.cone(x + math.sin(ang) * 10, y - math.cos(ang) * 10, ang,
-                    bomb and 0.9 or 0.35, bomb and 7 or 3,
+            local mx, my = x + math.sin(ang) * 10, y - math.cos(ang) * 10
+            fx.cone(mx, my, ang, bomb and 0.9 or 0.35, bomb and 7 or 3,
                     bomb and 120 or 190, 0.14, bomb and 2.2 or 1.4, col)
+            -- The flash itself. The cone was the whole muzzle before this,
+            -- and a spray of three sparks is the smoke rather than the shot:
+            -- at the moment of firing there was nothing bright at the barrel
+            -- at all, which is why the guns read as quiet.
+            fx.flash(mx, my, bomb and 26 or 15, bomb and 0.13 or 0.1,
+                     bomb and 0.7 or 0.5, pal.hot(col, 0.55, 1),
+                     bomb and 0.75 or 0.5)
             -- Which rung fired it. Read off the ship rather than off the
             -- weapon, because a spec carries what it does and not the rung it
             -- came from, and this is the tick that fired so the two cannot
@@ -2821,12 +3020,22 @@ function M.events(me, sfx)
                 fx.detonate(x, y, r, bomb_col(lvl))
                 sfx("blast", x, y, blast_rung(r))
             else
+                -- A round that ends without a blast ended on something: a
+                -- wall, a rock, a hull. Four sparks was the whole picture,
+                -- which reads as the round being absorbed rather than
+                -- stopping against anything. The mark is white-hot and
+                -- deliberately colorless: where a shot landed is a fact
+                -- about the terrain, and painting it in the shooter's team
+                -- color would put a friend-or-foe read on a wall.
                 fx.burst(x, y, 4, 90, 0.22, 1.5, pal.a(pal.INK, 0.9))
+                fx.flash(x, y, 13, 0.16, 0.55, pal.hot(pal.INK, 0.4, 1), 0.4)
             end
         elseif ty == sim.EV_HIT then
             local x, y = sim.ship_x(a), sim.ship_y(a)
             local col = (sim.ship_team(a) == team_of(me)) and pal.FRIEND or pal.ENEMY
             fx.burst(x, y, 5, 130, 0.26, 1.8, pal.hot(col, 0.6, 1))
+            fx.flash(x, y, 20, 0.12, 0.5, pal.hot(col, 0.7, 1), 0.45)
+            M.note_hit(a)
             -- The screen shakes by what it cost you, not by what hit you.
             -- A blast falls off linearly from its center, so the damage is
             -- already a measure of how close you were standing to it: a bomb

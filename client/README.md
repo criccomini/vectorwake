@@ -64,6 +64,7 @@ in `sim/`.
 | `tests/rung_test.lua` | That a rung's color is legible and unlike anything else |
 | `tests/pad_layout_test.lua` | Where a thumb's controls are, and what they draw |
 | `tests/overview_test.lua` | The map view's rectangles, against the maps the fleet serves |
+| `tests/impact_test.lua` | Muzzles, impact marks and hurt hulls, measured in lit pixels |
 | `tools/shot.sh` | Runs the client on a virtual display and photographs it |
 | `arena/world.lua` | Ships, weapons, flags, prizes, terrain, in triangles |
 | `arena/ui.lua` | The HUD and the menu, laid out like the web prototype |
@@ -713,6 +714,60 @@ draws the same mark above the loading progress bar.
 `lua5.1 client/tests/logo_test.lua` checks those consumers against the
 canonical paths, verifies the game mesh colors and triangle counts, and
 compares every embedded browser icon byte for byte with its source PNG.
+
+## What a hit looks like
+
+Firing used to be three sparks at the barrel and a noise. Being hit used to be
+five sparks and a bar appearing over your head. Both are true reports of the
+simulation and neither reads across a room, so a fight was rounds appearing in
+the air with no visible source and hulls quietly losing energy.
+
+`fx.flash` is the piece all four fixes are built from: one bloom that stays
+where it is put and dies in about a tenth of a second, and lends its color to
+the light list on the way out. A wave expands, which is the language for
+something that reached outward; a muzzle reached nowhere, so a flash collapses
+instead. Its alpha falls linearly rather than as the square the waves use.
+Squared, a tenth of a second is bright for one frame and gone, which the eye
+reads as a dropped frame.
+
+The four places it goes are the barrel, the rock, the hull, and the light list.
+A gun's muzzle flash comes out about as wide as the hull that fired it, and a
+bomb's is nearly twice that. A round that ends without a blast leaves a
+white-hot mark where it broke, deliberately colorless, because where a shot
+landed is a fact about the terrain and painting it in the shooter's team color
+would put a friend-or-foe question on a wall. A hull that takes a round flares:
+its rim goes wider, brighter and whiter for twelve ticks.
+
+Somebody else's gun needed more than the flash. `sim.replay` is handed your
+buttons and nobody else's, so the fire event belongs to the one ship this
+client predicts and every muzzle drawn was your own. `world.shots` already
+works a remote trigger out from a cooldown that rose, which is where their
+muzzle is drawn from now, inside a 900-pixel gate on the camera so sixty seats
+of off-screen fire cannot spend the particle budget on things nobody is
+looking at.
+
+Separately from the flare, a hull's rim grades toward `HURT` as its energy
+falls, from 45 percent down. Only the rim: the fill, the wash, the canopy and
+the bloom all stay on the team color, because friend-or-foe is the call a pilot
+makes in a tenth of a second and nothing may sit inside it. The rim is the one
+stroke that was carrying no information, and an enemy at eight percent used to
+look exactly like one at ninety right up until it died.
+
+The light list also changed. It holds ten lights and used to keep whichever ten
+arrived first, which is draw order: blasts are gathered before the frame
+starts, and every thrusting engine adds one while its hull draws. Ten ships
+coasting past a corridor could fill it and drop the bomb going off beside them.
+Ten entries is a short enough scan to find the weakest and take its place, so
+what survives depends on the fight rather than on the order the renderer walks
+it in.
+
+`lua5.1 client/tests/impact_test.lua` covers all of it, and the middle of that
+file is worth reading before adding another effect here. It builds a real
+vector layer over a recorded buffer, samples the triangles on a grid, and asks
+how many pixels across the lit patch is and for how many frames. Two of the
+three effects before this one shipped correct and invisible with every test
+they had passing, so an effect is not finished when the arithmetic is right.
+The muzzle measures 26 pixels across and holds for four frames.
 
 ## The repel nobody could see
 

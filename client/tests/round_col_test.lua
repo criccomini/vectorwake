@@ -91,6 +91,9 @@ function layer:seg_fade(...) rec("seg_fade", ...) end
 function layer:halo(...) rec("halo", ...) end
 function layer:ring(...) rec("ring", ...) end
 function layer:disc(...) rec("disc", ...) end
+-- The halo a bright round throws into the dark around it. Color last,
+-- like the rest, so it records the same way.
+function layer:bloom(...) rec("bloom", ...) end
 -- What a mine is made of. Two of these cannot go through `rec`, which reads
 -- the color off the end of the argument list: `seg` carries a cap flag after
 -- its color, and `fan` takes a table of points rather than a run of numbers,

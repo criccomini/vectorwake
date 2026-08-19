@@ -299,8 +299,35 @@ function Layer:disc(x, y, r, segs, col)
     end
 end
 
+-- The bloom a bright thing sheds into the space around it: a wide, faint
+-- halo drawn on top of whatever tight glow the thing already has.
+--
+-- This is the geometry answer to a post-process nobody here can test before a
+-- player sees it. What a real bloom does that a drawn halo does not is sum:
+-- the blurred layer adds, so two bolts crossing brighten the gap between
+-- them. These sum too, because the glow pass is additive, which is most of
+-- the effect for none of the risk. What is genuinely lost is bleeding off
+-- large filled areas, and a game made of thin lines and small dots has
+-- little of that to miss.
+--
+-- The center's alpha is a parameter rather than a color, because the writer
+-- multiplies the two and a fresh {r,g,b,a} per bright thing per frame is a
+-- table this loop cannot afford. Six segments: at these alphas nobody has
+-- ever seen the polygon, and the count is the whole cost, eighteen vertices
+-- a call.
+M.BLOOM_SEGS = 6
+function Layer:bloom(x, y, r, a, col)
+    local u = unit(M.BLOOM_SEGS)
+    for i = 0, M.BLOOM_SEGS - 1 do
+        self:tri_fade(x, y, a,
+                      x + u[i * 2 + 1] * r, y + u[i * 2 + 2] * r, 0,
+                      x + u[i * 2 + 3] * r, y + u[i * 2 + 4] * r, 0, col)
+    end
+end
+
 -- A disc that is solid at the center and gone at the rim: a light source
--- rather than a coin. Additive, this is the whole bloom vocabulary.
+-- rather than a coin. The tight one, sized to the thing it belongs to;
+-- `bloom` above is the wide faint one that goes over the top of it.
 function Layer:halo(x, y, r, segs, col)
     local u = unit(segs)
     for i = 0, segs - 1 do
