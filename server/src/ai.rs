@@ -1956,8 +1956,23 @@ impl Bot {
             // bomb spam.
             Doctrine::Bombardier => crowded || finisher || o.energy > 0.45,
             Doctrine::Heavy => crowded || finisher || outnumbered || o.energy > 0.48,
-            Doctrine::Denier => crowded || finisher,
-            _ => crowded || finisher,
+            // A bomb on a healthy bar, which is the license Bombardier and
+            // Heavy already had and these five did not. Without it they could
+            // bomb only into a crowd or at a target already under 38% energy,
+            // so the weapon was a panic button rather than a weapon, and this
+            // was the largest single gate in the funnel above: 816 of 1738.
+            //
+            // Measured on Alpha, forty bots for ten minutes, against the same
+            // run without it: 251 bomb presses against 177, which is z 3.5.
+            // It lands where it was aimed, doubling Apex and Lattice and
+            // quadrupling Facet while leaving Wedge and Anvil alone.
+            //
+            // 0.55 rather than lower because lower buys nothing. The same run
+            // at 0.40 read 249, so once this gate opens the binding constraint
+            // is somewhere below it, and the stiffer threshold is the one that
+            // costs a pilot less of the bar it lives on.
+            Doctrine::Denier => crowded || finisher || o.energy > 0.55,
+            _ => crowded || finisher || o.energy > 0.55,
         };
         if !purposeful {
             return Weapon::Gun;
