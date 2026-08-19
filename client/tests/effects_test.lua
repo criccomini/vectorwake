@@ -228,6 +228,35 @@ for probe = 4, 140, 2 do old_r = math.max(old_r, pushed(probe, 0)) end
 check("a dying wave bends less than a fresh one", old_r < young,
       string.format("%.2f then %.2f", young, old_r))
 
+-- A repel is the biggest shockwave in the game and the one this effect suits
+-- best: five hundred and twelve pixels of shove, straight off the original's
+-- RepelDistance. Every path that draws one, your own on its expiry and a
+-- stranger's through their charge count, goes through fx.detonate, so the
+-- ripple reaches it without knowing what a repel is. Pinned because it would
+-- be lost silently: raise the floor that ignores sparks, or shrink what a
+-- detonation emits, and the loudest thing on the field would stop bending
+-- anything with every test still green.
+fxr.reset()
+fxr.detonate(0, 0, 512, COL)
+fxr.update(1 / 60)
+local crest, crest_at = 0, 0
+for d = 4, 700, 2 do
+    local ax = select(1, fxr.bend(d, 0, 1))
+    if ax - d > crest then crest, crest_at = ax - d, d end
+end
+check("a repel bends the sky", crest > 1,
+      string.format("%.2f px at %d out", crest, crest_at))
+-- And the crest travels: the disturbance is out at the ring rather than
+-- parked on the ship that fired it.
+for _ = 1, 12 do fxr.update(1 / 60) end
+local later, later_at = 0, 0
+for d = 4, 700, 2 do
+    local ax = select(1, fxr.bend(d, 0, 1))
+    if ax - d > later then later, later_at = ax - d, d end
+end
+check("and its crest travels outward with the ring", later_at > crest_at * 3,
+      string.format("%d out, was %d", later_at, crest_at))
+
 -- Only the loudest few, however many are going off: a fleet fight cannot pay
 -- for a walk of every wave per star.
 fxr.reset()
