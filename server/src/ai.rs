@@ -38,15 +38,24 @@ pub struct RosterEntry {
 /// The calibrated roster. These eight have careers: `zone/ladder.json` holds a
 /// rating for each, earned in the offline tournament, and every other pilot in a
 /// zone floats against the one pinned among them.
+/// Skills span 0.05 to 0.90 rather than the 0.30 floor they used to share,
+/// because the roster's job is to cover the game's actual range and the game
+/// now has a bottom: below 0.30 the aim floor makes a pilot genuinely bad,
+/// which is what a new player needs some of the room to be. Kestrel takes the
+/// low end, which is a demotion from the top of the shipped ladder, and that
+/// ladder had it backwards anyway: it was calibrated in a room that could not
+/// measure aim. Ozone keeps 0.54, since the anchor's fixed 1200 is the scale
+/// everybody else is read against and moving its skill would quietly move
+/// what the number means.
 pub const CALIBRATED: [(&str, u8, f32); 8] = [
-    ("Kestrel", 0, 0.30),
-    ("Halcyon", 3, 0.46),
-    ("Vantage", 6, 0.62),
-    ("Ridgeline", 2, 0.78),
+    ("Kestrel", 0, 0.05),
+    ("Halcyon", 3, 0.35),
+    ("Vantage", 6, 0.65),
+    ("Ridgeline", 2, 0.82),
     ("Sable", 5, 0.90),
     ("Ozone", 1, 0.54),
-    ("Tessellate", 4, 0.70),
-    ("Cirrus", 2, 0.44),
+    ("Tessellate", 4, 0.74),
+    ("Cirrus", 2, 0.20),
 ];
 
 /// Names for the pilots beyond the calibrated roster. Same register, no overlap
@@ -146,7 +155,10 @@ pub fn individual(n: usize) -> RosterEntry {
         // the end of it is an out-of-bounds read the moment anything asks
         // what it is flying.
         class: (h >> 11) as u8 % CLASS_NAMES.len() as u8,
-        skill: 0.30 + (h % 61) as f32 / 100.0,
+        // 0.05 to 0.90, matching the calibrated span. The band below 0.30
+        // is the point: about three fill pilots in ten are genuinely bad now,
+        // which is the room a new player can find a fight they win in.
+        skill: 0.05 + (h % 86) as f32 / 100.0,
     }
 }
 
