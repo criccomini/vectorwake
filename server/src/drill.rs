@@ -38,6 +38,17 @@ pub struct Drill {
     /// this counts collisions and not the walls themselves.
     pub bounces: u32,
     pub shots: u32,
+    /// Trigger presses by weapon, counted off the button word the brain
+    /// returns rather than off a fire event, so a press the core refuses for
+    /// energy or cooldown still shows. A weapon nobody presses and a weapon
+    /// nobody is allowed to fire are different faults with the same symptom.
+    pub gun_presses: u32,
+    pub bomb_presses: u32,
+    pub mine_presses: u32,
+    /// Presses per hull, so "bots never bomb" can be asked of the hull that
+    /// is supposed to and the six that are not.
+    pub bomb_by_class: [u32; 8],
+    pub alive_by_class: [u64; 8],
     /// Damage events landed on somebody, so shots over hits is roughly accuracy
     /// once a fight is on.
     pub hits: u32,
@@ -110,6 +121,22 @@ impl Drill {
             self.shots
         );
         println!(
+            "  presses  gun {}, bomb {}, mine {}",
+            self.gun_presses, self.bomb_presses, self.mine_presses
+        );
+        let names = ai::CLASS_NAMES;
+        let mut per_class: Vec<String> = Vec::new();
+        for (c, name) in names.iter().enumerate().take(8) {
+            let secs = self.alive_by_class[c] as f64 / HZ as f64;
+            if secs > 0.0 {
+                per_class.push(format!(
+                    "{name} {:.1}/min",
+                    self.bomb_by_class[c] as f64 * 60.0 / secs
+                ));
+            }
+        }
+        println!("  bombs by hull  {}", per_class.join(", "));
+        println!(
             "  hits    {:6.2} per bot-minute  ({} total, {:.1}% of shots)",
             per(self.hits),
             self.hits,
@@ -177,6 +204,11 @@ pub fn run_on(map: std::sync::Arc<sim::sim_map>, bots: usize, ticks: u32, seed: 
         retreat_ticks: 0,
         bounces: 0,
         shots: 0,
+        gun_presses: 0,
+        bomb_presses: 0,
+        mine_presses: 0,
+        bomb_by_class: [0; 8],
+        alive_by_class: [0; 8],
         hits: 0,
         crawling: 0,
         flying: 0,
@@ -207,6 +239,20 @@ pub fn run_on(map: std::sync::Arc<sim::sim_map>, bots: usize, ticks: u32, seed: 
             let o = ai::own(&w, ship);
             before_energy[bi] = o.energy;
             let buttons = b.think(&o, &route, fresh);
+            let cls = (w.state.ships[ship as usize].cls as usize).min(7);
+            if o.alive {
+                d.alive_by_class[cls] += 1;
+            }
+            if buttons & sim::BTN_FIRE != 0 {
+                d.gun_presses += 1;
+            }
+            if buttons & sim::BTN_BOMB != 0 {
+                d.bomb_presses += 1;
+                d.bomb_by_class[cls] += 1;
+            }
+            if buttons & sim::BTN_MINE != 0 {
+                d.mine_presses += 1;
+            }
             if tracing
                 && ship == brains_first
                 && w.state.tick >= trace_from

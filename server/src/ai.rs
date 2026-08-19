@@ -1914,10 +1914,28 @@ impl Bot {
         // built one, while no other knob moved a win rate off a coin. A line
         // that flips sign with the prize economy is not a skill parameter, it
         // is two different games with a threshold between them.
-        if o.energy - bomb.cost <= self.reserve() || !foe.clear {
+        if o.energy - bomb.cost <= self.reserve() {
+            return Weapon::Gun;
+        }
+        if !foe.clear {
             return Weapon::Gun;
         }
         let doctrine = Doctrine::for_class(o.class);
+        // Seven gates stand between a bomb and a trigger press, and counted on
+        // Alpha with twenty-four bots for three minutes they compose to almost
+        // nothing. Of 1738 calls here: 816 died on `purposeful`, 330 on the
+        // range window, 247 on cadence, 140 on the reserve, 112 on the
+        // self-blast margin and 60 on the cooldown, leaving 33 that reached
+        // `Weapon::Bomb`. One point nine per cent. Over the same run the
+        // roster pressed the gun 19064 times and the bomb 21, and the Wedge,
+        // whose doctrine is named for the weapon, pressed it 0.8 times a
+        // minute.
+        //
+        // No single gate here is unreasonable and nobody tuned their product.
+        // That is the shape of the bug, so anybody loosening one should count
+        // the funnel again rather than reason about the line they touched:
+        // `drill` reports gun, bomb and mine presses and the per-hull rate.
+        //
         // A poor pilot throws them closer together than the hull can afford,
         // which in a fight is the same mistake as firing without aiming.
         let cadence = (self.bomb_cadence(doctrine) as f32
