@@ -80,12 +80,21 @@ every arena already running keeps running.
 ## Calibrating the bot ladder
 
 ```sh
-vectorwake-server calibrate 8 zone     # writes zone/ladder.json
+vectorwake-server calibrate 200 zone   # writes zone/ladder.json
 ```
 
 Every roster pilot fights every other, repeatedly, in the real simulation with
-the real bots and the real rating math. Every room seeds its bots from the
-result.
+the real bots and the real rating math, on Alpha's own map with the thirty
+greens a spawn there hands out. It ran in a bare thirty-two tile pit for a long
+time, and that room could not measure the one trait that decides a fight: aim
+error scales with how far a round flies, and at knife range there is no lead to
+misread. The pit rated a 0.15 pilot above a 0.95 one. Run from the repository
+root, where `catalog/` is.
+
+Two hundred rounds rather than eight, because an Elo gap at small samples is
+mostly noise: five identical tournaments at sixty rounds spread over thirty
+points, which is half the span the whole ladder covers. Every room seeds its
+bots from the result.
 
 `zone/ladder.json` is compiled into the binary, because the roster is code and
 the same calibrated pilots fly in every room this build serves. So there is no file to

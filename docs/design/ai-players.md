@@ -84,24 +84,32 @@ eight copies of one opponent.
 
 ## Skill
 
-Skill is a set of parameters, not a set of behaviors. A weak bot and a strong bot
-run the same code and differ in how well they execute:
+Skill is two parameters, and the number is a result rather than a choice: a
+table of six was tried, ablated one knob at a time on two hulls in two
+economies, and four of the six could not be told from a coin. A weak bot and a
+strong bot run the same code and differ in how well they execute:
 
 | Parameter | Weak | Strong |
 |---|---|---|
-| Reaction | ~400 ms before responding to something new | ~40 ms |
-| Aim | Poor lead prediction, wide error | Near-exact lead within the projectile solution |
-| Discipline | Notices a bad trade late and wastes its escape window | Breaks contact promptly and uses defensive fire well |
-| Awareness | Tracks one contact, ignores its back | Tracks the room, checks radar constantly |
-| Greed | Overcommits or flees at random | Correct risk for the situation |
-| Map | Bumps walls, takes bad routes | Uses chokepoints, carries speed through corners |
+| Aim | Misreads the target's motion most looks, badly | Reads the lead nearly right, nearly always |
+| Judgment | Spends the bar on shots that are not there, bombs on cooldown, panics charges early | Keeps a reserve, throws the bomb the geometry asks for, spends a charge on the round that would have hit |
 
-A single skill dial from 0 to 1 drives all of them, with per-archetype jitter, so
-a 0.7 Duelist and a 0.7 Ambusher are about equally hard and feel nothing alike.
+A single skill dial from 0 to 1 drives both, so a 0.7 Duelist and a 0.7
+Ambusher are about equally hard and feel nothing alike. Aim error is a misread
+of motion, so it grows with how fast the target crosses and how far the round
+must fly, and a quarter of even a bad pilot's looks come out clean: nobody is
+uniformly wrong, they are mostly wrong. Everything else the table used to
+promise, reaction time, look rate, aim tolerance, engagement range, is a
+constant now, pinned at what a mid-roster pilot always got, so retiring the
+knobs moved nobody's average.
 
-That is the intention. Two of the six carry it, and which of the two depends on
-the hull and on whether there are greens on the map, which is worth knowing
-before anybody tunes the other four.
+Reaction time deserves its own line, because it was built twice and failed
+twice, differently. As re-plan cadence it measured as a coin: in a fight the
+plan is stable and a slow re-plan has nothing to get wrong. As a delay on the
+hands it destroyed the dial, because steering is a closed loop and a lagged
+correction answers an error the ship no longer has, so every pilot oscillated
+and none could shoot. If it comes back a third time it has to lag what the
+pilot knows rather than what its hands do. The code records both attempts.
 
 ### Measuring it at all
 
