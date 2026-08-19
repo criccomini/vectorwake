@@ -1956,23 +1956,16 @@ impl Bot {
             // bomb spam.
             Doctrine::Bombardier => crowded || finisher || o.energy > 0.45,
             Doctrine::Heavy => crowded || finisher || outnumbered || o.energy > 0.48,
-            // A bomb on a healthy bar, which is the license Bombardier and
-            // Heavy already had and these five did not. Without it they could
-            // bomb only into a crowd or at a target already under 38% energy,
-            // so the weapon was a panic button rather than a weapon, and this
-            // was the largest single gate in the funnel above: 816 of 1738.
-            //
-            // Measured on Alpha, forty bots for ten minutes, against the same
-            // run without it: 251 bomb presses against 177, which is z 3.5.
-            // It lands where it was aimed, doubling Apex and Lattice and
-            // quadrupling Facet while leaving Wedge and Anvil alone.
-            //
-            // 0.55 rather than lower because lower buys nothing. The same run
-            // at 0.40 read 249, so once this gate opens the binding constraint
-            // is somewhere below it, and the stiffer threshold is the one that
-            // costs a pilot less of the bar it lives on.
-            Doctrine::Denier => crowded || finisher || o.energy > 0.55,
-            _ => crowded || finisher || o.energy > 0.55,
+            Doctrine::Denier => crowded || finisher,
+            // Deliberately no energy license here, though it is the obvious
+            // symmetry with the two above and it does raise the bomb rate.
+            // It also flattens the ladder, because `reserve` and the cadence
+            // both scale with the dial: a strong pilot holds more of its bar
+            // back and waits longer between throws, so opening this gate
+            // hands the weak pilot the extra bombing. Measured, it took
+            // Cipher from 78.6% to 61.9% and Facet from 67.1% to 55.4% at
+            // z 1.3, which is skill doing nothing on that hull.
+            _ => crowded || finisher,
         };
         if !purposeful {
             return Weapon::Gun;
@@ -1991,11 +1984,24 @@ impl Bot {
         // outside the blast is not safe if the plan immediately carries the
         // hull back into it.
         let near = bomb.blast + o.radius + 160.0;
+        // How far out a bomb is still worth throwing. These were 700, 650,
+        // 560 and 520, which is inside the range a pilot acquires a target
+        // at: sight is sixty tiles, so a bot spends most of its approach
+        // beyond the window and the funnel's largest rejection on a built
+        // hull was "too far", 3126 of 7235 calls. A bomb is safest at range
+        // and the numbers forbade it exactly there.
+        //
+        // Alpha, forty bots, ten minutes, thirty greens a spawn: 303 bomb
+        // rounds against 164, which is z 6.6, and the gun-to-bomb ratio goes
+        // 40 to one down to 18. Kills do not move and the run books one
+        // suicide, so the wider window is not pilots blowing themselves up.
+        // What binds now is cadence and the self-blast clearance, which are
+        // the two things that should bind a bomb.
         let far = (near + 180.0).max(match doctrine {
-            Doctrine::Bombardier => 700.0,
-            Doctrine::Heavy => 650.0,
-            Doctrine::Denier => 560.0,
-            _ => 520.0,
+            Doctrine::Bombardier => 900.0,
+            Doctrine::Heavy => 850.0,
+            Doctrine::Denier => 800.0,
+            _ => 800.0,
         });
         if dist <= near || dist >= far {
             return approach;

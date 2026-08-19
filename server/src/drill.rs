@@ -43,6 +43,17 @@ pub struct Drill {
     /// energy or cooldown still shows. A weapon nobody presses and a weapon
     /// nobody is allowed to fire are different faults with the same symptom.
     pub gun_presses: u32,
+    /// Rounds that actually left a barrel, by weapon.
+    ///
+    /// The press counters below cannot be compared to each other: BTN_FIRE is
+    /// held, so the brain sets it every tick the shot is on and a bot holding
+    /// the trigger for a second books a hundred of them, while a bomb is one
+    /// press per bomb. Dividing those two gives a ratio of several hundred to
+    /// one that means nothing. These count `EV_FIRE`, which the core raises
+    /// once per round that leaves, classified by the pattern's spec.
+    pub gun_rounds: u32,
+    pub bomb_rounds: u32,
+    pub mine_rounds: u32,
     pub bomb_presses: u32,
     pub mine_presses: u32,
     /// Presses per hull, so "bots never bomb" can be asked of the hull that
@@ -121,7 +132,14 @@ impl Drill {
             self.shots
         );
         println!(
-            "  presses  gun {}, bomb {}, mine {}",
+            "  rounds   gun {}, bomb {}, mine {}  (gun per bomb {:.0})",
+            self.gun_rounds,
+            self.bomb_rounds,
+            self.mine_rounds,
+            self.gun_rounds as f64 / self.bomb_rounds.max(1) as f64
+        );
+        println!(
+            "  presses  gun {}, bomb {}, mine {}  (held, not comparable)",
             self.gun_presses, self.bomb_presses, self.mine_presses
         );
         let names = ai::CLASS_NAMES;
@@ -173,10 +191,39 @@ impl Drill {
 pub fn run_on(map: std::sync::Arc<sim::sim_map>, bots: usize, ticks: u32, seed: u32) -> Drill {
     let route = nav::Nav::build(&map);
     let mut w = sim::World::on_shared_map(seed, map);
+    // Which weapon a fire event came from. `EV_FIRE` carries the pattern's
+    // spec, so walk every class's trigger ladders once and label each spec a
+    // gun, a bomb or a mine. A spec shared between two triggers would land on
+    // whichever is seen last, which no shipped zone does.
+    let mut spec_kind = [0u8; 256];
+    {
+        let c = &w.cfg;
+        let mut mark = |pat: u8, kind: u8| {
+            if pat != u8::MAX {
+                if let Some(p) = c.patterns.get(pat as usize) {
+                    spec_kind[p.spec as usize] = kind;
+                }
+            }
+        };
+        for cls in 0..c.class_count as usize {
+            for r in 0..sim::MAX_RUNGS {
+                mark(c.classes[cls].trigger[sim::TRIG_BOMB][r], 1);
+            }
+        }
+        mark(c.mine, 2);
+    }
     // The zone's own settings are not loaded: this measures flying, and a
     // spawn kit of thirty greens decides a fight before flying it matters, for
     // the same reason calibration turns them off.
-    w.cfg.spawn_prizes = 0;
+    // Bare by default, for the reason above. `VW_DRILL_GREENS` overrides it,
+    // because a question about a weapon is a question about the kit: a built
+    // bomb has a wider blast, and the standoff a pilot keeps from its own
+    // blast is computed from that. Measuring bombing on bare hulls answers a
+    // question nobody is playing.
+    w.cfg.spawn_prizes = std::env::var("VW_DRILL_GREENS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
 
     let mut brains = Vec::new();
     for i in 0..bots {
@@ -205,6 +252,9 @@ pub fn run_on(map: std::sync::Arc<sim::sim_map>, bots: usize, ticks: u32, seed: 
         bounces: 0,
         shots: 0,
         gun_presses: 0,
+        gun_rounds: 0,
+        bomb_rounds: 0,
+        mine_rounds: 0,
         bomb_presses: 0,
         mine_presses: 0,
         bomb_by_class: [0; 8],
@@ -277,7 +327,14 @@ pub fn run_on(map: std::sync::Arc<sim::sim_map>, bots: usize, ticks: u32, seed: 
         let ev = &*w.events;
         for i in 0..ev.count as usize {
             match ev.e[i].etype {
-                sim::EV_FIRE => d.shots += 1,
+                sim::EV_FIRE => {
+                    d.shots += 1;
+                    match spec_kind[ev.e[i].b as usize] {
+                        1 => d.bomb_rounds += 1,
+                        2 => d.mine_rounds += 1,
+                        _ => d.gun_rounds += 1,
+                    }
+                }
                 sim::EV_HIT => d.hits += 1,
                 sim::EV_DEATH => {
                     let victim = ev.e[i].a;
