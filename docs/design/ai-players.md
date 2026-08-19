@@ -208,10 +208,16 @@ a coin.
 | Wedge | 64.9% (z 4.5) | 69.0% (z 7.1) |
 | Lattice | 64.9% (z 7.6) | 67.4% (z 6.7) |
 | Facet | 67.1% (z 5.0) | 66.5% (z 5.7) |
-| Chord | 66.9% (z 7.2) | 57.9% (z 3.6) |
+| Chord | 66.9% (z 7.2) | 66.1% (z 8.4) |
 
-Two things are worth reading off it. Doubling the kit does not flatten the dial:
-five of seven hulls separate at least as well at sixty greens as at thirty,
+Chord's second column is from seven hundred bouts a pair rather than three
+hundred. At three hundred it read 57.9%, under the bar with an interval wide
+enough to span it, and more samples put it on 66.1%: the low number was noise.
+Worth writing down, because the other option on the table was calling 57.9%
+close enough.
+
+Three things are worth reading off it. Doubling the kit does not flatten the
+dial: five of seven hulls separate at least as well at sixty greens as at thirty,
 which contradicts the older finding that thirty greens turn a two-to-one gap
 flat. That finding came from a room where both pilots also raced for greens on
 the floor, so it was measuring who scavenged better as much as who flew better.
