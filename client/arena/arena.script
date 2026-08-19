@@ -1783,7 +1783,6 @@ function update(self, dt)
                and (i == me or not (sim.ship_x(i) < cull.x0 or sim.ship_x(i) > cull.x1
                                     or sim.ship_y(i) < cull.y0 or sim.ship_y(i) > cull.y1)) then
                 local col = (sim.ship_team(i) == my_team) and pal.FRIEND or pal.ENEMY
-                world.trail(glow, i, sim.ship_x(i), sim.ship_y(i), col, t)
                 -- Plates, panel lines and lamps only within the fight you are
                 -- actually in. A hull draws the same size wherever it is on
                 -- screen, so this is not a level of detail in the usual sense;
@@ -1792,6 +1791,10 @@ function update(self, dt)
                 local dx = sim.ship_x(i) - cx
                 local dy = sim.ship_y(i) - cy
                 local hdg = sim.ship_heading(i)
+                -- The ribbon, from this hull's own exhaust, on the heading
+                -- the hull is drawn at rather than the one the core holds.
+                world.trail(glow, i, sim.ship_x(i), sim.ship_y(i), hdg,
+                            sim.ship_class(i), col, t)
                 world.ship(fill, glow, sim.ship_class(i), sim.ship_x(i),
                            sim.ship_y(i), hdg, col, {
                     mine = i == me,

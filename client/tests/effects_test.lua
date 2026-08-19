@@ -43,9 +43,9 @@ end
 -- --- trails -----------------------------------------------------------------
 
 local g = glow_stub()
-world.trail(g, 1, 100, 100, COL, 0)
+world.trail(g, 1, 100, 100, 0, 0, COL, 0)
 check("one sample draws nothing", g.fades == 0, tostring(g.fades))
-world.trail(g, 1, 104, 100, COL, 1 / 60)
+world.trail(g, 1, 104, 100, 0, 0, COL, 1 / 60)
 check("the very next frame draws a segment to the hull", g.fades == 1,
       tostring(g.fades))
 -- Ninety frames of steady flight at four pixels a frame. Samples commit on
@@ -61,7 +61,7 @@ for i = 2, 90 do
         tail = math.min(tail, math.min(x1, x2))
     end
     tail = math.huge
-    world.trail(g, 1, 100 + i * 4, 100, COL, i / 60)
+    world.trail(g, 1, 100 + i * 4, 100, 0, 0, COL, i / 60)
 end
 check("a long flight draws a full ribbon and no more",
       g.fades * 6 == world.TRAIL_VERTS, tostring(g.fades))
@@ -69,15 +69,37 @@ check("and the ribbon reaches well behind the hull",
       (100 + 90 * 4) - tail > 100,
       string.format("tail %.0f behind", (100 + 90 * 4) - tail))
 
+-- The ribbon leaves from the exhaust, not from the middle of the hull. Each
+-- class's tail depth comes off its own jets, so an eastbound Apex trails
+-- from eleven pixels behind its center and a Cipher from thirteen: the head
+-- of the ribbon has to sit exactly there, and differently per hull.
+local function head_of(cls)
+    local head = -math.huge
+    local hg = glow_stub()
+    hg.seg_fade = function(self, x1)
+        self.fades = self.fades + 1
+        head = math.max(head, x1)
+    end
+    -- Two frames flying east (heading 16384 of 65536), far from earlier
+    -- trails so the ship index can be reused without a reset mattering.
+    world.trail(hg, 40 + cls, 5000, 5000, 16384, cls, COL, 0)
+    world.trail(hg, 40 + cls, 5008, 5000, 16384, cls, COL, 1 / 60)
+    return head
+end
+check("an Apex ribbon leaves from its jets", head_of(0) == 5008 - 11,
+      tostring(head_of(0)))
+check("a Cipher's leaves from its own, deeper", head_of(4) == 5008 - 13,
+      tostring(head_of(4)))
+
 -- A teleport is a jump with no gap in time; the ribbon must not cross it.
 g = glow_stub()
-world.trail(g, 1, 900, 900, COL, 91 / 60)
+world.trail(g, 1, 900, 900, 0, 0, COL, 91 / 60)
 check("a teleport resets the ribbon", g.fades == 0, tostring(g.fades))
 
 -- And a gap in time is a death, a respawn or a spell off screen.
-world.trail(g, 1, 904, 900, COL, 92 / 60)
+world.trail(g, 1, 904, 900, 0, 0, COL, 92 / 60)
 g = glow_stub()
-world.trail(g, 1, 908, 900, COL, 92 / 60 + 0.5)
+world.trail(g, 1, 908, 900, 0, 0, COL, 92 / 60 + 0.5)
 check("a gap in the record resets it too", g.fades == 0, tostring(g.fades))
 
 -- --- wall light -------------------------------------------------------------

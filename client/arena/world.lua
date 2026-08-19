@@ -2426,7 +2426,29 @@ local TRAIL_STEP = 0.05
 M.TRAIL_VERTS = TRAIL_LEN * 6
 local trails = {}
 
-function M.trail(glow, i, x, y, col, t)
+-- Where a ribbon starts: the exhaust, not the middle of the hull. Each
+-- class's depth is read off its own jets, the points the engine plumes
+-- already draw from, so the ribbon leaves exactly where the fire does and a
+-- hull redrawn with its engines somewhere new takes its ribbon along.
+local TAIL = {}
+for ci = 1, #M.HULLS do
+    local jets = M.HULLS[ci].jets
+    local depth = 0
+    for k = 2, #jets, 2 do
+        if -jets[k] > depth then depth = -jets[k] end
+    end
+    TAIL[ci] = depth
+end
+
+function M.trail(glow, i, x, y, heading, cls, col, t)
+    -- From the hull's center to its tail, along the drawn heading: zero is
+    -- north, and the simulation's +y runs down.
+    local d = TAIL[cls + 1] or 0
+    if d > 0 then
+        local a = heading / 65536 * math.pi * 2
+        x = x - math.sin(a) * d
+        y = y + math.cos(a) * d
+    end
     local tr = trails[i]
     if not tr then
         tr = {n = 0, at = 0, t = t, pushed = -1e9}
