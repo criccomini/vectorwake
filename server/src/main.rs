@@ -176,8 +176,16 @@ fn run_stage_tournament() {
     };
 
     // One skill on both sides. Which value hardly matters while the parameter
-    // does not separate pilots (see the ignored test in calibrate.rs), and the
-    // middle of the roster's range is the honest place to stand until it does.
+    // does not separate pilots, and the middle of the roster's range is the
+    // honest place to stand until it does.
+    //
+    // That claim is measurable and was for a while unmeasured: this comment
+    // pointed at an ignored test in calibrate.rs that no longer existed, so
+    // the finding had decayed into a sentence nobody could check. It is
+    // `skill_alone_should_make_a_ladder` again, which holds the hull still and
+    // varies only the dial. zone/ladder.json cannot answer it, because all
+    // eight calibrated pilots fly different hulls and it measures the two
+    // together.
     const SKILL: f32 = 0.50;
     println!(
         "pricing {} stages on a {hull} under {zone} tuning: {} pairs, {bouts} bouts each",

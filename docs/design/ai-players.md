@@ -84,20 +84,163 @@ eight copies of one opponent.
 
 ## Skill
 
-Skill is a set of parameters, not a set of behaviors. A weak bot and a strong bot
-run the same code and differ in how well they execute:
+Skill is two parameters, and the number is a result rather than a choice: a
+table of six was tried, ablated one knob at a time on two hulls in two
+economies, and four of the six could not be told from a coin. A weak bot and a
+strong bot run the same code and differ in how well they execute:
 
 | Parameter | Weak | Strong |
 |---|---|---|
-| Reaction | ~400 ms before responding to something new | ~40 ms |
-| Aim | Poor lead prediction, wide error | Near-exact lead within the projectile solution |
-| Discipline | Notices a bad trade late and wastes its escape window | Breaks contact promptly and uses defensive fire well |
-| Awareness | Tracks one contact, ignores its back | Tracks the room, checks radar constantly |
-| Greed | Overcommits or flees at random | Correct risk for the situation |
-| Map | Bumps walls, takes bad routes | Uses chokepoints, carries speed through corners |
+| Aim | Misreads the target's motion most looks, badly | Reads the lead nearly right, nearly always |
+| Judgment | Spends the bar on shots that are not there, bombs on cooldown, panics charges early | Keeps a reserve, throws the bomb the geometry asks for, spends a charge on the round that would have hit |
 
-A single skill dial from 0 to 1 drives all of them, with per-archetype jitter, so
-a 0.7 Duelist and a 0.7 Ambusher are about equally hard and feel nothing alike.
+A single skill dial from 0 to 1 drives both, so a 0.7 Duelist and a 0.7
+Ambusher are about equally hard and feel nothing alike. Aim error is a misread
+of motion, so it grows with how fast the target crosses and how far the round
+must fly, and a quarter of even a bad pilot's looks come out clean: nobody is
+uniformly wrong, they are mostly wrong. Everything else the table used to
+promise, reaction time, look rate, aim tolerance, engagement range, is a
+constant now, pinned at what a mid-roster pilot always got, so retiring the
+knobs moved nobody's average.
+
+Reaction time deserves its own line, because it was built twice and failed
+twice, differently. As re-plan cadence it measured as a coin: in a fight the
+plan is stable and a slow re-plan has nothing to get wrong. As a delay on the
+hands it destroyed the dial, because steering is a closed loop and a lagged
+correction answers an error the ship no longer has, so every pilot oscillated
+and none could shoot. If it comes back a third time it has to lag what the
+pilot knows rather than what its hands do. The code records both attempts.
+
+### Measuring it at all
+
+Three of the instruments that produced the numbers below were wrong, and each
+was wrong in the direction that flatters a change.
+
+The ladder was judged by the Elo gap between the roster's ends, and that gap
+carries about thirty points of run-to-run noise. Five tournaments of the same
+pilots on disjoint salts read 93, 64, 112, 138 and 158 with greens off, and 46,
+1, 24, -18 and 43 with them on, against a threshold of a hundred. The gap also
+understates the span whenever the middle of the roster bunches, because the fit
+has to place five pilots at once: a block whose ends sit at 67% can report +38.
+A win rate says the same thing with a fraction of the noise, so the bar is
+stated in one.
+
+The tournament had no null row. The ablation grew one, read 62% for two pilots
+identical in every respect, and that got written down as a side bias worth
+reading every table against. Four hundred bouts on independent salts then read
+54.2% and 47.2% in the two economies, and the Apex read 52.4% on the very salts
+where the Wedge read 62, so the 62 was one reading believed twice. `duel` deals
+each pilot the four combinations of start tile, facing and seat in equal
+numbers, and there was never anywhere for a positional bias to live. Each block
+measures its own coin and asserts on it rather than subtracting it, because
+taking a number with four points of noise off one with seven adds error instead
+of removing it.
+
+And every number came from one hull. Class 1 is the Wedge, whose doctrine is
+Bombardier, so a dial judged there was a dial judged on the bomb specialist. The
+tournament and the ablation both run the Apex too. The two hulls agree that aim
+is what separates pilots and disagree about the prize economy, where the Wedge
+flattens completely and the Apex does not.
+
+### What the dial actually drove
+
+That table described an intention for a long time rather than the code. Three of
+its six rows were decisions no pilot varied: the share of the bar a pilot would
+not spend attacking, how it chose greens, and the energy at which it broke off a
+fight were the same numbers for everybody in the game. What the dial did vary
+was mostly a permission line at 0.35 deciding who was allowed to throw a bomb or
+spend a charge at all.
+
+A tournament on alpha found the consequence. Bots were held one tile class
+apart, spawned inside sight of each other so the measurement was of fighting
+rather than walking, and fought three hundred bouts a pair. The ladder came out
+*inverted*, the roster's weakest pilot on top, because the pilot forbidden to
+bomb keeps its bar and a bare bomb is a poor trade. With the prize economy
+running it inverted the other way, because a built bomb is an excellent one. A
+parameter whose sign depends on whether greens are on the map is two games with
+a threshold between them, not a difficulty setting.
+
+`calibrate`'s ablation is what settles which knob is doing what: two pilots
+identical but for one parameter, and a null row of two pilots identical in every
+parameter, so every reading is a distance from the coin this fixture actually
+deals rather than from the one it was assumed to deal. Anybody changing these
+numbers should run it, because the first three attempts here were all wrong in
+ways only it caught, including one where greed was tuned backwards and the
+reckless side won 64% of its bouts.
+
+Two findings from it are worth keeping, because they are facts about this game
+rather than about the code that was fixed.
+
+**Aim decides a bare field.** A pilot that misreads a target's motion loses 37
+points of win rate on a bare Wedge and 28 on a bare Apex, against knobs that
+otherwise land inside their own intervals of a coin. With greens on the map it
+falls to two points on the Wedge and fourteen on the Apex: once multifire and
+shrapnel are on a hull nobody is aiming, they are spraying, and precision stops
+separating anybody.
+
+**Energy discipline decides a built Apex, and nothing decides a built Wedge.**
+Holding the permission knob at 0.30 costs a built Apex 24 points, which is more
+than aim costs it. That knob is the share of the bar a pilot will not spend
+attacking, plus the cadence and the margins that go with it, and a built hull
+firing multifire drains its bar fast enough for the question to decide fights. A
+built Wedge has no such knob: every one of the six lands inside a coin there, and
+so does the tournament, which puts 0.45 through 0.90 on 1224, 1223, 1221 and
+1216. Bombs and shrapnel together are the most stochastic thing in this game and
+they swamp the pilot flying behind them.
+
+So a change to reaction, look rate, tolerance or engagement range changes how
+the bots read rather than how hard they are. Difficulty lives in aim and in
+energy discipline.
+
+### What it comes to
+
+Seven hulls, two economies, five pilots from 0.05 to 0.90, three hundred bouts
+a pair, with both sides handed the same kit at every spawn and nothing on the
+floor to scavenge. The column is what the strongest pilot takes off the weakest
+in decided bouts, and z is that edge pooled over every pair in the block against
+a coin.
+
+| Hull | 30 greens | 60 greens |
+|---|---|---|
+| Cipher | 78.6% (z 10.6) | 77.9% (z 15.2) |
+| Apex | 76.7% (z 13.2) | 72.9% (z 15.3) |
+| Anvil | 67.2% (z 9.8) | 75.0% (z 11.9) |
+| Wedge | 64.9% (z 4.5) | 69.0% (z 7.1) |
+| Lattice | 64.9% (z 7.6) | 67.4% (z 6.7) |
+| Facet | 67.1% (z 5.0) | 66.5% (z 5.7) |
+| Chord | 66.9% (z 7.2) | 66.1% (z 8.4) |
+
+Chord's second column is from seven hundred bouts a pair rather than three
+hundred. At three hundred it read 57.9%, under the bar with an interval wide
+enough to span it, and more samples put it on 66.1%: the low number was noise.
+Worth writing down, because the other option on the table was calling 57.9%
+close enough.
+
+Three things are worth reading off it. Doubling the kit does not flatten the
+dial: five of seven hulls separate at least as well at sixty greens as at thirty,
+which contradicts the older finding that thirty greens turn a two-to-one gap
+flat. That finding came from a room where both pilots also raced for greens on
+the floor, so it was measuring who scavenged better as much as who flew better.
+
+The spread across hulls is real. Cipher and Apex separate pilots twice as
+sharply as Chord does, so how much your skill matters depends on what you fly.
+Nobody designed that and it is not obviously wrong, but it is worth knowing
+before anybody tunes a hull.
+
+And separation is not even along the dial. Chord at sixty greens, the block
+with the most bouts behind it, has 0.05 losing to everybody and then almost
+nothing between 0.45, 0.70 and 0.90: those three pairs read 47.6%, 49.0% and
+53.9%, the last of them favoring the weaker pilot. A room stocked from the top
+half of the dial would feel uniform. The difficulty lives at the bottom of the
+range, which is the argument for fielding it.
+
+**Error has to persist to matter.** Aim error was an angle drawn fresh around
+the correct bearing ten to twenty times a second, so a burst sprayed a cone
+centered on the truth and the mean shot was a perfect one. It measured as doing
+nothing, correctly. Error that survives being averaged is error that is held
+across a look and scaled by the thing being estimated: a misread of where the
+target will be, which grows with how fast they cross and how far the round must
+fly, and is zero against something standing still.
 
 ## Survival and greening
 

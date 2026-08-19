@@ -38,15 +38,24 @@ pub struct RosterEntry {
 /// The calibrated roster. These eight have careers: `zone/ladder.json` holds a
 /// rating for each, earned in the offline tournament, and every other pilot in a
 /// zone floats against the one pinned among them.
+/// Skills span 0.05 to 0.90 rather than the 0.30 floor they used to share,
+/// because the roster's job is to cover the game's actual range and the game
+/// now has a bottom: below 0.30 the aim floor makes a pilot genuinely bad,
+/// which is what a new player needs some of the room to be. Kestrel takes the
+/// low end, which is a demotion from the top of the shipped ladder, and that
+/// ladder had it backwards anyway: it was calibrated in a room that could not
+/// measure aim. Ozone keeps 0.54, since the anchor's fixed 1200 is the scale
+/// everybody else is read against and moving its skill would quietly move
+/// what the number means.
 pub const CALIBRATED: [(&str, u8, f32); 8] = [
-    ("Kestrel", 0, 0.30),
-    ("Halcyon", 3, 0.46),
-    ("Vantage", 6, 0.62),
-    ("Ridgeline", 2, 0.78),
+    ("Kestrel", 0, 0.05),
+    ("Halcyon", 3, 0.35),
+    ("Vantage", 6, 0.65),
+    ("Ridgeline", 2, 0.82),
     ("Sable", 5, 0.90),
     ("Ozone", 1, 0.54),
-    ("Tessellate", 4, 0.70),
-    ("Cirrus", 2, 0.44),
+    ("Tessellate", 4, 0.74),
+    ("Cirrus", 2, 0.20),
 ];
 
 /// Names for the pilots beyond the calibrated roster. Same register, no overlap
@@ -146,7 +155,10 @@ pub fn individual(n: usize) -> RosterEntry {
         // the end of it is an out-of-bounds read the moment anything asks
         // what it is flying.
         class: (h >> 11) as u8 % CLASS_NAMES.len() as u8,
-        skill: 0.30 + (h % 61) as f32 / 100.0,
+        // 0.05 to 0.90, matching the calibrated span. The band below 0.30
+        // is the point: about three fill pilots in ten are genuinely bad now,
+        // which is the room a new player can find a fight they win in.
+        skill: 0.05 + (h % 86) as f32 / 100.0,
     }
 }
 
@@ -1046,12 +1058,25 @@ pub struct Bot {
     skill: f32,
     react: u32,
     look_every: u32,
-    aim_err: f32,
+    /// How badly this pilot reads a target's motion, as a share of the lead
+    /// it should be taking. Held across a look rather than re-rolled per
+    /// tick, which is the whole point of it: see `lead_gain`.
+    lead_err: f32,
+    /// The skill the aim runs at: the pilot's own unless a harness holds it.
+    aim_skill: f32,
+    /// A wrong bearing held for the length of a look, zero above the floor.
+    bearing: f32,
+    /// This look's misreading, as a multiplier on the lead. One is a pilot who
+    /// solves the intercept exactly.
+    lead_gain: f32,
+    /// Per-knob skill overrides for `Knob::Permission`, `Tolerance` and
+    /// `Range`, which read the dial live. `None` everywhere in every real
+    /// pilot; the ablation harness is the only thing that sets one.
+    dial_at: [Option<f32>; 1],
     /// This pilot's current misjudgement, held rather than re-rolled. Rolled
     /// fresh on every look: a wrong estimate that changed a hundred times a
     /// second would average to a right one, which is the opposite of what an
     /// error is meant to model.
-    jitter: f32,
     timer: u32,
     mode: Mode,
     weapon: Weapon,
@@ -1138,19 +1163,211 @@ pub struct Bot {
 /// How far a destination may drift before the route to it is stale. One cell.
 const REROUTE_PX: f32 = 128.0;
 
+/// One parameter of the skill dial.
+///
+/// Named because the dial moves six things at once, which is why a tournament
+/// between two skills cannot say which of the six it measured. `Bot::tune`
+/// holds five still so a harness can ask.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Knob {
+    AimErr,
+    Permission,
+}
+
+impl Knob {
+    /// The one that reads `skill` where it stands rather than caching a number
+    /// when the pilot is built.
+    fn slot(self) -> Option<usize> {
+        match self {
+            Knob::Permission => Some(0),
+            Knob::AimErr => None,
+        }
+    }
+}
+
+/// The share of looks a poor pilot reads correctly anyway.
+const CLEAN_LOOKS: f32 = 0.25;
+
+/// Below this skill the dial keeps buying incompetence; above it, nothing
+/// here moves.
+///
+/// The floor exists because the dial saturates. Measured on Apex and Facet at
+/// thirty greens, a 0.05 pilot ties a 0.30 pilot at 47% and 52%: a sixty per
+/// cent lead misread and an eighty per cent one both miss at range and both
+/// connect up close, so past a point more of the same error stops costing
+/// anything. A game that is too hard for a new player needs a bot that is
+/// genuinely bad, and that takes a different kind of wrong, not a larger
+/// helping of the old one.
+///
+/// Everything gated on this ramp is a no-op at 0.30 and above, on purpose:
+/// the roster the tournaments were run on lives in 0.30 to 0.90, and a floor
+/// that leaked upward would invalidate every number measured there.
+const FLOOR: f32 = 0.30;
+
+/// How much of `CLEAN_LOOKS` this pilot keeps.
+///
+/// A quarter of a mid-roster pilot's looks come out clean; below the floor
+/// that share ramps away, to about one look in twenty-five at 0.05. The bad
+/// looks keep the magnitude they always had, anchored to the roster's own
+/// clean share, so the mean error grows as the clean looks vanish rather than
+/// the bad looks quietly shrinking to compensate.
+fn clean_share(skill: f32) -> f32 {
+    CLEAN_LOOKS * (skill / FLOOR).clamp(0.0, 1.0)
+}
+
+/// A bearing this pilot is simply wrong about, held for the length of a look.
+///
+/// The lead error scales with the target's crossing motion, which is correct
+/// and is also why it cannot make anybody truly bad: against a target flying
+/// straight at them, every pilot in the game was a perfect shot. Real bad play
+/// misses still targets too. So below the floor the whole aim is rotated by an
+/// angle drawn per look, up to a fifth of a turn's worth of wrong at the very
+/// bottom, and zero for the entire measured roster.
+fn bearing_err(skill: f32, u_mag: f32, u_sign: f32) -> f32 {
+    let deficit = ((FLOOR - skill) / FLOOR).clamp(0.0, 1.0);
+    if deficit <= 0.0 {
+        return 0.0;
+    }
+    let mag = deficit * 0.35 * (0.3 + 0.7 * u_mag);
+    if u_sign < 0.5 {
+        -mag
+    } else {
+        mag
+    }
+}
+
+/// How often a pilot re-plans, and how often it re-reads the world.
+///
+/// These used to ride the dial and no longer do, along with the aim tolerance
+/// and the engagement range below. Ablated on two hulls in two economies, all
+/// four came back inside their own intervals of a coin while aim moved
+/// twenty-eight to thirty-seven points, so what they bought was four more
+/// places for a sign to be wrong rather than four more ways to be good.
+///
+/// Both are set at what a 0.60 pilot used to get, which is the mean of the
+/// skill a zone deals its fill bots: `0.30 + (h % 61) / 100`, uniform over
+/// 0.30 to 0.90. So the average pilot in a room flies exactly as it did and
+/// only the spread is gone. Pinning them at the top of the old range instead
+/// would have made every bot in the game sharper, which is a difficulty change
+/// nobody asked for and one no bot-versus-bot tournament can see.
+///
+/// `REPLAN_TICKS` is worth reading for what it is not. It gates `decide` and
+/// `breaking_off`, which is how often a pilot changes its mind; `drive`,
+/// `trigger` and `charge` run every tick underneath it. So no pilot here has
+/// any hand latency at all, and this was never reaction time in the sense a
+/// player would mean. Reaction as output delay is a different mechanism and
+/// would need its own measurement.
+const REPLAN_TICKS: u32 = 20;
+const LOOK_TICKS: u32 = 7;
+
+/// Why there is no reaction time in this file.
+///
+/// Two implementations have failed now, in different ways, and the second is
+/// worth writing down because it looks obviously right.
+///
+/// The first gated `decide`, so skill bought how often a pilot changed its
+/// mind while `drive`, `trigger` and `charge` re-solved every tick underneath
+/// it. Ablated on two hulls in two economies it came back a coin every time,
+/// which makes sense: in a duel the plan is "fight the one person here", and a
+/// slower re-plan has nothing much to get wrong.
+///
+/// The second put the lag where it belongs, on the hands. A delay line on the
+/// button word, so a pilot was late to start turning and late to stop, late
+/// onto the trigger and late off it, with the lag redrawn every re-plan so
+/// nobody was uniformly slow. It reads as the correct model and it destroyed
+/// the dial: Apex at thirty greens fell from a pooled 59.7% at z 5.4 to 48.5%
+/// at z -1.2, and Facet inverted to z -4.7.
+///
+/// The reason is control rather than tuning. Aim updates every `REPLAN_TICKS`
+/// and `drive` steers toward it every tick, which is a stable loop: a slow
+/// setpoint and a fast corrector. Delaying the corrector's output makes every
+/// turn command answer an error the ship no longer has, so it overshoots and
+/// hunts, and a hunting ship cannot shoot. That costs every pilot, not the
+/// slow ones, which is exactly what the tournament showed.
+///
+/// If reaction is worth a third attempt, the lag belongs on what a pilot
+/// *knows* rather than on what its hands do: aim at where the target was a
+/// fifth of a second ago and steer toward that accurately. The loop stays
+/// closed, which is also how a person works. Unbuilt and unmeasured.
+
+/// The slack a pilot allows itself on the aim before it fires, and how far out
+/// it is willing to engage, both at the same 0.60 the two above are set at.
+const AIM_TOLERANCE: f32 = 0.016;
+const ENGAGE_SCALE: f32 = 0.96;
+
+/// How badly this pilot reads where the target will be, for one look.
+///
+/// `err` is zero for a perfect pilot and 0.85 for the worst, and the result
+/// multiplies the lead term, so 1.0 is a correct read and 1.6 is overshooting
+/// the lead by sixty per cent. The error is a gain on the lead rather than an
+/// angle, which is what makes it grow with how fast the target crosses and how
+/// far the round has to fly, and vanish against something standing still.
+///
+/// The shape is a mixture rather than a spread, and that is the whole of what
+/// changed here. Uniform error means a poor pilot reads the lead nearly right
+/// about as often as nearly wrong, which is not what a poor pilot looks like:
+/// they misjudge it most of the time and now and then they simply get it. So a
+/// quarter of looks come out clean and the rest are off by an amount that is
+/// never small, with the sign drawn each time.
+///
+/// Mean-preserving on purpose. The average magnitude is still `err / 2`,
+/// exactly what the uniform gave, so a pilot at a given skill is neither
+/// better nor worse than before and only reads differently. A reshaping that
+/// also moved the mean would arrive in the next tournament as a difficulty
+/// change wearing a costume, and there is no way to tell those apart after the
+/// fact.
+fn lead_gain(err: f32, clean: f32, u1: f32, u2: f32, u3: f32) -> f32 {
+    if u1 < clean {
+        return 1.0;
+    }
+    // What the bad looks have to average for the roster's own clean share to
+    // put the whole draw at err/2. Anchored to the constant rather than to
+    // `clean`, so a pilot below the floor loses clean looks without the bad
+    // ones shrinking to compensate.
+    let base = err * 0.5 / (1.0 - CLEAN_LOOKS);
+    // Spread around it, so every bad look is bad but not identically so. Half
+    // to one and a half of the base, which averages the base.
+    let mag = base * (0.5 + u2);
+    let sign = if u3 < 0.5 { -1.0 } else { 1.0 };
+    1.0 + sign * mag
+}
+
 impl Bot {
+    /// Set one parameter as if this pilot were of another skill, leaving the
+    /// other five where they are. For attribution, in the ablation harness.
+    pub fn tune(&mut self, knob: Knob, as_if: f32) {
+        match knob {
+            Knob::AimErr => {
+                self.lead_err = (1.0 - as_if) * 0.85;
+                self.aim_skill = as_if;
+            }
+            Knob::Permission => {
+                if let Some(i) = knob.slot() {
+                    self.dial_at[i] = Some(as_if);
+                }
+            }
+        }
+    }
+
+    /// What `skill` reads as for one of the live parameters. The pilot's own
+    /// skill unless a harness has held it somewhere else.
+    fn dial(&self, knob: Knob) -> f32 {
+        knob.slot()
+            .and_then(|i| self.dial_at[i])
+            .unwrap_or(self.skill)
+    }
+
     pub fn new(ship: u8, skill: f32) -> Self {
         Bot {
             ship,
             skill,
-            react: (38.0 - skill * 30.0).max(3.0) as u32,
-            // Ten looks a second for the worst pilot and twenty for the best,
-            // which is what docs/architecture/ai-runtime.md has always said
-            // perception costs and what this code did not do: it re-read the
-            // world every tick, at a hundred hertz, which no client can.
-            look_every: (10.0 - skill * 5.0).max(5.0) as u32,
-            aim_err: (1.0 - skill) * 0.42,
-            jitter: 0.0,
+            react: REPLAN_TICKS,
+            look_every: LOOK_TICKS,
+            lead_err: (1.0 - skill) * 0.85,
+            aim_skill: skill,
+            bearing: 0.0,
+            lead_gain: 1.0,
+            dial_at: [None; 1],
             timer: ship as u32 * 7, // stagger so they do not all think at once
             mode: Mode::Idle,
             weapon: Weapon::Gun,
@@ -1323,7 +1540,22 @@ impl Bot {
         }
         if fresh.is_some() {
             // A fresh look is a fresh estimate, right or wrong.
-            self.jitter = (self.rand() - 0.5) * self.aim_err;
+            // And a fresh reading of where the target is going, which is the
+            // one a poor pilot gets wrong in a way that matters.
+            //
+            // `jitter` is an angle drawn afresh around the correct bearing,
+            // so a burst of fire sprays a cone centred on the truth and the
+            // mean shot is a perfect one. Ablation found it inert for exactly
+            // that reason: at the range fights settle, the cone is narrower
+            // than the ship. This is a misread of the target's motion instead,
+            // so the error grows with how fast they are crossing and how far
+            // the round has to fly, is zero against something standing still,
+            // and holds for the length of the look rather than averaging out
+            // inside it. That is what "poor lead prediction" means.
+            let (u1, u2, u3) = (self.rand(), self.rand(), self.rand());
+            self.lead_gain = lead_gain(self.lead_err, clean_share(self.aim_skill), u1, u2, u3);
+            let (v1, v2) = (self.rand(), self.rand());
+            self.bearing = bearing_err(self.aim_skill, v1, v2);
         }
         if let Some(s) = fresh {
             self.seen = s;
@@ -1467,15 +1699,16 @@ impl Bot {
         if !o.alive || o.in_safe {
             return 0;
         }
-        // The worst pilots never think of it, the same way they never bomb.
-        if self.skill < 0.35 {
-            return 0;
-        }
+        let dial = self.dial(Knob::Permission);
         let threat = self.seen.threat;
         // A repel: something is arriving and there is no time to be elsewhere.
         // The push is hostile-only, so this costs the pilot nothing but the
         // charge.
-        let shoved = threat.map_or(false, |t| t.eta < 45.0 && t.miss < t.blast + 24.0);
+        // How late a pilot leaves the push. A good one reads the round coming
+        // and spends the charge on it; a poor one fires the moment anything is
+        // in the air, which is a charge gone and the round still arriving.
+        let notice = 45.0 + (1.0 - dial) * 90.0;
+        let shoved = threat.map_or(false, |t| t.eta < notice && t.miss < t.blast + 24.0);
         let crowded = self.dist < 150.0 && matches!(self.mode, Mode::Fight(_));
         if o.charges[0] > 0 && (shoved || (crowded && o.energy < 0.45)) {
             return sim::BTN_USE;
@@ -1584,8 +1817,25 @@ impl Bot {
     /// A small common floor keeps every pilot from shooting itself to death.
     /// Skill changes how quickly a pilot recognizes the need to disengage, not
     /// how long it refuses a good shot while still sitting in the fight.
+    /// How much of the bar a pilot will not spend attacking.
+    ///
+    /// Energy is health and ammunition at once, so this one number is most of
+    /// what separates a pilot who trades well from one who shoots itself flat
+    /// and dies to the next round that arrives. It scales with the dial: a
+    /// a tenth of a bar at the bottom, a third at the top.
+    ///
+    /// This one does straddle the 0.20 it replaced, and it is kept because it
+    /// measures well where the others did not: the dial makes +141 and +60
+    /// with it, and rewriting it to fall from 0.20 instead took those to +68
+    /// and +32. Energy is health and ammunition at once, so how much of it a
+    /// pilot refuses to spend is not a preference the game has already
+    /// optimised, the way a dodge window or a retreat threshold is.
+    ///
+    /// This used to be a flat 0.20 for everybody, which is why the ablation
+    /// found five of the dial's six knobs inert. Skill decided who was allowed
+    /// to bomb and nothing at all about how well anybody fought.
     fn reserve(&self) -> f32 {
-        0.20
+        0.10 + self.dial(Knob::Permission) * 0.24
     }
 
     fn selected_shot(&self, o: &Own) -> Option<Shot> {
@@ -1626,7 +1876,7 @@ impl Bot {
         };
         // Poor pilots overcommit a little. The range remains recognizably the
         // hull's, while skill still has a visible positional mistake to make.
-        base * (0.90 + self.skill * 0.10)
+        base * ENGAGE_SCALE
     }
 
     fn bomb_cadence(&self, doctrine: Doctrine) -> u32 {
@@ -1654,13 +1904,27 @@ impl Bot {
         let Some(bomb) = o.bomb else {
             return Weapon::Gun;
         };
-        if self.skill < 0.35 || o.energy - bomb.cost <= self.reserve() || !foe.clear {
+        // Everybody may bomb. What the dial decides is how well the moment is
+        // judged, which is the difference between a weapon and a way to spend
+        // a bar on nothing.
+        //
+        // It was a permission line at 0.35, and an ablation of all six knobs
+        // found it carrying the entire dial: holding it at 0.30 while the rest
+        // stayed at 0.90 won 96% of bouts in a bare field and lost 88% in a
+        // built one, while no other knob moved a win rate off a coin. A line
+        // that flips sign with the prize economy is not a skill parameter, it
+        // is two different games with a threshold between them.
+        if o.energy - bomb.cost <= self.reserve() || !foe.clear {
             return Weapon::Gun;
         }
         let doctrine = Doctrine::for_class(o.class);
+        // A poor pilot throws them closer together than the hull can afford,
+        // which in a fight is the same mistake as firing without aiming.
+        let cadence = (self.bomb_cadence(doctrine) as f32
+            * (0.45 + self.dial(Knob::Permission) * 0.55)) as u32;
         if self
             .last_bomb_at
-            .is_some_and(|last| self.timer.saturating_sub(last) < self.bomb_cadence(doctrine))
+            .is_some_and(|last| self.timer.saturating_sub(last) < cadence)
         {
             return Weapon::Gun;
         }
@@ -1707,8 +1971,12 @@ impl Bot {
         // moment of firing. This matters most to Anvil: its third-rung blast
         // is wider than its gun posture, so a closing target can turn an
         // apparently distant shot into an explosion beside the pilot.
+        // And leaves itself less room when it does. The margin a pilot wants
+        // beyond its own blast is the clearest thing skill can be: a bad one
+        // detonates its own round beside itself.
+        let margin = 24.0 + self.dial(Knob::Permission) * 120.0;
         let impact_clearance = self.bomb_impact_clearance(o, foe, bomb);
-        if impact_clearance.is_none_or(|d| d <= bomb.blast + o.radius + 96.0) {
+        if impact_clearance.is_none_or(|d| d <= bomb.blast + o.radius + margin) {
             return approach;
         }
         if !o.bomb_ready {
@@ -1766,7 +2034,16 @@ impl Bot {
             Doctrine::Denier => 700,
             Doctrine::Heavy => 1_400,
             Doctrine::Bombardier => 1_800,
-            _ => 2_600,
+            // The three above mine because their doctrine says to, at a rate
+            // that was tuned, and this leaves those numbers alone. Everyone
+            // else mines opportunistically, and there the rate is the
+            // judgement: a poor pilot lays them closer together than the bar
+            // can afford, which is the same mistake the bomb cadence prices
+            // and is priced the same way. One-sided on purpose. The top of
+            // the dial sits exactly on 2600, so nothing tuned moves for a
+            // strong pilot, which is where greed, discipline and awareness
+            // all went wrong.
+            _ => (2_600.0 * (0.45 + self.dial(Knob::Permission) * 0.55)) as u32,
         };
         if self
             .last_mine_at
@@ -1777,7 +2054,14 @@ impl Bot {
         match doctrine {
             Doctrine::Denier => true,
             Doctrine::Heavy | Doctrine::Bombardier => self.seen.company,
-            _ => self.skill >= 0.55 && self.seen.hostiles_near > 0,
+            // A hostile close enough to walk into it and not yet close
+            // enough to be shooting, which the guards above have already
+            // established. This was a permission line at 0.55: the last step
+            // in the file, and the last read of `skill` that went around
+            // `dial`, where the ablation could not see it at all. A 0.54
+            // pilot never laid a mine in its life and a 0.56 pilot laid one
+            // every time the band was occupied.
+            _ => self.seen.hostiles_near > 0,
         }
     }
 
@@ -1845,7 +2129,7 @@ impl Bot {
             _ => target,
         };
         let span = (reach / self.dist.max(1.0)).atan();
-        let tol = (span + (1.0 - self.skill) * 0.04).clamp(0.05, 0.32);
+        let tol = (span + AIM_TOLERANCE).clamp(0.05, 0.32);
         if self.aim_diff(o, self.aim.0, self.aim.1).abs() >= tol {
             return 0;
         }
@@ -2001,6 +2285,39 @@ impl Bot {
     /// make the current life more expensive to gamble. Skill still matters:
     /// a quick pilot notices the crossing several reaction cycles sooner.
     fn retreat_at(&self, o: &Own) -> f32 {
+        // Discipline, which the design describes as noticing a bad trade late
+        // and wasting the escape window, against breaking contact promptly.
+        // Nothing here read the dial: every pilot in the game left a fight on
+        // the same sliver of bar.
+        //
+        // It is the trait most likely to decide a fight between two built
+        // ships, which is the economy the ablation found nothing working in.
+        // Aim carries a bare field and stops mattering once multifire and
+        // shrapnel are on the hull, because then nobody is aiming, they are
+        // spraying.
+        //
+        // Deliberately flat, and it took three shapes and six tournaments to
+        // decide that.
+        //
+        // The design lists discipline among the traits the dial drives, and it
+        // is the obvious candidate for a built field, where the aim error is
+        // worth almost nothing because nobody aims a multifire. Measured
+        // against this flat number, which makes +141 of ladder in a bare field
+        // and +60 in a built one:
+        //
+        //     leaving earlier with skill      +88   +39
+        //     leaving later with skill       +102    -7
+        //     good pilot right, poor wrong    +80   +58
+        //
+        // All three are worse, the last included, and that is the shape that
+        // works for aim. The reason is not the shape. 0.30 is tuned, and the
+        // aim error already separates these pilots cleanly, so a second source
+        // of variance on both sides of every fight adds noise to a measurement
+        // that was working and takes the ladder down with it.
+        //
+        // Worth carrying to the next trait somebody wants on the dial: a
+        // parameter has to make the strong pilot better, not merely make the
+        // two of them differ.
         let value = (o.value as f32 / 60.0).min(1.0);
         let numbers = self
             .seen
@@ -2100,6 +2417,19 @@ impl Bot {
     /// than a two-hundred-pixel accident without turning every fight into a
     /// scavenger hunt.
     fn select_prize(&self, o: &Own) -> Option<(Prize, f32)> {
+        // Deliberately skill-blind, and measured that way.
+        //
+        // docs/design/ai-players.md lists greed among the traits the dial
+        // drives, so this carried two terms for a while: how far a pilot would
+        // go for a green, and how easily an enemy standing over it put them
+        // off. Both directions were tried, since the first had the reckless
+        // side winning 64% of its bouts against a null.
+        //
+        // It costs the ladder either way. Against the +141 and +60 the dial
+        // makes without it, adding greed reads +99 and +19, and the ablation
+        // has it inert in a bare field and slightly the wrong way in a built
+        // one. A green is worth having and every pilot knows it; there is no
+        // judgement here for a good pilot to be better at.
         let build_need = (1.0 - o.build as f32 / 36.0).clamp(0.0, 1.0);
         let reach = if o.build < 12 {
             720.0
@@ -2492,7 +2822,12 @@ impl Bot {
                     .or(o.bomb)
                     .map_or(2.0, |s| s.speed);
                 let t = intercept((dx, dy), rel, muzzle).unwrap_or(0.0).min(200.0);
-                self.aim = (dx + rel.0 * t, dy + rel.1 * t);
+                let g = self.lead_gain;
+                let (ax, ay) = (dx + rel.0 * t * g, dy + rel.1 * t * g);
+                // The held misjudgment of where they are, on top of the held
+                // misjudgment of where they are going. Zero above the floor.
+                let (s, c) = self.bearing.sin_cos();
+                self.aim = (ax * c - ay * s, ax * s + ay * c);
 
                 // Stand off at the working range along the line already flown,
                 // so closing and backing off are one instruction rather than a
@@ -2513,6 +2848,22 @@ impl Bot {
         let Some(t) = self.seen.threat else {
             return (wx, wy);
         };
+        // Flat, and this was measured twice before being left alone.
+        //
+        // Awareness is the obvious candidate for a built field, where the aim
+        // error is worth almost nothing because a multifire is sprayed rather
+        // than aimed, and the pilot still alive is the one that was not
+        // standing where the round went. It was tried as a spread, 18 plus the
+        // dial, and as a fall from this number, 45 less the dial. Against the
+        // +141 and +60 the dial makes without it:
+        //
+        //     18 + dial * 38     +123   +28
+        //     45 - dial * 24      +68   +32
+        //
+        // Both worse, and the second worse in the bare field than the first.
+        // Which is the same answer the retreat threshold gave three times: a
+        // number that is already tuned does not become a skill parameter by
+        // having pilots differ about it, whichever side of it they differ on.
         let age = self.timer.saturating_sub(self.seen_at) as f32;
         if t.eta - age > 45.0 {
             return (wx, wy);
@@ -2708,7 +3059,8 @@ impl Bot {
     /// Put the nose on a bearing. Thrust is not decided here: what the engine
     /// does depends on where the burn is, which is `fly`'s business.
     fn turn(&mut self, o: &Own, dx: f32, dy: f32, with_error: bool) -> u16 {
-        let diff = self.aim_diff(o, dx, dy) + if with_error { self.jitter } else { 0.0 };
+        let _ = with_error;
+        let diff = self.aim_diff(o, dx, dy);
         if diff > 0.05 {
             sim::BTN_RIGHT
         } else if diff < -0.05 {
@@ -2771,6 +3123,76 @@ fn nearest_prizes(w: &World, mx: f32, my: f32, within: f32, keep: usize) -> Vec<
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    /// The reshaped lead error leaves the measured roster where it was, and
+    /// the floor below it is strictly worse.
+    ///
+    /// Above `FLOOR` the mean misread is exactly `err / 2`, the same as the
+    /// uniform it replaced, so no tournament result moved when the shape did.
+    /// Below it the clean looks ramp away while the bad looks keep their size,
+    /// so the mean grows, and a bearing error appears that the whole measured
+    /// roster never has. Both halves are asserted, because a floor that leaks
+    /// upward invalidates every number measured on 0.30 to 0.90.
+    #[test]
+    fn the_aim_floor_is_a_floor() {
+        const N: u32 = 60_000;
+        let mut s: u32 = 0x9E37_79B9;
+        let mut draw = move || {
+            s ^= s << 13;
+            s ^= s >> 17;
+            s ^= s << 5;
+            (s >> 8) as f32 / ((1u32 << 24) as f32)
+        };
+        // The measured band: mean preserved, no bearing error at all.
+        for skill in [0.30f32, 0.60, 0.90] {
+            let err = (1.0 - skill) * 0.85;
+            let mut sum = 0.0f64;
+            for _ in 0..N {
+                let g = lead_gain(err, clean_share(skill), draw(), draw(), draw());
+                sum += (g - 1.0).abs() as f64;
+            }
+            let mean = sum / N as f64;
+            let want = (err / 2.0) as f64;
+            assert!(
+                (mean - want).abs() < want * 0.02 + 1e-6,
+                "at skill {skill} the mean misread is {mean:.4}, wanted {want:.4}"
+            );
+            assert_eq!(
+                bearing_err(skill, 0.99, 0.99),
+                0.0,
+                "a {skill} pilot should hold no bearing error"
+            );
+        }
+        // Below the floor: clean looks ramp away, the mean grows, and the
+        // bearing error appears.
+        let clean_low = clean_share(0.05);
+        assert!(
+            clean_low < CLEAN_LOOKS * 0.2,
+            "a 0.05 pilot keeps {clean_low:.3} of its looks clean"
+        );
+        let err = (1.0 - 0.05f32) * 0.85;
+        let mut sum = 0.0f64;
+        for _ in 0..N {
+            let g = lead_gain(err, clean_low, draw(), draw(), draw());
+            sum += (g - 1.0).abs() as f64;
+        }
+        let mean = sum / N as f64;
+        let ceiling = (err / 2.0) as f64;
+        assert!(
+            mean > ceiling * 1.2,
+            "the floor should cost a 0.05 pilot at least 20% more misread \
+             ({mean:.4} against a band mean of {ceiling:.4})"
+        );
+        let b = bearing_err(0.05, 0.5, 0.9);
+        assert!(
+            b > 0.15 && b < 0.35,
+            "a 0.05 pilot's held bearing error reads {b:.3} rad"
+        );
+        // And the sign is a draw, or every bad pilot misses the same way.
+        assert!(bearing_err(0.05, 0.5, 0.1) < 0.0);
+    }
+
     use super::*;
     use crate::sim;
 
