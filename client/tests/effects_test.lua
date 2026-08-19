@@ -149,6 +149,96 @@ world.wall_light(g)
 check("the light cap holds", g.glows == ten,
       g.glows .. " vs " .. ten)
 
+-- --- the ripple -------------------------------------------------------------
+
+package.loaded["arena.sfx"] = {play = function() end}
+local fxr = require("arena.fx")
+
+-- Nothing exploding, nothing bent. The starfield asks this of every star it
+-- places, so the quiet case has to be the identity or the sky drifts.
+fxr.reset()
+fxr.update(1 / 60)
+local bx, by = fxr.bend(500, 500, 1)
+check("a quiet sky is not bent", bx == 500 and by == 500,
+      string.format("%.2f, %.2f", bx, by))
+
+-- A blast pushes what is near its ring outward, and only what is near it.
+-- The wave starts at radius 4 and eases out to 90, so one frame in the ring
+-- is still small and the crest sits close to the middle.
+fxr.reset()
+fxr.wave(0, 0, 4, 90, 0.5, 10, COL)
+fxr.update(1 / 60)
+local function pushed(x, y)
+    local ax, ay = fxr.bend(x, y, 1)
+    return math.sqrt((ax - x) ^ 2 + (ay - y) ^ 2)
+end
+check("a star on the crest is pushed", pushed(14, 0) > 1, tostring(pushed(14, 0)))
+check("a star far outside the band is not", pushed(600, 0) == 0,
+      tostring(pushed(600, 0)))
+
+-- The disturbance is a band travelling with the ring, not a bubble filling
+-- it. A star well inside a grown ring is water the wave has already passed:
+-- it has to be still again, or the whole sky inside a blast heaves at once.
+fxr.reset()
+fxr.wave(0, 0, 4, 300, 0.6, 10, COL)
+for _ = 1, 12 do fxr.update(1 / 60) end
+check("a star the wave has passed is still again", pushed(12, 0) == 0,
+      tostring(pushed(12, 0)))
+fxr.reset()
+fxr.wave(0, 0, 4, 90, 0.5, 10, COL)
+fxr.update(1 / 60)
+check("and the push is outward, away from the blast",
+      select(1, fxr.bend(14, 0, 1)) > 14)
+
+-- Inside the band the push is shaped, not flat: hardest on the ring and
+-- trailing off to nothing at the band's edges. Flat would heave a wide disc
+-- of sky as one slab, which reads as the camera lurching rather than as a
+-- wave going by. The ring is near ten pixels out one frame in, so a star at
+-- seventy is inside the band and near its edge.
+check("the push peaks on the ring and fades across the band",
+      pushed(10, 0) > pushed(70, 0) * 4,
+      string.format("crest %.2f, edge %.2f", pushed(10, 0), pushed(70, 0)))
+
+-- Depth scales it: the near sky rides a blast the far sky barely feels.
+check("a nearer layer is bent further than a far one",
+      pushed(14, 0) > 0 and select(1, fxr.bend(14, 0, 0.18)) < select(1, fxr.bend(14, 0, 0.6)))
+
+-- The centre of a blast is left alone rather than divided by a distance of
+-- nothing: a star exactly on the origin has no direction to be pushed in.
+local cx2, cy2 = fxr.bend(0, 0, 1)
+check("a star at the very centre is left where it is",
+      cx2 == 0 and cy2 == 0, string.format("%.2f, %.2f", cx2, cy2))
+
+-- A spark-sized wave is not a shock. Ship deaths throw a 24-pixel flash
+-- alongside the real one, and the sky must not twitch for every hit.
+fxr.reset()
+fxr.wave(0, 0, 2, 24, 0.16, 15, COL)
+fxr.update(1 / 60)
+check("a small flash does not bend the sky", pushed(20, 0) == 0,
+      tostring(pushed(20, 0)))
+
+-- And the disturbance dies with the ring rather than outliving it.
+fxr.reset()
+fxr.wave(0, 0, 4, 90, 0.5, 10, COL)
+fxr.update(1 / 60)
+local young = pushed(14, 0)
+for _ = 1, 26 do fxr.update(1 / 60) end
+local old_r = 0
+for probe = 4, 140, 2 do old_r = math.max(old_r, pushed(probe, 0)) end
+check("a dying wave bends less than a fresh one", old_r < young,
+      string.format("%.2f then %.2f", young, old_r))
+
+-- Only the loudest few, however many are going off: a fleet fight cannot pay
+-- for a walk of every wave per star.
+fxr.reset()
+for k = 1, 30 do fxr.wave(k * 400, 0, 4, 90, 0.5, 10, COL) end
+fxr.update(1 / 60)
+local bent = 0
+for k = 1, 30 do
+    if pushed(k * 400 + 14, 0) > 0 then bent = bent + 1 end
+end
+check("the ripple count is capped", bent > 0 and bent <= 6, tostring(bent))
+
 -- --- the blast feeds the light ---------------------------------------------
 
 package.loaded["arena.sfx"] = {play = function() end}

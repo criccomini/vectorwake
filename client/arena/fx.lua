@@ -19,6 +19,26 @@ local MAX_PARTS = 320
 local MAX_WAVES = 48
 local MAX_DEBRIS = 96
 
+-- The ripple: a shockwave bending what it passes through.
+--
+-- There is no grid to deform, so what bends is the sky. A blast pushes the
+-- starfield outward in a band travelling with its own ring, and the stars
+-- settle back as the ring dies. Cheap, because a star is already being
+-- placed from scratch every frame and this only moves where it lands.
+--
+-- What must never bend is anything a player reads to survive: a bolt, a
+-- bomb, a mine, a fragment, a hull. Camera shake is allowed to move all of
+-- those because it moves them together, so every distance on screen stays
+-- true. A ripple moves things by different amounts, and a projectile drawn
+-- even two pixels off its collision is the interface lying about a threat.
+-- So this reaches the sky and the wreckage and stops there.
+local RIP_MAX = 6         -- the loudest few; a fleet fight cannot pay for all
+local RIP_STRIDE = 4
+local RIP_BAND = 64       -- how wide the disturbed band around the ring is
+local RIP_PUSH = 15       -- how far the crest shoves what is right on it
+local RIP_MIN_R = 40      -- smaller than this is a spark, not a shock
+local rip = {n = 0}
+
 local parts = {}   -- {x, y, vx, vy, age, life, size, col, drag}
 local waves = {}   -- {x, y, r0, r1, age, life, width, col, kind}
 local debris = {}  -- {x, y, vx, vy, ang, spin, len, age, life, col}
@@ -197,6 +217,23 @@ function M.update(dt)
         end
     end
 
+    -- The waves worth bending things around, flattened into one array so the
+    -- starfield does not walk the whole wave table per star per frame. Their
+    -- radius and fade are the ring's own, so the disturbance travels exactly
+    -- with the light it belongs to.
+    rip.n = 0
+    for k = 1, nw do
+        local w = waves[k]
+        if w.r1 >= RIP_MIN_R and rip.n < RIP_MAX then
+            local fade = 1 - w.age / w.life
+            local b = rip.n * RIP_STRIDE
+            rip[b + 1], rip[b + 2] = w.x, w.y
+            rip[b + 3] = w.r0 + (w.r1 - w.r0) * (1 - fade * fade)
+            rip[b + 4] = RIP_PUSH * fade * fade
+            rip.n = rip.n + 1
+        end
+    end
+
     if shake > 0 then
         shake = shake - dt * 2.4
         if shake < 0 then shake = 0 end
@@ -230,6 +267,38 @@ end
 -- `light`, when given, is told about each live shockwave so the walls can
 -- catch the flash: world.light, passed in by the arena rather than required
 -- here, since this file draws effects and owes the terrain nothing.
+-- Where a point lands once the live shockwaves have pushed it. `k` scales
+-- the push, which the starfield spends on parallax depth: the near layer
+-- rides the blast and the far one barely stirs, because it is meant to be
+-- much further away than the fight.
+--
+-- The squared-distance test comes first and rejects almost everything for
+-- two multiplies, which matters: this runs per star per wave, several
+-- hundred times a frame, and the square root behind it is the expensive part.
+function M.bend(x, y, k)
+    for i = 0, rip.n - 1 do
+        local b = i * RIP_STRIDE
+        local dx, dy = x - rip[b + 1], y - rip[b + 2]
+        local r = rip[b + 3]
+        local d2 = dx * dx + dy * dy
+        local outer = r + RIP_BAND
+        if d2 < outer * outer then
+            local inner = r - RIP_BAND
+            if inner <= 0 or d2 > inner * inner then
+                local d = math.sqrt(d2)
+                if d > 1 then
+                    -- Peak on the ring, nothing at the band's edges.
+                    local q = 1 - math.abs(d - r) / RIP_BAND
+                    local push = rip[b + 4] * q * q * k / d
+                    x = x + dx * push
+                    y = y + dy * push
+                end
+            end
+        end
+    end
+    return x, y
+end
+
 function M.draw(glow, light)
     for i = 1, nw do
         local w = waves[i]
@@ -265,7 +334,13 @@ function M.draw(glow, light)
         -- tumbling free of its course is what tells it apart from a spark.
         local h = p.len * (0.4 + 0.6 * fade) / 2
         local ca, sa = math.cos(p.ang), math.sin(p.ang)
-        glow:seg_fade(p.x - ca * h, p.y - sa * h, p.x + ca * h, p.y + sa * h,
+        -- Hull pieces are wreckage rather than information, so a wave may
+        -- shove them: a second shock overtaking the debris of the first is
+        -- the picture this buys. Into locals, never back into the piece. A
+        -- bend written home would compound every frame and throw the debris
+        -- to the edge of the map instead of nudging it as a wave goes by.
+        local bx, by = M.bend(p.x, p.y, 1)
+        glow:seg_fade(bx - ca * h, by - sa * h, bx + ca * h, by + sa * h,
                       0.8, 1.5, fade * 0.45, fade, faded(col, col[4] * fade))
     end
 end
