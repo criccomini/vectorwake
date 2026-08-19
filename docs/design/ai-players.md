@@ -192,6 +192,35 @@ So a change to reaction, look rate, tolerance or engagement range changes how
 the bots read rather than how hard they are. Difficulty lives in aim and in
 energy discipline.
 
+### What it comes to
+
+Seven hulls, two economies, five pilots from 0.05 to 0.90, three hundred bouts
+a pair, with both sides handed the same kit at every spawn and nothing on the
+floor to scavenge. The column is what the strongest pilot takes off the weakest
+in decided bouts, and z is that edge pooled over every pair in the block against
+a coin.
+
+| Hull | 30 greens | 60 greens |
+|---|---|---|
+| Cipher | 78.6% (z 10.6) | 77.9% (z 15.2) |
+| Apex | 76.7% (z 13.2) | 72.9% (z 15.3) |
+| Anvil | 67.2% (z 9.8) | 75.0% (z 11.9) |
+| Wedge | 64.9% (z 4.5) | 69.0% (z 7.1) |
+| Lattice | 64.9% (z 7.6) | 67.4% (z 6.7) |
+| Facet | 67.1% (z 5.0) | 66.5% (z 5.7) |
+| Chord | 66.9% (z 7.2) | 57.9% (z 3.6) |
+
+Two things are worth reading off it. Doubling the kit does not flatten the dial:
+five of seven hulls separate at least as well at sixty greens as at thirty,
+which contradicts the older finding that thirty greens turn a two-to-one gap
+flat. That finding came from a room where both pilots also raced for greens on
+the floor, so it was measuring who scavenged better as much as who flew better.
+
+And the spread across hulls is real. Cipher and Apex separate pilots twice as
+sharply as Chord does, so how much your skill matters depends on what you fly.
+Nobody designed that and it is not obviously wrong, but it is worth knowing
+before anybody tunes a hull.
+
 **Error has to persist to matter.** Aim error was an angle drawn fresh around
 the correct bearing ten to twenty times a second, so a burst sprayed a cone
 centered on the truth and the mean shot was a perfect one. It measured as doing
