@@ -22,89 +22,6 @@
 
 local zoom = require("render.zoom")
 
--- How far the bloom stands down from the frame, and how hard it comes back.
--- A quarter of the window is the whole trick: the gaussian's five taps reach
--- four times as far in a quarter-res image, and the linear upsample on the
--- way back is itself more blur, all of it for a sixteenth of the fill cost.
-local BLOOM_DOWN = 4
-local BLOOM_GAIN = 0.85
-
--- The offscreen half of the bloom: the glow layer alone, rendered small,
--- blurred once across and once down. A plain function so the caller can
--- pcall it without building a closure every frame.
---
--- The pcall latch is not decoration. A render script fails at runtime, not
--- in CI, and nothing in this pass may take the arena down with it: if any
--- call here is wrong on some driver, the latch turns the mistake into a
--- game without bloom rather than a game without a screen.
-local function bloom_source(self, w, h)
-    local rw = math.max(1, math.floor(w / BLOOM_DOWN))
-    local rh = math.max(1, math.floor(h / BLOOM_DOWN))
-    if self.rt_w ~= rw or self.rt_h ~= rh then
-        if self.rt_a then
-            render.delete_render_target(self.rt_a)
-            render.delete_render_target(self.rt_b)
-        end
-        local function target(name)
-            return render.render_target(name, {
-                [graphics.BUFFER_TYPE_COLOR0_BIT] = {
-                    format = graphics.TEXTURE_FORMAT_RGBA,
-                    width = rw, height = rh,
-                    min_filter = graphics.TEXTURE_FILTER_LINEAR,
-                    mag_filter = graphics.TEXTURE_FILTER_LINEAR,
-                    u_wrap = graphics.TEXTURE_WRAP_CLAMP_TO_EDGE,
-                    v_wrap = graphics.TEXTURE_WRAP_CLAMP_TO_EDGE,
-                },
-            })
-        end
-        self.rt_a, self.rt_b = target("bloom_a"), target("bloom_b")
-        self.rt_w, self.rt_h = rw, rh
-        self.dir_h = vmath.vector4(1 / rw, 0, 1, 0)
-        self.dir_v = vmath.vector4(0, 1 / rh, 1, 0)
-    end
-    -- The viewport goes down BEFORE the target it applies to. That order is
-    -- the render API's actual contract, learned the expensive way: set after
-    -- the bind, the draws into the small target kept the window's viewport,
-    -- the target caught only the bottom-left corner of the scene at full
-    -- pixel scale, and the composite stretched that corner over the whole
-    -- screen. On a phone the glow came back at four times its size and wore
-    -- the picture as wreckage. Nothing errored, so the pcall latch had
-    -- nothing to catch; the order below is the field-proven one, viewport
-    -- first at every hop and restored only after the default target is back.
-    render.set_viewport(0, 0, rw, rh)
-    render.set_render_target(self.rt_a)
-    render.clear({[graphics.BUFFER_TYPE_COLOR0_BIT] = self.black})
-    render.set_blend_func(graphics.BLEND_FACTOR_ONE,
-                          graphics.BLEND_FACTOR_ONE)
-    render.draw(self.glow_pred)
-    render.set_viewport(0, 0, rw, rh)
-    render.set_render_target(self.rt_b)
-    render.clear({[graphics.BUFFER_TYPE_COLOR0_BIT] = self.black})
-    render.enable_texture(0, self.rt_a, graphics.BUFFER_TYPE_COLOR0_BIT)
-    self.post_cb.dir = self.dir_h
-    render.draw(self.post_pred, {constants = self.post_cb})
-    render.disable_texture(0)
-    render.set_viewport(0, 0, rw, rh)
-    render.set_render_target(self.rt_a)
-    render.clear({[graphics.BUFFER_TYPE_COLOR0_BIT] = self.black})
-    render.enable_texture(0, self.rt_b, graphics.BUFFER_TYPE_COLOR0_BIT)
-    self.post_cb.dir = self.dir_v
-    render.draw(self.post_pred, {constants = self.post_cb})
-    render.disable_texture(0)
-    render.set_render_target(render.RENDER_TARGET_DEFAULT)
-    render.set_viewport(0, 0, w, h)
-end
-
--- The onscreen half: the blurred layer added over the frame. Runs while the
--- blend is already ONE, ONE from the sharp glow pass, so the halo sums with
--- the light that cast it.
-local function bloom_composite(self)
-    render.enable_texture(0, self.rt_a, graphics.BUFFER_TYPE_COLOR0_BIT)
-    self.post_cb.dir = self.dir_add
-    render.draw(self.post_pred, {constants = self.post_cb})
-    render.disable_texture(0)
-end
-
 -- Screen pixels per world pixel. One means the hulls draw at the size they
 -- were authored in, which is the reason for that default.
 local ZOOM = sys.get_config_number("vectorwake.zoom", 1.0)
@@ -114,15 +31,6 @@ function init(self)
     self.fill_pred = render.predicate({"vwfill"})
     self.glow_pred = render.predicate({"vwglow"})
     self.ui_pred = render.predicate({"vwui"})
-    self.post_pred = render.predicate({"vwpost"})
-    self.post_cb = render.constant_buffer()
-    self.dir_add = vmath.vector4(0, 0, BLOOM_GAIN, 0)
-    self.black = vmath.vector4(0, 0, 0, 0)
-    -- Off until the menu says otherwise, so the frames before the setting
-    -- arrives render the way every driver gets right. `bloom_ok` is the
-    -- latch bloom_source describes.
-    self.bloom = false
-    self.bloom_ok = true
     self.gui_pred = render.predicate({"gui"})
     self.text_pred = render.predicate({"debug_text"})
     -- Device pixels per point of screen.
@@ -191,15 +99,6 @@ function update(self)
     render.enable_state(graphics.STATE_BLEND)
     render.disable_state(graphics.STATE_DEPTH_TEST)
 
-    local bloomed = false
-    if self.bloom and self.bloom_ok then
-        bloomed = pcall(bloom_source, self, w, h)
-        if not bloomed then
-            self.bloom_ok = false
-            print("bloom disabled: its render pass failed on this driver")
-        end
-    end
-
     -- The fragment shader writes premultiplied color, so ordinary
     -- compositing takes ONE as the source factor, not SRC_ALPHA.
     render.set_blend_func(graphics.BLEND_FACTOR_ONE,
@@ -209,13 +108,6 @@ function update(self)
 
     render.set_blend_func(graphics.BLEND_FACTOR_ONE, graphics.BLEND_FACTOR_ONE)
     render.draw(self.glow_pred)
-    if bloomed then
-        local added = pcall(bloom_composite, self)
-        if not added then
-            self.bloom_ok = false
-            print("bloom disabled: its composite failed on this driver")
-        end
-    end
 
     -- Interface last, in screen space, where one unit is one drawable pixel.
     render.set_view(vmath.matrix4())
@@ -258,7 +150,5 @@ end
 function on_message(self, message_id, message)
     if message_id == hash("camera") then
         self.camera = message.position
-    elseif message_id == hash("glow") then
-        self.bloom = message.bloom and true or false
     end
 end

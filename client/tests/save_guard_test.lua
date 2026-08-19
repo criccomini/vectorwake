@@ -158,23 +158,6 @@ for _, bad in ipairs({1, 0, "yes", {}}) do
     end
 end
 
--- The glow blooms only when a save says exactly yes. It defaulted on for one
--- night, until an iPhone composited the blurred layer back at four times its
--- size; a default has to be the rendering every driver gets right, so the
--- effect is opt-in and junk under the key must not quietly turn it back on.
-if load_with({name = "Fresh Pilot"}, "a pilot who never answered glow") then
-    check("a missing answer keeps the picture crisp", menu.bloom == false)
-end
-if load_with({name = "Lit Pilot", bloom = true}, "a pilot who asked for bloom") then
-    check("a saved yes is honored", menu.bloom == true)
-end
-for _, junk in ipairs({0, 1, "on", {}}) do
-    if load_with({name = "Odd Pilot", bloom = junk}, "bloom " .. type(junk)) then
-        check("bloom " .. type(junk) .. " is not a yes", menu.bloom == false,
-              tostring(menu.bloom))
-    end
-end
-
 -- Offered on glass and nowhere else. A keyboard has a key for each of these
 -- and no question to answer.
 local function settings_rows()

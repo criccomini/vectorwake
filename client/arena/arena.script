@@ -1424,12 +1424,6 @@ function update(self, dt)
         -- being thumbs at all, so a save written on a phone cannot put a
         -- desktop on a control it has no way to press.
         touch.dpad = menu.dpad and touch.used
-        -- The bloom setting rides to the render script only when it moves,
-        -- including the first frame, so the pipeline never waits on a menu.
-        if self.bloom_sent ~= menu.bloom then
-            self.bloom_sent = menu.bloom
-            msg.post("@render:", "glow", {bloom = menu.bloom})
-        end
         -- A card with lines to fill in is being typed into, and the trigger
         -- is the space bar. Every call sign has a space in it, so a card that
         -- still read the trigger as "send" answered itself partway through
