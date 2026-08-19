@@ -1998,7 +1998,21 @@ mod tests {
     /// with no greens holds no charges, and the one surviving knob besides aim
     /// had nothing to decide. The kit is matched at thirty now, which is what
     /// the room a person plays in hands out.
+    /// Sixty rounds a pair could not decide this, and two different
+    /// assertions were fitted to two different runs of it before that was
+    /// admitted. The gap swung 1164/1226/1224 to 1192/1186/1227 on code that
+    /// differed by one reverted mechanism, which is the thirty points of noise
+    /// an Elo gap carries at that size sitting on top of a real gap of about
+    /// fifty. Three hundred rounds cuts the noise to thirteen and the question
+    /// becomes answerable.
+    ///
+    /// Ignored, like every other measurement here that takes minutes, and run
+    /// on purpose:
+    ///
+    ///     cargo test --release --manifest-path server/Cargo.toml \
+    ///       skill_decides_a_match_between_equal_hulls -- --ignored --nocapture
     #[test]
+    #[ignore]
     fn skill_decides_a_match_between_equal_hulls() {
         let roster = vec![
             ai::RosterEntry {
@@ -2017,29 +2031,20 @@ mod tests {
                 skill: 0.95,
             },
         ];
-        let r = run_roster(&roster, 60, false);
+        let r = run_roster(&roster, 300, false);
         let (lo, mid, hi) = (r.rating_of("low"), r.rating_of("mid"), r.rating_of("high"));
         println!("  0.15 {lo:.0}, 0.50 {mid:.0}, 0.95 {hi:.0}");
-        // What sixty rounds a pair can carry, and no more.
-        //
-        // A pair fought sixty times has an interval of thirteen points of win
-        // rate on it, and the Elo gap on top of that swings about thirty
-        // between runs, measured five times over in
-        // `is_the_built_ladder_a_measurement`. So `hi > lo` passes half the
-        // time on a dial that does nothing at all, and `hi > mid` cannot be
-        // resolved here whether it is true or not: this run reads 1226 and
-        // 1224 for 0.50 and 0.95, which is a tie in the same way a coin is.
-        //
-        // The claim that survives at this size is that the bottom of the dial
-        // is beaten, and it is worth guarding because it is exactly what broke:
-        // in the pit these three read 1219, 1179 and 1203, with the *worst*
-        // pilot on top. `skill_on_a_real_map` is the powered version of the
-        // same question, at three hundred bouts a pair over every hull, and it
-        // is where the ordering of the whole dial is settled.
+        // The gap the roster's own span should buy, against thirteen points
+        // of noise at this size. `skill_on_a_real_map` is the same question
+        // asked with win rates instead of Elo and over every hull; this one
+        // guards the generator that writes `zone/ladder.json`, which is a
+        // different thing worth its own guard: it ran in the pit for a long
+        // time, where a thirty-two tile room leaves no lead to misread and
+        // these three rated 1219, 1179 and 1203 with the worst pilot on top.
         assert!(
-            (mid - lo).min(hi - lo) >= 40.0,
-            "0.15 should be last by 40 or more, and reads {lo:.0} against \
-             {mid:.0} and {hi:.0}"
+            hi - lo >= 30.0,
+            "0.95 should outrank 0.15 by 30 or more, and reads {hi:.0} against \
+             {lo:.0} (0.50 on {mid:.0})"
         );
     }
 

@@ -1057,13 +1057,6 @@ pub struct Bot {
     /// `Range`, which read the dial live. `None` everywhere in every real
     /// pilot; the ablation harness is the only thing that sets one.
     dial_at: [Option<f32>; 1],
-    /// What the hands were told to do, one slot a tick, read back late.
-    hands: [u16; HANDS_MAX],
-    /// How late, in ticks, redrawn whenever the pilot re-plans.
-    lag: u32,
-    /// The skill the hands run at, which is the pilot's own unless a harness
-    /// is holding it somewhere else.
-    hand_skill: f32,
     /// This pilot's current misjudgement, held rather than re-rolled. Rolled
     /// fresh on every look: a wrong estimate that changed a hundred times a
     /// second would average to a right one, which is the opposite of what an
@@ -1163,7 +1156,6 @@ const REROUTE_PX: f32 = 128.0;
 pub enum Knob {
     AimErr,
     Permission,
-    React,
 }
 
 impl Knob {
@@ -1172,7 +1164,7 @@ impl Knob {
     fn slot(self) -> Option<usize> {
         match self {
             Knob::Permission => Some(0),
-            Knob::AimErr | Knob::React => None,
+            Knob::AimErr => None,
         }
     }
 }
@@ -1204,41 +1196,35 @@ const CLEAN_LOOKS: f32 = 0.25;
 const REPLAN_TICKS: u32 = 20;
 const LOOK_TICKS: u32 = 7;
 
-/// The longest a pilot's hands can lag behind its head, in ticks.
+/// Why there is no reaction time in this file.
 ///
-/// Sizes the delay line and nothing else. Six hundred milliseconds is well
-/// past any latency the dial deals, and the buffer is two bytes a slot.
-const HANDS_MAX: usize = 64;
-
-/// How long a pilot's hands take to catch up with its head, in ticks.
+/// Two implementations have failed now, in different ways, and the second is
+/// worth writing down because it looks obviously right.
 ///
-/// A hundred ticks is a second, so this deals 240ms to the worst pilot in a
-/// zone and 120ms to the best, which is roughly where people sit.
+/// The first gated `decide`, so skill bought how often a pilot changed its
+/// mind while `drive`, `trigger` and `charge` re-solved every tick underneath
+/// it. Ablated on two hulls in two economies it came back a coin every time,
+/// which makes sense: in a duel the plan is "fight the one person here", and a
+/// slower re-plan has nothing much to get wrong.
 ///
-/// It replaces a parameter that carried the same name and did something else.
-/// The old one gated `decide`, so skill bought how often a pilot changed its
-/// mind while its hands stayed perfect: steering, trigger and charges all
-/// re-solved every tick at a hundred hertz for everybody. Ablated on two hulls
-/// in two economies it came back a coin every time, which is what you would
-/// expect, because in a duel the plan is "fight the one person here" and a
-/// slower re-plan has almost nothing to get wrong.
+/// The second put the lag where it belongs, on the hands. A delay line on the
+/// button word, so a pilot was late to start turning and late to stop, late
+/// onto the trigger and late off it, with the lag redrawn every re-plan so
+/// nobody was uniformly slow. It reads as the correct model and it destroyed
+/// the dial: Apex at thirty greens fell from a pooled 59.7% at z 5.4 to 48.5%
+/// at z -1.2, and Facet inverted to z -4.7.
 ///
-/// Delaying the word instead of the decision is what makes it reaction. The
-/// hands lag on the way up and on the way down, so a slow pilot is late to
-/// start turning and late to stop, late on the trigger and late off it. It
-/// also leaves rate of fire alone, which the obvious version did not: gating
-/// the trigger on reaction made the quickest pilot shoot itself down to
-/// nothing, since firing costs the same pool as living, and a 0.95 bot lost
-/// 20-1 to a 0.15 one.
-fn hand_lag(skill: f32, u: f32) -> u32 {
-    let mean = 30.0 - skill.clamp(0.0, 1.0) * 18.0;
-    // Half to one and a half of it, redrawn every re-plan, because nobody is
-    // uniformly slow. The bands overlap on purpose: a weak pilot at its
-    // sharpest is about as quick as a strong one on an average look, which is
-    // the thing that keeps a low dial from reading as a different species.
-    let lag = mean * (0.5 + u);
-    (lag as u32).min(HANDS_MAX as u32 - 1)
-}
+/// The reason is control rather than tuning. Aim updates every `REPLAN_TICKS`
+/// and `drive` steers toward it every tick, which is a stable loop: a slow
+/// setpoint and a fast corrector. Delaying the corrector's output makes every
+/// turn command answer an error the ship no longer has, so it overshoots and
+/// hunts, and a hunting ship cannot shoot. That costs every pilot, not the
+/// slow ones, which is exactly what the tournament showed.
+///
+/// If reaction is worth a third attempt, the lag belongs on what a pilot
+/// *knows* rather than on what its hands do: aim at where the target was a
+/// fifth of a second ago and steer toward that accurately. The loop stays
+/// closed, which is also how a person works. Unbuilt and unmeasured.
 
 /// The slack a pilot allows itself on the aim before it fires, and how far out
 /// it is willing to engage, both at the same 0.60 the two above are set at.
@@ -1285,7 +1271,6 @@ impl Bot {
     pub fn tune(&mut self, knob: Knob, as_if: f32) {
         match knob {
             Knob::AimErr => self.lead_err = (1.0 - as_if) * 0.85,
-            Knob::React => self.hand_skill = as_if,
             Knob::Permission => {
                 if let Some(i) = knob.slot() {
                     self.dial_at[i] = Some(as_if);
@@ -1311,9 +1296,6 @@ impl Bot {
             lead_err: (1.0 - skill) * 0.85,
             lead_gain: 1.0,
             dial_at: [None; 1],
-            hands: [0; HANDS_MAX],
-            lag: 0,
-            hand_skill: skill,
             timer: ship as u32 * 7, // stagger so they do not all think at once
             mode: Mode::Idle,
             weapon: Weapon::Gun,
@@ -1551,8 +1533,6 @@ impl Bot {
             if self.timer % self.react == 0 {
                 self.decide(o, nav);
                 self.breaking_off((o.x, o.y));
-                let u = self.rand();
-                self.lag = hand_lag(self.hand_skill, u);
             }
             self.drive(o) | self.trigger(o) | self.charge(o)
         };
@@ -1631,11 +1611,7 @@ impl Bot {
         } else {
             self.pinned = 0;
         }
-        self.hands[self.timer as usize % HANDS_MAX] = out;
-        // What the head decided `lag` ticks ago. A fresh pilot reads zeros for
-        // its first fraction of a second, which is a pilot arriving rather
-        // than a pilot already flying, and is right.
-        self.hands[(self.timer as usize + HANDS_MAX - self.lag as usize) % HANDS_MAX]
+        out
     }
 
     /// The charges, which every hull carries three of and no bot has ever
@@ -3070,109 +3046,6 @@ fn nearest_prizes(w: &World, mx: f32, my: f32, within: f32, keep: usize) -> Vec<
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// Reaction is a delay on the hands, and these are the properties that
-    /// make it one rather than the parameter that used to wear the name.
-    #[test]
-    fn reaction_is_a_lag_on_the_hands() {
-        let mut s: u32 = 0x1234_5678;
-        let mut draw = move || {
-            s ^= s << 13;
-            s ^= s >> 17;
-            s ^= s << 5;
-            (s >> 8) as f32 / ((1u32 << 24) as f32)
-        };
-        let mut sample = |skill: f32| {
-            let (mut sum, mut lo, mut hi) = (0u64, u32::MAX, 0u32);
-            for _ in 0..20_000 {
-                let l = hand_lag(skill, draw());
-                sum += l as u64;
-                lo = lo.min(l);
-                hi = hi.max(l);
-            }
-            (sum as f32 / 20_000.0, lo, hi)
-        };
-        let (weak, weak_lo, weak_hi) = sample(0.30);
-        let (strong, strong_lo, strong_hi) = sample(0.90);
-        println!("  0.30 lags {weak:.1} ticks ({weak_lo}..{weak_hi}), 0.90 {strong:.1} ({strong_lo}..{strong_hi})");
-
-        // A worse pilot is slower on average. Around 240ms against 120ms,
-        // which is roughly where people sit.
-        assert!(
-            weak > strong * 1.5,
-            "{weak:.1} should be well over {strong:.1}"
-        );
-        assert!((18.0..30.0).contains(&weak), "0.30 lags {weak:.1} ticks");
-        assert!((9.0..18.0).contains(&strong), "0.90 lags {strong:.1} ticks");
-
-        // And nobody is uniformly slow. The bands have to overlap, or a low
-        // dial reads as a different species rather than a worse pilot.
-        assert!(
-            weak_lo < strong_hi,
-            "a weak pilot at its sharpest ({weak_lo}) should be inside a strong \
-             pilot's range (up to {strong_hi})"
-        );
-        // Nothing may exceed the buffer, or the read wraps into the future.
-        assert!(
-            weak_hi < HANDS_MAX as u32,
-            "{weak_hi} would wrap the delay line"
-        );
-    }
-
-    /// The delay has to move press and release alike, and leave the number of
-    /// presses alone. Gating the decision instead made reaction time secretly
-    /// control rate of fire, and that inverted the whole ladder.
-    #[test]
-    fn the_lag_shifts_a_word_without_changing_it() {
-        const LAG: usize = 12;
-        let mut hands = [0u16; HANDS_MAX];
-        // A trigger held for thirty ticks, then let go.
-        let intent: Vec<u16> = (0..200)
-            .map(|t| {
-                if (40..70).contains(&t) {
-                    sim::BTN_FIRE
-                } else {
-                    0
-                }
-            })
-            .collect();
-        let mut out = Vec::with_capacity(intent.len());
-        for (t, want) in intent.iter().enumerate() {
-            hands[t % HANDS_MAX] = *want;
-            out.push(hands[(t + HANDS_MAX - LAG) % HANDS_MAX]);
-        }
-        let edges = |v: &[u16]| {
-            let mut on = Vec::new();
-            let mut off = Vec::new();
-            for i in 1..v.len() {
-                if v[i - 1] == 0 && v[i] != 0 {
-                    on.push(i);
-                }
-                if v[i - 1] != 0 && v[i] == 0 {
-                    off.push(i);
-                }
-            }
-            (on, off)
-        };
-        let (want_on, want_off) = edges(&intent);
-        let (got_on, got_off) = edges(&out);
-        assert_eq!(want_on.len(), got_on.len(), "the number of presses changed");
-        assert_eq!(
-            want_off.len(),
-            got_off.len(),
-            "the number of releases changed"
-        );
-        assert_eq!(
-            got_on[0] - want_on[0],
-            LAG,
-            "press was not delayed by the lag"
-        );
-        assert_eq!(
-            got_off[0] - want_off[0],
-            LAG,
-            "release was not delayed by the lag"
-        );
-    }
 
     /// The reshaped lead error has to leave difficulty where it found it.
     ///
