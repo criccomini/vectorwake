@@ -179,8 +179,12 @@ check("a star far outside the band is not", pushed(600, 0) == 0,
 -- The disturbance is a band travelling with the ring, not a bubble filling
 -- it. A star well inside a grown ring is water the wave has already passed:
 -- it has to be still again, or the whole sky inside a blast heaves at once.
+-- The ring has to have outrun the band's own width for this to mean
+-- anything, which a wide band makes a bigger number than it looks: at five
+-- hundred pixels out, the disturbance reaches back to two hundred and forty
+-- and no further.
 fxr.reset()
-fxr.wave(0, 0, 4, 300, 0.6, 10, COL)
+fxr.wave(0, 0, 4, 900, 0.6, 10, COL)
 for _ = 1, 12 do fxr.update(1 / 60) end
 check("a star the wave has passed is still again", pushed(12, 0) == 0,
       tostring(pushed(12, 0)))
@@ -196,8 +200,8 @@ check("and the push is outward, away from the blast",
 -- wave going by. The ring is near ten pixels out one frame in, so a star at
 -- seventy is inside the band and near its edge.
 check("the push peaks on the ring and fades across the band",
-      pushed(10, 0) > pushed(70, 0) * 4,
-      string.format("crest %.2f, edge %.2f", pushed(10, 0), pushed(70, 0)))
+      pushed(10, 0) > pushed(240, 0) * 4,
+      string.format("crest %.2f, edge %.2f", pushed(10, 0), pushed(240, 0)))
 
 -- Depth scales it: the near sky rides a blast the far sky barely feels.
 check("a nearer layer is bent further than a far one",
@@ -267,6 +271,67 @@ for k = 1, 30 do
     if pushed(k * 400 + 14, 0) > 0 then bent = bent + 1 end
 end
 check("the ripple count is capped", bent > 0 and bent <= 6, tostring(bent))
+
+-- --- and whether any of it can be seen --------------------------------------
+--
+-- The check the first ripple needed and did not have. Every rule above was
+-- satisfied by an effect nobody could see: a thin front through a sparse sky
+-- moved seventeen stars of two hundred, by seven pixels, for three frames,
+-- and every test here passed. Correct and invisible is the failure this
+-- family of work keeps producing, so the last question is the player's
+-- question, asked of the smallest screen: how much of the sky moved, how far,
+-- and for how long.
+-- The starfield checks solid rock before it bends a star, and the wall column
+-- this file stubs would punch a hole in the sample. Open sky for this stretch,
+-- restored after, so the wall tests above keep the world they were written for.
+local wsim = _G.sim
+_G.sim = {solid = function() return false end}
+
+local HW, HH, CX, CY = 240, 480, 5000, 5000   -- a phone, in world pixels
+local function sky()
+    local pts = {}
+    world.stars({rect = function(_, x, y) pts[#pts + 1] = {x, y} end,
+                 halo = function() end},
+                {halo = function() end}, CX, CY, HW, HH)
+    return pts
+end
+
+fxr.reset()
+fxr.update(1 / 60)
+local still = sky()
+check("a phone screen holds a sky worth bending", #still > 100, tostring(#still))
+
+fxr.reset()
+fxr.detonate(CX, CY, 512, COL)
+local best, best_max, frames_live, reach_early, reach_late = 0, 0, 0, 0, 0
+for f = 1, 34 do
+    fxr.update(1 / 60)
+    local now, moved, maxd, edge = sky(), 0, 0, 0
+    for i = 1, #still do
+        local dx = now[i][1] - still[i][1]
+        local dy = now[i][2] - still[i][2]
+        local d = math.sqrt(dx * dx + dy * dy)
+        if d > 3 then
+            moved = moved + 1
+            local r = math.sqrt((still[i][1] - CX) ^ 2 + (still[i][2] - CY) ^ 2)
+            if r > edge then edge = r end
+        end
+        if d > maxd then maxd = d end
+    end
+    if moved > 40 then frames_live = frames_live + 1 end
+    if moved > best then best, best_max = moved, maxd end
+    if f == 4 then reach_early = edge end
+    if f == 14 then reach_late = edge end
+end
+check("a repel bends a good share of the sky", best > #still / 3,
+      string.format("%d of %d stars", best, #still))
+check("far enough to see", best_max > 12, string.format("%.1f px", best_max))
+check("for long enough to see", frames_live > 12,
+      string.format("%d frames", frames_live))
+check("and the front travels outward rather than sitting still",
+      reach_late > reach_early + 60,
+      string.format("%.0f px then %.0f px", reach_early, reach_late))
+_G.sim = wsim
 
 -- --- the blast feeds the light ---------------------------------------------
 

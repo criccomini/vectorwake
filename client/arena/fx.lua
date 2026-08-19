@@ -34,8 +34,17 @@ local MAX_DEBRIS = 96
 -- So this reaches the sky and the wreckage and stops there.
 local RIP_MAX = 6         -- the loudest few; a fleet fight cannot pay for all
 local RIP_STRIDE = 4
-local RIP_BAND = 64       -- how wide the disturbed band around the ring is
-local RIP_PUSH = 15       -- how far the crest shoves what is right on it
+-- The band's width and the crest's shove, both sized by measurement rather
+-- than by taste. The first cut was a 64 pixel band pushing 15, which is a
+-- correct ripple nobody can see: on a phone it moved seventeen of two hundred
+-- and twenty-four stars, by seven pixels, for three frames. A sky this sparse
+-- carries a thin front the way a handful of gravel carries a wave, which is
+-- why the game this borrows from deforms a dense grid instead. Widening the
+-- band is what buys the stars back: at 260 the same blast bends about a
+-- hundred and fifty of them, half the screen's worth, and the front still
+-- travels because the band is narrower than the ring's whole reach.
+local RIP_BAND = 260      -- how wide the disturbed band around the ring is
+local RIP_PUSH = 34       -- how far the crest shoves what is right on it
 local RIP_MIN_R = 40      -- smaller than this is a spark, not a shock
 local rip = {n = 0}
 
@@ -229,7 +238,12 @@ function M.update(dt)
             local b = rip.n * RIP_STRIDE
             rip[b + 1], rip[b + 2] = w.x, w.y
             rip[b + 3] = w.r0 + (w.r1 - w.r0) * (1 - fade * fade)
-            rip[b + 4] = RIP_PUSH * fade * fade
+            -- Fading with the ring rather than with its brightness. The
+            -- ring's own alpha falls as the square, which is right for light
+            -- and wrong for a shove: squared, the disturbance was three
+            -- quarters gone a third of the way through the wave, before the
+            -- eye had found it.
+            rip[b + 4] = RIP_PUSH * fade
             rip.n = rip.n + 1
         end
     end
@@ -276,6 +290,13 @@ end
 -- two multiplies, which matters: this runs per star per wave, several
 -- hundred times a frame, and the square root behind it is the expensive part.
 function M.bend(x, y, k)
+    -- Depth, softened. Raw parallax is the honest reading, and it put the
+    -- weakest push on the densest layer: the far sky has the most stars in it
+    -- and moved a fifth as far as the near one, so the layer best able to
+    -- show a wave was the layer that barely stirred. Half the depth is kept,
+    -- which reads as distance without arguing the effect away. Debris passes
+    -- 1 and is unaffected by this.
+    k = 0.45 + 0.55 * k
     for i = 0, rip.n - 1 do
         local b = i * RIP_STRIDE
         local dx, dy = x - rip[b + 1], y - rip[b + 2]
