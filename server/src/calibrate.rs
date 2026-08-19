@@ -2680,8 +2680,12 @@ mod real_map_tests {
         for (hull, hull_name) in hulls {
             // Percent, because env_list deals integers: VW_SKILLS=5,30,90
             // fields a 0.05 pilot against the usual pair. The default is the
-            // roster the dial has always been judged on.
-            let roster: Vec<ai::RosterEntry> = env_list("VW_SKILLS", &[30, 45, 60, 75, 90])
+            // span the game actually deals: the fill formula runs 0.05 to
+            // 0.90, so a tournament that started at 0.30 would be certifying
+            // a third of the fielded roster on faith. The bottom rung is
+            // where the aim floor lives and the top is where the old dial
+            // always was, with the middle spaced to catch a dead band.
+            let roster: Vec<ai::RosterEntry> = env_list("VW_SKILLS", &[5, 25, 45, 70, 90])
                 .iter()
                 .map(|s| ai::RosterEntry {
                     name: format!("{hull}skill{s:02}"),
@@ -2693,9 +2697,8 @@ mod real_map_tests {
             for greens in economies.iter().copied() {
                 println!("\n### {hull_name} ###");
                 let mut rates: Vec<f64> = Vec::new();
-                // The roster's two ends, 0.30 against 0.90, which is the span
-                // the dial is meant to cover and the pair the old Elo bar was
-                // written about.
+                // The roster's two ends, which is the span the dial is meant
+                // to cover and the pair the size bar is written about.
                 let mut ends = 0.0f64;
                 let (mut strong_wins, mut all_decided) = (0u64, 0u64);
                 println!(
