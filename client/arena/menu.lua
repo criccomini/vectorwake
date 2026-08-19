@@ -145,6 +145,10 @@ M.help_prompt_seen = false
 -- reads it and arena/touch.lua acts on it; nothing here draws with it. See
 -- the settings page below for why it is only offered on glass.
 M.dpad = false
+-- Whether the bright layer blooms. A picture setting like the frame cap: the
+-- render pipeline reads it through the arena, and off is for the machine that
+-- cannot afford it or the player who cannot stand it.
+M.bloom = true
 
 -- Whether the ship page's answer is currently "no hull". In a game that is
 -- what the connection says you are; on the home screen it is what you have
@@ -203,6 +207,7 @@ function M.save_identity()
         name = M.name, class = M.class, volume = M.volume, music = M.music,
         cap = M.cap, zone = M.zone, spectate = M.spectate,
         help_prompt_seen = M.help_prompt_seen, dpad = M.dpad,
+        bloom = M.bloom,
         -- Only the keys that have been moved, so a stock keyboard writes
         -- nothing here at all and a control this build stops carrying does
         -- not leave a line behind it. See arena/binds.lua.
@@ -237,6 +242,9 @@ function M.load_identity()
         -- else under this name lands on the stick rather than on a value the
         -- touch layer would try to steer with.
         M.dpad = d.dpad == true
+        -- On unless the save says exactly off: the default is the effect,
+        -- and junk under this key should not quietly turn the lights down.
+        M.bloom = d.bloom ~= false
         -- Whatever survives being read against this build's key list. A
         -- missing table is a stock keyboard, which is what `load` does with
         -- nothing.
@@ -588,6 +596,12 @@ local NODES = {
             end, act = "cap"},
             {label = "fullscreen", detail = "fill the screen",
              act = "fullscreen"},
+            {label = "glow", detail = function()
+                if M.bloom then return "blooms" end
+                return "stays crisp"
+            end,
+             choice = function() return M.bloom and 1 or 0, 1 end,
+             act = "bloom"},
         }
         -- Only where there are thumbs. A keyboard has a key for each of
         -- these and no question to answer.
@@ -1029,6 +1043,11 @@ local function settle(act, asked)
     elseif act == "cap" then
         M.cap = M.cap % #CAPS + 1
         M.apply_settings()
+        M.save_identity()
+    elseif act == "bloom" then
+        -- Nothing to apply here: the arena watches this and tells the render
+        -- pipeline when it changes.
+        M.bloom = not M.bloom
         M.save_identity()
     elseif act == "steering" then
         -- Nothing to apply: the arena reads this every frame and the touch

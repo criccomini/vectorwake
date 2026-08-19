@@ -227,7 +227,10 @@ local function faded(col, alpha)
     return tint
 end
 
-function M.draw(glow)
+-- `light`, when given, is told about each live shockwave so the walls can
+-- catch the flash: world.light, passed in by the arena rather than required
+-- here, since this file draws effects and owes the terrain nothing.
+function M.draw(glow, light)
     for i = 1, nw do
         local w = waves[i]
         local t = w.age / w.life
@@ -236,6 +239,9 @@ function M.draw(glow)
         local col = w.col
         glow:ring_fade(w.x, w.y, r, w.width * (0.35 + fade * 0.65),
                        24, faded(col, col[4] * fade * fade))
+        if light then
+            light(w.x, w.y, col, fade * fade * 0.9, r + 30)
+        end
     end
 
     for i = 1, np do

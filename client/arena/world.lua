@@ -411,6 +411,20 @@ for _, L in ipairs(STARS) do
     L.bloom = pal.a(L.col, 0.30)
 end
 
+-- Nebulae: the layer behind the layers. A few enormous, extremely faint
+-- radial fades drifting at the deepest parallax, whose whole job is making
+-- the black feel like a volume instead of a ceiling. Alpha stays under a
+-- twelfth, because identity.md's line is that the background never competes
+-- with a projectile, and a nebula that reads as an object has changed genre.
+-- The same hashed-cell scheme as the stars, so nothing is stored and a map
+-- twice the size costs the same.
+local NEBULA = {k = 0.12, cell = 720, fill = 9}
+local NEB_COLS = {
+    pal.a(pal.rgb(0x2b4268), 0.070),
+    pal.a(pal.rgb(0x4a306e), 0.055),
+    pal.a(pal.rgb(0x1d4a5a), 0.060),
+}
+
 -- What a star costs where it is drawn: a rect on the fill layer, and on the
 -- near layer sometimes an eight-segment halo on the glow layer. Published
 -- because the budget below is only as good as the drawing agreeing with it,
@@ -429,7 +443,11 @@ M.STAR_VERTS, M.HALO_SEGS = STAR_VERTS, HALO_SEGS
 -- figure already and always has been; see the ceiling note where the layers
 -- are made.
 local FILL_FIGHT = 3072
-local GLOW_FIGHT = 24576
+-- Grown when the trails and the wall light arrived: sixty-four ribbons at
+-- M.TRAIL_VERTS each and ten lights' worth of lit edges are about four and a
+-- half thousand vertices on a bad frame, and a glow layer that runs out does
+-- not report it, it just stops drawing whatever came last.
+local GLOW_FIGHT = 29696
 
 -- Capacities move in steps of this, so dragging a window edge does not
 -- allocate a new buffer on every frame of the drag.
@@ -453,6 +471,10 @@ local BUDGET_STEP = 1024
 -- cell counts hold wherever the camera happens to sit inside a cell.
 function M.star_cost(hw, hh)
     local f, g = 0, 0
+    -- The nebula layer, priced like the rest: every cell carrying one.
+    local nc = (math.floor(2 * hw / NEBULA.cell) + 2) *
+               (math.floor(2 * hh / NEBULA.cell) + 2)
+    f = f + nc * HALO_VERTS
     for li = 1, #STARS do
         local L = STARS[li]
         local cells = (math.floor(2 * hw / L.cell) + 2) *
@@ -490,6 +512,28 @@ function M.world_budget(hw, hh)
 end
 
 function M.stars(fill, glow, cam_x, cam_y, hw, hh)
+    do
+        local L = NEBULA
+        local c = L.cell
+        local ox, oy = cam_x * (1 - L.k), cam_y * (1 - L.k)
+        local bx, by = cam_x * L.k, cam_y * L.k
+        local i0, i1 = math.floor((bx - hw) / c), math.floor((bx + hw) / c)
+        local j0, j1 = math.floor((by - hh) / c), math.floor((by + hh) / c)
+        for j = j0, j1 do
+            for i = i0, i1 do
+                local s = lcg((i * 7907 + j * 15551 + 977) % 2147483646 + 1)
+                if s % 16 < L.fill then
+                    s = lcg(s)
+                    local px = (i + s / 2147483647) * c + ox
+                    s = lcg(s)
+                    local py = (j + s / 2147483647) * c + oy
+                    s = lcg(s)
+                    fill:halo(px, py, 150 + (s % 160), HALO_SEGS,
+                              NEB_COLS[s % #NEB_COLS + 1])
+                end
+            end
+        end
+    end
     for li = 1, #STARS do
         local L = STARS[li]
         local c = L.cell
@@ -2361,6 +2405,136 @@ local function arrival(spec, life, owner, t)
     return fade, age
 end
 
+-- --- ship trails -----------------------------------------------------------
+--
+-- A short ribbon behind every live hull, drawn from a ring of its last few
+-- drawn positions. Client-side and cosmetic: the ribbon is where the picture
+-- of the ship has been, so it follows the smoothed positions the hull is
+-- drawn at rather than anything the simulation said.
+local TRAIL_LEN = 9
+M.TRAIL_VERTS = (TRAIL_LEN - 1) * 6
+local trails = {}
+
+function M.trail(glow, i, x, y, col, t)
+    local tr = trails[i]
+    if not tr then
+        tr = {n = 0, at = 0, t = t}
+        trails[i] = tr
+    end
+    -- A gap in the record is a death, a respawn, or time spent off screen,
+    -- and a wormhole is a jump with no gap at all. Whichever it was, a
+    -- ribbon drawn across it would be a line the ship never flew.
+    if t - tr.t > 0.2 then tr.n = 0 end
+    if tr.n > 0 then
+        local lx, ly = tr[tr.at * 2 - 1], tr[tr.at * 2]
+        local dx, dy = x - lx, y - ly
+        if dx * dx + dy * dy > 90 * 90 then tr.n = 0 end
+    end
+    tr.t = t
+    tr.at = tr.at % TRAIL_LEN + 1
+    tr[tr.at * 2 - 1], tr[tr.at * 2] = x, y
+    if tr.n < TRAIL_LEN then tr.n = tr.n + 1 end
+    -- Newest to oldest, fading and thinning as it goes. Alphas ride the
+    -- team color through seg_fade's own vertex alpha, so no color tables
+    -- are made here, at sixty a second, per hull.
+    local ax, ay = x, y
+    for back = 1, tr.n - 1 do
+        local slot = (tr.at - back - 1) % TRAIL_LEN + 1
+        local bx, by = tr[slot * 2 - 1], tr[slot * 2]
+        local a1 = 0.30 * (1 - (back - 1) / TRAIL_LEN)
+        local a2 = 0.30 * (1 - back / TRAIL_LEN)
+        glow:seg_fade(ax, ay, bx, by, 3.0 * a1 + 0.6, 3.0 * a2 + 0.6,
+                      a1, a2, col)
+        ax, ay = bx, by
+    end
+end
+
+-- --- light on the walls -----------------------------------------------------
+--
+-- The per-frame lights: bright rounds and blasts, gathered while they are
+-- drawn and spent on the wall edges near them. A flat array with a stride
+-- rather than a table per light, for the usual reason: this refills at
+-- sixty a second.
+local LIGHT_MAX = 10
+local LIGHT_STRIDE = 6
+local lights = {n = 0}
+
+function M.lights_begin()
+    lights.n = 0
+end
+
+function M.light(x, y, col, strength, reach)
+    local n = lights.n
+    if n >= LIGHT_MAX then return end
+    local base = n * LIGHT_STRIDE
+    lights[base + 1], lights[base + 2] = x, y
+    lights[base + 3] = col
+    lights[base + 4], lights[base + 5] = strength, reach
+    lights.n = n + 1
+end
+
+local function dist(x0, y0, x1, y1)
+    local dx, dy = x1 - x0, y1 - y0
+    return math.sqrt(dx * dx + dy * dy)
+end
+
+-- Exposed wall edges near each light, brightened in the light's own color.
+-- The terrain mesh is static and rebuilt only when the camera walks, so the
+-- flicker of passing fire cannot live there; it is drawn over the top, on
+-- the glow layer, where bloom picks it up with everything else bright.
+--
+-- The scan is bounded twice: at most LIGHT_MAX lights a frame, and at most
+-- a five-tile radius each, so the worst frame reads a few hundred tiles.
+function M.wall_light(glow)
+    for li = 0, lights.n - 1 do
+        local base = li * LIGHT_STRIDE
+        local lx, ly = lights[base + 1], lights[base + 2]
+        local col = lights[base + 3]
+        local s, reach = lights[base + 4], lights[base + 5]
+        local rt = math.min(math.ceil(reach / TILE), 5)
+        local tx0, ty0 = math.floor(lx / TILE), math.floor(ly / TILE)
+        for ty = ty0 - rt, ty0 + rt do
+            for tx = tx0 - rt, tx0 + rt do
+                if sim.solid(tx, ty) then
+                    local x0, y0 = tx * TILE, ty * TILE
+                    -- Each open side is an exposed edge; alpha falls off
+                    -- with the distance from the light to its middle.
+                    if not sim.solid(tx - 1, ty) then
+                        local d = dist(lx, ly, x0, y0 + TILE / 2)
+                        local a = s * (1 - d / reach)
+                        if a > 0.04 then
+                            glow:seg_glow(x0, y0, x0, y0 + TILE, 1.6, a, col)
+                        end
+                    end
+                    if not sim.solid(tx + 1, ty) then
+                        local d = dist(lx, ly, x0 + TILE, y0 + TILE / 2)
+                        local a = s * (1 - d / reach)
+                        if a > 0.04 then
+                            glow:seg_glow(x0 + TILE, y0, x0 + TILE, y0 + TILE,
+                                          1.6, a, col)
+                        end
+                    end
+                    if not sim.solid(tx, ty - 1) then
+                        local d = dist(lx, ly, x0 + TILE / 2, y0)
+                        local a = s * (1 - d / reach)
+                        if a > 0.04 then
+                            glow:seg_glow(x0, y0, x0 + TILE, y0, 1.6, a, col)
+                        end
+                    end
+                    if not sim.solid(tx, ty + 1) then
+                        local d = dist(lx, ly, x0 + TILE / 2, y0 + TILE)
+                        local a = s * (1 - d / reach)
+                        if a > 0.04 then
+                            glow:seg_glow(x0, y0 + TILE, x0 + TILE, y0 + TILE,
+                                          1.6, a, col)
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
 function M.weapons(fill, glow, t, cull)
     local pulse = 0.72 + 0.28 * math.sin(t * 11)
     for i = 0, sim.weapon_count() - 1 do
@@ -2394,6 +2568,7 @@ function M.weapons(fill, glow, t, cull)
             -- its heading from across the arena. Its rung is its hue -- see
             -- the palette -- so what is coming says how hard it hits.
             local col = bomb_col(spec_level(spec))
+            M.light(x, y, col, 0.55 * af, 78)
             local reach = 7 + (math.min(age, 20) - 7) * (1 - fade)
             glow:seg_fade(x - vx * reach, y - vy * reach, x, y,
                           1.5, 5.5, 0, 0.55 * af, col)
@@ -2427,6 +2602,7 @@ function M.weapons(fill, glow, t, cull)
             local lvl = spec_level(spec)
             if lvl < 0 and depth > 0 then lvl = level end
             local col = lvl < 0 and pal.BURST or pal.rung(lvl)
+            M.light(x, y, col, 0.4 * af, 52)
             local reach = 14 + (math.min(age, 30) - 14) * (1 - fade)
             glow:seg_fade(x - vx * reach, y - vy * reach, x, y,
                           0.6, 4.5, 0, 0.30 * af, col)

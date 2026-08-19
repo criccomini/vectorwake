@@ -158,6 +158,22 @@ for _, bad in ipairs({1, 0, "yes", {}}) do
     end
 end
 
+-- The glow is on unless a save says exactly off. This key defaults the other
+-- way from the rest: the effect is the product's face, so junk under the key
+-- must not quietly turn the lights down.
+if load_with({name = "Fresh Pilot"}, "a pilot who never answered glow") then
+    check("a missing answer leaves the bloom on", menu.bloom == true)
+end
+if load_with({name = "Dim Pilot", bloom = false}, "a pilot who turned it off") then
+    check("a saved no is honored", menu.bloom == false)
+end
+for _, junk in ipairs({0, 1, "off", {}}) do
+    if load_with({name = "Odd Pilot", bloom = junk}, "bloom " .. type(junk)) then
+        check("bloom " .. type(junk) .. " is not a no", menu.bloom == true,
+              tostring(menu.bloom))
+    end
+end
+
 -- Offered on glass and nowhere else. A keyboard has a key for each of these
 -- and no question to answer.
 local function settings_rows()
