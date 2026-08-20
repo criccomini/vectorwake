@@ -187,9 +187,14 @@ CANOPY = {
 }
 
 
+HULL_SEQ = [0]
+
+
 def hull(name, col, k=1.0, dim=False, canopy=True):
     """One hull, nose up. Lit from its own nose per identity.md."""
     path, _, _ = HULLS[name]
+    HULL_SEQ[0] += 1
+    gid = f"g{name}{HULL_SEQ[0]}"
     op = ".55" if dim else "1"
     ink, lit = "#9fb6d4", "#dfe9f5"
     extra = EXTRA.get(name, "").format(ink=ink, lit=lit)
@@ -201,10 +206,10 @@ def hull(name, col, k=1.0, dim=False, canopy=True):
     side = 52 * k
     return (f'<svg width="{side}" height="{side}" viewBox="-26 -26 52 52" '
             f'style="flex:none;overflow:visible">'
-            f'<defs><linearGradient id="g{name}" x1="0" y1="0" x2="0" y2="1">'
+            f'<defs><linearGradient id="{gid}" x1="0" y1="0" x2="0" y2="1">'
             f'<stop offset="0" stop-color="#3a4a63"/>'
             f'<stop offset="1" stop-color="#080d16"/></linearGradient></defs>'
-            f'<path d="{path}" fill="url(#g{name})" stroke="{col}" '
+            f'<path d="{path}" fill="url(#{gid})" stroke="{col}" '
             f'stroke-width="1.5" opacity="{op}" stroke-linejoin="round"/>'
             f'{extra}{cap}</svg>')
 
@@ -441,7 +446,7 @@ def s_matchlist():
       <div>
         <div class="lbl">rotates in</div>
         <div class="num" style="font-size:17px;margin-top:3px;
-             color:var(--bounty)">1:47</div>
+             color:var(--bounty)">1h 12m</div>
       </div>
       <div style="width:1px;height:30px;background:rgba(63,88,120,.5)"></div>
       <div>
@@ -518,7 +523,7 @@ def s_matchlist():
       <div style="margin-top:12px">{kitdots(30, 30)}</div>
       <div class="row" style="gap:8px;margin-top:10px">
         {mark_diamond("var(--bounty)", 10)}
-        <div class="t11 num dim">WORTH 30 THE MOMENT YOU SPAWN</div>
+        <div class="t11 num dim">YOUR WHOLE SHIP &#183; NOTHING TO SCAVENGE</div>
       </div>
       <div class="ticks" style="margin:20px 0 14px"></div>
       <div class="row" style="gap:12px">
@@ -682,9 +687,12 @@ class Component extends DCLogic {
                  : '#ffe08a'),
       barStyle: 'width:' + Math.max(0, Math.min(100, spent / total * 100))
               + '%;background:' + (left === 0 ? '#8dffb0' : '#4fd6ff'),
+      // Deep speed and deep thrust are held; energy, recharge and rotation
+      // are not, so those three stop at the fourth step until the shop sells
+      // them. See Shop.dc.html.
       stats: STATS.map(([short, name, col], i) => ({
         short, name, count: s.up[i],
-        cells: this.cellsFor('up', i, s.up[i], 8, 8, col)
+        cells: this.cellsFor('up', i, s.up[i], 8, [4, 4, 8, 8, 4][i], col)
       })),
       // Apex: gun ladder tops at L2, bombs at L1. ships.md.
       gunRungs: this.rungRow('gun', 2, 2),
@@ -847,6 +855,7 @@ SHOP = [
         ("Deep thrust", "Slot THR past the fourth step", 120, "owned", ""),
         ("Deep rotation", "Slot ROT past the fourth step", 120, "buy", ""),
         ("Deep energy", "Slot NRG past the fourth step", 120, "buy", ""),
+        ("Deep recharge", "Slot RCH past the fourth step", 120, "buy", ""),
     ]),
     ("Triggers", [
         ("Gun rung 3", "The third rung, on hulls that reach it", 90, "buy",
@@ -881,21 +890,23 @@ def s_shop():
                      f'{cat}</div>')
         for name, line, price, state, note in items:
             owned = state == "owned"
+            notediv = (f'<div class="lbl" style="opacity:.7;margin-top:3px">'
+                       f'{note}</div>') if note else ""
             pricebox = (f'<div class="row" style="gap:6px">'
                         f'<div class="t10 num" style="color:var(--prize)">HELD</div>'
                         f'</div>') if owned else (
                         f'<div class="row" style="gap:6px">{rivet("#dfe9f5", 11)}'
                         f'<div class="num" style="font-size:15px">{price}</div></div>')
             cards.append(f"""
-        <div class="panel" style="padding:13px 15px;position:relative;
+        <div class="panel" style="padding:11px 14px;position:relative;
              opacity:{'.62' if owned else '1'}">
           <div class="row" style="gap:10px">
             <div style="font-size:16px">{name}</div>
             <div style="flex:1"></div>{pricebox}
           </div>
-          <div style="font-size:12px;color:var(--dim);margin-top:6px;
-               line-height:1.4;min-height:32px;text-wrap:pretty">{line}</div>
-          <div class="lbl" style="opacity:.7">{note}</div>
+          <div style="font-size:12px;color:var(--dim);margin-top:5px;
+               line-height:1.35;min-height:26px;text-wrap:pretty">{line}</div>
+          {notediv}
         </div>""")
 
     body = f"""
@@ -919,10 +930,10 @@ def s_shop():
 
     <div style="flex:1">
       <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));
-           gap:13px;align-items:start">
+           gap:11px;align-items:start">
         {''.join(cards)}
       </div>
-      <div class="row" style="gap:9px;margin-top:20px">
+      <div class="row" style="gap:9px;margin-top:13px">
         {mark_diamond("var(--dim)", 10)}
         <div style="font-size:13px;color:var(--dim);text-wrap:pretty">
           Nothing here makes a ship stronger. Everything trades against the same
@@ -995,9 +1006,11 @@ def s_match():
         '<circle cx="470" cy="600" r="3.6" fill="#f42e3d"/>',
     ])
     feed = [
-        ("QUARREL", "VESPER 412", "+34", "var(--friend)"),
-        ("SABLE 09", "KESTREL", "+12", "var(--enemy)"),
-        ("QUARREL", "ORRERY 3", "+30", "var(--friend)"),
+        ("QUARREL", "VESPER 412", "+12", "var(--friend)"),
+        ("SABLE 09", "KESTREL", "+6", "var(--enemy)"),
+        # Orrery had just spawned and was worth nothing. The feed stays
+        # quiet rather than printing a zero. bounty.md.
+        ("QUARREL", "ORRERY 3", "", "var(--friend)"),
     ]
     feed_html = "".join(
         f'<div class="row" style="gap:7px;height:19px">'
@@ -1053,12 +1066,12 @@ def s_match():
     </div>
     {side_rows([("QUARREL", False), ("KESTREL", True), ("PLINTH 41", True),
                 ("MARLOW", False)], "var(--friend)",
-               [(4, 1), (3, 2), (2, 3), (1, 2)])}
+               [(4, 1), (3, 2), (2, 2), (1, 2)])}
     <div class="ticks" style="margin:9px 0"></div>
     <div class="lbl" style="color:var(--enemy);height:16px">Caisson</div>
     {side_rows([("VESPER 412", True), ("SABLE 09", True), ("TALLOW", False),
                 ("ORRERY 3", True)], "var(--enemy)",
-               [(3, 3), (2, 2), (2, 4), (0, 3)])}
+               [(3, 3), (2, 2), (2, 3), (0, 2)])}
   </div>
 
   <!-- radar, then the feed under it: ui.lua puts them in that order -->
@@ -1098,7 +1111,7 @@ def s_match():
     </div>
     <div class="row" style="gap:12px;height:22px">
       {mark_diamond("var(--prize)", 13)}
-      <div class="num t13" style="color:var(--prize)">30</div>
+      <div class="num t13" style="color:var(--prize)">9</div>
     </div>
   </div>
 
@@ -1114,10 +1127,11 @@ def s_match():
 # 5. The podium: an ending, and a payday. Round points bank one for one.
 # =============================================================================
 def s_podium():
-    won = [("QUARREL", False, 34, True), ("KESTREL", True, 27, False),
-           ("PLINTH 41", True, 19, False), ("MARLOW", False, 12, False)]
-    lost = [("VESPER 412", True, 25, False), ("SABLE 09", True, 18, False),
-            ("TALLOW", False, 14, False), ("ORRERY 3", True, 6, False)]
+    # Kills, and the two sides sum to the 14 and 11 on the banner.
+    won = [("QUARREL", False, 5, True), ("KESTREL", True, 4, False),
+           ("PLINTH 41", True, 3, False), ("MARLOW", False, 2, False)]
+    lost = [("VESPER 412", True, 4, False), ("SABLE 09", True, 3, False),
+            ("TALLOW", False, 3, False), ("ORRERY 3", True, 1, False)]
 
     def col_rows(rows, col, mvp_label):
         out = []
@@ -1156,7 +1170,7 @@ def s_podium():
       <div class="panel" style="width:326px;padding:13px 10px">
         <div class="row" style="padding:0 8px 8px">
           <div class="lbl" style="color:var(--friend)">Bastion</div>
-          <div style="flex:1"></div><div class="lbl">round points</div>
+          <div style="flex:1"></div><div class="lbl">kills</div>
         </div>
         {col_rows(won, "var(--friend)", "mvp")}
       </div>
@@ -1164,7 +1178,7 @@ def s_podium():
       <div class="panel" style="width:326px;padding:13px 10px;opacity:.78">
         <div class="row" style="padding:0 8px 8px">
           <div class="lbl" style="color:var(--enemy)">Caisson</div>
-          <div style="flex:1"></div><div class="lbl">round points</div>
+          <div style="flex:1"></div><div class="lbl">kills</div>
         </div>
         {col_rows(lost, "var(--enemy)", "")}
       </div>
@@ -1180,14 +1194,14 @@ def s_podium():
         </div>
         <div class="ticks" style="margin:14px 0 10px"></div>
         <div class="row" style="height:23px">
-          <div class="t10 num dim">ROUND POINTS</div><div style="flex:1"></div>
-          <div class="t11 num">34</div></div>
+          <div class="t10 num dim">5 KILLS &#215; 4</div><div style="flex:1"></div>
+          <div class="t11 num">20</div></div>
         <div class="row" style="height:23px">
-          <div class="t10 num dim">PODIUM</div><div style="flex:1"></div>
-          <div class="t11 num">+3</div></div>
+          <div class="t10 num dim">WON THE MATCH</div><div style="flex:1"></div>
+          <div class="t11 num">+10</div></div>
         <div class="row" style="height:23px">
           <div class="t10 num dim">FIRST WIN TODAY</div><div style="flex:1"></div>
-          <div class="t11 num">+1</div></div>
+          <div class="t11 num">+8</div></div>
         <div class="ticks" style="margin:10px 0"></div>
         <div class="row" style="height:24px">
           <div class="t10 num dim">BALANCE</div><div style="flex:1"></div>
@@ -1231,16 +1245,16 @@ def s_podium():
 # 6. The week: the short ladder beside the career one, and what you wear.
 # =============================================================================
 WEEK = [
-    (1, "TALLOW", False, 14, 9, 412, 11, "ember"),
-    (2, "VESPER 412", True, 13, 11, 388, 9, "hairline"),
-    (3, "SABLE 09", True, 12, 8, 361, 8, "plain"),
-    (4, "MARLOW", False, 10, 7, 340, 7, "plain"),
-    (5, "ORRERY 3", True, 9, 9, 318, 6, "plain"),
-    (6, "PLINTH 41", True, 9, 6, 305, 7, "plain"),
-    (7, "CORVID", False, 8, 5, 288, 5, "plain"),
-    (8, "KESTREL", True, 8, 5, 271, 6, "plain"),
-    (9, "QUARREL", False, 7, 6, 264, 5, "plain"),
-    (10, "LINTEL 22", True, 6, 4, 240, 4, "plain"),
+    (1, "TALLOW", False, 14, 9, 118, 11, "ember"),
+    (2, "VESPER 412", True, 13, 11, 106, 9, "hairline"),
+    (3, "SABLE 09", True, 12, 8, 97, 8, "plain"),
+    (4, "MARLOW", False, 10, 7, 91, 7, "plain"),
+    (5, "ORRERY 3", True, 9, 9, 84, 6, "plain"),
+    (6, "PLINTH 41", True, 9, 6, 81, 7, "plain"),
+    (7, "CORVID", False, 8, 5, 74, 5, "plain"),
+    (8, "KESTREL", True, 8, 5, 71, 6, "plain"),
+    (9, "QUARREL", False, 7, 6, 68, 5, "hairline"),
+    (10, "LINTEL 22", True, 6, 4, 61, 4, "plain"),
 ]
 
 
@@ -1303,7 +1317,7 @@ def s_standings():
           <div style="flex:1"></div>
           <div class="lbl" style="width:34px;text-align:right">won</div>
           <div class="lbl" style="width:44px;text-align:right">podium</div>
-          <div class="lbl" style="width:52px;text-align:right">points</div>
+          <div class="lbl" style="width:52px;text-align:right">kills</div>
           <div class="lbl" style="width:38px;text-align:right">run</div>
         </div>
         <div class="ticks" style="margin:6px 16px 4px"></div>
