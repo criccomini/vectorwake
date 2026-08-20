@@ -1938,6 +1938,17 @@ impl Bot {
         //
         // A poor pilot throws them closer together than the hull can afford,
         // which in a fight is the same mistake as firing without aiming.
+        //
+        // That reading is half wrong and the half is measured. A bomb is 2.5
+        // damage per energy against a bullet's 10, so it only pays when the
+        // gun would have missed, which is a weak pilot's situation and not a
+        // strong one's: this shape hands the weapon to whoever it suits.
+        // Inverting it to `1.0 - dial * 0.55`, so the strong pilot throws
+        // more, does recover about half of what volume costs the ladder,
+        // Cipher 61.9% to 69.4% and Facet 55.4% to 60.1%. It does not recover
+        // all of it, and both still sit under the 78.8% and 66.9% they reach
+        // when nobody is bombing much. Left as it was because the inversion
+        // buys a trade rather than a fix, and the trade is not mine to take.
         let cadence = (self.bomb_cadence(doctrine) as f32
             * (0.45 + self.dial(Knob::Permission) * 0.55)) as u32;
         if self
@@ -1965,6 +1976,14 @@ impl Bot {
             // hands the weak pilot the extra bombing. Measured, it took
             // Cipher from 78.6% to 61.9% and Facet from 67.1% to 55.4% at
             // z 1.3, which is skill doing nothing on that hull.
+            //
+            // Volume is what costs the ladder, rather than who supplies it.
+            // Turning the bomb off altogether leaves Apex, Cipher and Facet
+            // exactly where they were, 76.9%, 78.3% and 67.1%, because at
+            // these rates the weapon is already absent: Cipher throws one a
+            // ten minutes and Facet fewer. Raising the rate is what moves
+            // things, and giving the extra throws to strong pilots instead of
+            // weak ones recovers only half the loss.
             _ => crowded || finisher,
         };
         if !purposeful {
