@@ -1,5 +1,13 @@
 # Landing, and the menu
 
+> **A split is proposed.** [match-game.md](match-game.md) moves the
+> hangar, the shop and the standings out of this tree and into screens
+> of their own, leaving the stack below to settings, help, and about or
+> leave. In a match it is three rows, because nothing pauses and
+> anything you cannot act on now costs match time to read. The games
+> list stops being a node, and changing hull becomes a front-end action
+> because the hull is locked for a match.
+
 The page opens on a menu over a starfield. It asks three things, none of them
 required: which hull you want, whether the call sign you were dealt suits you,
 and which game to join. Press enter on a game and you are flying.

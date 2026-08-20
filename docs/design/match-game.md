@@ -318,6 +318,40 @@ priced, the social damage is already absorbed, and a game this size does not
 need one. The pilot log should count leaves so the question can be answered
 with a number later.
 
+## The menu, and where the screens live
+
+The home experience stops being a menu. Hangar, shop and standings are
+screens with panes and grids, and the menu tree was deliberately one narrow
+column that [menu.md](menu.md) says "falls apart at 390 points wide". So
+there are two surfaces now rather than one:
+
+- **Four destinations** at the front end, which is where you are between
+  matches and where there is time to read: play, hangar, shop, standings.
+- **One small stack**, opened with escape in either place, holding the things
+  that are neither a destination nor a game: settings, help, and about or
+  leave depending on where you are.
+
+**In a match the stack has three rows: settings, help, leave.** Nothing you
+cannot act on right now belongs in it. This follows from a rule
+[menu.md](menu.md) already has and is proud of: nothing pauses, you can be
+shot while reading, and opening a menu is a risk rather than a timeout. In a
+three minute match a menu deep enough to browse a shop in is a menu that
+costs a real fraction of the match.
+
+It stays a menu rather than a bare leave button for one reason that does not
+show up on a desktop. On a phone this is the only route to sound, to
+fullscreen and to the controls reference, and a leave button alone would
+strand a player who needs to mute the game.
+
+None of this needs a new mechanism. `menu.home` already builds rows from the
+moment rather than declaring them, which is how the `leave` row appears only
+when there is something to leave. Hangar, shop and standings are the same
+conditional in the other direction.
+
+Two consequences for [menu.md](menu.md). Changing hull is a respawn today and
+becomes a front-end action, because the hull is locked for the match. And the
+games list stops being a menu node, because picking a mode is a screen now.
+
 ## The week
 
 Rating answers "how good am I" on a career scale and moves slowly. The week
@@ -403,8 +437,12 @@ honest and keeps every match matched.
 How a party of three is seated against a fair opposing side, which is the
 matchmaking question friends brings with it.
 
-What the modes beyond a kills match actually are. Capture and a hold-the-room
-mode are named in the mockups and neither is designed.
+What Capture and Holdfast actually are. Both are named and neither is
+designed. Three modes is the launch set on purpose: a turf mode was cut
+because several fixed points and one contested room collapse into the same
+game at four a side on a small map, and the one room is the better version
+because it forces contact. If a fourth is ever wanted, the one structural
+axis nothing uses is an objective that moves.
 
 Every price, which no harness can measure.
 

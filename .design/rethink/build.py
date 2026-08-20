@@ -387,10 +387,9 @@ MODES = [
     ("Capture", "flags", 1, False,
      "Carry theirs home. Holding it makes you worth more, which is how it "
      "gets contested."),
-    ("Holdfast", "ground", 1, False,
-     "One room pays while you hold it. Leaving it is how you lose it."),
-    ("Turf", "ground", 0, False,
-     "Flags bolted to the map pay whoever holds them, every ten seconds."),
+    ("Holdfast", "one room", 1, False,
+     "One room on the map pays whoever holds it. Standing in it is the whole "
+     "job, which is why the hulls that cannot hold ground struggle here."),
 ]
 
 FRIENDS = [
@@ -989,7 +988,11 @@ def ship_at(name, x, y, rot, col, trail=True, k=1.0, hurt=False):
             f'stroke-width="1.5" stroke-linejoin="round"/></g>')
 
 
-def s_match():
+def match_screen(menu=""):
+    # Nothing pauses. The world keeps running under an open menu and the
+    # interface stays up, because hiding it would be a lie about what is
+    # happening. It only stands down in alpha. ui.lua F.text_dim.
+    dim = ".45" if menu else "1"
     ships = "".join([
         ship_at("Apex", 640, 372, 18, "#4fd6ff", k=1.25),
         ship_at("Facet", 470, 250, 118, "#4fd6ff"),
@@ -1044,6 +1047,7 @@ def s_match():
 
     body = f"""
 <div class="screen">
+  <div style="position:absolute;inset:0;opacity:{dim}">
   <svg width="1280" height="720" style="position:absolute;inset:0">
     {arena_svg()}{bolts}{ships}
   </svg>
@@ -1129,8 +1133,67 @@ def s_match():
   <div style="position:absolute;right:16px;bottom:16px;text-align:right">
     <div class="lbl" style="opacity:.55">2 repels and 1 burst left this match</div>
   </div>
+  </div>
+  {menu}
 </div>"""
-    page("Match", body)
+    return body
+
+
+def s_match():
+    page("Match", match_screen())
+
+
+# =============================================================================
+# 4b. The menu over a live match. Three rows, because anything you cannot act
+#     on right now belongs at the front end and this one costs you the match
+#     time you spend reading it.
+# =============================================================================
+MENU_ROWS = [
+    ("Settings", "sound &#183; music &#183; frames &#183; fullscreen", False),
+    ("Help", "the controls, on a keyboard and under a thumb", False),
+    ("Leave", "", True),
+]
+
+
+def s_menu():
+    rows = []
+    for name, note, sel in MENU_ROWS:
+        cursor = ('<div style="color:var(--friend);font-size:13px;width:15px">'
+                  '&#9654;</div>') if sel else '<div style="width:15px"></div>'
+        rows.append(f"""
+        <div class="row {'wash' if sel else ''}" style="height:46px;padding:0 18px;
+             gap:13px">
+          {cursor}
+          <div style="font-size:21px;min-width:112px">{name}</div>
+          <div class="lbl" style="opacity:.75">{note}</div>
+        </div>""")
+
+    menu = f"""
+  <div style="position:absolute;left:50%;top:168px;transform:translateX(-50%);
+       width:472px">
+    <div class="panel" style="padding:16px 0 12px">
+      <div class="lbl" style="padding:0 18px 10px;letter-spacing:.24em">
+        vectorwake</div>
+      {''.join(rows)}
+      <div class="ticks" style="margin:10px 18px 0"></div>
+      <div style="padding:12px 18px 2px;font-size:13px;color:var(--dim);
+           line-height:1.5;text-wrap:pretty">
+        A bot takes your seat until the match ends. You keep the rivets you
+        have taken and give up the win.
+      </div>
+    </div>
+    <div class="row" style="gap:20px;padding:14px 18px 0">
+      <div class="row" style="gap:9px">
+        <div class="t11 num dim">ESC</div>
+        <div style="font-size:14px;color:var(--dim)">Back to it</div>
+      </div>
+      <div class="row" style="gap:9px">
+        <div class="t11 num dim">&#8593; &#8595;</div>
+        <div style="font-size:14px;color:var(--dim)">Move</div>
+      </div>
+    </div>
+  </div>"""
+    page("InMatchMenu", match_screen(menu))
 
 
 # =============================================================================
@@ -1405,5 +1468,6 @@ def s_standings():
 
 
 if __name__ == "__main__":
-    s_matchlist(); s_main(); s_shop(); s_match(); s_podium(); s_standings()
-    print("wrote 6 artboards")
+    s_matchlist(); s_main(); s_shop(); s_match(); s_menu(); s_podium()
+    s_standings()
+    print("wrote 7 artboards")

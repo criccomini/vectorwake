@@ -30,7 +30,7 @@
       "y": 880,
       "w": 1280,
       "h": 720,
-      "title": "4 \u00b7 Podium"
+      "title": "5 \u00b7 Podium"
     },
     {
       "file": "Shop.dc.html",
@@ -38,7 +38,7 @@
       "y": 880,
       "w": 1280,
       "h": 720,
-      "title": "5 \u00b7 Shop"
+      "title": "6 \u00b7 Shop"
     },
     {
       "file": "Standings.dc.html",
@@ -46,7 +46,15 @@
       "y": 880,
       "w": 1280,
       "h": 720,
-      "title": "6 \u00b7 The week"
+      "title": "7 \u00b7 The week"
+    },
+    {
+      "file": "InMatchMenu.dc.html",
+      "x": 4200,
+      "y": 0,
+      "w": 1280,
+      "h": 720,
+      "title": "4 \u00b7 In-match menu"
     }
   ],
   "annotations": [
@@ -91,6 +99,13 @@
       "y": 745,
       "w": 380,
       "text": "Rating is the career ladder and moves slowly. The week is the short one, and resets on Monday."
+    },
+    {
+      "id": "menu-is-small",
+      "x": 4200,
+      "y": -190,
+      "w": 400,
+      "text": "Nothing pauses, so a menu costs you match time while somebody shoots at you. Anything you cannot act on right now is not in here: hangar, shop and standings live at the front end.\n\nIt stays a menu rather than a bare leave button because on a phone this is the only way to reach settings and the controls."
     }
   ],
   "launch": {
