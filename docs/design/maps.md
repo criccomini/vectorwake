@@ -1,5 +1,11 @@
 # Maps
 
+> **A second shape is proposed.** [match-game.md](match-game.md) wants small
+> point-symmetric match maps, roughly 96 to 128 tiles square, with a home
+> pocket per side and two or three routes between them, sized in seconds of
+> flight. Everything below is about the 1024-tile arena map and stays true
+> of it.
+
 The original's map was a 1024x1024 grid of 16-pixel tiles, and a tile's
 number was its behavior: 1 through 160 were walls, 162 through 169 were
 doors, 171 was a safe zone, 176 through 190 were scenery you flew under. Every

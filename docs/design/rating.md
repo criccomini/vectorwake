@@ -1,5 +1,10 @@
 # Rating
 
+> **One addition is proposed.** [match-game.md](match-game.md) substitutes a
+> bot into the seat of a pilot who drops mid-match. The quitting rule below
+> is unchanged and still settles at the socket; what is new is that the seat
+> flies unrated from that moment.
+
 Every player carries a skill rating that moves when they kill and when they die,
 against humans and against AI alike. It is separate from score: bounty and points
 are gameplay, configured per zone, and they stay exactly as the zone author wants

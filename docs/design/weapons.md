@@ -1,5 +1,10 @@
 # Weapons
 
+> **Two parts of this are under proposal.** [match-game.md](match-game.md)
+> would remove greens entirely, keeping the upgrade space below as the
+> coordinate system a chosen kit is built in, and would make a mine an
+> ordinary charge rather than the bomb trigger's other posture.
+
 Everything that leaves a ship is the same thing.
 
 Not "a bullet and a bomb, plus special cases". One model, two tables, and

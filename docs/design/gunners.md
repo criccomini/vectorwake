@@ -1,5 +1,11 @@
 # Gunners
 
+> **Proposed for removal.** [match-game.md](match-game.md) makes every game
+> a 4v4, where two pilots on one hull is a quarter of a side parked. The
+> open question in [ships.md](ships.md) asked whether gunners earn their
+> place and said a playtest would settle it. This is that settlement. The
+> document below describes what is built today.
+
 A gunner is a player riding on a teammate's ship, keeping their own hull,
 their own energy bar and their own aim, and giving up all control of where the
 ship goes. The hull carrying them is a carrier.

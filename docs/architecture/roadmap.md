@@ -337,3 +337,6 @@ A Continuum compatibility gateway, which stays a proposal in
 [decisions.md](decisions.md) until there is a game worth connecting to.
 
 Anything resembling progression, an economy, or a persistent world.
+That deferral is being reopened deliberately, and the case is in
+[design/match-game.md](../design/match-game.md): owned kits, bounty as a
+run that pays its ender, and rivets. Playtesting is what reopened it.

@@ -1,5 +1,11 @@
 # Bounty and points
 
+> **Proposed replacement.** [match-game.md](match-game.md) would make bounty
+> start at one and rise by one per kill, paid to whoever ends the run as
+> rivets, which folds points and bounty into one number and makes the
+> derivation below unnecessary. The anti-farming property this document
+> prizes survives, by arithmetic rather than by rule.
+
 Two numbers that are constantly confused for each other.
 
 **Bounty** is what you are worth. It goes up as you get stronger, everyone can

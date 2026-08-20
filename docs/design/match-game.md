@@ -1,0 +1,389 @@
+# The match game
+
+> **Proposed, not built.** This is the direction the game is being taken in,
+> written down so it can be argued with before anything is deleted or
+> written. It replaces the six-gripe proposal that used to live at
+> `progression.md`, which was a persistent layer bolted around an untouched
+> Alpha. Alpha does not survive this document.
+
+## What playtesting said
+
+Six gripes, from the owner's own sessions:
+
+1. You land in the arena and there is no obvious point.
+2. A session has no beginning, middle, or end.
+3. You cannot shape your ship to your liking. Greens are random.
+4. A death takes everything you built.
+5. Rating tiers and `/pilots` exist, but nothing inside the game ranks you at
+   a cadence that pulls you back for one more.
+6. Points buy nothing. There is no economy.
+
+The live fleet agrees. Of 241 human accounts read off the public pilot API on
+2026-08-17, 67% never scored a rated exchange, the median career among those
+who did is three games, and nine accounts have passed twenty. Arrivals are
+fine. The first session is the wall.
+
+They are one gripe wearing six coats: nothing in the game accumulates
+meaning, and the one thing that does accumulate inside a session is designed
+to be taken away.
+
+## The shape of the answer
+
+**Every game is a three minute 4v4 match.** There is no open arena, no
+practice room, and no lobby to wait in. You pick a mode, you are in a match
+within seconds, and three minutes later it ends with a score, a payout and a
+next one.
+
+Around that sit four things:
+
+- **A kit** you build and own, dealt to your hull at every spawn. Gripe 3.
+- **Bounty** that starts at one and grows with your run, paid to whoever
+  ends it. Gripes 1 and 6.
+- **Rivets**, which are bounty taken, spent on what you may slot and on what
+  you wear. Gripe 6.
+- **The week**, a standings table that resets on Monday. Gripe 5.
+
+Gripe 4 is answered by the match itself. A death still empties the hull, and
+the hull refills from your kit at the next spawn, so what a death costs is
+the seconds it takes to fly back. Nothing you built goes away, because you
+own it.
+
+## The match
+
+```toml
+[arena]
+match_seconds = 180
+intermission_seconds = 25
+team_size = 4
+```
+
+**Four a side, three minutes.** Both sides are filled to four by the
+population director, so a room is never short. A match starts when it has a
+room, not when it has eight humans.
+
+**You never wait.** Press play and a room takes you: an open one if there is
+one, a fresh one if there is not, with bots seated in the empty chairs. This
+is the reason there is no rotation of modes on a timer. A rotation rations a
+queue, and rationing is a thing you do to a population you have; with the one
+this game has, every mode has to be startable on demand. If human queues ever
+grow enough to need herding, rotation is a directory feature and can return
+then.
+
+**Humans join at match boundaries, bots backfill mid-match.** Seating an
+arrival into a match that is 2:40 gone and 9-2 down is a bad first
+impression, and at this cadence a boundary is never more than three minutes
+away. Somebody who cannot find one opens a new room instead.
+
+**The hull is locked for the match**, the way a duel already locks it. Kit
+and hull change in the hangar between matches. This is not ceremony: charges
+are match-scoped below, and a mid-match hull change would have to answer what
+happens to a half-spent charge ledger across two different charge rows. The
+honest answer is to not let the question exist.
+
+**The ending is a podium and a payday**, and the intermission is where the
+hangar is one key away.
+
+## What a death costs
+
+Nothing you own, and a walk.
+
+This is the load-bearing consequence of owning a kit, and it makes spawn
+geometry the only thing pricing a death, so the maps carry the weight the
+prize table used to.
+
+**Each side spawns in its own pocket, at its own end of the map.** Not a
+shared scatter with a radius. Two homes, far apart, with real ground between
+them.
+
+Frictionless flight makes the trip do more work than it looks like it should.
+The run from your spawn is also your run-up, so pilots reach the middle
+carrying speed and the opening engagement is a jousting pass rather than a
+knife fight in a phone booth. A side that gets wiped re-arrives together,
+which produces waves and regroups without a respawn-wave rule written
+anywhere.
+
+**No safe zones in a home pocket.** The duel design's no-hiding rule applies
+to anything played against a clock: a safe pocket is where a leading team
+goes to stall. Respawn invulnerability stays as duels specify it, long enough
+to orient and short enough to be useless offensively. Camping a spawn is
+already close to worthless, because a pilot who has just died is worth one.
+
+## Maps
+
+Small, and symmetric.
+
+Roughly 96 to 128 tiles square. The 1024-tile world was for arenas holding
+sixty-four, and this holds eight.
+
+**Point-symmetric**, rotated a half turn rather than mirrored, so both sides
+face identical approach geometry rather than handed versions of it.
+
+**Two or three distinct routes between the homes**, which is the rule that
+keeps the roster honest. One corridor between spawns makes the Wedge the only
+ship in the game.
+
+Sized in seconds of flight rather than in tiles, which is the unit spawn
+radius is already sized in: first contact five to eight seconds from the
+opening whistle, and four to six from a respawn back into the fight. Against
+a three minute clock and lives that run about twenty seconds, that is a real
+cost that never eats a quarter of the match. Hulls will differ, and that is
+the roster expressing itself: an Apex arriving first and an Anvil arriving
+last is both ships doing their job.
+
+`sim/tools/mapgen` needs a recipe it does not have: two pockets, point
+symmetry, and a route count it guarantees rather than hopes for. The drill
+harness can measure both flight times headless before anybody flies a
+candidate.
+
+## The kit
+
+**A kit is thirty upgrades you choose, dealt to your hull at every spawn.**
+
+Alpha deals thirty random greens to every fresh spawn today (`spawn_prizes =
+30`). A kit is those same thirty, chosen once in the hangar instead of rolled
+at the pad. Nothing is added to the ship, which is what keeps this cheap: the
+sim already holds these as counts, the snapshot already carries them, and the
+drill harness already measures matched thirty-upgrade kits.
+
+The space is the one the tech tree already defines, and everything in it
+costs exactly one:
+
+| kind | ceiling |
+|---|---|
+| a step of a stat | eight, over five stats |
+| a rung of a trigger's ladder | the hull's row |
+| an add-on on a trigger | the hull's row |
+| a charge carried | the hull's row |
+
+**Everyone deals thirty**, new pilot and veteran alike. A new account gets a
+sensible starter kit per hull, worth the same thirty. What rivets buy is
+*which* upgrades you may slot, never how many.
+
+**Death re-deals the frame, never the ammunition.** Stats, rungs and add-ons
+come back at every spawn, because they are what your ship is. Charge counts
+do not: you start a match with the charges your kit slotted, and when they
+are gone they are gone until the next match.
+
+That rule earns its place twice. It closes an exploit, since a refill on
+death means a pilot out of repels can suicide into the nearest enemy to
+reload, and at a bounty of one that costs nothing. And it turns one kit slot
+into a three minute budget rather than a per-life allowance: spend both
+repels in the opening joust and you fly the last minute with no way out of a
+corner.
+
+The corner stack already draws spent charges as empty rings. It needs no
+change, it just stops refilling.
+
+## Bounty, and rivets
+
+**Bounty starts at one and rises by one for every kill. Your killer takes it,
+as rivets. Dying puts you back to one.**
+
+So a pilot's bounty is the length of their current run, and the number over a
+ship says exactly how good a prize it is. A fresh spawn is worth one, which
+is the anti-farming property `bounty.md` prizes, arrived at by arithmetic a
+player can do in their head rather than by a rule about camping.
+
+This collapses two numbers into one. There is no separate score banked into a
+separate wallet: rivets are what killing pays, they arrive at the kill, and
+nothing takes them back. `sim_bounty` stops being a sum over held counts and
+becomes a counter the server owns.
+
+**Objectives raise your bounty rather than paying around it.** In a mode with
+a flag, carrying it makes you worth more while you hold it, and capping banks
+it. A flag runner should be the most valuable thing on the field, and this is
+the way to say so without inventing a second currency for objective play.
+
+**The ending pays a little.** A win, a podium place and the first win of a
+day are small flat bonuses. Small because kills already pay continuously and
+the bonuses exist to make the ending feel like an ending; nonzero because a
+mode where only kills pay is a mode where nobody contests the objective.
+
+Every price in the shop is denominated in this, which means prices are tens
+rather than thousands. A match pays a pilot something in the low tens.
+
+## What rivets buy
+
+**Slots, and looks. Never strength.** Everything trades against the same
+thirty, and the drill harness is the referee: anything that wins more than
+55% of matched bouts against the bare kit, on at least two hulls, goes back
+to the bench.
+
+- **Depth on a stat**, the right to slot past the fourth step.
+- **Add-ons and rungs** your hull's row allows but your account has not
+  bought.
+- **Charge kinds** beyond the two everybody starts with.
+- **Livery.** Decoration, under the art direction's law: hull paint is the
+  team read and weapon hues are semantic bands, so livery lives on the wake,
+  the nameplate badge and the podium card. You should recognize a pilot by
+  their wake before you read the name.
+- **A name of your own**, eventually. Not now, and worth writing down: a name
+  bought with earned rivets costs time, which makes a throwaway offensive
+  name expensive and a ban something that actually takes something. Freeform
+  names need review whatever they cost, so the cheap version builds from the
+  call sign generator's word pool and the expensive one is freeform behind
+  the admin panel's rename tooling. It also needs a reserved list, because
+  the tier names and the team names are words that must not become people.
+
+## Charges
+
+Two slots to start, four in the core (`SIM_MAX_CHARGES`). Repel and burst are
+what every hull begins with; the shop sells the rest.
+
+**A mine is a charge.** It is the bomb trigger's other posture today, limited
+by how many of yours are already lying about. As a charge it is a count you
+carry and spend, which is what the kit makes coherent: how many mines you
+bring is a loadout decision priced against everything else.
+
+Two changes ride along. A mine currently wears its layer's bomb rung, and a
+charge fires one pattern that means the same thing to everybody, so mines
+standardize. And Lattice keeps its role through numbers rather than
+exclusivity: its row slots six where another hull slots two. The carried
+count becomes the limit and `mine_max` goes, along with the Shift+Tab chord
+and its touch cell.
+
+## Friends
+
+The one genuinely new system here, and the one most likely to move the number
+this document opens with. People stay for people.
+
+`decision 30` deferred friends and parties "until somebody wants them".
+Somebody does.
+
+Version one is three things: add somebody mutually, see which friends are
+online and what they are in, and join their next match with one press. Friend
+edges live at the meta-layer beside accounts; presence comes from the
+directory, which already knows every live room; the invite reuses the
+invitations-instead-of-passwords pattern teams already have.
+
+No chat, per `decision 28`. Discord carries the talking, per
+`community.md`, and a structured invite keeps both the no-chat property and
+the moderation surface small.
+
+The part that is real work is seating a party together on one side of a
+filling match, which is matchmaking logic that does not exist yet.
+
+## Dropping mid-match
+
+**A bot takes the seat, in place.** Same hull, same kit, the charge ledger as
+the leaver left it. The match stays four a side.
+
+The seat is what persists, so there is no reconnect timer to tune: come back
+any time before the final whistle and you take your ship back from the bot.
+Come back after it and you land on the podium with whatever you banked.
+
+Forfeiting is right for a duel, where your absence only hurts you, and wrong
+here, where it would punish three teammates for a fourth person's wifi.
+Substitution punishes nobody.
+
+Three rules compose:
+
+- **Rating** settles at the socket exactly as it does today, so a drop in the
+  middle of a losing fight is a death on your record. From there the seat
+  flies **unrated**, which keeps a bot's career clean of inherited doomed
+  hulls and closes any angle where farming a substitute pays.
+- **Rivets** already earned are yours, because bounty pays at the kill. What
+  you forfeit is the ending. Enemies who kill the substitute take its bounty
+  as usual, because the ship on the field is real even if the rating book is
+  not watching.
+- **The lag ladder** feeds the same path. A connection bad enough to bench
+  becomes an early substitution rather than a weaponless ship drifting while
+  its team plays three against four.
+
+No penalty box beyond the forfeited bonuses. The tactical dodge is already
+priced, the social damage is already absorbed, and a game this size does not
+need one. The pilot log should count leaves so the question can be answered
+with a number later.
+
+## The week
+
+Rating answers "how good am I" on a career scale and moves slowly. The week
+is the short ladder beside it: matches won, podiums, kills and the best run,
+resetting Monday 00:00 UTC, with livery paid to the top of a closing week.
+
+Rating measures skill and ignores attendance. The week measures what you did
+with it lately, and starts again often enough that tonight is worth playing.
+
+## What goes
+
+The direction is mostly subtraction. Named here because a design document
+that only adds is lying about its cost.
+
+**Greens, entirely.** The pickup, the prize table and its weights, rust, the
+death drop, the spawn deal. What survives is the upgrade *space*, which is
+the kit's coordinate system. This is a deletion of the delivery mechanism,
+not of the state, which is why it is cheap.
+
+It also retires a class of bug this repository has fixed twice: a green sown
+through a door and sealed inside a wall, and the point-versus-box confusions
+that came with it.
+
+**Turrets and gunners.** Two pilots on one hull is a quarter of a side parked
+in a game of four. `ships.md` asked whether gunners earn their place and said
+a playtest would settle it; this is the playtest settling it. About sixty
+lines of the core, the `ATTACH` message, the player-card verbs, the drop key,
+the drone ring and `gunners.md`.
+
+**The open arena.** Alpha, its sixty-four seats, its ten teams, its
+`max_rooms` ladder and its fill target.
+
+**Mode rotation**, before it was ever built.
+
+**Points as a separate number**, folded into bounty.
+
+Nothing here is irreversible, and that is worth saying plainly: a zone is a
+row in a catalog. If the open arena is ever wanted back, it comes back as
+configuration rather than as an excavation.
+
+## What this costs the framing
+
+`CLAUDE.md` opens by calling vectorwake a top-down space MMO. After this it is
+a session-based 4v4 match game that happens to be built on an MMO's
+simulation. The fleet architecture stays exactly as it is and finally gets
+the workload it was designed for, since rooms-on-demand in a long-lived
+process is precisely what a three minute match game needs, and it is the
+model `duel-mode.md` already describes.
+
+The word is the owner's to change, and the copy on the public site is
+downstream of it. It is listed here so the decision is made deliberately
+rather than discovered later.
+
+## Order of work
+
+Each step leaves a running game.
+
+1. **The match**, on the existing map: teams of four, a clock, an ending, a
+   re-deal, an intermission. Done when a pilot can play five matches back to
+   back without touching a menu. The number this exists to move is the median
+   first-session career, three games today.
+2. **The kit**, and greens out. Done when spawn deals a chosen thirty, the
+   prize system is gone, and the drill's matched-kit ladder still separates
+   the bot skill dial.
+3. **Bounty and rivets.** One counter, one wallet, prices in tens. Done when
+   two instances of one zone agree on a wallet.
+4. **Maps.** Two pockets, point symmetry, measured flight times.
+5. **Charges.** Mines as one, match-scoped counts, the shop's other kinds.
+6. **Friends**, and parties into a match.
+
+Turrets can go at any point; they block nothing and nothing blocks them.
+
+## Open questions
+
+Whether a three minute match rates per kill, as today, or per match, as
+`duel-mode.md` argues for a result that is stronger than the correlated
+outcomes inside it. Probably both, and probably worth measuring.
+
+Whether the kit budget starts at thirty or climbs to it over a first few
+matches. Climbing gives a new account something to feel; starting flat is
+honest and keeps every match matched.
+
+How a party of three is seated against a fair opposing side, which is the
+matchmaking question friends brings with it.
+
+What the modes beyond a kills match actually are. Capture and a hold-the-room
+mode are named in the mockups and neither is designed.
+
+Every price, which no harness can measure.
+
+The name "rivets", which is a proposal in the house register rather than an
+attachment.
