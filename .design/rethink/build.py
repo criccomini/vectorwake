@@ -571,11 +571,11 @@ class Component extends DCLogic {
     // Thirty is what alpha already deals a fresh spawn (spawn_prizes = 30).
     // The kit does not add anything: it chooses what those thirty are.
     this.state = {
-      up: [2, 4, 6, 5, 1],          // NRG RCH SPD THR ROT, ceiling 8 (SIM_UP_STEPS)
+      up: [2, 4, 8, 5, 1],          // NRG RCH SPD THR ROT; base 6, bought to 8
       gun: 2, bomb: 1,              // rungs; Apex tops out at gun 2, bomb 1
       gmods: [1, 1, 1, 0, 0, 0],    // multi bounce prox shrapnel freeze repel
       bmods: [0, 0, 1, 0, 0, 0],
-      chg: [4, 3]                   // repel, burst
+      chg: [3, 2]                   // repel, burst
     };
   }
 
@@ -608,7 +608,7 @@ class Component extends DCLogic {
       out.push({
         style: 'background:' + (on ? col : 'transparent')
              + ';box-shadow:' + (on ? 'none' : 'inset 0 0 0 1px ' + col)
-             + ';opacity:' + (on ? 1 : live ? 0.32 : 0.08)
+             + ';opacity:' + (on ? 1 : live ? 0.32 : 0.16)
              + ';cursor:' + (live ? 'pointer' : 'default'),
         pick: live ? () => this.try_set(path, idx, next) : null
       });
@@ -673,13 +673,14 @@ class Component extends DCLogic {
                  : '#ffe08a'),
       barStyle: 'width:' + Math.max(0, Math.min(100, spent / total * 100))
               + '%;background:' + (left === 0 ? '#8dffb0' : '#4fd6ff'),
-      // Deep speed and deep thrust are held; energy, recharge and rotation
-      // are not, so those three stop at the fourth step until the shop sells
-      // them. See Shop.dc.html.
-      stats: STATS.map(([short, name, col], i) => ({
-        short, name, count: s.up[i],
-        cells: this.cellsFor('up', i, s.up[i], 8, [4, 4, 8, 8, 4][i], col)
-      })),
+      // Every stat runs to six for everybody. The last two steps are the
+      // shop's, and only deep speed is bought here, which is what lets SPD
+      // sit at eight. See Shop.dc.html.
+      stats: STATS.map(([short, name, col], i) => {
+        const all = this.cellsFor('up', i, s.up[i], 8, [6, 6, 8, 6, 6][i], col);
+        return { short, name, count: s.up[i],
+                 cells: all.slice(0, 6), deep: all.slice(6) };
+      }),
       // Apex: gun ladder tops at L2, bombs at L1. ships.md.
       gunRungs: this.rungRow('gun', 2, 2),
       bombRungs: this.rungRow('bomb', 1, 1),
@@ -763,13 +764,23 @@ def s_main():
       </div>
 
       <div class="ticks" style="margin:14px 0 10px"></div>
-      <div class="lbl" style="margin-bottom:4px">Stats</div>
+      <div class="row" style="gap:10px;margin-bottom:4px">
+        <div class="lbl">Stats</div>
+        <div class="lbl" style="opacity:.55">six a stat is the whole budget
+          &#183; the last two are bought</div>
+      </div>
       <sc-for list="{{{{stats}}}}" as="s" hint-placeholder-count="5">
         <div class="krow">
           <div class="t10 num dim" style="width:32px">{{{{s.short}}}}</div>
           <div style="display:flex;gap:5px">
-            <sc-for list="{{{{s.cells}}}}" as="c" hint-placeholder-count="8">
+            <sc-for list="{{{{s.cells}}}}" as="c" hint-placeholder-count="6">
               <div class="kpip" style="{{{{c.style}}}}" onClick="{{{{c.pick}}}}"></div>
+            </sc-for>
+          </div>
+          <div style="width:1px;height:11px;background:rgba(63,88,120,.55)"></div>
+          <div style="display:flex;gap:5px">
+            <sc-for list="{{{{s.deep}}}}" as="d" hint-placeholder-count="2">
+              <div class="kpip" style="{{{{d.style}}}}" onClick="{{{{d.pick}}}}"></div>
             </sc-for>
           </div>
           <div class="num t11" style="width:14px;opacity:.75">{{{{s.count}}}}</div>
@@ -849,11 +860,11 @@ def s_main():
 # =============================================================================
 SHOP = [
     ("Stats", [
-        ("Deep speed", "Slot SPD past the fourth step", 120, "owned", ""),
-        ("Deep thrust", "Slot THR past the fourth step", 120, "owned", ""),
-        ("Deep rotation", "Slot ROT past the fourth step", 120, "buy", ""),
-        ("Deep energy", "Slot NRG past the fourth step", 120, "buy", ""),
-        ("Deep recharge", "Slot RCH past the fourth step", 120, "buy", ""),
+        ("Deep speed", "The seventh and eighth step of SPD", 120, "owned", ""),
+        ("Deep thrust", "The seventh and eighth step of THR", 120, "buy", ""),
+        ("Deep rotation", "The seventh and eighth step of ROT", 120, "buy", ""),
+        ("Deep energy", "The seventh and eighth step of NRG", 120, "buy", ""),
+        ("Deep recharge", "The seventh and eighth step of RCH", 120, "buy", ""),
     ]),
     ("Triggers", [
         ("Gun rung 3", "The third rung, on hulls that reach it", 90, "buy",
@@ -935,8 +946,8 @@ def s_shop():
         {mark_diamond("var(--dim)", 10)}
         <div style="font-size:13px;color:var(--dim);text-wrap:pretty">
           Nothing here makes a ship stronger. Everything trades against the same
-          thirty, and anything that wins more than 55% of matched bouts in the
-          drill goes back to the bench.
+          thirty, and five stats at eight would need forty, so no amount of
+          buying ever makes the kit stop being a set of tradeoffs.
         </div>
       </div>
     </div>
@@ -1103,10 +1114,10 @@ def s_match():
       </svg>
     </div>
     <div class="row" style="gap:12px;height:22px">
-      {mark_repel("var(--charge)", 15)}{pips(4, 2, "var(--charge)", gap=4.6)}
+      {mark_repel("var(--charge)", 15)}{pips(3, 2, "var(--charge)", gap=4.6)}
     </div>
     <div class="row" style="gap:12px;height:22px">
-      {mark_burst("var(--charge)", 15)}{pips(3, 1, "var(--charge)", gap=4.6)}
+      {mark_burst("var(--charge)", 15)}{pips(2, 1, "var(--charge)", gap=4.6)}
     </div>
     <div class="row" style="gap:12px;height:22px">
       {mark_diamond("var(--prize)", 13)}

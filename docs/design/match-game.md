@@ -150,7 +150,7 @@ costs exactly one:
 
 | kind | ceiling |
 |---|---|
-| a step of a stat | eight, over five stats |
+| a step of a stat | six over five stats, and eight once bought |
 | a rung of a trigger's ladder | the hull's row |
 | an add-on on a trigger | the hull's row |
 | a charge carried | the hull's row |
@@ -158,6 +158,29 @@ costs exactly one:
 **Everyone deals thirty**, new pilot and veteran alike. A new account gets a
 sensible starter kit per hull, worth the same thirty. What rivets buy is
 *which* upgrades you may slot, never how many.
+
+**Six a stat is exactly the budget**, and that is the reason for the number.
+Five stats at six steps is thirty, so a pilot can take every stat to its base
+ceiling and own nothing else: no charges, base rungs, no add-ons. It is a
+legibly poor ship and a useful one to be able to build, because it turns
+thirty from an allowance into a landmark. Every other kit reads as a trade
+away from a reference point rather than as an arbitrary allocation.
+
+**The last two steps of each stat are the shop's**, up to the eight the core
+allows. That is a purchase worth being suspicious of, since this document's
+one rule is that nothing persistent makes a ship stronger, and buying the
+right to concentrate looks like buying power.
+
+Two things answer it. Reaching the eighth step still costs two of the same
+thirty, so depth buys permission to spend in one place rather than more to
+spend. And five stats at eight is forty against a budget of thirty, so no
+amount of buying ever makes the kit stop being a set of tradeoffs: the
+ceiling being bought toward is unreachable by construction.
+
+It is still a measurement rather than an argument. The drill runs a
+concentrated kit against a spread one of the same thirty, on two hulls, and
+the 45 to 55 band decides. Depth is the item in this document most likely to
+fail that test.
 
 **Death re-deals the frame, never the ammunition.** Stats, rungs and add-ons
 come back at every spawn, because they are what your ship is. Charge counts
@@ -209,7 +232,7 @@ thirty, and the drill harness is the referee: anything that wins more than
 55% of matched bouts against the bare kit, on at least two hulls, goes back
 to the bench.
 
-- **Depth on a stat**, the right to slot past the fourth step.
+- **Depth on a stat**, its seventh and eighth step.
 - **Add-ons and rungs** your hull's row allows but your account has not
   bought.
 - **Charge kinds** beyond the two everybody starts with.
