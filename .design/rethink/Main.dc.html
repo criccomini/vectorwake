@@ -87,7 +87,7 @@ a{color:var(--friend)}a:hover{color:#8ee6ff}
       <div class="lbl" style="color:var(--friend);letter-spacing:.18em">Ace</div>
     </div>
     <div class="row" style="gap:7px"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" style="flex:none"><circle cx="6" cy="6" r="4.4" stroke="#dfe9f5" stroke-width="1.1"/><circle cx="6" cy="6" r="1.7" fill="#dfe9f5"/><path d="M6 1.6 V3" stroke="#dfe9f5" stroke-width="1"/><path d="M6 9 V10.4" stroke="#dfe9f5" stroke-width="1"/></svg>
-      <div class="num" style="font-size:15px">1,284</div>
+      <div class="num" style="font-size:15px">1,322</div>
       <div class="lbl">rivets</div>
     </div>
   </div>
@@ -427,8 +427,8 @@ class Component extends DCLogic {
         cells: this.cellsFor('up', i, s.up[i], 8, 8, col)
       })),
       // Apex: gun ladder tops at L2, bombs at L1. ships.md.
-      gunRungs: this.rungRow('gun', 2, 3),
-      bombRungs: this.rungRow('bomb', 1, 3),
+      gunRungs: this.rungRow('gun', 2, 2),
+      bombRungs: this.rungRow('bomb', 1, 1),
       // owned = bought in the shop; roster = the hull may ever hold it.
       // The add-on repel belongs to Lattice alone, so it is off-roster here.
       gunMods: this.modRow('gmods', [1, 1, 1, 0, 0, 0], [1, 1, 1, 1, 1, 0]),

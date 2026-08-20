@@ -307,7 +307,7 @@ EXTRA_CSS = {}
 NAV = ["Play", "Hangar", "Shop", "Standings"]
 
 
-def topbar(current, rivets="1,284"):
+def topbar(current, rivets="1,322"):
     items = []
     for n in NAV:
         on = n == current
@@ -687,8 +687,8 @@ class Component extends DCLogic {
         cells: this.cellsFor('up', i, s.up[i], 8, 8, col)
       })),
       // Apex: gun ladder tops at L2, bombs at L1. ships.md.
-      gunRungs: this.rungRow('gun', 2, 3),
-      bombRungs: this.rungRow('bomb', 1, 3),
+      gunRungs: this.rungRow('gun', 2, 2),
+      bombRungs: this.rungRow('bomb', 1, 1),
       // owned = bought in the shop; roster = the hull may ever hold it.
       // The add-on repel belongs to Lattice alone, so it is off-roster here.
       gunMods: this.modRow('gmods', [1, 1, 1, 0, 0, 0], [1, 1, 1, 1, 1, 0]),
@@ -911,7 +911,7 @@ def s_shop():
         <div class="lbl">Balance</div>
         <div class="row" style="gap:9px;margin-top:9px">
           {rivet("#dfe9f5", 17)}
-          <div class="num" style="font-size:25px">1,284</div>
+          <div class="num" style="font-size:25px">1,322</div>
         </div>
         <div class="lbl" style="margin-top:9px;opacity:.7">+38 last match</div>
       </div>
@@ -997,7 +997,7 @@ def s_match():
     feed = [
         ("QUARREL", "VESPER 412", "+34", "var(--friend)"),
         ("SABLE 09", "KESTREL", "+12", "var(--enemy)"),
-        ("QUARREL", "PLINTH 41", "+30", "var(--friend)"),
+        ("QUARREL", "ORRERY 3", "+30", "var(--friend)"),
     ]
     feed_html = "".join(
         f'<div class="row" style="gap:7px;height:19px">'
@@ -1031,14 +1031,14 @@ def s_match():
        display:flex;align-items:center;gap:22px">
     <div class="row" style="gap:11px">
       <div class="t11 num" style="color:var(--friend)">BASTION</div>
-      <div class="num" style="font-size:30px;color:var(--friend)">2</div>
+      <div class="num" style="font-size:30px;color:var(--friend)">10</div>
     </div>
     <div style="text-align:center;padding:0 4px">
       <div class="num" style="font-size:34px;letter-spacing:.02em">1:47</div>
       <div class="lbl" style="text-align:center;margin-top:-2px">melee</div>
     </div>
     <div class="row" style="gap:11px">
-      <div class="num" style="font-size:30px;color:var(--enemy)">1</div>
+      <div class="num" style="font-size:30px;color:var(--enemy)">7</div>
       <div class="t11 num" style="color:var(--enemy)">CAISSON</div>
     </div>
   </div>
@@ -1146,9 +1146,9 @@ def s_podium():
 
     <div class="lbl" style="letter-spacing:.3em">Drydock &#183; melee</div>
     <div class="row" style="gap:26px;margin-top:12px">
-      <div class="num" style="font-size:44px;color:var(--friend)">3</div>
+      <div class="num" style="font-size:44px;color:var(--friend)">14</div>
       <div style="font-size:27px;letter-spacing:.04em">Bastion takes it</div>
-      <div class="num" style="font-size:44px;color:var(--enemy)">1</div>
+      <div class="num" style="font-size:44px;color:var(--enemy)">11</div>
     </div>
 
     <div class="row" style="align-items:flex-start;gap:20px;margin-top:26px">
