@@ -312,7 +312,7 @@ EXTRA_CSS = {}
 NAV = ["Play", "Hangar", "Shop", "Standings"]
 
 
-def topbar(current, rivets="1,322"):
+def topbar(current, rivets="342"):
     items = []
     for n in NAV:
         on = n == current
@@ -378,109 +378,95 @@ def kitdots(spent=30, total=30):
 
 
 # =============================================================================
-# 1. Match list: the front door. Modes on a rotation, and the open arena still
-#    a row, because the classic game does not go away.
+# 1. Match list: four modes, all startable now. No rotation, because rationing
+#    a queue is a thing you do to a population you have; and no open arena.
 # =============================================================================
 MODES = [
-    ("Melee", "4v4", "3:00", 18, 6, True, True,
-     "Four a side, three minutes, kills only. Your kit is the whole ship: "
-     "no greens on the field."),
-    ("Capture", "4v4", "3:00", 12, 4, True, False,
-     "Carry their flag home. Dropping it where you die is how it gets "
-     "contested."),
-    ("Holdfast", "4v4", "3:00", 8, 8, True, False,
+    ("Melee", "kills", 2, True,
+     "Four a side, three minutes. Most kills takes it."),
+    ("Capture", "flags", 1, False,
+     "Carry theirs home. Holding it makes you worth more, which is how it "
+     "gets contested."),
+    ("Holdfast", "ground", 1, False,
      "One room pays while you hold it. Leaving it is how you lose it."),
-    ("Turf", "4v4", "3:00", 0, 0, False, False,
-     "Flags bolted to the map pay the side holding them, every ten seconds."),
+    ("Turf", "ground", 0, False,
+     "Flags bolted to the map pay whoever holds them, every ten seconds."),
+]
+
+FRIENDS = [
+    ("MARLOW", "in a match", "2:10 left", "var(--friend)"),
+    ("CORVID", "in the hangar", "", "var(--friend)"),
+    ("TALLOW", "offline", "", ""),
 ]
 
 
 def s_matchlist():
     rows = []
-    for name, side, clock, ppl, bots, live, sel, _ in MODES:
-        col = "var(--ink)" if live else "var(--dim)"
-        pop = (f'<div class="row" style="gap:5px">{helm("var(--dim)", 11)}'
-               f'<div class="num t11 dim">{ppl}</div>'
-               f'{bot("var(--dim)", 11)}'
-               f'<div class="num t11 dim">{bots}</div></div>') if live else \
-              '<div class="lbl">closed</div>'
+    for name, kind, rooms, sel, _ in MODES:
+        live = (f'<div class="row" style="gap:5px">{helm("var(--dim)", 11)}'
+                f'<div class="num t11 dim">{rooms * 3 + 2}</div></div>'
+                if rooms else '<div class="lbl" style="opacity:.6">'
+                              'nobody in one</div>')
         cursor = ('<div style="color:var(--friend);font-size:13px;width:14px">'
                   '&#9654;</div>') if sel else '<div style="width:14px"></div>'
         last = ('<div class="lbl" style="color:var(--friend)">last</div>'
                 if sel else "")
         rows.append(f"""
-      <div class="row {'wash' if sel else ''}" style="height:46px;padding:0 16px;gap:14px">
+      <div class="row {'wash' if sel else ''}" style="height:52px;padding:0 16px;gap:14px">
         {cursor}
-        <div style="font-size:21px;color:{col};min-width:132px">{name}</div>
-        <div class="lbl" style="min-width:66px">{side} &#183; {clock}</div>
-        {last}<div style="flex:1"></div>{pop}
+        <div style="font-size:22px;min-width:136px">{name}</div>
+        <div class="lbl" style="min-width:56px">{kind}</div>
+        {last}<div style="flex:1"></div>{live}
       </div>""")
 
-    others = f"""
-      <div class="row" style="height:46px;padding:0 16px;gap:14px">
-        <div style="width:14px"></div>
-        <div style="font-size:21px;min-width:132px">Alpha</div>
-        <div class="lbl" style="min-width:66px">open arena</div>
-        <div style="flex:1"></div>
-        <div class="row" style="gap:5px">{helm("var(--dim)", 11)}
-          <div class="num t11 dim">7</div>{bot("var(--dim)", 11)}
-          <div class="num t11 dim">44</div></div>
-      </div>
-      <div class="row" style="height:46px;padding:0 16px;gap:14px">
-        <div style="width:14px"></div>
-        <div style="font-size:21px;min-width:132px">Practice</div>
-        <div class="lbl" style="min-width:66px">solo, unrated</div>
-        <div style="flex:1"></div>
-      </div>"""
-
-    rot = f"""
-    <div class="panel row" style="margin:0 56px;height:62px;padding:0 22px;gap:26px">
-      <div>
-        <div class="lbl">now</div>
-        <div class="row" style="gap:10px;margin-top:3px">
-          <div style="font-size:17px;color:var(--friend)">Melee</div>
-          <div class="dim" style="font-size:15px">Drydock</div>
-        </div>
-      </div>
-      <div style="width:1px;height:30px;background:rgba(63,88,120,.5)"></div>
-      <div>
-        <div class="lbl">rotates in</div>
-        <div class="num" style="font-size:17px;margin-top:3px;
-             color:var(--bounty)">1h 12m</div>
-      </div>
-      <div style="width:1px;height:30px;background:rgba(63,88,120,.5)"></div>
-      <div>
-        <div class="lbl">next</div>
-        <div class="row" style="gap:10px;margin-top:3px">
-          <div style="font-size:17px">Capture</div>
-          <div class="dim" style="font-size:15px">Slipway</div>
-        </div>
-      </div>
-      <div style="flex:1"></div>
-      <div>
-        <div class="lbl">then</div>
-        <div class="row" style="gap:10px;margin-top:3px">
-          <div style="font-size:17px" class="dim">Holdfast</div>
-          <div class="dim" style="font-size:15px;opacity:.6">Ridgeline</div>
-        </div>
-      </div>
-    </div>"""
+    friends = []
+    for name, where, extra, col in FRIENDS:
+        on = bool(col)
+        dot = (f'<div style="width:6px;height:6px;flex:none;border-radius:50%;'
+               f'background:{"var(--prize)" if on else "var(--dim)"};'
+               f'opacity:{1 if on else .4}"></div>')
+        act = ('<div class="t10 num" style="color:var(--friend)">JOIN</div>'
+               if where == "in a match" else "")
+        friends.append(f"""
+        <div class="row" style="height:32px;gap:9px;opacity:{1 if on else .45}">
+          {dot}{helm("var(--dim)", 12)}
+          <div class="t11 num">{name}</div>
+          <div style="flex:1"></div>
+          <div class="lbl">{where}</div>
+          <div class="lbl" style="color:var(--bounty);min-width:44px;
+               text-align:right">{extra}</div>
+          <div style="min-width:30px;text-align:right">{act}</div>
+        </div>""")
 
     body = f"""
 <div class="screen">
   {topbar("Play")}
-  <div style="height:20px"></div>
-  {rot}
-  <div class="row" style="align-items:flex-start;gap:36px;padding:26px 56px 0">
+  <div class="row" style="align-items:flex-start;gap:36px;padding:30px 56px 0">
     <div style="flex:1">
       <div class="panel" style="padding:14px 0 8px">
         {''.join(rows)}
-        <div class="ticks" style="margin:8px 16px"></div>
-        {others}
       </div>
-      <div style="padding:16px 30px 0;font-size:15px;color:var(--dim);
+      <div style="padding:18px 30px 0;font-size:15px;color:var(--dim);
            max-width:600px;line-height:1.5;text-wrap:pretty">
-        {MODES[0][7]}
+        {MODES[0][4]}
+      </div>
+      <div class="row" style="gap:9px;padding:22px 30px 0">
+        {mark_diamond("var(--dim)", 10)}
+        <div style="font-size:13px;color:var(--dim);text-wrap:pretty;
+             max-width:520px;line-height:1.5">
+          Every mode starts on demand. If nobody is in one, you open it and
+          the bots take the other seats.
+        </div>
+      </div>
+
+      <div class="panel" style="margin-top:30px;padding:14px 18px 12px">
+        <div class="row">
+          <div class="lbl">Friends</div>
+          <div style="flex:1"></div>
+          <div class="lbl" style="opacity:.65">2 of 3 on</div>
+        </div>
+        <div class="ticks" style="margin:9px 0 4px"></div>
+        {''.join(friends)}
       </div>
     </div>
 
@@ -490,7 +476,7 @@ def s_matchlist():
         {minimap(104, 7)}
         <div>
           <div style="font-size:20px">Drydock</div>
-          <div class="lbl" style="margin-top:4px">64 &#215; 64 &#183; symmetric</div>
+          <div class="lbl" style="margin-top:4px">112 sq &#183; two pockets</div>
           <div class="row" style="gap:6px;margin-top:12px">
             <div style="width:7px;height:7px;background:var(--friend)"></div>
             <div class="t11 num" style="color:var(--friend)">BASTION</div>
@@ -522,15 +508,15 @@ def s_matchlist():
       </div>
       <div style="margin-top:12px">{kitdots(30, 30)}</div>
       <div class="row" style="gap:8px;margin-top:10px">
-        {mark_diamond("var(--bounty)", 10)}
-        <div class="t11 num dim">YOUR WHOLE SHIP &#183; NOTHING TO SCAVENGE</div>
+        {mark_diamond("var(--dim)", 10)}
+        <div class="t11 num dim">DEALT TO YOUR HULL AT EVERY SPAWN</div>
       </div>
       <div class="ticks" style="margin:20px 0 14px"></div>
       <div class="row" style="gap:12px">
         <div class="row" style="position:relative;padding:9px 18px;gap:10px">
           {bracket("rgba(79,214,255,.85)")}
           <div class="t11 num" style="color:var(--friend)">ENTER</div>
-          <div style="font-size:15px">Deploy</div>
+          <div style="font-size:15px">Play</div>
         </div>
         <div class="row" style="gap:9px;padding:9px 4px">
           <div class="t11 num dim">H</div>
@@ -772,8 +758,8 @@ def s_main():
       </div>
       <div class="row" style="gap:7px;margin-top:7px">
         {mark_diamond("var(--prize)", 10)}
-        <div class="t9 num dim">EVERY SLOT COSTS ONE GREEN &#183;
-          THIRTY IS WHAT A SPAWN IS DEALT TODAY</div>
+        <div class="t9 num dim">EVERY SLOT COSTS ONE &#183;
+          THIRTY IS WHAT A SPAWN IS ALREADY DEALT</div>
       </div>
 
       <div class="ticks" style="margin:14px 0 10px"></div>
@@ -811,8 +797,8 @@ def s_main():
       <div class="ticks" style="margin:14px 0 10px"></div>
       <div class="row" style="gap:10px">
         <div class="lbl">Charges</div>
-        <div class="lbl" style="opacity:.55">two slots &#183; brick and decoy
-          not owned</div>
+        <div class="lbl" style="opacity:.55">two slots &#183; spent charges do
+          not come back when you die</div>
       </div>
       <div class="row" style="gap:34px;margin-top:8px">
         <div class="row" style="gap:10px">
@@ -835,10 +821,22 @@ def s_main():
           </div>
           <div class="num t11" style="opacity:.75">{{{{burstN}}}}</div>
         </div>
-        <div style="flex:1"></div>
-        <div class="row" style="gap:14px;opacity:.35">
-          {mark_brick("var(--dim)")}{mark_decoy("var(--dim)")}
+      </div>
+      <div class="row" style="gap:13px;margin-top:11px">
+        <div class="lbl" style="width:52px">kinds</div>
+        <div class="row" style="gap:9px">
+          {mark_repel("var(--charge)", 15)}{mark_burst("var(--charge)", 15)}
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+            <circle cx="8" cy="8" r="3" fill="#ffd166"/>
+            <circle cx="8" cy="8" r="6.4" stroke="#ffd166" stroke-width="1"
+              stroke-dasharray="1.6 2.4" opacity=".8"/></svg>
         </div>
+        <div class="lbl" style="opacity:.7">held</div>
+        <div style="width:14px"></div>
+        <div class="row" style="gap:9px;opacity:.3">
+          {mark_brick("var(--dim)", 15)}{mark_decoy("var(--dim)", 15)}
+        </div>
+        <div class="lbl" style="opacity:.45">in the shop</div>
       </div>
     </div>
   </div>
@@ -922,9 +920,9 @@ def s_shop():
         <div class="lbl">Balance</div>
         <div class="row" style="gap:9px;margin-top:9px">
           {rivet("#dfe9f5", 17)}
-          <div class="num" style="font-size:25px">1,322</div>
+          <div class="num" style="font-size:25px">342</div>
         </div>
-        <div class="lbl" style="margin-top:9px;opacity:.7">+38 last match</div>
+        <div class="lbl" style="margin-top:9px;opacity:.7">+19 last match</div>
       </div>
     </div>
 
@@ -1006,11 +1004,12 @@ def s_match():
         '<circle cx="470" cy="600" r="3.6" fill="#f42e3d"/>',
     ])
     feed = [
-        ("QUARREL", "VESPER 412", "+12", "var(--friend)"),
-        ("SABLE 09", "KESTREL", "+6", "var(--enemy)"),
-        # Orrery had just spawned and was worth nothing. The feed stays
-        # quiet rather than printing a zero. bounty.md.
-        ("QUARREL", "ORRERY 3", "", "var(--friend)"),
+        # Vesper was four kills into a run, so was worth five.
+        ("QUARREL", "VESPER 412", "+5", "var(--friend)"),
+        ("SABLE 09", "KESTREL", "+3", "var(--enemy)"),
+        # A pilot who has just spawned is worth exactly one, which is what
+        # makes camping one pay almost nothing.
+        ("QUARREL", "ORRERY 3", "+1", "var(--friend)"),
     ]
     feed_html = "".join(
         f'<div class="row" style="gap:7px;height:19px">'
@@ -1104,20 +1103,20 @@ def s_match():
       </svg>
     </div>
     <div class="row" style="gap:12px;height:22px">
-      {mark_repel("var(--charge)", 15)}{pips(6, 4, "var(--charge)", gap=4.6)}
+      {mark_repel("var(--charge)", 15)}{pips(4, 2, "var(--charge)", gap=4.6)}
     </div>
     <div class="row" style="gap:12px;height:22px">
-      {mark_burst("var(--charge)", 15)}{pips(6, 3, "var(--charge)", gap=4.6)}
+      {mark_burst("var(--charge)", 15)}{pips(3, 1, "var(--charge)", gap=4.6)}
     </div>
     <div class="row" style="gap:12px;height:22px">
       {mark_diamond("var(--prize)", 13)}
-      <div class="num t13" style="color:var(--prize)">9</div>
+      <div class="num t13" style="color:var(--prize)">4</div>
     </div>
   </div>
 
-  <!-- the kit is the whole ship here, so the field carries no greens -->
+  <!-- charges are spent for the match rather than for the life -->
   <div style="position:absolute;right:16px;bottom:16px;text-align:right">
-    <div class="lbl" style="opacity:.55">no greens on this map</div>
+    <div class="lbl" style="opacity:.55">2 repels and 1 burst left this match</div>
   </div>
 </div>"""
     page("Match", body)
@@ -1190,23 +1189,24 @@ def s_podium():
         <div class="lbl">Banked</div>
         <div class="row" style="gap:10px;margin-top:9px">
           {rivet("#ffe08a", 22)}
-          <div class="num" style="font-size:36px;color:var(--bounty)">+38</div>
+          <div class="num" style="font-size:36px;color:var(--bounty)">+19</div>
         </div>
         <div class="ticks" style="margin:14px 0 10px"></div>
         <div class="row" style="height:23px">
-          <div class="t10 num dim">5 KILLS &#215; 4</div><div style="flex:1"></div>
-          <div class="t11 num">20</div></div>
+          <div class="t10 num dim">BOUNTY TAKEN &#183; 5 KILLS</div>
+          <div style="flex:1"></div>
+          <div class="t11 num">11</div></div>
         <div class="row" style="height:23px">
           <div class="t10 num dim">WON THE MATCH</div><div style="flex:1"></div>
-          <div class="t11 num">+10</div></div>
+          <div class="t11 num">+5</div></div>
         <div class="row" style="height:23px">
           <div class="t10 num dim">FIRST WIN TODAY</div><div style="flex:1"></div>
-          <div class="t11 num">+8</div></div>
+          <div class="t11 num">+3</div></div>
         <div class="ticks" style="margin:10px 0"></div>
         <div class="row" style="height:24px">
           <div class="t10 num dim">BALANCE</div><div style="flex:1"></div>
           <div class="row" style="gap:6px">{rivet("#dfe9f5", 12)}
-            <div class="num t13">1,322</div></div></div>
+            <div class="num t13">342</div></div></div>
         <div class="ticks" style="margin:12px 0 10px"></div>
         <div class="row" style="height:22px">
           <div class="t10 num dim">BEST RUN</div><div style="flex:1"></div>
@@ -1303,7 +1303,7 @@ def s_standings():
     <div style="flex:1">
       <div class="row" style="gap:14px;margin-bottom:12px">
         <div style="font-size:22px">Week 34</div>
-        <div class="lbl">drydock rotation &#183; alpha fleet</div>
+        <div class="lbl">melee &#183; every map</div>
         <div style="flex:1"></div>
         <div class="lbl">resets in</div>
         <div class="num" style="font-size:15px;color:var(--bounty)">2d 14h</div>
@@ -1361,7 +1361,7 @@ def s_standings():
         <div class="row" style="height:25px">
           <div class="t10 num dim">BANKED</div><div style="flex:1"></div>
           <div class="row" style="gap:6px">{rivet("#dfe9f5", 12)}
-            <div class="t11 num">1,322</div></div></div>
+            <div class="t11 num">342</div></div></div>
         <div class="ticks" style="margin:12px 0"></div>
         <div class="lbl" style="margin-bottom:9px">Wearing</div>
         <div class="row" style="gap:13px">

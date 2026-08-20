@@ -5,10 +5,6 @@ Six screens for the game shape in
 hangar where a kit is thirty upgrades you choose, an in-match HUD on a three
 minute clock, a podium that pays, a shop, and the weekly ladder.
 
-They lag the document in two places, because the design moved after they were
-drawn. The match list still shows a mode rotation and an open-arena row, both
-of which are now cut, and the screens still say thirty greens where the
-design has stopped calling them greens at all.
 
 They are drawings of a proposal, not a plan of record. Nothing here is built.
 

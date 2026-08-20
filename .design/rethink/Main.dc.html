@@ -87,7 +87,7 @@ a{color:var(--friend)}a:hover{color:#8ee6ff}
       <div class="lbl" style="color:var(--friend);letter-spacing:.18em">Ace</div>
     </div>
     <div class="row" style="gap:7px"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" style="flex:none"><circle cx="6" cy="6" r="4.4" stroke="#dfe9f5" stroke-width="1.1"/><circle cx="6" cy="6" r="1.7" fill="#dfe9f5"/><path d="M6 1.6 V3" stroke="#dfe9f5" stroke-width="1"/><path d="M6 9 V10.4" stroke="#dfe9f5" stroke-width="1"/></svg>
-      <div class="num" style="font-size:15px">1,322</div>
+      <div class="num" style="font-size:15px">342</div>
       <div class="lbl">rivets</div>
     </div>
   </div>
@@ -209,8 +209,8 @@ a{color:var(--friend)}a:hover{color:#8ee6ff}
       </div>
       <div class="row" style="gap:7px;margin-top:7px">
         <svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M6 1 L11 6 L6 11 L1 6 Z" fill="var(--prize)"/></svg>
-        <div class="t9 num dim">EVERY SLOT COSTS ONE GREEN &#183;
-          THIRTY IS WHAT A SPAWN IS DEALT TODAY</div>
+        <div class="t9 num dim">EVERY SLOT COSTS ONE &#183;
+          THIRTY IS WHAT A SPAWN IS ALREADY DEALT</div>
       </div>
 
       <div class="ticks" style="margin:14px 0 10px"></div>
@@ -280,8 +280,8 @@ a{color:var(--friend)}a:hover{color:#8ee6ff}
       <div class="ticks" style="margin:14px 0 10px"></div>
       <div class="row" style="gap:10px">
         <div class="lbl">Charges</div>
-        <div class="lbl" style="opacity:.55">two slots &#183; brick and decoy
-          not owned</div>
+        <div class="lbl" style="opacity:.55">two slots &#183; spent charges do
+          not come back when you die</div>
       </div>
       <div class="row" style="gap:34px;margin-top:8px">
         <div class="row" style="gap:10px">
@@ -304,10 +304,22 @@ a{color:var(--friend)}a:hover{color:#8ee6ff}
           </div>
           <div class="num t11" style="opacity:.75">{{burstN}}</div>
         </div>
-        <div style="flex:1"></div>
-        <div class="row" style="gap:14px;opacity:.35">
-          <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><rect x="2" y="5" width="12" height="6" stroke="var(--dim)" stroke-width="1.1"/><path d="M8 5 V11" stroke="var(--dim)" stroke-width=".9" opacity=".6"/></svg><svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M8 2.5 L11 11 L8 9.2 L5 11 Z" stroke="var(--dim)" stroke-width="1.1" stroke-linejoin="round"/><path d="M8 2.5 L11 11 L8 9.2 L5 11 Z" stroke="var(--dim)" stroke-width="1.1" stroke-linejoin="round" opacity=".3" transform="translate(3.4,1.6)"/></svg>
+      </div>
+      <div class="row" style="gap:13px;margin-top:11px">
+        <div class="lbl" style="width:52px">kinds</div>
+        <div class="row" style="gap:9px">
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="2" fill="var(--charge)"/><circle cx="8" cy="8" r="5" stroke="var(--charge)" stroke-width="1" opacity=".7"/><circle cx="8" cy="8" r="7.3" stroke="var(--charge)" stroke-width=".9" opacity=".35"/></svg><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M8 8 L14.4 8.0" stroke="var(--charge)" stroke-width=".9" opacity=".75"/><path d="M8 8 L12.5 12.5" stroke="var(--charge)" stroke-width=".9" opacity=".75"/><path d="M8 8 L8.0 14.4" stroke="var(--charge)" stroke-width=".9" opacity=".75"/><path d="M8 8 L3.5 12.5" stroke="var(--charge)" stroke-width=".9" opacity=".75"/><path d="M8 8 L1.6 8.0" stroke="var(--charge)" stroke-width=".9" opacity=".75"/><path d="M8 8 L3.5 3.5" stroke="var(--charge)" stroke-width=".9" opacity=".75"/><path d="M8 8 L8.0 1.6" stroke="var(--charge)" stroke-width=".9" opacity=".75"/><path d="M8 8 L12.5 3.5" stroke="var(--charge)" stroke-width=".9" opacity=".75"/><circle cx="8" cy="8" r="2.2" fill="var(--charge)"/></svg>
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+            <circle cx="8" cy="8" r="3" fill="#ffd166"/>
+            <circle cx="8" cy="8" r="6.4" stroke="#ffd166" stroke-width="1"
+              stroke-dasharray="1.6 2.4" opacity=".8"/></svg>
         </div>
+        <div class="lbl" style="opacity:.7">held</div>
+        <div style="width:14px"></div>
+        <div class="row" style="gap:9px;opacity:.3">
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><rect x="2" y="5" width="12" height="6" stroke="var(--dim)" stroke-width="1.1"/><path d="M8 5 V11" stroke="var(--dim)" stroke-width=".9" opacity=".6"/></svg><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M8 2.5 L11 11 L8 9.2 L5 11 Z" stroke="var(--dim)" stroke-width="1.1" stroke-linejoin="round"/><path d="M8 2.5 L11 11 L8 9.2 L5 11 Z" stroke="var(--dim)" stroke-width="1.1" stroke-linejoin="round" opacity=".3" transform="translate(3.4,1.6)"/></svg>
+        </div>
+        <div class="lbl" style="opacity:.45">in the shop</div>
       </div>
     </div>
   </div>
