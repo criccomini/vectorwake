@@ -1,0 +1,25 @@
+{
+  "artboards": [
+    { "file": "MatchList.dc.html",  "x": 0,    "y": 0,   "w": 1280, "h": 720, "title": "1 · Match list" },
+    { "file": "Main.dc.html",       "x": 1400, "y": 0,   "w": 1280, "h": 720, "title": "2 · Hangar" },
+    { "file": "Match.dc.html",      "x": 2800, "y": 0,   "w": 1280, "h": 720, "title": "3 · In match" },
+    { "file": "Podium.dc.html",     "x": 0,    "y": 880, "w": 1280, "h": 720, "title": "4 · Podium" },
+    { "file": "Shop.dc.html",       "x": 1400, "y": 880, "w": 1280, "h": 720, "title": "5 · Shop" },
+    { "file": "Standings.dc.html",  "x": 2800, "y": 880, "w": 1280, "h": 720, "title": "6 · The week" }
+  ],
+  "annotations": [
+    { "id": "flow", "x": 0, "y": -190, "w": 400,
+      "text": "The loop: pick a mode off the rotation, build a kit, fight for three minutes, get paid, spend it, climb the week." },
+    { "id": "kit-is-thirty", "x": 1400, "y": -190, "w": 400,
+      "text": "The one idea underneath all six screens.\n\nAlpha already deals every spawn 30 random greens (spawn_prizes = 30). A kit is those same thirty, chosen instead of rolled. Nothing is added, so bounty still reads 30 and the balance harness still works.\n\nThe pips on this screen actually spend." },
+    { "id": "no-greens", "x": 2800, "y": -190, "w": 400,
+      "text": "Match maps set prize_max = 0, so there is nothing on the field to scavenge. Your kit is the whole ship. The open arena keeps greens, where the kit becomes your floor rather than your ceiling." },
+    { "id": "payday", "x": 0, "y": 745, "w": 380,
+      "text": "Round points bank one for one as rivets. Points already cannot be taken by death, so this needs no new rule." },
+    { "id": "sidegrade", "x": 1400, "y": 745, "w": 380,
+      "text": "Rivets buy what you may slot, never how much. Everything trades against the same thirty." },
+    { "id": "two-ladders", "x": 2800, "y": 745, "w": 380,
+      "text": "Rating is the career ladder and moves slowly. The week is the short one, and resets on Monday." }
+  ],
+  "launch": { "view": "canvas" }
+}

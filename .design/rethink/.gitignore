@@ -1,0 +1,5 @@
+# The seeded canvas is 2.4 MB of editor payload wrapped round the artboards,
+# and it is rebuilt from them by the command in README.md. Committing it would
+# put a couple of megabytes into history every time a screen moves a pixel,
+# which is the same trade `client/dist/` is kept out of history for.
+vectorwake-match-rethink.html
