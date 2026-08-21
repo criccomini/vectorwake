@@ -2983,7 +2983,7 @@ local function match_clock(m, names, alone)
     -- foot, with room for it, and two of them at once is the interface
     -- answering a question nobody asked twice.
     if not m.playing and alone then
-        txt("NEXT MATCH IN", F.w / 2, y + 13 * F.scale, small,
+        txt("NEXT MATCH IN", F.w / 2, y + 17 * F.scale, small - 2 * F.scale,
             pal.a(pal.DIM, 0.8), "center")
     end
 
@@ -5152,7 +5152,10 @@ function M.menu(v)
         -- The far end of the row. Who you are and what you have to spend, in
         -- the slot a match fills with the score: whatever you are inside, the
         -- right-hand end of this row says how you are doing in it.
-        if v.pilot then
+        -- Only where the corner is free. Over a game the way out lives there,
+        -- and the arena's own topbar is already carrying the score, so a name
+        -- and a wallet would be a third thing in a corner that has two.
+        if v.pilot and not v.closable then
             local rt = x0 + total
             if v.pilot.rivets then
                 local ly = logo_y + 1 * F.scale
@@ -5554,8 +5557,6 @@ function M.menu(v)
         -- nothing about the rest.
         local fits = math.max(1, math.floor((room - heads * SECT) / rowh))
         local first = 1
-        -- Sections are drawn only when nothing is scrolled past.
-        if #v.rows > fits then heads = 0 end
         if #v.rows > fits then
             ty = top
             local cur = (v.sel and v.sel > 0) and v.sel or 1
@@ -5565,7 +5566,10 @@ function M.menu(v)
         local at = ty
         for i = first, math.min(#v.rows, first + fits - 1) do
             local r = v.rows[i]
-            if heads > 0 and r.sect then
+            -- A head belongs to the row under it, so it is drawn with that
+            -- row rather than laid out in advance: a list that scrolls keeps
+            -- the labels it can still show and drops the ones it cannot.
+            if r.sect and at + SECT + rowh <= ty + room then
                 ticks(tx, at + SECT * 0.45, lw - 20 * F.scale,
                       pal.a(pal.RADAR_TILE, 0.45), 14 * F.scale)
                 lbl(r.sect, tx, at + SECT * 0.85)
@@ -5599,8 +5603,9 @@ function M.menu(v)
             local bar = 3 * F.scale
             local hgt = room * fits / #v.rows
             local at = room * (first - 1) / #v.rows
-            rect(tx + lw + 8 * F.scale, ty, bar, room, pal.a(pal.DIM, 0.18))
-            rect(tx + lw + 8 * F.scale, ty + at, bar, hgt, pal.a(pal.FRIEND, 0.6))
+            rect(tx + lw + 8 * F.scale, ty, bar, room, pal.a(pal.DIM, 0.14))
+            rect(tx + lw + 8 * F.scale, ty + at, bar, hgt,
+                 pal.a(pal.RADAR_TILE, 0.85))
         end
         -- Under whatever rows there are, which over a game is the one row
         -- that leaves it.
