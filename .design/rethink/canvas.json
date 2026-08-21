@@ -71,7 +71,7 @@
       "x": 0,
       "y": -190,
       "w": 400,
-      "text": "The loop: pick a mode and you are flying in seconds, build a kit you own, fight for three minutes, take bounty as rivets, spend it, climb the week."
+      "text": "The loop: pick a mode and you are flying in seconds, build a kit you own, fight for three minutes, take bounty as rivets, spend it, climb the week.\n\nYou join a ROOM, not a match. Rooms are long lived and run match after match, so a join never waits for anything to finish: a match in progress just seats you. Rooms sort by humans and bots never count as fullness, so everybody online converges on one room instead of each opening their own."
     },
     {
       "id": "kit-is-thirty",

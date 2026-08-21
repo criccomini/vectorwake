@@ -375,6 +375,22 @@ def minimap(side, seed, cls_a="#3f5878", spawn=True):
             f'{bracket("rgba(63,88,120,.8)")}</div>')
 
 
+def seat_row(name, col, humans, you):
+    seats = []
+    for i, h in enumerate(humans):
+        if you is not None and i == you:
+            seats.append(f'<div style="position:relative;padding:0 3px">'
+                         f'{helm(col, 13)}</div>')
+        else:
+            seats.append(helm(col, 13) if h else bot("var(--dim)", 13))
+    tag = ('<div class="lbl" style="color:var(--friend)">you</div>'
+           if you is not None else "")
+    return (f'<div class="row" style="height:28px;gap:9px">'
+            f'<div class="t10 num" style="color:{col};min-width:74px">{name}</div>'
+            f'<div class="row" style="gap:7px">{"".join(seats)}</div>'
+            f'<div style="flex:1"></div>{tag}</div>')
+
+
 def kitdots(spent=30, total=30):
     """The kit budget as a run of marks. Thirty greens, chosen."""
     cells = []
@@ -489,23 +505,31 @@ def s_matchlist():
     </div>
 
     <div class="panel" style="width:404px;padding:18px 22px 22px">
-      <div class="lbl">deploying to</div>
+      <div class="row">
+        <div class="lbl">deploying to</div>
+        <div style="flex:1"></div>
+        <div class="lbl" style="opacity:.7">the busiest room</div>
+      </div>
       <div class="row" style="gap:16px;margin-top:10px">
         {minimap(104, 7)}
         <div>
           <div style="font-size:20px">Drydock</div>
           <div class="lbl" style="margin-top:4px">112 sq &#183; two pockets</div>
-          <div class="row" style="gap:6px;margin-top:12px">
-            <div style="width:7px;height:7px;background:var(--friend)"></div>
-            <div class="t11 num" style="color:var(--friend)">BASTION</div>
-            <div class="lbl" style="margin-left:6px">4</div>
+          <div class="row" style="gap:8px;margin-top:11px">
+            <div class="t10 num" style="color:var(--bounty)">IN PROGRESS</div>
+            <div class="t10 num dim">1:20 LEFT</div>
           </div>
-          <div class="row" style="gap:6px;margin-top:5px">
-            <div style="width:7px;height:7px;background:var(--enemy)"></div>
-            <div class="t11 num" style="color:var(--enemy)">CAISSON</div>
-            <div class="lbl" style="margin-left:6px">4</div>
-          </div>
+          <div class="lbl" style="margin-top:6px;opacity:.75">
+            you spawn straight in</div>
         </div>
+      </div>
+      <div class="ticks" style="margin:16px 0 12px"></div>
+      <div class="lbl">who is in it</div>
+      {seat_row("BASTION", "var(--friend)", [1, 1, 0, 0], None)}
+      {seat_row("CAISSON", "var(--enemy)", [1, 0, 0, 0], 2)}
+      <div class="row" style="gap:8px;margin-top:9px">
+        {mark_diamond("var(--dim)", 10)}
+        <div class="t11 num dim">A BOT STANDS DOWN FOR YOU</div>
       </div>
       <div class="ticks" style="margin:20px 0 16px"></div>
       <div class="lbl">flying</div>

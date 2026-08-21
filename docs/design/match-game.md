@@ -69,10 +69,45 @@ this game has, every mode has to be startable on demand. If human queues ever
 grow enough to need herding, rotation is a directory feature and can return
 then.
 
-**Humans join at match boundaries, bots backfill mid-match.** Seating an
-arrival into a match that is 2:40 gone and 9-2 down is a bad first
-impression, and at this cadence a boundary is never more than three minutes
-away. Somebody who cannot find one opens a new room instead.
+**You join a room, not a match.** A room is long lived and plays match after
+match with the intermission between them, which is the arrangement
+[duel-mode.md](duel-mode.md) already describes: the server stays alive between
+matches rather than being built for each one. The match is only what the room
+is doing right now. So a join never waits for anything to finish. If a match
+is running you spawn into it with your own kit at bounty 1 and the score
+standing; if the room is between matches you land on the podium and the next
+one starts in a few seconds.
+
+That replaces a rule saying humans join at match boundaries and open a new
+room when they cannot find one. Those two sentences together guaranteed the
+thing they were meant to prevent. Press a mode while the only room running it
+is ninety seconds in, find no boundary, open a fresh room full of bots: two
+humans arriving ninety seconds apart would never meet, not rarely but never.
+The cost the rule was avoiding is a minute of a match you cannot win. The cost
+it created is that the one other person online never sees you. At three
+minutes those are not close, and the boundary rule loses.
+
+**The sort is by humans, and bots do not count as fullness.** That second
+clause is the whole mechanism, because a bot always stands down for an
+arrival, so a room holding one human and seven bots is one eighth full rather
+than full. Joining walks the list in order:
+
+1. rooms running the mode you picked,
+2. most humans first,
+3. the first one with a seat, where a bot gives one up,
+4. and a new room only when every existing one holds eight humans.
+
+Three people pressing Melee across ten minutes therefore land in the same
+room, which is the property that matters and the one the old rule destroyed.
+
+**A solo arrival takes the side with fewer humans**, so four humans never
+stack against four bots. A party stays together, because that is what a party
+is for. The intermission is where the room rebalances and sorts whoever
+arrived late, which gives those twenty five seconds a job beyond the podium.
+
+There are three ways to end up beside a person, and a player should be able to
+name all of them: the mode list says where the humans are, the sort puts you
+where they already are, and the friends panel joins one by name.
 
 **The hull is locked for the match**, the way a duel already locks it. Kit
 and hull change in the hangar between matches. This is not ceremony: charges
@@ -482,6 +517,13 @@ honest and keeps every match matched.
 
 How a party of three is seated against a fair opposing side, which is the
 matchmaking question friends brings with it.
+
+Whether three modes is two too many at this population. Modes divide a small
+crowd the way rooms do, and the sort cannot help somebody who picked
+differently: four people online across three modes is four people alone. The
+honest options are to launch with Melee only and light the others as the crowd
+justifies them, or to accept that the human counts on the mode list are what
+herd people together. Leaning toward the first.
 
 What Capture and Holdfast actually are. Both are named and neither is
 designed. Three modes is the launch set on purpose: a turf mode was cut
