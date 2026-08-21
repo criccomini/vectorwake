@@ -130,6 +130,11 @@ M.MODS = {
     {name = "shrapnel", short = "SHR"},
     {name = "freeze",   short = "FRZ"},
     {name = "repel",    short = "RPL"},
+    -- Barrels: more rounds a pull, abreast rather than fanned. This was
+    -- DoubleBarrel, a flag on one hull, and it is an add-on so that it can be
+    -- bought. Last, because the core put it last, and this table is read by
+    -- index against `sim_mod`.
+    {name = "barrel",   short = "BRL"},
 }
 -- What a kill paid, drifting off the wreck that paid it, and the same green
 -- the feed uses for a line about a kill of yours.

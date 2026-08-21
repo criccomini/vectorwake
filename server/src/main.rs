@@ -3119,6 +3119,48 @@ mod tests {
         );
     }
 
+    /// A barrel, bought and flown, on any hull in the roster.
+    ///
+    /// This is the trait the whole slot space was flattened for. It was
+    /// `DoubleBarrel`, a flag one hull carried, so it could not be sold and it
+    /// could not be chosen; as an add-on it goes through the same two ceilings
+    /// as everything else and comes out of the gun as a second round.
+    ///
+    /// Every hull, because the point of the change is that the roster has
+    /// nothing to say about it. The old arrangement would have passed on one
+    /// class and refused on six.
+    #[test]
+    fn a_bought_barrel_flies_on_every_hull() {
+        let mut a = room_with_teams("teams = [\"Keel\"]\n");
+        let ship = seat_human(&mut a, "pilot");
+        let slot = sim::slot_mod(sim::TRIG_GUN, sim::MOD_BARREL) as usize;
+
+        let mut kit = [0u8; sim::SLOT_COUNT];
+        kit[slot] = 1;
+        assert!(
+            !a.set_kit(ship, &kit),
+            "nobody is dealt a barrel, so an unbought one is refused"
+        );
+
+        // What buying one does, which is raise this account's ceiling by one.
+        if let Some(s) = a.names.get_mut(&ship) {
+            s.entitlements[slot] = 1;
+        }
+        for cls in 0..a.world.cfg.class_count {
+            a.world.state.ships[ship as usize].cls = cls;
+            assert!(
+                a.set_kit(ship, &kit),
+                "hull {cls} refused a barrel the account owns"
+            );
+            let sh = a.world.state.ships[ship as usize];
+            assert_eq!(
+                sim::mod_get(sh.mods[sim::TRIG_GUN], sim::MOD_BARREL),
+                1,
+                "hull {cls} was dealt the kit but not the barrel"
+            );
+        }
+    }
+
     /// The hull is locked for a match and the kit with it, so a kit asked for
     /// mid-match waits for the whistle. One asked for between matches is dealt
     /// on the spot, because nobody is flying.

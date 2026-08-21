@@ -107,5 +107,36 @@ check("the diagnostic carries public context only",
       and requests[6].method == "POST"
       and report.account == 2 and report.build == "test-build")
 
+-- A purchase raises what this account may slot, and the arena reads that off
+-- the token rather than off this client. So buying has to mint a new one.
+--
+-- Without it the failure is silent and expensive: the hangar lets a pilot
+-- spend a point on what they just bought, the room checks a token minted
+-- before the purchase, and `sim_set_kit` refuses the whole kit rather than the
+-- one slot it cannot hold. The pilot flies the ship they had an hour ago and
+-- nothing on screen says why. Found by buying a barrel, slotting it, and
+-- watching a single round leave the gun.
+local before = #requests
+local bought = nil
+account.buy(13, function(ok) bought = ok end)
+check("buying asks the meta-layer", #requests == before + 1
+      and requests[before + 1].url == "https://meta/v1/buy",
+      requests[before + 1] and requests[before + 1].url or "no request")
+answer(requests[before + 1], "buy", {slot = 13, n = 1, rivets = 65})
+check("the purchase lands", bought == true and account.rivets == 65,
+      tostring(bought) .. "/" .. tostring(account.rivets))
+check("and this client can draw it at once",
+      account.entitlements[14] == 1, tostring(account.entitlements[14]))
+check("and a fresh token is asked for, since the arena reads that copy",
+      #requests == before + 2
+      and requests[before + 2].url == "https://meta/v1/session",
+      requests[before + 2] and requests[before + 2].url or "no session")
+answer(requests[before + 2], "post-buy", {
+    token = "bought-token", account = 2, name = "new-name", claimed = true,
+    entitlements = {[14] = 1},
+})
+check("and the token the arena will check carries it",
+      account.token == "bought-token", account.token)
+
 if fails > 0 then os.exit(1) end
 print("all good")

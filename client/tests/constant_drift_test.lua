@@ -72,6 +72,28 @@ end
 check("the menu lists exactly the core's classes", hulls == MAX_CLASSES,
       "menu has " .. hulls .. ", sim.h says " .. tostring(MAX_CLASSES))
 
+-- The add-ons, which the palette names by index against `sim_mod`. A table
+-- short by one draws the last add-on as "add-on 6" and colors it by falling
+-- off the end of the list, which is how the barrel slot arrived on screen the
+-- first time it was bought.
+local modblock = simh:match("typedef enum {(.-)} sim_mod;")
+local MOD_COUNT = 0
+if modblock then
+    for line in modblock:gmatch("[^\n]+") do
+        local name = line:match("^%s*(SIM_MOD_[%u_]+)")
+        if name and name ~= "SIM_MOD_COUNT" then MOD_COUNT = MOD_COUNT + 1 end
+    end
+end
+check("sim.h names its add-ons", MOD_COUNT > 0, tostring(MOD_COUNT))
+local palsrc = read("client/arena/palette.lua")
+local modtable = palsrc:match("M%.MODS = {(.-)\n}")
+local named = 0
+if modtable then
+    for _ in modtable:gmatch("{name =") do named = named + 1 end
+end
+check("the palette names every add-on the core has", named == MOD_COUNT,
+      "palette has " .. named .. ", sim.h says " .. tostring(MOD_COUNT))
+
 -- --- the radar's reach ------------------------------------------------------
 --
 -- The dial and bots use the sixty-tile radar reach. The zone adds the same
@@ -81,6 +103,17 @@ local uisrc = read("client/arena/ui.lua")
 local deliveryrs = read("server/src/delivery.rs")
 local aisrc = read("server/src/ai.rs")
 local arenasrc = read("client/arena/arena.script")
+
+-- The kit reaches the room on arrival, not only when a point is spent.
+--
+-- The room deals a starter kit to any seat wearing nothing and never asks the
+-- meta-layer for a stored one, so this send is the whole of how a built kit
+-- gets flown. Without it a pilot who had spent an evening in the hangar flew
+-- the default until the next time they moved a point, which is silent: the
+-- ship looks right and fires the wrong number of rounds.
+check("the client sends its kit when a seat is taken",
+      arenasrc:match("menu%.open_kit%(menu%.class%)%s*\n%s*net%.set_kit") ~= nil,
+      "arena.script no longer sends a kit on arrival")
 
 local reach = tonumber(worldsrc:match("local RADAR_TILES = (%d+)"))
 check("world.lua names a radar reach", reach ~= nil)

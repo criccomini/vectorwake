@@ -203,7 +203,7 @@ local function mk_bolt(hx, cy, k)
             -- Nothing on this mark rings the head except the add-ons that
             -- ring any mark. The fan hangs off the muzzle and the bounce
             -- ring sits on a dot, so neither takes a share of the room.
-            radial = {false, false, false, true, false, true}}
+            radial = {false, false, false, true, false, true, false}}
 end
 
 local function mk_bomb(hx, cy, k)
@@ -262,6 +262,39 @@ local function dec_multi(m, col, n)
                        M.pen(m.k, 0.078), M.pen(m.k, 0.222), 0,
                        (col[4] or 1) * 0.85, col)
         end
+    end
+end
+
+-- Barrels: rounds abreast, which is not the same drawing as a fan.
+--
+-- Multifire above leaves from one muzzle and spreads; this leaves from beside
+-- it and does not. So the strokes are parallel and offset sideways, and the
+-- mark says the difference the arena says: a fan covers ground, a pair covers
+-- a line. A rung adds a barrel, up to the two the arena allows, which is few
+-- enough that counting strokes is still a shape rather than a tally.
+--
+-- No shipped arena has a rack that comes in pairs, but the slot is per trigger
+-- and a zone may fill it, so the bomb answers too: heads abreast of the one
+-- being thrown, at the same size, tight against it. Same sentence as the gun's
+-- in a different alphabet.
+local function dec_barrel(m, col, n)
+    if m.bolt then
+        local off = m.k * 0.16
+        local ox = m.origin + m.k * 0.10
+        for i = 1, math.min(n, 2) do
+            local dy = ((i % 2 == 1) and -1 or 1) * off * math.ceil(i / 2)
+            local dx, dot = ox + m.k * (M.BOLT_LEN - 0.10), m.y + dy
+            u:seg(ox, m.y + dy, dx, dot, M.pen(m.k, 0.068), col)
+            u:disc(dx, dot, m.k * M.BOLT_DOT * 0.8, 10, col)
+            m.dots[#m.dots + 1] = {dx, dot}
+            m.far = math.max(m.far, dx - m.x + m.k * M.BOLT_DOT)
+        end
+        return
+    end
+    local step = m.k * M.BOMB_R * 0.9
+    for i = 1, math.min(n, 2) do
+        local dy = ((i % 2 == 1) and -1 or 1) * step * math.ceil(i / 2)
+        u:ring(m.x, m.y + dy, m.k * M.BOMB_R * 0.62, M.pen(m.k, 0.1), 12, col)
     end
 end
 
@@ -381,7 +414,8 @@ end
 -- that rings the head takes the next ring of room out from the last, so the
 -- fragments sit inside the shove. Reorder this list and they land on top of
 -- each other.
-local MOD_DECOR = {dec_multi, dec_bounce, nil, dec_shrap, dec_freeze, dec_push}
+local MOD_DECOR = {dec_multi, dec_bounce, nil, dec_shrap, dec_freeze, dec_push,
+                   dec_barrel}
 -- And the one that goes down before the round rather than onto it.
 local MOD_GROUND = {nil, nil, ground_prox}
 -- Which of them ring the head, and so want a share of the room around it.
@@ -389,7 +423,7 @@ local MOD_GROUND = {nil, nil, ground_prox}
 -- ground; none of the three costs the mark any width. This is the bomb's
 -- answer; a bolt carries its own, since it draws its fan and its bounce into
 -- the mark itself.
-local MOD_RADIAL = {false, true, false, true, false, true}
+local MOD_RADIAL = {false, true, false, true, false, true, false}
 -- How far out from the head a mark may reach, against its own size. In the
 -- stack the row is 22 points tall and a mark has to live inside it however
 -- loaded it is; on a pad the ring is what it has to live inside. Each caller

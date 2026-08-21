@@ -557,6 +557,12 @@ pub const fn slot_charge(k: usize) -> u8 {
     (UP_COUNT + TRIG_COUNT + TRIG_COUNT * MOD_COUNT + k) as u8
 }
 
+/// How many rungs of one add-on a packed word holds. Two bits each, mirroring
+/// `sim_mod_get`, which is a static inline and so has no symbol to link.
+pub const fn mod_get(mods: u16, m: usize) -> u8 {
+    ((mods >> (m * 2)) & 3) as u8
+}
+
 // Safe wrappers. The core has no globals and no allocation, so a state is a
 // plain value a thread can own for the duration of a tick.
 

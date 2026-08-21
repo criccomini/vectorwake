@@ -254,7 +254,8 @@ check("enter is the only thing that picks",
 -- Back to the grid first: picking a hull descends into its kit now, because
 -- choosing a ship and choosing what to put on it are the same act seen twice.
 menu.stack = {"root", "hangar"}
-local rows0 = menu.view().rows
+local peek0 = menu.view()
+local rows0 = peek0.hulls
 local hulls0 = 0
 for _, r in ipairs(rows0) do if r.hull then hulls0 = hulls0 + 1 end end
 local CELLS = #rows0
@@ -262,9 +263,20 @@ check("the cell is there with nothing behind the panel",
       hulls0 > 0 and CELLS == hulls0 + 1,
       CELLS .. " rows over " .. hulls0 .. " hulls")
 
+-- And beside the roster, the kit of the hull it is standing on. `rows` used
+-- to be the roster again here, which the page drew as gun add-ons: eight ship
+-- names under a heading that said stats.
+local previewed = 0
+for _, r in ipairs(peek0.rows or {}) do
+    if r.group or r.bar then previewed = previewed + 1 end
+end
+check("with the standing hull's kit beside it",
+      peek0.kit_preview == true and previewed > 0,
+      tostring(peek0.kit_preview) .. ", " .. previewed .. " kit rows")
+
 menu.home = false
 menu.stack = {"root", "hangar"}
-local ship_rows = menu.view().rows
+local ship_rows = menu.view().hulls
 check("and there with a game", #ship_rows == CELLS, tostring(#ship_rows))
 menu.sel.hangar = CELLS
 local act_w = menu.step({go = true})
@@ -309,10 +321,10 @@ menu.watching = false
 menu.class = 2
 menu.spectate = false
 check("at home, no choice made yet marks the hull you will arrive in",
-      menu.view().rows[3].mark and not menu.view().rows[CELLS].mark)
+      menu.view().hulls[3].mark and not menu.view().hulls[CELLS].mark)
 menu.spectate = true
 check("and choosing to watch moves the wash to the last cell",
-      menu.view().rows[CELLS].mark and not menu.view().rows[3].mark)
+      menu.view().hulls[CELLS].mark and not menu.view().hulls[3].mark)
 check("which is what the root row says too",
       menu.view().rail[2].detail == "spectating",
       tostring(menu.view().rail[2].detail))
@@ -320,7 +332,7 @@ check("which is what the root row says too",
 -- can refuse a hull and the page must not claim you got it.
 menu.home = false
 check("in a game the connection wins over what was remembered",
-      menu.view().rows[3].mark and not menu.view().rows[CELLS].mark,
+      menu.view().hulls[3].mark and not menu.view().hulls[CELLS].mark,
       "spectate remembered but watching is false")
 menu.spectate = false
 menu.home = true
@@ -332,12 +344,12 @@ menu.home = true
 menu.home = false
 menu.class = 2
 menu.watching = false
-local flying_view = menu.view().rows
+local flying_view = menu.view().hulls
 check("flying marks the hull you are in",
       flying_view[3].mark and not flying_view[CELLS].mark,
       tostring(flying_view[3].mark) .. "/" .. tostring(flying_view[CELLS].mark))
 menu.watching = true
-local watching_view = menu.view().rows
+local watching_view = menu.view().hulls
 check("watching marks the last cell instead, and no hull",
       watching_view[CELLS].mark and not watching_view[3].mark,
       tostring(watching_view[3].mark) .. "/" .. tostring(watching_view[CELLS].mark))

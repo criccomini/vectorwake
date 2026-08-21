@@ -530,8 +530,17 @@ function M.kit_step(slot, by)
     return true
 end
 
-local function kit_rows()
-    local class = M.kit_class or M.class
+-- The kit for a hull, as rows. `class` is the hull being asked about, which
+-- is the one being edited on the kit page and the one under the cursor while
+-- the roster has it: standing on a hull in the hangar shows what it will fly,
+-- which is the question the roster is being asked.
+--
+-- Switching to it is not destructive. A point spent saves the kit as it is
+-- spent, so the kit a hull comes back with is the kit it was left with, and
+-- moving the cursor along the roster loads each in turn rather than editing
+-- any of them.
+local function kit_rows(class)
+    class = class or M.kit_class or M.class
     if not M.kit or M.kit_class ~= class then M.open_kit(class) end
     local ceiling = kit_ceiling()
     -- What the arena alone would allow, which is a longer ladder than the
@@ -1969,6 +1978,23 @@ function M.view()
         out.hull_focus = M.at() == "hangar"
         if M.at() == "kit" then
             out.head = NODES.kit.head and NODES.kit.head() or nil
+        else
+            -- The roster level. `rows` here would be the hulls again, and the
+            -- page drew them: eight ship names laid out as gun add-ons, under
+            -- a heading that said stats. What belongs beside a roster is the
+            -- kit of the hull it is standing on, which is what pressing enter
+            -- opens and what this page has always claimed to show.
+            --
+            -- A preview rather than an edit. The arrows are in the roster, so
+            -- nothing here is the cursor and nothing here is pressable.
+            local under = out.hulls[sel]
+            out.kit_preview = true
+            out.rows = {}
+            if under and under.hull then
+                for i, r in ipairs(kit_rows(under.hull)) do
+                    out.rows[i] = view_row(r, i)
+                end
+            end
         end
     end
     -- The destinations, always, whatever level the stack is at: the interface

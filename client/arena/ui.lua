@@ -3843,6 +3843,11 @@ function pages.kit(v, x, y, w, h, focused)
 
     -- The kit. `v.rows` is the model in the order a pilot thinks about it, and
     -- the groups are drawn where they belong rather than where they fall.
+    --
+    -- While the arrows are in the roster this is a preview of the hull they
+    -- are standing on, so nothing in it is the cursor and nothing in it takes
+    -- a press. `v.sel` indexes the roster then, and a kit row whose index
+    -- happened to match would light for no reason a player could explain.
     local budget, stats, guns, bombs, charges = nil, {}, {}, {}, {}
     for _, r in ipairs(v.rows or {}) do
         if r.bar then budget = r
@@ -3851,6 +3856,8 @@ function pages.kit(v, x, y, w, h, focused)
         elseif r.trigger == 1 then bombs[#bombs + 1] = r
         else guns[#guns + 1] = r end
     end
+    local live = not v.kit_preview
+    local function cursor(r) return live and r.index == v.sel end
 
     local cy = y + 14 * F.scale
 
@@ -3898,7 +3905,7 @@ function pages.kit(v, x, y, w, h, focused)
     rule("stats", "six a stat is the whole budget, the last two are bought")
     local srow = 26 * F.scale
     for _, r in ipairs(stats) do
-        local hot = (r.index == v.sel)
+        local hot = cursor(r)
         if hot then wash(kx - 14 * F.scale, cy - srow / 2 + 2 * F.scale,
                          kw + 14 * F.scale, srow - 2 * F.scale,
                          pal.a(pal.FRIEND, focused and 0.2 or 0.1)) end
@@ -3931,7 +3938,7 @@ function pages.kit(v, x, y, w, h, focused)
             pal.a(pal.INK, hot and 0.95 or 0.7))
         txt(r.label, px + 28 * F.scale, cy, 12 * F.scale,
             pal.a(pal.DIM, hot and 1 or 0.85), nil, MENU_FONT)
-        if r.pick then hit(kx - 14 * F.scale, cy - srow / 2, kw, srow,
+        if live and r.pick then hit(kx - 14 * F.scale, cy - srow / 2, kw, srow,
                            "stage", r.index) end
         cy = cy + srow
     end
@@ -3944,8 +3951,8 @@ function pages.kit(v, x, y, w, h, focused)
         local px = kx
         for _, r in ipairs(list) do
             if px + cw > kx + kw then px = kx cy = cy + ch + 6 * F.scale end
-            pages.chip(px, cy - 2 * F.scale, cw, ch, r, r.index == v.sel, focused)
-            if r.pick then hit(px, cy - 2 * F.scale, cw, ch, "stage", r.index) end
+            pages.chip(px, cy - 2 * F.scale, cw, ch, r, cursor(r), focused)
+            if live and r.pick then hit(px, cy - 2 * F.scale, cw, ch, "stage", r.index) end
             px = px + cw + 8 * F.scale
         end
         cy = cy + ch + 8 * F.scale
@@ -3958,7 +3965,7 @@ function pages.kit(v, x, y, w, h, focused)
     if #charges > 0 then
         rule("charges", "spent charges do not come back when you die")
         for _, r in ipairs(charges) do
-            local hot = (r.index == v.sel)
+            local hot = cursor(r)
             if hot then wash(kx - 14 * F.scale, cy - srow / 2 + 2 * F.scale,
                              kw + 14 * F.scale, srow - 2 * F.scale,
                              pal.a(pal.FRIEND, focused and 0.2 or 0.1)) end
@@ -3970,7 +3977,7 @@ function pages.kit(v, x, y, w, h, focused)
                      (r.choice or 0) >= k and "on" or "off", pal.CHARGE_COL)
                 px = px + 13 * F.scale
             end
-            if r.pick then hit(kx - 14 * F.scale, cy - srow / 2, kw, srow,
+            if live and r.pick then hit(kx - 14 * F.scale, cy - srow / 2, kw, srow,
                                "stage", r.index) end
             cy = cy + srow
         end

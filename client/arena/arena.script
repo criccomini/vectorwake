@@ -1457,6 +1457,20 @@ function update(self, dt)
             menu.note = nil
             ui.help_prompt = menu.needs_help_prompt()
             self.joining = nil
+            -- And the kit this pilot built, to the room that has just seated
+            -- them. Nothing else sends it on arrival: the room deals a starter
+            -- kit to any seat wearing nothing, and the stored kit is the
+            -- account's rather than the arena's, so a pilot who had spent an
+            -- evening in the hangar flew the default until they next changed a
+            -- point. Found by buying a barrel, slotting it, and watching one
+            -- round leave the gun.
+            --
+            -- For the hull actually being flown, which is not necessarily the
+            -- one the hangar was last looking at.
+            if not net.watching then
+                menu.open_kit(menu.class)
+                net.set_kit(menu.kit)
+            end
         else
             self.joining = self.joining + dt
             if self.joining > 10 then

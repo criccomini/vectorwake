@@ -335,10 +335,18 @@ function M.buy(slot, cb)
         end
         M.rivets = tonumber(r.rivets) or M.rivets
         -- The shelf, so the hangar can slot it at once rather than after the
-        -- next session. The entitlements ride in the token as well, and that
-        -- copy is the one an arena checks; this one is what the screen draws.
+        -- next session. This copy is what the screen draws.
         M.entitlements[(tonumber(r.slot) or 0) + 1] = tonumber(r.n) or 0
         M.note = ""
+        -- And a fresh token, because the arena reads its copy rather than this
+        -- one. Without this a purchase is invisible where it matters: the
+        -- hangar lets you spend a point on what you just bought, the room
+        -- checks a token minted before you bought it, and `sim_set_kit`
+        -- refuses the whole kit rather than the one slot it cannot hold. So a
+        -- pilot buys a barrel, slots it, flies, and is dealt the ship they had
+        -- an hour ago with nothing on screen to say why. Forced, because the
+        -- session in hand is valid and a refresh would otherwise be skipped.
+        session(nil, true)
         if cb then cb(true) end
     end)
 end
