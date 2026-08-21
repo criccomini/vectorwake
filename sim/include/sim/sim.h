@@ -682,16 +682,6 @@ typedef struct {
 int32_t sim_bounty(const sim_settings *cfg, const sim_ship *sh);
 
 
-/* What this zone lets a kit hold, over the flat slot space. Just a copy of
- * `cfg->kit_ceiling`, kept as a call because the client and the server both
- * reach it across an FFI boundary that cannot see the struct.
- *
- * It takes no hull. That is the point: a kit is checked against the arena and
- * the account, and the hull it will be flown on has nothing to say about it.
- * Returns how many slots this zone actually has, which is the count above
- * zero. */
-int sim_kit_ceilings(const sim_settings *cfg, uint8_t *out);
-
 /* What an account owns before it has bought anything, over the same flat
  * space, and 255 for a slot the account never limits.
  *
@@ -736,7 +726,7 @@ void sim_base_entitlements(uint8_t *out);
  *
  * Takes the ceilings rather than the hull, because what a pilot may slot is
  * the zone's row and their account's entitlements together, and the account
- * is not something this core knows about. `sim_kit_ceilings` gives the zone's
+ * is not something this core knows about. `cfg->kit_ceiling` is the zone's
  * half; a caller with no account to consult passes that straight in.
  *
  * `out` is SIM_SLOT_COUNT bytes. Returns what it spent, which is
@@ -766,10 +756,10 @@ int sim_set_kit(sim_ship *sh, const sim_settings *cfg, const uint8_t *kit);
  * otherwise be a trade worth making. */
 void sim_deal_kit(sim_ship *sh, const sim_settings *cfg, int ammunition);
 
-/* Hand a pilot one named slot, with the hull's ceilings enforced. Returns 1
- * if the count moved and 0 if the hull cannot hold it, which is how a caller
+/* Hand a pilot one named slot, with the arena's ceilings enforced. Returns 1
+ * if the count moved and 0 if the slot is already full, which is how a caller
  * tells "wearing the kit" from "cannot wear it". `sim_deal_kit` is this in a
- * loop; the calibration harness calls it directly to build a hull a slot at
+ * loop; the calibration harness calls it directly to build a ship a slot at
  * a time. */
 int sim_grant(sim_ship *sh, const sim_settings *cfg, uint8_t type);
 
@@ -960,9 +950,9 @@ int sim_set_ship_class(sim_state *s, const sim_settings *cfg, uint8_t i,
  * ungated it is an escape. Flags are dropped and bounty earned by killing is
  * cleared, which is what stops two pilots swapping sides to feed each other.
  *
- * What you are flying is untouched -- hull, levels, add-ons and charges all
- * cross with you -- because unlike a hull change nothing about the roster row
- * moved. Which team numbers exist and who may enter one is the zone's
+ * What you are flying is untouched: hull, levels, add-ons and charges all
+ * cross with you, because a side is not a thing a ship is built against.
+ * Which team numbers exist and who may enter one is the zone's
  * business; this core only knows that a ship has a side and that sides differ.
  *
  * Returns 0, or -1 for an unknown ship, a dead pilot, or one not at full

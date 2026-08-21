@@ -97,16 +97,14 @@ local PASSWORD_MAX = 64
 -- The page the last tick was on, so the two that fetch their own contents can
 -- ask on the way in rather than on every frame they are up.
 local was_at = nil
--- When the friends page last asked, and how often it may. Presence is the one
--- thing in this menu that changes without the player doing anything, so it is
--- the one page that re-asks while it is open. Five seconds is a friend
--- appearing in a game about as fast as somebody would believe, and one request
--- per open page is a load the meta-layer will not notice.
-local friends_asked = -1e9
+-- Seconds until the friends page may ask again, counted down off the tick's
+-- own delta rather than read off a clock. Presence is the one thing in this
+-- menu that changes without the player doing anything, so it is the one page
+-- that re-asks while it is open. Five seconds is a friend appearing in a game
+-- about as fast as somebody would believe, and one request per open page is a
+-- load the meta-layer will not notice.
+local friends_due = 0
 local FRIENDS_EVERY = 5
-local function now_s()
-    return socket and socket.gettime and socket.gettime() or os.time()
-end
 -- Whether the games list has worked out where its cursor belongs since it was
 -- last opened. Declared up here because opening the menu clears it and the
 -- opening is written above the asking.
@@ -701,67 +699,59 @@ end
 -- nothing else. Then whoever is in the room with you, which is the whole of
 -- how a name reaches this page: there is no directory of the fleet and no way
 -- to search for anybody. See docs/design/friends.md.
+-- One name a row, under a head that belongs to the row opening its run: the
+-- list renderer draws a head wherever it finds a `sect` and dedupes nothing,
+-- so a label on every row is that label over every row.
+local function name_rows(rows, head, list, fill)
+    for i, p in ipairs(list or {}) do
+        local r = fill(p)
+        r.label = p.name or "?"
+        r.named = true
+        r.value = p.account
+        if i == 1 then r.sect = head end
+        rows[#rows + 1] = r
+    end
+end
+
 local function friend_rows()
     local rows = {}
-    -- A head belongs to the row that opens a run, not to every row in it: the
-    -- list renderer draws one wherever it finds a `sect` and does no
-    -- deduplicating, which is what "friends" over each friend looked like.
-    local function heading(label)
-        local first = true
-        return function()
-            if not first then return nil end
-            first = false
-            return label
-        end
-    end
-    local head_friends = heading("friends")
-    local head_asked = heading("waiting on you")
-    local head_here = heading("in this game")
-    local head_waiting = heading("you added")
-    for _, f in ipairs(account.friends or {}) do
+    name_rows(rows, "friends", account.friends, function(f)
         local where = directory.at_instance(f.instance)
         local flying = f.zone ~= nil and f.zone ~= ""
-        rows[#rows + 1] = {
-            label = f.name or "?", named = true, sect = head_friends(),
+        return {
             -- Where they are, or that they are not anywhere. A friend in an
             -- instance this client cannot see reads as in that game and is
             -- not joinable, which is the honest answer for an arena the
             -- directory has stopped listing.
             detail = flying and f.zone or "not on",
             live = where ~= nil,
+            zone = flying and f.zone or nil,
+            joinable = where ~= nil,
             -- A card rather than an action, because there are two things to
             -- do with a friend and one of them takes both edges away. Five
             -- inputs and no second button means a row has one press, so the
             -- press asks. See docs/design/friends.md.
-            act = "friend_card", value = f.account,
-            zone = flying and f.zone or nil,
-            joinable = where ~= nil,
+            act = "friend_card",
         }
-    end
-    for _, a in ipairs(account.asked or {}) do
-        rows[#rows + 1] = {
-            label = a.name or "?", named = true, sect = head_asked(),
-            detail = "add back",
-            act = "befriend", value = a.account,
-        }
-    end
-    for _, h in ipairs(account.here or {}) do
-        rows[#rows + 1] = {
-            label = h.name or "?", named = true, sect = head_here(),
-            detail = "add",
-            act = "befriend", value = h.account,
-        }
-    end
-    -- Last, because it is the section nothing happens on: these are presses
-    -- already made. It is here so a press has a visible consequence at all,
-    -- since adding somebody takes their name off the list above and would
-    -- otherwise put it nowhere.
-    for _, w in ipairs(account.waiting or {}) do
-        rows[#rows + 1] = {
-            label = w.name or "?", named = true, sect = head_waiting(),
-            detail = "waiting on them",
-            act = "friend_card", value = w.account,
-        }
+    end)
+    -- The other three are a name and one press, so they are a table rather
+    -- than three copies of the same loop. Order is what they are for: people
+    -- to answer, then people to add, then presses already made.
+    local plain = {
+        {head = "waiting on you", list = account.asked,
+         detail = "add back", act = "befriend"},
+        {head = "in this game", list = account.here,
+         detail = "add", act = "befriend"},
+        -- Last, because nothing happens on it. It exists so that adding
+        -- somebody has a visible consequence: without it a press took a name
+        -- off the list above and put it nowhere.
+        {head = "you added", list = account.waiting,
+         detail = "waiting on them", act = "friend_card"},
+    }
+    for _, sec in ipairs(plain) do
+        name_rows(rows, sec.head, sec.list, function()
+            return {detail = sec.detail, act = sec.act}
+        end)
     end
     return rows
 end
@@ -2035,9 +2025,9 @@ function M.tick(dt)
     -- stale on its own: a friend joins a game or leaves one, and nothing the
     -- pilot reading it does makes that so. The shelf and the week's table only
     -- move when the pilot moves them.
-    if (at == "friends" or at == "play")
-        and (arrived or now_s() - friends_asked > FRIENDS_EVERY) then
-        friends_asked = now_s()
+    friends_due = friends_due - (dt or 0)
+    if (at == "friends" or at == "play") and (arrived or friends_due <= 0) then
+        friends_due = FRIENDS_EVERY
         account.refresh_friends()
     end
     if M.at() ~= "play" then

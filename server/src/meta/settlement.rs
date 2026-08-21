@@ -203,7 +203,6 @@ pub(super) async fn route(
             };
             let zone = s("zone");
             let instance = s("instance");
-            let zone = s("zone");
             let empty = Vec::new();
             let events = body
                 .get("events")
@@ -271,7 +270,6 @@ pub(super) async fn route(
             }
             let zone = s("zone");
             let instance = s("instance");
-            let zone = s("zone");
             let empty = Vec::new();
             let events = body
                 .get("events")

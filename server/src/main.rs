@@ -3086,7 +3086,7 @@ mod tests {
         assert_eq!(sh.charge[sim::CHARGE_REPEL], 3);
 
         // Past what the account owns. The core would take a seventh step of a
-        // stat happily, because the hull's ceiling is eight; the account's is
+        // stat happily, because the arena's ceiling is eight; the account's is
         // six until somebody buys the last two.
         assert_eq!(
             base[sim::slot_stat(sim::UP_SPEED) as usize],

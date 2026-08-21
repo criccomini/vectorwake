@@ -2167,8 +2167,10 @@ so out loud: "a pilot who buys a rung their hull lacks has bought nothing they
 can slot on it."
 
 So the rows became one row for the arena, `sim_settings::kit_ceiling`, set from
-the union of what the seven allowed. `sim_kit_ceilings` takes settings rather
-than a class. `DoubleBarrel` becomes `SIM_MOD_BARREL`, an add-on that adds to
+the union of what the seven allowed. `sim_kit_ceilings` went with them: once
+the answer stopped depending on which hull was asking, the call was a copy of a
+field every caller could already read. `DoubleBarrel` becomes `SIM_MOD_BARREL`,
+an add-on that adds to
 the round count rather than multiplying it, keeps its own tight spacing, and
 charges energy without charging cooldown, which is the whole of its trade
 against multifire. Nobody is dealt a rung of it; it is the one add-on that is

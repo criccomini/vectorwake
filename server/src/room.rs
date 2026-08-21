@@ -1686,8 +1686,10 @@ impl Room {
     ///
     /// False changes nothing, which is the whole contract: a refused kit
     /// leaves a pilot in what they were already flying rather than half
-    /// dressed. The core checks the budget and the hull again on the way
-    /// through, so this is two independent refusals rather than one.
+    /// dressed. The core checks the arena's ceiling and the budget again on
+    /// the way through, so this is two independent refusals rather than one:
+    /// the entitlement half is only checked here, because an account is not
+    /// something the core knows about.
     pub(crate) fn set_kit(&mut self, ship: u8, kit: &[u8; sim::SLOT_COUNT]) -> bool {
         let ceiling = self.kit_ceiling(ship);
         if kit.iter().zip(ceiling.iter()).any(|(want, max)| want > max) {
@@ -1711,9 +1713,10 @@ impl Room {
                 }
                 return;
             }
-            // A kit that no longer fits is dropped rather than kept: the hull
-            // changed under it, or the zone retuned, and holding it would mean
-            // trying it again at every whistle for the rest of the session.
+            // A kit that no longer fits is dropped rather than kept: the
+            // zone retuned under it, which is the only way that can happen now
+            // that a hull has no say. Holding it would mean trying it again at
+            // every whistle for the rest of the session.
             if let Some(s) = self.names.get_mut(&ship) {
                 s.pending_kit = None;
             }

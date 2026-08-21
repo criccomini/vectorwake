@@ -228,13 +228,6 @@ void sim_init(sim_state *s, uint32_t seed) {
  * The caller sets energy afterwards, not before: the energy ceiling is a
  * function of `up[SIM_UP_ENERGY]`, and filling the bar before the prizes lands
  * would leave a ship at less than the full one it just earned. */
-int sim_kit_ceilings(const sim_settings *cfg, uint8_t *out) {
-    int n = 0;
-    memcpy(out, cfg->kit_ceiling, SIM_SLOT_COUNT);
-    for (int i = 0; i < SIM_SLOT_COUNT; i++) if (out[i]) n++;
-    return n;
-}
-
 int sim_kit_cost(const uint8_t *kit) {
     int n = 0;
     for (int i = 0; i < SIM_SLOT_COUNT; i++) n += kit[i];
@@ -316,11 +309,9 @@ int sim_starter_kit(const uint8_t *ceiling, uint8_t *out) {
 }
 
 int sim_set_kit(sim_ship *sh, const sim_settings *cfg, const uint8_t *kit) {
-    uint8_t ceiling[SIM_SLOT_COUNT];
-    sim_kit_ceilings(cfg, ceiling);
     int cost = 0;
     for (int i = 0; i < SIM_SLOT_COUNT; i++) {
-        if (kit[i] > ceiling[i]) return 0;
+        if (kit[i] > cfg->kit_ceiling[i]) return 0;
         cost += kit[i];
     }
     if (cost > SIM_KIT_BUDGET) return 0;
@@ -1335,11 +1326,21 @@ int sim_set_ship_class(sim_state *s, const sim_settings *cfg, uint8_t i,
     if (sh->energy < sim_eff_max_energy(&cfg->classes[sh->cls], sh)) return -1;
     drop_flags(s, cfg, i, 0);
     sh->cls = cls;
-    memset(sh->up, 0, sizeof sh->up);
-    memset(sh->level, 0, sizeof sh->level);
-    memset(sh->mods, 0, sizeof sh->mods);
-    memset(sh->charge, 0, sizeof sh->charge);
-    memset(sh->kit, 0, sizeof sh->kit);
+    /* The kit crosses, and is re-dealt onto the new hull without ammunition:
+     * exactly what a death costs, because that is what this is.
+     *
+     * It used to be wiped, on the argument that a kit was validated against
+     * the hull it was built for and so could not cross to another one. That
+     * stopped being true when the roster stopped carrying ceilings: a kit is
+     * checked against the arena and the account now, so one that fits in any
+     * hangar fits in all of them. Wiping it made changing ship cost a pilot
+     * their loadout until the next whistle re-dealt it, which is a price for a
+     * rule that no longer exists.
+     *
+     * Without ammunition, so spent charges stay spent. A hull change already
+     * hands out a fresh full bar; handing back the repels with it would make
+     * this the reload a death deliberately is not. */
+    sim_deal_kit(sh, cfg, 0);
     sh->run = 0;
     sh->alive = 1;
     sh->respawn_at = 0;
@@ -1348,9 +1349,9 @@ int sim_set_ship_class(sim_state *s, const sim_settings *cfg, uint8_t i,
     sh->vx = sh->vy = 0;
     sh->fire_cooldown[SIM_TRIG_GUN] = 0;
     sh->fire_cooldown[SIM_TRIG_BOMB] = 0;
-    /* A kit is validated against the hull it was built for, so it does not
-     * cross to another one. The caller sets one for the new hull; until it
-     * does, this pilot flies the bare frame. */
+    /* And a full bar of the ship you are now in, measured after the kit was
+     * dealt: energy steps move the ceiling, so reading it first would fill a
+     * bar the pilot has since outgrown. */
     sh->energy = sim_eff_max_energy(&cfg->classes[cls], sh);
     return 0;
 }
@@ -1390,10 +1391,9 @@ int sim_set_ship_team(sim_state *s, const sim_settings *cfg, uint8_t i,
     sh->fire_cooldown[SIM_TRIG_GUN] = 0;
     sh->fire_cooldown[SIM_TRIG_BOMB] = 0;
     sh->energy = sim_eff_max_energy(&cfg->classes[sh->cls], sh);
-    /* The hull and everything collected for it stay, which is where this parts
-     * company with a hull change. That one rerolls because the roster row
-     * moved and the old add-ons may not be things the new ship can hold;
-     * crossing to another side changes nothing about what you are flying. */
+    /* The hull and everything on it stay. This is where crossing a line parts
+     * company with a hull change: that one puts you back on your pad in a
+     * different ship, and this one does not move you at all. */
     return 0;
 }
 

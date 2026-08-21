@@ -462,7 +462,6 @@ extern "C" {
     pub fn sim_eff_thrust(c: *const sim_ship_class, s: *const sim_ship) -> i32;
     /// Per-slot ceilings for a hull, over the flat kit space. Zero is a slot
     /// the roster keeps from it.
-    pub fn sim_kit_ceilings(cfg: *const sim_settings, out: *mut u8) -> c_int;
     /// What a kit spends, which is its sum: every slot costs one.
     pub fn sim_kit_cost(kit: *const u8) -> c_int;
     /// Validate a kit against the hull and the budget, store it, deal it with
@@ -474,7 +473,7 @@ extern "C" {
     pub fn sim_restart(s: *mut sim_state, cfg: *const sim_settings);
     pub fn sim_base_entitlements(out: *mut u8);
     pub fn sim_starter_kit(ceiling: *const u8, out: *mut u8) -> c_int;
-    /// One named slot, with the hull's ceilings enforced.
+    /// One named slot, with the arena's ceilings enforced.
     pub fn sim_grant(sh: *mut sim_ship, cfg: *const sim_settings, ty: u8) -> c_int;
     pub fn sim_pack(s: *const sim_state, out: *mut u8, cap: c_int) -> c_int;
     /// The other end of a snapshot. Only a client needs this, and the bot
@@ -974,9 +973,7 @@ impl World {
     /// What this arena lets a kit hold. No hull argument: the roster stopped
     /// having a say, so an upgrade that fits in one hangar fits in all of them.
     pub fn kit_ceilings(&self) -> [u8; SLOT_COUNT] {
-        let mut out = [0u8; SLOT_COUNT];
-        unsafe { sim_kit_ceilings(&*self.cfg, out.as_mut_ptr()) };
-        out
+        self.cfg.kit_ceiling
     }
 
     /// What the game itself has, before any zone tunes it: the baseline's own
@@ -990,19 +987,15 @@ impl World {
     /// a zone's decision to make; what cannot happen any more is the shop
     /// selling something no arena anywhere could hold.
     ///
-    /// Built once. It needs a whole settings block to read six-and-twenty
-    /// bytes out of, and that block is a megabyte of specs and patterns.
+    /// Built once. It needs a whole settings block to read twenty-five bytes
+    /// out of, and that block is a megabyte of specs and patterns.
     pub fn baseline_kit_ceiling() -> &'static [u8; SLOT_COUNT] {
         static CEILING: std::sync::OnceLock<[u8; SLOT_COUNT]> = std::sync::OnceLock::new();
         CEILING.get_or_init(|| {
             let map: Box<sim_map> = zeroed_box();
             let mut cfg: Box<sim_settings> = zeroed_box();
-            let mut out = [0u8; SLOT_COUNT];
-            unsafe {
-                sim_settings_baseline(&mut *cfg, &*map);
-                sim_kit_ceilings(&*cfg, out.as_mut_ptr());
-            }
-            out
+            unsafe { sim_settings_baseline(&mut *cfg, &*map) };
+            cfg.kit_ceiling
         })
     }
 

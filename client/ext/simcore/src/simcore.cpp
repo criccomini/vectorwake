@@ -408,11 +408,9 @@ int HullExtent(lua_State* L) {
 // carried a tech tree and the hangar had to ask the question once per hull;
 // the answer is the same for all seven now, so the hangar asks once.
 int KitCeilings(lua_State* L) {
-    uint8_t ceiling[SIM_SLOT_COUNT];
-    sim_kit_ceilings(&g_cfg, ceiling);
     lua_createtable(L, SIM_SLOT_COUNT, 0);
     for (int k = 0; k < SIM_SLOT_COUNT; k++) {
-        lua_pushnumber(L, ceiling[k]);
+        lua_pushnumber(L, g_cfg.kit_ceiling[k]);
         lua_rawseti(L, -2, k + 1);
     }
     return 1;

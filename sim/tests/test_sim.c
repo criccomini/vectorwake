@@ -61,10 +61,9 @@ static void check_state_invariants(const sim_state *s, const sim_settings *cfg) 
                   "charges stay below the arena ceiling");
         /* A kit never asks for more than the arena has or more than the
          * budget buys, whatever route it arrived by. */
-        uint8_t ceiling[SIM_SLOT_COUNT];
-        sim_kit_ceilings(cfg, ceiling);
         for (int k = 0; k < SIM_SLOT_COUNT; k++)
-            CHECK(sh->kit[k] <= ceiling[k], "a kit stays inside the arena");
+            CHECK(sh->kit[k] <= cfg->kit_ceiling[k],
+                  "a kit stays inside the arena");
         CHECK(sim_kit_cost(sh->kit) <= SIM_KIT_BUDGET,
               "a kit stays inside the budget");
     }
@@ -202,8 +201,8 @@ static const sim_fire_pattern *bomb_of(const sim_settings *cfg, int cls) {
  * mixed run, where the point is that no sequence of legal kits, hull changes
  * and side changes can put the state somewhere the invariants refuse. */
 static void random_kit(sim_ship *sh, const sim_settings *cfg, uint32_t *rng) {
-    uint8_t ceiling[SIM_SLOT_COUNT], kit[SIM_SLOT_COUNT] = {0};
-    sim_kit_ceilings(cfg, ceiling);
+    const uint8_t *ceiling = cfg->kit_ceiling;
+    uint8_t kit[SIM_SLOT_COUNT] = {0};
     int budget = (int)(next_random(rng) % (SIM_KIT_BUDGET + 1));
     for (int spent = 0; spent < budget; spent++) {
         int tries = 0;
@@ -1258,21 +1257,36 @@ int main(void) {
     }
 
     /* Changing hull is a respawn, not a costume change, and it leaves the
-     * rest of the arena exactly where it was. */
+     * rest of the arena exactly where it was.
+     *
+     * The kit crosses. It used to be wiped, back when a kit was validated
+     * against the hull it was built for; a kit is checked against the arena
+     * now, so one that fits anywhere fits everywhere and taking it away was a
+     * price for a rule that no longer exists. */
     {
         sim_state s;
         sim_init(&s, 1);
         sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
         sim_spawn(&s, APEX, 1, 8500, 8192, 0, &cfg);
         step_n(&s, &cfg, SIM_BTN_THRUST, SIM_BTN_THRUST, 30);
-        s.ships[0].up[SIM_UP_SPEED] = 3;
+        uint8_t kit[SIM_SLOT_COUNT] = {0};
+        kit[SIM_SLOT_STAT(SIM_UP_SPEED)] = 3;
+        kit[SIM_SLOT_MOD(SIM_TRIG_GUN, SIM_MOD_MULTI)] = 1;
+        kit[SIM_SLOT_CHARGE(SIM_CHARGE_REPEL)] = 2;
+        CHECK(sim_set_kit(&s.ships[0], &cfg, kit) == 1, "a built ship");
+        /* One spent, so the reload this is not can be seen. */
+        s.ships[0].charge[SIM_CHARGE_REPEL] = 1;
         int32_t foe_y = s.ships[1].y;
         CHECK(s.ships[0].y != s.ships[0].spawn_y, "the pilot had flown off");
         CHECK(sim_set_ship_class(&s, &cfg, 0, ANVIL) == 0, "the hull changed");
         CHECK(s.ships[0].cls == ANVIL, "into the one asked for");
         CHECK(s.ships[0].y == s.ships[0].spawn_y, "back at the start");
         CHECK(s.ships[0].vx == 0 && s.ships[0].vy == 0, "and at rest");
-        CHECK(s.ships[0].up[SIM_UP_SPEED] == 0, "upgrades cost what dying costs");
+        CHECK(s.ships[0].up[SIM_UP_SPEED] == 3
+              && sim_mod_get(s.ships[0].mods[SIM_TRIG_GUN], SIM_MOD_MULTI) == 1,
+              "wearing the kit it was already wearing");
+        CHECK(s.ships[0].charge[SIM_CHARGE_REPEL] == 1,
+              "and what it spent stays spent");
         CHECK(s.ships[0].energy ==
               sim_eff_max_energy(&cfg.classes[ANVIL], &s.ships[0]),
               "with a full bar of the new ship");
@@ -1888,9 +1902,8 @@ int main(void) {
         /* What a kit may spend on is the arena's row, and nothing else. It
          * used to be the hull's, and the property worth testing is that the
          * hull no longer has a say: seven identical answers, one per class. */
-        uint8_t ceil[SIM_SLOT_COUNT];
+        const uint8_t *ceil = cfg.kit_ceiling;
         const int CIPHER = 4, LATTICE = 6;
-        sim_kit_ceilings(&cfg, ceil);
         for (int u = 0; u < SIM_UP_COUNT; u++)
             CHECK(ceil[SIM_SLOT_STAT(u)] == SIM_UP_STEPS,
                   "every stat climbs to the same ceiling");
@@ -1922,14 +1935,20 @@ int main(void) {
         /* The whole point, stated as one check: the roster has nothing to say
          * about what a pilot may hold, so nothing bought in the shop is dead
          * on the hull somebody wanted to fly it on. */
+        // Stated as one check: the roster has nothing to say about what a
+        // pilot may hold, so nothing bought in the shop is dead on the hull
+        // somebody wanted to fly it on. There is one row and every class
+        // reads it, which is the whole of why this loop has nothing to
+        // compare against.
         for (int i = 0; i < cfg.class_count; i++) {
-            uint8_t other[SIM_SLOT_COUNT];
             sim_ship probe;
             memset(&probe, 0, sizeof probe);
             probe.cls = (uint8_t)i;
-            sim_kit_ceilings(&cfg, other);
-            CHECK(memcmp(ceil, other, SIM_SLOT_COUNT) == 0,
-                  "every hull may hold exactly what every other one may");
+            uint8_t kit[SIM_SLOT_COUNT] = {0};
+            kit[SIM_SLOT_MOD(SIM_TRIG_GUN, SIM_MOD_BARREL)] =
+                ceil[SIM_SLOT_MOD(SIM_TRIG_GUN, SIM_MOD_BARREL)];
+            CHECK(sim_set_kit(&probe, &cfg, kit) == 1,
+                  "every hull takes the same kit as every other one");
         }
 
         /* Five stats at six steps is exactly the budget, and at eight it is
@@ -4067,11 +4086,10 @@ int main(void) {
                   "barrels are the one add-on nobody starts with");
 
         for (int c = 0; c < cfg.class_count; c++) {
-            uint8_t zone[SIM_SLOT_COUNT], ceiling[SIM_SLOT_COUNT];
-            uint8_t kit[SIM_SLOT_COUNT];
-            sim_kit_ceilings(&cfg, zone);
+            uint8_t ceiling[SIM_SLOT_COUNT], kit[SIM_SLOT_COUNT];
             for (int i = 0; i < SIM_SLOT_COUNT; i++)
-                ceiling[i] = zone[i] < base[i] ? zone[i] : base[i];
+                ceiling[i] = cfg.kit_ceiling[i] < base[i]
+                    ? cfg.kit_ceiling[i] : base[i];
             int spent = sim_starter_kit(ceiling, kit);
             CHECK(spent == SIM_KIT_BUDGET, "a starter kit spends the budget");
             CHECK(sim_kit_cost(kit) == spent, "and costs what it spent");

@@ -1038,6 +1038,31 @@ fn room_for_one_more(held: i64) -> Result<(), (u16, &'static str)> {
 /// something other than playing with friends.
 const MAX_FRIENDS: i64 = 100;
 
+/// An account number and the call sign against it, as the page draws a pilot
+/// who is not flying: three of the four lists are exactly this.
+fn named_pilot(r: &tokio_postgres::Row) -> serde_json::Value {
+    serde_json::json!({
+        "account": r.get::<_, i64>(0),
+        "name": r.get::<_, Option<String>>(1).unwrap_or_default(),
+    })
+}
+
+/// One half-made edge, either way round. The two queries differ only in which
+/// end of the edge is this account, so the shape they return does not differ
+/// at all. `blame` is what to say if the read fails.
+async fn one_sided(
+    db: &Client,
+    account: i64,
+    sql: &str,
+    blame: &str,
+) -> Result<Vec<serde_json::Value>, String> {
+    let rows = db
+        .query(sql, &[&account, &MAX_FRIENDS])
+        .await
+        .map_err(|e| format!("{blame}: {e}"))?;
+    Ok(rows.iter().map(named_pilot).collect())
+}
+
 /// The friends page, whole.
 ///
 /// Three lists, defined against each other so the client never has to
@@ -1085,9 +1110,9 @@ async fn friends_page(db: &Client, account: i64) -> Result<serde_json::Value, St
             serde_json::json!({
                 "account": r.get::<_, i64>(0),
                 "name": r.get::<_, Option<String>>(1).unwrap_or_default(),
-                // Absent rather than false when they are not flying, so a
-                // client draws "on" from the presence itself rather than from
-                // a flag that could disagree with it.
+                // Empty rather than a flag beside them. Whether somebody is
+                // flying is whether there is a zone here, so there is no
+                // second field that could disagree with the first.
                 "zone": zone.unwrap_or_default(),
                 "instance": instance.unwrap_or_default(),
             })
@@ -1095,54 +1120,36 @@ async fn friends_page(db: &Client, account: i64) -> Result<serde_json::Value, St
         .collect();
 
     // Who is waiting on you. Their direction exists and yours does not.
-    let inbound = db
-        .query(
-            "select f.account, n.call_sign
-               from friends f
-               left join names n on n.account = f.account
-              where f.friend = $1
-                and not exists (select 1 from friends b
-                                 where b.account = $1 and b.friend = f.account)
-              order by f.made
-              limit $2",
-            &[&account, &MAX_FRIENDS],
-        )
-        .await
-        .map_err(|e| format!("cannot read who is waiting: {e}"))?;
-    let asked: Vec<serde_json::Value> = inbound
-        .iter()
-        .map(|r| {
-            serde_json::json!({
-                "account": r.get::<_, i64>(0),
-                "name": r.get::<_, Option<String>>(1).unwrap_or_default(),
-            })
-        })
-        .collect();
+    let asked = one_sided(
+        db,
+        account,
+        "select f.account, n.call_sign
+           from friends f
+           left join names n on n.account = f.account
+          where f.friend = $1
+            and not exists (select 1 from friends b
+                             where b.account = $1 and b.friend = f.account)
+          order by f.made
+          limit $2",
+        "cannot read who is waiting",
+    )
+    .await?;
 
     // And who you are waiting on, which is the same edge from the other end.
-    let outbound = db
-        .query(
-            "select f.friend, n.call_sign
-               from friends f
-               left join names n on n.account = f.friend
-              where f.account = $1
-                and not exists (select 1 from friends b
-                                 where b.account = f.friend and b.friend = $1)
-              order by f.made
-              limit $2",
-            &[&account, &MAX_FRIENDS],
-        )
-        .await
-        .map_err(|e| format!("cannot read who you are waiting on: {e}"))?;
-    let waiting: Vec<serde_json::Value> = outbound
-        .iter()
-        .map(|r| {
-            serde_json::json!({
-                "account": r.get::<_, i64>(0),
-                "name": r.get::<_, Option<String>>(1).unwrap_or_default(),
-            })
-        })
-        .collect();
+    let waiting = one_sided(
+        db,
+        account,
+        "select f.friend, n.call_sign
+           from friends f
+           left join names n on n.account = f.friend
+          where f.account = $1
+            and not exists (select 1 from friends b
+                             where b.account = f.friend and b.friend = $1)
+          order by f.made
+          limit $2",
+        "cannot read who you are waiting on",
+    )
+    .await?;
 
     // And whoever is in the room with you, which is only answerable while you
     // are in one. This is the whole of how a name reaches this page: there is
@@ -1174,15 +1181,7 @@ async fn friends_page(db: &Client, account: i64) -> Result<serde_json::Value, St
             )
             .await
             .map_err(|e| format!("cannot read the room: {e}"))?;
-        here = rows
-            .iter()
-            .map(|r| {
-                serde_json::json!({
-                    "account": r.get::<_, i64>(0),
-                    "name": r.get::<_, Option<String>>(1).unwrap_or_default(),
-                })
-            })
-            .collect();
+        here = rows.iter().map(named_pilot).collect();
     }
 
     Ok(serde_json::json!({
@@ -1463,9 +1462,9 @@ async fn route(
         }
 
         // The hangar saving a kit. What is stored is what was sent, checked
-        // only for shape: an arena checks it against the hull's row and the
+        // only for shape: an arena checks it against its own ceiling and the
         // account's entitlements before it deals it, and that check has to
-        // happen there anyway because a zone may retune a hull after this was
+        // happen there anyway because a zone may retune after this was
         // written. Storing a kit that will not fit costs nothing and refusing
         // one that would fit some other zone costs a player their loadout.
         "/v1/kit" => {
