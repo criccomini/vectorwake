@@ -105,7 +105,7 @@
       "x": 4200,
       "y": -190,
       "w": 400,
-      "text": "Nothing pauses, so a menu costs you match time while somebody shoots at you. Anything you cannot act on right now is not in here: hangar, shop and standings live at the front end.\n\nIt stays a menu rather than a bare leave button because on a phone this is the only way to reach settings and the controls."
+      "text": "The same surface as the front end, not a different one: full screen, same tab row, differing only in which tabs it carries.\n\nNothing pauses, so the match reads through a scrim and the topbar carries the score and clock where the front end carries your wallet.\n\nTwo axes, still five inputs: left and right along the tabs, down into the page, left and right again to set a row's value."
     }
   ],
   "launch": {

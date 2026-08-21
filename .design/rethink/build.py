@@ -989,10 +989,6 @@ def ship_at(name, x, y, rot, col, trail=True, k=1.0, hurt=False):
 
 
 def match_screen(menu=""):
-    # Nothing pauses. The world keeps running under an open menu and the
-    # interface stays up, because hiding it would be a lie about what is
-    # happening. It only stands down in alpha. ui.lua F.text_dim.
-    dim = ".45" if menu else "1"
     ships = "".join([
         ship_at("Apex", 640, 372, 18, "#4fd6ff", k=1.25),
         ship_at("Facet", 470, 250, 118, "#4fd6ff"),
@@ -1047,7 +1043,6 @@ def match_screen(menu=""):
 
     body = f"""
 <div class="screen">
-  <div style="position:absolute;inset:0;opacity:{dim}">
   <svg width="1280" height="720" style="position:absolute;inset:0">
     {arena_svg()}{bolts}{ships}
   </svg>
@@ -1133,7 +1128,6 @@ def match_screen(menu=""):
   <div style="position:absolute;right:16px;bottom:16px;text-align:right">
     <div class="lbl" style="opacity:.55">2 repels and 1 burst left this match</div>
   </div>
-  </div>
   {menu}
 </div>"""
     return body
@@ -1144,52 +1138,118 @@ def s_match():
 
 
 # =============================================================================
-# 4b. The menu over a live match. Three rows, because anything you cannot act
-#     on right now belongs at the front end and this one costs you the match
-#     time you spend reading it.
+# 4b. The menu over a live match. Same surface as the front end, full screen
+#     with the tab row on top, over a scrim rather than over a blank: the
+#     world has not stopped and the screen should not pretend it has.
 # =============================================================================
-MENU_ROWS = [
-    ("Settings", "sound &#183; music &#183; frames &#183; fullscreen", False),
-    ("Help", "the controls, on a keyboard and under a thumb", False),
-    ("Leave", "", True),
+# Two axes, and exactly the five inputs menu.md commits to. Focus starts on
+# the tab row; left and right move along it; down enters the page; up from the
+# first row comes back; left and right on a focused row move its value;
+# escape closes. A d-pad, a thumb and a keyboard all do this without a second
+# layout.
+MATCH_TABS = ["Settings", "Help", "Leave"]
+
+SETTINGS = [
+    ("Sound", ["off", "quiet", "half", "full"], 2, "", True),
+    ("Music", ["off", "quiet", "half", "full"], 0, "", False),
+    ("Frames", ["60", "120", "screen"], 0, "", False),
+    ("Fullscreen", ["off", "on"], 1, "", False),
+    ("Steering", ["stick", "d-pad"], 0, "touch only", False),
 ]
+
+
+def opt_chips(items, sel, focused):
+    out = []
+    for i, it in enumerate(items):
+        on = i == sel
+        col = "var(--friend)" if on else "var(--dim)"
+        ring = ("box-shadow:inset 0 0 0 1px rgba(79,214,255,.75)" if on
+                else "box-shadow:inset 0 0 0 1px rgba(108,122,144,.28)")
+        out.append(f'<div style="padding:5px 13px;font-family:var(--mono);'
+                   f'font-size:10px;letter-spacing:.1em;text-transform:uppercase;'
+                   f'color:{col};{ring};opacity:{1 if on or focused else .72}">'
+                   f'{it}</div>')
+    return '<div style="display:flex;gap:7px">' + "".join(out) + "</div>"
+
+
+def topbar_match():
+    tabs = []
+    for t in MATCH_TABS:
+        on = t == "Settings"
+        col = "var(--friend)" if on else "var(--dim)"
+        rule = ('<div style="height:1.4px;background:var(--friend);'
+                'margin-top:5px"></div>') if on else ""
+        tabs.append(f'<div style="font-size:15px;color:{col}">{t}{rule}</div>')
+    return f"""
+  <div class="row" style="height:56px;padding:0 56px;gap:34px;
+       background:rgba(5,7,12,.72)">
+    {wordmark(.86)}
+    <div style="display:flex;gap:26px;align-items:flex-start">{''.join(tabs)}</div>
+    <div style="flex:1"></div>
+    <div class="row" style="gap:13px">
+      <div class="t11 num" style="color:var(--friend)">BASTION</div>
+      <div class="num" style="font-size:19px;color:var(--friend)">2</div>
+      <div class="num" style="font-size:19px">1:47</div>
+      <div class="num" style="font-size:19px;color:var(--enemy)">1</div>
+      <div class="t11 num" style="color:var(--enemy)">CAISSON</div>
+    </div>
+  </div>
+  <div class="ticks" style="margin:0 56px"></div>"""
 
 
 def s_menu():
     rows = []
-    for name, note, sel in MENU_ROWS:
+    for name, items, sel, note, focused in SETTINGS:
         cursor = ('<div style="color:var(--friend);font-size:13px;width:15px">'
-                  '&#9654;</div>') if sel else '<div style="width:15px"></div>'
+                  '&#9654;</div>') if focused else '<div style="width:15px"></div>'
         rows.append(f"""
-        <div class="row {'wash' if sel else ''}" style="height:46px;padding:0 18px;
-             gap:13px">
-          {cursor}
-          <div style="font-size:21px;min-width:112px">{name}</div>
-          <div class="lbl" style="opacity:.75">{note}</div>
-        </div>""")
+      <div class="row {'wash' if focused else ''}" style="height:52px;
+           padding:0 20px;gap:14px">
+        {cursor}
+        <div style="font-size:18px;min-width:150px;
+             color:{'var(--ink)' if focused else 'var(--dim)'}">{name}</div>
+        {opt_chips(items, sel, focused)}
+        <div style="flex:1"></div>
+        <div class="lbl" style="opacity:.7">{note}</div>
+      </div>""")
 
     menu = f"""
-  <div style="position:absolute;left:50%;top:168px;transform:translateX(-50%);
-       width:472px">
-    <div class="panel" style="padding:16px 0 12px">
-      <div class="lbl" style="padding:0 18px 10px;letter-spacing:.24em">
-        vectorwake</div>
-      {''.join(rows)}
-      <div class="ticks" style="margin:10px 18px 0"></div>
-      <div style="padding:12px 18px 2px;font-size:13px;color:var(--dim);
-           line-height:1.5;text-wrap:pretty">
-        A bot takes your seat until the match ends. You keep the rivets you
-        have taken and give up the win.
+  <!-- a scrim, not a curtain: the ships and the walls read straight through -->
+  <div style="position:absolute;inset:0;background:rgba(5,7,12,.8)"></div>
+  <div style="position:absolute;inset:0">
+    {topbar_match()}
+    <div style="padding:34px 56px 0">
+      <div class="row" style="gap:14px;margin-bottom:16px">
+        <div style="font-size:23px">Settings</div>
+        <div class="lbl" style="opacity:.6">saved as you set them</div>
       </div>
-    </div>
-    <div class="row" style="gap:20px;padding:14px 18px 0">
-      <div class="row" style="gap:9px">
-        <div class="t11 num dim">ESC</div>
-        <div style="font-size:14px;color:var(--dim)">Back to it</div>
+      <div class="panel" style="padding:12px 0">
+        {''.join(rows)}
       </div>
-      <div class="row" style="gap:9px">
-        <div class="t11 num dim">&#8593; &#8595;</div>
-        <div style="font-size:14px;color:var(--dim)">Move</div>
+
+      <div class="row" style="gap:9px;margin-top:26px">
+        {mark_diamond("var(--dim)", 10)}
+        <div style="font-size:13px;color:var(--dim);text-wrap:pretty;
+             max-width:640px;line-height:1.5">
+          The match is still running behind this and nothing here pauses it.
+          Leaving hands your seat to a bot: you keep the rivets you have taken
+          and give up the win.
+        </div>
+      </div>
+
+      <div class="row" style="gap:24px;margin-top:34px">
+        <div class="row" style="gap:9px">
+          <div class="t11 num dim">&#8592; &#8594;</div>
+          <div style="font-size:14px;color:var(--dim)">Tab, or set a value</div>
+        </div>
+        <div class="row" style="gap:9px">
+          <div class="t11 num dim">&#8593; &#8595;</div>
+          <div style="font-size:14px;color:var(--dim)">Row</div>
+        </div>
+        <div class="row" style="gap:9px">
+          <div class="t11 num dim">ESC</div>
+          <div style="font-size:14px;color:var(--dim)">Back to it</div>
+        </div>
       </div>
     </div>
   </div>"""

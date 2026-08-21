@@ -331,22 +331,49 @@ there are two surfaces now rather than one:
   that are neither a destination nor a game: settings, help, and about or
   leave depending on where you are.
 
-**In a match the stack has three rows: settings, help, leave.** Nothing you
-cannot act on right now belongs in it. This follows from a rule
+**It is one surface, and in a match it carries three tabs: settings, help,
+leave.** Same chrome as the front end, full screen, with the tab row on top;
+what differs is which tabs are on it, not how any of it looks or works. That
+is the point. A player learns one screen and meets it in both places.
+
+Nothing you cannot act on right now is on that row, which follows from a rule
 [menu.md](menu.md) already has and is proud of: nothing pauses, you can be
 shot while reading, and opening a menu is a risk rather than a timeout. In a
-three minute match a menu deep enough to browse a shop in is a menu that
-costs a real fraction of the match.
+three minute match a menu deep enough to browse a shop in costs a real
+fraction of the match.
 
 It stays a menu rather than a bare leave button for one reason that does not
 show up on a desktop. On a phone this is the only route to sound, to
 fullscreen and to the controls reference, and a leave button alone would
 strand a player who needs to mute the game.
 
+**The match shows through it.** A scrim rather than a curtain, and the topbar
+carries the score and the clock where the front end carries your call sign and
+your wallet, so the right-hand slot always answers "how are you doing in the
+thing you are in". Hiding the fight would be a lie about what is happening,
+which is the same reason the interface stays up today.
+
 None of this needs a new mechanism. `menu.home` already builds rows from the
 moment rather than declaring them, which is how the `leave` row appears only
 when there is something to leave. Hangar, shop and standings are the same
 conditional in the other direction.
+
+### It stays navigable from a keyboard, a d-pad and a thumb
+
+A tab row over a page is two axes where the old tree had one, and it would be
+easy to end up with a screen only a mouse can drive. It does not need more
+than [menu.md](menu.md)'s five inputs:
+
+- Focus opens on the tab row. **Left and right** move along it.
+- **Down** enters the page. **Up** from the first row returns to the tabs.
+- On a focused row, **left and right** set that row's value, which is what
+  those keys already mean everywhere else in the game.
+- **Escape** closes, or steps back to the tab row first.
+
+Every screen at the front end is the same shape, so the hangar, the shop and
+the standings inherit this rather than each inventing a focus order. The one
+thing it costs is that a page needs a first row and a last row that are
+obvious, which is a layout constraint worth having anyway.
 
 Two consequences for [menu.md](menu.md). Changing hull is a respawn today and
 becomes a front-end action, because the hull is locked for the match. And the
