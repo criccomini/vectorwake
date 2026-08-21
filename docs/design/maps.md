@@ -260,20 +260,57 @@ make -C sim build/mapdump
 ./sim/build/mapdump arena catalog/zones/somezone/somezone.vwmap
 ```
 
-## Where Alpha's map comes from
+## The match maps
 
-`sim/tools/mapgen.c` draws it, from a seed:
+Two, and the melee zone rotates between them. `sim/tools/mapgen --match`
+draws each from a seed:
 
 ```sh
 make -C sim build/mapgen
-./sim/build/mapgen catalog/zones/alpha/alpha.vwmap 28
+./sim/build/mapgen --match drydock catalog/zones/melee/drydock.vwmap 7
+./sim/build/mapgen --match slipway catalog/zones/melee/slipway.vwmap 11
 ```
 
-Seed 28 is the shipped map, and the seed is the whole of its provenance: the
-same number gives the same map on any machine, so a file in the repository can
-be explained by a command rather than by whoever happened to draw it.
+A match arena is 144 tiles square in the middle of the world, and everything
+outside it is solid, which is the border a pilot actually meets. Both layouts
+are **point symmetric**: the generator draws one half and `sym_put` turns it a
+half turn into the other, so the two sides face identical approach geometry
+rather than handed versions of it, and neither can be drawn out of step with
+its twin.
 
-Which seed ships is a drill result rather than a preference, and this one was
+**Drydock** puts the pockets north and south with three lanes between them:
+broken spines part the lanes, the breaks are five tiles because a hull is
+three wide and a gap it cannot fly is a wall with a picture of a door on it,
+and the middle is a room to fight through rather than a block to go past.
+
+**Slipway** puts them at opposite corners with a lattice down the diagonal, so
+the short way between the homes is the dangerous one and going round is a real
+choice. One long bar with a way through in the middle of it is what makes the
+long way passable at all.
+
+Both are checked before they are written: the arena has to be connected, the
+pockets have to hold their spawns, and cover has to land between four and
+sixteen per cent. `mapgen --selftest` runs that over a set of seeds.
+
+## Where the open arena's map came from
+
+The zone it was drawn for is gone, and the generator that drew it is not. It
+is the family every big map in this repository comes from, and what follows is
+how it works, kept because the next open arena will want it.
+
+`sim/tools/mapgen.c` draws one from a seed:
+
+```sh
+make -C sim build/mapgen
+./sim/build/mapgen out.vwmap 28
+```
+
+Seed 28 drew the map the open arena shipped with, and a seed is the whole of a
+generated map's provenance: the same number gives the same map on any machine,
+so a file in the repository can be explained by a command rather than by
+whoever happened to draw it.
+
+Which seed ships is a drill result rather than a preference, and that one was
 picked the same way seed 23 was before it. Twelve candidates were flown by
 the full roster and the one whose kill rate, accuracy, time to first contact
 and fighting share landed on top of the map it replaced was kept. That
@@ -407,7 +444,7 @@ part of `make -C sim check`, so a change that makes the generator produce
 unplayable maps fails the build rather than the match.
 
 Those checks say a map can be flown, not that it is worth flying. For that
-there is `vectorwake-server drill alpha 180 51`, which flies the live bot
+there is `vectorwake-server drill <zone> 180 51`, which flies the live bot
 count on the real map and reports what they did with the time. It is what
 picked the seed, and it caught the door mistake before the measurement did:
 twenty free-standing fences across open lanes cost a third of the kills,
@@ -448,9 +485,10 @@ one half and knowing the other.
 A zone names one in its own `zone.toml`, relative to the zone's directory:
 
 ```toml
-map = "chaos.vwmap"
+maps = ["drydock.vwmap", "slipway.vwmap"]
 ```
 
+More than one is a rotation, and the room takes the next one at every match.
 Empty runs the built-in arena, so a zone with no map is still a zone. A map
 that will not load is reported and then ignored, because a zone that refuses
 to start over a bad file is worse for the people trying to play in it than

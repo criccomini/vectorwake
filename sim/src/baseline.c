@@ -516,18 +516,17 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
 
     /* The mine: the bomb you leave behind you.
      *
-     * Not a charge, and that is the whole shape of it. A mine in the original
-     * is not a weapon type at all -- the two bytes a shot travels in have five
-     * bits of type with no code for one, and a single `alternate` bit that
-     * turns a bomb into a mine and multifire into a single shot. The
-     * inventory beside it lists bursts, repels, thors, bricks and portals and
-     * no mines, because there is nothing to carry: a pilot has mines for as
-     * long as they have a rack, and what stops them papering the map is how
-     * many of theirs are already lying about.
+     * A charge, in the slot beside repel and burst, so how many you bring is
+     * a loadout decision priced against everything else in the kit. It was
+     * the bomb trigger's other posture for a long time, which is faithful to
+     * the original -- a mine there is not a weapon type at all, the two bytes
+     * a shot travels in have five bits of type with no code for one and a
+     * single `alternate` bit that turns a bomb into a mine, and the inventory
+     * beside it lists bursts, repels, thors, bricks and portals and no mines.
+     * What that arrangement could not do is let a pilot trade for it: the
+     * limit sat on the hull rather than in their hands.
      *
-     * So this is one pattern the bomb trigger fires in its other posture, and
-     * `mine_max` on the hull is the only limit. Every field is one the model
-     * already had. Speed zero and `still` is a round that stays where it was
+     * Every field is one the model already had. Speed zero and `still` is a round that stays where it was
      * let go. Two minutes of life with `expire_ends` is a timer that goes off
      * rather than a round that quietly stops existing. A trigger is the fuse.
      * A blast is what it does when either of those finds somebody. Nothing in

@@ -435,11 +435,16 @@ local function kit_ceiling(class)
     local core = _G.sim
     local hull = core and core.kit_ceilings and core.kit_ceilings(class) or nil
     local own = account.entitlements or {}
+    -- The baseline where the account has said nothing, which is a deployment
+    -- with no meta-layer and a session that has not answered yet. Not "no
+    -- limit": that offered a mine to a pilot who cannot slot one, and the
+    -- arena, which reads the same baseline, refused it.
+    local base = (core and core.base_entitlements and core.base_entitlements())
+        or {}
     local out = {}
     for i = 1, simn("SLOT_COUNT", 23) do
         local h = hull and hull[i] or 0
-        local o = own[i]
-        if o == nil then o = 255 end
+        local o = own[i] or base[i] or 255
         out[i] = math.min(h, o)
     end
     return out
@@ -460,14 +465,16 @@ function M.open_kit(class)
     for i = 1, simn("SLOT_COUNT", 23) do
         kit[i] = tonumber(saved and saved[i]) or 0
     end
-    -- Nothing saved and nothing flying: read what the arena dealt, which is
-    -- the starter kit and is a better place to begin than an empty ship.
+    -- Nothing saved: what the arena would deal, computed by the same core the
+    -- arena deals with, so the hangar and the ship agree before anybody has
+    -- joined anything.
+    --
+    -- An empty kit is the one answer that would be wrong. Nobody flies bare,
+    -- so a hangar that opened on nothing would be showing a ship that does
+    -- not exist and inviting a player to build one from scratch every time.
     local core = _G.sim
-    if M.kit_spent(kit) == 0 and core and core.ship_kit and M.class == class
-        and net.me and net.me < 255 then
-        for i = 1, simn("SLOT_COUNT", 23) do
-            kit[i] = core.ship_kit(net.me, i - 1)
-        end
+    if M.kit_spent(kit) == 0 and core and core.starter_kit then
+        kit = core.starter_kit(kit_ceiling(class))
     end
     M.kit, M.kit_class = kit, class
 end
@@ -498,9 +505,18 @@ local function kit_rows()
     local class = M.kit_class or M.class
     if not M.kit or M.kit_class ~= class then M.open_kit(class) end
     local ceiling = kit_ceiling(class)
-    local rows = {}
     local budget = simn("KIT_BUDGET", 30)
-    local left = budget - M.kit_spent()
+    -- At the head, not the foot. It is the number every row below is
+    -- spending, and a list long enough to scroll would push it off the
+    -- bottom of the one page where it matters most.
+    -- Drawn as one bar rather than as the ladder every other row uses: thirty
+    -- steps at the width a step is drawn runs the length of the row and lands
+    -- on top of the word "budget".
+    local rows = {{
+        label = "budget", verbatim = true, bar = true,
+        detail = M.kit_spent() .. " of " .. budget,
+        choice = function() return M.kit_spent(), budget end,
+    }}
     for _, s in ipairs(kit_slots()) do
         local max = ceiling[s.slot + 1] or 0
         if max > 0 then
@@ -514,20 +530,9 @@ local function kit_rows()
                 -- has to be compared against the number on the row above.
                 choice = function() return held, max end,
                 act = "kit_step", value = s.slot,
-                -- A slot with nothing left to spend on it still moves down,
-                -- so a full kit is a kit you can take apart.
-                note = (held == 0 and left == 0)
-                    and "nothing left to spend" or nil,
             }
         end
     end
-    -- What is left, at the foot, because that is the number every row on this
-    -- page is spending and the one a player is deciding against.
-    rows[#rows + 1] = {
-        label = "budget", verbatim = true,
-        detail = M.kit_spent() .. " of " .. budget,
-        choice = function() return M.kit_spent(), budget end,
-    }
     return rows
 end
 
@@ -545,10 +550,12 @@ local function shop_rows()
             label = item.label or ("slot " .. tostring(item.slot)),
             detail = tostring(item.price or 0) .. " rivets",
             note = item.note,
-            -- Greyed rather than hidden when the wallet is short: a shop that
-            -- shows only what you can afford is a shop that never tells you
-            -- what you are saving for.
-            waiting = not afford,
+            -- Back a shade rather than hidden when the wallet is short: a
+            -- shop that shows only what you can afford is a shop that never
+            -- tells you what you are saving for. `full` is the shade and
+            -- nothing else; the price stays on the row, which is the whole
+            -- point of leaving it there.
+            full = not afford,
             act = afford and "buy" or nil, value = item.slot,
         }
     end
@@ -560,6 +567,12 @@ local function shop_empty()
     if account.base == "" then
         return {head = "no shop here",
                 line = "this deployment keeps no accounts"}
+    end
+    -- Asked and not yet answered. It used to say the shelf was empty, which
+    -- is a sentence about the account: a new pilot owns almost nothing and
+    -- was told they owned everything, because the request was still out.
+    if not account.shelf then
+        return {head = "asking the shop", line = "what is on sale is coming"}
     end
     return {head = "nothing left to buy",
             line = "you own every slot the roster has"}
@@ -584,6 +597,9 @@ end
 
 local function standings_empty()
     if account.week and #account.week > 0 then return nil end
+    if not account.week then
+        return {head = "asking for the table", line = "the week is coming"}
+    end
     return {head = "nobody has played this week yet",
             line = "the table resets on Monday"}
 end
@@ -766,10 +782,10 @@ local NODES = {
                  return HULLS[M.class + 1][1]
              end,
              go = "hangar"},
-            {label = "shop", icon = "about",
+            {label = "shop", icon = "shop",
              detail = function() return (account.rivets or 0) .. " rivets" end,
              go = "shop"},
-            {label = "standings", icon = "pilot", detail = "this week",
+            {label = "standings", icon = "standings", detail = "this week",
              go = "standings"},
             {label = "pilot", icon = "pilot",
              detail = function() return M.name end, go = "pilot"},
@@ -793,7 +809,16 @@ local NODES = {
     -- What thirty points buy on the hull you just picked. One row a slot, the
     -- count as steps, and left and right spend and unspend the way they set
     -- every other value in this menu.
-    kit = {rows = kit_rows},
+    -- The one page in the menu that names itself. Everywhere else the lit
+    -- stop on the tab row is the title, and here it says "hangar" over a page
+    -- that is one hull's thirty points: which hull is the thing a player has
+    -- to know and the only place it was written was the cell they came in
+    -- through.
+    kit = {rows = kit_rows, head = function()
+        local c = M.kit_class or M.class
+        local h = HULLS[c + 1]
+        return h and {label = h[1], role = h[2], hull = c} or nil
+    end},
 
     play = {rows = play_rows, empty = zone_empty},
 
@@ -807,7 +832,10 @@ local NODES = {
     -- The prices are the meta-layer's and are not written down here: a client
     -- that knew them would be a second copy to keep in step, and the reply to
     -- a purchase says what the slot now holds and what is left in the wallet.
-    shop = {rows = shop_rows, empty = shop_empty},
+    shop = {rows = shop_rows, empty = shop_empty, head = function()
+        return {label = (account.rivets or 0) .. " rivets",
+                role = "what a bounty pays in"}
+    end},
 
     -- The week: matches won, kills, and the best run, resetting Monday. The
     -- short ladder beside the rating, which answers "how good am I" on a
@@ -1151,6 +1179,16 @@ local function rows_of(nd)
     return r
 end
 
+-- Which page's rows are on screen. One level in that is the page you are
+-- inside; at the root it is whichever tab the cursor is resting on, because
+-- the stage there is a preview of what that tab holds.
+function M.showing()
+    if #M.stack > 1 then return M.at() end
+    local top = rows_of(NODES.root)
+    local r = top[M.sel.root or 1]
+    return (r and r.go) or "root"
+end
+
 -- One row of a page, flattened for drawing: everything a live value gets
 -- asked for its answer, and everything else copied across.
 --
@@ -1182,7 +1220,7 @@ local function view_row(r, i)
         -- that is not one.
         hull = r.hull, figure = r.figure, role = r.role,
         players = r.players, bots = r.bots, live = r.live,
-        choice = ci, choices = cn,
+        choice = ci, choices = cn, bar = r.bar,
         -- What the controls page needs to draw a chip: which color band the
         -- control is in, which key it is on so the board can be lit from the
         -- same list, whether it is the one waiting for a key, and whether it
@@ -1647,7 +1685,13 @@ function M.tick(dt)
     -- on the edge rather than every frame: a shelf and a week's table are
     -- read while somebody looks at them, and a page nobody is on should cost
     -- the fleet nothing.
-    local at = M.at()
+    --
+    -- "On screen" rather than "entered". At the root the stage previews the
+    -- tab under the cursor, so a player who arrows onto the shop reads the
+    -- whole page without the stack ever naming it. It said the shelf was
+    -- empty, which is a sentence about the account rather than about the
+    -- request that was never sent.
+    local at = M.showing()
     if at ~= was_at then
         if at == "shop" then account.refresh_shop() end
         if at == "standings" then account.refresh_week() end
@@ -1686,6 +1730,9 @@ function M.view()
     local out = {depth = #M.stack, sel = sel,
                  -- What the page has to say when it has nothing to list.
                  empty = nd.empty and nd.empty() or nil,
+                 -- What the page is about, where the tab row does not already
+                 -- say it. A name, a trade and a hull to draw.
+                 head = nd.head and nd.head() or nil,
                  -- The question, if one is up. Everything else in the view is
                  -- still filled in: the panel is drawn and then stood down
                  -- under it, rather than replaced by it.
@@ -1759,6 +1806,7 @@ function M.view()
             out.board = nd2.board or false
             out.chips = nd2.chips or false
             out.empty = nd2.empty and nd2.empty() or nil
+            out.head = nd2.head and nd2.head() or nil
             out.rows = {}
             for i, r in ipairs(rows_of(nd2)) do
                 out.rows[i] = view_row(r, i)
@@ -1841,6 +1889,11 @@ local function activate(by)
         if r.then_go then
             M.open_kit(r.value)
             M.stack[#M.stack + 1] = r.then_go
+            -- On the first slot rather than on the budget, which is the head
+            -- of that page and a readout: a page that opens with the cursor
+            -- on the one row the arrows do nothing to reads as a page the
+            -- arrows do nothing to.
+            M.sel[r.then_go] = math.max(2, M.sel[r.then_go] or 2)
         end
         return "ship"
     elseif r.act == "team" then

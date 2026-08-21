@@ -386,21 +386,9 @@ int ShipLevel(lua_State* L) {
     return 1;
 }
 
-// What this pilot's kit asks for in one slot of the flat kit space, and what
-// the hull they are in will let a kit put there.
-//
-// The two are different questions and the hangar needs both: a pilot moving to
-// a hull with a shorter bomb ladder keeps the kit they own and flies less of
-// it, and a panel that showed only what was dealt could not say why.
-int ShipKit(lua_State* L) {
-    int i = CheckShip(L);
-    int k = (int)luaL_checkinteger(L, 2);
-    lua_pushnumber(L, (k >= 0 && k < SIM_SLOT_COUNT) ? g_cur->ships[i].kit[k] : 0);
-    return 1;
-}
-
-// The ceilings for a hull by class rather than by seat, because the hangar
-// asks about ships nobody is currently flying.
+// The ceilings for a hull by class, rather than by seat: the hangar is a place
+// you stand between matches and every hull it asks about is one nobody is
+// flying.
 int KitCeilings(lua_State* L) {
     int cls = (int)luaL_checkinteger(L, 1);
     if (cls < 0 || cls >= g_cfg.class_count) { lua_pushnil(L); return 1; }
@@ -409,6 +397,49 @@ int KitCeilings(lua_State* L) {
     lua_createtable(L, SIM_SLOT_COUNT, 0);
     for (int k = 0; k < SIM_SLOT_COUNT; k++) {
         lua_pushnumber(L, ceiling[k]);
+        lua_rawseti(L, -2, k + 1);
+    }
+    return 1;
+}
+
+// What an account owns before it has bought anything, over the same space,
+// with 255 for a slot the account never limits.
+//
+// The hangar needs it because a kit is checked against the hull's row and the
+// account's entitlements together, and a client with no meta-layer to ask has
+// to fall back to something. Falling back to "no limit" offered a mine to
+// pilots who cannot slot one, which the arena then refused: a page that offers
+// what the server will not take is worse than one that offers less.
+int BaseEntitlements(lua_State* L) {
+    uint8_t base[SIM_SLOT_COUNT];
+    sim_base_entitlements(base);
+    lua_createtable(L, SIM_SLOT_COUNT, 0);
+    for (int k = 0; k < SIM_SLOT_COUNT; k++) {
+        lua_pushnumber(L, base[k]);
+        lua_rawseti(L, -2, k + 1);
+    }
+    return 1;
+}
+
+// A whole budget spent inside a table of ceilings, which is what a seat with
+// no kit of its own flies. The hangar opens on it, so what a player sees
+// before they have chosen anything is the ship the arena would have dealt
+// them.
+int StarterKit(lua_State* L) {
+    uint8_t ceiling[SIM_SLOT_COUNT], kit[SIM_SLOT_COUNT];
+    luaL_checktype(L, 1, LUA_TTABLE);
+    for (int k = 0; k < SIM_SLOT_COUNT; k++) {
+        lua_rawgeti(L, 1, k + 1);
+        double v = lua_isnumber(L, -1) ? lua_tonumber(L, -1) : 0;
+        lua_pop(L, 1);
+        if (v < 0) v = 0;
+        if (v > 255) v = 255;
+        ceiling[k] = (uint8_t)v;
+    }
+    sim_starter_kit(ceiling, kit);
+    lua_createtable(L, SIM_SLOT_COUNT, 0);
+    for (int k = 0; k < SIM_SLOT_COUNT; k++) {
+        lua_pushnumber(L, kit[k]);
         lua_rawseti(L, -2, k + 1);
     }
     return 1;
@@ -1237,8 +1268,9 @@ const luaL_reg kFunctions[] = {
     {"ship_vel", ShipVel},
     {"ship_repel", ShipRepel},
     {"ship_up", ShipUp},
-    {"ship_kit", ShipKit},
     {"kit_ceilings", KitCeilings},
+    {"base_entitlements", BaseEntitlements},
+    {"starter_kit", StarterKit},
     {"class_count", ClassCount},
     {"ship_level", ShipLevel},
     {"ship_charge", ShipCharge},

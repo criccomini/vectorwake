@@ -1,10 +1,14 @@
 # The match game
 
-> **Proposed, not built.** This is the direction the game is being taken in,
-> written down so it can be argued with before anything is deleted or
-> written. It replaces the six-gripe proposal that used to live at
-> `progression.md`, which was a persistent layer bolted around an untouched
-> Alpha. Alpha does not survive this document.
+> **Built, for Melee.** Everything below through the week is running: three
+> minute matches with an intermission, the kit and the shop that sells slots
+> for it, bounty paid as rivets, two match maps, and the six tabs. Capture and
+> Holdfast are named here and not written; so are friends, parties and livery.
+> Alpha did not survive this document, and greens, gunners and turrets went
+> with it.
+>
+> It replaces the six-gripe proposal that used to live at `progression.md`,
+> which was a persistent layer bolted around an untouched Alpha.
 
 ## What playtesting said
 
@@ -154,8 +158,9 @@ already close to worthless, because a pilot who has just died is worth one.
 
 Small, and symmetric.
 
-Roughly 96 to 128 tiles square. The 1024-tile world was for arenas holding
-sixty-four, and this holds eight.
+144 tiles square, inside the 1024-tile world the core still allocates. The
+big number was for arenas holding sixty-four; a match holds eight, and what is
+outside the arena is solid, which is the border a pilot actually meets.
 
 **Point-symmetric**, rotated a half turn rather than mirrored, so both sides
 face identical approach geometry rather than handed versions of it.
@@ -172,10 +177,14 @@ cost that never eats a quarter of the match. Hulls will differ, and that is
 the roster expressing itself: an Apex arriving first and an Anvil arriving
 last is both ships doing their job.
 
-`sim/tools/mapgen` needs a recipe it does not have: two pockets, point
-symmetry, and a route count it guarantees rather than hopes for. The drill
-harness can measure both flight times headless before anybody flies a
-candidate.
+`sim/tools/mapgen --match` draws them. Two are shipped and the zone rotates
+between them: **drydock**, pockets north and south with three lanes and a
+room in the middle worth fighting through, and **slipway**, pockets at
+opposite corners with a lattice down the diagonal, so the short way is the
+dangerous one. Both are point symmetric by construction, since the generator
+draws one half and `sym_put` turns it, and both are checked for a connected
+arena and a cover density between four and sixteen percent before they are
+written.
 
 ## The kit
 
@@ -304,8 +313,8 @@ Two changes ride along. A mine currently wears its layer's bomb rung, and a
 charge fires one pattern that means the same thing to everybody, so mines
 standardize. And Lattice keeps its role through numbers rather than
 exclusivity: its row slots six where another hull slots two. The carried
-count becomes the limit and `mine_max` goes, along with the Shift+Tab chord
-and its touch cell.
+count is the limit now, and `mine_max` went with the Shift+Tab chord and its
+touch cell.
 
 ## Friends
 
@@ -467,7 +476,7 @@ that came with it.
 in a game of four. `ships.md` asked whether gunners earn their place and said
 a playtest would settle it; this is the playtest settling it. About sixty
 lines of the core, the `ATTACH` message, the player-card verbs, the drop key,
-the drone ring and `gunners.md`.
+the drone ring and `gunners.md`, all now deleted.
 
 **The open arena.** Alpha, its sixty-four seats, its ten teams, its
 `max_rooms` ladder and its fill target.
@@ -495,22 +504,26 @@ rather than discovered later.
 
 ## Order of work
 
-Each step leaves a running game.
+Each step leaves a running game. The first five are done, for Melee.
 
-1. **The match**, on the existing map: teams of four, a clock, an ending, a
-   re-deal, an intermission. Done when a pilot can play five matches back to
-   back without touching a menu. The number this exists to move is the median
-   first-session career, three games today.
-2. **The kit**, and greens out. Done when spawn deals a chosen thirty, the
-   prize system is gone, and the drill's matched-kit ladder still separates
-   the bot skill dial.
-3. **Bounty and rivets.** One counter, one wallet, prices in tens. Done when
-   two instances of one zone agree on a wallet.
-4. **Maps.** Two pockets, point symmetry, measured flight times.
-5. **Charges.** Mines as one, match-scoped counts, the shop's other kinds.
-6. **Friends**, and parties into a match.
+1. **The match**: teams of four, a clock, an ending, a re-deal, an
+   intermission. A room plays match after match and rebalances the sides
+   during the podium, so five matches back to back cost nobody a keystroke.
+   The number this exists to move is the median first-session career, three
+   games when this was written.
+2. **The kit**, and greens out. A spawn is dealt the thirty its pilot chose,
+   or the starter kit the core works out for the hull when they have chosen
+   nothing. The prize table, the pickup and the death drop are gone.
+3. **Bounty and rivets.** One counter, one wallet, prices in tens. Rivets are
+   banked from the kill rows the pilot log already carries, and the unique
+   index on those rows is what makes an at-least-once delivery pay once.
+4. **Maps.** Two pockets, point symmetry, two layouts, and the zone rotates
+   between them.
+5. **Charges.** Mines as one, match-scoped counts, and the shop selling the
+   kinds beyond repel and burst.
+6. **Friends**, and parties into a match. Not built.
 
-Turrets can go at any point; they block nothing and nothing blocks them.
+Turrets and gunners are gone, along with the open arena and mode rotation.
 
 ## Open questions
 
@@ -525,12 +538,12 @@ honest and keeps every match matched.
 How a party of three is seated against a fair opposing side, which is the
 matchmaking question friends brings with it.
 
-Whether three modes is two too many at this population. Modes divide a small
-crowd the way rooms do, and the sort cannot help somebody who picked
-differently: four people online across three modes is four people alone. The
-honest options are to launch with Melee only and light the others as the crowd
-justifies them, or to accept that the human counts on the mode list are what
-herd people together. Leaning toward the first.
+Whether three modes is two too many at this population. Settled by building
+one: Melee ships alone, and Capture and Holdfast light when the crowd
+justifies them. Modes divide a small crowd the way rooms do, and the sort
+cannot help somebody who picked differently, so four people online across
+three modes is four people alone. Adding a mode is a row in the catalog, and
+that is the point of leaving it until there are people to divide.
 
 What Capture and Holdfast actually are. Both are named and neither is
 designed. Three modes is the launch set on purpose: a turf mode was cut

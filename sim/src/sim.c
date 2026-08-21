@@ -1365,8 +1365,7 @@ int sim_set_ship_team(sim_state *s, const sim_settings *cfg, uint8_t i,
     if (!sh->alive) return -1;
     if (sh->energy < sim_eff_max_energy(&cfg->classes[sh->cls], sh)) return -1;
 
-    /* What you were carrying belongs to the side you are leaving. Gunners
-     * too. */
+    /* What you were carrying belongs to the side you are leaving. */
     drop_flags(s, cfg, i, 0);
     sh->team = team;
     /* A run does not cross sides with you. Two pilots trading sides to feed

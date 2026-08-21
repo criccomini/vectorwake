@@ -39,9 +39,11 @@ M.kits = {}
 -- with a step on it, `{slot, label, price, note}`. Asked for when the shop is
 -- opened rather than carried by every session, because it is a page nobody is
 -- looking at most of the time.
-M.shelf = {}
+-- Nothing yet, which is not the same as nothing left to buy: the shelf is
+-- the meta-layer's answer and a page that has not had one has to say so.
+M.shelf = nil
 -- The week's table, as the meta-layer publishes it. Asked for the same way.
-M.week = {}
+M.week = nil
 -- Whether the meta-layer has ever answered. It separates "waiting" from
 -- "there is nothing there", which are the same empty token and very different
 -- sentences to show somebody.
@@ -367,7 +369,7 @@ function M.logout()
     M.rivets = 0
     M.entitlements = {}
     M.kits = {}
-    M.shelf = {}
+    M.shelf = nil
     save()
     if M.base ~= "" then make_guest() end
 end

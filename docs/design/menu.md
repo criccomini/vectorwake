@@ -1,17 +1,16 @@
 # Landing, and the menu
 
-> **A split is proposed.** [match-game.md](match-game.md) moves the
-> hangar, the shop and the standings out of this tree and into screens
-> of their own, and adds pilot and settings beside them, so the front end
-> is six tabs. Help folds into settings with the bindings. What is left
-> is one full-screen surface with a tab row,
-> met in both places and differing only in which tabs it carries: in a
-> match, settings and leave, because nothing pauses and anything
-> you cannot act on now costs match time to read. It stays driveable on
-> the five inputs below, with left and right moving along the tabs and
-> up and down moving through the page. The games list stops being a
-> node, and changing hull becomes a front-end action because the hull is
-> locked for a match.
+> **The split happened.** [match-game.md](match-game.md) moved the hangar,
+> the shop and the standings out of this tree and into pages of their own,
+> with pilot and settings beside them, so the front end is six tabs and help
+> folds into settings with the bindings. It is one full-screen surface met in
+> both places, differing only in which tabs it carries: in a match, settings
+> and leave, because nothing pauses and anything you cannot act on now costs
+> match time to read. It is still driven by the five inputs below, with left
+> and right moving along the tab row and up and down moving through the page.
+> The sections about a single column and about changing hull mid-fight are
+> kept for the reasoning; where they describe a tree, the tab row is what
+> exists.
 
 The page opens on a menu over a starfield. It asks three things, none of them
 required: which hull you want, whether the call sign you were dealt suits you,
@@ -31,28 +30,34 @@ root only once there is something to leave.
 Closing a menu with nothing behind it would leave a player on an empty
 starfield with no way back, which is a button that breaks the game.
 
-## One list, a stack behind it
+## A tab row, and a page under it
 
-A single column at a time. A title, the rows, a line at the bottom. Down and up
-move, enter or right descends or acts, escape or left goes back, and escape at
-the root closes.
+Six tabs at the front end and two in a match, with one page under whichever is
+lit. Left and right walk the row, down enters the page, up from its first row
+comes back to the row, and left and right on a row set that row's value.
 
 ```
 vectorwake
-├ play        the games a directory is running, and how busy each one is
-├ ship        seven hulls, silhouette and a line of what it is for
-├ pilot       your call sign, and a reroll
-├ settings    sound · music · frames · fullscreen
-├ help        the controls, on a keyboard and under a thumb
-├ about       what this is, and the build
-└ leave       back to the menu (only while you are in a game)
+├ play        the modes a directory is running, and how busy each one is
+├ hangar      seven hulls, and the thirty points a chosen one spends
+├ shop        what rivets buy: slots, never strength
+├ standings   the week, resetting Monday
+├ pilot       your call sign, your account, your career
+└ settings    sound · music · frames · fullscreen · bindings · about
+
+in a match
+├ settings    the same page, because sound and fullscreen are needed there
+└ leave       back to the front end
 ```
 
 Five inputs, which is exactly what a d-pad has, what a phone can draw as four
-arrows and a button, and what a keyboard already sends. The same tree works on
-all three without a second layout, which is the whole reason for a stack of
-lists rather than a screen: a two-pane menu reads better on a desktop and falls
-apart at 390 points wide, and the console work later would have to undo it.
+arrows and a button, and what a keyboard already sends. It is two axes rather
+than the stack's one, and it costs nothing on any of the three: the row is
+horizontal, the page is vertical, and nothing needs a pointer. A page still
+descends where it has somewhere to go, which is how a hull leads to its kit.
+
+The tab row sits on top on a desktop and on the bottom edge of a phone, where
+a thumb reaches it. That is the only thing about the layout that varies.
 
 Adding a level costs a table in `client/arena/menu.lua` and nothing in the
 drawing code. `menu.view()` hands the interface a title, rows, and which one is
@@ -62,10 +67,10 @@ built from the moment rather than declared.
 
 Closing forgets where you were. The first version kept the stack, and escape,
 down, enter, which had meant a play row a moment earlier, silently changed hull
-instead, because reopening had landed back in the ship list. A menu always
-opens at the top.
+instead, because reopening had landed back in the ship list. The menu always
+opens on the tab row.
 
-## The games list
+## The play tab
 
 `client/arena/directory.lua` asks a directory what is running. Opening the list
 asks at once, and it re-asks every three seconds for as long as the list is the
@@ -79,7 +84,7 @@ start with a fresh ask: without that, coming back to the list after a match
 would show the fleet as it stood before the match began, and the interval would
 have to elapse before that corrected itself.
 
-A row is a game, not a machine. The reply lists the instances running each zone
+A row is a mode, not a machine. The reply lists the instances running each zone
 underneath it, already ordered so the head is the fullest one that still has
 room, and joining takes that head. The address is never shown. The zone's name
 travels with the join, so arriving at an instance that has since changed game is
@@ -116,44 +121,38 @@ The interface stays up underneath, scoreboard and radar and feed and your own
 status, because hiding it would be a lie about what is happening. Only the two
 big centered lines step aside, since they sit exactly where the menu does.
 
-## Changing hull is a respawn
+## Changing hull is a front-end act
 
-`sim_set_ship_class` puts a pilot in a different hull in place: back to your
-start, at rest, a full bar of the new ship, upgrades gone, anything you were
-carrying dropped on the map. Everyone else keeps flying and the score stands.
+The hull is locked for a match, so the hangar is a place you stand between
+them: pick a hull, spend its thirty points, and arrive in that ship at the
+next spawn. What the hangar saves is a kit per hull, which is why the two
+questions are one page and not two.
 
-Before this, choosing a ship rebuilt the arena, which is why it could only
-happen before a match began. A menu that throws the match away to answer a
-question about yourself is not a menu you can open while playing, and in a zone
-it is not even possible, because the world belongs to the server.
+`sim_set_ship_class` still puts a pilot in a different hull in place, and the
+zone protocol still carries the change, because that is how a seat is dealt
+its hull when a match starts and how a watcher takes one. What went is the
+row that offered it mid-fight.
 
-The cost is the same cost dying has. Swapping hull mid-fight to counter somebody
-should not be free, and losing your greens is what makes it a decision.
+The reasoning for the old rule is worth keeping, because it is why the hull
+is locked at all. Changing hull in place cost exactly what dying cost: back
+to your start, at rest, a full bar of the new ship, everything you had built
+up gone. That priced a mid-fight swap honestly while a ship accumulated
+things during a life. A kit is owned rather than accumulated, so the same
+swap would now cost nothing at all, and a pilot could answer every matchup by
+dying into a counter.
 
-On the home screen the same row is just the hull you will arrive in, saved
-beside your call sign and sent with the join.
-
-### In a zone, and only from a full bar
+### The core still guards it
 
 The zone protocol carries a hull change (`C2S_SHIP`), the server applies it
 through the same core function, and the next snapshot brings back a different
 ship. Nothing is predicted: a hull that flickered back would be worse than one
 that arrives a frame late.
 
-You keep your team and your seat. You lose your upgrades, your position and
-anything you were carrying, exactly as dying takes them. Your kills and deaths
-stand, because those are the match's record rather than yours to spend.
-
-**Only at full energy, and only alive.** A fresh hull is a fresh bar, so ungated
-this is a way out of a fight you are losing: take a beating, switch, come back
-whole. Full energy means you are not in one, or you have flown clear long enough
-to recover, which is the same thing. Dead is refused too, because the change
-sets `alive`, and allowing it would hand an early respawn to anybody who opened
-the menu on the way down.
-
-The rule lives in the core, so the client and the server enforce one copy of it.
-The client checks first only so a refusal comes with a reason rather than
-silence.
+**Only at full energy, and only alive**, which the core enforces so the client
+and the server hold one copy of the rule. That gate was written against
+mid-fight swapping and outlives it: it is also what makes a seat dealt its
+hull at a spawn well defined, since a spawn is exactly a live ship at a full
+bar.
 
 ## Loading
 

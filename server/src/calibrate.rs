@@ -9,7 +9,7 @@
 //! rating math. Nothing here models an outcome, because a model of a fight is
 //! exactly the thing that would drift away from the fight.
 
-use crate::{ai, config, ingest_damage, nav, rating, sim};
+use crate::{ai, config, nav, rating, sim};
 
 /// A match ends at this many kills, or this many ticks if the two are too
 /// evenly matched to settle it. 100 ticks is a second.

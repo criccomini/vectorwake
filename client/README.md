@@ -66,7 +66,7 @@ in `sim/`.
 | `tests/overview_test.lua` | The map view's rectangles, against the maps the fleet serves |
 | `tests/impact_test.lua` | Muzzles, impact marks and hurt hulls, measured in lit pixels |
 | `tools/shot.sh` | Runs the client on a virtual display and photographs it |
-| `arena/world.lua` | Ships, weapons, flags, prizes, terrain, in triangles |
+| `arena/world.lua` | Ships, weapons, flags, terrain, in triangles |
 | `arena/ui.lua` | The HUD and the menu, laid out like the web prototype |
 | `arena/fx.lua` | Blasts, sparks, shake. Triggered by events, decides nothing |
 | `arena/sfx.lua` | Sound, with distance, pan and a per-frame budget |
@@ -269,7 +269,7 @@ times and points at the wrong thing.
 
 | phase | before | after |
 |---|---|---|
-| ships, weapons, prizes, effects | 2.20 ms | 0.39 ms |
+| ships, weapons, effects | 2.20 ms | 0.39 ms |
 | interface and radar | 2.06 ms | 0.43 ms |
 | starfield | 1.92 ms | 0.26 ms |
 | doors and wormholes | 1.63 ms | 0.09 ms |
@@ -344,11 +344,11 @@ around you and answers what is near; the map is all 1024 and answers where you
 are going, which on a map this size is a question nothing else on screen could
 answer. `M` swaps them, and so does clicking either one.
 
-The map draws terrain and nothing else: no ships, no prizes, no flags, nothing
-in flight. A view of the whole arena with every pilot on it is a wall hack with
-a keyboard shortcut, and contacts are what the radar is for. Its panel is
-opaque for the same reason, since at the radar's own 0.55 wash a prize lying
-under the dial comes through it and reads as part of the map.
+The map draws terrain and nothing else: no ships, no flags, nothing in flight.
+A view of the whole arena with every pilot on it is a wall hack with a keyboard
+shortcut, and contacts are what the radar is for. Its panel is opaque for the
+same reason, since at the radar's own 0.55 wash whatever lies under the dial
+comes through it and reads as part of the map.
 
 Reading all thousand tiles from Lua would be a call per tile, so `sim.map_coarse`
 in the extension does the pass in C and hands back one byte per four tiles,
@@ -382,11 +382,11 @@ on the charge color exactly. `tests/rung_test.lua` measures all of that.
 What it gives up is that a round no longer says whose it is. Ships, names and
 plates still carry the team, and in a free-for-all every round was worth
 dodging anyway. The price of borrowing a scale everybody already knows is that
-rung 1 sits nearer the prize green and rung 2 nearer the charge gold than a
-ramp of unused hues would.
+rung 1 sits nearer a plain signal green and rung 2 nearer the charge gold than
+a ramp of unused hues would.
 
 One weapon sits off the ramp, and for a while two did. The burst is a charge:
-you found it whole, it carries none of your add-ons and it climbs nothing, so
+it comes out of your kit whole, it carries none of your add-ons and it climbs nothing, so
 its two dozen bolts have no rung to be drawn in and wear a violet of their own.
 Shrapnel was in that band with it and does not belong there. A fragment is a
 bullet of the thrower's gun rung, damage and bouncing both, decided at the
@@ -401,8 +401,8 @@ There is one mark per trigger and nothing else on the row. An add-on is drawn
 onto the mark rather than set out beside it, which is the correction to the
 first version of this: it gave every add-on a symbol of its own and lined them
 up in a column, and six shapes beside a seventh read as seven things the ship
-is carrying, when what a player holds is one gun and one bomb that greens have
-been changing all match. So a bolt with bouncing on it is a bolt with a ball on
+is carrying, when what a player holds is one gun and one bomb that their kit
+decided before the match. So a bolt with bouncing on it is a bolt with a ball on
 each end of it, and a bomb with proximity is a bomb standing on the area its
 fuse reaches.
 

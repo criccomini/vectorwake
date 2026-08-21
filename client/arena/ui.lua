@@ -3824,9 +3824,35 @@ local function mark_ship(cx, cy, r, col, cls)
     thumb(cx, cy, cls or 0, col, r / 17)
 end
 
+-- The shop, as the thing it charges in. A rivet is a disc with a shank, seen
+-- from just off square on, and drawn small it is a ring with a bar under it.
+--
+-- Not a cart, and not a bag of coins. Nothing in this game is bought with
+-- money and nothing is carried out of a shop: what changes hands is which
+-- slots a pilot may fill, and rivets are what pays for it.
+local function mark_shop(cx, cy, r, col)
+    F.layer:ring(cx, ry(cy - r * 0.22), r * 0.62, RAIL_PEN * F.scale, 20, col)
+    F.layer:seg(cx - r * 0.34, ry(cy + r * 0.62), cx + r * 0.34,
+                ry(cy + r * 0.62), RAIL_PEN * F.scale, pal.a(col, 0.75), true)
+end
+
+-- The week's table, as three columns of different heights. The tallest is not
+-- in the middle: a symmetric podium reads as a logo, and three bars that step
+-- read as a ranking.
+local function mark_standings(cx, cy, r, col)
+    local w = r * 0.42
+    for i, k in ipairs({0.5, 1.0, 0.72}) do
+        local h = r * 1.5 * k
+        local x = cx + (i - 2) * (w + r * 0.22) - w / 2
+        rect(x, cy + r * 0.85 - h, w, h,
+             pal.a(col, i == 2 and 1 or 0.6))
+    end
+end
+
 local MARKS = {zones = mark_zones, pilot = mark_pilot, team = mark_team,
                settings = mark_settings, controls = mark_controls,
-               about = mark_about, discord = mark_discord, leave = mark_leave}
+               about = mark_about, discord = mark_discord, leave = mark_leave,
+               shop = mark_shop, standings = mark_standings}
 
 local function draw_mark(kind, cx, cy, r, col, cls)
     if kind == "ship" then return mark_ship(cx, cy, r, col, cls) end
@@ -3927,18 +3953,23 @@ local function stage_row(x, y, w, h, r, hot)
     -- choosing between three of them is reading three sentences, and one at a
     -- time at the foot of the panel, a screen away from the name it belongs
     -- to, is not reading them.
-    local ly = r.note and (y + h * 0.36) or (y + h / 2)
+    -- A sentence of its own needs two lines of room. A list long enough to
+    -- squeeze its rows has neither, and drew the note over the label rather
+    -- than dropping it: the shop's descriptions landed on top of the names
+    -- they described.
+    local note = (h >= 44 * F.scale) and r.note or nil
+    local ly = note and (y + h * 0.36) or (y + h / 2)
     -- Drawn here unless the detail turns out not to fit beside it, in which
     -- case the pair is laid out as two lines below and this one is skipped.
     local two_line = r.detail and r.detail ~= "" and not r.players
-        and not r.choice and not r.note
+        and not r.choice and not note
         and text_w(r.detail, 12 * F.scale) > w - 32 * F.scale - (tx - x) - 12 * F.scale
     if not two_line then
         txt(r.label or "", tx, ly, size,
             pal.a(col, sel and 1 or 0.82), nil, MENU_FONT, r.named)
     end
-    if r.note then
-        txt(r.note, tx, y + h * 0.68, 11.5 * F.scale,
+    if note then
+        txt(note, tx, y + h * 0.68, 11.5 * F.scale,
             pal.a(pal.DIM, (hot and 1 or 0.75) * (r.waiting and 0.7 or 1)))
     end
     -- The right hand side is data, so it stays in the face the numbers in
@@ -3966,14 +3997,32 @@ local function stage_row(x, y, w, h, r, hot)
         local gap = 5 * F.scale
         local x1 = x + w - 16 * F.scale
         local x0 = x1 - (n * sw2 + (n - 1) * gap)
-        for i = 1, n do
-            local px = x0 + (i - 1) * (sw2 + gap)
-            if i <= r.choice then
-                rect(px, y + h / 2 - 5 * F.scale, sw2, 10 * F.scale,
-                     pal.a(pal.FRIEND, sel and 1 or 0.8))
-            else
-                F.layer:frame(px, ry(y + h / 2 - 5 * F.scale, 10 * F.scale), sw2, 10 * F.scale,
-                        1.0 * F.scale, pal.a(pal.DIM, 0.45))
+        if r.bar then
+            -- A range too long to count is a bar instead: thirty pips is not
+            -- a position anybody reads off, it is a wall, and it is wider
+            -- than the row it would have to sit in. The kit's budget is the
+            -- one of these, and how full it is says everything the page
+            -- needs.
+            local bw = 180 * F.scale
+            local bh = 10 * F.scale
+            local by = y + h / 2 - bh / 2
+            x0 = x1 - bw
+            local part = math.max(0, math.min(1, r.choice / math.max(1, n)))
+            if part > 0 then
+                rect(x0, by, bw * part, bh, pal.a(pal.FRIEND, sel and 1 or 0.8))
+            end
+            F.layer:frame(x0, ry(by, bh), bw, bh, 1.0 * F.scale,
+                          pal.a(pal.DIM, 0.45))
+        else
+            for i = 1, n do
+                local px = x0 + (i - 1) * (sw2 + gap)
+                if i <= r.choice then
+                    rect(px, y + h / 2 - 5 * F.scale, sw2, 10 * F.scale,
+                         pal.a(pal.FRIEND, sel and 1 or 0.8))
+                else
+                    F.layer:frame(px, ry(y + h / 2 - 5 * F.scale, 10 * F.scale), sw2, 10 * F.scale,
+                            1.0 * F.scale, pal.a(pal.DIM, 0.45))
+                end
             end
         end
         if r.detail and r.detail ~= "" then
@@ -4792,6 +4841,27 @@ function M.menu(v)
     -- not there is one to draw, so a list does not shift sideways the moment
     -- it outgrows the page. It puts a row's count directly under the x.
     local lw = avail - 14 * F.scale
+    -- And a cap on a list, which came back when the tabs moved to the top.
+    -- The cap was dropped while the block was a rail plus a stage and the
+    -- widest a row could be was about 740 points; the stage is the whole
+    -- block now, and a row running the width of a desktop window puts a name
+    -- at one edge and its value at the other, which is two columns nobody
+    -- reads as one line.
+    --
+    -- Lists only. The hull grid and the keyboard are drawings, and they take
+    -- everything there is.
+    local listy = not (v.board and not M.touching)
+        and not (v.rows and v.rows[1] and v.rows[1].hull)
+    if listy then
+        local want = math.min(lw, 560 * F.scale)
+        -- Centred in the block rather than left against its edge. A capped
+        -- list hard left under a tab row that runs the whole width reads as a
+        -- page that failed to fill, and the block's own middle is where the
+        -- eye already is.
+        sx = sx + (lw - want) / 2
+        tx = sx + GUTTER * F.scale
+        lw = want
+    end
     -- No title over the stage. The rail is lit at the stop you are inside and
     -- says its name there, so a heading repeating it is the same answer
     -- written twice, in the one place a list of games could have used the
@@ -4818,8 +4888,45 @@ function M.menu(v)
         close_mark(sx + sw - 8 * F.scale, logo_y, pal.a(pal.DIM, 0.9), 11 * F.scale)
         hit(sx + sw - 30 * F.scale, logo_y - 12 * F.scale, 40 * F.scale, 24 * F.scale, "close")
     end
-    local top = sy + STAGE_TOP * F.scale
+    -- A page with a heading starts its heading where a page without one
+    -- starts its first row, near enough: the air over the list is what the
+    -- heading is standing in. Taking the full band and then the heading on
+    -- top of it cost the kit page its last row.
+    local top = sy + (v.head and 10 or STAGE_TOP) * F.scale
     local room = sh - (top - sy) - 26 * F.scale
+    -- A heading, on the one page that has one. The lit stop on the tab row is
+    -- the title everywhere else, and it stops being one as soon as a page is
+    -- about a thing you chose on the page before: over the kit it says
+    -- "hangar", which is the room rather than the ship on the bench.
+    --
+    -- The hull is drawn beside its name for the same reason it is drawn in the
+    -- grid you picked it from: eight names is a list to read and eight
+    -- outlines is a shape to recognise, and the page you land on should be
+    -- wearing the one you just pressed.
+    if v.head then
+        -- One line of it. Stacked, the name and the trade cost a row off the
+        -- list below, and a kit page that has to scroll to reach the last
+        -- charge is a page that cannot be read in one look.
+        local hh = 40 * F.scale
+        local name = v.head.label or ""
+        local size = 18 * F.scale
+        local base = top + hh * 0.56
+        -- A hull where the page is about one, and nothing where it is not:
+        -- the shop's heading is a wallet and has no ship in it.
+        local nx = tx + 4 * F.scale
+        if v.head.hull then
+            thumb(tx + 16 * F.scale, base - 5 * F.scale, v.head.hull,
+                  pal.a(pal.FRIEND, 0.95), hh / 78)
+            nx = tx + 40 * F.scale
+        end
+        txt(name, nx, base, size, pal.a(pal.INK, 0.95), nil, MENU_FONT)
+        if v.head.role then
+            txt(v.head.role, nx + text_w(name, size) + 10 * F.scale, base,
+                10.5 * F.scale, pal.a(pal.DIM, 0.9))
+        end
+        top = top + hh
+        room = room - hh
+    end
     -- A list is capped: a row whose name sits at one edge and whose count
     -- sits at the other, a screen apart, is two columns nobody reads as one
     -- line. The board and the hull grid are drawings and take everything.

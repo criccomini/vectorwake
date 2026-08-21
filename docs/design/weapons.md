@@ -1,9 +1,10 @@
 # Weapons
 
-> **Two parts of this are under proposal.** [match-game.md](match-game.md)
-> would remove greens entirely, keeping the upgrade space below as the
-> coordinate system a chosen kit is built in, and would make a mine an
-> ordinary charge rather than the bomb trigger's other posture.
+> **Two parts of this changed.** [match-game.md](match-game.md) removed greens
+> entirely, keeping the upgrade space below as the coordinate system a chosen
+> kit is built in, and made a mine an ordinary charge rather than the bomb
+> trigger's other posture. What the pickup, its weights and rust were is in
+> `docs/research/` with the rest of the original's tables.
 
 Everything that leaves a ship is the same thing.
 
@@ -136,8 +137,8 @@ has `BombBounceCount` per ship, 1 on the Lancaster and 0 on everyone else,
 with `BBombDamagePercent` beside it, and no bullet equivalent of either.
 On the wire it is not a budget at all but a weapon *type*, 1 for a bullet
 against 2 for a bouncing one. So a bullet takes `bounces: 255`, which its
-5.5 seconds of life cannot spend, and one green turns it from a round that
-stops at the first wall into one that fills a corridor. A fragment is a
+5.5 seconds of life cannot spend, and one point of bounce turns it from a
+round that stops at the first wall into one that fills a corridor. A fragment is a
 bullet and takes the same number.
 
 `mod_step` could not express that. A step is one number for every weapon that
@@ -148,28 +149,24 @@ and a blast. It sits where you left it and goes off when its fuse finds
 somebody or its timer runs out, whichever comes first. Nothing in the update
 loop knows a mine from a bomb.
 
-**It is not a charge.** It is the bomb trigger in its other posture: shift and
-the bomb key, which is the original's own chord, or the mine cell on glass.
-There is no inventory and no green, because a pilot has mines for as long as
-they have a rack. That is the original's arrangement rather than a
-simplification of it -- a mine there is not a weapon type at all, the two
-bytes a shot travels in have five bits of type with no code for one and a
-single `alternate` bit that turns a bomb into a mine, and the special
-inventory beside it lists bursts, repels, thors, bricks and portals and no
-mines.
+**It is a charge.** A count you carry out of your kit and spend, in the slot
+beside repel and burst, which is what makes "how many mines do I bring" a
+loadout decision priced against everything else in the thirty.
 
-What limits it is **`mine_max`**, how many of yours may be lying about at once.
-It is per hull and a zone sets it, which makes it the whole of the balance
-knob: zero is a hull that never mines, and a big number is a hull that papers
-a lane. Five apiece, which is MaxMines in the original's own vanilla settings
-and is five on all eight of its ships. Twenty is the highest that setting may
-be *set* to and is nobody's value. That count is walked out of the
-weapon table rather than kept on the ship, so every way a mine can leave the
-world gives the slot back -- a wall, its own timer, a repel turning it into a
-bomb -- and no counter can drift from it. Dying does not clear your minefield,
-so a pilot who spent their allowance and died comes back unable to lay until
-the old ones age out, which is the right way round: they are still out there
-and still yours.
+It was the bomb trigger's other posture for a long time, on the original's own
+chord: shift and the bomb key, no inventory, mines for as long as you had a
+rack, limited by a `mine_max` per hull. That is faithful, and it was the wrong
+half of the original to keep once a pilot chose their ship. The limit lived on
+the hull rather than in the pilot's hands, so the one weapon in the game that
+denies ground could not be traded for anything.
+
+What went with it: the chord, its touch cell, and `mine_max`. Lattice keeps
+its role through numbers rather than exclusivity, since its row slots six
+where another hull slots two.
+
+The count is the ordinary charge count, spent at the lay and not refilled
+until the next match. Dying does not clear your minefield, so what is already
+posted stays posted and stays yours.
 
 Two minutes of `life`, and a zone moves it the way it moves any weapon's:
 `[[arena.weapons]] name = "mine"`, `life = 12000`. That clock is the whole
@@ -201,8 +198,9 @@ shrapnel and watched their mines go off as bare blasts was being told the two
 are different weapons, and they are not.
 
 Two exceptions, in opposite directions. **Multifire is stripped**, because it
-multiplies a *pattern* rather than transforming a round: three mines out of one
-charge is not a stronger mine, it is a different inventory. And **proximity
+multiplies a *pattern* rather than transforming a round: three mines out of
+one charge is not a stronger mine, it is a different inventory, and the
+inventory is exactly what the kit already decided. And **proximity
 takes the larger of the two rather than the sum**, because a mine already
 senses. Adding is right for a bomb, which is a contact round with nothing to
 add to; on a mine it stacked to two tiles further than a proximity bomb of the
@@ -233,8 +231,8 @@ of its own.
 **Shrapnel.** A bomb whose `splinter` is a burst of short-lived fragments, and
 the fragments are *bullets*. That is the original's rule and it is where the
 add-on stops being a bomb thing: a fragment is a round of your **gun's** rung,
-bouncing if your bullets bounce, so a bomber who finds gun prizes throws a
-harder burst without touching their bombs. Both are read at the throw and
+bouncing if your bullets bounce, so a bomber who spent points on their gun
+throws a harder burst without touching their bombs. Both are read at the throw and
 carried by the bomb, so upgrading mid-flight does not improve the burst on its
 way, and a pilot who dies still throws what they had earned.
 
@@ -264,7 +262,7 @@ bar still has to count as a hit, which is what made the first attempt land
 silently.
 
 **Levels.** Not a field. A level is another spec with a bigger `damage`, and a
-prize that swaps which pattern the trigger points at. See the tech tree below.
+rung in the kit that swaps which pattern the trigger points at. See the tech tree below.
 
 ## Writing one
 
@@ -345,9 +343,10 @@ tree needed.
 | add-on | how much of that add-on | the hull's row |
 | charge | how many you are carrying | the hull's row |
 
-One shape, four meanings. A green is one byte naming a place in that space --
-five stats, then a level per trigger, then an add-on per trigger per kind --
-which is also the space a zone weights and the client colors from.
+One shape, four meanings. A kit slot is one byte naming a place in that space:
+five stats, then a level per trigger, then an add-on per trigger per kind, then
+a charge apiece. Every slot in it costs the same one point, which is what makes
+a budget of thirty a sentence a player can reason about.
 
 ### Add-ons are per trigger
 
@@ -428,7 +427,7 @@ The Terrier and Facet both use the baseline's 25-tick gun delay.
 
 A projectile carries the add-ons of the trigger that fired it -- two bytes, on
 the weapon and in the snapshot. It cannot read them off its owner, because the
-owner may pick up a green, change hull or die while it is in the air. A bomb
+owner may change hull or die while it is in the air. A bomb
 thrown while you had shrapnel still breaks up after you are dead, which is the
 right rule and also the only one a client can predict.
 
@@ -473,8 +472,8 @@ The Facet fires two and every other hull fires one.
 | **Lattice** denial | 1 | 2 | multi, bounce | prox, shrapnel ×2, bounce ×2, repel ×2 |
 
 **Freeze and repel are the exception**, and the only part of this table that is
-ours: the original has no such prize, so there is nothing to copy and they stay
-roster traits.
+ours: the original has no such upgrade, so there is nothing to copy and they
+stay roster traits.
 
 What would keep a hull out of the bombing business is not a list of forbidden
 items, it is having **no rack**. An add-on is a transform on a trigger, and a
@@ -491,34 +490,25 @@ upgrade, which is what makes it worth crossing the map for; what stops it
 running away with a match is that the pilot holding it is carrying a bounty
 everyone can see.
 
-### A green is a green
+### A kit is thirty of these
 
-Greens carry no type. Every one of them is takeable by everybody, and what it
-turns out to be is rolled where it is picked up, from what that hull could ever
-hold. There is no such thing as a green with somebody else's name on it.
+Nothing rolls. A pilot spends thirty points in the hangar, one per step, and
+the ship is dealt that kit at every spawn: stats, rungs, add-ons and charge
+counts, inside the hull's own row. The space above is the coordinate system
+that kit is written in, which is why it survived the pickup being deleted
+whole. [match-game.md](match-game.md) has the budget and what rivets buy.
 
-A destroyed hull leaves one green in the tile where it exploded. The drop
-replaces a field green when the arena is already at its configured limit, so a
-full field cannot swallow the reward. A zone that sets `prize_max = 0` still has
-no greens at all.
+Two properties the pickup used to provide are now structural rather than
+tuned. A pilot cannot hold what their hull has no ladder for, because the
+ceiling is checked where the kit is dealt rather than where a green is rolled.
+And what a death costs is the walk back, because the frame is re-dealt from
+something the pilot owns.
 
-The first version typed them at spawn, and the arena filled with greens that
-refused to be picked up -- two thirds of them, for an Apex. The treatment was
-drawing the ones that were not yours at a quarter alpha, which is a lot of
-machinery to make a rule legible instead of removing the rule.
-
-The roll is over what the hull could *ever* hold, not what it can still take.
-So a pilot already at the ceiling takes the green, is told what they found, and
-nothing moves. That matters: a green eaten in silence is a green that lies, and
-one that cannot be picked up reads as a broken pickup. Being told "+ speed" and
-watching the number stay where it is says the true thing -- you are full.
-
-It runs off the state's own generator, so the roll is the same roll on the
-server and on every client predicting it.
-
-The consequence to accept is that you cannot choose which green to chase. They
-are identical on the map and always worth taking, which is the trade: the
-gamble is the mechanic, and it is the same gamble for everybody.
+**Charge counts are the exception, and the only one.** They come back at the
+start of a match and never at a spawn, so a repel spent in the opening joust
+is a repel gone for three minutes. Refilling them on death would mean a pilot
+out of repels could suicide into the nearest enemy to reload, and at a bounty
+of one that costs nothing.
 
 ### Charges
 
@@ -549,11 +539,11 @@ not. Two reasons:
   which meant the key that cycles them and the pad that draws them could never
   do anything. The control was correct and unreachable.
 
-The consequence to know: charges are the *common* green. Both slots at 70
-against five stats at 40 makes a charge better than one green in three for
-every hull. That is faithful -- in the original's table `Brick` alone outweighs
-every stat put together -- and it is the number to move if the arena starts
-feeling like a fireworks display.
+The consequence to know: a charge is a point like any other, so a pilot who
+wants six of them buys six by giving up six steps of something else. What used
+to be an odds question is a budget question, and the number to move if the
+arena starts feeling like a fireworks display is the hull's row rather than a
+weight.
 
 **Which one is ready is not simulation state.** The client picks a slot and
 sends it in the two spare button bits; the core just spends what it is told.
@@ -578,98 +568,28 @@ one during a weapon delay, on the same tick as a shot, or immediately after
 another charge. Their inventory and energy cost are the limits. Mines are not
 charges: they wait for the bomb clock and lock both weapon triggers when laid.
 
-### A ship starts loaded
+### Thirty is a loud opening, and that is a choice
 
-`spawn_prizes`, default **30**. A ship is handed thirty greens the moment it
-spawns, rolled exactly the way one found on the floor is rolled: off the
-state's own generator, against the hull's own pool, respecting every ceiling
-in it. So this is a head start, not a way round the tree -- an Apex still
-cannot be handed a bomb rung it has no ladder for.
-
-It applies to a first spawn, a respawn and a hull change alike. A setting that
-only paid out once would mean the interesting fight is the first one and every
-fight after a death is the boring one.
-
-Rust is left in rather than suppressed. It cannot bite on the first roll --
-an empty pilot has nothing to corrode -- and after that it is one green in a
-hundred, so it costs a spawn a fraction of an item and needs no special case.
-
-**Know what this does to skill.** It is the strongest single lever in the
-tuning, and it does not merely make openings livelier. Running the bot
-calibration ladder over a 48-round round-robin -- same hull, three pilots at
-skill 0.15, 0.50 and 0.95 -- the kills come out:
+Every ship spawns carrying thirty steps. That number is the strongest single
+lever in the tuning, and it does more than make openings livelier. Running the
+bot calibration ladder over a 48-round round-robin, same hull, three pilots at
+skill 0.15, 0.50 and 0.95, the kills come out:
 
 | | low | mid | high |
 |---|---|---|---|
-| `spawn_prizes = 0` | 93 | 102 | **187** |
-| `spawn_prizes = 30` | 313 | 290 | 299 |
+| nothing dealt | 93 | 102 | **187** |
+| thirty dealt | 313 | 290 | 299 |
 
 A two-to-one skill gap becomes flat, and the total number of kills triples.
 With everyone carrying multifire from the first second, time to kill collapses
-and the fight is over before flying it decides anything. Thirty is a choice
-for a game that wants its openings loud; a competitive zone wants a much
-smaller number, and the offline calibration in `server/src/calibrate.rs`
-pins it to zero for exactly this reason -- a ladder has to rank pilots.
+and the fight is over before flying it decides anything.
 
-### The odds, and rust
-
-Each place in the prize space carries a weight, and the roll reads them against
-the pool of whoever took the green. So a zone writes the *shape* of its tree,
-and the roster decides which parts of that shape a given pilot can see.
-
-**The baseline is the original's `[PrizeWeight]` table**, entry for entry, out
-of the settings shipped with the reference server:
-
-| | weight | theirs |
-|---|---|---|
-| each stat | 40 | `Energy`, `QuickCharge`, `TopSpeed`, `Thruster`, `Rotation` |
-| a weapon level | 25 | `Gun`, `Bomb` |
-| multi, shrapnel | 30 | `MultiFire`, `Shrapnel` |
-| bounce, prox | 25 | `BouncingBullets`, `Proximity` |
-| a charge | 70 | `Repel`, `Burst` |
-
-A charge being the heaviest entry by a distance is the part worth noticing: in
-the original the green you are pleased to see is a thing the *odds* say, not
-the item. For an Apex -- five stats, a gun level, multifire, a burst -- that
-works out to a green being a stat three times in five and a charge better than
-one time in five.
-
-Two of our add-ons have no entry to copy, because the original has no such
-prize: freeze and push exist there as weapon effects, never as something a
-green hands you. They get 25, the band its comparable add-ons sit in, and that
-is a number we chose rather than inherited. Everything in its table we do not
-have -- cloak, stealth, xradar, antiwarp, warp, decoy, thor, brick, rocket,
-portal, shields, allweapons, multiprize -- is simply absent from our space.
-
-The weights are relative rather than percentages. Doubling every number changes
-nothing, which means a zone can add a weapon without recalculating the file.
-
-**Rust** is a green that takes something back. It is not a place in the space
--- it is a chance, out of a thousand, that the green corrodes instead of
-granting, and the baseline is 10: one green in a hundred.
-
-The original ships `PrizeNegativeFactor=300`, one in three hundred, which is
-rare enough to be a curiosity rather than a mechanic. Ours is three times more
-common because rust is doing a job here that it was not doing there -- it is
-the only way *down* a tech tree that otherwise only climbs -- but it is still
-the rare case. A pilot notices rust; a pilot does not plan around it.
-
-What it takes is chosen evenly from **what the pilot is actually holding**, and
-that is the whole reason it is not simply cruel:
-
-- a pilot who has just spawned holds nothing, cannot be rusted, and the green
-  quietly becomes an ordinary one. The punishment never lands on arriving.
-- a loaded pilot is the one with something to lose, so rust is a second source
-  of the pressure bounty applies -- being ahead costs something.
-- nothing can rust below nothing, and nothing can rust into a state the hull
-  could not have reached on its own.
-
-Losing an energy step clamps the bar down to the new ceiling rather than
-leaving a pilot standing above it.
-
-The client draws and sounds a rust as a loss: the feed says `- speed` in the
-rust color, and there is a separate sound, because the one mechanic in the
-game that costs you something should not be silent.
+That was measured when the thirty were rolled, and choosing them rather than
+rolling them does not move it: the flattening comes from how loaded a ship is
+at the whistle, not from where the load came from. It is a choice for a game
+that wants its openings loud. The offline calibration in
+`server/src/calibrate.rs` deals nothing for exactly this reason, because a
+ladder has to be able to rank pilots.
 
 ### Writing a tree
 
@@ -715,9 +635,9 @@ Two rows per hull, built from the roster in `sim/src/baseline.c`: a bolt and a
 gun pattern, and for the six hulls with a rack, a shell and a bomb pattern.
 
 No *base* weapon bounces, splinters, stalls or pushes -- every one of those
-arrives as an add-on, off a green, and composes onto whichever rung the trigger
-is on. So a pilot who has found nothing fires a plain bolt, and the same bolt
-becomes a bouncing one the moment they do.
+arrives as an add-on out of the kit and composes onto whichever rung the
+trigger is on. So a pilot who spent nothing there fires a plain bolt, and a
+pilot who spent one point fires a bouncing one.
 
 The bolt and the shell do carry a `bounces` of 255 while their `on_wall` is
 still `end`, which is not an exception to that: a budget is spent only once

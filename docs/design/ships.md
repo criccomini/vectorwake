@@ -173,10 +173,10 @@ Whether Chord and Facet are distinct enough in practice, or whether sustained
 fire and close-range spread collapse into the same playstyle.
 
 Whether gunners earn their place is answered, and the answer is no. It was
-built, every hull carries five, and a playtest settled it the way this
+built, every hull carried five, and a playtest settled it the way this
 document said a playtest would: [match-game.md](match-game.md) makes every
-game a 4v4, and two pilots on one hull is a quarter of a side parked. See
-[gunners.md](gunners.md), which is proposed for removal.
+game a 4v4, and two pilots on one hull is a quarter of a side parked. The
+code, the `ATTACH` message and `gunners.md` are all gone.
 
 Whether seven is right for launch. Six ships done well beats eight done
 carelessly, and the roster can grow after the game is good.

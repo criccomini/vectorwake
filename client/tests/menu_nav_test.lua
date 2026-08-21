@@ -1209,11 +1209,21 @@ do
     for _, r in ipairs(v.rows) do labels[#labels + 1] = r.label end
     check("only the slots this hull will take are on the page",
           #v.rows == 4, table.concat(labels, ", "))
-    check("with the budget at the foot",
-          v.rows[#v.rows].label == "budget", labels[#labels])
+    check("with the budget at the head",
+          v.rows[1].label == "budget", labels[1])
+    -- Drawn as a bar rather than as thirty pips, which is the difference
+    -- between a row and a row with a wall across it.
+    check("and drawn as a bar", v.rows[1].bar == true and v.rows[1].choices == 6,
+          tostring(v.rows[1].bar) .. "/" .. tostring(v.rows[1].choices))
+    -- And the page says which hull it is about, because the lit tab above it
+    -- says "hangar" and the hull was chosen on the page before.
+    check("the page names the hull it is about",
+          v.head and v.head.label == "Apex" and v.head.hull == 0,
+          v.head and tostring(v.head.label) or "no head")
 
     -- Right spends a point, left takes it back, and neither goes anywhere.
-    menu.sel.kit = 1
+    -- Row one is the budget, so the first stat is row two.
+    menu.sel.kit = 2
     menu.step({right = true})
     check("right spends a point", menu.kit[1] == 1 and menu.at() == "kit",
           tostring(menu.kit[1]) .. " at " .. table.concat(menu.stack, "/"))
@@ -1230,7 +1240,7 @@ do
           tostring(menu.kit[1]))
 
     -- The budget, which is what every row on the page is spending against.
-    menu.sel.kit = 3
+    menu.sel.kit = 4
     for _ = 1, 6 do menu.step({right = true}) end
     check("nor past the budget", menu.kit_spent() == 6,
           tostring(menu.kit_spent()))
@@ -1240,11 +1250,41 @@ do
     account.entitlements = {[1] = 2}
     menu.kit = nil
     menu.open_kit(0)
-    menu.sel.kit = 1
+    menu.sel.kit = 2
     for _ = 1, 6 do menu.step({right = true}) end
     check("and never past what the account owns", menu.kit[1] == 2,
           tostring(menu.kit[1]))
     account.entitlements = {}
+
+    -- A hull with nothing saved against it opens on what the arena would have
+    -- dealt, which the core works out and nobody here second-guesses. It
+    -- opened on an empty kit once, and an empty kit is a ship that does not
+    -- exist: every seat is dealt something the moment it is filled.
+    local asked = nil
+    _G.sim.starter_kit = function(ceiling)
+        asked = ceiling
+        local out = {}
+        for i = 1, 23 do out[i] = ceiling[i] or 0 end
+        return out
+    end
+    account.entitlements = {[1] = 1}
+    menu.kit = nil
+    menu.open_kit(0)
+    check("a hull with nothing saved opens on the core's starter kit",
+          menu.kit_spent() > 0, tostring(menu.kit_spent()))
+    check("and the core is asked against both ceilings at once",
+          asked ~= nil and asked[1] == 1 and asked[20] == 3,
+          asked and (tostring(asked[1]) .. "/" .. tostring(asked[20])) or "unasked")
+    account.entitlements = {}
+
+    -- A kit that is saved is the kit, even where it spends nothing on a slot
+    -- the starter kit would have.
+    account.kits = {Apex = {[1] = 2}}
+    menu.kit = nil
+    menu.open_kit(0)
+    check("and a saved kit is left alone", menu.kit[1] == 2 and menu.kit[6] == 0,
+          tostring(menu.kit[1]) .. "/" .. tostring(menu.kit[6]))
+    account.kits = {}
 
     _G.sim = nil
 end

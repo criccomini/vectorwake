@@ -241,11 +241,6 @@ pub struct ShipConfig {
     /// [3, 3]` is three repels and three bursts. Slots left off keep the
     /// baseline's, and zero is a hull that never gets one.
     pub charges: Vec<u8>,
-    /// MaxMines: how many of this hull's mines may lie about at once. The
-    /// only limit there is on mines, since a pilot has them for as long as
-    /// they have a bomb rack, so this is what decides whether a hull mines at
-    /// all and how heavily. Zero lays none.
-    pub mine_max: Option<u8>,
 }
 
 /// One weapon: what a trigger makes, and what one projectile of it is. The

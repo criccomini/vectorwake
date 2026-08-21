@@ -936,9 +936,6 @@ typedef struct {
     int32_t init_rotation, up_rotation, max_rotation;
     int32_t init_energy, up_energy, max_energy;
     int32_t init_recharge, up_recharge, max_recharge;
-    /* Gunners allowed on this hull, and what carrying any costs it. The
-     * penalties are authored in the same units as the stat each comes off:
-     * thrust like `max_thrust`, speed like `max_speed`. */
     /* No footprint here: the settings files these units mirror never carried
      * one, and the extents are measured off our own hulls in baseline.c. */
 } sim_class_units;
