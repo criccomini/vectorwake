@@ -936,6 +936,10 @@ end
 do
     local binds = require("arena.binds")
     binds.reset()
+    -- Nothing ships on a chord, so one is bound here: what this checks is
+    -- that a chord survives the trip to the drawing, not that any particular
+    -- control starts on one.
+    binds.set("map", {"shift", "tab"})
     menu.stack = {"root"}
     menu.sel = {}
     menu.click_rail(top_index("controls"))
@@ -957,14 +961,15 @@ do
           table.concat(unnamed, ", "))
 
     -- And a chord arrives whole rather than as its trigger.
-    local mine = nil
+    local chorded = nil
     for _, r in ipairs(v.rows) do
-        if r.control == "mine" then mine = r end
+        if r.control == "map" then chorded = r end
     end
     check("a chord reaches the drawing with both its keys",
-          mine ~= nil and #mine.keys == 2
-          and table.concat(mine.keys, "+") == "shift+tab",
-          mine and table.concat(mine.keys or {}, "+") or "no mine row")
+          chorded ~= nil and #chorded.keys == 2
+          and table.concat(chorded.keys, "+") == "shift+tab",
+          chorded and table.concat(chorded.keys or {}, "+") or "no map row")
+    binds.reset()
 end
 
 -- --- the discord stop leaves, rather than going somewhere in here ----------

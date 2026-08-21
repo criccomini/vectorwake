@@ -33,9 +33,6 @@ local C2S_TEAM, C2S_FOUND, C2S_INVITE = 6, 7, 8
 -- somewhere else. A request like the team asks: the subject byte of the next
 -- snapshot is the answer, and an unlawful ask lands on the room channel.
 local C2S_WATCH = 9
--- Ride a teammate as a gunner, or 255 to get off. A request like the rest:
--- the core decides, and the answer is the carrier byte of the next snapshot.
-local C2S_ATTACH = 10
 -- The one flag a player sets in a join: this client came to watch, not to
 -- fly. The class byte is ignored, no ship is spawned, and the seat taken is a
 -- watcher's. The other bit is JOIN_BOT, which a player never sets.
@@ -47,7 +44,9 @@ local S2C_MAP, S2C_SETTINGS, S2C_YIELD, S2C_TEAMS = 9, 10, 11, 12
 -- channel's camera picks you without asking, so being told is the one
 -- courtesy it owes: two minutes on air is something a pilot can play around.
 local S2C_ONAIR = 13
-local S2C_PRIZE, S2C_CHARGE = 14, 15
+-- The clock and the score of a match game: playing, seconds left, and a
+-- kill count per side. A second's resolution, which is what the clock draws.
+local S2C_MATCH, S2C_CHARGE = 14, 15
 local S2C_LAG = 16
 
 -- The client wire's own version, checked by the zone before it reads anything
@@ -114,15 +113,14 @@ M.ratings = {}
 -- once per snapshot. The zone says every death to everyone; this queue keeps
 -- only the two kinds this pilot needs to read, their kills and their deaths.
 M.kills = {}
--- Authoritative prize rolls waiting for the frame that draws their effect and
--- feed line. The prediction core removes a touched green but never rolls it.
-M.prizes = {}
--- Result-free local contacts, emitted by prediction on the collision tick.
--- They let presentation answer the touch without learning what the green was.
-M.prize_touches = {}
 -- Public charge actions inside the server's fairness circle. These name the
 -- charge that was used, never how many remain in the private inventory.
 M.charge_events = {}
+-- What the room is doing, in a zone that plays matches: `playing`, `left` in
+-- whole seconds, and `score`, a kill count per side in the order the roster
+-- names them. Nil in a room that runs forever, which is how the interface
+-- decides whether to draw a clock at all.
+M.match = nil
 
 -- People arriving and leaving, drained into feed lines the same way. Worked
 -- out here by comparing one roster against the last rather than sent, because
@@ -256,12 +254,6 @@ local receipts = reconcile.new()
 -- censored rather than called wrong because the client no longer knows its fate.
 local death_candidates = {}
 local DEATH_CONFIRM_SNAPSHOTS = 6
--- One token per locally predicted touch, paired in order with authoritative
--- outcomes so their positive pickup sound is not played twice. A contested
--- green can make prediction wrong, so unmatched tokens expire after a second.
-local pending_prize_touches = {}
-local PRIZE_TOUCH_WINDOW = 100
-
 local function note_predicted_deaths()
     -- Lightweight net.lua tests use a counter-only simulation stub. The real
     -- extension always provides this pair, while those tests have no combat
@@ -272,23 +264,6 @@ local function note_predicted_deaths()
         if not death_candidates[victim] then
             death_candidates[victim] = {tick = sim.tick(), observations = 0}
             M.stats.death_pending = M.stats.death_pending + 1
-        end
-    end
-end
-
-local function note_prize_touches()
-    for i = #pending_prize_touches, 1, -1 do
-        pending_prize_touches[i] = pending_prize_touches[i] + 1
-        if pending_prize_touches[i] > PRIZE_TOUCH_WINDOW then
-            table.remove(pending_prize_touches, i)
-        end
-    end
-    if not sim.event_count or not sim.event_at then return end
-    for i = 0, sim.event_count() - 1 do
-        local ty, ship = sim.event_at(i)
-        if ty == sim.EV_PRIZE_TOUCH and ship == M.me then
-            pending_prize_touches[#pending_prize_touches + 1] = 0
-            M.prize_touches[#M.prize_touches + 1] = ship
         end
     end
 end
@@ -469,9 +444,6 @@ local function hangup()
     -- drains them afterwards against a seat number that has been reset and a
     -- roster that has been emptied.
     M.kills = {}
-    M.prizes = {}
-    M.prize_touches = {}
-    pending_prize_touches = {}
     M.charge_events = {}
     pending_kills, pending_charges = {}, {}
     seen_kills, seen_charges = {}, {}
@@ -740,6 +712,24 @@ local function on_kill(s)
     else pending_kills[#pending_kills + 1] = e end
 end
 
+-- The clock and the score. Replaces whatever was held rather than queueing,
+-- because there is one answer and the newest is it: a message lost to a full
+-- socket queue costs a second of clock and the next one repairs it.
+local function on_match(s)
+    local score = {}
+    local sides = string.byte(s, 4) or 0
+    for k = 0, sides - 1 do
+        local at = 5 + k * 2
+        if #s < at + 1 then break end
+        score[k] = string.byte(s, at) + string.byte(s, at + 1) * 256
+    end
+    M.match = {
+        playing = string.byte(s, 2) == 1,
+        left = string.byte(s, 3),
+        score = score,
+    }
+end
+
 local function on_charge(s)
     if #s < 15 then return end
     local e = {
@@ -900,8 +890,6 @@ local function adopt_lifecycle(epoch, watching, subject)
         input_log = {}
         receipts:reset()
         death_candidates = {}
-        pending_prize_touches = {}
-        M.prize_touches = {}
         M.stats.death_pending = 0
         predicted_tick = 0
         prediction_clock:reset()
@@ -1045,7 +1033,6 @@ local function on_snapshot(s)
         repel_before_ticks, repel_before_speed = sim.ship_repel(M.me)
     end
     local alive_before = sim.ship_alive(M.me) == 1
-    local carrier_before = sim.ship_carrier and sim.ship_carrier(M.me) or 255
     -- What the screen is currently asserting about every hull, held across the
     -- correction so the drawing can be walked to the truth rather than cut to
     -- it. See the render section of simcore.cpp.
@@ -1148,7 +1135,6 @@ local function on_snapshot(s)
     end
 
     local alive_after = sim.ship_alive(M.me) == 1
-    local carrier_after = sim.ship_carrier and sim.ship_carrier(M.me) or 255
     local large = err > DEBUG_LARGE_CORRECTION_PX
     -- An enemy repel is absent from local prediction, so its authoritative
     -- correction is expected. If the smoother preserved the whole position
@@ -1162,7 +1148,7 @@ local function on_snapshot(s)
             and u32n(from - last_report) >= cooldown)
     if not first_flying_snapshot and M.stats.snaps > 3
         and err > DEBUG_CORRECTION_PX
-        and alive_before and alive_after and carrier_before == carrier_after
+        and alive_before and alive_after
         and not expected_repel
         and debug_reports < DEBUG_REPORT_MAX
         and (large or debug_small_reports < DEBUG_SMALL_REPORT_MAX) and cooled
@@ -1294,10 +1280,8 @@ local function on_message(s)
         end
     elseif kind == S2C_ONAIR then
         M.on_air = string.byte(s, 2) == 1
-    elseif kind == S2C_PRIZE and #s >= 3 then
-        local delta = string.byte(s, 3)
-        if delta >= 128 then delta = delta - 256 end
-        M.prizes[#M.prizes + 1] = {type = string.byte(s, 2), delta = delta}
+    elseif kind == S2C_MATCH and #s >= 4 then
+        on_match(s)
     elseif kind == S2C_CHARGE then
         on_charge(s)
     elseif kind == S2C_LAG and #s >= 10 then
@@ -1472,10 +1456,8 @@ function M.connect(url, class, name, on_lost, zone, watch, wt, room)
     M.pilots = {}
     M.ratings = {}
     M.kills = {}
-    M.prizes = {}
-    M.prize_touches = {}
-    pending_prize_touches = {}
     M.charge_events = {}
+    M.match = nil
     -- Back to knowing nobody, so the next room's first roster seeds rather
     -- than announcing everyone in it as having just walked in.
     M.comings = {}
@@ -1584,14 +1566,6 @@ function M.invite(ship)
     if not ask(string.char(C2S_INVITE, ship)) then return false end
     M.invited[ship] = true
     return true
-end
-
--- Climb onto a teammate, or 255 to drop off. Nothing is recorded here the way
--- an invitation is: an invitation vanishes into a team list that does not name
--- the invitee, where this one comes back as state on the hull, so the panel
--- reads the answer off the ship rather than off a note it wrote itself.
-function M.attach(ship)
-    return ask(string.char(C2S_ATTACH, ship or 255))
 end
 
 -- Watch somebody, or 255 for the room channel. From a flying pilot this is
@@ -1704,17 +1678,7 @@ function M.step(buttons)
     end)
     send_input_records(records)
     sim.replay(M.me, buttons)
-    note_prize_touches()
     note_predicted_deaths()
-    return true
-end
-
--- Match an authoritative result to the oldest local touch. Kept at the
--- presentation boundary so a result and its touch can arrive in either order
--- during one frame without playing the ordinary pickup sound twice.
-function M.claim_prize_sound()
-    if #pending_prize_touches == 0 then return false end
-    table.remove(pending_prize_touches, 1)
     return true
 end
 

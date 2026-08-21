@@ -1,6 +1,6 @@
 -- Drawing the world.
 --
--- Ships, weapons, flags, prizes, stars and terrain, in the two world layers:
+-- Ships, weapons, flags, stars and terrain, in the two world layers:
 -- a dark alpha fill that occludes what is behind it, and an additive glow
 -- that carries every bright edge. Nothing here reads input or advances
 -- anything; it asks the simulation what is true and describes it in
@@ -307,51 +307,6 @@ for _, h in ipairs(M.HULLS) do
 
     h.tris = triangulate(p)
 
-    -- The ring a gunner's drone sits on, as the 80th percentile of how far
-    -- this hull reaches from its origin.
-    --
-    -- From the origin, because that is the point the ring is drawn around:
-    -- M.drones puts every drone at this radius from the ship's position, and
-    -- it has to, since the ring is held in world directions so that spinning
-    -- the carrier does not drag the drones round with it. This measured from
-    -- `h.mid` instead, which is the thumbnail's centering and belongs to the
-    -- menu, and the two disagreed by the whole of that offset: a drone aiming
-    -- over the nose sat a few pixels inside the plating the ring was fitted
-    -- to, and one aiming over the tail floated the same distance clear of it.
-    --
-    -- Not the maximum, which is the obvious answer and the wrong one: a ring
-    -- outside the longest thing on a Cipher is a ring twenty pixels off its
-    -- flanks, because the longest thing on a Cipher is a blade. And not a
-    -- fraction of the maximum either, which buries the ring inside a round
-    -- hull long before it tightens around a long one, since a round hull
-    -- reaches nearly as far in every direction and a knife does not. The
-    -- spread is what has to be cut through. At the 80th the ring sits on the
-    -- plating of the hull's body and lets its spikes pass through, which is a
-    -- pixel or so of overlap on an Anvil and eleven on a Cipher.
-    do
-        local rs = {}
-        for k = 0, 127 do
-            local a = k / 128 * TAU
-            local dx, dy = math.sin(a), math.cos(a)
-            local best = 0
-            for v = 1, n do
-                local nv = (v % n) + 1
-                local ax, ay = p[v * 2 - 1], p[v * 2]
-                local bx, by = p[nv * 2 - 1], p[nv * 2]
-                local ex, ey = bx - ax, by - ay
-                local den = dx * ey - dy * ex
-                if math.abs(den) > 1e-9 then
-                    local t = (ax * ey - ay * ex) / den
-                    local u = (ax * dy - ay * dx) / den
-                    if t > 0 and u >= 0 and u <= 1 and t > best then best = t end
-                end
-            end
-            rs[#rs + 1] = best
-        end
-        table.sort(rs)
-        h.orbit = rs[math.floor(0.8 * (#rs - 1)) + 1]
-    end
-
     -- Somewhere to transform into. A fresh table per part per hull per frame
     -- is a hundred tables a frame and all of them garbage, on a collector that
     -- runs in the same thread as the draw.
@@ -438,7 +393,7 @@ M.STAR_VERTS, M.HALO_SEGS = STAR_VERTS, HALO_SEGS
 -- of the two per-frame layers.
 --
 -- Unlike the starfield these do not follow the window: what fills them is
--- hulls, bolts, blasts and prizes, and how many of those are on screen is a
+-- hulls, bolts and blasts, and how many of those are on screen is a
 -- property of the room. Sixty-four seats of detailed hull is past the glow
 -- figure already and always has been; see the ceiling note where the layers
 -- are made.
@@ -1977,66 +1932,6 @@ function M.ship(fill, glow, cls, x, y, heading, col, opts)
     end
 end
 
--- The gunners riding a hull, as drones on a ring around it.
---
--- A drone sits in the direction its gunner is aiming and faces out along it,
--- which makes position and facing the same fact: turning does not spin a
--- drone in place, it walks it around the ring, so where five guns are
--- pointing is readable without waiting for them to fire. The ring is a circle
--- rather than anything fitted to the hull, so a drone's place depends on its
--- gunner's aim and not at all on where the carrier is pointing: spin the
--- carrier and the drones hover.
---
--- The carrier itself is not touched. Nothing here tints it, brightens it or
--- adds a fitting to it, and with nobody aboard nothing is drawn at all, so a
--- hull that can carry and a hull that cannot look identical while both are
--- empty. That is deliberate: every hull can carry, so a marking that said
--- "this one can" would be on all seven and say nothing.
---
--- `riders` is a flat list of heading, energy fraction, color and whether it
--- is yours, four entries per gunner.
-local DRONE = {0,2.1, 1.2,0.9, 1.2,-0.9, 0,-1.75, -1.2,-0.9, -1.2,0.9}
-local dtmp = {}
-
-function M.drones(fill, glow, cls, x, y, riders)
-    local h = M.HULLS[cls + 1] or M.HULLS[1]
-    for k = 1, #riders, 4 do
-        local a = riders[k] / 65536 * TAU
-        local frac = riders[k + 1]
-        local col = riders[k + 2]
-        local mine = riders[k + 3]
-        local ca, sa = math.cos(a), math.sin(a)
-        -- Brightness is that gunner's own energy, which the original hides
-        -- and its own guides complain about: a carrier cannot otherwise tell
-        -- it is hauling somebody one bullet from death.
-        local e = 0.34 + 0.66 * math.max(0, math.min(1, frac))
-        local dx = x + h.orbit * sa
-        local dy = y - h.orbit * ca
-        -- Yours carries the halo your hull carries when you are flying it,
-        -- and its edge is lit the way your own hull's is. Riding takes your
-        -- silhouette off the screen, so without this the one question a pilot
-        -- asks every second -- which one is me -- has no answer at all while
-        -- they are a gunner, and the key that gets them off is a key they
-        -- press hoping.
-        if mine then
-            glow:halo(dx, dy, 9, 10, pal.a(col, 0.12))
-        end
-        local q = place(DRONE, dtmp, dx, dy, ca, sa, 1, 1)
-        glow:fan(q, pal.a(col, (mine and 0.24 or 0.16) * e))
-        glow:outline(q, 0.85,
-                     pal.a(pal.hot(col, mine and 0.7 or 0.45, 1), 0.9 * e), true)
-        -- The bore, out the front, which is the whole of what a drone is for.
-        local bx, by = dx + sa * 3.7, dy - ca * 3.7
-        local rx, ry = dx + sa * 1.2, dy - ca * 1.2
-        glow:seg(rx, ry, bx, by, 0.9, pal.a(col, 0.30 * e), true)
-        glow:seg(rx, ry, bx, by, 0.38,
-                 pal.a(pal.hot(col, 0.75, 1), 0.95 * e), true)
-        -- Its eye, brightest cell on it, for the reason a canopy is the
-        -- brightest cell on a hull: it says which way this thing is looking.
-        glow:disc(dx, dy, 0.55, 4, pal.a(pal.hot(col, 0.85, 1), 0.95 * e))
-    end
-end
-
 -- The energy pip above a hull. Energy is health in this game -- it powers the
 -- guns and it absorbs the damage -- so one bar says both things, and a
 -- wounded enemy reads at a glance without a number anywhere near it.
@@ -2863,50 +2758,15 @@ function M.weapons(fill, glow, t, cull)
     end
 end
 
--- --- prizes and flags ------------------------------------------------------
+-- --- flags -----------------------------------------------------------------
 
--- Everything below takes a cull box -- the camera's own extents, grown by a
--- margin -- and skips what falls outside it.
---
--- This was not needed when the arena was 84 tiles: everything in the world
--- was on screen or a few tiles off it. On a map a thousand tiles across, all
--- but a fraction of it is somewhere nobody is looking, and drawing it is not
--- merely wasted -- it *overflows the layer*. A hundred and fifty greens at a
--- ten segment halo each pinned the glow buffer at 8190 of 8192 and dropped a
--- million primitives a minute, which is not a slow frame but a wrong one:
--- whichever strokes fell past the cap that frame simply vanished. It read as
--- hulls that changed shape and energy bars that blinked empty, because a
--- bar's backing is on the fill layer and its level is on the glow one.
-function M.prizes(fill, glow, t, cull)
-    local spin = t * 1.1
-    local ca, sa = math.cos(spin), math.sin(spin)
-    local pulse = 0.78 + 0.22 * math.sin(t * 3.4)
-    for i = 0, sim.prize_count() - 1 do
-        local active, x, y, life = sim.prize_at(i)
-        if active and not outside(cull, x, y) then
-            -- Every green looks the same, because every green *is* the same:
-            -- what it turns out to be is decided when somebody takes it, from
-            -- what their hull can hold. Coloring them by kind would have been
-            -- coloring them by a decision that has not been made yet.
-            local col = pal.PRIZE
-            -- A prize about to time out blinks, so a player can tell the
-            -- difference between one worth crossing the arena for and one
-            -- that will be gone before they arrive.
-            local fade = (life < 120) and (0.35 + 0.65 * math.abs(math.sin(t * 9))) or 1
-            local r = 6.5 * pulse
-            local pts = {}
-            for k = 0, 3 do
-                local px = (k == 0 and 0) or (k == 1 and r) or (k == 2 and 0) or -r
-                local py = (k == 0 and -r) or (k == 1 and 0) or (k == 2 and r) or 0
-                pts[k * 2 + 1] = x + px * ca + py * sa
-                pts[k * 2 + 2] = y + px * sa - py * ca
-            end
-            glow:halo(x, y, 15, 10, pal.a(col, 0.20 * fade))
-            fill:fan(pts, pal.a(col, 0.28 * fade))
-            glow:outline(pts, 1.4, pal.a(col, 0.95 * fade))
-        end
-    end
-end
+-- Everything below takes a cull box, the camera's own extents grown by a
+-- margin, and skips what falls outside it. Drawing what nobody is looking at
+-- is not merely wasted: it overflows the layer, and whichever strokes fall
+-- past the cap that frame simply vanish. It read as hulls that changed shape
+-- and energy bars that blinked empty, because a bar's backing is on the fill
+-- layer and its level is on the glow one.
+
 
 function M.flags(fill, glow, my_team, t)
     local wave = math.sin(t * 2.2) * 1.6
@@ -3084,8 +2944,6 @@ function M.events(me, sfx)
             local x, y = sim.ship_x(a), sim.ship_y(a)
             fx.wave(x, y, 5, 30, 0.3, 4, pal.CHARGE_COL)
             sfx("charge", x, y)
-        elseif ty == sim.EV_PRIZE then
-            M.prize(a, b, v, sfx)
         elseif ty == sim.EV_FLAG_TAKE then
             local x, y = sim.ship_x(a), sim.ship_y(a)
             local col = (sim.ship_team(a) == team_of(me)) and pal.FRIEND or pal.ENEMY
@@ -3093,31 +2951,6 @@ function M.events(me, sfx)
             fx.burst(x, y, 5, 55, 0.4, 1.4, pal.a(col, 0.8))
             sfx("flag", x, y)
         end
-    end
-end
-
--- Answer predicted contact immediately, without guessing what was collected.
-function M.prize_touch(ship, sfx)
-    if ship < 0 or ship >= sim.ship_count()
-        or sim.ship_active(ship) ~= 1 then return end
-    sfx("prize", sim.ship_x(ship), sim.ship_y(ship))
-end
-
--- Draw one prize outcome the authority announced. Prediction may remove the
--- green that was touched, but the type and whether it rusted come only from
--- this event.
-function M.prize(ship, ty, delta, sfx, already_sounded)
-    if ship < 0 or ship >= sim.ship_count() or sim.ship_active(ship) ~= 1 then return end
-    local x, y = sim.ship_x(ship), sim.ship_y(ship)
-    local col = (delta < 0) and pal.RUST or pal.prize(ty)
-    if delta < 0 then
-        fx.wave(x, y, 5, 22, 0.4, 3, col)
-        fx.burst(x, y, 5, 40, 0.45, 1.2, col)
-        sfx("rust", x, y)
-    else
-        fx.wave(x, y, 4, 26, 0.35, 3, col)
-        fx.burst(x, y, 6, 60, 0.5, 1.4, col)
-        if not already_sounded then sfx("prize", x, y) end
     end
 end
 

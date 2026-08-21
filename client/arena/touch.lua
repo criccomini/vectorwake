@@ -174,14 +174,12 @@ local ramp = {dir = 0, held = 0, acc = 1}
 -- Whether an upward gun pull happened since it was last asked. The core toggles
 -- multifire on a rising edge, so one gun hold may produce at most one edge.
 local fanned = false
--- And the mine tab, latched the same way: one tap is one mine.
-local mined = false
 
 -- The charge slots this hull can carry, newest set by the caller. Empty until
--- told, so a hull with none draws none.
+-- told, so a hull with none draws none. A mine is one of them: it used to be
+-- a cell of its own tied to the bomb pad, and it is a count you carry and
+-- spend now, which is what every cell on this rail already is.
 M.charges = {}
--- Whether this hull lays mines at all, which is `mine_max` above zero.
-M.has_mine = false
 
 -- Where the controls are. One definition, used by the hit test and by the
 -- drawing, because they were written out separately once and had drifted: the
@@ -196,9 +194,10 @@ M.has_mine = false
 -- at two pixels per point would otherwise get pads half the size it needs.
 --
 -- The two triggers keep the corner, side by side along the bottom. Their
--- secondary actions form one fixed row above them: mine over bomb, then charge
--- slots in stable positions around it. Empty slots disappear but never pull a
--- neighbor into their place. Reverse mirrors that row above the flight stick.
+-- secondary actions form one fixed row above them: charge slots in stable
+-- positions, two over the guns and the rest continuing left over the bomb.
+-- Empty slots disappear but never pull a neighbor into their place. Reverse
+-- mirrors that row above the flight stick.
 function M.layout(w, h, s)
     s = s or 1
     local r = math.max(30 * s, math.min(math.min(w, h) * 0.11, 62 * s))
@@ -221,29 +220,21 @@ function M.layout(w, h, s)
     local wanted_y = gun_pad.y + gun_pad.r * 1.3 + cell_reach + 4 * s
     local y0 = math.min(wanted_y, M.ceiling - cw / 2)
 
-    -- The mine is physically tied to the bomb. It is present for the whole
-    -- life of a mining hull and never moves as charges are spent.
-    local mine = nil
-    if M.has_mine then
-        mine = {x = bomb_pad.x, y = y0, w = cw, r = cw / 2}
-    end
-
     -- Charge slots keep their configured identity. The first two sit over the
-    -- weapons. The next two continue left after the mine, leaving a full
-    -- target's gap on either side of it.
+    -- weapons and the rest continue left past the bomb.
     local charge = {}
     for i, k in ipairs(M.charges) do
         if (M.counts and M.counts[k] or 0) > 0 then
             local x
             if i <= 2 then x = gun_pad.x - (i - 1) * step
-            else x = bomb_pad.x - (i - 2) * step end
+            else x = bomb_pad.x - (i - 3) * step end
             charge[#charge + 1] = {slot = k, x = x, y = y0,
                                    w = cw, r = cw / 2}
         end
     end
 
     return {r = r, guns = gun_pad, bombs = bomb_pad, home = home,
-            charge = charge, mine = mine}
+            charge = charge}
 end
 
 local function near(pad, x, y, slack)
@@ -269,7 +260,6 @@ local function zone(x, y, w, h, s)
     -- Not tested when the hull has no rack, so the space falls through to the
     -- stick rather than being eaten by a control that is not drawn.
     if M.has_bomb and near(L.bombs, x, y) then return "bombs" end
-    if L.mine and within(L.mine, x, y) then return "mine" end
     for _, c in ipairs(L.charge) do
         if within(c, x, y) then return c.slot end   -- a number, not a name
     end
@@ -331,8 +321,6 @@ function M.on_touch(action, w, h, s, claimed)
                 gun_fanned = false
             elseif z == "bombs" then
                 bombs = t.id
-            elseif z == "mine" then
-                mined = true
             elseif type(z) == "number" then
                 fired = z
             end
@@ -391,15 +379,6 @@ end
 function M.fired_multi()
     local hit = fanned
     fanned = false
-    return hit
-end
-
--- Whether the mine tab was tapped since this was last asked, consumed by the
--- read like the others: one tap lays one mine however many frames pass before
--- the step loop gets to it.
-function M.fired_mine()
-    local hit = mined
-    mined = false
     return hit
 end
 
@@ -629,49 +608,12 @@ function M.draw(u, w, h, s)
         pad_mark(L.bombs, sim.TRIG_BOMB)
     end
 
-    -- The mine is a tab attached to the bomb rather than another loose button.
-    -- It keeps the bomb color because it is that trigger's other posture.
-    --
-    -- Its pips are the room left rather than the stock in hand, which is the
-    -- one place a mine differs from everything else on this rail. A pilot
-    -- never runs out of mines; they run out of floor. So a lit pip is a mine
-    -- that could still be laid, and a cell with none lit is a minefield at its
-    -- ceiling -- the same picture a spent charge would draw, saying the same
-    -- thing about whether pressing it will do anything.
-    if L.mine then
-        local c = L.mine
-        local half = c.w / 2
-        local cap = M.mine_max or 0
-        local room = cap - (M.mines_out or 0)
-        local lit = room > 0
-        local bcol = pal.rung(marks.level(M.me, sim.TRIG_BOMB))
-        u:seg(L.bombs.x, L.bombs.y + L.bombs.r,
-              c.x, c.y - half, 1.6 * s, pal.a(bcol, 0.34))
-        u:rect(c.x - half, c.y - half, c.w, c.w,
-               pal.a(bcol, lit and 0.07 or 0.03))
-        u:frame(c.x - half, c.y - half, c.w, c.w, 2.2 * s,
-                pal.a(bcol, lit and 0.6 or 0.26))
-        marks.mine(c.x, c.y + c.w * 0.06, c.w * 0.30,
-                   pal.a(bcol, lit and 0.92 or 0.42))
-        if cap > 0 then
-            local pw = c.w * 0.14
-            local gap = pw * 0.55
-            local span = cap * pw + (cap - 1) * gap
-            local px = c.x - span / 2
-            for i = 1, cap do
-                u:rect(px, c.y - half + c.w * 0.10, pw, c.w * 0.075,
-                       pal.a(bcol, i <= room and 0.85 or 0.18))
-                px = px + pw + gap
-            end
-        end
-    end
-
     -- A cell per charge in hand, and none for one that is spent out. Its slot
-    -- keeps the same position when a neighbor empties. What
-    -- says how many is pips along the cell's floor rather than a numeral above
-    -- it: a charge is one of three, and three marks is a quantity read without
-    -- counting, where the numeral sat in the gap between two pads and belonged
-    -- to neither.
+    -- keeps the same position when a neighbor empties. What says how many is
+    -- pips along the cell's floor rather than a numeral above it: a charge is
+    -- one of three, and three marks is a quantity read without counting,
+    -- where the numeral sat in the gap between two pads and belonged to
+    -- neither.
     for _, c in ipairs(L.charge) do
         local n = M.counts and M.counts[c.slot] or 0
         local cap = (M.maxes and M.maxes[c.slot]) or 3

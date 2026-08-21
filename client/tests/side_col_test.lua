@@ -48,7 +48,6 @@ local sim = {
     ship_active = function(i) return IN[i] and 1 or 0 end,
     ship_alive = function(i) return IN[i] and 1 or 0 end,
     ship_team = function(i) return IN[i] and (3 + i) or 0 end,
-    ship_carrier = function() return 255 end,
     ship_class = function() return 0 end,
     ship_energy = function() return 100 end,
     ship_max_energy = function() return 100 end,

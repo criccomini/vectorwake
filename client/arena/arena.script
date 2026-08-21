@@ -257,10 +257,6 @@ local function bit_for(action)
             -- doing the edge here as well would make two places that have to
             -- agree about one press.
             [hash("multi")] = sim.BTN_MULTI,
-            -- A chord rather than a key, and nothing here has to know that:
-            -- the press arrives under this name or under `bombs`, and which
-            -- one it was is settled before it gets here. See arena/binds.lua.
-            [hash("mine")] = sim.BTN_MINE,
             -- The mouse buttons are their own actions rather than aliases of
             -- guns and bombs. A browser synthesises a click from every touch,
             -- so while they shared a name, one tap anywhere on a phone was a
@@ -302,6 +298,17 @@ local function my_rooms()
     return nil
 end
 
+-- The zone's sides, by the byte the simulation knows each as, for anything
+-- that wants to print one. The roster carries them already; this is the same
+-- list keyed the way a caller with a team byte in hand can use.
+local function side_names()
+    local out = {}
+    for _, t in ipairs(net.teams) do
+        if t.public then out[t.team] = t.name end
+    end
+    return out
+end
+
 local function my_slots()
     local out = {}
     if watching then return out end
@@ -328,8 +335,6 @@ local enter_game
 -- is the same shape of thing: a gesture latched by the interface and spent by
 -- exactly one simulation step.
 local multi_tap = false
--- The mine tab's tap, latched the same way as the gun gesture.
-local mine_tap = false
 -- The same latch for a charge key, filled where taps are read and drained
 -- into `charge_tap` by the step loop.
 local key_charge = nil
@@ -378,17 +383,6 @@ local function my_buttons()
     -- The upward gun pull declines or restores multifire on glass. It lands in
     -- the same bit the key holds down, so the core sees one press either way.
     if multi_tap then bits[sim.BTN_MULTI] = true end
-
-    -- The mine pad on glass, which is the only way to lay one without a
-    -- keyboard. It lands in the same bit the chord holds down, so the core
-    -- sees one press however it was made.
-    --
-    -- Shift and the bomb key used to be wired together here, because a mine
-    -- was the bomb trigger held differently rather than a control of its own.
-    -- Bindings are chords now and `mine` is one, so the press arrives already
-    -- knowing which of the two it was: Shift+Tab beats Tab whenever Shift is
-    -- down, and the bomb bit is never set to have to be taken off again.
-    if mine_tap then bits[sim.BTN_MINE] = true end
 
     local b = 0
     for bit in pairs(bits) do b = b + bit end
@@ -762,7 +756,7 @@ local function drain_kills()
         -- it is the line you will want to see.
         local col, mine = nil, false
         if k.killer == me and k.victim ~= me then
-            col, mine = pal.PRIZE, true
+            col, mine = pal.PAID, true
             -- And the same number again, off the wreck rather than in the
             -- feed. A kill is read where it happened: a pilot who just took
             -- somebody is looking at the explosion, not at the corner. The
@@ -803,21 +797,6 @@ local function drain_events()
     -- yours", the reading a watcher wants.
     local view = eye() or 255
     world.events(view, sfx.play)
-    for _, ship in ipairs(net.prize_touches) do
-        if not net.watching then world.prize_touch(ship, sfx.play) end
-    end
-    if #net.prize_touches > 0 then net.prize_touches = {} end
-    for _, p in ipairs(net.prizes) do
-        if not net.watching and me < sim.ship_count() then
-            world.prize(me, p.type, p.delta, sfx.play,
-                        net.claim_prize_sound())
-            local col, name = pal.prize(p.type)
-            local up = p.delta >= 0
-            if not up then col = pal.RUST end
-            notify((up and "+ " or "- ") .. name, col, true)
-        end
-    end
-    if #net.prizes > 0 then net.prizes = {} end
     for _, charge in ipairs(net.charge_events) do
         world.remote_charge(charge.slot, charge.x, charge.y, sfx.play)
     end
@@ -843,14 +822,6 @@ local function drain_events()
         local ty, a, b, v = sim.event_at(i)
         if ty == sim.EV_HIT and a == me then
             hurt = 1
-        elseif ty == sim.EV_PRIZE and a == me then
-            local col, name = pal.prize(b)
-            -- v is the sign: a green can take as well as give, and the feed
-            -- is the one place that says which happened.
-            local up = v >= 0
-            if not up then col = pal.RUST end
-            -- Always yours: the event is filtered to this pilot two lines up.
-            notify((up and "+ " or "- ") .. name, col, true)
         elseif ty == sim.EV_FLAG_TAKE or ty == sim.EV_FLAG_DROP then
             local col = (sim.ship_team(a) == eye_team())
                 and pal.FRIEND or pal.ENEMY
@@ -865,7 +836,6 @@ end
 -- replays its own ship; nothing else in the world is stepped here.
 -- Whether the mine input was down on the previous step, so a held chord asks
 -- once rather than a hundred times a second.
-local mine_was_down = false
 
 -- Why nothing happened when you asked for a mine.
 --
@@ -880,26 +850,8 @@ local mine_was_down = false
 -- holds both numbers to draw those pips with and a refusal is not simulation
 -- state: nothing about the world changed, so there is nothing to put in a
 -- snapshot and nobody else to tell.
---
--- Only the ceiling gets a line. A mine refused for want of energy, inside a
--- safe zone, or on a hull with no rack is a refusal a player can already see
--- the cause of; being full is the one that is invisible.
-local function mine_refused(b)
-    local down = has(b, sim.BTN_MINE)
-    local edge = down and not mine_was_down
-    mine_was_down = down
-    if not edge or net.watching or not net.connected then return end
-    local seat = net.me
-    if sim.ship_alive(seat) ~= 1 then return end
-    local cap = sim.mine_max(seat)
-    if cap > 0 and sim.mines_out(seat) >= cap then
-        notify("no room for another mine", pal.BOMB, true)
-    end
-end
-
 local function step_once()
     local b = my_buttons()
-    mine_refused(b)
     if net.step(b) then drain_events() end
     -- The safe-zone clock, on the tick rather than the frame, because the room
     -- counts ticks and a frame is not one. A watcher has no hull to be in one,
@@ -1183,7 +1135,7 @@ function update(self, dt)
     -- Latched like the pad's tap, and for the same reason: the press has to
     -- survive until a simulation step spends it.
     if not menu.open then
-        for i = 1, 2 do
+        for i = 1, sim.MAX_CHARGES do
             if tapped[hash("charge_" .. i)] then
                 tapped[hash("charge_" .. i)] = nil
                 local slot = my_slots()[i]
@@ -1206,11 +1158,9 @@ function update(self, dt)
             -- is a second. Reading it here, once, is what makes a tap a
             -- press rather than a hold.
             multi_tap = touch.fired_multi()
-            mine_tap = touch.fired_mine()
             step_once()
             charge_tap = nil
             multi_tap = false
-            mine_tap = false
             accum = accum - TUNE.DT
             steps = steps + 1
         end
@@ -1283,31 +1233,6 @@ function update(self, dt)
                 ui.player_step(move[2], net.pilots, net.watchers, eye_team(),
                                menu.name)
                 sfx.ui("ui_move")
-            end
-        end
-    end
-    -- D is the gunner key in both directions. Riding, it drops you off without
-    -- making you open anything first. Flying, it attaches only when Players is
-    -- visible and its selected row is an eligible teammate.
-    --
-    -- The target comes from the same rule that draws ATTACH on the pilot card,
-    -- so D cannot choose somebody the panel says is unavailable. The server
-    -- still owns the live capacity and full-bar checks.
-    --
-    -- Not while a card is taking typing, which the panel toggles on P and M
-    -- get away with and this cannot: those two open something a stray press
-    -- can close again, and this one throws a pilot off a ship. The letter
-    -- reaches both paths, since a key trigger and the text stream are
-    -- separate actions in Defold, so typing a name with a d in it would
-    -- otherwise drop you.
-    if tapped[hash("drone")] then
-        tapped[hash("drone")] = nil
-        if live and not menu.typing() then
-            local target = ui.drone_target(me, watching)
-            if target ~= nil then
-                net.attach(target)
-                ui.inspect = nil
-                sfx.ui(target == 255 and "ui_move" or "ui_go")
             end
         end
     end
@@ -1755,41 +1680,13 @@ function update(self, dt)
         world.lights_begin()
         fx.gather_lights(world.light)
         world.draw_rocks(fill, glow, t, cull)
-        world.prizes(fill, glow, t, cull)
         world.weapons(fill, glow, t, cull)
-
-        -- Who is riding whom, once for the room rather than once per hull.
-        --
-        -- Every drawn hull used to ask every seat whether it was riding this
-        -- one, which is the room squared and almost always answers no: a
-        -- sixty-four seat game with twenty hulls on screen crossed into the
-        -- core about thirteen hundred extra times a frame to find the handful
-        -- of gunners, or none. Ascending g here is the order the flat list
-        -- below was built in, so the ring is drawn exactly as before.
-        local mounted = nil
-        for g = 0, sim.ship_count() - 1 do
-            local c = sim.ship_carrier(g)
-            if c ~= 255 and sim.ship_alive(g) == 1 then
-                mounted = mounted or {}
-                local l = mounted[c]
-                if not l then
-                    l = {}
-                    mounted[c] = l
-                end
-                l[#l + 1] = g
-            end
-        end
 
         for i = 0, sim.ship_count() - 1 do
             -- Yours is always drawn: the camera is on it, so it cannot be off
             -- screen, and a frame that skipped it would be a frame with no
             -- ship.
-            -- A gunner is not drawn as a hull. It is sitting on its carrier's
-            -- point, so drawing it there would be a second silhouette on the
-            -- same pixel; it comes back below as a drone on that carrier's
-            -- ring instead. Its own pip goes with it, since a bar over a hull
-            -- nobody can see belongs to nothing.
-            if sim.ship_alive(i) == 1 and sim.ship_carrier(i) == 255
+            if sim.ship_alive(i) == 1
                and (i == me or not (sim.ship_x(i) < cull.x0 or sim.ship_x(i) > cull.x1
                                     or sim.ship_y(i) < cull.y0 or sim.ship_y(i) > cull.y1)) then
                 local col = (sim.ship_team(i) == my_team) and pal.FRIEND or pal.ENEMY
@@ -1844,25 +1741,6 @@ function update(self, dt)
                                    bar_col)
                 end
 
-                -- And whoever is riding it, as drones on its ring. Gathered
-                -- here rather than inside the renderer because the renderer
-                -- draws one ship and knows nothing about the rest of the room.
-                local riders = nil
-                local aboard = mounted and mounted[i]
-                if aboard then
-                    riders = {}
-                    for k = 1, #aboard do
-                        local g = aboard[k]
-                        riders[#riders + 1] = sim.ship_heading(g)
-                        riders[#riders + 1] = world.energy_fraction(g)
-                        riders[#riders + 1] = col
-                        riders[#riders + 1] = g == me
-                    end
-                end
-                if riders then
-                    world.drones(fill, glow, sim.ship_class(i),
-                                 sim.ship_x(i), sim.ship_y(i), riders)
-                end
             end
         end
 
@@ -1909,9 +1787,6 @@ function update(self, dt)
                  or sim.ship_mod(me, sim.TRIG_BOMB, sim.MOD_MULTI) > 0)
         touch.multi_off = not watching and sim.ship_multi_off(me)
         touch.charges = my_slots()
-        touch.has_mine = not watching and sim.mine_max(me) > 0
-        touch.mine_max = touch.has_mine and sim.mine_max(me) or 0
-        touch.mines_out = touch.has_mine and sim.mines_out(me) or 0
         touch.counts = {}
         touch.maxes = {}
         for _, k in ipairs(touch.charges) do
@@ -2011,6 +1886,12 @@ function update(self, dt)
             -- public, so what may be said comes from here rather than from a
             -- team byte the client could read off any ship.
             teams = net.teams,
+            -- The clock and the score, from a zone that plays matches, and
+            -- the sides' own names to draw beside them. Nil in a room that
+            -- runs forever, which is how the HUD decides whether to draw a
+            -- clock at all.
+            match = net.match,
+            side_names = side_names(),
             -- Whether that box should also offer to invite whoever it is
             -- describing, and who has already been asked. Both are the
             -- connection's business, so they are read here rather than in the
@@ -2495,22 +2376,6 @@ function on_input(self, action_id, action)
                 if r.action == "invite" then
                     net.invite(r.value)
                     sfx.ui("ui_go")
-                    return true
-                end
-                -- Climb onto this pilot as a gunner, or drop off them. The box
-                -- shuts behind both: the answer arrives as your own hull
-                -- moving onto theirs, or falling off, and that is on the
-                -- screen behind the panel.
-                if r.action == "attach" then
-                    net.attach(r.value)
-                    ui.inspect = nil
-                    sfx.ui("ui_go")
-                    return true
-                end
-                if r.action == "detach" then
-                    net.attach(255)
-                    ui.inspect = nil
-                    sfx.ui("ui_move")
                     return true
                 end
                 -- Borrow this pilot's eyes. The box shuts behind it, unlike

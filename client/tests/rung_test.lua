@@ -118,9 +118,9 @@ check("and no two rungs anywhere in it are close", any > 25,
 -- acts on, so a round wearing one is a round telling a lie.
 local SPENT = {
     {"team cyan", pal.FRIEND}, {"team amber", pal.ENEMY},
-    {"charge gold", pal.CHARGE_COL}, {"prize green", pal.PRIZE},
+    {"charge gold", pal.CHARGE_COL}, {"payout green", pal.PAID},
     {"burst violet", pal.BURST}, {"HUD ink", pal.INK},
-    {"a bomb's own color", pal.BOMB}, {"rust", pal.RUST},
+    {"a bomb's own color", pal.BOMB}, {"bounty amber", pal.BOUNTY},
 }
 local near, nname = math.huge, ""
 for i, c in ipairs(pal.RUNG) do

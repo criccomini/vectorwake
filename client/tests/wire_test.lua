@@ -35,7 +35,6 @@ local next_vx, next_vy, next_repel_ticks, next_repel_speed = nil, nil, nil, nil
 local smooth_repel_started, smooth_correction_absorbed = false, false
 local sim_events = {}
 _G.sim = {
-    EV_PRIZE_TOUCH = 14,
     tick = function() return tick end,
     replay = function() tick = tick + 1 end,
     step = function() tick = tick + 1 end,
@@ -76,7 +75,6 @@ _G.sim = {
     ship_x_raw = function(i) return i == 3 and own_x or 0 end,
     ship_y_raw = function(i) return i == 3 and own_y or 0 end,
     ship_heading_raw = function() return 0 end,
-    ship_carrier = function() return 255 end,
     weapon_count = function() return 0 end,
     weapon_at = function() end,
     spec_life = function() return 0 end,
@@ -244,20 +242,17 @@ check("inputs acknowledge the snapshot receipt window",
       and string.byte(wt.unsent[#wt.unsent], 11) == 1)
 check("and nothing leaks onto the socket", ws.dialled == 0)
 
-sim_events = {{sim.EV_PRIZE_TOUCH, 3, 0, 0}}
-net.step(0)
-sim_events = {}
-check("predicted green contact is ready on the collision tick",
-      #net.prize_touches == 1 and net.prize_touches[1] == 3)
+-- The clock and the score, which is the newest answer rather than a queue:
+-- one lost to a full socket costs a second of clock and the next repairs it.
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
-            message = string.char(14, 2, 1)})
-check("the authoritative result claims its local pickup sound",
-      #net.prizes == 1 and net.claim_prize_sound())
+            message = string.char(14, 1, 97, 2, 3, 0, 5, 0)})
+check("a match clock arrives",
+      net.match and net.match.playing and net.match.left == 97
+      and net.match.score[0] == 3 and net.match.score[1] == 5)
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
-            message = string.char(14, 2, 1)})
-check("a result without local contact still needs a sound",
-      #net.prizes == 2 and not net.claim_prize_sound())
-net.prizes, net.prize_touches = {}, {}
+            message = string.char(14, 0, 25, 2, 3, 0, 5, 0)})
+check("and the whistle replaces it rather than queueing behind it",
+      net.match and not net.match.playing and net.match.left == 25)
 
 local reliable_before, unreliable_before = #wt.sent, #wt.unsent
 check("focus loss can release held controls", net.release_controls())

@@ -40,7 +40,6 @@ local sim = {
     ship_heading = function() return 0 end,
     ship_alive = function() return 1 end,
     ship_team = function(i) return room.teams[i] or 0 end,
-    ship_carrier = function() return 255 end,
     ship_class = function() return 0 end,
     ship_energy = function() return 100 end,
     ship_max_energy = function() return 100 end,
@@ -147,8 +146,8 @@ frame(0.02)
 local first = floated()
 check("a kill of yours floats its payout", first ~= nil)
 check("in the green the feed uses for your own kill",
-      first and first.col[1] == pal.PRIZE[1] and first.col[2] == pal.PRIZE[2]
-          and first.col[3] == pal.PRIZE[3],
+      first and first.col[1] == pal.PAID[1] and first.col[2] == pal.PAID[2]
+          and first.col[3] == pal.PAID[3],
       first and table.concat(first.col, ",") or "nothing drawn")
 -- Center of the screen plus the nameplate's own offset, because the wreck is
 -- under the camera and that is where the bounty sat.

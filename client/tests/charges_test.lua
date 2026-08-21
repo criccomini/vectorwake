@@ -65,7 +65,6 @@ _G.sim = {
     ship_y = function() return 200 end,
     ship_team = function() return 1 end,
     -- Nobody is riding anybody unless a test says so.
-    ship_carrier = function() return 255 end,
     charge_spec = function(k) return CHARGE_SPEC[k] or -1 end,
     spec_blast = function(id) return (SPECS[id] or {}).blast or 0 end,
     spec_life = function(id) return (SPECS[id] or {}).life or 0 end,

@@ -10,9 +10,8 @@
 --
 -- One list because there were two, and they drifted exactly the way two lists
 -- of the same facts do: the phone's page was written before the map moved to
--- the dial and before anybody could be a gunner, so it went on describing a
--- game with neither in it. What a control does is one fact, and the device
--- decides how to say it, not what is true.
+-- the dial, so it went on describing a game without it. What a control does
+-- is one fact, and the device decides how to say it, not what is true.
 --
 -- `id` is the name the press arrives under in `arena.script`, so it is not
 -- free: adding a control here without a hand for it there is a row that says
@@ -53,18 +52,6 @@ return {
     {id = "bombs", name = "bombs", cat = "bomb", keys = {"tab"},
      what = "Fires a heavy weapon that detonates on impact.",
      pad = "the smaller pad beside the guns"},
-    -- Not a weapon of its own and not a charge: the bomb trigger held
-    -- differently, which is the original's own chord and the reason this is
-    -- the one control that starts on two keys. It sits next to bombs and
-    -- wears the bomb's color.
-    --
-    -- Shift and the bomb key used to be wired together in `arena.script`, so
-    -- moving the bomb key moved the mine chord with it. They are two bindings
-    -- now and neither follows the other: putting bombs on K leaves the mine on
-    -- Shift+Tab until it is moved as well, which the page shows.
-    {id = "mine", name = "mine", cat = "bomb", keys = {"shift", "tab"},
-     what = "Lays a mine instead of throwing a bomb.",
-     pad = "tap the mine tab attached to bombs"},
     -- The charge keys are positions under the skin: each spends the next slot
     -- the hull you are in actually carries, so on a ship with no repel the
     -- first key spends the burst. They are named for what the slots hold,
@@ -72,22 +59,26 @@ return {
     -- page that called them "charge 1" was asking a pilot to learn a second
     -- name for the same thing.
     --
-    -- Two, not four. The core carries four slots and the baseline fills two:
-    -- the third was the mine until mines became the bomb trigger's other
-    -- posture, and the fourth has never held anything. A key for a charge no
-    -- hull can carry is a row on this page that does nothing when pressed.
+    -- Three, not four. The core carries four slots and the baseline fills
+    -- three: a repel, a burst and a mine. The fourth is a zone's to fill, and
+    -- a key for a charge no hull can carry is a row on this page that does
+    -- nothing when pressed.
+    --
+    -- The mine used to be the bomb trigger's other posture, on Shift+Tab. It
+    -- is a count you carry and spend now, so it is a charge like the other
+    -- two and it lost the chord along with the special case.
     {id = "charge_1", name = "repel", cat = "charge", keys = {"q"},
      what = "Pushes enemy fire and ships away from you.",
      pad = "tap its fixed cell above the weapons"},
     {id = "charge_2", name = "burst", cat = "charge", keys = {"w"},
      what = "Fires bullets in every direction at once.",
      pad = "tap its fixed cell above the weapons"},
+    {id = "charge_3", name = "mine", cat = "charge", keys = {"e"},
+     what = "Leaves a mine where you are.",
+     pad = "tap its fixed cell above the weapons"},
     {id = "multi", name = "multifire", cat = "multi", keys = {"tick"},
      what = "Fans your gun wider for more energy per shot.",
      pad = "hold guns and slide up to toggle the fan"},
-    {id = "drone", name = "attach / drop off", cat = "drone", keys = {"d"},
-     what = "Attaches to the selected teammate in Players, or drops you off your carrier.",
-     pad = "a teammate's card carries ATTACH; your carrier's card carries DROP"},
     {id = "map", name = "map", cat = "map", keys = {"m"},
      what = "Shows the whole arena instead of the radar.",
      pad = "tap the dial"},

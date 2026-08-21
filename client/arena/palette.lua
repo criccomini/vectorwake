@@ -120,9 +120,9 @@ M.UPGRADES = {
 -- Three lengths, for three places with three amounts of room. `short` is the
 -- mark's own letters, `name` is what the feed says as a green lands, and
 -- `long` is for somewhere that is explaining rather than reporting: the
--- hover card in the corner, which exists because "prox" teaches nobody what
--- the round does. Only the ones whose short name is jargon carry a `long`,
--- and a caller that wants one falls back to `name`.
+-- hangar and the hover card in the corner, which exist because "prox"
+-- teaches nobody what the round does. Only the ones whose short name is
+-- jargon carry a `long`, and a caller that wants one falls back to `name`.
 M.MODS = {
     {name = "multi",    short = "MUL"},
     {name = "bounce",   short = "BNC"},
@@ -131,15 +131,17 @@ M.MODS = {
     {name = "freeze",   short = "FRZ"},
     {name = "repel",    short = "RPL"},
 }
--- Every green on the map, one color. See world.prizes.
-M.PRIZE     = rgb(0x8dffb0)
--- And the color of one that took something back.
-M.RUST      = rgb(0xff8a5c)
+-- What a kill paid, drifting off the wreck that paid it, and the same green
+-- the feed uses for a line about a kill of yours.
+M.PAID      = rgb(0x8dffb0)
 -- Charges: things you carry a count of and spend.
+-- The four charge slots, and what the baseline puts in the first three. A
+-- zone may fill the fourth, which is why it is named for the slot rather
+-- than for a weapon nobody has decided on.
 M.CHARGES = {
     {name = "repel", short = "RPL"},
     {name = "burst", short = "BST"},
-    {name = "charge 3", short = "C3"},
+    {name = "mine",  short = "MIN"},
     {name = "charge 4", short = "C4"},
 }
 M.CHARGE_COL = rgb(0xffd166)
@@ -149,9 +151,12 @@ M.BOUNTY    = rgb(0xffe08a)
 M.LEVEL_COL = rgb(0xff7ba8)
 M.MOD_COL   = rgb(0x9df0ff)
 
--- What a green of this type is: its color, and what the feed calls it.
--- The prize space is flat and the core hands out an index into it.
-function M.prize(kind)
+-- What one slot of the kit space is: its color, and what to call it.
+--
+-- The space is flat and every slot in it costs one, so this is the whole of
+-- the vocabulary: five stats, a rung per trigger, an add-on per trigger per
+-- kind, then the charges.
+function M.slot(kind)
     local u = M.UPGRADES[kind + 1]
     if u then return u.col, u.name end
     local t = kind - #M.UPGRADES

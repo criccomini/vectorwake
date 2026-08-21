@@ -173,9 +173,6 @@ local function reset(w, h, s)
     -- Off by default, which is the ordinary hull: a fan is picked up. The
     -- block at the bottom turns it on for the case that is actually tight.
     touch.has_fan = false
-    -- Off by default too, and for the same reason: a hull that lays mines is
-    -- a hull the zone said may, not the ordinary one.
-    touch.has_mine = false
     touch.charges = {0, 1}
     touch.counts = {[0] = 2, [1] = 1}
     touch.maxes = {[0] = 3, [1] = 3}
@@ -429,10 +426,6 @@ local function controls(L2)
         out[#out + 1] = {n = "bombs", x = L2.bombs.x, y = L2.bombs.y,
                          r = L2.bombs.r * 1.18}
     end
-    if L2.mine then
-        out[#out + 1] = {n = "mine", x = L2.mine.x, y = L2.mine.y,
-                         r = L2.mine.w * 0.65}
-    end
     for i, c in ipairs(L2.charge) do
         out[#out + 1] = {n = "charge" .. i, x = c.x, y = c.y,
                          r = c.w * 0.65}
@@ -488,7 +481,6 @@ local function rows(l)
 end
 
 local function under_ceiling(l, ceil)
-    if l.mine and l.mine.y + l.mine.r > ceil then return false end
     for _, c in ipairs(l.charge) do
         if c.y + c.r > ceil then return false end
     end
@@ -538,7 +530,6 @@ end
 -- reach the wrong one.
 do
     local w, h, s = reset(unpack(LAND))
-    touch.has_mine = true
     local l = touch.layout(w, h, s)
     local got = {}
     local function tap(x, y)
@@ -548,7 +539,6 @@ do
                                   screen_x = x, screen_y = y}}}, w, h, s)
         local k = touch.fired_charge()
         if k then out = k
-        elseif touch.fired_mine() then out = "mine"
         else
             for _, bit in ipairs(touch.bits(0)) do
                 if bit == sim.BTN_FIRE then out = "guns"
@@ -562,11 +552,9 @@ do
     end
     got.guns = tap(l.guns.x, l.guns.y)
     got.bombs = tap(l.bombs.x, l.bombs.y)
-    got.mine = tap(l.mine.x, l.mine.y)
     check("the gun pad fires the gun", got.guns == "guns", tostring(got.guns))
     check("the bomb pad drops a bomb", got.bombs == "bombs",
           tostring(got.bombs))
-    check("the mine tab lays a mine", got.mine == "mine", tostring(got.mine))
     local ok = true
     for _, c in ipairs(l.charge) do
         if tap(c.x, c.y) ~= c.slot then ok = false end
@@ -765,43 +753,42 @@ do
     end
 end
 
--- --- the mine tab ------------------------------------------------------------
+-- --- four charges ------------------------------------------------------------
 --
--- A mine is not a charge. Its tab stays attached to the bomb while every charge
--- keeps its own fixed slot around it.
+-- The mine is one of them now, so a hull that carries all four fills the rail
+-- and every cell keeps its own fixed slot.
 do
     local w, h, s = reset(unpack(PORT))
     touch.ceiling = ROOMY
     touch.has_fan = true
-    touch.has_mine = true
     touch.charges = {0, 1, 2, 3}
     touch.counts = {[0] = 3, [1] = 3, [2] = 3, [3] = 3}
+    touch.maxes = {[0] = 3, [1] = 3, [2] = 3, [3] = 3}
     local l = touch.layout(w, h, s)
-    check("a mining hull gets a mine tab", l.mine ~= nil)
+    check("four charges make four cells", #l.charge == 4,
+          tostring(#l.charge))
     check("nothing in the utility row overlaps", worst_overlap(l) == nil,
           tostring(worst_overlap(l)))
     check("and the utility row clears the dial", under_ceiling(l, ROOMY))
     for _, c in ipairs(controls(l)) do
-        check(c.n .. " is on the screen with a mine tab",
+        check(c.n .. " is on the screen with a full rail",
               c.x - c.r >= 0 and c.x + c.r <= w
                   and c.y - c.r >= 0 and c.y + c.r <= h,
               string.format("%s at %.0f,%.0f r%.0f", c.n, c.x, c.y, c.r))
     end
 
-    -- Spending a charge must not slide the mine a thumb is already reaching for.
-    local at = {l.mine.x, l.mine.y}
-    touch.counts = {[0] = 0, [1] = 1}
+    -- Spending one must not slide a cell a thumb is already reaching for.
+    local at = {}
+    for _, c in ipairs(l.charge) do at[c.slot] = {c.x, c.y} end
+    touch.counts = {[0] = 0, [1] = 1, [2] = 2, [3] = 0}
     local fewer = touch.layout(w, h, s)
-    check("and it holds its cell as the rack empties",
-          fewer.mine.x == at[1] and fewer.mine.y == at[2],
-          string.format("%.0f,%.0f then %.0f,%.0f", at[1], at[2],
-                        fewer.mine.x, fewer.mine.y))
-
-    -- A hull the zone allows none gets no cell at all, so the space falls
-    -- through to the stick rather than to a control that does nothing.
-    touch.has_mine = false
-    check("a hull that lays none gets no tab",
-          touch.layout(w, h, s).mine == nil)
+    local held = true
+    for _, c in ipairs(fewer.charge) do
+        if c.x ~= at[c.slot][1] or c.y ~= at[c.slot][2] then held = false end
+    end
+    check("and every surviving cell holds its place as the rack empties", held)
+    check("while a spent slot leaves no cell behind", #fewer.charge == 2,
+          tostring(#fewer.charge))
 end
 
 print(fails == 0 and "all good" or (fails .. " failed"))

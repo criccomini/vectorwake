@@ -827,26 +827,6 @@ local function radar(cx, cy, me)
     -- Greens, under the flags and ships and over the terrain: a green is
     -- worth steering for, but never worth steering for instead of the pilot
     -- carrying thirty of them.
-    --
-    -- Read live rather than sampled into a list the way terrain is. Terrain
-    -- can be cached because it does not move; a green appears, is taken, and
-    -- times out, and a radar showing one that is already gone is worse than
-    -- a radar showing none.
-    --
-    -- One about to expire is dimmed, for the same reason the world draw
-    -- blinks it: the useful question is not "is there a green there" but "will
-    -- it still be there when I arrive", and on the radar that is a question
-    -- about somewhere half a screen away.
-    for i = 0, sim.prize_count() - 1 do
-        local active, wx, wy, life = sim.prize_at(i)
-        if active then
-            local px, py = put(wx, wy)
-            if px then
-                F.layer:disc(px, ry(py, 0), 1.9 * F.scale, 6,
-                       pal.a(pal.PRIZE, life < 120 and 0.4 or 0.95))
-            end
-        end
-    end
 
     local my_team = view_team
     for i = 0, sim.flag_count() - 1 do
@@ -929,10 +909,9 @@ local function overview(me)
     local ix, iy, side = dial()
     local ov = world.overview
     -- Opaque, where the radar's wash is not, and that is the rule above
-    -- rather than a preference about panels. At the radar's 0.55 a green
-    -- lying under the dial comes through it at half strength, so a view that
-    -- draws no prizes shows prizes anyway, in the one place a player would
-    -- read them as part of the map.
+    -- rather than a preference about panels. At the radar's 0.55 whatever
+    -- lies under the dial comes through it at half strength, in the one place
+    -- a player would read it as part of the map.
     rect(ix, iy, side, side, pal.RADAR_BG)
     if ov.grid > 0 then
         local k = side / ov.grid
@@ -1093,12 +1072,12 @@ local function nameplates(o)
     -- the rest, and the list stays as short as the killing is fast.
     payouts:each(F.now, function(p, f, a)
             local px, py = on_glass(o, scale, p.x, p.y)
-            -- The bounty's own size and offset, in the green the feed already
-            -- uses for a line about a kill of yours. Up is negative here: the
-            -- name sits at +13 and the bounty at +25, under it.
+            -- The payout's own size and offset, in the green the feed
+            -- already uses for a line about a kill of yours. Up is negative
+            -- here: the name sits at +13 and the payout at +25, under it.
             txt("+" .. p.n, px + 12 * F.scale,
                 py + 13 * F.scale - ui_payouts.RISE * F.scale * f,
-                11 * F.scale, pal.a(pal.PRIZE, 0.95 * a), nil, nil, true)
+                11 * F.scale, pal.a(pal.PAID, 0.95 * a), nil, nil, true)
     end)
 
     -- Not your own, for the same reason your name is not drawn: a bounty under
@@ -1293,23 +1272,6 @@ local function seat_team(i, p)
     return seat_here(i) and sim.ship_team(i) or (p and p.team)
 end
 
--- Whether the selected pilot is a teammate this ship may ask to ride. This is
--- shared by the card's ATTACH button and the D key so the two controls never
--- disagree about which pilot is a target.
---
--- Do not ask the filtered simulation whether the target is active, alive, or
--- already riding somebody. A teammate across the map is deliberately absent
--- from this client's snapshot, but attaching across the map is the point of
--- the action. The roster supplies the stable team fact. The server owns the
--- changing gates, including life, capacity, carrier state, and a full bar.
-local function attachable(me, i, theirs, watch, riding)
-    if watch or me == nil or i == nil or i == me then return false end
-    if me < 0 or me >= sim.ship_count() then return false end
-    if i < 0 or i >= sim.ship_count() then return false end
-    if sim.ship_active(me) ~= 1 or sim.ship_alive(me) ~= 1 then return false end
-    return theirs == view_team and riding ~= i
-end
-
 -- Kills, deaths, points and bounty, whichever way round they have to be got.
 local function seat_score(i, p)
     if seat_here(i) then
@@ -1429,24 +1391,6 @@ function M.player_step(delta, pilots, watchers, side, viewer_name)
     if at <= M.scroll then M.scroll = at - 1 end
     if at > M.scroll + SHOWN then M.scroll = at - SHOWN end
     return M.inspect
-end
-
--- The request D should make, or nil when D has no contextual action. Dropping
--- off is always available to a live gunner. Attaching additionally needs the
--- Players panel, a selected eligible teammate, and a pilot who is flying.
-function M.drone_target(me, watch)
-    if watch or me == nil or me < 0 or me >= sim.ship_count() then return nil end
-    if sim.ship_active(me) ~= 1 then return nil end
-    local riding = sim.ship_carrier(me)
-    if riding ~= 255 then return 255 end
-    if not M.details or M.inspect == nil then return nil end
-    for _, r in ipairs(rows) do
-        if r.i == M.inspect
-            and attachable(me, r.i, r.team, false, riding) then
-            return r.i
-        end
-    end
-    return nil
 end
 
 local function scores(me, pilots, watchers, viewer_name)
@@ -2002,7 +1946,7 @@ local function status(me, charges, lift)
         local slot = string.lower(c.name or c.short or "")
         local gc = CHARGE_GLYPHS[slot] or gl_diamond
         gc(mid, y + rows_h / 2, 7 * z,
-           pal.a(CHARGE_HUES[slot] or pal.PRIZE, 0.85))
+           pal.a(CHARGE_HUES[slot] or pal.CHARGE_COL, 0.85))
         local slot_max = math.max(1, c.max or 3)
         pips(val + 3 * z, y + rows_h / 2, slot_max, c.count,
              pal.CHARGE_COL, 2.7 * z, 9 * z)
@@ -2017,22 +1961,29 @@ local function status(me, charges, lift)
         y = y + rows_h
     end
 
-    -- What you are worth, which is the number that decides who comes for you,
-    -- and which was only ever behind the info toggle. The mark is the green's
-    -- own diamond, since greens are most of what the number counts.
-    gl_diamond(mid, y + rows_h / 2, 6 * z, pal.a(pal.PRIZE, 0.8))
+    -- What you are worth, which is the number that decides who comes for
+    -- you. It is the base plus your run, so this row says how long you have
+    -- been alive and killing rather than what you own: the run is drawn
+    -- beside it so a pilot reads "worth five, on a run of four" without
+    -- having to subtract.
+    gl_diamond(mid, y + rows_h / 2, 6 * z, pal.a(pal.BOUNTY, 0.8))
     local bty = sim.ship_bounty(me)
+    local run = sim.ship_run and sim.ship_run(me) or 0
     txt(tostring(bty), val, y + rows_h / 2, (FONT - 2) * z,
-        bty > 0 and pal.a(pal.PRIZE, 0.95) or pal.a(pal.DIM, 0.5))
+        run > 0 and pal.a(pal.BOUNTY, 0.95) or pal.a(pal.DIM, 0.6))
     local bw = val + text_w(tostring(bty), (FONT - 2) * z)
+    if run > 0 then
+        txt("x" .. run, bw + 6 * z, y + rows_h / 2, (FONT - 4) * z,
+            pal.a(pal.PAID, 0.8))
+        bw = bw + 6 * z + text_w("x" .. run, (FONT - 4) * z)
+    end
     zone("bounty", x, y, bw - x, rows_h)
 
     return 0
 end
 
--- What a season of play has added up to, under the same toggle as the
--- scoreboard: which hull you are in and how far up each stat the greens have
--- carried you.
+-- What this pilot is flying, under the same toggle as the scoreboard: which
+-- hull, and how far up each stat their kit took them.
 --
 -- The gun and bomb ladders used to be here too. They are what a trigger does
 -- rather than what a run has accumulated, and they belong in the corner with
@@ -2053,15 +2004,20 @@ local function loadout(me, class_names, top)
         x + w - 12 * F.scale, y + 16 * F.scale, (FONT - 3) * F.scale, pal.a(pal.DIM, 0.85),
         "right")
 
-    -- Every slot always present, so the row does not reflow as prizes are
-    -- picked up, and the ones you do not hold sit there as empties: a list of
-    -- what is still out there to find.
+    -- Every stat always present, and the pips run to the kit space's own
+    -- ceiling rather than to a number written here: a pilot who bought the
+    -- last two steps of a stat should see two more places to fill, not a row
+    -- that silently stops counting.
+    -- Through tonumber, because a stub `sim` that answers every unknown key
+    -- with a function would otherwise be counted with.
+    local steps = tonumber(sim.UP_STEPS) or 8
     local gap = (w - 24 * F.scale) / #pal.UPGRADES
     for i, up in ipairs(pal.UPGRADES) do
         local held = sim.ship_up(me, i - 1)
         local sx = x + 14 * F.scale + (i - 1) * gap
         txt(up.short, sx, y + 32 * F.scale, (FONT - 4) * F.scale, pal.a(pal.DIM, 0.75))
-        pips(sx + 3 * F.scale, y + 42 * F.scale, 4, held, up.col, 1.9 * F.scale, 6 * F.scale)
+        pips(sx + 3 * F.scale, y + 42 * F.scale, steps, held, up.col,
+             1.7 * F.scale, 4.6 * F.scale)
     end
     return y + h
 end
@@ -2138,24 +2094,10 @@ local function inspect(o, top)
     -- else's, so offering it on an enemy would be a control that quietly
     -- dropped you back on the room channel.
     local follow = o.watch and same_team and o.watch.subject ~= i
-    -- Riding lives in this panel for the reason the other two do: you opened
-    -- it by picking a person, and climbing onto somebody is a thing you do to
-    -- a person. Never offered to a watcher: the request goes out on your own
-    -- seat, and a watcher pressing DROP on somebody else's carrier would be
-    -- detaching a ship the button was not about.
-    --
-    -- Offered on a teammate who is not you. Their current life, carrier, and
-    -- capacity are facts the filtered snapshot may not contain, so the core
-    -- owns every changing condition. A refused request leaves this ship where
-    -- it is. Testing those conditions here would hide valid distant targets
-    -- and make a second copy of the rules drift.
-    local riding = (not o.watch) and sim.ship_carrier(o.me) or 255
-    local drop = riding ~= 255 and i == riding
-    local attach = attachable(o.me, i, theirs, o.watch, riding)
     -- The team row always exists now, so the count is fixed.
     local rows_n = 8
     local h = 30 * F.scale + rows_n * rowh
-        + ((invite or follow or attach or drop) and (KEY_H + 12) * F.scale or 0)
+        + ((invite or follow) and (KEY_H + 12) * F.scale or 0)
         + 10 * F.scale
     -- Under whatever is in the column, and never above where the column
     -- starts: with the scoreboard shut there is nothing above it, and a panel
@@ -2256,17 +2198,7 @@ local function inspect(o, top)
     -- appear together: inviting wants somebody who is not on your side and
     -- following wants somebody who is.
     local label, action = nil, nil
-    -- DROP only on the card of whoever you are riding: a DROP under a
-    -- stranger's name would be a control about a ship the name does not
-    -- belong to. ATTACH on any other living teammate, including while you
-    -- ride -- switching carriers is a legal ask, gated by the core on the
-    -- same full bar as any other attach. Neither ever displaces INVITE,
-    -- which wants an enemy where these want a teammate.
-    if drop then
-        label, action = "DROP", "detach"
-    elseif attach then
-        label, action = "ATTACH", "attach"
-    elseif invite then
+    if invite then
         -- Once it is sent it says so and stops taking clicks: the zone answers
         -- an invitation with a team list that does not name the invitee, so
         -- this is the only acknowledgement there is, and a button that stayed
@@ -2768,7 +2700,7 @@ local function menu_button(on_air, watch, room, pilots, watchers)
         local mid = y + KEY_H * F.scale / 2
         local h = 4.6 * F.scale
         local wsym = h * 1.5
-        local col = pal.a(pal.PRIZE, 0.92)
+        local col = pal.a(pal.PAID, 0.92)
         F.layer:tri(cx, ry(mid - h, 0), cx, ry(mid + h, 0),
               cx + wsym, ry(mid, 0), col)
         local size = key_size()
@@ -2800,7 +2732,7 @@ local function link(q)
         local bh = (3 + k * 2.6) * F.scale
         local bx = right - (26 - k * 6) * F.scale
         rect(bx, base - bh, 4 * F.scale, bh,
-             k < q and pal.a(pal.PRIZE, 0.85) or pal.a(pal.DIM, 0.22))
+             k < q and pal.a(pal.PAID, 0.85) or pal.a(pal.DIM, 0.22))
     end
     txt("LINK", right - 34 * F.scale, base - 4 * F.scale, (FONT - 3) * F.scale,
         pal.a(pal.DIM, 0.8), "right")
@@ -2939,8 +2871,8 @@ local function debug_hud(o, top)
     local w = colw * cols
     local x = F.w - F.safe_r - PAD * F.scale - w
     rect(x, y, w, h, pal.a(pal.BG, 0.78))
-    vrule(x, y, h, pal.a(pal.PRIZE, 0.8))
-    txt("DEBUG", x + 10 * F.scale, y + 15 * F.scale, size, pal.a(pal.PRIZE, 0.9))
+    vrule(x, y, h, pal.a(pal.PAID, 0.8))
+    txt("DEBUG", x + 10 * F.scale, y + 15 * F.scale, size, pal.a(pal.PAID, 0.9))
     -- The zone's name and nothing else. The wire sends the description on a
     -- second line of the same message, and a sentence about the game is not a
     -- diagnostic: it wrapped the header in prose that never changes while the
@@ -3009,6 +2941,72 @@ local function flag_strip(me)
         F.layer:seg(px, ry(y + 9 * F.scale, 0), px, ry(y - 8 * F.scale, 0), 1.6 * F.scale, col)
         F.layer:tri(px, ry(y - 8 * F.scale, 0), px + 9 * F.scale, ry(y - 4 * F.scale, 0),
               px, ry(y, 0), col)
+    end
+end
+
+-- The clock and the score, dead center at the top, which are the two facts a
+-- three minute match is about.
+--
+-- Both sides in the viewer's own colors rather than in the zone's: which one
+-- is yours is the first thing the number has to say, and every other
+-- instrument on this screen already reads cyan for yours and amber for
+-- theirs. A watcher's side is the subject's, the way it is everywhere else.
+--
+-- Drawn under the menu as well, unlike the two big centered lines below,
+-- because the menu is a scrim rather than a curtain and "how are you doing in
+-- the thing you are in" is exactly what a player opening it wants to keep.
+local function match_clock(m, names)
+    if not m then return end
+    local left = m.left or 0
+    local clock = string.format("%d:%02d", math.floor(left / 60), left % 60)
+    local y = F.safe_t + 26 * F.scale
+    local big = (M.compact and 22 or 30) * F.scale
+    local small = (M.compact and 10 or 13) * F.scale
+
+    -- The middle first, because everything else is placed off it.
+    local dim = m.playing and 1 or 0.55
+    txt(clock, F.w / 2, y, big, pal.a(pal.INK, 0.95 * dim), "center")
+    -- Nothing under it while a match is being played: the clock is counting
+    -- down and a word saying "match" beneath it is the interface reading its
+    -- own label back. The intermission does need saying, because a clock
+    -- counting down to something a player cannot see is a question.
+    if not m.playing then
+        txt("NEXT MATCH IN", F.w / 2, y + 13 * F.scale, small,
+            pal.a(pal.DIM, 0.8), "center")
+    end
+
+    -- A side's score sits outboard of the clock, its name outboard of that.
+    -- Yours on the left however the zone numbered the teams, so the reading
+    -- is positional and never has to be worked out from a color.
+    local gap = 26 * F.scale
+    local mine = view_team
+    local sides = {}
+    for team, n in pairs(m.score or {}) do
+        sides[#sides + 1] = {team = team, n = n}
+    end
+    table.sort(sides, function(a, b)
+        if (a.team == mine) ~= (b.team == mine) then return a.team == mine end
+        return a.team < b.team
+    end)
+    for i, side in ipairs(sides) do
+        local ours = side.team == mine
+        local col = pal.a(ours and pal.FRIEND or pal.ENEMY, 0.95 * dim)
+        local num = tostring(side.n)
+        local nw = text_w(num, big)
+        local nm = (names and names[side.team]) or ""
+        local at, align
+        if i == 1 then
+            at = F.w / 2 - text_w(clock, big) / 2 - gap
+            txt(num, at, y, big, col, "right")
+            at, align = at - nw - 10 * F.scale, "right"
+        else
+            at = F.w / 2 + text_w(clock, big) / 2 + gap
+            txt(num, at, y, big, col)
+            at, align = at + nw + 10 * F.scale, nil
+        end
+        if nm ~= "" then
+            txt(nm, at, y + 2 * F.scale, small, pal.a(col, 0.85 * dim), align)
+        end
     end
 end
 
@@ -3105,6 +3103,10 @@ function M.hud(o)
     if not (o.watch or M.touching) then
         stack_card(o, me)
     end
+    -- Above the two big centered lines and above the menu's own early return:
+    -- the clock is what the topbar carries and a player reading a menu still
+    -- wants it. See `match_clock`.
+    match_clock(o.match, o.side_names)
     -- The two big centered lines are the only interface that sits where the
     -- menu does. The panels can share the screen with it; these cannot.
     if o.menu_open then return end
@@ -3294,10 +3296,6 @@ local function board_col(cat)
     if cat == "bomb" then return pal.BOMB end
     if cat == "charge" then return pal.CHARGE_COL end
     if cat == "fly" then return pal.INK end
-    -- The gunner's own band, and it is the bounty gold rather than a new
-    -- hue: this key is the way off a ship somebody else is flying, and gold
-    -- is already what the interface uses for a number about you.
-    if cat == "drone" then return pal.BOUNTY end
     if cat == "players" then return pal.DOOR end
     if cat == "map" then return pal.HOLE end
     if cat == "menu" then return pal.ENEMY end

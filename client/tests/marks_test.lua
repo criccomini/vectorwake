@@ -101,7 +101,6 @@ _G.sim = setmetatable({
     ship_alive = function() return 1 end,
     ship_team = function(i) return i end,
     -- Nobody is riding anybody unless a test says so.
-    ship_carrier = function() return 255 end,
     ship_x = function(i) return 100 + i * 90 end,
     ship_y = function(i) return 100 + i * 60 end,
     ship_max_energy = function() return 100 end,

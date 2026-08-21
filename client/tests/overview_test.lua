@@ -69,11 +69,9 @@ local function check(desc, ok, why)
     print(string.format("%-46s %s", desc, ok and "ok" or ("FAIL: " .. why)))
 end
 
--- Every map the catalog ships, which is Alpha alone since the other two
--- came out of it.
-for _, name in ipairs({"alpha"}) do
-    local grid, g = coarse(tiles_of("catalog/zones/" .. name .. "/" ..
-                                    name .. ".vwmap"), CELL)
+-- Every map the catalog ships, which is the melee zone's two.
+for _, name in ipairs({"melee/drydock", "melee/slipway"}) do
+    local grid, g = coarse(tiles_of("catalog/zones/" .. name .. ".vwmap"), CELL)
     local bytes = {}
     for i = 1, g * g do bytes[i] = string.char(grid[i]) end
     local packed = table.concat(bytes)

@@ -257,14 +257,18 @@ do
           #split == 0, table.concat(split, ", "))
 end
 
--- A chord lights whole. Mines are Shift and the bomb key, and the bomb key is
--- also the bomb: reading the shortest chord for the armed state left the board
--- lighting half of what it was waiting to be told, which is a page asking for
--- a binding while showing a different one.
+-- A chord lights whole. Nothing ships on one, so this puts a control on Shift
+-- and the bomb key, which is also the bomb: reading the shortest chord for the
+-- armed state left the board lighting half of what it was waiting to be told,
+-- which is a page asking for a binding while showing a different one.
 do
-    local asking = draw_at(1280, 800, 7, "mine")
+    local binds = require("arena.binds")
+    binds.reset()
+    binds.set("map", {"shift", "tab"})
+    local asking = draw_at(1280, 800, 7, "map")
     check("a chord lights every key it is made of", asking.lit == 3,
           "lit " .. asking.lit)
+    binds.reset()
 end
 
 -- And every one of them is pressable. The picture is a control surface, not a

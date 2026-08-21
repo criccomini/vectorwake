@@ -339,9 +339,6 @@ int ShipPrivate(lua_State* L) {
     return 1;
 }
 SHIP_GETTER(ShipTeam, s->team)
-// Who this ship is riding, or 255. What the drawing needs to put a gunner's
-// drone on the right hull, and what the panel needs to offer the right verb.
-SHIP_GETTER(ShipCarrier, s->carrier)
 SHIP_GETTER(ShipClass, s->cls)
 SHIP_GETTER(ShipEnergy, s->energy)
 SHIP_GETTER(ShipKills, s->kills)
@@ -369,7 +366,9 @@ int ShipRepel(lua_State* L) {
     return 2;
 }
 
-// Upgrades held, by sim_upgrade index.
+// Stat steps dealt onto the hull, by sim_upgrade index. This is what the kit
+// bought, not what the kit asked for: a slot over the hull's ceiling grants
+// nothing, and the panel should draw the ship the pilot is actually flying.
 int ShipUp(lua_State* L) {
     int i = CheckShip(L);
     int k = (int)luaL_checkinteger(L, 2);
@@ -384,6 +383,41 @@ int ShipLevel(lua_State* L) {
     int i = CheckShip(L);
     int t = (int)luaL_checkinteger(L, 2);
     lua_pushnumber(L, (t >= 0 && t < SIM_TRIG_COUNT) ? g_cur->ships[i].level[t] : 0);
+    return 1;
+}
+
+// What this pilot's kit asks for in one slot of the flat kit space, and what
+// the hull they are in will let a kit put there.
+//
+// The two are different questions and the hangar needs both: a pilot moving to
+// a hull with a shorter bomb ladder keeps the kit they own and flies less of
+// it, and a panel that showed only what was dealt could not say why.
+int ShipKit(lua_State* L) {
+    int i = CheckShip(L);
+    int k = (int)luaL_checkinteger(L, 2);
+    lua_pushnumber(L, (k >= 0 && k < SIM_SLOT_COUNT) ? g_cur->ships[i].kit[k] : 0);
+    return 1;
+}
+
+// The ceilings for a hull by class rather than by seat, because the hangar
+// asks about ships nobody is currently flying.
+int KitCeilings(lua_State* L) {
+    int cls = (int)luaL_checkinteger(L, 1);
+    if (cls < 0 || cls >= g_cfg.class_count) { lua_pushnil(L); return 1; }
+    uint8_t ceiling[SIM_SLOT_COUNT];
+    sim_kit_ceilings(&g_cfg.classes[cls], ceiling);
+    lua_createtable(L, SIM_SLOT_COUNT, 0);
+    for (int k = 0; k < SIM_SLOT_COUNT; k++) {
+        lua_pushnumber(L, ceiling[k]);
+        lua_rawseti(L, -2, k + 1);
+    }
+    return 1;
+}
+
+// Hulls this zone flies, and what each is called. The hangar draws a row per
+// hull and cannot ask the roster for one it has no name for.
+int ClassCount(lua_State* L) {
+    lua_pushnumber(L, g_cfg.class_count);
     return 1;
 }
 
@@ -540,20 +574,12 @@ int ChargeMax(lua_State* L) {
     return 1;
 }
 
-// How many mines this hull may have out at once, and how many it has.
-//
-// Two numbers rather than a count in hand, because a mine is not carried:
-// the pilot always has them and what runs out is room on the floor. The
-// interface needs both to say "two of your four are out", and the second is
-// a walk of the weapon table for the same reason the core walks it -- a
-// count kept anywhere else is a second copy of a fact the world already
-// holds, and the two part company the moment one goes off unseen.
-int MineMax(lua_State* L) {
-    int i = CheckShip(L);
-    lua_pushnumber(L, g_cfg.classes[g_cur->ships[i].cls].mine_max);
-    return 1;
-}
-
+// How many of this pilot's mines are lying about. A mine is a charge now, so
+// what they have left is `ship_charge` like any other; this is the other half
+// of the picture, and it is a walk of the weapon table for the same reason the
+// core walks it: a count kept anywhere else is a second copy of a fact the
+// world already holds, and the two part company the moment one goes off
+// unseen.
 int MinesOut(lua_State* L) {
     int i = CheckShip(L);
     int n = 0;
@@ -567,14 +593,22 @@ int MinesOut(lua_State* L) {
     return 1;
 }
 
-// What a pilot is worth, and what they have been paid. Bounty is derived
-// from what they hold, so it costs the wire nothing: the client already has
-// every count it is a sum over.
+// What a pilot is worth, and what they have been paid.
+//
+// A bounty is the base plus the run, so the number over a ship is the length
+// of its current streak and says nothing about what the pilot owns. It costs
+// the wire nothing either way: the run is in the snapshot and the base is in
+// the settings, so the client has both halves already.
 int ShipBounty(lua_State* L) {
     int i = CheckShip(L);
-    lua_pushnumber(L, sim_bounty(&g_cur->ships[i]));
+    lua_pushnumber(L, sim_bounty(&g_cfg, &g_cur->ships[i]));
     return 1;
 }
+
+// Kills since this hull last spawned, which is the whole of the bounty beyond
+// the base. Drawn beside the number so a pilot can read "on a run of four"
+// rather than having to subtract.
+SHIP_GETTER(ShipRun, s->run)
 
 int ShipPoints(lua_State* L) {
     int i = CheckShip(L);
@@ -830,27 +864,6 @@ int WeaponAt(lua_State* L) {
     lua_pushnumber(L, w->depth);
     lua_pushnumber(L, w->level);
     return 10;
-}
-
-int PrizeCount(lua_State* L) {
-    lua_pushnumber(L, SIM_MAX_PRIZES);
-    return 1;
-}
-
-// x, y, life. A green carries no type: every one of them is takeable by
-// everybody, and what it turns out to be is rolled where it is picked up.
-int PrizeAt(lua_State* L) {
-    int i = (int)luaL_checkinteger(L, 1);
-    const sim_prize* p = &g_cur->prizes[i];
-    if (!p->active) {
-        lua_pushboolean(L, 0);
-        return 1;
-    }
-    lua_pushboolean(L, 1);
-    lua_pushnumber(L, p->x / 256.0);
-    lua_pushnumber(L, p->y / 256.0);
-    lua_pushnumber(L, p->life);
-    return 4;
 }
 
 // Solid means "a wall that never moves", which is what the static terrain
@@ -1216,7 +1229,6 @@ const luaL_reg kFunctions[] = {
     {"ship_active", ShipActive},
     {"ship_private", ShipPrivate},
     {"ship_team", ShipTeam},
-    {"ship_carrier", ShipCarrier},
     {"ship_class", ShipClass},
     {"ship_energy", ShipEnergy},
     {"ship_max_energy", ShipMaxEnergy},
@@ -1225,12 +1237,15 @@ const luaL_reg kFunctions[] = {
     {"ship_vel", ShipVel},
     {"ship_repel", ShipRepel},
     {"ship_up", ShipUp},
+    {"ship_kit", ShipKit},
+    {"kit_ceilings", KitCeilings},
+    {"class_count", ClassCount},
     {"ship_level", ShipLevel},
     {"ship_charge", ShipCharge},
     {"ship_bounty", ShipBounty},
+    {"ship_run", ShipRun},
     {"ship_points", ShipPoints},
     {"charge_max", ChargeMax},
-    {"mine_max", MineMax},
     {"mines_out", MinesOut},
     {"has_trigger", HasTrigger},
     {"trigger_rate", TriggerRate},
@@ -1253,8 +1268,6 @@ const luaL_reg kFunctions[] = {
     {"tick", Tick},
     {"weapon_count", WeaponCount},
     {"weapon_at", WeaponAt},
-    {"prize_count", PrizeCount},
-    {"prize_at", PrizeAt},
     {"solid", Solid},
     {"tile", TileAt},
     {"map_coarse", MapCoarse},
@@ -1316,30 +1329,33 @@ void LuaInit(lua_State* L) {
     lua_pushnumber(L, SIM_EV_DEATH);     lua_setfield(L, -2, "EV_DEATH");
     lua_pushnumber(L, SIM_EV_SPAWN);     lua_setfield(L, -2, "EV_SPAWN");
     lua_pushnumber(L, SIM_EV_EXPIRE);    lua_setfield(L, -2, "EV_EXPIRE");
-    lua_pushnumber(L, SIM_EV_PRIZE);     lua_setfield(L, -2, "EV_PRIZE");
     lua_pushnumber(L, SIM_EV_FLAG_TAKE); lua_setfield(L, -2, "EV_FLAG_TAKE");
     lua_pushnumber(L, SIM_EV_FLAG_DROP); lua_setfield(L, -2, "EV_FLAG_DROP");
-    lua_pushnumber(L, SIM_EV_PRIZE_TOUCH); lua_setfield(L, -2, "EV_PRIZE_TOUCH");
+    lua_pushnumber(L, SIM_EV_CHARGE);    lua_setfield(L, -2, "EV_CHARGE");
     lua_pushnumber(L, SIM_UP_COUNT);     lua_setfield(L, -2, "UP_COUNT");
 
-    // The tech tree's shape, so the panel never hard-codes a layout the core
-    // is free to change. The prize space is flat: stats, then a level per
-    // trigger, then an add-on per trigger per kind.
+    // The kit space, so the hangar never hard-codes a layout the core is free
+    // to change. It is flat and every slot in it costs one: five stats, then a
+    // rung per trigger, then an add-on per trigger per kind, then a charge.
     lua_pushnumber(L, SIM_TRIG_COUNT);   lua_setfield(L, -2, "TRIG_COUNT");
     lua_pushnumber(L, SIM_TRIG_GUN);     lua_setfield(L, -2, "TRIG_GUN");
     lua_pushnumber(L, SIM_TRIG_BOMB);    lua_setfield(L, -2, "TRIG_BOMB");
     lua_pushnumber(L, SIM_MOD_COUNT);    lua_setfield(L, -2, "MOD_COUNT");
     lua_pushnumber(L, SIM_MOD_MULTI);    lua_setfield(L, -2, "MOD_MULTI");
-    lua_pushnumber(L, SIM_PRIZE_COUNT);  lua_setfield(L, -2, "PRIZE_COUNT");
-    lua_pushnumber(L, SIM_PRIZE_LEVEL(0)); lua_setfield(L, -2, "PRIZE_LEVEL0");
-    lua_pushnumber(L, SIM_PRIZE_MOD(0, 0)); lua_setfield(L, -2, "PRIZE_MOD0");
-    lua_pushnumber(L, SIM_PRIZE_CHARGE(0)); lua_setfield(L, -2, "PRIZE_CHARGE0");
+    lua_pushnumber(L, SIM_SLOT_COUNT);   lua_setfield(L, -2, "SLOT_COUNT");
+    lua_pushnumber(L, SIM_SLOT_LEVEL(0)); lua_setfield(L, -2, "SLOT_LEVEL0");
+    lua_pushnumber(L, SIM_SLOT_MOD(0, 0)); lua_setfield(L, -2, "SLOT_MOD0");
+    lua_pushnumber(L, SIM_SLOT_CHARGE(0)); lua_setfield(L, -2, "SLOT_CHARGE0");
+    lua_pushnumber(L, SIM_KIT_BUDGET);   lua_setfield(L, -2, "KIT_BUDGET");
+    lua_pushnumber(L, SIM_UP_STEPS);     lua_setfield(L, -2, "UP_STEPS");
+    lua_pushnumber(L, SIM_UP_STEPS_BASE); lua_setfield(L, -2, "UP_STEPS_BASE");
     lua_pushnumber(L, SIM_MAX_CHARGES);  lua_setfield(L, -2, "MAX_CHARGES");
+    lua_pushnumber(L, SIM_CHARGE_REPEL); lua_setfield(L, -2, "CHARGE_REPEL");
+    lua_pushnumber(L, SIM_CHARGE_BURST); lua_setfield(L, -2, "CHARGE_BURST");
+    lua_pushnumber(L, SIM_CHARGE_MINE);  lua_setfield(L, -2, "CHARGE_MINE");
     lua_pushnumber(L, SIM_BTN_USE);      lua_setfield(L, -2, "BTN_USE");
     lua_pushnumber(L, SIM_BTN_MULTI);    lua_setfield(L, -2, "BTN_MULTI");
-    lua_pushnumber(L, SIM_BTN_MINE);     lua_setfield(L, -2, "BTN_MINE");
     lua_pushnumber(L, 1u << SIM_BTN_SLOT_SHIFT); lua_setfield(L, -2, "BTN_SLOT_STEP");
-    lua_pushnumber(L, SIM_EV_CHARGE);    lua_setfield(L, -2, "EV_CHARGE");
 
     lua_pop(L, 1);
     assert(top == lua_gettop(L));

@@ -73,7 +73,6 @@ local sim = {
     ship_alive = function(i) return room.alive[i] == false and 0 or 1 end,
     ship_team = function(i) return room.teams[i] or 0 end,
     -- Nobody is riding anybody unless a test says so.
-    ship_carrier = function() return 255 end,
     ship_class = function() return 0 end,
     ship_energy = function() return 100 end,
     ship_max_energy = function() return 100 end,
@@ -147,6 +146,8 @@ local function frame(o)
         ratings = o.ratings,
         watchers = o.watchers,
         teams = o.teams or {},
+        match = o.match,
+        side_names = o.side_names,
         feed = o.feed or {},
         hurt = 0,
         charges = {},
@@ -543,19 +544,10 @@ check("a spectator's own roster row stays marked",
       and math.abs(watcher_col[2] - pal.FRIEND[2]) < 0.001
       and math.abs(watcher_col[3] - pal.FRIEND[3]) < 0.001)
 
--- D has a target only in its two real contexts. A selected teammate in the
--- visible Players panel is an attach; an existing ride is a drop even with the
--- panel shut. A watcher, a hidden panel, or no selected pilot does nothing.
-ui.details = true
-ui.inspect = 1
-frame()
-check("D attaches to the selected teammate", ui.drone_target(0, false) == 1)
-check("D cannot attach while spectating", ui.drone_target(0, true) == nil)
-
 -- A distant teammate is present in the roster and absent from the filtered
--- combat snapshot. That is the normal use for an across-map attach, not proof
--- that the pilot left. Both controls must trust the roster's team byte and let
--- the authoritative simulation decide whether the current request succeeds.
+-- combat snapshot. Their card still has to read as a teammate's rather than
+-- vanishing, because the roster's team byte is the stable fact and the
+-- snapshot is a view.
 room.active[1] = false
 local distant_pilots = {
     [0] = {name = "you", label = "human", team = 1},
@@ -563,9 +555,10 @@ local distant_pilots = {
     [2] = {name = "enemy", label = "bot", ai = true, team = 9},
     [3] = {name = "guest", label = "unknown", team = 9},
 }
+ui.details = true
+ui.inspect = 1
 frame({pilots = distant_pilots})
-check("a distant teammate's card still offers ATTACH", box("attach", 1) ~= nil)
-check("D targets a distant teammate", ui.drone_target(0, false) == 1)
+check("a distant teammate still has a card", ui.inspect == 1)
 room.active[1] = nil
 
 -- `ship_count` is the highest slot the room has ever used, not the number of
@@ -590,14 +583,7 @@ room.active[4], room.active[5] = nil, nil
 room.alive[4], room.alive[5] = nil, nil
 
 ui.inspect = nil
-check("D cannot attach without a selection", ui.drone_target(0, false) == nil)
-ui.inspect = 1
 ui.details = false
-check("D cannot attach with Players hidden", ui.drone_target(0, false) == nil)
-local carrier = sim.ship_carrier
-sim.ship_carrier = function(i) return i == 0 and 1 or 255 end
-check("D still drops off with Players hidden", ui.drone_target(0, false) == 255)
-sim.ship_carrier = carrier
 ui.inspect = nil
 ui.details = false
 
@@ -924,6 +910,42 @@ check("and it says the room the server seated us in", says("ROOM 3"))
 -- zone is holding.
 frame({rooms = ROOMS})
 check("no answer yet is no chip", not says("ROOM"), drawn())
+
+-- --- the match clock ---------------------------------------------------------
+--
+-- A room that plays matches draws a clock and a score at the top; one that
+-- runs forever draws neither. Both halves matter: an arena with no clock must
+-- not grow one.
+
+do
+    ui.details = false
+    ui.inspect = nil
+    frame()
+    check("a room with no clock draws none",
+          not says("1:47") and not says("NEXT MATCH IN"))
+
+    local SIDES = {[0] = "Pylon", [1] = "Caisson"}
+    frame({match = {playing = true, left = 107, score = {[0] = 10, [1] = 7}},
+           side_names = SIDES})
+    check("the clock reads minutes and seconds", says("1:47"), drawn())
+    check("and both sides' scores are on it", says("10") and says("7"))
+    check("named, so a score is a side rather than a number",
+          says("Pylon") and says("Caisson"))
+    check("with nothing about an intermission", not says("NEXT MATCH IN"))
+
+    frame({match = {playing = false, left = 25, score = {[0] = 10, [1] = 7}},
+           side_names = SIDES})
+    check("the podium says what the clock is counting down to",
+          says("0:25") and says("NEXT MATCH IN"))
+
+    -- The clock survives the menu, which is a scrim rather than a curtain:
+    -- "how are you doing in the thing you are in" is exactly what a player
+    -- opening one wants to keep.
+    frame({menu_open = true,
+           match = {playing = true, left = 107, score = {[0] = 10, [1] = 7}},
+           side_names = SIDES})
+    check("and it shows through an open menu", says("1:47"))
+end
 
 print(fails == 0 and "all good" or (fails .. " failed"))
 os.exit(fails == 0 and 0 or 1)

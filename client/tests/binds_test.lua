@@ -152,9 +152,9 @@ do
           and key_of("guns") == "space")
 
     -- A free key: nothing displaced.
-    local moved, ok = binds.set("thrust", {"e"})
+    local moved, ok = binds.set("thrust", {"j"})
     check("a control moves to a free key", ok and moved == nil
-          and key_of("thrust") == "e")
+          and key_of("thrust") == "j")
     check("and its old key is free", binds.control_of["up"] == nil)
 
     -- A taken key: the two trade, and both keep one.
@@ -218,28 +218,34 @@ end
 
 -- --- chords -----------------------------------------------------------------
 --
--- Two controls may share a trigger as long as their modifiers differ, which is
--- the whole of what makes Shift+Tab a mine while Tab alone is a bomb.
+-- Two controls may share a trigger as long as their modifiers differ, so a
+-- player can put a control on Shift and the bomb key while the bomb key alone
+-- stays the bomb.
+--
+-- Nothing ships on a chord any more. The mine was the last one, and it is a
+-- charge with a key of its own now; the mechanism stays because a player may
+-- still want one.
 
 do
     binds.reset()
-    check("mines start on the original's own chord",
-          key_of("mine") == "shift+tab", tostring(key_of("mine")))
+    binds.set("map", {"shift", "tab"})
+    check("a chord binds without taking the bare key",
+          key_of("map") == "shift+tab" and key_of("bombs") == "tab",
+          tostring(key_of("map")) .. " / " .. tostring(key_of("bombs")))
     check("the bare trigger is still the bomb",
           press(nil, "k_tab") == "bombs")
     check("and the chord beats it when the modifier is down",
-          press({k_shift = true}, "k_tab") == "mine")
+          press({k_shift = true}, "k_tab") == "map")
     check("while the modifier on its own is nobody's",
           press(nil, "k_shift") == nil)
 
     -- Order is the hand's, not the list's: the same two keys are one binding
     -- however they were typed.
-    binds.reset()
-    local _, ok = binds.set("map", {"tab", "shift"})
+    local _, ok = binds.set("details", {"tab", "shift"})
     check("a chord typed backwards is the same chord",
-          ok and key_of("map") == "shift+tab", tostring(key_of("map")))
+          ok and key_of("details") == "shift+tab", tostring(key_of("details")))
     check("and it displaced the control that was on it",
-          key_of("mine") == "m", tostring(key_of("mine")))
+          key_of("map") == "p", tostring(key_of("map")))
 
     -- A chord and its own trigger are different bindings, so putting one on a
     -- key the other already uses is not a conflict.

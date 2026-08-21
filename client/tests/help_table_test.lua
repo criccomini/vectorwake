@@ -47,7 +47,6 @@ _G.sim = {
     ship_heading = function() return 0 end,
     ship_alive = function() return 1 end,
     ship_team = function(i) return i end,
-    ship_carrier = function() return 255 end,
     ship_class = function() return 0 end,
     ship_energy = function() return 100 end,
     ship_max_energy = function() return 100 end,
@@ -277,9 +276,9 @@ end
 -- --- and a phone is told about the controls it cannot read ----------------
 --
 -- These rows were written out a second time in the menu once, and drifted:
--- the map moved onto the dial and gunners landed, and the page a phone reads
--- went on describing a game with neither in it. One list fixes that, and this
--- pins the part of it a sweep cannot judge.
+-- the map moved onto the dial and the page a phone reads went on describing a
+-- game without it. One list fixes that, and this pins the part of it a sweep
+-- cannot judge.
 --
 -- Not every tappable thing needs a sentence. Most of what a finger lands on
 -- in the arena is a word on a card: INVITE, WATCH, a room number. Those say
@@ -290,12 +289,9 @@ end
 
 do
     -- Wearing no label a player can read, so a phone learns them here or not
-    -- at all. The dial is a picture, the pads are marks, and ATTACH and DROP
-    -- are behind the pilot cards they act on.
+    -- at all. The dial is a picture and the pads are marks.
     local MUST_SAY = {"turn left", "thrust", "reverse", "guns", "bombs", "repel",
-                      "burst", "mine", "multifire", "map",
-                      "attach / drop off",
-                      "players"}
+                      "burst", "mine", "multifire", "map", "players"}
     local pad = {}
     for _, r in ipairs(ROWS) do pad[r.name] = r.pad end
 
