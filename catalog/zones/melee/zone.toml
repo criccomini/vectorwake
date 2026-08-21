@@ -65,8 +65,8 @@ friction = 12
 
 # Two seconds dead. The open arena waited four, and four was fine there because
 # the map was a thousand tiles wide and the wait was the smaller half of the
-# penalty. Here the walk home is the penalty -- see below -- and four seconds of
-# staring at a card is a fortieth of the match.
+# penalty. Here the walk home is the penalty, described below, and four seconds
+# of staring at a card is a fortieth of the match.
 respawn_delay = 200
 
 # Exactly on the map's own starts, which is what a pocket is for.
@@ -212,7 +212,7 @@ bomb_mods = { prox = 1, shrapnel = 2 }
 
 # The only hull that can learn to bounce a bomb, and the miner: six mine slots
 # where the rest of the roster gets three. That is how it keeps a role now that
-# mines are a charge anybody may carry -- by numbers rather than by exclusivity.
+# mines are a charge anybody may carry: by numbers rather than by exclusivity.
 [[arena.ships]]
 name = "Lattice"
 bomb_mods = { prox = 1, shrapnel = 2, bounce = 1, push = 2 }

@@ -1174,7 +1174,7 @@ static void draw_drydock(void) {
     int lo = arena_lo;
     /* One spine drawn, two standing: `sym_put` puts the other half turn away.
      * Drawing both by hand is what made this a wall rather than a lane
-     * divider -- the second pass filled the first one's breaks, because a
+     * divider, because the second pass filled the first one's breaks: a
      * break at y arrives mirrored at a different height, and the union of two
      * broken spines is a solid one. */
     for (int y = lo + 24; y <= arena_hi - 24; y++)

@@ -4870,7 +4870,20 @@ function M.menu(v)
     local focused = (v.focus == "stage")
 
     -- --- the rail
+    --
+    -- A tab is as wide as the row divided by however many there are, up to a
+    -- point: two tabs across a nine hundred point block are two words in two
+    -- lit fields the size of doors. The row is capped and centred instead, so
+    -- an in-match menu with settings and leave on it reads as a tab row rather
+    -- than as two panels, and a front end with six is unchanged.
     local pitch = vertical and (rh / n) or (rw / n)
+    if not vertical then
+        local cap = 170 * F.scale
+        if pitch > cap then
+            rx = rx + (rw - cap * n) / 2
+            pitch = cap
+        end
+    end
     -- Along the bottom, every stop says its name, and the words are sized so
     -- the longest of them fits the room one stop has. Only the lit one used to
     -- carry a word, because "settings" and "about" at the desktop's size run
