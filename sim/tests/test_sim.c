@@ -1917,9 +1917,13 @@ int main(void) {
               "barrels are a slot, where they were one hull's flag");
         CHECK(ceil[SIM_SLOT_MOD(SIM_TRIG_BOMB, SIM_MOD_SHRAPNEL)] == 3,
               "shrapnel climbs three, which was the bombers'");
-        CHECK(ceil[SIM_SLOT_MOD(SIM_TRIG_BOMB, SIM_MOD_PUSH)] == 2
-                  && ceil[SIM_SLOT_MOD(SIM_TRIG_BOMB, SIM_MOD_BOUNCE)] == 2,
-              "and shoving and bouncing bombs, which were the denial hull's");
+        CHECK(ceil[SIM_SLOT_MOD(SIM_TRIG_BOMB, SIM_MOD_BOUNCE)] == 2,
+              "and bouncing bombs, which were the denial hull's");
+        CHECK(ceil[SIM_SLOT_MOD(SIM_TRIG_BOMB, SIM_MOD_FREEZE)] == 1,
+              "bombs freeze too: stalling a recharge is a thing a hit does, "
+              "and the core reads it off whichever trigger carried it");
+        CHECK(ceil[SIM_SLOT_MOD(SIM_TRIG_BOMB, SIM_MOD_PUSH)] == 0,
+              "and shoving is off the shelf until it has been looked at");
         CHECK(ceil[SIM_SLOT_CHARGE(SIM_CHARGE_MINE)] == 6,
               "six mines, which the roster used to hand to one hull");
 
@@ -4076,14 +4080,26 @@ int main(void) {
               "an account starts on six of each stat");
         CHECK(SIM_UP_STEPS_BASE * SIM_UP_COUNT == SIM_KIT_BUDGET,
               "which is exactly the budget, and is why the budget is thirty");
-        CHECK(base[SIM_SLOT_CHARGE(SIM_CHARGE_REPEL)] == 255
-              && base[SIM_SLOT_CHARGE(SIM_CHARGE_BURST)] == 255,
-              "repel and burst are the two everybody starts with");
+        CHECK(base[SIM_SLOT_CHARGE(SIM_CHARGE_REPEL)] == 1
+              && base[SIM_SLOT_CHARGE(SIM_CHARGE_BURST)] == 1,
+              "one repel and one burst, and the other two rungs of each are "
+              "bought");
         CHECK(base[SIM_SLOT_CHARGE(SIM_CHARGE_MINE)] == 0,
-              "and the mine is bought");
+              "and the mine is bought from nothing");
+        /* Every add-on, not just barrels. An add-on granted at one rung whose
+         * arena ceiling is also one is an add-on nobody can ever buy and
+         * everybody already has, which is a slot the shelf cannot mention. */
         for (int t = 0; t < SIM_TRIG_COUNT; t++)
-            CHECK(base[SIM_SLOT_MOD(t, SIM_MOD_BARREL)] == 0,
-                  "barrels are the one add-on nobody starts with");
+            for (int m = 0; m < SIM_MOD_COUNT; m++)
+                CHECK(base[SIM_SLOT_MOD(t, m)] == 0,
+                      "no add-on arrives granted");
+        /* The property that rule exists for: nothing this arena allows is
+         * already owned to its ceiling, so every slot with a rung on it is a
+         * slot the shelf has something to say about. */
+        for (int i = 0; i < SIM_SLOT_COUNT; i++)
+            CHECK(cfg.kit_ceiling[i] == 0 || base[i] < cfg.kit_ceiling[i],
+                  "every slot this arena has is a slot with something left "
+                  "to buy");
 
         for (int c = 0; c < cfg.class_count; c++) {
             uint8_t ceiling[SIM_SLOT_COUNT], kit[SIM_SLOT_COUNT];

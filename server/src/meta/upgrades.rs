@@ -67,31 +67,24 @@ pub(super) fn next_step(slot: usize, owned: u8) -> Option<(u8, u32)> {
         };
     }
 
-    // An add-on rung, priced the same way and for the same reason.
+    // Everything else is a rung, priced the same way and for the same reason:
+    // an add-on, or a rung of a charge rack.
     //
-    // Starting from nothing is allowed here, which it was not while every
-    // account began with one rung of everything. Barrels begin at zero, being
-    // the one add-on that is bought rather than dealt, so the first rung of
-    // one has to be something the shelf can offer.
-    let mods = sim::UP_COUNT + sim::TRIG_COUNT + sim::TRIG_COUNT * sim::MOD_COUNT;
-    if slot < mods {
+    // Starting from nothing is allowed, which it was not while every account
+    // began with one rung of every add-on. It is also what the racks needed.
+    // Charges used to be sold as a *kind*, one price for 255, which is "the
+    // arena decides how many": buying the mine bought all six at once, and
+    // repel and burst, which everybody was dealt without limit, could never
+    // be bought at all because nobody was ever short of one. A rack is a
+    // ladder like every other ladder on that page, and the shelf sells
+    // ladders.
+    let charges =
+        sim::UP_COUNT + sim::TRIG_COUNT + sim::TRIG_COUNT * sim::MOD_COUNT + sim::MAX_CHARGES;
+    if slot < charges {
         return match owned {
             n if n < ceiling => Some((n + 1, 35 + 35 * bought)),
             _ => None,
         };
-    }
-
-    // A charge kind. Repel and burst are what everybody starts with, and the
-    // other two are bought whole: a kind you may slot or one you may not,
-    // with the count inside the kit's own budget either way. 255 is "the
-    // arena decides", which is what the two free ones already carry.
-    let k = slot - mods;
-    if k < sim::MAX_CHARGES && owned == 0 {
-        // The mine is the cheaper of the two, because it is the one the game
-        // is built to be played with: six of them is most of a kit, and an
-        // account that may not carry one at all is missing a whole posture
-        // rather than a gadget.
-        return Some((255, if k == sim::CHARGE_MINE { 120 } else { 200 }));
     }
     None
 }
@@ -101,7 +94,13 @@ pub(super) fn next_step(slot: usize, owned: u8) -> Option<(u8, u32)> {
 pub(super) fn name_of(slot: usize) -> String {
     const STATS: [&str; sim::UP_COUNT] = ["energy", "recharge", "speed", "thrust", "rotation"];
     const MODS: [&str; sim::MOD_COUNT] = [
-        "multi", "bounce", "prox", "shrapnel", "freeze", "push", "barrel",
+        "spray",
+        "bouncing",
+        "proximity",
+        "shrapnel",
+        "freeze",
+        "push",
+        "double barrel",
     ];
     const CHARGES: [&str; 4] = ["repel", "burst", "mine", "charge 4"];
     if slot < sim::UP_COUNT {
@@ -113,8 +112,23 @@ pub(super) fn name_of(slot: usize) -> String {
     }
     let at = at - sim::TRIG_COUNT;
     if at < sim::TRIG_COUNT * sim::MOD_COUNT {
-        let trig = if at < sim::MOD_COUNT { "gun" } else { "bomb" };
-        return format!("{trig} {}", MODS[at % sim::MOD_COUNT]);
+        let m = at % sim::MOD_COUNT;
+        let gun = at < sim::MOD_COUNT;
+        // Which trigger it hangs off, but only where both can hang it.
+        // Bouncing and freeze exist on the gun and the bomb, so a card saying
+        // "bouncing" would not say which. Spray and the double barrel are the
+        // gun's alone and proximity and shrapnel the bomb's, and prefixing
+        // those makes a name out of two words where one is the whole answer.
+        let ceiling = sim::World::baseline_kit_ceiling();
+        let other = if gun {
+            sim::slot_mod(sim::TRIG_BOMB, m)
+        } else {
+            sim::slot_mod(sim::TRIG_GUN, m)
+        };
+        if ceiling[other as usize] == 0 {
+            return MODS[m].to_string();
+        }
+        return format!("{} {}", if gun { "gun" } else { "bomb" }, MODS[m]);
     }
     CHARGES
         .get(at - sim::TRIG_COUNT * sim::MOD_COUNT)
@@ -129,10 +143,10 @@ pub(super) fn note_for(slot: usize, owned: u8, next: u8) -> Option<String> {
     if slot < sim::UP_COUNT {
         return Some(format!("a {}th step, on this stat alone", next));
     }
-    if next == 255 {
-        return Some("a charge kind, to slot in any kit".into());
+    let charges = sim::UP_COUNT + sim::TRIG_COUNT + sim::TRIG_COUNT * sim::MOD_COUNT;
+    if slot >= charges && owned == 0 {
+        return Some("a charge kind, to carry and spend".into());
     }
-    let _ = owned;
     None
 }
 
@@ -186,19 +200,49 @@ mod tests {
         assert_eq!(next_step(0, eighth), None, "and then it is finished");
     }
 
-    /// A charge kind is bought whole, and the arena decides the count.
+    /// A rack is a ladder, climbed a rung at a time like every other.
+    ///
+    /// These were bought as a *kind*: one price for 255, which is "the arena
+    /// decides how many". Buying the mine bought all six at once, and repel
+    /// and burst, dealt to everybody without limit, could never be bought at
+    /// all because nobody was ever short of one. Two of the three charges in
+    /// this game were unsellable by construction.
     #[test]
-    fn a_charge_kind_is_bought_whole() {
+    fn a_rack_is_climbed_a_rung_at_a_time() {
+        let base = sim::World::base_entitlements();
+        let ceiling = sim::World::baseline_kit_ceiling();
+
         let mine = sim::slot_charge(sim::CHARGE_MINE) as usize;
-        let (n, price) = next_step(mine, 0).expect("the mine is for sale");
-        assert_eq!(n, 255, "which is: the arena's row is the only limit");
-        assert!(price > 0);
-        assert_eq!(next_step(mine, 255), None, "once, not twice");
-        assert_eq!(
-            next_step(sim::slot_charge(sim::CHARGE_REPEL) as usize, 255),
-            None,
-            "and the two everybody starts with are never on the shelf"
-        );
+        assert_eq!(base[mine], 0, "nobody is dealt a mine");
+        let (first, cheap) = next_step(mine, 0).expect("the first mine is for sale");
+        assert_eq!(first, 1, "one mine, not the whole rack");
+        let (second, dear) = next_step(mine, first).expect("and a second");
+        assert_eq!(second, 2);
+        assert!(dear > cheap, "and each rung costs more than the last");
+
+        // All the way to the arena's own ceiling, and no further.
+        let mut owned = 0u8;
+        let mut rungs = 0;
+        while let Some((next, _)) = next_step(mine, owned) {
+            owned = next;
+            rungs += 1;
+        }
+        assert_eq!(owned, ceiling[mine], "the rack ends where the arena's does");
+        assert_eq!(rungs, 6, "six of them, which is most of a kit");
+
+        // And the two an account is dealt one of have the rest for sale.
+        for k in [sim::CHARGE_REPEL, sim::CHARGE_BURST] {
+            let slot = sim::slot_charge(k) as usize;
+            assert_eq!(base[slot], 1, "one is dealt");
+            let mut owned = base[slot];
+            let mut rungs = 0;
+            while let Some((next, _)) = next_step(slot, owned) {
+                owned = next;
+                rungs += 1;
+            }
+            assert_eq!(rungs, 2, "and the other two rungs are bought");
+            assert_eq!(owned, ceiling[slot]);
+        }
     }
 
     /// Barrels are for sale, which is the whole reason the slot space was
@@ -246,7 +290,11 @@ mod tests {
             owned = next;
             steps += 1;
         }
-        assert_eq!(steps, 2, "and shrapnel climbs to the bombers' old three");
+        assert_eq!(
+            steps, 3,
+            "and shrapnel climbs to the bombers' old three, from nothing: an \
+             add-on is bought now rather than granted"
+        );
     }
 
     /// A slot the game does not have is not on the shelf. Bombs neither fan

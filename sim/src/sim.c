@@ -245,25 +245,33 @@ void sim_deal_kit(sim_ship *sh, const sim_settings *cfg, int ammunition) {
     }
 }
 
+/* What an account owns before it has bought anything.
+ *
+ * The rule is that everything with a rung above what this hands out is on the
+ * shelf, and the shelf is the whole of what rivets are for. Add-ons used to
+ * arrive with one rung of each already granted, and the four whose arena
+ * ceiling is also one -- gun bouncing, gun freeze, bomb proximity, and now
+ * bomb freeze -- were therefore free, complete, and absent from the shelf
+ * forever. A pilot could see them on the ship page and never find out they
+ * were things anybody bought.
+ *
+ * So: no add-ons at all. It costs a new pilot nothing they were using, since
+ * the starter kit spends its thirty on stats, rungs and charges and never had
+ * a rung of an add-on in it; what it changes is that an add-on is now a thing
+ * you go and get. */
 void sim_base_entitlements(uint8_t *out) {
     memset(out, 0, SIM_SLOT_COUNT);
     for (int u = 0; u < SIM_UP_COUNT; u++)
         out[SIM_SLOT_STAT(u)] = SIM_UP_STEPS_BASE;
-    for (int t = 0; t < SIM_TRIG_COUNT; t++) {
-        out[SIM_SLOT_LEVEL(t)] = 1;
-        for (int m = 0; m < SIM_MOD_COUNT; m++) out[SIM_SLOT_MOD(t, m)] = 1;
-        /* Every add-on but this one. The others change what a round does;
-         * barrels change how many leave, and a rung of that handed out free
-         * is the one thing that would make the starting kit better than a
-         * starting kit should be. It is also the trait the whole slot space
-         * was flattened to make sellable, so it is the shop's. */
-        out[SIM_SLOT_MOD(t, SIM_MOD_BARREL)] = 0;
-    }
-    /* 255 rather than a number: the arena's row is the limit on these, and an
-     * account that never bought anything is not the thing standing in the
-     * way of a pilot slotting three repels. */
-    out[SIM_SLOT_CHARGE(SIM_CHARGE_REPEL)] = 255;
-    out[SIM_SLOT_CHARGE(SIM_CHARGE_BURST)] = 255;
+    for (int t = 0; t < SIM_TRIG_COUNT; t++) out[SIM_SLOT_LEVEL(t)] = 1;
+    /* One of each rather than the arena's three. These were 255, which meant
+     * the arena's row was the only limit and neither charge was ever for
+     * sale; nobody could buy a deeper rack because everybody already had the
+     * deepest one. One is enough to fly with and leaves two rungs of each on
+     * the shelf, which is what makes a rack something a pilot builds towards
+     * rather than something they were handed. */
+    out[SIM_SLOT_CHARGE(SIM_CHARGE_REPEL)] = 1;
+    out[SIM_SLOT_CHARGE(SIM_CHARGE_BURST)] = 1;
 }
 
 int sim_starter_kit(const uint8_t *ceiling, uint8_t *out) {

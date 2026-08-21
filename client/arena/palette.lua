@@ -123,22 +123,28 @@ M.UPGRADES = {
 -- hangar and the hover card in the corner, which exist because "prox"
 -- teaches nobody what the round does. Only the ones whose short name is
 -- jargon carry a `long`, and a caller that wants one falls back to `name`.
+-- `short` is what a chip says, so it is the word rather than a code: a chip is
+-- wide enough for one and three letters bought nothing. `name` is what the
+-- rows and the shelf spell out.
 M.MODS = {
-    {name = "multi",    short = "MUL"},
-    {name = "bounce",   short = "BNC"},
-    {name = "prox",     short = "PRX", long = "proximity detonation"},
-    {name = "shrapnel", short = "SHR"},
-    {name = "freeze",   short = "FRZ"},
+    -- Spray, not multifire. What it does is put three where one went, and
+    -- "multi" was the core's word for the mechanism rather than a name for
+    -- the thing a pilot is buying.
+    {name = "spray",    short = "SPRAY"},
+    {name = "bounce",   short = "BOUNCE"},
+    {name = "prox",     short = "PROX", long = "proximity detonation"},
+    {name = "shrapnel", short = "SHRAPNEL"},
+    {name = "freeze",   short = "FREEZE"},
     -- Push, not repel. The core calls this one `SIM_MOD_PUSH` and the
     -- meta-layer prices it as "push"; only this table said repel, which is
     -- also the name of a charge, so a bomb wearing it and the charge in the
-    -- next group along both read RPL.
-    {name = "push",     short = "PSH", long = "a shove welded onto a bomb"},
-    -- Barrels: more rounds a pull, abreast rather than fanned. This was
+    -- next group along both read RPL. Off every arena's ladder for now.
+    {name = "push",     short = "PUSH", long = "a shove welded onto a bomb"},
+    -- Double barrel: more rounds a pull, abreast rather than fanned. This was
     -- DoubleBarrel, a flag on one hull, and it is an add-on so that it can be
     -- bought. Last, because the core put it last, and this table is read by
     -- index against `sim_mod`.
-    {name = "barrel",   short = "BRL"},
+    {name = "double barrel", short = "DOUBLE"},
 }
 -- What a kill paid, drifting off the wreck that paid it, and the same green
 -- the feed uses for a line about a kill of yours.

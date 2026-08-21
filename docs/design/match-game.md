@@ -302,10 +302,17 @@ to the bench.
 
 - **Depth on a stat**, its seventh and eighth step.
 - **Add-ons and rungs** the arena allows but your account has not bought. That
-  is all of them now, which it was not: barrels, the third bomb rung, the
-  deepest rung of shrapnel and the mine count used to be the roster's, and a
-  shop cannot sell a thing that exists on one hull.
-- **Charge kinds** beyond the two everybody starts with.
+  is all of them now, which it was not twice over. First the roster held them:
+  barrels, the third bomb rung, the deepest rung of shrapnel and the mine
+  count were one hull's each, and nothing can be sold that exists on one hull.
+  Then the entitlements did: an account arrived owning one rung of every
+  add-on, so the four whose arena ceiling is also one were free, complete and
+  absent from the shelf forever. Nobody arrives with an add-on now.
+- **Deeper racks.** One repel and one burst is what an account starts with,
+  against the three the arena allows, so the other two rungs of each are
+  bought. They used to be granted without limit, which meant neither was ever
+  for sale.
+- **Charge kinds** beyond those two.
 - **Livery.** Decoration, under the art direction's law: hull paint is the
   team read and weapon hues are semantic bands, so livery lives on the wake,
   the nameplate badge and the podium card. You should recognize a pilot by
@@ -320,8 +327,9 @@ to the bench.
 
 ## Charges
 
-Two slots to start, four in the core (`SIM_MAX_CHARGES`). Repel and burst are
-what every hull begins with; the shop sells the rest.
+Two slots to start, four in the core (`SIM_MAX_CHARGES`). One repel and one
+burst is what an account begins with, against the three of each the arena
+allows; the rest of both racks, and every other kind, are bought.
 
 **A mine is a charge.** It is the bomb trigger's other posture today, limited
 by how many of yours are already lying about. As a charge it is a count you

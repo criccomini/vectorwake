@@ -152,14 +152,21 @@ static const uint8_t hull_extent[SIM_MAX_CLASSES][3] = {
 #define GUN_MODS  (M2(SIM_MOD_MULTI) | M1(SIM_MOD_BOUNCE) \
                    | M1(SIM_MOD_FREEZE) | M2(SIM_MOD_BARREL))
 
-/* Bombs bounce, sense, shatter and shove. They do not fan and they do not
+/* Bombs bounce, sense, shatter and freeze. They do not fan and they do not
  * come in pairs, which is the other combination no hull ever had: a rack that
  * throws three at a pull is not a bomber, it is a different game.
  *
- * Bounce at two and push at two were the Lattice's alone. Shrapnel at three
- * was the two bombers'. */
+ * Bounce at two was the Lattice's alone. Shrapnel at three was the two
+ * bombers'.
+ *
+ * Freeze is on both triggers rather than the gun alone. Stalling a recharge is
+ * a thing a hit does, and the core has always applied it off whichever
+ * trigger's add-ons carried it, so this is a flag rather than a weapon.
+ *
+ * Push is off the shelf for now. It was two rungs of the Lattice's shove, and
+ * a shove welded onto a bomb wants its own look before it is sold. */
 #define BOMB_MODS (M2(SIM_MOD_BOUNCE) | M1(SIM_MOD_PROX) \
-                   | M3(SIM_MOD_SHRAPNEL) | M2(SIM_MOD_PUSH))
+                   | M3(SIM_MOD_SHRAPNEL) | M1(SIM_MOD_FREEZE))
 
 /* Repels and bursts are three, which is RepelMax and BurstMax on all eight of
  * the original's ships. Mines are six, which was the Lattice's row and is the

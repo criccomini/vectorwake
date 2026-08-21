@@ -205,12 +205,12 @@ do
     frame(point_on("gun"))
     check("jargon gets its long form", shows("proximity detonation"))
 
-    -- Multifire folded is multifire the next shot will not do, so the card
-    -- says so rather than listing it flat.
+    -- Spray folded is spray the next shot will not do, so the card says so
+    -- rather than listing it flat.
     kit.mods = {[0] = {[0] = 1}}
     kit.multi_off = true
     frame(point_on("gun"))
-    check("multifire switched off says so", shows("multi (off)"))
+    check("spray switched off says so", shows("spray (off)"))
     kit.multi_off = false
     kit.level = {[0] = 0, [1] = 0}
     kit.mods = {}

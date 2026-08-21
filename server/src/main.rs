@@ -3076,14 +3076,16 @@ mod tests {
         let ship = seat_human(&mut a, "pilot");
         let base = a.kit_ceiling(ship);
 
-        // Inside both: taken, and dealt onto the hull.
+        // Inside both: taken, and dealt onto the hull. One repel rather than
+        // three, which is what a fresh account is entitled to: the other two
+        // rungs of the rack are bought.
         let mut good = [0u8; sim::SLOT_COUNT];
         good[sim::slot_stat(sim::UP_SPEED) as usize] = 6;
-        good[sim::slot_charge(sim::CHARGE_REPEL) as usize] = 3;
+        good[sim::slot_charge(sim::CHARGE_REPEL) as usize] = 1;
         assert!(a.set_kit(ship, &good), "a legal kit is taken");
         let sh = a.world.state.ships[ship as usize];
         assert_eq!(sh.up[sim::UP_SPEED], 6);
-        assert_eq!(sh.charge[sim::CHARGE_REPEL], 3);
+        assert_eq!(sh.charge[sim::CHARGE_REPEL], 1);
 
         // Past what the account owns. The core would take a seventh step of a
         // stat happily, because the arena's ceiling is eight; the account's is

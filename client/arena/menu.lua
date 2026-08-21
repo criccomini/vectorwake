@@ -452,7 +452,7 @@ local function kit_slots()
                 slot = simn("SLOT_MOD0", up + trig) + t * mods + m,
                 label = (t == 0 and "gun " or "bomb ") ..
                         (mod and mod.name or ("add-on " .. m)),
-                short = mod and mod.name or ("add-on " .. m),
+                short = mod and mod.short or ("add-on " .. m),
                 note = mod and mod.long or nil,
                 trigger = t, group = "weapons",
             }
@@ -645,7 +645,13 @@ local function kit_rows(class)
     }}
     for _, s in ipairs(kit_slots()) do
         local max = ceiling[s.slot + 1] or 0
-        if max > 0 then
+        -- On the page if the arena has the slot at all, not if the account
+        -- owns a rung of it. The two used to be the same test, so a slot you
+        -- owned none of had no row: add-ons arrived granted, so only barrels
+        -- and the mine were ever missing, and nobody could see that the one
+        -- trait the whole slot space was flattened to make sellable existed.
+        -- Nothing is granted now, so that test would have emptied the page.
+        if (arena_ceiling[s.slot + 1] or 0) > 0 then
             local held = M.kit[s.slot + 1] or 0
             rows[#rows + 1] = {
                 label = s.label,
@@ -2412,9 +2418,34 @@ local function activate(by)
     if r.act == "kit_step" then
         -- One point spent or taken back. Enter spends, because a hand walking
         -- the list with enter is adding to a ship; the arrows do both.
+        --
+        -- An add-on wraps. It is drawn as a chip rather than a ladder, so
+        -- there are no lower rungs to press and a chip already at its ceiling
+        -- answered nothing: an add-on could be put on with a pointer and only
+        -- taken off with the arrow keys, which is a control with one
+        -- direction. At the top, the next press takes it off.
+        local at = (M.kit and M.kit[r.value + 1]) or 0
+        local top = kit_ceiling()[r.value + 1] or 0
+        if not by and r.group == "weapons" and at > 0 and at >= top then
+            if M.kit_set(r.value, 0) then
+                M.note = nil
+                return "kit"
+            end
+            return nil
+        end
         if M.kit_step(r.value, by or 1) then
             M.note = nil
             return "kit"
+        end
+        -- Refused, and a press that does nothing looks the same whatever the
+        -- reason, so the foot of the page says which. A slot the arena has and
+        -- the account does not is the one worth pointing somewhere.
+        if (by or 1) > 0 then
+            if top == 0 and (r.arena_max or 0) > 0 then
+                M.note = "not yours yet: it is on the upgrades page"
+            elseif at < top then
+                M.note = "no kit points left"
+            end
         end
         return nil
     elseif r.act == "hull" then

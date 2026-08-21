@@ -3841,6 +3841,11 @@ end
 -- are chips because they are not ladders you climb but switches you throw.
 function pages.chip(x, y, w, h, r, hot, focused)
     local held = (r.choice or 0) > 0
+    -- A slot the arena has and the account does not own a rung of. Drawn back
+    -- the way a dim pip on a ladder is, and for the same reason: the page has
+    -- to say the thing exists and is not yours, or a pilot cannot know there
+    -- is anything to buy.
+    local shut = (r.owned or 0) == 0
     if held then
         rect(x, y, w, h, pal.a(pal.FRIEND, 0.14))
     end
@@ -3850,16 +3855,17 @@ function pages.chip(x, y, w, h, r, hot, focused)
     else
         F.layer:frame(x, ry(y, h), w, h, 0.9 * F.scale,
                       pal.a(held and pal.FRIEND or pal.RADAR_TILE,
-                            held and 0.55 or 0.5))
+                            held and 0.55 or (shut and 0.22 or 0.5)))
     end
     lbl(r.short or r.label, x + w / 2, y + h * 0.42,
-        pal.a(held and pal.FRIEND or pal.DIM, held and 1 or 0.8), "center",
-        9 * F.scale)
-    -- How many of it, where more than one is possible. A rung is a ladder in
-    -- a chip's clothing: two of them is level two.
-    if (r.choices or 1) > 1 then
-        txt(tostring(r.choice or 0), x + w / 2, y + h * 0.74, 9 * F.scale,
-            pal.a(pal.DIM, 0.85), "center")
+        pal.a(held and pal.FRIEND or pal.DIM,
+              held and 1 or (shut and 0.4 or 0.8)), "center", 9 * F.scale)
+    -- How many of it, out of how many this account may hold. A rung is a
+    -- ladder in a chip's clothing: two of them is level two. A chip nobody
+    -- owns says nothing, because zero of zero is a sum rather than a fact.
+    if (r.owned or 0) > 1 then
+        txt((r.choice or 0) .. " of " .. r.owned, x + w / 2, y + h * 0.74,
+            9 * F.scale, pal.a(pal.DIM, 0.85), "center")
     end
 end
 
@@ -4100,12 +4106,19 @@ function pages.kit(v, x, y, w, h, focused)
     end
 
     -- The triggers. A rung and its add-ons, per trigger, as chips.
-    local cw, ch = 62 * F.scale, 36 * F.scale
+    --
+    -- Each as wide as its own word rather than all of them at one width. A
+    -- fixed 62 points fit "PROX" and clipped anything longer, which is what
+    -- kept these labelled with three letter codes nobody could read.
+    local ch = 36 * F.scale
     local function chips_for(list, label)
         if #list == 0 then return end
         rule(label)
         local px = kx
         for _, r in ipairs(list) do
+            local cw = math.max(62 * F.scale,
+                                text_w(r.short or r.label or "",
+                                       9 * F.scale) + 24 * F.scale)
             if px + cw > kx + kw then px = kx cy = cy + ch + 6 * F.scale end
             pages.chip(px, cy - 2 * F.scale, cw, ch, r, cursor(r), focused)
             if live and r.pick then hit(px, cy - 2 * F.scale, cw, ch, "stage", r.index) end

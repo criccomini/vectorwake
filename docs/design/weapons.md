@@ -478,14 +478,22 @@ and slows you down, a pair throws fewer at the rate you already had.
 | | rungs above the first | add-ons |
 |---|---|---|
 | **gun** | 2 | multi ×2, bounce, freeze, barrel ×2 |
-| **bomb** | 2 | prox, shrapnel ×3, bounce ×2, push ×2 |
+| **bomb** | 2 | prox, shrapnel ×3, bounce ×2, freeze |
 
 Those are the deepest each of the seven hull rows used to reach, so nothing was
 granted and nothing taken away when the rows collapsed into one. A Wedge could
 always hold three rungs of shrapnel; now anyone who buys them can.
 
 **Freeze and push are the exception**, and the only part of this table that is
-ours: the original has no such upgrade, so there is nothing to copy.
+ours: the original has no such upgrade, so there is nothing to copy. Freeze
+hangs off both triggers, because stalling a recharge is a thing a hit does and
+the core reads it off whichever trigger's add-ons carried it. Push is off the
+shelf until the shove has had a look of its own, so the bomb row does not
+mention it and no arena grants it.
+
+The names a player reads are not these. `multi` is **Spray** and `barrel` is
+**Double barrel** on the ship page and in upgrades; the words in this table are
+the core's, and the core's are what a zone file writes.
 
 **A trigger's add-ons stay a trigger's.** Bullets do not carry a fuse and do
 not break up, because a bullet with a proximity fuse is a bomb and that weapon
@@ -627,7 +635,7 @@ prox = 24                 # px of fuse
 
 [arena.kit]               # and how many rungs of each a kit may hold
 gun_mods = { multi = 2, bounce = 1, freeze = 1, barrel = 2 }
-bomb_mods = { prox = 1, shrapnel = 3, bounce = 2, push = 2 }
+bomb_mods = { prox = 1, shrapnel = 3, bounce = 2, freeze = 1 }
 charges = [3, 3, 6]       # repels, bursts, mines
 ```
 
