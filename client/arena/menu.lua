@@ -685,11 +685,24 @@ local function shop_rows()
     local mods = simn("MOD_COUNT", 6)
     local level0 = simn("SLOT_LEVEL0", up)
     local charge0 = simn("SLOT_CHARGE0", up + trig + trig * mods)
+    local mod0 = simn("SLOT_MOD0", up + trig)
     local function kind_of(slot)
         if not slot then return nil end
         if slot < level0 then return "stats" end
         if slot >= charge0 then return "charges" end
         return "triggers"
+    end
+    -- What the card is a picture of. The slot number is the meta-layer's, and
+    -- what a slot means is arithmetic the core owns and this file already
+    -- does, so the row carries the answer and the drawing carries none of the
+    -- arithmetic.
+    local function icon_of(slot)
+        if not slot then return nil end
+        if slot < level0 then return {kind = "stat", i = slot} end
+        if slot >= charge0 then return {kind = "charge", i = slot - charge0} end
+        if slot < mod0 then return {kind = "level", trigger = slot - level0} end
+        local at = slot - mod0
+        return {kind = "mod", trigger = math.floor(at / mods), mod = at % mods}
     end
     local was = nil
     for _, item in ipairs(account.shelf or {}) do
@@ -700,7 +713,10 @@ local function shop_rows()
         rows[#rows + 1] = {
             sect = sect,
             label = item.label or ("slot " .. tostring(item.slot)),
-            detail = tostring(item.price or 0) .. " rivets",
+            -- The number alone. The page draws the rivet mark in front of it,
+            -- the way a price is written everywhere else in the world.
+            detail = item.price or 0, price = item.price or 0,
+            icon = icon_of(item.slot),
             note = item.note,
             -- Back a shade rather than hidden when the wallet is short: a
             -- shop that shows only what you can afford is a shop that never
@@ -985,6 +1001,11 @@ local function play_rows()
     local rows = {}
     for i, r in ipairs(directory.rows) do
         rows[i] = {
+            -- The games under a heading of their own. This page is three
+            -- different questions in a column: which game, who is on, and
+            -- where the talking happens. Run together they read as one list
+            -- where Discord is a zone you could join.
+            sect = (i == 1) and "zones" or nil,
             label = r.name, detail = r.count,
             -- A zone the directory lists with no arena behind it. The row
             -- keeps its place, because a player is better off seeing that
@@ -1017,7 +1038,8 @@ local function play_rows()
     -- the music" in a row of six equals, and it is not one of six equals, it
     -- is the other way into a game. See docs/design/friends.md.
     if account.base ~= "" then
-        rows[#rows + 1] = {label = "friends", go = "friends", detail = function()
+        rows[#rows + 1] = {label = "friends", go = "friends",
+                           sect = "friends", detail = function()
             local on = 0
             for _, f in ipairs(account.friends or {}) do
                 if f.zone ~= nil and f.zone ~= "" then on = on + 1 end
@@ -1037,7 +1059,10 @@ local function play_rows()
     -- play with, which is the argument `community.md` makes and the reason it
     -- is not a tab: the game carries no chat, and the panel about finding
     -- people should be honest about where the talking happens.
-    rows[#rows + 1] = {label = "discord", detail = "chat with us",
+    -- Drawn as a button rather than as a row, with the mark on it. It is not
+    -- a page of this menu and reading as one is what it did.
+    rows[#rows + 1] = {label = "Talk on Discord",
+                       sect = "community", button = "discord",
                        act = "discord", link = DISCORD}
     -- Nothing about leaving down here. The way out of a game is the tab row's
     -- own leave, which is on it whenever there is something to leave.
@@ -1575,6 +1600,10 @@ local function view_row(r, i)
         -- The week's own columns.
         rank = r.rank, kills = r.kills, deaths = r.deaths, run = r.run,
         played = r.played, rating = r.rating,
+        -- What a shelf card is a picture of, and what it costs.
+        icon = r.icon, price = r.price,
+        -- A row the page draws as a button, and which mark goes on it.
+        button = r.button,
         trigger = r.trigger, owned = r.owned, arena_max = r.arena_max,
         -- What the controls page needs to draw a chip: which color band the
         -- control is in, which key it is on so the board can be lit from the
@@ -1653,6 +1682,25 @@ function M.cancel_bind()
     M.arming = nil
     M.foot = nil
     return true
+end
+
+-- The next row the arrows stop on, walking one step in `dir` and wrapping.
+--
+-- A row that is neither a destination nor a value is a readout, and the cursor
+-- has no business standing on one: left does nothing from it, right does
+-- nothing to it, and on the ship page left is the way out, so walking down
+-- from the ship onto the budget bar and pressing left shut the page. Skipped
+-- entirely, unless the whole list is readouts, in which case a cursor that
+-- refused to move would be worse.
+local function next_stop(rows, at, dir)
+    local n = #rows
+    if n == 0 then return at end
+    for _ = 1, n do
+        at = (at - 1 + dir) % n + 1
+        local r = rows[at]
+        if r and (r.go or r.act) then return at end
+    end
+    return (at - 1 + dir) % n + 1
 end
 
 local function row_index(rows)
@@ -2678,11 +2726,11 @@ function M.step(keys)
         -- Off the first row and back to the tabs. A list that wrapped from
         -- its head to its foot had no way back up to the row above the page.
         if row_index(rows) == 1 then return back() end
-        M.sel[id] = (row_index(rows) - 2) % n + 1
+        M.sel[id] = next_stop(rows, row_index(rows), -1)
         return nil, true
     end
     if keys.down then
-        M.sel[id] = row_index(rows) % n + 1
+        M.sel[id] = next_stop(rows, row_index(rows), 1)
         return nil, true
     end
     if keys.go then return activate(), true end

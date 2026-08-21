@@ -38,9 +38,10 @@ row comes back to the row, and left and right on a row set that row's value.
 
 ```
 vectorwake
-├ play        the modes a directory is running, how busy each one is, and
-│             who is on: friends is a row here rather than a seventh tab, for
-│             the reason Discord is one
+├ play        three sections: the zones a directory is running and how busy
+│             each one is, who is on, and the way out to Discord. Friends is
+│             a section here rather than a tab of its own, for the reason
+│             Discord is a button and not a page
 ├ ship        one hull on a carousel, and the thirty points you spend on it
 ├ shop        what rivets buy: slots, never strength
 ├ standings   the week, resetting Monday
@@ -79,6 +80,17 @@ instead, because reopening had landed back in the ship list. The menu always
 opens on the tab row.
 
 ## The play tab
+
+Three sections, headed: zones, friends, community. They are three different
+questions, and run together in one column they read as one list where Discord
+is a game you could join and friends is a room with nobody in it. A heading and
+the map border's tick between them costs two lines and says which question you
+are looking at.
+
+Discord is a button rather than a row, with its own mark on it and its name
+spelled the way Discord spells it. It is the one thing on this page that is not
+a place inside the game, and a row is how the menu writes places inside the
+game.
 
 `client/arena/directory.lua` asks a directory what is running. Opening the list
 asks at once, and it re-asks every three seconds for as long as the list is the

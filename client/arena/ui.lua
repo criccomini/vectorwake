@@ -102,6 +102,16 @@ end
 -- marks and have to weight them the same way.
 local pen = marks.pen
 
+-- --- the pages -------------------------------------------------------------
+--
+-- The pages drawn as layouts rather than as lists, and the handful of marks
+-- shared between them, kept in one table rather than under a name each: a Lua
+-- chunk may hold two hundred locals and this file is at that ceiling.
+--
+-- Declared up here rather than beside the pages themselves, because the marks
+-- on it are drawn by things a long way above them.
+local pages = {}
+
 -- `font` names one of the faces the gui scene carries: nil for the mono
 -- everything in flight is set in, "menu" for the menu's own. It is passed
 -- through rather than looked up, so a caller that says nothing gets what the
@@ -1830,6 +1840,51 @@ local function gl_spokes(n)
 end
 local gl_burst = gl_spokes(8)
 
+-- The rivet: what this game charges in.
+--
+-- A currency wants a mark rather than a word. Every one in use is a shape with
+-- a stroke or two struck through it, and that convention is what makes a glyph
+-- read as money rather than as decoration, so this follows it: the head of a
+-- rivet seen face on, struck through twice.
+--
+-- Two bars rather than one, and overhanging on both sides. One bar through a
+-- circle is a "no entry" sign, which is a poor thing to price a shop in; two
+-- is what the yen, the euro and the won all do, and the overhang is what keeps
+-- the strokes visible where the circle is only a few pixels across.
+function pages.rivet_mark(cx, cy, r, col)
+    local line = pen(r * 1.5, 0.15)
+    -- The cap, the shank, and two strikes across it.
+    --
+    -- This started as a rivet head seen face on, a circle with the two bars
+    -- struck through it, and at the size a price is actually set the bars sat
+    -- inside the circle with nothing but a few pixels between them: they
+    -- filled in and the mark read as a barred circle, which is a "no entry"
+    -- sign. Seen from the side there is nothing enclosing the strikes, so the
+    -- gap between them is the page, and the silhouette is a fastener rather
+    -- than a symbol that could be anything.
+    F.layer:seg(cx - r * 0.95, ry(cy - r * 0.9),
+                cx + r * 0.95, ry(cy - r * 0.9), line, col)
+    F.layer:seg(cx, ry(cy - r * 0.9), cx, ry(cy + r), line, col)
+    for _, dy in ipairs({-0.05, 0.42}) do
+        F.layer:seg(cx - r * 0.62, ry(cy + r * dy),
+                    cx + r * 0.62, ry(cy + r * dy), line, col)
+    end
+end
+
+-- A price, as the mark and the number: "40 rivets" was a word doing a glyph's
+-- job, three times on every card.
+function pages.priced(n, x, y, px, col, align)
+    -- As tall as the figure beside it, near enough. A mark half the height of
+    -- its own number reads as a bullet point rather than as a unit.
+    local r = px * 0.46
+    local w = text_w(tostring(n), px)
+    local lead = r * 2.4
+    local left = align == "right" and (x - w - lead) or x
+    pages.rivet_mark(left + r, y + px * 0.02, r, col)
+    txt(tostring(n), left + lead, y, px, col)
+    return lead + w
+end
+
 -- What a green is, worn by the row that counts what greens made you worth.
 local function gl_diamond(cx, cy, k, col)
     local pts = {cx, ry(cy - k), cx + k * 0.8, ry(cy),
@@ -1862,6 +1917,52 @@ local CHARGE_HUES = {repel = pal.CHARGE_COL, burst = pal.BURST}
 -- somewhere and mirrored a mark.
 local function weapon_mark(cx, cy, k, me, t)
     return marks.weapon(cx, ry(cy), k, me, t)
+end
+
+-- What a shelf card is a picture of.
+--
+-- The arena's own drawing wherever there is one, fed a hull wearing exactly
+-- the thing being sold: a shop where the picture of an add-on is the round it
+-- makes is a shop where you can recognize what you bought when it comes past
+-- you. Stats have no mark in the arena, so they wear the ladder they are drawn
+-- as on the ship page, with the step this card sells still empty at the end
+-- of it.
+function pages.shelf_icon(ic, cx, cy, k)
+    if type(ic) ~= "table" then return end
+    if ic.kind == "stat" then
+        local u = pal.UPGRADES[(ic.i or 0) + 1]
+        local col = pal.a(u and u.col or pal.FRIEND, 0.95)
+        local step = k * 0.62
+        for j = 0, 3 do
+            pages.pip(cx + step * (j - 1.5), cy, k * 0.24,
+                      j < 3 and "on" or "off", col)
+        end
+        return
+    end
+    if ic.kind == "charge" then
+        local c = pal.CHARGES[(ic.i or 0) + 1]
+        local name = c and c.name or ""
+        local col = pal.a(CHARGE_HUES[name] or pal.CHARGE_COL, 0.95)
+        local g = CHARGE_GLYPHS[name]
+        if g then
+            g(cx, cy, k * 0.9, col)
+        else
+            -- A mine is the one charge that leaves something behind, so it is
+            -- drawn as the thing it leaves rather than as a spoke pattern.
+            marks.mine(cx, ry(cy), k * 0.62, col)
+        end
+        return
+    end
+    if not (sim and sim.TRIG_GUN) then return end
+    local t = ic.trigger or 0
+    local mods = {}
+    if ic.kind == "mod" then mods[ic.mod or 0] = 1 end
+    -- One rung on the ladder this card is about, so a level card shows the
+    -- round a step buys and an add-on card shows a plain round wearing it.
+    marks.hold({level = {[t] = ic.kind == "level" and 1 or 0},
+                mods = {[t] = mods}, multi_off = false})
+    weapon_mark(cx - k * 0.5, cy, k, nil, t)
+    marks.hold(nil)
 end
 
 -- How much bigger than the rest of the interface the corner stack draws, and
@@ -2412,13 +2513,6 @@ end
 
 -- Break a sentence to a width, on spaces. The one card that carries prose is
 -- the bounty's, and its sentence is wider than any corner should be.
--- --- the pages --------------------------------------------------------------
---
--- The three pages drawn as layouts rather than as lists, kept in one table
--- rather than as five names of their own: a Lua chunk may hold two hundred
--- locals and this file is at that ceiling.
-local pages = {}
-
 local function wrapped(s, px, max)
     local out, line = {}, nil
     for word in string.gmatch(s, "%S+") do
@@ -3388,6 +3482,12 @@ function pages.shop(v, x, y, w, h, focused)
             wash(cx, cy, cwid, chgt,
                  pal.a(pal.FRIEND, focused and 0.16 or 0.08))
         end
+        -- The thing itself, at the far end of the card. A shelf of names is
+        -- a price list; a shelf of pictures is a shop, and every one of these
+        -- already has a drawing in the arena, so what you buy here is what
+        -- comes past you out there.
+        pages.shelf_icon(r.icon, cx + cwid - 30 * F.scale,
+                         cy + 22 * F.scale, 13 * F.scale)
         txt(r.label or "", cx + 14 * F.scale, cy + 16 * F.scale, 15 * F.scale,
             pal.a(pal.INK, held and 0.6 or 0.95), nil, MENU_FONT)
         -- The price under the name rather than beside it. Beside it they
@@ -3397,9 +3497,9 @@ function pages.shop(v, x, y, w, h, focused)
         -- It stays on a card the wallet cannot reach, back a shade. A shop
         -- that shows only what you can afford never says what you are saving
         -- for.
-        txt(r.detail or "", cx + 14 * F.scale, cy + 36 * F.scale,
-            12 * F.scale, pal.a(held and pal.DIM or pal.CHARGE_COL,
-                                held and 0.8 or 0.95))
+        pages.priced(r.detail or 0, cx + 14 * F.scale, cy + 36 * F.scale,
+                     12 * F.scale, pal.a(held and pal.DIM or pal.CHARGE_COL,
+                                         held and 0.8 or 0.95))
         local ly = cy + 54 * F.scale
         for _, line in ipairs(wrapped(r.note or "", 11 * F.scale,
                                       cwid - 26 * F.scale)) do
@@ -4762,7 +4862,37 @@ end
 --
 -- `hot` is the cursor, from either hand: the row the arrows are on while the
 -- stage has them, or the row a pointer is resting on.
+-- One row of a page. Returns true when it published its own hit box, which
+-- only a button does: a button is a shape rather than a line, and a press
+-- landing anywhere along the row it sits in would make it read as a line
+-- again.
 local function stage_row(x, y, w, h, r, hot)
+    -- A row drawn as a button rather than as a line of a list.
+    --
+    -- One row in this game is one. Discord is not a page of this menu and
+    -- should not read as a stop on the way to one: it is the way out to where
+    -- the talking happens, and the mocks draw it as a thing you press. See
+    -- docs/design/community.md.
+    if r.button then
+        local bh = math.min(h - 6 * F.scale, 38 * F.scale)
+        local bw = math.min(w - GUTTER * F.scale,
+                            text_w(r.label or "", 14 * F.scale)
+                                + 74 * F.scale)
+        local bx = x + GUTTER * F.scale
+        local by = y + (h - bh) / 2
+        local edge = pal.a(hot and pal.FRIEND or pal.RADAR_TILE,
+                           hot and 0.95 or 0.6)
+        rect(bx, by, bw, bh, pal.rgb(0x070b12, hot and 0.85 or 0.6))
+        bracket(bx, by, bw, bh, edge, 13 * F.scale)
+        draw_mark(r.button, bx + 22 * F.scale, by + bh / 2, 9.5 * F.scale,
+                  pal.a(hot and pal.FRIEND or pal.INK, hot and 1 or 0.9))
+        -- Quoted rather than said: it is the name of somewhere else, and the
+        -- interface's own capitalisation has no business on it.
+        txt(r.label or "", bx + 40 * F.scale, by + bh / 2, 14 * F.scale,
+            pal.a(pal.INK, hot and 1 or 0.85), nil, MENU_FONT, true)
+        if r.pick then hit(bx, by, bw, bh, "stage", r.index) end
+        return true
+    end
     local col = r.mark and pal.FRIEND or pal.INK
     -- A row that stands for a side is written in that side's color, which is
     -- what makes this list the key to every plate in the arena. It outranks
@@ -5606,13 +5736,12 @@ function M.menu(v)
         if v.pilot and not v.closable then
             local rt = x0 + total
             if v.pilot.rivets then
-                local ly = logo_y + 1 * F.scale
-                lbl("rivets", rt, ly, nil, "right")
-                rt = rt - text_w("rivets", 9 * F.scale) - 8 * F.scale
-                txt(tostring(v.pilot.rivets), rt, logo_y, 15 * F.scale,
-                    pal.a(pal.INK, 0.95), "right")
-                rt = rt - text_w(tostring(v.pilot.rivets), 15 * F.scale)
-                     - 26 * F.scale
+                -- The mark, not the word. "0 RIVETS" spent a third of the
+                -- corner explaining its own units on every page.
+                rt = rt - pages.priced(v.pilot.rivets, rt, logo_y,
+                                       15 * F.scale, pal.a(pal.INK, 0.95),
+                                       "right")
+                rt = rt - 22 * F.scale
             end
             if v.pilot.name and v.pilot.name ~= "" then
                 local lit = v.pilot_hot
@@ -6063,9 +6192,11 @@ function M.menu(v)
             -- second row, so `hover` only ever arrives on the home screen,
             -- where the cursor belongs to the rail and the stage is a preview
             -- of what the mark beside it holds.
-            stage_row(sx, y, GUTTER * F.scale + lw, rowh, r,
-                      (focused and i == v.sel) or i == v.hover)
-            if r.pick then hit(sx, y, GUTTER * F.scale + lw, rowh, "stage", i) end
+            local own = stage_row(sx, y, GUTTER * F.scale + lw, rowh, r,
+                                  (focused and i == v.sel) or i == v.hover)
+            if r.pick and not own then
+                hit(sx, y, GUTTER * F.scale + lw, rowh, "stage", i)
+            end
             -- A row that leaves the game gets a real anchor laid over it by
             -- the page, because nothing this client does from its own loop is
             -- inside the tap that asked for it. Published in CSS pixels,

@@ -491,10 +491,22 @@ local zones = menu.view()
 -- is a way out of the game: they are where somebody thinking about who to
 -- play with already is, which is the argument for both being here rather than
 -- on the tab row. See docs/design/friends.md.
+-- Three questions, headed as three. Run together they read as one list where
+-- Discord is a game you could join and friends is a room with nobody in it.
+local heads = {}
+for _, r in ipairs(zones.rows) do
+    if r.sect then heads[#heads + 1] = r.sect end
+end
+check("the play page is three sections",
+      table.concat(heads, "/") == "zones/friends/community",
+      table.concat(heads, "/"))
+check("and the way out to Discord is a button rather than a row",
+      zones.rows[3].button == "discord", tostring(zones.rows[3].button))
+
 check("nothing at the foot of the list leaves the game",
       #zones.rows == 3 and zones.rows[1].label == "chaos"
           and zones.rows[2].label == "friends"
-          and zones.rows[3].label == "discord",
+          and zones.rows[3].label == "Talk on Discord",
       table.concat(texts_of(zones), ", "))
 
 local act2 = menu.step({go = true})
@@ -1130,7 +1142,7 @@ local function discord_row()
     menu.sel = {}
     menu.click_rail(top_index("play"))
     for i, r in ipairs(menu.view().rows) do
-        if r.label == "discord" then return i end
+        if r.button == "discord" then return i end
     end
     return nil
 end
@@ -1226,7 +1238,7 @@ do
     discord_row()
     local link, strays = nil, {}
     for _, r in ipairs(menu.view().rows) do
-        if r.label == "discord" then
+        if r.button == "discord" then
             link = r.link
         elseif r.link then
             strays[#strays + 1] = r.label
@@ -1457,6 +1469,18 @@ do
           v.rows[2].bar == true and v.rows[2].choices == 6,
           tostring(v.rows[2].bar) .. "/" .. tostring(v.rows[2].choices))
 
+    -- The arrows walk past the budget bar. It is a readout: right does
+    -- nothing to it, and left, which is the way out of a page, shut the whole
+    -- thing. So a cursor that stopped there had two keys that did nothing and
+    -- one that was a trapdoor.
+    menu.sel.hangar = 1
+    menu.step({down = true})
+    check("down from the ship skips the budget readout", menu.sel.hangar == 3,
+          "cursor " .. tostring(menu.sel.hangar))
+    menu.step({up = true})
+    check("and up comes back to the ship", menu.sel.hangar == 1,
+          "cursor " .. tostring(menu.sel.hangar))
+
     -- Right spends a point, left takes it back, and neither goes anywhere.
     -- Row one is the ship and row two the budget, so the first stat is row
     -- three.
@@ -1494,6 +1518,37 @@ do
     check("and never past what the account owns", menu.kit[1] == 2,
           tostring(menu.kit[1]))
     account.entitlements = {}
+
+    -- The whole page, walked with nothing but down. Every stop the cursor
+    -- makes has to be a row the arrows can do something to, and between them
+    -- they have to cover every such row exactly once before wrapping: a slot
+    -- the cursor cannot reach is a slot a player with no mouse cannot spend.
+    for i = 1, 25 do CEIL[i] = 2 end
+    CEIL[22], CEIL[23], CEIL[24] = 3, 3, 3
+    _G.sim.KIT_BUDGET = 30
+    menu.kit = nil
+    menu.open_kit(0)
+    local page = menu.view().rows
+    local want = 0
+    for _, r in ipairs(page) do if r.pick then want = want + 1 end end
+    check("the page has slots to walk", want > 20, tostring(want) .. " rows")
+    menu.sel.hangar = 1
+    local seen, order, dead = {}, {}, 0
+    for _ = 1, want do
+        local at = menu.sel.hangar
+        local r = page[at]
+        if not (r and r.pick) then dead = dead + 1 end
+        if seen[at] then dead = dead + 100 end
+        seen[at] = true
+        order[#order + 1] = at
+        menu.step({down = true})
+    end
+    check("down stops only on rows the arrows can work", dead == 0,
+          dead .. " stops on a readout or a repeat")
+    check("and covers the page before it wraps", #order == want
+          and menu.sel.hangar == order[1],
+          #order .. " of " .. want .. ", back at "
+              .. tostring(menu.sel.hangar))
 
     -- Turning the carousel loads that hull's own saved kit rather than
     -- carrying this one onto it. The page re-reads only where the class it
