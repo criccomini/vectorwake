@@ -288,13 +288,16 @@ menu.home = true
 menu.stack = {"root"}
 menu.sel = {root = ship_at}
 local peek = menu.view()
+-- The hangar previews as the hangar: a roster, and beside it the kit of the
+-- hull the roster is standing on. So the cells are in `hulls` and `rows` is
+-- what the kit column holds.
 check("the rail previews the page it points at",
-      #peek.rows == CELLS and peek.sel == 0,
-      #peek.rows .. " rows, cursor " .. tostring(peek.sel))
+      #peek.hulls == CELLS and peek.sel == 0,
+      #(peek.hulls or {}) .. " hulls, cursor " .. tostring(peek.sel))
 check("flattened, not handed over as it was written",
-      type(peek.rows[CELLS].mark) ~= "function")
+      type(peek.hulls[CELLS].mark) ~= "function")
 check("and the last cell is a pilot there too",
-      peek.rows[CELLS].figure == "pilot", tostring(peek.rows[CELLS].figure))
+      peek.hulls[CELLS].figure == "pilot", tostring(peek.hulls[CELLS].figure))
 menu.stack, menu.sel, menu.home = was_stack, was_sel, was_home
 
 -- On the home screen the same page answers a different tense: not what you

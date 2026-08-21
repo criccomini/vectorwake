@@ -637,9 +637,13 @@ local function standings_rows()
     for i, p in ipairs(account.week or {}) do
         rows[#rows + 1] = {
             label = p.name or "?", named = true,
-            detail = (p.wins or 0) .. "w  " .. (p.kills or 0) .. "k",
-            note = (p.run and p.run > 0)
-                and ("best run of " .. p.run) or nil,
+            -- A table rather than a sentence: the page draws these in their
+            -- own columns, so the row carries the numbers and not a phrasing
+            -- of them. `detail` is what a list would have shown and is what
+            -- the preview still shows.
+            detail = (p.kills or 0) .. "k",
+            rank = i, kills = p.kills or 0, wins = p.wins or 0,
+            run = p.run or 0,
             mark = function() return p.name == M.name end,
         }
         if i >= 20 then break end
@@ -744,6 +748,28 @@ end
 -- the panel for a while as well, a long way from the name it belonged to,
 -- which made choosing between three games into reading three sentences one at
 -- a time.
+-- What the play page says beside its list: the room a press would put you in.
+--
+-- Read off the same directory row the cursor is on, because "where would this
+-- put me" is a question about the thing under the cursor and not about the
+-- fleet in general.
+local function deploying(sel)
+    local r = directory.rows[sel]
+    if not r then return nil end
+    local out = {head = "deploying to", label = r.name or "",
+                 note = r.detail or "", rows = {}}
+    if r.live then
+        out.sub = "the busiest room with a seat"
+        out.rows[#out.rows + 1] = {"people", tostring(r.players or 0)}
+        out.rows[#out.rows + 1] = {"bots holding seats", tostring(r.bots or 0)}
+    else
+        out.sub = "nobody is running it"
+    end
+    out.foot = "a room takes you the moment you press play, and the bots "
+               .. "stand down as people arrive"
+    return out
+end
+
 local function play_rows()
     local rows = {}
     for i, r in ipairs(directory.rows) do
@@ -1296,6 +1322,8 @@ local function view_row(r, i)
         -- The label a group of rows sits under, on the first row of it.
         sect = r.sect,
         group = r.group, short = r.short, tint_col = r.tint_col,
+        -- The week's own columns.
+        rank = r.rank, kills = r.kills, wins = r.wins, run = r.run,
         trigger = r.trigger, owned = r.owned, hull_max = r.hull_max,
         -- What the controls page needs to draw a chip: which color band the
         -- control is in, which key it is on so the board can be lit from the
@@ -1756,6 +1784,12 @@ function M.tick(dt)
     -- one, since the keyboard is taken but the mouse is not, so this is where
     -- the state is let go rather than in each of the four ways out.
     if M.arming and (M.at() ~= "controls" or M.ask) then M.arming = nil end
+    -- The roster opens on the hull you are flying rather than on the first
+    -- one. Every other page opens at the top because its rows are a list; this
+    -- one is a place you are already standing in.
+    if M.at() == "hangar" and not M.sel.hangar then
+        M.sel.hangar = M.class + 1
+    end
     -- A page the tab row no longer carries is a page you are no longer in.
     -- The hangar is the one that comes and goes: it opens for the twenty five
     -- seconds between matches, and a pilot still standing in it when the
@@ -1869,6 +1903,34 @@ function M.view()
     -- The hangar is two levels of the stack drawn at once: the roster down
     -- the left and the kit of the hull it is standing on beside it. So the
     -- page carries both, and which of them the arrows are in.
+    -- The shelf is a grid of cards rather than a list of rows, and the page
+    -- says so rather than the drawing guessing from what a row carries.
+    if M.at() == "shop" and #rows > 0 then out.shelf = true end
+    -- The week is a table, and the page draws it as one.
+    if M.at() == "standings" and #rows > 0 then out.table = true end
+    -- What pressing play would do, beside the list of things to press it on.
+    -- The mode list is short and the panel is wide, and the question a player
+    -- is actually asking is "where would this put me".
+    local previewing = (#M.stack == 1) and rows_of(NODES.root)[sel]
+                       and rows_of(NODES.root)[sel].go or nil
+    if M.at() == "play" or previewing == "play" then
+        out.aside = deploying(M.at() == "play" and sel or (M.sel.play or 1))
+    elseif M.at() == "pilot" or previewing == "pilot" then
+        -- Who you are, beside what you can do about it. The call sign is the
+        -- page, and the rows are three things you might do to it.
+        out.aside = {
+            head = "call sign",
+            label = M.name,
+            sub = account.claimed and "claimed" or "a guest on this device",
+            note = "dealt to you on arrival, and yours until you reroll it. "
+                   .. "A name of your own is something to buy once you have "
+                   .. "flown enough to want one.",
+            foot = account.claimed
+                and "this pilot comes back anywhere you sign in"
+                or "a password brings this pilot back on any machine; without "
+                   .. "one it lives on this one",
+        }
+    end
     if M.at() == "hangar" or M.at() == "kit" then
         out.hulls = {}
         for i, r in ipairs(rows_of(NODES.hangar)) do
@@ -1921,6 +1983,24 @@ function M.view()
             out.rows = {}
             for i, r in ipairs(rows_of(nd2)) do
                 out.rows[i] = view_row(r, i)
+            end
+            -- A preview of a page is that page, not a different drawing of
+            -- the same rows: the hangar previews as a roster beside a kit and
+            -- the shop as its shelf, because what the tab under the cursor
+            -- leads to is the thing worth showing.
+            if pick.go == "hangar" then
+                out.hulls = out.rows
+                out.hull_sel = M.sel.hangar or (M.class + 1)
+                out.hull_focus = false
+                out.head = NODES.kit.head and NODES.kit.head() or nil
+                out.rows = {}
+                for i, r in ipairs(rows_of(NODES.kit)) do
+                    out.rows[i] = view_row(r, i)
+                end
+            elseif pick.go == "shop" then
+                out.shelf = #out.rows > 0
+            elseif pick.go == "standings" then
+                out.table = #out.rows > 0
             end
             -- Nothing in the preview is selected, because the cursor is on
             -- the rail. `sel` at this level counts rail stops, and left where
