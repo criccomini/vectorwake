@@ -54,7 +54,15 @@
       "y": 0,
       "w": 1280,
       "h": 720,
-      "title": "4 \u00b7 In-match menu"
+      "title": "4 \u00b7 Settings, in match"
+    },
+    {
+      "file": "Pilot.dc.html",
+      "x": 5600,
+      "y": 0,
+      "w": 1280,
+      "h": 720,
+      "title": "8 \u00b7 Pilot"
     }
   ],
   "annotations": [
@@ -106,6 +114,13 @@
       "y": -190,
       "w": 400,
       "text": "The same surface as the front end, not a different one: full screen, same tab row, differing only in which tabs it carries.\n\nNothing pauses, so the match reads through a scrim and the topbar carries the score and clock where the front end carries your wallet.\n\nTwo axes, still five inputs: left and right along the tabs, down into the page, left and right again to set a row's value."
+    },
+    {
+      "id": "pilot-tab",
+      "x": 5600,
+      "y": -190,
+      "w": 400,
+      "text": "Who you are rather than how a match went, and the one place a bought name can land: a call sign that cost six hundred rivets is a name a ban actually takes something from."
     }
   ],
   "launch": {

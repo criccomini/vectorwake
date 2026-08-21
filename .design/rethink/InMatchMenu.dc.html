@@ -149,13 +149,13 @@ a{color:var(--friend)}a:hover{color:#8ee6ff}
   </div>
   
   <!-- a scrim, not a curtain: the ships and the walls read straight through -->
-  <div style="position:absolute;inset:0;background:rgba(5,7,12,.8)"></div>
+  <div style="position:absolute;inset:0;background:rgba(5,7,12,.82)"></div>
   <div style="position:absolute;inset:0">
     
   <div class="row" style="height:56px;padding:0 56px;gap:34px;
        background:rgba(5,7,12,.72)">
     <svg width="39.56" height="22.36" viewBox="0 0 46 26" fill="none" style="flex:none"><path d="M2 3 H20 L15 9 H2 Z" fill="#27c5ed"/><path d="M2 10 H16 L11 16 H2 Z" fill="#ff9d22"/><path d="M2 17 H12 L7 23 H2 Z" fill="#27c5ed" opacity=".75"/><path d="M26 3 H44 L39 9 H26 Z" fill="#ff9d22"/><path d="M26 10 H40 L35 16 H26 Z" fill="#27c5ed"/><path d="M26 17 H36 L31 23 H26 Z" fill="#ff9d22" opacity=".75"/></svg>
-    <div style="display:flex;gap:26px;align-items:flex-start"><div style="font-size:15px;color:var(--friend)">Settings<div style="height:1.4px;background:var(--friend);margin-top:5px"></div></div><div style="font-size:15px;color:var(--dim)">Help</div><div style="font-size:15px;color:var(--dim)">Leave</div></div>
+    <div style="display:flex;gap:21px;align-items:flex-start"><div style="font-size:15px;color:var(--friend)">Settings<div style="height:1.4px;background:var(--friend);margin-top:5px"></div></div><div style="font-size:15px;color:var(--dim)">Leave</div></div>
     <div style="flex:1"></div>
     <div class="row" style="gap:13px">
       <div class="t11 num" style="color:var(--friend)">BASTION</div>
@@ -166,71 +166,85 @@ a{color:var(--friend)}a:hover{color:#8ee6ff}
     </div>
   </div>
   <div class="ticks" style="margin:0 56px"></div>
-    <div style="padding:34px 56px 0">
-      <div class="row" style="gap:14px;margin-bottom:16px">
+    
+    <div style="padding:30px 56px 0">
+      <div class="row" style="gap:14px;margin-bottom:14px">
         <div style="font-size:23px">Settings</div>
         <div class="lbl" style="opacity:.6">saved as you set them</div>
       </div>
-      <div class="panel" style="padding:12px 0">
-        
-      <div class="row wash" style="height:52px;
-           padding:0 20px;gap:14px">
-        <div style="color:var(--friend);font-size:13px;width:15px">&#9654;</div>
-        <div style="font-size:18px;min-width:150px;
-             color:var(--ink)">Sound</div>
-        <div style="display:flex;gap:7px"><div style="padding:5px 13px;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);box-shadow:inset 0 0 0 1px rgba(108,122,144,.28);opacity:1">off</div><div style="padding:5px 13px;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);box-shadow:inset 0 0 0 1px rgba(108,122,144,.28);opacity:1">quiet</div><div style="padding:5px 13px;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--friend);box-shadow:inset 0 0 0 1px rgba(79,214,255,.75);opacity:1">half</div><div style="padding:5px 13px;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);box-shadow:inset 0 0 0 1px rgba(108,122,144,.28);opacity:1">full</div></div>
-        <div style="flex:1"></div>
-        <div class="lbl" style="opacity:.7"></div>
-      </div>
-      <div class="row " style="height:52px;
-           padding:0 20px;gap:14px">
-        <div style="width:15px"></div>
-        <div style="font-size:18px;min-width:150px;
-             color:var(--dim)">Music</div>
-        <div style="display:flex;gap:7px"><div style="padding:5px 13px;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--friend);box-shadow:inset 0 0 0 1px rgba(79,214,255,.75);opacity:1">off</div><div style="padding:5px 13px;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);box-shadow:inset 0 0 0 1px rgba(108,122,144,.28);opacity:0.72">quiet</div><div style="padding:5px 13px;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);box-shadow:inset 0 0 0 1px rgba(108,122,144,.28);opacity:0.72">half</div><div style="padding:5px 13px;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);box-shadow:inset 0 0 0 1px rgba(108,122,144,.28);opacity:0.72">full</div></div>
-        <div style="flex:1"></div>
-        <div class="lbl" style="opacity:.7"></div>
-      </div>
-      <div class="row " style="height:52px;
-           padding:0 20px;gap:14px">
-        <div style="width:15px"></div>
-        <div style="font-size:18px;min-width:150px;
-             color:var(--dim)">Frames</div>
-        <div style="display:flex;gap:7px"><div style="padding:5px 13px;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--friend);box-shadow:inset 0 0 0 1px rgba(79,214,255,.75);opacity:1">60</div><div style="padding:5px 13px;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);box-shadow:inset 0 0 0 1px rgba(108,122,144,.28);opacity:0.72">120</div><div style="padding:5px 13px;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);box-shadow:inset 0 0 0 1px rgba(108,122,144,.28);opacity:0.72">screen</div></div>
-        <div style="flex:1"></div>
-        <div class="lbl" style="opacity:.7"></div>
-      </div>
-      <div class="row " style="height:52px;
-           padding:0 20px;gap:14px">
-        <div style="width:15px"></div>
-        <div style="font-size:18px;min-width:150px;
-             color:var(--dim)">Fullscreen</div>
-        <div style="display:flex;gap:7px"><div style="padding:5px 13px;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);box-shadow:inset 0 0 0 1px rgba(108,122,144,.28);opacity:0.72">off</div><div style="padding:5px 13px;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--friend);box-shadow:inset 0 0 0 1px rgba(79,214,255,.75);opacity:1">on</div></div>
-        <div style="flex:1"></div>
-        <div class="lbl" style="opacity:.7"></div>
-      </div>
-      <div class="row " style="height:52px;
-           padding:0 20px;gap:14px">
-        <div style="width:15px"></div>
-        <div style="font-size:18px;min-width:150px;
-             color:var(--dim)">Steering</div>
-        <div style="display:flex;gap:7px"><div style="padding:5px 13px;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--friend);box-shadow:inset 0 0 0 1px rgba(79,214,255,.75);opacity:1">stick</div><div style="padding:5px 13px;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);box-shadow:inset 0 0 0 1px rgba(108,122,144,.28);opacity:0.72">d-pad</div></div>
-        <div style="flex:1"></div>
-        <div class="lbl" style="opacity:.7">touch only</div>
-      </div>
-      </div>
+      <div class="row" style="align-items:flex-start;gap:26px">
 
-      <div class="row" style="gap:9px;margin-top:26px">
+        <div class="panel" style="flex:1;padding:6px 0 14px">
+          <div class="lbl" style="padding:0 18px;margin:14px 0 6px;letter-spacing:.2em">Audio</div>
+        <div class="row wash" style="height:44px;
+             padding:0 18px;gap:13px">
+          <div style="color:var(--friend);font-size:13px;width:14px">&#9654;</div>
+          <div style="font-size:17px;min-width:126px;
+               color:var(--ink)">Sound</div>
+          <div style="display:flex;gap:7px"><div style="padding:5px 13px;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);box-shadow:inset 0 0 0 1px rgba(108,122,144,.28);opacity:1">off</div><div style="padding:5px 13px;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);box-shadow:inset 0 0 0 1px rgba(108,122,144,.28);opacity:1">quiet</div><div style="padding:5px 13px;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--friend);box-shadow:inset 0 0 0 1px rgba(79,214,255,.75);opacity:1">half</div><div style="padding:5px 13px;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);box-shadow:inset 0 0 0 1px rgba(108,122,144,.28);opacity:1">full</div></div>
+        </div>
+        <div class="row " style="height:44px;
+             padding:0 18px;gap:13px">
+          <div style="width:14px"></div>
+          <div style="font-size:17px;min-width:126px;
+               color:var(--dim)">Music</div>
+          <div style="display:flex;gap:7px"><div style="padding:5px 13px;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--friend);box-shadow:inset 0 0 0 1px rgba(79,214,255,.75);opacity:1">off</div><div style="padding:5px 13px;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);box-shadow:inset 0 0 0 1px rgba(108,122,144,.28);opacity:0.72">quiet</div><div style="padding:5px 13px;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);box-shadow:inset 0 0 0 1px rgba(108,122,144,.28);opacity:0.72">half</div><div style="padding:5px 13px;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);box-shadow:inset 0 0 0 1px rgba(108,122,144,.28);opacity:0.72">full</div></div>
+        </div>
+          <div class="lbl" style="padding:0 18px;margin:14px 0 6px;letter-spacing:.2em">Video</div>
+        <div class="row " style="height:44px;
+             padding:0 18px;gap:13px">
+          <div style="width:14px"></div>
+          <div style="font-size:17px;min-width:126px;
+               color:var(--dim)">Frames</div>
+          <div style="display:flex;gap:7px"><div style="padding:5px 13px;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--friend);box-shadow:inset 0 0 0 1px rgba(79,214,255,.75);opacity:1">60</div><div style="padding:5px 13px;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);box-shadow:inset 0 0 0 1px rgba(108,122,144,.28);opacity:0.72">120</div><div style="padding:5px 13px;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);box-shadow:inset 0 0 0 1px rgba(108,122,144,.28);opacity:0.72">screen</div></div>
+        </div>
+        <div class="row " style="height:44px;
+             padding:0 18px;gap:13px">
+          <div style="width:14px"></div>
+          <div style="font-size:17px;min-width:126px;
+               color:var(--dim)">Fullscreen</div>
+          <div style="display:flex;gap:7px"><div style="padding:5px 13px;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);box-shadow:inset 0 0 0 1px rgba(108,122,144,.28);opacity:0.72">off</div><div style="padding:5px 13px;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--friend);box-shadow:inset 0 0 0 1px rgba(79,214,255,.75);opacity:1">on</div></div>
+        </div>
+          <div class="lbl" style="padding:0 18px;margin:14px 0 6px;letter-spacing:.2em">About</div>
+          <div class="row" style="height:26px;padding:0 18px;gap:12px">
+            <div style="font-size:14px;color:var(--dim);min-width:112px">build</div>
+            <div class="t11 num">c429fcd</div>
+          </div>
+          <div class="row" style="height:26px;padding:0 18px;gap:12px">
+            <div style="font-size:14px;color:var(--dim);min-width:112px">source</div>
+            <div class="t11 num" style="color:var(--friend)">GITHUB</div>
+          </div>
+          <div class="row" style="height:26px;padding:0 18px;gap:12px">
+            <div style="font-size:14px;color:var(--dim);min-width:112px">licence</div>
+            <div class="t11 num" style="opacity:.75">POLYFORM</div>
+          </div>
+        </div>
+
+        <div class="panel" style="width:452px;padding:6px 0 14px">
+          <div class="lbl" style="padding:0 18px;margin:14px 0 6px;letter-spacing:.2em">Controls</div>
+          
+        <div class="row " style="height:44px;
+             padding:0 18px;gap:13px">
+          <div style="width:14px"></div>
+          <div style="font-size:17px;min-width:92px;
+               color:var(--dim)">Steering</div>
+          <div style="display:flex;gap:7px"><div style="padding:5px 13px;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--friend);box-shadow:inset 0 0 0 1px rgba(79,214,255,.75);opacity:1">stick</div><div style="padding:5px 13px;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);box-shadow:inset 0 0 0 1px rgba(108,122,144,.28);opacity:0.72">d-pad</div></div>
+        </div>
+          <div class="ticks" style="margin:8px 18px 8px"></div>
+          <div class="row" style="height:26px;padding:0 18px;gap:12px"><div style="font-size:14px;color:var(--dim);min-width:112px">turn left</div><div class="t11 num" style="color:var(--ink)">&#8592;</div><div style="flex:1"></div><div class="lbl" style="opacity:.45">rebind</div></div><div class="row" style="height:26px;padding:0 18px;gap:12px"><div style="font-size:14px;color:var(--dim);min-width:112px">turn right</div><div class="t11 num" style="color:var(--ink)">&#8594;</div><div style="flex:1"></div><div class="lbl" style="opacity:.45">rebind</div></div><div class="row" style="height:26px;padding:0 18px;gap:12px"><div style="font-size:14px;color:var(--dim);min-width:112px">thrust</div><div class="t11 num" style="color:var(--ink)">&#8593;</div><div style="flex:1"></div><div class="lbl" style="opacity:.45">rebind</div></div><div class="row" style="height:26px;padding:0 18px;gap:12px"><div style="font-size:14px;color:var(--dim);min-width:112px">reverse</div><div class="t11 num" style="color:var(--ink)">&#8595;</div><div style="flex:1"></div><div class="lbl" style="opacity:.45">rebind</div></div><div class="row" style="height:26px;padding:0 18px;gap:12px"><div style="font-size:14px;color:var(--dim);min-width:112px">guns</div><div class="t11 num" style="color:var(--ink)">SPACE</div><div style="flex:1"></div><div class="lbl" style="opacity:.45">rebind</div></div><div class="row" style="height:26px;padding:0 18px;gap:12px"><div style="font-size:14px;color:var(--dim);min-width:112px">bombs</div><div class="t11 num" style="color:var(--ink)">TAB</div><div style="flex:1"></div><div class="lbl" style="opacity:.45">rebind</div></div><div class="row" style="height:26px;padding:0 18px;gap:12px"><div style="font-size:14px;color:var(--dim);min-width:112px">repel</div><div class="t11 num" style="color:var(--ink)">Q</div><div style="flex:1"></div><div class="lbl" style="opacity:.45">rebind</div></div><div class="row" style="height:26px;padding:0 18px;gap:12px"><div style="font-size:14px;color:var(--dim);min-width:112px">burst</div><div class="t11 num" style="color:var(--ink)">W</div><div style="flex:1"></div><div class="lbl" style="opacity:.45">rebind</div></div><div class="row" style="height:26px;padding:0 18px;gap:12px"><div style="font-size:14px;color:var(--dim);min-width:112px">mine</div><div class="t11 num" style="color:var(--ink)">E</div><div style="flex:1"></div><div class="lbl" style="opacity:.45">rebind</div></div><div class="row" style="height:26px;padding:0 18px;gap:12px"><div style="font-size:14px;color:var(--dim);min-width:112px">map</div><div class="t11 num" style="color:var(--ink)">M</div><div style="flex:1"></div><div class="lbl" style="opacity:.45">rebind</div></div><div class="row" style="height:26px;padding:0 18px;gap:12px"><div style="font-size:14px;color:var(--dim);min-width:112px">players</div><div class="t11 num" style="color:var(--ink)">P</div><div style="flex:1"></div><div class="lbl" style="opacity:.45">rebind</div></div><div class="row" style="height:26px;padding:0 18px;gap:12px"><div style="font-size:14px;color:var(--dim);min-width:112px">menu</div><div class="t11 num" style="color:var(--ink)">ESC</div><div style="flex:1"></div><div class="lbl" style="opacity:.45">fixed</div></div>
+        </div>
+      </div>
+      
+      <div class="row" style="gap:9px;margin-top:24px">
         <svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M6 1 L11 6 L6 11 L1 6 Z" fill="var(--dim)"/></svg>
         <div style="font-size:13px;color:var(--dim);text-wrap:pretty;
-             max-width:640px;line-height:1.5">
+             max-width:660px;line-height:1.5">
           The match is still running behind this and nothing here pauses it.
           Leaving hands your seat to a bot: you keep the rivets you have taken
           and give up the win.
         </div>
       </div>
-
-      <div class="row" style="gap:24px;margin-top:34px">
+      <div class="row" style="gap:24px;margin-top:22px">
         <div class="row" style="gap:9px">
           <div class="t11 num dim">&#8592; &#8594;</div>
           <div style="font-size:14px;color:var(--dim)">Tab, or set a value</div>
@@ -241,7 +255,8 @@ a{color:var(--friend)}a:hover{color:#8ee6ff}
         </div>
         <div class="row" style="gap:9px">
           <div class="t11 num dim">ESC</div>
-          <div style="font-size:14px;color:var(--dim)">Back to it</div>
+          <div style="font-size:14px;color:var(--dim)">
+            Back to it</div>
         </div>
       </div>
     </div>

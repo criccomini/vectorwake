@@ -325,16 +325,35 @@ screens with panes and grids, and the menu tree was deliberately one narrow
 column that [menu.md](menu.md) says "falls apart at 390 points wide". So
 there are two surfaces now rather than one:
 
-- **Four destinations** at the front end, which is where you are between
-  matches and where there is time to read: play, hangar, shop, standings.
-- **One small stack**, opened with escape in either place, holding the things
-  that are neither a destination nor a game: settings, help, and about or
-  leave depending on where you are.
+- **Six tabs** at the front end, which is where you are between matches and
+  where there is time to read: play, hangar, shop, standings, pilot,
+  settings.
+- **Two tabs in a match**: settings and leave. Same row in the same place,
+  carrying what you can act on from a cockpit.
 
-**It is one surface, and in a match it carries three tabs: settings, help,
+Settings holds everything that is about the machine rather than about a
+match, in one column: audio, video, the control bindings, and about. Help
+folds into it rather than standing beside it, because the controls board and
+the rebinding screen were always the same list read two ways, and `about` is
+three lines that never deserved a destination.
+
+Pilot is the one tab about you rather than about a match: your call sign and
+its reroll, whether the account is claimed, your career, the hulls you fly and
+what you are wearing. It is also where a bought name lands, which is the
+moderation argument as much as the vanity one. A call sign that cost six
+hundred rivets is a name a ban actually takes something from, and rivets are
+earned by flying rather than bought with money, so the cost is time.
+
+**It is one surface, and in a match it carries two tabs: settings and
 leave.** Same chrome as the front end, full screen, with the tab row on top;
 what differs is which tabs are on it, not how any of it looks or works. That
 is the point. A player learns one screen and meets it in both places.
+
+Discord is not a tab. It sits in the friends panel on the play screen,
+which is where somebody is already thinking about who to play with, and it is
+the only outbound link in the game. [community.md](community.md) has the rest
+of that argument; what matters here is that the game carries no chat and the
+friends panel is honest about where the talking happens.
 
 Nothing you cannot act on right now is on that row, which follows from a rule
 [menu.md](menu.md) already has and is proud of: nothing pauses, you can be

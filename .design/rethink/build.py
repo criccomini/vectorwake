@@ -309,7 +309,19 @@ EXTRA_CSS = {}
 
 
 # --- chrome shared by the three menu screens --------------------------------
-NAV = ["Play", "Hangar", "Shop", "Standings"]
+NAV = ["Play", "Hangar", "Shop", "Standings", "Pilot", "Settings"]
+
+
+def discord(col="currentColor", w=19):
+    return (f'<svg width="{w}" height="{int(w * 16 / 21)}" viewBox="0 0 21 17" '
+            f'fill="{col}" style="flex:none">'
+            f'<path d="M17.7 2.6A15 15 0 0 0 14 1.4l-.2.4a13.8 13.8 0 0 1 3.3 1.1 '
+            f'12.6 12.6 0 0 0-10.6 0A13.9 13.9 0 0 1 9.8 1.8L9.6 1.4A15 15 0 0 0 '
+            f'5.9 2.6C3.3 6.5 2.6 10.3 2.9 14a15.1 15.1 0 0 0 4.6 2.3l1-1.6a9.8 '
+            f'9.8 0 0 1-1.6-.8l.4-.3a10.8 10.8 0 0 0 9 0l.4.3a9.7 9.7 0 0 1-1.6.8'
+            f'l1 1.6a15 15 0 0 0 4.6-2.3c.4-4.3-.7-8.1-3-11.4ZM8.5 11.8c-.9 0-1.6-.8'
+            f'-1.6-1.8s.7-1.8 1.6-1.8 1.6.8 1.6 1.8-.7 1.8-1.6 1.8Zm4.6 0c-.9 0-1.6'
+            f'-.8-1.6-1.8s.7-1.8 1.6-1.8 1.6.8 1.6 1.8-.7 1.8-1.6 1.8Z"/></svg>')
 
 
 def topbar(current, rivets="342"):
@@ -320,7 +332,7 @@ def topbar(current, rivets="342"):
         w = ('<div style="height:1.4px;background:var(--friend);margin-top:5px">'
              '</div>') if on else ""
         items.append(f'<div style="font-size:15px;color:{col}">{n}{w}</div>')
-    nav = ('<div style="display:flex;gap:26px;align-items:flex-start">'
+    nav = ('<div style="display:flex;gap:21px;align-items:flex-start">'
            + "".join(items) + "</div>")
     return f"""
   <div class="row" style="height:56px;padding:0 56px;gap:34px;
@@ -466,6 +478,13 @@ def s_matchlist():
         </div>
         <div class="ticks" style="margin:9px 0 4px"></div>
         {''.join(friends)}
+        <div class="ticks" style="margin:6px 0 0"></div>
+        <div class="row" style="height:38px;gap:10px">
+          {discord("var(--dim)")}
+          <div style="font-size:14px;color:var(--dim)">Talk on Discord</div>
+          <div style="flex:1"></div>
+          <div class="lbl" style="opacity:.6">the game carries no chat</div>
+        </div>
       </div>
     </div>
 
@@ -1138,7 +1157,7 @@ def s_match():
 
 
 # =============================================================================
-# 4b. The menu over a live match. Same surface as the front end, full screen
+# 4b. Settings, over a live match. Same surface as the front end, full screen
 #     with the tab row on top, over a scrim rather than over a blank: the
 #     world has not stopped and the screen should not pretend it has.
 # =============================================================================
@@ -1147,14 +1166,22 @@ def s_match():
 # first row comes back; left and right on a focused row move its value;
 # escape closes. A d-pad, a thumb and a keyboard all do this without a second
 # layout.
-MATCH_TABS = ["Settings", "Help", "Leave"]
+MATCH_TABS = ["Settings", "Leave"]
 
-SETTINGS = [
-    ("Sound", ["off", "quiet", "half", "full"], 2, "", True),
-    ("Music", ["off", "quiet", "half", "full"], 0, "", False),
-    ("Frames", ["60", "120", "screen"], 0, "", False),
-    ("Fullscreen", ["off", "on"], 1, "", False),
-    ("Steering", ["stick", "d-pad"], 0, "touch only", False),
+AUDIO = [("Sound", ["off", "quiet", "half", "full"], 2, True),
+         ("Music", ["off", "quiet", "half", "full"], 0, False)]
+VIDEO = [("Frames", ["60", "120", "screen"], 0, False),
+         ("Fullscreen", ["off", "on"], 1, False)]
+
+# The real ids and defaults out of client/arena/controls.lua, less the two the
+# design retires: the mine posture becomes a third charge, and attach goes
+# with the turrets.
+BINDS = [
+    ("turn left", "&#8592;"), ("turn right", "&#8594;"),
+    ("thrust", "&#8593;"), ("reverse", "&#8595;"),
+    ("guns", "SPACE"), ("bombs", "TAB"),
+    ("repel", "Q"), ("burst", "W"), ("mine", "E"),
+    ("map", "M"), ("players", "P"), ("menu", "ESC"),
 ]
 
 
@@ -1172,6 +1199,100 @@ def opt_chips(items, sel, focused):
     return '<div style="display:flex;gap:7px">' + "".join(out) + "</div>"
 
 
+def setting_rows(rows, label_w=126):
+    out = []
+    for name, items, sel, focused in rows:
+        cursor = ('<div style="color:var(--friend);font-size:13px;width:14px">'
+                  '&#9654;</div>') if focused else '<div style="width:14px"></div>'
+        out.append(f"""
+        <div class="row {'wash' if focused else ''}" style="height:44px;
+             padding:0 18px;gap:13px">
+          {cursor}
+          <div style="font-size:17px;min-width:{label_w}px;
+               color:{'var(--ink)' if focused else 'var(--dim)'}">{name}</div>
+          {opt_chips(items, sel, focused)}
+        </div>""")
+    return "".join(out)
+
+
+def section(title):
+    return (f'<div class="lbl" style="padding:0 18px;margin:14px 0 6px;'
+            f'letter-spacing:.2em">{title}</div>')
+
+
+def settings_page(in_match):
+    binds = "".join(
+        f'<div class="row" style="height:26px;padding:0 18px;gap:12px">'
+        f'<div style="font-size:14px;color:var(--dim);min-width:112px">{n}</div>'
+        f'<div class="t11 num" style="color:var(--ink)">{k}</div>'
+        f'<div style="flex:1"></div>'
+        f'<div class="lbl" style="opacity:.45">'
+        f'{"fixed" if n == "menu" else "rebind"}</div></div>'
+        for n, k in BINDS)
+
+    footer = ("""
+      <div class="row" style="gap:9px;margin-top:24px">
+        %s
+        <div style="font-size:13px;color:var(--dim);text-wrap:pretty;
+             max-width:660px;line-height:1.5">
+          The match is still running behind this and nothing here pauses it.
+          Leaving hands your seat to a bot: you keep the rivets you have taken
+          and give up the win.
+        </div>
+      </div>""" % mark_diamond("var(--dim)", 10)) if in_match else ""
+
+    return f"""
+    <div style="padding:30px 56px 0">
+      <div class="row" style="gap:14px;margin-bottom:14px">
+        <div style="font-size:23px">Settings</div>
+        <div class="lbl" style="opacity:.6">saved as you set them</div>
+      </div>
+      <div class="row" style="align-items:flex-start;gap:26px">
+
+        <div class="panel" style="flex:1;padding:6px 0 14px">
+          {section("Audio")}{setting_rows(AUDIO)}
+          {section("Video")}{setting_rows(VIDEO)}
+          {section("About")}
+          <div class="row" style="height:26px;padding:0 18px;gap:12px">
+            <div style="font-size:14px;color:var(--dim);min-width:112px">build</div>
+            <div class="t11 num">c429fcd</div>
+          </div>
+          <div class="row" style="height:26px;padding:0 18px;gap:12px">
+            <div style="font-size:14px;color:var(--dim);min-width:112px">source</div>
+            <div class="t11 num" style="color:var(--friend)">GITHUB</div>
+          </div>
+          <div class="row" style="height:26px;padding:0 18px;gap:12px">
+            <div style="font-size:14px;color:var(--dim);min-width:112px">licence</div>
+            <div class="t11 num" style="opacity:.75">POLYFORM</div>
+          </div>
+        </div>
+
+        <div class="panel" style="width:452px;padding:6px 0 14px">
+          {section("Controls")}
+          {setting_rows([("Steering", ["stick", "d-pad"], 0, False)], 92)}
+          <div class="ticks" style="margin:8px 18px 8px"></div>
+          {binds}
+        </div>
+      </div>
+      {footer}
+      <div class="row" style="gap:24px;margin-top:{"22" if in_match else "30"}px">
+        <div class="row" style="gap:9px">
+          <div class="t11 num dim">&#8592; &#8594;</div>
+          <div style="font-size:14px;color:var(--dim)">Tab, or set a value</div>
+        </div>
+        <div class="row" style="gap:9px">
+          <div class="t11 num dim">&#8593; &#8595;</div>
+          <div style="font-size:14px;color:var(--dim)">Row</div>
+        </div>
+        <div class="row" style="gap:9px">
+          <div class="t11 num dim">ESC</div>
+          <div style="font-size:14px;color:var(--dim)">
+            {"Back to it" if in_match else "Back"}</div>
+        </div>
+      </div>
+    </div>"""
+
+
 def topbar_match():
     tabs = []
     for t in MATCH_TABS:
@@ -1184,7 +1305,7 @@ def topbar_match():
   <div class="row" style="height:56px;padding:0 56px;gap:34px;
        background:rgba(5,7,12,.72)">
     {wordmark(.86)}
-    <div style="display:flex;gap:26px;align-items:flex-start">{''.join(tabs)}</div>
+    <div style="display:flex;gap:21px;align-items:flex-start">{''.join(tabs)}</div>
     <div style="flex:1"></div>
     <div class="row" style="gap:13px">
       <div class="t11 num" style="color:var(--friend)">BASTION</div>
@@ -1198,62 +1319,118 @@ def topbar_match():
 
 
 def s_menu():
-    rows = []
-    for name, items, sel, note, focused in SETTINGS:
-        cursor = ('<div style="color:var(--friend);font-size:13px;width:15px">'
-                  '&#9654;</div>') if focused else '<div style="width:15px"></div>'
-        rows.append(f"""
-      <div class="row {'wash' if focused else ''}" style="height:52px;
-           padding:0 20px;gap:14px">
-        {cursor}
-        <div style="font-size:18px;min-width:150px;
-             color:{'var(--ink)' if focused else 'var(--dim)'}">{name}</div>
-        {opt_chips(items, sel, focused)}
-        <div style="flex:1"></div>
-        <div class="lbl" style="opacity:.7">{note}</div>
-      </div>""")
-
     menu = f"""
   <!-- a scrim, not a curtain: the ships and the walls read straight through -->
-  <div style="position:absolute;inset:0;background:rgba(5,7,12,.8)"></div>
+  <div style="position:absolute;inset:0;background:rgba(5,7,12,.82)"></div>
   <div style="position:absolute;inset:0">
     {topbar_match()}
-    <div style="padding:34px 56px 0">
-      <div class="row" style="gap:14px;margin-bottom:16px">
-        <div style="font-size:23px">Settings</div>
-        <div class="lbl" style="opacity:.6">saved as you set them</div>
+    {settings_page(True)}
+  </div>"""
+    page("InMatchMenu", match_screen(menu))
+
+
+# =============================================================================
+# 4c. Pilot: who you are, which is the one tab that is about you rather than
+#     about a match. It is also where a bought name would land.
+# =============================================================================
+def s_pilot():
+    body = f"""
+<div class="screen">
+  {topbar("Pilot")}
+  <div class="row" style="align-items:flex-start;gap:26px;padding:30px 56px 0">
+
+    <div class="panel" style="width:432px;padding:20px 22px 22px;position:relative">
+      {bracket("rgba(79,214,255,.6)")}
+      <div class="lbl">call sign</div>
+      <div class="row" style="gap:13px;margin-top:11px">
+        {helm("var(--friend)", 22)}
+        <div style="font-size:30px">Quarrel</div>
+        <div style="flex:1"></div>
+        <div class="lbl" style="color:var(--friend);letter-spacing:.2em">ace</div>
       </div>
-      <div class="panel" style="padding:12px 0">
-        {''.join(rows)}
+      <div style="font-size:13px;color:var(--dim);margin-top:12px;
+           line-height:1.5;text-wrap:pretty">
+        Dealt to you on arrival. Reroll for another from the pool, or buy a
+        name of your own once you have flown enough to want one.
+      </div>
+      <div class="row" style="gap:12px;margin-top:16px">
+        <div class="row" style="position:relative;padding:8px 16px;gap:9px">
+          {bracket("rgba(108,122,144,.6)")}
+          <div class="t11 num dim">R</div>
+          <div style="font-size:14px;color:var(--dim)">Reroll</div>
+        </div>
+        <div class="row" style="position:relative;padding:8px 16px;gap:9px">
+          {bracket("rgba(255,224,138,.6)")}
+          {rivet("#ffe08a", 12)}
+          <div class="num" style="font-size:14px;color:var(--bounty)">600</div>
+          <div style="font-size:14px">Name your own</div>
+        </div>
+      </div>
+      <div class="ticks" style="margin:20px 0 14px"></div>
+      <div class="lbl">account</div>
+      <div class="row" style="height:30px;margin-top:6px">
+        <div style="font-size:14px;color:var(--dim)">Claimed</div>
+        <div style="flex:1"></div>
+        <div class="t11 num" style="color:var(--prize)">YES</div>
+      </div>
+      <div class="row" style="height:30px">
+        <div style="font-size:14px;color:var(--dim)">Flying since</div>
+        <div style="flex:1"></div>
+        <div class="t11 num">MAR 2026</div>
+      </div>
+    </div>
+
+    <div style="flex:1">
+      <div class="panel" style="padding:18px 22px">
+        <div class="lbl">career</div>
+        <div class="row" style="gap:34px;margin-top:14px">
+          <div>
+            <div class="num" style="font-size:29px;color:var(--friend)">ACE</div>
+            <div class="lbl" style="margin-top:3px">rating band</div>
+          </div>
+          <div>
+            <div class="num" style="font-size:29px">412</div>
+            <div class="lbl" style="margin-top:3px">matches</div>
+          </div>
+          <div>
+            <div class="num" style="font-size:29px">1.24</div>
+            <div class="lbl" style="margin-top:3px">kills a death</div>
+          </div>
+          <div>
+            <div class="num" style="font-size:29px;color:var(--bounty)">11</div>
+            <div class="lbl" style="margin-top:3px">longest run</div>
+          </div>
+        </div>
       </div>
 
-      <div class="row" style="gap:9px;margin-top:26px">
-        {mark_diamond("var(--dim)", 10)}
-        <div style="font-size:13px;color:var(--dim);text-wrap:pretty;
-             max-width:640px;line-height:1.5">
-          The match is still running behind this and nothing here pauses it.
-          Leaving hands your seat to a bot: you keep the rivets you have taken
-          and give up the win.
+      <div class="panel" style="margin-top:18px;padding:18px 22px">
+        <div class="lbl">hulls flown</div>
+        <div class="row" style="gap:8px;margin-top:14px;flex-wrap:wrap">
+          {''.join(
+            f'<div style="display:flex;flex-direction:column;align-items:center;'
+            f'gap:6px;width:74px">'
+            f'{hull(n, "var(--friend)" if n == "Apex" else "var(--dim)", .62, dim=n != "Apex", canopy=False)}'
+            f'<div class="lbl" style="opacity:{1 if n == "Apex" else .6}">{n}</div>'
+            f'<div class="t10 num" style="opacity:.6">{p}</div></div>'
+            for n, p in [("Apex", "48%"), ("Cipher", "19%"), ("Facet", "12%"),
+                         ("Wedge", "9%"), ("Chord", "6%"), ("Lattice", "4%"),
+                         ("Anvil", "2%")])}
         </div>
       </div>
 
-      <div class="row" style="gap:24px;margin-top:34px">
-        <div class="row" style="gap:9px">
-          <div class="t11 num dim">&#8592; &#8594;</div>
-          <div style="font-size:14px;color:var(--dim)">Tab, or set a value</div>
-        </div>
-        <div class="row" style="gap:9px">
-          <div class="t11 num dim">&#8593; &#8595;</div>
-          <div style="font-size:14px;color:var(--dim)">Row</div>
-        </div>
-        <div class="row" style="gap:9px">
-          <div class="t11 num dim">ESC</div>
-          <div style="font-size:14px;color:var(--dim)">Back to it</div>
+      <div class="panel" style="margin-top:18px;padding:18px 22px">
+        <div class="lbl">wearing</div>
+        <div class="row" style="gap:14px;margin-top:12px">
+          {wake("hairline", 64)}
+          <div style="font-size:15px">Hairline wake</div>
+          <div style="flex:1"></div>
+          <div class="lbl" style="opacity:.65">won in week 31</div>
         </div>
       </div>
     </div>
-  </div>"""
-    page("InMatchMenu", match_screen(menu))
+  </div>
+</div>"""
+    page("Pilot", body)
 
 
 # =============================================================================
@@ -1528,6 +1705,6 @@ def s_standings():
 
 
 if __name__ == "__main__":
-    s_matchlist(); s_main(); s_shop(); s_match(); s_menu(); s_podium()
-    s_standings()
-    print("wrote 7 artboards")
+    s_matchlist(); s_main(); s_shop(); s_match(); s_menu(); s_pilot()
+    s_podium(); s_standings()
+    print("wrote 8 artboards")

@@ -2,9 +2,11 @@
 
 > **A split is proposed.** [match-game.md](match-game.md) moves the
 > hangar, the shop and the standings out of this tree and into screens
-> of their own. What is left is one full-screen surface with a tab row,
+> of their own, and adds pilot and settings beside them, so the front end
+> is six tabs. Help folds into settings with the bindings. What is left
+> is one full-screen surface with a tab row,
 > met in both places and differing only in which tabs it carries: in a
-> match, settings, help and leave, because nothing pauses and anything
+> match, settings and leave, because nothing pauses and anything
 > you cannot act on now costs match time to read. It stays driveable on
 > the five inputs below, with left and right moving along the tabs and
 > up and down moving through the page. The games list stops being a
