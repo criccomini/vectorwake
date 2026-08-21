@@ -1179,7 +1179,12 @@ local NODES = {
 
     teams = {rows = team_rows},
 
-    pilot = {rows = function()
+    -- Not a stop on the tab row: the call sign in the corner is the way here,
+    -- because that is the one thing on screen already naming the pilot. So it
+    -- is marked as reached from off the row, or the guard below that shuts a
+    -- page the row has stopped carrying would put a pilot straight back out of
+    -- it, one frame after the corner let them in.
+    pilot = {off_rail = true, rows = function()
         local rows = {
             {label = "call sign", detail = function() return M.name end,
              -- A call sign is upper, lower and numeric as its owner has it.
@@ -2063,7 +2068,9 @@ function M.tick(dt)
     -- whistle goes would be picking a hull for a match already running, which
     -- is exactly what locking the hull for a match means not doing.
     if #M.stack > 1 then
-        local top, reachable = rows_of(NODES.root), false
+        local nd2 = NODES[M.stack[2]]
+        local top = rows_of(NODES.root)
+        local reachable = nd2 ~= nil and nd2.off_rail == true
         for _, r in ipairs(top) do
             if r.go == M.stack[2] then reachable = true break end
         end

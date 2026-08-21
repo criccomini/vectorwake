@@ -227,6 +227,31 @@ check("the lit stop at the root still goes in",
 menu.stack = {"root"}
 menu.sel = {}
 
+-- --- the call sign in the corner is the way to the pilot page -------------
+--
+-- There is no pilot stop on the tab row. The name at the far end of that row
+-- is the one thing on screen already naming the pilot, so it is the way in.
+-- What that has to survive is the guard that shuts a page the row has stopped
+-- carrying: it read the second level of the stack against the row and found
+-- nothing, so the corner let a pilot in and the next frame put them out.
+
+menu.home = true
+menu.stack = {"root"}
+menu.sel = {}
+menu.click_pilot()
+check("the call sign opens the pilot page", menu.at() == "pilot",
+      table.concat(menu.stack, "/"))
+menu.tick(0.1)
+check("and it is still open a frame later", menu.at() == "pilot",
+      table.concat(menu.stack, "/"))
+local rail_names = {}
+for _, r in ipairs(menu.view().rail) do rail_names[#rail_names + 1] = r.label end
+check("with no pilot stop on the row itself",
+      table.concat(rail_names, "/"):find("pilot") == nil,
+      table.concat(rail_names, "/"))
+menu.stack = {"root"}
+menu.sel = {}
+
 -- --- a tap on a row is still a tap on a row -------------------------------
 
 menu.home = true

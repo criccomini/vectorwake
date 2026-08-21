@@ -5631,8 +5631,12 @@ function M.menu(v)
                 pilot_mark(rt - 7 * F.scale, logo_y, pal.a(pal.FRIEND, 0.9),
                            7 * F.scale, 1.1 * F.scale)
                 -- The whole lockup, mark and name, takes the press.
+                -- Not "pilot", which the scoreboard's own rows already
+                -- publish for the box about one of them. The press dispatch
+                -- reads that one first and swallowed this one whole: the name
+                -- underlined under the pointer and answered nothing.
                 hit(rt - 16 * F.scale, logo_y - 14 * F.scale,
-                    nw + 26 * F.scale, 28 * F.scale, "pilot")
+                    nw + 26 * F.scale, 28 * F.scale, "pilot_page")
             end
         end
     end

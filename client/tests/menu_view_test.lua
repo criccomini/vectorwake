@@ -147,6 +147,29 @@ end
 check("and not as a row of whatever page is showing", as_rows == 0,
       as_rows .. " rail stops published as rows")
 check("the rail names its stops", has(st, "zones") and has(st, "about"))
+
+-- --- the call sign in the corner takes a press ----------------------------
+--
+-- It is the only way to the pilot page: there is no stop for it on the tab
+-- row. The box under it went out as "pilot", which the scoreboard's own rows
+-- already publish for the card about one of them, and the press dispatch
+-- reads that one first: the name lit under the pointer and answered nothing.
+local corner = draw({depth = 1, sel = 0, rail = RAIL, rail_sel = 1,
+                     focus = "rail", home = true, closable = false,
+                     rows = rows,
+                     pilot = {name = "Tiller 963", rivets = 40}})
+check("the corner says who is reading", has(corner, "Tiller 963"))
+local named, clashed = nil, false
+for _, h in ipairs(ui.hits) do
+    if h.action == "pilot" then clashed = true end
+    -- Small, near the top, at the right-hand end: the name and its mark.
+    if h.w < 400 and h.h < 60 and h.y < 120 and h.x + h.w / 2 > W * 0.7 then
+        named = h.action
+    end
+end
+check("and publishes a box under it", named ~= nil, tostring(named))
+check("under an action the arena does not already spend on something else",
+      not clashed, "the menu published a hit as \"pilot\"")
 check("the stage shows what the rail points at", has(st, "zone1"))
 
 -- --- the rail does not move when you go a level in ------------------------
