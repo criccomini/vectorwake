@@ -133,7 +133,7 @@ menu.home = true
 menu.stack = {"root"}
 menu.sel = {}
 
-local ship_at = top_index("hangar")
+local ship_at = top_index("ship")
 local settings_at = top_index("settings")
 check("the rail carries the destinations", ship_at and settings_at,
       "ship " .. tostring(ship_at) .. ", settings " .. tostring(settings_at))
@@ -200,9 +200,9 @@ menu.sel = {}
 local between = {}
 for _, r in ipairs(menu.view().rail) do between[#between + 1] = r.label end
 check("the intermission opens the hangar",
-      #between == 4 and between[1] == "hangar", table.concat(between, "/"))
+      #between == 4 and between[1] == "ship", table.concat(between, "/"))
 
-menu.click_rail(top_index("hangar"))
+menu.click_rail(top_index("ship"))
 check("and it can be walked into", menu.stack[2] == "hangar",
       table.concat(menu.stack, "/"))
 net.match = {playing = true, left = 180, score = {}}
@@ -229,104 +229,112 @@ menu.sel = {}
 
 -- --- a tap on a row is still a tap on a row -------------------------------
 
+menu.home = true
+menu.class = 0
+menu.spectate = false
+menu.hull_at = nil
 menu.stack = {"root"}
 menu.sel = {}
-menu.click_rail(ship_at)
-menu.click_stage(3)
-check("a stage tap picks from the page it is on", menu.pending == 2,
-      "asked for hull " .. tostring(menu.pending))
-
--- --- the hulls are a grid, and its arrows mean what a grid's arrows mean ---
---
--- Right is enter everywhere else, which is what a one-column list wants and
--- exactly wrong on a page laid out in four: pressing right to look at the
--- hull beside this one flew it instead, and down, which should have gone to
--- the row below, went one ship along.
-
-menu.stack = {"root"}
-menu.sel = {}
-menu.cols = 4
 menu.click_rail(ship_at)
 menu.pending = nil
-menu.step({right = true})
-check("right in the grid moves rather than picks",
-      menu.sel.hangar == 2 and menu.pending == nil,
-      "cursor " .. tostring(menu.sel.hangar) .. ", asked for "
-          .. tostring(menu.pending))
-menu.step({down = true})
-check("down goes to the row below, not one to the right",
-      menu.sel.hangar == 6, "cursor " .. tostring(menu.sel.hangar))
-menu.step({up = true})
-check("and up comes back", menu.sel.hangar == 2,
-      "cursor " .. tostring(menu.sel.hangar))
-local act = menu.step({go = true})
-check("enter is the only thing that picks",
-      act == "ship" and menu.pending == 1,
-      tostring(act) .. ", asked for " .. tostring(menu.pending))
+menu.click_stage(1)
+check("a stage tap picks from the page it is on", menu.pending == 0,
+      "asked for hull " .. tostring(menu.pending))
 
--- Sitting out is the last cell of this page rather than an answer on some
--- card elsewhere, so it is picked the same way a hull is: move to it, press
--- enter, and the action names itself. What it must not do is come back as a
--- hull change, which would fly you in a ship one past the end of the roster.
--- On both screens, because on the home screen this page is what you will
--- arrive as and arriving to watch is a thing the wire can say. It is the same
--- page and the same answers whether or not there is a game behind it.
+-- --- the roster is a carousel at the head of the ship page ----------------
 --
--- Counted off the roster rather than written out, so a hull leaving the game
--- moves this without anybody having to remember it is here.
+-- It was a grid: every hull laid out as a cell, the kit of whichever one the
+-- cursor stood on drawn beside them, and a second page behind a press for
+-- editing that kit. Two thirds of the page went to choosing between eight
+-- things you choose between once, and the kit drawn beside the roster looked
+-- exactly like the editor while answering no press at all.
 --
--- Back to the grid first: picking a hull descends into its kit now, because
--- choosing a ship and choosing what to put on it are the same act seen twice.
-menu.stack = {"root", "hangar"}
-local peek0 = menu.view()
-local rows0 = peek0.hulls
-local hulls0 = 0
-for _, r in ipairs(rows0) do if r.hull then hulls0 = hulls0 + 1 end end
-local CELLS = #rows0
-check("the cell is there with nothing behind the panel",
-      hulls0 > 0 and CELLS == hulls0 + 1,
-      CELLS .. " rows over " .. hulls0 .. " hulls")
+-- One page now. The ship is the first row of it, the arrows either side of
+-- the drawing are what left and right do while the cursor is there, and
+-- everything below is the thirty points being spent on it.
 
--- And beside the roster, the kit of the hull it is standing on. `rows` used
--- to be the roster again here, which the page drew as gun add-ons: eight ship
--- names under a heading that said stats.
-local previewed = 0
-for _, r in ipairs(peek0.rows or {}) do
-    if r.group or r.bar then previewed = previewed + 1 end
-end
-check("with the standing hull's kit beside it",
-      peek0.kit_preview == true and previewed > 0,
-      tostring(peek0.kit_preview) .. ", " .. previewed .. " kit rows")
+menu.hull_at = nil
+menu.stack = {"root"}
+menu.sel = {}
+menu.click_rail(ship_at)
+local ship_page = menu.view()
+local CELLS = #ship_page.hulls
+check("every hull rides the carousel, and sitting out with them",
+      CELLS > 1 and ship_page.hull_sel == 1,
+      CELLS .. " cells, showing " .. tostring(ship_page.hull_sel))
+check("and the page under it is the kit itself",
+      ship_page.rows[1].ship == true and ship_page.rows[2].bar == true,
+      tostring(ship_page.rows[1].ship) .. "/" .. tostring(ship_page.rows[2].bar))
+check("live, because there is no level above it left to preview from",
+      ship_page.kit_preview == nil, tostring(ship_page.kit_preview))
+check("with the cursor on the ship", ship_page.sel == 1,
+      "cursor " .. tostring(ship_page.sel))
 
-menu.home = false
-menu.stack = {"root", "hangar"}
-local ship_rows = menu.view().hulls
-check("and there with a game", #ship_rows == CELLS, tostring(#ship_rows))
-menu.sel.hangar = CELLS
-local act_w = menu.step({go = true})
-check("the last cell asks to spectate", act_w == "spectate",
-      tostring(act_w))
-check("and it is not a hull", ship_rows[CELLS].hull == nil,
-      tostring(ship_rows[CELLS].hull))
+-- Left and right turn it. At home that is the choice itself: what a hull
+-- means with no game on is the ship you will arrive in, and a pilot who spins
+-- to one, likes it and walks away should be flying it.
+menu.pending = nil
+local turned = menu.step({right = true})
+check("right turns the carousel",
+      menu.hull_index() == 2 and menu.view().hull_sel == 2,
+      "showing " .. tostring(menu.hull_index()))
+check("and at home turning it is choosing",
+      turned == "ship" and menu.pending == 1,
+      tostring(turned) .. ", asked for " .. tostring(menu.pending))
+menu.step({left = true})
+check("left turns it back", menu.hull_index() == 1,
+      "showing " .. tostring(menu.hull_index()))
+
+-- It wraps, so nothing on the roster is more than a few presses away and an
+-- arrow never does nothing.
+local out_act = menu.step({left = true})
+check("and it wraps round to the last cell", menu.hull_index() == CELLS,
+      "showing " .. tostring(menu.hull_index()))
+check("which is sitting out rather than a hull",
+      out_act == "spectate" and menu.view().hulls[CELLS].hull == nil,
+      tostring(out_act))
 -- A cell with no hull and no figure falls back to hull zero and draws an
 -- Apex, which is what this one did until `figure` was carried through the
 -- view. The drawing reads this field; nothing else can say what it gets.
-check("so it says what to draw instead", ship_rows[CELLS].figure == "pilot",
-      tostring(ship_rows[CELLS].figure))
+check("so it says what to draw instead",
+      menu.view().hulls[CELLS].figure == "pilot",
+      tostring(menu.view().hulls[CELLS].figure))
+menu.step({right = true})
+check("and back onto the first hull", menu.hull_index() == 1,
+      "showing " .. tostring(menu.hull_index()))
+
+-- In a game the same turn is a browse. There a hull ask is a request the room
+-- answers and sitting out despawns you, so the press is what commits.
+menu.home = false
+menu.pending = nil
+local browsed = menu.step({right = true})
+check("in a game turning it commits nothing",
+      browsed == nil and menu.pending == nil,
+      tostring(browsed) .. ", asked for " .. tostring(menu.pending))
+local picked = menu.step({go = true})
+check("and the press is what asks", picked == "ship" and menu.pending == 1,
+      tostring(picked) .. ", asked for " .. tostring(menu.pending))
+menu.home = true
+menu.hull_at = nil
+
+-- Up off the ship goes back to the tab row, which is what up means everywhere
+-- in this menu.
+menu.stack = {"root", "hangar"}
+menu.sel = {}
+menu.step({up = true})
+check("up from the ship goes back to the tabs", menu.stack[2] == nil,
+      table.concat(menu.stack, "/"))
 
 -- The same cell, seen from the rail. The stage previews the page a rail stop
 -- leads to before you go in, and that preview flattens rows down its own
--- path, so a field the grid reads has to survive both. `figure` survived only
--- one: escape into the menu and arrow left onto the rail, and the last cell
--- was an Apex; step into the page and it was the helmet again.
+-- path, so a field the carousel reads has to survive both. `figure` survived
+-- only one: escape into the menu and arrow left onto the rail, and the last
+-- cell was an Apex; step into the page and it was the helmet again.
 local was_stack, was_sel, was_home = menu.stack, menu.sel, menu.home
 menu.home = true
 menu.stack = {"root"}
 menu.sel = {root = ship_at}
 local peek = menu.view()
--- The hangar previews as the hangar: a roster, and beside it the kit of the
--- hull the roster is standing on. So the cells are in `hulls` and `rows` is
--- what the kit column holds.
 check("the rail previews the page it points at",
       #peek.hulls == CELLS and peek.sel == 0,
       #(peek.hulls or {}) .. " hulls, cursor " .. tostring(peek.sel))
@@ -334,6 +342,8 @@ check("flattened, not handed over as it was written",
       type(peek.hulls[CELLS].mark) ~= "function")
 check("and the last cell is a pilot there too",
       peek.hulls[CELLS].figure == "pilot", tostring(peek.hulls[CELLS].figure))
+check("and nothing in a preview takes a press",
+      peek.kit_preview == true, tostring(peek.kit_preview))
 menu.stack, menu.sel, menu.home = was_stack, was_sel, was_home
 
 -- On the home screen the same page answers a different tense: not what you
@@ -341,6 +351,8 @@ menu.stack, menu.sel, menu.home = was_stack, was_sel, was_home
 -- remembered choice there and the live connection in a game, and the two are
 -- read through one question rather than by each caller checking `home`.
 menu.home = true
+menu.stack = {"root", "hangar"}
+menu.sel = {}
 menu.watching = false
 menu.class = 2
 menu.spectate = false
@@ -378,43 +390,11 @@ check("watching marks the last cell instead, and no hull",
       watching_view[CELLS].mark and not watching_view[3].mark,
       tostring(watching_view[3].mark) .. "/" .. tostring(watching_view[CELLS].mark))
 menu.watching = false
-
--- The edges wrap, so nothing on the page is out of reach in one press and an
--- arrow never does nothing, which is what right at the last column did.
-menu.sel.hangar = 6
-menu.step({left = true})
-check("left inside the grid moves", menu.sel.hangar == 5 and menu.stack[2] == "hangar",
-      "cursor " .. tostring(menu.sel.hangar) .. " at "
-          .. table.concat(menu.stack, "/"))
-menu.sel.hangar = 8
-menu.step({right = true})
-check("right off the last column comes back to the first",
-      menu.sel.hangar == 5, "cursor " .. tostring(menu.sel.hangar))
--- Up off the top row leaves the page for the tab row above it, which is what
--- up means everywhere in this menu. It wrapped to the bottom of the grid
--- before the tabs moved from a column down the left to a row across the top,
--- and there a hand on the arrows could reach the page and never leave it.
-menu.sel.hangar = 3
-menu.step({up = true})
-check("up from the top row goes back to the tabs", menu.stack[2] == nil,
-      table.concat(menu.stack, "/"))
-menu.stack = {"root", "hangar"}
-menu.sel.hangar = 3 + menu.cols
-menu.step({up = true})
-check("and up from anywhere else is the row above",
-      menu.sel.hangar == 3 and menu.stack[2] == "hangar",
-      "cursor " .. tostring(menu.sel.hangar))
-menu.step({down = true})
-check("and down goes back", menu.sel.hangar == 3 + menu.cols,
-      "cursor " .. tostring(menu.sel.hangar))
-
--- Left off the first column is the one edge that does not wrap. It is the way
--- back to the rail, and wrapped round to the far end of the row it shut the
--- page on anybody holding nothing but the arrows.
-menu.sel.hangar = 5
-menu.step({left = true})
-check("and left off the first column is the way out", menu.stack[2] == nil,
-      table.concat(menu.stack, "/"))
+menu.home = true
+menu.class = 0
+menu.hull_at = nil
+menu.stack = {"root"}
+menu.sel = {}
 
 -- --- the client opens on the games, with the cursor in the list -----------
 --
@@ -569,7 +549,15 @@ menu.home = true
 menu.stack = {"root"}
 menu.sel = {}
 account.claimed = false
-menu.click_rail(top_index("pilot"))
+-- The call sign in the corner of the tab row rather than a stop on it. There
+-- is no pilot tab: a tab whose whole detail is the name written beside it says
+-- the name twice, so the name is the control.
+check("the tab row has no pilot stop",
+      top_index("pilot") == nil,
+      table.concat(texts_of(menu.view()), ", "))
+menu.click_pilot()
+check("and pressing the name opens the page",
+      menu.at() == "pilot", table.concat(menu.stack, "/"))
 local v_guest = menu.view()
 check("a guest is offered the claim and the login",
       texts_of(v_guest)[2] == "keep this pilot"
@@ -621,7 +609,7 @@ menu.ask = nil
 
 menu.stack = {"root"}
 menu.sel = {}
-menu.click_rail(top_index("pilot"))
+menu.click_pilot()
 menu.sel.pilot = 3
 menu.step({go = true})
 check("logging in asks for a name in the clear and a password in discs",
@@ -669,7 +657,7 @@ account.refuse = nil
 account.claimed = true
 menu.stack = {"root"}
 menu.sel = {}
-menu.click_rail(top_index("pilot"))
+menu.click_pilot()
 local v_in = menu.view()
 check("a claimed pilot is offered the password change and the way out",
       texts_of(v_in)[2] == "change password"
@@ -696,7 +684,7 @@ menu.chosen = nil
 menu.ask = nil
 menu.stack = {"root"}
 menu.sel = {}
-menu.click_rail(top_index("pilot"))
+menu.click_pilot()
 local was = menu.name
 local act8 = menu.step({go = true})
 check("rolling a call sign asks first",
@@ -760,7 +748,7 @@ menu.sel = {}
 menu.stack = {"root"}
 menu.sel = {}
 menu.home = true
-menu.click_rail(top_index("pilot"))
+menu.click_pilot()
 menu.home = false
 menu.step({go = true})
 check("mid-game the card says a roll respawns your ship",
@@ -778,6 +766,19 @@ menu.home = true
 menu.stack = {"root"}
 menu.sel = {}
 menu.hover_stage(nil)
+-- The ship page is a ladder a slot only where the arena has said what a kit
+-- may hold, so the pointer is tried on one that has rows to land on.
+local was_core = _G.sim
+_G.sim = {
+    UP_COUNT = 5, TRIG_COUNT = 2, MOD_COUNT = 7, MAX_CHARGES = 4,
+    SLOT_COUNT = 25, SLOT_LEVEL0 = 5, SLOT_MOD0 = 7, SLOT_CHARGE0 = 21,
+    KIT_BUDGET = 30,
+    kit_ceilings = function()
+        local c = {}
+        for i = 1, 25 do c[i] = 3 end
+        return c
+    end,
+}
 menu.click_rail(ship_at)
 check("a hover moves the cursor", menu.hover_stage(4) and menu.sel.hangar == 4,
       "cursor " .. tostring(menu.sel.hangar))
@@ -786,8 +787,10 @@ check("and resting on the same row says nothing more",
 -- A pointer left lying on a row must not put the cursor back on it, or the
 -- arrows could never leave the row the mouse happens to be over.
 menu.step({down = true})
-check("and does not hold the arrows to it", menu.sel.hangar == 8,
+check("and does not hold the arrows to it", menu.sel.hangar == 5,
       "cursor " .. tostring(menu.sel.hangar))
+_G.sim = was_core
+menu.kit, menu.kit_class = nil, nil
 
 menu.hover_stage(nil)
 menu.stack = {"root"}
@@ -1398,53 +1401,60 @@ do
     account.kits = {}
 
     menu.home = true
+    menu.class = 0
+    menu.hull_at = nil
+    menu.kit, menu.kit_class = nil, nil
     menu.stack = {"root"}
     menu.sel = {}
-    menu.click_rail(top_index("hangar"))
+    menu.click_rail(top_index("ship"))
     menu.sel.hangar = 1
     local pressed = menu.step({go = true})
-    check("picking a hull asks for it", pressed == "ship" and menu.pending == 0,
-          tostring(pressed))
-    check("and goes on to its kit", menu.at() == "kit",
-          table.concat(menu.stack, "/"))
+    check("pressing the ship asks for the hull under it",
+          pressed == "ship" and menu.pending == 0, tostring(pressed))
+    check("and stays on the page, because its kit is the rest of it",
+          menu.at() == "hangar", table.concat(menu.stack, "/"))
 
     local v = menu.view()
     local labels = {}
     for _, r in ipairs(v.rows) do labels[#labels + 1] = r.label end
-    check("only the slots this hull will take are on the page",
-          #v.rows == 4, table.concat(labels, ", "))
-    check("with the budget at the head",
-          v.rows[1].label == "budget", labels[1])
+    check("only the slots this arena will take are on the page",
+          #v.rows == 5, table.concat(labels, ", "))
+    -- The ship the points are being spent on, then the budget they come out
+    -- of, then the slots. Both of the first two are readouts as much as rows,
+    -- and both are at the head because everything below is about them.
+    check("with the ship at the head and the budget under it",
+          v.rows[1].ship == true and v.rows[1].label == "Apex"
+              and v.rows[2].label == "budget",
+          labels[1] .. ", " .. labels[2])
     -- Drawn as a bar rather than as thirty pips, which is the difference
     -- between a row and a row with a wall across it.
-    check("and drawn as a bar", v.rows[1].bar == true and v.rows[1].choices == 6,
-          tostring(v.rows[1].bar) .. "/" .. tostring(v.rows[1].choices))
-    -- And the page says which hull it is about, because the lit tab above it
-    -- says "hangar" and the hull was chosen on the page before.
-    check("the page names the hull it is about",
-          v.head and v.head.label == "Apex" and v.head.hull == 0,
-          v.head and tostring(v.head.label) or "no head")
+    check("and the budget drawn as a bar",
+          v.rows[2].bar == true and v.rows[2].choices == 6,
+          tostring(v.rows[2].bar) .. "/" .. tostring(v.rows[2].choices))
 
     -- Right spends a point, left takes it back, and neither goes anywhere.
-    -- Row one is the budget, so the first stat is row two.
-    menu.sel.kit = 2
+    -- Row one is the ship and row two the budget, so the first stat is row
+    -- three.
+    menu.sel.hangar = 3
     menu.step({right = true})
-    check("right spends a point", menu.kit[1] == 1 and menu.at() == "kit",
+    check("right spends a point",
+          menu.kit[1] == 1 and menu.at() == "hangar",
           tostring(menu.kit[1]) .. " at " .. table.concat(menu.stack, "/"))
     menu.step({right = true})
     menu.step({right = true})
     check("and again", menu.kit[1] == 3, tostring(menu.kit[1]))
     menu.step({left = true})
-    check("left takes one back", menu.kit[1] == 2 and menu.at() == "kit",
+    check("left takes one back",
+          menu.kit[1] == 2 and menu.at() == "hangar",
           tostring(menu.kit[1]) .. " at " .. table.concat(menu.stack, "/"))
 
-    -- The hull's ceiling, which is the roster's own rule and not a budget.
+    -- The arena's ceiling, which is the zone's own rule and not a budget.
     for _ = 1, 6 do menu.step({right = true}) end
-    check("and never past the hull's ceiling", menu.kit[1] == 4,
+    check("and never past the arena's ceiling", menu.kit[1] == 4,
           tostring(menu.kit[1]))
 
     -- The budget, which is what every row on the page is spending against.
-    menu.sel.kit = 4
+    menu.sel.hangar = 5
     for _ = 1, 6 do menu.step({right = true}) end
     check("nor past the budget", menu.kit_spent() == 6,
           tostring(menu.kit_spent()))
@@ -1454,11 +1464,30 @@ do
     account.entitlements = {[1] = 2}
     menu.kit = nil
     menu.open_kit(0)
-    menu.sel.kit = 2
+    menu.sel.hangar = 3
     for _ = 1, 6 do menu.step({right = true}) end
     check("and never past what the account owns", menu.kit[1] == 2,
           tostring(menu.kit[1]))
     account.entitlements = {}
+
+    -- Turning the carousel loads that hull's own saved kit rather than
+    -- carrying this one onto it. The page re-reads only where the class it
+    -- holds disagrees with the class it is asked about, so setting the class
+    -- and nothing else left an Apex build under a Wedge drawing, and the next
+    -- point spent would have saved it there.
+    menu.kit = nil
+    menu.open_kit(0)
+    menu.kit[1] = 3
+    local wedge = {}
+    for i = 1, 25 do wedge[i] = 0 end
+    wedge[1] = 1
+    account.kits = {Wedge = wedge}
+    menu.click_carousel(1)
+    check("turning the carousel loads that hull's own kit",
+          menu.kit_class == 1 and menu.kit[1] == 1,
+          "class " .. tostring(menu.kit_class) .. ", first stat "
+              .. tostring(menu.kit[1]))
+    account.kits = {}
 
     -- A hull with nothing saved against it opens on what the arena would have
     -- dealt, which the core works out and nobody here second-guesses. It

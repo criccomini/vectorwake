@@ -242,12 +242,25 @@ tris = {}
 ui.begin(layer, 512, 512, 1, false, math.pi / 1.7)
 ui.logo(256, 256, 104)
 ui.finish()
-local back_orange = {pal.LOGO_ORANGE[1] * 0.30,
-                     pal.LOGO_ORANGE[2] * 0.30,
-                     pal.LOGO_ORANGE[3] * 0.30, 1}
-local back_cyan = {pal.LOGO_CYAN[1] * 0.30,
-                   pal.LOGO_CYAN[2] * 0.30,
-                   pal.LOGO_CYAN[3] * 0.30, 1}
+-- Read out of the drawing rather than written down again here. This was a
+-- literal 0.30 in two places, so brightening the far face broke the test
+-- rather than being measured by it.
+local shade = tonumber(string.match(read_file("client/arena/ui.lua"),
+                                    "MK_ORANGE_BACK%s*=%s*{pal%.LOGO_ORANGE%[1%]%s*%*%s*([%d%.]+)"))
+check("the rear face has a shade to be drawn at", shade ~= nil,
+      tostring(shade))
+-- A face turned away is shaded, not switched off. Below about a third it
+-- reads as black against this background, which is what it did.
+check("and it is dark enough to read as the far side",
+      shade and shade < 0.85, tostring(shade))
+check("and light enough not to read as a hole",
+      shade and shade > 0.45, tostring(shade))
+local back_orange = {pal.LOGO_ORANGE[1] * shade,
+                     pal.LOGO_ORANGE[2] * shade,
+                     pal.LOGO_ORANGE[3] * shade, 1}
+local back_cyan = {pal.LOGO_CYAN[1] * shade,
+                   pal.LOGO_CYAN[2] * shade,
+                   pal.LOGO_CYAN[3] * shade, 1}
 local back_orange_n, back_cyan_n, bright_n = 0, 0, 0
 for _, tri in ipairs(tris) do
     if same_color(tri.col, back_orange) then

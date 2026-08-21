@@ -1,9 +1,9 @@
 # Landing, and the menu
 
-> **The split happened.** [match-game.md](match-game.md) moved the hangar,
+> **The split happened.** [match-game.md](match-game.md) moved the ship page,
 > the shop and the standings out of this tree and into pages of their own,
-> with pilot and settings beside them, so the front end is six tabs and help
-> folds into settings with the bindings. It is one full-screen surface met in
+> with settings beside them, so the front end is five tabs and help folds
+> into settings with the bindings. It is one full-screen surface met in
 > both places, differing only in which tabs it carries: in a match, settings
 > and leave, because nothing pauses and anything you cannot act on now costs
 > match time to read. It is still driven by the five inputs below, with left
@@ -32,20 +32,23 @@ starfield with no way back, which is a button that breaks the game.
 
 ## A tab row, and a page under it
 
-Six tabs at the front end and two in a match, with one page under whichever is
-lit. Left and right walk the row, down enters the page, up from its first row
-comes back to the row, and left and right on a row set that row's value.
+Five tabs at the front end and three in a match, with one page under whichever
+is lit. Left and right walk the row, down enters the page, up from its first
+row comes back to the row, and left and right on a row set that row's value.
 
 ```
 vectorwake
 ├ play        the modes a directory is running, how busy each one is, and
 │             who is on: friends is a row here rather than a seventh tab, for
 │             the reason Discord is one
-├ hangar      seven shapes, and the thirty points you spend on one
+├ ship        one hull on a carousel, and the thirty points you spend on it
 ├ shop        what rivets buy: slots, never strength
 ├ standings   the week, resetting Monday
-├ pilot       your call sign, your account, your career
 └ settings    sound · music · frames · fullscreen · bindings · about
+
+              your call sign sits at the far end of the row and is the way
+              into your account and career: a page reached from the one
+              place already naming it, rather than a sixth stop
 
 in a match
 ├ friends     the people you are flying with, and who else is on
@@ -57,7 +60,9 @@ Five inputs, which is exactly what a d-pad has, what a phone can draw as four
 arrows and a button, and what a keyboard already sends. It is two axes rather
 than the stack's one, and it costs nothing on any of the three: the row is
 horizontal, the page is vertical, and nothing needs a pointer. A page still
-descends where it has somewhere to go, which is how a hull leads to its kit.
+descends where it has somewhere to go, though the ship page no longer does:
+picking a hull and spending its thirty points are the same act seen twice, so
+the carousel and the ladders are one page rather than two levels.
 
 The tab row sits on top on a desktop and on the bottom edge of a phone, where
 a thumb reaches it. That is the only thing about the layout that varies.
@@ -126,11 +131,14 @@ big centered lines step aside, since they sit exactly where the menu does.
 
 ## Changing hull is a front-end act
 
-The hull is locked for a match, so the hangar is a place you stand between
-them: pick a hull, spend your thirty points, and arrive in that ship at the
-next spawn.
+The hull is locked for a match, so the ship page is a place you stand between
+them: turn the carousel to a hull, spend your thirty points, and arrive in that
+ship at the next spawn. At home the turn is the choice, since a hull there is
+only what you will arrive in and turning again undoes it. In a game the turn is
+a browse and the press is the choice, because there a hull is a request the
+room answers and sitting out despawns you.
 
-What the hangar saves is a kit per hull, and that is a convenience now rather
+What the ship page saves is a kit per hull, and that is a convenience now rather
 than a requirement. It used to be neither: a kit was checked against the hull's
 own row, so the same thirty points bought a different ship on a Chord than on
 an Anvil and the two questions could not be asked apart. The rows are gone

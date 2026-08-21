@@ -291,6 +291,22 @@ end
 
 -- --- settings draw as steps rather than words -----------------------------
 
+-- The wide menu sets its type and its boxes a fraction larger than the arena
+-- does, so a step is not ten units tall on this page. Read out of the drawing
+-- rather than written down again here: a literal 10 meant that changing the
+-- menu's scale broke this test instead of being measured by it.
+local MENU_ZOOM = 1
+do
+    local f = io.open("client/arena/ui.lua", "r")
+    if f then
+        local src = f:read("*a")
+        f:close()
+        MENU_ZOOM = tonumber(string.match(src, "MENU_ZOOM%s*=%s*([%d%.]+)"))
+                    or 1
+    end
+end
+local STEP_H = 10 * MENU_ZOOM
+
 local function setting(choice, choices)
     draw({depth = 2, sel = 1,
           rail = RAIL, rail_sel = 4, focus = "stage", home = false,
@@ -299,10 +315,10 @@ local function setting(choice, choices)
                    choices = choices, index = 1, pick = true}}})
     local steps, lit = 0, 0
     for _, f in ipairs(frames) do
-        if math.abs(f.h - 10) < 0.01 then steps = steps + 1 end
+        if math.abs(f.h - STEP_H) < 0.01 then steps = steps + 1 end
     end
     for _, r in ipairs(rects) do
-        if math.abs(r.h - 10) < 0.01 then lit = lit + 1 end
+        if math.abs(r.h - STEP_H) < 0.01 then lit = lit + 1 end
     end
     return steps, lit
 end
@@ -831,20 +847,76 @@ do
           "arena.script no longer polls it")
 end
 
--- --- the hangar says what a hull is --------------------------------------
+-- --- the week's table -----------------------------------------------------
 --
--- A column of ceilings stood in this space: how far the ladders climbed, how
--- many charge kinds the hull took. None of that is a hull's any more, and the
--- page had better not still be claiming it is. What belongs there is the
--- footprint, which is the whole of what one hull has that another does not.
+-- A `won` column stood at the end of this with a zero in every cell, because
+-- nothing files a match result. What is here instead is what the log actually
+-- holds, and the panel beside it follows the cursor rather than only ever
+-- describing you.
+do
+    local week = draw({
+        depth = 2, sel = 2, rail = RAIL, rail_sel = 1, focus = "stage",
+        home = true, closable = false, page = "week",
+        pilot = {name = "Vantage 7", rivets = 12},
+        table = true,
+        rows = {
+            {label = "Halcyon 1", rank = 1, kills = 9, deaths = 3, run = 4,
+             played = "22m", index = 1, pick = true},
+            {label = "Vantage 7", rank = 2, kills = 5, deaths = 4, run = 2,
+             played = "8m", index = 2, pick = true, mark = true},
+        },
+    })
+    check("the table says nothing about matches won", not has(week, "won"),
+          table.concat(texts(week), " "))
+    check("and carries deaths and time instead",
+          has(week, "deaths") and has(week, "time"),
+          table.concat(texts(week), " "))
+    -- The cursor is on row two, which is this pilot, so the panel is theirs.
+    check("the panel follows the cursor", has(week, "your week"),
+          table.concat(texts(week), " "))
+    check("and works out a ratio the table has no room for",
+          has(week, "kills per death"), table.concat(texts(week), " "))
+
+    -- On somebody else it says so, and drops the wallet, which is yours.
+    local other = draw({
+        depth = 2, sel = 1, rail = RAIL, rail_sel = 1, focus = "stage",
+        home = true, closable = false, page = "week",
+        pilot = {name = "Vantage 7", rivets = 12},
+        table = true,
+        rows = {
+            {label = "Halcyon 1", rank = 1, kills = 9, deaths = 3, run = 4,
+             played = "22m", index = 1, pick = true},
+            {label = "Vantage 7", rank = 2, kills = 5, deaths = 4, run = 2,
+             played = "8m", index = 2, pick = true, mark = true},
+        },
+    })
+    check("standing on somebody else names them",
+          has(other, "this pilot") and has(other, "halcyon 1"),
+          table.concat(texts(other), " "))
+    check("and keeps your wallet out of their card",
+          not has(other, "banked"), table.concat(texts(other), " "))
+end
+
+-- --- the ship page is a ship and its thirty points ------------------------
+--
+-- Two columns stood to the left of the kit: every hull as a row, and a panel
+-- carrying a role, a sentence and three footprint numbers. That is two thirds
+-- of a page spent on a choice made once and on reference material, so it is a
+-- drawing with arrows either side of it now.
+--
+-- What is pinned is what a player uses: the ship is named, it says which of
+-- the seven it is, and the numbers that belonged to a spec sheet are gone.
 do
     local hangar = draw({
         depth = 2, sel = 2, rail = RAIL, rail_sel = 1, focus = "stage",
         home = true, closable = false, page = "kit",
         head = {label = "Cipher", hull = 4},
+        -- Two, so the carousel has somewhere to go: the arrows and the
+        -- count only draw where there is more than one ship.
         hulls = {{label = "Cipher", role = "knife", index = 1, hull = 4,
                   detail = "six pixels from the side",
-                  extent = {fore = 22, aft = 12, beam = 12}}},
+                  extent = {fore = 22, aft = 12, beam = 12}},
+                 {label = "Apex", role = "dart", index = 2, hull = 0}},
         hull_sel = 1,
         rows = {
             {label = "budget", bar = true, choice = 4, choices = 30, index = 1},
@@ -852,15 +924,20 @@ do
              choices = 6, owned = 6, arena_max = 8, index = 2},
         },
     })
-    check("the hangar reads the hull's footprint", has(hangar, "footprint"),
+    check("the page names the ship", has(hangar, "cipher"),
           table.concat(texts(hangar), " "))
-    local said_beam = false
+    check("and says which of them it is", has(hangar, "1 of 2"),
+          table.concat(texts(hangar), " "))
+    local said_px = false
     for _, t in ipairs(texts(hangar)) do
-        if t == "12 PX" then said_beam = true end
+        if string.find(t, " PX", 1, true) then said_px = true end
     end
-    check("in px, off the core's own extents", said_beam,
+    check("with no footprint numbers on it", not said_px,
           table.concat(texts(hangar), " "))
-    check("and says nothing about a hull's limits", not has(hangar, "hull limits"),
+    check("nor the role and the sentence under it",
+          not has(hangar, "knife") and not has(hangar, "six pixels"),
+          table.concat(texts(hangar), " "))
+    check("and nothing about a hull's limits", not has(hangar, "hull limits"),
           table.concat(texts(hangar), " "))
 end
 

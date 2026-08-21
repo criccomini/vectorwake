@@ -1641,21 +1641,77 @@ async fn route(
             }
         }
 
-        // The week: matches won, kills and the best run, resetting Monday.
-        // Read off the pilot log, which is where a kill row already lands, so
-        // this is a query rather than a second tally kept in step.
+        // The week: kills, the best run, and what the rating did, resetting
+        // Monday. Read off the pilot log, which is where a kill row already
+        // lands, so this is a query rather than a second tally kept in step.
         "/v1/week" => {
+            // Kills, deaths, the longest run anybody ended, how long each
+            // pilot was actually in a room, and how far their rating moved.
+            // A `won` column used to ride along at a hardcoded zero: no event
+            // records a match result, so it was a column that could only ever
+            // say nothing, and it is gone until something files one.
+            //
+            // Time played is the span of each session rather than a sum of
+            // join and leave pairs. A connection that dropped never filed a
+            // leave, and a pilot whose session ended badly is exactly the one
+            // whose time would have gone missing.
+            //
+            // The rating swing comes from the other log, because the pilot
+            // log does not carry a number the rating model owns. It joins by
+            // account, not by call sign: a guest has no rating to move, and a
+            // call sign is not what the rating is kept under.
             let rows = db
                 .query(
-                    "select name,
-                            count(*) filter (where kind = 'kill') as kills,
-                            coalesce(max((detail->>'bounty')::int), 0) as run
-                     from pilot_events
-                     where not bot and kind = 'kill'
-                       and at >= date_trunc('week', now() at time zone 'utc')
-                     group by name
-                     order by kills desc
-                     limit 20",
+                    "with bound as (
+                         select date_trunc('week', now() at time zone 'utc') as since
+                     ),
+                     wk as (
+                         select * from pilot_events, bound
+                          where not bot and at >= bound.since
+                     ),
+                     sess as (
+                         select name, session, max(at) - min(at) as span
+                           from wk where session is not null
+                          group by name, session
+                     ),
+                     played as (
+                         select name, sum(span) as span from sess group by name
+                     ),
+                     tally as (
+                         select name, max(pilot) as account,
+                                count(*) filter (where kind = 'kill') as kills,
+                                count(*) filter (where kind = 'died') as deaths,
+                                coalesce(max((detail->>'bounty')::int)
+                                         filter (where kind = 'kill'), 0) as run
+                           from wk group by name
+                     ),
+                     swing as (
+                         select re.victim as account,
+                                re.victim_after - re.victim_before as delta
+                           from rated_events re, bound
+                          where re.at >= bound.since
+                          union all
+                         select (item.credit->>'account')::bigint,
+                                (item.credit->>'after')::double precision
+                              - (item.credit->>'before')::double precision
+                           from rated_events re, bound
+                          cross join lateral
+                                jsonb_array_elements(re.credits) as item(credit)
+                          where re.at >= bound.since
+                     ),
+                     moved as (
+                         select account, sum(delta) as delta
+                           from swing group by account
+                     )
+                     select t.name, t.kills, t.deaths, t.run,
+                            coalesce(extract(epoch from p.span), 0)::bigint,
+                            coalesce(m.delta, 0)::double precision
+                       from tally t
+                       left join played p on p.name = t.name
+                       left join moved m on m.account = t.account
+                      where t.kills > 0 or t.deaths > 0
+                      order by t.kills desc, t.deaths asc
+                      limit 20",
                     &[],
                 )
                 .await
@@ -1666,12 +1722,19 @@ async fn route(
                     serde_json::json!({
                         "name": r.get::<_, String>(0),
                         "kills": r.get::<_, i64>(1),
+                        "deaths": r.get::<_, i64>(2),
                         // A bounty taken is the length of the run it ended,
                         // so the biggest one somebody collected is the
                         // longest streak they broke. Their own best run is a
                         // different number and nothing files it yet.
-                        "run": r.get::<_, i32>(2),
-                        "wins": 0,
+                        "run": r.get::<_, i32>(3),
+                        "seconds": r.get::<_, i64>(4),
+                        // How far the rating moved this week: every point
+                        // taken off a victim and every point paid to a
+                        // shooter, summed. Rating only ever moves through
+                        // these rows, so the sum of the week's rows is the
+                        // week's change.
+                        "rating": r.get::<_, f64>(5).round() as i64,
                     })
                 })
                 .collect();
