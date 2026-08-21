@@ -186,6 +186,15 @@ draws one half and `sym_put` turns it, and both are checked for a connected
 arena and a cover density between four and sixteen percent before they are
 written.
 
+The flight time between the homes is held by a test rather than by a comment.
+`the_melee_maps_are_two_homes_with_ground_between_them` routes a hull from one
+pocket to the other on the shipped file and flies the polyline at an Apex's
+top speed with a kit that spends nothing on speed, which puts both maps at
+about nine and a half seconds and first contact a hair under five. It caught
+the pockets being moved in for the camera's sake: at twenty seven tiles from
+the wall drydock came in under the floor, and twenty two is where the two
+constraints meet.
+
 ## The kit
 
 **A kit is thirty upgrades you choose, dealt to your hull at every spawn.**

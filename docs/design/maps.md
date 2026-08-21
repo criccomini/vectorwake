@@ -272,8 +272,13 @@ make -C sim build/mapgen
 ```
 
 A match arena is 144 tiles square in the middle of the world, and everything
-outside it is solid, which is the border a pilot actually meets. Both layouts
-are **point symmetric**: the generator draws one half and `sym_put` turns it a
+outside it is solid, which is the border a pilot actually meets. How far in
+the pockets sit is two numbers pulling against each other: near the wall, a
+spawning pilot's camera is a fifth full of solid, and far from it the two
+homes are too close for the flight times below. Twenty-two tiles down and
+forty-one across is where both hold.
+
+Both layouts are **point symmetric**: the generator draws one half and `sym_put` turns it a
 half turn into the other, so the two sides face identical approach geometry
 rather than handed versions of it, and neither can be drawn out of step with
 its twin.

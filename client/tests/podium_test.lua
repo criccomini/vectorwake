@@ -242,6 +242,20 @@ check("a scoreless match has no mvp", counted("mvp") == 0,
       tostring(counted("mvp")))
 room.kills = {[0] = 2, 5, 1, 3}
 
+-- Names hanging off ships come down with it, for the reason the menu takes
+-- them down: text is drawn over every mesh, so nothing the card lays down can
+-- cover a plate, and four names scattered through a scoreboard read as a
+-- fault rather than as depth.
+frame({match = {playing = true, left = 90, score = {[0] = 3, [1] = 3}},
+       side_names = NAMES, side = 0})
+local plates_playing = counted("Kestrel")
+frame({match = {playing = false, left = 23, score = {[0] = 11, [1] = 14}},
+       side_names = NAMES, side = 0})
+check("a plate is drawn while the match runs", plates_playing > 0,
+      tostring(plates_playing))
+check("and only the card's copy survives the whistle",
+      counted("Kestrel") == 1, tostring(counted("Kestrel")))
+
 -- --- a draw ----------------------------------------------------------------
 
 frame({match = {playing = false, left = 9, score = {[0] = 9, [1] = 9}},

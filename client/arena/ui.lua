@@ -3102,19 +3102,27 @@ local function podium(o, m, names)
     local cw = w / math.max(1, #sides)
     for i, team in ipairs(sides) do
         local cx = x + (i - 1) * cw
+        -- A hairline between the columns, because one side's numbers and the
+        -- next side's names are otherwise twenty four points apart and read as
+        -- one line: "6 8 Halcyon".
+        if i > 1 then
+            F.layer:seg(cx, ry(y + 30 * F.scale), cx,
+                        ry(y + 54 * F.scale + tall * line),
+                        1.0 * F.scale, pal.a(pal.RADAR_TILE, 0.45), true)
+        end
         local col = (team == view_team) and pal.FRIEND or pal.ENEMY
         local nm = (names and names[team]) or ""
-        txt(nm, cx + 12 * F.scale, y + 34 * F.scale, 12 * F.scale,
+        txt(nm, cx + 18 * F.scale, y + 34 * F.scale, 12 * F.scale,
             pal.a(col, 0.9))
         txt(tostring(m.score and m.score[team] or 0),
-            cx + cw - 12 * F.scale, y + 34 * F.scale, 12 * F.scale,
+            cx + cw - 18 * F.scale, y + 34 * F.scale, 12 * F.scale,
             pal.a(col, 0.9), "right")
         -- What the two numbers on every row below are. Once per column, in
         -- the head, rather than a word per row.
-        txt("k  d", cx + cw - 40 * F.scale, y + 34 * F.scale, 9.5 * F.scale,
+        txt("k  d", cx + cw - 46 * F.scale, y + 34 * F.scale, 9.5 * F.scale,
             pal.a(pal.DIM, 0.75), "right")
-        F.layer:seg(cx + 12 * F.scale, ry(y + 44 * F.scale),
-                    cx + cw - 12 * F.scale, ry(y + 44 * F.scale),
+        F.layer:seg(cx + 18 * F.scale, ry(y + 44 * F.scale),
+                    cx + cw - 18 * F.scale, ry(y + 44 * F.scale),
                     1.0 * F.scale, pal.a(pal.RADAR_TILE, 0.6), true)
         for k, r in ipairs(seen[team] or {}) do
             local ry0 = y + 54 * F.scale + (k - 1) * line
@@ -3122,18 +3130,18 @@ local function podium(o, m, names)
             -- Your own row keeps the field the scoreboard gives it, so the
             -- one line you are looking for is the one that is lit.
             if r.self then
-                wash(cx + 6 * F.scale, ry0 - line / 2, cw - 12 * F.scale, line,
+                wash(cx + 10 * F.scale, ry0 - line / 2, cw - 20 * F.scale, line,
                      pal.a(pal.FRIEND, 0.12))
             end
-            txt(r.name, cx + 12 * F.scale, ry0, 12.5 * F.scale,
+            txt(r.name, cx + 18 * F.scale, ry0, 12.5 * F.scale,
                 pal.a(r.self and pal.FRIEND or pal.INK, a), nil, nil, true)
             -- The best gun in the room, whichever side it was on. One mark
             -- rather than a column, because it is one pilot.
             if r == mvp then
-                txt("mvp", cx + cw - 62 * F.scale, ry0, 9.5 * F.scale,
+                txt("mvp", cx + cw - 68 * F.scale, ry0, 9.5 * F.scale,
                     pal.a(pal.CHARGE_COL, 0.85), "right")
             end
-            txt(r.k .. "  " .. r.d, cx + cw - 12 * F.scale, ry0, 12 * F.scale,
+            txt(r.k .. "  " .. r.d, cx + cw - 18 * F.scale, ry0, 12 * F.scale,
                 pal.a(pal.DIM, 0.95), "right")
         end
     end
@@ -3194,7 +3202,10 @@ function M.hud(o)
     -- reads as a fault rather than as depth. The instruments stay -- your
     -- bars, the dial, the feed -- because you can still be shot while you
     -- are reading, and those are what say so.
-    if not o.menu_open then nameplates(o) end
+    -- The ending is text over a card and lands in the same trap, so it takes
+    -- the plates down with it for the twenty five seconds it is up.
+    local ending = o.match ~= nil and not o.match.playing
+    if not o.menu_open and not ending then nameplates(o) end
     -- One corner, one instrument. The map is the radar pulled back to the
     -- whole thousand tiles, so it stands where the radar stands rather than
     -- somewhere else with the radar still lit beside it.

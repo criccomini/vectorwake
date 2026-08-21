@@ -1115,13 +1115,16 @@ static void sym_room(int x, int y, int w, int h) {
  * out of them: a home end crowded with structures is a home end a wiped team
  * cannot form up in, and the spawn placer simply runs out of room.
  *
- * How far in they sit is a camera number rather than a layout one. A desktop
+ * How far in they sit is two numbers pulling against each other. A desktop
  * window shows about eighty tiles across and fifty down, so a pocket fourteen
- * tiles from the edge spawns a pilot looking at half a screen of solid: a
- * wall is honest and half a screen of it is not a room. Twenty-seven down and
- * forty-one across is the first pair that puts the arena in the view a pilot
- * arrives in, and it shortens the trip between homes, which is the direction
- * the flight times wanted anyway. */
+ * tiles from the edge spawned a pilot looking at a fifth of a screen of solid,
+ * and a corner pocket at eighteen looked into two walls at once. Pulling them
+ * in fixes that and shortens the trip between the homes, which
+ * `the_melee_maps_are_two_homes_with_ground_between_them` holds to the window
+ * the design asks for: at twenty-seven down, drydock came in at 8.6 seconds of
+ * flight against a floor of nine. Twenty-two down and forty-one across is
+ * where both hold, and what it costs is a thin band of wall over a drydock
+ * spawn, which is the north end of the arena honestly drawn. */
 static int pocket_x, pocket_y;
 
 static int in_pocket(int x, int y, int pad) {
@@ -1245,7 +1248,7 @@ static int generate_match(sim_map *m, uint32_t s, match_layout layout, int quiet
 
     if (layout == LAYOUT_DRYDOCK) {
         pocket_x = arena_cx;
-        pocket_y = arena_lo + 27;
+        pocket_y = arena_lo + 22;
         draw_drydock();
     } else {
         pocket_x = arena_lo + 41;
