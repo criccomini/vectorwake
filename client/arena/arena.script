@@ -2163,6 +2163,34 @@ function apply_menu(self, act)
         return
     end
 
+    -- Somebody's friend, in a game, pressed. The menu holds the account
+    -- number; the whereabouts are the meta-layer's and the address is the
+    -- directory's, so this is where the two meet.
+    --
+    -- Nothing is remembered about it afterwards. A friend's room is a place
+    -- you were sent once, and a reconnect this client makes on its own belongs
+    -- wherever the ladder puts it. See docs/design/friends.md.
+    if act == "join_friend" then
+        local who = menu.pending
+        local at = nil
+        for _, f in ipairs(account.friends or {}) do
+            if f.account == who then at = directory.at_instance(f.instance) end
+        end
+        if not at then
+            -- Between the page being drawn and the press landing they left,
+            -- or the arena did. Saying so beats a press that does nothing.
+            menu.note = "they are not there any more"
+            return
+        end
+        if html5 and touch.used then
+            pcall(html5.run, "window.vwFullOnPlay && window.vwFullOnPlay()")
+        end
+        menu.zone = at.zone
+        menu.save_identity()
+        enter_game(self, at.address, at.zone, at.wt, nil, menu.spectate)
+        return
+    end
+
     -- The ninth cell of the ship page: sit out. The hull despawns and the same
     -- socket watches, landing on the room channel. Coming back is any of the
     -- other eight cells, which is the same page and the same press.

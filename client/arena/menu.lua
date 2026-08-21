@@ -97,6 +97,16 @@ local PASSWORD_MAX = 64
 -- The page the last tick was on, so the two that fetch their own contents can
 -- ask on the way in rather than on every frame they are up.
 local was_at = nil
+-- When the friends page last asked, and how often it may. Presence is the one
+-- thing in this menu that changes without the player doing anything, so it is
+-- the one page that re-asks while it is open. Five seconds is a friend
+-- appearing in a game about as fast as somebody would believe, and one request
+-- per open page is a load the meta-layer will not notice.
+local friends_asked = -1e9
+local FRIENDS_EVERY = 5
+local function now_s()
+    return socket and socket.gettime and socket.gettime() or os.time()
+end
 -- Whether the games list has worked out where its cursor belongs since it was
 -- last opened. Declared up here because opening the menu clears it and the
 -- opening is written above the asking.
@@ -683,6 +693,65 @@ local function standings_empty()
             line = "the table resets on Monday"}
 end
 
+-- The friends page: three sections, from one reply.
+--
+-- Friends first, the ones in a game at the top of them, because "who is on"
+-- is the question this page exists to answer. Then whoever has added you and
+-- is waiting, which is the only inbox this game has and holds names and
+-- nothing else. Then whoever is in the room with you, which is the whole of
+-- how a name reaches this page: there is no directory of the fleet and no way
+-- to search for anybody. See docs/design/friends.md.
+local function friend_rows()
+    local rows = {}
+    for _, f in ipairs(account.friends or {}) do
+        local where = directory.at_instance(f.instance)
+        local flying = f.zone ~= nil and f.zone ~= ""
+        rows[#rows + 1] = {
+            label = f.name or "?", named = true, sect = "friends",
+            -- Where they are, or that they are not anywhere. A friend in an
+            -- instance this client cannot see reads as in that game and is
+            -- not joinable, which is the honest answer for an arena the
+            -- directory has stopped listing.
+            detail = flying and f.zone or "not on",
+            live = where ~= nil,
+            -- A card rather than an action, because there are two things to
+            -- do with a friend and one of them takes both edges away. Five
+            -- inputs and no second button means a row has one press, so the
+            -- press asks. See docs/design/friends.md.
+            act = "friend_card", value = f.account,
+            zone = flying and f.zone or nil,
+            joinable = where ~= nil,
+        }
+    end
+    for _, a in ipairs(account.asked or {}) do
+        rows[#rows + 1] = {
+            label = a.name or "?", named = true, sect = "waiting on you",
+            detail = "add back",
+            act = "befriend", value = a.account,
+        }
+    end
+    for _, h in ipairs(account.here or {}) do
+        rows[#rows + 1] = {
+            label = h.name or "?", named = true, sect = "in this game",
+            detail = "add",
+            act = "befriend", value = h.account,
+        }
+    end
+    return rows
+end
+
+local function friends_empty()
+    if account.base == "" then
+        return {head = "no accounts here",
+                line = "this deployment keeps none, so there is nobody to add"}
+    end
+    if not account.have_friends then
+        return {head = "asking", line = "your friends are coming"}
+    end
+    return {head = "nobody yet",
+            line = "fly with somebody and add them from this page"}
+end
+
 local function hull_rows()
     local rows = {}
     for i, h in ipairs(HULLS) do
@@ -832,6 +901,27 @@ local function play_rows()
             return net.my_team_name()
         end, go = "teams"}
     end
+    -- Who is on. A row here rather than a seventh tab, for the reason the
+    -- Discord row below is a row: this is where somebody is already thinking
+    -- about who to play with. A tab would put "who is on" beside "how loud is
+    -- the music" in a row of six equals, and it is not one of six equals, it
+    -- is the other way into a game. See docs/design/friends.md.
+    if account.base ~= "" then
+        rows[#rows + 1] = {label = "friends", go = "friends", detail = function()
+            local on = 0
+            for _, f in ipairs(account.friends or {}) do
+                if f.zone ~= nil and f.zone ~= "" then on = on + 1 end
+            end
+            if on > 0 then return on .. " in a game" end
+            local waiting = #(account.asked or {})
+            if waiting > 0 then
+                return waiting .. (waiting == 1 and " waiting on you"
+                                                 or " waiting on you")
+            end
+            if #(account.friends or {}) == 0 then return "nobody yet" end
+            return "none on"
+        end}
+    end
     -- Where the community is, and the only outbound link in the game. It sits
     -- here because this is where somebody is already thinking about who to
     -- play with, which is the argument `community.md` makes and the reason it
@@ -884,6 +974,17 @@ local NODES = {
                         if M.spectating() then return "spectating" end
                         return HULLS[M.class + 1][1]
                     end, go = "hangar"}
+            end
+            -- The people you are flying with, which is where a friend is
+            -- made. One press from the card at the end of a match, because the
+            -- menu opens over it.
+            if account.base ~= "" then
+                rows[#rows + 1] = {label = "friends", icon = "pilot",
+                                   go = "friends", detail = function()
+                    local n = #(account.here or {})
+                    if n > 0 then return n .. " to add" end
+                    return "who is on"
+                end}
             end
             rows[#rows + 1] = {label = "settings", icon = "settings",
                                go = "settings"}
@@ -944,6 +1045,12 @@ local NODES = {
     end},
 
     play = {rows = play_rows, empty = zone_empty},
+
+    -- Who is on, who is waiting on you, and who you are playing with. One
+    -- page, reachable from the games at home and from the tab row in a match,
+    -- because those are the two places the question comes up. See
+    -- docs/design/friends.md.
+    friends = {rows = friend_rows, empty = friends_empty},
 
     -- What rivets buy: slots, and looks. Never strength.
     --
@@ -1516,6 +1623,15 @@ local function settle(act, asked, by)
         M.cap = (M.cap - 1 + (by or 1)) % #CAPS + 1
         M.apply_settings()
         M.save_identity()
+    elseif act == "do_unfriend" then
+        -- Both directions, so a removed pilot does not keep this one on their
+        -- list, visible and joinable. See docs/design/friends.md.
+        account.friend(asked and asked.who or 0, false)
+    elseif act == "do_join_friend" then
+        -- The arena's half: this file has no socket. `pending` is the account
+        -- number, and arena.script turns it into the instance they are in.
+        M.pending = asked and asked.who or 0
+        return "join_friend"
     elseif act == "steering" then
         -- Nothing to apply: the arena reads this every frame and the touch
         -- layer redraws from it, so there is no engine state to keep in step
@@ -1536,6 +1652,24 @@ end
 -- the whole point of raising one is to fill it in and send it.
 function M.confirm(head, keys, code)
     M.ask = {head = head, keys = keys, sel = #keys, code = code}
+end
+
+-- What there is to do with a friend, on a card, because a row has one press
+-- and there are two answers.
+--
+-- Join first when there is one, since it is what somebody opening this page is
+-- usually here for, and it is where the cursor would be if the card had one
+-- key. Removing sits under it and says what it does: both edges, so they stop
+-- seeing you as well.
+function M.ask_friend(who, name, zone, joinable)
+    local keys = {}
+    if joinable then
+        keys[#keys + 1] = {label = "join " .. (zone or "them"),
+                           act = "do_join_friend"}
+    end
+    keys[#keys + 1] = {label = "remove", act = "do_unfriend"}
+    keys[#keys + 1] = {label = "never mind"}
+    M.ask = {head = name or "This pilot.", keys = keys, sel = #keys, who = who}
 end
 
 -- The card that claims this pilot, and the one that changes the password
@@ -1853,7 +1987,17 @@ function M.tick(dt)
     if at ~= was_at then
         if at == "shop" then account.refresh_shop() end
         if at == "standings" then account.refresh_week() end
+        if at == "friends" then account.refresh_friends() end
         was_at = at
+        friends_asked = now_s()
+    end
+    -- And again while it is up, because this is the one page whose answer goes
+    -- stale on its own: a friend joins a game or leaves one and the page is
+    -- wrong until it asks. The shelf and the week's table only change when the
+    -- pilot reading them does something.
+    if at == "friends" and now_s() - friends_asked > FRIENDS_EVERY then
+        friends_asked = now_s()
+        account.refresh_friends()
     end
     if M.at() ~= "play" then
         zone_synced = false
@@ -2150,6 +2294,17 @@ local function activate(by)
         return "team"
     elseif r.act == "found" then
         return "found"
+    elseif r.act == "befriend" then
+        -- Adding is one press and nothing else: it is not destructive, it is
+        -- reversible from the same page, and the pilot doing it is looking at
+        -- the name. The reply is the whole page back, so the row moves from
+        -- one section to another without a second request.
+        account.friend(r.value, true)
+        M.note = nil
+        return nil
+    elseif r.act == "friend_card" then
+        M.ask_friend(r.value, r.label, r.zone, r.joinable)
+        return nil
     elseif r.act == "buy" then
         -- The meta-layer prices it, checks the wallet and raises the ceiling
         -- in one call. Nothing here decides whether it can be afforded: this

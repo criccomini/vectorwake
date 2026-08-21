@@ -107,6 +107,15 @@ pub struct BrowseZone {
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct BrowseInstance {
+    /// Which instance this is. Published so a client holding a friend's
+    /// whereabouts can turn it into an address: the meta-layer knows an
+    /// account is in instance `abc`, and this list is the only thing that
+    /// knows where `abc` answers. See docs/design/friends.md.
+    ///
+    /// Not a secret and not the address: an id names a process, and knowing
+    /// one buys nothing the games list does not already hand out.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub id: String,
     pub address: String,
     /// The WebTransport address, when the instance serves one. A client that
     /// can speak it dials this first and keeps `address` as the fallback; one
@@ -278,6 +287,7 @@ impl Directory {
                 z.players += people;
                 z.bots += r.status.bots;
                 z.instances.push(BrowseInstance {
+                    id: r.instance.clone(),
                     address: r.address.clone(),
                     wt: r.wt.clone(),
                     region: r.region.clone(),

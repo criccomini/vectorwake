@@ -44,6 +44,14 @@ M.kits = {}
 M.shelf = nil
 -- The week's table, as the meta-layer publishes it. Asked for the same way.
 M.week = nil
+-- The friends page's three lists: friends with where they are flying, whoever
+-- has added this pilot and is waiting, and whoever is in the room right now
+-- and is on neither list. `have_friends` separates "waiting for an answer"
+-- from "nobody yet", which are the same empty table and different sentences.
+M.friends = {}
+M.asked = {}
+M.here = {}
+M.have_friends = false
 -- Whether the meta-layer has ever answered. It separates "waiting" from
 -- "there is nothing there", which are the same empty token and very different
 -- sentences to show somebody.
@@ -368,11 +376,54 @@ function M.refresh_week()
     end)
 end
 
+-- The friends page, whole: who you are friends with and where they are, who
+-- has added you and is waiting, and who is in the room with you.
+--
+-- One request for three lists because they are one screen and because the
+-- lists are defined against each other. Asking separately would leave a frame
+-- where two replies disagree about which list somebody belongs in, and the
+-- page would draw them twice. See docs/design/friends.md.
+local function take_friends(r)
+    if type(r) ~= "table" then return false end
+    M.friends = type(r.friends) == "table" and r.friends or {}
+    M.asked = type(r.asked) == "table" and r.asked or {}
+    M.here = type(r.here) == "table" and r.here or {}
+    M.have_friends = true
+    return true
+end
+
+function M.refresh_friends()
+    if M.base == "" then return end
+    post("/v1/friends", {secret = secret}, function(r) take_friends(r) end)
+end
+
+-- One edge, made or dropped. The reply is the page, so a press redraws
+-- without a second request and without this client guessing what the edge did
+-- to three lists it does not compute.
+function M.friend(other, add, cb)
+    if M.base == "" then
+        if cb then cb(false, "no meta-layer") end
+        return
+    end
+    post("/v1/friend", {secret = secret, account = other, add = add ~= false},
+         function(r, err)
+             if not r then
+                 M.note = err or "cannot do that"
+                 if cb then cb(false, M.note) end
+                 return
+             end
+             take_friends(r)
+             M.note = ""
+             if cb then cb(true) end
+         end)
+end
+
 function M.logout()
     secret = ""
     M.token = ""
     M.account = 0
     M.claimed = false
+    M.friends, M.asked, M.here, M.have_friends = {}, {}, {}, false
     M.name = ""
     M.rivets = 0
     M.entitlements = {}

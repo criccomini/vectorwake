@@ -31,7 +31,19 @@ local account = {
     name = "", aim = function() end,
     claimed = true, base = "https://meta",
     refuse = nil, password = nil, logged = nil, renamed = 0,
+    -- The friends page's three lists and the one call the menu makes to fill
+    -- them. Empty is a pilot with nobody yet, which is what most of this file
+    -- is testing around.
+    friends = {}, asked = {}, here = {}, have_friends = true,
+    asked_friends = 0,
+    friended = nil,
 }
+function account.refresh_friends()
+    account.asked_friends = account.asked_friends + 1
+end
+function account.friend(who, add)
+    account.friended = {who = who, add = add}
+end
 function account.online()
     return account.base ~= ""
 end
@@ -78,7 +90,14 @@ package.loaded["arena.directory"] = {
              count = "0 playing", players = 0, bots = 51, live = true}},
     note = "", tick = function() end, aim = function() end,
     pilot_name = "",
+    -- Where an instance answers, by its id. The friends page turns a friend's
+    -- whereabouts into a press with it.
+    instances = {},
 }
+do
+    local dir = package.loaded["arena.directory"]
+    dir.at_instance = function(id) return dir.instances[id] end
+end
 package.loaded["arena.sfx"] = {ui = function() end, master_gain = function() end,
                                music_gain = function() end}
 _G.sys = {get_config_string = function(_, d) return d end,
@@ -144,17 +163,22 @@ menu.click_rail(ship_at)
 check("the lit stop with nothing behind the panel stays put",
       menu.open and menu.stack[2] == "hangar", table.concat(menu.stack, "/"))
 
--- In a match the tab row is a different row: settings and leave, which is
--- everything a pilot can act on from a cockpit. Nothing about a shop or a
--- hangar is on it, because a hull is locked for the match and a three minute
--- match is short enough that browsing one costs a real fraction of it.
+-- In a match the tab row is a different row: friends, settings and leave,
+-- which is everything a pilot can act on from a cockpit. Nothing about a shop
+-- or a hangar is on it, because a hull is locked for the match and a three
+-- minute match is short enough that browsing one costs a real fraction of it.
+--
+-- Friends is on it because the roster is here: the people to add are the
+-- people you are flying with, and the menu opens over the card at the end of
+-- a match. See docs/design/friends.md.
 menu.home = false
 menu.stack = {"root"}
 menu.sel = {}
 local in_match = {}
 for _, r in ipairs(menu.view().rail) do in_match[#in_match + 1] = r.label end
-check("a match carries two tabs",
-      #in_match == 2 and in_match[1] == "settings" and in_match[2] == "leave",
+check("a match carries three tabs",
+      #in_match == 3 and in_match[1] == "friends"
+      and in_match[2] == "settings" and in_match[3] == "leave",
       table.concat(in_match, "/"))
 
 local match_settings = top_index("settings")
@@ -176,7 +200,7 @@ menu.sel = {}
 local between = {}
 for _, r in ipairs(menu.view().rail) do between[#between + 1] = r.label end
 check("the intermission opens the hangar",
-      #between == 3 and between[1] == "hangar", table.concat(between, "/"))
+      #between == 4 and between[1] == "hangar", table.concat(between, "/"))
 
 menu.click_rail(top_index("hangar"))
 check("and it can be walked into", menu.stack[2] == "hangar",
@@ -187,7 +211,7 @@ check("the whistle puts a pilot back on the row",
       #menu.stack == 1, table.concat(menu.stack, "/"))
 local playing = {}
 for _, r in ipairs(menu.view().rail) do playing[#playing + 1] = r.label end
-check("and takes the hangar off it", #playing == 2,
+check("and takes the hangar off it", #playing == 3,
       table.concat(playing, "/"))
 net.match = nil
 
@@ -458,11 +482,14 @@ menu.zone = "chaos"
 menu.ask = nil
 menu.show("play")
 local zones = menu.view()
--- One game and the community row, which is not a place to go and is where
--- somebody thinking about who to play with already is.
+-- One game, the friends row and the community row. Neither of the last two
+-- is a way out of the game: they are where somebody thinking about who to
+-- play with already is, which is the argument for both being here rather than
+-- on the tab row. See docs/design/friends.md.
 check("nothing at the foot of the list leaves the game",
-      #zones.rows == 2 and zones.rows[1].label == "chaos"
-          and zones.rows[2].label == "discord",
+      #zones.rows == 3 and zones.rows[1].label == "chaos"
+          and zones.rows[2].label == "friends"
+          and zones.rows[3].label == "discord",
       table.concat(texts_of(zones), ", "))
 
 local act2 = menu.step({go = true})
@@ -1209,6 +1236,100 @@ do
               tostring(js))
     end
     _G.html5 = nil
+end
+
+-- --- friends -----------------------------------------------------------------
+--
+-- Three lists from one reply, and the two things a press does with them:
+-- adding is one press because it is not destructive, and a friend opens a
+-- card because a row has one press and there are two answers.
+
+do
+    local was_home, was_stack, was_sel = menu.home, menu.stack, menu.sel
+    local dir = package.loaded["arena.directory"]
+    account.friends = {
+        {account = 11, name = "Rill 121", zone = "melee", instance = "abc"},
+        {account = 12, name = "Sable 4", zone = "", instance = ""},
+    }
+    account.asked = {{account = 13, name = "Kestrel 9"}}
+    account.here = {{account = 14, name = "Vantage 2"}}
+    account.have_friends = true
+    dir.instances = {abc = {zone = "melee", address = "ws://a", wt = ""}}
+
+    menu.home = true
+    menu.stack = {"root", "friends"}
+    menu.sel = {}
+    local v = menu.view()
+    local said = {}
+    for _, r in ipairs(v.rows) do
+        said[#said + 1] = r.label .. "/" .. tostring(r.detail)
+            .. "/" .. tostring(r.sect)
+    end
+    check("the page is the three lists in one", #v.rows == 4,
+          table.concat(said, " "))
+    check("a friend in a game says which one",
+          v.rows[1].label == "Rill 121" and v.rows[1].detail == "melee"
+          and v.rows[1].sect == "friends", said[1])
+    check("and one who is not says so", v.rows[2].detail == "not on", said[2])
+    check("somebody waiting on you is their own section",
+          v.rows[3].sect == "waiting on you" and v.rows[3].detail == "add back",
+          said[3])
+    check("and so is the room you are in",
+          v.rows[4].sect == "in this game" and v.rows[4].detail == "add",
+          said[4])
+
+    -- Adding is one press and reaches the account layer as an add.
+    menu.sel.friends = 4
+    account.friended = nil
+    local act = menu.step({go = true})
+    check("adding is one press", account.friended ~= nil
+          and account.friended.who == 14 and account.friended.add == true,
+          tostring(act))
+
+    -- A friend opens a card instead, because removing is on it.
+    menu.sel.friends = 1
+    account.friended = nil
+    menu.step({go = true})
+    check("a friend asks rather than acting", menu.ask ~= nil,
+          tostring(menu.ask))
+    check("and offers the game they are in first",
+          menu.ask.keys[1].label == "join melee"
+          and menu.ask.keys[1].act == "do_join_friend",
+          menu.ask.keys[1] and menu.ask.keys[1].label or "no key")
+    check("with the answer that changes nothing under the cursor",
+          menu.ask.sel == #menu.ask.keys
+          and menu.ask.keys[menu.ask.sel].act == nil,
+          "on " .. tostring(menu.ask.sel))
+    -- Joining is the arena's half: this file names the pilot and stops.
+    local joined = menu.click_answer(1)
+    check("joining names the pilot and leaves the socket to the arena",
+          joined == "join_friend" and menu.pending == 11,
+          tostring(joined) .. "/" .. tostring(menu.pending))
+
+    -- A friend who is not in a game is not offered a game to join.
+    menu.sel.friends = 2
+    menu.step({go = true})
+    check("a friend who is not on has nothing to join",
+          menu.ask ~= nil and menu.ask.keys[1].act == "do_unfriend",
+          menu.ask and menu.ask.keys[1].label or "no card")
+    menu.click_answer(1)
+    check("and removing takes both directions",
+          account.friended ~= nil and account.friended.who == 12
+          and account.friended.add == false,
+          tostring(account.friended and account.friended.who))
+
+    -- A friend the directory is no longer listing reads as on and is not
+    -- joinable, which is the honest answer for an arena that has just gone.
+    dir.instances = {}
+    menu.sel.friends = 1
+    menu.step({go = true})
+    check("an unlisted instance is on but not joinable",
+          menu.ask ~= nil and menu.ask.keys[1].act == "do_unfriend",
+          menu.ask and menu.ask.keys[1].label or "no card")
+    menu.ask = nil
+
+    account.friends, account.asked, account.here = {}, {}, {}
+    menu.home, menu.stack, menu.sel = was_home, was_stack, was_sel
 end
 
 -- --- the hangar: thirty points, spent -----------------------------------------

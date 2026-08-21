@@ -69,6 +69,9 @@ pub(crate) struct RatedLease {
     pub(crate) base: String,
     pub(crate) pool_token: String,
     pub(crate) instance: String,
+    /// What this instance serves, carried so the row says where a pilot is and
+    /// not only that they are somewhere. The friends page reads it.
+    pub(crate) zone: String,
     pub(crate) account: u64,
     pub(crate) session: String,
     pub(crate) spool: std::sync::Arc<std::sync::Mutex<spool::Spool<spool::Event>>>,
@@ -93,10 +96,12 @@ impl StandingCheck {
 }
 
 impl RatedLease {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) async fn claim(
         base: String,
         pool_token: String,
         instance: String,
+        zone: String,
         account: u64,
         session: String,
         spool: std::sync::Arc<std::sync::Mutex<spool::Spool<spool::Event>>>,
@@ -109,7 +114,8 @@ impl RatedLease {
         let mut waits = 0;
         let (claimed, ratings) = loop {
             let result =
-                meta::claim_rated_session(&base, &pool_token, account, &session, &instance).await?;
+                meta::claim_rated_session(&base, &pool_token, account, &session, &instance, &zone)
+                    .await?;
             if result.0 || waits == 12 {
                 break result;
             }
@@ -122,6 +128,7 @@ impl RatedLease {
                     base,
                     pool_token,
                     instance,
+                    zone,
                     account,
                     session,
                     spool,
@@ -140,6 +147,7 @@ impl RatedLease {
             self.account,
             &self.session,
             &self.instance,
+            &self.zone,
         )
         .await
         .map(|(claimed, _)| claimed)
@@ -642,7 +650,7 @@ impl ArenaServer {
     /// Where this arena claims rated seats. An authenticated account without
     /// these credentials cannot be admitted safely: treating a missing meta
     /// route as permission would recreate the multi-room allowance bypass.
-    pub(crate) fn rated_lease_args(&self) -> Result<(String, String, String), String> {
+    pub(crate) fn rated_lease_args(&self) -> Result<(String, String, String, String), String> {
         let base = match std::env::var("VW_META") {
             Ok(v) if !v.is_empty() => v,
             _ => self
@@ -655,7 +663,12 @@ impl ArenaServer {
         if base.is_empty() || pool_token.is_empty() {
             return Err("rated session service is not configured".into());
         }
-        Ok((base, pool_token, self.fleet.instance.clone()))
+        Ok((
+            base,
+            pool_token,
+            self.fleet.instance.clone(),
+            self.zone_name.clone(),
+        ))
     }
 
     /// Give back rooms nobody is in, keeping the first. Watchers count as being

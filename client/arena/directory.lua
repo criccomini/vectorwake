@@ -110,6 +110,37 @@ local function zone_rooms(z)
     return out
 end
 
+-- Where an instance answers, by its id.
+--
+-- The meta-layer knows a friend is in instance `abc`; this list is the only
+-- thing that knows where `abc` is. Rebuilt with the rows rather than searched
+-- on demand, because the friends page asks once a frame while it is open and
+-- the games list changes every few seconds at most.
+--
+-- An instance the directory is no longer listing is simply absent, and a
+-- friend in one reads as on but not joinable, which is the honest answer for
+-- an arena that has just gone. See docs/design/friends.md.
+M.instances = {}
+
+local function index_instances(zones)
+    local out = {}
+    for _, z in ipairs(zones) do
+        for _, inst in ipairs(type(z.instances) == "table" and z.instances or {}) do
+            if type(inst.id) == "string" and inst.id ~= "" then
+                out[inst.id] = {zone = z.name, address = inst.address or "",
+                                wt = inst.wt or ""}
+            end
+        end
+    end
+    return out
+end
+
+-- The row a press on a friend would join: their instance, resolved. Nil when
+-- the directory is not listing it.
+function M.at_instance(id)
+    return type(id) == "string" and M.instances[id] or nil
+end
+
 local function on_message(s)
     if string.byte(s, 1) ~= S2C_STATUS then return end
     local ok, reply = pcall(json.decode, string.sub(s, 2))
@@ -177,6 +208,7 @@ local function on_message(s)
         if la ~= lb then return la < lb end
         return a.name < b.name
     end)
+    M.instances = index_instances(reply.zones)
     -- Swapped in whole rather than cleared and refilled. A reply that fails to
     -- parse halfway leaves the last good list up, which is a better answer
     -- than an empty one.

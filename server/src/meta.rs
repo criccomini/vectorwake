@@ -350,6 +350,29 @@ create table if not exists active_rated_sessions (
 );
 create index if not exists active_rated_sessions_by_touch
     on active_rated_sessions (touched);
+-- What the instance above is serving, so a friends list can say where
+-- somebody is rather than only that they are somewhere. Added rather than
+-- built in, because this table predates the friends page and a deployment
+-- upgrading into it has rows without one.
+alter table active_rated_sessions
+    add column if not exists zone text not null default '';
+
+-- Friend edges, one row per direction. The friendship is the pair: A has
+-- added B and B has added A. There is no accept and no decline, because both
+-- are the same press seen from the other side, and no inbox for a stranger to
+-- fill. Removing takes both rows, since leaving one standing would keep a
+-- removed pilot on the other's list forever.
+--
+-- See docs/design/friends.md.
+create table if not exists friends (
+    account bigint not null references accounts(id) on delete cascade,
+    friend  bigint not null references accounts(id) on delete cascade,
+    made    timestamptz not null default now(),
+    primary key (account, friend)
+);
+-- The other direction is read as often as the first, because who has added
+-- me is half of what the page draws.
+create index if not exists friends_by_friend on friends (friend);
 ";
 
 /// How long a pilot's own rows live. Long enough to answer a report weeks after
@@ -987,6 +1010,156 @@ async fn kits_of(db: &Client, account: i64) -> serde_json::Value {
     serde_json::Value::Object(out)
 }
 
+/// Whether an account number is somebody this pilot could be friends with,
+/// before anything is read from the database.
+///
+/// Split out because it is the half of the rule that is not SQL, and because
+/// the two cases it rejects are easy to get subtly wrong: adding yourself
+/// would make a self-mutual edge that reads as a friendship on the page, and a
+/// zero or negative id is a client that has lost track of what it is holding.
+fn names_a_pilot(me: i64, other: i64) -> Result<(), (u16, &'static str)> {
+    if other <= 0 || other == me {
+        return Err((400, "no such pilot"));
+    }
+    Ok(())
+}
+
+/// And whether there is room on the list. Separate from the read that counts
+/// it so the bound itself is testable without a database.
+fn room_for_one_more(held: i64) -> Result<(), (u16, &'static str)> {
+    if held >= MAX_FRIENDS {
+        return Err((409, "that is as many as a list holds"));
+    }
+    Ok(())
+}
+
+/// The most edges one account may hold. Not a social judgment: it is what
+/// bounds the query, the page and the JSON. Anybody who reaches it is doing
+/// something other than playing with friends.
+const MAX_FRIENDS: i64 = 100;
+
+/// The friends page, whole.
+///
+/// Three lists, defined against each other so the client never has to
+/// subtract one from another:
+///
+/// - `friends`, where both directions exist, with where each one is flying.
+/// - `asked`, where they have added you and you have not added back. The
+///   only inbox this system has, and it holds names and nothing else.
+/// - `here`, the pilots in the room you are in who are on neither list, so
+///   the page you make a friend on is the one you are already reading.
+///
+/// Presence is a join against `active_rated_sessions`, which an arena keeps
+/// honest because a rated seat is exclusive. Watchers hold no such row, and
+/// that is correct: "in a game" should mean flying. See
+/// docs/design/friends.md.
+async fn friends_page(db: &Client, account: i64) -> Result<serde_json::Value, String> {
+    let mutual = db
+        .query(
+            "select f.friend, n.call_sign, s.instance, s.zone
+               from friends f
+               join friends b on b.account = f.friend and b.friend = f.account
+               left join names n on n.account = f.friend
+               left join active_rated_sessions s
+                      on s.account = f.friend
+                     and s.touched > now() - interval '180 seconds'
+              where f.account = $1
+              order by (s.instance is null), n.call_sign
+              limit $2",
+            &[&account, &MAX_FRIENDS],
+        )
+        .await
+        .map_err(|e| format!("cannot read friends: {e}"))?;
+    let friends: Vec<serde_json::Value> = mutual
+        .iter()
+        .map(|r| {
+            let instance: Option<String> = r.get(2);
+            let zone: Option<String> = r.get(3);
+            serde_json::json!({
+                "account": r.get::<_, i64>(0),
+                "name": r.get::<_, Option<String>>(1).unwrap_or_default(),
+                // Absent rather than false when they are not flying, so a
+                // client draws "on" from the presence itself rather than from
+                // a flag that could disagree with it.
+                "zone": zone.unwrap_or_default(),
+                "instance": instance.unwrap_or_default(),
+            })
+        })
+        .collect();
+
+    // Who is waiting on you. Their direction exists and yours does not.
+    let waiting = db
+        .query(
+            "select f.account, n.call_sign
+               from friends f
+               left join names n on n.account = f.account
+              where f.friend = $1
+                and not exists (select 1 from friends b
+                                 where b.account = $1 and b.friend = f.account)
+              order by f.made
+              limit $2",
+            &[&account, &MAX_FRIENDS],
+        )
+        .await
+        .map_err(|e| format!("cannot read who is waiting: {e}"))?;
+    let asked: Vec<serde_json::Value> = waiting
+        .iter()
+        .map(|r| {
+            serde_json::json!({
+                "account": r.get::<_, i64>(0),
+                "name": r.get::<_, Option<String>>(1).unwrap_or_default(),
+            })
+        })
+        .collect();
+
+    // And whoever is in the room with you, which is only answerable while you
+    // are in one. This is the whole of how a name reaches this page: there is
+    // no directory of the fleet to ask and no way to search for anybody.
+    let mut here: Vec<serde_json::Value> = Vec::new();
+    let mine = db
+        .query_opt(
+            "select instance from active_rated_sessions
+              where account = $1 and touched > now() - interval '180 seconds'",
+            &[&account],
+        )
+        .await
+        .map_err(|e| format!("cannot read where you are: {e}"))?;
+    if let Some(row) = mine {
+        let instance: String = row.get(0);
+        let rows = db
+            .query(
+                "select s.account, n.call_sign
+                   from active_rated_sessions s
+                   left join names n on n.account = s.account
+                  where s.instance = $1
+                    and s.account <> $2
+                    and s.touched > now() - interval '180 seconds'
+                    and not exists (select 1 from friends f
+                                     where f.account = $2 and f.friend = s.account)
+                  order by n.call_sign
+                  limit 64",
+                &[&instance, &account],
+            )
+            .await
+            .map_err(|e| format!("cannot read the room: {e}"))?;
+        here = rows
+            .iter()
+            .map(|r| {
+                serde_json::json!({
+                    "account": r.get::<_, i64>(0),
+                    "name": r.get::<_, Option<String>>(1).unwrap_or_default(),
+                })
+            })
+            .collect();
+    }
+
+    Ok(serde_json::json!({
+        "friends": friends,
+        "asked": asked,
+        "here": here,
+    }))
+}
+
 // ------------------------------------------------------------------ routes
 
 /// Every route takes JSON and answers JSON. Hand-rolled HTTP for the same
@@ -1328,6 +1501,112 @@ async fn route(
                 200,
                 serde_json::json!({ "shelf": shelf, "rivets": wallet_of(&db, account).await }),
             )
+        }
+
+        // The friends page, whole, in one request: who you are friends with and
+        // where they are, who has added you and is waiting, and who is in the
+        // room with you right now.
+        //
+        // One route rather than three because it is one screen, and because
+        // the three lists are defined against each other: somebody in your
+        // room who is already a friend belongs in the first list and not the
+        // third. Splitting them would make the client do that subtraction and
+        // get it wrong on the frame where two replies disagree.
+        //
+        // See docs/design/friends.md.
+        "/v1/friends" => {
+            let Some(account) =
+                account_for(&db, "secret", &sha256_hex(s("secret").as_bytes())).await
+            else {
+                return (403, serde_json::json!({ "error": "no such account" }));
+            };
+            match friends_page(&db, account).await {
+                Ok(page) => (200, page),
+                Err(e) => (500, serde_json::json!({ "error": e })),
+            }
+        }
+
+        // One edge, made or dropped. `add` is the whole verb: adding somebody
+        // who has already added you is what accepting is, and dropping takes
+        // both directions so a removed pilot does not stay on the other's
+        // list. See docs/design/friends.md.
+        "/v1/friend" => {
+            let Some(account) =
+                account_for(&db, "secret", &sha256_hex(s("secret").as_bytes())).await
+            else {
+                return (403, serde_json::json!({ "error": "no such account" }));
+            };
+            let other = body
+                .get("account")
+                .and_then(|v| v.as_i64())
+                .unwrap_or_default();
+            let add = body.get("add").and_then(|v| v.as_bool()).unwrap_or(true);
+            if let Err((code, why)) = names_a_pilot(account, other) {
+                return (code, serde_json::json!({ "error": why }));
+            }
+            if add {
+                // Adding is the rate-limited half. Dropping is not: a pilot
+                // clearing a list they no longer want is not something to
+                // stand in the way of, and it can only ever shrink.
+                if !meta.throttle.allow(&format!("friend:{account}"), 60, hour) {
+                    return (
+                        429,
+                        serde_json::json!({ "error": "too many at once; wait a while" }),
+                    );
+                }
+                // A pilot who does not exist, or one who is banned, is not
+                // somebody to be waiting on. Both answer the same way: this
+                // page never says whether an account it will not add exists.
+                match db
+                    .query_opt("select banned from accounts where id = $1", &[&other])
+                    .await
+                {
+                    Ok(Some(row)) if row.get::<_, bool>(0) => {
+                        return (403, serde_json::json!({ "error": "no such pilot" }));
+                    }
+                    Ok(Some(_)) => {}
+                    Ok(None) => return (400, serde_json::json!({ "error": "no such pilot" })),
+                    Err(e) => return (500, serde_json::json!({ "error": format!("{e}") })),
+                }
+                let held: i64 = db
+                    .query_one(
+                        "select count(*) from friends where account = $1",
+                        &[&account],
+                    )
+                    .await
+                    .map(|r| r.get(0))
+                    .unwrap_or(0);
+                if let Err((code, why)) = room_for_one_more(held) {
+                    return (code, serde_json::json!({ "error": why }));
+                }
+                if let Err(e) = db
+                    .execute(
+                        "insert into friends (account, friend) values ($1, $2)
+                         on conflict do nothing",
+                        &[&account, &other],
+                    )
+                    .await
+                {
+                    return (500, serde_json::json!({ "error": format!("{e}") }));
+                }
+            } else if let Err(e) = db
+                .execute(
+                    "delete from friends
+                     where (account = $1 and friend = $2)
+                        or (account = $2 and friend = $1)",
+                    &[&account, &other],
+                )
+                .await
+            {
+                return (500, serde_json::json!({ "error": format!("{e}") }));
+            }
+            // The page back, so one press redraws without a second request
+            // and without the client guessing what the edge did to the three
+            // lists it is drawn from.
+            match friends_page(&db, account).await {
+                Ok(page) => (200, page),
+                Err(e) => (500, serde_json::json!({ "error": e })),
+            }
         }
 
         // The week: matches won, kills and the best run, resetting Monday.
@@ -3268,12 +3547,17 @@ pub async fn claim_rated_session(
     account: u64,
     session: &str,
     instance: &str,
+    zone: &str,
 ) -> Result<(bool, Vec<ClassRating>), String> {
     let body = serde_json::json!({
         "pool_token": pool_token,
         "account": account,
         "session": session,
         "instance": instance,
+        // What that instance is serving. The row is a presence table as well
+        // as an exclusion, and a friends page that could only say "somewhere"
+        // is not one. See docs/design/friends.md.
+        "zone": zone,
     })
     .to_string();
     let reply = call(base, "/v1/rated-session/claim", &body).await?;
@@ -3952,6 +4236,42 @@ mod tests {
         assert_eq!(
             settlement::validate_rated_event(&attacker),
             Err("credit rating movement exceeds the event bound".into())
+        );
+    }
+
+    /// Nobody is their own friend. A self edge would satisfy the mutual test
+    /// against itself and draw as a friendship on the page, which is a thing
+    /// somebody would report as a bug in the friends list rather than as a
+    /// hole in this check.
+    #[test]
+    fn a_pilot_cannot_add_themselves() {
+        assert_eq!(names_a_pilot(7, 7), Err((400, "no such pilot")));
+        assert_eq!(names_a_pilot(7, 8), Ok(()));
+    }
+
+    /// And an id a client has lost track of is refused rather than sent to the
+    /// database as a lookup that happens to find nothing.
+    #[test]
+    fn an_account_number_has_to_be_one() {
+        assert_eq!(names_a_pilot(7, 0), Err((400, "no such pilot")));
+        assert_eq!(names_a_pilot(7, -3), Err((400, "no such pilot")));
+    }
+
+    /// The list has a bound, and it is what makes the page, the query and the
+    /// JSON finite rather than a judgment about how many friends to have.
+    #[test]
+    fn a_list_is_bounded() {
+        assert_eq!(room_for_one_more(0), Ok(()));
+        assert_eq!(room_for_one_more(MAX_FRIENDS - 1), Ok(()));
+        assert_eq!(
+            room_for_one_more(MAX_FRIENDS),
+            Err((409, "that is as many as a list holds"))
+        );
+        // Over, not merely at: a list that grew past the bound some other way
+        // still refuses rather than letting one more in per request.
+        assert_eq!(
+            room_for_one_more(MAX_FRIENDS + 40),
+            Err((409, "that is as many as a list holds"))
         );
     }
 
