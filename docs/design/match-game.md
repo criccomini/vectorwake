@@ -109,6 +109,13 @@ There are three ways to end up beside a person, and a player should be able to
 name all of them: the mode list says where the humans are, the sort puts you
 where they already are, and the friends panel joins one by name.
 
+**Sitting out is a drop you chose**, and lands in the same place: a bot takes
+the seat, you land in the stands, and the seat is yours to reclaim until the
+match ends. A dropped socket and the lag ladder benching a bad connection
+arrive there too, so three paths produce one state rather than three.
+[spectating.md](spectating.md) has the gallery, including what happens to a
+seat that frees while people are watching.
+
 **The hull is locked for the match**, the way a duel already locks it. Kit
 and hull change in the hangar between matches. This is not ceremony: charges
 are match-scoped below, and a mid-match hull change would have to answer what

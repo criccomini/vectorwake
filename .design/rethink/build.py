@@ -421,9 +421,11 @@ MODES = [
 ]
 
 FRIENDS = [
-    ("MARLOW", "in a match", "2:10 left", "var(--friend)"),
-    ("CORVID", "in the hangar", "", "var(--friend)"),
-    ("TALLOW", "offline", "", ""),
+    ("MARLOW", "in a match", "2:10 left", "JOIN", "var(--friend)"),
+    # Eight humans in the room, so no bot is left to stand down. Opening a
+    # fresh room would be the exact wrong answer here.
+    ("CORVID", "room is full", "8 of 8", "WATCH", "var(--friend)"),
+    ("TALLOW", "offline", "", "", ""),
 ]
 
 
@@ -447,22 +449,23 @@ def s_matchlist():
       </div>""")
 
     friends = []
-    for name, where, extra, col in FRIENDS:
+    for name, where, extra, act_label, col in FRIENDS:
         on = bool(col)
         dot = (f'<div style="width:6px;height:6px;flex:none;border-radius:50%;'
                f'background:{"var(--prize)" if on else "var(--dim)"};'
                f'opacity:{1 if on else .4}"></div>')
-        act = ('<div class="t10 num" style="color:var(--friend)">JOIN</div>'
-               if where == "in a match" else "")
+        act = (f'<div class="t10 num" style="color:var(--friend)">'
+               f'{act_label}</div>') if act_label else ""
+        extra_col = "var(--bounty)" if act_label == "JOIN" else "var(--dim)"
         friends.append(f"""
         <div class="row" style="height:32px;gap:9px;opacity:{1 if on else .45}">
           {dot}{helm("var(--dim)", 12)}
           <div class="t11 num">{name}</div>
           <div style="flex:1"></div>
           <div class="lbl">{where}</div>
-          <div class="lbl" style="color:var(--bounty);min-width:44px;
+          <div class="lbl" style="color:{extra_col};min-width:44px;
                text-align:right">{extra}</div>
-          <div style="min-width:30px;text-align:right">{act}</div>
+          <div style="min-width:44px;text-align:right">{act}</div>
         </div>""")
 
     body = f"""

@@ -228,6 +228,81 @@ word "watching" where the numbers would be, and a count of its own
 in the line under the board. The roster exists so you know who is in the room
 with you, and somebody watching the fight is in the room.
 
+## In a match game
+
+[match-game.md](match-game.md) changes what this is for without changing the
+rule above, which is the good news and worth stating plainly: live sight is
+still your own side or a written grant, and everything else is still the
+delayed channel. That rule was about who may see what, not about how long a
+match runs, so it survives the move to four a side intact. In particular
+`channel_delay_ticks` stays at five seconds rather than dropping to the zero a
+duel zone uses. A duel sets zero because both pilots are equally exposed and
+the audience is the point; in a four a side match a watcher can be partisan
+and relay to one side, so the delay is still doing work.
+
+What does change is the reason anybody is in the stands. The old one is gone,
+since duels wanted a gallery because a queue is pilots present and not
+playing, and there is no queue any more. Three reasons replace it, and they
+are worth ranking by how often they actually fire.
+
+**Sitting out, which is now the common one.** In an open arena a pilot who sat
+out simply left their side short. Four a side cannot absorb that, so sitting
+out does what a disconnect does: a bot takes the seat, the pilot lands in the
+stands, and the seat stays theirs. That unifies three paths that used to be
+separate, since a voluntary sit-out, a dropped socket, and the lag ladder
+benching a bad connection all now produce one state. The lag response keeps
+the gentlest step it has, which is the reason it was built.
+
+**Watching a friend whose room is full**, which will rarely fire and matters
+when it does. A bot stands down for every arrival, so a room is only truly
+full at eight humans; below that a would-be watcher can simply take a seat.
+When it is full, though, opening a fresh bot-filled room is the exact wrong
+answer, and the gallery is what stops the friends list breaking at the one
+moment it is useful.
+
+**Operators**, through the `watch` capability, unchanged.
+
+### Two kinds of watcher
+
+The distinction is load-bearing and the room has to keep it.
+
+A **benched pilot** still holds a seat: they sat out, dropped, or were moved
+here by the lag ladder, and a bot is keeping the chair warm. They reclaim it
+whenever they like and they are not in any line. The hold lasts to the end of
+the current match; an unreclaimed seat is free at the intermission, which
+bounds it without a timer of its own and puts the expiry on the boundary
+everything else in this game already uses.
+
+A **visitor** holds nothing. They arrived to watch, and a seat reaches them
+only through the offer below.
+
+### The seat offer
+
+A seat that comes free with the room at its human cap is offered to the
+visitors one at a time, in arrival order, with a ten second countdown on each.
+Decline it or let it lapse and it passes to the next; either way you go to the
+back, so an idle watcher sinks and an attentive one rises rather than the loop
+stalling on somebody who has walked away. The loop keeps running into the
+match rather than stopping when it starts, because joining a match in progress
+is ordinary now, so a visitor who accepts at 1:20 spawns in exactly as any
+arrival would.
+
+**An offer does not reserve the seat.** Somebody arriving from the directory
+takes it and the offer is withdrawn mid-countdown. That is unfair to a visitor
+who has sat through two offers, and it is still right: a visitor chose to
+watch and an arrival chose to fly, and when one seat has to settle that, the
+unambiguous intent should win. Holding the seat instead would mean the room
+advertising a vacancy it refuses to fill, which is the queue this design keeps
+saying it does not have. If an acceptance and an assignment race, the server
+settles it and the loser keeps their place at the front rather than being sent
+to the back, since they said yes.
+
+Worth knowing before any of this is built: it fires only when a room holds
+eight humans and one of them leaves. Below that a bot stands down and a
+visitor becomes a pilot by asking. So this is the machinery that makes a
+popular room behave, and on the population this game has today it will
+essentially never run.
+
 ## What waits
 
 The heat-scored director, a WATCH row on the games list, the long-delay
