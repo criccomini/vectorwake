@@ -402,15 +402,20 @@ local function kit_slots()
     local up = simn("UP_COUNT", 5)
     local trig = simn("TRIG_COUNT", 2)
     local mods = simn("MOD_COUNT", 6)
+    -- `short` and `tint` travel with every slot, because the page draws each
+    -- group in its own shape: a stat is a row of steps behind a three-letter
+    -- mark, an add-on is a chip, and a charge is a count. The interface picks
+    -- the shape; this says what the thing is.
     for u = 0, up - 1 do
         local s = pal.UPGRADES[u + 1]
         out[#out + 1] = {slot = u, label = s and s.name or ("stat " .. u),
+                         short = s and s.short or "?", tint = s and s.col,
                          group = "flight"}
     end
     for t = 0, trig - 1 do
         out[#out + 1] = {slot = simn("SLOT_LEVEL0", up) + t,
                          label = (t == 0 and "gun" or "bomb") .. " rung",
-                         group = "weapons"}
+                         short = "rung", trigger = t, group = "weapons"}
     end
     for t = 0, trig - 1 do
         for m = 0, mods - 1 do
@@ -419,7 +424,9 @@ local function kit_slots()
                 slot = simn("SLOT_MOD0", up + trig) + t * mods + m,
                 label = (t == 0 and "gun " or "bomb ") ..
                         (mod and mod.name or ("add-on " .. m)),
-                group = "weapons",
+                short = mod and mod.name or ("add-on " .. m),
+                note = mod and mod.long or nil,
+                trigger = t, group = "weapons",
             }
         end
     end
@@ -427,7 +434,7 @@ local function kit_slots()
         local c = pal.CHARGES[k + 1]
         out[#out + 1] = {slot = simn("SLOT_CHARGE0", up + trig + trig * mods) + k,
                          label = c and c.name or ("charge " .. k),
-                         group = "charges"}
+                         short = c and c.short or "?", group = "charges"}
     end
     return out
 end
@@ -513,6 +520,13 @@ local function kit_rows()
     local class = M.kit_class or M.class
     if not M.kit or M.kit_class ~= class then M.open_kit(class) end
     local ceiling = kit_ceiling(class)
+    -- What the hull alone would allow, which is a longer ladder than the
+    -- account's wherever the shop still holds a step. Drawn behind what you
+    -- own, so a page says "there is more of this and it is not yours" without
+    -- a word about it.
+    local core = _G.sim
+    local hull_ceiling = (core and core.kit_ceilings
+                          and core.kit_ceilings(class)) or ceiling
     local budget = simn("KIT_BUDGET", 30)
     -- At the head, not the foot. It is the number every row below is
     -- spending, and a list long enough to scroll would push it off the
@@ -538,6 +552,16 @@ local function kit_rows()
                 -- has to be compared against the number on the row above.
                 choice = function() return held, max end,
                 act = "kit_step", value = s.slot,
+                -- What the page needs to draw this slot as the thing it is
+                -- rather than as another row: which group it belongs to, its
+                -- own short mark, its color, and which trigger it hangs off.
+                group = s.group, short = s.short, tint_col = s.tint,
+                trigger = s.trigger, note = s.note,
+                -- What the account owns here, against what the hull would
+                -- take. The difference is the part of the ladder the shop is
+                -- still holding, and the page draws it as a step that is
+                -- there and not yours.
+                owned = max, hull_max = hull_ceiling[s.slot + 1] or max,
             }
         end
     end
@@ -552,9 +576,29 @@ end
 -- to draw and the page says so rather than inventing a price.
 local function shop_rows()
     local rows = {}
+    -- Which part of the kit space a slot belongs to, so the shelf reads as
+    -- three short lists rather than as one long one. The meta-layer sends the
+    -- slot; what a slot means is the core's own arithmetic and is already
+    -- here.
+    local up = simn("UP_COUNT", 5)
+    local trig = simn("TRIG_COUNT", 2)
+    local mods = simn("MOD_COUNT", 6)
+    local level0 = simn("SLOT_LEVEL0", up)
+    local charge0 = simn("SLOT_CHARGE0", up + trig + trig * mods)
+    local function kind_of(slot)
+        if not slot then return nil end
+        if slot < level0 then return "stats" end
+        if slot >= charge0 then return "charges" end
+        return "triggers"
+    end
+    local was = nil
     for _, item in ipairs(account.shelf or {}) do
         local afford = (account.rivets or 0) >= (item.price or 0)
+        local kind = kind_of(item.slot)
+        local sect = (kind ~= was) and kind or nil
+        was = kind
         rows[#rows + 1] = {
+            sect = sect,
             label = item.label or ("slot " .. tostring(item.slot)),
             detail = tostring(item.price or 0) .. " rivets",
             note = item.note,
@@ -902,14 +946,18 @@ local NODES = {
     -- deliberately and then comes back wondering about.
     settings = {rows = function()
         local rows = {
-            {label = "sound",
+            -- Grouped, the way the mocks group a list of settings: a small
+            -- label and a ticked rule over each run of rows. What a group
+            -- says is what the rows under it are about, which is the one
+            -- thing a page of eight settings cannot say in its title.
+            {label = "sound", sect = "audio",
              detail = function() return VOLUMES[M.volume][2] end,
              choice = function() return M.volume - 1, #VOLUMES - 1 end,
              act = "volume"},
             {label = "music", detail = function() return MUSICS[M.music][2] end,
              choice = function() return M.music - 1, #MUSICS - 1 end,
              act = "music"},
-            {label = "frames", detail = function()
+            {label = "frames", sect = "video", detail = function()
                 if not M.can_cap then return "as the display asks" end
                 return CAPS[M.cap][2]
             end, choice = function()
@@ -955,8 +1003,8 @@ local NODES = {
         -- machine rather than about a match, which is what this page is for:
         -- the controls board is where the keys are set, and `about` is three
         -- lines that never deserved a destination.
-        rows[#rows + 1] = {label = "controls", detail = "keys and pads",
-                           go = "controls"}
+        rows[#rows + 1] = {label = "controls", sect = "the machine",
+                           detail = "keys and pads", go = "controls"}
         rows[#rows + 1] = {label = "about", detail = "this build",
                            go = "about"}
         return rows
@@ -1242,6 +1290,13 @@ local function view_row(r, i)
         hull = r.hull, figure = r.figure, role = r.role,
         players = r.players, bots = r.bots, live = r.live,
         choice = ci, choices = cn, bar = r.bar,
+        -- What the hangar's page needs to draw a slot as the thing it is:
+        -- its group, its short mark, its color, the trigger it hangs off, and
+        -- how far the hull's own ladder runs past what the account owns.
+        -- The label a group of rows sits under, on the first row of it.
+        sect = r.sect,
+        group = r.group, short = r.short, tint_col = r.tint_col,
+        trigger = r.trigger, owned = r.owned, hull_max = r.hull_max,
         -- What the controls page needs to draw a chip: which color band the
         -- control is in, which key it is on so the board can be lit from the
         -- same list, whether it is the one waiting for a key, and whether it
@@ -1769,6 +1824,12 @@ function M.view()
                  -- What the page is about, where the tab row does not already
                  -- say it. A name, a trade and a hull to draw.
                  head = nd.head and nd.head() or nil,
+                 -- Who is reading this and what they have to spend, which the
+                 -- topbar carries at the far end of the tab row. It is the
+                 -- same slot the score and the clock take in a match: the
+                 -- right-hand end of that row always answers "how am I doing
+                 -- in the thing I am in".
+                 pilot = {name = M.name, rivets = account.rivets or 0},
                  -- The question, if one is up. Everything else in the view is
                  -- still filled in: the panel is drawn and then stood down
                  -- under it, rather than replaced by it.
@@ -1804,6 +1865,20 @@ function M.view()
                  rows = {}}
     for i, r in ipairs(rows) do
         out.rows[i] = view_row(r, i)
+    end
+    -- The hangar is two levels of the stack drawn at once: the roster down
+    -- the left and the kit of the hull it is standing on beside it. So the
+    -- page carries both, and which of them the arrows are in.
+    if M.at() == "hangar" or M.at() == "kit" then
+        out.hulls = {}
+        for i, r in ipairs(rows_of(NODES.hangar)) do
+            out.hulls[i] = view_row(r, i)
+        end
+        out.hull_sel = (M.at() == "hangar") and sel or (M.sel.hangar or 1)
+        out.hull_focus = M.at() == "hangar"
+        if M.at() == "kit" then
+            out.head = NODES.kit.head and NODES.kit.head() or nil
+        end
     end
     -- The destinations, always, whatever level the stack is at: the interface
     -- draws them as a rail of icons and the rail is the one thing on screen
@@ -2322,6 +2397,21 @@ end
 -- node the cursor is in: on the home screen the stage shows what the rail is
 -- pointing at, before anybody has gone in. So this goes in first and then
 -- acts, which is what the tap meant.
+-- A press on the roster while the hangar is on screen. It is the level above
+-- the kit, so it sets the cursor there and picks, whichever level the arrows
+-- happened to be in.
+function M.click_hull(index)
+    if not M.open then return nil, false end
+    while #M.stack > 1 and M.stack[#M.stack] ~= "hangar" do
+        M.stack[#M.stack] = nil
+    end
+    if M.stack[#M.stack] ~= "hangar" then
+        M.stack = {"root", "hangar"}
+    end
+    M.sel.hangar = index
+    return activate(), true
+end
+
 function M.click_stage(index)
     if not M.open then return nil, false end
     if #M.stack == 1 then

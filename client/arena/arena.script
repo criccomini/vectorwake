@@ -2447,6 +2447,13 @@ function on_input(self, action_id, action)
                 local act, moved
                 if r.action == "stage" then
                     act, moved = menu.click_stage(r.value)
+                elseif r.action == "hull" then
+                    -- The hangar draws two levels of the stack at once: the
+                    -- roster down the left and the kit of whichever hull is
+                    -- picked beside it. A press on a hull is a press on the
+                    -- level above whatever the cursor is in, so it cannot
+                    -- arrive as a stage row.
+                    act, moved = menu.click_hull(r.value)
                 elseif r.action == "key" then
                     -- A key on the drawn board. The picture is the same list
                     -- as the chips under it, so it answers a press the same

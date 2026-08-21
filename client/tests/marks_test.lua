@@ -218,17 +218,23 @@ local function menu(rows)
     return frame(function()
         ui.menu({depth = 1, sel = 0, rail = RAIL, rail_sel = 3,
                  focus = "rail", home = true, closable = false,
+                 -- The helmet moved off the tab row and onto the topbar's
+                 -- other end, beside the name it stands for. On a desktop the
+                 -- tabs are words with a rule under the lit one and carry no
+                 -- marks at all; the mark that says "you" is the one drawn
+                 -- next to your call sign.
+                 pilot = {name = "Quarrel", rivets = 342},
                  rows = rows or {}})
     end)
 end
 
 -- --- the person is round ---------------------------------------------------
 
--- The rail's pilot stop, alone: no games list, so the only helmet on screen
--- is the one that names the player.
+-- The topbar's helmet, alone: no games list, so the only helmet on screen is
+-- the one that names the player.
 local rail_frame = menu({{label = "a row"}})
 local rail_only = crowns(rail_frame)
-check("the rail's pilot stop is a helmet", #rail_only == 1,
+check("the topbar names the pilot with a helmet", #rail_only == 1,
       #rail_only .. " helmets with no games listed")
 local RAIL_HELMETS = #rail_only
 

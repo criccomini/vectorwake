@@ -26,10 +26,19 @@ local frames, rects, segs = {}, {}, {}
 local layer = {}
 local function noop() end
 for _, name in ipairs({"arc", "disc", "flush", "outline", "quad", "reset", "ring",
-                       "skirt", "tri", "tri_fade", "fan", "seg_glow",
+                       "tri", "tri_fade", "fan", "seg_glow",
                        "glow_band", "halo", "ring_fade", "seg_fade",
                        "seg_flat"}) do
     layer[name] = noop
+end
+-- A selection is a skirt now rather than a rectangle: bright where it meets
+-- the panel's rule and gone across the row. It is counted with the rectangles
+-- because what these checks ask is "how many rows are lit", which is a
+-- question about the mark and not about which primitive drew it.
+layer.skirt = function(_, x, y0, _x1, y1, w, _fade, alpha, col)
+    local top, bot = math.min(y0, y1), math.max(y0, y1)
+    rects[#rects + 1] = {x = x, y = H - bot, w = w, h = bot - top,
+                         col = {col[1], col[2], col[3], alpha or col[4]}}
 end
 layer.frame = function(_, x, y, w, h)
     frames[#frames + 1] = {x = x, y = H - y - h, w = w, h = h}
@@ -37,8 +46,8 @@ end
 layer.rect = function(_, x, y, w, h, col)
     rects[#rects + 1] = {x = x, y = H - y - h, w = w, h = h, col = col}
 end
-layer.seg = function(_, x0, y0, x1, y1)
-    segs[#segs + 1] = {x0 = x0, y0 = y0, x1 = x1, y1 = y1}
+layer.seg = function(_, x0, y0, x1, y1, w, col)
+    segs[#segs + 1] = {x0 = x0, y0 = y0, x1 = x1, y1 = y1, w = w, col = col}
 end
 
 _G.sim = setmetatable({}, {__index = function() return function() return 0 end end})
@@ -206,17 +215,18 @@ preview.hover = nil
 
 -- --- the lit half is the half the arrows are in ---------------------------
 --
--- Both halves mark their cursor with the same blue field, so the one wearing
--- the brighter of the two is the whole of the answer to what up and down will
--- move. Read off the rail's own field, drawn either side of the focus.
+-- Both halves mark their cursor the same way, so the one wearing the brighter
+-- of the two is the whole of the answer to what up and down will move. Read
+-- off the rule under the tab you are in, which is the tab row's own mark: a
+-- word with a line under it, drawn either side of the focus.
 
 local function rail_wash()
     local a = 0
-    for _, r in ipairs(rects) do
-        local c = r.col
+    for _, sg in ipairs(segs) do
+        local c = sg.col
         if c and c[1] == pal.FRIEND[1] and c[2] == pal.FRIEND[2]
-           and r.w < 300 and c[4] < 0.5 and c[4] > a then
-            a = c[4]
+           and sg.y0 == sg.y1 and (c[4] or 1) > a then
+            a = c[4] or 1
         end
     end
     return a
@@ -664,21 +674,16 @@ check("and draws no second line for the name", st6 ~= nil
 
 -- --- the rail lights under a pointer, as the stage does -------------------
 --
--- The stage has worn a hover since the home screen was two panes. The rail is
--- the other half of the same gesture and went without one, so a mouse walking
--- down it lit nothing until it was clicked. Counted as a field in the rail's
--- own column, which is a third the width of a stage row's.
-
--- Wider than a mark and narrower than a stage row. The lower bound is not
--- fussiness: several icons are drawn from rectangles, the settings sliders
--- among them, and they take the stop's color when it lights, so counting
--- every blue rectangle in the rail counts the drawing as well as the field.
+-- The stage has worn a hover since the home screen was two panes. The tab row
+-- is the other half of the same gesture and went without one, so a mouse
+-- walking along it lit nothing until it was clicked. Counted as a rule under
+-- a word: the tab you are in wears a lit one, and the one under the pointer
+-- wears a dim one, so a row with a hover on it carries two rather than one.
 local function rail_fields()
     local n = 0
-    for _, r in ipairs(rects) do
-        local c = r.col
-        if c and c[1] == pal.FRIEND[1] and c[2] == pal.FRIEND[2]
-           and c[4] > 0.12 and r.w > 60 and r.w < 300 then
+    for _, sg in ipairs(segs) do
+        if sg.y0 == sg.y1 and sg.col and (sg.w or 0) >= 1.0
+           and sg.x1 - sg.x0 > 20 and sg.x1 - sg.x0 < 200 then
             n = n + 1
         end
     end
