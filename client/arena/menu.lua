@@ -1915,6 +1915,11 @@ function M.view()
                        and rows_of(NODES.root)[sel].go or nil
     if M.at() == "play" or previewing == "play" then
         out.aside = deploying(M.at() == "play" and sel or (M.sel.play or 1))
+    elseif not M.home then
+        -- In a match the column beside the page is the match: who is in it and
+        -- what they have done, which is what the mock puts there and what a
+        -- player opening a menu mid-fight is most likely to want a look at.
+        out.aside = {match = true, head = "in this match"}
     elseif M.at() == "pilot" or previewing == "pilot" then
         -- Who you are, beside what you can do about it. The call sign is the
         -- page, and the rows are three things you might do to it.

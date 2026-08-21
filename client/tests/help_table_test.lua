@@ -46,6 +46,9 @@ _G.sim = {
     ship_y = function(i) return 100 + i * 120 end,
     ship_heading = function() return 0 end,
     ship_alive = function() return 1 end,
+    -- The roster is filled while a menu is open now, for the column the menu
+    -- draws beside its page, so a stub that draws one has to answer this.
+    ship_active = function() return 1 end,
     ship_team = function(i) return i end,
     ship_class = function() return 0 end,
     ship_energy = function() return 100 end,

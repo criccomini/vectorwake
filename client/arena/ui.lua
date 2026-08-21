@@ -3276,6 +3276,16 @@ function M.hud(o)
     -- Above the two big centered lines and above the menu's own early return:
     -- the clock is what the topbar carries and a player reading a menu still
     -- wants it. See `match_clock`.
+    -- Kept for the menu, which is drawn after this in the same frame and has
+    -- no connection of its own to ask. The alternative is a second copy of
+    -- the same question in the view.
+    M.side_names = o.side_names
+    -- And the roster itself, for the column the menu draws beside its page.
+    -- The scoreboard fills this when somebody opens the scoreboard; the menu
+    -- is open right now and is about to read it.
+    if o.menu_open then
+        refresh_players(o.pilots, o.watchers, nil, o.viewer_name)
+    end
     match_clock(o.match, o.side_names, o.menu_open)
     -- The two big centered lines are the only interface that sits where the
     -- menu does. The panels can share the screen with it; these cannot.
@@ -3583,6 +3593,56 @@ function pages.aside(a, x, y, w, h)
     vrule(x - 18 * F.scale, y + 6 * F.scale, h - 12 * F.scale,
           pal.a(pal.RADAR_TILE, 0.45), 18 * F.scale)
     lbl(a.head or "", x, y + 16 * F.scale)
+    -- The match, where there is one. Read off the same roster the scoreboard
+    -- draws from rather than out of a message of its own, which is what the
+    -- ending does and for the same reason: the numbers are already here.
+    if a.match then
+        local sides, seen = {}, {}
+        for _, r in ipairs(rows) do
+            if not r.watch and r.team then
+                if not seen[r.team] then
+                    seen[r.team] = {}
+                    sides[#sides + 1] = r.team
+                end
+                local list = seen[r.team]
+                list[#list + 1] = r
+            end
+        end
+        table.sort(sides, function(p1, p2)
+            if (p1 == view_team) ~= (p2 == view_team) then
+                return p1 == view_team
+            end
+            return p1 < p2
+        end)
+        for _, list in pairs(seen) do
+            table.sort(list, function(p1, p2)
+                if p1.k ~= p2.k then return p1.k > p2.k end
+                return p1.d < p2.d
+            end)
+        end
+        local ly = y + 40 * F.scale
+        for _, team in ipairs(sides) do
+            local col = (team == view_team) and pal.FRIEND or pal.ENEMY
+            lbl(M.side_names and M.side_names[team] or "side", x, ly,
+                pal.a(col, 0.9))
+            local rx2 = x + w - 24 * F.scale
+            lbl("k  d", rx2, ly, pal.a(pal.DIM, 0.75), "right")
+            ly = ly + 8 * F.scale
+            ticks(x, ly, w - 24 * F.scale, pal.a(pal.RADAR_TILE, 0.4),
+                  14 * F.scale)
+            ly = ly + 16 * F.scale
+            for _, r in ipairs(seen[team]) do
+                txt(r.name, x, ly, 12.5 * F.scale,
+                    pal.a(r.self and pal.FRIEND or pal.INK, r.self and 1 or 0.8),
+                    nil, nil, true)
+                txt(r.k .. "  " .. r.d, x + w - 24 * F.scale, ly, 11 * F.scale,
+                    pal.a(pal.DIM, 0.95), "right")
+                ly = ly + 17 * F.scale
+            end
+            ly = ly + 12 * F.scale
+        end
+        return
+    end
     txt(a.label or "", x, y + 44 * F.scale, 21 * F.scale,
         pal.a(pal.INK, 0.95), nil, MENU_FONT)
     lbl(a.sub or "", x, y + 64 * F.scale, pal.a(pal.DIM, 0.85))
