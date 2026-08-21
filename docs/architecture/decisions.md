@@ -685,7 +685,8 @@ space, one byte on a green, one table for a zone to weight.
 Add-ons are per trigger, so "bounce on guns, shrapnel on bombs" is a thing a
 pilot holds. Each hull's row says which it may ever have, which is what keeps
 the roster a roster once greens are flying: no run of luck turns a skirmisher
-into a bomber.
+into a bomber. (Superseded twice over: greens went in decision 34 and the hull
+rows in decision 50.)
 
 Greens carry no type, and what one turns out to be is rolled where it is
 picked up, from what that hull could ever hold. Typing them at spawn filled
@@ -2142,3 +2143,60 @@ client needs for presentation, not client telemetry as gameplay authority.
 **Reconsider if:** a concrete exploit survives server validation and depends on
 a stale downstream view. Fix that exploit at the authoritative rule it crosses,
 not by trusting a client receipt bitmap again.
+
+---
+
+## 50. A hull is a shape, and everything else is on the shelf
+
+**Status:** accepted
+
+Seven hulls carried a row apiece: how far each weapon climbed, which add-ons
+they could hold and how deep, how many of each charge they carried. Four things
+in those rows existed on exactly one hull. A second barrel was the Facet's, a
+third bomb rung the Anvil's, six mines the Lattice's, and the deepest rung of
+shrapnel belonged to whichever two hulls the table called bombers.
+
+Two problems, one cause. A shop cannot sell a trait that exists on one hull, so
+none of the four was ever for sale and the shelf was whatever the roster
+happened to allow rather than whatever the game has. And a kit was validated
+against three composing ceilings, one of them the hull's, so a pilot could buy a
+rung and then find the ship they wanted refused it. The shop's own source said
+so out loud: "a pilot who buys a rung their hull lacks has bought nothing they
+can slot on it."
+
+So the rows became one row for the arena, `sim_settings::kit_ceiling`, set from
+the union of what the seven allowed. `sim_kit_ceilings` takes settings rather
+than a class. `DoubleBarrel` becomes `SIM_MOD_BARREL`, an add-on that adds to
+the round count rather than multiplying it, keeps its own tight spacing, and
+charges energy without charging cooldown, which is the whole of its trade
+against multifire. Nobody is dealt a rung of it; it is the one add-on that is
+bought.
+
+Flight went the same way, in the shipped zone rather than in the core. The
+baseline has always given every hull one shared `flight` struct, following the
+original, where all eight ships fly identically. The melee zone was overriding
+it per hull, so the game people actually played did have a faster Apex. That
+override is gone, because a kit is thirty points and the match game rests on
+every pilot dealing the same thirty: with different floors per hull, thirty
+buys a different amount of ship depending on what you are sitting in, and the
+drill harness has seven baselines to measure against instead of one.
+
+What is left of a hull is its footprint. That is not a consolation prize: the
+collision box follows the heading and weapons test the oriented rectangle, so a
+Cipher turned side-on is a six-pixel target where facing it is twenty-two, and
+a Lattice is near square and can turn anywhere it fits. It is also the one
+advantage no shop could sell even if it wanted to, which is why hulls stay free
+and cosmetics live on the wake, the nameplate badge and the podium card.
+
+**Cost:** the roster is thinner. Seven silhouettes with identical engines is
+less differentiation than seven stat blocks, and the roles in `ships.md` are now
+names for shapes rather than for capabilities. Balance also moved without a
+referee: `match-game.md` promises a drill harness that benches anything winning
+more than 55% of matched bouts, and that harness measures bot behavior rather
+than kits, so the new ceilings are a guess like every price in the shop.
+
+**Reconsider if:** shapes turn out not to be enough to tell hulls apart in play.
+The answer then is more shape, not a stat table coming back: extents that vary
+more, or something a silhouette can express that a number cannot. Bringing
+per-hull flight back means giving up "everyone deals thirty", and that trade
+should be made deliberately rather than by adding a line to a zone file.

@@ -421,7 +421,7 @@ int KitCeilings(lua_State* L) {
 // What an account owns before it has bought anything, over the same space,
 // with 255 for a slot the account never limits.
 //
-// The hangar needs it because a kit is checked against the hull's row and the
+// The hangar needs it because a kit is checked against the arena's row and the
 // account's entitlements together, and a client with no meta-layer to ask has
 // to fall back to something. Falling back to "no limit" offered a mine to
 // pilots who cannot slot one, which the arena then refused: a page that offers

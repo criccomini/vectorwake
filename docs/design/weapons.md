@@ -160,9 +160,11 @@ half of the original to keep once a pilot chose their ship. The limit lived on
 the hull rather than in the pilot's hands, so the one weapon in the game that
 denies ground could not be traded for anything.
 
-What went with it: the chord, its touch cell, and `mine_max`. Lattice keeps
-its role through numbers rather than exclusivity, since its row slots six
-where another hull slots two.
+What went with it: the chord, its touch cell, and `mine_max`. Six mines was
+then the Lattice's row, which fixed the wrong half of the same problem: the
+limit had moved off the rack and onto the roster instead of into the pilot's
+hands. Six is the arena's ceiling for everyone now, the kind is something the
+shop sells, and the miner is whoever spends a fifth of their kit on mines.
 
 The count is the ordinary charge count, spent at the lay and not refilled
 until the next match. Dying does not clear your minefield, so what is already
@@ -340,8 +342,8 @@ tree needed.
 |---|---|---|
 | stat | steps from the hull's floor toward its ceiling | eight |
 | level | which rung of the trigger's ladder | the ladder's length |
-| add-on | how much of that add-on | the hull's row |
-| charge | how many you are carrying | the hull's row |
+| add-on | how much of that add-on | the arena's row |
+| charge | how many you are carrying | the arena's row |
 
 One shape, four meanings. A kit slot is one byte naming a place in that space:
 five stats, then a level per trigger, then an add-on per trigger per kind, then
@@ -447,7 +449,9 @@ shrapnel-loaded bomb still gets the bomb they threw.
 
 ### The matrix
 
-Each hull's row says how far it climbs and how far it may take each add-on.
+One row, for the arena, in `sim_settings::kit_ceiling`. It says how far each
+weapon climbs and how deep each add-on goes, and it says the same thing to
+every hull in the room.
 
 **Availability follows the original; ceilings are ours.** `MultiFire`,
 `BouncingBullets`, `Proximity` and `Shrapnel` appear nowhere in the original's
@@ -455,32 +459,45 @@ per-ship config: they are `[PrizeWeight]` entries any ship can be handed. Its
 per-ship differentiation is a short list of flags and counts, and the ones that
 bear on this are `MaxBombs` (3 on the Leviathan, 2 elsewhere), `ShrapnelMax` (8
 everywhere, 31 on the Shark), `BombBounceCount` (1 on the Lancaster alone) and
-`DoubleBarrel` (the Terrier alone). So a bomber is not the hull that *may* hold
-shrapnel. It is the hull that holds more of it than anyone.
+`DoubleBarrel` (the Terrier alone).
 
-Barrels are not on the matrix, because they are neither a ladder nor an add-on.
-The Facet fires two and every other hull fires one.
+Those four were a row per hull here too, and they are not any more. A trait one
+hull holds is a trait the shop can never sell, so the deepest of each is the
+arena's ceiling and everything below it is a purchase. A bomber is not the hull
+that holds the most shrapnel; a bomber is a pilot who bought three rungs of it.
+See [ships.md](ships.md#the-tech-tree).
 
-| | gun | bomb | gun add-ons | bomb add-ons |
-|---|---|---|---|---|
-| **Apex** interceptor | 2 | 1 | multi, bounce | prox, shrapnel ×2 |
-| **Wedge** bomber | 1 | 2 | multi, bounce | prox ×2, shrapnel ×3 |
-| **Chord** skirmisher | 2 | — | multi ×2, bounce, freeze | |
-| **Anvil** heavy | 1 | 3 | multi, bounce | prox ×2, shrapnel ×3 |
-| **Cipher** stealth | 3 | 1 | multi, bounce | prox, shrapnel ×2 |
-| **Facet** brawler | 2 | 1 | multi ×2, bounce | prox, shrapnel ×2 |
-| **Lattice** denial | 1 | 2 | multi, bounce | prox, shrapnel ×2, bounce ×2, repel ×2 |
+Barrels are on the matrix now. `DoubleBarrel` was the one weapon setting with
+no home in this space, being neither a ladder nor an add-on, and it stayed a
+flag on one hull for exactly as long as that was true. It is `SIM_MOD_BARREL`:
+an add-on that adds to the round count rather than multiplying it, keeps its
+own tight spacing, and charges energy without charging cooldown. That last part
+is the whole difference from multifire, which charges both: a fan throws more
+and slows you down, a pair throws fewer at the rate you already had.
 
-**Freeze and repel are the exception**, and the only part of this table that is
-ours: the original has no such upgrade, so there is nothing to copy and they
-stay roster traits.
+| | rungs above the first | add-ons |
+|---|---|---|
+| **gun** | 2 | multi ×2, bounce, freeze, barrel ×2 |
+| **bomb** | 2 | prox, shrapnel ×3, bounce ×2, push ×2 |
 
-What would keep a hull out of the bombing business is not a list of forbidden
-items, it is having **no rack**. An add-on is a transform on a trigger, and a
-trigger that does not exist cannot be transformed. Every hull on the shipped
-roster carries one, so this is a rule for a zone that takes a rack away rather
-than a fact about any of them. Hull identity lives in the ladders, the
-ceilings and the flight model, which is where the original put it too.
+Those are the deepest each of the seven hull rows used to reach, so nothing was
+granted and nothing taken away when the rows collapsed into one. A Wedge could
+always hold three rungs of shrapnel; now anyone who buys them can.
+
+**Freeze and push are the exception**, and the only part of this table that is
+ours: the original has no such upgrade, so there is nothing to copy.
+
+**A trigger's add-ons stay a trigger's.** Bullets do not carry a fuse and do
+not break up, because a bullet with a proximity fuse is a bomb and that weapon
+already exists. Bombs do not fan and do not come in pairs, because a rack that
+throws three at a pull is a different game. Those four are zeroes in the
+arena's row, and a zero is a slot that does not exist: it is not on the shelf
+and it is not in the hangar.
+
+The other way a weapon goes missing is having **no rack**. An add-on is a
+transform on a trigger, and a trigger that does not exist cannot be
+transformed. Every hull on the shipped roster carries one, so this is a rule
+for a zone that takes a rack away rather than a fact about any of them.
 
 **Charges are not on this matrix**, and that is the original's rule rather than
 an omission -- see below.
@@ -494,12 +511,12 @@ everyone can see.
 
 Nothing rolls. A pilot spends thirty points in the hangar, one per step, and
 the ship is dealt that kit at every spawn: stats, rungs, add-ons and charge
-counts, inside the hull's own row. The space above is the coordinate system
+counts, inside the arena's own row. The space above is the coordinate system
 that kit is written in, which is why it survived the pickup being deleted
 whole. [match-game.md](match-game.md) has the budget and what rivets buy.
 
 Two properties the pickup used to provide are now structural rather than
-tuned. A pilot cannot hold what their hull has no ladder for, because the
+tuned. A pilot cannot hold what the arena has no ladder for, because the
 ceiling is checked where the kit is dealt rather than where a green is rolled.
 And what a death costs is the walk back, because the frame is re-dealt from
 something the pilot owns.
@@ -522,18 +539,21 @@ first place.
 Four kinds, zone-wide, so slot two means the same weapon for everybody and a
 zone can weight "the odds of finding a burst".
 
-**Every hull may carry three of every charge.** That is the original's rule:
+**Everybody may carry three of every charge**, and six mines. That is the
+original's rule, give or take the mine:
 `RepelMax`, `BurstMax`, `DecoyMax`, `ThorMax`, `BrickMax`, `PortalMax` and
 `RocketMax` are all 3 on all eight of its ships, and every ship starts holding
 none of them. Charges are not a roster trait there; they are loot, and the
 hull does not gate them.
 
-The ceiling is still a per-class field, so a zone that wants charges to be a
-trait can say so and the core will honour it -- but the shipped roster does
-not. Two reasons:
+The ceiling is the arena's, and it is six for mines rather than three: that
+was the Lattice's row, and it is everybody's now. Charges are not a hull trait
+here for the same reason nothing else is, plus one of their own:
 
-- **Hull identity already has three carriers** -- the ladders, the add-ons,
-  and the flight model. A fourth buys little and costs the thing below.
+- **A hull carries no traits at all.** Ladders, add-ons and flight are the
+  arena's; the hull is a footprint. A trait one hull holds is a trait the shop
+  cannot sell, which is what made the roster's version of this a dead end. See
+  [ships.md](ships.md#the-tech-tree).
 - **A mixed inventory is the whole point of the cycle key.** An earlier roster
   gave each hull exactly one kind, which meant nobody could ever hold two,
   which meant the key that cycles them and the pad that draws them could never
@@ -542,7 +562,7 @@ not. Two reasons:
 The consequence to know: a charge is a point like any other, so a pilot who
 wants six of them buys six by giving up six steps of something else. What used
 to be an odds question is a budget question, and the number to move if the
-arena starts feeling like a fireworks display is the hull's row rather than a
+arena starts feeling like a fireworks display is the arena's row rather than a
 weight.
 
 **Which one is ready is not simulation state.** The client picks a slot and
@@ -594,22 +614,27 @@ ladder has to be able to rank pilots.
 ### Writing a tree
 
 Rungs above the first are named for their level, so a zone tunes them the same
-way it tunes anything else, and a hull's row is two inline tables:
+way it tunes anything else, and the ceilings are one section:
 
 ```toml
 [[arena.weapons]]
-name = "anvil-bomb-3"     # the Anvil's third rung
+name = "anvil-bomb-3"     # the third bomb rung, which every hull climbs to
 blast = 96
 
 [arena.mod_step]          # what one rung of each add-on is worth
 freeze = 250              # ticks
 prox = 24                 # px of fuse
 
-[[arena.ships]]
-name = "Anvil"
-bomb_mods = { shrapnel = 3, prox = 1 }
-gun_mods = { multi = 1 }
+[arena.kit]               # and how many rungs of each a kit may hold
+gun_mods = { multi = 2, bounce = 1, freeze = 1, barrel = 2 }
+bomb_mods = { prox = 1, shrapnel = 3, bounce = 2, push = 2 }
+charges = [3, 3, 6]       # repels, bursts, mines
 ```
+
+An add-on left out of a map that names any is a slot this arena does not have,
+which is how "bombs do not fan here" gets said. Leaving the section out
+entirely keeps the baseline's, which is the union of what the seven hull rows
+used to allow.
 
 ## What is deliberately out
 

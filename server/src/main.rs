@@ -3065,12 +3065,13 @@ mod tests {
         );
     }
 
-    /// A kit is checked twice: against the hull's row, which is the roster
-    /// expressing itself, and against what the account owns, which is what the
-    /// shop has sold. The smaller of the two wins, and a kit outside either is
-    /// refused whole.
+    /// A kit is checked twice: against the arena's row, which is what this zone
+    /// has, and against what the account owns, which is what the shop has sold.
+    /// The smaller of the two wins, and a kit outside either is refused whole.
+    ///
+    /// Twice, not three times. The hull used to be one of the ceilings.
     #[test]
-    fn a_kit_has_to_fit_the_hull_and_the_account() {
+    fn a_kit_has_to_fit_the_arena_and_the_account() {
         let mut a = room_with_teams("teams = [\"Keel\"]\n");
         let ship = seat_human(&mut a, "pilot");
         let base = a.kit_ceiling(ship);
@@ -6013,7 +6014,7 @@ mod tests {
         let sp = w.cfg.specs[p.spec as usize];
         assert_eq!((sp.on_wall, sp.bounces), (1, 3), "the bomb bounces now");
         assert!(sp.blast > 0, "and is otherwise still the bomb");
-        // Nobody else's weapon moved: each hull's rows are its own.
+        // Nobody else's weapon moved: a ladder is still named per hull.
         let (_, apex) = gun(&w, ai::class_index("Apex").unwrap());
         assert_eq!(apex.on_wall, 0);
     }

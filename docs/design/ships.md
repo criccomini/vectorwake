@@ -1,8 +1,19 @@
 # Ships
 
-Seven classes covering the archetypes that thirty years of play proved out:
-interceptor, bomber, skirmisher, heavy, stealth, brawler, and area denial.
-The roles are inherited because they work. The ships are ours.
+Seven hulls, and a hull is a shape. They fly alike, they climb alike and they
+hold alike; what one has that another does not is the rectangle it presents to
+a bullet. Everything else a pilot flies with is bought, chosen, and the same
+thirty points for everybody.
+
+That is a change from what this document used to say, and the reasoning is
+under [standard settings](#standard-settings) and [the tech
+tree](#the-tech-tree). The short version: a trait that lives on one hull is a
+trait the shop can never sell and a pilot can never choose, and the roster was
+carrying four of them.
+
+The role names survive as names for silhouettes. They are useful because a
+dart and a slab do play differently, and misleading if read as a stat block,
+which is what they used to be.
 
 Support was the eighth, and the Spire carried it. It is gone: see
 [decisions.md](../architecture/decisions.md). The role is not disowned, it is
@@ -15,36 +26,50 @@ at radar scale, which is where most ship names actually get used.
 
 ## The roster
 
-| Class | Role | Reads as |
-|---|---|---|
-| **Apex** | Interceptor | A swept dart, wings back far enough to clear its own engines. Fastest and sharpest turn in the game |
-| **Wedge** | Bomber | A wide delta with a lit bomb bay down the spine. Fires bombs on a flat, fast trajectory |
-| **Chord** | Skirmisher | A shallow bow with a sensor housing at the middle. Sustained fire and detection |
-| **Anvil** | Heavy | A blunt slab with two tubes on a flat bow face. Slow, enormous energy, level 3 bombs |
-| **Cipher** | Stealth | A knife, and the only hull that draws dim. Cloak, stealth, and the highest burst damage |
-| **Facet** | Brawler | A squat pentagon with two barrels out past the nose. Spread guns, lethal inside two tiles |
-| **Lattice** | Denial | A trussed cross with dispensers at the arm tips. Mines, bricks, and repels. Owns terrain |
+Reach past the nose, behind the tail, and to either side of the pivot, in
+pixels, measured off each hull's own drawing. These are the differences.
+
+| Class | Reads as | Nose | Tail | Beam |
+|---|---|---|---|---|
+| **Apex** | A swept dart, wings back far enough to clear its own engines | 20 | 11 | 20 |
+| **Wedge** | A wide delta with a lit bomb bay down the spine | 13 | 12 | 30 |
+| **Chord** | A shallow bow with a sensor housing at the middle | 13 | 5 | 34 |
+| **Anvil** | A blunt slab with two tubes on a flat bow face | 15 | 11 | 26 |
+| **Cipher** | A knife, and the only hull that draws dim | 22 | 12 | 12 |
+| **Facet** | A squat pentagon with two barrels out past the nose | 14 | 12 | 22 |
+| **Lattice** | A trussed cross with dispensers at the arm tips | 16 | 14 | 28 |
 
 ## Standard settings
 
-These are the defaults, the equivalent of the original's standard settings file.
-Every value is per-arena configuration; a zone that wants a fast Anvil sets a
-fast Anvil. Units follow [simulation-core.md](../architecture/simulation-core.md):
-speed and thrust in the Subspace-derived scales, rotation where 400 is one full
-turn per second, recharge in energy per second times ten.
+There is one row, and every hull is on it.
 
-| Class | Speed | Thrust | Rotation | Energy | Recharge | Guns | Bombs |
-|---|---|---|---|---|---|---|---|
-| Apex | 4900 | 30 | 420 | 1350 | 600 | L2 | L1 |
-| Wedge | 4400 | 22 | 340 | 1450 | 520 | L1 | L2 |
-| Chord | 4300 | 26 | 400 | 1500 | 700 | L1 multi | none |
-| Anvil | 3200 | 14 | 240 | 2600 | 380 | L1 | L3 |
-| Cipher | 4700 | 24 | 390 | 1100 | 480 | L3 | L1 |
-| Facet | 4200 | 27 | 410 | 1600 | 560 | L2 double | L1 |
-| Lattice | 3800 | 20 | 330 | 1900 | 500 | L1 | L2 mines |
+| Speed | Thrust | Rotation | Energy | Recharge |
+|---|---|---|---|---|
+| 3250 | 17 | 230 | 1700 | 1150 |
 
-Numbers are a starting point for M3, not a balance claim. They will be wrong,
-and the first playtest will say how.
+Those are ceilings; each stat also has a floor a fresh ship starts at and a
+step one kit slot adds, and all three are in `sim/src/baseline.c`. Units follow
+[simulation-core.md](../architecture/simulation-core.md): speed and thrust in
+the Subspace-derived scales, rotation where 400 is one full turn per second,
+recharge in energy per second times ten.
+
+A table of seven rows stood here, giving the Apex a 420 rotation against the
+Anvil's 240 and the Anvil a 2600 energy pool against the Cipher's 1100. It was
+never what the simulation did. `baseline.c` has carried one shared `flight`
+struct since it was written, for a reason it states plainly: all eight of the
+original's ships fly identically, and what tells them apart there is ten
+capability flags. The table was an intention nobody had implemented.
+
+It is not going to be implemented, either, and that is the decision worth
+writing down. A kit is thirty points and
+[match-game.md](match-game.md) rests on every pilot dealing the same thirty. If
+an Anvil started on 2600 energy and an Apex on 1350, thirty points would buy
+wildly different ships depending on what you were sitting in, and the drill
+harness would have seven baselines to measure a change against instead of one.
+Uniform flight is what makes a kit a fair trade.
+
+So a hull is a shape. See [the footprint](#size-and-shape) below, which is
+where the roster actually lives.
 
 ## Size and shape
 
@@ -97,71 +122,99 @@ drift apart again, and the sim's own tests hold the diagonal ceiling.
 
 ## What each ship is for
 
-**Apex** catches things. Highest top speed, highest thrust, sharpest turn, and
-an energy pool thin enough that a single mistake ends it. It exists to punish
-players who are out of position, and it dies to anything it cannot outrun.
+Every hull flies alike, climbs alike and holds alike. What differs is the
+rectangle it puts between a bullet and the pilot, and because weapons test the
+oriented rectangle rather than a box drawn around it, that rectangle is a real
+number in a real fight. Turning side-on in a Cipher shows six pixels where
+facing shows twenty-two; turning side-on in a Chord shows seventeen.
 
-**Wedge** throws bombs on a flat trajectory at speed. Where a heavy bomber lobs,
-the Wedge fires straight, which makes it lethal down a corridor and useless in
-the open. It turns badly on purpose.
+So the roles below are read off the shapes rather than off a settings table.
+They are how the hull plays, not what it is issued.
 
-**Chord** puts a lot of weak bullets in the air and sees more than anyone. It
-wins fights by attrition and by information: X-radar and detection let it find
-cloaked ships, and its recharge lets it keep firing when others stop. It cannot
-finish anything quickly.
+**Apex** is a dart: a long nose, narrow flanks, very little behind the pivot.
+It is the hardest hull to thread through a gap diagonally, because the corner
+reach of a long thin box is what a corridor has to accommodate, and it is the
+easiest to point somewhere precisely.
 
-**Anvil** is a fortress that moves. It cannot outrun or outturn anything, but
-two level 3 bombs kill any ship in the game, and its energy pool means shooting
-it is a commitment. Its low recharge is the price: every shot it takes is a
-long time coming back.
+**Wedge** is broad across the beam and short down the nose. Coming at you it is
+one of the largest targets on the roster; from the side it is one of the
+shorter ones. A Wedge that keeps its nose to the fight is choosing to be seen.
 
-**Cipher** kills one target and leaves. Cloak and stealth get it into position,
-level 3 guns end a fight in a burst, and its energy pool means the second fight
-kills it. Playing it well is about patience; playing against it is about
-denying position.
+**Chord** is wider than it is long, and nearly all of that width is in front of
+the pivot. It has the largest side profile in the game and the shortest tail,
+which makes it quick to turn in place and difficult to hide behind anything.
 
-**Facet** wins inside two tiles and loses outside them. Double-barrel spread
-guns make it the strongest ship in a tunnel and the weakest in the open. It
-gives new players something honest to learn: get close, or die.
+**Anvil** is the even one. No face is much thinner than another, so nothing
+about how you are pointing changes how big a target you are. That sounds like a
+disadvantage and mostly is; what it buys is a hull with no bad angle to be
+caught at.
 
-**Lattice** shapes the map. Mines, bricks that become temporary walls, and
-repels that push everything away. It scores less than anything else and decides
-more fights than its stats suggest, which is a role type the original proved
-players love once they find it.
+**Cipher** is the knife: the longest and by a wide margin the thinnest. Six
+pixels of beam is a third of a Chord's. Played side-on it is the hardest thing
+in the game to hit and the easiest to lose track of your own facing in, since
+the difference between presenting six pixels and twenty-two is one turn.
 
-The repel here is the **add-on** -- the one that welds a shove onto Lattice's
-own bombs, and the one thing on the matrix nobody else can hold. The repel you
-*carry and spend* is a charge, and every hull gets three of those; see
-[weapons.md](weapons.md#charges). Two things called repel, one mechanic, and
-only one of them is a roster trait.
+**Facet** is the smallest target on the roster from any angle. It gives new
+players something honest: nothing about it is conditional, and it is simply
+harder to hit than the ship next to it, whichever way either of them is
+pointing.
+
+**Lattice** is near square and near flush, which means it can turn anywhere it
+fits. Every other hull has an orientation it cannot rotate out of in a
+three-tile corridor; this one does not.
 
 ## The tech tree
 
-Each hull's row also says how far its weapons climb and which add-ons it may
-ever hold. Levels and add-ons are different things -- one is the same weapon
-harder, the other changes its character -- and the matrix is in
-[weapons.md](weapons.md#the-tech-tree). It is the half of the roster that only
-shows up once greens are flying: without it, luck with the prize table would
-turn every hull into the same hull by the end of a round.
+It is not the roster's. Every hull may hold everything the arena has, to the
+same depth, and what a pilot flies is what they chose to spend thirty points on
+plus what their account has bought. The matrix is in
+[weapons.md](weapons.md#the-tech-tree) and the ceilings are one row in
+`sim_settings::kit_ceiling`.
+
+This is a change, and it is the reason the sections above no longer talk about
+bomb racks and barrel counts. A row per hull said which add-ons that hull could
+hold and how deep: shrapnel to three on the bombers, multifire to two on the
+spread hulls, six mines on the denial hull, a second barrel on the brawler
+alone, a third bomb rung on the heavy alone. Four of those were the whole of
+what made those hulls what they were, and all four had the same defect. A shop
+cannot sell a trait that exists on one hull, so none of them could ever be
+bought; and a pilot who bought a rung anyway would find the hull they wanted to
+fly it on refused it.
+
+They are slots now, on the same shelf as everything else. What was the
+brawler's barrel is `SIM_MOD_BARREL`, an add-on anybody may buy two rungs of.
+What was the heavy's third bomb rung is a rung on a ladder every hull climbs.
+Six mines is what the arena allows anyone willing to spend a fifth of their kit
+on mines. See [match-game.md](match-game.md#the-shop).
 
 ## Design rules that hold across the roster
 
-No ship is good at everything, and every ship beats something. A player who
-loses to a class should be able to name the counter.
+No ship is good at everything, and every ship beats something. That used to be
+a claim about stat blocks and is now a claim about geometry: a hull with a thin
+side has a fat front, and a hull with no bad angle has no good one either. A
+player who loses to a shape should be able to say which way to have been
+pointing.
 
 Every class is identifiable by silhouette alone at radar scale. Shape carries
-class and color carries team, per [identity.md](identity.md).
+class and color carries team, per [identity.md](identity.md). This matters more
+than it did: the silhouette is no longer a label for a stat block, it is the
+stat block.
 
 A hull's detail earns its place by saying something the silhouette cannot. The
-canopy says which end is the front. A hardpoint is drawn where the class
-actually fires from, so the Facet's double barrels and the Anvil's two bomb
-tubes are visible facts rather than table entries. Panel lines say a ship is
-built out of parts. Anything that is decoration alone belongs on a hull that
-needs one of those three things instead.
+canopy says which end is the front. A hardpoint is drawn where a weapon
+actually leaves the ship. Panel lines say a ship is built out of parts.
+Anything that is decoration alone belongs on a hull that needs one of those
+three things instead.
 
-Specials are role-defining rather than universal. Cloak belongs to Cipher, and a
-zone that hands cloak to everything has made a different game, which is allowed
-and is exactly what configuration is for.
+A hardpoint is not a claim about what the ship carries. The brawler is drawn
+with two barrels out past the nose because that is the shape it has always
+had; whether it fires two rounds is a question about the pilot's kit, and any
+hull that buys a rung of barrels fires two.
+
+Nothing is exclusive to a hull. Not an add-on, not a rung, not a charge kind.
+A trait one hull has is a trait the shop cannot sell and a pilot cannot choose,
+which was true of four of them until it was fixed. If a role seems to need
+exclusivity, the role is asking to be a purchase.
 
 Ship performance comes from settings, never from code. If a class needs a
 mechanic the settings cannot express, either the settings are missing something
@@ -169,8 +222,12 @@ or the class is wrong.
 
 ## Open questions
 
-Whether Chord and Facet are distinct enough in practice, or whether sustained
-fire and close-range spread collapse into the same playstyle.
+Whether a shape is enough. Seven silhouettes with identical engines is a
+thinner roster than seven stat blocks, and the bet is that a hitbox you can
+see and turn is a more legible difference than a rotation number you cannot.
+If it turns out not to be, the answer is more shape rather than a stat table
+coming back: extents that vary more, or something a shape can express that a
+number cannot.
 
 Whether gunners earn their place is answered, and the answer is no. It was
 built, every hull carried five, and a playtest settled it the way this

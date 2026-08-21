@@ -39,7 +39,7 @@ comes back to the row, and left and right on a row set that row's value.
 ```
 vectorwake
 ├ play        the modes a directory is running, and how busy each one is
-├ hangar      seven hulls, and the thirty points a chosen one spends
+├ hangar      seven shapes, and the thirty points you spend on one
 ├ shop        what rivets buy: slots, never strength
 ├ standings   the week, resetting Monday
 ├ pilot       your call sign, your account, your career
@@ -124,9 +124,16 @@ big centered lines step aside, since they sit exactly where the menu does.
 ## Changing hull is a front-end act
 
 The hull is locked for a match, so the hangar is a place you stand between
-them: pick a hull, spend its thirty points, and arrive in that ship at the
-next spawn. What the hangar saves is a kit per hull, which is why the two
-questions are one page and not two.
+them: pick a hull, spend your thirty points, and arrive in that ship at the
+next spawn.
+
+What the hangar saves is a kit per hull, and that is a convenience now rather
+than a requirement. It used to be neither: a kit was checked against the hull's
+own row, so the same thirty points bought a different ship on a Chord than on
+an Anvil and the two questions could not be asked apart. The rows are gone
+(see [ships.md](ships.md#the-tech-tree)), so any kit is legal on any hull, and
+saving one per hull is just a place to keep the build you like flying that
+shape with.
 
 `sim_set_ship_class` still puts a pilot in a different hull in place, and the
 zone protocol still carries the change, because that is how a seat is dealt

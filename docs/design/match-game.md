@@ -211,13 +211,21 @@ costs exactly one:
 | kind | ceiling |
 |---|---|
 | a step of a stat | six over five stats, and eight once bought |
-| a rung of a trigger's ladder | the hull's row |
-| an add-on on a trigger | the hull's row |
-| a charge carried | the hull's row |
+| a rung of a trigger's ladder | the arena's row |
+| an add-on on a trigger | the arena's row |
+| a charge carried | the arena's row |
+
+**Two ceilings, and neither is the hull.** The arena says what it has; the
+account says what it has bought; the smaller wins, inside the budget. There
+used to be a third, a row per hull saying which add-ons that hull would hold
+and how deep, and it is gone. It meant a pilot could buy an upgrade and then
+find the ship they wanted to fly it on would not take it, and it meant four
+traits could never be sold at all because they existed on one hull each. See
+[ships.md](ships.md#the-tech-tree).
 
 **Everyone deals thirty**, new pilot and veteran alike. A new account gets a
-sensible starter kit per hull, worth the same thirty. What rivets buy is
-*which* upgrades you may slot, never how many.
+sensible starter kit, worth the same thirty. What rivets buy is *which*
+upgrades you may slot, never how many.
 
 **Six a stat is exactly the budget**, and that is the reason for the number.
 Five stats at six steps is thirty, so a pilot can take every stat to its base
@@ -293,8 +301,10 @@ thirty, and the drill harness is the referee: anything that wins more than
 to the bench.
 
 - **Depth on a stat**, its seventh and eighth step.
-- **Add-ons and rungs** your hull's row allows but your account has not
-  bought.
+- **Add-ons and rungs** the arena allows but your account has not bought. That
+  is all of them now, which it was not: barrels, the third bomb rung, the
+  deepest rung of shrapnel and the mine count used to be the roster's, and a
+  shop cannot sell a thing that exists on one hull.
 - **Charge kinds** beyond the two everybody starts with.
 - **Livery.** Decoration, under the art direction's law: hull paint is the
   team read and weapon hues are semantic bands, so livery lives on the wake,
@@ -320,10 +330,11 @@ bring is a loadout decision priced against everything else.
 
 Two changes ride along. A mine currently wears its layer's bomb rung, and a
 charge fires one pattern that means the same thing to everybody, so mines
-standardize. And Lattice keeps its role through numbers rather than
-exclusivity: its row slots six where another hull slots two. The carried
-count is the limit now, and `mine_max` went with the Shift+Tab chord and its
-touch cell.
+standardize. And the mining role stops belonging to a hull. Six mines was the
+Lattice's row, which was exactly the shape of problem this whole space was
+flattened to fix: six is the arena's ceiling now, the kind is a purchase, and
+whoever is willing to spend a fifth of their kit on mines is the miner.
+`mine_max` went with the Shift+Tab chord and its touch cell.
 
 ## Friends
 

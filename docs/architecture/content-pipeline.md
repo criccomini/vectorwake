@@ -118,8 +118,8 @@ sprites in a dedicated layer.
 ## What is built, and what it looks like
 
 The plan above is the destination. What exists is `zone/zone.toml`: one file,
-re-read while running, carrying the arena's scalars, per-hull tuning, and the
-weapon tables by name -- `[[arena.weapons]]`, documented in
+re-read while running, carrying the arena's scalars, its kit ceilings, each
+hull's footprint, and the weapon tables by name -- `[[arena.weapons]]`, documented in
 [design/weapons.md](../design/weapons.md). Applying it rebuilds from the
 baseline first, so the arena means the file as it stands rather than every
 version of it since boot.
