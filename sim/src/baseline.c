@@ -45,13 +45,11 @@ typedef struct {
      * Terrier's actual behavior and we get it for nothing. */
     uint8_t gun_barrels;
     uint16_t gun_mods, bomb_mods;
-    /* How many of each charge, by slot: repel, burst. RepelMax and BurstMax
-     * are 3 on all eight of the original's ships and none of them starts
-     * holding any. */
+    /* How many of each charge a kit may slot on this hull, by kind: repel,
+     * burst, mine. RepelMax and BurstMax are 3 on all eight of the original's
+     * ships; MaxMines is 5 on all eight of them, and as a charge that ceiling
+     * is what makes mining a hull's job rather than everybody's. */
     uint8_t charges[SIM_MAX_CHARGES];
-    /* MaxMines: how many of this hull's may lie about at once. Nothing else
-     * limits mines, since a pilot has them for as long as they have a rack. */
-    uint8_t mines;
 } class_row;
 
 /* Flight, identical on every hull, straight off the original's ship files.
@@ -73,15 +71,6 @@ static const sim_class_units flight = {
     200,   40,  230,      /* rotation */
     1000, 100, 1700,      /* energy */
     400,  166, 1150,      /* recharge */
-    /* Gunners, and what carrying them costs: TurretLimit, TurretThrustPenalty
-     * and TurretSpeedPenalty, which the original gives every one of its eight
-     * ships identically. Five riders, one of seventeen thrust and 12.5 px/s
-     * off the top, charged once however many are aboard.
-     *
-     * Every hull carrying is the original's default and it is the right one
-     * to inherit: a zone that wants a single carrier sets the others to zero,
-     * which is how the zones with a single carrier did it. */
-    5, 1, 125,
 };
 
 /* The weapons, also identical on every hull, from the same files and the
@@ -201,39 +190,39 @@ static const class_row rows[SIM_MAX_CLASSES] = {
        started at L2 where everyone else started at L1, and this core has no
        equivalent: every hull spawns on the bottom rung and climbs by green.
 
-       Five mines apiece, which is MaxMines in the original's own vanilla
-       settings: five on all eight of its ships, so this is one of the numbers
-       that does *not* vary by hull there and the roster does not differentiate
-       on it here either. Twenty is the highest the setting may be set to and
-       is nobody's value; a zone is where a hull becomes the mining one.
+       Charges are three repels, three bursts and three mines, except on
+       Lattice, whose six is what makes it the hull that owns ground. Five
+       was MaxMines on all eight of the original's ships, where a mine cost
+       nothing to carry; as a slot in a thirty point kit it is priced against
+       everything else a pilot could bring instead.
 
-       gun  bomb  barrels  gun add-ons  bomb add-ons   repel burst   mines */
-    {3, 2, 1, GUN_ALL, BOMB_ALL,                           {3, 3, 0, 0}, 5},
+       gun  bomb  barrels  gun add-ons  bomb add-ons  repel burst mine */
+    {3, 2, 1, GUN_ALL, BOMB_ALL,                           {3, 3, 3, 0}},
     /* Wedge and Anvil are the bombers, so they are the hulls that hold the
        most shrapnel, which here is a deeper rung on the add-on rather than
        the count the original's ShrapnelMax is. */
     {3, 2, 1, GUN_ALL,
-     M1(SIM_MOD_PROX) | M3(SIM_MOD_SHRAPNEL),              {3, 3, 0, 0}, 5},
+     M1(SIM_MOD_PROX) | M3(SIM_MOD_SHRAPNEL),              {3, 3, 3, 0}},
     /* Spread is Chord's and freeze is ours: neither has a setting in the
        original, so add-on ceilings are where our roster still lives. */
     {3, 2, 1, M2(SIM_MOD_MULTI) | M1(SIM_MOD_BOUNCE) | M1(SIM_MOD_FREEZE),
-     BOMB_ALL,                                             {3, 3, 0, 0}, 5},
+     BOMB_ALL,                                             {3, 3, 3, 0}},
     /* The Leviathan: MaxBombs 3. */
     {3, 3, 1, GUN_ALL,
-     M1(SIM_MOD_PROX) | M3(SIM_MOD_SHRAPNEL),              {3, 3, 0, 0}, 5},
-    {3, 2, 1, GUN_ALL, BOMB_ALL,                           {3, 3, 0, 0}, 5},
+     M1(SIM_MOD_PROX) | M3(SIM_MOD_SHRAPNEL),              {3, 3, 3, 0}},
+    {3, 2, 1, GUN_ALL, BOMB_ALL,                           {3, 3, 3, 0}},
     /* Facet carries the Terrier's DoubleBarrel, the one hull that fires two
        abreast for one pull. The multifire ceiling of two is Chord's as well,
        so the barrels are what actually tell the two spread hulls apart: the
        Chord has to find greens to fan at all, and the Facet is already
        throwing a wall of lead the moment it spawns. */
     {3, 2, 2, M2(SIM_MOD_MULTI) | M1(SIM_MOD_BOUNCE), BOMB_ALL,
-                                                           {3, 3, 0, 0}, 5},
+                                                           {3, 3, 3, 0}},
     /* Lattice is the Lancaster: BombBounceCount is 1 on that ship and 0 on
        every other, so bombs that come back off a wall are its alone. Push is
        ours and stays with it for the same reason. */
     {3, 2, 1, GUN_ALL,
-     BOMB_ALL | M2(SIM_MOD_BOUNCE) | M2(SIM_MOD_PUSH),     {3, 3, 0, 0}, 5},
+     BOMB_ALL | M2(SIM_MOD_BOUNCE) | M2(SIM_MOD_PUSH),     {3, 3, 6, 0}},
 };
 #undef GUN_ALL
 #undef BOMB_ALL
@@ -290,13 +279,6 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
      * One a second to a field of two dozen is what the shipped zones already
      * ask for. Shared among a roster it is a green each every ten seconds or
      * so: worth turning for, not worth ignoring. */
-    cfg->prize_delay = 100;
-    cfg->prize_max = 24;
-    cfg->prize_life = 3000;   /* 30 s */
-    /* The green's drawn diamond reaches about seven pixels from its center.
-     * Treat that visible body as the pickup padding, so its outline has to
-     * meet the hull instead of disappearing across an invisible gap. */
-    cfg->prize_radius = 7 * 256;
     cfg->flag_radius = 18 * 256;
     cfg->flag_drop_cooldown = 200;
     /* Sixty-four is four times what the original aimed a public room at:
@@ -316,8 +298,6 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
      * it matters, is sending a client only the greens near it -- which is
      * interest management, a feature rather than a number, and the same
      * answer for every other thing a 1024-tile map has too many of. */
-    cfg->prize_lo = 8;
-    cfg->prize_hi = 1015;
     cfg->map = map;
     /* Doors breathe on a six second cycle, open for four of it: long enough
      * to commit to a crossing, short enough that the choice matters. */
@@ -349,33 +329,13 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
      * Rust is the number to tune first. One green in a hundred takes
      * something back, and it can only take what you are holding, so it costs
      * a loaded pilot and never touches one who has just spawned. */
-    cfg->prize_weight[SIM_PRIZE_STAT(SIM_UP_ENERGY)] = 40;    /* Energy */
-    cfg->prize_weight[SIM_PRIZE_STAT(SIM_UP_RECHARGE)] = 40;  /* QuickCharge */
-    cfg->prize_weight[SIM_PRIZE_STAT(SIM_UP_SPEED)] = 40;     /* TopSpeed */
-    cfg->prize_weight[SIM_PRIZE_STAT(SIM_UP_THRUST)] = 40;    /* Thruster */
-    cfg->prize_weight[SIM_PRIZE_STAT(SIM_UP_ROTATION)] = 40;  /* Rotation */
-    for (int t = 0; t < SIM_TRIG_COUNT; t++) {
-        /* Gun=25, Bomb=25 */
-        cfg->prize_weight[SIM_PRIZE_LEVEL(t)] = 25;
-        cfg->prize_weight[SIM_PRIZE_MOD(t, SIM_MOD_MULTI)] = 30;    /* MultiFire */
-        cfg->prize_weight[SIM_PRIZE_MOD(t, SIM_MOD_BOUNCE)] = 25;   /* BouncingBullets */
-        cfg->prize_weight[SIM_PRIZE_MOD(t, SIM_MOD_PROX)] = 25;     /* Proximity */
-        cfg->prize_weight[SIM_PRIZE_MOD(t, SIM_MOD_SHRAPNEL)] = 30; /* Shrapnel */
-        cfg->prize_weight[SIM_PRIZE_MOD(t, SIM_MOD_FREEZE)] = 25;   /* ours */
-        cfg->prize_weight[SIM_PRIZE_MOD(t, SIM_MOD_PUSH)] = 25;     /* ours */
-    }
-    cfg->rust_chance = 10;
-    /* Thirty greens in hand the moment a ship spawns. A fight between two
-     * empty ships is the least interesting fight in the game, and without
-     * this it is the one every match opens with and the one every death
-     * returns you to. A zone that wants pilots to earn it all sets zero. */
-    cfg->spawn_prizes = 30;
-    /* A kill is worth three bounty to the killer, so a pilot on a streak
-     * becomes a target without having touched a green -- and a flag carrier
-     * is worth crossing the map for. The original's reference zone used six
-     * and a hundred; three keeps the number over a ship mostly a readout of
-     * what they are carrying, which is what the tech tree made it. */
-    cfg->bounty_per_kill = 3;
+    /* A fresh pilot is worth one and each kill adds one, so the number over
+     * a ship is the length of its current run and nothing else. Killing
+     * somebody who just spawned pays almost nothing, which is the free
+     * anti-farming property bounty.md wants: no repeat-kill decay, no timer,
+     * no rule about camping, just a price that starts at the floor. */
+    cfg->bounty_base = 1;
+    cfg->bounty_per_kill = 1;
     cfg->points_per_flag = 100;
 
     /* What one rung of each add-on is worth, in the units of the field it
@@ -551,18 +511,7 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
         bf.spacing = 65536 / 24;
         cfg->charge[1] = (uint8_t)sim_add_pattern(cfg, &bf);
 
-        cfg->charge[2] = SIM_NO_PATTERN;
         cfg->charge[3] = SIM_NO_PATTERN;
-        /* Repel=70 and Burst=70, and they are the two heaviest entries in the
-         * original's table by a distance -- almost twice a stat. A charge is
-         * the green you are pleased to see, which is a thing the odds say
-         * rather than the item. The two slots this zone does not use are
-         * zero; a weight is the only thing that keeps a prize out of a pool
-         * the hull would otherwise accept. */
-        cfg->prize_weight[SIM_PRIZE_CHARGE(0)] = 70;
-        cfg->prize_weight[SIM_PRIZE_CHARGE(1)] = 70;
-        cfg->prize_weight[SIM_PRIZE_CHARGE(2)] = 0;
-        cfg->prize_weight[SIM_PRIZE_CHARGE(3)] = 0;
     }
 
     /* The mine: the bomb you leave behind you.
@@ -610,11 +559,10 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
         mn.expire_ends = 1;
         mn.trigger = 2 * 16 * 256;
         mn.damage = sim_units_energy(BOMB_DAMAGE);
-        /* The rung the pilot's bombs are on, since one pattern serves every
-         * rung. Base plus one step per rung is the bomb ladder's own
-         * arithmetic, so a rung 3 mine makes a rung 3 bomb's hole. */
+        /* One hole for everybody. A mine used to wear the layer's bomb rung,
+         * which is what a bomb-trigger posture meant; a charge fires one
+         * pattern for every pilot who carries it, so a mine is a mine. */
         mn.blast = BOMB_BLAST * 256;
-        mn.blast_up = BOMB_BLAST * 256;
         mn.splinter = SIM_NO_PATTERN;
         sim_fire_pattern mf;
         memset(&mf, 0, sizeof mf);
@@ -623,7 +571,7 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
         mf.energy = sim_units_energy(MINE_ENERGY);
         mf.energy_up = sim_units_energy(MINE_ENERGY_UP);
         mf.delay = MINE_DELAY;
-        cfg->mine = (uint8_t)sim_add_pattern(cfg, &mf);
+        cfg->charge[SIM_CHARGE_MINE] = (uint8_t)sim_add_pattern(cfg, &mf);
     }
 
     for (int i = 0; i < SIM_MAX_CLASSES; i++) {
@@ -637,7 +585,6 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
         c->mod_max[SIM_TRIG_BOMB] = r->bomb_mods;
         for (int k = 0; k < SIM_MAX_CHARGES; k++)
             c->charge_max[k] = r->charges[k];
-        c->mine_max = r->mines;
 
         /* A ladder per trigger. A gun rung adds BulletDamageUpgrade, flat,
          * which is what the original's help says it is: "amount of extra

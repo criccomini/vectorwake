@@ -32,20 +32,6 @@ extern "C" {
  * against 13.5. See docs/architecture/hosting.md. */
 #define SIM_MAX_SHIPS 255
 #define SIM_MAX_WEAPONS 1024
-/* Greens alive at once. The snapshot writes a u8 index and a u8 count, so
- * 255 is the wire's ceiling and not an arbitrary one. */
-#define SIM_MAX_PRIZES 255
-
-/* Where a green appears, in tiles from a live pilot: outside the first so it is
- * a trip rather than a gift, inside the second so it lands on their radar,
- * whose reach is thirty tiles either way.
- *
- * Raising `prize_max` is not the alternative it looks like. Placed uniformly, a
- * thousand-tile map needs thousands of greens before one is reliably inside the
- * sixty tiles a pilot can see, and the wire ceiling is 255. Placing them where
- * the people are costs no extra state at all. */
-#define SIM_PRIZE_NEAR_LO 6
-#define SIM_PRIZE_NEAR_HI 28
 #define SIM_MAX_FLAGS 16
 #define SIM_TEAM_NONE 255
 #define SIM_MAX_EVENTS 256
@@ -77,15 +63,6 @@ extern "C" {
  * Edge-triggered inside the core rather than pulsed by the client, so a lost
  * input cannot leave the two ends disagreeing about a piece of ship state. */
 #define SIM_BTN_MULTI 0x0200u
-/* Lay a mine, which is the bomb trigger in its other posture.
- *
- * Its own button and not a charge slot, because a mine is not a thing you
- * carry a count of: you have mines because you have bombs, exactly as the
- * original has it -- there a mine is not a weapon type at all but a bomb with
- * one bit set, and the inventory its position packet carries lists bursts,
- * repels, thors and portals and no mines. What limits it is how many of yours
- * are already out, which is `mine_max` on the hull. */
-#define SIM_BTN_MINE 0x0400u
 #define SIM_BTN_SLOT_SHIFT 7
 #define SIM_BTN_SLOT_MASK 0x0180u
 #define SIM_BTN_SLOT(b) (((b) & SIM_BTN_SLOT_MASK) >> SIM_BTN_SLOT_SHIFT)
@@ -175,7 +152,7 @@ int sim_map_spawn(const sim_map *m, uint8_t team, uint32_t nth,
  * the pointer to `sim_step`. If its copy is smaller than this one -- one array
  * bound left behind, one field missed -- the core writes past the end of the
  * allocation and the failure is heap corruption a long way from the cause. It
- * has happened twice: a field inserted in the middle, and `SIM_MAX_PRIZES`
+ * has happened twice: a field inserted in the middle, and a table bound
  * raised from 64. Neither is a compile error on the far side, so the far side
  * asserts against these instead. */
 uint32_t sim_sizeof_state(void);
@@ -261,6 +238,16 @@ typedef enum {
  * a zone can weight "the odds of finding a burst". What each hull may carry
  * is its own row, the same way add-ons work. */
 #define SIM_MAX_CHARGES 4
+/* The charge kinds this game ships, and the reason a mine is one of them.
+ * A charge is a count you carry and spend, which is what a mine always was
+ * once a kit made every count explicit; it used to be the bomb trigger's
+ * other posture, limited by how many of yours were already lying about. As a
+ * charge it fires one pattern for everybody, so a mine means the same thing
+ * in every hangar and the hull's `charge_max` row is what makes mining one
+ * ship's job. */
+#define SIM_CHARGE_REPEL 0
+#define SIM_CHARGE_BURST 1
+#define SIM_CHARGE_MINE 2
 #define SIM_CHARGE_MAX 15  /* how many of one kind a pilot can hold */
 
 /* The slot field in the buttons and the number of charge kinds are two halves
@@ -360,36 +347,48 @@ typedef enum {
     SIM_UP_COUNT
 } sim_upgrade;
 
-/* ---- what a green can be ----
+/* ---- the kit space ----
  *
  * One flat space, because the whole tech tree is one shape: a count with a
  * ceiling. A stat count interpolates a range, a level count indexes a
- * ladder, an add-on count transforms what a trigger fires. The zone weights
- * this space to decide what its greens are; the client colors and names
- * from it; a prize carries one byte of it.
+ * ladder, an add-on count transforms what a trigger fires, a charge count is
+ * ammunition. A kit is a vector over this space and its budget is the sum.
  *
  *   0 .. 4     a stat            sim_upgrade
  *   5 .. 6     a level           per trigger
  *   7 .. 18    an add-on         per trigger, per sim_mod
  *  19 .. 22    a charge          per kind
- */
-#define SIM_PRIZE_STAT(u)     (u)
-#define SIM_PRIZE_LEVEL(t)    (SIM_UP_COUNT + (t))
-#define SIM_PRIZE_MOD(t, m)   (SIM_UP_COUNT + SIM_TRIG_COUNT \
-                               + (t) * SIM_MOD_COUNT + (m))
-#define SIM_PRIZE_CHARGE(k)   (SIM_UP_COUNT + SIM_TRIG_COUNT \
-                               + SIM_TRIG_COUNT * SIM_MOD_COUNT + (k))
-#define SIM_PRIZE_COUNT       (SIM_UP_COUNT + SIM_TRIG_COUNT \
-                               + SIM_TRIG_COUNT * SIM_MOD_COUNT \
-                               + SIM_MAX_CHARGES)
-#define SIM_PRIZE_NONE 255
+ *
+ * This used to be the space a green indexed, one byte per prize, rolled by
+ * the server against a table of weights. Greens are gone and the space is
+ * not: what was rolled at a pickup is now chosen in the hangar, and the
+ * ceilings a roll respected are the ceilings a kit is validated against. */
+#define SIM_SLOT_STAT(u)     (u)
+#define SIM_SLOT_LEVEL(t)    (SIM_UP_COUNT + (t))
+#define SIM_SLOT_MOD(t, m)   (SIM_UP_COUNT + SIM_TRIG_COUNT \
+                              + (t) * SIM_MOD_COUNT + (m))
+#define SIM_SLOT_CHARGE(k)   (SIM_UP_COUNT + SIM_TRIG_COUNT \
+                              + SIM_TRIG_COUNT * SIM_MOD_COUNT + (k))
+#define SIM_SLOT_COUNT       (SIM_UP_COUNT + SIM_TRIG_COUNT \
+                              + SIM_TRIG_COUNT * SIM_MOD_COUNT \
+                              + SIM_MAX_CHARGES)
+#define SIM_SLOT_NONE 255
+
+/* Steps a stat may climb, and what a kit may spend in total. Six over five
+ * stats is exactly the budget, so an all-stats kit is exactly achievable and
+ * exactly exhausting; the last two steps of each are the shop's, and five at
+ * eight is forty against a budget of thirty, so no purchase ever stops the
+ * kit being a set of tradeoffs. docs/design/match-game.md. */
+#define SIM_UP_STEPS 8
+#define SIM_UP_STEPS_BASE 6
+#define SIM_KIT_BUDGET 30
 
 
 /* Per-class tuning in core units. sim_class_from_units fills this from
  * settings-file units. */
 typedef struct {
     /* Each stat has a floor a fresh ship starts at, a ceiling upgrades climb
-     * toward, and the step one prize adds. */
+     * toward, and the step one kit slot adds. */
     int32_t max_speed, init_speed, up_speed;       /* Q16 px/tick */
     int32_t thrust, init_thrust, up_thrust;        /* Q16 px/tick^2 */
     int32_t rot, init_rot, up_rot;                 /* heading units per tick */
@@ -418,26 +417,6 @@ typedef struct {
     /* How many of each charge kind this hull may carry. Zero is a hull that
      * never gets one, which is how a repel stays the denial ship's thing. */
     uint8_t charge_max[SIM_MAX_CHARGES];
-    /* How many of this hull's mines may be in the world at once. MaxMines,
-     * which the original bounds at twenty.
-     *
-     * This is the whole of what limits mines, because nothing else does: a
-     * pilot has them for as long as they have a bomb rack, so there is no
-     * ammunition to run out of and no green to wait for. Zero is a hull that
-     * lays none, which is how a zone makes mining one ship's job. */
-    uint8_t mine_max;
-
-    /* Gunners: teammates riding this hull, aiming and firing their own
-     * weapons out of a ship they cannot steer. Zero forbids it, which is how
-     * a zone makes one hull the carrier and leaves the rest alone.
-     *
-     * The two penalties are charged once, when the first gunner arrives, and
-     * not again for the next four. That is what the original does and it is
-     * worth knowing rather than inheriting by accident: a carrier with one
-     * gunner always wants five. */
-    uint8_t gunner_limit;
-    int32_t gunner_thrust;   /* Q16 px/tick^2 off the carrier while carrying */
-    int32_t gunner_speed;    /* Q16 px/tick off the carrier while carrying */
 } sim_ship_class;
 
 typedef struct {
@@ -452,32 +431,17 @@ typedef struct {
      * a slot this zone does not use. Zone-wide rather than per hull, so a
      * charge means the same thing to everybody who has one. */
     uint8_t charge[SIM_MAX_CHARGES];
-    /* What a mine is, as a pattern index, or SIM_NO_PATTERN in a zone with
-     * none. One pattern for the whole room rather than a ladder per hull: the
-     * rung a mine wears is the layer's bomb rung, and `blast_up` is what turns
-     * that rung into a hole the size of that rung's bomb. */
-    uint8_t mine;
-    /* Odds a green turns out to be each thing, over the flat prize space.
-     * Relative rather than percentages -- doubling every number changes
-     * nothing -- and read against the pool of the hull that took it, so what
-     * a zone writes is the shape of the tree rather than its arithmetic. */
-    uint16_t prize_weight[SIM_PRIZE_COUNT];
-    /* What a kill adds to the killer's own bounty, so a pilot on a streak
-     * becomes a target without having touched a green. */
+    /* What a kill adds to the killer's own bounty. Bounty is a run rather
+     * than a loadout now, so this is the whole of what makes one: a fresh
+     * pilot is worth `bounty_base` and each kill adds this. */
     uint16_t bounty_per_kill;
+    /* What a pilot who has just spawned is worth. One, so that killing one
+     * pays almost nothing and camping a spawn is not a living, which is the
+     * free anti-farming property docs/design/bounty.md wants and which a kit
+     * counted into bounty would have destroyed. */
+    uint16_t bounty_base;
     /* Points on top of the victim's bounty for each flag they were carrying. */
     uint16_t points_per_flag;
-    /* Out of a thousand, how often a green corrodes something instead of
-     * granting it. Rust can only take what a pilot is actually holding, so a
-     * fresh one is never punished for arriving; when there is nothing to take
-     * the green is an ordinary upgrade. */
-    uint16_t rust_chance;
-    /* Greens a ship is handed the moment it spawns, rolled the same way a
-     * green found on the floor is. A zone that wants pilots to start plain
-     * sets it to zero; the baseline starts everyone loaded, because a fight
-     * between two empty ships is the least interesting fight in the game and
-     * it is the one every match opens with. */
-    uint16_t spawn_prizes;
     /* What one rung of each add-on is worth. Units are the field it changes:
      * extra projectiles, walls, Q8 px of fuse, ticks of stall, Q16 push. */
     int32_t mod_step[SIM_MOD_COUNT];
@@ -570,17 +534,12 @@ typedef struct {
      * settings and both ends read one value rather than two that have to be
      * kept in step. */
     uint16_t safe_limit;
-    uint16_t prize_delay;  /* ticks between prize spawns */
-    uint16_t prize_max;    /* prizes alive on the map at once */
-    uint16_t prize_life;   /* ticks a prize waits to be collected */
     /* Doors. A cycle is open then shut; variant n leads by n eighths of it,
      * so one map can breathe rather than blink. */
     uint16_t door_period;  /* ticks for a full cycle; 0 leaves doors shut */
     uint16_t door_open;    /* ticks of that cycle a door stands open */
     int32_t wormhole_pull;   /* Q16 px/tick^2 at the mouth */
     int32_t wormhole_range;  /* Q8 px, beyond which it does not reach */
-    int32_t prize_radius;  /* Q8 px, pickup distance */
-    int32_t prize_lo, prize_hi; /* tile bounds prizes spawn within */
     int32_t flag_radius;    /* Q8 px, pickup distance */
     uint16_t flag_drop_cooldown; /* ticks a dropped flag is untouchable */
     /* Ships this room will hold, which is a rule about the game rather than
@@ -599,13 +558,8 @@ typedef struct {
      * coasting remote hull is an explosion the next snapshot may take back,
      * so a remote death only ever arrives as a snapshot state change, which the
      * client already turns into light and sound (decision 40). A deathless
-     * instance sows no ambient prizes either, and for the same reason: it
-     * simulates a snapshot filtered to its interest window, so its live-prize
-     * count says nothing about the map. Its one exception is the named mortal
-     * hull's death green. That death is already predicted, the green is
-     * guaranteed, and drawing both on the same tick keeps the local death from
-     * splitting into two beats. Neither field is packed or hashed: this is a
-     * fact about who is simulating, not about the world. */
+     * Neither field is packed or hashed: this is a fact about who is
+     * simulating, not about the world. */
     uint8_t deathless;
     uint8_t mortal_ship;
     const sim_map *map;    /* geometry; not part of rolled-back state */
@@ -639,12 +593,16 @@ typedef struct {
     uint16_t respawn_at;    /* ticks remaining while dead */
     int32_t spawn_x, spawn_y;
     uint16_t kills, deaths;
-    uint8_t up[SIM_UP_COUNT];  /* stat upgrades held; cleared by death */
-    /* The rung each trigger is on, and the add-ons held on each. Cleared by
-     * death with everything else: what you are carrying is what you have
-     * survived with. */
+    /* What this hull is, which is the kit dealt back at every spawn. These
+     * are not accumulated any more and are not lost by dying: a death
+     * re-deals the frame. */
+    uint8_t up[SIM_UP_COUNT];
     uint8_t level[SIM_TRIG_COUNT];
     uint16_t mods[SIM_TRIG_COUNT];
+    /* The kit itself, over the flat slot space, kept on the ship so a
+     * respawn can re-deal it without the caller being asked twice. Set by
+     * `sim_set_kit`, which validates it against the hull and the budget. */
+    uint8_t kit[SIM_SLOT_COUNT];
     /* Multifire declined. The add-on stays held and stays on the scoreboard;
      * this only stops it being applied when the trigger is pulled. Cleared by
      * death with everything else, because the add-on it refuses is. */
@@ -655,84 +613,55 @@ typedef struct {
      * that starts every snapshot believing nothing was held sees a press that
      * never happened. */
     uint16_t btn_prev;
-    /* Charges in hand, spent one at a time. */
+    /* Charges in hand, spent one at a time, and the one thing a death does
+     * NOT give back: the kit deals them once and the match spends them.
+     * Dying to reload would otherwise be free at a bounty of one. */
     uint8_t charge[SIM_MAX_CHARGES];
-    /* Bounty that is not sitting in an upgrade slot: what killing has paid,
-     * and what greens taken at a ceiling were worth. Cleared by death with
-     * everything else. */
-    uint16_t earned;
+    /* Kills since this hull last spawned, which is the whole of its bounty
+     * beyond the base. Cleared by death, which is what makes the number over
+     * a ship say "this one is on a run" rather than "this one shopped well". */
+    uint16_t run;
     /* The score. Not cleared by death: what you have been paid is yours,
      * and what you are worth is a different number entirely. */
     uint32_t points;
-    /* The ship this one is riding, or SIM_NO_CARRIER. A gunner keeps its own
-     * heading, its own energy and its own weapons, and gives up thrust and
-     * position: it sits exactly where its carrier sits, takes damage there,
-     * and is as big as one point. */
-    uint8_t carrier;
 } sim_ship;
 
-#define SIM_NO_CARRIER 0xFFu
+/* What this pilot is worth to whoever kills them: the base plus their run.
+ *
+ * This used to be a sum over everything held, which was the right answer
+ * while what you held was what you had survived to collect. Once a kit is
+ * dealt back at every spawn that sum says only what you shopped for, it is
+ * the same for a pilot who has just undocked as for one on a tear, and a
+ * fresh spawn becomes worth thirty to whoever camps it. So bounty counts the
+ * run instead: one on arrival, one more per kill, gone when you die. */
+int32_t sim_bounty(const sim_settings *cfg, const sim_ship *sh);
 
-/* What this pilot is worth to whoever kills them.
- *
- * Derived rather than stored, and that is the whole trick. Every count in the
- * tech tree is already authoritative state, so bounty is a sum over it plus
- * what killing has earned -- which means rust lowers your price, a green
- * taken at the ceiling does not inflate you, and dying resets it, all without
- * a line of code in any of those places. The original kept bounty as its own
- * counter, in the client, where it could disagree with what you were actually
- * carrying. This one cannot.
- *
- * Everything held counts one, and a green taken at a ceiling counts one in
- * `earned` instead -- so every green is worth exactly one bounty whatever it
- * turned out to be, and a pilot who is already at every ceiling still gets
- * more dangerous by taking them. */
-int32_t sim_bounty(const sim_ship *sh);
 
-/* A green carries no type. Every green is takeable by everybody, and what it
- * turns out to be is rolled where it is picked up, from what that hull could
- * ever hold -- so there is no such thing as a green with somebody else's name
- * on it, and every one of them is worth crossing the map for. */
-typedef struct {
-    uint8_t active;
-    int32_t x, y;   /* Q8 px */
-    uint16_t life;  /* ticks remaining */
-} sim_prize;
+int sim_kit_ceilings(const sim_ship_class *c, uint8_t *out);
 
-/* Every prize id this hull could ever be handed, into `out` (which must hold
- * SIM_PRIZE_COUNT), returning how many. This is the roster's half of the tech
- * tree: a hull whose ladder is one rung deep is never offered a level, and one
- * whose row allows no shrapnel is never offered shrapnel. */
-int sim_prize_pool(const sim_ship_class *c, uint8_t *out);
+/* What a kit spends, which is just its sum, because every slot costs one. */
+int sim_kit_cost(const uint8_t *kit);
 
-/* Roll what a green is for this pilot, apply it, and return which it was.
- * `delta` comes back +1 for an upgrade and -1 for rust.
- *
- * The roll is over what the hull could *ever* hold rather than what it can
- * still take, so a pilot at the ceiling is told what they found and the count
- * simply does not move -- a green that is eaten in silence is a green that
- * lies. Advances `rng` in place, which is state, which is why the roll can
- * happen here at all and still be the same roll on both machines. */
-uint8_t sim_take_prize(sim_ship *sh, const sim_settings *cfg, uint32_t *rng,
-                       int *delta);
+/* Validate a kit against the hull and the budget, store it on the ship, and
+ * deal it with ammunition. Returns 0 and changes nothing if any slot is over
+ * its ceiling or the total is over `SIM_KIT_BUDGET`, so a refused kit leaves
+ * the pilot in what they were already flying rather than half dressed. */
+int sim_set_kit(sim_ship *sh, const sim_settings *cfg, const uint8_t *kit);
 
-/* Hand a pilot one named thing from the prize space, with no roll in it.
+/* Deal the stored kit onto the hull.
  *
- * A green is a roll and a grant welded together, and something that measures
- * what a kit is worth needs the second half without the first: the server's
- * loadout tournament fights fixed kits against each other, so the only thing
- * varying between two pilots is what they are carrying rather than what the
- * dice said. Nothing in a live arena calls this, and nothing should: greens
- * are how the tech tree is reached in a game.
- *
- * Ceilings still hold, because holding them is `move_count`'s job either way:
- * a hull with no rack cannot be granted a bomb level any more than it can be
- * handed one. Returns 1 if the count moved and 0 if it did not, which is how a
- * caller tells "this hull is wearing the kit" from "this hull cannot".
- *
- * `earned` is left alone. That is a green's consolation for landing on a count
- * already at its ceiling, and paying it here would make a hull more dangerous
- * for being handed something it cannot hold. */
+ * `ammunition` is the whole of the difference between arriving and
+ * respawning. A match deals charges once and a death re-deals only the
+ * frame, so a pilot who has spent both repels flies the rest of the match
+ * without them and cannot reload by dying, which at a bounty of one would
+ * otherwise be a trade worth making. */
+void sim_deal_kit(sim_ship *sh, const sim_settings *cfg, int ammunition);
+
+/* Hand a pilot one named slot, with the hull's ceilings enforced. Returns 1
+ * if the count moved and 0 if the hull cannot hold it, which is how a caller
+ * tells "wearing the kit" from "cannot wear it". `sim_deal_kit` is this in a
+ * loop; the calibration harness calls it directly to build a hull a slot at
+ * a time. */
 int sim_grant(sim_ship *sh, const sim_settings *cfg, uint8_t type);
 
 /* Flags. The core owns pickup, carry, and drop, exactly as the original's
@@ -806,9 +735,6 @@ typedef enum {
      * by the time a caller looks, the weapon is gone from the state. Whole
      * pixels, packed (x << 14) | y. */
     SIM_EV_EXPIRE,   /* a: weapon type, b: owner, v: packed position */
-    /* a: ship, b: the flat prize index (see SIM_PRIZE_LEVEL and friends,
-     * not sim_upgrade alone), v: +1 collected, -1 rusted away. */
-    SIM_EV_PRIZE,
     /* A charge was spent. b is the slot, v is how many are left, which is
      * what a panel wants and what a sound wants to know it happened. */
     SIM_EV_CHARGE,
@@ -825,11 +751,7 @@ typedef enum {
      *
      * Appended rather than slotted next to SIM_EV_BOUNCE where it belongs,
      * because the numbers are mirrored by hand in server/src/sim.rs. */
-    SIM_EV_RICOCHET, /* a: owner, b: weapon type, v: packed position */
-    /* A deathless prediction client touched a green. It names no outcome,
-     * because the prize generator is server-private. Appended so every event
-     * number already mirrored outside the core stays put. */
-    SIM_EV_PRIZE_TOUCH /* a: ship */
+    SIM_EV_RICOCHET /* a: owner, b: weapon type, v: packed position */
 } sim_event_type;
 
 typedef struct {
@@ -842,16 +764,10 @@ typedef struct {
 typedef struct {
     uint32_t tick;
     uint32_t rng;
-    /* Prize rolls and green placement are server decisions. This stream is
-     * distinct from the prediction stream above and is omitted from every
-     * network snapshot. */
-    uint32_t prize_rng;
     uint8_t ship_count;
     uint16_t weapon_count;
-    uint16_t prize_timer;
     sim_ship ships[SIM_MAX_SHIPS];
     sim_weapon weapons[SIM_MAX_WEAPONS];
-    sim_prize prizes[SIM_MAX_PRIZES];
     sim_flag flags[SIM_MAX_FLAGS];
     uint8_t flag_count;
 } sim_state;
@@ -930,21 +846,6 @@ int sim_set_ship_class(sim_state *s, const sim_settings *cfg, uint8_t i,
  *
  * Returns 0, or -1 for an unknown ship, a dead pilot, or one not at full
  * energy. Asking for the side you are already on does nothing and succeeds. */
-/* Ride a teammate, or SIM_NO_CARRIER to stop. Returns 0 if the state
- * changed and -1 if the request was refused.
- *
- * Refused unless both ships are alive on the same side, the target is not
- * itself riding somebody, it has room under its hull's `gunner_limit`, and
- * the asker is at full energy. Granting it moves the asker onto the target
- * from anywhere in the arena and leaves it with almost nothing in the bar,
- * which is the whole shape of the mechanic: the ride is free and arriving is
- * what costs. Detaching is never refused. */
-int sim_attach(sim_state *s, const sim_settings *cfg, uint8_t i,
-               uint8_t target);
-
-/* How many gunners are riding this ship. */
-uint8_t sim_gunners(const sim_state *s, uint8_t i);
-
 int sim_set_ship_team(sim_state *s, const sim_settings *cfg, uint8_t i,
                       uint8_t team);
 
@@ -981,7 +882,6 @@ typedef struct {
     /* Gunners allowed on this hull, and what carrying any costs it. The
      * penalties are authored in the same units as the stat each comes off:
      * thrust like `max_thrust`, speed like `max_speed`. */
-    int32_t gunner_limit, gunner_thrust_penalty, gunner_speed_penalty;
     /* No footprint here: the settings files these units mirror never carried
      * one, and the extents are measured off our own hulls in baseline.c. */
 } sim_class_units;

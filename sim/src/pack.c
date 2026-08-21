@@ -60,7 +60,7 @@ static int world_velocity(int32_t v) {
 
 int sim_pack(const sim_state *s, uint8_t *out, int cap) {
     return sim_pack_around(s, out, cap, 0, 0, -1, 255, 255,
-                           SIM_PACK_PRIVATE_ALL | SIM_PACK_SECRET);
+                           SIM_PACK_PRIVATE_ALL);
 }
 
 int sim_pack_around(const sim_state *s, uint8_t *out, int cap,
@@ -74,11 +74,6 @@ int sim_pack_around(const sim_state *s, uint8_t *out, int cap,
 
     w32(&w, s->tick);
     w32(&w, s->rng);
-    w8(&w, options & SIM_PACK_SECRET);
-    if (options & SIM_PACK_SECRET) {
-        w32(&w, s->prize_rng);
-        w16(&w, s->prize_timer);
-    }
 
     /* Which ships this viewer is told about, as a bitmap ahead of the records.
      *
@@ -130,12 +125,8 @@ int sim_pack_around(const sim_state *s, uint8_t *out, int cap,
         w32(&w, (uint32_t)sh->repel_speed);
         w16(&w, sh->kills);
         w16(&w, sh->deaths);
-        int32_t bounty = sim_bounty(sh);
-        if (bounty < 0) bounty = 0;
-        if (bounty > UINT16_MAX) bounty = UINT16_MAX;
-        w16(&w, (uint32_t)bounty);
+        w16(&w, sh->run);
         w32(&w, sh->points);
-        w8(&w, sh->carrier);
         /* Energy is the fight's health bar. Anyone who can see the hull can
          * see how close it is to dying, which requires its capacity rung as
          * well as its current value. Other inventory and weapon state remain
@@ -161,7 +152,10 @@ int sim_pack_around(const sim_state *s, uint8_t *out, int cap,
              * snapshot. */
             w8(&w, sh->multi_off);
             w16(&w, sh->btn_prev);
-            w16(&w, sh->earned);
+            /* The kit, because a respawn re-deals from it and the client
+             * predicts that: without this a pilot comes back flying a
+             * different ship on the client than on the server. */
+            for (int k = 0; k < SIM_SLOT_COUNT; k++) w8(&w, sh->kit[k]);
         }
     }
 
@@ -239,31 +233,6 @@ int sim_pack_around(const sim_state *s, uint8_t *out, int cap,
         w8(&w, p->shrap_bounce);
     }
 
-    /* A prize is always at the center of a tile -- `spawn_prize` puts it
-     * there and nothing moves it -- so its position is two tile indices
-     * rather than two Q8 pixel coordinates. Four bytes each way instead of
-     * eight, and the unpacked state is bit-identical: the arithmetic below is
-     * the same expression `spawn_prize` used to place it.
-     *
-     * This is worth its own note because prizes are most of a snapshot. At
-     * two hundred on the map they were 1651 bytes of a 3048-byte packet --
-     * more than the ships and every projectile in the air put together. */
-    uint8_t live = 0;
-    for (int i = 0; i < SIM_MAX_PRIZES; i++)
-        live += (s->prizes[i].active
-                 && within(s->prizes[i].x, s->prizes[i].y, cx, cy, radius, r2))
-                ? 1 : 0;
-    w8(&w, live);
-    for (int i = 0; i < SIM_MAX_PRIZES; i++) {
-        const sim_prize *p = &s->prizes[i];
-        if (!p->active) continue;
-        if (!within(p->x, p->y, cx, cy, radius, r2)) continue;
-        w8(&w, (uint32_t)i);
-        w16(&w, (uint32_t)(p->x / (SIM_TILE_PX * 256)));
-        w16(&w, (uint32_t)(p->y / (SIM_TILE_PX * 256)));
-        w16(&w, p->life);
-    }
-
     w8(&w, s->flag_count);
     for (int i = 0; i < s->flag_count; i++) {
         const sim_flag *f = &s->flags[i];
@@ -290,14 +259,6 @@ int sim_unpack(sim_state *out, const uint8_t *in, int len) {
 
     s->tick = r32(&r);
     s->rng = r32(&r);
-    uint32_t options = r8(&r);
-    if (options & ~SIM_PACK_SECRET) return -1;
-    if (options & SIM_PACK_SECRET) {
-        s->prize_rng = r32(&r);
-        s->prize_timer = (uint16_t)r16(&r);
-    } else {
-        s->prize_rng = 1;
-    }
 
     uint32_t ships = r8(&r);
     if (ships > SIM_MAX_SHIPS) return -1;
@@ -343,12 +304,8 @@ int sim_unpack(sim_state *out, const uint8_t *in, int len) {
         if (!world_velocity(sh->repel_speed)) return -1;
         sh->kills = (uint16_t)r16(&r);
         sh->deaths = (uint16_t)r16(&r);
-        uint16_t bounty = (uint16_t)r16(&r);
+        sh->run = (uint16_t)r16(&r);
         sh->points = r32(&r);
-        sh->carrier = (uint8_t)r8(&r);
-        if (sh->carrier != SIM_NO_CARRIER
-            && (sh->carrier >= ships || sh->carrier == i))
-            return -1;
         sh->energy = (int32_t)r32(&r);
         if ((sh->alive && sh->energy <= 0) || (!sh->alive && sh->energy != 0))
             return -1;
@@ -377,12 +334,8 @@ int sim_unpack(sim_state *out, const uint8_t *in, int len) {
             sh->multi_off = (uint8_t)r8(&r);
             if (sh->multi_off > 1) return -1;
             sh->btn_prev = (uint16_t)r16(&r);
-            sh->earned = (uint16_t)r16(&r);
-        } else {
-            /* `sim_bounty` remains useful to rendering code without exposing
-             * which upgrades make up the number. With every private count at
-             * zero, the public bounty is exactly `earned`. */
-            sh->earned = bounty;
+            for (int k = 0; k < SIM_SLOT_COUNT; k++)
+                sh->kit[k] = (uint8_t)r8(&r);
         }
     }
 
@@ -422,23 +375,6 @@ int sim_unpack(sim_state *out, const uint8_t *in, int len) {
             return -1;
     }
 
-    uint32_t prizes = r8(&r);
-    if (prizes > SIM_MAX_PRIZES) return -1;
-    uint8_t seen_prize[SIM_MAX_PRIZES] = {0};
-    for (uint32_t i = 0; i < prizes; i++) {
-        uint32_t idx = r8(&r);
-        if (idx >= SIM_MAX_PRIZES || seen_prize[idx]) return -1;
-        seen_prize[idx] = 1;
-        sim_prize *p = &s->prizes[idx];
-        p->active = 1;
-        /* The same expression spawn_prize places a prize with, so the state
-         * that comes off the wire is the state that went on it. */
-        uint32_t tx = r16(&r), ty = r16(&r);
-        if (tx >= SIM_MAP_TILES || ty >= SIM_MAP_TILES) return -1;
-        p->x = (int32_t)((int32_t)tx * SIM_TILE_PX + SIM_TILE_PX / 2) * 256;
-        p->y = (int32_t)((int32_t)ty * SIM_TILE_PX + SIM_TILE_PX / 2) * 256;
-        p->life = (uint16_t)r16(&r);
-    }
 
     uint32_t flags = r8(&r);
     if (flags > SIM_MAX_FLAGS) return -1;
@@ -524,8 +460,15 @@ int sim_unpack(sim_state *out, const uint8_t *in, int len) {
  *
  * 14: public energy state and the capacity rung returned to ship records.
  *
- * 15: gunner limits plus the carrier thrust and speed penalties. */
-#define CFG_VERSION 15
+ * 15: gunner limits plus the carrier thrust and speed penalties.
+ *
+ * 16: the match game. Greens are gone, so every weight, rate, bound and
+ * lifetime that placed or priced one leaves with them; a mine is a charge
+ * again, so `mine` and `mine_max` go back to `charge[]` and the hull's
+ * charge row; gunners are gone, so their three fields go; and `bounty_base`
+ * arrives, because bounty is a run rather than a sum over what is held and
+ * the client derives the price from it. */
+#define CFG_VERSION 16
 
 static int settings_valid(const sim_settings *cfg) {
     if (cfg->class_count == 0 || cfg->class_count > SIM_MAX_CLASSES
@@ -553,7 +496,6 @@ static int settings_valid(const sim_settings *cfg) {
         if (cfg->charge[i] != SIM_NO_PATTERN
             && cfg->charge[i] >= cfg->pattern_count)
             return 0;
-    if (cfg->mine != SIM_NO_PATTERN && cfg->mine >= cfg->pattern_count) return 0;
     for (int i = 0; i < SIM_MAX_RUNGS; i++)
         if (cfg->mod_splinter[i] != SIM_NO_PATTERN
             && cfg->mod_splinter[i] >= cfg->pattern_count)
@@ -594,10 +536,6 @@ int sim_settings_pack(const sim_settings *cfg, uint8_t *out, int cap) {
             w16(&w, c->mod_max[t]);
         }
         for (int k = 0; k < SIM_MAX_CHARGES; k++) w8(&w, c->charge_max[k]);
-        w8(&w, c->mine_max);
-        w8(&w, c->gunner_limit);
-        w32(&w, (uint32_t)c->gunner_thrust);
-        w32(&w, (uint32_t)c->gunner_speed);
     }
 
     w32(&w, (uint32_t)cfg->prox_step);
@@ -640,10 +578,7 @@ int sim_settings_pack(const sim_settings *cfg, uint8_t *out, int cap) {
     }
 
     for (int k = 0; k < SIM_MAX_CHARGES; k++) w8(&w, cfg->charge[k]);
-    w8(&w, cfg->mine);
-    for (int i = 0; i < SIM_PRIZE_COUNT; i++) w16(&w, cfg->prize_weight[i]);
-    w16(&w, cfg->rust_chance);
-    w16(&w, cfg->spawn_prizes);
+    w16(&w, cfg->bounty_base);
     w16(&w, cfg->bounty_per_kill);
     w16(&w, cfg->points_per_flag);
     for (int m = 0; m < SIM_MOD_COUNT; m++) w32(&w, (uint32_t)cfg->mod_step[m]);
@@ -657,16 +592,10 @@ int sim_settings_pack(const sim_settings *cfg, uint8_t *out, int cap) {
     w16(&w, cfg->spawn_radius);
     w8(&w, cfg->show_spawns);
     w16(&w, cfg->safe_limit);
-    w16(&w, cfg->prize_delay);
-    w16(&w, cfg->prize_max);
-    w16(&w, cfg->prize_life);
     w16(&w, cfg->door_period);
     w16(&w, cfg->door_open);
     w32(&w, (uint32_t)cfg->wormhole_pull);
     w32(&w, (uint32_t)cfg->wormhole_range);
-    w32(&w, (uint32_t)cfg->prize_radius);
-    w32(&w, (uint32_t)cfg->prize_lo);
-    w32(&w, (uint32_t)cfg->prize_hi);
     w32(&w, (uint32_t)cfg->flag_radius);
     w16(&w, cfg->flag_drop_cooldown);
     w8(&w, cfg->max_ships);
@@ -718,10 +647,6 @@ int sim_settings_unpack(sim_settings *out, const uint8_t *in, int len) {
         }
         for (int k = 0; k < SIM_MAX_CHARGES; k++)
             c->charge_max[k] = (uint8_t)r8(&r);
-        c->mine_max = (uint8_t)r8(&r);
-        c->gunner_limit = (uint8_t)r8(&r);
-        c->gunner_thrust = (int32_t)r32(&r);
-        c->gunner_speed = (int32_t)r32(&r);
     }
 
     cfg->prox_step = (int32_t)r32(&r);
@@ -768,11 +693,7 @@ int sim_settings_unpack(sim_settings *out, const uint8_t *in, int len) {
     }
 
     for (int k = 0; k < SIM_MAX_CHARGES; k++) cfg->charge[k] = (uint8_t)r8(&r);
-    cfg->mine = (uint8_t)r8(&r);
-    for (int i = 0; i < SIM_PRIZE_COUNT; i++)
-        cfg->prize_weight[i] = (uint16_t)r16(&r);
-    cfg->rust_chance = (uint16_t)r16(&r);
-    cfg->spawn_prizes = (uint16_t)r16(&r);
+    cfg->bounty_base = (uint16_t)r16(&r);
     cfg->bounty_per_kill = (uint16_t)r16(&r);
     cfg->points_per_flag = (uint16_t)r16(&r);
     for (int m = 0; m < SIM_MOD_COUNT; m++) cfg->mod_step[m] = (int32_t)r32(&r);
@@ -787,16 +708,10 @@ int sim_settings_unpack(sim_settings *out, const uint8_t *in, int len) {
     cfg->spawn_radius = (uint16_t)r16(&r);
     cfg->show_spawns = (uint8_t)r8(&r);
     cfg->safe_limit = (uint16_t)r16(&r);
-    cfg->prize_delay = (uint16_t)r16(&r);
-    cfg->prize_max = (uint16_t)r16(&r);
-    cfg->prize_life = (uint16_t)r16(&r);
     cfg->door_period = (uint16_t)r16(&r);
     cfg->door_open = (uint16_t)r16(&r);
     cfg->wormhole_pull = (int32_t)r32(&r);
     cfg->wormhole_range = (int32_t)r32(&r);
-    cfg->prize_radius = (int32_t)r32(&r);
-    cfg->prize_lo = (int32_t)r32(&r);
-    cfg->prize_hi = (int32_t)r32(&r);
     cfg->flag_radius = (int32_t)r32(&r);
     cfg->flag_drop_cooldown = (uint16_t)r16(&r);
     cfg->max_ships = r8(&r);

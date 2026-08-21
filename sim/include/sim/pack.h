@@ -11,11 +11,14 @@ extern "C" {
 /* Largest snapshot a full arena can produce. */
 #define SIM_PACK_MAX (64 * 1024)
 
-/* Network snapshots normally carry one owner-only ship tail and no secret
- * randomness. The whole-state replay path uses both options; trusted house
- * bots use only the first. */
+/* A network snapshot carries one owner-only ship tail. The whole-state
+ * replay path and trusted house bots ask for every tail instead.
+ *
+ * There used to be a second flag for server-private randomness, because the
+ * prize stream was a decision the server made and the client was not allowed
+ * to predict. Greens are gone and nothing in the state is private any more:
+ * a kit is chosen rather than rolled, so both ends can predict all of it. */
 #define SIM_PACK_PRIVATE_ALL 0x01u
-#define SIM_PACK_SECRET      0x02u
 
 /* Write s into out. Returns bytes written, or -1 if cap was too small. */
 int sim_pack(const sim_state *s, uint8_t *out, int cap);
@@ -54,8 +57,6 @@ int sim_pack(const sim_state *s, uint8_t *out, int cap);
  * separate from `viewer` because a spectator may borrow a pilot's camera
  * without becoming that pilot.
  * `SIM_PACK_PRIVATE_ALL` is reserved for trusted in-process users.
- * `SIM_PACK_SECRET` includes prize randomness and its timer and must not be
- * used for a network client.
  *
  * A negative radius means everything, which is what `sim_pack` passes. */
 int sim_pack_around(const sim_state *s, uint8_t *out, int cap,

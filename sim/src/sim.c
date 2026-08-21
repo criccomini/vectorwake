@@ -166,11 +166,6 @@ void sim_class_from_units(sim_ship_class *c, const sim_class_units *u) {
         c->mod_max[t] = 0;
     }
     for (int k = 0; k < SIM_MAX_CHARGES; k++) c->charge_max[k] = 0;
-    c->gunner_limit = (uint8_t)(u->gunner_limit < 0 ? 0
-                                : u->gunner_limit > SIM_MAX_SHIPS - 1
-                                  ? SIM_MAX_SHIPS - 1 : u->gunner_limit);
-    c->gunner_thrust = sim_units_thrust(u->gunner_thrust_penalty);
-    c->gunner_speed = sim_units_speed(u->gunner_speed_penalty);
 }
 
 /* ---- upgrades ---- */
@@ -218,16 +213,6 @@ int32_t sim_eff_recharge(const sim_ship_class *c, const sim_ship *s) {
 void sim_init(sim_state *s, uint32_t seed) {
     memset(s, 0, sizeof *s);
     s->rng = seed ? seed : 1u;
-    /* A distinct, nonzero stream for prize outcomes and placement. A network
-     * client receives `rng` for deterministic flight prediction and never
-     * receives this value. */
-    s->prize_rng = xorshift32(s->rng ^ 0x9e3779b9u);
-    if (s->prize_rng == 0) s->prize_rng = 1u;
-    /* Nobody is riding anybody, and zero is a ship index rather than a way of
-     * saying so. Every slot, not only the ones in use: the hash reads to
-     * `ship_count` and a slot that was never spawned still has to agree
-     * across three architectures. */
-    for (int i = 0; i < SIM_MAX_SHIPS; i++) s->ships[i].carrier = SIM_NO_CARRIER;
 }
 
 /* Hand a fresh ship its opening greens.
@@ -245,9 +230,66 @@ void sim_init(sim_state *s, uint32_t seed) {
  * The caller sets energy afterwards, not before: the energy ceiling is a
  * function of `up[SIM_UP_ENERGY]`, and filling the bar before the prizes lands
  * would leave a ship at less than the full one it just earned. */
-static void outfit(sim_ship *sh, const sim_settings *cfg, uint32_t *rng) {
-    for (uint16_t n = 0; n < cfg->spawn_prizes; n++)
-        sim_take_prize(sh, cfg, rng, NULL);
+int sim_kit_ceilings(const sim_ship_class *c, uint8_t *out) {
+    int n = 0;
+    memset(out, 0, SIM_SLOT_COUNT);
+    for (int u = 0; u < SIM_UP_COUNT; u++) {
+        out[SIM_SLOT_STAT(u)] = SIM_UP_STEPS;
+        n++;
+    }
+    for (int t = 0; t < SIM_TRIG_COUNT; t++) {
+        /* No trigger, nothing to spend on it. An add-on is a transform on a
+         * weapon and a level is a rung of one, so neither means anything
+         * without the weapon, and this has to be the code's rule rather than
+         * the roster's: enforcing it in the table held only for as long as
+         * every rackless hull remembered to zero its own add-on field. */
+        if (c->trigger[t][0] == SIM_NO_PATTERN) continue;
+        int rungs = 0;
+        while (rungs + 1 < SIM_MAX_RUNGS &&
+               c->trigger[t][rungs + 1] != SIM_NO_PATTERN) rungs++;
+        if (rungs > 0) { out[SIM_SLOT_LEVEL(t)] = (uint8_t)rungs; n++; }
+        for (int m = 0; m < SIM_MOD_COUNT; m++) {
+            uint8_t mx = sim_mod_get(c->mod_max[t], m);
+            if (mx > 0) { out[SIM_SLOT_MOD(t, m)] = mx; n++; }
+        }
+    }
+    for (int k = 0; k < SIM_MAX_CHARGES; k++)
+        if (c->charge_max[k] > 0) {
+            out[SIM_SLOT_CHARGE(k)] = c->charge_max[k];
+            n++;
+        }
+    return n;
+}
+
+int sim_kit_cost(const uint8_t *kit) {
+    int n = 0;
+    for (int i = 0; i < SIM_SLOT_COUNT; i++) n += kit[i];
+    return n;
+}
+
+void sim_deal_kit(sim_ship *sh, const sim_settings *cfg, int ammunition) {
+    memset(sh->up, 0, sizeof sh->up);
+    memset(sh->level, 0, sizeof sh->level);
+    memset(sh->mods, 0, sizeof sh->mods);
+    if (ammunition) memset(sh->charge, 0, sizeof sh->charge);
+    for (int i = 0; i < SIM_SLOT_COUNT; i++) {
+        if (i >= SIM_SLOT_CHARGE(0) && !ammunition) continue;
+        for (int k = 0; k < sh->kit[i]; k++) sim_grant(sh, cfg, (uint8_t)i);
+    }
+}
+
+int sim_set_kit(sim_ship *sh, const sim_settings *cfg, const uint8_t *kit) {
+    uint8_t ceiling[SIM_SLOT_COUNT];
+    sim_kit_ceilings(&cfg->classes[sh->cls], ceiling);
+    int cost = 0;
+    for (int i = 0; i < SIM_SLOT_COUNT; i++) {
+        if (kit[i] > ceiling[i]) return 0;
+        cost += kit[i];
+    }
+    if (cost > SIM_KIT_BUDGET) return 0;
+    memcpy(sh->kit, kit, SIM_SLOT_COUNT);
+    sim_deal_kit(sh, cfg, 1);
+    return 1;
 }
 
 uint32_t sim_offsetof_settings_max_ships(void) {
@@ -279,13 +321,11 @@ int sim_spawn(sim_state *s, uint8_t cls, uint8_t team, int32_t x_px,
     memset(sh, 0, sizeof *sh);
     sh->active = 1;
     sh->alive = 1;
-    sh->carrier = SIM_NO_CARRIER;
     sh->cls = cls < cfg->class_count ? cls : 0;
     sh->team = team;
     sh->x = sh->spawn_x = x_px * 256;
     sh->y = sh->spawn_y = y_px * 256;
     sh->heading = heading;
-    outfit(sh, cfg, &s->prize_rng);
     sh->energy = sim_eff_max_energy(&cfg->classes[sh->cls], sh);
     return i;
 }
@@ -766,65 +806,11 @@ static void kill_weapon(sim_state *s, uint16_t i) {
 
 static void drop_flags(sim_state *s, const sim_settings *cfg, uint8_t ship,
                        sim_events *ev);
-static void detach_all(sim_state *s, uint8_t i);
 
-int32_t sim_bounty(const sim_ship *sh) {
-    int32_t n = sh->earned;
-    for (int u = 0; u < SIM_UP_COUNT; u++) n += sh->up[u];
-    for (int t = 0; t < SIM_TRIG_COUNT; t++) {
-        n += sh->level[t];
-        for (int m = 0; m < SIM_MOD_COUNT; m++) n += sim_mod_get(sh->mods[t], m);
-    }
-    for (int k = 0; k < SIM_MAX_CHARGES; k++) n += sh->charge[k];
-    return n;
+int32_t sim_bounty(const sim_settings *cfg, const sim_ship *sh) {
+    return (int32_t)cfg->bounty_base + sh->run;
 }
 
-/* Leave one green in the tile where a hull came apart. Ambient greens stop at
- * prize_max, but a kill must still leave its green when the field is full, so
- * it replaces one already on the map. Choosing from the victim's seat spreads
- * simultaneous deaths across the field without consuming the secret prize
- * generator. A zone with prize_max zero has deliberately turned greens off.
- *
- * The position is the tile center because that is the green wire format: a
- * snapshot sends tile indices and reconstructs the same center on the client. */
-static void drop_death_prize(sim_state *s, const sim_settings *cfg,
-                             uint8_t victim, int32_t x, int32_t y) {
-    if (cfg->prize_max == 0) return;
-
-    int slot = -1;
-    int live = 0;
-    for (int i = 0; i < SIM_MAX_PRIZES; i++) {
-        if (s->prizes[i].active) {
-            live++;
-        } else if (slot < 0) {
-            slot = i;
-        }
-    }
-
-    if (live >= cfg->prize_max || slot < 0) {
-        int pick = victim % live;
-        for (int i = 0; i < SIM_MAX_PRIZES; i++) {
-            if (!s->prizes[i].active) continue;
-            if (pick-- == 0) {
-                slot = i;
-                break;
-            }
-        }
-    }
-    if (slot < 0) return;
-
-    /* Where the hull came apart, moved to the nearest tile the map will not
-     * close over. A pilot killed inside an open door used to leave their green
-     * in it for the door to shut on. */
-    int32_t tx = x / (SIM_TILE_PX * 256), ty = y / (SIM_TILE_PX * 256);
-    nearest_ground(cfg->map, &tx, &ty);
-
-    sim_prize *p = &s->prizes[slot];
-    p->active = 1;
-    p->x = tile_mid(tx);
-    p->y = tile_mid(ty);
-    p->life = cfg->prize_life;
-}
 
 static void apply_damage(sim_state *s, const sim_settings *cfg, uint8_t victim,
                          uint8_t attacker, int32_t amount, uint16_t stall,
@@ -878,28 +864,23 @@ static void apply_damage(sim_state *s, const sim_settings *cfg, uint8_t victim,
              * layer already refuses to score teammate damage; this is the
              * same rule where a player can see it. */
             if (k->team != v->team) {
-                paid = sim_bounty(v);
+                paid = sim_bounty(cfg, v);
                 for (int f = 0; f < s->flag_count; f++)
                     if (s->flags[f].active && s->flags[f].carried
                         && s->flags[f].carrier == victim)
                         paid += cfg->points_per_flag;
                 k->points += (uint32_t)paid;
-                k->earned = (uint16_t)(k->earned + cfg->bounty_per_kill);
+                k->run = (uint16_t)(k->run + cfg->bounty_per_kill);
             }
         }
-        /* Dying costs you everything: stats, rungs, add-ons and the bounty
-         * killing earned you. What you are carrying is what you have
-         * survived with -- but the points already paid to you are yours. */
+        /* What a death takes is the run, which is the whole of what a pilot
+         * was worth, and the ammunition they had already spent, which does
+         * not come back. The frame is re-dealt at the respawn: a kit is
+         * something you own rather than something you survived with. */
         v->repel = 0;
         v->repel_speed = 0;
-        detach_all(s, victim);
-        memset(v->up, 0, sizeof v->up);
-        memset(v->level, 0, sizeof v->level);
-        memset(v->mods, 0, sizeof v->mods);
-        memset(v->charge, 0, sizeof v->charge);
-        v->earned = 0;
+        v->run = 0;
         drop_flags(s, cfg, victim, ev);
-        drop_death_prize(s, cfg, victim, v->x, v->y);
         emit(ev, SIM_EV_DEATH, victim, attacker, paid);
     }
 }
@@ -1234,32 +1215,7 @@ static void drop_flags(sim_state *s, const sim_settings *cfg, uint8_t ship,
     }
 }
 
-/* Change a pilot's hull without changing the arena around them.
- *
- * A hull is not a costume: it is a different tank, a different gun and a
- * different turn rate, so swapping one mid-flight has to cost what dying
- * costs. You reappear at your start, at rest, with a full bar of the new
- * ship's energy and none of the upgrades you had collected, and anything you
- * were carrying goes back on the map. Everyone else keeps flying, which is
- * the whole point: a menu that rebuilt the arena to change your ship would
- * throw away the match to answer a question about yourself. */
-uint8_t sim_gunners(const sim_state *s, uint8_t i) {
-    uint8_t n = 0;
-    for (int k = 0; k < s->ship_count; k++) {
-        const sim_ship *g = &s->ships[k];
-        if (g->active && g->carrier == i) n++;
-    }
-    return n;
-}
 
-/* Put a ship down and take its gunners off with it. Used wherever a ship
- * stops being the thing its riders attached to: it dies, it changes sides, it
- * changes hull. */
-static void detach_all(sim_state *s, uint8_t i) {
-    s->ships[i].carrier = SIM_NO_CARRIER;
-    for (int k = 0; k < s->ship_count; k++)
-        if (s->ships[k].carrier == i) s->ships[k].carrier = SIM_NO_CARRIER;
-}
 
 int sim_set_ship_class(sim_state *s, const sim_settings *cfg, uint8_t i,
                        uint8_t cls) {
@@ -1286,74 +1242,19 @@ int sim_set_ship_class(sim_state *s, const sim_settings *cfg, uint8_t i,
     memset(sh->level, 0, sizeof sh->level);
     memset(sh->mods, 0, sizeof sh->mods);
     memset(sh->charge, 0, sizeof sh->charge);
-    sh->earned = 0;
+    memset(sh->kit, 0, sizeof sh->kit);
+    sh->run = 0;
     sh->alive = 1;
     sh->respawn_at = 0;
-    /* A new hull is a new ship as far as riding goes, in both directions:
-     * this one lands back at its own start, so anybody on it would be coming
-     * along uninvited, and it is no longer the hull it climbed onto. */
-    detach_all(s, i);
     sh->x = sh->spawn_x;
     sh->y = sh->spawn_y;
     sh->vx = sh->vy = 0;
     sh->fire_cooldown[SIM_TRIG_GUN] = 0;
     sh->fire_cooldown[SIM_TRIG_BOMB] = 0;
-    /* Rerolled for the new hull rather than carried across: the roster row
-     * changed, so the old items may not be things this hull can hold. */
-    outfit(sh, cfg, &s->prize_rng);
+    /* A kit is validated against the hull it was built for, so it does not
+     * cross to another one. The caller sets one for the new hull; until it
+     * does, this pilot flies the bare frame. */
     sh->energy = sim_eff_max_energy(&cfg->classes[cls], sh);
-    return 0;
-}
-
-int sim_attach(sim_state *s, const sim_settings *cfg, uint8_t i,
-               uint8_t target) {
-    if (i >= s->ship_count) return -1;
-    sim_ship *sh = &s->ships[i];
-    if (!sh->active) return -1;
-
-    /* Getting off is always allowed and costs nothing. It has to be: a gunner
-     * with an empty bar in a fight that has arrived is a pilot whose only move
-     * is to leave, and a refused detach is a death. */
-    if (target == SIM_NO_CARRIER) {
-        if (sh->carrier == SIM_NO_CARRIER) return -1;
-        sh->carrier = SIM_NO_CARRIER;
-        return 0;
-    }
-
-    if (target >= s->ship_count || target == i) return -1;
-    sim_ship *to = &s->ships[target];
-    if (!to->active || !to->alive || !sh->alive) return -1;
-    if (to->team != sh->team) return -1;
-    /* No chains. A gunner cannot be ridden, which keeps the graph one deep
-     * and keeps a stack a thing that dies with one ship rather than a tree. */
-    if (to->carrier != SIM_NO_CARRIER) return -1;
-    if (sh->carrier == target) return 0;
-    /* Nobody rides a hull that was not built to carry, and a hull that was
-     * only carries as many as its class allows. */
-    const sim_ship_class *tc = &cfg->classes[to->cls];
-    if (tc->gunner_limit == 0) return -1;
-    if (sim_gunners(s, target) >= tc->gunner_limit) return -1;
-    /* Full bar, the same gate a hull change and a side change get, and for
-     * the same reason: this is a free ride out of wherever you are to
-     * wherever your team is, and a pilot in trouble should not be able to
-     * spend it as an escape. */
-    if (sh->energy < sim_eff_max_energy(&cfg->classes[sh->cls], sh)) return -1;
-
-    /* Anything riding you comes off first: you are about to stop being a
-     * place to sit. */
-    for (int k = 0; k < s->ship_count; k++)
-        if (s->ships[k].carrier == i) s->ships[k].carrier = SIM_NO_CARRIER;
-
-    sh->carrier = target;
-    sh->x = to->x;
-    sh->y = to->y;
-    sh->vx = to->vx;
-    sh->vy = to->vy;
-    /* And you arrive with nothing. The crossing is unlimited and instant, so
-     * what it costs is the bar, which is why attaching into a fight that is
-     * already running kills you and why a carrier is worth holding position
-     * with. A sliver rather than zero, since zero is dead. */
-    sh->energy = 1024;
     return 0;
 }
 
@@ -1372,16 +1273,13 @@ int sim_set_ship_team(sim_state *s, const sim_settings *cfg, uint8_t i,
     if (sh->energy < sim_eff_max_energy(&cfg->classes[sh->cls], sh)) return -1;
 
     /* What you were carrying belongs to the side you are leaving. Gunners
-     * too, in both directions: the ones riding you are about to be on the
-     * wrong side of a hull they cannot steer, and you cannot stay on a
-     * carrier that is now an enemy. */
+     * too. */
     drop_flags(s, cfg, i, 0);
-    detach_all(s, i);
     sh->team = team;
-    /* Bounty earned by killing does not cross with you. Two pilots trading
-     * sides to feed each other kills is the oldest arrangement in this genre,
-     * and what a kill pays is the victim's bounty. */
-    sh->earned = 0;
+    /* A run does not cross sides with you. Two pilots trading sides to feed
+     * each other kills is the oldest arrangement in this genre, and what a
+     * kill pays is the victim's bounty. */
+    sh->run = 0;
 
     /* And your start moves to the new side's. A map that marks no start for
      * this team hands out somebody else's, which `sim_map_spawn` already does
@@ -1447,35 +1345,6 @@ static void update_flags(sim_state *s, const sim_settings *cfg, sim_events *ev) 
 /* Spawn one prize at a random open tile inside the configured bounds. Every
  * draw comes from the state's own PRNG, so prize placement is part of the
  * deterministic stream and a client can predict it exactly. */
-/* Everything this hull could ever be given.
- *
- * Built per pickup rather than stored on the class, because it is a dozen
- * comparisons and a stored copy is a second version of the roster row that
- * can disagree with the first. A ladder with one rung is a weapon that never
- * levels, so a level is not something that hull can be handed.
- */
-int sim_prize_pool(const sim_ship_class *c, uint8_t *out) {
-    int n = 0;
-    for (int u = 0; u < SIM_UP_COUNT; u++) out[n++] = (uint8_t)SIM_PRIZE_STAT(u);
-    for (int t = 0; t < SIM_TRIG_COUNT; t++) {
-        /* No trigger, nothing to hand out for it. An add-on is a transform on
-         * a weapon and a level is a rung of one, so neither means anything
-         * without the weapon -- and this has to be the code's rule rather
-         * than the roster's. It used to be enforced by the table, by giving a
-         * rackless hull an empty add-on field, which held only for as long as
-         * every such hull remembered to. Every shipped hull carries a rack
-         * now, so the table cannot say it at all. */
-        if (c->trigger[t][0] == SIM_NO_PATTERN) continue;
-        if (c->trigger[t][1] != SIM_NO_PATTERN)
-            out[n++] = (uint8_t)SIM_PRIZE_LEVEL(t);
-        for (int m = 0; m < SIM_MOD_COUNT; m++)
-            if (sim_mod_get(c->mod_max[t], m) > 0)
-                out[n++] = (uint8_t)SIM_PRIZE_MOD(t, m);
-    }
-    for (int k = 0; k < SIM_MAX_CHARGES; k++)
-        if (c->charge_max[k] > 0) out[n++] = (uint8_t)SIM_PRIZE_CHARGE(k);
-    return n;
-}
 
 /* Move one count by a step, within its ceiling and never below zero. */
 /* How far a proximity sensor reaches, from the bomb's center, in Q8 px.
@@ -1540,7 +1409,9 @@ static void move_count(sim_ship *sh, const sim_ship_class *c, uint8_t type,
     }
 }
 
-/* How much of `type` this pilot is holding, which is what rust can take. */
+
+
+/* How much of `type` this pilot is holding. */
 static uint8_t held(const sim_ship *sh, uint8_t type) {
     if (type < SIM_UP_COUNT) return sh->up[type];
     type = (uint8_t)(type - SIM_UP_COUNT);
@@ -1551,236 +1422,12 @@ static uint8_t held(const sim_ship *sh, uint8_t type) {
     return sh->charge[type - SIM_TRIG_COUNT * SIM_MOD_COUNT];
 }
 
-/* Rust: a green that takes something instead of giving it.
- *
- * It can only corrode what the pilot is actually holding, chosen evenly among
- * those, which is the whole of why it is not simply cruel. A pilot who has
- * just spawned holds nothing and cannot be rusted at all, so the punishment
- * lands on the loaded rather than on the arriving -- the same pressure bounty
- * applies, coming from a second direction. Returns 0 when there is nothing to
- * take, and the green goes back to being an ordinary one.
- */
-static int rust_one(sim_ship *sh, const sim_ship_class *c, uint32_t *rng,
-                    uint8_t *out) {
-    uint8_t pool[SIM_PRIZE_COUNT], have[SIM_PRIZE_COUNT];
-    int n = sim_prize_pool(c, pool), k = 0;
-    for (int i = 0; i < n; i++)
-        if (held(sh, pool[i])) have[k++] = pool[i];
-    if (k == 0) return 0;
-    *rng = xorshift32(*rng);
-    *out = have[*rng % (uint32_t)k];
-    move_count(sh, c, *out, -1);
-    return 1;
-}
-
 int sim_grant(sim_ship *sh, const sim_settings *cfg, uint8_t type) {
-    if (type >= SIM_PRIZE_COUNT) return 0;
+    if (type >= SIM_SLOT_COUNT) return 0;
     const sim_ship_class *c = &cfg->classes[sh->cls];
     uint8_t was = held(sh, type);
     move_count(sh, c, type, 1);
     return held(sh, type) != was;
-}
-
-uint8_t sim_take_prize(sim_ship *sh, const sim_settings *cfg, uint32_t *rng,
-                       int *delta) {
-    const sim_ship_class *c = &cfg->classes[sh->cls];
-    if (delta) *delta = 1;
-
-    if (cfg->rust_chance) {
-        *rng = xorshift32(*rng);
-        if (*rng % 1000u < cfg->rust_chance) {
-            uint8_t got;
-            if (rust_one(sh, c, rng, &got)) {
-                if (delta) *delta = -1;
-                return got;
-            }
-        }
-    }
-
-    uint8_t pool[SIM_PRIZE_COUNT];
-    int n = sim_prize_pool(c, pool);
-    if (n == 0) return SIM_PRIZE_NONE;
-    /* Weighted over the hull's own pool, so a zone writes the shape of its
-     * tree and the roster decides which parts of it this pilot can see. A
-     * zone that zeroes everything gets an even roll rather than a division
-     * by nothing. */
-    uint32_t total = 0;
-    for (int i = 0; i < n; i++) total += cfg->prize_weight[pool[i]];
-    *rng = xorshift32(*rng);
-    uint8_t type;
-    if (total == 0) {
-        type = pool[*rng % (uint32_t)n];
-    } else {
-        uint32_t r = *rng % total;
-        int i = 0;
-        for (; i < n - 1; i++) {
-            uint32_t w = cfg->prize_weight[pool[i]];
-            if (r < w) break;
-            r -= w;
-        }
-        type = pool[i];
-    }
-    /* A green is worth one bounty whatever it turns out to be, including one
-     * that turns out to be nothing. A pilot at every ceiling still gets more
-     * dangerous by hoovering, which is the point: otherwise the pressure
-     * bounty applies stops growing exactly when somebody is at their most
-     * dominant, and the best player in the room becomes the safest. */
-    uint8_t was = held(sh, type);
-    move_count(sh, c, type, 1);
-    if (held(sh, type) == was && sh->earned < 60000) sh->earned++;
-    return type;
-}
-
-/* A green appears near somebody, not somewhere.
- *
- * Uniform placement over the whole map was right when the arena was one room.
- * The map is 1024 tiles across now and `prize_max` is twenty, which is one
- * green per fifty thousand tiles: a pilot who can see sixty tiles finds one
- * about never. Measured against the live arena, two greens inside the entire
- * 256-tile interest radius, and a player reported a zone with none in it at
- * all. Since `spawn_prizes` is zero on purpose -- greens are the only way into
- * the tech tree, and handing them out at spawn flattens the skill gap -- an
- * unfindable green is an unreachable tech tree.
- *
- * So the ring is around a live pilot: outside NEAR_LO so a green is a trip
- * rather than a gift, inside NEAR_HI so it lands on their radar, whose reach is
- * thirty tiles either way. Twenty greens where the people are beats twenty
- * greens in a million tiles of nobody, and it needs no extra state, no larger
- * snapshot, and no per-zone tuning.
- *
- * With nobody alive it falls back to the old uniform band, because a room
- * between rounds should still have greens on the map when the lights come up.
- */
-static void spawn_prize(sim_state *s, const sim_settings *cfg) {
-    if (cfg->prize_hi <= cfg->prize_lo) return;
-    int slot = -1;
-    for (int i = 0; i < SIM_MAX_PRIZES; i++)
-        if (!s->prizes[i].active) { slot = i; break; }
-    if (slot < 0) return;
-
-    /* Whose neighbourhood. Chosen from the rng rather than by scanning from
-     * zero, so greens do not all pile up around whoever holds the first seat. */
-    int host = -1;
-    if (s->ship_count > 0) {
-        s->prize_rng = xorshift32(s->prize_rng);
-        int start = (int)(s->prize_rng % (uint32_t)s->ship_count);
-        for (int k = 0; k < s->ship_count; k++) {
-            int i = (start + k) % s->ship_count;
-            if (s->ships[i].active && s->ships[i].alive) { host = i; break; }
-        }
-    }
-
-    int32_t span = cfg->prize_hi - cfg->prize_lo;
-    for (int attempt = 0; attempt < 24; attempt++) {
-        int32_t tx, ty;
-        if (host >= 0) {
-            const int32_t R = SIM_PRIZE_NEAR_HI;
-            s->prize_rng = xorshift32(s->prize_rng);
-            int32_t ox = (int32_t)(s->prize_rng % (uint32_t)(2 * R + 1)) - R;
-            s->prize_rng = xorshift32(s->prize_rng);
-            int32_t oy = (int32_t)(s->prize_rng % (uint32_t)(2 * R + 1)) - R;
-            if (ox * ox + oy * oy < SIM_PRIZE_NEAR_LO * SIM_PRIZE_NEAR_LO) continue;
-            tx = s->ships[host].x / (SIM_TILE_PX * 256) + ox;
-            ty = s->ships[host].y / (SIM_TILE_PX * 256) + oy;
-            if (tx < cfg->prize_lo || tx > cfg->prize_hi) continue;
-            if (ty < cfg->prize_lo || ty > cfg->prize_hi) continue;
-        } else {
-            s->prize_rng = xorshift32(s->prize_rng);
-            tx = cfg->prize_lo + (int32_t)(s->prize_rng % (uint32_t)span);
-            s->prize_rng = xorshift32(s->prize_rng);
-            ty = cfg->prize_lo + (int32_t)(s->prize_rng % (uint32_t)span);
-        }
-        /* Ground rather than `solid`, so a door is refused whatever it is
-         * doing this tick: a green is going to sit here for a minute and the
-         * door will shut on it. */
-        if (!ground(cfg->map, tx, ty)) continue;
-        if (SIM_TILE_CLASS(sim_tile_at(cfg->map, tx, ty)) == SIM_TILE_SAFE)
-            continue;
-        sim_prize *p = &s->prizes[slot];
-        p->active = 1;
-        p->x = (tx * SIM_TILE_PX + SIM_TILE_PX / 2) * 256;
-        p->y = (ty * SIM_TILE_PX + SIM_TILE_PX / 2) * 256;
-        p->life = cfg->prize_life;
-        return;
-    }
-}
-
-static void update_prizes(sim_state *s, const sim_settings *cfg, sim_events *ev) {
-    uint16_t live = 0;
-    for (int i = 0; i < SIM_MAX_PRIZES; i++) {
-        sim_prize *p = &s->prizes[i];
-        if (!p->active) continue;
-        if (p->life > 0 && --p->life == 0) { p->active = 0; continue; }
-        /* A green inside a wall is a green nobody can take, so it stops being
-         * one. Placement already refuses anything but ground, which makes this
-         * a second answer to a question that should already be answered, and
-         * it is here because the first answer is not the only thing that
-         * decides it: a green lives a minute and the map underneath it is not
-         * a constant. An operator reloading a zone moves walls under a field
-         * that is already sown, and any future hand that writes a prize
-         * without asking gets swept rather than believed.
-         *
-         * The client runs this loop too, so a green it has somehow put in a
-         * wall goes there as well rather than sitting on the screen. */
-        if (!ground(cfg->map, p->x / (SIM_TILE_PX * 256),
-                    p->y / (SIM_TILE_PX * 256))) {
-            p->active = 0;
-            continue;
-        }
-        live++;
-
-        for (int k = 0; k < s->ship_count; k++) {
-            sim_ship *sh = &s->ships[k];
-            if (!sh->active || !sh->alive) continue;
-            if (!hull_reaches(&cfg->classes[sh->cls], sh->heading,
-                              sh->x, sh->y, p->x, p->y, cfg->prize_radius))
-                continue;
-            /* A prediction client may conclude that the green was touched,
-             * but it cannot roll the secret outcome. The next authoritative
-             * snapshot supplies the owner state and the server sends the
-             * outcome as a reliable event. */
-            if (cfg->deathless) {
-                emit(ev, SIM_EV_PRIZE_TOUCH, (uint8_t)k, 0, 0);
-                p->active = 0;
-                live--;
-                break;
-            }
-            /* Every green is takeable by everybody; what it turns out to be
-             * is rolled here, from what this hull could ever hold. A pilot
-             * already at that ceiling is still told what they found -- the
-             * count simply does not move. A green that refuses to be picked
-             * up reads as a broken pickup, and one that is eaten in silence
-             * is a green that lies. */
-            int delta = 1;
-            uint8_t got = sim_take_prize(sh, cfg, &s->prize_rng, &delta);
-            /* Collecting energy or recharge should feel immediate rather than
-             * arriving over the next few seconds. Losing one is not the same
-             * shape: the bar is clamped down to the new ceiling rather than
-             * refilled to it. */
-            if (got == SIM_UP_ENERGY || got == SIM_UP_RECHARGE) {
-                int32_t cap = sim_eff_max_energy(&cfg->classes[sh->cls], sh);
-                if (delta > 0 || sh->energy > cap) sh->energy = cap;
-            }
-            emit(ev, SIM_EV_PRIZE, (uint8_t)k, got, delta);
-            p->active = 0;
-            live--;
-            break;
-        }
-    }
-
-    /* Sowing is the authority's act, like concluding a death. A prediction
-     * client runs this same routine over a snapshot filtered to its interest
-     * window, so its live count is a fact about the window rather than about
-     * the map: far below prize_max even on a full field. Left to run, it
-     * seeded a phantom green near the player every prize_delay ticks,
-     * because spawn_prize aims at a live pilot's radar ring and the only
-     * pilots in a filtered state are the nearby ones. The next snapshot
-     * swept each one, so greens blinked in and out of the visible screen. */
-    if (cfg->deathless || cfg->prize_delay == 0 || live >= cfg->prize_max) return;
-    if (++s->prize_timer >= cfg->prize_delay) {
-        s->prize_timer = 0;
-        spawn_prize(s, cfg);
-    }
 }
 
 /* Whether this hull is carrying a fan at all. Multifire is held per trigger
@@ -1809,19 +1456,6 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
     for (uint16_t i = 0; i < input_count; i++)
         if (inputs[i].ship < SIM_MAX_SHIPS) buttons[inputs[i].ship] = inputs[i].buttons;
 
-    /* Riders per ship, counted once. The penalty check below wants the count
-     * for every hull every tick, and asking sim_gunners each time is a walk
-     * of the roster inside a walk of the roster. Counting from `prev`-equal
-     * state is safe because nothing between here and the penalty check
-     * changes a carrier field: attach and detach happen between ticks, and
-     * the seating pass that drops riders runs after the ship loop ends. */
-    uint8_t riders[SIM_MAX_SHIPS] = {0};
-    for (int i = 0; i < next->ship_count; i++) {
-        const sim_ship *g = &next->ships[i];
-        if (g->active && g->carrier != SIM_NO_CARRIER && g->carrier < SIM_MAX_SHIPS)
-            riders[g->carrier]++;
-    }
-
     /* --- ships --- */
     for (int i = 0; i < next->ship_count; i++) {
         sim_ship *sh = &next->ships[i];
@@ -1849,7 +1483,7 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
                 sh->x = sh->spawn_x;
                 sh->y = sh->spawn_y;
                 sh->vx = sh->vy = 0;
-                if (!cfg->deathless) outfit(sh, cfg, &next->prize_rng);
+                sim_deal_kit(sh, cfg, 0);
                 sh->energy = sim_eff_max_energy(cls, sh);
                 sh->fire_cooldown[SIM_TRIG_GUN] = 0;
                 sh->fire_cooldown[SIM_TRIG_BOMB] = 0;
@@ -1866,19 +1500,6 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
         int32_t e_thrust = sim_eff_thrust(cls, sh);
         int32_t e_speed = sim_eff_speed(cls, sh);
 
-        /* Carrying costs, and it costs the same whether one is riding or
-         * five. Charged here rather than in the effective-stat helpers
-         * because it is a property of the tick rather than of the ship: those
-         * helpers answer "what can this hull do", and the answer does not
-         * change because somebody sat on it. */
-        const int riding = sh->carrier != SIM_NO_CARRIER;
-        if (!riding && riders[i] > 0) {
-            e_thrust -= cls->gunner_thrust;
-            e_speed -= cls->gunner_speed;
-            if (e_thrust < 0) e_thrust = 0;
-            if (e_speed < 0) e_speed = 0;
-        }
-
         /* 1. Rotate. */
         if (b & SIM_BTN_LEFT) sh->heading = (uint16_t)(sh->heading - e_rot);
         if (b & SIM_BTN_RIGHT) sh->heading = (uint16_t)(sh->heading + e_rot);
@@ -1886,9 +1507,8 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
         int32_t dx, dy;
         heading_dir(sh->heading, &dx, &dy);
 
-        /* 2. Thrust along the nose. A gunner has none: it turns, it shoots,
-         * and where it goes is somebody else's business. */
-        if (!riding && (b & (SIM_BTN_THRUST | SIM_BTN_REVERSE))) {
+        /* 2. Thrust along the nose. */
+        if (b & (SIM_BTN_THRUST | SIM_BTN_REVERSE)) {
             int32_t sign = (b & SIM_BTN_THRUST) ? 1 : -1;
             sh->vx += (int32_t)(((int64_t)e_thrust * dx * sign) >> 15);
             sh->vy += (int32_t)(((int64_t)e_thrust * dy * sign) >> 15);
@@ -1979,75 +1599,6 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
                 sh->vx -= (int32_t)(((int64_t)cp.recoil * dx) >> 15);
                 sh->vy -= (int32_t)(((int64_t)cp.recoil * dy) >> 15);
                 emit(ev, SIM_EV_CHARGE, (uint8_t)i, (uint8_t)k, sh->charge[k]);
-            }
-        }
-
-        /* 3b. A mine, which is the bomb trigger in its other posture.
-         *
-         * There is no inventory and no green: a pilot has mines because they
-         * have a rack, which is the original's arrangement -- a mine there is
-         * a bomb with one bit set rather than a weapon of its own, and the
-         * special inventory its position packet carries has no room for one.
-         * What limits it is how many of yours are already lying about.
-         *
-         * The count is walked rather than kept. A byte on the ship would be
-         * cheaper and would be a second copy of a fact the weapon table
-         * already holds, and the two would part company the first time a mine
-         * ended somewhere the counter did not hear about: a wall, a repel
-         * turning it into a bomb, its own timer, or the owner dying with it
-         * still out. Walking the table cannot be wrong, costs nothing on the
-         * ticks nobody lays one, and takes no room in a snapshot. */
-        if (!in_safe && sh->fire_cooldown[SIM_TRIG_BOMB] == 0
-            && (b & SIM_BTN_MINE) && cls->mine_max > 0) {
-            uint8_t rack = trigger_pattern(cls, SIM_TRIG_BOMB,
-                                           sh->level[SIM_TRIG_BOMB]);
-            sim_fire_pattern mp;
-            sim_weapon_spec ms;
-            /* The bomb trigger's add-ons and its rung, because that is what
-             * this round is. Multifire is the one stripped: it multiplies a
-             * pattern rather than transforming a round, and one press putting
-             * three mines on the floor spends the hull's whole allowance in a
-             * single tick.
-             *
-             * Resolved *with* both, rather than bare: what a mine costs
-             * climbs with the rung the way a bomb's does, and a bare resolve
-             * priced every rung at the first one. */
-            uint16_t mm = sim_mod_set(sh->mods[SIM_TRIG_BOMB],
-                                      SIM_MOD_MULTI, 0);
-            /* A hull with no rack lays nothing: a mine is a bomb you did not
-             * throw, so having one to throw is the whole of the licence. */
-            if (rack != SIM_NO_PATTERN
-                && resolve(cfg, cfg->mine, mm, sh->level[SIM_TRIG_BOMB],
-                           &mp, &ms)
-                && sh->energy > mp.energy) {
-                int out = 0;
-                for (uint16_t w = 0; w < next->weapon_count; w++) {
-                    if (next->weapons[w].owner != (uint8_t)i) continue;
-                    if (is_mine(&cfg->specs[next->weapons[w].spec])) out++;
-                }
-                if (out < (int)cls->mine_max) {
-                    int32_t mx = sh->x
-                        + (int32_t)(((int64_t)(cls->fore + 512) * dx) >> 15);
-                    int32_t my = sh->y
-                        + (int32_t)(((int64_t)(cls->fore + 512) * dy) >> 15);
-                    /* The fragments are bullets of the layer's *gun* rung and
-                     * bounce if their bullets do, read here at the laying
-                     * exactly as a thrown bomb reads it at the throw. */
-                    spawn_pattern(next, cfg, cfg->mine, (uint8_t)i, sh->team,
-                                  mx, my, sh->vx, sh->vy, sh->heading, 0, mm,
-                                  sh->level[SIM_TRIG_BOMB],
-                                  sh->level[SIM_TRIG_GUN],
-                                  (uint8_t)(sim_mod_get(sh->mods[SIM_TRIG_GUN],
-                                                        SIM_MOD_BOUNCE) != 0),
-                                  0, ev);
-                    sh->energy -= mp.energy;
-                    /* It rides the bomb's clock and locks both, the way every
-                     * other thing that leaves this hull does. No recoil: it is
-                     * put down rather than thrown, so there is nothing to
-                     * push back against. */
-                    lock_trigger(sh, SIM_TRIG_GUN, mp.delay);
-                    lock_trigger(sh, SIM_TRIG_BOMB, mp.delay);
-                }
             }
         }
 
@@ -2222,7 +1773,7 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
          * so the warp did not fire and the collision below could not move
          * them. Reported from play as a ship frozen inside a laser wall until
          * the wall opened again, which is exactly how long it lasts. */
-        if (!riding) {
+        {
             int32_t dox, doy, dhx, dhy;
             hull_box(cls, sh->heading, &dox, &doy, &dhx, &dhy);
             if (box_shut_door(cfg->map, cfg, next->tick, sh->x + dox,
@@ -2244,10 +1795,7 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
          * behind it. The clamps below are the old flush-to-tile arithmetic
          * with the reach on each side spelled out, since with an offset box
          * the reach to the right is no longer the reach to the left. */
-        if (riding) {
-            /* A gunner does not fly and does not collide. It is put on its
-             * carrier below, once every hull that steers itself has moved. */
-        } else {
+        {
             const sim_map *m = cfg->map;
             int32_t ox, oy, hx, hy;
             hull_box(cls, sh->heading, &ox, &oy, &hx, &hy);
@@ -2356,40 +1904,6 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
         if (sh->energy > cap) sh->energy = cap;
     }
 
-    /* --- gunners ---
-     *
-     * Everything that steers itself has moved, so now the riders go where
-     * their carriers ended up. Done in a pass of its own rather than inside
-     * the loop above because a gunner seated mid-loop would be a tick behind
-     * or a tick ahead depending on which slot its carrier happened to hold,
-     * and the whole point of this core is that slot order is not a rule.
-     *
-     * It is also where a ride ends. Death, a side change, a hull change and a
-     * carrier that has itself climbed onto somebody all drop a gunner here,
-     * which is one place to be right rather than four. Nothing announces it:
-     * a gunner whose carrier just died is standing where the carrier was,
-     * with its own energy, and the next tick it flies. */
-    for (int i = 0; i < next->ship_count; i++) {
-        sim_ship *sh = &next->ships[i];
-        if (!sh->active || sh->carrier == SIM_NO_CARRIER) continue;
-        if (!sh->alive) { sh->carrier = SIM_NO_CARRIER; continue; }
-        if (sh->carrier >= next->ship_count) {
-            sh->carrier = SIM_NO_CARRIER;
-            continue;
-        }
-        const sim_ship *to = &next->ships[sh->carrier];
-        if (!to->active || !to->alive || to->team != sh->team
-            || to->carrier != SIM_NO_CARRIER) {
-            sh->carrier = SIM_NO_CARRIER;
-            continue;
-        }
-        sh->x = to->x;
-        sh->y = to->y;
-        sh->vx = to->vx;
-        sh->vy = to->vy;
-    }
-
-    update_prizes(next, cfg, ev);
     update_flags(next, cfg, ev);
 
     /* --- weapons ---
@@ -2668,7 +2182,6 @@ uint64_t sim_hash(const sim_state *s) {
     uint64_t h = 0xcbf29ce484222325ULL;
     h = hash_u32(h, s->tick);
     h = hash_u32(h, s->rng);
-    h = hash_u32(h, s->prize_rng);
     h = hash_u32(h, s->ship_count);
     h = hash_u32(h, s->weapon_count);
     for (int i = 0; i < s->ship_count; i++) {
@@ -2697,15 +2210,13 @@ uint64_t sim_hash(const sim_state *s) {
          * client that guessed at it would toggle when the server did not. */
         h = hash_u32(h, sh->multi_off);
         h = hash_u32(h, sh->btn_prev);
-        h = hash_u32(h, sh->earned);
+        h = hash_u32(h, sh->run);
         h = hash_u32(h, sh->points);
-        /* Who this ship is riding. In here because a client that disagreed
-         * about it would be flying a hull the server has sitting still, which
-         * is the loudest desync there is and the one worth catching on the
-         * tick it happens rather than on the pixel it shows up as. */
-        h = hash_u32(h, sh->carrier);
+        /* The kit, because a respawn re-deals from it: a client holding a
+         * different one would rebuild a different ship on the tick a pilot
+         * comes back, which is the loudest desync there is. */
+        for (int k = 0; k < SIM_SLOT_COUNT; k++) h = hash_u32(h, sh->kit[k]);
     }
-    h = hash_u32(h, s->prize_timer);
     h = hash_u32(h, s->flag_count);
     for (int i = 0; i < s->flag_count; i++) {
         const sim_flag *f = &s->flags[i];
@@ -2715,14 +2226,6 @@ uint64_t sim_hash(const sim_state *s) {
         h = hash_u32(h, (uint32_t)f->x);
         h = hash_u32(h, (uint32_t)f->y);
         h = hash_u32(h, f->cooldown);
-    }
-    for (int i = 0; i < SIM_MAX_PRIZES; i++) {
-        const sim_prize *p = &s->prizes[i];
-        if (!p->active) continue;
-        h = hash_u32(h, (uint32_t)(i | (p->active << 16)));
-        h = hash_u32(h, (uint32_t)p->x);
-        h = hash_u32(h, (uint32_t)p->y);
-        h = hash_u32(h, p->life);
     }
     for (uint16_t i = 0; i < s->weapon_count; i++) {
         const sim_weapon *w = &s->weapons[i];

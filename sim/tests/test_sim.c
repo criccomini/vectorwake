@@ -21,10 +21,6 @@ static int failures = 0;
         }                                                         \
     } while (0)
 
-static int32_t tile_center(int32_t t) {
-    return (t * SIM_TILE_PX + SIM_TILE_PX / 2) * 256;
-}
-
 static uint32_t next_random(uint32_t *state) {
     *state ^= *state << 13;
     *state ^= *state >> 17;
@@ -62,16 +58,14 @@ static void check_state_invariants(const sim_state *s, const sim_settings *cfg) 
         for (int charge = 0; charge < SIM_MAX_CHARGES; charge++)
             CHECK(sh->charge[charge] <= c->charge_max[charge],
                   "charges stay below the hull ceiling");
-        if (sh->carrier != SIM_NO_CARRIER) {
-            CHECK(sh->carrier < s->ship_count, "a gunner names an existing carrier");
-            if (sh->carrier >= s->ship_count) continue;
-            const sim_ship *carrier = &s->ships[sh->carrier];
-            CHECK(carrier->active && carrier->alive, "a gunner rides a live carrier");
-            CHECK(carrier->carrier == SIM_NO_CARRIER, "attachments stay one level deep");
-            CHECK(carrier->team == sh->team, "a gunner rides their own side");
-            CHECK(carrier->x == sh->x && carrier->y == sh->y,
-                  "a gunner stays on the carrier");
-        }
+        /* A kit never asks for more than the hull holds or more than the
+         * budget buys, whatever route it arrived by. */
+        uint8_t ceiling[SIM_SLOT_COUNT];
+        sim_kit_ceilings(c, ceiling);
+        for (int k = 0; k < SIM_SLOT_COUNT; k++)
+            CHECK(sh->kit[k] <= ceiling[k], "a kit stays inside the hull");
+        CHECK(sim_kit_cost(sh->kit) <= SIM_KIT_BUDGET,
+              "a kit stays inside the budget");
     }
 
     for (int i = 0; i < s->weapon_count; i++) {
@@ -85,22 +79,6 @@ static void check_state_invariants(const sim_state *s, const sim_settings *cfg) 
         CHECK(w->shrap_level < SIM_MAX_RUNGS, "a fragment rung stays in bounds");
     }
 
-    int live_prizes = 0;
-    for (int i = 0; i < SIM_MAX_PRIZES; i++) {
-        const sim_prize *p = &s->prizes[i];
-        if (!p->active) continue;
-        live_prizes++;
-        CHECK(p->x >= 0 && p->y >= 0, "a green stays on the map");
-        if (p->x < 0 || p->y < 0) continue;
-        CHECK((p->x & (SIM_TILE_PX * 256 - 1)) == SIM_TILE_PX * 128,
-              "a green stays centered on its tile horizontally");
-        CHECK((p->y & (SIM_TILE_PX * 256 - 1)) == SIM_TILE_PX * 128,
-              "a green stays centered on its tile vertically");
-        CHECK(SIM_TILE_CLASS(sim_tile_at(cfg->map, p->x >> 12, p->y >> 12))
-                  != SIM_TILE_SOLID,
-              "a green stays out of walls");
-    }
-    CHECK(live_prizes <= SIM_MAX_PRIZES, "green count stays in bounds");
 
     for (int i = 0; i < s->flag_count; i++) {
         const sim_flag *f = &s->flags[i];
@@ -142,12 +120,12 @@ static void step_n(sim_state *s, const sim_settings *cfg, uint16_t b0,
 /* Counts of each event type over n ticks. Energy is a poor probe for damage
  * because recharge erases the evidence within a second; events do not lie. */
 typedef struct {
-    int fires, hits, deaths, bounces, spawns, prizes, warps, predicted_deaths;
+    int fires, hits, deaths, bounces, spawns, warps, predicted_deaths;
 } ev_counts;
 
 static ev_counts step_counting(sim_state *s, const sim_settings *cfg,
                                uint16_t b0, uint16_t b1, int n) {
-    ev_counts c = {0, 0, 0, 0, 0, 0, 0, 0};
+    ev_counts c = {0, 0, 0, 0, 0, 0, 0};
     sim_state tmp;
     sim_events ev;
     for (int i = 0; i < n; i++) {
@@ -161,7 +139,6 @@ static ev_counts step_counting(sim_state *s, const sim_settings *cfg,
                 case SIM_EV_DEATH: c.deaths++; break;
                 case SIM_EV_BOUNCE: c.bounces++; break;
                 case SIM_EV_SPAWN: c.spawns++; break;
-                case SIM_EV_PRIZE: c.prizes++; break;
                 case SIM_EV_WARP: c.warps++; break;
                 default: break;
             }
@@ -192,8 +169,9 @@ static int32_t gun_cost(const sim_settings *cfg, uint8_t cls, uint8_t level,
     return a.ships[0].energy - b.ships[0].energy;
 }
 
-/* How much of one prize kind a pilot is holding. The core keeps this rule to
- * itself; the test needs it to check that rust took what it says it took. */
+/* How much of one kit slot a pilot is holding, which is the check that a
+ * dealt kit put the counts where the kit said. The core keeps this rule to
+ * itself, so the test carries its own copy. */
 static uint8_t held_of(const sim_ship *sh, uint8_t type) {
     if (type < SIM_UP_COUNT) return sh->up[type];
     type = (uint8_t)(type - SIM_UP_COUNT);
@@ -218,16 +196,33 @@ static const sim_fire_pattern *bomb_of(const sim_settings *cfg, int cls) {
     return &cfg->patterns[cfg->classes[cls].trigger[SIM_TRIG_BOMB][0]];
 }
 
+/* A random legal kit for whatever hull this pilot is in: spend one at a time
+ * on slots the roster allows until the budget runs out. Used by the long
+ * mixed run, where the point is that no sequence of legal kits, hull changes
+ * and side changes can put the state somewhere the invariants refuse. */
+static void random_kit(sim_ship *sh, const sim_settings *cfg, uint32_t *rng) {
+    uint8_t ceiling[SIM_SLOT_COUNT], kit[SIM_SLOT_COUNT] = {0};
+    sim_kit_ceilings(&cfg->classes[sh->cls], ceiling);
+    int budget = (int)(next_random(rng) % (SIM_KIT_BUDGET + 1));
+    for (int spent = 0; spent < budget; spent++) {
+        int tries = 0;
+        for (; tries < 32; tries++) {
+            int k = (int)(next_random(rng) % SIM_SLOT_COUNT);
+            if (kit[k] < ceiling[k]) { kit[k]++; break; }
+        }
+        if (tries == 32) break;
+    }
+    sim_set_kit(sh, cfg, kit);
+}
+
 int main(void) {
     sim_map *m = walled_map();
     sim_settings cfg;
     memset(&cfg, 0, sizeof cfg);
     sim_settings_baseline(&cfg, m);
-    /* Every test below that is not about the opening loadout wants a plain
-     * ship: with the baseline's thirty spawn greens, a "does one trigger pull
-     * make one bullet" test is really asking whether the roll handed out
-     * multifire. The feature has its own test, which sets this back. */
-    cfg.spawn_prizes = 0;
+    /* Every ship below spawns bare unless a test hands it a kit. A pilot in
+     * a real room is dealt one at the seat; here a "does one trigger pull
+     * make one bullet" test wants nothing in the way of the answer. */
     const int APEX = 0, ANVIL = 3;
 
     /* Thrust at heading 0 moves up (-y) and nowhere else. */
@@ -620,7 +615,6 @@ int main(void) {
      */
     {
         sim_settings w = cfg;
-        w.prize_max = 0;
         w.bomb_safety = 0;
         for (int k = 1; k < SIM_MAX_RUNGS; k++) {
             const sim_weapon_spec *fs =
@@ -889,89 +883,13 @@ int main(void) {
 
         CHECK(crossed, "an open door lets the same ship through");
 
-        /* Nothing is left lying in a door.
-         *
-         * A door is a wall on a clock, so "is this tile solid" is a question
-         * about this tick, which is right for a hull crossing it and wrong for
-         * a green that will sit there for a minute: sown through an open one it
-         * is inside a wall for the third of every cycle the door is shut,
-         * unreachable while it is, and drawn embedded in it. On alpha that was
-         * about one green every ten minutes.
-         *
-         * A field of doors with one open lane through it, so a placement rule
-         * that reads the clock lands in a door almost every time and one that
-         * reads the tile can only ever land in the lane. */
-        {
-            sim_map *pm = walled_map();
-            const int LO = 500, HI = 540, LANE = 520;
-            for (int ty = LO; ty <= HI; ty++)
-                for (int tx = LO; tx <= HI; tx++)
-                    if (tx != LANE)
-                        pm->tile[(size_t)ty * SIM_MAP_TILES + tx] =
-                            SIM_TILE(SIM_TILE_DOOR, (uint8_t)(tx % 8));
-            sim_map_index(pm);
-            sim_settings pc;
-            memset(&pc, 0, sizeof pc);
-            sim_settings_baseline(&pc, pm);
-            pc.prize_lo = LO;
-            pc.prize_hi = HI;
-            pc.prize_delay = 1;
-            pc.prize_max = 60;
-            pc.prize_life = 60000;
 
-            sim_state s;
-            sim_init(&s, 7);
-            sim_spawn(&s, APEX, 0, LANE * 16, 520 * 16, 0, &pc);
-            step_n(&s, &pc, 0, 0, 4000);
-
-            int sown = 0;
-            for (int i = 0; i < SIM_MAX_PRIZES; i++) {
-                if (!s.prizes[i].active) continue;
-                sown++;
-                int32_t tx = s.prizes[i].x / (SIM_TILE_PX * 256);
-                int32_t ty = s.prizes[i].y / (SIM_TILE_PX * 256);
-                CHECK(SIM_TILE_CLASS(sim_tile_at(pm, tx, ty)) != SIM_TILE_DOOR,
-                      "no green is sown in a door");
-            }
-            CHECK(sown > 0, "and greens were sown at all");
-
-            /* And one that is in a wall regardless goes, whoever put it
-             * there. Placement is the first answer and this is the second,
-             * because a green lives a minute and the map under it can move:
-             * an operator reloading a zone puts walls through a field that is
-             * already sown. Written by hand here for the same reason it
-             * exists at all, which is that the state is not only ever written
-             * by the sowing. */
-            sim_state g;
-            sim_init(&g, 5);
-            sim_spawn(&g, APEX, 0, LANE * 16, 520 * 16, 0, &pc);
-            for (int i = 0; i < SIM_MAX_PRIZES; i++) g.prizes[i].active = 0;
-            g.prizes[0].active = 1;
-            g.prizes[0].x = tile_center(LO + 1);   /* a door, and shut or not */
-            g.prizes[0].y = tile_center(LO + 1);
-            g.prizes[0].life = 60000;
-            g.prizes[1].active = 1;
-            g.prizes[1].x = tile_center(LANE);     /* the open lane */
-            g.prizes[1].y = tile_center(LO + 1);
-            g.prizes[1].life = 60000;
-            sim_settings quiet = pc;
-            quiet.prize_delay = 0;                 /* nothing sown over the top */
-            step_n(&g, &quiet, 0, 0, 1);
-            CHECK(!g.prizes[0].active, "a green found inside a wall stops being one");
-            CHECK(g.prizes[1].active, "and one on open ground is left alone");
-
-            free(pm);
-        }
-
-        /* The other two ways something is left on the map, and neither asked
-         * about the tile: the green a kill drops where the hull came apart,
-         * and the flag its carrier was holding. A pilot killed standing in an
-         * open doorway left both inside the door for it to shut on, and a flag
-         * nobody can reach is a round nobody can finish. */
+        /* A flag dropped by a dying carrier, which never asked about the
+         * tile either: killed in an open doorway they left it inside the
+         * door for the clock to shut on, and a flag nobody can reach is a
+         * round nobody can finish. */
         {
             sim_settings dc2 = dc;
-            dc2.prize_max = 8;
-            dc2.prize_delay = 0;       /* no ambient sowing to confuse the count */
             sim_state s;
             sim_init(&s, 3);
             uint32_t t0 = 0;
@@ -993,20 +911,6 @@ int main(void) {
             ev_counts c = step_counting(&s, &dc2, SIM_BTN_FIRE, 0, 120);
             CHECK(c.deaths == 1, "the pilot in the doorway is killed");
             CHECK(!s.ships[prey].alive, "and is dead");
-
-            int found = 0;
-            for (int i = 0; i < SIM_MAX_PRIZES; i++) {
-                if (!s.prizes[i].active) continue;
-                found++;
-                int32_t tx = s.prizes[i].x / (SIM_TILE_PX * 256);
-                int32_t ty = s.prizes[i].y / (SIM_TILE_PX * 256);
-                int cls2 = SIM_TILE_CLASS(sim_tile_at(dm, tx, ty));
-                CHECK(cls2 != SIM_TILE_DOOR && cls2 != SIM_TILE_SOLID,
-                      "the green a death leaves is not left in a door");
-                int64_t gx = tx - 505, gy = ty - 504;
-                CHECK(gx * gx + gy * gy <= 9, "and it is near where they fell");
-            }
-            CHECK(found == 1, "a kill leaves exactly one green");
 
             CHECK(!s.flags[flag].carried, "the flag is dropped");
             int32_t fx = s.flags[flag].x / (SIM_TILE_PX * 256);
@@ -1295,32 +1199,15 @@ int main(void) {
     {
         sim_state s;
         sim_settings w = cfg;
-        w.prize_delay = 0;
-        w.prize_max = 1;
         sim_init(&s, 1);
         sim_spawn(&s, APEX, 0, 8192, 8192, 0, &w);
         sim_spawn(&s, APEX, 1, 8192, 8192 - 200, 0, &w);
-        s.prizes[0].active = 1;
-        s.prizes[0].x = tile_center(20);
-        s.prizes[0].y = tile_center(20);
-        s.prizes[0].life = w.prize_life;
         s.ships[1].energy = 1;
         ev_counts c = step_counting(&s, &w, SIM_BTN_FIRE, 0, 150);
         CHECK(!s.ships[1].alive, "low energy target dies");
         CHECK(c.deaths == 1, "death is reported once");
         CHECK(s.ships[0].kills == 1, "the killer is credited");
         CHECK(s.ships[1].deaths == 1, "the victim's deaths increment");
-        int greens = 0;
-        for (int i = 0; i < SIM_MAX_PRIZES; i++) {
-            if (!s.prizes[i].active) continue;
-            greens++;
-            CHECK(s.prizes[i].x
-                      == tile_center(s.ships[1].x / (SIM_TILE_PX * 256))
-                  && s.prizes[i].y
-                      == tile_center(s.ships[1].y / (SIM_TILE_PX * 256)),
-                  "death leaves a green where the hull exploded");
-        }
-        CHECK(greens == 1, "a death green replaces a full field prize");
         step_n(&s, &w, 0, 0, w.respawn_delay + 2);
         CHECK(s.ships[1].alive, "the dead respawn");
         CHECK(s.ships[1].energy == sim_eff_max_energy(&w.classes[APEX], &s.ships[1]),
@@ -1351,33 +1238,6 @@ int main(void) {
         CHECK(s.ships[0].kills == 0, "and no kill is credited");
     }
 
-    /* A deathless instance sows no prizes, for the same reason it concludes
-     * no death: it is a prediction client simulating a snapshot filtered to
-     * its interest window, so its live count is about the window, not the
-     * map. Left to sow, it seeded a green near the player every prize_delay
-     * ticks and the next snapshot swept it: greens blinking in and out of
-     * the visible screen. The authority run beside it is what proves the
-     * gate is doing the work rather than the field being unsowable. */
-    {
-        sim_state s;
-        sim_settings dc = cfg;
-        dc.deathless = 1;
-        dc.mortal_ship = 0;
-        sim_init(&s, 5);
-        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &dc);
-        step_counting(&s, &dc, 0, 0, dc.prize_delay * 4);
-        int live = 0;
-        for (int i = 0; i < SIM_MAX_PRIZES; i++) live += s.prizes[i].active;
-        CHECK(live == 0, "a deathless instance sows nothing");
-
-        sim_state a;
-        sim_init(&a, 5);
-        sim_spawn(&a, APEX, 0, 8192, 8192, 0, &cfg);
-        step_counting(&a, &cfg, 0, 0, cfg.prize_delay * 4);
-        live = 0;
-        for (int i = 0; i < SIM_MAX_PRIZES; i++) live += a.prizes[i].active;
-        CHECK(live > 0, "the authority sows the same field");
-    }
 
     /* The one hull named mortal still dies, which is how the client keeps
      * its own death immediate while everyone else's waits for the zone. */
@@ -1395,9 +1255,6 @@ int main(void) {
         CHECK(c.deaths == 1, "and its death is reported");
         CHECK(c.predicted_deaths == 0,
               "a real local death is not a prediction candidate");
-        int live = 0;
-        for (int i = 0; i < SIM_MAX_PRIZES; i++) live += s.prizes[i].active;
-        CHECK(live == 1, "and its death green appears in the predicted tick");
     }
 
     /* Changing hull is a respawn, not a costume change, and it leaves the
@@ -1435,7 +1292,7 @@ int main(void) {
         sim_spawn(&s, APEX, 1, 8500, 8192, 0, &cfg);
         step_n(&s, &cfg, SIM_BTN_THRUST, SIM_BTN_THRUST, 30);
         s.ships[0].up[SIM_UP_SPEED] = 3;
-        s.ships[0].earned = 40;
+        s.ships[0].run = 40;
         sim_add_flag(&s, 100, 100);
         s.flags[0].team = 0;
         s.flags[0].carried = 1;
@@ -1448,7 +1305,7 @@ int main(void) {
         CHECK(s.ships[0].cls == APEX, "in the hull they were already flying");
         CHECK(s.ships[0].up[SIM_UP_SPEED] == 3,
               "keeping what they had collected for it");
-        CHECK(s.ships[0].earned == 0, "and none of the bounty they had earned");
+        CHECK(s.ships[0].run == 0, "and none of the run they were worth");
         CHECK(s.ships[0].x == s.ships[0].spawn_x
               && s.ships[0].y == s.ships[0].spawn_y, "back at a start");
         CHECK(s.ships[0].vx == 0 && s.ships[0].vy == 0, "at rest");
@@ -2028,22 +1885,31 @@ int main(void) {
      * Keeping them apart is the whole design: as rows, three levels against
      * six add-ons would be a hundred and ninety-two patterns per weapon. */
     {
-        /* What a hull can be handed is its roster row, and nothing else. */
-        uint8_t pool[SIM_PRIZE_COUNT];
+        /* What a kit may spend on is the hull's roster row, and nothing
+         * else. The ceilings are the whole of that row: zero is a slot this
+         * hull never gets. */
+        uint8_t ceil[SIM_SLOT_COUNT];
         const int CIPHER = 4, LATTICE = 6;
-        int n = sim_prize_pool(&cfg.classes[APEX], pool);
-        int has_gun_level = 0, has_bomb_level = 0, has_multi = 0, has_shrap = 0;
-        for (int i = 0; i < n; i++) {
-            if (pool[i] == SIM_PRIZE_LEVEL(SIM_TRIG_GUN)) has_gun_level = 1;
-            if (pool[i] == SIM_PRIZE_LEVEL(SIM_TRIG_BOMB)) has_bomb_level = 1;
-            if (pool[i] == SIM_PRIZE_MOD(SIM_TRIG_GUN, SIM_MOD_MULTI)) has_multi = 1;
-            if (pool[i] == SIM_PRIZE_MOD(SIM_TRIG_BOMB, SIM_MOD_SHRAPNEL)) has_shrap = 1;
-        }
-        CHECK(n >= SIM_UP_COUNT, "every hull can be handed every stat");
-        CHECK(has_gun_level, "MaxGuns is 3, so a gun level is on offer");
-        CHECK(has_bomb_level, "and MaxBombs is 2, so a bomb level is too");
-        CHECK(has_multi, "multifire is universal, as it is in the original");
-        CHECK(has_shrap, "and so is shrapnel, on any hull with a rack");
+        sim_kit_ceilings(&cfg.classes[APEX], ceil);
+        for (int u = 0; u < SIM_UP_COUNT; u++)
+            CHECK(ceil[SIM_SLOT_STAT(u)] == SIM_UP_STEPS,
+                  "every hull climbs every stat to the same ceiling");
+        CHECK(ceil[SIM_SLOT_LEVEL(SIM_TRIG_GUN)] == 2,
+              "MaxGuns is 3, so two rungs are buyable above the first");
+        CHECK(ceil[SIM_SLOT_LEVEL(SIM_TRIG_BOMB)] == 1,
+              "and MaxBombs is 2, so one is");
+        CHECK(ceil[SIM_SLOT_MOD(SIM_TRIG_GUN, SIM_MOD_MULTI)] > 0,
+              "multifire is universal, as it is in the original");
+        CHECK(ceil[SIM_SLOT_MOD(SIM_TRIG_BOMB, SIM_MOD_SHRAPNEL)] > 0,
+              "and so is shrapnel, on any hull with a rack");
+
+        /* Five stats at six steps is exactly the budget, and at eight it is
+         * forty against thirty, so no purchase ever stops a kit being a set
+         * of tradeoffs. docs/design/match-game.md. */
+        CHECK(SIM_UP_STEPS_BASE * SIM_UP_COUNT == SIM_KIT_BUDGET,
+              "six a stat is exactly what a kit spends");
+        CHECK(SIM_UP_STEPS * SIM_UP_COUNT > SIM_KIT_BUDGET,
+              "and the bought ceiling stays out of reach");
 
         /* A hull with no rack is offered no bomb add-on: an add-on is a
          * transform on a trigger, and a trigger that does not exist cannot be
@@ -2054,12 +1920,12 @@ int main(void) {
         *nb = cfg;
         for (int r = 0; r < SIM_MAX_RUNGS; r++)
             nb->classes[CIPHER].trigger[SIM_TRIG_BOMB][r] = SIM_NO_PATTERN;
-        n = sim_prize_pool(&nb->classes[CIPHER], pool);
+        sim_kit_ceilings(&nb->classes[CIPHER], ceil);
         int bomb_addon = 0;
-        for (int i = 0; i < n; i++)
-            if (pool[i] >= SIM_PRIZE_MOD(SIM_TRIG_BOMB, 0)
-                && pool[i] < SIM_PRIZE_CHARGE(0)) bomb_addon = 1;
-        CHECK(!bomb_addon, "a hull with no rack is offered no bomb add-on");
+        for (int m = 0; m < SIM_MOD_COUNT; m++)
+            if (ceil[SIM_SLOT_MOD(SIM_TRIG_BOMB, m)]) bomb_addon = 1;
+        CHECK(!bomb_addon, "a hull with no rack may spend on no bomb add-on");
+        CHECK(ceil[SIM_SLOT_LEVEL(SIM_TRIG_BOMB)] == 0, "nor on a bomb rung");
         free(nb);
 
         /* The roster is ceilings now, so that is what to check it by. Two
@@ -2076,21 +1942,21 @@ int main(void) {
         CHECK(sim_mod_get(cfg.classes[WEDGE].mod_max[SIM_TRIG_BOMB],
                           SIM_MOD_SHRAPNEL) == 3, "a bomber holds the most shrapnel");
 
-        n = sim_prize_pool(&cfg.classes[LATTICE], pool);
-        int has_push = 0;
-        for (int i = 0; i < n; i++)
-            if (pool[i] == SIM_PRIZE_MOD(SIM_TRIG_BOMB, SIM_MOD_PUSH)) has_push = 1;
-        CHECK(has_push, "the denial hull is the one whose bombs shove");
+        sim_kit_ceilings(&cfg.classes[LATTICE], ceil);
+        CHECK(ceil[SIM_SLOT_MOD(SIM_TRIG_BOMB, SIM_MOD_PUSH)] > 0,
+              "the denial hull is the one whose bombs shove");
+        CHECK(ceil[SIM_SLOT_CHARGE(SIM_CHARGE_MINE)]
+                  > cfg.classes[APEX].charge_max[SIM_CHARGE_MINE],
+              "and the one that carries the most mines");
 
-        /* A kit handed over rather than rolled for. The loadout tournament
-         * hands both sides of a bout a fixed list of these, so what it is
-         * measuring is the kit and not the dice. */
+        /* One named slot at a time, with the hull's ceilings enforced.
+         * `sim_deal_kit` is this in a loop. */
         sim_ship sh;
         memset(&sh, 0, sizeof sh);
         sh.cls = (uint8_t)APEX;
-        CHECK(sim_grant(&sh, &cfg, SIM_PRIZE_LEVEL(SIM_TRIG_GUN)) == 1
+        CHECK(sim_grant(&sh, &cfg, SIM_SLOT_LEVEL(SIM_TRIG_GUN)) == 1
               && sh.level[SIM_TRIG_GUN] == 1, "a granted rung is a rung climbed");
-        CHECK(sim_grant(&sh, &cfg, SIM_PRIZE_MOD(SIM_TRIG_GUN, SIM_MOD_MULTI)) == 1
+        CHECK(sim_grant(&sh, &cfg, SIM_SLOT_MOD(SIM_TRIG_GUN, SIM_MOD_MULTI)) == 1
               && sim_mod_get(sh.mods[SIM_TRIG_GUN], SIM_MOD_MULTI) == 1,
               "and a granted add-on is an add-on held");
 
@@ -2100,12 +1966,11 @@ int main(void) {
          * fighting itself as a loadout that is worth nothing. */
         int granted = 1;
         for (int i = 0; i < SIM_MAX_RUNGS + 4 && granted; i++)
-            granted = sim_grant(&sh, &cfg, SIM_PRIZE_LEVEL(SIM_TRIG_GUN));
+            granted = sim_grant(&sh, &cfg, SIM_SLOT_LEVEL(SIM_TRIG_GUN));
         CHECK(granted == 0, "the ladder ends and the grant says so");
         uint8_t top = sh.level[SIM_TRIG_GUN];
-        CHECK(sim_grant(&sh, &cfg, SIM_PRIZE_LEVEL(SIM_TRIG_GUN)) == 0
+        CHECK(sim_grant(&sh, &cfg, SIM_SLOT_LEVEL(SIM_TRIG_GUN)) == 0
               && sh.level[SIM_TRIG_GUN] == top, "and it stays refused there");
-        CHECK(sh.earned == 0, "a grant is not a green and pays no bounty");
 
         /* A trigger the hull does not have refuses outright, at rung zero,
          * where a green would never have offered it in the first place. */
@@ -2116,392 +1981,15 @@ int main(void) {
         sim_ship gunner;
         memset(&gunner, 0, sizeof gunner);
         gunner.cls = (uint8_t)CIPHER;
-        CHECK(sim_grant(&gunner, rackless, SIM_PRIZE_LEVEL(SIM_TRIG_BOMB)) == 0
+        CHECK(sim_grant(&gunner, rackless, SIM_SLOT_LEVEL(SIM_TRIG_BOMB)) == 0
               && gunner.level[SIM_TRIG_BOMB] == 0,
               "a hull with no rack cannot be granted a bomb rung");
         free(rackless);
 
         /* Out of the space entirely is refused rather than written past the
          * end of the counts it would have indexed. */
-        CHECK(sim_grant(&sh, &cfg, SIM_PRIZE_COUNT) == 0, "no such prize");
-        CHECK(sim_grant(&sh, &cfg, SIM_PRIZE_NONE) == 0, "and none is not one");
-    }
-
-    {
-        /* A hundred greens into one Apex: everything it can hold fills to its
-         * ceiling and stops, and nothing it cannot hold ever appears. Which
-         * is the claim -- the roll is over the roster row, so luck cannot
-         * turn one hull into another. */
-        sim_settings w = cfg;
-        w.rust_chance = 0;          /* rust has its own tests below */
-        sim_ship sh;
-        memset(&sh, 0, sizeof sh);
-        uint32_t rng = 12345;
-        for (int i = 0; i < 4000; i++) {
-            uint8_t got = sim_take_prize(&sh, &w, &rng, NULL);
-            CHECK(got != SIM_PRIZE_NONE, "a green is always something");
-        }
-        for (int u = 0; u < SIM_UP_COUNT; u++)
-            CHECK(sh.up[u] == 8, "every stat reaches its eighth step and stops");
-        CHECK(sh.level[SIM_TRIG_GUN] == 2, "the gun climbs MaxGuns rungs");
-        CHECK(sh.level[SIM_TRIG_BOMB] == 1, "and the bomb climbs MaxBombs");
-        CHECK(sim_mod_get(sh.mods[SIM_TRIG_GUN], SIM_MOD_MULTI) == 1,
-              "multifire fills to the row's allowance");
-        CHECK(sim_mod_get(sh.mods[SIM_TRIG_BOMB], SIM_MOD_SHRAPNEL) == 2,
-              "and so does shrapnel, which every racked hull may hold");
-        CHECK(sim_mod_get(sh.mods[SIM_TRIG_GUN], SIM_MOD_FREEZE) == 0,
-              "while freeze, which is ours and not on its row, never arrives");
-    }
-
-    {
-        /* A pilot at the ceiling is still told what they found. The count
-         * does not move; the green is taken and named. */
-        sim_settings w = cfg;
-        w.rust_chance = 0;
-        sim_ship sh;
-        memset(&sh, 0, sizeof sh);
-        uint32_t rng = 999;
-        for (int i = 0; i < 4000; i++) sim_take_prize(&sh, &w, &rng, NULL);
-        sim_ship before = sh;
-        int delta = 0;
-        uint8_t got = sim_take_prize(&sh, &w, &rng, &delta);
-        CHECK(got != SIM_PRIZE_NONE, "a maxed pilot still gets an answer");
-        CHECK(delta > 0, "still reported as an upgrade");
-        CHECK(memcmp(before.up, sh.up, sizeof sh.up) == 0
-              && memcmp(before.level, sh.level, sizeof sh.level) == 0
-              && memcmp(before.mods, sh.mods, sizeof sh.mods) == 0
-              && memcmp(before.charge, sh.charge, sizeof sh.charge) == 0,
-              "and no count moves");
-        /* But they are worth more for having taken it. A pilot at every
-         * ceiling who keeps hoovering keeps becoming a target. */
-        CHECK(sim_bounty(&sh) == sim_bounty(&before) + 1,
-              "while still being worth one more");
-    }
-
-    {
-        /* And the same green in two places gives the same answer, because
-         * the roll runs off the state's own generator. */
-        sim_ship a, b;
-        memset(&a, 0, sizeof a);
-        memset(&b, 0, sizeof b);
-        uint32_t ra = 7, rb = 7;
-        for (int i = 0; i < 50; i++) {
-            CHECK(sim_take_prize(&a, &cfg, &ra, NULL)
-                  == sim_take_prize(&b, &cfg, &rb, NULL),
-                  "the roll is the same roll on both machines");
-        }
-        CHECK(memcmp(&a, &b, sizeof a) == 0, "and lands in the same place");
-    }
-
-    {
-        /* Weights decide what a green usually is, read against the pool of
-         * whoever took it. Ten thousand greens into a pilot who is reset
-         * between each, so nothing fills up and skews the counting. */
-        sim_settings w = cfg;
-        w.rust_chance = 0;
-        uint32_t rng = 4242;
-        int stats = 0, levels = 0, mods = 0, charges = 0;
-        for (int i = 0; i < 10000; i++) {
-            sim_ship sh;
-            memset(&sh, 0, sizeof sh);
-            uint8_t got = sim_take_prize(&sh, &w, &rng, NULL);
-            if (got < SIM_UP_COUNT) stats++;
-            else if (got < SIM_UP_COUNT + SIM_TRIG_COUNT) levels++;
-            else if (got < SIM_PRIZE_CHARGE(0)) mods++;
-            else charges++;
-        }
-        /* On the original's table an Apex's pool is five stats at 40, a gun
-         * level at 25, four add-ons at 110 between them, and both charges at
-         * 70: 475 in total. So a green is a stat a little over four times in
-         * ten, a charge three, an add-on two, and a level about one in
-         * twenty. Bands rather than exact numbers, because the point under
-         * test is the shape of the tree and not the generator.
-         *
-         * Two charges and not three: a mine is not one. It is the bomb
-         * trigger's other posture and there is no green for it, so it takes
-         * nothing out of this pool -- which is the half of the change a
-         * distribution test can see. */
-        CHECK(stats > 3950 && stats < 4500, "stats are the bread of the tree");
-        CHECK(levels > 850 && levels < 1250, "a level is the rare one");
-        CHECK(mods > 2100 && mods < 2550, "an add-on is ordinary now");
-        CHECK(charges > 2700 && charges < 3200, "and a charge is common");
-
-        /* And a zone that says otherwise gets otherwise. */
-        for (int i = 0; i < SIM_UP_COUNT; i++) w.prize_weight[i] = 0;
-        int only_level = 1;
-        for (int i = 0; i < 500; i++) {
-            sim_ship sh;
-            memset(&sh, 0, sizeof sh);
-            if (sim_take_prize(&sh, &w, &rng, NULL) < SIM_UP_COUNT)
-                only_level = 0;
-        }
-        CHECK(only_level, "zeroing the stats takes them out of the roll");
-    }
-
-    {
-        /* A ship starts loaded. Thirty greens, rolled the way a green on the
-         * floor is rolled, so what a pilot opens with respects the hull's
-         * roster and every ceiling in it. */
-        sim_settings w = cfg;
-        w.spawn_prizes = 30;
-        sim_state s;
-        sim_init(&s, 1);
-        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &w);
-        const sim_ship *sh = &s.ships[0];
-
-        int held_count = 0;
-        for (int u = 0; u < SIM_UP_COUNT; u++) held_count += sh->up[u];
-        for (int t = 0; t < SIM_TRIG_COUNT; t++) {
-            held_count += sh->level[t];
-            for (int mo = 0; mo < SIM_MOD_COUNT; mo++)
-                held_count += sim_mod_get(sh->mods[t], mo);
-        }
-        for (int k = 0; k < SIM_MAX_CHARGES; k++) held_count += sh->charge[k];
-
-        /* Not exactly thirty: a green that lands on something already at its
-         * ceiling is taken and named without moving a count, and one in a
-         * hundred rusts. The claim is that a spawn is loaded, not that it is
-         * loaded to a number. */
-        CHECK(held_count > 18, "a ship spawns carrying most of thirty greens");
-        CHECK(held_count <= 30, "and never more than it was handed");
-        CHECK(sim_bounty(sh) >= held_count, "which is what it is worth");
-
-        /* What is left of the roster still holds. Freeze is not on an Apex
-         * row, however the thirty fall, and a rung above the ladder cannot be
-         * handed out. */
-        CHECK(sh->level[SIM_TRIG_BOMB] <= 1, "a hull cannot be handed a rung it lacks");
-        CHECK(sim_mod_get(sh->mods[SIM_TRIG_GUN], SIM_MOD_FREEZE) == 0,
-              "nor an add-on that is not on its row");
-
-        /* And the bar is filled after the prizes land, not before: a spawn
-         * that rolled energy steps must open at the ceiling it just earned,
-         * not at the one it would have had empty. */
-        CHECK(s.ships[0].energy == sim_eff_max_energy(&w.classes[APEX], sh),
-              "the bar opens full at the ceiling the greens just bought");
-
-        /* Two ships spawned from one state differ, because the roll runs off
-         * the state's own generator rather than a fixed seed per ship. */
-        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &w);
-        CHECK(memcmp(&s.ships[0].up, &s.ships[1].up, sizeof s.ships[0].up) != 0
-              || s.ships[0].mods[SIM_TRIG_GUN] != s.ships[1].mods[SIM_TRIG_GUN]
-              || memcmp(&s.ships[0].charge, &s.ships[1].charge,
-                        sizeof s.ships[0].charge) != 0,
-              "and two spawns are not the same spawn");
-
-        /* A zone that wants pilots to earn it says so, and gets a plain ship. */
-        w.spawn_prizes = 0;
-        sim_state t;
-        sim_init(&t, 1);
-        sim_spawn(&t, APEX, 0, 8192, 8192, 0, &w);
-        CHECK(sim_bounty(&t.ships[0]) == 0, "zero spawn prizes is a plain ship");
-
-        /* A respawn is a spawn: dying strips everything and the next life is
-         * outfitted again, or the setting would only apply to the first. */
-        w.spawn_prizes = 30;
-        sim_init(&t, 1);
-        sim_spawn(&t, APEX, 0, 8192, 8192, 0, &w);
-        t.ships[0].alive = 0;
-        t.ships[0].respawn_at = 1;
-        memset(t.ships[0].up, 0, sizeof t.ships[0].up);
-        memset(t.ships[0].level, 0, sizeof t.ships[0].level);
-        memset(t.ships[0].mods, 0, sizeof t.ships[0].mods);
-        memset(t.ships[0].charge, 0, sizeof t.ships[0].charge);
-        t.ships[0].earned = 0;
-        step_n(&t, &w, 0, 0, 1);
-        CHECK(t.ships[0].alive, "the respawn happened");
-        CHECK(sim_bounty(&t.ships[0]) > 0, "and it came back loaded");
-    }
-
-    {
-        /* Rust takes something back, and only something you are holding. */
-        sim_settings w = cfg;
-        w.rust_chance = 1000;      /* every green, so the test is not a lottery */
-        sim_ship sh;
-        memset(&sh, 0, sizeof sh);
-        uint32_t rng = 31337;
-
-        /* A pilot who has just arrived holds nothing, so there is nothing to
-         * corrode and the green is an ordinary one. */
-        int delta = 0;
-        uint8_t got = sim_take_prize(&sh, &w, &rng, &delta);
-        CHECK(delta > 0, "an empty pilot cannot be rusted");
-        CHECK(held_of(&sh, got) == 1, "and is given the thing instead");
-
-        /* Load one up and it goes the other way. Cleared first, because the
-         * green above left something in their hands and rust takes whatever
-         * is there: with a bomb level now on offer to every hull, the thing
-         * it reached for stopped being one of the two set below. */
-        memset(&sh, 0, sizeof sh);
-        sh.up[SIM_UP_SPEED] = 4;
-        sh.up[SIM_UP_THRUST] = 2;
-        int before = sh.up[SIM_UP_SPEED] + sh.up[SIM_UP_THRUST];
-        got = sim_take_prize(&sh, &w, &rng, &delta);
-        CHECK(delta < 0, "a loaded pilot is");
-        CHECK(got == SIM_UP_SPEED || got == SIM_UP_THRUST,
-              "and what corrodes is something they had");
-        CHECK(sh.up[SIM_UP_SPEED] + sh.up[SIM_UP_THRUST] == before - 1,
-              "one step of it");
-
-        /* It never goes below nothing, and never leaves the pilot in a state
-         * the hull could not have reached.
-         *
-         * Checked every step rather than at the end. An empty pilot is given
-         * a green instead of being rusted, so the two alternate and where two
-         * hundred of them happen to stop is a parity rather than a property:
-         * it used to land on empty and stopped doing so the moment a bomb
-         * level joined the pool and changed what a give hands out. */
-        int wrapped = 0;
-        for (int i = 0; i < 200; i++) {
-            sim_take_prize(&sh, &w, &rng, &delta);
-            for (int u = 0; u < SIM_UP_COUNT; u++)
-                if (sh.up[u] > 8) wrapped = 1;
-            for (int t = 0; t < SIM_TRIG_COUNT; t++)
-                if (sh.level[t] >= SIM_MAX_RUNGS) wrapped = 1;
-        }
-        CHECK(!wrapped, "and rust never takes a pilot past nothing");
-    }
-
-    {
-        /* A prediction client may consume the visible green, but it does not
-         * roll or apply the server-secret result. */
-        sim_settings w = cfg;
-        w.deathless = 1;
-        w.spawn_prizes = 0;
-        w.prize_delay = 0;
-        sim_state s, next;
-        sim_events ev;
-        sim_init(&s, 77);
-        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &w);
-        s.prizes[0].active = 1;
-        s.prizes[0].x = s.ships[0].x;
-        s.prizes[0].y = s.ships[0].y;
-        s.prizes[0].life = 100;
-        sim_ship before = s.ships[0];
-        sim_step(&next, &s, NULL, 0, &w, &ev);
-        CHECK(!next.prizes[0].active, "prediction removes a touched green");
-        CHECK(memcmp(next.ships[0].up, before.up, sizeof before.up) == 0
-              && memcmp(next.ships[0].level, before.level, sizeof before.level) == 0
-              && memcmp(next.ships[0].mods, before.mods, sizeof before.mods) == 0
-              && memcmp(next.ships[0].charge, before.charge, sizeof before.charge) == 0,
-              "but applies no guessed outcome");
-        int announced = 0, touched = 0;
-        for (uint16_t i = 0; i < ev.count; i++) {
-            announced += ev.e[i].type == SIM_EV_PRIZE;
-            touched += ev.e[i].type == SIM_EV_PRIZE_TOUCH
-                       && ev.e[i].a == 0;
-        }
-        CHECK(announced == 0, "and emits no guessed prize event");
-        CHECK(touched == 1, "and reports the touch without an outcome");
-
-        w.spawn_prizes = 30;
-        next.ships[0].alive = 0;
-        next.ships[0].respawn_at = 1;
-        sim_step(&s, &next, NULL, 0, &w, &ev);
-        CHECK(s.ships[0].alive, "prediction still advances the respawn");
-        CHECK(sim_bounty(&s.ships[0]) == 0,
-              "but does not invent a server-secret respawn kit");
-    }
-
-    {
-        /* Pickup radius is the seven-pixel body of the drawn green, padded
-         * circularly around the hull. A square adds the full radius on both
-         * axes, so a green off one corner disappears before either visible
-         * body has reached the other. */
-        sim_settings w = cfg;
-        w.deathless = 1;
-        w.prize_delay = 0;
-        CHECK(w.prize_radius == 7 * 256,
-              "the pickup padding matches the green's visible body");
-        sim_state s;
-        sim_init(&s, 91);
-        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &w);
-        sim_ship *sh = &s.ships[0];
-        const sim_ship_class *hull = &w.classes[APEX];
-        sim_prize *green = &s.prizes[0];
-        green->active = 1;
-        green->life = 100;
-        green->x = sh->x + hull->halfw + 6 * 256;
-        green->y = sh->y - hull->fore - 6 * 256;
-
-        step_n(&s, &w, 0, 0, 1);
-        CHECK(s.prizes[0].active,
-              "a green beyond the radius at a hull corner stays put");
-
-        green = &s.prizes[0];
-        green->x = s.ships[0].x + hull->halfw + 8 * 256;
-        green->y = s.ships[0].y;
-        step_n(&s, &w, 0, 0, 1);
-        CHECK(s.prizes[0].active,
-              "a visible one-pixel gap straight off the side stays put");
-
-        green->x = s.ships[0].x + hull->halfw + w.prize_radius;
-        step_n(&s, &w, 0, 0, 1);
-        CHECK(!s.prizes[0].active, "visible contact collects the green");
-    }
-
-    {
-        /* Losing an energy step clamps the bar down to the new ceiling rather
-         * than leaving a pilot over it. */
-        sim_settings w = cfg;
-        w.rust_chance = 1000;
-        for (int i = 0; i < SIM_PRIZE_COUNT; i++) w.prize_weight[i] = 0;
-        sim_state s;
-        sim_init(&s, 3);
-        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &w);
-        s.ships[0].up[SIM_UP_ENERGY] = 6;
-        s.ships[0].energy = sim_eff_max_energy(&w.classes[APEX], &s.ships[0]);
-        int32_t full = s.ships[0].energy;
-        step_n(&s, &w, 0, 0, w.prize_delay + 2);
-        int idx = -1;
-        for (int i = 0; i < SIM_MAX_PRIZES; i++)
-            if (s.prizes[i].active) { idx = i; break; }
-        CHECK(idx >= 0, "a prize appears");
-        s.ships[0].x = s.prizes[idx].x;
-        s.ships[0].y = s.prizes[idx].y;
-        step_n(&s, &w, 0, 0, 2);
-        CHECK(s.ships[0].energy <= sim_eff_max_energy(&w.classes[APEX], &s.ships[0]),
-              "the bar is never above the ceiling it now has");
-        CHECK(s.ships[0].energy < full || s.ships[0].up[SIM_UP_ENERGY] == 6,
-              "and it came down if the ceiling did");
-    }
-
-    {
-        /* Greens appear where somebody can find them.
-         *
-         * A map 1024 tiles across holding twenty greens, placed uniformly, is a
-         * map with no greens in it: a pilot sees sixty tiles, so the odds of one
-         * being in reach are about one in fifty. That shipped, and a player
-         * reported a zone with none at all -- which also means an unreachable
-         * tech tree, since spawn_prizes is zero and greens are the only way in. */
-        sim_settings w = cfg;
-        sim_state s;
-        sim_init(&s, 17);
-        sim_spawn(&s, APEX, 0, 512 * SIM_TILE_PX, 512 * SIM_TILE_PX, 0, &w);
-        step_n(&s, &w, 0, 0, w.prize_delay * (w.prize_max + 2));
-
-        int live = 0, worst = 0;
-        for (int i = 0; i < SIM_MAX_PRIZES; i++) {
-            if (!s.prizes[i].active) continue;
-            live++;
-            int32_t dx = (s.prizes[i].x - s.ships[0].x) / (SIM_TILE_PX * 256);
-            int32_t dy = (s.prizes[i].y - s.ships[0].y) / (SIM_TILE_PX * 256);
-            int d = (int)(dx * dx + dy * dy);
-            if (d > worst) worst = d;
-        }
-        CHECK(live > 1, "greens appear at all");
-        /* The ship does not move here, so every green must be inside the ring
-         * it was placed in -- with a tile of slack for the truncating divide. */
-        CHECK(worst <= (SIM_PRIZE_NEAR_HI + 1) * (SIM_PRIZE_NEAR_HI + 1) * 2,
-              "and every one of them is within reach of the pilot they spawned by");
-
-        /* Nobody alive is the fallback, and it must still put greens out: a
-         * room between rounds comes back up with a field on it. */
-        sim_state e;
-        sim_init(&e, 19);
-        step_n(&e, &w, 0, 0, w.prize_delay * 4);
-        int empty_live = 0;
-        for (int i = 0; i < SIM_MAX_PRIZES; i++) empty_live += e.prizes[i].active;
-        CHECK(empty_live > 0, "an empty room still grows a prize field");
+        CHECK(sim_grant(&sh, &cfg, SIM_SLOT_COUNT) == 0, "no such slot");
+        CHECK(sim_grant(&sh, &cfg, SIM_SLOT_NONE) == 0, "and none is not one");
     }
 
     {
@@ -2767,7 +2255,6 @@ int main(void) {
          * whose bombs may bounce at all. */
         const int LATTICE = 6;
         sim_settings w = cfg;
-        w.prize_max = 0;
 
         sim_state s;
         sim_init(&s, 1);
@@ -2807,7 +2294,6 @@ int main(void) {
          * come out of. Two ways for this to fail for a reason that is not
          * shrapnel. */
         sim_settings w = cfg;
-        w.prize_max = 0;
         sim_state s;
         sim_init(&s, 1);
         /* Broken on a ship out in the open rather than against a wall, so
@@ -2838,7 +2324,7 @@ int main(void) {
          * and wrong twice over: it read a splinter as a trigger pull, and it
          * stopped being true the day splinters stopped emitting one. */
         int seen = 0, carried = 0;
-        ev_counts ec = {0, 0, 0, 0, 0, 0, 0, 0};
+        ev_counts ec = {0, 0, 0, 0, 0, 0, 0};
         for (int t = 0; t < 200; t++) {
             ev_counts one = step_counting(&s, &w, 0, 0, 1);
             ec.fires += one.fires;
@@ -2866,7 +2352,6 @@ int main(void) {
          * the difference between them. */
         const int WEDGE = 1;
         sim_settings w = cfg;
-        w.prize_max = 0;
         for (int k = 1; k < SIM_MAX_RUNGS; k++) {
             const sim_weapon_spec *fs =
                 &w.specs[w.patterns[w.mod_splinter[k]].spec];
@@ -2919,7 +2404,6 @@ int main(void) {
          * shrapnel sits at 255, and a wrap would hand a whole-life bouncer
          * a handful. */
         sim_settings w = cfg;
-        w.prize_max = 0;
         w.mod_step[SIM_MOD_BOUNCE] = 20;
         sim_weapon_spec sp = w.specs[gun_of(&w, APEX)->spec];
         sp.on_wall = SIM_WALL_BOUNCE;
@@ -2965,541 +2449,6 @@ int main(void) {
         CHECK(s.ships[1].energy >= e1, "and not hurt");
         step_n(&s, &cfg, use, 0, 10);
         CHECK(s.ships[0].charge[0] == 0, "and an empty slot fires nothing");
-    }
-
-    {
-        /* Repel and burst remain available during ordinary weapon delay and
-         * do not stop a weapon firing beside them. Mines keep the bomb rule. */
-        const int LATTICE = 6;
-        sim_state s;
-        sim_init(&s, 1);
-        sim_spawn(&s, LATTICE, 0, 8192, 8192, 0, &cfg);
-        s.ships[0].charge[0] = 1;
-
-        step_n(&s, &cfg, SIM_BTN_FIRE, 0, 1);
-        CHECK(s.ships[0].fire_cooldown[SIM_TRIG_BOMB] > 0,
-              "a gun shot locks the bomb clock");
-        step_n(&s, &cfg, SIM_BTN_USE, 0, 1);
-        CHECK(s.ships[0].charge[0] == 0,
-              "but a repel still fires during that delay");
-
-        sim_init(&s, 1);
-        sim_spawn(&s, LATTICE, 0, 8192, 8192, 0, &cfg);
-        s.ships[0].charge[1] = 1;
-        ev_counts c = step_counting(&s, &cfg,
-                                    SIM_BTN_USE | SIM_BTN_FIRE
-                                        | (1u << SIM_BTN_SLOT_SHIFT),
-                                    0, 1);
-        CHECK(s.ships[0].charge[1] == 0 && c.fires == 2,
-              "a burst and a gun may fire on the same tick");
-
-        sim_init(&s, 1);
-        sim_spawn(&s, LATTICE, 0, 8192, 8192, 0, &cfg);
-        step_n(&s, &cfg, SIM_BTN_FIRE, 0, 1);
-        CHECK(s.weapon_count == 1, "the gun fires before the mine check");
-        step_n(&s, &cfg, SIM_BTN_MINE, 0, 1);
-        CHECK(s.weapon_count == 1,
-              "a mine waits for the shared weapon delay like a bomb");
-        step_n(&s, &cfg, 0, 0, 30);
-        step_n(&s, &cfg, SIM_BTN_MINE, 0, 1);
-        CHECK(s.weapon_count == 2, "the mine lays when that delay clears");
-        CHECK(s.ships[0].fire_cooldown[SIM_TRIG_GUN] > 0
-              && s.ships[0].fire_cooldown[SIM_TRIG_BOMB] > 0,
-              "and the mine locks both weapon triggers");
-    }
-
-    {
-        /* A hull carries what its row allows, and a slot the zone never
-         * filled is not a slot.
-         *
-         * The shipped roster gives every hull three of each charge, which is
-         * the original's rule -- RepelMax through RocketMax are 3 on all
-         * eight of its ships. So the gate is tested by closing one rather
-         * than by finding a hull that happens to be shut. */
-        uint8_t pool[SIM_PRIZE_COUNT];
-        const int LATTICE = 6;
-        int n = sim_prize_pool(&cfg.classes[LATTICE], pool);
-        int repel = 0, burst = 0, empty_slot = 0;
-        for (int i = 0; i < n; i++) {
-            if (pool[i] == SIM_PRIZE_CHARGE(0)) repel = 1;
-            if (pool[i] == SIM_PRIZE_CHARGE(1)) burst = 1;
-            if (pool[i] == SIM_PRIZE_CHARGE(2)
-                || pool[i] == SIM_PRIZE_CHARGE(3)) empty_slot = 1;
-        }
-        CHECK(repel && burst, "a hull is offered both charges the zone filled");
-        CHECK(!empty_slot, "and never a slot the zone left empty");
-
-        /* Close one on the hull and it leaves that hull's pool. */
-        sim_settings w = cfg;
-        w.rust_chance = 0;
-        w.classes[LATTICE].charge_max[1] = 0;
-        n = sim_prize_pool(&w.classes[LATTICE], pool);
-        burst = 0;
-        for (int i = 0; i < n; i++)
-            if (pool[i] == SIM_PRIZE_CHARGE(1)) burst = 1;
-        CHECK(!burst, "a hull with no room for a burst is not offered one");
-
-        sim_ship sh;
-        memset(&sh, 0, sizeof sh);
-        sh.cls = LATTICE;
-        uint32_t rng = 77;
-        for (int i = 0; i < 4000; i++) sim_take_prize(&sh, &w, &rng, NULL);
-        CHECK(sh.charge[1] == 0, "and never picks one up however lucky");
-        CHECK(sh.charge[0] == cfg.classes[LATTICE].charge_max[0],
-              "while the one it may hold fills to the row and stops");
-    }
-
-    {
-        /* A mine, which is the bomb trigger in its other posture.
-         *
-         * The whole of it is fields the model already had, so what these
-         * check is that the combination behaves like a mine rather than that
-         * any new mechanism works. It stays where it was let go, it goes off
-         * on its own clock, and it wears the rung its layer's bombs are on.
-         */
-        const uint16_t MINE = SIM_BTN_MINE;
-        sim_state s;
-        sim_init(&s, 1);
-        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
-
-        /* Laid at a run. This is the one the `still` field exists for: with
-         * the ship's velocity added, a speed-zero round leaves the rack doing
-         * exactly what the ship was doing and never stops, which is a bomb
-         * that does not steer rather than a mine. */
-        step_n(&s, &cfg, SIM_BTN_THRUST, 0, 120);
-        CHECK(s.ships[0].vy < -10000, "the pilot is moving when they lay it");
-        step_n(&s, &cfg, MINE, 0, 1);
-        CHECK(s.weapon_count == 1, "a mine is in the world");
-        CHECK(s.ships[0].energy < sim_eff_max_energy(&cfg.classes[APEX],
-                                                     &s.ships[0]),
-              "and it cost energy rather than an item in a slot");
-        int32_t mx = s.weapons[0].x, my = s.weapons[0].y;
-        CHECK(s.weapons[0].vx == 0 && s.weapons[0].vy == 0,
-              "a mine is laid at rest however fast its layer was going");
-        step_n(&s, &cfg, 0, 0, 200);
-        CHECK(s.weapon_count == 1, "and is still there two seconds later");
-        CHECK(s.weapons[0].x == mx && s.weapons[0].y == my,
-              "in exactly the place it was left");
-
-        /* Its life is its whole mechanism, and running out is an ending
-         * rather than a round quietly ceasing to exist. */
-        uint8_t mine_spec = s.weapons[0].spec;
-        CHECK(cfg.specs[mine_spec].expire_ends,
-              "a mine that runs out goes off");
-        CHECK(cfg.specs[mine_spec].blast > 0, "and takes a blast with it");
-        CHECK(cfg.specs[mine_spec].trigger > 0, "and senses on a fuse");
-    }
-
-    {
-        /* The rung a mine wears is the rung its layer's bombs are on, and it
-         * is a real number rather than a coat of paint: the blast climbs the
-         * bomb ladder's own arithmetic, so the color the client paints from
-         * cannot promise more than the mine delivers. */
-        const uint16_t MINE = SIM_BTN_MINE;
-        sim_state s;
-        sim_init(&s, 1);
-        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
-        step_n(&s, &cfg, MINE, 0, 1);
-        CHECK(s.weapons[0].level == 0, "a rung one pilot lays a rung one mine");
-
-        sim_init(&s, 1);
-        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
-        s.ships[0].level[SIM_TRIG_BOMB] = 2;
-        step_n(&s, &cfg, MINE, 0, 1);
-        CHECK(s.weapons[0].level == 2, "and a rung three pilot a rung three one");
-
-        /* What that rung buys, measured where it lands rather than read off
-         * the spec: a victim standing 150 px out, inside a rung three mine's
-         * 240 px blast and outside a rung one's 80. The composition happens
-         * in the update loop, off the level the round carries, so this is
-         * the path a real detonation takes and not arithmetic done here. */
-        sim_state det;
-        for (int lvl = 0; lvl <= 2; lvl += 2) {
-            sim_init(&det, 1);
-            sim_spawn(&det, APEX, 0, 8192, 8192, 0, &cfg);
-            sim_spawn(&det, APEX, 1, 8192 + 150, 8192, 0, &cfg);
-            det.ships[0].level[SIM_TRIG_BOMB] = (uint8_t)lvl;
-            step_n(&det, &cfg, MINE, 0, 1);
-            CHECK(det.weapon_count == 1, "the mine is down");
-            /* The layer clears out, as a layer does. Standing next to your
-             * own blast discounts what it deals everyone else -- the mercy
-             * rule -- and a layer camped on its own mine would discount this
-             * victim to nothing. */
-            det.ships[0].x -= 2000 * 256;
-            det.weapons[0].life = 2;      /* run the minute out now */
-            int32_t e0 = det.ships[1].energy;
-            step_n(&det, &cfg, 0, 0, 4);
-            CHECK(det.weapon_count == 0, "and its timer set it off");
-            if (lvl == 0)
-                CHECK(det.ships[1].energy == e0,
-                      "150 px is outside a rung one mine's blast");
-            else
-                CHECK(det.ships[1].energy < e0,
-                      "and inside a rung three's, off the same spec");
-        }
-
-        /* The expiry event carries the rung, in the payload bits above the
-         * position, because by the time a client reads it the round is gone
-         * from the state and a mine is one spec whatever rung was posted.
-         * Without it the detonation flashed rung one in violet. */
-        sim_init(&det, 1);
-        sim_spawn(&det, APEX, 0, 8192, 8192, 0, &cfg);
-        det.ships[0].level[SIM_TRIG_BOMB] = 2;
-        step_n(&det, &cfg, MINE, 0, 1);
-        det.weapons[0].life = 2;
-        int rung_seen = -1;
-        {
-            sim_state tmp;
-            sim_events ev;
-            for (int i = 0; i < 4; i++) {
-                sim_input in = {0, 0};
-                sim_step(&tmp, &det, &in, 1, &cfg, &ev);
-                det = tmp;
-                for (uint16_t e = 0; e < ev.count; e++)
-                    if (ev.e[e].type == SIM_EV_EXPIRE)
-                        rung_seen = (int)((ev.e[e].v >> 28) & 3);
-            }
-        }
-        CHECK(rung_seen == 2, "the expiry event says which rung went off");
-    }
-
-    {
-        /* A repelled mine stops being a mine.
-         *
-         * It is the one round in the game whose shape is wrong for being in
-         * flight: a minute of life and a fuse tuned to something standing
-         * still beside it. So the shove turns it into a bomb of the rung it
-         * was laid at and sends it off in the push direction, which is what
-         * clearing a doorway with a repel should look like.
-         *
-         * The Lattice carries the repel here; the mine is the Apex's, so the
-         * two are different hulls and the round crossing between them is
-         * unambiguous. */
-        const uint16_t MINE = SIM_BTN_MINE;
-        const int LATTICE = 6;
-        sim_state s;
-        sim_init(&s, 1);
-        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);            /* lays it */
-        sim_spawn(&s, LATTICE, 1, 8192 - 200, 8192, 0, &cfg);   /* repels */
-        s.ships[0].level[SIM_TRIG_BOMB] = 1;
-        step_n(&s, &cfg, MINE, 0, 1);
-        CHECK(s.weapon_count == 1, "the mine is posted");
-        uint8_t was = s.weapons[0].spec;
-        CHECK(cfg.specs[was].still, "and it is the still kind of round");
-
-        s.ships[1].charge[0] = 1;
-        step_n(&s, &cfg, 0, SIM_BTN_USE, 3);
-        CHECK(s.weapon_count >= 1, "and it survives being repelled");
-        const sim_weapon *m = &s.weapons[0];
-        CHECK(m->spec != was, "a repelled mine is not a mine any more");
-        CHECK(!cfg.specs[m->spec].still, "it is a round that flies now");
-        CHECK(cfg.specs[m->spec].blast > 0, "and still a bomb");
-        CHECK(m->vx > 0, "thrown away from the repel, not toward it");
-        CHECK(m->owner == 0, "still owned by whoever laid it");
-        CHECK(m->life <= cfg.specs[m->spec].life
-              && m->life > cfg.specs[m->spec].life - 8,
-              "on a bomb's clock rather than the minute a mine sits for");
-        /* The rung survives the change, which is the point of reading it off
-         * the ladder rather than handing every repelled mine the same bomb. */
-        CHECK(m->spec == cfg.patterns[cfg.classes[APEX]
-                                      .trigger[SIM_TRIG_BOMB][1]].spec,
-              "and it is a bomb of the rung the mine was laid at");
-    }
-
-    {
-        /* Your own repel does not disarm your own minefield. The push loop
-         * has always been hostile-only; this is that rule reaching the new
-         * round, because a mine you cleared yourself would make the charge a
-         * way to tidy up after an ally rather than a way through a door. */
-        const uint16_t MINE = SIM_BTN_MINE;
-        const int LATTICE = 6;
-        sim_state s;
-        sim_init(&s, 1);
-        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
-        sim_spawn(&s, LATTICE, 0, 8192 - 200, 8192, 0, &cfg);   /* same team */
-        step_n(&s, &cfg, MINE, 0, 1);
-        uint8_t was = s.weapons[0].spec;
-        s.ships[1].charge[0] = 1;
-        step_n(&s, &cfg, 0, SIM_BTN_USE, 3);
-        CHECK(s.weapon_count >= 1, "the friendly mine is still there");
-        CHECK(s.weapons[0].spec == was, "and still a mine");
-        CHECK(s.weapons[0].vx == 0 && s.weapons[0].vy == 0,
-              "and has not moved an inch");
-    }
-
-    {
-        /* A mine is your own bomb put on the floor, so the bomb trigger's
-         * add-ons reach it. A bomber who climbed to shrapnel and watched
-         * their mines go off as bare blasts was being told the two are
-         * different weapons, and they are not.
-         *
-         * Fragments are looked for every tick rather than counted at the
-         * end, for the reason the shrapnel test above gives: they are born
-         * at the point of impact and the short-lived ones are gone by the
-         * next sample. A peak weapon count misses them entirely, which is
-         * how this was first measured and first got the wrong answer. */
-        const uint16_t MINE = SIM_BTN_MINE;
-        sim_state s;
-        sim_init(&s, 1);
-        sim_spawn(&s, ANVIL, 0, 8192, 8192, 0, &cfg);
-        sim_spawn(&s, ANVIL, 1, 8192 + 60, 8192, 0, &cfg);
-        s.ships[0].level[SIM_TRIG_BOMB] = 1;
-        s.ships[0].level[SIM_TRIG_GUN] = 2;
-        s.ships[0].mods[SIM_TRIG_BOMB] = sim_mod_set(0, SIM_MOD_SHRAPNEL, 3);
-        step_n(&s, &cfg, MINE, 0, 1);
-        CHECK(s.weapon_count == 1, "one charge lays one mine");
-        CHECK(sim_mod_get(s.weapons[0].mods, SIM_MOD_SHRAPNEL) == 3,
-              "and the mine carries the bomb trigger's shrapnel");
-        CHECK(s.weapons[0].shrap_level == 2,
-              "with fragments of the layer's gun rung, as a thrown bomb has");
-        s.ships[0].x -= 3000 * 256;
-        s.weapons[0].life = 2;
-        int frags = 0;
-        for (int t = 0; t < 120; t++) {
-            step_n(&s, &cfg, 0, 0, 1);
-            for (uint16_t i = 0; i < s.weapon_count; i++)
-                if (s.weapons[i].depth > 0) frags++;
-        }
-        CHECK(frags > 0, "and a mine that goes off breaks up");
-
-        /* Multifire is the one add-on that does not follow, because it
-         * multiplies the pattern rather than transforming the round: three
-         * mines out of one charge is not a stronger mine, it is a different
-         * inventory. */
-        sim_init(&s, 1);
-        sim_spawn(&s, ANVIL, 0, 8192, 8192, 0, &cfg);
-        s.ships[0].mods[SIM_TRIG_BOMB] = sim_mod_set(0, SIM_MOD_MULTI, 3);
-        step_n(&s, &cfg, MINE, 0, 1);
-        CHECK(s.weapon_count == 1, "multifire does not lay three mines");
-        CHECK(sim_mod_get(s.weapons[0].mods, SIM_MOD_MULTI) == 0,
-              "and the round does not carry it either");
-    }
-
-    {
-        /* A fuse the weapon already has does not stack with the add-on.
-         *
-         * A bomb is a contact round until proximity gives it a fuse, so there
-         * the add-on is the whole of the reach and adding is right. A mine
-         * comes with one, and summing made it sense two tiles further than a
-         * proximity bomb of the same rung -- which inverts the reason its own
-         * fuse is the tighter of the two, since a mine does not have to be
-         * dodged in the air first.
-         *
-         * Measured as the furthest a standing hull can be and still arm the
-         * thing, because that is the number a player meets. The bomb is
-         * pinned where the mine sits so the two are compared at one
-         * geometry rather than wherever flight happened to take it. */
-        const uint16_t MINE = SIM_BTN_MINE;
-        for (int rung = 0; rung < 3; rung++) {
-            int arm[2] = {0, 0};
-            for (int kind = 0; kind < 2; kind++) {
-                for (int d = 8; d < 400; d += 2) {
-                    sim_state s;
-                    sim_init(&s, 1);
-                    sim_spawn(&s, ANVIL, 0, 8192, 8192, 0, &cfg);
-                    sim_spawn(&s, ANVIL, 1, 8192 + d, 8192, 0, &cfg);
-                    s.ships[0].level[SIM_TRIG_BOMB] = (uint8_t)rung;
-                    s.ships[0].mods[SIM_TRIG_BOMB] =
-                        sim_mod_set(0, SIM_MOD_PROX, 1);
-                    if (kind == 0) {
-                        step_n(&s, &cfg, MINE, 0, 1);
-                    } else {
-                        step_n(&s, &cfg, SIM_BTN_BOMB, 0, 1);
-                        if (s.weapon_count < 1) continue;
-                        s.weapons[0].x = 8192 * 256;
-                        s.weapons[0].y = 8192 * 256;
-                        s.weapons[0].vx = 0;
-                        s.weapons[0].vy = 0;
-                    }
-                    if (s.weapon_count < 1) continue;
-                    step_n(&s, &cfg, 0, 0, 1);
-                    if (s.weapon_count > 0 && s.weapons[0].fuse_target != 255)
-                        arm[kind] = d;
-                }
-            }
-            CHECK(arm[0] > 0 && arm[1] > 0, "both armed on somebody");
-            CHECK(arm[0] == arm[1],
-                  "a proximity mine senses exactly as far as the bomb it is");
-        }
-
-        /* And without the add-on it keeps a fuse of its own, which is the
-         * half of this that makes a mine a mine: a bomb there is contact. */
-        sim_state s;
-        sim_init(&s, 1);
-        sim_spawn(&s, ANVIL, 0, 8192, 8192, 0, &cfg);
-        sim_spawn(&s, ANVIL, 1, 8192 + 30, 8192, 0, &cfg);
-        step_n(&s, &cfg, MINE, 0, 1);
-        step_n(&s, &cfg, 0, 0, 1);
-        CHECK(s.weapon_count > 0 && s.weapons[0].fuse_target != 255,
-              "a mine with no add-on still senses on its own two tiles");
-    }
-
-    {
-        /* Push follows too, and the thing to hold is that it does not make a
-         * mine repel-proof. The push loop skips a round whose spec pushes, so
-         * that two repels cannot throw each other about, and it reads the
-         * *base* spec: a mine carrying push as an add-on still has none of
-         * its own, so an enemy repel converts it like any other. Pinned
-         * because it is load-bearing and accidental -- reading the composed
-         * spec there instead would silently make a Lattice's minefield
-         * immune to the one thing meant to clear it. */
-        const uint16_t MINE = SIM_BTN_MINE;
-        const int LATTICE = 6;
-        sim_state s;
-        sim_init(&s, 1);
-        sim_spawn(&s, LATTICE, 0, 8192, 8192, 0, &cfg);        /* lays it */
-        sim_spawn(&s, LATTICE, 1, 8192 - 200, 8192, 0, &cfg);  /* repels */
-        s.ships[0].mods[SIM_TRIG_BOMB] = sim_mod_set(0, SIM_MOD_PUSH, 2);
-        step_n(&s, &cfg, MINE, 0, 1);
-        CHECK(s.weapon_count == 1, "the pushing mine is posted");
-        CHECK(sim_mod_get(s.weapons[0].mods, SIM_MOD_PUSH) == 2,
-              "and it carries the push add-on");
-        uint8_t was = s.weapons[0].spec;
-        s.ships[1].charge[0] = 1;
-        step_n(&s, &cfg, 0, SIM_BTN_USE, 3);
-        CHECK(s.weapon_count >= 1, "it survived the repel");
-        CHECK(s.weapons[0].spec != was,
-              "a mine that pushes is still a mine a repel can clear");
-        CHECK(s.weapons[0].vx > 0, "and it leaves in the push direction");
-    }
-
-    {
-        /* What laying one costs, and what the rung adds to it.
-         *
-         * LandmineFireEnergy is 270 against the bomb's 300 and the upgrade is
-         * 150 against the bomb's 50, so a mine starts cheaper and ends dearer:
-         * a rung 3 mine costs 570 where a rung 3 bomb costs 400. That is the
-         * original's own arrangement and it is the thing stopping the rung
-         * being free on the weapon that does not have to be aimed.
-         *
-         * A mine is one pattern for every rung, so this needs `energy_up` the
-         * way its blast needs `blast_up`: the bomb ladder charges per rung by
-         * being a pattern per rung and has somewhere to put the number. It was
-         * resolved bare here at first, which priced every rung at the first
-         * one and made the widest blast in the game free. */
-        const uint16_t MINE = SIM_BTN_MINE;
-        int32_t cost[3];
-        for (int lvl = 0; lvl < 3; lvl++) {
-            sim_state s;
-            sim_init(&s, 1);
-            sim_spawn(&s, ANVIL, 0, 8192, 8192, 0, &cfg);
-            s.ships[0].level[SIM_TRIG_BOMB] = (uint8_t)lvl;
-            int32_t e0 = s.ships[0].energy;
-            step_n(&s, &cfg, MINE, 0, 1);
-            CHECK(s.weapon_count == 1, "a mine went down");
-            cost[lvl] = e0 - s.ships[0].energy;
-        }
-        CHECK(cost[1] > cost[0] && cost[2] > cost[1],
-              "a rung of the ladder costs more to lay");
-        /* The steps are equal, which is what an upgrade per rung means, and
-         * measured against each other rather than against a literal so a tick
-         * of recharge in the same step cancels out. */
-        CHECK(cost[2] - cost[1] == cost[1] - cost[0],
-              "and each rung adds the same again");
-
-        /* Refused rather than half-charged when the bar cannot cover it. */
-        sim_state s;
-        sim_init(&s, 1);
-        sim_spawn(&s, ANVIL, 0, 8192, 8192, 0, &cfg);
-        s.ships[0].level[SIM_TRIG_BOMB] = 2;
-        s.ships[0].energy = cost[2] / 2;
-        int32_t before = s.ships[0].energy;
-        step_n(&s, &cfg, MINE, 0, 1);
-        CHECK(s.weapon_count == 0, "a bar that cannot pay lays nothing");
-        CHECK(s.ships[0].energy >= before, "and is not charged for it");
-    }
-
-    {
-        /* You have mines because you have bombs.
-         *
-         * No inventory, no green, nothing to run out of: a fresh hull that has
-         * touched nothing can lay one on the tick it spawns. That is the
-         * original's arrangement -- a mine there is a bomb with one bit set,
-         * and the special inventory a position packet carries lists bursts and
-         * repels and thors and no mines -- and it is the whole reason the
-         * ceiling below has to exist. */
-        const uint16_t MINE = SIM_BTN_MINE;
-        sim_state s;
-        sim_init(&s, 1);
-        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
-        CHECK(s.ships[0].charge[0] == 0 && s.ships[0].charge[1] == 0,
-              "the pilot is carrying nothing");
-        step_n(&s, &cfg, MINE, 0, 1);
-        CHECK(s.weapon_count == 1, "and lays a mine anyway");
-
-        /* A hull with no rack lays none, because there is no bomb to not
-         * throw. That is the only licence a mine needs and the only one it
-         * has. */
-        sim_settings w = cfg;
-        w.classes[APEX].trigger[SIM_TRIG_BOMB][0] = SIM_NO_PATTERN;
-        sim_init(&s, 1);
-        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &w);
-        step_n(&s, &w, MINE, 0, 1);
-        CHECK(s.weapon_count == 0, "a hull with no rack lays nothing");
-
-        /* And a zone that wants a hull out of the mining business says so
-         * directly, which is what makes mining somebody's job rather than
-         * everybody's. */
-        w = cfg;
-        w.classes[APEX].mine_max = 0;
-        sim_init(&s, 1);
-        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &w);
-        step_n(&s, &w, MINE, 0, 1);
-        CHECK(s.weapon_count == 0, "nor does a hull the zone allows none");
-    }
-
-    {
-        /* The ceiling, which is the only thing limiting a weapon with no
-         * ammunition: how many of yours are already lying about.
-         *
-         * Walked rather than counted on the ship, so it cannot drift. What
-         * this pins is the consequence of that choice: every way a mine
-         * leaves the world gives the slot back, including ones a counter
-         * would have to be told about. */
-        const uint16_t MINE = SIM_BTN_MINE;
-        sim_settings w = cfg;
-        w.classes[APEX].mine_max = 3;
-        sim_state s;
-        sim_init(&s, 1);
-        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &w);
-        s.ships[0].energy = sim_eff_max_energy(&w.classes[APEX], &s.ships[0]);
-
-        for (int n = 0; n < 3; n++) {
-            /* Nose somewhere new each time so they do not stack in one spot,
-             * and wait out the bomb clock the laying locked. */
-            s.ships[0].heading = (uint16_t)(n * 8000);
-            s.ships[0].energy =
-                sim_eff_max_energy(&w.classes[APEX], &s.ships[0]);
-            step_n(&s, &w, MINE, 0, 1);
-            step_n(&s, &w, 0, 0, 160);
-        }
-        CHECK(s.weapon_count == 3, "three down, which is the hull's ceiling");
-        s.ships[0].energy = sim_eff_max_energy(&w.classes[APEX], &s.ships[0]);
-        step_n(&s, &w, MINE, 0, 1);
-        CHECK(s.weapon_count == 3, "and the fourth press does nothing at all");
-        /* Refused rather than fired and wasted, the way the bomb safety is:
-         * a trigger that costs you a bar for nothing is a bug that reads as
-         * lag. */
-        CHECK(s.ships[0].energy
-              == sim_eff_max_energy(&w.classes[APEX], &s.ships[0]),
-              "and costs nothing, since nothing was laid");
-
-        /* One goes off and the room is there again. */
-        s.weapons[0].life = 2;
-        step_n(&s, &w, 0, 0, 5);
-        CHECK(s.weapon_count == 2, "one ran out");
-        step_n(&s, &w, MINE, 0, 1);
-        CHECK(s.weapon_count == 3, "so another may be laid");
-
-        /* Dying does not clear them, so a pilot who spent their allowance and
-         * died comes back unable to mine until the old ones age out. That
-         * falls out of the count being a walk of the world rather than a
-         * number on the hull, and it is the right way round: the mines are
-         * still out there, still yours, still dangerous. */
-        int before = s.weapon_count;
-        s.ships[0].alive = 0;
-        step_n(&s, &w, 0, 0, 2);
-        CHECK(s.weapon_count == before, "a death leaves your minefield where it is");
     }
 
     {
@@ -3586,67 +2535,59 @@ int main(void) {
     }
 
     {
-        /* Dying costs the tree as well as the stats. */
+        /* Dying no longer costs the tree, because the tree is a kit rather
+         * than a collection. What a death takes is the run and whatever
+         * ammunition was already spent; the frame comes back at the
+         * respawn, dealt from the kit that was bought for it. */
+        sim_settings dk = cfg;
+        dk.respawn_delay = 4;
         sim_state s;
         sim_init(&s, 1);
-        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
-        sim_spawn(&s, APEX, 1, 8192, 8192 - 200, 32768, &cfg);
-        s.ships[0].level[SIM_TRIG_GUN] = 1;
-        s.ships[0].mods[SIM_TRIG_GUN] = sim_mod_set(0, SIM_MOD_MULTI, 1);
-        s.ships[0].up[SIM_UP_SPEED] = 3;
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &dk);
+        sim_spawn(&s, APEX, 1, 8192, 8192 - 200, 32768, &dk);
+        uint8_t kit[SIM_SLOT_COUNT] = {0};
+        kit[SIM_SLOT_STAT(SIM_UP_SPEED)] = 3;
+        kit[SIM_SLOT_LEVEL(SIM_TRIG_GUN)] = 1;
+        kit[SIM_SLOT_MOD(SIM_TRIG_GUN, SIM_MOD_MULTI)] = 1;
+        kit[SIM_SLOT_CHARGE(SIM_CHARGE_BURST)] = 2;
+        CHECK(sim_set_kit(&s.ships[0], &dk, kit) == 1, "the target has a kit");
+        s.ships[0].run = 5;
+        s.ships[0].charge[SIM_CHARGE_BURST] = 1;   /* one already spent */
         s.ships[0].energy = 1;
-        step_counting(&s, &cfg, 0, SIM_BTN_FIRE, 400);
+        step_counting(&s, &dk, 0, SIM_BTN_FIRE, 400);
         CHECK(s.ships[0].deaths > 0, "the target dies");
-        CHECK(s.ships[0].level[SIM_TRIG_GUN] == 0, "and loses the rung");
-        CHECK(s.ships[0].mods[SIM_TRIG_GUN] == 0, "and the add-ons");
-        CHECK(s.ships[0].up[SIM_UP_SPEED] == 0, "and the stats, as before");
+        CHECK(s.ships[0].run == 0, "and is worth nothing again");
+        CHECK(s.ships[0].alive, "and comes back inside the run");
+        CHECK(s.ships[0].up[SIM_UP_SPEED] == 3, "with the stats re-dealt");
+        CHECK(s.ships[0].level[SIM_TRIG_GUN] == 1, "and the rung");
+        CHECK(sim_mod_get(s.ships[0].mods[SIM_TRIG_GUN], SIM_MOD_MULTI) == 1,
+              "and the add-ons");
+        CHECK(s.ships[0].charge[SIM_CHARGE_BURST] == 1,
+              "but not the burst it had already spent");
     }
 
     /* --- bounty and points ----------------------------------------------
      *
      * Bounty is what you are worth and points are what you have been paid,
-     * and they are different numbers. Bounty is derived from what a pilot is
-     * holding rather than stored, which is what keeps it honest: rust lowers
-     * it, a green at the ceiling does not raise it, and death resets it
-     * without a line of code in any of those places. */
+     * and they are different numbers. Bounty is the length of your current
+     * run: the base on arrival, one more a kill, and gone when you die. It
+     * deliberately says nothing about the kit, because a kit is dealt back
+     * at every spawn and a bounty counting it would make a fresh pilot worth
+     * thirty to whoever camps the pad. */
     {
         sim_ship sh;
         memset(&sh, 0, sizeof sh);
-        CHECK(sim_bounty(&sh) == 0, "a fresh pilot is worth nothing");
+        CHECK(sim_bounty(&cfg, &sh) == cfg.bounty_base,
+              "a fresh pilot is worth the base and no more");
         sh.up[SIM_UP_SPEED] = 3;
         sh.level[SIM_TRIG_GUN] = 1;
         sh.mods[SIM_TRIG_GUN] = sim_mod_set(0, SIM_MOD_MULTI, 2);
         sh.charge[1] = 4;
-        CHECK(sim_bounty(&sh) == 10, "and otherwise worth what it holds");
-        sh.earned = 6;
-        CHECK(sim_bounty(&sh) == 16, "plus what killing has earned");
-    }
-
-    {
-        /* Every green raises it by exactly one, and rust lowers it. Which is
-         * not a rule anybody wrote: it falls out of the sum. */
-        sim_settings w = cfg;
-        w.rust_chance = 0;
-        sim_ship sh;
-        memset(&sh, 0, sizeof sh);
-        uint32_t rng = 4;
-        for (int i = 1; i <= 12; i++) {
-            sim_take_prize(&sh, &w, &rng, NULL);
-            CHECK(sim_bounty(&sh) == i, "a green is worth one bounty");
-        }
-        w.rust_chance = 1000;
-        int before = sim_bounty(&sh);
-        sim_take_prize(&sh, &w, &rng, NULL);
-        CHECK(sim_bounty(&sh) == before - 1, "and rust takes one back");
-
-        /* And it keeps being one a green, long past every ceiling: four
-         * hundred of them is four hundred bounty, whatever the hull could
-         * actually absorb. */
-        w.rust_chance = 0;
-        before = sim_bounty(&sh);
-        for (int i = 0; i < 400; i++) sim_take_prize(&sh, &w, &rng, NULL);
-        CHECK(sim_bounty(&sh) == before + 400,
-              "a ceiling stops the upgrade, not the price");
+        CHECK(sim_bounty(&cfg, &sh) == cfg.bounty_base,
+              "and a loaded one is worth exactly the same");
+        sh.run = 6;
+        CHECK(sim_bounty(&cfg, &sh) == cfg.bounty_base + 6,
+              "what moves it is the run");
     }
 
     {
@@ -3661,24 +2602,27 @@ int main(void) {
         step_counting(&s, &cfg, SIM_BTN_FIRE, 0, 400);
         CHECK(s.ships[1].deaths > 0, "the empty pilot dies");
         CHECK(s.ships[0].kills == 1, "and it counts as a kill");
-        CHECK(s.ships[0].points == 0, "worth nothing to whoever did it");
-        CHECK(sim_bounty(&s.ships[0]) == (int32_t)cfg.bounty_per_kill,
+        CHECK(s.ships[0].points == (uint32_t)cfg.bounty_base,
+              "worth only the base to whoever did it");
+        CHECK(sim_bounty(&cfg, &s.ships[0])
+                  == (int32_t)(cfg.bounty_base + cfg.bounty_per_kill),
               "though the killer is a little more dangerous for it");
 
-        /* Load the victim up and the same kill pays. */
+        /* Put the victim on a run and the same kill pays more. */
         sim_init(&s, 1);
         sim_spawn(&s, APEX, 0, 8192, 8192, 32768, &cfg);
         sim_spawn(&s, APEX, 1, 8192, 8192 + 200, 0, &cfg);
-        s.ships[1].up[SIM_UP_SPEED] = 5;
-        s.ships[1].up[SIM_UP_THRUST] = 4;
-        int32_t worth = sim_bounty(&s.ships[1]);
-        CHECK(worth == 9, "a loaded pilot is worth what they carry");
+        s.ships[1].run = 4;
+        int32_t worth = sim_bounty(&cfg, &s.ships[1]);
+        CHECK(worth == (int32_t)cfg.bounty_base + 4,
+              "a pilot on a run is worth the length of it");
         s.ships[1].energy = 1;
         step_counting(&s, &cfg, SIM_BTN_FIRE, 0, 400);
         CHECK(s.ships[1].deaths > 0, "they die too");
         CHECK(s.ships[0].points == (uint32_t)worth,
               "and the killer is paid exactly what they were worth");
-        CHECK(sim_bounty(&s.ships[1]) == 0, "the dead are worth nothing again");
+        CHECK(sim_bounty(&cfg, &s.ships[1]) == (int32_t)cfg.bounty_base,
+              "the dead are back to the floor");
     }
 
     {
@@ -3689,13 +2633,13 @@ int main(void) {
         sim_spawn(&s, APEX, 0, 8192, 8192, 32768, &cfg);
         sim_spawn(&s, APEX, 1, 8192, 8192 + 200, 0, &cfg);
         s.ships[0].points = 500;
-        s.ships[0].earned = 12;
-        s.ships[0].up[SIM_UP_SPEED] = 2;
+        s.ships[0].run = 12;
         s.ships[0].energy = 1;
         step_counting(&s, &cfg, 0, SIM_BTN_FIRE, 400);
         CHECK(s.ships[0].deaths > 0, "the scorer dies");
         CHECK(s.ships[0].points == 500, "and keeps every point they were paid");
-        CHECK(sim_bounty(&s.ships[0]) == 0, "while their price goes to nothing");
+        CHECK(sim_bounty(&cfg, &s.ships[0]) == (int32_t)cfg.bounty_base,
+              "while their price goes back to the floor");
     }
 
     {
@@ -3715,7 +2659,7 @@ int main(void) {
         CHECK(c.deaths > 0, "the bomb's blast kills the teammate");
         CHECK(s.ships[1].deaths == 1, "and it is the teammate who died");
         CHECK(s.ships[0].points == 0, "a teamkill pays no points");
-        CHECK(s.ships[0].earned == 0, "and no bounty");
+        CHECK(s.ships[0].run == 0, "and no bounty");
     }
 
     {
@@ -3732,7 +2676,7 @@ int main(void) {
             s.flags[f].carrier = 1;
         }
         s.ships[1].up[SIM_UP_ENERGY] = 2;
-        int32_t worth = sim_bounty(&s.ships[1]);
+        int32_t worth = sim_bounty(&cfg, &s.ships[1]);
         s.ships[1].energy = 1;
         step_counting(&s, &cfg, SIM_BTN_FIRE, 0, 400);
         CHECK(s.ships[1].deaths > 0, "the carrier dies");
@@ -3740,48 +2684,6 @@ int main(void) {
               "and the flags they held are worth extra");
     }
 
-    /* Prizes spawn, get collected, and raise the ship's effective stats. */
-    {
-        sim_state s;
-        sim_init(&s, 3);
-        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
-        step_n(&s, &cfg, 0, 0, cfg.prize_delay + 2);
-        int live = 0;
-        for (int i = 0; i < SIM_MAX_PRIZES; i++) live += s.prizes[i].active;
-        CHECK(live > 0, "a prize appears");
-
-        /* Teleport the ship onto one and confirm the pickup. */
-        int idx = -1;
-        for (int i = 0; i < SIM_MAX_PRIZES; i++)
-            if (s.prizes[i].active) { idx = i; break; }
-        /* A green carries no type, so what it turns out to be is whatever
-         * the roll says. Start the pilot one step below every ceiling and
-         * something has to move. */
-        for (int u = 0; u < SIM_UP_COUNT; u++) s.ships[0].up[u] = 7;
-        sim_ship before = s.ships[0];
-        s.ships[0].x = s.prizes[idx].x;
-        s.ships[0].y = s.prizes[idx].y;
-        ev_counts c = step_counting(&s, &cfg, 0, 0, 2);
-        CHECK(c.prizes > 0, "flying over a prize collects it");
-        CHECK(!s.prizes[idx].active, "and takes it off the map");
-        CHECK(memcmp(&before.up, &s.ships[0].up, sizeof before.up) != 0
-              || before.level[SIM_TRIG_GUN] != s.ships[0].level[SIM_TRIG_GUN]
-              || before.mods[SIM_TRIG_GUN] != s.ships[0].mods[SIM_TRIG_GUN]
-              || memcmp(&before.charge, &s.ships[0].charge, sizeof before.charge) != 0,
-              "and something the pilot holds went up");
-
-        /* Dying strips everything. */
-        s.ships[0].up[SIM_UP_SPEED] = 4;
-        s.ships[0].up[SIM_UP_ENERGY] = 4;
-        /* Spawn the shooter above and facing down, or it fires away. */
-        sim_spawn(&s, APEX, 1, s.ships[0].x / 256, s.ships[0].y / 256 - 200,
-                  32768, &cfg);
-        s.ships[0].energy = 1;
-        step_counting(&s, &cfg, 0, SIM_BTN_FIRE, 400);
-        CHECK(s.ships[0].deaths > 0, "the target dies");
-        CHECK(s.ships[0].up[SIM_UP_SPEED] == 0 && s.ships[0].up[SIM_UP_ENERGY] == 0,
-              "death strips every upgrade");
-    }
 
     /* Walls are inelastic: a bounce returns less speed than it took, and a
      * ship resting against one settles rather than buzzing. */
@@ -3869,424 +2771,6 @@ int main(void) {
         }
     }
 
-    /* A snapshot round trip reproduces the state exactly. This is what lets
-     * a client accept the server's word without drifting from it. */
-    {
-        sim_state s, back;
-        sim_init(&s, 11);
-        sim_spawn(&s, APEX, 0, 8000, 8000, 900, &cfg);
-        sim_spawn(&s, ANVIL, 1, 8000, 7800, 32768, &cfg);
-        /* A third pilot, four hundred tiles away and left alone. Greens appear
-         * near a live ship, so a field with everybody in one place is a field
-         * in one place -- and the interest-radius check below needs prizes on
-         * both sides of the radius to be checking anything. Somebody off on
-         * their own is also the ordinary case on a map this size. */
-        sim_spawn(&s, APEX, 1, 8000 + 400 * SIM_TILE_PX, 8000, 0, &cfg);
-        /* Long enough for the field to fill: one green a second to a field of
-         * two dozen, so a few hundred ticks would be checking the round trip
-         * against three of them. */
-        step_counting(&s, &cfg, SIM_BTN_THRUST | SIM_BTN_FIRE, SIM_BTN_BOMB,
-                      cfg.prize_delay * (cfg.prize_max + 4));
-
-        /* With a prize field on it, because prizes are most of a snapshot
-         * and their position is the one thing on the wire that is not stored
-         * the way it is sent -- two tile indices out, two Q8 pixel
-         * coordinates back. A round trip over an empty field would prove
-         * nothing about the part most likely to be wrong. */
-        int live = 0;
-        for (int i = 0; i < SIM_MAX_PRIZES; i++) live += s.prizes[i].active;
-        CHECK(live > 10, "the state under test carries a prize field");
-
-        /* Keep a known linked round in the state. A zero would let the new
-         * snapshot field be omitted on both sides while this broad round-trip
-         * test still looked healthy. */
-        if (s.weapon_count == 0) {
-            sim_weapon *round = &s.weapons[s.weapon_count++];
-            memset(round, 0, sizeof *round);
-            round->spec = gun_of(&cfg, APEX)->spec;
-            round->owner = 0;
-            round->team = s.ships[0].team;
-            round->x = s.ships[0].x;
-            round->y = s.ships[0].y;
-            round->life = 10;
-            round->fuse_target = 255;
-        }
-        s.weapons[0].link = 0xa1b2c3d4u;
-
-        static uint8_t buf[SIM_PACK_MAX];
-        int n = sim_pack(&s, buf, sizeof buf);
-        CHECK(n > 0, "a snapshot packs");
-        CHECK(sim_unpack(&back, buf, n) == 0, "a snapshot unpacks");
-        CHECK(sim_hash(&back) == sim_hash(&s), "the round trip is exact");
-        CHECK(back.weapons[0].link == 0xa1b2c3d4u,
-              "a gun-volley link survives the snapshot");
-
-        /* Network snapshots never reveal the prize stream. Two otherwise
-         * identical states with different future prize decisions produce the
-         * same bytes. */
-        {
-            static uint8_t a_buf[SIM_PACK_MAX], b_buf[SIM_PACK_MAX];
-            sim_state other = s;
-            other.prize_rng ^= 0x5a5aa5a5u;
-            other.prize_timer ^= 37;
-            int an = sim_pack_around(&s, a_buf, sizeof a_buf, s.ships[0].x,
-                                     s.ships[0].y, 84 * SIM_TILE_PX * 256,
-                                     0, 0, 0);
-            int bn = sim_pack_around(&other, b_buf, sizeof b_buf, other.ships[0].x,
-                                     other.ships[0].y, 84 * SIM_TILE_PX * 256,
-                                     0, 0, 0);
-            CHECK(an > 0 && an == bn && memcmp(a_buf, b_buf, an) == 0,
-                  "network bytes hide prize randomness and timing");
-        }
-
-        /* A message longer than this build knows how to read is refused.
-         *
-         * This is the case that reached a player. Three fields were added to the
-         * wire for repel and the browser bundle was not rebuilt, so the server
-         * wrote the new layout and the deployed client read the old one --
-         * stopping before the new fields, leaving them unread, and reporting
-         * success on a state it had misread from that point on. What the player
-         * saw was DESTROYED, permanently, on a healthy server.
-         *
-         * Appending a byte is the same shape as a field added on the far side:
-         * the reader lands short of the end. `underflow` never caught it, because
-         * that only fires on reading too far. */
-        {
-            static uint8_t longer[SIM_PACK_MAX + 8];
-            memcpy(longer, buf, (size_t)n);
-            longer[n] = 0x5a;
-            sim_state ignored;
-            CHECK(sim_unpack(&ignored, longer, n + 1) != 0,
-                  "a snapshot with bytes this build cannot read is refused");
-            CHECK(sim_unpack(&ignored, buf, n) == 0,
-                  "and the exact same bytes at the right length still unpack");
-
-            uint64_t before = sim_hash(&ignored);
-            buf[8] ^= 0x80;
-            CHECK(sim_unpack(&ignored, buf, n) != 0,
-                  "a malformed snapshot is refused");
-            CHECK(sim_hash(&ignored) == before,
-                  "and does not partly replace the live state");
-            buf[8] ^= 0x80;
-        }
-
-        /* And the same for settings, which is the message that actually broke. */
-        {
-            static uint8_t sbuf[SIM_PACK_MAX + 8];
-            int sn = sim_settings_pack(&cfg, sbuf, SIM_PACK_MAX);
-            CHECK(sn > 0, "settings pack");
-            sim_settings other;
-            CHECK(sim_settings_unpack(&other, sbuf, sn) == 0, "settings unpack");
-            sbuf[sn] = 0x5a;
-            CHECK(sim_settings_unpack(&other, sbuf, sn + 1) != 0,
-                  "settings carrying a field this build does not know are refused");
-        }
-        CHECK(memcmp(back.prizes, s.prizes, sizeof s.prizes) == 0,
-              "every prize comes back at the pixel it went out on");
-
-        /* And an unpacked state steps identically to the original, which is
-         * the property client prediction actually depends on. */
-        sim_state a2, b2;
-        sim_input in = {0, SIM_BTN_THRUST};
-        sim_step(&a2, &s, &in, 1, &cfg, NULL);
-        sim_step(&b2, &back, &in, 1, &cfg, NULL);
-        CHECK(sim_hash(&a2) == sim_hash(&b2), "an unpacked state steps identically");
-
-        /* And a snapshot packed around a point carries the prizes near it
-         * and none of the far ones -- which is the claim the wire saving
-         * rests on. The near ones still arrive at the pixel they left. */
-        {
-            int32_t cx = s.ships[0].x, cy = s.ships[0].y;
-            /* Two hundred tiles rather than the radar's sixty. This state
-             * holds about forty-five prizes spread over a thousand tiles
-             * square, so a sixty-tile circle catches none of them and the
-             * test would be asserting over an empty set. The radius under
-             * test is the filter, not the number the server picks. */
-            const int32_t R = 200 * 16 * 256;
-            int near = 0, far = 0;
-            for (int i = 0; i < SIM_MAX_PRIZES; i++) {
-                if (!s.prizes[i].active) continue;
-                int64_t dx = (int64_t)s.prizes[i].x - cx;
-                int64_t dy = (int64_t)s.prizes[i].y - cy;
-                if (dx * dx + dy * dy <= (int64_t)R * R) near++; else far++;
-            }
-            CHECK(near > 0 && far > 0, "the field straddles the radius");
-
-            /* Give one visible opponent a capacity upgrade and an unrelated
-             * private upgrade. A zero rung would let the wire omit capacity
-             * and still pass, while copying the whole upgrade array would
-             * restore the information leak this split is meant to keep shut. */
-            int public_energy_ship = -1;
-            for (int i = 1; i < s.ship_count; i++) {
-                if (!s.ships[i].active) continue;
-                int64_t dx = (int64_t)s.ships[i].x - cx;
-                int64_t dy = (int64_t)s.ships[i].y - cy;
-                if (dx * dx + dy * dy > (int64_t)R * R) continue;
-                public_energy_ship = i;
-                s.ships[i].up[SIM_UP_ENERGY] = 3;
-                s.ships[i].up[SIM_UP_SPEED] = 2;
-                s.ships[i].energy = sim_eff_max_energy(
-                    &cfg.classes[s.ships[i].cls], &s.ships[i]) / 2;
-                break;
-            }
-            CHECK(public_energy_ship >= 0,
-                  "a visible opponent can exercise public energy capacity");
-
-            int m = sim_pack_around(&s, buf, sizeof buf, cx, cy, R, 255, 0, 0);
-            CHECK(m > 0 && m < n, "a filtered snapshot is smaller");
-            sim_state cut;
-            CHECK(sim_unpack(&cut, buf, m) == 0, "and unpacks");
-
-            int got = 0;
-            for (int i = 0; i < SIM_MAX_PRIZES; i++) {
-                if (!cut.prizes[i].active) continue;
-                got++;
-                CHECK(cut.prizes[i].x == s.prizes[i].x
-                      && cut.prizes[i].y == s.prizes[i].y
-                      && cut.prizes[i].life == s.prizes[i].life,
-                      "a prize that was sent is unchanged");
-                int64_t dx = (int64_t)cut.prizes[i].x - cx;
-                int64_t dy = (int64_t)cut.prizes[i].y - cy;
-                CHECK(dx * dx + dy * dy <= (int64_t)R * R,
-                      "and nothing outside the radius was sent");
-            }
-            CHECK(got == near, "every prize inside the radius was sent");
-
-            /* Ships and rounds are filtered by the same radius, and that is
-             * the half of this that is about cheating rather than bytes: a
-             * client is not told where anybody is that it could not lawfully
-             * see, so a modified one has nothing beyond its own sight to
-             * draw. Flags still travel whole, being few and being objectives
-             * every pilot is entitled to know the state of.
-             *
-             * The seat count is the arena's either way. Indices are identity
-             * for the roster, the kill feed and the team lists, so a filtered
-             * snapshot keeps them and marks the absent seats inactive. */
-            CHECK(cut.ship_count == s.ship_count, "the seat count is the arena's");
-            CHECK(cut.flag_count == s.flag_count, "and every flag travels");
-
-            int ship_near = 0, ship_far = 0;
-            for (int i = 0; i < s.ship_count; i++) {
-                if (!s.ships[i].active) continue;
-                int64_t dx = (int64_t)s.ships[i].x - cx;
-                int64_t dy = (int64_t)s.ships[i].y - cy;
-                if (dx * dx + dy * dy <= (int64_t)R * R) {
-                    ship_near++;
-                    CHECK(cut.ships[i].active, "a ship inside the radius is sent");
-                    CHECK(cut.ships[i].x == s.ships[i].x
-                          && cut.ships[i].y == s.ships[i].y,
-                          "and its public state arrives unchanged");
-                    CHECK((i == 0) == !cut.ships[i].public_only,
-                          "only the owner receives private ship state");
-                    if (i == 0)
-                        CHECK(cut.ships[i].energy == s.ships[i].energy,
-                              "the owner's energy travels");
-                    else
-                        CHECK(cut.ships[i].energy == s.ships[i].energy,
-                              "visible remote energy is public");
-                    CHECK(cut.ships[i].up[SIM_UP_ENERGY]
-                          == s.ships[i].up[SIM_UP_ENERGY],
-                          "visible energy capacity is public");
-                    if (i == public_energy_ship)
-                        CHECK(cut.ships[i].up[SIM_UP_SPEED] == 0,
-                              "other visible upgrades remain private");
-                } else {
-                    ship_far++;
-                    CHECK(!cut.ships[i].active,
-                          "a ship outside it is not sent at all");
-                    CHECK(cut.ships[i].x == 0 && cut.ships[i].y == 0
-                          && cut.ships[i].energy == 0,
-                          "and leaves nothing behind to read");
-                }
-            }
-            CHECK(ship_near > 0 && ship_far > 0, "the seats straddle the radius");
-
-            /* A round whose fuse latched a seat outside the radius travels
-             * unarmed. Without this the client reads the fuse against a seat
-             * it was not sent, finds it inactive, and detonates a bomb the
-             * server is still flying: an explosion at the edge of the view
-             * that never happened. */
-            for (uint16_t i = 0; i < cut.weapon_count; i++) {
-                uint8_t ft = cut.weapons[i].fuse_target;
-                if (ft == 255) continue;
-                CHECK(ft < cut.ship_count && cut.ships[ft].active,
-                      "an armed fuse names a seat that was sent");
-            }
-
-            int wnear = 0;
-            for (uint16_t i = 0; i < s.weapon_count; i++) {
-                int64_t dx = (int64_t)s.weapons[i].x - cx;
-                int64_t dy = (int64_t)s.weapons[i].y - cy;
-                if (dx * dx + dy * dy <= (int64_t)R * R) wnear++;
-            }
-            CHECK(cut.weapon_count == wnear, "only the near rounds are sent");
-            for (uint16_t i = 0; i < cut.weapon_count; i++) {
-                int64_t dx = (int64_t)cut.weapons[i].x - cx;
-                int64_t dy = (int64_t)cut.weapons[i].y - cy;
-                CHECK(dx * dx + dy * dy <= (int64_t)R * R,
-                      "and every round that arrived is one of them");
-            }
-        }
-
-        /* A respawn lands on the same tile for the arena and for the client
-         * predicting it.
-         *
-         * The client is sent the ships inside its interest radius and no
-         * others, so every draw the arena makes for a hull it cannot see is a
-         * draw it does not make. Taken off the shared generator, a spawn tile
-         * is therefore whatever that client's copy of the stream happened to
-         * reach: a different tile, on a different side of the map. Reported
-         * from alphasmall as a 9416 px correction with both positions exact
-         * tile centers and no velocity either side, which is a respawn and
-         * nothing else.
-         *
-         * Two hulls far enough apart to filter, both about to come back. */
-        {
-            sim_settings rc = cfg;
-            rc.spawn_radius = 40;      /* a scatter, so the draw decides a tile */
-            rc.prize_delay = 0;
-            rc.respawn_delay = 2;
-
-            sim_state s;
-            sim_init(&s, 12345);
-            /* The unseen hull takes the lower seat, because the step walks
-             * seats in order: the arena's draw for it lands before the
-             * pilot's, and the client's does not happen at all. A room where
-             * every hull the client cannot see sits behind it in the roster
-             * would hide this. */
-            int far = sim_spawn(&s, APEX, 1, 900 * 16, 900 * 16, 0, &rc);
-            int near = sim_spawn(&s, APEX, 0, 300 * 16, 300 * 16, 0, &rc);
-            CHECK(far == 0 && near == 1, "two hulls, far apart");
-            /* Both dead and due back on the same tick. */
-            for (int k = 0; k < 2; k++) {
-                s.ships[k].alive = 0;
-                s.ships[k].energy = 0;
-                s.ships[k].respawn_at = 2;
-            }
-
-            /* What this pilot is actually sent, which leaves the far hull out. */
-            const int32_t R = 84 * 16 * 256;
-            int n = sim_pack_around(&s, buf, sizeof buf, s.ships[near].x,
-                                    s.ships[near].y, R, (uint8_t)near,
-                                    (uint8_t)near, SIM_PACK_SECRET);
-            sim_state client;
-            CHECK(n > 0 && sim_unpack(&client, buf, n) == 0, "the snapshot reads");
-            CHECK(!client.ships[far].active,
-                  "and the far hull is not in it, which is the whole point");
-            CHECK(client.rng == s.rng, "the generator arrives with it");
-
-            /* Both step the same two ticks: the arena with the room it has,
-             * the client with the room it was told about. */
-            step_n(&s, &rc, 0, 0, 2);
-            step_n(&client, &rc, 0, 0, 2);
-            CHECK(s.ships[near].alive && client.ships[near].alive,
-                  "the pilot is back on both sides");
-            CHECK(s.ships[near].x == client.ships[near].x
-                  && s.ships[near].y == client.ships[near].y,
-                  "and back on the same tile, whatever else the room did");
-        }
-
-        /* Except a pilot's own, which travel however far off they are.
-         *
-         * This is the minefield. A mine sits for two minutes and the pilot who
-         * laid it flies away, so it is the one round that leaves the radius
-         * without ending, and a client that stops being told about it draws it
-         * detonating and then lays a sixth mine because it can no longer count
-         * the five. Measured on alpha, every mine laid left its own layer's
-         * snapshot inside seven seconds while the arena flew it on for the
-         * best part of a minute.
-         *
-         * Written as the round the pilot owns rather than as the mine they
-         * own: their bullets are inside the radius by construction, so the
-         * narrower rule buys nothing and reads as a special case. */
-        {
-            sim_state m;
-            sim_init(&m, 3);
-            int layer = sim_spawn(&m, APEX, 0, 2048, 2048, 0, &cfg);
-            int other = sim_spawn(&m, APEX, 1, 2200, 2048, 0, &cfg);
-            CHECK(layer == 0 && other == 1, "two pilots, two sides");
-            step_n(&m, &cfg, SIM_BTN_MINE, 0, 1);
-            CHECK(m.weapon_count == 1, "one of them lays a mine");
-            /* Somewhere the radius below cannot reach. Moved rather than
-             * flown, because what is under test is the filter and not how
-             * long the trip takes. */
-            m.ships[0].x += 400 * 16 * 256;
-
-            const int32_t R = 84 * 16 * 256;    /* the floor a client gets */
-            int32_t vx = m.ships[0].x, vy = m.ships[0].y;
-            int n2 = sim_pack_around(&m, buf, sizeof buf, vx, vy, R, 0, 0, 0);
-            sim_state mine_seen;
-            CHECK(n2 > 0 && sim_unpack(&mine_seen, buf, n2) == 0,
-                  "the layer's own snapshot packs");
-            CHECK(mine_seen.weapon_count == 1,
-                  "and still carries the mine they left behind");
-            CHECK(mine_seen.weapons[0].x == m.weapons[0].x
-                  && mine_seen.weapons[0].y == m.weapons[0].y
-                  && mine_seen.weapons[0].life == m.weapons[0].life,
-                  "at the pixel and on the clock it actually has");
-
-            int n3 = sim_pack_around(&m, buf, sizeof buf, vx, vy, R, 1, 1, 0);
-            sim_state stranger;
-            CHECK(n3 > 0 && sim_unpack(&stranger, buf, n3) == 0,
-                  "and so does somebody else's from the same place");
-            CHECK(stranger.weapon_count == 0,
-                  "which is told nothing about a mine that far away");
-
-            /* 255 is nobody, and it has to be: every round is owned by a seat,
-             * so the sentinel can never be somebody by accident. */
-            int n5 = sim_pack_around(&m, buf, sizeof buf, vx, vy, R, 255, 255, 0);
-            sim_state nobody;
-            CHECK(n5 > 0 && sim_unpack(&nobody, buf, n5) == 0, "packs");
-            CHECK(nobody.weapon_count == 0, "and carries no round's exception");
-
-            /* And the exception is the owner rather than the distance: from
-             * next to the mine, everybody is told about it. */
-            int n4 = sim_pack_around(&m, buf, sizeof buf,
-                                     m.weapons[0].x, m.weapons[0].y, R, 1, 1, 0);
-            sim_state near_by;
-            CHECK(n4 > 0 && sim_unpack(&near_by, buf, n4) == 0, "packs");
-            CHECK(near_by.weapon_count == 1,
-                  "a stranger standing on the minefield sees it");
-        }
-
-        /* A negative radius is the whole state, and has to stay bit-identical
-         * to it: the replay tool, the golden hashes and every test above pack
-         * that way, so a filtered format that changed the unfiltered bytes
-         * would be a format change wearing a disguise. */
-        {
-            int whole = sim_pack_around(&s, buf, sizeof buf, 0, 0, -1, 255, 255,
-                                        SIM_PACK_PRIVATE_ALL | SIM_PACK_SECRET);
-            CHECK(whole == n, "an unfiltered pack is the same size as sim_pack");
-            sim_state all;
-            CHECK(sim_unpack(&all, buf, whole) == 0, "and unpacks");
-            CHECK(sim_hash(&all) == sim_hash(&s),
-                  "and carries the whole arena");
-        }
-
-        /* The bitmap is read a byte at a time and a seat count is rarely a
-         * multiple of eight, so the seats either side of a byte boundary are
-         * where an off-by-one would live. Packed around one seat with a
-         * radius of zero, exactly that seat comes back. */
-        for (int pick = 0; pick < s.ship_count; pick++) {
-            if (!s.ships[pick].active) continue;
-            int m = sim_pack_around(&s, buf, sizeof buf,
-                                    s.ships[pick].x, s.ships[pick].y, 0, 255,
-                                    (uint8_t)pick, 0);
-            CHECK(m > 0, "a pack around one seat succeeds");
-            sim_state one;
-            CHECK(sim_unpack(&one, buf, m) == 0, "and unpacks");
-            for (int i = 0; i < s.ship_count; i++) {
-                int want = s.ships[i].active
-                           && s.ships[i].x == s.ships[pick].x
-                           && s.ships[i].y == s.ships[pick].y;
-                CHECK(!one.ships[i].active == !want,
-                      "each seat is present exactly when it is in range");
-            }
-        }
-
-        CHECK(sim_pack(&s, buf, 8) == -1, "packing reports an undersized buffer");
-        CHECK(sim_unpack(&back, buf, 3) == -1, "unpacking rejects a truncated snapshot");
-    }
 
     /* Settings travel too, and the test that matters is not that the fields
      * survive but that a fresh core given them steps the same way. A client
@@ -4408,54 +2892,6 @@ int main(void) {
         }
     }
 
-    /* Touching a wormhole puts you somewhere else.
-     *
-     * The pull was already there and did nothing but bend a course. What a
-     * wormhole is for is the other side of it, so contact with the tile itself
-     * moves the ship to a spawn point chosen at random and stops it dead: an
-     * exit that keeps your velocity puts you through the wall behind wherever
-     * you came out. */
-    {
-        sim_map *wm = malloc(sizeof *wm);
-        memset(wm->tile, SIM_TILE_EMPTY, sizeof wm->tile);
-        for (int i = 0; i < SIM_MAP_TILES; i++) {
-            wm->tile[i] = SIM_TILE_SOLID;
-            wm->tile[(size_t)(SIM_MAP_TILES - 1) * SIM_MAP_TILES + i] = SIM_TILE_SOLID;
-            wm->tile[(size_t)i * SIM_MAP_TILES] = SIM_TILE_SOLID;
-            wm->tile[(size_t)i * SIM_MAP_TILES + SIM_MAP_TILES - 1] = SIM_TILE_SOLID;
-        }
-        wm->tile[(size_t)512 * SIM_MAP_TILES + 512] = SIM_TILE_WORMHOLE;
-        /* Two of them, far apart, so "went to a spawn" cannot be satisfied by
-         * standing still. */
-        wm->tile[(size_t)300 * SIM_MAP_TILES + 300] = SIM_TILE(SIM_TILE_SPAWN, 0);
-        wm->tile[(size_t)700 * SIM_MAP_TILES + 700] = SIM_TILE(SIM_TILE_SPAWN, 0);
-        sim_map_index(wm);
-        sim_settings wc;
-        memset(&wc, 0, sizeof wc);
-        sim_settings_baseline(&wc, wm);
-        wc.spawn_prizes = 0;
-
-        sim_state s;
-        sim_init(&s, 1);
-        /* Four tiles above the hole, pointing down at it. Stepped one tick at
-         * a time because the interesting state is the tick the warp lands on:
-         * a ship still holding thrust is off the spawn tile a second later,
-         * which is the game working rather than the test failing. */
-        int id = sim_spawn(&s, APEX, 0, 512 * 16, 508 * 16, 32768, &wc);
-        int warped = 0;
-        for (int t = 0; t < 200 && !warped; t++) {
-            ev_counts c = step_counting(&s, &wc, SIM_BTN_THRUST, 0, 1);
-            warped = c.warps > 0;
-        }
-        CHECK(warped, "flying into a wormhole warps the ship");
-        int at_a = (s.ships[id].x >> 12) == 300 && (s.ships[id].y >> 12) == 300;
-        int at_b = (s.ships[id].x >> 12) == 700 && (s.ships[id].y >> 12) == 700;
-        CHECK(at_a || at_b, "and puts it on a spawn tile");
-        CHECK(s.ships[id].vx == 0 && s.ships[id].vy == 0,
-              "with its speed taken off it");
-        CHECK(s.ships[id].alive, "and without killing it");
-        free(wm);
-    }
 
     /* Multifire is a switch the pilot holds, not one the prize decides.
      *
@@ -4507,7 +2943,7 @@ int main(void) {
             step_n(&s, &cfg, SIM_BTN_MULTI, 0, 1);   /* down: toggles once */
             CHECK(s.ships[id].multi_off, "the key goes down and it toggles");
             int m = sim_pack_around(&s, buf, sizeof buf, 0, 0, -1, 255, 255,
-                                    SIM_PACK_PRIVATE_ALL | SIM_PACK_SECRET);
+                                    SIM_PACK_PRIVATE_ALL);
             CHECK(m > 0, "the state packs");
             CHECK(sim_unpack(&s2, buf, m) == 0, "and reads back");
             CHECK(s2.ships[id].btn_prev == SIM_BTN_MULTI,
@@ -4562,6 +2998,120 @@ int main(void) {
               "and a fan picked up afterwards fans");
     }
 
+
+    /* A round faster than a hull is thick still hits it.
+     *
+     * The hit test used to sample once per tick, at the end of the tick's
+     * travel. A Cipher's flank is 12 px thick and a round can cross more than
+     * that in one tick, so a crossing could land entirely between two samples
+     * and pass through, deterministically, on both ends of the wire at once.
+     * The sweep walks the travel in 4 px samples instead. The velocity here
+     * is written onto the round directly, standing in for any zone that
+     * retunes its weapons faster than the baseline flies. */
+    {
+        const int CIPHER = 4;
+        sim_state s;
+        sim_init(&s, 1);
+        sim_spawn(&s, CIPHER, 0, 8192, 8192, 0, &cfg);
+
+        sim_weapon *w = &s.weapons[s.weapon_count++];
+        memset(w, 0, sizeof *w);
+        w->spec = gun_of(&cfg, APEX)->spec;
+        w->owner = 1;          /* nobody's round arrives at its owner */
+        w->team = 1;
+        w->life = 10;
+        /* 16 px a tick, eastward, from 8 px short of the near flank: the
+         * endpoint lands 2 px past the far one, so the old single sample
+         * would have seen empty space on both sides of the crossing. */
+        w->x = 8184 * 256;
+        w->y = 8192 * 256;
+        w->vx = 16 * 65536;
+
+        ev_counts c = step_counting(&s, &cfg, 0, 0, 1);
+        CHECK(c.hits == 1, "a 16 px/tick round cannot cross a 12 px flank");
+        CHECK(s.weapon_count == 0, "and it ended on the hull it hit");
+    }
+
+    /* And the same round cannot cross a wall one tile thick. */
+    {
+        for (int ty = 500; ty < 525; ty++)
+            m->tile[(size_t)ty * SIM_MAP_TILES + 512] = SIM_TILE_SOLID;
+        sim_map_index(m);
+
+        sim_state s;
+        sim_init(&s, 1);
+        sim_weapon *w = &s.weapons[s.weapon_count++];
+        memset(w, 0, sizeof *w);
+        w->spec = gun_of(&cfg, APEX)->spec;
+        w->owner = 1;
+        w->team = 1;
+        w->life = 10;
+        /* The wall column covers x 8192..8208 px. From 8180 at 48 px a tick
+         * the endpoint is 8228, past the far face, so the endpoint sample
+         * alone would have read clear air. */
+        w->x = 8180 * 256;
+        w->y = 8072 * 256;   /* tile 504, inside the column's run */
+        w->vx = 48 * 65536;
+
+        step_n(&s, &cfg, 0, 0, 1);
+        CHECK(s.weapon_count == 0, "a 48 px/tick round cannot cross a wall");
+
+        for (int ty = 500; ty < 525; ty++)
+            m->tile[(size_t)ty * SIM_MAP_TILES + 512] = SIM_TILE_EMPTY;
+        sim_map_index(m);
+    }
+
+
+
+
+    /* Touching a wormhole puts you somewhere else.
+     *
+     * The pull was already there and did nothing but bend a course. What a
+     * wormhole is for is the other side of it, so contact with the tile itself
+     * moves the ship to a spawn point chosen at random and stops it dead: an
+     * exit that keeps your velocity puts you through the wall behind wherever
+     * you came out. */
+    {
+        sim_map *wm = malloc(sizeof *wm);
+        memset(wm->tile, SIM_TILE_EMPTY, sizeof wm->tile);
+        for (int i = 0; i < SIM_MAP_TILES; i++) {
+            wm->tile[i] = SIM_TILE_SOLID;
+            wm->tile[(size_t)(SIM_MAP_TILES - 1) * SIM_MAP_TILES + i] = SIM_TILE_SOLID;
+            wm->tile[(size_t)i * SIM_MAP_TILES] = SIM_TILE_SOLID;
+            wm->tile[(size_t)i * SIM_MAP_TILES + SIM_MAP_TILES - 1] = SIM_TILE_SOLID;
+        }
+        wm->tile[(size_t)512 * SIM_MAP_TILES + 512] = SIM_TILE_WORMHOLE;
+        /* Two of them, far apart, so "went to a spawn" cannot be satisfied by
+         * standing still. */
+        wm->tile[(size_t)300 * SIM_MAP_TILES + 300] = SIM_TILE(SIM_TILE_SPAWN, 0);
+        wm->tile[(size_t)700 * SIM_MAP_TILES + 700] = SIM_TILE(SIM_TILE_SPAWN, 0);
+        sim_map_index(wm);
+        sim_settings wc;
+        memset(&wc, 0, sizeof wc);
+        sim_settings_baseline(&wc, wm);
+
+        sim_state s;
+        sim_init(&s, 1);
+        /* Four tiles above the hole, pointing down at it. Stepped one tick at
+         * a time because the interesting state is the tick the warp lands on:
+         * a ship still holding thrust is off the spawn tile a second later,
+         * which is the game working rather than the test failing. */
+        int id = sim_spawn(&s, APEX, 0, 512 * 16, 508 * 16, 32768, &wc);
+        int warped = 0;
+        for (int t = 0; t < 200 && !warped; t++) {
+            ev_counts c = step_counting(&s, &wc, SIM_BTN_THRUST, 0, 1);
+            warped = c.warps > 0;
+        }
+        CHECK(warped, "flying into a wormhole warps the ship");
+        int at_a = (s.ships[id].x >> 12) == 300 && (s.ships[id].y >> 12) == 300;
+        int at_b = (s.ships[id].x >> 12) == 700 && (s.ships[id].y >> 12) == 700;
+        CHECK(at_a || at_b, "and puts it on a spawn tile");
+        CHECK(s.ships[id].vx == 0 && s.ships[id].vy == 0,
+              "with its speed taken off it");
+        CHECK(s.ships[id].alive, "and without killing it");
+        free(wm);
+    }
+
     /* A hull's box follows its heading. The extents are measured off what
      * the client draws, which is why client/tests/hull_fit_test.lua reads
      * the table they come from; here we check the properties the core
@@ -4592,7 +3142,6 @@ int main(void) {
         sim_settings hc;
         memset(&hc, 0, sizeof hc);
         sim_settings_baseline(&hc, wm);
-        hc.spawn_prizes = 0;
         const int32_t face = 40 * 16 * 256;   /* the wall's south edge */
 
         /* Nose-first: thrust straight up at the wall and take the closest
@@ -4685,126 +3234,6 @@ int main(void) {
         free(wm);
     }
 
-    /* A round faster than a hull is thick still hits it.
-     *
-     * The hit test used to sample once per tick, at the end of the tick's
-     * travel. A Cipher's flank is 12 px thick and a round can cross more than
-     * that in one tick, so a crossing could land entirely between two samples
-     * and pass through, deterministically, on both ends of the wire at once.
-     * The sweep walks the travel in 4 px samples instead. The velocity here
-     * is written onto the round directly, standing in for any zone that
-     * retunes its weapons faster than the baseline flies. */
-    {
-        const int CIPHER = 4;
-        sim_state s;
-        sim_init(&s, 1);
-        sim_spawn(&s, CIPHER, 0, 8192, 8192, 0, &cfg);
-
-        sim_weapon *w = &s.weapons[s.weapon_count++];
-        memset(w, 0, sizeof *w);
-        w->spec = gun_of(&cfg, APEX)->spec;
-        w->owner = 1;          /* nobody's round arrives at its owner */
-        w->team = 1;
-        w->life = 10;
-        /* 16 px a tick, eastward, from 8 px short of the near flank: the
-         * endpoint lands 2 px past the far one, so the old single sample
-         * would have seen empty space on both sides of the crossing. */
-        w->x = 8184 * 256;
-        w->y = 8192 * 256;
-        w->vx = 16 * 65536;
-
-        ev_counts c = step_counting(&s, &cfg, 0, 0, 1);
-        CHECK(c.hits == 1, "a 16 px/tick round cannot cross a 12 px flank");
-        CHECK(s.weapon_count == 0, "and it ended on the hull it hit");
-    }
-
-    /* And the same round cannot cross a wall one tile thick. */
-    {
-        for (int ty = 500; ty < 525; ty++)
-            m->tile[(size_t)ty * SIM_MAP_TILES + 512] = SIM_TILE_SOLID;
-        sim_map_index(m);
-
-        sim_state s;
-        sim_init(&s, 1);
-        sim_weapon *w = &s.weapons[s.weapon_count++];
-        memset(w, 0, sizeof *w);
-        w->spec = gun_of(&cfg, APEX)->spec;
-        w->owner = 1;
-        w->team = 1;
-        w->life = 10;
-        /* The wall column covers x 8192..8208 px. From 8180 at 48 px a tick
-         * the endpoint is 8228, past the far face, so the endpoint sample
-         * alone would have read clear air. */
-        w->x = 8180 * 256;
-        w->y = 8072 * 256;   /* tile 504, inside the column's run */
-        w->vx = 48 * 65536;
-
-        step_n(&s, &cfg, 0, 0, 1);
-        CHECK(s.weapon_count == 0, "a 48 px/tick round cannot cross a wall");
-
-        for (int ty = 500; ty < 525; ty++)
-            m->tile[(size_t)ty * SIM_MAP_TILES + 512] = SIM_TILE_EMPTY;
-        sim_map_index(m);
-    }
-
-    /* Gunners. A ride is refused below a full bar, granted from anywhere in
-     * the arena, and ends when the carrier does. */
-    {
-        sim_state s;
-        sim_init(&s, 1);
-        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);   /* the carrier */
-        sim_spawn(&s, APEX, 0, 2000, 2000, 0, &cfg);   /* half the map away */
-        sim_spawn(&s, APEX, 1, 8192, 8300, 0, &cfg);   /* the other side */
-
-        CHECK(s.ships[1].carrier == SIM_NO_CARRIER, "a fresh ship rides nobody");
-        CHECK(sim_attach(&s, &cfg, 2, 0) == -1, "an enemy cannot ride you");
-        CHECK(sim_attach(&s, &cfg, 1, 1) == -1, "a ship cannot ride itself");
-
-        s.ships[1].energy -= 1;
-        CHECK(sim_attach(&s, &cfg, 1, 0) == -1, "a ride needs a full bar");
-        s.ships[1].energy += 1;
-
-        CHECK(sim_attach(&s, &cfg, 1, 0) == 0, "a teammate may be ridden");
-        CHECK(s.ships[1].x == s.ships[0].x && s.ships[1].y == s.ships[0].y,
-              "attaching crosses the map");
-        CHECK(s.ships[1].energy < sim_eff_max_energy(&cfg.classes[APEX],
-                                                     &s.ships[1]) / 4,
-              "and arrives with almost nothing");
-        CHECK(sim_gunners(&s, 0) == 1, "the carrier counts one gunner");
-        CHECK(sim_attach(&s, &cfg, 0, 1) == -1, "a gunner cannot be ridden");
-
-        /* Riding is not flying: the gunner keeps the carrier's position
-         * whatever it holds down, and turns while it does. */
-        uint16_t was = s.ships[1].heading;
-        step_n(&s, &cfg, SIM_BTN_THRUST, SIM_BTN_THRUST | SIM_BTN_LEFT, 30);
-        CHECK(s.ships[1].x == s.ships[0].x && s.ships[1].y == s.ships[0].y,
-              "a gunner rides where the carrier is");
-        CHECK(s.ships[1].heading != was, "a gunner still turns");
-
-        /* And the carrier pays for the passenger, once. */
-        int32_t one = sim_eff_thrust(&cfg.classes[APEX], &s.ships[0]);
-        CHECK(cfg.classes[APEX].gunner_thrust > 0, "carrying costs thrust");
-        CHECK(one > 0, "the carrier still has thrust");
-
-        s.ships[0].energy = 1;
-        s.ships[2].x = s.ships[0].x;
-        s.ships[2].y = s.ships[0].y + 200 * 256;
-        s.ships[2].heading = 0;
-        int died = 0;
-        for (int tick = 0; tick < 400 && !died; tick++) {
-            sim_state next;
-            sim_events ev;
-            sim_input fire = {2, SIM_BTN_FIRE};
-            sim_step(&next, &s, &fire, 1, &cfg, &ev);
-            s = next;
-            for (uint16_t e = 0; e < ev.count; e++)
-                if (ev.e[e].type == SIM_EV_DEATH && ev.e[e].a == 0) died = 1;
-        }
-        CHECK(died, "the carrier dies in the weapon phase");
-        CHECK(s.ships[1].carrier == SIM_NO_CARRIER,
-              "the death snapshot already drops its gunners");
-    }
-
     /* --- where a ship comes back ------------------------------------------
      *
      * Two arrangements behind one number, so both are measured against the
@@ -4823,7 +3252,6 @@ int main(void) {
         sim_settings sc;
         memset(&sc, 0, sizeof sc);
         sim_settings_baseline(&sc, sm);
-        sc.spawn_prizes = 0;
         sc.respawn_delay = 1;
 
         CHECK(sc.spawn_radius == 0, "the baseline spawns on the map's tiles");
@@ -4982,13 +3410,11 @@ int main(void) {
     }
 
     /* A long mixed run checks relationships rather than one scripted answer.
-     * The seed is fixed so a failure can be replayed, but inputs, hull changes,
-     * side changes, attachments, weapons, deaths, respawns, flags, and greens
-     * still meet in combinations the examples above do not enumerate. */
+     * The seed is fixed so a failure can be replayed, but inputs, hull
+     * changes, side changes, kits, weapons, deaths, respawns and flags still
+     * meet in combinations the examples above do not enumerate. */
     {
         sim_settings mixed = cfg;
-        mixed.prize_delay = 7;
-        mixed.prize_max = 48;
         mixed.respawn_delay = 25;
         mixed.flag_drop_cooldown = 5;
         sim_state s;
@@ -5008,8 +3434,8 @@ int main(void) {
 
         const uint16_t buttons = SIM_BTN_LEFT | SIM_BTN_RIGHT | SIM_BTN_THRUST
                                  | SIM_BTN_REVERSE | SIM_BTN_FIRE | SIM_BTN_BOMB
-                                 | SIM_BTN_USE | SIM_BTN_SLOT_MASK | SIM_BTN_MULTI
-                                 | SIM_BTN_MINE;
+                                 | SIM_BTN_USE | SIM_BTN_SLOT_MASK
+                                 | SIM_BTN_MULTI;
         for (int tick = 0; tick < 12000; tick++) {
             sim_input in[12];
             for (int i = 0; i < 12; i++) {
@@ -5028,8 +3454,7 @@ int main(void) {
                     sim_set_ship_team(&s, &mixed, i,
                                       (uint8_t)(next_random(&random) % 3));
                 else
-                    sim_attach(&s, &mixed, i,
-                               (uint8_t)(next_random(&random) % 12));
+                    random_kit(&s.ships[i], &mixed, &random);
             }
 
             sim_state next;
@@ -5048,6 +3473,469 @@ int main(void) {
                       "an invariant state survives the wire exactly");
             }
         }
+    }
+
+    /* A snapshot round trip reproduces the state exactly. This is what lets
+     * a client accept the server's word without drifting from it. */
+    {
+        sim_state s, back;
+        sim_init(&s, 11);
+        sim_spawn(&s, APEX, 0, 8000, 8000, 900, &cfg);
+        sim_spawn(&s, ANVIL, 1, 8000, 7800, 32768, &cfg);
+        sim_spawn(&s, APEX, 1, 8000 + 400 * SIM_TILE_PX, 8000, 0, &cfg);
+        /* Long enough for the field to fill: one green a second to a field of
+         * two dozen, so a few hundred ticks would be checking the round trip
+         * against three of them. */
+        step_counting(&s, &cfg, SIM_BTN_THRUST | SIM_BTN_FIRE, SIM_BTN_BOMB,
+                      600);
+
+        /* Keep a known linked round in the state. A zero would let the new
+         * snapshot field be omitted on both sides while this broad round-trip
+         * test still looked healthy. */
+        if (s.weapon_count == 0) {
+            sim_weapon *round = &s.weapons[s.weapon_count++];
+            memset(round, 0, sizeof *round);
+            round->spec = gun_of(&cfg, APEX)->spec;
+            round->owner = 0;
+            round->team = s.ships[0].team;
+            round->x = s.ships[0].x;
+            round->y = s.ships[0].y;
+            round->life = 10;
+            round->fuse_target = 255;
+        }
+        s.weapons[0].link = 0xa1b2c3d4u;
+
+        static uint8_t buf[SIM_PACK_MAX];
+        int n = sim_pack(&s, buf, sizeof buf);
+        CHECK(n > 0, "a snapshot packs");
+        CHECK(sim_unpack(&back, buf, n) == 0, "a snapshot unpacks");
+        CHECK(sim_hash(&back) == sim_hash(&s), "the round trip is exact");
+        CHECK(back.weapons[0].link == 0xa1b2c3d4u,
+              "a gun-volley link survives the snapshot");
+
+        /* A message longer than this build knows how to read is refused.
+         *
+         * This is the case that reached a player. Three fields were added to the
+         * wire for repel and the browser bundle was not rebuilt, so the server
+         * wrote the new layout and the deployed client read the old one --
+         * stopping before the new fields, leaving them unread, and reporting
+         * success on a state it had misread from that point on. What the player
+         * saw was DESTROYED, permanently, on a healthy server.
+         *
+         * Appending a byte is the same shape as a field added on the far side:
+         * the reader lands short of the end. `underflow` never caught it, because
+         * that only fires on reading too far. */
+        {
+            static uint8_t longer[SIM_PACK_MAX + 8];
+            memcpy(longer, buf, (size_t)n);
+            longer[n] = 0x5a;
+            sim_state ignored;
+            CHECK(sim_unpack(&ignored, longer, n + 1) != 0,
+                  "a snapshot with bytes this build cannot read is refused");
+            CHECK(sim_unpack(&ignored, buf, n) == 0,
+                  "and the exact same bytes at the right length still unpack");
+
+            uint64_t before = sim_hash(&ignored);
+            buf[8] ^= 0x80;
+            CHECK(sim_unpack(&ignored, buf, n) != 0,
+                  "a malformed snapshot is refused");
+            CHECK(sim_hash(&ignored) == before,
+                  "and does not partly replace the live state");
+            buf[8] ^= 0x80;
+        }
+
+        /* And the same for settings, which is the message that actually broke. */
+        {
+            static uint8_t sbuf[SIM_PACK_MAX + 8];
+            int sn = sim_settings_pack(&cfg, sbuf, SIM_PACK_MAX);
+            CHECK(sn > 0, "settings pack");
+            sim_settings other;
+            CHECK(sim_settings_unpack(&other, sbuf, sn) == 0, "settings unpack");
+            sbuf[sn] = 0x5a;
+            CHECK(sim_settings_unpack(&other, sbuf, sn + 1) != 0,
+                  "settings carrying a field this build does not know are refused");
+        }
+
+        /* And an unpacked state steps identically to the original, which is
+         * the property client prediction actually depends on. */
+        sim_state a2, b2;
+        sim_input in = {0, SIM_BTN_THRUST};
+        sim_step(&a2, &s, &in, 1, &cfg, NULL);
+        sim_step(&b2, &back, &in, 1, &cfg, NULL);
+        CHECK(sim_hash(&a2) == sim_hash(&b2), "an unpacked state steps identically");
+
+        /* And a snapshot packed around a point carries what is near it and
+         * none of the far ones, which is the claim the wire saving rests
+         * on, and the half of it that is about cheating rather than bytes. */
+        {
+            int32_t cx = s.ships[0].x, cy = s.ships[0].y;
+            /* Two hundred tiles rather than the radar's sixty: the third
+             * pilot is four hundred tiles out, so this catches the pair
+             * and not them. The radius under test is the filter, not the
+             * number the server picks. */
+            const int32_t R = 200 * 16 * 256;
+
+            /* Give one visible opponent a capacity upgrade and an unrelated
+             * private upgrade. A zero rung would let the wire omit capacity
+             * and still pass, while copying the whole upgrade array would
+             * restore the information leak this split is meant to keep shut. */
+            int public_energy_ship = -1;
+            for (int i = 1; i < s.ship_count; i++) {
+                if (!s.ships[i].active) continue;
+                int64_t dx = (int64_t)s.ships[i].x - cx;
+                int64_t dy = (int64_t)s.ships[i].y - cy;
+                if (dx * dx + dy * dy > (int64_t)R * R) continue;
+                public_energy_ship = i;
+                s.ships[i].up[SIM_UP_ENERGY] = 3;
+                s.ships[i].up[SIM_UP_SPEED] = 2;
+                s.ships[i].energy = sim_eff_max_energy(
+                    &cfg.classes[s.ships[i].cls], &s.ships[i]) / 2;
+                break;
+            }
+            CHECK(public_energy_ship >= 0,
+                  "a visible opponent can exercise public energy capacity");
+
+            int m = sim_pack_around(&s, buf, sizeof buf, cx, cy, R, 255, 0, 0);
+            CHECK(m > 0 && m < n, "a filtered snapshot is smaller");
+            sim_state cut;
+            CHECK(sim_unpack(&cut, buf, m) == 0, "and unpacks");
+
+
+            /* Ships and rounds are filtered by the same radius, and that is
+             * the half of this that is about cheating rather than bytes: a
+             * client is not told where anybody is that it could not lawfully
+             * see, so a modified one has nothing beyond its own sight to
+             * draw. Flags still travel whole, being few and being objectives
+             * every pilot is entitled to know the state of.
+             *
+             * The seat count is the arena's either way. Indices are identity
+             * for the roster, the kill feed and the team lists, so a filtered
+             * snapshot keeps them and marks the absent seats inactive. */
+            CHECK(cut.ship_count == s.ship_count, "the seat count is the arena's");
+            CHECK(cut.flag_count == s.flag_count, "and every flag travels");
+
+            int ship_near = 0, ship_far = 0;
+            for (int i = 0; i < s.ship_count; i++) {
+                if (!s.ships[i].active) continue;
+                int64_t dx = (int64_t)s.ships[i].x - cx;
+                int64_t dy = (int64_t)s.ships[i].y - cy;
+                if (dx * dx + dy * dy <= (int64_t)R * R) {
+                    ship_near++;
+                    CHECK(cut.ships[i].active, "a ship inside the radius is sent");
+                    CHECK(cut.ships[i].x == s.ships[i].x
+                          && cut.ships[i].y == s.ships[i].y,
+                          "and its public state arrives unchanged");
+                    CHECK((i == 0) == !cut.ships[i].public_only,
+                          "only the owner receives private ship state");
+                    if (i == 0)
+                        CHECK(cut.ships[i].energy == s.ships[i].energy,
+                              "the owner's energy travels");
+                    else
+                        CHECK(cut.ships[i].energy == s.ships[i].energy,
+                              "visible remote energy is public");
+                    CHECK(cut.ships[i].up[SIM_UP_ENERGY]
+                          == s.ships[i].up[SIM_UP_ENERGY],
+                          "visible energy capacity is public");
+                    if (i == public_energy_ship)
+                        CHECK(cut.ships[i].up[SIM_UP_SPEED] == 0,
+                              "other visible upgrades remain private");
+                } else {
+                    ship_far++;
+                    CHECK(!cut.ships[i].active,
+                          "a ship outside it is not sent at all");
+                    CHECK(cut.ships[i].x == 0 && cut.ships[i].y == 0
+                          && cut.ships[i].energy == 0,
+                          "and leaves nothing behind to read");
+                }
+            }
+            CHECK(ship_near > 0 && ship_far > 0, "the seats straddle the radius");
+
+            /* A round whose fuse latched a seat outside the radius travels
+             * unarmed. Without this the client reads the fuse against a seat
+             * it was not sent, finds it inactive, and detonates a bomb the
+             * server is still flying: an explosion at the edge of the view
+             * that never happened. */
+            for (uint16_t i = 0; i < cut.weapon_count; i++) {
+                uint8_t ft = cut.weapons[i].fuse_target;
+                if (ft == 255) continue;
+                CHECK(ft < cut.ship_count && cut.ships[ft].active,
+                      "an armed fuse names a seat that was sent");
+            }
+
+            int wnear = 0;
+            for (uint16_t i = 0; i < s.weapon_count; i++) {
+                int64_t dx = (int64_t)s.weapons[i].x - cx;
+                int64_t dy = (int64_t)s.weapons[i].y - cy;
+                if (dx * dx + dy * dy <= (int64_t)R * R) wnear++;
+            }
+            CHECK(cut.weapon_count == wnear, "only the near rounds are sent");
+            for (uint16_t i = 0; i < cut.weapon_count; i++) {
+                int64_t dx = (int64_t)cut.weapons[i].x - cx;
+                int64_t dy = (int64_t)cut.weapons[i].y - cy;
+                CHECK(dx * dx + dy * dy <= (int64_t)R * R,
+                      "and every round that arrived is one of them");
+            }
+        }
+
+        /* A respawn lands on the same tile for the arena and for the client
+         * predicting it.
+         *
+         * The client is sent the ships inside its interest radius and no
+         * others, so every draw the arena makes for a hull it cannot see is a
+         * draw it does not make. Taken off the shared generator, a spawn tile
+         * is therefore whatever that client's copy of the stream happened to
+         * reach: a different tile, on a different side of the map. Reported
+         * from alphasmall as a 9416 px correction with both positions exact
+         * tile centers and no velocity either side, which is a respawn and
+         * nothing else.
+         *
+         * Two hulls far enough apart to filter, both about to come back. */
+        {
+            sim_settings rc = cfg;
+            rc.spawn_radius = 40;      /* a scatter, so the draw decides a tile */
+            rc.respawn_delay = 2;
+
+            sim_state s;
+            sim_init(&s, 12345);
+            /* The unseen hull takes the lower seat, because the step walks
+             * seats in order: the arena's draw for it lands before the
+             * pilot's, and the client's does not happen at all. A room where
+             * every hull the client cannot see sits behind it in the roster
+             * would hide this. */
+            int far = sim_spawn(&s, APEX, 1, 900 * 16, 900 * 16, 0, &rc);
+            int near = sim_spawn(&s, APEX, 0, 300 * 16, 300 * 16, 0, &rc);
+            CHECK(far == 0 && near == 1, "two hulls, far apart");
+            /* Both dead and due back on the same tick. */
+            for (int k = 0; k < 2; k++) {
+                s.ships[k].alive = 0;
+                s.ships[k].energy = 0;
+                s.ships[k].respawn_at = 2;
+            }
+
+            /* What this pilot is actually sent, which leaves the far hull out. */
+            const int32_t R = 84 * 16 * 256;
+            int n = sim_pack_around(&s, buf, sizeof buf, s.ships[near].x,
+                                    s.ships[near].y, R, (uint8_t)near,
+                                    (uint8_t)near, 0);
+            sim_state client;
+            CHECK(n > 0 && sim_unpack(&client, buf, n) == 0, "the snapshot reads");
+            CHECK(!client.ships[far].active,
+                  "and the far hull is not in it, which is the whole point");
+            CHECK(client.rng == s.rng, "the generator arrives with it");
+
+            /* Both step the same two ticks: the arena with the room it has,
+             * the client with the room it was told about. */
+            step_n(&s, &rc, 0, 0, 2);
+            step_n(&client, &rc, 0, 0, 2);
+            CHECK(s.ships[near].alive && client.ships[near].alive,
+                  "the pilot is back on both sides");
+            CHECK(s.ships[near].x == client.ships[near].x
+                  && s.ships[near].y == client.ships[near].y,
+                  "and back on the same tile, whatever else the room did");
+        }
+
+        /* Except a pilot's own, which travel however far off they are.
+         *
+         * This is the minefield. A mine sits for two minutes and the pilot who
+         * laid it flies away, so it is the one round that leaves the radius
+         * without ending, and a client that stops being told about it draws it
+         * detonating and then lays a sixth mine because it can no longer count
+         * the five. Measured on alpha, every mine laid left its own layer's
+         * snapshot inside seven seconds while the arena flew it on for the
+         * best part of a minute.
+         *
+         * Written as the round the pilot owns rather than as the mine they
+         * own: their bullets are inside the radius by construction, so the
+         * narrower rule buys nothing and reads as a special case. */
+        {
+            sim_state m;
+            sim_init(&m, 3);
+            int layer = sim_spawn(&m, APEX, 0, 2048, 2048, 0, &cfg);
+            int other = sim_spawn(&m, APEX, 1, 2200, 2048, 0, &cfg);
+            CHECK(layer == 0 && other == 1, "two pilots, two sides");
+            m.ships[0].charge[SIM_CHARGE_MINE] = 1;
+            step_n(&m, &cfg,
+                   SIM_BTN_USE | (SIM_CHARGE_MINE << SIM_BTN_SLOT_SHIFT), 0, 1);
+            CHECK(m.weapon_count == 1, "one of them lays a mine");
+            /* Somewhere the radius below cannot reach. Moved rather than
+             * flown, because what is under test is the filter and not how
+             * long the trip takes. */
+            m.ships[0].x += 400 * 16 * 256;
+
+            const int32_t R = 84 * 16 * 256;    /* the floor a client gets */
+            int32_t vx = m.ships[0].x, vy = m.ships[0].y;
+            int n2 = sim_pack_around(&m, buf, sizeof buf, vx, vy, R, 0, 0, 0);
+            sim_state mine_seen;
+            CHECK(n2 > 0 && sim_unpack(&mine_seen, buf, n2) == 0,
+                  "the layer's own snapshot packs");
+            CHECK(mine_seen.weapon_count == 1,
+                  "and still carries the mine they left behind");
+            CHECK(mine_seen.weapons[0].x == m.weapons[0].x
+                  && mine_seen.weapons[0].y == m.weapons[0].y
+                  && mine_seen.weapons[0].life == m.weapons[0].life,
+                  "at the pixel and on the clock it actually has");
+
+            int n3 = sim_pack_around(&m, buf, sizeof buf, vx, vy, R, 1, 1, 0);
+            sim_state stranger;
+            CHECK(n3 > 0 && sim_unpack(&stranger, buf, n3) == 0,
+                  "and so does somebody else's from the same place");
+            CHECK(stranger.weapon_count == 0,
+                  "which is told nothing about a mine that far away");
+
+            /* 255 is nobody, and it has to be: every round is owned by a seat,
+             * so the sentinel can never be somebody by accident. */
+            int n5 = sim_pack_around(&m, buf, sizeof buf, vx, vy, R, 255, 255, 0);
+            sim_state nobody;
+            CHECK(n5 > 0 && sim_unpack(&nobody, buf, n5) == 0, "packs");
+            CHECK(nobody.weapon_count == 0, "and carries no round's exception");
+
+            /* And the exception is the owner rather than the distance: from
+             * next to the mine, everybody is told about it. */
+            int n4 = sim_pack_around(&m, buf, sizeof buf,
+                                     m.weapons[0].x, m.weapons[0].y, R, 1, 1, 0);
+            sim_state near_by;
+            CHECK(n4 > 0 && sim_unpack(&near_by, buf, n4) == 0, "packs");
+            CHECK(near_by.weapon_count == 1,
+                  "a stranger standing on the minefield sees it");
+        }
+
+        /* A negative radius is the whole state, and has to stay bit-identical
+         * to it: the replay tool, the golden hashes and every test above pack
+         * that way, so a filtered format that changed the unfiltered bytes
+         * would be a format change wearing a disguise. */
+        {
+            int whole = sim_pack_around(&s, buf, sizeof buf, 0, 0, -1, 255, 255,
+                                        SIM_PACK_PRIVATE_ALL);
+            CHECK(whole == n, "an unfiltered pack is the same size as sim_pack");
+            sim_state all;
+            CHECK(sim_unpack(&all, buf, whole) == 0, "and unpacks");
+            CHECK(sim_hash(&all) == sim_hash(&s),
+                  "and carries the whole arena");
+        }
+
+        /* The bitmap is read a byte at a time and a seat count is rarely a
+         * multiple of eight, so the seats either side of a byte boundary are
+         * where an off-by-one would live. Packed around one seat with a
+         * radius of zero, exactly that seat comes back. */
+        for (int pick = 0; pick < s.ship_count; pick++) {
+            if (!s.ships[pick].active) continue;
+            int m = sim_pack_around(&s, buf, sizeof buf,
+                                    s.ships[pick].x, s.ships[pick].y, 0, 255,
+                                    (uint8_t)pick, 0);
+            CHECK(m > 0, "a pack around one seat succeeds");
+            sim_state one;
+            CHECK(sim_unpack(&one, buf, m) == 0, "and unpacks");
+            for (int i = 0; i < s.ship_count; i++) {
+                int want = s.ships[i].active
+                           && s.ships[i].x == s.ships[pick].x
+                           && s.ships[i].y == s.ships[pick].y;
+                CHECK(!one.ships[i].active == !want,
+                      "each seat is present exactly when it is in range");
+            }
+        }
+
+        CHECK(sim_pack(&s, buf, 8) == -1, "packing reports an undersized buffer");
+        CHECK(sim_unpack(&back, buf, 3) == -1, "unpacking rejects a truncated snapshot");
+    }
+
+    /* --- the kit ---------------------------------------------------------
+     *
+     * A pilot is dealt a kit at the seat and dealt it again at every
+     * respawn, minus the ammunition, which is the whole of what a death
+     * takes besides the run. Greens used to reach the same counts by rolling
+     * for them; what is left of that machinery is the ceilings a kit is
+     * checked against. */
+    {
+        sim_settings kc = cfg;
+        sim_state s;
+        sim_init(&s, 3);
+        int id = sim_spawn(&s, APEX, 0, 8192, 8192, 0, &kc);
+        sim_ship *sh = &s.ships[id];
+
+        uint8_t kit[SIM_SLOT_COUNT] = {0};
+        kit[SIM_SLOT_STAT(SIM_UP_SPEED)] = 6;
+        kit[SIM_SLOT_STAT(SIM_UP_THRUST)] = 5;
+        kit[SIM_SLOT_LEVEL(SIM_TRIG_GUN)] = 1;
+        kit[SIM_SLOT_MOD(SIM_TRIG_GUN, SIM_MOD_MULTI)] = 1;
+        kit[SIM_SLOT_CHARGE(SIM_CHARGE_REPEL)] = 3;
+        kit[SIM_SLOT_CHARGE(SIM_CHARGE_BURST)] = 2;
+        CHECK(sim_kit_cost(kit) == 18, "a kit costs the sum of its slots");
+        CHECK(sim_set_kit(sh, &kc, kit) == 1, "and a legal one is accepted");
+
+        CHECK(sh->up[SIM_UP_SPEED] == 6 && sh->up[SIM_UP_THRUST] == 5,
+              "the stats it asked for are dealt");
+        CHECK(sh->level[SIM_TRIG_GUN] == 1, "so is the rung");
+        CHECK(sim_mod_get(sh->mods[SIM_TRIG_GUN], SIM_MOD_MULTI) == 1,
+              "so is the add-on");
+        CHECK(sh->charge[SIM_CHARGE_REPEL] == 3
+              && sh->charge[SIM_CHARGE_BURST] == 2, "and so is the ammunition");
+        for (int k = 0; k < SIM_SLOT_COUNT; k++)
+            CHECK(held_of(sh, (uint8_t)k) == kit[k],
+                  "every slot holds exactly what the kit asked for");
+
+        /* Over the budget is refused whole, so a pilot keeps the kit they
+         * were already flying rather than getting a truncated one. */
+        uint8_t fat[SIM_SLOT_COUNT] = {0};
+        for (int u = 0; u < SIM_UP_COUNT; u++) fat[SIM_SLOT_STAT(u)] = 7;
+        CHECK(sim_kit_cost(fat) > SIM_KIT_BUDGET, "thirty-five is over");
+        CHECK(sim_set_kit(sh, &kc, fat) == 0, "and is refused");
+        CHECK(sh->up[SIM_UP_SPEED] == 6, "leaving the old kit untouched");
+
+        /* Past a hull ceiling is refused for the same reason. An Apex tops
+         * out at gun rung two, so asking for three is not a kit. */
+        uint8_t tall[SIM_SLOT_COUNT] = {0};
+        tall[SIM_SLOT_LEVEL(SIM_TRIG_GUN)] = 3;
+        CHECK(sim_set_kit(sh, &kc, tall) == 0, "a rung the hull lacks is refused");
+
+        /* Death re-deals the frame and never the ammunition. */
+        sh->charge[SIM_CHARGE_REPEL] = 1;
+        sh->charge[SIM_CHARGE_BURST] = 0;
+        sh->up[SIM_UP_SPEED] = 0;
+        sh->run = 4;
+        sh->alive = 0;
+        sh->energy = 0;
+        sh->respawn_at = 1;
+        step_n(&s, &kc, 0, 0, 2);
+        CHECK(sh->alive, "the pilot comes back");
+        CHECK(sh->up[SIM_UP_SPEED] == 6, "with the frame the kit says");
+        CHECK(sim_mod_get(sh->mods[SIM_TRIG_GUN], SIM_MOD_MULTI) == 1,
+              "add-ons and all");
+        CHECK(sh->charge[SIM_CHARGE_REPEL] == 1
+              && sh->charge[SIM_CHARGE_BURST] == 0,
+              "and exactly the ammunition they had left");
+    }
+
+    /* A mine is a charge: a count you carry and spend, laid where you are
+     * rather than thrown. It used to be the bomb trigger's other posture,
+     * limited by how many of yours were already lying about. */
+    {
+        sim_state s;
+        sim_init(&s, 5);
+        const int LATTICE = 6;
+        int id = sim_spawn(&s, LATTICE, 0, 8192, 8192, 0, &cfg);
+        sim_ship *sh = &s.ships[id];
+        uint8_t kit[SIM_SLOT_COUNT] = {0};
+        kit[SIM_SLOT_CHARGE(SIM_CHARGE_MINE)] = 2;
+        CHECK(sim_set_kit(sh, &cfg, kit) == 1, "a hull may slot mines");
+        CHECK(sh->charge[SIM_CHARGE_MINE] == 2, "and carries the count");
+
+        int32_t vx0 = 40000;
+        sh->vx = vx0;
+        const uint16_t lay = SIM_BTN_USE
+                             | (SIM_CHARGE_MINE << SIM_BTN_SLOT_SHIFT);
+        step_n(&s, &cfg, lay, 0, 1);
+        CHECK(s.weapon_count == 1, "pressing the slot lays one");
+        CHECK(sh->charge[SIM_CHARGE_MINE] == 1, "and spends one");
+        CHECK(s.weapons[0].vx == 0 && s.weapons[0].vy == 0,
+              "a mine is left where it was put, not thrown at ship speed");
+
+        /* And it runs out, which is what a count means. */
+        step_n(&s, &cfg, lay, 0, 200);
+        CHECK(sh->charge[SIM_CHARGE_MINE] == 0, "the last one is spent");
+        int mines = 0;
+        for (uint16_t w = 0; w < s.weapon_count; w++)
+            if (s.weapons[w].owner == id) mines++;
+        CHECK(mines == 2, "and no more than the kit carried were ever laid");
     }
 
     free(m);
