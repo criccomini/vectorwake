@@ -318,6 +318,26 @@ impl Rig {
         true
     }
 
+    /// Lift this pilot's seat out and hand it back, brain and all.
+    ///
+    /// `release` drops it, which is right when a flight is over and wrong when
+    /// it is only moving house: a map change keys a new rig, and a pilot that
+    /// arrives at one with no brain in its seat has nothing to fly with.
+    fn take(&self, ship: u8, id: u64) -> Option<Seat> {
+        let mut c = self.lock_crew();
+        let seat = match c.get(&ship) {
+            Some(held) if held.id == id => {
+                self.buttons[ship as usize].store(0, Ordering::Relaxed);
+                c.remove(&ship)
+            }
+            _ => None,
+        };
+        let _ = self
+            .pen
+            .compare_exchange(id, 0, Ordering::Relaxed, Ordering::Relaxed);
+        seat
+    }
+
     /// Give back whatever this pilot held: its seat if it had one, the pen if
     /// it was writing. Safe to call however the flight ended.
     fn release(&self, ship: u8, id: u64) {
@@ -1050,14 +1070,40 @@ async fn fly(
                     Some(crate::S2C_MAP) => {
                         let key = fingerprint(&data[1..]);
                         let Some((m, grid)) = maps.get(&data[1..]) else { break };
-                        route = Some(grid);
-                        // A fresh map mid-flight would mean a new rig; give
-                        // back whatever was held against the old one first.
-                        if let Sight::Shared(rig) = &sight {
-                            rig.release(ship, me);
-                        }
+                        route = Some(Arc::clone(&grid));
+                        // A fresh map mid-flight keys a new rig, and the seat
+                        // moves house rather than ending: it is lifted out of
+                        // the old one with the brain still in it and set down
+                        // in the new one.
+                        //
+                        // It used to be released, which drops it. The seat was
+                        // only ever taken at welcome, so nothing put the pilot
+                        // back in one: it sat at the controls of nothing until
+                        // the supervisor noticed it doing nothing and replaced
+                        // it, about a minute later. A match game changes map
+                        // at every whistle, so that was the first minute of
+                        // every three minute match with the bots parked.
+                        let carried = match &sight {
+                            Sight::Shared(rig) => rig.take(ship, me),
+                            _ => None,
+                        };
                         if share_world {
                             let Some(rig) = rigs.get(&addr, key, &m) else { break };
+                            if let Some(mut seat) = carried {
+                                // The route it was flying was a list of points
+                                // on the old ground.
+                                seat.brain.remap();
+                                seat.route = Arc::clone(&grid);
+                                seat.sent = None;
+                                seat.sent_at = 0;
+                                if !rig.claim(ship, seat) {
+                                    println!(
+                                        "{addr}: seat {ship} is taken after a map change; \
+                                         {} waits for a welcome",
+                                        who.name
+                                    );
+                                }
+                            }
                             sight = Sight::Shared(rig);
                         } else {
                             sight = Sight::Dark;
@@ -1308,6 +1354,84 @@ mod tests {
         let nlen = msg[5] as usize;
         let h = 7;
         String::from_utf8_lossy(msg.get(h + zlen..h + zlen + nlen).unwrap_or_default()).to_string()
+    }
+
+    /// A map change carries the pilot across rather than emptying its seat.
+    ///
+    /// A match game changes map at every whistle, and a new map keys a new
+    /// rig. The seat used to be released into the old one, and nothing takes a
+    /// seat except a welcome, so every bot in the room ended up at the
+    /// controls of nothing: parked until the supervisor noticed it doing
+    /// nothing and replaced it, about a minute into a three minute match.
+    #[test]
+    fn a_map_change_moves_the_pilot_rather_than_emptying_the_seat() {
+        let drydock = std::fs::read("../catalog/zones/melee/drydock.vwmap")
+            .expect("a shipped map lives in this repository");
+        let slipway = std::fs::read("../catalog/zones/melee/slipway.vwmap")
+            .expect("a shipped map lives in this repository");
+        assert_ne!(
+            fingerprint(&drydock),
+            fingerprint(&slipway),
+            "two maps, or this test is about nothing"
+        );
+
+        let maps = Maps::default();
+        let (first, road) = maps.get(&drydock).expect("the map unpacks");
+        let (second, other_road) = maps.get(&slipway).expect("the map unpacks");
+        let old = Rig::new(sim::World::on_shared_map(1, first));
+        let new = Rig::new(sim::World::on_shared_map(2, second));
+
+        let (tx, _rx) = tokio::sync::mpsc::channel(4);
+        let ship = 3u8;
+        let me = 77u64;
+        let mut brain = ai::Bot::new(ship, 0.5);
+        brain.reseed(19);
+        assert!(old.claim(
+            ship,
+            Seat {
+                id: me,
+                lifecycle: 1,
+                name: "Halcyon".into(),
+                addr: "ws://nowhere".into(),
+                brain,
+                route: Arc::clone(&road),
+                yielding: Arc::new(AtomicBool::new(false)),
+                asked: None,
+                sent: Some(0b101),
+                sent_at: 40,
+                tx,
+            }
+        ));
+
+        // What the map message does, in the order it does it.
+        let carried = old.take(ship, me).expect("the pilot comes out with it");
+        assert!(
+            old.lock_crew().get(&ship).is_none(),
+            "and is not left behind in the rig it came from"
+        );
+        let mut seat = carried;
+        seat.brain.remap();
+        seat.route = Arc::clone(&other_road);
+        seat.sent = None;
+        seat.sent_at = 0;
+        assert!(new.claim(ship, seat), "and sits down in the new one");
+
+        let crew = new.lock_crew();
+        let landed = crew.get(&ship).expect("somebody is at the controls");
+        assert_eq!(landed.id, me, "the same pilot, not a fresh one");
+        assert_eq!(
+            landed.name, "Halcyon",
+            "with its own name and its own brain"
+        );
+        assert!(
+            std::ptr::eq(Arc::as_ptr(&landed.route), Arc::as_ptr(&other_road)),
+            "flying the new ground rather than the old"
+        );
+        assert_eq!(
+            landed.sent, None,
+            "and its last controls forgotten, so the first frame on the new \
+             map is sent rather than held back as unchanged"
+        );
     }
 
     #[test]

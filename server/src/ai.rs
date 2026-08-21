@@ -1425,6 +1425,31 @@ impl Bot {
     /// Vary this pilot's luck. Two bots with the same hull and skill would
     /// otherwise fly an identical match every time, which makes a calibration
     /// tournament replay one game rather than sample many.
+    /// The ground changed under this pilot.
+    ///
+    /// A route is a list of points on a map that no longer exists, and so is
+    /// everything derived from one: which approaches were blocked, where the
+    /// unstick reflex last fired, what the current goal was solved against.
+    /// All of it goes. Who this pilot is, how well it flies and how far
+    /// through leaving it is are about the pilot rather than the ground, and
+    /// all of that stays.
+    pub fn remap(&mut self) {
+        self.path.clear();
+        self.corner.clear();
+        self.suffix.clear();
+        self.at = 0;
+        self.path_to = (0.0, 0.0);
+        self.goal = None;
+        self.best_dist = f32::MAX;
+        self.best_at = 0;
+        self.blocked = [0; 5];
+        self.pinned = 0;
+        self.detour_until = 0;
+        self.detour_chain = 0;
+        self.pin_site = (0.0, 0.0);
+        self.pin_seen = 0;
+    }
+
     pub fn reseed(&mut self, seed: u32) {
         self.seed = 0x9e3779b9 ^ seed.wrapping_mul(2654435761).max(1);
         self.timer = seed % 64;
