@@ -1054,6 +1054,272 @@ static int place_spawns(int32_t main) {
     return placed;
 }
 
+/* ---- match arenas -------------------------------------------------------
+ *
+ * A second layout, for the three minute four a side game rather than for a
+ * zone. Everything above draws a thousand tiles of open field with clusters
+ * in it; a match wants roughly a hundred, walled, with two home ends far
+ * enough apart that the trip between them is the whole death penalty.
+ *
+ * Two rules shape it and both come out of docs/design/match-game.md. It is
+ * point symmetric, a half turn about the middle, so neither side has the
+ * better approach and a map cannot quietly favour whoever spawned north.
+ * And there is never one lane between the pockets: a single corridor makes
+ * the Wedge the only ship in the game, so every layout here has to leave at
+ * least two ways across that a hull can fly.
+ *
+ * The arena sits in the middle of the thousand-tile world because the world
+ * is a fixed size in the core. Everything outside it is solid, which costs
+ * nothing on the wire: a map packs its runs. */
+/* A hundred and forty-four tiles square, which is a number about travel
+ * time rather than about taste. A hull tops out near 325 px/s and the
+ * pockets sit at opposite ends, so the run at somebody is roughly two
+ * thousand pixels and the two sides meet about five seconds in, with a
+ * respawn about four. Death costs nothing you own any more: what it costs
+ * is the trip back, so this is the dial that prices dying. */
+#define ARENA 144
+
+static int arena_lo, arena_hi, arena_cx, arena_cy;
+
+/* Draw at a point and at its half-turn twin, so a layout is symmetric by
+ * construction rather than by being drawn twice and checked. */
+static void sym_put(int x, int y, uint8_t t) {
+    put(x, y, t);
+    put(arena_cx * 2 - x, arena_cy * 2 - y, t);
+}
+
+static void sym_rect(int x, int y, int w, int h, uint8_t t) {
+    for (int j = 0; j < h; j++)
+        for (int i = 0; i < w; i++) sym_put(x + i, y + j, t);
+}
+
+/* A hollow box with a gap in each face, which is the vocabulary the field
+ * above is built from and reads the same at this scale. */
+static void sym_room(int x, int y, int w, int h) {
+    int gx = x + rr(1, w - 2), gy = y + rr(1, h - 2);
+    for (int i = 0; i < w; i++) {
+        if (i != gx - x && i != gx - x + 1) {
+            sym_put(x + i, y, SIM_TILE_SOLID);
+            sym_put(x + i, y + h - 1, SIM_TILE_SOLID);
+        }
+    }
+    for (int j = 0; j < h; j++) {
+        if (j != gy - y && j != gy - y + 1) {
+            sym_put(x, y + j, SIM_TILE_SOLID);
+            sym_put(x + w - 1, y + j, SIM_TILE_SOLID);
+        }
+    }
+}
+
+/* Where the two pockets are, set before a layout draws so cover can be kept
+ * out of them: a home end crowded with structures is a home end a wiped team
+ * cannot form up in, and the spawn placer simply runs out of room. */
+static int pocket_x, pocket_y;
+
+static int in_pocket(int x, int y, int pad) {
+    int ox = arena_cx * 2 - pocket_x, oy = arena_cy * 2 - pocket_y;
+    int dx = x - pocket_x, dy = y - pocket_y;
+    if (dx * dx + dy * dy < pad * pad) return 1;
+    dx = x - ox; dy = y - oy;
+    return dx * dx + dy * dy < pad * pad;
+}
+
+/* Four spawn tiles per side, inside the pocket, spread so a wiped team does
+ * not come back stacked on one tile. */
+static int match_spawns(int32_t main, int px, int py, int team) {
+    int placed = 0;
+    for (int i = 0; i < 4; i++) {
+        int ok = 0;
+        for (int tries = 0; tries < 4000 && !ok; tries++) {
+            int x = px + rr(-9, 9), y = py + rr(-6, 6);
+            if (!open_around(x, y, 4, main)) continue;
+            /* Not on top of one already placed: four ships want four tiles. */
+            int near = 0;
+            for (int j = -5; j <= 5 && !near; j++)
+                for (int k = -5; k <= 5; k++)
+                    if (SIM_TILE_CLASS(get(x + k, y + j)) == SIM_TILE_SPAWN)
+                        near = 1;
+            if (near) continue;
+            put(x, y, SIM_TILE(SIM_TILE_SPAWN, (uint8_t)team));
+            ok = 1;
+            placed++;
+        }
+    }
+    return placed;
+}
+
+/* The two shipped layouts. Both are point symmetric and both leave three
+ * ways across; what differs is where the pockets sit and what stands
+ * between them, which is what makes one a lane fight and the other a
+ * scramble around a middle nobody owns. */
+typedef enum { LAYOUT_DRYDOCK = 0, LAYOUT_SLIPWAY = 1 } match_layout;
+
+static void draw_drydock(void) {
+    /* Pockets north and south, three lanes between them: a wide middle with
+     * something standing in it, and a flank down each side. The spines that
+     * part the lanes are broken every so often, and the breaks are five
+     * tiles rather than two, because a hull is three wide and a gap it
+     * cannot fly is a wall with a picture of a door on it. */
+    int lo = arena_lo;
+    for (int k = 0; k < 2; k++) {
+        int x = lo + 38 + k * 68;
+        for (int y = lo + 24; y <= arena_hi - 24; y++)
+            if ((y - lo) % 19 >= 5) {
+                sym_put(x, y, SIM_TILE_SOLID);
+                sym_put(x + 1, y, SIM_TILE_SOLID);
+            }
+    }
+    /* The middle, which is the widest lane and should not also be the
+     * safest. A room rather than a block: something to fight around and
+     * through rather than a wall to go past. */
+    sym_room(arena_cx - 9, arena_cy - 22, 12, 10);
+    sym_rect(arena_cx - 3, arena_cy - 6, 6, 4, SIM_TILE_SOLID);
+
+    /* Cover in the half between a pocket and the middle, mirrored into the
+     * other half. Placement refuses anything that would crowd what is
+     * already down, so the count lands where the spacing allows. */
+    for (int i = 0; i < 44; i++) {
+        int x = lo + 10 + rr(0, ARENA - 26), y = lo + 18 + rr(0, ARENA / 2 - 30);
+        if (in_pocket(x, y, 20) || !clear_box(x, y, 9, 8, 5)) continue;
+        if (chance(45)) sym_room(x, y, rr(7, 10), rr(6, 8));
+        else sym_rect(x, y, rr(3, 6), rr(2, 5), SIM_TILE_SOLID);
+    }
+    /* And a pair of stubs off each pocket, so a spawn is not an open field. */
+    for (int k = 0; k < 4; k++)
+        sym_rect(lo + 20 + k * 32, lo + 15, 5, 3, SIM_TILE_SOLID);
+}
+
+static void draw_slipway(void) {
+    /* Pockets at opposite corners, with a lattice standing along the
+     * diagonal between them: the direct line is the short one and the
+     * dangerous one, and going round is a real choice rather than a detour.
+     */
+    int lo = arena_lo;
+    for (int i = -7; i <= 7; i++) {
+        int x = arena_cx + i * 9, y = arena_cy + i * 9;
+        if (in_pocket(x, y, 20)) continue;
+        sym_rect(x - 2, y - 2, 5, 5, SIM_TILE_SOLID);
+    }
+    /* Two long bars off the diagonal, each with a way through, which is what
+     * makes the long way round passable at all. */
+    for (int k = 0; k < 2; k++) {
+        int sgn = k ? 1 : -1;
+        for (int t = -30; t <= 30; t++) {
+            if (t > -4 && t < 4) continue;      /* the way through */
+            int x = arena_cx + t + sgn * 34, y = arena_cy - t + sgn * 34;
+            if (in_pocket(x, y, 16)) continue;
+            sym_put(x, y, SIM_TILE_SOLID);
+            sym_put(x, y + 1, SIM_TILE_SOLID);
+        }
+    }
+    for (int i = 0; i < 52; i++) {
+        int x = lo + 10 + rr(0, ARENA - 24), y = lo + 10 + rr(0, ARENA - 24);
+        if (in_pocket(x, y, 20) || !clear_box(x, y, 8, 8, 5)) continue;
+        if (chance(40)) sym_room(x, y, rr(7, 9), rr(6, 8));
+        else sym_rect(x, y, rr(3, 5), rr(3, 5), SIM_TILE_SOLID);
+    }
+}
+
+/* Draw one match arena into `m`. Same contract as `generate`. */
+static int generate_match(sim_map *m, uint32_t s, match_layout layout, int quiet) {
+    seed(s);
+    T = m->tile;
+    memset(m, 0, sizeof *m);
+    for (size_t i = 0; i < (size_t)TILES * TILES; i++) T[i] = SIM_TILE_SOLID;
+
+    arena_lo = (TILES - ARENA) / 2;
+    arena_hi = arena_lo + ARENA - 1;
+    arena_cx = arena_cy = TILES / 2;
+    for (int y = arena_lo; y <= arena_hi; y++)
+        for (int x = arena_lo; x <= arena_hi; x++)
+            T[(size_t)y * TILES + x] = SIM_TILE_EMPTY;
+
+    if (layout == LAYOUT_DRYDOCK) {
+        pocket_x = arena_cx;
+        pocket_y = arena_lo + 14;
+        draw_drydock();
+    } else {
+        pocket_x = arena_lo + 18;
+        pocket_y = arena_lo + 18;
+        draw_slipway();
+    }
+    int px = pocket_x, py = pocket_y;
+
+    sim_map_index(m);
+
+    /* The same two passes the zone maps take, and in the same order. A room
+     * with a two-tile door is a room a hull cannot enter, so joining widens
+     * what has to be flyable and filling walls off what is still not: a
+     * layout is drawn for how it reads and then made passable, rather than
+     * every primitive having to know how wide a hull is. */
+    int dug = join_nav();
+    int filled = fill_dead();
+    mark_nav(1);
+    size_t nav_n = 0;
+    int32_t main_c = label(nav, &nav_n);
+    int nav_regions = 0;
+    for (size_t i = 0; i < (size_t)TILES * TILES; i++)
+        if (comp[i] > nav_regions) nav_regions = comp[i];
+
+    /* An ASCII picture of the arena, for looking at a layout while tuning
+     * it. Off unless asked for: the checks below are what decides. */
+    if (getenv("VW_DUMP")) {
+        for (int y = arena_lo - 1; y <= arena_hi + 1; y += 2) {
+            for (int x = arena_lo - 1; x <= arena_hi + 1; x++) {
+                uint8_t c = SIM_TILE_CLASS(get(x, y));
+                putchar(c == SIM_TILE_SOLID ? '#'
+                        : c == SIM_TILE_SPAWN ? '@'
+                        : nav[(size_t)y * TILES + x] ? '.' : ':');
+            }
+            putchar('\n');
+        }
+    }
+
+    int spawns = match_spawns(main_c, px, py, 0);
+    spawns += match_spawns(main_c, arena_cx * 2 - px, arena_cy * 2 - py, 1);
+
+    size_t solid = 0;
+    for (int y = arena_lo; y <= arena_hi; y++)
+        for (int x = arena_lo; x <= arena_hi; x++)
+            if (SIM_TILE_CLASS(T[(size_t)y * TILES + x]) == SIM_TILE_SOLID) solid++;
+    double solid_pct = 100.0 * (double)solid / (double)(ARENA * ARENA);
+    int dead = dead_ground();
+
+    if (!quiet)
+        printf("seed %u %s: %d tiles square, %.2f%% solid, %d spawns,"
+               " %d region(s), %d dug, %d walled off, %d dead\n", s,
+               layout == LAYOUT_DRYDOCK ? "drydock" : "slipway",
+               ARENA, solid_pct, spawns, nav_regions, dug, filled, dead);
+
+    if (dug < 0 || filled < 0) {
+        fprintf(stderr, "seed %u: could not join the arena up\n", s);
+        return 1;
+    }
+    if (spawns != 8) {
+        fprintf(stderr, "seed %u: %d spawns, wanted 8\n", s, spawns);
+        return 1;
+    }
+    /* One region with every door shut, measured against a hull rather than a
+     * point, which is the same promise the zone maps make. */
+    if (nav_regions != 1) {
+        fprintf(stderr, "seed %u: %d regions a hull can fly, not one\n",
+                s, nav_regions);
+        return 1;
+    }
+    if (dead) {
+        fprintf(stderr, "seed %u: %d open tiles no hull can reach\n", s, dead);
+        return 1;
+    }
+    /* Denser than a zone map on purpose: a hundred tiles with three per cent
+     * wall is an empty room. Too dense and there is nowhere to fly. */
+    if (solid_pct < 4.0 || solid_pct > 16.0) {
+        fprintf(stderr, "seed %u: %.2f%% solid is outside the intended range\n",
+                s, solid_pct);
+        return 1;
+    }
+    return 0;
+}
+
 /* Draw one whole map into `m`. Returns 0 when every check passes, and says
  * on stderr which one did not otherwise. `quiet` is for the selftest, which
  * runs several seeds and wants a line only when something is wrong. */
@@ -1223,8 +1489,11 @@ static int generate(sim_map *m, uint32_t s, int quiet) {
 
 int main(int argc, char **argv) {
     if (argc < 2) {
-        fprintf(stderr, "usage: %s <out.vwmap> [seed]\n       %s --selftest\n",
-                argv[0], argv[0]);
+        fprintf(stderr,
+                "usage: %s <out.vwmap> [seed]\n"
+                "       %s --match <drydock|slipway> <out.vwmap> [seed]\n"
+                "       %s --selftest\n",
+                argv[0], argv[0], argv[0]);
         return 2;
     }
     sim_map *m = calloc(1, sizeof *m);
@@ -1239,23 +1508,44 @@ int main(int argc, char **argv) {
     if (strcmp(argv[1], "--selftest") == 0) {
         for (uint32_t k = 101; k <= 112; k++)
             if (generate(m, k, 1) != 0) return 1;
+        /* Both match layouts over several seeds, for the same reason: what
+         * is worth checking is that the generator makes a playable arena
+         * generally, not that one seed once did. */
+        for (uint32_t k = 21; k <= 28; k++) {
+            if (generate_match(m, k, LAYOUT_DRYDOCK, 1) != 0) return 1;
+            if (generate_match(m, k, LAYOUT_SLIPWAY, 1) != 0) return 1;
+        }
         printf("mapgen selftest passed\n");
         free(dist); free(nav); free(comp); free(m);
         return 0;
     }
 
-    uint32_t s = argc > 2 ? (uint32_t)strtoul(argv[2], NULL, 10) : 1u;
-    if (generate(m, s, 0) != 0) return 1;
+    const char *out;
+    uint32_t s;
+    if (strcmp(argv[1], "--match") == 0) {
+        if (argc < 4) { fprintf(stderr, "--match wants a layout and a path\n"); return 2; }
+        match_layout layout;
+        if (strcmp(argv[2], "drydock") == 0) layout = LAYOUT_DRYDOCK;
+        else if (strcmp(argv[2], "slipway") == 0) layout = LAYOUT_SLIPWAY;
+        else { fprintf(stderr, "unknown layout %s\n", argv[2]); return 2; }
+        out = argv[3];
+        s = argc > 4 ? (uint32_t)strtoul(argv[4], NULL, 10) : 1u;
+        if (generate_match(m, s, layout, 0) != 0) return 1;
+    } else {
+        out = argv[1];
+        s = argc > 2 ? (uint32_t)strtoul(argv[2], NULL, 10) : 1u;
+        if (generate(m, s, 0) != 0) return 1;
+    }
 
     uint8_t *buf = malloc(SIM_MAP_PACK_MAX);
     if (!buf) return 1;
     int n = sim_map_pack(m, buf, SIM_MAP_PACK_MAX);
     if (n < 0) { fprintf(stderr, "pack failed\n"); return 1; }
-    FILE *f = fopen(argv[1], "wb");
-    if (!f) { perror(argv[1]); return 1; }
+    FILE *f = fopen(out, "wb");
+    if (!f) { perror(out); return 1; }
     fwrite(buf, 1, (size_t)n, f);
     fclose(f);
-    printf("  %s: %d bytes, hash %08x, %u features\n", argv[1], n,
+    printf("  %s: %d bytes, hash %08x, %u features\n", out, n,
            sim_map_hash(m), m->feature_count);
     free(buf); free(dist); free(nav); free(comp); free(m);
     return 0;
