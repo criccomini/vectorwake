@@ -421,7 +421,7 @@ impl ArenaServer {
         // share one copy; without this the ceiling would be a memory limit
         // instead of a blast-radius one. There is no first room before a zone
         // arrives, and then the bytes are the only source there is.
-        let mut fresh = Self::build_room(&z, self.rooms.first().map(|r| &r.world))?;
+        let mut fresh = Self::build_room(&z, self.rooms.first())?;
         fresh.number = self.free_room_number();
         fresh.spool = self.spools.rated.clone();
         fresh.pilots = self.spools.pilots.clone();
@@ -668,18 +668,25 @@ impl ArenaServer {
     /// every room grown after it, so they cannot differ. `on` is a room already
     /// running this zone, whose map the new one borrows instead of unpacking a
     /// second megabyte of identical tiles.
-    pub(crate) fn build_room(z: &fleet::WireZone, on: Option<&sim::World>) -> Result<Room, String> {
-        let world = match on {
-            Some(w) => w.sibling(0x5eed),
-            None => {
-                let bytes = fleet::unb64(&z.map_b64).ok_or("map is not base64")?;
-                sim::World::from_packed(0x5eed, &bytes).map_err(|e| e.to_string())?
-            }
+    pub(crate) fn build_room(z: &fleet::WireZone, on: Option<&Room>) -> Result<Room, String> {
+        let maps = match on {
+            Some(r) => r.maps.clone(),
+            None => z
+                .maps_b64
+                .iter()
+                .map(|m| {
+                    let bytes = fleet::unb64(m).ok_or("map is not base64")?;
+                    sim::unpack_map(&bytes)
+                })
+                .collect::<Result<Vec<_>, String>>()?,
         };
+        let first = maps.first().ok_or("the zone names no maps")?;
+        let world = sim::World::on_map(0x5eed, std::sync::Arc::clone(first));
         let def: catalog::ZoneDef =
             toml::from_str(&z.zone_toml).map_err(|e| format!("zone.toml: {e}"))?;
         let mut room = Room::with_world_bare(world);
-        for w in Room::apply_config(&mut room.world, &def.arena) {
+        room.maps = maps;
+        for w in room.retune(&def.arena) {
             println!("zone {}: {w}", z.name);
         }
         if let Some(m) = def.max_ships {
@@ -690,11 +697,7 @@ impl ArenaServer {
             room.add_default_flags();
             room.world.state.flag_count = def.arena.flags.min(room.world.state.flag_count as u8);
         }
-        room.mode = modes::build(
-            &z.mode,
-            room.world.state.flag_count as u8,
-            room.public_teams,
-        );
+        room.mode = modes::build(&z.mode, &room.mode_setup(&def.arena));
         room.bot_fill = def.bot_fill();
         room.lag_policy = def.arena.lag.clone();
         room.max_watchers = def.max_watchers.unwrap_or(DEFAULT_MAX_WATCHERS);
@@ -744,7 +747,7 @@ impl ArenaServer {
                 if let Ok(def) = toml::from_str::<catalog::ZoneDef>(&z.zone_toml) {
                     let name = self.zone_name.clone();
                     for r in self.rooms.iter_mut() {
-                        for w in Room::apply_config(&mut r.world, &def.arena) {
+                        for w in r.retune(&def.arena) {
                             println!("zone {name}: {w}");
                         }
                         if let Some(m) = def.max_ships {
@@ -1195,7 +1198,7 @@ impl ArenaServer {
             // applied to every room: they are all the same game.
             let block = self.cfg.current.arena.clone();
             for r in self.rooms.iter_mut() {
-                for w in Room::apply_config(&mut r.world, &block) {
+                for w in r.retune(&block) {
                     println!("zone: {w}");
                 }
                 r.lag_policy = block.lag.clone();

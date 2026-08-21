@@ -804,6 +804,18 @@ int sim_add_pattern(sim_settings *cfg, const sim_fire_pattern *pattern);
  * and the core cannot disagree about it. */
 uint8_t sim_eff_max_ships(const sim_settings *cfg);
 
+/* Open a match: every active pilot home, alive, full, and freshly kitted with
+ * their ammunition, with nothing of the last match left in the air.
+ *
+ * A match game plays match after match in one room, so this is the edge
+ * between two of them and it belongs here rather than in a server: it touches
+ * the same fields a spawn touches and it has to land identically on every
+ * architecture the state hash is compared across.
+ *
+ * Kills, deaths and points are the match's own tally and go back to zero with
+ * it. The kit does not, because a kit is what you own. */
+void sim_restart(sim_state *s, const sim_settings *cfg);
+
 int sim_spawn(sim_state *s, uint8_t cls, uint8_t team, int32_t x_px,
               int32_t y_px, uint16_t heading, const sim_settings *cfg);
 

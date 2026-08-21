@@ -94,11 +94,10 @@ pub(crate) const C2S_SHIP: u8 = 5;
 pub(crate) const C2S_TEAM: u8 = 6;
 pub(crate) const C2S_FOUND: u8 = 7;
 pub(crate) const C2S_INVITE: u8 = 8;
-/// `[C2S_ATTACH, ship]`: ride that teammate as a gunner, or 255 to get off.
-/// A request like the rest, answered by the snapshot: the core refuses anyone
-/// dead, on another side, short of a full bar, or reaching for a hull that
-/// carries nobody or is already full.
-pub(crate) const C2S_ATTACH: u8 = 10;
+/// 10 was `C2S_ATTACH`, riding a teammate as a gunner. Gunners are gone: at
+/// four a side, two pilots on one hull is a quarter of a team's guns parked.
+/// The number is left unused rather than reissued, so an old client asking
+/// for it is refused rather than being understood as something else.
 /// `[C2S_WATCH, ship]`: whose eyes to borrow. From a player it means sit out,
 /// from a watcher it means look somewhere else. 255 asks for the room channel.
 ///
@@ -215,10 +214,15 @@ pub(crate) const S2C_TEAMS: u8 = 12;
 /// them is knowing it: two minutes on camera is something a pilot can play
 /// around, and only if they are told.
 pub(crate) const S2C_ONAIR: u8 = 13;
-/// `[S2C_PRIZE, type, delta]`, sent only to the pilot who collected it. The
-/// roll is server-secret; snapshots carry the resulting owner state and this
-/// message carries the immediate effect and feed line.
-pub(crate) const S2C_PRIZE: u8 = 14;
+/// `[S2C_MATCH, playing, seconds left, sides, score per side as u16]`.
+///
+/// The clock and the score of a match game, at a second's resolution, which is
+/// what a clock draws. `playing` is zero through the intermission, when the
+/// podium is up, nobody is flying, and the score is the one just settled.
+///
+/// Sent at a join, at every whistle, and whenever either number moves, so a
+/// three minute match costs about two hundred of these.
+pub(crate) const S2C_MATCH: u8 = 14;
 /// `[S2C_CHARGE, ship, slot, x, y, tick]`, a public action without the private
 /// inventory count. Sent only to views whose fixed fairness circle contains
 /// the firing ship; x and y are signed Q8 positions.

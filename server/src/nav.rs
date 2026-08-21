@@ -4,7 +4,7 @@
 //! been bots, under "Route", and it was never built. What stood in for it was a
 //! give-up timer: head straight at the destination, notice after two seconds
 //! that nothing is getting closer, and leave that kind of destination alone for
-//! five. That fixed a pilot pressing its nose against a green behind a wall,
+//! five. That fixed a pilot pressing its nose against a target behind a wall,
 //! and it fixes nothing else, because the replacement destination is rolled from
 //! the same box in the middle of the map and lies through the same wall. A drill
 //! on Chaos caught one holding thrust into a wall for a minute and a half,

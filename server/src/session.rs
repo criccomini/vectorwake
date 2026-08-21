@@ -447,6 +447,12 @@ pub(crate) async fn serve_client(
                             c.extend_from_slice(&a.settings_generation.to_le_bytes());
                             c.extend_from_slice(&a.world.packed_settings());
                             let _ = tx.try_send(Message::Binary(c));
+                            // The clock, so somebody arriving ninety seconds
+                            // into a match knows they arrived ninety seconds
+                            // into a match.
+                            if let Some(m) = a.match_msg() {
+                                let _ = tx.try_send(Message::Binary(m));
+                            }
                             // 255 is a watcher's ship: the client
                             // learns which of its two lives this is
                             // from the welcome.
@@ -515,6 +521,9 @@ pub(crate) async fn serve_client(
                     c.extend_from_slice(&a.settings_generation.to_le_bytes());
                     c.extend_from_slice(&a.world.packed_settings());
                     let _ = tx.try_send(Message::Binary(c));
+                    if let Some(m) = a.match_msg() {
+                        let _ = tx.try_send(Message::Binary(m));
+                    }
                     let mut w = vec![S2C_WELCOME, ship];
                     w.extend_from_slice(&a.players[&new_id].lifecycle.to_le_bytes());
                     w.extend_from_slice(&a.world.state.tick.to_le_bytes());
@@ -793,26 +802,6 @@ pub(crate) async fn serve_client(
                                 let a = &mut z.rooms[index];
                                 if let Some(ship) = a.players.get(&member).map(|p| p.ship) {
                                     a.invite(ship, guest);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            C2S_ATTACH => {
-                // Climb onto a teammate, or drop off. Every condition is the
-                // core's, and the answer is the next snapshot: a gunner is a
-                // ship whose carrier byte points at somebody, which is what
-                // the client draws the drone from.
-                if data.len() >= 2 {
-                    if presence.current().flying().is_some() {
-                        let want = data[1];
-                        let mut z = zone.lock().await;
-                        if let Some((room, member)) = presence.current().flying() {
-                            if let Some(index) = z.rooms.iter().position(|a| a.number == room) {
-                                let a = &mut z.rooms[index];
-                                if let Some(ship) = a.players.get(&member).map(|p| p.ship) {
-                                    a.world.attach(ship, want);
                                 }
                             }
                         }

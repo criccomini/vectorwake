@@ -22,9 +22,10 @@ pub struct ZoneConfig {
     /// wss instead of ws, which a page delivered over https is required to
     /// use: browsers refuse a plain ws socket from a secure origin, and
     /// loopback is the only exception.
-    /// A map file, relative to the zone directory. Empty uses the built-in
-    /// arena, so a zone with no map is still a zone.
-    pub map: String,
+    /// The maps this zone plays, relative to the zone directory, in the order
+    /// a room rotates through them. Empty uses the built-in arena, so a zone
+    /// with no map is still a zone.
+    pub maps: Vec<String>,
     pub tls_cert: String,
     pub tls_key: String,
     /// A UDP address to serve WebTransport on, beside the WebSocket listener.
@@ -91,16 +92,6 @@ pub struct ArenaConfig {
     /// baseline's 64, which is already four times what the original aimed a
     /// public room at. See docs/architecture/hosting.md.
     pub max_ships: Option<u8>,
-    pub prize_delay: Option<u16>,
-    pub prize_max: Option<u16>,
-    /// Ticks a green waits on the floor to be collected.
-    pub prize_life: Option<u16>,
-    /// Px a ship picks a green up from.
-    pub prize_radius: Option<i32>,
-    /// Tile bounds greens spawn within, so a zone can keep them out of its
-    /// border or confine them to a middle.
-    pub prize_lo: Option<i32>,
-    pub prize_hi: Option<i32>,
     /// Px a flag is taken from, and ticks a dropped one is untouchable.
     pub flag_radius: Option<i32>,
     pub flag_drop_cooldown: Option<u16>,
@@ -128,21 +119,17 @@ pub struct ArenaConfig {
     /// Degrees a multifire add-on fans to, when the pattern it transforms has
     /// no spread of its own.
     pub mod_spread: Option<i32>,
-    /// How often a green turns out to be each thing, by prize name: the five
-    /// stats, `gun-level` and `bomb-level`, and `gun-multi`, `bomb-shrapnel`
-    /// and the rest. Relative rather than percentages, and read against the
-    /// pool of whichever hull took the green, so this is the shape of the
-    /// tree rather than its arithmetic.
-    pub prize_weight: HashMap<String, u16>,
-    /// Out of a thousand, how often a green takes something back instead of
-    /// giving it. Rust can only corrode what a pilot is holding, so it costs
-    /// the loaded and never the newly spawned.
-    pub rust: Option<u16>,
-    /// Greens a ship is handed the moment it spawns, rolled the same way one
-    /// found on the floor is. Zero starts pilots plain.
-    pub spawn_prizes: Option<u16>,
-    /// What a kill adds to the killer's own bounty, so a pilot on a streak
-    /// becomes a target without having touched a green.
+    /// A match game's two clocks, in seconds. Three minutes of play and
+    /// twenty-five seconds of podium is what `docs/design/match-game.md`
+    /// settles on: long enough for a match to have a shape, short enough that
+    /// a bad one is nearly over. Only `mode = "melee"` reads them.
+    pub match_seconds: Option<u16>,
+    pub intermission_seconds: Option<u16>,
+    /// What a pilot is worth the moment they spawn, and what each kill on a
+    /// run adds to that. A bounty is the run rather than the kit: the kit is
+    /// the same every life, so it is what a pilot has done since their last
+    /// death that prices their head.
+    pub bounty_base: Option<u16>,
     pub bounty_per_kill: Option<u16>,
     /// Points on top of the victim's bounty for each flag they were holding.
     pub points_per_flag: Option<u16>,
@@ -202,9 +189,9 @@ impl Default for LagConfig {
     }
 }
 
-/// One hull. Each stat is a ceiling, a floor a fresh ship starts at, and the
-/// step one green adds -- the original's MaximumSpeed, InitialSpeed and
-/// UpgradeSpeed, under those names.
+/// One hull. Each stat is a ceiling, a floor a fresh ship starts at, and what
+/// one step in the kit adds, which are the original's MaximumSpeed,
+/// InitialSpeed and UpgradeSpeed under those names.
 ///
 /// Setting only the ceiling moves the floor and the step with it, in
 /// proportion, so raising a hull's top speed does not quietly make it start
@@ -246,8 +233,8 @@ pub struct ShipConfig {
     pub bomb: Option<Vec<String>>,
     /// Which add-ons this hull may hold on each trigger, and how many rungs
     /// of each: `gun_mods = { multi = 2, freeze = 1 }`. This is the roster's
-    /// half of the tech tree -- shrapnel belongs to bombers, and no run of
-    /// luck with the greens should change that.
+    /// half of the tech tree: shrapnel belongs to bombers, and nothing a
+    /// pilot can buy should change that.
     pub gun_mods: HashMap<String, u8>,
     pub bomb_mods: HashMap<String, u8>,
     /// How many of each charge this hull may carry, by slot: `charges =
@@ -336,7 +323,7 @@ impl Default for ZoneConfig {
             name: "vectorwake".into(),
             description: "an unconfigured zone".into(),
             listen: "127.0.0.1:9010".into(),
-            map: String::new(),
+            maps: Vec::new(),
             tls_cert: String::new(),
             tls_key: String::new(),
             wt_listen: String::new(),

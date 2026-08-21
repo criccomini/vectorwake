@@ -19,13 +19,13 @@ const MATCH_TICKS: u32 = 30_000; // five minutes of arena time
 /// What the ladder ranks pilots in.
 ///
 /// It used to be an empty room, and the argument for that was good as far as
-/// it went: greens are the loudest thing in a fight, so holding them at zero
-/// holds the loadout still the way the hull is held still. Thirty of them
+/// it went: the kit is the loudest thing in a fight, so holding its budget at
+/// zero holds the loadout still the way the hull is held still. Thirty points
 /// flatten a two-to-one kill gap to nothing, which was measured here.
 ///
 /// The argument was still wrong, because an empty room is not a place anybody
-/// plays and it is missing a whole mechanism. Charges are only ever bought
-/// with greens, so a pilot at zero holds none, and a branch of the AI that
+/// plays and it is missing a whole mechanism. Charges are only ever slotted in
+/// a kit, so a pilot at zero holds none, and a branch of the AI that
 /// decides when to spend one is unreachable. A ladder measured there ranks
 /// pilots on a subset of the game and then seeds their careers in the whole
 /// of it.
@@ -34,7 +34,7 @@ const MATCH_TICKS: u32 = 30_000; // five minutes of arena time
 /// still the same way as before, which is what matters: both pilots draw the
 /// same kit off the same stream, and none of it is lying on the floor to be
 /// raced for.
-const LADDER_GREENS: u32 = 30;
+const LADDER_KIT: u32 = 30;
 
 /// Run a full round-robin `rounds` times and return the resulting ladder.
 ///
@@ -68,15 +68,7 @@ pub fn run_roster(roster: &[ai::RosterEntry], rounds: u32, verbose: bool) -> rat
         for i in 0..roster.len() {
             for j in (i + 1)..roster.len() {
                 duel(
-                    &bytes,
-                    &route,
-                    at,
-                    &mut r,
-                    &roster[i],
-                    &roster[j],
-                    salt,
-                    LADDER_GREENS,
-                    None,
+                    &bytes, &route, at, &mut r, &roster[i], &roster[j], salt, LADDER_KIT, None,
                 );
                 salt = salt.wrapping_add(1);
             }
@@ -110,10 +102,10 @@ pub fn table(r: &rating::Rating) -> Vec<(String, f64, u32, &'static str)> {
  * stage of the tree in win probability, which is the balance question the
  * ladder cannot answer and the drill does not ask.
  *
- * It is the same argument the spawn-prize zeroing makes higher up, read the
- * other way round. Thirty greens flatten a two-to-one skill gap, so somewhere
- * between nothing and thirty the kit stops being a garnish on flying and
- * becomes the whole result. This maps where.
+ * It is the same argument the ladder's matched budget makes higher up, read
+ * the other way round. Thirty points flatten a two-to-one skill gap, so
+ * somewhere between nothing and thirty the kit stops being a garnish on
+ * flying and becomes the whole result. This maps where.
  */
 
 /// A kit, handed to a pilot at every spawn.
@@ -159,53 +151,53 @@ pub const STAGES: &[Stage] = &[
     },
     Stage {
         name: "gun 1",
-        kit: &[(sim::prize_level(sim::TRIG_GUN), 1)],
+        kit: &[(sim::slot_level(sim::TRIG_GUN), 1)],
     },
     Stage {
         name: "gun 2",
-        kit: &[(sim::prize_level(sim::TRIG_GUN), 2)],
+        kit: &[(sim::slot_level(sim::TRIG_GUN), 2)],
     },
     Stage {
         name: "bomb 1",
-        kit: &[(sim::prize_level(sim::TRIG_BOMB), 1)],
+        kit: &[(sim::slot_level(sim::TRIG_BOMB), 1)],
     },
     Stage {
         name: "bomb 2",
-        kit: &[(sim::prize_level(sim::TRIG_BOMB), 2)],
+        kit: &[(sim::slot_level(sim::TRIG_BOMB), 2)],
     },
     Stage {
         name: "stats",
         kit: &[
-            (sim::prize_stat(0), TO_CEILING),
-            (sim::prize_stat(1), TO_CEILING),
-            (sim::prize_stat(2), TO_CEILING),
-            (sim::prize_stat(3), TO_CEILING),
-            (sim::prize_stat(4), TO_CEILING),
+            (sim::slot_stat(0), TO_CEILING),
+            (sim::slot_stat(1), TO_CEILING),
+            (sim::slot_stat(2), TO_CEILING),
+            (sim::slot_stat(3), TO_CEILING),
+            (sim::slot_stat(4), TO_CEILING),
         ],
     },
     Stage {
         name: "multifire",
-        kit: &[(sim::prize_mod(sim::TRIG_GUN, sim::MOD_MULTI), 1)],
+        kit: &[(sim::slot_mod(sim::TRIG_GUN, sim::MOD_MULTI), 1)],
     },
     Stage {
         name: "bouncing gun",
-        kit: &[(sim::prize_mod(sim::TRIG_GUN, sim::MOD_BOUNCE), 1)],
+        kit: &[(sim::slot_mod(sim::TRIG_GUN, sim::MOD_BOUNCE), 1)],
     },
     Stage {
         name: "freezing gun",
-        kit: &[(sim::prize_mod(sim::TRIG_GUN, sim::MOD_FREEZE), 1)],
+        kit: &[(sim::slot_mod(sim::TRIG_GUN, sim::MOD_FREEZE), 1)],
     },
     Stage {
         name: "shrapnel",
-        kit: &[(sim::prize_mod(sim::TRIG_BOMB, sim::MOD_SHRAPNEL), 1)],
+        kit: &[(sim::slot_mod(sim::TRIG_BOMB, sim::MOD_SHRAPNEL), 1)],
     },
     Stage {
         name: "proximity",
-        kit: &[(sim::prize_mod(sim::TRIG_BOMB, sim::MOD_PROX), 1)],
+        kit: &[(sim::slot_mod(sim::TRIG_BOMB, sim::MOD_PROX), 1)],
     },
     Stage {
         name: "shoving bomb",
-        kit: &[(sim::prize_mod(sim::TRIG_BOMB, sim::MOD_PUSH), 1)],
+        kit: &[(sim::slot_mod(sim::TRIG_BOMB, sim::MOD_PUSH), 1)],
     },
     // A second bare hull, and the most useful row in the table.
     //
@@ -259,19 +251,20 @@ pub struct Bout {
 
 /// Put a kit on, and say how much of it went on.
 ///
-/// Called at every spawn, not once. Death clears the tech tree and a bout runs
-/// to five kills, so a kit granted at the start would measure one outfitted
-/// life and four bare ones, plus whatever advantage the first blood bought.
+/// Called at every spawn, not once. A stage grants slot by slot rather than
+/// setting a kit, so it is put back on at the dead-to-alive edge the way the
+/// arena re-deals one; granted once at the start it would measure one
+/// outfitted life and four bare ones.
 fn wear(world: &mut sim::World, ship: usize, stage: &Stage) -> u32 {
     let mut worn = 0;
-    for &(prize, n) in stage.kit {
+    for &(slot, n) in stage.kit {
         let want = if n == TO_CEILING {
             GRANT_LIMIT
         } else {
             n as u32
         };
         for _ in 0..want {
-            if !world.grant(ship, prize) {
+            if !world.grant(ship, slot) {
                 break;
             }
             worn += 1;
@@ -328,12 +321,6 @@ pub fn stage_bout(
         // comes before the two lines below rather than after.
         crate::Room::apply_config(&mut world, c);
     }
-    // The same two settings the ladder holds still, for the same reason: a
-    // green landing mid-bout would be a kit this harness did not hand out.
-    // Held even against a zone that asks for thirty, since the whole point is
-    // that the kit is the only difference between the two pilots.
-    world.cfg.spawn_prizes = 0;
-    world.cfg.prize_max = 0;
     // And the zone's spawn scatter, for a reason the other two did not have to
     // spell out. A radius drops a respawning ship on a random tile that far
     // from the map's centre, and Alpha's is 250 against a pit thirty-two tiles
@@ -812,12 +799,12 @@ against this number.",
  * by construction and no amount of running it compares two hulls.
  *
  * Pilots are matched on **bounty** rather than on kit, and that is the whole
- * design. `sim_bounty` counts every green as one whatever it turned out to be,
- * including one that landed on a ceiling, so handing both sides the same number
- * of greens matches them exactly on the number a player actually sees over an
- * enemy's head. It does not match them on power: hulls have different pools and
- * different ceilings, so the same bounty buys a Cipher and an Anvil different
- * amounts of kit, and the gap widens as the count climbs.
+ * design. Every slot in the kit costs one, including one that lands on a
+ * ceiling and grants nothing, so handing both sides the same budget matches
+ * them exactly on what they were allowed to spend. It does not match them on
+ * power: hulls have different pools and different ceilings, so the same budget
+ * buys a Cipher and an Anvil different amounts of ship, and the gap widens as
+ * the budget climbs.
  *
  * That difference is the finding rather than the flaw. A hull that saturates
  * early really is weaker at high bounty, and a matrix that erased it would be
@@ -887,11 +874,12 @@ pub struct HullRow {
     pub damage: u64,
     pub self_hits: u32,
     pub self_damage: u64,
-    /// Greens offered, and how many of them moved a count. The first is what
-    /// the two sides are matched on, since every green is one bounty; the
-    /// second is what this hull got for it. Two hulls at the same bounty with
-    /// different conversion is the mechanism behind most of this table.
-    pub greens: u32,
+    /// Kit points offered, and how many of them moved a count. The first is
+    /// what the two sides are matched on, since every slot in the kit costs
+    /// one; the second is what this hull got for it. Two hulls on the same
+    /// budget with different conversion is the mechanism behind most of this
+    /// table.
+    pub budget: u32,
     pub converted: u32,
     /// Win rate against each hull, indexed as the roster is. `None` on the
     /// diagonal, which is scored as a bias check instead.
@@ -914,36 +902,52 @@ impl HullRow {
     }
 }
 
-/// Roll `greens` greens for one ship, and return how many of them moved a count.
+/// Deal one ship a kit worth `budget`, and return what it actually spent.
 ///
-/// The generator is the caller's so the same salt draws the same greens, and so
-/// that handing out a loadout does not shift the bout's own stream.
+/// Random within the hull's own ceilings rather than a fixed list, because
+/// what this harness measures is a hull at a level of kit rather than a hull
+/// wearing one author's idea of a good build. The generator is the caller's,
+/// so the same salt builds the same kit and dressing a pilot does not shift
+/// the bout's own stream.
 ///
-/// Conversion is read off `earned` rather than off the delta the core returns.
-/// That delta is +1 for everything except rust, so it answers "was this a
-/// green" and never "did it land on anything" -- measuring with it reported
-/// every hull converting all of sixty greens, which is what sent me looking.
-/// `earned` is the counter the core moves in exactly the case wanted: a green
-/// whose count was already at its ceiling banks a bounty there instead. Read
-/// across the grants alone, with no ticks in between, it cannot pick up the
-/// bounty that killing also earns.
-fn green(world: &mut sim::World, ship: usize, greens: u32, rng: &mut u32) -> u32 {
-    let before = world.state.ships[ship].earned;
-    for _ in 0..greens {
-        world.take_prize_from(ship, rng);
+/// The return is what fit. A hull with a short ladder and few add-ons runs
+/// out of places to spend before the budget does, and that difference is a
+/// real part of what the roster is.
+fn deal_kit(world: &mut sim::World, ship: usize, budget: u32, rng: &mut u32) -> u32 {
+    let cls = world.state.ships[ship].cls;
+    let ceiling = world.kit_ceilings(cls);
+    let mut kit = [0u8; sim::SLOT_COUNT];
+    let mut spent = 0u32;
+    while spent < budget {
+        let mut placed = false;
+        for _ in 0..64 {
+            *rng ^= *rng << 13;
+            *rng ^= *rng >> 17;
+            *rng ^= *rng << 5;
+            let k = (*rng as usize) % sim::SLOT_COUNT;
+            if kit[k] < ceiling[k] {
+                kit[k] += 1;
+                spent += 1;
+                placed = true;
+                break;
+            }
+        }
+        if !placed {
+            break;
+        }
     }
-    let wasted = world.state.ships[ship].earned.saturating_sub(before) as u32;
-    greens.saturating_sub(wasted)
+    world.set_kit(ship, &kit);
+    spent
 }
 
 /// Two hulls, the same bounty each, one bout.
 ///
-/// Returns the bout and how many greens each side was offered over it, which is
-/// `greens` times the number of lives it had rather than a constant.
+/// Returns the bout and the kit budget each side was offered over it, which is
+/// `budget` times the number of lives it had rather than a constant.
 pub fn hull_bout(
     classes: [u8; 2],
     skill: f32,
-    greens: u32,
+    budget: u32,
     salt: u32,
     tuning: Option<&config::ArenaConfig>,
     map: &Arena,
@@ -971,13 +975,8 @@ pub fn hull_bout(
     if let Some(c) = tuning {
         crate::Room::apply_config(&mut world, c);
     }
-    // The zone's own spawn kit would arrive on top of the one being measured,
-    // and greens on the floor would let one side out-scavenge the other. Held
-    // against the zone for the same reason the other two harnesses hold them.
-    world.cfg.spawn_prizes = 0;
-    world.cfg.prize_max = 0;
-    // And the zone's spawn scatter, for a reason the other two did not have to
-    // spell out. A radius drops a respawning ship on a random tile that far
+    // The zone's spawn scatter is overridden, for a reason worth spelling
+    // out. A radius drops a respawning ship on a random tile that far
     // from the map's centre, and Alpha's is 250 against a pit thirty-two tiles
     // wide: the first death throws both pilots out of the room and into the
     // empty field around it, where they spend the rest of the bout not finding
@@ -991,7 +990,7 @@ pub fn hull_bout(
     };
 
     // Nonzero, because xorshift stays at zero forever once it arrives there and
-    // a bout whose greens all rolled the same thing is not obvious from a
+    // a bout whose kits all rolled the same thing is not obvious from a
     // report that only prints totals.
     let mut prng = [
         (salt.wrapping_mul(2654435761) ^ 0x9E37_79B9) | 1,
@@ -1001,8 +1000,8 @@ pub fn hull_bout(
     let mut out = [Side::default(); 2];
     let mut offered = [0u32; 2];
     for k in 0..2 {
-        out[k].worn = green(&mut world, ships[k] as usize, greens, &mut prng[k]);
-        offered[k] = greens;
+        out[k].worn = deal_kit(&mut world, ships[k] as usize, budget, &mut prng[k]);
+        offered[k] = budget;
     }
 
     let mut bots = [ai::Bot::new(ships[0], skill), ai::Bot::new(ships[1], skill)];
@@ -1074,8 +1073,8 @@ pub fn hull_bout(
         for k in 0..2 {
             let alive = world.state.ships[ships[k] as usize].alive != 0;
             if alive && !alive_was[k] {
-                out[k].regrants += green(&mut world, ships[k] as usize, greens, &mut prng[k]);
-                offered[k] += greens;
+                out[k].regrants += deal_kit(&mut world, ships[k] as usize, budget, &mut prng[k]);
+                offered[k] += budget;
             }
             alive_was[k] = alive;
         }
@@ -1110,7 +1109,7 @@ pub fn hull_bout(
 /// Every hull against every other, `bouts` times each, at one bounty.
 pub fn run_hulls(
     skill: f32,
-    greens: u32,
+    budget: u32,
     bouts: u32,
     tuning: Option<&config::ArenaConfig>,
     map: &Arena,
@@ -1130,7 +1129,7 @@ pub fn run_hulls(
             damage: 0,
             self_hits: 0,
             self_damage: 0,
-            greens: 0,
+            budget: 0,
             converted: 0,
             vs: vec![None; n],
             mirror: 0.0,
@@ -1143,7 +1142,7 @@ pub fn run_hulls(
         for j in i..n {
             let (mut wi, mut wj, mut drew, mut stale) = (0u32, 0u32, 0u32, 0u32);
             for _ in 0..bouts {
-                let (b, offered) = hull_bout([i as u8, j as u8], skill, greens, salt, tuning, map);
+                let (b, offered) = hull_bout([i as u8, j as u8], skill, budget, salt, tuning, map);
                 salt = salt.wrapping_add(1);
 
                 for (k, side) in [(i, b.sides[0]), (j, b.sides[1])] {
@@ -1157,8 +1156,8 @@ pub fn run_hulls(
                         rows[k].shots[t] += side.shots[t];
                     }
                 }
-                rows[i].greens += offered[0];
-                rows[j].greens += offered[1];
+                rows[i].budget += offered[0];
+                rows[j].budget += offered[1];
 
                 if !b.decided {
                     stale += 1;
@@ -1199,15 +1198,15 @@ pub fn run_hulls(
 pub fn report_hulls(
     rows: &[HullRow],
     skill: f32,
-    greens: u32,
+    budget: u32,
     bouts: u32,
     zone: &str,
     map: &str,
 ) -> serde_json::Value {
     let n = rows.len();
     println!(
-        "\nhull tournament: {zone} tuning on the {map}, skill {skill:.2}, {greens} greens \
-a life, {bouts} bouts a pair, {n} hulls"
+        "\nhull tournament: {zone} tuning on the {map}, skill {skill:.2}, a {budget}-point \
+kit a life, {bouts} bouts a pair, {n} hulls"
     );
 
     println!(
@@ -1230,10 +1229,10 @@ a life, {bouts} bouts a pair, {n} hulls"
             r.hits as f64 / fired.max(1) as f64,
             r.damage as f64 / r.hits.max(1) as f64,
             100.0 * r.self_damage as f64 / (r.damage + r.self_damage).max(1) as f64,
-            // What this hull turned its bounty into. Two hulls matched on
-            // greens and split on this column are the same price and not the
+            // What this hull turned its budget into. Two hulls matched on
+            // budget and split on this column are the same price and not the
             // same ship.
-            100.0 * r.converted as f64 / r.greens.max(1) as f64,
+            100.0 * r.converted as f64 / r.budget.max(1) as f64,
             100.0 * r.mirror,
         );
     }
@@ -1307,7 +1306,7 @@ those hulls, so read their rows knowing the map is in them.",
         "tuning": zone,
         "map": map,
         "skill": skill,
-        "greens_per_life": greens,
+        "kit_budget": budget,
         "bouts_per_pair": bouts,
         "hulls": rows.iter().map(|r| serde_json::json!({
             "name": r.name,
@@ -1324,8 +1323,8 @@ those hulls, so read their rows knowing the map is in them.",
             "damage": r.damage,
             "self_hits": r.self_hits,
             "self_damage": r.self_damage,
-            "greens_offered": r.greens,
-            "greens_converted": r.converted,
+            "kit_offered": r.budget,
+            "kit_spent": r.converted,
             "mirror": r.mirror,
             "stalemates": r.stalemates,
             "vs": r.vs,
@@ -1374,7 +1373,7 @@ pub struct TeamRow {
     pub hits: u32,
     pub damage: u64,
     pub self_damage: u64,
-    pub greens: u32,
+    pub budget: u32,
     pub converted: u32,
 }
 
@@ -1403,7 +1402,7 @@ pub struct Seat {
     pub hits: u32,
     pub damage: u64,
     pub self_damage: u64,
-    pub greens: u32,
+    pub budget: u32,
     pub converted: u32,
 }
 
@@ -1418,8 +1417,6 @@ fn team_world(salt: u32, tuning: Option<&config::ArenaConfig>, map: &Arena) -> O
     if let Some(c) = tuning {
         crate::Room::apply_config(&mut world, c);
     }
-    world.cfg.spawn_prizes = 0;
-    world.cfg.prize_max = 0;
     // Keep the zone's spawn scatter. This tournament uses the real map, so
     // placement is part of the team game it measures.
     Some(world)
@@ -1428,7 +1425,7 @@ fn team_world(salt: u32, tuning: Option<&config::ArenaConfig>, map: &Arena) -> O
 pub fn team_match(
     lineup: &[u8],
     skill: f32,
-    greens: u32,
+    budget: u32,
     salt: u32,
     tuning: Option<&config::ArenaConfig>,
     map: &Arena,
@@ -1464,8 +1461,8 @@ pub fn team_match(
         });
     }
     for i in 0..ships.len() {
-        seats[i].converted += green(&mut world, ships[i] as usize, greens, &mut prng[i]);
-        seats[i].greens += greens;
+        seats[i].converted += deal_kit(&mut world, ships[i] as usize, budget, &mut prng[i]);
+        seats[i].budget += budget;
     }
 
     let mut bots: Vec<ai::Bot> = ships
@@ -1542,8 +1539,8 @@ pub fn team_match(
         for i in 0..ships.len() {
             let alive = world.state.ships[ships[i] as usize].alive != 0;
             if alive && !alive_was[i] {
-                seats[i].converted += green(&mut world, ships[i] as usize, greens, &mut prng[i]);
-                seats[i].greens += greens;
+                seats[i].converted += deal_kit(&mut world, ships[i] as usize, budget, &mut prng[i]);
+                seats[i].budget += budget;
             }
             if !alive && alive_was[i] {
                 seats[i].deaths += 1;
@@ -1571,7 +1568,7 @@ pub fn team_match(
 pub fn run_teams(
     per_side: usize,
     matches: u32,
-    greens: u32,
+    budget: u32,
     skill: f32,
     tuning: Option<&config::ArenaConfig>,
     map: &Arena,
@@ -1596,7 +1593,7 @@ pub fn run_teams(
             hits: 0,
             damage: 0,
             self_damage: 0,
-            greens: 0,
+            budget: 0,
             converted: 0,
         })
         .collect();
@@ -1614,7 +1611,7 @@ pub fn run_teams(
             rng ^= rng << 5;
             lineup.push((rng % n as u32) as u8);
         }
-        let (seats, decided) = team_match(&lineup, skill, greens, m, tuning, map);
+        let (seats, decided) = team_match(&lineup, skill, budget, m, tuning, map);
         if seats.is_empty() {
             continue;
         }
@@ -1648,7 +1645,7 @@ pub fn run_teams(
             r.engagement_samples += s.engagement_samples;
             r.planned_range += s.planned_range;
             r.planned_range_samples += s.planned_range_samples;
-            r.greens += s.greens;
+            r.budget += s.budget;
             r.converted += s.converted;
             for t in 0..sim::TRIG_COUNT {
                 r.shots[t] += s.shots[t];
@@ -1679,7 +1676,7 @@ pub fn report_teams(
     rows: &[TeamRow],
     per_side: usize,
     skill: f32,
-    greens: u32,
+    budget: u32,
     matches: u32,
     zone: &str,
     map: &str,
@@ -1687,7 +1684,7 @@ pub fn report_teams(
 ) -> serde_json::Value {
     println!(
         "\nteam tournament: {per_side} a side, {zone} tuning on the {map}, skill \
-{skill:.2}, {greens} greens a life, spawn radius {spawn_radius}, {matches} matches, \
+{skill:.2}, a {budget}-point kit a life, spawn radius {spawn_radius}, {matches} matches, \
 lineups drawn at random"
     );
     println!(
@@ -1737,7 +1734,7 @@ is the one to read the board by."
 
     serde_json::json!({
         "per_side": per_side, "tuning": zone, "map": map, "skill": skill,
-        "greens_per_life": greens, "spawn_radius": spawn_radius, "matches": matches,
+        "kit_budget": budget, "spawn_radius": spawn_radius, "matches": matches,
         "hulls": rows.iter().map(|r| serde_json::json!({
             "name": r.name, "class": r.class, "seats": r.seats, "won": r.won,
             "drawn": r.drawn, "win_rate": r.win_rate(), "win_rate_margin": r.margin(),
@@ -1747,7 +1744,7 @@ is the one to read the board by."
             "mean_planned_range": r.planned_range / r.planned_range_samples.max(1) as f64,
             "mean_engagement_distance": r.engagement_distance / r.engagement_samples.max(1) as f64,
             "hits": r.hits, "damage": r.damage, "self_damage": r.self_damage,
-            "greens_offered": r.greens, "greens_converted": r.converted,
+            "kit_offered": r.budget, "kit_spent": r.converted,
         })).collect::<Vec<_>>(),
     })
 }
@@ -1788,22 +1785,22 @@ pub(crate) const APART: usize = 24;
 /// worth finding rather than assuming, because a hard-coded tile that
 /// lands inside a cluster spawns nobody and the bout reads as a draw.
 /// The map, its route and a place to put two pilots, built once.
-pub(crate) fn alpha_map() -> Vec<u8> {
+pub(crate) fn real_map() -> Vec<u8> {
     // Both the crate directory a test runs in and the repository root a binary
     // is started from, because the ladder is generated by
     // `vectorwake-server calibrate` and measured by `cargo test`.
     const WHERE: [&str; 2] = [
-        "../catalog/zones/alpha/alpha.vwmap",
-        "catalog/zones/alpha/alpha.vwmap",
+        "../catalog/zones/melee/drydock.vwmap",
+        "catalog/zones/melee/drydock.vwmap",
     ];
     WHERE
         .iter()
         .find_map(|p| std::fs::read(p).ok())
-        .unwrap_or_else(|| panic!("the alpha map ships here; looked in {WHERE:?}"))
+        .unwrap_or_else(|| panic!("a shipped map lives here; looked in {WHERE:?}"))
 }
 
 pub(crate) fn real_map_fixture() -> (Vec<u8>, nav::Nav, ((i32, i32), (i32, i32))) {
-    let bytes = alpha_map();
+    let bytes = real_map();
     let probe = sim::World::from_packed(0x5eed, &bytes).expect("a map");
     let at = open_pair(&probe.map);
     let route = nav::Nav::build(&probe.map);
@@ -1846,22 +1843,20 @@ pub(crate) fn duel(
     a: &ai::RosterEntry,
     b: &ai::RosterEntry,
     salt: u32,
-    greens: u32,
+    budget: u32,
     handicap: Option<(ai::Knob, f32)>,
 ) -> (u16, u16) {
     let mut world = sim::World::from_packed(0xd0e1 ^ salt, bytes).expect("a map");
-    // The kit is handed out here rather than inherited from the zone, and
-    // the floor is empty, so both pilots carry exactly `greens` and the
-    // only thing left varying between them is the pilot.
+    // The kit is handed out here rather than inherited from the zone, so both
+    // pilots carry exactly `budget` and the only thing left varying between
+    // them is the pilot.
     //
-    // This used to be a bool that meant "let Alpha do what it does", which
-    // is `spawn_prizes = 30` and `prize_max = 42`. The thirty was matched
-    // and fine. The forty-two on the floor were not: whoever scavenged
-    // better carried a kit the other did not have, and that landed on top
-    // of every built number this harness ever printed. A tournament that
-    // ranks pilots cannot also be a race for the floor.
-    world.cfg.spawn_prizes = 0;
-    world.cfg.prize_max = 0;
+    // This used to be a bool that meant "let Alpha do what it does", which was
+    // thirty at spawn and forty-two more scattered on the floor. The thirty
+    // were matched and fine. The forty-two were not: whoever scavenged better
+    // carried a kit the other did not have, and that landed on top of every
+    // built number this harness ever printed. A tournament that ranks pilots
+    // cannot also be a race for the floor.
     // Always. A scatter of 250 on a map this size throws them apart on
     // the first death and the rest of the bout is two pilots looking for
     // each other.
@@ -1906,12 +1901,12 @@ pub(crate) fn duel(
     // of variance out of a measurement that needs every bout it has.
     //
     // Nonzero because xorshift that reaches zero stays there, and would
-    // then hand out the same green for the rest of the bout.
+    // then deal the same slot for the rest of the bout.
     let seed = (salt.wrapping_mul(2654435761) ^ 0x9E37_79B9) | 1;
     let mut prng = [seed, seed];
     let seats = [s1, s2];
     for k in 0..2 {
-        green(&mut world, seats[k] as usize, greens, &mut prng[k]);
+        deal_kit(&mut world, seats[k] as usize, budget, &mut prng[k]);
     }
     let mut alive_was = [true; 2];
 
@@ -1943,14 +1938,14 @@ pub(crate) fn duel(
         for (victim, _killer, _paid) in crate::ingest_damage(&world, r, &name_of) {
             r.death(tick, &name_of(victim));
         }
-        // Death clears the tech tree, so the kit goes back on at the
-        // dead-to-alive edge. Without this a bout at sixty greens is one
+        // The kit goes back on at the dead-to-alive edge, the way the arena
+        // re-deals one. Without this a bout at a sixty-point budget is one
         // built exchange followed by four bare ones, which measures
         // something nobody asked about.
         for k in 0..2 {
             let alive = world.state.ships[seats[k] as usize].alive != 0;
             if alive && !alive_was[k] {
-                green(&mut world, seats[k] as usize, greens, &mut prng[k]);
+                deal_kit(&mut world, seats[k] as usize, budget, &mut prng[k]);
             }
             alive_was[k] = alive;
         }
@@ -1995,7 +1990,7 @@ mod tests {
     /// facts arrived the same way. Ablating six knobs on two hulls left only
     /// aim outside a coin, so the other four were retired; and this test then
     /// failed at 1198 against 1202, because the pit was an empty room, a pilot
-    /// with no greens holds no charges, and the one surviving knob besides aim
+    /// with no kit holds no charges, and the one surviving knob besides aim
     /// had nothing to decide. The kit is matched at thirty now, which is what
     /// the room a person plays in hands out.
     /// Sixty rounds a pair could not decide this, and two different
@@ -2163,16 +2158,16 @@ mod tests {
     /// Bounty is matched a life at a time, which is not the same as matched
     /// over a bout, and the difference is worth pinning rather than assuming.
     ///
-    /// Both pilots are handed `greens` at every spawn, so at any moment in the
+    /// Both pilots are handed `budget` at every spawn, so at any moment in the
     /// fight they have drawn the same number since they last died. Totals come
     /// apart, because the side that dies more respawns more and is handed the
-    /// opening bounty again each time. That is the game's own arrangement and
-    /// not an advantage: those extra greens are bought with deaths, and a hull
+    /// opening kit again each time. That is the game's own arrangement and not
+    /// an advantage: those extra points are bought with deaths, and a hull
     /// that is dying is not winning.
     ///
-    /// What this guards is the silent version of the failure. A green landing
-    /// on a ceiling grants nothing, so a harness that counted grants rather
-    /// than offers would hand the deeper tech tree more bounty for free and
+    /// What this guards is the silent version of the failure. A point spent
+    /// against a ceiling grants nothing, so a harness that counted grants
+    /// rather than offers would hand the deeper tech tree more for free and
     /// report the result as balance.
     #[test]
     fn bounty_is_matched_a_life_at_a_time() {
@@ -2180,25 +2175,25 @@ mod tests {
         // roster has, so the widest gap between offered and converted.
         let cipher = ai::class_index("Cipher").unwrap() as u8;
         let anvil = ai::class_index("Anvil").unwrap() as u8;
-        const GREENS: u32 = 8;
+        const BUDGET: u32 = 8;
         for salt in 0..4 {
             let (_, offered) = hull_bout(
                 [cipher, anvil],
                 0.5,
-                GREENS,
+                BUDGET,
                 salt,
                 None,
                 &Arena::Built(sim::build_pit),
             );
             for k in 0..2 {
                 assert!(
-                    offered[k] >= GREENS,
+                    offered[k] >= BUDGET,
                     "salt {salt}: side {k} never got its opening"
                 );
                 assert_eq!(
-                    offered[k] % GREENS,
+                    offered[k] % BUDGET,
                     0,
-                    "salt {salt}: greens arrive a life at a time"
+                    "salt {salt}: the kit is dealt a life at a time"
                 );
             }
         }
@@ -2209,17 +2204,17 @@ mod tests {
         // refitted for a death that appears in nobody's column. Trying to
         // predict the refit count from kills is how that got found.
 
-        // The claim underneath all of this, on its own: the same bounty buys
-        // different hulls different amounts of ship. Handed enough greens to
-        // saturate, a hull stops converting them, and every one of those still
-        // counts a bounty.
+        // The claim underneath all of this, on its own: the same budget buys
+        // different hulls different amounts of ship. Handed enough to
+        // saturate, a hull stops spending, and every unspent point still
+        // counted against the budget it was offered.
         let mut world = sim::World::with_map(1, sim::build_pit);
         let mut short = 0;
         for &(class, name) in &[(cipher, "Cipher"), (anvil, "Anvil")] {
             let ship = world.spawn(class, 0, 505, 522, 0) as usize;
             let mut rng = 0x1234_5678u32;
             let offered = 60;
-            let converted = green(&mut world, ship, offered, &mut rng);
+            let converted = deal_kit(&mut world, ship, offered, &mut rng);
             assert!(
                 converted <= offered,
                 "{name} converted more than it was handed"
@@ -2230,8 +2225,8 @@ mod tests {
         }
         assert!(
             short > 0,
-            "sixty greens saturated nobody, so this harness is not reaching \
-the ceilings the matched-bounty argument turns on"
+            "a sixty-point budget saturated nobody, so this harness is not \
+reaching the ceilings the matched-budget argument turns on"
         );
     }
 
@@ -2284,15 +2279,12 @@ the room"
     #[test]
     fn a_team_tournament_keeps_the_zones_spawn_scatter() {
         let scattered: config::ArenaConfig =
-            toml::from_str("spawn_radius = 60\nspawn_prizes = 30\nprize_max = 42\n")
-                .expect("a zone with scattered, prized spawns");
+            toml::from_str("spawn_radius = 60\n").expect("a zone with scattered spawns");
 
         let world = team_world(0, Some(&scattered), &Arena::Built(sim::build_arena))
             .expect("a tournament world");
 
         assert_eq!(world.cfg.spawn_radius, 60);
-        assert_eq!(world.cfg.spawn_prizes, 0);
-        assert_eq!(world.cfg.prize_max, 0);
     }
 
     /// A hull opens the bout with the zone's numbers, not the baseline's.
@@ -2392,14 +2384,12 @@ which is the pit talking",
     #[test]
     fn a_kit_is_worn_up_to_the_hull_s_ceiling() {
         let mut world = sim::World::with_map(1, sim::build_pit);
-        // The baseline hands out thirty greens at spawn, which would put rungs
-        // and add-ons on this hull before the kit does and leave the test
-        // measuring the roll it is supposed to be replacing.
-        world.cfg.spawn_prizes = 0;
+        // Spawned bare, so what this measures is the stage's kit and nothing
+        // the baseline put on the hull ahead of it.
         let ship = world.spawn(0, 0, 505, 522, 0) as usize;
 
-        const ONE: &[(u8, u8)] = &[(sim::prize_level(sim::TRIG_GUN), 1)];
-        const NINE: &[(u8, u8)] = &[(sim::prize_level(sim::TRIG_GUN), 9)];
+        const ONE: &[(u8, u8)] = &[(sim::slot_level(sim::TRIG_GUN), 1)];
+        const NINE: &[(u8, u8)] = &[(sim::slot_level(sim::TRIG_GUN), 9)];
 
         let one = Stage {
             name: "t",
@@ -2421,11 +2411,11 @@ which is the pit talking",
         );
         assert_eq!(world.state.ships[ship].level[sim::TRIG_GUN], 2);
 
-        // And a ceiling reached is not a bounty paid, which is the one way a
-        // grant could quietly change what it is measuring: bounty is derived
-        // from what you hold, so an `earned` bumped here would make the
-        // outfitted side worth more to kill for no reason a player could see.
-        assert_eq!(world.state.ships[ship].earned, 0);
+        // And dressing a pilot does not make them worth more to kill, which
+        // is the one way a kit could quietly change what this measures.
+        // Bounty is the run now, so it cannot: a pilot who has not killed
+        // anybody is worth the base whatever they are wearing.
+        assert_eq!(world.state.ships[ship].run, 0);
     }
 
     /// Death clears the tech tree, so a bout that does not re-outfit measures
@@ -2487,17 +2477,20 @@ which is the pit talking",
             "a five-degree fan is not a fifteen-degree one"
         );
 
-        // And the harness still overrides the two it must, whatever the zone
-        // asks for. A zone can hand out thirty spawn greens, which is exactly
-        // the thing that would erase what is being measured.
-        c.spawn_prizes = Some(30);
-        c.prize_max = Some(42);
+        // And the harness still overrides the one it must, whatever the zone
+        // asks for. A spawn scatter is the setting that would quietly erase
+        // what is being measured: 250 px of it on a pit thirty-two tiles wide
+        // throws both pilots off the map at the first death.
+        c.spawn_radius = Some(250);
         let b = stage_bout([&STAGES[1], &STAGES[0]], 0, 0.5, 1, Some(&c));
         assert!(b.ticks > 0, "the bout ran");
         assert_eq!(
             b.sides[1].worn, 0,
-            "the bare side stayed bare under a zone \
-                                        that hands out thirty greens"
+            "the bare side stayed bare: a stage's kit is the whole of what it flies"
+        );
+        assert!(
+            b.sides[0].kills + b.sides[1].kills > 0,
+            "the pilots still found each other, so the scatter was overridden"
         );
     }
 
@@ -2589,7 +2582,7 @@ mod skill_tests {
         // This read -26 once, inverted at r = -0.88, with the roster's worst
         // pilot beating its best about as often as a coin lands. What it was
         // measuring was a permission line at 0.35 deciding who was allowed to
-        // bomb, and in a pit with no greens the pilot forbidden to bomb keeps
+        // bomb, and in a pit with no kit the pilot forbidden to bomb keeps
         // its bar and wins. See `skill_on_a_real_map` for the same question
         // asked where people play, and the ablation next door for which of
         // the dial's knobs was carrying it.
@@ -2624,11 +2617,10 @@ mod real_map_tests {
     /// six points, so a real advantage cannot hide inside the noise and a
     /// coin cannot look like one.
     ///
-    /// Run twice over, without the prize economy and with it. The first is
-    /// the pit's own control, holding the loadout still the way the hull is
-    /// held. The second is the game as it ships, because greed and build
+    /// Run twice over, with no kit and with one. The first is the pit's own
+    /// control, holding the loadout still the way the hull is held. The second is the game as it ships, because greed and build
     /// planning are two of the six traits the dial is supposed to drive and
-    /// a field with no greens on it cannot show either.
+    /// a pilot with no kit cannot show either.
     #[test]
     #[ignore]
     fn skill_on_a_real_map() {
@@ -2649,18 +2641,18 @@ mod real_map_tests {
         .into_iter()
         .map(|c| (c as u8, ai::CLASS_NAMES[c as usize]))
         .collect();
-        // The two kits a pilot in this zone actually fights in. Alpha hands
-        // out thirty at every spawn, so that is the game as it ships, and
-        // sixty asks whether the flattening that greens do to a skill gap
-        // keeps going or levels off.
+        // The two kits a pilot actually fights in. Thirty points is the
+        // shipped budget, so that is the game as it ships, and sixty asks
+        // whether the flattening a kit does to a skill gap keeps going or
+        // levels off.
         //
         // Bare is not one of them. It was worth running while the dial was
         // inverted, because it separates flying from carrying, but nobody
-        // plays it: a pilot with no greens holds no charges at all, so a
-        // whole branch of the AI is unreachable and a row of the skill table
-        // cannot be measured there. Ranking pilots in a room that does not
-        // exist was the habit worth dropping.
-        let economies = env_list("VW_GREENS", &[30, 60]);
+        // plays it: a pilot with no kit holds no charges at all, so a whole
+        // branch of the AI is unreachable and a row of the skill table cannot
+        // be measured there. Ranking pilots in a room that does not exist was
+        // the habit worth dropping.
+        let economies = env_list("VW_KIT", &[30, 60]);
         // Three hundred, which is what the doc comment above has always said
         // and what the constant drifted away from: the tables print an
         // interval of eight points, and six is what three hundred buys.
@@ -2672,7 +2664,7 @@ mod real_map_tests {
         // nothing either way. Buying resolution for an effect already known to
         // be small, not lowering a bar to meet it.
         let per_pair = env_list("VW_BOUTS", &[300])[0];
-        let bytes = alpha_map();
+        let bytes = real_map();
         let probe = sim::World::from_packed(0x5eed, &bytes).expect("a map");
         let at = open_pair(&probe.map);
         let route = nav::Nav::build(&probe.map);
@@ -2694,7 +2686,7 @@ mod real_map_tests {
                 })
                 .collect();
 
-            for greens in economies.iter().copied() {
+            for budget in economies.iter().copied() {
                 println!("\n### {hull_name} ###");
                 let mut rates: Vec<f64> = Vec::new();
                 // The roster's two ends, which is the span the dial is meant
@@ -2703,12 +2695,12 @@ mod real_map_tests {
                 let (mut strong_wins, mut all_decided) = (0u64, 0u64);
                 println!(
                     "\n=== alpha, spawns {APART} tiles apart, {per_pair} bouts a pair, \
-                 {greens} greens a life ==="
+                 a {budget}-point kit a life ==="
                 );
                 let mut r = rating::Rating::new();
                 // A window per economy, so two of them are never the same
                 // bouts wearing different kit.
-                let mut salt = greens * 500_000;
+                let mut salt = budget * 500_000;
 
                 // The coin this fixture actually deals, measured rather than
                 // assumed, on the same salts the pairs use so it sees the same
@@ -2747,7 +2739,7 @@ mod real_map_tests {
                     let mut s = salt;
                     for _ in 0..per_pair {
                         let (ka, kb) =
-                            duel(&bytes, &route, at, &mut null, &mid, &same, s, greens, None);
+                            duel(&bytes, &route, at, &mut null, &mid, &same, s, budget, None);
                         s = s.wrapping_add(1);
                         match ka.cmp(&kb) {
                             std::cmp::Ordering::Greater => nw += 1,
@@ -2768,7 +2760,7 @@ mod real_map_tests {
                         let (mut wa, mut wb, mut drew) = (0u32, 0u32, 0u32);
                         for _ in 0..per_pair {
                             let (ka, kb) =
-                                duel(&bytes, &route, at, &mut r, a, b, salt, greens, None);
+                                duel(&bytes, &route, at, &mut r, a, b, salt, budget, None);
                             salt = salt.wrapping_add(1);
                             match ka.cmp(&kb) {
                                 std::cmp::Ordering::Greater => wa += 1,
@@ -2845,7 +2837,7 @@ mod real_map_tests {
                     edge * 100.0,
                     coin * 100.0
                 );
-                gaps.push((greens, gap, coin, ends, edge, z, leaning, rates.len()));
+                gaps.push((budget, gap, coin, ends, edge, z, leaning, rates.len()));
             }
         }
 
@@ -2869,7 +2861,7 @@ mod real_map_tests {
         //
         // The Elo gap also understates the span whenever the middle of the
         // roster is bunched, because the fit has to place five pilots at once:
-        // greens on, the ends sit at 67% and the gap reads +38.
+        // with a kit on, the ends sit at 67% and the gap reads +38.
         // And the bar is read against the null row rather than against a half,
         // for the reason the null row exists. Sixty-four per cent in a fair
         // fixture is the weaker pilot on thirty-six, fourteen points below its
@@ -2905,8 +2897,8 @@ mod real_map_tests {
         // is still printed, as a diagnostic.
         const ENDS: f64 = 0.64;
         const Z: f64 = 3.0;
-        for (greens, gap, coin, ends, edge, z, leaning, pairs) in gaps {
-            let economy = format!("{greens} greens");
+        for (budget, gap, coin, ends, edge, z, leaning, pairs) in gaps {
+            let economy = format!("{budget} points");
             assert!(
                 (coin - 0.5).abs() <= 0.15,
                 "at {economy}, the fixture deals {:.1}% to two identical pilots, \
@@ -2933,7 +2925,7 @@ mod real_map_tests {
     #[test]
     #[ignore]
     fn time_one_real_map_bout() {
-        let bytes = alpha_map();
+        let bytes = real_map();
         let probe = sim::World::from_packed(0x5eed, &bytes).expect("a map");
         let at = open_pair(&probe.map);
         println!("spawns at {:?} and {:?}", at.0, at.1);
@@ -3001,10 +2993,10 @@ mod ablation {
                 skill: 0.90,
             };
 
-            for greens in env_list("VW_GREENS", &[0, 30, 60]).iter().copied() {
+            for budget in env_list("VW_KIT", &[0, 30, 60]).iter().copied() {
                 println!(
                     "\n=== {hull_name}: one knob at 0.30, the rest at 0.90, \
-                     {greens} greens a life ==="
+                     a {budget}-point kit a life ==="
                 );
                 println!("  knob          handicapped wins   rate      95% ci");
                 for knob in [
@@ -3029,7 +3021,7 @@ mod ablation {
                             &strong,
                             &same,
                             salt,
-                            greens,
+                            budget,
                             knob.map(|k| (k, 0.30)),
                         );
                         salt = salt.wrapping_add(1);
@@ -3089,7 +3081,7 @@ mod stability {
             })
             .collect();
 
-        for greens in env_list("VW_GREENS", &[0, 30]).iter().copied() {
+        for budget in env_list("VW_KIT", &[0, 30]).iter().copied() {
             let mut gaps: Vec<f64> = Vec::new();
             for run in 0..RUNS {
                 let mut r = rating::Rating::new();
@@ -3098,7 +3090,7 @@ mod stability {
                     for j in (i + 1)..roster.len() {
                         for _ in 0..PER_PAIR {
                             duel(
-                                &bytes, &route, at, &mut r, &roster[i], &roster[j], salt, greens,
+                                &bytes, &route, at, &mut r, &roster[i], &roster[j], salt, budget,
                                 None,
                             );
                             salt = salt.wrapping_add(1);
@@ -3113,7 +3105,7 @@ mod stability {
             let sd =
                 (gaps.iter().map(|g| (g - mean).powi(2)).sum::<f64>() / gaps.len() as f64).sqrt();
             println!(
-                "\n  {greens} greens: gaps {:?}",
+                "\n  {budget} points: gaps {:?}",
                 gaps.iter().map(|g| g.round() as i64).collect::<Vec<_>>()
             );
             println!("  mean {mean:+.0}, spread {sd:.0}");
@@ -3131,7 +3123,7 @@ mod draws {
     ///     cargo test --release --manifest-path server/Cargo.toml \
     ///       what_a_draw_is_made_of -- --ignored --nocapture
     ///
-    /// Half the bouts with greens on end level, and a level bout carries no
+    /// Half the bouts with a kit on end level, and a level bout carries no
     /// information, so the built economy is measured on half the sample the
     /// bare one gets. Whether that is worth fixing depends entirely on what
     /// the draws are: nought-all means two pilots that never found each other,
@@ -3207,14 +3199,14 @@ mod fixture {
             class: 1,
             skill: 0.60,
         };
-        for greens in env_list("VW_GREENS", &[0, 30]).iter().copied() {
+        for budget in env_list("VW_KIT", &[0, 30]).iter().copied() {
             // Indexed by salt % 4, which is what picks the start tile and the
             // facing between them.
             let mut won = [0u32; 4];
             let mut lost = [0u32; 4];
             let mut r = rating::Rating::new();
             for salt in 0..BOUTS {
-                let (ka, kb) = duel(&bytes, &route, at, &mut r, &a, &b, salt, greens, None);
+                let (ka, kb) = duel(&bytes, &route, at, &mut r, &a, &b, salt, budget, None);
                 let s = (salt % 4) as usize;
                 match ka.cmp(&kb) {
                     std::cmp::Ordering::Greater => won[s] += 1,
@@ -3222,7 +3214,7 @@ mod fixture {
                     std::cmp::Ordering::Equal => {}
                 }
             }
-            println!("\n=== two pilots at 0.60, nothing between them, {greens} greens a life ===");
+            println!("\n=== two pilots at 0.60, nothing between them, a {budget}-point kit ===");
             println!("   salt%4   a starts   a faces     a won   a lost    rate");
             for s in 0..4 {
                 let decided = (won[s] + lost[s]).max(1) as f64;
@@ -3265,28 +3257,25 @@ mod kit {
     ///     cargo test --release --manifest-path server/Cargo.toml \
     ///       the_kit_is_matched_and_real -- --ignored --nocapture
     ///
-    /// A green count that silently grants nothing would make every economy in
-    /// the sweep the bare one and the tables would still look plausible, so
-    /// this counts what is on the hull rather than what was asked for. Rust
-    /// takes a small toll, so thirty greens buys fewer than thirty steps and
-    /// the interesting numbers are that the count rises with the offer, that
-    /// both sides get the same, and that the ceiling is reached at sixty.
+    /// A budget that silently grants nothing would make every economy in the
+    /// sweep the bare one and the tables would still look plausible, so this
+    /// counts what is on the hull rather than what was asked for. The
+    /// interesting numbers are that the count rises with the offer, that both
+    /// sides get the same, and that the ceiling is reached at sixty.
     #[test]
     #[ignore]
     fn the_kit_is_matched_and_real() {
         let (bytes, route, at) = real_map_fixture();
         let _ = route;
-        for greens in [0u32, 30, 60] {
+        for budget in [0u32, 30, 60] {
             let mut world = sim::World::from_packed(0xd0e1, &bytes).expect("a map");
-            world.cfg.spawn_prizes = 0;
-            world.cfg.prize_max = 0;
             world.cfg.spawn_radius = 0;
             let s1 = world.spawn(0, 0, at.0 .0, at.0 .1, 0) as u8;
             let s2 = world.spawn(0, 1, at.1 .0, at.1 .1, 32768) as u8;
             let seed = 0x9E37_79B9u32 | 1;
             let mut prng = [seed, seed];
             for (k, s) in [s1, s2].iter().enumerate() {
-                green(&mut world, *s as usize, greens, &mut prng[k]);
+                deal_kit(&mut world, *s as usize, budget, &mut prng[k]);
             }
             let held = |s: u8| {
                 let sh = &world.state.ships[s as usize];
@@ -3304,22 +3293,22 @@ mod kit {
             let (u1, l1, m1, c1) = held(s1);
             let (u2, l2, m2, c2) = held(s2);
             println!(
-                "  {greens:>2} greens: a has {u1} stat steps, gun+bomb {l1}, {m1} add-ons, \
+                "  {budget:>2} points: a has {u1} stat steps, gun+bomb {l1}, {m1} add-ons, \
                  {c1} charges; b has {u2}/{l2}/{m2}/{c2}"
             );
-            if greens == 0 {
+            if budget == 0 {
                 assert_eq!(
                     (u1, l1, m1, c1),
                     (0, 0, 0, 0),
                     "a bare pilot should carry nothing"
                 );
             } else {
-                assert!(u1 + l1 + m1 + c1 > 0, "{greens} greens bought nothing");
+                assert!(u1 + l1 + m1 + c1 > 0, "{budget} points bought nothing");
             }
             assert_eq!(
                 (u1, l1, m1, c1),
                 (u2, l2, m2, c2),
-                "at {greens} greens the two pilots drew different kit"
+                "at {budget} points the two pilots drew different kit"
             );
         }
     }

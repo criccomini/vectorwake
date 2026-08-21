@@ -26,6 +26,28 @@ pub struct ModeCtx<'a> {
     pub banner: String,
     /// Set when the mode is finished and the arena should be torn down.
     pub finished: bool,
+    /// Set when the mode wants a fresh match opened: new ground, everybody
+    /// home, kits re-dealt with their ammunition. The mode says when, the
+    /// room does it, because the map and the sockets are the room's.
+    pub open_match: bool,
+}
+
+/// What a match game is doing right now.
+///
+/// A mode that is not one has no answer, which is what `Mode::match_state`
+/// returning `None` means: the room sends no clock, and the controls are
+/// never held.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct MatchState {
+    /// False during the intermission, when the podium is up and nobody is
+    /// flying.
+    pub playing: bool,
+    /// Seconds left in whichever of the two this is. A match is three minutes
+    /// and an intermission is twenty-five seconds, so a byte is plenty and
+    /// the client only ever draws whole seconds of it.
+    pub seconds_left: u8,
+    /// Kills per public side, in the order the zone named them.
+    pub score: Vec<u16>,
 }
 
 impl ModeCtx<'_> {
@@ -42,17 +64,34 @@ impl ModeCtx<'_> {
 /// Every mode a zone may name. The catalog checks against this rather than
 /// falling back to warzone, which is exactly how `arena.mode` came to be a key
 /// that parsed and did nothing for months.
-pub const NAMES: [&str; 3] = ["arena", "warzone", "duel"];
+pub const NAMES: [&str; 4] = ["arena", "warzone", "duel", "melee"];
 
 pub fn exists(name: &str) -> bool {
     NAMES.contains(&name)
 }
 
-/// Build the mode a zone asked for. `teams` and `flags` come from the zone, so
-/// a two-team warzone with three flags is configuration rather than a rebuild.
-pub fn build(name: &str, flags: u8, teams: u8) -> Box<dyn Mode> {
+/// Everything a mode is built from, which is all of it a zone's own. A
+/// two-team warzone with three flags, or a four-a-side melee on a two minute
+/// clock, is configuration rather than a rebuild.
+pub struct Setup {
+    pub flags: u8,
+    pub teams: u8,
+    /// Ticks a match runs, and ticks of podium between two of them. Only a
+    /// match game reads these.
+    pub match_ticks: u32,
+    pub intermission_ticks: u32,
+}
+
+/// Build the mode a zone asked for.
+pub fn build(name: &str, s: &Setup) -> Box<dyn Mode> {
+    let (flags, teams) = (s.flags.max(1), s.teams.max(1));
     match name {
-        "warzone" => Box::new(Warzone::new(flags.max(1), teams.max(1))),
+        "warzone" => Box::new(Warzone::new(flags, teams)),
+        "melee" => Box::new(Melee::new(
+            teams,
+            s.match_ticks.max(1),
+            s.intermission_ticks.max(1),
+        )),
         // Duel is deferred; see docs/design/duel-mode.md. Naming it in a zone
         // gets a free-for-all rather than a refusal, because the catalog has
         // already accepted the name and a running room beats a dead one.
@@ -64,6 +103,13 @@ pub trait Mode: Send {
     fn tick(&mut self, ctx: &mut ModeCtx);
     fn on_death(&mut self, ctx: &mut ModeCtx, victim: u8, killer: u8);
     fn name(&self) -> &'static str;
+    /// The clock and the score, for a mode that has them. The room sends this
+    /// to its clients and holds their controls while it says nobody is
+    /// flying; a mode that answers `None` is a room that runs forever and
+    /// draws no clock.
+    fn match_state(&self) -> Option<MatchState> {
+        None
+    }
 }
 
 /// The default arena: everybody against everybody, forever.
@@ -76,6 +122,141 @@ impl Mode for FreeForAll {
     fn on_death(&mut self, _ctx: &mut ModeCtx, _victim: u8, _killer: u8) {}
     fn name(&self) -> &'static str {
         "arena"
+    }
+}
+
+/// Melee: four a side, three minutes, kills.
+///
+/// The room outlives the match. This owns the clock that says which of the
+/// two things the room is doing, and the score, which is read off the ships
+/// rather than kept a second time: `sim_restart` zeroes every tally at the
+/// whistle, so the kills on the field *are* the match.
+///
+/// Frozen at the whistle, though, because the intermission still ticks and a
+/// score that kept climbing under the podium would be a lie about the match
+/// just played. Nobody is flying then either -- see `match_state` -- so in
+/// practice it only ever moves by a bomb already in the air, which is exactly
+/// the case worth being right about.
+pub struct Melee {
+    teams: u8,
+    match_ticks: u32,
+    intermission_ticks: u32,
+    /// Ticks left in whichever phase this is.
+    left: u32,
+    playing: bool,
+    /// The score, live while playing and held through the intermission.
+    score: Vec<u16>,
+    /// The first tick has not run yet, so the room has not opened a match.
+    /// Set once, which is what makes a room that has just been built start
+    /// playing rather than sit through an intermission it did not earn.
+    opened: bool,
+}
+
+impl Melee {
+    pub fn new(teams: u8, match_ticks: u32, intermission_ticks: u32) -> Self {
+        Melee {
+            teams,
+            match_ticks,
+            intermission_ticks,
+            left: match_ticks,
+            playing: true,
+            score: vec![0; teams as usize],
+            opened: false,
+        }
+    }
+
+    /// Kills by side, over everybody on the field.
+    fn tally(&self, ctx: &ModeCtx) -> Vec<u16> {
+        let mut score = vec![0u16; self.teams as usize];
+        for sh in ctx.world.state.ships.iter() {
+            if sh.active == 0 {
+                continue;
+            }
+            if let Some(n) = score.get_mut(sh.team as usize) {
+                *n = n.saturating_add(sh.kills);
+            }
+        }
+        score
+    }
+
+    /// Who took it, and by how much. `None` for a draw, which at four a side
+    /// over three minutes happens often enough to be worth a sentence of its
+    /// own rather than an arbitrary tiebreak.
+    fn winner(&self) -> Option<u8> {
+        let best = *self.score.iter().max()?;
+        let mut who = None;
+        for (t, n) in self.score.iter().enumerate() {
+            if *n == best {
+                if who.is_some() {
+                    return None;
+                }
+                who = Some(t as u8);
+            }
+        }
+        who
+    }
+}
+
+impl Mode for Melee {
+    fn tick(&mut self, ctx: &mut ModeCtx) {
+        // A room that has just opened plays rather than waiting out a phase
+        // it was built in the middle of.
+        if !self.opened {
+            self.opened = true;
+            ctx.open_match = true;
+            self.left = self.match_ticks;
+            self.playing = true;
+            self.score = vec![0; self.teams as usize];
+        }
+
+        if self.playing {
+            self.score = self.tally(ctx);
+        }
+
+        self.left = self.left.saturating_sub(1);
+        if self.left == 0 {
+            self.playing = !self.playing;
+            if self.playing {
+                self.left = self.match_ticks;
+                self.score = vec![0; self.teams as usize];
+                ctx.open_match = true;
+            } else {
+                self.left = self.intermission_ticks.max(1);
+            }
+        }
+
+        ctx.banner = if self.playing {
+            String::new()
+        } else {
+            match self.winner() {
+                Some(t) => format!(
+                    "{} takes it, {}",
+                    ctx.team_name(t),
+                    self.score
+                        .iter()
+                        .map(|n| n.to_string())
+                        .collect::<Vec<_>>()
+                        .join(" to ")
+                ),
+                None => "a draw".to_string(),
+            }
+        };
+    }
+
+    fn on_death(&mut self, _ctx: &mut ModeCtx, _victim: u8, _killer: u8) {}
+
+    fn name(&self) -> &'static str {
+        "melee"
+    }
+
+    fn match_state(&self) -> Option<MatchState> {
+        Some(MatchState {
+            playing: self.playing,
+            // Rounded up, so a clock reads 1 for the last second rather than
+            // sitting on 0 while there is still a second to play in.
+            seconds_left: self.left.div_ceil(100).min(255) as u8,
+            score: self.score.clone(),
+        })
     }
 }
 
@@ -228,6 +409,7 @@ mod warzone_tests {
             team_names: &[],
             banner: String::new(),
             finished: false,
+            open_match: false,
         }
     }
 

@@ -105,7 +105,7 @@ impl Maps {
         if let Some((m, n)) = self.0.lock().ok()?.get(&key) {
             return Some((Arc::clone(m), Arc::clone(n)));
         }
-        let m = sim::unpack_map(packed)?;
+        let m = sim::unpack_map(packed).ok()?;
         let n = Arc::new(nav::Nav::build(&m));
         self.0
             .lock()
@@ -150,8 +150,7 @@ static PILOT_ID: AtomicU64 = AtomicU64::new(1);
 /// world showed every other ship coasting.
 ///
 /// Sound only while any one bot's snapshot is the whole room's truth, which
-/// the arena now guarantees for declared bots: see the prize radius note in
-/// `broadcast_snapshot`.
+/// the arena now guarantees for declared bots: see `broadcast_snapshot`.
 /// What the driver tells a connection task. Frames are this pilot's own
 /// input messages, sent on its own socket so the wire holds one client per
 /// bot exactly as decision 29 requires; Leave is a departure that finished,

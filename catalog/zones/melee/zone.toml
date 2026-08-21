@@ -1,0 +1,218 @@
+# Melee: four a side, three minutes, kills.
+#
+# The room outlives the match. It plays one, puts up a podium for twenty-five
+# seconds, changes ground, and plays another, so a pilot who presses Play once
+# never touches a menu again until they want to. docs/design/match-game.md is
+# the argument for all of it.
+#
+# The tuning below came across from the open arena this replaced, where it was
+# arrived at by playing rather than out of anybody's settings file. What is new
+# here is the clock, the two pockets, and the numbers that had to move because
+# a match is three minutes rather than an evening.
+
+description = "four a side, three minutes"
+
+# The clock and the score are the mode's; kills are what it counts.
+mode = "melee"
+
+# Both maps, in the order a room takes them: one match on each, alternating,
+# so two matches back to back are never the same ground. Drawn by
+# `sim/tools/mapgen --match`, which builds two pockets with real distance
+# between them and guarantees the lanes are wide enough to fly.
+#
+#   ./sim/build/mapgen --match drydock catalog/zones/melee/drydock.vwmap 22
+#   ./sim/build/mapgen --match slipway catalog/zones/melee/slipway.vwmap 24
+maps = ["drydock.vwmap", "slipway.vwmap"]
+
+# Eight seats, all eight of them a person's if eight people want them. The bot
+# server holds every empty one and stands down the moment somebody arrives,
+# which is what makes "press play and you are in a match" true at this
+# population.
+max_players = 8
+max_ships = 8
+bot_fill = 1.0
+
+# A second room opens only when the first holds eight humans. That is the whole
+# of the concentration rule, and at this population it means everybody who
+# turns up is in the same match.
+fill_target = 8
+
+# Ten rooms to a process, which is a ceiling rather than a count: a room
+# appears when every live one is full and is reclaimed when it empties.
+max_rooms = 10
+
+# Two sides, four each. Named for things that hold a structure up, which is the
+# register the hulls are named in, and neither is a name any pilot wears.
+teams = ["Pylon", "Caisson"]
+# Two, so nobody founds a third side inside a game built for two.
+max_teams = 2
+max_humans_per_team = 4
+max_bots_per_team = 4
+
+# Five seconds behind, which is what the gallery runs at everywhere. See
+# docs/design/spectating.md.
+channel_delay_ticks = 500
+
+[arena]
+# Three minutes of play, twenty-five seconds of podium.
+match_seconds = 180
+intermission_seconds = 25
+
+# A wall gives back twelve sixteenths of what hit it. There is no separate term
+# for speed along a wall, so both take the same number.
+bounce = 12
+friction = 12
+
+# Two seconds dead. The open arena waited four, and four was fine there because
+# the map was a thousand tiles wide and the wait was the smaller half of the
+# penalty. Here the walk home is the penalty -- see below -- and four seconds of
+# staring at a card is a fortieth of the match.
+respawn_delay = 200
+
+# Exactly on the map's own starts, which is what a pocket is for.
+#
+# The open arena scattered arrivals over sixty pixels because it put fifty-one
+# ships on sixteen points and they landed on top of each other. Here there are
+# four points a side and four ships a side, and `sim_restart` walks a side
+# along its own starts, so every pilot opens a match on a tile of their own.
+# A radius would only blur the one piece of geometry the whole design leans on.
+spawn_radius = 0
+
+# Neither map draws a safe zone, and neither should: a safe pocket is where a
+# leading side goes to stall out a clock. The limit is set anyway, because a
+# zone that later wants one should not also have to remember this line.
+safe_limit = 3000
+
+# A pilot is worth one the moment they spawn and one more for every kill on the
+# run. Their killer takes it. So the number over a ship is the length of its
+# current streak and nothing else, which is a sum a player can do at a glance,
+# and a fresh spawn is worth almost nothing to camp. docs/design/bounty.md.
+bounty_base = 1
+bounty_per_kill = 1
+points_per_flag = 0
+
+# Five degrees between barrels. Between tunings this was the one setting that
+# moved a lot: a 15-degree fan was worth +5 win points and a 5-degree one +29,
+# because a fan nobody can land is not a weapon.
+mod_spread = 5
+
+# Half again the energy of a plain shot, and twice the wait, for a rung of
+# multifire.
+multi_energy = 50
+multi_delay = 100
+
+# Three tiles of fuse, and a tile more for each rung of the bomb carrying it. A
+# fuse that has found somebody waits `prox_delay` for them to start pulling
+# away before it goes off anyway, and a proximity bomb will not leave the tube
+# with an enemy already inside the fuse's distance, so it cannot be carried up
+# to a hull and posted through it.
+prox_step = 16
+prox_delay = 150
+bomb_safety = true
+# A hull whose bombs bounce pays nothing for it.
+bbomb_damage = 1000
+# Three damage over the first quarter second, which is what stops a bomb landing
+# twice at point blank.
+shrap_inactive = 3
+shrap_inactive_ticks = 25
+
+[arena.mod_step]
+# One rung of multifire is two more barrels, and proximity is measured in
+# pixels. A rung of bouncing is one more wall on top of what the weapon already
+# had, which is one wall for a bomb and nothing worth counting for a bullet.
+multi = 2
+bounce = 1
+prox = 48
+
+# Thirty seconds a mine. The open arena's two minutes made a doorway posted
+# early in a fight still posted at the end of it, which is a fair trade over an
+# evening and not over three minutes: a mine is a slot in a kit here, and a slot
+# that denies a lane for a sixth of the match is the strongest thing anybody
+# could buy.
+[[arena.weapons]]
+name = "mine"
+life = 3000
+
+# The damage of one of the twenty-four rounds a burst throws. Lower than the
+# baseline's 700, so a burst is survivable at a range that one is not.
+[[arena.weapons]]
+name = "burst"
+damage = 515
+
+# Cipher's bombs stop a hit pilot recharging for four seconds, which is what
+# makes them a different weapon rather than a better one.
+[[arena.weapons]]
+name = "cipher-bomb"
+stall = 400
+
+[[arena.weapons]]
+name = "cipher-bomb-2"
+stall = 400
+
+# The ships. Everything not written below is the same across all seven, which is
+# deliberate: the hulls fly alike and are told apart by what they carry. The
+# kit is the difference between two pilots, not the chassis.
+#
+# What a hull's row says here is what a kit may ever slot on it. A pilot spends
+# thirty points inside these ceilings; the shop sells the right to reach the
+# ones their account has not bought yet, never a point more to spend.
+
+# The interceptor turns harder and pushes harder than anything else in the zone,
+# and pays for it with the same hull everyone has.
+[[arena.ships]]
+name = "Apex"
+rotation = 300
+initial_rotation = 210
+upgrade_rotation = 40
+thrust = 19
+initial_thrust = 16
+upgrade_thrust = 2
+bomb_mods = { prox = 1, shrapnel = 2 }
+
+# The fastest thing in the zone from the moment it spawns. Its third shrapnel
+# rung reaches the eight-fragment ceiling and gives the bomber a payoff for
+# spending a third of its kit in one place.
+[[arena.ships]]
+name = "Wedge"
+speed = 3750
+initial_speed = 2200
+upgrade_speed = 250
+bomb_mods = { prox = 1, shrapnel = 3 }
+
+# Starts a quarter better at getting energy back and climbs to the same ceiling
+# as everyone.
+[[arena.ships]]
+name = "Chord"
+initial_recharge = 500
+gun_mods = { multi = 1, bounce = 1, freeze = 1 }
+bomb_mods = { prox = 1, shrapnel = 2 }
+
+# The heavy, and the only three-bomb rack. That comes from the baseline rather
+# than from here.
+[[arena.ships]]
+name = "Anvil"
+bomb_mods = { prox = 1, shrapnel = 3 }
+
+# The one hull whose bombs never break up, which is most of what makes its
+# stalling bomb a different weapon rather than a better one. It is the hardest
+# hull in the game to hit: twelve pixels wide where the rest of the roster is
+# twenty to thirty-four, and weapons test the oriented rectangle rather than a
+# box around it, so pointing at somebody it shows a third of a Chord.
+[[arena.ships]]
+name = "Cipher"
+bomb_mods = { prox = 1 }
+
+# Double barrels are the whole of what Facet is for. One multifire rung is an
+# on-or-off upgrade, not another advantage unique to the hull that already
+# starts with two barrels.
+[[arena.ships]]
+name = "Facet"
+gun_mods = { multi = 1, bounce = 1 }
+bomb_mods = { prox = 1, shrapnel = 2 }
+
+# The only hull that can learn to bounce a bomb, and the miner: six mine slots
+# where the rest of the roster gets three. That is how it keeps a role now that
+# mines are a charge anybody may carry -- by numbers rather than by exclusivity.
+[[arena.ships]]
+name = "Lattice"
+bomb_mods = { prox = 1, shrapnel = 2, bounce = 1, push = 2 }

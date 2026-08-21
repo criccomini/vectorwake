@@ -108,8 +108,7 @@ pub(crate) const INPUT_QUEUE_MAX: usize = 128;
 /// Silence limits for held controls. A brief gap keeps ordinary held movement
 /// intact, but a suspended client cannot keep firing or drift through an
 /// objective forever.
-const STALE_WEAPON_BUTTONS: u16 =
-    sim::BTN_FIRE | sim::BTN_BOMB | sim::BTN_USE | sim::BTN_MINE | sim::BTN_MULTI;
+const STALE_WEAPON_BUTTONS: u16 = sim::BTN_FIRE | sim::BTN_BOMB | sim::BTN_USE | sim::BTN_MULTI;
 
 /// What a watcher is looking at.
 /// A connection with a seat in the roster and no ship in the simulation.
@@ -592,6 +591,25 @@ pub(crate) struct Room {
     /// so leaving a side and starting another hands out a different word rather
     /// than the one the reaper just freed.
     pub(crate) name_cursor: usize,
+    /// The zone tuning this room is running, kept so it can be put back on
+    /// after the ground changes. Swapping a map resets the settings to the
+    /// baseline, because most of the baseline is derived from the geometry it
+    /// was built against, so a room on its second map would otherwise be a
+    /// room that had quietly forgotten its zone file.
+    pub(crate) tuning: config::ArenaConfig,
+    /// The last match message sent, so the tick can send one only when the
+    /// clock or the score has actually moved. That is about twice a second in
+    /// a busy match and once a second in a quiet one, against a hundred a
+    /// second if the tick simply sent it.
+    pub(crate) last_match: Option<Vec<u8>>,
+    /// Every map this zone plays, in the order it named them, and which of
+    /// them this room is on. A match game takes the next at every whistle, so
+    /// two people playing back to back do not play the same ground twice.
+    ///
+    /// Shared with the room's siblings rather than unpacked per room: a zone
+    /// with four maps holds four sets of tiles for the whole process.
+    pub(crate) maps: Vec<std::sync::Arc<sim::sim_map>>,
+    pub(crate) map_at: usize,
     /// The share of this room's seats the bot server is asked to keep filled.
     /// The room does not fill anything itself; it publishes the count it would
     /// like and the bot server supplies it, per decision 29.
@@ -606,6 +624,15 @@ impl Room {
     /// rather than the file plus everything it has ever said: a deleted line
     /// used to stay in force until a restart, and a weapon block would append
     /// another row every time the file was saved.
+    /// The same thing on a room, which also remembers what it was given. A
+    /// match game changes ground between matches and has to be able to put the
+    /// tuning back on afterwards; a calibration harness has a world and no
+    /// room, which is why the plain function stays.
+    pub(crate) fn retune(&mut self, c: &config::ArenaConfig) -> Vec<String> {
+        self.tuning = c.clone();
+        Room::apply_config(&mut self.world, c)
+    }
+
     pub(crate) fn apply_config(world: &mut sim::World, c: &config::ArenaConfig) -> Vec<String> {
         let mut warn = Vec::new();
         world.reset_settings();
@@ -637,24 +664,6 @@ impl Room {
         // than an overflow.
         if let Some(v) = c.max_ships {
             world.cfg.max_ships = v;
-        }
-        if let Some(v) = c.prize_delay {
-            world.cfg.prize_delay = v;
-        }
-        if let Some(v) = c.prize_max {
-            world.cfg.prize_max = v;
-        }
-        if let Some(v) = c.prize_life {
-            world.cfg.prize_life = v;
-        }
-        if let Some(v) = c.prize_radius {
-            world.cfg.prize_radius = v * 256;
-        }
-        if let Some(v) = c.prize_lo {
-            world.cfg.prize_lo = v;
-        }
-        if let Some(v) = c.prize_hi {
-            world.cfg.prize_hi = v;
         }
         if let Some(v) = c.flag_radius {
             world.cfg.flag_radius = v * 256;
@@ -710,11 +719,8 @@ impl Room {
                 named.push((name, pat));
             }
         }
-        if let Some(v) = c.rust {
-            world.cfg.rust_chance = v.min(1000);
-        }
-        if let Some(v) = c.spawn_prizes {
-            world.cfg.spawn_prizes = v;
+        if let Some(v) = c.bounty_base {
+            world.cfg.bounty_base = v;
         }
         if let Some(v) = c.bounty_per_kill {
             world.cfg.bounty_per_kill = v;
@@ -727,12 +733,6 @@ impl Room {
         }
         if let Some(v) = c.multi_delay {
             world.cfg.mod_multi_delay = v;
-        }
-        for (name, v) in &c.prize_weight {
-            match Room::prize_index(name) {
-                Some(i) => world.cfg.prize_weight[i] = *v,
-                None => warn.push(format!("\"{name}\" is not a prize")),
-            }
         }
         // What a rung of each add-on is worth, before any hull is told which
         // ones it may hold.
@@ -865,15 +865,12 @@ impl Room {
             for (k, &n) in s.charges.iter().take(sim::MAX_CHARGES).enumerate() {
                 world.cfg.classes[idx].charge_max[k] = n.min(sim::CHARGE_MAX);
             }
-            if let Some(n) = s.mine_max {
-                world.cfg.classes[idx].mine_max = n;
-            }
             let cls = &mut world.cfg.classes[idx];
             // Raise the ceiling and the ladder under it moves with it, in
             // proportion. A zone that says nothing keeps the baseline's own
             // numbers exactly, which is the whole point: those are the
             // original's, and it starts a pilot at 62% of top speed but 88%
-            // of top thrust and closes a quarter of the speed gap per green
+            // of top thrust and closes a quarter of the speed gap per step
             // against a seventh of the energy gap. Recomputing them from a
             // flat rule -- seventy per cent of the ceiling and an eighth of
             // the gap, which is what stood here -- overwrote all of that on
@@ -962,21 +959,40 @@ impl Room {
         warn
     }
 
-    /// The weapons that belong to a settings slot rather than to a hull, under
-    /// the names a zone file reaches them by: `charge-1` through `charge-4`,
-    /// `shrapnel-1` up, one per rung of the add-on, and `mine`.
+    /// What this room builds its mode from: the flags it actually laid, the
+    /// sides the zone named, and the two clocks a match game runs on. One
+    /// place, so a room built at startup and a room grown later cannot differ
+    /// on any of it.
     ///
-    /// The charges are numbered rather than called repel and burst, because
-    /// what sits in a charge slot is the zone's own choice and the prize
-    /// weights name them the same way. The mine is named, because it is not a
-    /// slot a zone chooses the contents of: there is one mine, it is what the
-    /// bomb trigger lays, and calling it `charge-3` would say otherwise.
+    /// Seconds in the file, ticks here, because the arena runs at 100 Hz and a
+    /// zone file is written by a person.
+    pub(crate) fn mode_setup(&self, c: &config::ArenaConfig) -> modes::Setup {
+        modes::Setup {
+            flags: self.world.state.flag_count as u8,
+            teams: self.public_teams,
+            match_ticks: c.match_seconds.unwrap_or(180) as u32 * 100,
+            intermission_ticks: c.intermission_seconds.unwrap_or(25) as u32 * 100,
+        }
+    }
+
+    /// The weapons that belong to a settings slot rather than to a hull, under
+    /// the names a zone file reaches them by: `repel`, `burst` and `mine` for
+    /// the three charges the baseline fills, and `shrapnel-1` up, one per rung
+    /// of the add-on.
+    ///
+    /// Charges are named for what they are rather than for the slot they sit
+    /// in, because a slot number is an implementation detail of the kit space
+    /// and a zone file is written by a person.
     pub(crate) fn slots(world: &sim::World) -> Vec<(String, u8)> {
         let mut v = Vec::new();
+        const NAMED: [&str; 3] = ["repel", "burst", "mine"];
         for k in 0..sim::MAX_CHARGES {
-            v.push((format!("charge-{}", k + 1), world.cfg.charge[k]));
+            let name = NAMED
+                .get(k)
+                .map(|s| (*s).to_string())
+                .unwrap_or_else(|| format!("charge-{}", k + 1));
+            v.push((name, world.cfg.charge[k]));
         }
-        v.push(("mine".into(), world.cfg.mine));
         for k in 1..sim::MAX_RUNGS {
             v.push((format!("shrapnel-{k}"), world.cfg.mod_splinter[k]));
         }
@@ -986,7 +1002,9 @@ impl Room {
     /// Put a freshly made weapon in the slot its name asks for, if it asks for
     /// one. This is what lets a zone fill a slot the baseline leaves empty.
     pub(crate) fn fill_slot(world: &mut sim::World, name: &str, pat: u8) {
-        if let Some(n) = name.strip_prefix("charge-") {
+        if let Some(k) = Room::charge_named(name) {
+            world.cfg.charge[k] = pat;
+        } else if let Some(n) = name.strip_prefix("charge-") {
             if let Ok(k) = n.parse::<usize>() {
                 if k >= 1 && k <= sim::MAX_CHARGES {
                     world.cfg.charge[k - 1] = pat;
@@ -998,30 +1016,36 @@ impl Room {
                     world.cfg.mod_splinter[k] = pat;
                 }
             }
-        } else if name == "mine" {
-            world.cfg.mine = pat;
         }
     }
 
-    /// Prizes are named in a zone file and numbered in the core. The five
-    /// stats keep the names the panel shows; a level and an add-on are named
-    /// for the trigger they belong to, because both are per trigger.
-    pub(crate) fn prize_index(name: &str) -> Option<usize> {
+    /// The charge kinds this game ships, by the name a zone file uses. A
+    /// zone says `mine` rather than `charge-3`, because which slot a mine
+    /// sits in is an implementation detail and what it is is not. The
+    /// positional names still work for the slots nothing has claimed.
+    pub(crate) fn charge_named(name: &str) -> Option<usize> {
+        match name {
+            "repel" => Some(sim::CHARGE_REPEL),
+            "burst" => Some(sim::CHARGE_BURST),
+            "mine" => Some(sim::CHARGE_MINE),
+            _ => None,
+        }
+    }
+
+    /// A kit slot's name, as a person writes it, to its number in the core.
+    ///
+    /// The kit space is flat -- five stats, two trigger levels, twelve
+    /// add-ons, four charges -- and every slot in it costs one. The names are
+    /// the ones the shop and the hangar show: a stat by itself, a level and an
+    /// add-on prefixed by the trigger they belong to, and a charge by what it
+    /// is rather than by which of the four slots a zone parked it in.
+    pub(crate) fn slot_named(name: &str) -> Option<u8> {
         const STATS: [&str; sim::UP_COUNT] = ["energy", "recharge", "speed", "thrust", "rotation"];
         if let Some(i) = STATS.iter().position(|n| n.eq_ignore_ascii_case(name)) {
-            return Some(i);
+            return Some(sim::slot_stat(i));
         }
-        // Charge slots are named by position, because what sits in each is
-        // the zone's own choice: the baseline puts a repel in one and a burst
-        // in two, and a zone that fills three and four names those.
-        if let Some(n) = name.strip_prefix("charge-") {
-            let k: usize = n.parse().ok()?;
-            if k >= 1 && k <= sim::MAX_CHARGES {
-                return Some(
-                    sim::UP_COUNT + sim::TRIG_COUNT + sim::TRIG_COUNT * sim::MOD_COUNT + k - 1,
-                );
-            }
-            return None;
+        if let Some(k) = Room::charge_named(&name.to_ascii_lowercase()) {
+            return Some(sim::slot_charge(k));
         }
         let (trig, rest) = name.split_once('-')?;
         let t = match trig.to_ascii_lowercase().as_str() {
@@ -1030,10 +1054,9 @@ impl Room {
             _ => return None,
         };
         if rest.eq_ignore_ascii_case("level") {
-            return Some(sim::UP_COUNT + t);
+            return Some(sim::slot_level(t));
         }
-        let m = Room::mod_index(rest)?;
-        Some(sim::UP_COUNT + sim::TRIG_COUNT + t * sim::MOD_COUNT + m)
+        Some(sim::slot_mod(t, Room::mod_index(rest)?))
     }
 
     /// Add-ons are named in a zone file and numbered in the core. The order
@@ -1140,7 +1163,7 @@ impl Room {
     }
 
     pub(crate) fn new_from(cfg: &config::ZoneConfig) -> Self {
-        let mut a = Room::new_on_map(&cfg.map);
+        let mut a = Room::new_on_maps(&cfg.maps);
         // Mode and flags were keys in the file that nobody read: the arena
         // built a four-flag warzone whatever they said. They settle at start
         // rather than on reload, because changing what a round is for while
@@ -1157,44 +1180,43 @@ impl Room {
             );
         }
         a.world.state.flag_count = cfg.arena.flags.min(placed);
-        a.mode = match cfg.arena.mode.as_str() {
-            "arena" | "ffa" => Box::new(modes::FreeForAll),
-            _ => Box::new(modes::Warzone::new(
-                a.world.state.flag_count,
-                a.public_teams,
-            )),
-        };
-        for w in Room::apply_config(&mut a.world, &cfg.arena) {
+        a.mode = modes::build(&cfg.arena.mode, &a.mode_setup(&cfg.arena));
+        for w in a.retune(&cfg.arena) {
             println!("zone: {w}");
         }
         a.lag_policy = cfg.arena.lag.clone();
         a
     }
 
-    /// A zone's own map, if it named one. A map that will not load is
-    /// reported and then ignored: a zone that refuses to start because of a
-    /// bad file is worse for the people trying to play in it than one that
-    /// runs the built-in room and says so.
-    pub(crate) fn new_on_map(path: &str) -> Self {
-        if path.is_empty() {
-            return Room::new();
-        }
-        match std::fs::read(path) {
-            Ok(bytes) => match sim::World::from_packed(0x5eed, &bytes) {
-                Ok(w) => {
-                    println!("map {path}: {} bytes", bytes.len());
-                    Room::with_world(w)
+    /// A zone's own maps, if it named any, with the room opening on the first.
+    /// A map that will not load is reported and then skipped: a zone that
+    /// refuses to start because of a bad file is worse for the people trying
+    /// to play in it than one that runs what it can and says so.
+    pub(crate) fn new_on_maps(paths: &[String]) -> Self {
+        let mut maps = Vec::new();
+        for path in paths {
+            match std::fs::read(path)
+                .map_err(|e| e.to_string())
+                .and_then(|b| {
+                    let n = b.len();
+                    sim::unpack_map(&b).map(|m| (m, n))
+                }) {
+                Ok((m, n)) => {
+                    println!("map {path}: {n} bytes");
+                    maps.push(m);
                 }
-                Err(e) => {
-                    println!("map {path}: {e}; running the built-in arena");
-                    Room::new()
-                }
-            },
-            Err(e) => {
-                println!("map {path}: {e}; running the built-in arena");
-                Room::new()
+                Err(e) => println!("map {path}: {e}; skipped"),
             }
         }
+        let Some(first) = maps.first() else {
+            if !paths.is_empty() {
+                println!("no map loaded; running the built-in arena");
+            }
+            return Room::new();
+        };
+        let mut room = Room::with_world(sim::World::on_map(0x5eed, first.clone()));
+        room.maps = maps;
+        room
     }
 
     pub(crate) fn new() -> Self {
@@ -1245,6 +1267,10 @@ impl Room {
             settings_generation: 1,
             invites: HashMap::new(),
             name_cursor: 0,
+            tuning: Default::default(),
+            last_match: None,
+            maps: Vec::new(),
+            map_at: 0,
             bot_fill: catalog::DEFAULT_BOT_FILL,
         }
     }
@@ -1536,7 +1562,8 @@ impl Room {
             sh.level = [0; sim::TRIG_COUNT];
             sh.mods = [0; sim::TRIG_COUNT];
             sh.charge = [0; sim::MAX_CHARGES];
-            sh.earned = 0;
+            sh.kit = [0; sim::SLOT_COUNT];
+            sh.run = 0;
             sh.points = 0;
             sh.stall = 0;
             sh.repel = 0;
@@ -1553,15 +1580,15 @@ impl Room {
             sh.spawn_x = sh.x;
             sh.spawn_y = sh.y;
         }
-        // And then the zone's opening greens, because the clear above took away
-        // everything including what a spawn would have handed out. The core
-        // outfits a ship it spawns; a seat inherited from a departing bot is
-        // not a spawn, so this asks. Without it a zone with a spawn kit gave
-        // one to its bots and to anybody who had died once, and nothing at all
-        // to a pilot who had just arrived.
-        self.world.outfit(ship as usize);
-        // A full bar, asked for as the number it is, and after the class and
-        // the greens are set, because the ceiling depends on both. This used to be i32::MAX with a
+        // The kit is dealt by whoever seats this pilot, right after this, and
+        // it has to be: the clear above took away everything, and the core no
+        // longer outfits a ship it spawns because there is nothing to roll.
+        // A seat inherited from a departing bot is not a spawn either, which
+        // is what used to leave an arriving pilot plain in a zone whose bots
+        // and repeat-deaths were all dressed.
+        //
+        // A full bar, asked for as the number it is, and after the class is
+        // set, because the ceiling depends on it. This used to be i32::MAX with a
         // comment saying the core would clamp it; the core clamped it by adding
         // a tick of recharge first, which overflowed, so a joining ship spent
         // its first tick at INT32_MIN energy and one hit from dead. The core no
@@ -2652,6 +2679,7 @@ impl Room {
         // function cannot tell which is which.
         let mut no_flags = [false; sim::MAX_SHIPS];
         let mut spectate = Vec::new();
+        let live = self.mode.match_state().is_none_or(|m| m.playing);
         for (id, p) in self.players.iter_mut() {
             if !p.lag.input_synchronized && p.input_window_ready(now) {
                 p.lag.synchronize_input();
@@ -2673,7 +2701,10 @@ impl Room {
             if update.decision.spectate {
                 spectate.push(*id);
             }
-            let buttons = p.buttons_at(now);
+            // Held between matches. That is the whole of what makes an
+            // intermission an intermission rather than a free-for-all under a
+            // frozen scoreboard: the podium is up, and nobody is flying.
+            let buttons = if live { p.buttons_at(now) } else { 0 };
             inputs.push(sim::sim_input {
                 ship: p.ship,
                 buttons,
@@ -2711,11 +2742,20 @@ impl Room {
             team_names: &names,
             banner: std::mem::take(&mut self.banner),
             finished: false,
+            open_match: false,
         };
         self.mode.tick(&mut ctx);
         self.banner = std::mem::take(&mut ctx.banner);
         if ctx.finished {
             self.finished = true;
+        }
+        if ctx.open_match {
+            self.open_match();
+        }
+        let now_match = self.match_msg();
+        if now_match != self.last_match {
+            self.broadcast_match();
+            self.last_match = now_match;
         }
         for id in spectate {
             if self.sit_out_for(id, 255, false, SitOutWhy::Lag) {
@@ -2731,6 +2771,80 @@ impl Room {
             }
         }
         player_count_changed
+    }
+
+    /// Open a fresh match: new ground, everybody home, kits re-dealt.
+    ///
+    /// The room does this rather than the mode because all three halves of it
+    /// belong to the room. The map is one of several the zone named and the
+    /// clients have to be told which; the tuning has to go back on over the
+    /// new geometry; and the roster everybody is reading has just had every
+    /// tally in it zeroed.
+    pub(crate) fn open_match(&mut self) {
+        if self.maps.len() > 1 {
+            self.map_at = (self.map_at + 1) % self.maps.len();
+            // The room's size is a zone key that lives on the settings, so it
+            // is read back off the running room rather than out of the tuning:
+            // a `max_ships` from the zone stanza never passed through the
+            // `[arena]` block this puts back on.
+            let seats = self.world.cfg.max_ships;
+            self.world.set_map(self.maps[self.map_at].clone());
+            let tuning = self.tuning.clone();
+            for w in Room::apply_config(&mut self.world, &tuning) {
+                println!("room {}: {w}", self.number);
+            }
+            self.world.cfg.max_ships = seats;
+            self.settings_generation = crate::delivery::next_nonzero(self.settings_generation);
+            self.broadcast_map();
+            self.broadcast_settings();
+        }
+        self.world.restart();
+        self.broadcast_roster();
+        self.broadcast_match();
+    }
+
+    /// The ground everybody is playing on. Sent at a join and again whenever a
+    /// match opens on a different map, which is the only time it changes.
+    pub(crate) fn broadcast_map(&self) {
+        let mut m = vec![S2C_MAP];
+        m.extend_from_slice(&self.world.packed_map());
+        for p in self.players.values() {
+            let _ = p.tx.try_send(Message::Binary(m.clone()));
+        }
+        for w in self.watchers.values() {
+            let _ = w.tx.try_send(Message::Binary(m.clone()));
+        }
+    }
+
+    /// The clock and the score, for a room that has them.
+    ///
+    /// `[S2C_MATCH, playing, seconds left, sides, score per side as u16]`. A
+    /// second's resolution, because that is what the clock draws, and it is
+    /// what keeps this to one small message a second rather than one a tick.
+    pub(crate) fn match_msg(&self) -> Option<Vec<u8>> {
+        let m = self.mode.match_state()?;
+        let mut out = vec![
+            S2C_MATCH,
+            m.playing as u8,
+            m.seconds_left,
+            m.score.len().min(255) as u8,
+        ];
+        for n in m.score.iter().take(255) {
+            out.extend_from_slice(&n.to_le_bytes());
+        }
+        Some(out)
+    }
+
+    pub(crate) fn broadcast_match(&self) {
+        let Some(m) = self.match_msg() else {
+            return;
+        };
+        for p in self.players.values() {
+            let _ = p.tx.try_send(Message::Binary(m.clone()));
+        }
+        for w in self.watchers.values() {
+            let _ = w.tx.try_send(Message::Binary(m.clone()));
+        }
     }
 
     /// Turn this tick's events into rating movement. The simulation does not
@@ -2788,12 +2902,7 @@ impl Room {
         let tick = self.world.state.tick;
         let events = self.world.events.e[..self.world.events.count as usize].to_vec();
         for e in events {
-            if e.etype == sim::EV_PRIZE {
-                if let Some(p) = self.players.values().find(|p| p.ship == e.a) {
-                    let delta = (e.v.clamp(i8::MIN as i32, i8::MAX as i32) as i8) as u8;
-                    let _ = p.tx.try_send(Message::Binary(vec![S2C_PRIZE, e.b, delta]));
-                }
-            } else if e.etype == sim::EV_CHARGE {
+            if e.etype == sim::EV_CHARGE {
                 let Some(sh) = self.world.state.ships.get(e.a as usize) else {
                     continue;
                 };
@@ -2842,6 +2951,7 @@ impl Room {
                 team_names: &names,
                 banner: std::mem::take(&mut self.banner),
                 finished: false,
+                open_match: false,
             };
             self.mode.on_death(&mut ctx, victim, killer);
             self.banner = std::mem::take(&mut ctx.banner);
@@ -2986,10 +3096,9 @@ impl Room {
         let names = &self.names;
         for p in self.players.values_mut() {
             // Packed per player rather than once for everybody, so each is
-            // sent only the prizes near its own ship. Prizes are most of a
-            // snapshot -- two hundred of them outweigh the ships and every
-            // projectile together -- and a client can only see the handful
-            // inside its radar, sixty tiles out.
+            // sent only what is near its own ship. A client can act on the
+            // handful inside its radar, sixty tiles out, and nothing beyond
+            // it: the rest is bytes bought and thrown away.
             //
             // A pack is under two microseconds, so sixteen of them is thirty
             // microseconds of a fifty millisecond period. The bytes saved are

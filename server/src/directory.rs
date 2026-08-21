@@ -184,7 +184,7 @@ impl Directory {
                         bot_fill: z.bot_fill(),
                         max_rooms: z.max_rooms() as u32,
                         admission: z.admission.clone(),
-                        map_b64: c.map_bytes(n).map(|b| fleet::b64(&b)).unwrap_or_default(),
+                        maps_b64: c.map_bytes(n).iter().map(|b| fleet::b64(b)).collect(),
                         zone_toml: z.raw.clone(),
                     })
                 })

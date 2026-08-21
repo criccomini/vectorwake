@@ -3,11 +3,11 @@
 //!     vectorwake-server drill [zone] [seconds]
 //!
 //! Calibration measures pilots against each other, and it does it in
-//! `sim_map_pit`: a bare thirty-tile box with two blocks in it, no greens, two
-//! ships. That is the right room for ranking two pilots and the wrong one for
-//! noticing that a pilot cannot fly. Corridors, routing, dodging, a crowd and a
-//! prize economy are all absent from it, so every failure that only shows up in
-//! Chaos is invisible to the ladder rating them.
+//! `sim_map_pit`: a bare thirty-tile box with two blocks in it and two ships.
+//! That is the right room for ranking two pilots and the wrong one for
+//! noticing that a pilot cannot fly. Corridors, routing, dodging and a crowd
+//! are all absent from it, so every failure that only shows up in a real
+//! arena is invisible to the ladder rating them.
 //!
 //! This is the other measurement. It puts the roster on a zone's own map, runs
 //! it, and prints what happened, which makes a change to the brain something
@@ -210,17 +210,15 @@ pub fn run_on(map: std::sync::Arc<sim::sim_map>, bots: usize, ticks: u32, seed: 
                 mark(c.classes[cls].trigger[sim::TRIG_BOMB][r], 1);
             }
         }
-        mark(c.mine, 2);
+        mark(c.charge[sim::CHARGE_MINE], 2);
     }
-    // The zone's own settings are not loaded: this measures flying, and a
-    // spawn kit of thirty greens decides a fight before flying it matters, for
-    // the same reason calibration turns them off.
-    // Bare by default, for the reason above. `VW_DRILL_GREENS` overrides it,
-    // because a question about a weapon is a question about the kit: a built
-    // bomb has a wider blast, and the standoff a pilot keeps from its own
-    // blast is computed from that. Measuring bombing on bare hulls answers a
-    // question nobody is playing.
-    w.cfg.spawn_prizes = std::env::var("VW_DRILL_GREENS")
+    // How much kit the pilots here fly with. Bare by default, because this
+    // measures flying; `VW_DRILL_KIT` gives them a budget, because a question
+    // about a weapon is a question about the kit. A built bomb has a wider
+    // blast and the standoff a pilot keeps from its own blast is computed
+    // from that, so measuring bombing on bare hulls answers a question
+    // nobody is playing.
+    let _kit_budget: u32 = std::env::var("VW_DRILL_KIT")
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(0);
@@ -300,7 +298,9 @@ pub fn run_on(map: std::sync::Arc<sim::sim_map>, bots: usize, ticks: u32, seed: 
                 d.bomb_presses += 1;
                 d.bomb_by_class[cls] += 1;
             }
-            if buttons & sim::BTN_MINE != 0 {
+            if buttons & sim::BTN_USE != 0
+                && (buttons >> sim::BTN_SLOT_SHIFT) & 3 == sim::CHARGE_MINE as u16
+            {
                 d.mine_presses += 1;
             }
             if tracing
@@ -403,13 +403,20 @@ pub fn run_check() {
             std::process::exit(1);
         }
     };
-    let Some(bytes) = cat.map_bytes(&zone) else {
+    let maps = cat.map_bytes(&zone);
+    let Some(bytes) = maps.first() else {
         println!("drill: zone {zone:?} has no map");
         std::process::exit(1);
     };
-    let Some(map) = sim::unpack_map(&bytes) else {
-        println!("drill: zone {zone:?} has a map this build cannot read");
-        std::process::exit(1);
+    // The zone's first map. A zone rotates through several and the drill runs
+    // one, because what it measures is a roster rather than a map, and running
+    // every map would fold a difference between two of them into one number.
+    let map = match sim::unpack_map(bytes) {
+        Ok(m) => m,
+        Err(e) => {
+            println!("drill: zone {zone:?}: {e}");
+            std::process::exit(1);
+        }
     };
     let d = run_on(map, bots, secs * HZ, 0xd2111);
     d.report(&zone);

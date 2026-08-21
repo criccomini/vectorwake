@@ -79,17 +79,6 @@ respawn_delay = 400   # ticks, so four seconds
 #
 # show_spawns = true
 
-# Greens: how fast they arrive, how many the map holds, how long one waits to
-# be collected, how close a ship has to get, and the tile band they land in.
-prize_delay = 100
-prize_max = 20
-prize_life = 3000
-# The green's visible diamond is seven pixels from its center. Matching that
-# body makes collection read as contact rather than attraction from a gap.
-prize_radius = 7
-prize_lo = 8
-prize_hi = 1015
-
 # Flags: how close a ship takes one from, and how long a dropped one is
 # untouchable so a carrier cannot juggle their own.
 flag_radius = 18
@@ -107,25 +96,23 @@ door_open = 400
 wormhole_pull = 90
 wormhole_range = 220
 
-# Out of a thousand, how often a green takes something back instead of giving
-# it. Rust can only corrode what a pilot is holding, so it costs the loaded
-# and never touches one who has just spawned.
-rust = 10
+# The clock, for `mode = "melee"` and ignored by every other mode. A room that
+# has one plays a match, puts up a podium, and plays another; a room without
+# one runs until nobody is in it.
+#
+# match_seconds = 180
+# intermission_seconds = 25
 
-# Greens a ship is handed the moment it spawns, rolled exactly the way one
-# found on the floor is: the hull's roster and every ceiling in it still
-# apply, so this is a head start rather than a way round the tree. Zero
-# starts pilots plain.
-spawn_prizes = 30
-
-# What a kill is worth. A killer is paid the victim's whole bounty, which is
-# derived from what that pilot was carrying, so what a spawn is worth is what
-# `spawn_prizes` just handed it: at thirty greens that is about 29.5, not the
-# nothing this line claimed for as long as the setting above was zero. Camping
-# a spawn pays, and the levers on that are `spawn_prizes` and `spawn_radius`
-# rather than any rule about farming. bounty_per_kill is what a kill adds to
-# the killer's own price; points_per_flag is the bonus for each flag the victim
-# was holding. See docs/design/bounty.md.
+# What a kill is worth. A killer is paid the victim's whole bounty, and a
+# bounty is `bounty_base` plus `bounty_per_kill` for every kill since that
+# pilot last died. So the number over a ship is the length of its current run
+# and nothing else: it says nothing about what the pilot owns, and a fresh
+# spawn is worth `bounty_base` whatever they are flying. Camping is priced by
+# that arithmetic rather than by a rule about farming.
+#
+# points_per_flag is the bonus for each flag the victim was holding. See
+# docs/design/bounty.md.
+bounty_base = 1
 bounty_per_kill = 3
 points_per_flag = 100
 
@@ -190,10 +177,11 @@ charges = [3, 3]
 # weapon, which a hull can carry or another weapon can splinter into.
 #
 # The weapons that belong to a slot in the settings rather than to a hull are
-# named for the slot: charge-1 through charge-4, and shrapnel-1 up, one per
-# rung of the add-on. So the repel's own radius is charge-1's blast, and what
-# a second rung of shrapnel breaks into is shrapnel-2. Naming a charge slot
-# the baseline leaves empty makes the weapon and fills the slot at once.
+# named for what they are: `repel`, `burst` and `mine` for the three charges
+# the baseline fills, `charge-4` for the slot it leaves empty, and shrapnel-1
+# up, one per rung of the add-on. So the repel's own radius is `repel`'s
+# blast, and what a second rung of shrapnel breaks into is shrapnel-2. Naming
+# the empty charge slot makes the weapon and fills the slot at once.
 #
 # Units are the file's: px, px/s/10, energy, ticks, and degrees.
 #
@@ -212,9 +200,9 @@ charges = [3, 3]
 # every client in the room gets the new table without reconnecting.
 #
 # A hull's ladder is named by rung: anvil-bomb is the first, anvil-bomb-2 and
-# anvil-bomb-3 the ones a bomb-level green climbs to. A ship block can write
-# that ladder out -- `gun = ["spike", "spike-2"]` -- and `bomb = []` takes a
-# rack away.
+# anvil-bomb-3 the ones a kit's bomb rungs climb to. A ship block can write
+# that ladder out (`gun = ["spike", "spike-2"]`) and `bomb = []` takes a rack
+# away.
 #
 # Bombs that bounce three times, at every level:
 #   [[arena.weapons]]
@@ -249,22 +237,22 @@ charges = [3, 3]
 #   energy = 400
 #   delay = 300
 #
-# The zone's own repel is charge-1, straight off the original's numbers:
+# The baseline's own repel comes straight off the original's numbers:
 # RepelDistance 512, RepelSpeed 5000 and RepelTime 225. The reach is a square
 # of that half-width, the shove sets a hostile ship's speed to exactly that
 # from anywhere inside it rather than falling off with range, and the time is
 # how long it may fly at it before its own ceiling takes over -- which is the
 # part that makes a repel a repel, since 5000 is half again the fastest hull.
 #   [[arena.weapons]]
-#   name = "charge-1"
+#   name = "repel"
 #   blast = 300
 #   push_time = 100
 #
-# A third charge, in a slot the baseline leaves empty. Naming it makes the
-# weapon and fills the slot; give it a prize weight or no green will ever be
-# one, and a count under each hull that may carry it.
+# A fourth charge, in the slot the baseline leaves empty. Naming it makes the
+# weapon and fills the slot; give it a count under each hull that may carry
+# it, which is what lets a kit slot one.
 #   [[arena.weapons]]
-#   name = "charge-3"
+#   name = "charge-4"
 #   speed = 0
 #   life = 1
 #   on_wall = "pass"
@@ -273,33 +261,33 @@ charges = [3, 3]
 #   damage = 900
 #   delay = 200
 #
-#   [arena.prize_weight]
-#   charge-3 = 40
-#
 #   [[arena.ships]]
 #   name = "Anvil"
-#   charges = [3, 3, 2]
+#   charges = [3, 3, 3, 2]
 #
-# Mines, which are not a charge: a pilot has them for as long as they have a
-# bomb rack, so there is no slot, no count in hand and no green. What a zone
-# decides is how many of one pilot's may lie about at once, per hull, and how
-# long each sits there. Zero is a hull that never mines.
+# A mine is a charge like any other: a count you carry and spend, laid where
+# you are rather than thrown. What a zone decides is how long one sits there,
+# which is a map setting as much as a weapon one, and how many each hull may
+# slot.
 #   [[arena.weapons]]
 #   name = "mine"
-#   life = 30000
+#   life = 3000
 #   blast = 120
 #
 #   [[arena.ships]]
 #   name = "Anvil"
-#   mine_max = 8
+#   charges = [3, 3, 8]
 
-# The tech tree.
+# The kit space.
 #
-# A green is a stat step, a weapon level, or an add-on. Levels climb the
-# ladders above; add-ons are transforms applied to whatever rung the trigger is
-# on -- multi, bounce, prox, shrapnel, freeze, repel -- and each hull's row
-# says which it may ever hold and how many rungs of each. That is what keeps
-# the roster a roster: shrapnel belongs to bombers however the greens fall.
+# A kit is thirty upgrades a pilot chooses and owns, dealt to the hull at every
+# spawn, and every slot in it costs exactly one. A slot is a stat step, a rung
+# of a trigger's ladder, an add-on on a trigger, or a charge carried. Levels
+# climb the ladders above; add-ons are transforms applied to whatever rung the
+# trigger is on (multi, bounce, prox, shrapnel, freeze, push) and each hull's
+# row says which it may ever hold and how many rungs of each. That is what
+# keeps the roster a roster: shrapnel belongs to bombers, and nothing a pilot
+# can buy changes it. See docs/design/match-game.md.
 #
 # What one rung of each add-on is worth. Units are the field it moves:
 # barrels, walls, px of fuse, ticks of stall, px/s/10 of shove.
@@ -358,28 +346,15 @@ charges = [3, 3]
 #   bomb_mods = { shrapnel = 3, prox = 1 }
 #   gun_mods = { multi = 1 }
 #
-# How often a green turns out to be each thing. Relative, not percentages, and
-# read against the pool of whoever picked it up -- so this is the shape of the
-# tree, and the roster decides which of it a given hull ever sees. The five
-# stats keep their own names; a level and an add-on are named for the trigger.
-# Anything left out keeps the baseline, which is the original's own table: 40 a
-# stat, 25 a level, 30 for multi or shrapnel, 25 for bounce or prox, 70 for a
-# charge.
-#   [arena.prize_weight]
-#   speed = 120
-#   gun-level = 30
-#   bomb-shrapnel = 20
-#   charge-2 = 25
+# A charge is a weapon you carry a count of and spend, and the count is a kit
+# slot: one key per charge, so a zone can fill the fourth slot without asking
+# for a key. The baseline fills three of the four -- a repel, a burst and a
+# mine -- and what each hull may slot is the `charges` row under it.
 #
-# Charges are named by slot, because what sits in each is the zone's choice:
-# the baseline puts a repel in one and a burst in two. A charge is a weapon
-# you carry a count of and spend -- one key cycles which is ready and one
-# fires it, so a zone can add a third and fourth without asking for a key. The
-# weight is what makes a green ever be one; the count under each hull is what
-# makes that hull able to hold it.
-#
-# And rust, which is a key on [arena] rather than a weight -- see the top of
-# that section.
+# Nothing here decides what a pilot ends up flying. That is theirs: a kit is
+# chosen in the hangar out of what their account owns, inside the ceilings
+# every hull's row above sets, and thirty points is thirty points for a new
+# account and a veteran alike.
 
 # Staff and their capabilities are not here. Authority is still a set of named
 # powers rather than a rank, the way ASSS did it, but it belongs to the

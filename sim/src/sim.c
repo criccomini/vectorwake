@@ -588,6 +588,44 @@ static void pick_spawn(const sim_settings *cfg, uint32_t *rng, uint32_t tick,
     *y = tile_mid(cy);
 }
 
+void sim_restart(sim_state *s, const sim_settings *cfg) {
+    /* Nothing of the last match is left flying. A bomb in the air when the
+     * whistle went would otherwise arrive at somebody standing on a start
+     * line, and a mine posted in the last minute would still be there. */
+    s->weapon_count = 0;
+
+    /* Ships of a side line up along that side's starts rather than drawing
+     * one each, so four pilots open a match spread across their pocket
+     * instead of piled on whichever tile the roll landed on. `nth` walks the
+     * map's starts for a team, which is exactly what this wants and is
+     * already what a zone with no spawn radius asks for. */
+    uint32_t nth[256] = {0};
+    for (int i = 0; i < SIM_MAX_SHIPS; i++) {
+        sim_ship *sh = &s->ships[i];
+        if (!sh->active) continue;
+        const sim_ship_class *cls =
+            &cfg->classes[sh->cls < cfg->class_count ? sh->cls : 0];
+        uint32_t seed = placement_seed(s->tick, (uint8_t)i, sh->team, sh->cls);
+        uint32_t n = nth[sh->team]++;
+        pick_spawn(cfg, &seed, s->tick, sh->team, sh->cls, n,
+                   &sh->spawn_x, &sh->spawn_y);
+        sh->x = sh->spawn_x;
+        sh->y = sh->spawn_y;
+        sh->vx = sh->vy = 0;
+        sh->alive = 1;
+        sh->respawn_at = 0;
+        sh->fire_cooldown[SIM_TRIG_GUN] = 0;
+        sh->fire_cooldown[SIM_TRIG_BOMB] = 0;
+        sh->kills = sh->deaths = 0;
+        sh->points = 0;
+        sh->run = 0;
+        /* With ammunition, which is the one thing a match start does that a
+         * respawn does not. */
+        sim_deal_kit(sh, cfg, 1);
+        sh->energy = sim_eff_max_energy(cls, sh);
+    }
+}
+
 void sim_spawn_point(sim_state *s, const sim_settings *cfg, uint8_t team,
                      uint8_t cls, uint32_t nth, int32_t *x, int32_t *y) {
     pick_spawn(cfg, &s->rng, s->tick, team, cls, nth, x, y);

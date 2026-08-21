@@ -381,9 +381,10 @@ pub struct WireZone {
     /// See `catalog::ZoneDef::admission`.
     #[serde(default)]
     pub admission: String,
-    /// The packed map, base64 so the whole catalog stays one JSON document.
-    /// A full-size map packs to a couple of kilobytes, so this is cheap.
-    pub map_b64: String,
+    /// The packed maps, base64 so the whole catalog stays one JSON document,
+    /// in the order a room rotates through them. A full-size map packs to a
+    /// couple of kilobytes, so this is cheap even at several.
+    pub maps_b64: Vec<String>,
     /// The zone's whole `zone.toml`, verbatim. The arena parses it with the same
     /// parser the catalog loader uses, so there is exactly one schema and one
     /// code path for a zone definition however it arrived. Re-serialising the

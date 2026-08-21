@@ -22,8 +22,11 @@ pub struct ZoneDef {
     pub description: String,
     /// warzone | arena | duel. Read, unlike before.
     pub mode: String,
-    /// Relative to the zone's own directory.
-    pub map: String,
+    /// The maps this zone plays, relative to its own directory, in the order
+    /// a room rotates through them. At least one; a match game takes the next
+    /// one at every whistle, so a zone with two of them never plays the same
+    /// ground twice in a row.
+    pub maps: Vec<String>,
     /// Pilots a room holds, bots included; the core clamps to SIM_MAX_SHIPS.
     pub max_ships: Option<u8>,
     /// Humans of those seats.
@@ -81,7 +84,7 @@ impl Default for ZoneDef {
         ZoneDef {
             description: String::new(),
             mode: "arena".into(),
-            map: String::new(),
+            maps: Vec::new(),
             max_ships: None,
             max_players: None,
             fill_target: None,
@@ -271,13 +274,20 @@ impl Catalog {
         self.zones.get(name)
     }
 
-    /// The map bytes for a zone, read from its own directory.
-    pub fn map_bytes(&self, name: &str) -> Option<Vec<u8>> {
-        let z = self.zones.get(name)?;
-        if z.map.is_empty() {
-            return None;
-        }
-        std::fs::read(self.dirs.get(name)?.join(&z.map)).ok()
+    /// Every map a zone plays, read from its own directory, in its own order.
+    /// Empty if the zone names none or a file will not read: a caller that
+    /// gets nothing runs the built-in arena and says so.
+    pub fn map_bytes(&self, name: &str) -> Vec<Vec<u8>> {
+        let Some(z) = self.zones.get(name) else {
+            return Vec::new();
+        };
+        let Some(dir) = self.dirs.get(name) else {
+            return Vec::new();
+        };
+        z.maps
+            .iter()
+            .filter_map(|m| std::fs::read(dir.join(m)).ok())
+            .collect()
     }
 
     /// The zone an arena serves when it has been told nothing: the declared
@@ -494,15 +504,16 @@ fn validate_zone(name: &str, z: &ZoneDef, zdir: &Path) -> Result<(), String> {
             ));
         }
     }
-    if z.map.is_empty() {
-        return Err(format!("zone {name:?}: map is required"));
+    if z.maps.is_empty() {
+        return Err(format!("zone {name:?}: maps is required"));
     }
-    if !zdir.join(&z.map).exists() {
-        return Err(format!(
-            "zone {name:?}: map {:?} is missing; the zone would be listed and \
-             unplayable",
-            z.map
-        ));
+    for m in &z.maps {
+        if !zdir.join(m).exists() {
+            return Err(format!(
+                "zone {name:?}: map {m:?} is missing; the zone would be listed \
+                 and unplayable"
+            ));
+        }
     }
     if let Some(m) = z.max_ships {
         if m == 0 {
@@ -761,7 +772,7 @@ mod tests {
         write(
             dir,
             "zones/war/zone.toml",
-            "mode = \"warzone\"\nmap = \"war.vwmap\"\nfill_target = 8\n",
+            "mode = \"warzone\"\nmaps = [\"war.vwmap\"]\nfill_target = 8\n",
         );
         write(
             dir,
@@ -791,7 +802,7 @@ mod tests {
         write(
             &d,
             "zones/duel/zone.toml",
-            "mode = \"duel\"\nmap = \"d.vwmap\"\n\
+            "mode = \"duel\"\nmaps = [\"d.vwmap\"]\n\
                                            max_rooms = 100\nfill_target = 2\n\
                                            max_players = 2\n",
         );
@@ -828,7 +839,7 @@ mod tests {
                     write(
                         d,
                         "zones/war/zone.toml",
-                        "mode = \"soccer\"\nmap = \"war.vwmap\"\n",
+                        "mode = \"soccer\"\nmaps = [\"war.vwmap\"]\n",
                     )
                 }),
                 "no implementation",
@@ -839,7 +850,7 @@ mod tests {
                     write(
                         d,
                         "zones/war/zone.toml",
-                        "mode = \"warzone\"\nmap = \"gone.vwmap\"\n",
+                        "mode = \"warzone\"\nmaps = [\"gone.vwmap\"]\n",
                     )
                 }),
                 "missing",
@@ -850,7 +861,7 @@ mod tests {
                     write(
                         d,
                         "zones/war/zone.toml",
-                        "mode = \"warzone\"\nmap = \"war.vwmap\"\nmax_ships = 300\n",
+                        "mode = \"warzone\"\nmaps = [\"war.vwmap\"]\nmax_ships = 300\n",
                     )
                 }),
                 "300",
@@ -861,7 +872,7 @@ mod tests {
                     write(
                         d,
                         "zones/war/zone.toml",
-                        "mode = \"warzone\"\nmap = \"war.vwmap\"\nmax_rooms = 0\n",
+                        "mode = \"warzone\"\nmaps = [\"war.vwmap\"]\nmax_rooms = 0\n",
                     )
                 }),
                 "max_rooms",
@@ -872,7 +883,7 @@ mod tests {
                     write(
                         d,
                         "zones/war/zone.toml",
-                        "mode = \"warzone\"\nmap = \"war.vwmap\"\n\
+                        "mode = \"warzone\"\nmaps = [\"war.vwmap\"]\n\
                                                  fill_target = 40\nmax_players = 8\n",
                     )
                 }),
@@ -910,7 +921,7 @@ mod tests {
                     write(
                         d,
                         "zones/war/zone.toml",
-                        "mode = \"warzone\"\nmap = \"war.vwmap\"\n\
+                        "mode = \"warzone\"\nmaps = [\"war.vwmap\"]\n\
                                                  teams = [\"Keel\", \"\"]\n",
                     )
                 }),
@@ -922,7 +933,7 @@ mod tests {
                     write(
                         d,
                         "zones/war/zone.toml",
-                        "mode = \"warzone\"\nmap = \"war.vwmap\"\n\
+                        "mode = \"warzone\"\nmaps = [\"war.vwmap\"]\n\
                                                  teams = [\"Keel\", \"Vantage\"]\n\
                                                  max_teams = 1\n",
                     )
@@ -963,7 +974,7 @@ mod tests {
         write(
             &d,
             "zones/war/zone.toml",
-            "mode = \"warzone\"\nmap = \"war.vwmap\"\nmax_ships = 255\n",
+            "mode = \"warzone\"\nmaps = [\"war.vwmap\"]\nmax_ships = 255\n",
         );
         assert_eq!(load(&d).unwrap().zone("war").unwrap().max_ships, Some(255));
     }
@@ -1011,10 +1022,11 @@ pub fn run_check() {
             );
             for name in &c.order {
                 let z = &c.zones[name];
-                let map = c.map_bytes(name).map(|b| b.len()).unwrap_or(0);
+                let maps = c.map_bytes(name);
+                let map: usize = maps.iter().map(|b| b.len()).sum();
                 println!(
                     "  zone {name:<10} mode {:<8} {} ships / {} players, fill {}, \
-                     bots {:.0}%, {} room(s), teams {}, map {map} B",
+                     bots {:.0}%, {} room(s), teams {}, {} map(s), {map} B",
                     z.mode,
                     z.max_ships.unwrap_or(64),
                     z.max_players(),
@@ -1025,7 +1037,8 @@ pub fn run_check() {
                         "free-for-all".to_string()
                     } else {
                         z.teams.join("/")
-                    }
+                    },
+                    maps.len()
                 );
             }
             println!("  default {:?}", c.fallback_zone().unwrap_or_default());

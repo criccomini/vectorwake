@@ -3938,6 +3938,75 @@ int main(void) {
         CHECK(mines == 2, "and no more than the kit carried were ever laid");
     }
 
+    /* A match opens with everybody home, whole, and reloaded. This is the
+     * edge between two matches in one room, and the one place ammunition
+     * comes back: a death re-deals the frame and a whistle re-deals the
+     * lot. */
+    {
+        /* The built-in arena, because it marks a start per side and what this
+         * checks is that two sides open a match at their own ends. */
+        sim_map *mm = malloc(sizeof *mm);
+        sim_map_arena(mm);
+        sim_settings mc;
+        memset(&mc, 0, sizeof mc);
+        sim_settings_baseline(&mc, mm);
+        mc.spawn_radius = 0;
+        sim_state s;
+        sim_init(&s, 9);
+        int a = sim_spawn(&s, APEX, 0, 8192, 8192, 0, &mc);
+        int b = sim_spawn(&s, APEX, 1, 9216, 9216, 0, &mc);
+        uint8_t kit[SIM_SLOT_COUNT] = {0};
+        kit[SIM_SLOT_STAT(SIM_UP_SPEED)] = 4;
+        kit[SIM_SLOT_CHARGE(SIM_CHARGE_REPEL)] = 3;
+        CHECK(sim_set_kit(&s.ships[a], &mc, kit) == 1, "a kit each");
+        CHECK(sim_set_kit(&s.ships[b], &mc, kit) == 1, "on both sides");
+
+        /* A match played: one pilot dead with a tally, both out of repels,
+         * a round in the air, and somebody a long way from home. */
+        s.ships[a].kills = 3;
+        s.ships[a].run = 3;
+        s.ships[a].points = 40;
+        s.ships[a].charge[SIM_CHARGE_REPEL] = 0;
+        s.ships[a].x = 4096;
+        s.ships[a].vx = 30000;
+        s.ships[b].alive = 0;
+        s.ships[b].deaths = 3;
+        s.ships[b].respawn_at = 300;
+        s.ships[b].charge[SIM_CHARGE_REPEL] = 1;
+        s.weapon_count = 1;
+
+        sim_restart(&s, &mc);
+
+        CHECK(s.weapon_count == 0, "nothing of the last match is still flying");
+        for (int i = 0; i < 2; i++) {
+            const sim_ship *sh = &s.ships[i == 0 ? a : b];
+            CHECK(sh->alive && sh->respawn_at == 0, "everybody is on the field");
+            CHECK(sh->kills == 0 && sh->deaths == 0 && sh->points == 0,
+                  "the tally is the match's own and starts again");
+            CHECK(sh->run == 0, "and so does the run");
+            CHECK(sh->up[SIM_UP_SPEED] == 4, "the kit is dealt");
+            CHECK(sh->charge[SIM_CHARGE_REPEL] == 3,
+                  "with the ammunition, which is what a whistle gives back");
+            CHECK(sh->x == sh->spawn_x && sh->y == sh->spawn_y,
+                  "on a start rather than wherever the last match left them");
+            CHECK(sh->vx == 0 && sh->vy == 0, "at rest");
+            CHECK(sh->energy == sim_eff_max_energy(&mc.classes[sh->cls], sh),
+                  "and full");
+        }
+        CHECK(s.ships[a].spawn_x != s.ships[b].spawn_x
+              || s.ships[a].spawn_y != s.ships[b].spawn_y,
+              "two sides do not open a match on the same tile");
+
+        /* And a side lines up along its own starts rather than piling onto
+         * one, which is what the walk over `nth` is for. */
+        int c = sim_spawn(&s, APEX, 0, 8192, 8192, 0, &mc);
+        sim_restart(&s, &mc);
+        CHECK(s.ships[a].spawn_x != s.ships[c].spawn_x
+              || s.ships[a].spawn_y != s.ships[c].spawn_y,
+              "two pilots of one side open on different starts");
+        free(mm);
+    }
+
     free(m);
     if (failures == 0) printf("all tests passed\n");
     return failures ? 1 : 0;

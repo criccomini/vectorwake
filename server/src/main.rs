@@ -1,8 +1,8 @@
 //! vectorwake zone server.
 //!
 //! One arena, ticking at 100 Hz, authoritative over everything that matters.
-//! Clients send inputs and nothing else; positions, damage, deaths, and prize
-//! pickups are outputs of `sim_step` and cannot be asserted from outside.
+//! Clients send inputs and nothing else; positions, damage and deaths are
+//! outputs of `sim_step` and cannot be asserted from outside.
 //!
 //! Transport is WebSocket, which every browser can speak. UDP for native
 //! clients is the same message format on a different socket and is not built
@@ -205,18 +205,18 @@ fn run_stage_tournament() {
     }
 }
 
-/// `calibrate hulls <bouts> <greens> <zone> <dir>`: every hull against every
-/// other at matched bounty.
+/// `calibrate hulls <bouts> <kit> <zone> <dir>`: every hull against every
+/// other on a matched budget.
 ///
 /// The other two harnesses each hold the hull still. This one varies it, which
 /// is the only way to ask whether the roster is balanced against itself rather
 /// than whether a kit is worth carrying.
 ///
-/// `greens` is the bounty both sides are handed at every spawn. It is a bounty
-/// and not a loadout: the core counts every green as one whatever it turned out
-/// to be, so the two pilots are matched exactly on the number over their heads
-/// and inexactly on what it bought them, which is the situation a player is
-/// actually in. Zero measures bare hulls, the way the ladder does.
+/// `kit` is the budget both sides are handed at every spawn. It is a budget
+/// and not a loadout: every slot in the kit costs one, so the two pilots are
+/// matched exactly on what they spent and inexactly on what it bought them,
+/// which is the situation a player is actually in. Zero measures bare hulls,
+/// the way the ladder does.
 ///
 /// Writes `hulls.json`, which nothing loads. Same reasoning as `stages.json`:
 /// it is a measurement to diff a change against, and `ladder.json` is an input.
@@ -225,7 +225,7 @@ fn run_hull_tournament() {
         .nth(3)
         .and_then(|s| s.parse().ok())
         .unwrap_or(24);
-    let greens: u32 = std::env::args()
+    let kit: u32 = std::env::args()
         .nth(4)
         .and_then(|s| s.parse().ok())
         .unwrap_or(0);
@@ -275,12 +275,12 @@ fn run_hull_tournament() {
     const SKILL: f32 = 0.50;
     let n = ai::CLASS_NAMES.len();
     println!(
-        "hulls at {greens} greens under {zone} tuning on the {map}: {} pairs, \
+        "hulls on a {kit}-point kit under {zone} tuning on the {map}: {} pairs, \
 {bouts} bouts each",
         n * (n + 1) / 2
     );
-    let rows = calibrate::run_hulls(SKILL, greens, bouts, tuning.as_ref(), &builder, true);
-    let doc = calibrate::report_hulls(&rows, SKILL, greens, bouts, &zone, &map);
+    let rows = calibrate::run_hulls(SKILL, kit, bouts, tuning.as_ref(), &builder, true);
+    let doc = calibrate::report_hulls(&rows, SKILL, kit, bouts, &zone, &map);
 
     let path = format!("{dir}/hulls.json");
     match std::fs::write(
@@ -292,7 +292,7 @@ fn run_hull_tournament() {
     }
 }
 
-/// `calibrate teams <matches> <per_side> <greens> <zone> <dir> [map]`: sides
+/// `calibrate teams <matches> <per_side> <kit> <zone> <dir> [map]`: sides
 /// drawn at random, scored by the seats each hull filled.
 ///
 /// The hull tournament fights one against one, which cannot see a hull whose
@@ -311,7 +311,7 @@ fn run_team_tournament() {
         .nth(4)
         .and_then(|s| s.parse().ok())
         .unwrap_or(4);
-    let greens: u32 = std::env::args()
+    let kit: u32 = std::env::args()
         .nth(5)
         .and_then(|s| s.parse().ok())
         .unwrap_or(30);
@@ -365,12 +365,12 @@ fn run_team_tournament() {
     let spawn_radius = tuning.as_ref().and_then(|c| c.spawn_radius).unwrap_or(0);
     println!(
         "{per_side} a side under {zone} tuning on the {map}: {matches} matches at \
-{greens} greens a life, spawn radius {spawn_radius}"
+a {kit}-point kit a life, spawn radius {spawn_radius}"
     );
     let rows = calibrate::run_teams(
         per_side,
         matches,
-        greens,
+        kit,
         SKILL,
         tuning.as_ref(),
         &builder,
@@ -380,7 +380,7 @@ fn run_team_tournament() {
         &rows,
         per_side,
         SKILL,
-        greens,
+        kit,
         matches,
         &zone,
         &map,
@@ -1872,7 +1872,7 @@ mod tests {
             max_rooms: rooms,
             admission: "any".into(),
             bot_fill: 0.0,
-            map_b64: fleet::b64(&sim::World::new(1).packed_map()),
+            maps_b64: vec![fleet::b64(&sim::World::new(1).packed_map())],
             // A zone's name lives in the catalog that references it, never in the
             // zone's own file, so there is one place a name can be.
             zone_toml: "description = \"a zone for tests\"\n".into(),
@@ -2764,114 +2764,6 @@ mod tests {
         );
     }
 
-    /// Put one green on the map, wherever asked, and nothing else.
-    fn only_prize(w: &mut sim::World, tile_x: i32, tile_y: i32) {
-        for p in w.state.prizes.iter_mut() {
-            p.active = 0;
-        }
-        w.state.prizes[0] = sim::sim_prize {
-            active: 1,
-            x: (tile_x * 16 + 8) * 256,
-            y: (tile_y * 16 + 8) * 256,
-            life: 30_000,
-        };
-    }
-
-    #[test]
-    fn a_green_behind_a_wall_is_not_a_green_worth_chasing() {
-        // Reported from the live server: bots with their noses against a wall and
-        // a green on the other side of it. Selection tested distance and nothing
-        // else, and a green does not move, so the next plan chose the same one,
-        // for the same reason, for ever.
-        //
-        // The pit's inner block spans tiles 505 to 508. A pilot at 503 has it
-        // between them and anything at 511 on the same row, and open floor above.
-        let mut w = sim::World::with_map(1, sim::build_pit);
-        let ship = w.spawn(0, 0, 503, 506, 0) as u8;
-
-        only_prize(&mut w, 503, 502);
-        assert!(
-            ai::scan(&w, ship).prize.is_some(),
-            "a green four tiles away across open floor is worth the detour"
-        );
-
-        only_prize(&mut w, 511, 506);
-        assert!(
-            ai::scan(&w, ship).prize.is_none(),
-            "a green with a wall in front of it was chosen anyway"
-        );
-    }
-
-    #[test]
-    fn a_pilot_pushing_at_a_wall_eventually_does_something_else() {
-        // The case the line of sight test above cannot catch: somewhere visible,
-        // not behind a straight wall, and still not reachable, which is what a
-        // corner is. So the green is handed over directly rather than found by
-        // `scan`, and the only way out is the pilot noticing it is not getting
-        // any closer.
-        //
-        // An enemy sits in range throughout. A fresh pilot values this green
-        // above a healthy foe and takes its hands off the trigger while running
-        // it, so a shot fired proves the green was abandoned.
-        let mut w = sim::World::with_map(1, sim::build_pit);
-        let ship = w.spawn(0, 0, 503, 506, 0) as u8;
-        let mut bot = ai::Bot::new(ship, 0.5);
-
-        let px = |t: i32| (t * 16 + 8) as f32;
-        let foe = ai::Foe {
-            x: px(503),
-            y: px(517),
-            vx: 0.0,
-            vy: 0.0,
-            energy: 1.0,
-            radius: 22.0,
-            value: 0,
-            carrying_flag: false,
-            clear: true,
-            crowd: 0,
-            ship: 0,
-            standing: None,
-        };
-        let stuck_on = ai::Scan {
-            prize: Some((px(511), px(506))),
-            prizes: vec![ai::Prize {
-                x: px(511),
-                y: px(506),
-                clear: true,
-            }],
-            foe: Some(foe),
-            contacts: vec![foe],
-            company: true,
-            flag: None,
-            threat: None,
-            allies_near: 0,
-            hostiles_near: 1,
-            // Hand-built, so the whiskers say open on purpose: this test is
-            // about giving up on a green behind a wall, and a bot that could
-            // see the wall would never press into it to begin with.
-            clear: [1e9; ai::WHISKERS],
-        };
-
-        let route = nav::Nav::build(&w.map);
-        let mut fired_at = None;
-        for t in 0..2500u32 {
-            // Handed over once and never refreshed. Working from a stale picture
-            // is the ordinary case for these pilots, and here it is what keeps
-            // the unreachable green in front of them.
-            let fresh = (t == 0).then(|| stuck_on.clone());
-            let buttons = bot.think(&ai::own(&w, ship), &route, fresh);
-            if buttons & (sim::BTN_FIRE | sim::BTN_BOMB) != 0 && fired_at.is_none() {
-                fired_at = Some(t);
-            }
-            w.step(&[sim::sim_input { ship, buttons }]);
-        }
-        // Utility scoring may abandon the errand before the no-progress clock
-        // when the fight becomes the better trade. The upper bound is what this
-        // regression protects: a stale green must not own the pilot forever.
-        let t = fired_at.expect("never gave up on a green it could not reach");
-        assert!(t < 2200, "gave up on the green at tick {t}");
-    }
-
     /// A seat is furniture, and its last occupant does not come with it.
     ///
     /// Joining cleared the stat upgrades and nothing else, so a pilot handed a
@@ -2958,13 +2850,9 @@ mod tests {
 
     #[test]
     fn a_joining_pilot_does_not_inherit_the_seat() {
-        // No spawn kit, so every number below can be asserted at zero. A zone
-        // that hands one out puts real upgrades on the arriving ship, and a
-        // rolled level of two is indistinguishable from an inherited one, which
-        // would make this test about the kit instead of about the seat. The kit
-        // has a test of its own.
-        let mut def = wire_zone(1, 6, 16);
-        def.zone_toml = "description = \"no kit\"\n[arena]\nspawn_prizes = 0\n".into();
+        // The seat arrives with no kit, so every number below can be asserted
+        // at zero. What a hangar sends is a test of its own.
+        let def = wire_zone(1, 6, 16);
         let (cfg, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
         let mut z = ArenaServer::new(cfg, test_spool(), HashMap::new());
         z.serve_zone(&def).expect("a room");
@@ -2980,7 +2868,7 @@ mod tests {
             sh.mods = [0x15; sim::TRIG_COUNT];
             sh.charge = [3; sim::MAX_CHARGES];
             sh.up = [4; sim::UP_COUNT];
-            sh.earned = 250;
+            sh.run = 250;
             sh.points = 9000;
             sh.x += 400 * 256;
             sh.vx = 12345;
@@ -3004,67 +2892,12 @@ mod tests {
         assert_eq!(sh.mods, [0; sim::TRIG_COUNT], "nor add-ons");
         assert_eq!(sh.charge, [0; sim::MAX_CHARGES], "nor charges");
         assert_eq!(sh.up, [0; sim::UP_COUNT], "nor stat upgrades");
-        assert_eq!(sh.earned, 0, "nor bounty somebody else earned");
+        assert_eq!(sh.run, 0, "nor the run somebody else was on");
         assert_eq!(sh.points, 0, "nor their score");
         assert_eq!(sh.vx, 0, "and it arrives at rest");
         assert_ne!(
             sh.x, flown_to,
             "at a start, not where the last one left off"
-        );
-    }
-
-    /// The other half of not inheriting a seat: what the arriving pilot gets
-    /// instead.
-    ///
-    /// Clearing the seat was the whole of `join` for a while, which is right
-    /// for a zone that starts everybody plain and wrong for one that does not.
-    /// A zone handing out thirty greens gave them to its bots and to anybody
-    /// who had died once, and nothing at all to somebody who had just walked
-    /// in, so a fresh arrival was the poorest ship in the room.
-    #[test]
-    fn an_arriving_pilot_gets_the_zones_spawn_kit() {
-        let mut def = wire_zone(1, 6, 16);
-        def.zone_toml = "description = \"a zone with a kit\"\n\
-                         [arena]\nspawn_prizes = 30\n"
-            .into();
-        let (cfg, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
-        let mut z = ArenaServer::new(cfg, test_spool(), HashMap::new());
-        z.serve_zone(&def).expect("a room");
-
-        let (tx, _rx) = mpsc::channel(OUT_QUEUE);
-        let id = z.rooms[0]
-            .join(Seat::guest("arrival", false), 0, 16, tx)
-            .expect("a seat");
-        let ship = z.rooms[0].players[&id].ship as usize;
-        let sh = z.rooms[0].world.state.ships[ship];
-        // One green is one bounty, whatever it turned out to be, so thirty
-        // rolls is a bounty near thirty. Near rather than exactly: rust takes
-        // one back now and then, which is the zone's own setting doing its job.
-        let bounty = unsafe { sim::sim_bounty(&sh) };
-        assert!(
-            bounty > 20,
-            "an arrival carries the kit, not nothing: {bounty}"
-        );
-        // And the bar is full of the energy those greens just bought, rather
-        // than of the ceiling the ship had before them.
-        let full = z.rooms[0].world.eff_max_energy(ship);
-        assert_eq!(sh.energy, full, "the bar is filled after the kit lands");
-
-        // A zone that hands out nothing still starts pilots plain.
-        let mut bare = wire_zone(1, 6, 16);
-        bare.zone_toml = "description = \"bare\"\n[arena]\nspawn_prizes = 0\n".into();
-        let (cfg, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
-        let mut z2 = ArenaServer::new(cfg, test_spool(), HashMap::new());
-        z2.serve_zone(&bare).expect("a room");
-        let (tx, _rx) = mpsc::channel(OUT_QUEUE);
-        let id = z2.rooms[0]
-            .join(Seat::guest("arrival", false), 0, 16, tx)
-            .expect("a seat");
-        let ship = z2.rooms[0].players[&id].ship as usize;
-        assert_eq!(
-            z2.rooms[0].world.state.ships[ship].up,
-            [0; sim::UP_COUNT],
-            "and a zone with no kit hands out no kit"
         );
     }
 
@@ -3127,11 +2960,11 @@ mod tests {
     fn crossing_sides_drops_the_flag_and_the_bounty_it_earned() {
         let mut a = room_with_teams("teams = [\"Keel\", \"Vantage\"]\n");
         let ship = seat_human(&mut a, "one");
-        a.world.state.ships[ship as usize].earned = 30;
+        a.world.state.ships[ship as usize].run = 30;
         assert!(a.join_team(ship, 1));
         assert_eq!(a.world.state.ships[ship as usize].team, 1);
         assert_eq!(
-            a.world.state.ships[ship as usize].earned, 0,
+            a.world.state.ships[ship as usize].run, 0,
             "what killing paid does not cross with you"
         );
         // And the gate: a hurt pilot stays where they are, so the team list is
@@ -3635,36 +3468,6 @@ mod tests {
     }
 
     #[test]
-    fn a_prize_outcome_is_sent_only_after_the_server_rolls_it() {
-        let mut a = room_with_teams("teams = [\"Keel\"]\n");
-        let (ship, _id, mut rx) = seat_rx(&mut a, "collector");
-        drain(&mut rx);
-        a.world.cfg.prize_delay = 0;
-        let sh = a.world.state.ships[ship as usize];
-        a.world.state.prizes[0] = sim::sim_prize {
-            active: 1,
-            x: sh.x,
-            y: sh.y,
-            life: 100,
-        };
-        a.tick();
-        let messages = drain(&mut rx);
-        let prize = messages
-            .iter()
-            .find(|m| m.first() == Some(&S2C_PRIZE))
-            .expect("the collector receives the authoritative outcome");
-        assert_eq!(prize.len(), 3);
-        assert!(
-            prize[1] < sim::PRIZE_COUNT as u8,
-            "the rolled type is on the tree"
-        );
-        assert!(
-            prize[2] == 1 || prize[2] == 0xff,
-            "the sign is grant or rust"
-        );
-    }
-
-    #[test]
     fn a_charge_action_reveals_no_inventory_and_stays_inside_fair_sight() {
         let mut a = room_with_teams("teams = [\"Keel\"]\n");
         let (shooter, _, mut shooter_rx) = seat_rx(&mut a, "shooter");
@@ -3735,10 +3538,12 @@ mod tests {
         let mut a = room_with_teams("teams = [\"Keel\"]\n");
         let (me, _, mut rx) = seat_rx(&mut a, "layer");
 
+        // A mine is a charge, so the kit is what puts one in hand.
+        a.world.state.ships[me as usize].charge[sim::CHARGE_MINE] = 1;
         let laid = a.world.state.ships[me as usize];
         a.world.step(&[sim::sim_input {
             ship: me,
-            buttons: sim::BTN_MINE,
+            buttons: sim::btn_charge(sim::CHARGE_MINE),
         }]);
         assert_eq!(a.world.state.weapon_count, 1, "a mine is in the world");
         let mine = a.world.state.weapons[0];
@@ -5480,7 +5285,15 @@ mod tests {
             std::sync::Arc::ptr_eq(&z.rooms[0].world.map, &z.rooms[1].world.map),
             "rooms of one zone share one map"
         );
-        assert_eq!(std::sync::Arc::strong_count(&z.rooms[0].world.map), 2);
+        // Two references a room: the entry in the list of maps its zone
+        // rotates through, and the one its world is currently playing on.
+        // Nothing else may hold one, which is the property this number is
+        // here to pin.
+        assert_eq!(
+            std::sync::Arc::strong_count(&z.rooms[0].world.map),
+            2 * z.rooms.len(),
+            "one list entry and one world a room, and no copies"
+        );
     }
 
     #[test]
@@ -5500,6 +5313,15 @@ mod tests {
                 std::sync::Arc::ptr_eq(&map, &r.world.map),
                 "room {n} shares it"
             );
+            for (k, m) in r.maps.iter().enumerate() {
+                assert!(
+                    z.rooms[0]
+                        .maps
+                        .get(k)
+                        .is_some_and(|first| std::sync::Arc::ptr_eq(first, m)),
+                    "room {n} shares the zone's map {k} rather than unpacking it"
+                );
+            }
         }
     }
 
@@ -5912,41 +5734,6 @@ mod tests {
         assert_eq!(w.cfg.max_ships, 64, "and removing the line puts it back");
     }
 
-    #[test]
-    fn a_zone_sets_the_odds_and_the_rust() {
-        let (w, warn) = tuned(
-            r#"
-            [arena]
-            rust = 250
-
-            [arena.prize_weight]
-            speed = 5
-            gun-level = 400
-            bomb-shrapnel = 90
-        "#,
-        );
-        assert!(warn.is_empty(), "{warn:?}");
-        assert_eq!(w.cfg.rust_chance, 250);
-        assert_eq!(w.cfg.prize_weight[2], 5, "speed is the third stat");
-        assert_eq!(w.cfg.prize_weight[sim::UP_COUNT], 400, "gun level");
-        let bomb_shrap = sim::UP_COUNT + sim::TRIG_COUNT + sim::MOD_COUNT + 3;
-        assert_eq!(w.cfg.prize_weight[bomb_shrap], 90);
-        // Everything unnamed keeps the baseline's odds.
-        assert_eq!(
-            w.cfg.prize_weight[0], 40,
-            "energy keeps the original's odds"
-        );
-
-        let (w, warn) = tuned(
-            r#"
-            [arena.prize_weight]
-            luck = 10
-        "#,
-        );
-        assert!(warn.iter().any(|x| x.contains("luck")), "{warn:?}");
-        assert_eq!(w.cfg.rust_chance, 10, "and rust keeps its default");
-    }
-
     /// Every zone the shipped catalog offers, applied to a fresh room.
     ///
     /// A weapon or a hull a zone file names and the core does not is a warning
@@ -5989,33 +5776,9 @@ mod tests {
             mode = "warzone"
         "#,
         );
-        assert_eq!(w.cfg.bounty_per_kill, 3);
+        assert_eq!(w.cfg.bounty_base, 1);
+        assert_eq!(w.cfg.bounty_per_kill, 1);
         assert_eq!(w.cfg.points_per_flag, 100);
-        assert_eq!(w.cfg.rust_chance, 10);
-    }
-
-    #[test]
-    fn a_zone_sets_the_opening_loadout() {
-        let (w, warn) = tuned(
-            r#"
-            [arena]
-            spawn_prizes = 0
-        "#,
-        );
-        assert!(warn.is_empty(), "{warn:?}");
-        assert_eq!(w.cfg.spawn_prizes, 0, "a zone can start pilots plain");
-
-        // Untouched it is thirty. Reading the field on either side too,
-        // because a u16 landing in the wrong place is how this mirror drifts.
-        let (w, _) = tuned(
-            r#"
-            [arena]
-            mode = "warzone"
-        "#,
-        );
-        assert_eq!(w.cfg.spawn_prizes, 30);
-        assert_eq!(w.cfg.rust_chance, 10, "and the field before it");
-        assert_eq!(w.cfg.mod_step[0], 2, "and the one after");
     }
 
     #[test]
@@ -6180,7 +5943,9 @@ mod tests {
     /// touches nothing else about the weapon.
     #[test]
     fn a_zone_sets_how_long_a_mine_lives() {
-        let mine = |w: &sim::World| w.cfg.specs[w.cfg.patterns[w.cfg.mine as usize].spec as usize];
+        let mine = |w: &sim::World| {
+            w.cfg.specs[w.cfg.patterns[w.cfg.charge[sim::CHARGE_MINE] as usize].spec as usize]
+        };
         let (base, warn) = tuned("");
         assert!(warn.is_empty(), "{warn:?}");
         assert_eq!(mine(&base).life, 12_000, "two minutes, out of the box");
@@ -6205,47 +5970,7 @@ mod tests {
     }
 
     fn base_blast(w: &sim::World) -> i32 {
-        w.cfg.specs[w.cfg.patterns[w.cfg.mine as usize].spec as usize].blast
-    }
-
-    /// The mine ceiling, which is the whole of what limits mines: there is no
-    /// inventory to run out of, so how many of a pilot's may lie about at
-    /// once is the only number a zone has to reach for.
-    #[test]
-    fn a_zone_says_how_many_mines_a_hull_may_have_out() {
-        let (base, warn) = tuned("");
-        assert!(warn.is_empty(), "{warn:?}");
-        let anvil = ai::class_index("Anvil").unwrap();
-        assert_eq!(
-            base.cfg.classes[anvil].mine_max, 5,
-            "five, which is the original's own MaxMines"
-        );
-
-        let (w, warn) = tuned(
-            r#"
-            [[arena.ships]]
-            name = "Anvil"
-            mine_max = 9
-
-            [[arena.ships]]
-            name = "Apex"
-            mine_max = 0
-        "#,
-        );
-        assert!(warn.is_empty(), "{warn:?}");
-        assert_eq!(w.cfg.classes[anvil].mine_max, 9, "the heavy mines heavily");
-        assert_eq!(
-            w.cfg.classes[ai::class_index("Apex").unwrap()].mine_max,
-            0,
-            "and a zone can take a hull out of the business"
-        );
-        // Hulls the file did not name keep the baseline's, the way every other
-        // per-ship number here does.
-        assert_eq!(
-            w.cfg.classes[ai::class_index("Wedge").unwrap()].mine_max,
-            5,
-            "a hull the file passed over is untouched"
-        );
+        w.cfg.specs[w.cfg.patterns[w.cfg.charge[sim::CHARGE_MINE] as usize].spec as usize].blast
     }
 
     /// Alpha's own file, applied the way a room applies it.
@@ -6265,46 +5990,54 @@ mod tests {
     /// and has no `mode` -- so this also gets `deny_unknown_fields` over the
     /// whole file rather than only over the line it came to check.
     #[test]
-    fn the_alpha_zone_file_says_what_it_means() {
-        let src = std::fs::read_to_string("../catalog/zones/alpha/zone.toml")
-            .expect("the alpha zone ships in this repository");
-        let z: crate::catalog::ZoneDef = toml::from_str(&src).expect("alpha's zone file parses");
+    fn the_melee_zone_file_says_what_it_means() {
+        let src = std::fs::read_to_string("../catalog/zones/melee/zone.toml")
+            .expect("the melee zone ships in this repository");
+        let z: crate::catalog::ZoneDef = toml::from_str(&src).expect("melee's zone file parses");
         let mut w = sim::World::new(1);
         let warn = Room::apply_config(&mut w, &z.arena);
-        assert!(warn.is_empty(), "alpha's own file warns: {warn:?}");
+        assert!(warn.is_empty(), "melee's own file warns: {warn:?}");
 
         // The control, and it has to be here. A weapon name this file does not
         // recognize is not an error -- an unknown name *makes* a weapon, which
         // is how a zone adds one -- so a typo in a block above is a new dead
-        // weapon and no warning. Reading a number alpha shares with the
+        // weapon and no warning. Reading a number the zone shares with the
         // baseline would then pass on a file that never applied. The burst's
-        // damage is alpha's own and the baseline's is 700.
-        let burst = w.cfg.specs[w.cfg.patterns[w.cfg.charge[1] as usize].spec as usize];
+        // damage is the zone's own and the baseline's is 700.
+        let burst =
+            w.cfg.specs[w.cfg.patterns[w.cfg.charge[sim::CHARGE_BURST] as usize].spec as usize];
         assert_eq!(
             burst.damage,
             unsafe { sim::sim_units_energy(515) },
-            "alpha's file reached the weapon table at all"
+            "the file reached the weapon table at all"
         );
 
-        let mine = w.cfg.specs[w.cfg.patterns[w.cfg.mine as usize].spec as usize];
-        assert_eq!(mine.life, 12_000, "alpha's mines sit for two minutes");
-        assert_eq!(mine.still, 1, "and are still mines");
-        assert_eq!(
-            w.cfg.spawn_prizes, 30,
-            "alpha starts every life with its thirty-green opening kit"
-        );
+        let mine =
+            w.cfg.specs[w.cfg.patterns[w.cfg.charge[sim::CHARGE_MINE] as usize].spec as usize];
+        assert_eq!(mine.life, 3_000, "a mine sits for thirty seconds");
+        assert_eq!(mine.still, 1, "and is a still mine");
 
-        // Five apiece, on every hull in the room. Alpha does not write this
-        // out: its ships section says in as many words that what is uniform
-        // stays unwritten, and five is uniform in the original's own settings
-        // too. So the assertion lives here rather than seven times in a TOML
-        // file, and it is what would catch the baseline moving underneath the
-        // zone -- which is the only way this number can change without
-        // somebody meaning to.
+        // The clock, which is the whole of what makes this a match game and is
+        // the one setting no other zone in the history of this repository had.
+        assert_eq!(z.arena.match_seconds, Some(180));
+        assert_eq!(z.arena.intermission_seconds, Some(25));
+        assert_eq!(z.mode, "melee");
+        assert_eq!(z.maps.len(), 2, "two maps, alternating");
+        assert_eq!(z.max_humans_per_team, Some(4), "four a side");
+        assert_eq!(z.teams.len(), 2);
+        // Three apiece on every hull but the denial one, which carries six.
+        // The zone file does not write this out: its ships section says in as
+        // many words that what is uniform stays unwritten. So the assertion
+        // lives here rather than seven times in a TOML file, and it is what
+        // would catch the baseline moving underneath the zone, which is the
+        // only way this number changes without somebody meaning it to.
+        const LATTICE: usize = 6;
         for c in 0..w.cfg.class_count as usize {
+            let want = if c == LATTICE { 6 } else { 3 };
             assert_eq!(
-                w.cfg.classes[c].mine_max, 5,
-                "hull {c} may have five mines out"
+                w.cfg.classes[c].charge_max[sim::CHARGE_MINE],
+                want,
+                "hull {c} may bring {want} mines"
             );
         }
     }
@@ -6329,9 +6062,6 @@ mod tests {
             damage = 900
             delay = 200
 
-            [arena.prize_weight]
-            charge-4 = 40
-
             [[arena.ships]]
             name = "Anvil"
             charges = [3, 3, 3, 2]
@@ -6341,11 +6071,6 @@ mod tests {
         assert_ne!(w.cfg.charge[3], sim::NO_PATTERN, "the slot is filled");
         let sp = w.cfg.specs[w.cfg.patterns[w.cfg.charge[3] as usize].spec as usize];
         assert_eq!(sp.blast, 400 * 256);
-        assert_eq!(
-            w.cfg.prize_weight[sim::PRIZE_COUNT - 1],
-            40,
-            "and greens can be it"
-        );
         let anvil = ai::class_index("Anvil").unwrap();
         assert_eq!(
             w.cfg.classes[anvil].charge_max[3], 2,
@@ -6450,19 +6175,14 @@ mod tests {
 
     /// Absent and zero are different things. Every setting the core owns is
     /// absent-means-baseline, which leaves zero free to mean zero: a wall that
-    /// gives nothing back, doors that never open, a room with no greens in it.
+    /// gives nothing back, doors that never open, a wormhole with no pull.
     #[test]
     fn zero_is_a_setting_rather_than_a_missing_one() {
         let (w, warn) = tuned(
             r#"
             [arena]
             bounce = 0
-            prize_max = 0
             door_period = 0
-            prize_life = 400
-            prize_radius = 4
-            prize_lo = 100
-            prize_hi = 900
             flag_radius = 30
             flag_drop_cooldown = 50
             door_open = 100
@@ -6472,11 +6192,7 @@ mod tests {
         );
         assert!(warn.is_empty(), "{warn:?}");
         assert_eq!(w.cfg.bounce, 0, "a wall that eats everything that hits it");
-        assert_eq!(w.cfg.prize_max, 0, "and a room with no greens in it");
         assert_eq!(w.cfg.door_period, 0);
-        assert_eq!(w.cfg.prize_life, 400);
-        assert_eq!(w.cfg.prize_radius, 4 * 256);
-        assert_eq!((w.cfg.prize_lo, w.cfg.prize_hi), (100, 900));
         assert_eq!(w.cfg.flag_radius, 30 * 256);
         assert_eq!(w.cfg.flag_drop_cooldown, 50);
         assert_eq!(w.cfg.door_open, 100);
@@ -6486,9 +6202,7 @@ mod tests {
         // Left out, each is the core's own.
         let (w, _) = tuned("[arena]\nmode = \"warzone\"\n");
         assert_eq!(w.cfg.bounce, 10);
-        assert_eq!(w.cfg.prize_max, 24);
         assert_eq!(w.cfg.door_period, 600);
-        assert_eq!(w.cfg.prize_life, 3000);
         assert_eq!(w.cfg.flag_radius, 18 * 256);
     }
 
@@ -6522,7 +6236,7 @@ mod tests {
 
     /// The zones we ship are the worked example of this format, and the half of
     /// it that goes wrong quietly is the names: a weapon no hull has, an add-on
-    /// spelled wrong, a prize that is not a prize. None of those is a parse
+    /// spelled wrong, a charge that is not a charge. None of those is a parse
     /// error. They are a line in a warning list nobody is reading at three in
     /// the morning, and a setting that reached the fleet and did nothing.
     #[test]

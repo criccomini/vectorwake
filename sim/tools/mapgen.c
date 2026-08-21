@@ -1161,14 +1161,16 @@ static void draw_drydock(void) {
      * tiles rather than two, because a hull is three wide and a gap it
      * cannot fly is a wall with a picture of a door on it. */
     int lo = arena_lo;
-    for (int k = 0; k < 2; k++) {
-        int x = lo + 38 + k * 68;
-        for (int y = lo + 24; y <= arena_hi - 24; y++)
-            if ((y - lo) % 19 >= 5) {
-                sym_put(x, y, SIM_TILE_SOLID);
-                sym_put(x + 1, y, SIM_TILE_SOLID);
-            }
-    }
+    /* One spine drawn, two standing: `sym_put` puts the other half turn away.
+     * Drawing both by hand is what made this a wall rather than a lane
+     * divider -- the second pass filled the first one's breaks, because a
+     * break at y arrives mirrored at a different height, and the union of two
+     * broken spines is a solid one. */
+    for (int y = lo + 24; y <= arena_hi - 24; y++)
+        if ((y - lo) % 19 >= 5) {
+            sym_put(lo + 38, y, SIM_TILE_SOLID);
+            sym_put(lo + 39, y, SIM_TILE_SOLID);
+        }
     /* The middle, which is the widest lane and should not also be the
      * safest. A room rather than a block: something to fight around and
      * through rather than a wall to go past. */
@@ -1181,8 +1183,8 @@ static void draw_drydock(void) {
     for (int i = 0; i < 44; i++) {
         int x = lo + 10 + rr(0, ARENA - 26), y = lo + 18 + rr(0, ARENA / 2 - 30);
         if (in_pocket(x, y, 20) || !clear_box(x, y, 9, 8, 5)) continue;
-        if (chance(45)) sym_room(x, y, rr(7, 10), rr(6, 8));
-        else sym_rect(x, y, rr(3, 6), rr(2, 5), SIM_TILE_SOLID);
+        if (chance(45)) sym_room(x, y, rr(9, 13), rr(7, 10));
+        else sym_rect(x, y, rr(4, 8), rr(3, 6), SIM_TILE_SOLID);
     }
     /* And a pair of stubs off each pocket, so a spawn is not an open field. */
     for (int k = 0; k < 4; k++)
@@ -1200,23 +1202,22 @@ static void draw_slipway(void) {
         if (in_pocket(x, y, 20)) continue;
         sym_rect(x - 2, y - 2, 5, 5, SIM_TILE_SOLID);
     }
-    /* Two long bars off the diagonal, each with a way through, which is what
-     * makes the long way round passable at all. */
-    for (int k = 0; k < 2; k++) {
-        int sgn = k ? 1 : -1;
-        for (int t = -30; t <= 30; t++) {
-            if (t > -4 && t < 4) continue;      /* the way through */
-            int x = arena_cx + t + sgn * 34, y = arena_cy - t + sgn * 34;
-            if (in_pocket(x, y, 16)) continue;
-            sym_put(x, y, SIM_TILE_SOLID);
-            sym_put(x, y + 1, SIM_TILE_SOLID);
-        }
+    /* One long bar off the diagonal, with a way through in the middle of it,
+     * which is what makes the long way round passable at all. The other is
+     * the half turn of this one, so it is drawn once here for the same reason
+     * the spines next door are. */
+    for (int t = -30; t <= 30; t++) {
+        if (t > -4 && t < 4) continue;      /* the way through */
+        int x = arena_cx + t - 34, y = arena_cy - t - 34;
+        if (in_pocket(x, y, 16)) continue;
+        sym_put(x, y, SIM_TILE_SOLID);
+        sym_put(x, y + 1, SIM_TILE_SOLID);
     }
     for (int i = 0; i < 52; i++) {
         int x = lo + 10 + rr(0, ARENA - 24), y = lo + 10 + rr(0, ARENA - 24);
         if (in_pocket(x, y, 20) || !clear_box(x, y, 8, 8, 5)) continue;
-        if (chance(40)) sym_room(x, y, rr(7, 9), rr(6, 8));
-        else sym_rect(x, y, rr(3, 5), rr(3, 5), SIM_TILE_SOLID);
+        if (chance(40)) sym_room(x, y, rr(8, 12), rr(7, 10));
+        else sym_rect(x, y, rr(4, 7), rr(4, 7), SIM_TILE_SOLID);
     }
 }
 

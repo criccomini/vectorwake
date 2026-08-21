@@ -30,24 +30,34 @@ pub const BTN_BOMB: u16 = 32;
 pub const BTN_USE: u16 = 64;
 pub const BTN_SLOT_SHIFT: u16 = 7;
 pub const BTN_MULTI: u16 = 0x0200;
-/// Lay a mine: the bomb trigger's other posture, not a charge.
-pub const BTN_MINE: u16 = 0x0400;
+
+/// Spend the mine slot, which is what laying one is now: 0x0400 used to be a
+/// button of its own, because a mine was the bomb trigger's other posture.
+pub const fn btn_charge(k: usize) -> u16 {
+    BTN_USE | ((k as u16) << BTN_SLOT_SHIFT)
+}
 
 // Mirrored by hand from sim_event_type in sim/include/sim/sim.h, so the order
 // there is the order here and a new one goes on the end.
 //
-// These two were 7 and 8, which are SIM_EV_PRIZE and SIM_EV_CHARGE. Nothing
-// had matched on them yet, so the mismatch was silent and would have stayed
-// silent right up until a flag handler quietly ran on prize pickups.
+// The whole enum is listed even where nothing here matches on it yet, because
+// a partial mirror is what goes wrong: deleting SIM_EV_PRIZE from the core
+// slid every event after it down by one, and with only the handled half
+// written down there was nothing to notice that a charge had become an
+// expiry. `the_event_numbers_are_the_ones_the_core_emits` reads the header and
+// checks all of them now.
 pub const EV_FIRE: u8 = 1;
 pub const EV_BOUNCE: u8 = 2;
 pub const EV_HIT: u8 = 3;
 pub const EV_DEATH: u8 = 4;
 pub const EV_SPAWN: u8 = 5;
-pub const EV_PRIZE: u8 = 7;
-pub const EV_CHARGE: u8 = 8;
-pub const EV_FLAG_TAKE: u8 = 9;
-pub const EV_FLAG_DROP: u8 = 10;
+pub const EV_EXPIRE: u8 = 6;
+pub const EV_CHARGE: u8 = 7;
+pub const EV_FLAG_TAKE: u8 = 8;
+pub const EV_FLAG_DROP: u8 = 9;
+pub const EV_GOAL: u8 = 10;
+pub const EV_WARP: u8 = 11;
+pub const EV_RICOCHET: u8 = 12;
 
 pub const MAX_FEATURES: usize = 256;
 pub const MAP_PACK_MAX: usize = MAP_TILES * MAP_TILES * 3 / 2 + 32;
@@ -150,20 +160,10 @@ pub struct sim_ship_class {
     /// weapon; a hull with no bomb rack has 255 at rung zero.
     pub trigger: [[u8; MAX_RUNGS]; TRIG_COUNT],
     /// Which add-ons this hull may ever hold on each trigger, packed two bits
-    /// each exactly as the pilot's are. This is what keeps the roster a
-    /// roster once greens are flying.
+    /// each exactly as a kit's are. This is what keeps the roster a roster.
     pub mod_max: [u16; TRIG_COUNT],
     /// How many of each charge kind this hull may carry.
     pub charge_max: [u8; MAX_CHARGES],
-    /// MaxMines: how many of this hull's mines may be in the world at once.
-    /// The only limit on mines, since a pilot has them for as long as they
-    /// have a bomb rack.
-    pub mine_max: u8,
-    /// Gunners this hull may carry, and what carrying any of them costs it.
-    /// The penalties are charged once, not per gunner.
-    pub gunner_limit: u8,
-    pub gunner_thrust: i32,
-    pub gunner_speed: i32,
 }
 
 #[repr(C)]
@@ -177,18 +177,14 @@ pub struct sim_settings {
     pub pattern_count: u8,
     /// What each charge kind fires, as a pattern index.
     pub charge: [u8; MAX_CHARGES],
-    /// What a mine is, as a pattern index, or NO_PATTERN in a zone with none.
-    pub mine: u8,
-    /// Odds a green turns out to be each thing, over the flat prize space.
-    pub prize_weight: [u16; PRIZE_COUNT],
-    /// What a kill adds to the killer's own bounty.
+    /// What a kill adds to the killer's own bounty. Bounty is a run rather
+    /// than a loadout, so this is the whole of what makes one.
     pub bounty_per_kill: u16,
+    /// What a pilot who has just spawned is worth. One, so killing one pays
+    /// almost nothing and camping a pad is not a living.
+    pub bounty_base: u16,
     /// Points on top of the victim's bounty per flag they were carrying.
     pub points_per_flag: u16,
-    /// Out of a thousand, how often a green corrodes instead of granting.
-    pub rust_chance: u16,
-    /// Greens a ship is handed the moment it spawns.
-    pub spawn_prizes: u16,
     /// What one rung of each add-on is worth, in the units of the field it
     /// moves.
     pub mod_step: [i32; MOD_COUNT],
@@ -227,16 +223,10 @@ pub struct sim_settings {
     /// back, zero for never. The core neither counts it nor acts on it: it
     /// travels in the settings so the room and the client read one number.
     pub safe_limit: u16,
-    pub prize_delay: u16,
-    pub prize_max: u16,
-    pub prize_life: u16,
     pub door_period: u16,
     pub door_open: u16,
     pub wormhole_pull: i32,
     pub wormhole_range: i32,
-    pub prize_radius: i32,
-    pub prize_lo: i32,
-    pub prize_hi: i32,
     pub flag_radius: i32,
     pub flag_drop_cooldown: u16,
     pub max_ships: u8,
@@ -276,23 +266,25 @@ pub struct sim_ship {
     pub spawn_y: i32,
     pub kills: u16,
     pub deaths: u16,
+    /// What this hull is, which is the kit dealt back at every spawn.
     pub up: [u8; UP_COUNT],
-    /// The rung each trigger is on, and the add-ons held on each.
     pub level: [u8; TRIG_COUNT],
     pub mods: [u16; TRIG_COUNT],
+    /// The kit itself, over the flat slot space, so a respawn can re-deal it.
+    pub kit: [u8; SLOT_COUNT],
     /// Multifire declined: the add-on is still held, it is just not applied
     /// when the trigger is pulled.
     pub multi_off: u8,
     /// Last tick's buttons, for the toggles that fire on a press.
     pub btn_prev: u16,
-    /// Charges in hand, spent one at a time.
+    /// Charges in hand, and the one thing a death does not give back: the
+    /// kit deals them once and the match spends them.
     pub charge: [u8; MAX_CHARGES],
-    /// Bounty earned by killing, as opposed to bounty carried.
-    pub earned: u16,
+    /// Kills since this hull last spawned, which is its whole bounty beyond
+    /// the base. Cleared by death.
+    pub run: u16,
     /// The score. Not cleared by death.
     pub points: u32,
-    /// The ship this one is riding, or 255.
-    pub carrier: u8,
 }
 
 #[repr(C)]
@@ -311,15 +303,6 @@ pub const MAX_FLAGS: usize = 16;
 pub const TEAM_NONE: u8 = 255;
 /// A trigger with nothing on it. Matches `SIM_NO_PATTERN`.
 pub const NO_PATTERN: u8 = 255;
-
-#[repr(C)]
-#[derive(Clone, Copy, Default)]
-pub struct sim_prize {
-    pub active: u8,
-    pub x: i32,
-    pub y: i32,
-    pub life: u16,
-}
 
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
@@ -363,22 +346,13 @@ pub struct sim_weapon {
 pub struct sim_state {
     pub tick: u32,
     pub rng: u32,
-    pub prize_rng: u32,
     pub ship_count: u8,
     pub weapon_count: u16,
-    pub prize_timer: u16,
     pub ships: [sim_ship; MAX_SHIPS],
     pub weapons: [sim_weapon; MAX_WEAPONS],
-    pub prizes: [sim_prize; MAX_PRIZES],
     pub flags: [sim_flag; MAX_FLAGS],
     pub flag_count: u8,
 }
-
-/// Must match `SIM_MAX_PRIZES`. The C core writes `sim_state` through this
-/// mirror, so a smaller number here is not a smaller array -- it is a buffer
-/// overrun into whatever the allocator put next, which is exactly how raising
-/// it from 64 announced itself: a glibc malloc assertion, in every test.
-pub const MAX_PRIZES: usize = 255;
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -430,7 +404,10 @@ extern "C" {
     pub fn sim_hash(s: *const sim_state) -> u64;
     /// What a pilot is worth to whoever kills them: a sum over what they hold
     /// plus what killing has earned. Derived, never stored.
-    pub fn sim_bounty(sh: *const sim_ship) -> i32;
+    /// What a pilot is worth: the zone's base plus their run. It takes the
+    /// settings now because the base is a zone number rather than a sum over
+    /// what the hull is holding.
+    pub fn sim_bounty(cfg: *const sim_settings, sh: *const sim_ship) -> i32;
     pub fn sim_pack_around(
         s: *const sim_state,
         out: *mut u8,
@@ -456,7 +433,6 @@ extern "C" {
     pub fn sim_map_unpack(map: *mut sim_map, inp: *const u8, len: i32) -> i32;
     pub fn sim_set_ship_team(s: *mut sim_state, cfg: *const sim_settings, i: u8, team: u8)
         -> c_int;
-    pub fn sim_attach(s: *mut sim_state, cfg: *const sim_settings, i: u8, target: u8) -> c_int;
     pub fn sim_map_spawn(
         map: *const sim_map,
         team: u8,
@@ -478,14 +454,19 @@ extern "C" {
     pub fn sim_eff_max_energy(c: *const sim_ship_class, s: *const sim_ship) -> i32;
     pub fn sim_eff_speed(c: *const sim_ship_class, s: *const sim_ship) -> i32;
     pub fn sim_eff_thrust(c: *const sim_ship_class, s: *const sim_ship) -> i32;
-    pub fn sim_take_prize(
-        sh: *mut sim_ship,
-        cfg: *const sim_settings,
-        rng: *mut u32,
-        delta: *mut c_int,
-    ) -> u8;
-    /// A green's grant without a green's roll, for a harness that needs to
-    /// hand two pilots the same kit. Returns whether the count moved.
+    /// Per-slot ceilings for a hull, over the flat kit space. Zero is a slot
+    /// the roster keeps from it.
+    pub fn sim_kit_ceilings(c: *const sim_ship_class, out: *mut u8) -> c_int;
+    /// What a kit spends, which is its sum: every slot costs one.
+    pub fn sim_kit_cost(kit: *const u8) -> c_int;
+    /// Validate a kit against the hull and the budget, store it, deal it with
+    /// ammunition. Returns 0 and changes nothing if it does not fit.
+    pub fn sim_set_kit(sh: *mut sim_ship, cfg: *const sim_settings, kit: *const u8) -> c_int;
+    /// Deal the stored kit. `ammunition` is the difference between arriving
+    /// and respawning: a death re-deals only the frame.
+    pub fn sim_deal_kit(sh: *mut sim_ship, cfg: *const sim_settings, ammunition: c_int);
+    pub fn sim_restart(s: *mut sim_state, cfg: *const sim_settings);
+    /// One named slot, with the hull's ceilings enforced.
     pub fn sim_grant(sh: *mut sim_ship, cfg: *const sim_settings, ty: u8) -> c_int;
     pub fn sim_pack(s: *const sim_state, out: *mut u8, cap: c_int) -> c_int;
     /// The other end of a snapshot. Only a client needs this, and the bot
@@ -521,7 +502,18 @@ pub const MAX_RUNGS: usize = 4;
 pub const MOD_MAX: u8 = 3;
 pub const MAX_CHARGES: usize = 4;
 pub const CHARGE_MAX: u8 = 15;
-pub const PRIZE_COUNT: usize = UP_COUNT + TRIG_COUNT + TRIG_COUNT * MOD_COUNT + MAX_CHARGES;
+/// The flat kit space: a stat, a rung, an add-on or a charge, all one shape.
+pub const SLOT_COUNT: usize = UP_COUNT + TRIG_COUNT + TRIG_COUNT * MOD_COUNT + MAX_CHARGES;
+/// Steps a stat may climb, and what a kit may spend in total. Six over five
+/// stats is exactly the budget; the last two of each are the shop's, and five
+/// at eight is forty against thirty, so the budget always binds.
+pub const UP_STEPS: u8 = 8;
+pub const UP_STEPS_BASE: u8 = 6;
+pub const KIT_BUDGET: u32 = 30;
+/// Charge kinds. A mine is one: a count you carry and spend.
+pub const CHARGE_REPEL: usize = 0;
+pub const CHARGE_BURST: usize = 1;
+pub const CHARGE_MINE: usize = 2;
 pub const MOD_MULTI: usize = 0;
 pub const MOD_BOUNCE: usize = 1;
 pub const MOD_PROX: usize = 2;
@@ -529,19 +521,22 @@ pub const MOD_SHRAPNEL: usize = 3;
 pub const MOD_FREEZE: usize = 4;
 pub const MOD_PUSH: usize = 5;
 
-// Where a thing sits in the flat prize space, mirroring the SIM_PRIZE_ macros.
+// Where a thing sits in the flat kit space, mirroring the SIM_SLOT_ macros.
 // The space is one shape, a count with a ceiling, so a stat, a rung, an add-on
-// and a charge are all addressed the same way, and anything that hands out a
-// specific one names it through these rather than by arithmetic at the call
+// and a charge are all addressed the same way, and anything that names a
+// specific one goes through these rather than doing arithmetic at the call
 // site.
-pub const fn prize_stat(u: usize) -> u8 {
+pub const fn slot_stat(u: usize) -> u8 {
     u as u8
 }
-pub const fn prize_level(t: usize) -> u8 {
+pub const fn slot_level(t: usize) -> u8 {
     (UP_COUNT + t) as u8
 }
-pub const fn prize_mod(t: usize, m: usize) -> u8 {
+pub const fn slot_mod(t: usize, m: usize) -> u8 {
     (UP_COUNT + TRIG_COUNT + t * MOD_COUNT + m) as u8
+}
+pub const fn slot_charge(k: usize) -> u8 {
+    (UP_COUNT + TRIG_COUNT + TRIG_COUNT * MOD_COUNT + k) as u8
 }
 
 // Safe wrappers. The core has no globals and no allocation, so a state is a
@@ -603,26 +598,33 @@ impl World {
         Self::with_map(seed, build_arena)
     }
 
-    /// Build from a packed map file. Errors carry the reason rather than a
-    /// number, because the only person who sees one is an operator holding a
-    /// file they believed was a map.
-    ///
-    /// The map is unpacked before anything shares it, so the settings that point
-    /// into it are derived from the geometry they will actually be played on.
+    /// Build from a packed map file. The map is unpacked before anything
+    /// shares it, so the settings that point into it are derived from the
+    /// geometry they will actually be played on.
     pub fn from_packed(seed: u32, bytes: &[u8]) -> Result<Self, String> {
-        let mut map: Box<sim_map> = zeroed_box();
-        let r = unsafe {
-            sim_map_unpack(
-                &mut *map as *mut sim_map,
-                bytes.as_ptr(),
-                bytes.len() as i32,
-            )
-        };
-        match r {
-            0 => Ok(Self::on_map(seed, std::sync::Arc::from(map))),
-            -2 => Err("the tiles do not match the hash in its header".into()),
-            _ => Err("not a map file, or truncated".into()),
-        }
+        unpack_map(bytes).map(|map| Self::on_map(seed, map))
+    }
+
+    /// Play the next match on different ground.
+    ///
+    /// The settings go back to the baseline over the new geometry, because a
+    /// good deal of the baseline is derived from the map it was built against
+    /// and `cfg.map` is a pointer into the old tiles either way. The caller
+    /// re-applies the zone file afterwards, which is the same order a room
+    /// takes when it opens.
+    ///
+    /// Ships keep their places, which is wrong for about one tick and right
+    /// afterwards: a match starts by putting everybody on their own home
+    /// anyway, and a mode that changes the ground mid-fight is not a thing
+    /// this game has.
+    pub fn set_map(&mut self, map: std::sync::Arc<sim_map>) {
+        self.map = map;
+        self.reset_settings();
+        // Nothing in the old geometry survives the swap. A flag stands on a
+        // tile of a map that is gone and a round in the air was fired down a
+        // lane that no longer exists.
+        self.state.flag_count = 0;
+        self.state.weapon_count = 0;
     }
 
     /// Another simulation of the same geometry, for a second room of a zone.
@@ -714,7 +716,7 @@ impl World {
     /// state, and the scratch and event buffers a step needs. The one place a
     /// World is assembled, so a room built here and a room built by `sibling`
     /// start from the same numbers.
-    fn on_map(seed: u32, map: std::sync::Arc<sim_map>) -> Self {
+    pub fn on_map(seed: u32, map: std::sync::Arc<sim_map>) -> Self {
         let mut cfg: Box<sim_settings> = zeroed_box();
         unsafe { sim_settings_baseline(&mut *cfg, &*map) };
         let mut state: Box<sim_state> = zeroed_box();
@@ -810,13 +812,6 @@ impl World {
         unsafe { sim_set_ship_team(&mut *self.state, &*self.cfg, i, team) == 0 }
     }
 
-    /// Ride a teammate, or 255 to stop. Every condition is the core's: alive,
-    /// same side, a hull that carries, room on it, and a full bar. The room
-    /// has nothing to add, which is why this is a straight pass through.
-    pub fn attach(&mut self, i: u8, target: u8) -> bool {
-        unsafe { sim_attach(&mut *self.state, &*self.cfg, i, target) == 0 }
-    }
-
     pub fn step(&mut self, inputs: &[sim_input]) {
         unsafe {
             sim_step(
@@ -902,7 +897,7 @@ impl World {
     }
 
     pub fn bounty(&self, ship: usize) -> i32 {
-        unsafe { sim_bounty(&self.state.ships[ship]) }
+        unsafe { sim_bounty(&*self.cfg, &self.state.ships[ship]) }
     }
 
     /// The common gate for voluntarily replacing a hull or leaving it behind:
@@ -912,49 +907,31 @@ impl World {
         sh.active != 0 && sh.alive != 0 && sh.energy >= self.eff_max_energy(ship)
     }
 
-    /// Hand a ship the zone's opening greens: the same roll, off the same
-    /// generator, that the core runs for a ship it spawns itself.
+    /// Give a seat a kit, validated against the hull and the budget. False
+    /// means it did not fit and nothing changed, so a refused kit leaves the
+    /// pilot in what they were already flying rather than half dressed.
     ///
-    /// A joining pilot needs this asked for explicitly. The core outfits what
-    /// it spawns, but a seat handed on by a departing bot is not a spawn, and
-    /// `join` clears what the last occupant held so nobody inherits a game in
-    /// progress. Clearing without re-outfitting is what left an arriving pilot
-    /// plain in a zone whose spawn kit is not empty, until their first death
-    /// respawned them properly.
-    pub fn outfit(&mut self, ship: usize) {
-        for _ in 0..self.cfg.spawn_prizes {
-            let sh: *mut sim_ship = &mut self.state.ships[ship];
-            let rng: *mut u32 = &mut self.state.prize_rng;
-            unsafe { sim_take_prize(sh, &*self.cfg, rng, std::ptr::null_mut()) };
-        }
+    /// This is what a seat is handed on arrival and what a hangar sends. The
+    /// core deals it again at every respawn, minus the ammunition.
+    /// Open a match: everybody home, whole, and reloaded. See `sim_restart`.
+    pub fn restart(&mut self) {
+        unsafe { sim_restart(&mut *self.state, &*self.cfg) }
     }
 
-    /// Roll one green for this ship off a generator the caller holds, and say
-    /// whether the count actually moved.
-    ///
-    /// `outfit` rolls the same greens off the state's own generator, which is
-    /// what a live arena wants. A measurement wants two things that arrangement
-    /// cannot give: rolls that repeat for a given salt, and a bout whose own
-    /// stream does not shift depending on how many greens were handed out
-    /// first. So the generator comes in from outside.
-    ///
-    /// The return is the delta: 1 where a count moved, 0 where the roll landed
-    /// on a ceiling, -1 for rust. Bounty does not care which, since every green
-    /// is worth one whatever it turned out to be, so this is the difference
-    /// between what two pilots are matched on and what they got for it.
-    pub fn take_prize_from(&mut self, ship: usize, rng: &mut u32) -> i32 {
+    pub fn set_kit(&mut self, ship: usize, kit: &[u8; SLOT_COUNT]) -> bool {
         let sh: *mut sim_ship = &mut self.state.ships[ship];
-        let mut delta: c_int = 0;
-        unsafe { sim_take_prize(sh, &*self.cfg, rng as *mut u32, &mut delta) };
-        delta as i32
+        unsafe { sim_set_kit(sh, &*self.cfg, kit.as_ptr()) != 0 }
     }
 
-    /// Hand a ship one specific thing from the tech tree, no roll involved.
-    /// False means the hull is already at that ceiling or has no such trigger,
-    /// which is a caller's answer rather than an error: it is how the loadout
-    /// tournament learns that a hull cannot wear the kit it is being measured
-    /// in. Never touches the generator, so a bout that grants is the same bout
-    /// as one that does not.
+    /// Per-slot ceilings for a hull: how many of each a kit may ask for.
+    /// Zero is a slot the roster keeps from that hull.
+    pub fn kit_ceilings(&self, cls: u8) -> [u8; SLOT_COUNT] {
+        let mut out = [0u8; SLOT_COUNT];
+        let c: *const sim_ship_class = &self.cfg.classes[cls as usize];
+        unsafe { sim_kit_ceilings(c, out.as_mut_ptr()) };
+        out
+    }
+
     pub fn grant(&mut self, ship: usize, ty: u8) -> bool {
         let sh: *mut sim_ship = &mut self.state.ships[ship];
         unsafe { sim_grant(sh, &*self.cfg, ty) != 0 }
@@ -963,19 +940,27 @@ impl World {
 
 /// Geometry from the bytes a zone sends at join, with nothing else attached.
 ///
-/// `World::from_packed` does this and builds a simulation around it. A client
-/// with many pilots in one room wants the geometry once and a simulation each,
-/// so the two halves are separable here.
-pub fn unpack_map(bytes: &[u8]) -> Option<std::sync::Arc<sim_map>> {
+/// `World::from_packed` builds a simulation around this. A client with many
+/// pilots in one room wants the geometry once and a simulation each, and a
+/// zone with several maps wants all of them and a room on one, so the two
+/// halves are separable here.
+///
+/// The error is the reason rather than a number, because the only person who
+/// ever reads one is an operator holding a file they believed was a map.
+pub fn unpack_map(bytes: &[u8]) -> Result<std::sync::Arc<sim_map>, String> {
     let mut map: Box<sim_map> = zeroed_box();
-    let ok = unsafe {
+    let r = unsafe {
         sim_map_unpack(
             &mut *map as *mut sim_map,
             bytes.as_ptr(),
             bytes.len() as i32,
         )
     };
-    (ok == 0).then(|| std::sync::Arc::from(map))
+    match r {
+        0 => Ok(std::sync::Arc::from(map)),
+        -2 => Err("the tiles do not match the hash in its header".into()),
+        _ => Err("not a map file, or truncated".into()),
+    }
 }
 
 /// The same arena the single-player client builds, so a player sees the same
@@ -1028,6 +1013,71 @@ mod layout {
                 "sim_events mirror is the wrong size"
             );
         }
+    }
+
+    /// The event numbers are not sizes, so nothing above catches them drifting.
+    ///
+    /// They drifted. `SIM_EV_PRIZE` came out of the core with the prize,
+    /// which slid `SIM_EV_CHARGE` from 8 to 7 and every event after it down by
+    /// one, and the hand-written mirror stayed where it was. What the room
+    /// then did was match a charge against 8, find an expiry there, and send
+    /// nobody the repel that had just gone off in front of them.
+    ///
+    /// So this reads the header -- the actual source of truth, not a copy of
+    /// it -- and numbers the enum the way a C compiler would.
+    #[test]
+    fn the_event_numbers_are_the_ones_the_core_emits() {
+        let header = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../sim/include/sim/sim.h"
+        ))
+        .expect("the core header sits beside the server");
+        let body = header
+            .split_once("typedef enum {\n    SIM_EV_FIRE")
+            .expect("sim_event_type starts at SIM_EV_FIRE")
+            .1;
+        let body = body.split_once("} sim_event_type;").expect("and ends").0;
+
+        let mut next = 0i64;
+        let mut found = std::collections::HashMap::new();
+        for name in std::iter::once("SIM_EV_FIRE = 1").chain(
+            body.lines()
+                .map(|l| l.split("/*").next().unwrap_or("").trim())
+                .filter(|l| l.starts_with("SIM_EV_")),
+        ) {
+            let (name, value) = match name.split_once('=') {
+                Some((n, v)) => (n.trim(), v.trim_end_matches(',').trim().parse().unwrap()),
+                None => (name.trim_end_matches(',').trim(), next),
+            };
+            next = value + 1;
+            found.insert(name.to_string(), value);
+        }
+
+        for (name, mirrored) in [
+            ("SIM_EV_FIRE", EV_FIRE),
+            ("SIM_EV_BOUNCE", EV_BOUNCE),
+            ("SIM_EV_HIT", EV_HIT),
+            ("SIM_EV_DEATH", EV_DEATH),
+            ("SIM_EV_SPAWN", EV_SPAWN),
+            ("SIM_EV_EXPIRE", EV_EXPIRE),
+            ("SIM_EV_CHARGE", EV_CHARGE),
+            ("SIM_EV_FLAG_TAKE", EV_FLAG_TAKE),
+            ("SIM_EV_FLAG_DROP", EV_FLAG_DROP),
+            ("SIM_EV_GOAL", EV_GOAL),
+            ("SIM_EV_WARP", EV_WARP),
+            ("SIM_EV_RICOCHET", EV_RICOCHET),
+        ] {
+            assert_eq!(
+                found.get(name).copied(),
+                Some(mirrored as i64),
+                "{name} is not where the mirror says it is"
+            );
+        }
+        assert_eq!(
+            found.len(),
+            12,
+            "the core has an event the mirror has never heard of"
+        );
     }
 
     /// Size is not enough, and this is the test that proves why. `max_ships`
