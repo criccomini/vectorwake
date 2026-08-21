@@ -1180,8 +1180,8 @@ do
 
     -- And an engine with no open_url at all does not take the menu down.
     _G.sys.open_url = nil
-    local at = discord_row()
-    local ok = pcall(menu.click_stage, at)
+    local link = discord_row()
+    local ok = pcall(menu.click_stage, link)
     check("an engine without open_url survives the tap", ok)
 end
 
@@ -1245,7 +1245,10 @@ end
 -- card because a row has one press and there are two answers.
 
 do
-    local was_home, was_stack, was_sel = menu.home, menu.stack, menu.sel
+    -- Saved and put back, so this block leaves the menu where it found
+    -- it. Named apart from the three at the top of the file, which do the
+    -- same job for a different block.
+    local kept_home, kept_stack, kept_sel = menu.home, menu.stack, menu.sel
     local dir = package.loaded["arena.directory"]
     account.friends = {
         {account = 11, name = "Rill 121", zone = "melee", instance = "abc"},
@@ -1298,10 +1301,10 @@ do
     -- Adding is one press and reaches the account layer as an add.
     menu.sel.friends = 4
     account.friended = nil
-    local act = menu.step({go = true})
+    local pressed = menu.step({go = true})
     check("adding is one press", account.friended ~= nil
           and account.friended.who == 14 and account.friended.add == true,
-          tostring(act))
+          tostring(pressed))
 
     -- A friend opens a card instead, because removing is on it.
     menu.sel.friends = 1
@@ -1358,7 +1361,7 @@ do
 
     account.friends, account.asked, account.here = {}, {}, {}
     account.waiting = {}
-    menu.home, menu.stack, menu.sel = was_home, was_stack, was_sel
+    menu.home, menu.stack, menu.sel = kept_home, kept_stack, kept_sel
 end
 
 -- --- the hangar: thirty points, spent -----------------------------------------
@@ -1399,9 +1402,9 @@ do
     menu.sel = {}
     menu.click_rail(top_index("hangar"))
     menu.sel.hangar = 1
-    local act = menu.step({go = true})
-    check("picking a hull asks for it", act == "ship" and menu.pending == 0,
-          tostring(act))
+    local pressed = menu.step({go = true})
+    check("picking a hull asks for it", pressed == "ship" and menu.pending == 0,
+          tostring(pressed))
     check("and goes on to its kit", menu.at() == "kit",
           table.concat(menu.stack, "/"))
 

@@ -838,7 +838,7 @@ end
 -- page had better not still be claiming it is. What belongs there is the
 -- footprint, which is the whole of what one hull has that another does not.
 do
-    local st = draw({
+    local hangar = draw({
         depth = 2, sel = 2, rail = RAIL, rail_sel = 1, focus = "stage",
         home = true, closable = false, page = "kit",
         head = {label = "Cipher", hull = 4},
@@ -852,16 +852,16 @@ do
              choices = 6, owned = 6, arena_max = 8, index = 2},
         },
     })
-    check("the hangar reads the hull's footprint", has(st, "footprint"),
-          table.concat(texts(st), " "))
+    check("the hangar reads the hull's footprint", has(hangar, "footprint"),
+          table.concat(texts(hangar), " "))
     local said_beam = false
-    for _, t in ipairs(texts(st)) do
+    for _, t in ipairs(texts(hangar)) do
         if t == "12 PX" then said_beam = true end
     end
     check("in px, off the core's own extents", said_beam,
-          table.concat(texts(st), " "))
-    check("and says nothing about a hull's limits", not has(st, "hull limits"),
-          table.concat(texts(st), " "))
+          table.concat(texts(hangar), " "))
+    check("and says nothing about a hull's limits", not has(hangar, "hull limits"),
+          table.concat(texts(hangar), " "))
 end
 
 print(fails == 0 and "all good" or (fails .. " failed"))

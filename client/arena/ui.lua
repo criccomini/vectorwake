@@ -3685,14 +3685,14 @@ end
 -- A diamond rather than a square because a row of squares is a progress bar,
 -- and this is not progress: it is a number of things chosen out of a budget,
 -- and every one of them cost the same one point.
-function pages.pip(cx, cy, k, state, col)
+function pages.pip(cx, cy, k, lit, col)
     local a = {cx, ry(cy - k), cx + k, ry(cy), cx, ry(cy + k), cx - k, ry(cy)}
-    if state == "on" then
+    if lit == "on" then
         F.layer:quad(a[1], a[2], a[3], a[4], a[5], a[6], a[7], a[8], col)
     else
         F.layer:outline({a[1], a[2], a[3], a[4], a[5], a[6], a[7], a[8]},
                         0.9 * F.scale,
-                        pal.a(col, state == "locked" and 0.14 or 0.34), true)
+                        pal.a(col, lit == "locked" and 0.14 or 0.34), true)
     end
 end
 
@@ -3701,7 +3701,6 @@ end
 -- are chips because they are not ladders you climb but switches you throw.
 function pages.chip(x, y, w, h, r, hot, focused)
     local held = (r.choice or 0) > 0
-    local col = held and pal.FRIEND or pal.DIM
     if held then
         rect(x, y, w, h, pal.a(pal.FRIEND, 0.14))
     end
@@ -3926,11 +3925,11 @@ function pages.kit(v, x, y, w, h, focused)
                         1.0 * F.scale, pal.a(pal.RADAR_TILE, 0.6), true)
             px = px + 5 * F.scale
             for k = base + 1, r.arena_max do
-                local state = "locked"
+                local lit = "locked"
                 if k <= (r.owned or 0) then
-                    state = (r.choice or 0) >= k and "on" or "off"
+                    lit = (r.choice or 0) >= k and "on" or "off"
                 end
-                pages.pip(px, cy, 4.4 * F.scale, state, col)
+                pages.pip(px, cy, 4.4 * F.scale, lit, col)
                 px = px + step
             end
         end
@@ -4751,12 +4750,6 @@ local function stage_row(x, y, w, h, r, hot)
     -- Two kinds of row you cannot press, written the same shade back from the
     -- ones you can: one nothing is serving yet, and one with no seat left.
     if r.waiting or r.full then col = pal.a(col, 0.6) end
-    local size = (M.compact and 17 or 18) * F.scale
-    -- A row carrying a sentence is a row about a thing you are choosing
-    -- between rather than a value you are setting, and the mocks set those
-    -- names half again as large: it is the name that is being read, and the
-    -- sentence under it is the reading.
-    if note and h >= 44 * F.scale then size = (M.compact and 19 or 21) * F.scale end
     -- A row carrying a sentence of its own gives it the lower half and takes
     -- the upper for everything else. The games are the list that wants it:
     -- choosing between three of them is reading three sentences, and one at a
@@ -4767,6 +4760,17 @@ local function stage_row(x, y, w, h, r, hot)
     -- than dropping it: the shop's descriptions landed on top of the names
     -- they described.
     local note = (h >= 44 * F.scale) and r.note or nil
+    -- A row carrying a sentence is a row about a thing you are choosing
+    -- between rather than a value you are setting, and the mocks set those
+    -- names half again as large: it is the name that is being read, and the
+    -- sentence under it is the reading.
+    --
+    -- Declared under `note` rather than over it, which is the whole of what
+    -- was wrong here: read above its own `local`, `note` is a global, a
+    -- global is nil, and the larger size this chooses never once applied.
+    -- That is the bug .luacheckrc exists to catch, and it caught this one.
+    local size = (M.compact and 17 or 18) * F.scale
+    if note and h >= 44 * F.scale then size = (M.compact and 19 or 21) * F.scale end
     local ly = note and (y + h * 0.36) or (y + h / 2)
     -- Drawn here unless the detail turns out not to fit beside it, in which
     -- case the pair is laid out as two lines below and this one is skipped.
@@ -5478,7 +5482,7 @@ function M.menu(v)
         px1, py1 = F.w, F.h
         F.layer:seg(rx, ry(ry_ - 12 * F.scale), F.w - F.safe_r - margin, ry(ry_ - 12 * F.scale),
               1.0 * F.scale, pal.a(pal.RADAR_TILE, 0.6), true)
-    
+
         tab_h = F.h - ry_
     else
         local total = math.min(F.w - F.safe_l - F.safe_r - 2 * margin, 940 * F.scale)
@@ -5826,18 +5830,21 @@ function M.menu(v)
         local hh = 40 * F.scale
         local name = v.head.label or ""
         local size = 18 * F.scale
-        local base = top + hh * 0.56
+        -- Where the heading's own baseline sits. Named for what it is rather
+        -- than `base`, which is the panel's wash weight a few hundred lines
+        -- up: two different numbers under one name in one function.
+        local head_y = top + hh * 0.56
         -- A hull where the page is about one, and nothing where it is not:
         -- the shop's heading is a wallet and has no ship in it.
         local nx = tx + 4 * F.scale
         if v.head.hull then
-            thumb(tx + 16 * F.scale, base - 5 * F.scale, v.head.hull,
+            thumb(tx + 16 * F.scale, head_y - 5 * F.scale, v.head.hull,
                   pal.a(pal.FRIEND, 0.95), hh / 78)
             nx = tx + 40 * F.scale
         end
-        txt(name, nx, base, size, pal.a(pal.INK, 0.95), nil, MENU_FONT)
+        txt(name, nx, head_y, size, pal.a(pal.INK, 0.95), nil, MENU_FONT)
         if v.head.role then
-            txt(v.head.role, nx + text_w(name, size) + 10 * F.scale, base,
+            txt(v.head.role, nx + text_w(name, size) + 10 * F.scale, head_y,
                 10.5 * F.scale, pal.a(pal.DIM, 0.9))
         end
         top = top + hh
@@ -5986,9 +5993,13 @@ function M.menu(v)
         if #v.rows > fits then
             local bar = 3 * F.scale
             local hgt = room * fits / #v.rows
-            local at = room * (first - 1) / #v.rows
+            -- How far down the bar its thumb starts. Named for that rather
+            -- than `at`, which a few lines up is where the next row is drawn:
+            -- one name for two positions in one function is how a scrollbar
+            -- ends up tracking the wrong thing.
+            local scrolled = room * (first - 1) / #v.rows
             rect(tx + lw + 8 * F.scale, ty, bar, room, pal.a(pal.DIM, 0.14))
-            rect(tx + lw + 8 * F.scale, ty + at, bar, hgt,
+            rect(tx + lw + 8 * F.scale, ty + scrolled, bar, hgt,
                  pal.a(pal.RADAR_TILE, 0.85))
         end
         if asidew > 0 then

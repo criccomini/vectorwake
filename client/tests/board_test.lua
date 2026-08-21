@@ -262,13 +262,13 @@ end
 -- armed state left the board lighting half of what it was waiting to be told,
 -- which is a page asking for a binding while showing a different one.
 do
-    local binds = require("arena.binds")
-    binds.reset()
-    binds.set("map", {"shift", "tab"})
+    local keymap = require("arena.binds")
+    keymap.reset()
+    keymap.set("map", {"shift", "tab"})
     local asking = draw_at(1280, 800, 7, "map")
     check("a chord lights every key it is made of", asking.lit == 3,
           "lit " .. asking.lit)
-    binds.reset()
+    keymap.reset()
 end
 
 -- And every one of them is pressable. The picture is a control surface, not a

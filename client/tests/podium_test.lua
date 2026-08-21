@@ -110,7 +110,6 @@ package.loaded["arena.world"] = {
 }
 
 local ui = require("arena.ui")
-local pal = require("arena.palette")
 
 -- --- the harness -----------------------------------------------------------
 
