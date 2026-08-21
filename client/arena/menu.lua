@@ -462,7 +462,11 @@ local function kit_slots()
         local c = pal.CHARGES[k + 1]
         out[#out + 1] = {slot = simn("SLOT_CHARGE0", up + trig + trig * mods) + k,
                          label = c and c.name or ("charge " .. k),
-                         short = c and c.short or "?", group = "charges"}
+                         short = c and c.short or "?",
+                         -- The color they go off in, which the page used to
+                         -- hardcode where it drew them and now travels with
+                         -- the slot like every other row's does.
+                         tint = pal.CHARGE_COL, group = "charges"}
     end
     return out
 end

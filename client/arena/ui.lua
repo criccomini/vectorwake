@@ -4006,11 +4006,22 @@ function pages.kit(v, x, y, w, h, focused)
         end
     end
 
-    -- A ladder: a mark, its steps, what it is set to, and its name. The steps
-    -- are the control, and each one takes a press of its own, so clicking the
-    -- fourth pip asks for four rather than adding one to whatever is there.
-    -- See `menu.click_kit_at`.
+    -- A ladder: what it is, its steps, and what it is set to, in that order.
+    -- The steps are the control, and each one takes a press of its own, so
+    -- clicking the fourth pip asks for four rather than adding one to whatever
+    -- is there. See `menu.click_kit_at`.
+    --
+    -- One name, said once. The row used to open with a three letter mark and
+    -- close with the same word spelled out, with the pips and the count
+    -- between them: "SPD [pips] 4 Speed" is two labels for one thing at
+    -- opposite ends of a row, and the eye reads the second one as a new fact.
+    -- The mark sits against its own word now, which is where an abbreviation
+    -- is taught rather than merely used, and the arena's corner stack that
+    -- draws NRG and SPD over its pips is the reason it is still here at all.
     local srow = 26 * F.scale
+    -- Where the pips begin, which is the same on every row of the page so the
+    -- ladders line up under each other whatever their names are worth.
+    local NAMEW = 118 * F.scale
     local function ladder(r, readout)
         local hot = cursor(r)
         if hot then wash(kx - 14 * F.scale, cy - srow / 2 + 2 * F.scale,
@@ -4019,7 +4030,9 @@ function pages.kit(v, x, y, w, h, focused)
         local col = r.tint_col or pal.FRIEND
         lbl(r.short or "", kx, cy, pal.a(col, hot and 1 or 0.8), nil,
             9.5 * F.scale)
-        local px = kx + 40 * F.scale
+        txt(r.label, kx + 38 * F.scale, cy, 12.5 * F.scale,
+            pal.a(pal.INK, hot and 0.95 or 0.8), nil, MENU_FONT)
+        local px = kx + NAMEW
         local base = math.min(6, r.arena_max or 6)
         local step = 13 * F.scale
         -- The pips first, so a press on one beats the row behind it: hit boxes
@@ -4054,14 +4067,12 @@ function pages.kit(v, x, y, w, h, focused)
         -- come back down, and dragging back to nothing needs somewhere to
         -- land. It sits under the mark, where there are no pips.
         if live and r.pick then
-            hit(kx - 14 * F.scale, cy - srow / 2, 52 * F.scale, srow,
+            hit(kx - 14 * F.scale, cy - srow / 2, NAMEW - 6 * F.scale, srow,
                 "kit_at", r.index, 0)
         end
         txt(readout and readout(r.choice or 0) or tostring(r.choice or 0),
             px + 10 * F.scale, cy, 11 * F.scale,
             pal.a(pal.INK, hot and 0.95 or 0.7))
-        txt(r.label, px + 28 * F.scale, cy, 12 * F.scale,
-            pal.a(pal.DIM, hot and 1 or 0.85), nil, MENU_FONT)
         if live and r.pick then hit(kx - 14 * F.scale, cy - srow / 2, kw, srow,
                            "stage", r.index) end
         cy = cy + srow
@@ -4109,23 +4120,11 @@ function pages.kit(v, x, y, w, h, focused)
     -- back, so the page says so where they are chosen.
     if #charges > 0 then
         rule("charges", "spent charges do not come back when you die")
-        for _, r in ipairs(charges) do
-            local hot = cursor(r)
-            if hot then wash(kx - 14 * F.scale, cy - srow / 2 + 2 * F.scale,
-                             kw + 14 * F.scale, srow - 2 * F.scale,
-                             pal.a(pal.FRIEND, focused and 0.2 or 0.1)) end
-            txt(r.label, kx, cy, 13 * F.scale,
-                pal.a(pal.INK, hot and 0.95 or 0.8), nil, MENU_FONT)
-            local px = kx + 92 * F.scale
-            for k = 1, (r.choices or 0) do
-                pages.pip(px, cy, 4.4 * F.scale,
-                     (r.choice or 0) >= k and "on" or "off", pal.CHARGE_COL)
-                px = px + 13 * F.scale
-            end
-            if live and r.pick then hit(kx - 14 * F.scale, cy - srow / 2, kw, srow,
-                               "stage", r.index) end
-            cy = cy + srow
-        end
+        -- On the same ladder as everything else. These were the one group
+        -- with a row shape of their own: the name on the left, the pips at an
+        -- offset of their own, and no count at the end, so a page that is one
+        -- kind of control all the way down had two.
+        for _, r in ipairs(charges) do ladder(r) end
     end
 end
 
