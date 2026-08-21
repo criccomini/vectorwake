@@ -3010,6 +3010,137 @@ local function match_clock(m, names)
     end
 end
 
+-- The ending: who took the match, what everybody did in it, and what the room
+-- is counting down to.
+--
+-- Built out of what the roster already carries rather than out of a message of
+-- its own. Every number here is one the scoreboard has been drawing all match:
+-- kills, deaths, and `points`, which is the bounty a pilot collected and so
+-- exactly the rivets the match paid them.
+--
+-- It sits where the menu sits and stands down for it, the way the two big
+-- centered lines do, because a player who opens the menu during an
+-- intermission is doing the one thing the intermission is for.
+local function podium(o, m, names)
+    -- The roster, asked for here rather than assumed: the scoreboard fills it
+    -- when somebody opens the scoreboard, and this page is on screen whether
+    -- anybody did or not.
+    refresh_players(o.pilots, o.watchers, nil, o.viewer_name)
+    local pad = 18 * F.scale
+    local w = math.min(F.w - 2 * pad, 620 * F.scale)
+    local x = (F.w - w) / 2
+    local line = (M.compact and 15 or 17) * F.scale
+
+    -- Which side took it, and by how much. A draw is a real result at three
+    -- minutes and says so rather than naming a winner by tie-break.
+    local best, best_at, drawn = -1, nil, false
+    for team, n in pairs(m.score or {}) do
+        if n > best then best, best_at, drawn = n, team, false
+        elseif n == best then drawn = true end
+    end
+    local head
+    if drawn or best_at == nil then
+        head = "drawn"
+    else
+        head = ((names and names[best_at]) or "a side") .. " takes it"
+    end
+
+    -- The sides, each with its own pilots under it, best first. Two columns
+    -- where there is room for two.
+    local sides, seen = {}, {}
+    for team in pairs(m.score or {}) do
+        sides[#sides + 1] = team
+        seen[team] = {}
+    end
+    table.sort(sides, function(a, b)
+        if (a == view_team) ~= (b == view_team) then return a == view_team end
+        return a < b
+    end)
+    -- The best gun in the room, whichever side it was on. Nobody in a
+    -- scoreless match, because a mark on a pilot with no kills is a prize for
+    -- turning up, and the fewer deaths where two are level, so the mark lands
+    -- in the same place on every machine rather than on whoever the roster
+    -- happened to name first.
+    local mvp = nil
+    for _, r in ipairs(rows) do
+        if not r.watch and seen[r.team] then
+            local list = seen[r.team]
+            list[#list + 1] = r
+            if r.k > 0 and (mvp == nil or r.k > mvp.k
+                            or (r.k == mvp.k and r.d < mvp.d)) then
+                mvp = r
+            end
+        end
+    end
+    for _, list in pairs(seen) do
+        table.sort(list, function(a, b)
+            if a.k ~= b.k then return a.k > b.k end
+            return a.d < b.d
+        end)
+    end
+
+    local tall = 0
+    for _, list in pairs(seen) do tall = math.max(tall, #list) end
+    local h = 34 * F.scale + 20 * F.scale + tall * line + 40 * F.scale
+    local y = math.max(72 * F.scale, (F.h - h) / 2)
+
+    -- A wash rather than a panel, the same one the menu sits on: the match is
+    -- over and the arena behind it is not hidden, because the next one starts
+    -- in the room you are looking at.
+    rect(x - pad, y - pad, w + 2 * pad, h + 2 * pad, pal.rgb(0x03050a, 0.72))
+    txt(head, F.w / 2, y + 6 * F.scale, (M.compact and 17 or 21) * F.scale,
+        pal.a(pal.INK, 0.95), "center")
+
+    local cw = w / math.max(1, #sides)
+    for i, team in ipairs(sides) do
+        local cx = x + (i - 1) * cw
+        local col = (team == view_team) and pal.FRIEND or pal.ENEMY
+        local nm = (names and names[team]) or ""
+        txt(nm, cx + 12 * F.scale, y + 34 * F.scale, 12 * F.scale,
+            pal.a(col, 0.9))
+        txt(tostring(m.score and m.score[team] or 0),
+            cx + cw - 12 * F.scale, y + 34 * F.scale, 12 * F.scale,
+            pal.a(col, 0.9), "right")
+        F.layer:seg(cx + 12 * F.scale, ry(y + 44 * F.scale),
+                    cx + cw - 12 * F.scale, ry(y + 44 * F.scale),
+                    1.0 * F.scale, pal.a(pal.RADAR_TILE, 0.6), true)
+        for k, r in ipairs(seen[team] or {}) do
+            local ry0 = y + 54 * F.scale + (k - 1) * line
+            local a = r.self and 1 or 0.8
+            -- Your own row keeps the field the scoreboard gives it, so the
+            -- one line you are looking for is the one that is lit.
+            if r.self then
+                wash(cx + 6 * F.scale, ry0 - line / 2, cw - 12 * F.scale, line,
+                     pal.a(pal.FRIEND, 0.12))
+            end
+            txt(r.name, cx + 12 * F.scale, ry0, 12.5 * F.scale,
+                pal.a(r.self and pal.FRIEND or pal.INK, a), nil, nil, true)
+            -- The best gun in the room, whichever side it was on. One mark
+            -- rather than a column, because it is one pilot.
+            if r == mvp then
+                txt("mvp", cx + cw - 62 * F.scale, ry0, 9.5 * F.scale,
+                    pal.a(pal.CHARGE_COL, 0.85), "right")
+            end
+            txt(r.k .. "  " .. r.d, cx + cw - 12 * F.scale, ry0, 12 * F.scale,
+                pal.a(pal.DIM, 0.95), "right")
+        end
+    end
+
+    -- What the match paid you, and when the next one starts. The payout is
+    -- your own bounty taken, which is the number the wallet moves by.
+    local foot = y + h - 6 * F.scale
+    local mine
+    for _, r in ipairs(rows) do if r.self then mine = r end end
+    if mine then
+        local paid = mine.p or 0
+        txt("banked " .. paid .. (paid == 1 and " rivet" or " rivets"),
+            x + 12 * F.scale, foot, 12 * F.scale, pal.a(pal.INK, 0.9))
+    end
+    local left = m.left or 0
+    txt(string.format("next match in %d:%02d", math.floor(left / 60), left % 60),
+        x + w - 12 * F.scale, foot, 12 * F.scale, pal.a(pal.DIM, 0.95), "right")
+end
+
 function M.hud(o)
     F.case = "upper"
     if sim.ship_count() == 0 then return end
@@ -3110,6 +3241,12 @@ function M.hud(o)
     -- The two big centered lines are the only interface that sits where the
     -- menu does. The panels can share the screen with it; these cannot.
     if o.menu_open then return end
+    -- The ending, while the room counts down to the next one. Same place, same
+    -- reason: it is the thing being read.
+    if o.match and not o.match.playing then
+        podium(o, o.match, o.side_names)
+        return
+    end
     -- Over the arena and under nothing, since it is the thing being read. The
     -- game carries on behind it: nothing is paused here, and a player who
     -- opens this in a fight can still be shot while they read.

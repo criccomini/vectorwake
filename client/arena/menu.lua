@@ -160,6 +160,14 @@ function M.spectating()
     return M.watching
 end
 
+-- Whether the room is between matches. A zone that plays no matches has no
+-- between, and a zone that does spends twenty five seconds of every three
+-- minutes here: it is the window the hangar opens in.
+function M.between()
+    local m = net.match
+    return m ~= nil and not m.playing
+end
+
 local VOLUMES = {{0, "off"}, {0.3, "quiet"}, {0.6, "half"}, {1.0, "full"}}
 -- The soundtrack is its own mixer group and its own row, because wanting the
 -- game loud and the music off is the commonest thing anybody wants out of a
@@ -762,11 +770,24 @@ local NODES = {
     -- alone would strand a player who needs to mute the game.
     root = {rows = function()
         if not M.home then
-            return {
-                {label = "settings", icon = "settings", go = "settings"},
-                {label = "leave", icon = "zones", detail = "back to the games",
-                 act = "leave"},
-            }
+            local rows = {}
+            -- Between matches the hull is not locked, and this is the one
+            -- window a pilot has to change it without leaving the room. It is
+            -- gone again the moment the next whistle goes, which is the rule
+            -- rather than a hurry we invented: a kit is spent inside a hull
+            -- and both are settled before a match, never during one.
+            if M.between() then
+                rows[#rows + 1] = {label = "hangar", icon = "ship",
+                    detail = function()
+                        if M.spectating() then return "spectating" end
+                        return HULLS[M.class + 1][1]
+                    end, go = "hangar"}
+            end
+            rows[#rows + 1] = {label = "settings", icon = "settings",
+                               go = "settings"}
+            rows[#rows + 1] = {label = "leave", icon = "zones",
+                               detail = "back to the games", act = "leave"}
+            return rows
         end
         return {
             {label = "play", icon = "zones", detail = function()
@@ -1680,6 +1701,21 @@ function M.tick(dt)
     -- one, since the keyboard is taken but the mouse is not, so this is where
     -- the state is let go rather than in each of the four ways out.
     if M.arming and (M.at() ~= "controls" or M.ask) then M.arming = nil end
+    -- A page the tab row no longer carries is a page you are no longer in.
+    -- The hangar is the one that comes and goes: it opens for the twenty five
+    -- seconds between matches, and a pilot still standing in it when the
+    -- whistle goes would be picking a hull for a match already running, which
+    -- is exactly what locking the hull for a match means not doing.
+    if #M.stack > 1 then
+        local top, reachable = rows_of(NODES.root), false
+        for _, r in ipairs(top) do
+            if r.go == M.stack[2] then reachable = true break end
+        end
+        if not reachable then
+            M.stack = {"root"}
+            M.sel = {}
+        end
+    end
     if M.at() ~= "controls" then M.foot = nil end
     -- Two pages ask the meta-layer for their contents when they open. Asked
     -- on the edge rather than every frame: a shelf and a week's table are

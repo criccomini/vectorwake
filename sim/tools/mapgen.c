@@ -1113,7 +1113,15 @@ static void sym_room(int x, int y, int w, int h) {
 
 /* Where the two pockets are, set before a layout draws so cover can be kept
  * out of them: a home end crowded with structures is a home end a wiped team
- * cannot form up in, and the spawn placer simply runs out of room. */
+ * cannot form up in, and the spawn placer simply runs out of room.
+ *
+ * How far in they sit is a camera number rather than a layout one. A desktop
+ * window shows about eighty tiles across and fifty down, so a pocket fourteen
+ * tiles from the edge spawns a pilot looking at half a screen of solid: a
+ * wall is honest and half a screen of it is not a room. Twenty-seven down and
+ * forty-one across is the first pair that puts the arena in the view a pilot
+ * arrives in, and it shortens the trip between homes, which is the direction
+ * the flight times wanted anyway. */
 static int pocket_x, pocket_y;
 
 static int in_pocket(int x, int y, int pad) {
@@ -1180,7 +1188,7 @@ static void draw_drydock(void) {
     /* Cover in the half between a pocket and the middle, mirrored into the
      * other half. Placement refuses anything that would crowd what is
      * already down, so the count lands where the spacing allows. */
-    for (int i = 0; i < 44; i++) {
+    for (int i = 0; i < 60; i++) {
         int x = lo + 10 + rr(0, ARENA - 26), y = lo + 18 + rr(0, ARENA / 2 - 30);
         if (in_pocket(x, y, 20) || !clear_box(x, y, 9, 8, 5)) continue;
         if (chance(45)) sym_room(x, y, rr(9, 13), rr(7, 10));
@@ -1237,11 +1245,11 @@ static int generate_match(sim_map *m, uint32_t s, match_layout layout, int quiet
 
     if (layout == LAYOUT_DRYDOCK) {
         pocket_x = arena_cx;
-        pocket_y = arena_lo + 14;
+        pocket_y = arena_lo + 27;
         draw_drydock();
     } else {
-        pocket_x = arena_lo + 18;
-        pocket_y = arena_lo + 18;
+        pocket_x = arena_lo + 41;
+        pocket_y = arena_lo + 27;
         draw_slipway();
     }
     int px = pocket_x, py = pocket_y;

@@ -65,6 +65,7 @@ in `sim/`.
 | `tests/pad_layout_test.lua` | Where a thumb's controls are, and what they draw |
 | `tests/overview_test.lua` | The map view's rectangles, against the maps the fleet serves |
 | `tests/impact_test.lua` | Muzzles, impact marks and hurt hulls, measured in lit pixels |
+| `tests/podium_test.lua` | What the ending says: who took it, who the mvp was, what it paid |
 | `tools/shot.sh` | Runs the client on a virtual display and photographs it |
 | `arena/world.lua` | Ships, weapons, flags, terrain, in triangles |
 | `arena/ui.lua` | The HUD and the menu, laid out like the web prototype |

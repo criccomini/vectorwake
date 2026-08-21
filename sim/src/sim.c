@@ -937,18 +937,16 @@ static void apply_damage(sim_state *s, const sim_settings *cfg, uint8_t victim,
         v->deaths++;
         v->respawn_at = cfg->respawn_delay;
         v->vx = v->vy = 0;
-        /* What the kill is worth, read before the pilot is stripped: the
-         * price is what they were carrying, and in one more instruction it
-         * will be nothing.
+        /* What the kill is worth, read before the pilot is stripped: the run
+         * they were on, plus the base a fresh spawn is worth.
          *
-         * That used to carry a second claim, that a fresh spawn is therefore
-         * worth nothing and this game needs no anti-farming rule because
-         * camping a respawn pays zero. True while `spawn_prizes` was zero and
-         * not since: the greens a ship is handed at spawn are things it holds,
-         * `sim_bounty` sums what a pilot holds, and at the baseline's thirty
-         * that is about 29.5 a kill for shooting people as they arrive. The
-         * levers on it are `spawn_prizes` and `spawn_radius`, which is what a
-         * radius is for as much as distance is. */
+         * So camping a respawn pays `bounty_base` and nothing else, which is
+         * the anti-farming rule arrived at by arithmetic a player can do in
+         * their head rather than by a rule about camping. It cost a paragraph
+         * of tuning while a kill paid for what the victim was carrying: thirty
+         * upgrades dealt at every spawn made an arriving pilot worth about
+         * thirty, and the levers on that were `spawn_radius` and how much a
+         * spawn was handed. Neither is a lever any more. */
         int32_t paid = 0;
         if (attacker != 255 && attacker != victim) {
             sim_ship *k = &s->ships[attacker];

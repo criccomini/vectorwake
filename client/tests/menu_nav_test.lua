@@ -164,6 +164,33 @@ check("and settings is one of them",
 menu.click_rail(match_settings)
 check("the lit stop over a game is the way back to it", not menu.open)
 
+-- Except between matches, which is the twenty five seconds the hull is not
+-- locked for. The hangar opens there and closes again at the whistle, and a
+-- pilot still standing in it when that happens is put back on the row rather
+-- than left picking a hull for a match already running.
+local net = package.loaded["arena.net"]
+menu.open = true
+net.match = {playing = false, left = 20, score = {}}
+menu.stack = {"root"}
+menu.sel = {}
+local between = {}
+for _, r in ipairs(menu.view().rail) do between[#between + 1] = r.label end
+check("the intermission opens the hangar",
+      #between == 3 and between[1] == "hangar", table.concat(between, "/"))
+
+menu.click_rail(top_index("hangar"))
+check("and it can be walked into", menu.stack[2] == "hangar",
+      table.concat(menu.stack, "/"))
+net.match = {playing = true, left = 180, score = {}}
+menu.tick(0.1)
+check("the whistle puts a pilot back on the row",
+      #menu.stack == 1, table.concat(menu.stack, "/"))
+local playing = {}
+for _, r in ipairs(menu.view().rail) do playing[#playing + 1] = r.label end
+check("and takes the hangar off it", #playing == 2,
+      table.concat(playing, "/"))
+net.match = nil
+
 -- At the root the same stop is lit while the page under it is only a preview,
 -- so a tap there goes in, which is what it has always done.
 menu.open = true
