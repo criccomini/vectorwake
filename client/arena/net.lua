@@ -29,6 +29,10 @@ local transport = net_transport.new()
 local C2S_JOIN, C2S_INPUT = 1, 2
 local C2S_SHIP = 5
 local C2S_TEAM, C2S_FOUND, C2S_INVITE = 6, 7, 8
+-- What this pilot wants to fly. It took the number the gunner's attach
+-- request used to hold, because gunners are gone and a wire with a hole in it
+-- is a wire somebody has to remember about.
+local C2S_KIT = 10
 -- Whose eyes to borrow. From a player it means sit out; from a watcher, look
 -- somewhere else. A request like the team asks: the subject byte of the next
 -- snapshot is the answer, and an unlawful ask lands on the room channel.
@@ -1552,6 +1556,22 @@ end
 
 function M.set_class(cls)
     return ask(string.char(C2S_SHIP, cls))
+end
+
+-- What this pilot wants to fly, over the core's flat kit space, one byte a
+-- slot. A request like every other: the room checks it against the hull's own
+-- row and against what the account owns, and the next snapshot carries what
+-- was dealt. A refusal leaves the old kit, which is the same answer either
+-- way, so nothing comes back.
+--
+-- Applied at once at a join and between matches, and held to the next whistle
+-- during one, because a hull is locked for a match and the kit with it.
+function M.set_kit(kit)
+    local out = {C2S_KIT}
+    for i = 1, sim.SLOT_COUNT do
+        out[i + 1] = math.max(0, math.min(255, math.floor(kit[i] or 0)))
+    end
+    return ask(string.char(unpack(out)))
 end
 
 function M.set_team(team)

@@ -975,7 +975,7 @@ function init(self)
             url, menu.class, sys.get_config_string("vectorwake.name", "pilot"),
             function(why)
                 menu.note = why
-                go_home(self, "zones")
+                go_home(self, "play")
             end)
         if not started then return end
         self.online = true
@@ -989,7 +989,7 @@ function init(self)
     -- and the cursor lands on the game they were in last as soon as the
     -- directory answers, so arriving and pressing enter is arriving and
     -- flying. The rail is still beside it, one press left.
-    go_home(self, "zones")
+    go_home(self, "play")
 
 end
 
@@ -1461,7 +1461,7 @@ function update(self, dt)
             self.joining = self.joining + dt
             if self.joining > 10 then
                 menu.note = "no answer from the zone"
-                go_home(self, "zones")
+                go_home(self, "play")
             end
         end
     end
@@ -1977,7 +1977,7 @@ function enter_game(self, address, zone_name, wt, room, watch)
     -- since changed game refuses rather than surprising anybody.
     local started = net.connect(address, menu.class, menu.name, function(why)
         menu.note = why
-        go_home(self, "zones")
+        go_home(self, "play")
     end, zone_name, watch, wt, room)
     if not started then return false end
     self.online = true
@@ -2006,6 +2006,36 @@ local function full_bar(what)
 end
 
 function apply_menu(self, act)
+    -- A point spent or taken back in the hangar. The kit reaches the room at
+    -- once, because the room is what decides whether it fits and the next
+    -- snapshot is the answer; it reaches the account too, so it comes back on
+    -- the next device. A meta-layer that is down costs a player their loadout
+    -- tomorrow and nothing tonight.
+    if act == "kit" then
+        local class = menu.kit_class or menu.class
+        local name = TUNE.CLASS_NAMES[class + 1]
+        if name then account.save_kit(name, menu.kit) end
+        if self.online then net.set_kit(menu.kit) end
+        return
+    end
+    -- One step in one slot, bought. The meta-layer prices it, checks the
+    -- wallet and raises the ceiling; this asks and reports what came back, so
+    -- a purchase a player cannot afford is a line at the foot of the shop
+    -- rather than a row that quietly did nothing.
+    if act == "buy" then
+        local slot = menu.pending
+        account.buy(slot, function(ok, why)
+            if ok then
+                menu.note = nil
+                account.refresh_shop()
+                sfx.ui("ui_go")
+            else
+                menu.note = why or "cannot buy that"
+                sfx.ui("ui_move")
+            end
+        end)
+        return
+    end
     if act == "ship" then
         -- With no game on, this is simply the hull you will arrive in.
         if not self.online then
@@ -2139,7 +2169,7 @@ function apply_menu(self, act)
     if act == "leave" or act == "cancel" then
         if self.online then
             menu.note = nil
-            go_home(self, "zones")
+            go_home(self, "play")
             -- Made here rather than by the caller. Escape at the root of the
             -- home screen produces this same action and does nothing with it,
             -- and a click for a keystroke that changed nothing is how an

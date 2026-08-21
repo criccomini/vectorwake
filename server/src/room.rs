@@ -2881,6 +2881,12 @@ impl Room {
     pub(crate) fn open_match(&mut self) {
         let first = self.match_no == 0;
         self.match_no += 1;
+        println!(
+            "room {}: match {} opens, {} pilot(s)",
+            self.number,
+            self.match_no,
+            self.players.len()
+        );
         if !first && self.maps.len() > 1 {
             self.map_at = (self.map_at + 1) % self.maps.len();
             // The room's size is a zone key that lives on the settings, so it

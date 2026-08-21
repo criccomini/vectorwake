@@ -235,14 +235,24 @@ _G.sys = {get_config_string = function(_, d) return d or "" end,
           load = function() return {} end, save = function() return true end,
           get_save_file = function() return "" end}
 local menu = require("arena.menu")
-menu.show("zones")
+menu.show("play")
 
 dir.rows = {}
 dir.note = "no servers found"
 dir.why = "retrying"
 local view = menu.view()
-check("an empty list draws no rows at all", #view.rows == 0,
-      #view.rows .. " rows")
+-- The play page carries one row that is not a game: the way to the community,
+-- which is where somebody is already thinking about who to play with. So an
+-- empty list is a page with nothing on it a player can join.
+local function games_on(v)
+    local n = 0
+    for _, r in ipairs(v.rows) do
+        if r.act == "join" then n = n + 1 end
+    end
+    return n
+end
+check("an empty list offers no game to join", games_on(view) == 0,
+      games_on(view) .. " games")
 check("and says why", view.empty and view.empty.head == dir.note,
       "head: " .. tostring(view.empty and view.empty.head))
 check("and that it is still trying",

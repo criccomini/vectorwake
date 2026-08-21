@@ -114,13 +114,13 @@ menu.home = true
 menu.stack = {"root"}
 menu.sel = {}
 
-local ship_at = top_index("ship")
+local ship_at = top_index("hangar")
 local settings_at = top_index("settings")
 check("the rail carries the destinations", ship_at and settings_at,
       "ship " .. tostring(ship_at) .. ", settings " .. tostring(settings_at))
 
 menu.click_rail(ship_at)
-check("a rail tap goes in", menu.stack[2] == "ship",
+check("a rail tap goes in", menu.stack[2] == "hangar",
       table.concat(menu.stack, "/"))
 
 -- The one that was broken: a second rail tap, from inside the first page.
@@ -133,7 +133,7 @@ check("and does not act on the page it left", menu.class == before_class,
 
 -- Back out, and the rail still works.
 menu.click_rail(ship_at)
-check("and again, the other way", menu.stack[2] == "ship",
+check("and again, the other way", menu.stack[2] == "hangar",
       table.concat(menu.stack, "/"))
 
 -- The stop you are already standing in. On a phone the rail is the whole of
@@ -142,21 +142,37 @@ check("and again, the other way", menu.stack[2] == "ship",
 -- already reading is the only other thing it could mean, and that is nothing.
 menu.click_rail(ship_at)
 check("the lit stop with nothing behind the panel stays put",
-      menu.open and menu.stack[2] == "ship", table.concat(menu.stack, "/"))
+      menu.open and menu.stack[2] == "hangar", table.concat(menu.stack, "/"))
 
+-- In a match the tab row is a different row: settings and leave, which is
+-- everything a pilot can act on from a cockpit. Nothing about a shop or a
+-- hangar is on it, because a hull is locked for the match and a three minute
+-- match is short enough that browsing one costs a real fraction of it.
 menu.home = false
-menu.click_rail(ship_at)
+menu.stack = {"root"}
+menu.sel = {}
+local in_match = {}
+for _, r in ipairs(menu.view().rail) do in_match[#in_match + 1] = r.label end
+check("a match carries two tabs",
+      #in_match == 2 and in_match[1] == "settings" and in_match[2] == "leave",
+      table.concat(in_match, "/"))
+
+local match_settings = top_index("settings")
+menu.click_rail(match_settings)
+check("and settings is one of them",
+      menu.stack[2] == "settings", table.concat(menu.stack, "/"))
+menu.click_rail(match_settings)
 check("the lit stop over a game is the way back to it", not menu.open)
 
--- At the root the same stop is lit while the stage is only previewing it, so
--- a tap there goes in, which is what it has always done.
+-- At the root the same stop is lit while the page under it is only a preview,
+-- so a tap there goes in, which is what it has always done.
 menu.open = true
+menu.home = true
 menu.stack = {"root"}
 menu.sel = {}
 menu.click_rail(ship_at)
 check("the lit stop at the root still goes in",
-      menu.open and menu.stack[2] == "ship", table.concat(menu.stack, "/"))
-menu.home = true
+      menu.open and menu.stack[2] == "hangar", table.concat(menu.stack, "/"))
 menu.stack = {"root"}
 menu.sel = {}
 
@@ -183,15 +199,15 @@ menu.click_rail(ship_at)
 menu.pending = nil
 menu.step({right = true})
 check("right in the grid moves rather than picks",
-      menu.sel.ship == 2 and menu.pending == nil,
-      "cursor " .. tostring(menu.sel.ship) .. ", asked for "
+      menu.sel.hangar == 2 and menu.pending == nil,
+      "cursor " .. tostring(menu.sel.hangar) .. ", asked for "
           .. tostring(menu.pending))
 menu.step({down = true})
 check("down goes to the row below, not one to the right",
-      menu.sel.ship == 6, "cursor " .. tostring(menu.sel.ship))
+      menu.sel.hangar == 6, "cursor " .. tostring(menu.sel.hangar))
 menu.step({up = true})
-check("and up comes back", menu.sel.ship == 2,
-      "cursor " .. tostring(menu.sel.ship))
+check("and up comes back", menu.sel.hangar == 2,
+      "cursor " .. tostring(menu.sel.hangar))
 local act = menu.step({go = true})
 check("enter is the only thing that picks",
       act == "ship" and menu.pending == 1,
@@ -207,6 +223,10 @@ check("enter is the only thing that picks",
 --
 -- Counted off the roster rather than written out, so a hull leaving the game
 -- moves this without anybody having to remember it is here.
+--
+-- Back to the grid first: picking a hull descends into its kit now, because
+-- choosing a ship and choosing what to put on it are the same act seen twice.
+menu.stack = {"root", "hangar"}
 local rows0 = menu.view().rows
 local hulls0 = 0
 for _, r in ipairs(rows0) do if r.hull then hulls0 = hulls0 + 1 end end
@@ -216,9 +236,10 @@ check("the cell is there with nothing behind the panel",
       CELLS .. " rows over " .. hulls0 .. " hulls")
 
 menu.home = false
+menu.stack = {"root", "hangar"}
 local ship_rows = menu.view().rows
 check("and there with a game", #ship_rows == CELLS, tostring(#ship_rows))
-menu.sel.ship = CELLS
+menu.sel.hangar = CELLS
 local act_w = menu.step({go = true})
 check("the last cell asks to spectate", act_w == "spectate",
       tostring(act_w))
@@ -235,7 +256,8 @@ check("so it says what to draw instead", ship_rows[CELLS].figure == "pilot",
 -- path, so a field the grid reads has to survive both. `figure` survived only
 -- one: escape into the menu and arrow left onto the rail, and the last cell
 -- was an Apex; step into the page and it was the helmet again.
-local was_stack, was_sel = menu.stack, menu.sel
+local was_stack, was_sel, was_home = menu.stack, menu.sel, menu.home
+menu.home = true
 menu.stack = {"root"}
 menu.sel = {root = ship_at}
 local peek = menu.view()
@@ -246,7 +268,7 @@ check("flattened, not handed over as it was written",
       type(peek.rows[CELLS].mark) ~= "function")
 check("and the last cell is a pilot there too",
       peek.rows[CELLS].figure == "pilot", tostring(peek.rows[CELLS].figure))
-menu.stack, menu.sel = was_stack, was_sel
+menu.stack, menu.sel, menu.home = was_stack, was_sel, was_home
 
 -- On the home screen the same page answers a different tense: not what you
 -- are, which is nothing, but what you will arrive as. So the wash follows the
@@ -293,36 +315,37 @@ menu.watching = false
 
 -- The edges wrap, so nothing on the page is out of reach in one press and an
 -- arrow never does nothing, which is what right at the last column did.
-menu.sel.ship = 6
+menu.sel.hangar = 6
 menu.step({left = true})
-check("left inside the grid moves", menu.sel.ship == 5 and menu.stack[2] == "ship",
-      "cursor " .. tostring(menu.sel.ship) .. " at "
+check("left inside the grid moves", menu.sel.hangar == 5 and menu.stack[2] == "hangar",
+      "cursor " .. tostring(menu.sel.hangar) .. " at "
           .. table.concat(menu.stack, "/"))
-menu.sel.ship = 8
+menu.sel.hangar = 8
 menu.step({right = true})
 check("right off the last column comes back to the first",
-      menu.sel.ship == 5, "cursor " .. tostring(menu.sel.ship))
--- The page carries every hull and the answer "none of them, I am watching",
--- so the wrap runs through one more cell than there are ships. Checked as
--- the property rather than as the cell it lands on: a number worked out here
--- from the column count and the roster is the implementation written twice,
--- and it would agree with a broken one.
-menu.sel.ship = 3
+      menu.sel.hangar == 5, "cursor " .. tostring(menu.sel.hangar))
+-- Up off the top row leaves the page for the tab row above it, which is what
+-- up means everywhere in this menu. It wrapped to the bottom of the grid
+-- before the tabs moved from a column down the left to a row across the top,
+-- and there a hand on the arrows could reach the page and never leave it.
+menu.sel.hangar = 3
 menu.step({up = true})
-local landed = menu.sel.ship
-check("up from the top row is the bottom row, same column",
-      landed > CELLS - menu.cols
-        and (landed - 1) % menu.cols == (3 - 1) % menu.cols,
-      "cursor " .. tostring(landed) .. " of " .. CELLS
-          .. " over " .. menu.cols .. " columns")
+check("up from the top row goes back to the tabs", menu.stack[2] == nil,
+      table.concat(menu.stack, "/"))
+menu.stack = {"root", "hangar"}
+menu.sel.hangar = 3 + menu.cols
+menu.step({up = true})
+check("and up from anywhere else is the row above",
+      menu.sel.hangar == 3 and menu.stack[2] == "hangar",
+      "cursor " .. tostring(menu.sel.hangar))
 menu.step({down = true})
-check("and down from the bottom is the top again", menu.sel.ship == 3,
-      "cursor " .. tostring(menu.sel.ship))
+check("and down goes back", menu.sel.hangar == 3 + menu.cols,
+      "cursor " .. tostring(menu.sel.hangar))
 
 -- Left off the first column is the one edge that does not wrap. It is the way
 -- back to the rail, and wrapped round to the far end of the row it shut the
 -- page on anybody holding nothing but the arrows.
-menu.sel.ship = 5
+menu.sel.hangar = 5
 menu.step({left = true})
 check("and left off the first column is the way out", menu.stack[2] == nil,
       table.concat(menu.stack, "/"))
@@ -336,18 +359,18 @@ check("and left off the first column is the way out", menu.stack[2] == nil,
 
 menu.hover_stage(nil)
 menu.home = true
-menu.show("zones")
+menu.show("play")
 local opened = menu.view()
 check("showing a level puts the cursor in the stage",
-      opened.focus == "stage" and menu.at() == "zones",
+      opened.focus == "stage" and menu.at() == "play",
       tostring(opened.focus) .. " at " .. table.concat(menu.stack, "/"))
 check("and on a row of it", opened.sel >= 1 and opened.rows[opened.sel] ~= nil,
       "row " .. tostring(opened.sel) .. " of " .. tostring(#opened.rows))
 -- And the rail still says which page that is, since nothing else does now.
-check("with the rail lit at the stop it belongs to",
+check("with the tab lit at the stop it belongs to",
       opened.rail[opened.rail_sel]
-          and opened.rail[opened.rail_sel].label == "zones",
-      "rail on " .. tostring(opened.rail_sel))
+          and opened.rail[opened.rail_sel].label == "play",
+      "tabs on " .. tostring(opened.rail_sel))
 
 -- --- escape opens on the games, and escape leaves ------------------------
 --
@@ -359,10 +382,10 @@ check("with the rail lit at the stop it belongs to",
 menu.home = false
 menu.open = false
 menu.toggle()
-check("escape over a game opens on the games",
-      menu.open and menu.at() == "zones" and menu.view().focus == "stage",
+check("escape over a game opens on the tab row",
+      menu.open and menu.at() == "root" and menu.view().focus == "rail",
       table.concat(menu.stack, "/"))
-menu.click_rail(settings_at)
+menu.click_rail(top_index("settings"))
 check("and the rail still goes where it says", menu.at() == "settings",
       table.concat(menu.stack, "/"))
 menu.step({back = true})
@@ -391,10 +414,13 @@ menu.hover_stage(nil)
 menu.home = false
 menu.zone = "chaos"
 menu.ask = nil
-menu.show("zones")
+menu.show("play")
 local zones = menu.view()
+-- One game and the community row, which is not a place to go and is where
+-- somebody thinking about who to play with already is.
 check("nothing at the foot of the list leaves the game",
-      #zones.rows == 1 and zones.rows[1].label == "chaos",
+      #zones.rows == 2 and zones.rows[1].label == "chaos"
+          and zones.rows[2].label == "discord",
       table.concat(texts_of(zones), ", "))
 
 local act2 = menu.step({go = true})
@@ -408,10 +434,10 @@ check("and the view carries it", menu.view().ask == menu.ask)
 
 -- The question owns the keys while it is up. Anything else and the list walks
 -- under a card that is asking about the row it walked off.
-local before = menu.sel.zones
+local before = menu.sel.play
 menu.step({down = true})
-check("the list underneath cannot be walked", menu.sel.zones == before,
-      tostring(before) .. " -> " .. tostring(menu.sel.zones))
+check("the list underneath cannot be walked", menu.sel.play == before,
+      tostring(before) .. " -> " .. tostring(menu.sel.play))
 -- Down moved between the answers instead. The answers sit side by side, so
 -- left and right are what they are laid out along, but a hand that has been
 -- walking a list all the way here reaches for down first.
@@ -658,10 +684,15 @@ menu.sel = {}
 -- place that can say so before it happens, and this is the row whose whole
 -- design is asking first.
 
-menu.home = false
+-- Reached the way a player reaches it, which is the front end: the tab row in
+-- a match carries settings and leave and nothing else. The card still knows
+-- the difference, because `home` is what it asks and a pilot can be connected
+-- with the panel up.
 menu.stack = {"root"}
 menu.sel = {}
+menu.home = true
 menu.click_rail(top_index("pilot"))
+menu.home = false
 menu.step({go = true})
 check("mid-game the card says a roll respawns your ship",
       menu.ask ~= nil and string.find(menu.ask.head, "respawns your ship") ~= nil,
@@ -674,19 +705,20 @@ menu.sel = {}
 
 -- --- a pointer resting on a row is the same cursor the arrows move --------
 
+menu.home = true
 menu.stack = {"root"}
 menu.sel = {}
 menu.hover_stage(nil)
 menu.click_rail(ship_at)
-check("a hover moves the cursor", menu.hover_stage(4) and menu.sel.ship == 4,
-      "cursor " .. tostring(menu.sel.ship))
+check("a hover moves the cursor", menu.hover_stage(4) and menu.sel.hangar == 4,
+      "cursor " .. tostring(menu.sel.hangar))
 check("and resting on the same row says nothing more",
       menu.hover_stage(4) == false)
 -- A pointer left lying on a row must not put the cursor back on it, or the
 -- arrows could never leave the row the mouse happens to be over.
 menu.step({down = true})
-check("and does not hold the arrows to it", menu.sel.ship == 8,
-      "cursor " .. tostring(menu.sel.ship))
+check("and does not hold the arrows to it", menu.sel.hangar == 8,
+      "cursor " .. tostring(menu.sel.hangar))
 
 menu.hover_stage(nil)
 menu.stack = {"root"}
@@ -723,10 +755,10 @@ check("resting on the same stop says nothing more",
 -- One level in, the stage owns the cursor, so a hover on the rail is a
 -- second mark rather than a move.
 menu.click_rail(ship_at)
-menu.sel.ship = 4
+menu.sel.hangar = 4
 menu.hover_rail(settings_at)
 check("a hover from inside a page leaves the cursor alone",
-      menu.sel.ship == 4, "cursor " .. tostring(menu.sel.ship))
+      menu.sel.hangar == 4, "cursor " .. tostring(menu.sel.hangar))
 check("and leaves the lit stop saying where you are",
       menu.view().rail_sel == ship_at, tostring(menu.view().rail_sel))
 check("while the view says where the pointer is",
@@ -818,13 +850,28 @@ check("and are sent as typed",
       tostring(account.logged and account.logged.name))
 html5 = nil
 
--- --- and the rail is reachable from the root, which is where it started ---
+-- --- and every page is reachable from the tab row, which is where it started
 
-menu.stack = {"root"}
-menu.sel = {}
-local help_at = top_index("controls")
-menu.click_rail(help_at)
-check("every stop is reachable", menu.stack[2] == "controls",
+-- The controls board and `about` are pages under settings now rather than tabs
+-- of their own: both are about the machine rather than about a match, which is
+-- what that tab is for.
+local function open_controls()
+    menu.home = true
+    menu.stack = {"root"}
+    menu.sel = {}
+    menu.click_rail(top_index("settings"))
+    local rows = menu.view().rows
+    for i, r in ipairs(rows) do
+        if string.lower(r.label) == "controls" then
+            menu.sel.settings = i
+            menu.step({go = true})
+            return
+        end
+    end
+end
+
+open_controls()
+check("every page is reachable", menu.stack[3] == "controls",
       table.concat(menu.stack, "/"))
 
 -- --- a key on the drawn board is a control, not a diagram ------------------
@@ -839,9 +886,7 @@ do
     local binds = require("arena.binds")
     local keyset = require("arena.keys")
     binds.reset()
-    menu.stack = {"root"}
-    menu.sel = {}
-    menu.click_rail(top_index("controls"))
+    open_controls()
 
     -- The cursor on `map`, and a key nothing is using.
     local rows = menu.view().rows
@@ -941,8 +986,7 @@ do
     -- control starts on one.
     binds.set("map", {"shift", "tab"})
     menu.stack = {"root"}
-    menu.sel = {}
-    menu.click_rail(top_index("controls"))
+    open_controls()
     local v = menu.view()
     local mute, unnamed = {}, {}
     for _, r in ipairs(v.rows) do
@@ -974,10 +1018,39 @@ end
 
 -- --- the discord stop leaves, rather than going somewhere in here ----------
 --
--- Every other stop on the rail pushes a page onto the stack. This one hands a
--- URL to the browser and leaves the stack where it was, so the two things
--- worth pinning are that it opens the right address in a new tab and that it
--- does not quietly navigate the menu somewhere as well.
+-- Every other row pushes a page onto the stack. This one hands a URL to the
+-- browser and leaves the stack where it was, so the two things worth pinning
+-- are that it opens the right address in a new tab and that it does not
+-- quietly navigate the menu somewhere as well.
+--
+-- It sits at the foot of the play page rather than on the tab row. That is
+-- where somebody is already thinking about who to play with, and it is the one
+-- outbound link in a game that carries no chat.
+
+local function discord_row()
+    menu.home = true
+    menu.stack = {"root"}
+    menu.sel = {}
+    menu.click_rail(top_index("play"))
+    for i, r in ipairs(menu.view().rows) do
+        if r.label == "discord" then return i end
+    end
+    return nil
+end
+
+local function open_about()
+    menu.home = true
+    menu.stack = {"root"}
+    menu.sel = {}
+    menu.click_rail(top_index("settings"))
+    for i, r in ipairs(menu.view().rows) do
+        if string.lower(r.label) == "about" then
+            menu.sel.settings = i
+            menu.step({go = true})
+            return
+        end
+    end
+end
 
 do
     local asked = nil
@@ -987,19 +1060,10 @@ do
     end
 
     menu.open = true
-    menu.home = true
-    menu.stack = {"root"}
-    menu.sel = {}
-    local at = top_index("discord")
-    check("the rail carries a discord stop", at ~= nil, "absent")
-    -- Its own mark, or it would draw the fallback and read as an about row.
-    local icon = nil
-    for _, r in ipairs(menu.view().rail) do
-        if r.label == "discord" then icon = r.icon end
-    end
-    check("and it wears its own mark", icon == "discord", tostring(icon))
+    local at = discord_row()
+    check("the play page carries a discord row", at ~= nil, "absent")
 
-    menu.click_rail(at)
+    menu.click_stage(at)
     check("tapping it asks the browser to open the invite",
           asked and asked.url == "https://play.vectorwake.net/discord",
           asked and asked.url or "nothing asked")
@@ -1009,7 +1073,7 @@ do
     -- be one line of Caddy rather than a client release.
     check("and it is the redirect rather than a discord.gg link",
           asked and not asked.url:find("discord.gg", 1, true))
-    check("the menu stays where it was", #menu.stack == 1,
+    check("the menu stays where it was", menu.at() == "play",
           table.concat(menu.stack, "/"))
 
     -- Nothing is put on screen when the browser says no, and there is no
@@ -1028,14 +1092,12 @@ do
     for label, url in pairs({privacy = "https://vectorwake.net/privacy",
                              terms = "https://vectorwake.net/terms"}) do
         asked = nil
-        menu.stack = {"root"}
-        menu.sel = {}
         menu.ask = nil
         _G.sys.open_url = function(got, attrs)
             asked = {url = got, target = attrs and attrs.target}
             return true
         end
-        menu.click_rail(top_index("about"))
+        open_about()
         local row = nil
         for i, entry in ipairs(menu.view().rows) do
             if entry.label == label then row = i end
@@ -1048,10 +1110,9 @@ do
     end
 
     -- And an engine with no open_url at all does not take the menu down.
-    menu.stack = {"root"}
-    menu.sel = {}
     _G.sys.open_url = nil
-    local ok = pcall(menu.click_rail, top_index("discord"))
+    local at = discord_row()
+    local ok = pcall(menu.click_stage, at)
     check("an engine without open_url survives the tap", ok)
 end
 
@@ -1065,27 +1126,26 @@ end
 
 do
     menu.open = true
-    menu.home = true
-    menu.stack = {"root"}
-    menu.sel = {}
-    local link = nil
-    for _, r in ipairs(menu.view().rail) do
-        if r.label == "discord" then link = r.link end
-    end
-    check("the rail stop carries its address", link ~= nil, "none")
-    check("and it is the redirect",
-          link == "https://play.vectorwake.net/discord", tostring(link))
-
-    -- No other stop does, or the page would put a link over a page of the
-    -- game's own.
-    local strays = {}
-    for _, r in ipairs(menu.view().rail) do
-        if r.link and r.label ~= "discord" then
+    discord_row()
+    local link, strays = nil, {}
+    for _, r in ipairs(menu.view().rows) do
+        if r.label == "discord" then
+            link = r.link
+        elseif r.link then
             strays[#strays + 1] = r.label
         end
     end
-    check("and no other stop does", #strays == 0, table.concat(strays, ", "))
+    check("the row carries its address", link ~= nil, "none")
+    check("and it is the redirect",
+          link == "https://play.vectorwake.net/discord", tostring(link))
+    -- No other row does, or the page would put a link over a page of the
+    -- game's own.
+    check("and no other row does", #strays == 0, table.concat(strays, ", "))
 end
+
+-- `about` is a page under settings rather than a tab of its own, on the same
+-- argument as the controls board: it is about the machine and not about a
+-- match, and it is three lines that never deserved a destination.
 
 -- Policy rows navigate the current browser tab. A new tab requested from
 -- the game loop is outside the original tap and mobile browsers block it.
@@ -1095,9 +1155,7 @@ do
     for label, url in pairs({privacy = "https://vectorwake.net/privacy",
                              terms = "https://vectorwake.net/terms"}) do
         js = nil
-        menu.stack = {"root"}
-        menu.sel = {}
-        menu.click_rail(top_index("about"))
+        open_about()
         local row = nil
         for i, entry in ipairs(menu.view().rows) do
             if entry.label == label then row = i end
@@ -1109,6 +1167,86 @@ do
               tostring(js))
     end
     _G.html5 = nil
+end
+
+-- --- the hangar: thirty points, spent -----------------------------------------
+--
+-- Picking a hull descends into what thirty points buy on it. Only the slots
+-- the hull will take and the account owns appear, left and right spend and
+-- unspend, and the budget is what every row is spending against.
+
+do
+    -- The core's own shape and ceilings, stubbed the way the extension
+    -- publishes them: a hull that will take four steps of the first stat, one
+    -- rung of the gun, and three repels, and nothing else.
+    local CEIL = {}
+    for i = 1, 23 do CEIL[i] = 0 end
+    CEIL[1] = 4          -- the first stat
+    CEIL[6] = 2          -- the gun's ladder
+    CEIL[20] = 3         -- the first charge
+    _G.sim = {
+        UP_COUNT = 5, TRIG_COUNT = 2, MOD_COUNT = 6, MAX_CHARGES = 4,
+        SLOT_COUNT = 23, SLOT_LEVEL0 = 5, SLOT_MOD0 = 7, SLOT_CHARGE0 = 19,
+        KIT_BUDGET = 6,
+        kit_ceilings = function() return CEIL end,
+    }
+    account.entitlements = {}
+    account.kits = {}
+
+    menu.home = true
+    menu.stack = {"root"}
+    menu.sel = {}
+    menu.click_rail(top_index("hangar"))
+    menu.sel.hangar = 1
+    local act = menu.step({go = true})
+    check("picking a hull asks for it", act == "ship" and menu.pending == 0,
+          tostring(act))
+    check("and goes on to its kit", menu.at() == "kit",
+          table.concat(menu.stack, "/"))
+
+    local v = menu.view()
+    local labels = {}
+    for _, r in ipairs(v.rows) do labels[#labels + 1] = r.label end
+    check("only the slots this hull will take are on the page",
+          #v.rows == 4, table.concat(labels, ", "))
+    check("with the budget at the foot",
+          v.rows[#v.rows].label == "budget", labels[#labels])
+
+    -- Right spends a point, left takes it back, and neither goes anywhere.
+    menu.sel.kit = 1
+    menu.step({right = true})
+    check("right spends a point", menu.kit[1] == 1 and menu.at() == "kit",
+          tostring(menu.kit[1]) .. " at " .. table.concat(menu.stack, "/"))
+    menu.step({right = true})
+    menu.step({right = true})
+    check("and again", menu.kit[1] == 3, tostring(menu.kit[1]))
+    menu.step({left = true})
+    check("left takes one back", menu.kit[1] == 2 and menu.at() == "kit",
+          tostring(menu.kit[1]) .. " at " .. table.concat(menu.stack, "/"))
+
+    -- The hull's ceiling, which is the roster's own rule and not a budget.
+    for _ = 1, 6 do menu.step({right = true}) end
+    check("and never past the hull's ceiling", menu.kit[1] == 4,
+          tostring(menu.kit[1]))
+
+    -- The budget, which is what every row on the page is spending against.
+    menu.sel.kit = 3
+    for _ = 1, 6 do menu.step({right = true}) end
+    check("nor past the budget", menu.kit_spent() == 6,
+          tostring(menu.kit_spent()))
+
+    -- What the account owns is the other ceiling. This one owns two of the
+    -- first stat and nothing else has moved, so the page stops at two.
+    account.entitlements = {[1] = 2}
+    menu.kit = nil
+    menu.open_kit(0)
+    menu.sel.kit = 1
+    for _ = 1, 6 do menu.step({right = true}) end
+    check("and never past what the account owns", menu.kit[1] == 2,
+          tostring(menu.kit[1]))
+    account.entitlements = {}
+
+    _G.sim = nil
 end
 
 print(fails == 0 and "all good" or (fails .. " failed"))

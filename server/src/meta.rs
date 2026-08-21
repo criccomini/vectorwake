@@ -1301,6 +1301,72 @@ async fn route(
             }
         }
 
+        // What is left to buy, priced. One entry a slot with a step on it,
+        // with the name a person reads it by, so the client never has to
+        // learn the kit space's layout to draw a shop.
+        "/v1/shop" => {
+            let Some(account) =
+                account_for(&db, "secret", &sha256_hex(s("secret").as_bytes())).await
+            else {
+                return (403, serde_json::json!({ "error": "no such account" }));
+            };
+            let base = sim::World::base_entitlements();
+            let mut shelf = Vec::new();
+            for slot in 0..sim::SLOT_COUNT {
+                let owned = entitlement_of(&db, account, slot as i16, base[slot]).await;
+                let Some((next, price)) = shop::next_step(slot, owned) else {
+                    continue;
+                };
+                shelf.push(serde_json::json!({
+                    "slot": slot,
+                    "label": shop::name_of(slot),
+                    "price": price,
+                    "note": shop::note_for(slot, owned, next),
+                }));
+            }
+            (
+                200,
+                serde_json::json!({ "shelf": shelf, "rivets": wallet_of(&db, account).await }),
+            )
+        }
+
+        // The week: matches won, kills and the best run, resetting Monday.
+        // Read off the pilot log, which is where a kill row already lands, so
+        // this is a query rather than a second tally kept in step.
+        "/v1/week" => {
+            let rows = db
+                .query(
+                    "select name,
+                            count(*) filter (where kind = 'kill') as kills,
+                            coalesce(max((detail->>'bounty')::int), 0) as run
+                     from pilot_events
+                     where not bot and kind = 'kill'
+                       and at >= date_trunc('week', now() at time zone 'utc')
+                     group by name
+                     order by kills desc
+                     limit 20",
+                    &[],
+                )
+                .await
+                .unwrap_or_default();
+            let week: Vec<serde_json::Value> = rows
+                .iter()
+                .map(|r| {
+                    serde_json::json!({
+                        "name": r.get::<_, String>(0),
+                        "kills": r.get::<_, i64>(1),
+                        // A bounty taken is the length of the run it ended,
+                        // so the biggest one somebody collected is the
+                        // longest streak they broke. Their own best run is a
+                        // different number and nothing files it yet.
+                        "run": r.get::<_, i32>(2),
+                        "wins": 0,
+                    })
+                })
+                .collect();
+            (200, serde_json::json!({ "week": week }))
+        }
+
         // The shop. One slot, one step, one price, and the wallet is checked
         // and debited in the same statement that raises the ceiling: two
         // clients pressing buy at once must not both be told yes.

@@ -70,6 +70,44 @@ pub(super) fn next_step(slot: usize, owned: u8) -> Option<(u8, u32)> {
     None
 }
 
+/// What to call a slot, as a person reads it. The same vocabulary the corner
+/// stack uses while a pilot flies, so nothing is learned twice.
+pub(super) fn name_of(slot: usize) -> String {
+    const STATS: [&str; sim::UP_COUNT] = ["energy", "recharge", "speed", "thrust", "rotation"];
+    const MODS: [&str; sim::MOD_COUNT] = ["multi", "bounce", "prox", "shrapnel", "freeze", "push"];
+    const CHARGES: [&str; 4] = ["repel", "burst", "mine", "charge 4"];
+    if slot < sim::UP_COUNT {
+        return format!("{} depth", STATS[slot]);
+    }
+    let at = slot - sim::UP_COUNT;
+    if at < sim::TRIG_COUNT {
+        return format!("{} rung", if at == 0 { "gun" } else { "bomb" });
+    }
+    let at = at - sim::TRIG_COUNT;
+    if at < sim::TRIG_COUNT * sim::MOD_COUNT {
+        let trig = if at < sim::MOD_COUNT { "gun" } else { "bomb" };
+        return format!("{trig} {}", MODS[at % sim::MOD_COUNT]);
+    }
+    CHARGES
+        .get(at - sim::TRIG_COUNT * sim::MOD_COUNT)
+        .copied()
+        .unwrap_or("a charge")
+        .to_string()
+}
+
+/// One line under a price, where the thing being sold needs a sentence. Most
+/// do not: "gun bounce, 35 rivets" is already a sentence.
+pub(super) fn note_for(slot: usize, owned: u8, next: u8) -> Option<String> {
+    if slot < sim::UP_COUNT {
+        return Some(format!("a {}th step, on this stat alone", next));
+    }
+    if next == 255 {
+        return Some("a charge kind, to slot in any kit".into());
+    }
+    let _ = owned;
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

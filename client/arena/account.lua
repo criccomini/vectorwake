@@ -24,6 +24,24 @@ M.account = 0
 M.name = ""
 M.claimed = false
 M.note = ""
+-- What this pilot has banked, and what their account may slot. Both come back
+-- with a session and neither is asserted by this client: the arena checks a
+-- kit against the entitlements the token carries, and the shop debits the
+-- wallet at the meta-layer. These two copies are what the hangar and the shop
+-- draw, so a client that edited them would fool only its own screen.
+M.rivets = 0
+M.entitlements = {}
+-- The kit this pilot has chosen, per hull, by the hull's own name. A hull with
+-- no entry has never been taken to the hangar, and the arena deals it a
+-- starter kit.
+M.kits = {}
+-- What is left to buy, priced, as the meta-layer lists it: one entry a slot
+-- with a step on it, `{slot, label, price, note}`. Asked for when the shop is
+-- opened rather than carried by every session, because it is a page nobody is
+-- looking at most of the time.
+M.shelf = {}
+-- The week's table, as the meta-layer publishes it. Asked for the same way.
+M.week = {}
 -- Whether the meta-layer has ever answered. It separates "waiting" from
 -- "there is nothing there", which are the same empty token and very different
 -- sentences to show somebody.
@@ -149,6 +167,9 @@ local function session(done, force)
         M.account = r.account or 0
         M.name = r.name or M.name
         M.claimed = r.claimed == true
+        M.rivets = tonumber(r.rivets) or 0
+        M.entitlements = type(r.entitlements) == "table" and r.entitlements or {}
+        M.kits = type(r.kits) == "table" and r.kits or {}
         M.note = ""
         refreshed_at = now()
         publish_account()
@@ -280,12 +301,73 @@ end
 -- its password still opens it from anywhere; what is forgotten is this
 -- device's way in. The next thing this client needs is to be somebody, so it
 -- asks to be a fresh guest straight away.
+-- A kit saved against a hull, so it comes back on the next device and the
+-- next session.
+--
+-- The arena is told separately and does not wait for this: a kit takes effect
+-- because the client sent it to the room, and this is what makes it survive
+-- the tab closing. So a meta-layer that is down costs a player their loadout
+-- tomorrow and nothing tonight, which is the same bargain every other durable
+-- thing here makes.
+function M.save_kit(class, kit)
+    M.kits[class] = kit
+    if M.base == "" then return end
+    post("/v1/kit", {secret = secret, class = class, kit = kit}, function(r, err)
+        if not r then M.note = err or "cannot save that kit" end
+    end)
+end
+
+-- One step in one slot, bought. The price and what is left to buy are the
+-- meta-layer's to decide: this asks, and the reply says what the slot now
+-- holds and what is left in the wallet.
+function M.buy(slot, cb)
+    if M.base == "" then
+        if cb then cb(false, "no meta-layer") end
+        return
+    end
+    post("/v1/buy", {secret = secret, slot = slot}, function(r, err)
+        if not r then
+            M.note = err or "cannot buy that"
+            if cb then cb(false, M.note) end
+            return
+        end
+        M.rivets = tonumber(r.rivets) or M.rivets
+        -- The shelf, so the hangar can slot it at once rather than after the
+        -- next session. The entitlements ride in the token as well, and that
+        -- copy is the one an arena checks; this one is what the screen draws.
+        M.entitlements[(tonumber(r.slot) or 0) + 1] = tonumber(r.n) or 0
+        M.note = ""
+        if cb then cb(true) end
+    end)
+end
+
+-- What is on the shelf, and the week's table. Both are pages somebody is
+-- looking at rather than facts a session needs, so they are asked for when
+-- the page opens and left alone otherwise.
+function M.refresh_shop()
+    if M.base == "" then return end
+    post("/v1/shop", {secret = secret}, function(r)
+        if r and type(r.shelf) == "table" then M.shelf = r.shelf end
+    end)
+end
+
+function M.refresh_week()
+    if M.base == "" then return end
+    post("/v1/week", {}, function(r)
+        if r and type(r.week) == "table" then M.week = r.week end
+    end)
+end
+
 function M.logout()
     secret = ""
     M.token = ""
     M.account = 0
     M.claimed = false
     M.name = ""
+    M.rivets = 0
+    M.entitlements = {}
+    M.kits = {}
+    M.shelf = {}
     save()
     if M.base ~= "" then make_guest() end
 end

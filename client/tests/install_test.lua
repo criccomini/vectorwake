@@ -100,18 +100,25 @@ check("and says it is going to explain rather than do",
       share and string.lower(share.detail) == "how to",
       share and tostring(share.detail))
 
--- The row is the last one on the page either way, under the other thing that
--- reaches outside the game.
+-- The row is the last of the settings either way, under the things that are
+-- settings and above the two that are destinations.
+local function index_of(v, want)
+    for i, r in ipairs(v.rows) do
+        if string.lower(r.label) == want then return i end
+    end
+    return nil
+end
 local v = settings("tap")
+local install_at = index_of(v, "add to home screen")
 check("it goes under the settings rather than among them",
-      string.lower(v.rows[#v.rows].label) == "add to home screen",
-      v.rows[#v.rows].label)
+      install_at ~= nil and install_at == (index_of(v, "controls") or 0) - 1,
+      tostring(install_at) .. " of " .. #v.rows)
 
 -- Pressing it. On a browser that will install, this asks it to and says
 -- nothing; on one that will not, the only useful thing is the sentence.
 local v2 = settings("tap")
 ran = {}
-menu.click_stage(#v2.rows)
+menu.click_stage(index_of(v2, "add to home screen"))
 local asked = false
 for _, js in ipairs(ran) do
     if string.find(js, "vwInstall &&", 1, true) then asked = true end
@@ -122,7 +129,7 @@ check("and raises no card, because the browser is raising one",
       menu.ask == nil)
 
 local v3 = settings("share")
-menu.click_stage(#v3.rows)
+menu.click_stage(index_of(v3, "add to home screen"))
 check("the other one says where the button is", menu.ask ~= nil
       and string.find(menu.ask.head, "Add to Home Screen", 1, true) ~= nil,
       menu.ask and menu.ask.head or "no card")

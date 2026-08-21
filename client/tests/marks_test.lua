@@ -210,7 +210,7 @@ local function near(list, cx, cy, r)
 end
 
 local RAIL = {}
-for i, n in ipairs({"zones", "ship", "pilot", "settings", "controls", "about"}) do
+for i, n in ipairs({"play", "hangar", "shop", "standings", "pilot", "settings"}) do
     RAIL[i] = {label = n, icon = n, index = i}
 end
 
@@ -522,14 +522,18 @@ local ship_frame = frame(function()
              home = false, closable = true, rows = rows})
 end)
 
--- Everything on the stage, which is to say everything clear of the rail. The
--- rail is on this page too and wears a helmet of its own at its own line, so
--- a search across the whole frame finds two of them and compares the wrong
--- one.
+-- Everything on the stage, which is to say everything under the tabs. The tab
+-- row is on this page too and wears a helmet of its own at its own line, so a
+-- search across the whole frame finds two of them and compares the wrong one.
+--
+-- By height rather than by width, which is what this asked before the tabs
+-- moved from a column down the left to a row across the top. The row sits at
+-- about 140 in this window and the first stage line at about 250.
+local STAGE_Y = 200
 local function on_stage(list)
     local out = {}
     for _, sh in ipairs(list) do
-        if sh.x0 and sh.x0 > W / 3 then out[#out + 1] = sh end
+        if sh.y0 and sh.y0 > STAGE_Y then out[#out + 1] = sh end
     end
     return out
 end

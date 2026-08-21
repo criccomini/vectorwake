@@ -27,6 +27,9 @@
 -- an action and arena.script carries it out.
 
 local account = require("arena.account")
+-- The words for what a kit slot is, which the corner stack already uses while
+-- a pilot flies. One vocabulary, so nothing is learned twice.
+local pal = require("arena.palette")
 -- For the protocol number the about page prints. Reading it from the module
 -- that speaks it is what keeps the page honest when the wire changes.
 local net = require("arena.net")
@@ -91,6 +94,9 @@ M.ask = nil             -- {head, keys = {{label, act}}, sel, fields, field}
 -- typeable because it is never shown or spoken, only hashed.
 local NAME_MAX = 24
 local PASSWORD_MAX = 64
+-- The page the last tick was on, so the two that fetch their own contents can
+-- ask on the way in rather than on every frame they are up.
+local was_at = nil
 -- Whether the games list has worked out where its cursor belongs since it was
 -- last opened. Declared up here because opening the menu clears it and the
 -- opening is written above the asking.
@@ -361,11 +367,237 @@ end
 -- A node's `rows` is a table, or a function returning one when what is in the
 -- list depends on the moment.
 
+-- The kit space's shape, off the core.
+--
+-- Through `_G.sim` at the moment of asking rather than captured at load,
+-- because this module is required before the extension has published its
+-- table in some harnesses and the real client always has it. The fallbacks
+-- are the compiled numbers and `constant_drift_test` holds them to the C, so
+-- a core that moved one of them fails there rather than on a screen.
+local function simn(key, fallback)
+    local s = _G.sim
+    return (s and tonumber(s[key])) or fallback
+end
+
+-- The kit space, as a list a person can walk.
+--
+-- The core's space is flat and every slot in it costs one: five stats, a rung
+-- on each trigger, an add-on per trigger per kind, then the charges. This is
+-- that space in the order a pilot thinks about it, with the names the corner
+-- stack already uses so nothing has to be learned twice.
+--
+-- Only the slots the hull will take and the account owns appear. A row for
+-- something you cannot put on this ship is a row that does nothing when
+-- pressed, and a page of twenty-three of those is not a page.
+local function kit_slots()
+    local out = {}
+    local up = simn("UP_COUNT", 5)
+    local trig = simn("TRIG_COUNT", 2)
+    local mods = simn("MOD_COUNT", 6)
+    for u = 0, up - 1 do
+        local s = pal.UPGRADES[u + 1]
+        out[#out + 1] = {slot = u, label = s and s.name or ("stat " .. u),
+                         group = "flight"}
+    end
+    for t = 0, trig - 1 do
+        out[#out + 1] = {slot = simn("SLOT_LEVEL0", up) + t,
+                         label = (t == 0 and "gun" or "bomb") .. " rung",
+                         group = "weapons"}
+    end
+    for t = 0, trig - 1 do
+        for m = 0, mods - 1 do
+            local mod = pal.MODS[m + 1]
+            out[#out + 1] = {
+                slot = simn("SLOT_MOD0", up + trig) + t * mods + m,
+                label = (t == 0 and "gun " or "bomb ") ..
+                        (mod and mod.name or ("add-on " .. m)),
+                group = "weapons",
+            }
+        end
+    end
+    for k = 0, simn("MAX_CHARGES", 4) - 1 do
+        local c = pal.CHARGES[k + 1]
+        out[#out + 1] = {slot = simn("SLOT_CHARGE0", up + trig + trig * mods) + k,
+                         label = c and c.name or ("charge " .. k),
+                         group = "charges"}
+    end
+    return out
+end
+
+-- What this pilot may put in each slot on the hull they are looking at: the
+-- hull's own row and the account's entitlements together, smaller wins.
+--
+-- The arena checks the same thing when a kit arrives, against the entitlements
+-- the token carries rather than against this copy. That is the check that
+-- matters; this one is so the page never offers a step it would be refused
+-- for taking.
+local function kit_ceiling(class)
+    local core = _G.sim
+    local hull = core and core.kit_ceilings and core.kit_ceilings(class) or nil
+    local own = account.entitlements or {}
+    local out = {}
+    for i = 1, simn("SLOT_COUNT", 23) do
+        local h = hull and hull[i] or 0
+        local o = own[i]
+        if o == nil then o = 255 end
+        out[i] = math.min(h, o)
+    end
+    return out
+end
+
+-- The kit being edited, which is this pilot's own for the hull they are on.
+-- Held here rather than read back off the ship every frame: a hull the pilot
+-- is not flying has no ship to read, and a kit is a thing you are composing
+-- until you leave the page.
+M.kit = nil
+M.kit_class = nil
+
+-- Start editing the kit for a hull, from the account where it has one and
+-- from what the ship is already wearing where it does not.
+function M.open_kit(class)
+    local saved = account.kits and account.kits[HULLS[class + 1][1]]
+    local kit = {}
+    for i = 1, simn("SLOT_COUNT", 23) do
+        kit[i] = tonumber(saved and saved[i]) or 0
+    end
+    -- Nothing saved and nothing flying: read what the arena dealt, which is
+    -- the starter kit and is a better place to begin than an empty ship.
+    local core = _G.sim
+    if M.kit_spent(kit) == 0 and core and core.ship_kit and M.class == class
+        and net.me and net.me < 255 then
+        for i = 1, simn("SLOT_COUNT", 23) do
+            kit[i] = core.ship_kit(net.me, i - 1)
+        end
+    end
+    M.kit, M.kit_class = kit, class
+end
+
+function M.kit_spent(kit)
+    local n = 0
+    for _, v in ipairs(kit or M.kit or {}) do n = n + v end
+    return n
+end
+
+-- One slot, up or down by one, inside every ceiling and the budget.
+--
+-- Refused rather than clamped where it does not fit, so the page never shows
+-- a kit the arena would not take: what a player sees here is what they will
+-- fly.
+function M.kit_step(slot, by)
+    if not M.kit then return false end
+    local ceiling = kit_ceiling(M.kit_class or M.class)
+    local at = M.kit[slot + 1] or 0
+    local want = at + by
+    if want < 0 or want > (ceiling[slot + 1] or 0) then return false end
+    if by > 0 and M.kit_spent() >= simn("KIT_BUDGET", 30) then return false end
+    M.kit[slot + 1] = want
+    return true
+end
+
+local function kit_rows()
+    local class = M.kit_class or M.class
+    if not M.kit or M.kit_class ~= class then M.open_kit(class) end
+    local ceiling = kit_ceiling(class)
+    local rows = {}
+    local budget = simn("KIT_BUDGET", 30)
+    local left = budget - M.kit_spent()
+    for _, s in ipairs(kit_slots()) do
+        local max = ceiling[s.slot + 1] or 0
+        if max > 0 then
+            local held = M.kit[s.slot + 1] or 0
+            rows[#rows + 1] = {
+                label = s.label,
+                detail = tostring(held),
+                -- The range as steps with the one it is on lit, which is what
+                -- every other setting in this menu draws and says "four of
+                -- six" in the shape of the thing rather than in a number that
+                -- has to be compared against the number on the row above.
+                choice = function() return held, max end,
+                act = "kit_step", value = s.slot,
+                -- A slot with nothing left to spend on it still moves down,
+                -- so a full kit is a kit you can take apart.
+                note = (held == 0 and left == 0)
+                    and "nothing left to spend" or nil,
+            }
+        end
+    end
+    -- What is left, at the foot, because that is the number every row on this
+    -- page is spending and the one a player is deciding against.
+    rows[#rows + 1] = {
+        label = "budget", verbatim = true,
+        detail = M.kit_spent() .. " of " .. budget,
+        choice = function() return M.kit_spent(), budget end,
+    }
+    return rows
+end
+
+-- The shelf: every slot with a step left on it, priced.
+--
+-- Built from what the account owns and what the core's space allows, which is
+-- the same pair the hangar reads. What a step costs is the meta-layer's
+-- answer and arrives with the shelf; until it has answered there is nothing
+-- to draw and the page says so rather than inventing a price.
+local function shop_rows()
+    local rows = {}
+    for _, item in ipairs(account.shelf or {}) do
+        local afford = (account.rivets or 0) >= (item.price or 0)
+        rows[#rows + 1] = {
+            label = item.label or ("slot " .. tostring(item.slot)),
+            detail = tostring(item.price or 0) .. " rivets",
+            note = item.note,
+            -- Greyed rather than hidden when the wallet is short: a shop that
+            -- shows only what you can afford is a shop that never tells you
+            -- what you are saving for.
+            waiting = not afford,
+            act = afford and "buy" or nil, value = item.slot,
+        }
+    end
+    return rows
+end
+
+local function shop_empty()
+    if account.shelf and #account.shelf > 0 then return nil end
+    if account.base == "" then
+        return {head = "no shop here",
+                line = "this deployment keeps no accounts"}
+    end
+    return {head = "nothing left to buy",
+            line = "you own every slot the roster has"}
+end
+
+-- The week. Read off the standings the meta-layer publishes, which is the
+-- same list the public site draws.
+local function standings_rows()
+    local rows = {}
+    for i, p in ipairs(account.week or {}) do
+        rows[#rows + 1] = {
+            label = p.name or "?", named = true,
+            detail = (p.wins or 0) .. "w  " .. (p.kills or 0) .. "k",
+            note = (p.run and p.run > 0)
+                and ("best run of " .. p.run) or nil,
+            mark = function() return p.name == M.name end,
+        }
+        if i >= 20 then break end
+    end
+    return rows
+end
+
+local function standings_empty()
+    if account.week and #account.week > 0 then return nil end
+    return {head = "nobody has played this week yet",
+            line = "the table resets on Monday"}
+end
+
 local function hull_rows()
     local rows = {}
     for i, h in ipairs(HULLS) do
         rows[i] = {
             label = h[1], detail = h[3], act = "ship", value = i - 1,
+            -- Picking a hull takes you to what thirty points buy on it,
+            -- because choosing a ship and choosing what to put on it are the
+            -- same act seen twice: a kit is spent inside a hull's own row, so
+            -- the two questions cannot be asked apart.
+            then_go = "kit",
             hull = i - 1, role = h[2],
             -- Not while the answer is "none of them". A watcher is in no
             -- hull, so marking the one they would fly back in would put the
@@ -444,7 +676,7 @@ end
 -- the panel for a while as well, a long way from the name it belonged to,
 -- which made choosing between three games into reading three sentences one at
 -- a time.
-local function zone_rows()
+local function play_rows()
     local rows = {}
     for i, r in ipairs(directory.rows) do
         rows[i] = {
@@ -466,11 +698,23 @@ local function zone_rows()
             act = "join", value = i,
         }
     end
-    -- Nothing about leaving down here. The way out of a game is the game's own
-    -- row: choosing the one you are already in asks whether that is what you
-    -- meant. A row at the foot of the list was a way out written a long way
-    -- from the thing it was a way out of, and it stood in a list that is
-    -- otherwise entirely places to go.
+    -- The side you are on, where there is a room to be on one in. A side is
+    -- a thing a room has, so the row appears with the room rather than
+    -- standing on the front end saying nothing.
+    if not M.home and #net.teams > 0 then
+        rows[#rows + 1] = {label = "side", detail = function()
+            return net.my_team_name()
+        end, go = "teams"}
+    end
+    -- Where the community is, and the only outbound link in the game. It sits
+    -- here because this is where somebody is already thinking about who to
+    -- play with, which is the argument `community.md` makes and the reason it
+    -- is not a tab: the game carries no chat, and the panel about finding
+    -- people should be honest about where the talking happens.
+    rows[#rows + 1] = {label = "discord", detail = "chat with us",
+                       act = "discord", link = DISCORD}
+    -- Nothing about leaving down here. The way out of a game is the tab row's
+    -- own leave, which is on it whenever there is something to leave.
     return rows
 end
 
@@ -483,43 +727,58 @@ local function zone_empty()
 end
 
 local NODES = {
+    -- The tab row, and the whole of the front end's shape.
+    --
+    -- Six of them between matches, where there is time to read: play, hangar,
+    -- shop, standings, pilot, settings. Two in a match: settings and leave.
+    -- Same row in the same place, wearing the same chrome; what differs is
+    -- which tabs are on it, not how any of it looks or works, so a player
+    -- learns one screen and meets it in both places.
+    --
+    -- Nothing you cannot act on right now is on that row while you are
+    -- flying. A three minute match is short enough that a menu deep enough to
+    -- browse a shop in costs a real fraction of it, and nothing pauses: you
+    -- can be shot while you read. See docs/design/match-game.md.
+    --
+    -- It stays a tab row rather than a bare leave button for one reason that
+    -- does not show up on a desktop. On a phone this is the only route to
+    -- sound, to fullscreen and to the controls reference, and a leave button
+    -- alone would strand a player who needs to mute the game.
     root = {rows = function()
-        local rows = {
-            {label = "zones", icon = "zones", detail = function()
+        if not M.home then
+            return {
+                {label = "settings", icon = "settings", go = "settings"},
+                {label = "leave", icon = "zones", detail = "back to the games",
+                 act = "leave"},
+            }
+        end
+        return {
+            {label = "play", icon = "zones", detail = function()
                 if M.zone ~= "" then return M.zone end
                 return "choose a game"
-            end, go = "zones"},
-            {label = "ship", icon = "ship",
+            end, go = "play"},
+            -- The hull and its kit are one choice made in one place: a kit is
+            -- spent inside a hull's own ceilings, so choosing a ship and
+            -- choosing what to put on it are the same act seen twice.
+            {label = "hangar", icon = "ship",
              detail = function()
                  if M.spectating() then return "spectating" end
                  return HULLS[M.class + 1][1]
              end,
-             go = "ship"},
+             go = "hangar"},
+            {label = "shop", icon = "about",
+             detail = function() return (account.rivets or 0) .. " rivets" end,
+             go = "shop"},
+            {label = "standings", icon = "pilot", detail = "this week",
+             go = "standings"},
             {label = "pilot", icon = "pilot",
              detail = function() return M.name end, go = "pilot"},
+            -- Everything about the machine rather than about a match, in one
+            -- column: audio, video, the bindings, and about. Help folded into
+            -- it because the controls board and the rebinding screen were
+            -- always the same list read two ways.
             {label = "settings", icon = "settings", go = "settings"},
-            -- Named for what the page is rather than for what it used to
-            -- be. It was a wall of prose about energy and bounty, then a
-            -- picture of a keyboard, and it is now where the keys are set:
-            -- "help" is the one word of the three that describes none of it.
-            {label = "controls", icon = "controls", go = "controls"},
-            -- The one stop that leaves. Every other row on this rail opens a
-            -- page of the game's own; this hands the browser somewhere else,
-            -- which is why it sits at the bottom next to the row that says
-            -- what the game is rather than up among the ones you fly with.
-            {label = "discord", icon = "discord", detail = "chat with us",
-             act = "discord", link = DISCORD},
-            {label = "about", icon = "about", go = "about"},
         }
-        -- Sides are a thing a room has, so the row appears with the room and
-        -- says which one you are on. On the home screen there is no room and
-        -- nothing to be on.
-        if not M.home and #net.teams > 0 then
-            table.insert(rows, 4, {label = "team", icon = "team",
-                detail = function() return net.my_team_name() end,
-                go = "teams"})
-        end
-        return rows
     end},
 
     -- A grid, not a list: the hulls are drawings laid out in rows and columns,
@@ -529,9 +788,31 @@ local NODES = {
     -- A function rather than a table: the page is eight cells on the home
     -- screen and nine with a game behind it, so it has to be asked each time
     -- rather than built once at load.
-    ship = {grid = true, rows = hull_rows},
+    hangar = {grid = true, rows = hull_rows},
 
-    zones = {rows = zone_rows, empty = zone_empty},
+    -- What thirty points buy on the hull you just picked. One row a slot, the
+    -- count as steps, and left and right spend and unspend the way they set
+    -- every other value in this menu.
+    kit = {rows = kit_rows},
+
+    play = {rows = play_rows, empty = zone_empty},
+
+    -- What rivets buy: slots, and looks. Never strength.
+    --
+    -- One row a slot with something left on the shelf, priced, with what the
+    -- account already owns beside it. Everything in a kit trades against the
+    -- same thirty points, so what is on sale here is *which* upgrades a pilot
+    -- may slot rather than how many. See docs/design/match-game.md.
+    --
+    -- The prices are the meta-layer's and are not written down here: a client
+    -- that knew them would be a second copy to keep in step, and the reply to
+    -- a purchase says what the slot now holds and what is left in the wallet.
+    shop = {rows = shop_rows, empty = shop_empty},
+
+    -- The week: matches won, kills, and the best run, resetting Monday. The
+    -- short ladder beside the rating, which answers "how good am I" on a
+    -- career scale and moves slowly.
+    standings = {rows = standings_rows, empty = standings_empty},
 
     teams = {rows = team_rows},
 
@@ -621,6 +902,14 @@ local NODES = {
             rows[#rows + 1] = {label = "add to home screen",
                                detail = "how to", act = "install"}
         end
+        -- The two pages that used to be tabs of their own. Both are about the
+        -- machine rather than about a match, which is what this page is for:
+        -- the controls board is where the keys are set, and `about` is three
+        -- lines that never deserved a destination.
+        rows[#rows + 1] = {label = "controls", detail = "keys and pads",
+                           go = "controls"}
+        rows[#rows + 1] = {label = "about", detail = "this build",
+                           go = "about"}
         return rows
     end},
 
@@ -845,8 +1134,15 @@ local NODES = {
 
 -- --- navigation -------------------------------------------------------------
 
+-- The page the stack is standing on, or the tab row when it names one that
+-- does not exist here.
+--
+-- The fallback is load-bearing rather than defensive. The tab row is a
+-- different row in a match than it is at the front end, so a stack left
+-- pointing at the hangar when a match starts names a page that is no longer
+-- reachable, and every caller of this was written assuming a page.
 local function node()
-    return NODES[M.stack[#M.stack]]
+    return NODES[M.stack[#M.stack]] or NODES.root
 end
 
 local function rows_of(nd)
@@ -895,6 +1191,12 @@ local function view_row(r, i)
         arming = r.arming, reset = r.reset,
         pick = (r.go or r.act) ~= nil,
         mark = r.mark and r.mark() or false,
+        -- A row that leaves the game gets a real anchor laid over it by the
+        -- page. Nothing the client does from its own loop is inside the tap
+        -- that asked for it, and a browser will not open a tab for anything
+        -- else, so the finger has to land on the anchor rather than on the
+        -- canvas. Only the community row carries one.
+        link = r.link,
     }
 end
 
@@ -979,11 +1281,20 @@ function M.toggle()
     if M.open then
         M.close()
     else
-        -- Opened on the games, the page the client itself opens on, with the
-        -- cursor in the list rather than on the rail. Escape mid-fight is
-        -- somebody looking for another game as often as it is anything else,
-        -- and the rail is one press to the left of it either way.
-        M.show("zones")
+        -- With nothing behind the panel it opens on the games, the page the
+        -- client itself opens on, with the cursor in the list rather than on
+        -- the tabs: one press from flying.
+        --
+        -- Over a game it opens on the tab row, because the row is two tabs
+        -- long there and the thing a pilot mid-fight most often wants is one
+        -- of them. Opening a page first would put a press between them.
+        if M.home then
+            M.show("play")
+        else
+            M.stack = {"root"}
+            M.sel.root = 1
+            M.open = true
+        end
         M.note = nil
     end
     return M.open
@@ -997,7 +1308,7 @@ end
 -- settles the same way a row does. Rolling a call sign is now a question, and
 -- the answer that rolls one has to land where the row that used to would have,
 -- not travel out to the arena and back for something the menu can do itself.
-local function settle(act, asked)
+local function settle(act, asked, by)
     if act == "reroll" then
         M.reroll(asked)
     elseif act == "claim" then
@@ -1019,15 +1330,15 @@ local function settle(act, asked)
         M.name = ""
         M.save_identity()
     elseif act == "volume" then
-        M.volume = M.volume % #VOLUMES + 1
+        M.volume = (M.volume - 1 + (by or 1)) % #VOLUMES + 1
         M.apply_settings()
         M.save_identity()
     elseif act == "music" then
-        M.music = M.music % #MUSICS + 1
+        M.music = (M.music - 1 + (by or 1)) % #MUSICS + 1
         M.apply_settings()
         M.save_identity()
     elseif act == "cap" then
-        M.cap = M.cap % #CAPS + 1
+        M.cap = (M.cap - 1 + (by or 1)) % #CAPS + 1
         M.apply_settings()
         M.save_identity()
     elseif act == "steering" then
@@ -1332,12 +1643,22 @@ function M.tick(dt)
     -- the state is let go rather than in each of the four ways out.
     if M.arming and (M.at() ~= "controls" or M.ask) then M.arming = nil end
     if M.at() ~= "controls" then M.foot = nil end
-    if M.at() ~= "zones" then
+    -- Two pages ask the meta-layer for their contents when they open. Asked
+    -- on the edge rather than every frame: a shelf and a week's table are
+    -- read while somebody looks at them, and a page nobody is on should cost
+    -- the fleet nothing.
+    local at = M.at()
+    if at ~= was_at then
+        if at == "shop" then account.refresh_shop() end
+        if at == "standings" then account.refresh_week() end
+        was_at = at
+    end
+    if M.at() ~= "play" then
         zone_synced = false
         -- And forget where the cursor was. Every other page is a place you
         -- left off; this one has a right answer, and it is the game you are in
         -- rather than the row you were reading when you walked away.
-        M.sel.zones = nil
+        M.sel.play = nil
         return
     end
     if zone_synced or #directory.rows == 0 then return end
@@ -1346,10 +1667,10 @@ function M.tick(dt)
     -- list now, so a player can be arrowing down it while the directory is
     -- still being asked, and a row that jumps out from under them a second
     -- later is worse than one that never moved.
-    if M.sel.zones and M.sel.zones > 1 then return end
+    if M.sel.play and M.sel.play > 1 then return end
     if M.zone == "" then return end
     for i, r in ipairs(directory.rows) do
-        if r.zone == M.zone then M.sel.zones = i return end
+        if r.zone == M.zone then M.sel.play = i return end
     end
 end
 
@@ -1481,7 +1802,13 @@ local function open_external(url)
 end
 
 -- Activate the selected row. Returns an action for the arena, or nil.
-local function activate()
+-- Press a row, or nudge it.
+--
+-- `by` is -1 or 1 from left and right on a row that carries a range, and nil
+-- from enter. A row with a range is a value rather than a destination, so the
+-- arrows set it and enter cycles it, which is what those keys mean everywhere
+-- else in the game.
+local function activate(by)
     local rows = rows_of(node())
     local r = rows[row_index(rows)]
     if not r then return nil end
@@ -1493,12 +1820,28 @@ local function activate()
     if not r.act then return nil end
 
     -- The ones this file can settle itself.
-    if r.act == "ship" then
+    if r.act == "kit_step" then
+        -- One point spent or taken back. Enter spends, because a hand walking
+        -- the list with enter is adding to a ship; the arrows do both.
+        if M.kit_step(r.value, by or 1) then
+            M.note = nil
+            return "kit"
+        end
+        return nil
+    elseif r.act == "ship" then
         -- A request, not a decision. The hull you are flying is whatever the
         -- simulation says it is, and in a zone that is the server's answer and
         -- it can refuse, so this reports what was asked for and lets the arena
         -- find out. `M.class` follows the ship, never leads it.
         M.pending = r.value
+        -- And on to its kit, which is the other half of the same choice. The
+        -- editor is opened against the hull that was asked for rather than the
+        -- one being flown, so it says the truth about the ship the pilot is
+        -- looking at even while the arena is still deciding.
+        if r.then_go then
+            M.open_kit(r.value)
+            M.stack[#M.stack + 1] = r.then_go
+        end
         return "ship"
     elseif r.act == "team" then
         -- Likewise a request. Which sides exist, who may enter one, and whether
@@ -1508,6 +1851,12 @@ local function activate()
         return "team"
     elseif r.act == "found" then
         return "found"
+    elseif r.act == "buy" then
+        -- The meta-layer prices it, checks the wallet and raises the ceiling
+        -- in one call. Nothing here decides whether it can be afforded: this
+        -- asks, and the reply is the answer.
+        M.pending = r.value
+        return "buy"
     elseif r.act == "discord" then
         -- A new tab, and the game keeps running behind it: nothing here is
         -- paused, and a player who came to ask a question has not asked to
@@ -1624,7 +1973,7 @@ local function activate()
         end
         return "join"
     end
-    return settle(r.act)
+    return settle(r.act, nil, by)
 end
 
 -- keys: {left, right, up, down, go, back} as booleans, already edge-detected
@@ -1681,6 +2030,28 @@ function M.step(keys)
         return nil, false
     end
 
+    -- The tab row reads its own axis, which is the row's own: left and right
+    -- walk the tabs, down and enter go into the page under them, and up does
+    -- nothing because there is nothing above a tab row.
+    --
+    -- This was up and down while the tabs were a column down the left. The
+    -- keys follow the drawing rather than the tree, which is what makes the
+    -- same five inputs work on a keyboard, a d-pad and a thumb without a
+    -- second layout: an arrow means the direction it points.
+    if #M.stack == 1 then
+        if keys.back then return escape() end
+        if keys.left then
+            M.sel[id] = (row_index(rows) - 2) % n + 1
+            return nil, true
+        end
+        if keys.right then
+            M.sel[id] = row_index(rows) % n + 1
+            return nil, true
+        end
+        if keys.go or keys.down then return activate(), true end
+        return nil, false
+    end
+
     -- A grid reads its own arrows. Everywhere else right is enter, which is
     -- what a one-column list wants and exactly wrong on a page laid out in
     -- four: pressing right to look at the hull beside this one flew it
@@ -1718,6 +2089,11 @@ function M.step(keys)
             return nil, true
         end
         if keys.up then
+            -- Off the top row and back to the tabs, which is what up means
+            -- everywhere in this menu now. Wrapped round to the bottom of the
+            -- grid instead, a hand on the arrows could reach the page and
+            -- never leave it.
+            if i <= cols then return back() end
             M.sel[id] = (i - 1 - cols) % n + 1
             return nil, true
         end
@@ -1730,9 +2106,24 @@ function M.step(keys)
     end
 
     if keys.back then return escape() end
-    if keys.left then return back() end
+    -- A row carrying a range is a value rather than a destination, so left and
+    -- right set it. Everywhere else left is the way back and right is enter,
+    -- which is what a one-column list of places wants.
+    local here = rows[row_index(rows)]
+    local ranged = here ~= nil and here.choice ~= nil and here.act ~= nil
+    if keys.left then
+        if ranged then return activate(-1), true end
+        return back()
+    end
+    if keys.right then
+        if ranged then return activate(1), true end
+        return activate(), true
+    end
 
     if keys.up then
+        -- Off the first row and back to the tabs. A list that wrapped from
+        -- its head to its foot had no way back up to the row above the page.
+        if row_index(rows) == 1 then return back() end
         M.sel[id] = (row_index(rows) - 2) % n + 1
         return nil, true
     end
@@ -1740,7 +2131,7 @@ function M.step(keys)
         M.sel[id] = row_index(rows) % n + 1
         return nil, true
     end
-    if keys.go or keys.right then return activate(), true end
+    if keys.go then return activate(), true end
     return nil, false
 end
 

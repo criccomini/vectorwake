@@ -4527,69 +4527,27 @@ function M.menu(v)
     -- without meaning to leave. Published as one box at the end, so the
     -- gaps between rows are not a way out of the menu.
     local px0, py0, px1, py1
-    local vertical = not narrow
+    -- Two arrangements, and both put the tabs in a row.
+    --
+    -- On top where there is room to read a page under them, which is what
+    -- `match-game.md` asks for and what the in-match surface needs: the same
+    -- chrome in both places, so a player learns one screen and meets it twice.
+    -- On the bottom edge of a phone, where a thumb has to reach them.
+    --
+    -- The rail was a column down the left for a long time, with the page
+    -- beside it. That was the right shape while the pages were lists of a few
+    -- rows each; the hangar and the shop are grids, and a grid in the two
+    -- thirds of a window left over from a rail is a grid with no room in it.
+    -- `vertical` stays as a name because the drawing below still asks, and it
+    -- is false everywhere now.
+    local vertical = false
+    -- How far a lit tab's field reaches past its mark. Down to the edge of
+    -- the screen on a phone, so the lit stop is a tab reaching the bottom of
+    -- the glass rather than a panel floating over the indicator; down to the
+    -- rule under the row where the tabs are on top.
+    local tab_h
 
-    if vertical then
-        local total = math.min(F.w - F.safe_l - F.safe_r - 2 * margin, 940 * F.scale)
-        local x0 = F.safe_l + (F.w - F.safe_l - F.safe_r - total) / 2
-        -- Clear of what the ship is carrying. Over a game the corner stack
-        -- holds the left edge, and on a phone held sideways a centered block
-        -- lands right on it: the rail's marks and the words GUN and BOMB in
-        -- the same column read as one broken thing. The stack stays, because
-        -- what you are carrying is worth knowing while you pick a hull.
-        if not home then
-            x0 = math.max(x0, F.safe_l + 124 * F.scale)
-            -- And give back what moving right took: the block is as wide as
-            -- the room left of the far margin, or it hangs off the edge of
-            -- the screen carrying the end of the keyboard with it.
-            total = math.min(total, F.w - F.safe_r - x0 - margin)
-        end
-        -- Wide enough for the words, at any height. A rail of marks alone
-        -- was the short window's layout, on the argument that eight labeled
-        -- stops do not fit a phone held sideways; they fit, and with no title
-        -- over the stage the lit word is the only thing on screen that says
-        -- which page this is.
-        rw = 150 * F.scale
-        -- A stop is 38 points at least, so a thumb has something to land on,
-        -- and 58 at most, so six of them in a tall window do not drift apart
-        -- into a list of unrelated things.
-        --
-        -- The floor gives way before the screen edge does, which it did not
-        -- until a test drew the rail at its real length. Eight stops is what a
-        -- pilot in a game with sides gets, and at 38 apiece that is 304 points
-        -- of rail on a phone held sideways with 390 of screen: the last stops
-        -- ran off the bottom, where a thumb cannot reach them at all. A small
-        -- target is worse than a comfortable one and better than none.
-        local room = F.h - head - 3 * margin - STAGE_TOP * F.scale
-        local pitch = math.min(math.max(room / n, 38 * F.scale), 58 * F.scale)
-        if pitch * n > room then pitch = room / n end
-        rh = pitch * n
-        -- The rail hangs from the top of the block, starting where the stage's
-        -- first row starts. Centered in the block instead, six stops in a tall
-        -- window sat opposite the middle of a three-row list with the whole
-        -- top of the panel empty above them, and the two halves read as two
-        -- panels that had been put side by side by accident.
-        local block = math.max(rh + STAGE_TOP * F.scale,
-                               math.min(F.h - head - 2 * margin, 470 * F.scale))
-        local top = math.max(margin, (F.h - block - head) / 2) + head
-        rx, ry_ = x0, top + STAGE_TOP * F.scale
-        sx = x0 + rw + 26 * F.scale
-        sy, sh = top, block
-        sw = total - rw - 26 * F.scale
-        logo_y = top - head + 30 * F.scale
-        wordmark(x0, logo_y, (tall and 40 or 30) * F.scale)
-        -- What you are reading, laid over what you are not. A wash rather
-        -- than a panel: no border, no corners, just enough that the type sits
-        -- on something and the arena stays visible round the edges of it.
-        rect(x0 - 18 * F.scale, top - 16 * F.scale, total + 36 * F.scale, block + 30 * F.scale,
-             pal.rgb(0x03050a, 0.5))
-        -- Up to the name, which stands above the wash and is part of the
-        -- panel to anybody looking at it.
-        px0, py0 = x0 - 18 * F.scale, top - head
-        px1, py1 = px0 + total + 36 * F.scale, top - 16 * F.scale + block + 30 * F.scale
-        -- The rule the whole thing hangs off, between the rail and the stage.
-        vrule(x0 + rw + 1 * F.scale, top, block, pal.a(pal.RADAR_TILE, 0.75), 30 * F.scale)
-    else
+    if narrow then
         rh = (home and 78 or 84) * F.scale
         rw = F.w - F.safe_l - F.safe_r - 2 * margin
         rx = F.safe_l + margin
@@ -4656,6 +4614,45 @@ function M.menu(v)
         px1, py1 = F.w, F.h
         F.layer:seg(rx, ry(ry_ - 12 * F.scale), F.w - F.safe_r - margin, ry(ry_ - 12 * F.scale),
               1.0 * F.scale, pal.a(pal.RADAR_TILE, 0.6), true)
+    
+        tab_h = F.h - ry_
+    else
+        local total = math.min(F.w - F.safe_l - F.safe_r - 2 * margin, 940 * F.scale)
+        local x0 = F.safe_l + (F.w - F.safe_l - F.safe_r - total) / 2
+        -- Clear of what the ship is carrying. Over a game the corner stack
+        -- holds the left edge, and a centered block lands right on it.
+        if not home then
+            x0 = math.max(x0, F.safe_l + 124 * F.scale)
+            total = math.min(total, F.w - F.safe_r - x0 - margin)
+        end
+        rx, rw = x0, total
+        rh = 58 * F.scale
+        icon_dy = 21 * F.scale
+        -- Tall enough for a grid of hulls or a shop's shelves, and no taller
+        -- than a screen: the page under the tabs is the reason the tabs moved.
+        local block = math.min(F.h - head - 2 * margin, 560 * F.scale)
+        local top = math.max(margin, (F.h - block - head) / 2) + head
+        ry_ = top
+        sx, sw = x0, total
+        sy = top + rh
+        sh = block - rh
+        tab_h = rh
+        logo_y = top - head + 30 * F.scale
+        wordmark(x0, logo_y, (tall and 40 or 30) * F.scale)
+        -- What you are reading, laid over what you are not. A wash rather
+        -- than a panel: no border, no corners, just enough that the type sits
+        -- on something and the arena stays visible round the edges of it.
+        rect(x0 - 18 * F.scale, top - 16 * F.scale, total + 36 * F.scale,
+             block + 30 * F.scale, pal.rgb(0x03050a, 0.5))
+        -- Up to the name, which stands above the wash and is part of the
+        -- panel to anybody looking at it.
+        px0, py0 = x0 - 18 * F.scale, top - head
+        px1, py1 = px0 + total + 36 * F.scale,
+                   top - 16 * F.scale + block + 30 * F.scale
+        -- The rule the whole thing hangs off, under the tabs rather than
+        -- between a rail and a stage.
+        F.layer:seg(x0, ry(sy), x0 + total, ry(sy), 1.0 * F.scale,
+                    pal.a(pal.RADAR_TILE, 0.75), true)
     end
 
     -- Which half the arrows are in. The two halves share one cursor and mark
@@ -4708,7 +4705,7 @@ function M.menu(v)
                 rect(rx - 6 * F.scale, cy - pitch / 2 + 3 * F.scale,
                      rw + 6 * F.scale, pitch - 6 * F.scale, warm)
             else
-                rect(cx - pitch / 2 + 3 * F.scale, ry_, pitch - 6 * F.scale, F.h - ry_, warm)
+                rect(cx - pitch / 2 + 3 * F.scale, ry_, pitch - 6 * F.scale, tab_h, warm)
             end
         end
         if sel then
@@ -4733,7 +4730,7 @@ function M.menu(v)
                 -- Down to the edge of the screen rather than to the end of
                 -- the block, so the lit stop is a tab reaching the bottom of
                 -- the phone and not a panel floating above the indicator.
-                rect(cx - pitch / 2 + 3 * F.scale, ry_, pitch - 6 * F.scale, F.h - ry_, lit)
+                rect(cx - pitch / 2 + 3 * F.scale, ry_, pitch - 6 * F.scale, tab_h, lit)
             end
         end
         -- A stop that leaves the game gets a real link laid over it by the
@@ -4749,7 +4746,7 @@ function M.menu(v)
                 lw, lh = rw + 6 * F.scale, pitch - 6 * F.scale
             else
                 lx, ly = cx - pitch / 2 + 3 * F.scale, ry_
-                lw, lh = pitch - 6 * F.scale, F.h - ry_
+                lw, lh = pitch - 6 * F.scale, tab_h
             end
             M.link_dom = string.format("%.1f,%.1f,%.1f,%.1f,%s",
                                        lx / F.scale, ly / F.scale,
@@ -4772,7 +4769,7 @@ function M.menu(v)
         if vertical then
             hit(rx - 6 * F.scale, cy - pitch / 2, rw + 10 * F.scale, pitch, "rail", i)
         else
-            hit(cx - pitch / 2, ry_ - 8 * F.scale, pitch, F.h - ry_ + 8 * F.scale, "rail", i)
+            hit(cx - pitch / 2, ry_ - 8 * F.scale, pitch, tab_h + 8 * F.scale, "rail", i)
         end
     end
 
@@ -4914,6 +4911,17 @@ function M.menu(v)
             stage_row(sx, y, GUTTER * F.scale + lw, rowh, r,
                       (focused and i == v.sel) or i == v.hover)
             if r.pick then hit(sx, y, GUTTER * F.scale + lw, rowh, "stage", i) end
+            -- A row that leaves the game gets a real anchor laid over it by
+            -- the page, because nothing this client does from its own loop is
+            -- inside the tap that asked for it. Published in CSS pixels,
+            -- which is what the page lays out in; everything here is drawable
+            -- ones.
+            if r.link then
+                M.link_dom = string.format("%.1f,%.1f,%.1f,%.1f,%s",
+                                           sx / F.scale, y / F.scale,
+                                           (GUTTER * F.scale + lw) / F.scale,
+                                           rowh / F.scale, r.link)
+            end
         end
         -- What is off the ends, as the same tick the map border uses. It says
         -- there is more without spending a row on saying so.
