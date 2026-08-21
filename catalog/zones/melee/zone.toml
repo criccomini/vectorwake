@@ -149,70 +149,38 @@ stall = 400
 name = "cipher-bomb-2"
 stall = 400
 
-# The ships. Everything not written below is the same across all seven, which is
-# deliberate: the hulls fly alike and are told apart by what they carry. The
-# kit is the difference between two pilots, not the chassis.
+# The ships.
 #
-# What a hull's row says here is what a kit may ever slot on it. A pilot spends
-# thirty points inside these ceilings; the shop sells the right to reach the
-# ones their account has not bought yet, never a point more to spend.
+# There is no ships section. Every hull here flies alike, climbs alike and
+# holds alike, and what tells them apart is the shape each presents to a
+# bullet: a Cipher is six pixels from the side and twenty-two down the nose,
+# and weapons test the oriented rectangle rather than a box around it, so
+# turning your profile to somebody is showing them a third of what facing them
+# shows. Those extents are measured off the drawings in sim/src/baseline.c and
+# a zone has no business moving them.
+#
+# This used to be seven blocks: a rotation for the interceptor, a speed for
+# the bomber, a recharge for the skirmisher, and a row of add-on ceilings
+# apiece. Both are gone, for the same reason. Thirty points has to mean the
+# same thing to everybody or a kit is not a fair trade, and an add-on ceiling
+# that lives on a hull is an upgrade the shop can never sell. See
+# docs/design/ships.md.
 
-# The interceptor turns harder and pushes harder than anything else in the zone,
-# and pays for it with the same hull everyone has.
-[[arena.ships]]
-name = "Apex"
-rotation = 300
-initial_rotation = 210
-upgrade_rotation = 40
-thrust = 19
-initial_thrust = 16
-upgrade_thrust = 2
-bomb_mods = { prox = 1, shrapnel = 2 }
+# What a kit may hold here, once, for every hull alike. A pilot spends thirty
+# points inside these ceilings; the shop sells the right to reach the ones
+# their account has not bought yet, never a point more to spend.
+#
+# These are the baseline's own numbers, written out because this is the zone
+# people actually play and the ceilings are worth reading in one place. Guns
+# fan, freeze and come in pairs. Bombs bounce, sense, shatter and shove.
+# Neither crosses over: a bullet with a fuse is a bomb, and a rack that throws
+# three at a pull is a different game.
+[arena.kit]
+gun_mods = { multi = 2, bounce = 1, freeze = 1, barrel = 2 }
+bomb_mods = { prox = 1, shrapnel = 3, bounce = 2, push = 2 }
 
-# The fastest thing in the zone from the moment it spawns. Its third shrapnel
-# rung reaches the eight-fragment ceiling and gives the bomber a payoff for
-# spending a third of its kit in one place.
-[[arena.ships]]
-name = "Wedge"
-speed = 3750
-initial_speed = 2200
-upgrade_speed = 250
-bomb_mods = { prox = 1, shrapnel = 3 }
-
-# Starts a quarter better at getting energy back and climbs to the same ceiling
-# as everyone.
-[[arena.ships]]
-name = "Chord"
-initial_recharge = 500
-gun_mods = { multi = 1, bounce = 1, freeze = 1 }
-bomb_mods = { prox = 1, shrapnel = 2 }
-
-# The heavy, and the only three-bomb rack. That comes from the baseline rather
-# than from here.
-[[arena.ships]]
-name = "Anvil"
-bomb_mods = { prox = 1, shrapnel = 3 }
-
-# The one hull whose bombs never break up, which is most of what makes its
-# stalling bomb a different weapon rather than a better one. It is the hardest
-# hull in the game to hit: twelve pixels wide where the rest of the roster is
-# twenty to thirty-four, and weapons test the oriented rectangle rather than a
-# box around it, so pointing at somebody it shows a third of a Chord.
-[[arena.ships]]
-name = "Cipher"
-bomb_mods = { prox = 1 }
-
-# Double barrels are the whole of what Facet is for. One multifire rung is an
-# on-or-off upgrade, not another advantage unique to the hull that already
-# starts with two barrels.
-[[arena.ships]]
-name = "Facet"
-gun_mods = { multi = 1, bounce = 1 }
-bomb_mods = { prox = 1, shrapnel = 2 }
-
-# The only hull that can learn to bounce a bomb, and the miner: six mine slots
-# where the rest of the roster gets three. That is how it keeps a role now that
-# mines are a charge anybody may carry: by numbers rather than by exclusivity.
-[[arena.ships]]
-name = "Lattice"
-bomb_mods = { prox = 1, shrapnel = 2, bounce = 1, push = 2 }
+# Three repels, three bursts, and six mines for anyone who buys the kind and
+# is willing to spend a fifth of their kit on them. Six was the denial hull's
+# row, which is how that hull kept a role; it is a purchase now, and the role
+# goes to whoever wants to pay for it.
+charges = [3, 3, 6]

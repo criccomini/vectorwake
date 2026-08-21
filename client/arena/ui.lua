@@ -3814,34 +3814,30 @@ function pages.kit(v, x, y, w, h, focused)
             ly = ly + 17 * F.scale
         end
 
-        -- What this hull will take, which is the roster's own rule and the
-        -- reason a kit runs out of places to go before it runs out of points.
-        ly = ly + 14 * F.scale
-        ticks(dx, ly, dw, pal.a(pal.RADAR_TILE, 0.45), 14 * F.scale)
-        ly = ly + 16 * F.scale
-        lbl("hull limits", dx, ly)
-        ly = ly + 18 * F.scale
-        local limits = {}
-        for _, r in ipairs(v.rows or {}) do
-            if r.short == "rung" then
-                limits[#limits + 1] = {(r.trigger == 1 and "bomb" or "gun")
-                                       .. " ladder", "L" .. (r.hull_max or 0)}
+        -- The shape, which is the whole of what this hull is.
+        --
+        -- A row of ceilings stood here: how far the ladders climbed, how many
+        -- charge kinds it took, how many it carried. None of that belongs to a
+        -- hull any more, because none of it could be sold while it did. What
+        -- is left is measured off the drawing and collided against at every
+        -- wall, and it is worth reading: weapons test the oriented rectangle,
+        -- so a beam of twelve is genuinely half the target a beam of
+        -- twenty-eight is when you turn side-on.
+        local ext = pick and pick.extent
+        if ext then
+            ly = ly + 14 * F.scale
+            ticks(dx, ly, dw, pal.a(pal.RADAR_TILE, 0.45), 14 * F.scale)
+            ly = ly + 16 * F.scale
+            lbl("footprint", dx, ly)
+            ly = ly + 18 * F.scale
+            local shape = {{"nose", ext.fore}, {"tail", ext.aft},
+                           {"beam", ext.beam}}
+            for _, e in ipairs(shape) do
+                lbl(e[1], dx, ly, pal.a(pal.DIM, 0.85))
+                txt(e[2] .. " px", dx + dw - 8 * F.scale, ly, 11 * F.scale,
+                    pal.a(pal.INK, 0.9), "right")
+                ly = ly + 19 * F.scale
             end
-        end
-        local kinds, slots = 0, 0
-        for _, r in ipairs(v.rows or {}) do
-            if r.group == "charges" and (r.hull_max or 0) > 0 then
-                kinds = kinds + 1
-                slots = slots + (r.hull_max or 0)
-            end
-        end
-        limits[#limits + 1] = {"charge kinds", tostring(kinds)}
-        limits[#limits + 1] = {"charges carried", tostring(slots)}
-        for _, e in ipairs(limits) do
-            lbl(e[1], dx, ly, pal.a(pal.DIM, 0.85))
-            txt(e[2], dx + dw - 8 * F.scale, ly, 11 * F.scale,
-                pal.a(pal.INK, 0.9), "right")
-            ly = ly + 19 * F.scale
         end
     end
 
@@ -3910,19 +3906,19 @@ function pages.kit(v, x, y, w, h, focused)
         lbl(r.short or "", kx, cy, pal.a(col, hot and 1 or 0.8), nil,
             9.5 * F.scale)
         local px = kx + 40 * F.scale
-        local base = math.min(6, r.hull_max or 6)
+        local base = math.min(6, r.arena_max or 6)
         local step = 13 * F.scale
         for k = 1, base do
             pages.pip(px, cy, 4.4 * F.scale,
                  (r.choice or 0) >= k and "on" or "off", col)
             px = px + step
         end
-        if (r.hull_max or 0) > base then
+        if (r.arena_max or 0) > base then
             F.layer:seg(px - 3 * F.scale, ry(cy - 5.5 * F.scale),
                         px - 3 * F.scale, ry(cy + 5.5 * F.scale),
                         1.0 * F.scale, pal.a(pal.RADAR_TILE, 0.6), true)
             px = px + 5 * F.scale
-            for k = base + 1, r.hull_max do
+            for k = base + 1, r.arena_max do
                 local state = "locked"
                 if k <= (r.owned or 0) then
                     state = (r.choice or 0) >= k and "on" or "off"

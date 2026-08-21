@@ -163,9 +163,7 @@ void sim_class_from_units(sim_ship_class *c, const sim_class_units *u) {
      * settings are what a zone tunes. */
     for (int t = 0; t < SIM_TRIG_COUNT; t++) {
         for (int r = 0; r < SIM_MAX_RUNGS; r++) c->trigger[t][r] = SIM_NO_PATTERN;
-        c->mod_max[t] = 0;
     }
-    for (int k = 0; k < SIM_MAX_CHARGES; k++) c->charge_max[k] = 0;
 }
 
 /* ---- upgrades ---- */
@@ -230,34 +228,10 @@ void sim_init(sim_state *s, uint32_t seed) {
  * The caller sets energy afterwards, not before: the energy ceiling is a
  * function of `up[SIM_UP_ENERGY]`, and filling the bar before the prizes lands
  * would leave a ship at less than the full one it just earned. */
-int sim_kit_ceilings(const sim_ship_class *c, uint8_t *out) {
+int sim_kit_ceilings(const sim_settings *cfg, uint8_t *out) {
     int n = 0;
-    memset(out, 0, SIM_SLOT_COUNT);
-    for (int u = 0; u < SIM_UP_COUNT; u++) {
-        out[SIM_SLOT_STAT(u)] = SIM_UP_STEPS;
-        n++;
-    }
-    for (int t = 0; t < SIM_TRIG_COUNT; t++) {
-        /* No trigger, nothing to spend on it. An add-on is a transform on a
-         * weapon and a level is a rung of one, so neither means anything
-         * without the weapon, and this has to be the code's rule rather than
-         * the roster's: enforcing it in the table held only for as long as
-         * every rackless hull remembered to zero its own add-on field. */
-        if (c->trigger[t][0] == SIM_NO_PATTERN) continue;
-        int rungs = 0;
-        while (rungs + 1 < SIM_MAX_RUNGS &&
-               c->trigger[t][rungs + 1] != SIM_NO_PATTERN) rungs++;
-        if (rungs > 0) { out[SIM_SLOT_LEVEL(t)] = (uint8_t)rungs; n++; }
-        for (int m = 0; m < SIM_MOD_COUNT; m++) {
-            uint8_t mx = sim_mod_get(c->mod_max[t], m);
-            if (mx > 0) { out[SIM_SLOT_MOD(t, m)] = mx; n++; }
-        }
-    }
-    for (int k = 0; k < SIM_MAX_CHARGES; k++)
-        if (c->charge_max[k] > 0) {
-            out[SIM_SLOT_CHARGE(k)] = c->charge_max[k];
-            n++;
-        }
+    memcpy(out, cfg->kit_ceiling, SIM_SLOT_COUNT);
+    for (int i = 0; i < SIM_SLOT_COUNT; i++) if (out[i]) n++;
     return n;
 }
 
@@ -285,8 +259,14 @@ void sim_base_entitlements(uint8_t *out) {
     for (int t = 0; t < SIM_TRIG_COUNT; t++) {
         out[SIM_SLOT_LEVEL(t)] = 1;
         for (int m = 0; m < SIM_MOD_COUNT; m++) out[SIM_SLOT_MOD(t, m)] = 1;
+        /* Every add-on but this one. The others change what a round does;
+         * barrels change how many leave, and a rung of that handed out free
+         * is the one thing that would make the starting kit better than a
+         * starting kit should be. It is also the trait the whole slot space
+         * was flattened to make sellable, so it is the shop's. */
+        out[SIM_SLOT_MOD(t, SIM_MOD_BARREL)] = 0;
     }
-    /* 255 rather than a number: the hull's row is the limit on these, and an
+    /* 255 rather than a number: the arena's row is the limit on these, and an
      * account that never bought anything is not the thing standing in the
      * way of a pilot slotting three repels. */
     out[SIM_SLOT_CHARGE(SIM_CHARGE_REPEL)] = 255;
@@ -297,17 +277,19 @@ int sim_starter_kit(const uint8_t *ceiling, uint8_t *out) {
     memset(out, 0, SIM_SLOT_COUNT);
     int spent = 0;
 
-    /* A rung on each trigger first, because a hull with a bomb rack and no
-     * rung on it is a hull that never uses half of what it is. */
+    /* A rung on each trigger first, because a ship with a bomb rack and no
+     * rung on it is a ship that never uses half of what it is. */
     for (int t = 0; t < SIM_TRIG_COUNT && spent < SIM_KIT_BUDGET; t++)
         if (ceiling[SIM_SLOT_LEVEL(t)] > 0) {
             out[SIM_SLOT_LEVEL(t)] = 1;
             spent++;
         }
 
-    /* Then the charges the hull will hold, which is the one part of a kit
-     * that runs out during a match and the one a pilot notices the absence
-     * of immediately. */
+    /* Then the charges, which are the one part of a kit that runs out during
+     * a match and the one a pilot notices the absence of immediately. Three
+     * of a kind, or the ceiling if the arena is stingier: the mine ceiling is
+     * six and spending six points of thirty on mines is a build rather than a
+     * default. */
     for (int k = 0; k < SIM_MAX_CHARGES && spent < SIM_KIT_BUDGET; k++) {
         uint8_t want = ceiling[SIM_SLOT_CHARGE(k)];
         if (want > 3) want = 3;
@@ -335,7 +317,7 @@ int sim_starter_kit(const uint8_t *ceiling, uint8_t *out) {
 
 int sim_set_kit(sim_ship *sh, const sim_settings *cfg, const uint8_t *kit) {
     uint8_t ceiling[SIM_SLOT_COUNT];
-    sim_kit_ceilings(&cfg->classes[sh->cls], ceiling);
+    sim_kit_ceilings(cfg, ceiling);
     int cost = 0;
     for (int i = 0; i < SIM_SLOT_COUNT; i++) {
         if (kit[i] > ceiling[i]) return 0;
@@ -778,6 +760,27 @@ static void spawn_weapon(sim_state *s, uint8_t spec, uint8_t owner,
 static void compose(const sim_settings *cfg, uint16_t mods, uint8_t level,
                     sim_weapon_spec *sp, sim_fire_pattern *p) {
     uint8_t n;
+    /* Barrels first, and the order is load-bearing. A barrel sets the tight
+     * spacing a pair is supposed to leave at; multifire below only reaches for
+     * the zone's wide fan when the pattern has none of its own, so running
+     * this first is what makes a pilot holding both fire a tight group rather
+     * than a wide one. It is also the arrangement the Terrier had, back when
+     * this was a flag on that hull and the spacing was baked into its pattern.
+     *
+     * Adding rather than multiplying, for the same reason the note below the
+     * multifire block gives: two abreast plus a rung of multifire is four
+     * rounds, not six. */
+    if (p && (n = sim_mod_get(mods, SIM_MOD_BARREL)) != 0) {
+        int32_t base = (int32_t)(p->count ? p->count : 1);
+        int32_t total = base + n * cfg->mod_step[SIM_MOD_BARREL];
+        p->count = (uint8_t)(total > 255 ? 255 : total);
+        if (p->spacing == 0) p->spacing = cfg->mod_barrel_spread;
+        /* Energy, and no delay. Rounds that cost nothing are the whole of the
+         * balance problem; a rate that is never punished is what a pilot is
+         * actually buying when they take this over a rung of multifire. */
+        p->energy = (int32_t)((int64_t)p->energy
+                              * (100 + n * cfg->mod_barrel_energy) / 100);
+    }
     if (p && (n = sim_mod_get(mods, SIM_MOD_MULTI)) != 0) {
         int32_t base = (int32_t)(p->count ? p->count : 1);
         int32_t extra = n * cfg->mod_step[SIM_MOD_MULTI];
@@ -1051,15 +1054,18 @@ static void weapon_end(sim_state *s, const sim_settings *cfg,
     }
     if (spec->blast > 0) {
         int64_t rad = spec->blast;
-        /* BBombDamagePercent. A hull whose bombs bounce pays for the trick on
-         * every bomb it throws rather than on the ones that come back, so the
-         * ceiling its roster row allows is the test and not what this round is
-         * carrying. */
-        if (cfg->bbomb_damage != 1000 && w->owner < SIM_MAX_SHIPS) {
-            const sim_ship_class *oc = &cfg->classes[s->ships[w->owner].cls];
-            if (sim_mod_get(oc->mod_max[SIM_TRIG_BOMB], SIM_MOD_BOUNCE))
-                damage = (int32_t)(((int64_t)damage * cfg->bbomb_damage) / 1000);
-        }
+        /* BBombDamagePercent. A pilot whose bombs bounce pays for the trick
+         * on every bomb they throw rather than on the ones that come back, so
+         * holding the add-on is the test and not whether this particular round
+         * has touched a wall yet.
+         *
+         * That used to read the hull's ceiling for bomb bounce, back when one
+         * hull in the roster was the only one allowed the add-on at all. The
+         * add-on is bought now, so the round's own mods say the same thing and
+         * say it about the pilot who actually took it. */
+        if (cfg->bbomb_damage != 1000
+            && sim_mod_get(w->mods, SIM_MOD_BOUNCE))
+            damage = (int32_t)(((int64_t)damage * cfg->bbomb_damage) / 1000);
         /* How far the pilot who threw it is standing from their own blast.
          * Everyone else's damage is cut by half of whatever that distance
          * would have paid them, so a bomb let off at your own feet lands at
@@ -1460,11 +1466,21 @@ static void lock_trigger(sim_ship *sh, int trig, uint16_t ticks) {
     if (ticks > sh->fire_cooldown[trig]) sh->fire_cooldown[trig] = ticks;
 }
 
-static void move_count(sim_ship *sh, const sim_ship_class *c, uint8_t type,
+/* One slot, one step, up or down, clamped where that slot ends.
+ *
+ * The ceiling is the arena's, read straight off `cfg->kit_ceiling` at the
+ * slot this call is about. It used to be the hull's row, and the difference
+ * shows up here as one lookup instead of three: a stat, an add-on and a
+ * charge all end at the same kind of number now, and the class is consulted
+ * for exactly one thing, which is whether the ladder a level indexes has a
+ * rung there to stand on. */
+static void move_count(sim_ship *sh, const sim_settings *cfg, uint8_t type,
                        int by) {
+    const sim_ship_class *c = &cfg->classes[sh->cls];
+    uint8_t cap = cfg->kit_ceiling[type];
     if (type < SIM_UP_COUNT) {
         if (by < 0) { if (sh->up[type]) sh->up[type]--; }
-        else if (sh->up[type] < SIM_UP_STEPS) sh->up[type]++;
+        else if (sh->up[type] < cap) sh->up[type]++;
         return;
     }
     type = (uint8_t)(type - SIM_UP_COUNT);
@@ -1473,7 +1489,8 @@ static void move_count(sim_ship *sh, const sim_ship_class *c, uint8_t type,
             if (sh->level[type]) sh->level[type]--;
         } else {
             int next = sh->level[type] + 1;
-            if (next < SIM_MAX_RUNGS && c->trigger[type][next] != SIM_NO_PATTERN)
+            if (next <= cap && next < SIM_MAX_RUNGS
+                && c->trigger[type][next] != SIM_NO_PATTERN)
                 sh->level[type] = (uint8_t)next;
         }
         return;
@@ -1484,7 +1501,7 @@ static void move_count(sim_ship *sh, const sim_ship_class *c, uint8_t type,
         uint8_t have = sim_mod_get(sh->mods[t], m);
         if (by < 0) {
             if (have) sh->mods[t] = sim_mod_set(sh->mods[t], m, (uint8_t)(have - 1));
-        } else if (have < sim_mod_get(c->mod_max[t], m)) {
+        } else if (have < cap) {
             sh->mods[t] = sim_mod_set(sh->mods[t], m, (uint8_t)(have + 1));
         }
         return;
@@ -1493,7 +1510,7 @@ static void move_count(sim_ship *sh, const sim_ship_class *c, uint8_t type,
         int k = type - SIM_TRIG_COUNT * SIM_MOD_COUNT;
         if (by < 0) {
             if (sh->charge[k]) sh->charge[k]--;
-        } else if (sh->charge[k] < c->charge_max[k]) {
+        } else if (sh->charge[k] < cap) {
             sh->charge[k]++;
         }
     }
@@ -1514,9 +1531,8 @@ static uint8_t held(const sim_ship *sh, uint8_t type) {
 
 int sim_grant(sim_ship *sh, const sim_settings *cfg, uint8_t type) {
     if (type >= SIM_SLOT_COUNT) return 0;
-    const sim_ship_class *c = &cfg->classes[sh->cls];
     uint8_t was = held(sh, type);
-    move_count(sh, c, type, 1);
+    move_count(sh, cfg, type, 1);
     return held(sh, type) != was;
 }
 

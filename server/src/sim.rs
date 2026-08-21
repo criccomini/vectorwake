@@ -156,14 +156,9 @@ pub struct sim_ship_class {
     pub aft: i32,
     pub halfw: i32,
     /// A ladder of patterns per trigger, climbed by the pilot's level, with
-    /// 255 ending it. The ladder's length is the hull's ceiling for that
-    /// weapon; a hull with no bomb rack has 255 at rung zero.
+    /// 255 ending it. The baseline builds the same ladders for every class;
+    /// how far a weapon climbs is `sim_settings::kit_ceiling` now.
     pub trigger: [[u8; MAX_RUNGS]; TRIG_COUNT],
-    /// Which add-ons this hull may ever hold on each trigger, packed two bits
-    /// each exactly as a kit's are. This is what keeps the roster a roster.
-    pub mod_max: [u16; TRIG_COUNT],
-    /// How many of each charge kind this hull may carry.
-    pub charge_max: [u8; MAX_CHARGES],
 }
 
 #[repr(C)]
@@ -177,6 +172,11 @@ pub struct sim_settings {
     pub pattern_count: u8,
     /// What each charge kind fires, as a pattern index.
     pub charge: [u8; MAX_CHARGES],
+    /// The most a kit may put in each slot, over the flat slot space, and
+    /// zero for a slot this arena does not have. Zone-wide: it was a row per
+    /// hull, which meant an upgrade could be bought and then refused by the
+    /// hull somebody wanted to fly it on.
+    pub kit_ceiling: [u8; SLOT_COUNT],
     /// What a kill adds to the killer's own bounty. Bounty is a run rather
     /// than a loadout, so this is the whole of what makes one.
     pub bounty_per_kill: u16,
@@ -192,6 +192,12 @@ pub struct sim_settings {
     /// Percent a rung of multifire adds to the shot's energy and cooldown.
     pub mod_multi_energy: u16,
     pub mod_multi_delay: u16,
+    /// Percent a rung of barrels adds to the shot's energy. There is no delay
+    /// to match: barrels do not slow the gun, which is the trade against
+    /// multifire, which does.
+    pub mod_barrel_energy: u16,
+    /// The angle a pair of barrels leaves at, tighter than `mod_spread`.
+    pub mod_barrel_spread: u16,
     /// What each rung of shrapnel breaks into.
     pub mod_splinter: [u8; MAX_RUNGS],
     /// Q8 px a bomb level adds to the proximity fuse.
@@ -456,7 +462,7 @@ extern "C" {
     pub fn sim_eff_thrust(c: *const sim_ship_class, s: *const sim_ship) -> i32;
     /// Per-slot ceilings for a hull, over the flat kit space. Zero is a slot
     /// the roster keeps from it.
-    pub fn sim_kit_ceilings(c: *const sim_ship_class, out: *mut u8) -> c_int;
+    pub fn sim_kit_ceilings(cfg: *const sim_settings, out: *mut u8) -> c_int;
     /// What a kit spends, which is its sum: every slot costs one.
     pub fn sim_kit_cost(kit: *const u8) -> c_int;
     /// Validate a kit against the hull and the budget, store it, deal it with
@@ -506,7 +512,7 @@ pub const TRIG_COUNT: usize = 2;
 /// index was written out as a bare 1 wherever a bomb was meant.
 pub const TRIG_GUN: usize = 0;
 pub const TRIG_BOMB: usize = 1;
-pub const MOD_COUNT: usize = 6;
+pub const MOD_COUNT: usize = 7;
 pub const MAX_RUNGS: usize = 4;
 pub const MOD_MAX: u8 = 3;
 pub const MAX_CHARGES: usize = 4;
@@ -529,6 +535,9 @@ pub const MOD_PROX: usize = 2;
 pub const MOD_SHRAPNEL: usize = 3;
 pub const MOD_FREEZE: usize = 4;
 pub const MOD_PUSH: usize = 5;
+/// More barrels, abreast rather than fanned. This was DoubleBarrel, a flag on
+/// one hull; it is an add-on so that the shop can sell it.
+pub const MOD_BARREL: usize = 6;
 
 // Where a thing sits in the flat kit space, mirroring the SIM_SLOT_ macros.
 // The space is one shape, a count with a ceiling, so a stat, a rung, an add-on
@@ -956,11 +965,39 @@ impl World {
         out
     }
 
-    pub fn kit_ceilings(&self, cls: u8) -> [u8; SLOT_COUNT] {
+    /// What this arena lets a kit hold. No hull argument: the roster stopped
+    /// having a say, so an upgrade that fits in one hangar fits in all of them.
+    pub fn kit_ceilings(&self) -> [u8; SLOT_COUNT] {
         let mut out = [0u8; SLOT_COUNT];
-        let c: *const sim_ship_class = &self.cfg.classes[cls as usize];
-        unsafe { sim_kit_ceilings(c, out.as_mut_ptr()) };
+        unsafe { sim_kit_ceilings(&*self.cfg, out.as_mut_ptr()) };
         out
+    }
+
+    /// What the game itself has, before any zone tunes it: the baseline's own
+    /// ceiling over the flat slot space.
+    ///
+    /// The shop needs this and has no arena to ask. It sells entitlements,
+    /// which are an account's property rather than a room's, so the question
+    /// it can answer is "does this game have such a slot at all" rather than
+    /// "does the room you are standing in". A zone that narrows its own
+    /// ceiling can still leave a bought upgrade unslottable there, which is
+    /// a zone's decision to make; what cannot happen any more is the shop
+    /// selling something no arena anywhere could hold.
+    ///
+    /// Built once. It needs a whole settings block to read six-and-twenty
+    /// bytes out of, and that block is a megabyte of specs and patterns.
+    pub fn baseline_kit_ceiling() -> &'static [u8; SLOT_COUNT] {
+        static CEILING: std::sync::OnceLock<[u8; SLOT_COUNT]> = std::sync::OnceLock::new();
+        CEILING.get_or_init(|| {
+            let map: Box<sim_map> = zeroed_box();
+            let mut cfg: Box<sim_settings> = zeroed_box();
+            let mut out = [0u8; SLOT_COUNT];
+            unsafe {
+                sim_settings_baseline(&mut *cfg, &*map);
+                sim_kit_ceilings(&*cfg, out.as_mut_ptr());
+            }
+            out
+        })
     }
 
     pub fn grant(&mut self, ship: usize, ty: u8) -> bool {

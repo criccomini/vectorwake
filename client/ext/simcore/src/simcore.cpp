@@ -386,14 +386,30 @@ int ShipLevel(lua_State* L) {
     return 1;
 }
 
-// The ceilings for a hull by class, rather than by seat: the hangar is a place
-// you stand between matches and every hull it asks about is one nobody is
-// flying.
-int KitCeilings(lua_State* L) {
+// A hull's footprint, in whole px: how far it reaches past the nose, behind
+// the tail, and to either side.
+//
+// The whole of what tells one hull from another, now that they fly alike and
+// hold alike. Worth drawing in the hangar for that reason: it is the only
+// number on that page a player cannot change.
+int HullExtent(lua_State* L) {
     int cls = (int)luaL_checkinteger(L, 1);
     if (cls < 0 || cls >= g_cfg.class_count) { lua_pushnil(L); return 1; }
+    const sim_ship_class* c = &g_cfg.classes[cls];
+    lua_pushnumber(L, c->fore / 256);
+    lua_pushnumber(L, c->aft / 256);
+    lua_pushnumber(L, c->halfw / 256);
+    return 3;
+}
+
+// What this arena lets a kit hold, over the flat slot space.
+//
+// It takes no hull and no seat. It used to take a class, back when the roster
+// carried a tech tree and the hangar had to ask the question once per hull;
+// the answer is the same for all seven now, so the hangar asks once.
+int KitCeilings(lua_State* L) {
     uint8_t ceiling[SIM_SLOT_COUNT];
-    sim_kit_ceilings(&g_cfg.classes[cls], ceiling);
+    sim_kit_ceilings(&g_cfg, ceiling);
     lua_createtable(L, SIM_SLOT_COUNT, 0);
     for (int k = 0; k < SIM_SLOT_COUNT; k++) {
         lua_pushnumber(L, ceiling[k]);
@@ -597,11 +613,12 @@ int TriggerRate(lua_State* L) {
     return 2;
 }
 
+// How many of a charge kind a kit may hold here. The arena's number, not the
+// hull's: what a seat is flying has nothing to say about it.
 int ChargeMax(lua_State* L) {
-    int i = CheckShip(L);
     int k = (int)luaL_checkinteger(L, 2);
     if (k < 0 || k >= SIM_MAX_CHARGES) { lua_pushnumber(L, 0); return 1; }
-    lua_pushnumber(L, g_cfg.classes[g_cur->ships[i].cls].charge_max[k]);
+    lua_pushnumber(L, g_cfg.kit_ceiling[SIM_SLOT_CHARGE(k)]);
     return 1;
 }
 
@@ -1269,6 +1286,7 @@ const luaL_reg kFunctions[] = {
     {"ship_repel", ShipRepel},
     {"ship_up", ShipUp},
     {"kit_ceilings", KitCeilings},
+    {"hull_extent", HullExtent},
     {"base_entitlements", BaseEntitlements},
     {"starter_kit", StarterKit},
     {"class_count", ClassCount},

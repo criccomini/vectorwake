@@ -126,44 +126,35 @@ input_sample_ticks = 50
 combat_idle_ticks = 500
 spectate_silence_ticks = 500
 
-# Per-hull tuning, in settings-file units. Name the hull and set only what you
-# want to change.
+# Per-hull tuning. Name the hull and set only what you want to change, which
+# is a footprint and a ladder and nothing else.
 #
-# Each stat is three numbers, under the original's names: a ceiling upgrades
-# climb toward (`speed`), a floor a fresh ship starts at (`initial_speed`), and
-# the step one green adds (`upgrade_speed`). Setting only the ceiling moves the
-# other two with it in proportion, so raising a hull's top speed does not
-# quietly make it start slower relative to where it can get. Writing a floor or
-# a step out beats that.
+# A hull used to carry flight as well: a ceiling, a floor and a step for each
+# of five stats, so a zone could make one ship faster than another. That is
+# gone, and so is the tech tree that sat beside it. Thirty points has to buy
+# the same ship whatever you are flying or a kit is not a fair trade, and an
+# add-on ceiling that lives on a hull is an upgrade the shop can never sell.
+# See docs/design/ships.md.
 #
-# The baseline is the original's, where all eight hulls fly identically and
-# what tells them apart is the weapons -- so the two blocks below are a
-# departure from it rather than a restatement, and deleting them puts the
-# roster back.
-[[arena.ships]]
-name = "Apex"
-speed = 4900
-thrust = 30
-rotation = 420
-energy = 1350
-recharge = 1500
-# The hull's footprint is deliberately not set here. The defaults are measured
-# off the drawn ships and the collision box follows the heading; a zone that
-# overrides `fore`, `aft` or `width` should keep sqrt(fore^2 + (width/2)^2)
-# inside 23 px, the diagonal every shipped map was checked against.
+# What is left is the shape. The defaults are measured off the drawn ships and
+# the collision box follows the heading, so a Cipher is genuinely a thin target
+# from the side; a zone that overrides `fore`, `aft` or `width` should keep
+# sqrt(fore^2 + (width/2)^2) inside 23 px, the diagonal every shipped map was
+# checked against.
+#
+# [[arena.ships]]
+# name = "Apex"
+# fore = 20
 
-[[arena.ships]]
-name = "Anvil"
-speed = 3200
-initial_speed = 2000
-upgrade_speed = 240
-thrust = 14
-rotation = 240
-energy = 2600
-recharge = 1000
-# How many of each charge this hull carries, by slot: three repels, three
-# bursts. Slots left off keep the baseline's.
-charges = [3, 3]
+# What a kit may hold here, over the flat slot space, for every hull alike.
+# Anything left out keeps the baseline's, which is the union of what the seven
+# hull rows used to allow. An add-on left out of a map that names any is a slot
+# this arena does not have.
+#
+# [arena.kit]
+# gun_mods = { multi = 2, bounce = 1, freeze = 1, barrel = 2 }
+# bomb_mods = { prox = 1, shrapnel = 3, bounce = 2, push = 2 }
+# charges = [3, 3, 6]
 
 # Weapons, by name.
 #

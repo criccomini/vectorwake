@@ -831,5 +831,38 @@ do
           "arena.script no longer polls it")
 end
 
+-- --- the hangar says what a hull is --------------------------------------
+--
+-- A column of ceilings stood in this space: how far the ladders climbed, how
+-- many charge kinds the hull took. None of that is a hull's any more, and the
+-- page had better not still be claiming it is. What belongs there is the
+-- footprint, which is the whole of what one hull has that another does not.
+do
+    local st = draw({
+        depth = 2, sel = 2, rail = RAIL, rail_sel = 1, focus = "stage",
+        home = true, closable = false, page = "kit",
+        head = {label = "Cipher", hull = 4},
+        hulls = {{label = "Cipher", role = "knife", index = 1, hull = 4,
+                  detail = "six pixels from the side",
+                  extent = {fore = 22, aft = 12, beam = 12}}},
+        hull_sel = 1,
+        rows = {
+            {label = "budget", bar = true, choice = 4, choices = 30, index = 1},
+            {label = "energy", group = "flight", short = "en", choice = 2,
+             choices = 6, owned = 6, arena_max = 8, index = 2},
+        },
+    })
+    check("the hangar reads the hull's footprint", has(st, "footprint"),
+          table.concat(texts(st), " "))
+    local said_beam = false
+    for _, t in ipairs(texts(st)) do
+        if t == "12 PX" then said_beam = true end
+    end
+    check("in px, off the core's own extents", said_beam,
+          table.concat(texts(st), " "))
+    check("and says nothing about a hull's limits", not has(st, "hull limits"),
+          table.concat(texts(st), " "))
+end
+
 print(fails == 0 and "all good" or (fails .. " failed"))
 os.exit(fails == 0 and 0 or 1)

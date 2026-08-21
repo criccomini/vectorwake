@@ -756,7 +756,6 @@ fn shot_of(w: &World, me: &sim::sim_ship, trig: usize, max_e: f32) -> Option<Sho
 /// The mine this pilot would lay now, plus the state of its rack.
 fn mine_of(w: &World, ship: u8, max_e: f32) -> Option<Mine> {
     let me = &w.state.ships[ship as usize];
-    let cls = &w.cfg.classes[me.cls as usize];
     // A mine is a charge now, so what limits it is how many the kit brought
     // rather than how many of yours are already lying about. The count on
     // the field still matters for spacing: two mines on one tile is one
@@ -764,7 +763,7 @@ fn mine_of(w: &World, ship: u8, max_e: f32) -> Option<Mine> {
     let pat = w.cfg.charge[sim::CHARGE_MINE];
     let held = me.charge[sim::CHARGE_MINE];
     if held == 0
-        || cls.charge_max[sim::CHARGE_MINE] == 0
+        || w.cfg.kit_ceiling[sim::slot_charge(sim::CHARGE_MINE) as usize] == 0
         || pat == sim::NO_PATTERN
         || pat as usize >= w.cfg.pattern_count as usize
         || shot_of(w, me, sim::TRIG_BOMB, max_e).is_none()
@@ -3336,6 +3335,18 @@ mod tests {
             let e = individual(i);
             let ship = w.spawn_on_map(e.class, (i % 2) as u8, i as u32 / 2, 0);
             assert!(ship >= 0, "a seat on the map");
+            // The kit a room would deal this seat. `sim_spawn` leaves one
+            // empty and a room fills it before the pilot flies, so a drill
+            // that skipped this step flew eight bare hulls: rung zero guns, no
+            // add-ons and no charges, which is a fight nobody in this game
+            // ever has. It also made the drill fragile, since a room full of
+            // pilots who cannot finish each other is a room nobody can leave.
+            let mut ceiling = w.kit_ceilings();
+            for (c, own) in ceiling.iter_mut().zip(sim::World::base_entitlements()) {
+                *c = (*c).min(own);
+            }
+            let kit = sim::World::starter_kit(&ceiling);
+            assert!(w.set_kit(ship as usize, &kit), "a starter kit is legal");
             let mut b = Bot::new(ship as u8, e.skill);
             b.reseed(i as u32 * 977 + 13);
             bots.push(b);
@@ -3649,6 +3660,18 @@ mod tests {
             let e = individual(i);
             let ship = w.spawn_on_map(e.class, (i % 2) as u8, i as u32 / 2, 0);
             assert!(ship >= 0, "a seat on the map");
+            // The kit a room would deal this seat. `sim_spawn` leaves one
+            // empty and a room fills it before the pilot flies, so a drill
+            // that skipped this step flew eight bare hulls: rung zero guns, no
+            // add-ons and no charges, which is a fight nobody in this game
+            // ever has. It also made the drill fragile, since a room full of
+            // pilots who cannot finish each other is a room nobody can leave.
+            let mut ceiling = w.kit_ceilings();
+            for (c, own) in ceiling.iter_mut().zip(sim::World::base_entitlements()) {
+                *c = (*c).min(own);
+            }
+            let kit = sim::World::starter_kit(&ceiling);
+            assert!(w.set_kit(ship as usize, &kit), "a starter kit is legal");
             let mut b = Bot::new(ship as u8, e.skill);
             b.reseed(i as u32 * 977 + 13);
             bots.push(b);

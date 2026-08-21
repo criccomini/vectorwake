@@ -859,114 +859,7 @@ impl Room {
                     world.cfg.classes[idx].trigger[t] = ladder;
                 }
             }
-            for (t, mods) in [&s.gun_mods, &s.bomb_mods].into_iter().enumerate() {
-                if mods.is_empty() {
-                    continue;
-                }
-                let mut packed = 0u16;
-                for (name, rungs) in mods {
-                    match Room::mod_index(name) {
-                        Some(m) => {
-                            let n = (*rungs).min(sim::MOD_MAX) as u16;
-                            packed |= n << (m * 2);
-                        }
-                        None => warn.push(format!("\"{name}\" is not an add-on")),
-                    }
-                }
-                world.cfg.classes[idx].mod_max[t] = packed;
-            }
-            if s.charges.len() > sim::MAX_CHARGES {
-                warn.push(format!(
-                    "{} names {} charge slots and there are {}",
-                    s.name,
-                    s.charges.len(),
-                    sim::MAX_CHARGES
-                ));
-            }
-            for (k, &n) in s.charges.iter().take(sim::MAX_CHARGES).enumerate() {
-                world.cfg.classes[idx].charge_max[k] = n.min(sim::CHARGE_MAX);
-            }
             let cls = &mut world.cfg.classes[idx];
-            // Raise the ceiling and the ladder under it moves with it, in
-            // proportion. A zone that says nothing keeps the baseline's own
-            // numbers exactly, which is the whole point: those are the
-            // original's, and it starts a pilot at 62% of top speed but 88%
-            // of top thrust and closes a quarter of the speed gap per step
-            // against a seventh of the energy gap. Recomputing them from a
-            // flat rule -- seventy per cent of the ceiling and an eighth of
-            // the gap, which is what stood here -- overwrote all of that on
-            // every reload, whether or not the file mentioned the ship.
-            fn scaled(old_max: i32, new_max: i32, v: &mut i32) {
-                if old_max > 0 && new_max != old_max {
-                    *v = ((*v as i64) * new_max as i64 / old_max as i64) as i32;
-                }
-            }
-            unsafe {
-                if let Some(v) = s.speed {
-                    let m = sim::sim_units_speed(v);
-                    scaled(cls.max_speed, m, &mut cls.init_speed);
-                    scaled(cls.max_speed, m, &mut cls.up_speed);
-                    cls.max_speed = m;
-                }
-                if let Some(v) = s.thrust {
-                    let m = sim::sim_units_thrust(v);
-                    scaled(cls.thrust, m, &mut cls.init_thrust);
-                    scaled(cls.thrust, m, &mut cls.up_thrust);
-                    cls.thrust = m;
-                }
-                if let Some(v) = s.rotation {
-                    let m = sim::sim_units_rotation(v);
-                    scaled(cls.rot, m, &mut cls.init_rot);
-                    scaled(cls.rot, m, &mut cls.up_rot);
-                    cls.rot = m;
-                }
-                if let Some(v) = s.energy {
-                    let m = sim::sim_units_energy(v);
-                    scaled(cls.max_energy, m, &mut cls.init_energy);
-                    scaled(cls.max_energy, m, &mut cls.up_energy);
-                    cls.max_energy = m;
-                }
-                if let Some(v) = s.recharge {
-                    let m = sim::sim_units_recharge(v);
-                    scaled(cls.recharge, m, &mut cls.init_recharge);
-                    scaled(cls.recharge, m, &mut cls.up_recharge);
-                    cls.recharge = m;
-                }
-                // A floor or a step written out beats the proportion, so a
-                // zone can say what the original's files say -- InitialSpeed,
-                // UpgradeSpeed and MaximumSpeed as three independent numbers
-                // -- rather than only being able to move all three together.
-                if let Some(v) = s.initial_speed {
-                    cls.init_speed = sim::sim_units_speed(v);
-                }
-                if let Some(v) = s.upgrade_speed {
-                    cls.up_speed = sim::sim_units_speed(v);
-                }
-                if let Some(v) = s.initial_thrust {
-                    cls.init_thrust = sim::sim_units_thrust(v);
-                }
-                if let Some(v) = s.upgrade_thrust {
-                    cls.up_thrust = sim::sim_units_thrust(v);
-                }
-                if let Some(v) = s.initial_rotation {
-                    cls.init_rot = sim::sim_units_rotation(v);
-                }
-                if let Some(v) = s.upgrade_rotation {
-                    cls.up_rot = sim::sim_units_rotation(v);
-                }
-                if let Some(v) = s.initial_energy {
-                    cls.init_energy = sim::sim_units_energy(v);
-                }
-                if let Some(v) = s.upgrade_energy {
-                    cls.up_energy = sim::sim_units_energy(v);
-                }
-                if let Some(v) = s.initial_recharge {
-                    cls.init_recharge = sim::sim_units_recharge(v);
-                }
-                if let Some(v) = s.upgrade_recharge {
-                    cls.up_recharge = sim::sim_units_recharge(v);
-                }
-            }
             if let Some(v) = s.fore {
                 cls.fore = v * 256;
             }
@@ -976,6 +869,62 @@ impl Room {
             if let Some(v) = s.width {
                 cls.halfw = v * 256 / 2;
             }
+        }
+
+        // And what a kit may hold, once, for the whole arena.
+        //
+        // The ladder ceilings are derived rather than written: a level slot
+        // buys a rung, so what it can buy is however far the longest ladder in
+        // the roster climbs. Deriving it is what keeps a zone from selling a
+        // rung that nothing fires, and taking the longest rather than the
+        // shortest is what keeps one short-laddered hull from making the
+        // purchase worthless on the other six.
+        for t in 0..sim::TRIG_COUNT {
+            let mut deepest = 0u8;
+            for i in 0..world.cfg.class_count as usize {
+                let ladder = &world.cfg.classes[i].trigger[t];
+                let mut rungs = 0u8;
+                while (rungs as usize) + 1 < sim::MAX_RUNGS
+                    && ladder[rungs as usize + 1] != sim::NO_PATTERN
+                {
+                    rungs += 1;
+                }
+                if ladder[0] == sim::NO_PATTERN {
+                    rungs = 0;
+                }
+                deepest = deepest.max(rungs);
+            }
+            world.cfg.kit_ceiling[sim::slot_level(t) as usize] = deepest;
+        }
+        for (t, mods) in [&c.kit.gun_mods, &c.kit.bomb_mods].into_iter().enumerate() {
+            if mods.is_empty() {
+                continue;
+            }
+            // A map that names any add-on names all of them: what it leaves
+            // out is a slot this arena does not have. Merging into the
+            // baseline instead would make "no shrapnel here" unsayable.
+            for m in 0..sim::MOD_COUNT {
+                world.cfg.kit_ceiling[sim::slot_mod(t, m) as usize] = 0;
+            }
+            for (name, rungs) in mods {
+                match Room::mod_index(name) {
+                    Some(m) => {
+                        world.cfg.kit_ceiling[sim::slot_mod(t, m) as usize] =
+                            (*rungs).min(sim::MOD_MAX);
+                    }
+                    None => warn.push(format!("\"{name}\" is not an add-on")),
+                }
+            }
+        }
+        if c.kit.charges.len() > sim::MAX_CHARGES {
+            warn.push(format!(
+                "arena.kit names {} charge slots and there are {}",
+                c.kit.charges.len(),
+                sim::MAX_CHARGES
+            ));
+        }
+        for (k, &n) in c.kit.charges.iter().take(sim::MAX_CHARGES).enumerate() {
+            world.cfg.kit_ceiling[sim::slot_charge(k) as usize] = n.min(sim::CHARGE_MAX);
         }
         warn
     }
@@ -1083,8 +1032,9 @@ impl Room {
     /// Add-ons are named in a zone file and numbered in the core. The order
     /// is `sim_mod`'s and the names are the ones the design doc uses.
     pub(crate) fn mod_index(name: &str) -> Option<usize> {
-        const NAMES: [&str; sim::MOD_COUNT] =
-            ["multi", "bounce", "prox", "shrapnel", "freeze", "push"];
+        const NAMES: [&str; sim::MOD_COUNT] = [
+            "multi", "bounce", "prox", "shrapnel", "freeze", "push", "barrel",
+        ];
         NAMES.iter().position(|n| n.eq_ignore_ascii_case(name))
     }
 
@@ -1713,13 +1663,14 @@ impl Room {
     /// row and the account's entitlements together, smaller wins.
     ///
     /// Two ceilings rather than one because they answer different questions.
-    /// The hull's row is the roster expressing itself, and it moves when a
-    /// zone retunes a ship; the account's is what the shop has sold, and it
-    /// moves when somebody spends. A kit legal under both is a kit the core
-    /// will deal.
+    /// The arena's row is what this zone has, and it moves when a zone is
+    /// retuned; the account's is what the shop has sold, and it moves when
+    /// somebody spends. A kit legal under both is a kit the core will deal.
+    ///
+    /// The hull is not one of the two. It used to be, and a pilot could buy
+    /// an upgrade and then find the ship they wanted refused it.
     pub(crate) fn kit_ceiling(&self, ship: u8) -> [u8; sim::SLOT_COUNT] {
-        let cls = self.world.state.ships[ship as usize].cls;
-        let mut ceiling = self.world.kit_ceilings(cls);
+        let mut ceiling = self.world.kit_ceilings();
         let owned = self
             .names
             .get(&ship)

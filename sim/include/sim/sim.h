@@ -211,7 +211,7 @@ void sim_map_pit(sim_map *m);
  *
  * Each add-on is a count rather than a flag, two bits wide, so a pilot can
  * hold three rungs of shrapnel the same way they hold three rungs of speed.
- * Twelve bits of add-on fit one word, which is what a projectile carries.
+ * Fourteen bits of add-on fit one word, which is what a projectile carries.
  */
 typedef enum {
     SIM_MOD_MULTI = 0,   /* more projectiles per shot, fanned */
@@ -220,6 +220,20 @@ typedef enum {
     SIM_MOD_SHRAPNEL,    /* its ending fires the zone's fragment pattern */
     SIM_MOD_FREEZE,      /* it stalls the recharge of whoever it reaches */
     SIM_MOD_PUSH,        /* it shoves: a repel, welded onto something else */
+    /* More barrels, abreast rather than fanned. This was DoubleBarrel, a
+     * per-hull flag the Terrier alone carried, and it is an add-on now for
+     * the reason everything else here is one: a trait only one hull may hold
+     * is a trait the shop can never sell, and the hull rows were the only
+     * thing standing between a pilot and the upgrade they wanted to buy.
+     *
+     * It adds to the count rather than multiplying it, which is what made
+     * the original's odd arithmetic fall out: two abreast plus a rung of
+     * multifire is four rounds, not six. It keeps its own tight spacing, so
+     * a pair reads as a pair and not as a cheap rung of multifire, and it
+     * pays energy without paying cooldown. That is the whole difference
+     * between the two: multifire is a wide fan that slows your rate, barrels
+     * are a tight group that does not. Neither dominates. */
+    SIM_MOD_BARREL,
     SIM_MOD_COUNT
 } sim_mod;
 
@@ -356,13 +370,21 @@ typedef enum {
  *
  *   0 .. 4     a stat            sim_upgrade
  *   5 .. 6     a level           per trigger
- *   7 .. 18    an add-on         per trigger, per sim_mod
- *  19 .. 22    a charge          per kind
+ *   7 .. 20    an add-on         per trigger, per sim_mod
+ *  21 .. 24    a charge          per kind
  *
  * This used to be the space a green indexed, one byte per prize, rolled by
  * the server against a table of weights. Greens are gone and the space is
  * not: what was rolled at a pickup is now chosen in the hangar, and the
- * ceilings a roll respected are the ceilings a kit is validated against. */
+ * ceilings a roll respected are the ceilings a kit is validated against.
+ *
+ * Everything a pilot can hold lives here, which is a rule rather than an
+ * observation. A trait that sat on the hull instead -- a second barrel, a
+ * third bomb rung, the mine count that made one hull the mining hull -- was
+ * a trait no shop could sell and no pilot could choose, and the roster was
+ * carrying four of them. They are slots now. What tells the hulls apart is
+ * the shape they present to a bullet, which is the one difference nobody
+ * can buy. */
 #define SIM_SLOT_STAT(u)     (u)
 #define SIM_SLOT_LEVEL(t)    (SIM_UP_COUNT + (t))
 #define SIM_SLOT_MOD(t, m)   (SIM_UP_COUNT + SIM_TRIG_COUNT \
@@ -406,17 +428,16 @@ typedef struct {
 
     /* What the two triggers fire: a ladder of patterns per trigger, climbed
      * by the pilot's level. Rung zero is what a fresh hull carries, and
-     * SIM_NO_PATTERN ends the ladder -- so a hull with no bomb rack has
-     * SIM_NO_PATTERN at rung zero, and the length of a ladder is the hull's
-     * ceiling for that weapon without a second number to keep in step. */
+     * SIM_NO_PATTERN ends the ladder, so a hull with no bomb rack has
+     * SIM_NO_PATTERN at rung zero.
+     *
+     * The baseline builds the same ladders for every class, because how far
+     * a weapon climbs is the zone's business now and lives in `kit_ceiling`
+     * below. This stays per class so a zone that wants a hull with no rack
+     * can still write one, and `trigger_pattern` clamps to whatever is
+     * actually here, so the two disagreeing costs a pilot points rather than
+     * crashing anything. */
     uint8_t trigger[SIM_TRIG_COUNT][SIM_MAX_RUNGS];
-    /* Add-ons this hull may hold on each trigger, packed as counts the same
-     * way the pilot's are. Zero is a hull that never gets that add-on, which
-     * is how the roster stays a roster: shrapnel belongs to bombers. */
-    uint16_t mod_max[SIM_TRIG_COUNT];
-    /* How many of each charge kind this hull may carry. Zero is a hull that
-     * never gets one, which is how a repel stays the denial ship's thing. */
-    uint8_t charge_max[SIM_MAX_CHARGES];
 } sim_ship_class;
 
 typedef struct {
@@ -431,6 +452,18 @@ typedef struct {
      * a slot this zone does not use. Zone-wide rather than per hull, so a
      * charge means the same thing to everybody who has one. */
     uint8_t charge[SIM_MAX_CHARGES];
+    /* The most a kit may put in each slot, over the flat space above. Zero is
+     * a slot this zone does not have at all, which is how "bombs do not
+     * multifire here" gets said.
+     *
+     * Zone-wide, and that is the change worth naming. This was a row per hull:
+     * which add-ons that hull could hold and how deep, how far each trigger
+     * climbed, how many of each charge it carried. Seven rows meant a pilot
+     * could buy an upgrade and then find the hull they wanted to fly would not
+     * take it, and it meant the shop's shelf was whatever the roster happened
+     * to allow rather than whatever the game has. One row for the arena ends
+     * both: everything on the shelf fits in every hangar. */
+    uint8_t kit_ceiling[SIM_SLOT_COUNT];
     /* What a kill adds to the killer's own bounty. Bounty is a run rather
      * than a loadout now, so this is the whole of what makes one: a fresh
      * pilot is worth `bounty_base` and each kill adds this. */
@@ -454,6 +487,18 @@ typedef struct {
      * and twice the wait. */
     uint16_t mod_multi_energy;
     uint16_t mod_multi_delay;
+    /* And what a rung of barrels adds to the energy, on the same scale. There
+     * is no delay to match it: a barrel does not slow the gun down, which is
+     * the whole reason to take one over a rung of multifire. Free rounds are
+     * the balance problem the multifire note above is about, so the energy
+     * half is not optional.
+     *
+     * `mod_barrel_spread` is the angle a pair leaves at, and it is deliberately
+     * tighter than `mod_spread`: barrels are abreast and multifire is a fan.
+     * It has to be nonzero, because a pattern of many at spacing zero is the
+     * shrapnel encoding and scatters. */
+    uint16_t mod_barrel_energy;
+    uint16_t mod_barrel_spread;
     /* What each rung of shrapnel breaks into. Shrapnel is the one add-on
      * whose magnitude is another weapon rather than a number. */
     uint8_t mod_splinter[SIM_MAX_RUNGS];
@@ -637,14 +682,22 @@ typedef struct {
 int32_t sim_bounty(const sim_settings *cfg, const sim_ship *sh);
 
 
-int sim_kit_ceilings(const sim_ship_class *c, uint8_t *out);
+/* What this zone lets a kit hold, over the flat slot space. Just a copy of
+ * `cfg->kit_ceiling`, kept as a call because the client and the server both
+ * reach it across an FFI boundary that cannot see the struct.
+ *
+ * It takes no hull. That is the point: a kit is checked against the arena and
+ * the account, and the hull it will be flown on has nothing to say about it.
+ * Returns how many slots this zone actually has, which is the count above
+ * zero. */
+int sim_kit_ceilings(const sim_settings *cfg, uint8_t *out);
 
 /* What an account owns before it has bought anything, over the same flat
  * space, and 255 for a slot the account never limits.
  *
- * A kit is checked against the hull's row and the account's entitlements
- * together, and the smaller of the two wins. The hull's row is the roster
- * expressing itself; this is the shop's half, and it exists so that "what
+ * A kit is checked against the zone's ceiling and the account's entitlements
+ * together, and the smaller of the two wins. The zone's row is the arena
+ * saying what it has; this is the shop's half, and it exists so that "what
  * rivets buy is which upgrades you may slot, never how many" has somewhere to
  * be true.
  *
@@ -656,7 +709,14 @@ int sim_kit_ceilings(const sim_ship_class *c, uint8_t *out);
  * One rung of each ladder and one of each add-on, so a new account flies a
  * whole ship rather than a chassis. Repel and burst without limit, which is
  * what "the two everybody starts with" means; the other two charge kinds are
- * bought. See docs/design/match-game.md. */
+ * bought.
+ *
+ * Barrels are the exception and the only add-on a new account holds none of.
+ * Every other add-on changes what a round does; this one changes how many
+ * leave, and a rung of it handed out free is the one upgrade that would make
+ * the starting kit strictly better than it should be. It is also the trait
+ * this whole space was flattened to make sellable, so selling it is rather
+ * the point. See docs/design/match-game.md. */
 void sim_base_entitlements(uint8_t *out);
 
 /* A whole budget spent on a hull, without asking anybody what they wanted.
@@ -675,22 +735,26 @@ void sim_base_entitlements(uint8_t *out);
  * is worth doing.
  *
  * Takes the ceilings rather than the hull, because what a pilot may slot is
- * the hull's row and their account's entitlements together, and the account
- * is not something this core knows about. `sim_kit_ceilings` gives the hull's
+ * the zone's row and their account's entitlements together, and the account
+ * is not something this core knows about. `sim_kit_ceilings` gives the zone's
  * half; a caller with no account to consult passes that straight in.
  *
  * `out` is SIM_SLOT_COUNT bytes. Returns what it spent, which is
- * SIM_KIT_BUDGET on every hull the roster has and less on one with almost
+ * SIM_KIT_BUDGET in any arena with room for it and less in one with almost
  * nothing to spend it on. */
 int sim_starter_kit(const uint8_t *ceiling, uint8_t *out);
 
 /* What a kit spends, which is just its sum, because every slot costs one. */
 int sim_kit_cost(const uint8_t *kit);
 
-/* Validate a kit against the hull and the budget, store it on the ship, and
+/* Validate a kit against the zone and the budget, store it on the ship, and
  * deal it with ammunition. Returns 0 and changes nothing if any slot is over
  * its ceiling or the total is over `SIM_KIT_BUDGET`, so a refused kit leaves
- * the pilot in what they were already flying rather than half dressed. */
+ * the pilot in what they were already flying rather than half dressed.
+ *
+ * The hull is not consulted. A kit that validated in the hangar flies on
+ * anything in the roster, which is what makes changing hull between matches a
+ * free choice rather than a rebuild. */
 int sim_set_kit(sim_ship *sh, const sim_settings *cfg, const uint8_t *kit);
 
 /* Deal the stored kit onto the hull.

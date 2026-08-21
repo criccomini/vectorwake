@@ -1207,18 +1207,27 @@ end
 
 do
     -- The core's own shape and ceilings, stubbed the way the extension
-    -- publishes them: a hull that will take four steps of the first stat, one
-    -- rung of the gun, and three repels, and nothing else.
+    -- publishes them: an arena that will take four steps of the first stat,
+    -- one rung of the gun, and three repels, and nothing else.
+    --
+    -- Seven add-ons rather than six, and twenty-five slots rather than
+    -- twenty-three: barrels are an add-on now, where DoubleBarrel used to be a
+    -- flag on one hull. And `kit_ceilings` takes no argument, because the
+    -- roster has nothing to say about what a kit may hold.
     local CEIL = {}
-    for i = 1, 23 do CEIL[i] = 0 end
+    for i = 1, 25 do CEIL[i] = 0 end
     CEIL[1] = 4          -- the first stat
     CEIL[6] = 2          -- the gun's ladder
-    CEIL[20] = 3         -- the first charge
+    CEIL[22] = 3         -- the first charge
     _G.sim = {
-        UP_COUNT = 5, TRIG_COUNT = 2, MOD_COUNT = 6, MAX_CHARGES = 4,
-        SLOT_COUNT = 23, SLOT_LEVEL0 = 5, SLOT_MOD0 = 7, SLOT_CHARGE0 = 19,
+        UP_COUNT = 5, TRIG_COUNT = 2, MOD_COUNT = 7, MAX_CHARGES = 4,
+        SLOT_COUNT = 25, SLOT_LEVEL0 = 5, SLOT_MOD0 = 7, SLOT_CHARGE0 = 21,
         KIT_BUDGET = 6,
-        kit_ceilings = function() return CEIL end,
+        kit_ceilings = function(cls)
+            assert(cls == nil, "the hangar asks the arena, not a hull")
+            return CEIL
+        end,
+        hull_extent = function(cls) return 20 - cls, 11, 10 end,
     }
     account.entitlements = {}
     account.kits = {}
@@ -1294,7 +1303,7 @@ do
     _G.sim.starter_kit = function(ceiling)
         asked = ceiling
         local out = {}
-        for i = 1, 23 do out[i] = ceiling[i] or 0 end
+        for i = 1, 25 do out[i] = ceiling[i] or 0 end
         return out
     end
     account.entitlements = {[1] = 1}
@@ -1303,8 +1312,8 @@ do
     check("a hull with nothing saved opens on the core's starter kit",
           menu.kit_spent() > 0, tostring(menu.kit_spent()))
     check("and the core is asked against both ceilings at once",
-          asked ~= nil and asked[1] == 1 and asked[20] == 3,
-          asked and (tostring(asked[1]) .. "/" .. tostring(asked[20])) or "unasked")
+          asked ~= nil and asked[1] == 1 and asked[22] == 3,
+          asked and (tostring(asked[1]) .. "/" .. tostring(asked[22])) or "unasked")
     account.entitlements = {}
 
     -- A kit that is saved is the kit, even where it spends nothing on a slot

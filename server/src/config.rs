@@ -103,9 +103,11 @@ pub struct ArenaConfig {
     /// does not reach.
     pub wormhole_pull: Option<i32>,
     pub wormhole_range: Option<i32>,
-    /// Per class, in settings-file units. Anything left out keeps the
+    /// Per class: a footprint and a ladder. Anything left out keeps the
     /// baseline.
     pub ships: Vec<ShipConfig>,
+    /// What a kit may hold here, for every hull alike.
+    pub kit: KitConfig,
     /// Weapons, by name. A name the baseline already built (`apex-gun`,
     /// `anvil-bomb`, `anvil-bomb-2` for the rung above it, `charge-1` for the
     /// repel, `shrapnel-2` for what a second rung of shrapnel breaks into)
@@ -201,21 +203,6 @@ impl Default for LagConfig {
 #[serde(default, deny_unknown_fields)]
 pub struct ShipConfig {
     pub name: String,
-    pub speed: Option<i32>,
-    pub initial_speed: Option<i32>,
-    pub upgrade_speed: Option<i32>,
-    pub thrust: Option<i32>,
-    pub initial_thrust: Option<i32>,
-    pub upgrade_thrust: Option<i32>,
-    pub rotation: Option<i32>,
-    pub initial_rotation: Option<i32>,
-    pub upgrade_rotation: Option<i32>,
-    pub energy: Option<i32>,
-    pub initial_energy: Option<i32>,
-    pub upgrade_energy: Option<i32>,
-    pub recharge: Option<i32>,
-    pub initial_recharge: Option<i32>,
-    pub upgrade_recharge: Option<i32>,
     /// The hull's footprint, px from the point it turns about: reach past
     /// the nose, behind the tail, and to either side. The collision box
     /// follows the ship's heading, so these are the shape a wall stops and
@@ -223,23 +210,46 @@ pub struct ShipConfig {
     /// sim/src/baseline.c; a zone overriding one should keep the diagonal
     /// (sqrt of fore^2 + width^2) inside 23 px or its maps owe the roster
     /// gaps the shipped ones were never checked for.
+    ///
+    /// This is nearly the whole of a hull. Flight used to be here too, per
+    /// class, and it is gone with the tech tree that sat beside it: a roster
+    /// where one hull turns harder is a roster where thirty points buy
+    /// different ships depending on what you are flying, and every pilot
+    /// dealing the same thirty is the promise the match game rests on. What a
+    /// hull is now is the shape it presents to a bullet, which is the one
+    /// advantage no shop could sell. See docs/design/ships.md.
     pub fore: Option<i32>,
     pub aft: Option<i32>,
     pub width: Option<i32>,
     /// What the two triggers fire: the ladder, by weapon name, first rung
     /// first. One name is a hull that never levels and `bomb = []` takes the
     /// rack out. A hull keeps its own ladder unless the file says otherwise.
+    ///
+    /// How far a pilot may climb one is `arena.kit` below, and it follows the
+    /// longest ladder in the roster, so a zone that shortens one hull's has
+    /// not quietly made a purchase worthless everywhere else.
     pub gun: Option<Vec<String>>,
     pub bomb: Option<Vec<String>>,
-    /// Which add-ons this hull may hold on each trigger, and how many rungs
-    /// of each: `gun_mods = { multi = 2, freeze = 1 }`. This is the roster's
-    /// half of the tech tree: shrapnel belongs to bombers, and nothing a
-    /// pilot can buy should change that.
+}
+
+/// What a kit may hold in this arena, over the flat slot space.
+///
+/// One section for the zone, where this was a row per hull. Seven rows meant
+/// an upgrade could be bought and then refused by the hull somebody wanted to
+/// fly it on, and it meant the shop's shelf was whatever the roster happened
+/// to allow rather than whatever the game has. Anything left out keeps the
+/// baseline's, which is the union of what the seven rows used to allow.
+#[derive(Deserialize, Clone, Debug, Default)]
+#[serde(default, deny_unknown_fields)]
+pub struct KitConfig {
+    /// Which add-ons a kit may hold on each trigger, and how many rungs of
+    /// each: `gun_mods = { multi = 2, barrel = 2 }`. An add-on left out of a
+    /// map that names any is a slot this arena does not have.
     pub gun_mods: HashMap<String, u8>,
     pub bomb_mods: HashMap<String, u8>,
-    /// How many of each charge this hull may carry, by slot: `charges =
-    /// [3, 3]` is three repels and three bursts. Slots left off keep the
-    /// baseline's, and zero is a hull that never gets one.
+    /// How many of each charge a kit may carry, by slot: `charges = [3, 3]`
+    /// is three repels and three bursts. Slots left off keep the baseline's,
+    /// and zero is a charge this arena does not have.
     pub charges: Vec<u8>,
 }
 
@@ -414,7 +424,10 @@ bounce = 12
 
 [[arena.ships]]
 name = "Apex"
-speed = 5200
+fore = 18
+
+[arena.kit]
+gun_mods = { multi = 2, barrel = 2 }
 "#;
 
     #[test]
@@ -423,7 +436,8 @@ speed = 5200
         assert_eq!(c.name, "test zone");
         assert_eq!(c.arena.flags, 3);
         assert_eq!(c.arena.bounce, Some(12));
-        assert_eq!(c.arena.ships[0].speed, Some(5200));
+        assert_eq!(c.arena.ships[0].fore, Some(18));
+        assert_eq!(c.arena.kit.gun_mods.get("barrel"), Some(&2));
     }
 
     #[test]
@@ -478,7 +492,10 @@ bans = ["griefer"]
     fn the_reference_zone_parses() {
         let src = include_str!("../../zone/zone.toml");
         let c: ZoneConfig = toml::from_str(src).expect("the shipped zone file parses");
-        assert_eq!(c.arena.ships.len(), 2);
+        assert!(
+            c.arena.ships.is_empty(),
+            "the reference zone tunes no hull: they differ by footprint alone"
+        );
         assert_eq!(c.arena.mode, "warzone");
     }
 

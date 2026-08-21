@@ -531,12 +531,11 @@ int sim_settings_pack(const sim_settings *cfg, uint8_t *out, int cap) {
         w32(&w, (uint32_t)c->fore);
         w32(&w, (uint32_t)c->aft);
         w32(&w, (uint32_t)c->halfw);
-        for (int t = 0; t < SIM_TRIG_COUNT; t++) {
+        for (int t = 0; t < SIM_TRIG_COUNT; t++)
             for (int r = 0; r < SIM_MAX_RUNGS; r++) w8(&w, c->trigger[t][r]);
-            w16(&w, c->mod_max[t]);
-        }
-        for (int k = 0; k < SIM_MAX_CHARGES; k++) w8(&w, c->charge_max[k]);
     }
+    /* Once for the arena, where it used to be twice per hull. */
+    for (int i = 0; i < SIM_SLOT_COUNT; i++) w8(&w, cfg->kit_ceiling[i]);
 
     w32(&w, (uint32_t)cfg->prox_step);
     w16(&w, cfg->prox_delay);
@@ -640,14 +639,12 @@ int sim_settings_unpack(sim_settings *out, const uint8_t *in, int len) {
         c->fore = (int32_t)r32(&r);
         c->aft = (int32_t)r32(&r);
         c->halfw = (int32_t)r32(&r);
-        for (int t = 0; t < SIM_TRIG_COUNT; t++) {
+        for (int t = 0; t < SIM_TRIG_COUNT; t++)
             for (int k = 0; k < SIM_MAX_RUNGS; k++)
                 c->trigger[t][k] = (uint8_t)r8(&r);
-            c->mod_max[t] = (uint16_t)r16(&r);
-        }
-        for (int k = 0; k < SIM_MAX_CHARGES; k++)
-            c->charge_max[k] = (uint8_t)r8(&r);
     }
+    for (int i = 0; i < SIM_SLOT_COUNT; i++)
+        cfg->kit_ceiling[i] = (uint8_t)r8(&r);
 
     cfg->prox_step = (int32_t)r32(&r);
     cfg->prox_delay = (uint16_t)r16(&r);

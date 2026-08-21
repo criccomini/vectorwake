@@ -52,18 +52,19 @@ static void check_state_invariants(const sim_state *s, const sim_settings *cfg) 
                       "a held rung names a pattern");
             for (int mod = 0; mod < SIM_MOD_COUNT; mod++)
                 CHECK(sim_mod_get(sh->mods[t], mod)
-                          <= sim_mod_get(c->mod_max[t], mod),
-                      "weapon add-ons stay below the hull ceiling");
+                          <= cfg->kit_ceiling[SIM_SLOT_MOD(t, mod)],
+                      "weapon add-ons stay below the arena ceiling");
         }
         for (int charge = 0; charge < SIM_MAX_CHARGES; charge++)
-            CHECK(sh->charge[charge] <= c->charge_max[charge],
-                  "charges stay below the hull ceiling");
-        /* A kit never asks for more than the hull holds or more than the
+            CHECK(sh->charge[charge]
+                      <= cfg->kit_ceiling[SIM_SLOT_CHARGE(charge)],
+                  "charges stay below the arena ceiling");
+        /* A kit never asks for more than the arena has or more than the
          * budget buys, whatever route it arrived by. */
         uint8_t ceiling[SIM_SLOT_COUNT];
-        sim_kit_ceilings(c, ceiling);
+        sim_kit_ceilings(cfg, ceiling);
         for (int k = 0; k < SIM_SLOT_COUNT; k++)
-            CHECK(sh->kit[k] <= ceiling[k], "a kit stays inside the hull");
+            CHECK(sh->kit[k] <= ceiling[k], "a kit stays inside the arena");
         CHECK(sim_kit_cost(sh->kit) <= SIM_KIT_BUDGET,
               "a kit stays inside the budget");
     }
@@ -202,7 +203,7 @@ static const sim_fire_pattern *bomb_of(const sim_settings *cfg, int cls) {
  * and side changes can put the state somewhere the invariants refuse. */
 static void random_kit(sim_ship *sh, const sim_settings *cfg, uint32_t *rng) {
     uint8_t ceiling[SIM_SLOT_COUNT], kit[SIM_SLOT_COUNT] = {0};
-    sim_kit_ceilings(&cfg->classes[sh->cls], ceiling);
+    sim_kit_ceilings(cfg, ceiling);
     int budget = (int)(next_random(rng) % (SIM_KIT_BUDGET + 1));
     for (int spent = 0; spent < budget; spent++) {
         int tries = 0;
@@ -542,36 +543,35 @@ int main(void) {
               "and one let off at your own feet lands about half as hard");
     }
 
-    /* BBombDamagePercent: a hull whose bombs may bounce pays for it on every
-     * bomb, whether or not this one bounced. */
+    /* BBombDamagePercent: a pilot whose bombs bounce pays for it on every
+     * bomb, whether or not this one bounced. Two pilots on the same hull,
+     * differing in the add-on alone, since that is what carries the trait now
+     * that the roster does not. */
     {
         sim_settings w = cfg;
         w.bomb_safety = 0;
         w.bbomb_damage = 500;
-        /* An Apex may not bounce a bomb; give a copy of it the ceiling and
-         * nothing else, so the hulls differ in that alone. */
-        const int OTHER = 1;
-        w.classes[OTHER] = w.classes[APEX];
-        w.classes[OTHER].mod_max[SIM_TRIG_BOMB] =
-            sim_mod_set(w.classes[APEX].mod_max[SIM_TRIG_BOMB], SIM_MOD_BOUNCE, 1);
         int32_t dealt[2];
         for (int bouncer = 0; bouncer < 2; bouncer++) {
             sim_state s;
             sim_init(&s, 1);
-            sim_spawn(&s, bouncer ? OTHER : APEX, 0, 8192, 8192, 0, &w);
+            sim_spawn(&s, APEX, 0, 8192, 8192, 0, &w);
             sim_spawn(&s, APEX, 1, 8192, 8192 - 400, 0, &w);
+            if (bouncer)
+                sim_grant(&s.ships[0], &w,
+                          SIM_SLOT_MOD(SIM_TRIG_BOMB, SIM_MOD_BOUNCE));
             int32_t e0 = s.ships[1].energy;
             step_n(&s, &w, SIM_BTN_BOMB, 0, 1);
             s.weapons[0].x = s.ships[1].x;
             s.weapons[0].y = s.ships[1].y;
             s.weapons[0].vx = s.weapons[0].vy = 0;
             /* The bomber stays where it fired, well clear of the blast, so
-             * the hull's ceiling is the only thing that differs. */
+             * the add-on is the only thing that differs. */
             step_n(&s, &w, 0, 0, 3);
             dealt[bouncer] = e0 - s.ships[1].energy;
         }
-        CHECK(dealt[0] > 0, "the plain hull's bomb lands");
-        CHECK(dealt[1] < dealt[0], "and a bouncing hull's lands softer");
+        CHECK(dealt[0] > 0, "a plain bomb lands");
+        CHECK(dealt[1] < dealt[0], "and a bouncing pilot's lands softer");
     }
 
     /* An EMP bomb leaves its own guns running, which is the one exception to
@@ -1885,23 +1885,52 @@ int main(void) {
      * Keeping them apart is the whole design: as rows, three levels against
      * six add-ons would be a hundred and ninety-two patterns per weapon. */
     {
-        /* What a kit may spend on is the hull's roster row, and nothing
-         * else. The ceilings are the whole of that row: zero is a slot this
-         * hull never gets. */
+        /* What a kit may spend on is the arena's row, and nothing else. It
+         * used to be the hull's, and the property worth testing is that the
+         * hull no longer has a say: seven identical answers, one per class. */
         uint8_t ceil[SIM_SLOT_COUNT];
         const int CIPHER = 4, LATTICE = 6;
-        sim_kit_ceilings(&cfg.classes[APEX], ceil);
+        sim_kit_ceilings(&cfg, ceil);
         for (int u = 0; u < SIM_UP_COUNT; u++)
             CHECK(ceil[SIM_SLOT_STAT(u)] == SIM_UP_STEPS,
-                  "every hull climbs every stat to the same ceiling");
+                  "every stat climbs to the same ceiling");
         CHECK(ceil[SIM_SLOT_LEVEL(SIM_TRIG_GUN)] == 2,
               "MaxGuns is 3, so two rungs are buyable above the first");
-        CHECK(ceil[SIM_SLOT_LEVEL(SIM_TRIG_BOMB)] == 1,
-              "and MaxBombs is 2, so one is");
-        CHECK(ceil[SIM_SLOT_MOD(SIM_TRIG_GUN, SIM_MOD_MULTI)] > 0,
-              "multifire is universal, as it is in the original");
-        CHECK(ceil[SIM_SLOT_MOD(SIM_TRIG_BOMB, SIM_MOD_SHRAPNEL)] > 0,
-              "and so is shrapnel, on any hull with a rack");
+        CHECK(ceil[SIM_SLOT_LEVEL(SIM_TRIG_BOMB)] == 2,
+              "and MaxBombs is 3 for everybody now, so two are");
+        CHECK(ceil[SIM_SLOT_MOD(SIM_TRIG_GUN, SIM_MOD_MULTI)] == 2,
+              "multifire climbs two, which was the spread hulls' ceiling");
+        CHECK(ceil[SIM_SLOT_MOD(SIM_TRIG_GUN, SIM_MOD_BARREL)] == 2,
+              "barrels are a slot, where they were one hull's flag");
+        CHECK(ceil[SIM_SLOT_MOD(SIM_TRIG_BOMB, SIM_MOD_SHRAPNEL)] == 3,
+              "shrapnel climbs three, which was the bombers'");
+        CHECK(ceil[SIM_SLOT_MOD(SIM_TRIG_BOMB, SIM_MOD_PUSH)] == 2
+                  && ceil[SIM_SLOT_MOD(SIM_TRIG_BOMB, SIM_MOD_BOUNCE)] == 2,
+              "and shoving and bouncing bombs, which were the denial hull's");
+        CHECK(ceil[SIM_SLOT_CHARGE(SIM_CHARGE_MINE)] == 6,
+              "six mines, which the roster used to hand to one hull");
+
+        /* Two combinations no hull ever had stay unbuilt, because an arena
+         * ceiling of zero is a slot that does not exist. */
+        CHECK(ceil[SIM_SLOT_MOD(SIM_TRIG_BOMB, SIM_MOD_MULTI)] == 0
+                  && ceil[SIM_SLOT_MOD(SIM_TRIG_BOMB, SIM_MOD_BARREL)] == 0,
+              "bombs neither fan nor come in pairs");
+        CHECK(ceil[SIM_SLOT_MOD(SIM_TRIG_GUN, SIM_MOD_PROX)] == 0
+                  && ceil[SIM_SLOT_MOD(SIM_TRIG_GUN, SIM_MOD_SHRAPNEL)] == 0,
+              "and a bullet carries no fuse and does not break up");
+
+        /* The whole point, stated as one check: the roster has nothing to say
+         * about what a pilot may hold, so nothing bought in the shop is dead
+         * on the hull somebody wanted to fly it on. */
+        for (int i = 0; i < cfg.class_count; i++) {
+            uint8_t other[SIM_SLOT_COUNT];
+            sim_ship probe;
+            memset(&probe, 0, sizeof probe);
+            probe.cls = (uint8_t)i;
+            sim_kit_ceilings(&cfg, other);
+            CHECK(memcmp(ceil, other, SIM_SLOT_COUNT) == 0,
+                  "every hull may hold exactly what every other one may");
+        }
 
         /* Five stats at six steps is exactly the budget, and at eight it is
          * forty against thirty, so no purchase ever stops a kit being a set
@@ -1911,45 +1940,18 @@ int main(void) {
         CHECK(SIM_UP_STEPS * SIM_UP_COUNT > SIM_KIT_BUDGET,
               "and the bought ceiling stays out of reach");
 
-        /* A hull with no rack is offered no bomb add-on: an add-on is a
-         * transform on a trigger, and a trigger that does not exist cannot be
-         * transformed. No shipped hull is in that position any more, since
-         * every one of the original's ships carries a rack, so this takes the
-         * rack away to prove the rule still holds for a zone that does. */
-        sim_settings *nb = malloc(sizeof *nb);
-        *nb = cfg;
-        for (int r = 0; r < SIM_MAX_RUNGS; r++)
-            nb->classes[CIPHER].trigger[SIM_TRIG_BOMB][r] = SIM_NO_PATTERN;
-        sim_kit_ceilings(&nb->classes[CIPHER], ceil);
-        int bomb_addon = 0;
-        for (int m = 0; m < SIM_MOD_COUNT; m++)
-            if (ceil[SIM_SLOT_MOD(SIM_TRIG_BOMB, m)]) bomb_addon = 1;
-        CHECK(!bomb_addon, "a hull with no rack may spend on no bomb add-on");
-        CHECK(ceil[SIM_SLOT_LEVEL(SIM_TRIG_BOMB)] == 0, "nor on a bomb rung");
-        free(nb);
+        /* What is left of a hull is its footprint, and it had better still
+         * differ or the roster is seven names for one ship. */
+        const int FACET = 5;
+        CHECK(cfg.classes[CIPHER].halfw < cfg.classes[FACET].halfw,
+              "the knife is thinner from the side than the squat one");
+        CHECK(cfg.classes[CIPHER].fore > cfg.classes[FACET].fore,
+              "and longer down the nose");
+        CHECK(cfg.classes[LATTICE].fore != cfg.classes[APEX].fore
+                  || cfg.classes[LATTICE].halfw != cfg.classes[APEX].halfw,
+              "and no two hulls present the same shape");
 
-        /* The roster is ceilings now, so that is what to check it by. Two
-         * bits per add-on and `GUN_ALL | M2(MULTI)` is three rungs rather
-         * than two, so these also catch a row built by OR-ing over the
-         * macro. */
-        const int CHORD = 2, FACET = 5, WEDGE = 1;
-        CHECK(sim_mod_get(cfg.classes[CHORD].mod_max[SIM_TRIG_GUN],
-                          SIM_MOD_MULTI) == 2, "a Chord climbs two of multifire");
-        CHECK(sim_mod_get(cfg.classes[FACET].mod_max[SIM_TRIG_GUN],
-                          SIM_MOD_MULTI) == 2, "and so does a Facet");
-        CHECK(sim_mod_get(cfg.classes[APEX].mod_max[SIM_TRIG_GUN],
-                          SIM_MOD_MULTI) == 1, "where an Apex climbs one");
-        CHECK(sim_mod_get(cfg.classes[WEDGE].mod_max[SIM_TRIG_BOMB],
-                          SIM_MOD_SHRAPNEL) == 3, "a bomber holds the most shrapnel");
-
-        sim_kit_ceilings(&cfg.classes[LATTICE], ceil);
-        CHECK(ceil[SIM_SLOT_MOD(SIM_TRIG_BOMB, SIM_MOD_PUSH)] > 0,
-              "the denial hull is the one whose bombs shove");
-        CHECK(ceil[SIM_SLOT_CHARGE(SIM_CHARGE_MINE)]
-                  > cfg.classes[APEX].charge_max[SIM_CHARGE_MINE],
-              "and the one that carries the most mines");
-
-        /* One named slot at a time, with the hull's ceilings enforced.
+        /* One named slot at a time, with the arena's ceilings enforced.
          * `sim_deal_kit` is this in a loop. */
         sim_ship sh;
         memset(&sh, 0, sizeof sh);
@@ -2029,15 +2031,19 @@ int main(void) {
     }
 
     {
-        /* DoubleBarrel. The Facet fires two for one pull where everyone else
-         * fires one, which is the Terrier's setting and the only weapon
-         * number besides MaxBombs that the original varied by ship. */
+        /* Barrels. This was DoubleBarrel, a flag the Terrier alone carried and
+         * the only weapon number besides MaxBombs the original varied by ship.
+         * It is an add-on now, held by whoever bought it and flown on whatever
+         * hull they like, which is the whole of what changed: nothing about
+         * the rounds it sends is different. */
         const int FACET = 5;
+        const uint16_t ONE = sim_mod_set(0, SIM_MOD_BARREL, 1);
         sim_state s;
         sim_init(&s, 1);
-        sim_spawn(&s, (uint8_t)FACET, 0, 8192, 8192, 0, &cfg);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
+        s.ships[0].mods[SIM_TRIG_GUN] = ONE;
         step_n(&s, &cfg, SIM_BTN_FIRE, 0, 1);
-        CHECK(s.weapon_count == 2, "a Facet's gun sends two rounds");
+        CHECK(s.weapon_count == 2, "a rung of barrels sends two rounds");
 
         /* One either side of where the nose points. Not exact mirrors: the
          * offsets are, but a heading is quantised to 4096 entries on the way
@@ -2046,13 +2052,22 @@ int main(void) {
         CHECK((s.weapons[0].vx < 0) != (s.weapons[1].vx < 0),
               "one either side of where it is pointing");
 
+        /* And on any hull, which is the point of moving it off the roster.
+         * A Facet with no barrels fires one round like everybody else. */
+        sim_state f;
+        sim_init(&f, 1);
+        sim_spawn(&f, (uint8_t)FACET, 0, 8192, 8192, 0, &cfg);
+        step_n(&f, &cfg, SIM_BTN_FIRE, 0, 1);
+        CHECK(f.weapon_count == 1, "and a hull is not born with them");
+
         /* Fanned and not scattered, which is a real distinction here: spacing
          * of zero on a pattern of many is the shrapnel encoding, and it rolls
          * every round's heading off the state's own generator. So move the
          * generator and fire again. A fan cannot notice. */
         sim_state r;
         sim_init(&r, 1);
-        sim_spawn(&r, (uint8_t)FACET, 0, 8192, 8192, 0, &cfg);
+        sim_spawn(&r, APEX, 0, 8192, 8192, 0, &cfg);
+        r.ships[0].mods[SIM_TRIG_GUN] = ONE;
         r.rng = 0x5eed1234u;
         step_n(&r, &cfg, SIM_BTN_FIRE, 0, 1);
         CHECK(r.weapon_count == s.weapon_count
@@ -2063,26 +2078,54 @@ int main(void) {
         /* Four with a rung of multifire, not the six a pilot expects out of
          * three times two. `compose` adds barrels rather than multiplying
          * them, so the original's odd number falls out of the model rather
-         * than being special-cased for this hull. */
+         * than being special-cased for one hull. */
         sim_state m;
         sim_init(&m, 1);
-        sim_spawn(&m, (uint8_t)FACET, 0, 8192, 8192, 0, &cfg);
-        m.ships[0].mods[SIM_TRIG_GUN] = sim_mod_set(0, SIM_MOD_MULTI, 1);
+        sim_spawn(&m, APEX, 0, 8192, 8192, 0, &cfg);
+        m.ships[0].mods[SIM_TRIG_GUN] = sim_mod_set(ONE, SIM_MOD_MULTI, 1);
         step_n(&m, &cfg, SIM_BTN_FIRE, 0, 1);
         CHECK(m.weapon_count == 4, "and four with a rung of multifire, not six");
 
-        /* DoubleBarrel changes the rounds, not the trigger price. The SVS
-         * Terrier pays the same BulletFireEnergy and BulletFireDelay as the
-         * Warbird, and the multifire surcharge lands on that one-pull cost. */
-        uint16_t facet_wait = 0, apex_wait = 0;
-        int32_t facet_plain = gun_cost(&cfg, (uint8_t)FACET, 0, 0, &facet_wait);
-        int32_t apex_plain = gun_cost(&cfg, (uint8_t)APEX, 0, 0, &apex_wait);
-        CHECK(facet_plain == apex_plain, "two barrels cost one trigger");
-        CHECK(facet_wait == apex_wait, "and use the same trigger delay");
-        int32_t facet_multi = gun_cost(&cfg, (uint8_t)FACET, 0,
-                                       sim_mod_set(0, SIM_MOD_MULTI, 1), NULL);
-        CHECK(facet_multi == facet_plain * 3 / 2,
-              "and multifire is half again on top of that");
+        /* Tight, not fanned: a pair reads as a pair. Barrels run before
+         * multifire in `compose` for exactly this, so a pilot holding both
+         * fires the close group they paid for rather than the wide one. */
+        CHECK(cfg.mod_barrel_spread < cfg.mod_spread,
+              "barrels leave closer together than a fan");
+        sim_state wide;
+        sim_init(&wide, 1);
+        sim_spawn(&wide, APEX, 0, 8192, 8192, 0, &cfg);
+        wide.ships[0].mods[SIM_TRIG_GUN] = sim_mod_set(0, SIM_MOD_MULTI, 1);
+        step_n(&wide, &cfg, SIM_BTN_FIRE, 0, 1);
+        /* How far off the nose the outermost round leaves, which is the whole
+         * of what a spread is. Every ship here points along +y, so vx is the
+         * sideways half of the velocity and its largest magnitude is the edge
+         * of the group. */
+        int32_t widest[2] = {0, 0};
+        const sim_state *pair[2] = {&m, &wide};
+        for (int g = 0; g < 2; g++)
+            for (uint16_t k = 0; k < pair[g]->weapon_count; k++) {
+                int32_t vx = pair[g]->weapons[k].vx;
+                if (vx < 0) vx = -vx;
+                if (vx > widest[g]) widest[g] = vx;
+            }
+        CHECK(widest[1] > widest[0],
+              "and a fan throws its outside round wider than a pair does");
+
+        /* What a barrel costs, which is the half of this that is ours. The
+         * original charged nothing for DoubleBarrel, which was fine while one
+         * hull had it and could not choose otherwise; as something a pilot
+         * buys, free rounds would end every argument about gun add-ons.
+         *
+         * So: energy, and no delay. That is the trade against multifire,
+         * which charges both. */
+        uint16_t plain_wait = 0, barrel_wait = 0;
+        int32_t plain = gun_cost(&cfg, APEX, 0, 0, &plain_wait);
+        int32_t barrel = gun_cost(&cfg, APEX, 0, ONE, &barrel_wait);
+        CHECK(barrel > plain, "a barrel costs energy");
+        CHECK(barrel_wait == plain_wait, "and costs no cooldown at all");
+        CHECK(barrel < gun_cost(&cfg, APEX, 0,
+                                sim_mod_set(0, SIM_MOD_MULTI, 1), NULL),
+              "and less energy than the rung of multifire it undercuts");
     }
 
     {
@@ -2216,8 +2259,6 @@ int main(void) {
          * projectile, so losing them does not reach back and disarm what is
          * already in the air. */
         sim_settings w = cfg;
-        w.classes[APEX].mod_max[SIM_TRIG_GUN] =
-            sim_mod_set(0, SIM_MOD_BOUNCE, 1);
         sim_state s;
         sim_init(&s, 1);
         /* Two tiles under the wall, which is four tiles thick and so ends at
@@ -4021,13 +4062,16 @@ int main(void) {
               "repel and burst are the two everybody starts with");
         CHECK(base[SIM_SLOT_CHARGE(SIM_CHARGE_MINE)] == 0,
               "and the mine is bought");
+        for (int t = 0; t < SIM_TRIG_COUNT; t++)
+            CHECK(base[SIM_SLOT_MOD(t, SIM_MOD_BARREL)] == 0,
+                  "barrels are the one add-on nobody starts with");
 
         for (int c = 0; c < cfg.class_count; c++) {
-            uint8_t hull[SIM_SLOT_COUNT], ceiling[SIM_SLOT_COUNT];
+            uint8_t zone[SIM_SLOT_COUNT], ceiling[SIM_SLOT_COUNT];
             uint8_t kit[SIM_SLOT_COUNT];
-            sim_kit_ceilings(&cfg.classes[c], hull);
+            sim_kit_ceilings(&cfg, zone);
             for (int i = 0; i < SIM_SLOT_COUNT; i++)
-                ceiling[i] = hull[i] < base[i] ? hull[i] : base[i];
+                ceiling[i] = zone[i] < base[i] ? zone[i] : base[i];
             int spent = sim_starter_kit(ceiling, kit);
             CHECK(spent == SIM_KIT_BUDGET, "a starter kit spends the budget");
             CHECK(sim_kit_cost(kit) == spent, "and costs what it spent");

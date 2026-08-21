@@ -6153,15 +6153,16 @@ mod tests {
         assert!(top_p.energy > base_p.energy, "and it costs more to let go");
     }
 
+    /// The add-on ceiling is the arena's, so a zone writes it once rather than
+    /// seven times, and every hull in the room holds the same thing.
     #[test]
-    fn a_hull_holds_the_add_ons_its_row_allows() {
+    fn an_arena_says_what_a_kit_may_hold() {
         let (w, warn) = tuned(
             r#"
             [arena.mod_step]
             freeze = 250
 
-            [[arena.ships]]
-            name = "Cipher"
+            [arena.kit]
             gun_mods = { freeze = 3, multi = 1 }
         "#,
         );
@@ -6170,15 +6171,25 @@ mod tests {
             w.cfg.mod_step[4], 250,
             "a rung of freeze is two and a half seconds"
         );
-        let spire = ai::class_index("Cipher").unwrap();
-        let m = w.cfg.classes[spire].mod_max[0];
-        assert_eq!((m >> 8) & 3, 3, "three rungs of freeze");
-        assert_eq!(m & 3, 1, "and one of multifire");
+        assert_eq!(
+            w.cfg.kit_ceiling[sim::slot_mod(sim::TRIG_GUN, sim::MOD_FREEZE) as usize],
+            3,
+            "three rungs of freeze"
+        );
+        assert_eq!(
+            w.cfg.kit_ceiling[sim::slot_mod(sim::TRIG_GUN, sim::MOD_MULTI) as usize],
+            1,
+            "and one of multifire"
+        );
+        assert_eq!(
+            w.cfg.kit_ceiling[sim::slot_mod(sim::TRIG_GUN, sim::MOD_BARREL) as usize],
+            0,
+            "and an add-on the map leaves out is a slot this arena does not have"
+        );
         // Named add-ons are checked, not guessed at.
         let (_, warn) = tuned(
             r#"
-            [[arena.ships]]
-            name = "Cipher"
+            [arena.kit]
             gun_mods = { sideways = 1 }
         "#,
         );
@@ -6516,21 +6527,16 @@ mod tests {
         assert_eq!(z.maps.len(), 2, "two maps, alternating");
         assert_eq!(z.max_humans_per_team, Some(4), "four a side");
         assert_eq!(z.teams.len(), 2);
-        // Three apiece on every hull but the denial one, which carries six.
-        // The zone file does not write this out: its ships section says in as
-        // many words that what is uniform stays unwritten. So the assertion
-        // lives here rather than seven times in a TOML file, and it is what
-        // would catch the baseline moving underneath the zone, which is the
-        // only way this number changes without somebody meaning it to.
-        const LATTICE: usize = 6;
-        for c in 0..w.cfg.class_count as usize {
-            let want = if c == LATTICE { 6 } else { 3 };
-            assert_eq!(
-                w.cfg.classes[c].charge_max[sim::CHARGE_MINE],
-                want,
-                "hull {c} may bring {want} mines"
-            );
-        }
+        // Six mines, for anybody who buys the kind and spends six of thirty
+        // points on them. This used to be one hull's row and six numbers in a
+        // TOML file; it is the arena's, written nowhere, which means this
+        // assertion is what would catch the baseline moving underneath the
+        // zone.
+        assert_eq!(
+            w.cfg.kit_ceiling[sim::slot_charge(sim::CHARGE_MINE) as usize],
+            6,
+            "anybody may bring six mines"
+        );
     }
 
     /// The baseline fills two charge slots and leaves two empty. Naming an
@@ -6553,8 +6559,7 @@ mod tests {
             damage = 900
             delay = 200
 
-            [[arena.ships]]
-            name = "Anvil"
+            [arena.kit]
             charges = [3, 3, 3, 2]
         "#,
         );
@@ -6562,15 +6567,10 @@ mod tests {
         assert_ne!(w.cfg.charge[3], sim::NO_PATTERN, "the slot is filled");
         let sp = w.cfg.specs[w.cfg.patterns[w.cfg.charge[3] as usize].spec as usize];
         assert_eq!(sp.blast, 400 * 256);
-        let anvil = ai::class_index("Anvil").unwrap();
         assert_eq!(
-            w.cfg.classes[anvil].charge_max[3], 2,
-            "the Anvil carries two"
-        );
-        assert_eq!(
-            w.cfg.classes[ai::class_index("Apex").unwrap()].charge_max[3],
-            0,
-            "and nobody else carries any"
+            w.cfg.kit_ceiling[sim::slot_charge(3) as usize],
+            2,
+            "and a kit may bring two of it"
         );
     }
 
@@ -6610,19 +6610,16 @@ mod tests {
         assert_ne!(rungs[1], sim::NO_PATTERN, "the hull kept its own ladder");
     }
 
-    /// A stat is three numbers -- the original's InitialSpeed, UpgradeSpeed
-    /// and MaximumSpeed -- and a zone can write all three.
+    /// A hull is a footprint. Flight used to be here as well, three numbers
+    /// per stat under the original's own names, and it went with the tech tree
+    /// that sat beside it: thirty points has to buy the same ship whatever you
+    /// are flying. See docs/design/ships.md.
     #[test]
-    fn a_zone_sets_a_floor_and_a_step_as_well_as_a_ceiling() {
+    fn a_zone_sets_a_hulls_footprint() {
         let (w, warn) = tuned(
             r#"
             [[arena.ships]]
             name = "Apex"
-            speed = 4000
-            initial_speed = 1000
-            upgrade_speed = 600
-            initial_energy = 500
-            upgrade_recharge = 200
             fore = 20
             aft = 12
             width = 18
@@ -6630,38 +6627,17 @@ mod tests {
         );
         assert!(warn.is_empty(), "{warn:?}");
         let apex = w.cfg.classes[ai::class_index("Apex").unwrap()];
-        unsafe {
-            assert_eq!(apex.max_speed, sim::sim_units_speed(4000));
-            assert_eq!(
-                apex.init_speed,
-                sim::sim_units_speed(1000),
-                "written, not scaled"
-            );
-            assert_eq!(apex.up_speed, sim::sim_units_speed(600));
-            assert_eq!(apex.init_energy, sim::sim_units_energy(500));
-            assert_eq!(apex.up_recharge, sim::sim_units_recharge(200));
-        }
         assert_eq!(apex.fore, 20 * 256);
         assert_eq!(apex.aft, 12 * 256);
         assert_eq!(apex.halfw, 9 * 256, "width is the whole beam, halved");
 
-        // A ceiling on its own still moves the floor and the step with it, so
-        // raising a hull's top speed does not make it start slower relative to
-        // where it can get.
-        let (w, _) = tuned(
-            r#"
-            [[arena.ships]]
-            name = "Apex"
-            speed = 6500
-        "#,
-        );
-        let apex = w.cfg.classes[ai::class_index("Apex").unwrap()];
-        let base = sim::World::new(1).cfg.classes[0];
-        assert_eq!(
-            apex.init_speed,
-            base.init_speed * 2,
-            "doubling the ceiling doubled it"
-        );
+        // And flies exactly as everything else does, which is the property
+        // that makes a hull a shape rather than a stat block.
+        let anvil = w.cfg.classes[ai::class_index("Anvil").unwrap()];
+        assert_eq!(apex.max_speed, anvil.max_speed);
+        assert_eq!(apex.max_energy, anvil.max_energy);
+        assert_eq!(apex.rot, anvil.rot);
+        assert_ne!(apex.fore, anvil.fore, "and differs in the one thing it may");
     }
 
     /// Absent and zero are different things. Every setting the core owns is
@@ -6748,22 +6724,19 @@ mod tests {
     #[test]
     fn removing_a_line_removes_its_effect() {
         let mut w = sim::World::new(1);
+        let multi = sim::slot_mod(sim::TRIG_GUN, sim::MOD_MULTI) as usize;
         Room::apply_config(
             &mut w,
             &parse(
                 r#"
-            [[arena.ships]]
-            name = "Apex"
-            speed = 6000
+            [arena.kit]
+            gun_mods = { bounce = 1 }
         "#,
             ),
         );
-        let tuned_speed = w.cfg.classes[0].max_speed;
+        assert_eq!(w.cfg.kit_ceiling[multi], 0, "the zone took multifire away");
         Room::apply_config(&mut w, &parse("[arena]\nmode = \"warzone\""));
-        assert!(
-            w.cfg.classes[0].max_speed < tuned_speed,
-            "back to the baseline"
-        );
+        assert!(w.cfg.kit_ceiling[multi] > 0, "back to the baseline");
     }
 }
 

@@ -910,12 +910,9 @@ impl HullRow {
 /// so the same salt builds the same kit and dressing a pilot does not shift
 /// the bout's own stream.
 ///
-/// The return is what fit. A hull with a short ladder and few add-ons runs
-/// out of places to spend before the budget does, and that difference is a
-/// real part of what the roster is.
+/// The return is what fit, which is the budget in any arena with room for it.
 fn deal_kit(world: &mut sim::World, ship: usize, budget: u32, rng: &mut u32) -> u32 {
-    let cls = world.state.ships[ship].cls;
-    let ceiling = world.kit_ceilings(cls);
+    let ceiling = world.kit_ceilings();
     let mut kit = [0u8; sim::SLOT_COUNT];
     let mut spent = 0u32;
     while spent < budget {
@@ -2205,28 +2202,37 @@ mod tests {
         // predict the refit count from kills is how that got found.
 
         // The claim underneath all of this, on its own: the same budget buys
-        // different hulls different amounts of ship. Handed enough to
-        // saturate, a hull stops spending, and every unspent point still
-        // counted against the budget it was offered.
+        // the same amount of ship whatever hull it is spent on.
+        //
+        // It used to be the opposite. A budget bought different hulls
+        // different amounts, because each carried its own ceilings and a hull
+        // with a short ladder and few add-ons ran out of places to spend
+        // before the budget ran out. That difference was defended here as a
+        // real part of what the roster was; it was also what made a bought
+        // upgrade dead on the wrong hull, and it is gone.
+        //
+        // Handed more than any kit can hold, both stop in exactly the same
+        // place, and every unspent point still counts against the budget it
+        // was offered.
         let mut world = sim::World::with_map(1, sim::build_pit);
-        let mut short = 0;
+        let ceiling: u32 = world.kit_ceilings().iter().map(|&n| n as u32).sum();
+        let offered = ceiling + 20;
+        let mut converted = Vec::new();
         for &(class, name) in &[(cipher, "Cipher"), (anvil, "Anvil")] {
             let ship = world.spawn(class, 0, 505, 522, 0) as usize;
             let mut rng = 0x1234_5678u32;
-            let offered = 60;
-            let converted = deal_kit(&mut world, ship, offered, &mut rng);
+            let spent = deal_kit(&mut world, ship, offered, &mut rng);
+            assert!(spent <= offered, "{name} converted more than it was handed");
             assert!(
-                converted <= offered,
-                "{name} converted more than it was handed"
+                spent < offered,
+                "{name} never saturated, so this is not reaching a ceiling at all"
             );
-            if converted < offered {
-                short += 1;
-            }
+            converted.push(spent);
         }
-        assert!(
-            short > 0,
-            "a sixty-point budget saturated nobody, so this harness is not \
-reaching the ceilings the matched-budget argument turns on"
+        assert_eq!(
+            converted[0], converted[1],
+            "two hulls saturated in different places, so something still tells \
+them apart"
         );
     }
 
@@ -2287,47 +2293,51 @@ the room"
         assert_eq!(world.cfg.spawn_radius, 60);
     }
 
-    /// A hull opens the bout with the zone's numbers, not the baseline's.
+    /// A bout deals its kits against the zone's ceiling, not the baseline's.
     ///
-    /// `sim_spawn` reads opening energy out of the class table, so seating a
-    /// ship before the zone's settings are applied gives it the baseline's bar
-    /// and then swaps the ceiling out from under it. It is invisible in every
-    /// column the report prints and it corrupts exactly the measurement anybody
-    /// would reach for this harness to make, which is what a per-hull change is
-    /// worth. It happened: a refactor moved the seating inside the map builder,
-    /// and the Cipher energy change came back moving hulls it cannot touch.
+    /// The ordering hazard this guards used to be about energy: hulls carried
+    /// their own flight, `sim_spawn` read the opening bar out of the class
+    /// table, and seating a ship before the zone was applied gave it the
+    /// baseline's bar. Hulls carry no flight now, so that particular bug
+    /// cannot happen, but the shape of it moved rather than going away. The
+    /// kit ceiling is the zone's, `deal_kit` reads it every time it places a
+    /// point, and a harness that dealt before applying would measure a roster
+    /// nobody plays.
+    ///
+    /// It is worth an assertion for the reason the old one was: nothing in
+    /// any column this harness prints would look wrong.
     #[test]
-    fn a_zones_ship_settings_reach_the_opening_bar() {
+    fn a_zones_kit_ceiling_reaches_the_kits_it_deals() {
         let cipher = ai::class_index("Cipher").unwrap() as u8;
-        let thin: config::ArenaConfig =
-            toml::from_str("[[ships]]\nname = \"Cipher\"\ninitial_energy = 250\nenergy = 400\n")
-                .expect("a zone that thins one hull");
+        let bare: config::ArenaConfig = toml::from_str("[kit]\ngun_mods = { bounce = 1 }\n")
+            .expect("a zone with one gun add-on");
 
         let arena = Arena::Built(sim::build_pit);
+        let multi = sim::slot_mod(sim::TRIG_GUN, sim::MOD_MULTI) as usize;
 
         let mut plain = arena.build(0).expect("a room");
-        let p = arena.seat(&mut plain, 0, [cipher, cipher]).expect("seats");
-        let untuned = plain.state.ships[p[0] as usize].energy;
-
-        let mut room = arena.build(0).expect("a room");
-        crate::Room::apply_config(&mut room, &thin);
-        let s = arena.seat(&mut room, 0, [cipher, cipher]).expect("seats");
-        let opened = room.state.ships[s[0] as usize].energy;
-
         assert!(
-            opened < untuned,
-            "a Cipher opened on {opened} either way, so the zone's ship block \
-never reached the spawn"
+            plain.kit_ceilings()[multi] > 0,
+            "the baseline has multifire to take away"
         );
 
-        // Checked on the bar directly and not through a bout, because a bout
-        // cannot see it. Seat a ship early and it opens on the baseline's
-        // energy and then recharges toward the zone's ceiling within a few
-        // seconds, so the fight converges and every column this harness prints
-        // comes out the same. That is the whole reason it went unnoticed, and
-        // it is why the ordering in `hull_bout` carries a comment rather than
-        // a second assertion: nothing observable from outside that function
-        // distinguishes the two orders.
+        let mut room = arena.build(0).expect("a room");
+        crate::Room::apply_config(&mut room, &bare);
+        let seats = arena.seat(&mut room, 0, [cipher, cipher]).expect("seats");
+        assert_eq!(
+            room.kit_ceilings()[multi],
+            0,
+            "the zone took multifire away and the room did not notice"
+        );
+
+        // And a kit dealt in that room cannot hold what the room does not
+        // have, however much budget it is handed.
+        let mut rng = 0x5eed_u32;
+        deal_kit(&mut room, seats[0] as usize, sim::KIT_BUDGET, &mut rng);
+        assert_eq!(
+            room.state.ships[seats[0] as usize].kit[multi], 0,
+            "a whole budget still found no multifire to buy"
+        );
     }
 
     /// A hull against itself comes out even, or the pit is doing the deciding.

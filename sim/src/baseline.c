@@ -10,48 +10,6 @@
 #include <string.h>
 #include "sim/baseline.h"
 
-/* A hull's whole tech tree, in one row.
- *
- * `gun_rungs` and `bomb_rungs` are the ladders: how many levels of that
- * weapon this hull can climb, where one is a hull that never levels and zero
- * is a hull without the rack at all. `gun_mods` and `bomb_mods` are which
- * add-ons it may ever hold and how many rungs of each, packed the same way the
- * pilot's are. Availability follows the original -- every hull may hold the
- * add-ons it had prizes for -- so what makes a bomber a bomber is the rack it
- * has and the ceiling it climbs to, not a list of things nobody else may
- * touch. See the table's own note. */
-typedef struct {
-    /* What still varies between hulls, which is everything the original
-     * varies and nothing else. Three of its per-ship settings are here:
-     * MaxBombs, which is 3 on the
-     * Leviathan and 2 elsewhere; ShrapnelMax, which is 31 on the Shark and 8
-     * elsewhere; and DoubleBarrel, which the Terrier alone carried. The rest
-     * are flags for weapons this core has no idea about, meaning cloak,
-     * antiwarp, bricks, portals, thors and mines.
-     *
-     * `gun_rungs` and `bomb_rungs` are MaxGuns and MaxBombs: how many levels
-     * of that weapon this hull climbs. `gun_mods` and `bomb_mods` are which
-     * add-ons it may hold and how many rungs of each, packed two bits apiece
-     * the way the pilot's are. */
-    uint8_t gun_rungs, bomb_rungs;
-    /* DoubleBarrel, as a count rather than a flag. One pull of the gun sends
-     * this many rounds, and the Terrier was the only ship in the original
-     * whose answer was two.
-     *
-     * A count and not a free multifire rung, which is the distinction that
-     * makes the original's odd number fall out: `compose` adds barrels rather
-     * than multiplying them, so two abreast plus one rung of multifire is
-     * four, not the six a pilot expects from three times two. That was the
-     * Terrier's actual behavior and we get it for nothing. */
-    uint8_t gun_barrels;
-    uint16_t gun_mods, bomb_mods;
-    /* How many of each charge a kit may slot on this hull, by kind: repel,
-     * burst, mine. RepelMax and BurstMax are 3 on all eight of the original's
-     * ships; MaxMines is 5 on all eight of them, and as a charge that ceiling
-     * is what makes mining a hull's job rather than everybody's. */
-    uint8_t charges[SIM_MAX_CHARGES];
-} class_row;
-
 /* Flight, identical on every hull, straight off the original's ship files.
  * All eight of them carry the same numbers: a Warbird and a Leviathan fly
  * exactly alike there, and what tells them apart is the ten capability flags
@@ -114,38 +72,6 @@ static const sim_class_units flight = {
 #define M2(a) ((uint16_t)(2u << ((a) * 2)))
 #define M3(a) ((uint16_t)(3u << ((a) * 2)))
 
-/* Every hull gets multifire and bouncing bullets on its gun, and proximity
- * and shrapnel on its bomb if it has one. That is the original's rule: those
- * are entries in [PrizeWeight] with no per-ship gate anywhere in its config,
- * so any ship can be handed any of them.
- *
- * What it varies is the *ceiling*, not the availability. Its per-ship
- * differentiation is a short list of flags and counts, and the ones that
- * matter here are `MaxBombs` (3 on the Leviathan against 2 everywhere else),
- * `ShrapnelMax` at 8 against the Shark's 31, `BombBounceCount`, which is 1 on
- * the Lancaster alone, and `DoubleBarrel`, which is the Terrier's alone. So a
- * bomber is not the hull that *may* hold shrapnel, it is the hull that holds
- * more of it than anyone.
- *
- * Freeze and push have no setting to copy, because the original has no such
- * prize. They stay roster traits, which is a choice of ours and the only part
- * of this table that is.
- *
- * A hull with no rack (`bomb_rungs` 0) gets no bomb add-ons: an add-on is a
- * transform on a trigger, and a trigger that does not exist cannot be
- * transformed. That, not the add-on list, is what would keep a hull out of
- * the bombing business; every hull on this roster carries a rack.
- *
- * `GUN_ALL` and `BOMB_ALL` are the plain ceilings. A row that wants a
- * different one spells its whole field out rather than OR-ing over the macro:
- * the field is two bits per add-on, so `GUN_ALL | M2(MULTI)` is 1|2 = three
- * rungs, not two. OR builds a field, it does not override one.
- *
- * Energy per second is recharge/10, so 1500 refills a 1350-energy hull in
- * about nine seconds. Getting this wrong by a factor of ten makes ships that
- * can never shoot twice, which is what the first test run caught. */
-#define GUN_ALL   (M1(SIM_MOD_MULTI) | M1(SIM_MOD_BOUNCE))
-#define BOMB_ALL  (M1(SIM_MOD_PROX) | M2(SIM_MOD_SHRAPNEL))
 /* Each hull's footprint, in pixels from the point it turns about: past the
    nose, behind the tail, to either side. client/tests/hull_fit_test.lua reads
    this table out of this file by name and measures the client's drawing
@@ -181,51 +107,87 @@ static const uint8_t hull_extent[SIM_MAX_CLASSES][3] = {
     /* Lattice: near square, near flush       */ {16, 14, 14},
 };
 
-static const class_row rows[SIM_MAX_CLASSES] = {
-    /* MaxGuns is 3 on every ship the original ships and MaxBombs is 2 on
-       seven of them, so that is what every row here says. The Anvil is the
-       Leviathan, whose MaxBombs is 3 and is the only ladder in the whole file
-       that differs; the barrel count below is another weapon setting the
-       original varied by ship. InitialGuns varied too, since the Terrier
-       started at L2 where everyone else started at L1, and this core has no
-       equivalent: every hull spawns on the bottom rung and climbs by green.
+/* What an arena lets a kit hold, and how far each weapon climbs.
+ *
+ * One row, for the whole zone. This was seven rows, one per hull, and every
+ * number in it was something a pilot could want and not be allowed: the
+ * second barrel was the Facet's, the third bomb rung was the Anvil's, six
+ * mines were the Lattice's, and a deep rung of shrapnel belonged to whichever
+ * two hulls the table called bombers. None of it could ever be sold, because
+ * a shop cannot sell a trait that exists on one hull, and a pilot who bought
+ * a rung anyway would find the hull they wanted to fly refused it.
+ *
+ * So the roster stopped carrying a tech tree. What is left of a hull is the
+ * shape it presents to a bullet, in `hull_extent` above, and that is the one
+ * difference no shop could sell even if it wanted to. Everything else is
+ * here, the same for everybody, and on the shelf.
+ *
+ * These numbers are the union of what the seven rows allowed, each at its
+ * deepest. Nothing new is granted and nothing is taken away: a Wedge could
+ * always hold three rungs of shrapnel, and now anyone who buys them can.
+ *
+ * Availability still follows the original, which gates none of this per ship:
+ * its add-ons are entries in [PrizeWeight] and any ship can be handed any of
+ * them. What it varies is the ceiling, and the ceiling is the arena's now.
+ */
 
-       Charges are three repels, three bursts and three mines, except on
-       Lattice, whose six is what makes it the hull that owns ground. Five
-       was MaxMines on all eight of the original's ships, where a mine cost
-       nothing to carry; as a slot in a thirty point kit it is priced against
-       everything else a pilot could bring instead.
+/* MaxGuns is 3 on every ship the original ships. MaxBombs is 2 on seven of
+ * them and 3 on the Leviathan, and three is what everybody climbs to here:
+ * the shop sells the rung rather than the roster handing it to one hull. */
+#define GUN_RUNGS  3
+#define BOMB_RUNGS 3
 
-       gun  bomb  barrels  gun add-ons  bomb add-ons  repel burst mine */
-    {3, 2, 1, GUN_ALL, BOMB_ALL,                           {3, 3, 3, 0}},
-    /* Wedge and Anvil are the bombers, so they are the hulls that hold the
-       most shrapnel, which here is a deeper rung on the add-on rather than
-       the count the original's ShrapnelMax is. */
-    {3, 2, 1, GUN_ALL,
-     M1(SIM_MOD_PROX) | M3(SIM_MOD_SHRAPNEL),              {3, 3, 3, 0}},
-    /* Spread is Chord's and freeze is ours: neither has a setting in the
-       original, so add-on ceilings are where our roster still lives. */
-    {3, 2, 1, M2(SIM_MOD_MULTI) | M1(SIM_MOD_BOUNCE) | M1(SIM_MOD_FREEZE),
-     BOMB_ALL,                                             {3, 3, 3, 0}},
-    /* The Leviathan: MaxBombs 3. */
-    {3, 3, 1, GUN_ALL,
-     M1(SIM_MOD_PROX) | M3(SIM_MOD_SHRAPNEL),              {3, 3, 3, 0}},
-    {3, 2, 1, GUN_ALL, BOMB_ALL,                           {3, 3, 3, 0}},
-    /* Facet carries the Terrier's DoubleBarrel, the one hull that fires two
-       abreast for one pull. The multifire ceiling of two is Chord's as well,
-       so the barrels are what actually tell the two spread hulls apart: the
-       Chord has to find greens to fan at all, and the Facet is already
-       throwing a wall of lead the moment it spawns. */
-    {3, 2, 2, M2(SIM_MOD_MULTI) | M1(SIM_MOD_BOUNCE), BOMB_ALL,
-                                                           {3, 3, 3, 0}},
-    /* Lattice is the Lancaster: BombBounceCount is 1 on that ship and 0 on
-       every other, so bombs that come back off a wall are its alone. Push is
-       ours and stays with it for the same reason. */
-    {3, 2, 1, GUN_ALL,
-     BOMB_ALL | M2(SIM_MOD_BOUNCE) | M2(SIM_MOD_PUSH),     {3, 3, 6, 0}},
-};
-#undef GUN_ALL
-#undef BOMB_ALL
+/* Guns fan, freeze and come in pairs. They carry no fuse and do not break up,
+ * which no hull's gun ever did: a bullet with a proximity fuse is a bomb, and
+ * that weapon already exists.
+ *
+ * Bullet bouncing is one rung and stays one. A bounced bullet lives out its
+ * whole clock either way -- 69 tiles of reach against a life it cannot spend
+ * -- so a second rung would buy literally nothing.
+ *
+ * Multifire at two is what the Chord and the Facet had. Barrels at two is a
+ * choice of ours: the original's DoubleBarrel is a flag with no second step
+ * to copy, and two rungs makes it a ladder the shop can sell twice rather
+ * than a switch it sells once. */
+#define GUN_MODS  (M2(SIM_MOD_MULTI) | M1(SIM_MOD_BOUNCE) \
+                   | M1(SIM_MOD_FREEZE) | M2(SIM_MOD_BARREL))
+
+/* Bombs bounce, sense, shatter and shove. They do not fan and they do not
+ * come in pairs, which is the other combination no hull ever had: a rack that
+ * throws three at a pull is not a bomber, it is a different game.
+ *
+ * Bounce at two and push at two were the Lattice's alone. Shrapnel at three
+ * was the two bombers'. */
+#define BOMB_MODS (M2(SIM_MOD_BOUNCE) | M1(SIM_MOD_PROX) \
+                   | M3(SIM_MOD_SHRAPNEL) | M2(SIM_MOD_PUSH))
+
+/* Repels and bursts are three, which is RepelMax and BurstMax on all eight of
+ * the original's ships. Mines are six, which was the Lattice's row and is the
+ * arena's now: MaxMines was five on every ship there, where carrying one cost
+ * nothing, and as slots in a thirty point kit six mines is most of a build.
+ * What made one hull the mining hull is a purchase. */
+#define CHARGE_REPEL_MAX 3
+#define CHARGE_BURST_MAX 3
+#define CHARGE_MINE_MAX  6
+
+/* The above, over the flat slot space: the most this arena will let a kit put
+ * in each slot, and zero for a slot it does not have at all. */
+static void fill_kit_ceiling(sim_settings *cfg) {
+    memset(cfg->kit_ceiling, 0, sizeof cfg->kit_ceiling);
+    for (int u = 0; u < SIM_UP_COUNT; u++)
+        cfg->kit_ceiling[SIM_SLOT_STAT(u)] = SIM_UP_STEPS;
+    /* A ladder of N rungs is N-1 steps to buy: rung zero is what the trigger
+     * already fires. */
+    cfg->kit_ceiling[SIM_SLOT_LEVEL(SIM_TRIG_GUN)] = GUN_RUNGS - 1;
+    cfg->kit_ceiling[SIM_SLOT_LEVEL(SIM_TRIG_BOMB)] = BOMB_RUNGS - 1;
+    for (int m = 0; m < SIM_MOD_COUNT; m++) {
+        cfg->kit_ceiling[SIM_SLOT_MOD(SIM_TRIG_GUN, m)] = sim_mod_get(GUN_MODS, m);
+        cfg->kit_ceiling[SIM_SLOT_MOD(SIM_TRIG_BOMB, m)] = sim_mod_get(BOMB_MODS, m);
+    }
+    cfg->kit_ceiling[SIM_SLOT_CHARGE(SIM_CHARGE_REPEL)] = CHARGE_REPEL_MAX;
+    cfg->kit_ceiling[SIM_SLOT_CHARGE(SIM_CHARGE_BURST)] = CHARGE_BURST_MAX;
+    cfg->kit_ceiling[SIM_SLOT_CHARGE(SIM_CHARGE_MINE)] = CHARGE_MINE_MAX;
+}
 
 const char *const sim_class_names[SIM_MAX_CLASSES] = {
     "Apex", "Wedge", "Chord", "Anvil", "Cipher", "Facet", "Lattice"};
@@ -375,12 +337,24 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
     cfg->mod_step[SIM_MOD_SHRAPNEL] = 0;           /* a pattern, not a number */
     cfg->mod_step[SIM_MOD_FREEZE] = 100;           /* a second of no recharge */
     cfg->mod_step[SIM_MOD_PUSH] = sim_units_speed(1200);
+    cfg->mod_step[SIM_MOD_BARREL] = 1;             /* one more barrel abreast */
     cfg->mod_spread = 65536 / 24;                  /* fifteen degrees */
     /* Straight from the original: 20 energy a bullet against 30 for multifire,
      * and 25 ticks of cooldown against 50. Three rounds for half again the
      * energy and twice the wait. */
     cfg->mod_multi_energy = 50;
     cfg->mod_multi_delay = 100;
+    /* A barrel is half a rung of multifire in rounds, so it is half of one in
+     * energy too, and it costs no cooldown at all. That is the trade the two
+     * add-ons are: multifire throws more and throws it slower, barrels throw
+     * fewer at the rate you already had.
+     *
+     * The original priced DoubleBarrel at nothing, which was defensible when
+     * exactly one hull had it and could not choose otherwise. As something a
+     * pilot buys, free rounds would make every other gun add-on pointless. */
+    cfg->mod_barrel_energy = 25;
+    cfg->mod_barrel_spread = BARREL_SPREAD;
+    fill_kit_ceiling(cfg);
 
     /* Shrapnel, one pattern per rung: four fragments, then eight, then
      * sixteen. The fragments themselves are one spec -- a rung of shrapnel
@@ -573,17 +547,16 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
         cfg->charge[SIM_CHARGE_MINE] = (uint8_t)sim_add_pattern(cfg, &mf);
     }
 
+    /* Every hull, built the same way. What differs between them is three
+     * numbers of footprint and nothing else: they fly alike, they climb alike
+     * and they hold alike, and the shape each one presents to a bullet is the
+     * whole of the roster. See docs/design/ships.md. */
     for (int i = 0; i < SIM_MAX_CLASSES; i++) {
-        const class_row *r = &rows[i];
         sim_ship_class *c = &cfg->classes[i];
         sim_class_from_units(c, &flight);
         c->fore = (int32_t)hull_extent[i][0] * 256;
         c->aft = (int32_t)hull_extent[i][1] * 256;
         c->halfw = (int32_t)hull_extent[i][2] * 256;
-        c->mod_max[SIM_TRIG_GUN] = r->gun_mods;
-        c->mod_max[SIM_TRIG_BOMB] = r->bomb_mods;
-        for (int k = 0; k < SIM_MAX_CHARGES; k++)
-            c->charge_max[k] = r->charges[k];
 
         /* A ladder per trigger. A gun rung adds BulletDamageUpgrade, flat,
          * which is what the original's help says it is: "amount of extra
@@ -600,7 +573,7 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
          * be now that every hull carries the same 1700 the original gives
          * them all. A gun rung also multiplies BulletFireEnergy by its level,
          * which is the original's `(weapon level + 1)` rule. */
-        for (int k = 0; k < r->gun_rungs && k < SIM_MAX_RUNGS; k++) {
+        for (int k = 0; k < GUN_RUNGS && k < SIM_MAX_RUNGS; k++) {
             sim_weapon_spec bolt;
             memset(&bolt, 0, sizeof bolt);
             bolt.speed = sim_units_speed(2000);
@@ -631,12 +604,14 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
             sim_fire_pattern gun;
             memset(&gun, 0, sizeof gun);
             gun.spec = (uint8_t)sim_add_spec(cfg, &bolt);
-            gun.count = r->gun_barrels;
-            gun.spacing = r->gun_barrels > 1 ? BARREL_SPREAD : 0;
-            /* DoubleBarrel changes what one pull sends, not what the pull
-             * costs. The SVS Terrier and Warbird both use
-             * BulletFireEnergy=20 and BulletFireDelay=25; DoubleBarrel is the
-             * setting that differs. Gun level still scales the trigger cost. */
+            /* One round, and the spacing an add-on will want if a pilot
+             * buys barrels. DoubleBarrel used to be baked in here, because it
+             * was a property of the hull the pattern belonged to; it is a
+             * transform applied when the trigger is pulled now, so every
+             * hull's rung zero fires one round and what leaves the barrel is
+             * the pilot's business. */
+            gun.count = 1;
+            gun.spacing = 0;
             gun.energy = sim_units_energy(BULLET_ENERGY * (k + 1));
             gun.delay = BULLET_DELAY;
             c->trigger[SIM_TRIG_GUN][k] = (uint8_t)sim_add_pattern(cfg, &gun);
@@ -646,7 +621,7 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
          * does: MaxBombs is 2 or 3 on all eight. The empty-ladder case is
          * still handled -- a zone may take a rack away -- and the trigger
          * simply goes dead when it does. */
-        for (int k = 0; k < r->bomb_rungs && k < SIM_MAX_RUNGS; k++) {
+        for (int k = 0; k < BOMB_RUNGS && k < SIM_MAX_RUNGS; k++) {
             sim_weapon_spec sh;
             memset(&sh, 0, sizeof sh);
             /* BombSpeed=2000, BombAliveTime=6000 and BombExplodePixels=80.

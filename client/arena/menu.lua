@@ -182,14 +182,22 @@ local CAPS = {{0, "display"}, {60, "60 a second"}, {30, "30 a second"}}
 -- and a guard written against a table declared below it is not a guard: Lua
 -- resolves the name at compile time, so it would read a nil global and admit
 -- everything.
+-- The roster, as a name, a silhouette and what that silhouette costs you.
+--
+-- These used to describe stats: the lightest bar, the biggest bomb, no bomb
+-- rack. None of it was true of the simulation and all of it is false now on
+-- purpose. Every hull flies alike, climbs alike and holds alike; what differs
+-- is the shape it puts between a bullet and the pilot, and since weapons test
+-- the oriented rectangle rather than a box drawn round it, that shape is a
+-- real number in a real fight. So the sentence describes the shape.
 local HULLS = {
-    {"Apex", "interceptor", "fastest, sharpest turn, lightest bar"},
-    {"Wedge", "bomber", "heavy bombs on a short reload"},
-    {"Chord", "skirmisher", "quick guns, no bomb rack"},
-    {"Anvil", "heavy", "the biggest bar and the biggest bomb"},
-    {"Cipher", "stealth", "hardest hitting gun, thinnest hull"},
-    {"Facet", "brawler", "close in, and quick about it"},
-    {"Lattice", "denial", "holds ground it has taken"},
+    {"Apex", "dart", "a long nose and narrow flanks, awkward through a gap"},
+    {"Wedge", "delta", "broad across the beam, hard to miss from the front"},
+    {"Chord", "bow", "the widest hull and the shortest, all of it beam"},
+    {"Anvil", "slab", "blunt and even, no face much thinner than another"},
+    {"Cipher", "knife", "six pixels from the side, twenty-two down the nose"},
+    {"Facet", "wedge", "the smallest target on the roster from any angle"},
+    {"Lattice", "cross", "near square, so it turns anywhere it fits"},
 }
 
 local SAVE = sys.get_save_file("vectorwake", "pilot")
@@ -439,16 +447,22 @@ local function kit_slots()
     return out
 end
 
--- What this pilot may put in each slot on the hull they are looking at: the
--- hull's own row and the account's entitlements together, smaller wins.
+-- What this pilot may put in each slot: the arena's own row and the account's
+-- entitlements together, smaller wins.
+--
+-- Two ceilings, where there were three. The hull used to carry one, and it is
+-- the one that went: a roster that said which add-ons a hull would hold was a
+-- roster that could refuse an upgrade somebody had bought, and the shop could
+-- never sell what only one hull had. So a hull is a shape now and the tech
+-- tree is the arena's. See docs/design/ships.md.
 --
 -- The arena checks the same thing when a kit arrives, against the entitlements
 -- the token carries rather than against this copy. That is the check that
 -- matters; this one is so the page never offers a step it would be refused
 -- for taking.
-local function kit_ceiling(class)
+local function kit_ceiling()
     local core = _G.sim
-    local hull = core and core.kit_ceilings and core.kit_ceilings(class) or nil
+    local hull = core and core.kit_ceilings and core.kit_ceilings() or nil
     local own = account.entitlements or {}
     -- The baseline where the account has said nothing, which is a deployment
     -- with no meta-layer and a session that has not answered yet. Not "no
@@ -457,7 +471,7 @@ local function kit_ceiling(class)
     local base = (core and core.base_entitlements and core.base_entitlements())
         or {}
     local out = {}
-    for i = 1, simn("SLOT_COUNT", 23) do
+    for i = 1, simn("SLOT_COUNT", 25) do
         local h = hull and hull[i] or 0
         local o = own[i] or base[i] or 255
         out[i] = math.min(h, o)
@@ -477,7 +491,7 @@ M.kit_class = nil
 function M.open_kit(class)
     local saved = account.kits and account.kits[HULLS[class + 1][1]]
     local kit = {}
-    for i = 1, simn("SLOT_COUNT", 23) do
+    for i = 1, simn("SLOT_COUNT", 25) do
         kit[i] = tonumber(saved and saved[i]) or 0
     end
     -- Nothing saved: what the arena would deal, computed by the same core the
@@ -489,7 +503,7 @@ function M.open_kit(class)
     -- not exist and inviting a player to build one from scratch every time.
     local core = _G.sim
     if M.kit_spent(kit) == 0 and core and core.starter_kit then
-        kit = core.starter_kit(kit_ceiling(class))
+        kit = core.starter_kit(kit_ceiling())
     end
     M.kit, M.kit_class = kit, class
 end
@@ -507,7 +521,7 @@ end
 -- fly.
 function M.kit_step(slot, by)
     if not M.kit then return false end
-    local ceiling = kit_ceiling(M.kit_class or M.class)
+    local ceiling = kit_ceiling()
     local at = M.kit[slot + 1] or 0
     local want = at + by
     if want < 0 or want > (ceiling[slot + 1] or 0) then return false end
@@ -519,14 +533,14 @@ end
 local function kit_rows()
     local class = M.kit_class or M.class
     if not M.kit or M.kit_class ~= class then M.open_kit(class) end
-    local ceiling = kit_ceiling(class)
-    -- What the hull alone would allow, which is a longer ladder than the
+    local ceiling = kit_ceiling()
+    -- What the arena alone would allow, which is a longer ladder than the
     -- account's wherever the shop still holds a step. Drawn behind what you
     -- own, so a page says "there is more of this and it is not yours" without
     -- a word about it.
     local core = _G.sim
-    local hull_ceiling = (core and core.kit_ceilings
-                          and core.kit_ceilings(class)) or ceiling
+    local arena_ceiling = (core and core.kit_ceilings
+                           and core.kit_ceilings()) or ceiling
     local budget = simn("KIT_BUDGET", 30)
     -- At the head, not the foot. It is the number every row below is
     -- spending, and a list long enough to scroll would push it off the
@@ -557,11 +571,11 @@ local function kit_rows()
                 -- own short mark, its color, and which trigger it hangs off.
                 group = s.group, short = s.short, tint_col = s.tint,
                 trigger = s.trigger, note = s.note,
-                -- What the account owns here, against what the hull would
+                -- What the account owns here, against what the arena would
                 -- take. The difference is the part of the ladder the shop is
                 -- still holding, and the page draws it as a step that is
                 -- there and not yours.
-                owned = max, hull_max = hull_ceiling[s.slot + 1] or max,
+                owned = max, arena_max = arena_ceiling[s.slot + 1] or max,
             }
         end
     end
@@ -671,6 +685,15 @@ local function hull_rows()
             -- the two questions cannot be asked apart.
             then_go = "kit",
             hull = i - 1, role = h[2],
+            -- The one fact about a hull that is not a matter of taste, read
+            -- off the core rather than repeated here so the two cannot drift.
+            extent = function()
+                local core = _G.sim
+                if not (core and core.hull_extent) then return nil end
+                local fore, aft, halfw = core.hull_extent(i - 1)
+                if not fore then return nil end
+                return {fore = fore, aft = aft, beam = halfw * 2}
+            end,
             -- Not while the answer is "none of them". A watcher is in no
             -- hull, so marking the one they would fly back in would put the
             -- "you are here" wash on a ship nobody is sitting in.
@@ -1314,17 +1337,18 @@ local function view_row(r, i)
         -- `hull` names a ship to draw and `figure` overrides it with something
         -- that is not one.
         hull = r.hull, figure = r.figure, role = r.role,
+        extent = type(r.extent) == "function" and r.extent() or r.extent,
         players = r.players, bots = r.bots, live = r.live,
         choice = ci, choices = cn, bar = r.bar,
         -- What the hangar's page needs to draw a slot as the thing it is:
         -- its group, its short mark, its color, the trigger it hangs off, and
-        -- how far the hull's own ladder runs past what the account owns.
+        -- how far the arena's own ladder runs past what the account owns.
         -- The label a group of rows sits under, on the first row of it.
         sect = r.sect,
         group = r.group, short = r.short, tint_col = r.tint_col,
         -- The week's own columns.
         rank = r.rank, kills = r.kills, wins = r.wins, run = r.run,
-        trigger = r.trigger, owned = r.owned, hull_max = r.hull_max,
+        trigger = r.trigger, owned = r.owned, arena_max = r.arena_max,
         -- What the controls page needs to draw a chip: which color band the
         -- control is in, which key it is on so the board can be lit from the
         -- same list, whether it is the one waiting for a key, and whether it
