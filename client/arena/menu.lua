@@ -703,11 +703,26 @@ end
 -- to search for anybody. See docs/design/friends.md.
 local function friend_rows()
     local rows = {}
+    -- A head belongs to the row that opens a run, not to every row in it: the
+    -- list renderer draws one wherever it finds a `sect` and does no
+    -- deduplicating, which is what "friends" over each friend looked like.
+    local function heading(label)
+        local first = true
+        return function()
+            if not first then return nil end
+            first = false
+            return label
+        end
+    end
+    local head_friends = heading("friends")
+    local head_asked = heading("waiting on you")
+    local head_here = heading("in this game")
+    local head_waiting = heading("you added")
     for _, f in ipairs(account.friends or {}) do
         local where = directory.at_instance(f.instance)
         local flying = f.zone ~= nil and f.zone ~= ""
         rows[#rows + 1] = {
-            label = f.name or "?", named = true, sect = "friends",
+            label = f.name or "?", named = true, sect = head_friends(),
             -- Where they are, or that they are not anywhere. A friend in an
             -- instance this client cannot see reads as in that game and is
             -- not joinable, which is the honest answer for an arena the
@@ -725,22 +740,39 @@ local function friend_rows()
     end
     for _, a in ipairs(account.asked or {}) do
         rows[#rows + 1] = {
-            label = a.name or "?", named = true, sect = "waiting on you",
+            label = a.name or "?", named = true, sect = head_asked(),
             detail = "add back",
             act = "befriend", value = a.account,
         }
     end
     for _, h in ipairs(account.here or {}) do
         rows[#rows + 1] = {
-            label = h.name or "?", named = true, sect = "in this game",
+            label = h.name or "?", named = true, sect = head_here(),
             detail = "add",
             act = "befriend", value = h.account,
+        }
+    end
+    -- Last, because it is the section nothing happens on: these are presses
+    -- already made. It is here so a press has a visible consequence at all,
+    -- since adding somebody takes their name off the list above and would
+    -- otherwise put it nowhere.
+    for _, w in ipairs(account.waiting or {}) do
+        rows[#rows + 1] = {
+            label = w.name or "?", named = true, sect = head_waiting(),
+            detail = "waiting on them",
+            act = "friend_card", value = w.account,
         }
     end
     return rows
 end
 
 local function friends_empty()
+    -- Only where there is nothing at all. A card under a list that has rows in
+    -- it is a page saying two things at once, and the second one is wrong.
+    if #(account.friends or {}) + #(account.asked or {})
+        + #(account.here or {}) + #(account.waiting or {}) > 0 then
+        return nil
+    end
     if account.base == "" then
         return {head = "no accounts here",
                 line = "this deployment keeps none, so there is nobody to add"}
@@ -1984,18 +2016,27 @@ function M.tick(dt)
     -- empty, which is a sentence about the account rather than about the
     -- request that was never sent.
     local at = M.showing()
-    if at ~= was_at then
+    local arrived = at ~= was_at
+    if arrived then
         if at == "shop" then account.refresh_shop() end
         if at == "standings" then account.refresh_week() end
-        if at == "friends" then account.refresh_friends() end
         was_at = at
-        friends_asked = now_s()
     end
-    -- And again while it is up, because this is the one page whose answer goes
-    -- stale on its own: a friend joins a game or leaves one and the page is
-    -- wrong until it asks. The shelf and the week's table only change when the
-    -- pilot reading them does something.
-    if at == "friends" and now_s() - friends_asked > FRIENDS_EVERY then
+    -- Friends is asked for on two pages rather than one, and again while
+    -- either is up.
+    --
+    -- On its own page for the obvious reason. On the games page because the
+    -- row there says how many friends are in a game, and a row that only fills
+    -- in once you have opened the page it is advertising can never be the
+    -- reason you open it. It said "nobody yet" to a pilot with two friends
+    -- flying.
+    --
+    -- And again on a timer because this is the one page whose answer goes
+    -- stale on its own: a friend joins a game or leaves one, and nothing the
+    -- pilot reading it does makes that so. The shelf and the week's table only
+    -- move when the pilot moves them.
+    if (at == "friends" or at == "play")
+        and (arrived or now_s() - friends_asked > FRIENDS_EVERY) then
         friends_asked = now_s()
         account.refresh_friends()
     end

@@ -38,7 +38,9 @@ comes back to the row, and left and right on a row set that row's value.
 
 ```
 vectorwake
-├ play        the modes a directory is running, and how busy each one is
+├ play        the modes a directory is running, how busy each one is, and
+│             who is on: friends is a row here rather than a seventh tab, for
+│             the reason Discord is one
 ├ hangar      seven shapes, and the thirty points you spend on one
 ├ shop        what rivets buy: slots, never strength
 ├ standings   the week, resetting Monday
@@ -46,6 +48,7 @@ vectorwake
 └ settings    sound · music · frames · fullscreen · bindings · about
 
 in a match
+├ friends     the people you are flying with, and who else is on
 ├ settings    the same page, because sound and fullscreen are needed there
 └ leave       back to the front end
 ```

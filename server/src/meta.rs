@@ -1046,8 +1046,15 @@ const MAX_FRIENDS: i64 = 100;
 /// - `friends`, where both directions exist, with where each one is flying.
 /// - `asked`, where they have added you and you have not added back. The
 ///   only inbox this system has, and it holds names and nothing else.
-/// - `here`, the pilots in the room you are in who are on neither list, so
-///   the page you make a friend on is the one you are already reading.
+/// - `waiting`, where you have added them and they have not added back. It is
+///   the other half of the same edge and it is here because a press with no
+///   visible consequence reads as a press that did nothing: adding somebody
+///   took their name off the room list and put it nowhere.
+/// - `here`, the pilots in the room you are in who are on none of the above,
+///   so the page you make a friend on is the one you are already reading.
+///
+/// Every edge has exactly one home, which is what lets the client draw four
+/// sections without deciding anything.
 ///
 /// Presence is a join against `active_rated_sessions`, which an arena keeps
 /// honest because a rated seat is exclusive. Watchers hold no such row, and
@@ -1088,7 +1095,7 @@ async fn friends_page(db: &Client, account: i64) -> Result<serde_json::Value, St
         .collect();
 
     // Who is waiting on you. Their direction exists and yours does not.
-    let waiting = db
+    let inbound = db
         .query(
             "select f.account, n.call_sign
                from friends f
@@ -1102,7 +1109,32 @@ async fn friends_page(db: &Client, account: i64) -> Result<serde_json::Value, St
         )
         .await
         .map_err(|e| format!("cannot read who is waiting: {e}"))?;
-    let asked: Vec<serde_json::Value> = waiting
+    let asked: Vec<serde_json::Value> = inbound
+        .iter()
+        .map(|r| {
+            serde_json::json!({
+                "account": r.get::<_, i64>(0),
+                "name": r.get::<_, Option<String>>(1).unwrap_or_default(),
+            })
+        })
+        .collect();
+
+    // And who you are waiting on, which is the same edge from the other end.
+    let outbound = db
+        .query(
+            "select f.friend, n.call_sign
+               from friends f
+               left join names n on n.account = f.friend
+              where f.account = $1
+                and not exists (select 1 from friends b
+                                 where b.account = f.friend and b.friend = $1)
+              order by f.made
+              limit $2",
+            &[&account, &MAX_FRIENDS],
+        )
+        .await
+        .map_err(|e| format!("cannot read who you are waiting on: {e}"))?;
+    let waiting: Vec<serde_json::Value> = outbound
         .iter()
         .map(|r| {
             serde_json::json!({
@@ -1156,6 +1188,7 @@ async fn friends_page(db: &Client, account: i64) -> Result<serde_json::Value, St
     Ok(serde_json::json!({
         "friends": friends,
         "asked": asked,
+        "waiting": waiting,
         "here": here,
     }))
 }

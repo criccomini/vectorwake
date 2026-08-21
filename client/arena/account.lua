@@ -44,12 +44,15 @@ M.kits = {}
 M.shelf = nil
 -- The week's table, as the meta-layer publishes it. Asked for the same way.
 M.week = nil
--- The friends page's three lists: friends with where they are flying, whoever
--- has added this pilot and is waiting, and whoever is in the room right now
--- and is on neither list. `have_friends` separates "waiting for an answer"
+-- The friends page's four lists: friends with where they are flying, whoever
+-- has added this pilot and is waiting on them, whoever this pilot has added
+-- and is waiting on, and whoever is in the room right now and is on none of
+-- the others. Every edge has exactly one home, so the page draws four sections
+-- without deciding anything. `have_friends` separates "waiting for an answer"
 -- from "nobody yet", which are the same empty table and different sentences.
 M.friends = {}
 M.asked = {}
+M.waiting = {}
 M.here = {}
 M.have_friends = false
 -- Whether the meta-layer has ever answered. It separates "waiting" from
@@ -387,6 +390,7 @@ local function take_friends(r)
     if type(r) ~= "table" then return false end
     M.friends = type(r.friends) == "table" and r.friends or {}
     M.asked = type(r.asked) == "table" and r.asked or {}
+    M.waiting = type(r.waiting) == "table" and r.waiting or {}
     M.here = type(r.here) == "table" and r.here or {}
     M.have_friends = true
     return true
@@ -423,7 +427,8 @@ function M.logout()
     M.token = ""
     M.account = 0
     M.claimed = false
-    M.friends, M.asked, M.here, M.have_friends = {}, {}, {}, false
+    M.friends, M.asked, M.here = {}, {}, {}
+    M.waiting, M.have_friends = {}, false
     M.name = ""
     M.rivets = 0
     M.entitlements = {}

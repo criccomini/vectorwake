@@ -34,7 +34,7 @@ local account = {
     -- The friends page's three lists and the one call the menu makes to fill
     -- them. Empty is a pilot with nobody yet, which is what most of this file
     -- is testing around.
-    friends = {}, asked = {}, here = {}, have_friends = true,
+    friends = {}, asked = {}, waiting = {}, here = {}, have_friends = true,
     asked_friends = 0,
     friended = nil,
 }
@@ -1253,6 +1253,7 @@ do
     }
     account.asked = {{account = 13, name = "Kestrel 9"}}
     account.here = {{account = 14, name = "Vantage 2"}}
+    account.waiting = {{account = 15, name = "Marl 30"}}
     account.have_friends = true
     dir.instances = {abc = {zone = "melee", address = "ws://a", wt = ""}}
 
@@ -1265,11 +1266,16 @@ do
         said[#said + 1] = r.label .. "/" .. tostring(r.detail)
             .. "/" .. tostring(r.sect)
     end
-    check("the page is the three lists in one", #v.rows == 4,
+    check("the page is the four lists in one", #v.rows == 5,
           table.concat(said, " "))
     check("a friend in a game says which one",
           v.rows[1].label == "Rill 121" and v.rows[1].detail == "melee"
           and v.rows[1].sect == "friends", said[1])
+    -- One head per run. The list renderer draws a head wherever it finds a
+    -- `sect` and dedupes nothing, so a section label on every row is that
+    -- label over every row.
+    check("and the head belongs to the row that opens the run",
+          v.rows[2].sect == nil, said[2])
     check("and one who is not says so", v.rows[2].detail == "not on", said[2])
     check("somebody waiting on you is their own section",
           v.rows[3].sect == "waiting on you" and v.rows[3].detail == "add back",
@@ -1277,6 +1283,17 @@ do
     check("and so is the room you are in",
           v.rows[4].sect == "in this game" and v.rows[4].detail == "add",
           said[4])
+    -- Adding takes a name off the room list, and this is where it goes. A
+    -- press whose whole visible effect is a row disappearing reads as a press
+    -- that did nothing.
+    check("somebody you added and are waiting on has a home",
+          v.rows[5].sect == "you added"
+          and v.rows[5].detail == "waiting on them",
+          said[5])
+    -- And the card that says there is nobody stays down while there is
+    -- somebody: a page saying two things at once has one of them wrong.
+    check("with no card saying the page is empty", v.empty == nil,
+          tostring(v.empty and v.empty.head))
 
     -- Adding is one press and reaches the account layer as an add.
     menu.sel.friends = 4
@@ -1328,7 +1345,19 @@ do
           menu.ask and menu.ask.keys[1].label or "no card")
     menu.ask = nil
 
+    -- The games page asks for this too, because the row on it counts friends
+    -- in a game and a count that only arrives once you have opened the page it
+    -- is advertising cannot be the reason you open it.
+    account.asked_friends = 0
+    menu.stack = {"root"}
+    menu.sel = {root = 1}
+    menu.show("play")
+    menu.tick(0.1)
+    check("the games page asks who is on", account.asked_friends > 0,
+          tostring(account.asked_friends))
+
     account.friends, account.asked, account.here = {}, {}, {}
+    account.waiting = {}
     menu.home, menu.stack, menu.sel = was_home, was_stack, was_sel
 end
 

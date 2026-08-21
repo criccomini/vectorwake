@@ -341,21 +341,25 @@ whoever is willing to spend a fifth of their kit on mines is the miner.
 The one genuinely new system here, and the one most likely to move the number
 this document opens with. People stay for people.
 
-`decision 30` deferred friends and parties "until somebody wants them".
-Somebody does.
+Built. [friends.md](friends.md) is the design and the reasoning; the short
+version is that version one is the three things asked for here and nothing
+else: add somebody mutually, see which friends are on and what they are in,
+and join them.
 
-Version one is three things: add somebody mutually, see which friends are
-online and what they are in, and join their next match with one press. Friend
-edges live at the meta-layer beside accounts; presence comes from the
-directory, which already knows every live room; the invite reuses the
-invitations-instead-of-passwords pattern teams already have.
+Two things landed differently from the sketch this section used to carry.
+Presence comes from the meta-layer rather than the directory, because the
+meta-layer already holds a row per flying pilot: an arena claims one to make a
+rated seat exclusive, so the presence table exists and is kept honest by the
+thing that most wants it right. And there is no invite, because there is
+nothing to accept: one row per direction, and the friendship is the pair.
 
 No chat, per `decision 28`. Discord carries the talking, per
-`community.md`, and a structured invite keeps both the no-chat property and
-the moderation surface small.
+`community.md`, and with nothing to say to anybody there is nearly nothing to
+moderate: what one stranger can do to another is appear on a list.
 
-The part that is real work is seating a party together on one side of a
-filling match, which is matchmaking logic that does not exist yet.
+The part that is still real work is seating a party together on one side of a
+filling match, which is matchmaking logic that does not exist yet. Friends
+gets two people into the same room without touching it.
 
 ## Dropping mid-match
 

@@ -1079,7 +1079,9 @@ Nakama for everything durable outside the arena tick. That list has been
 shrinking ever since: the directory left with
 [decision 25](#25-an-arena-server-chooses-which-zone-it-serves), chat with
 [decision 28](#28-no-chat), and friends, parties and tournaments are wanted by
-nobody yet. What remains that we need now is identity, and our identity has
+nobody yet. (Friends are wanted now and are built, on this meta-layer rather
+than on anybody's: see [design/friends.md](../design/friends.md). Parties and
+tournaments still are not.) What remains that we need now is identity, and our identity has
 shapes Nakama does not: accounts minted silently on first contact, bot
 accounts with owners, a human, bot, or unknown label derived from credential
 shape, session tokens carrying rating claims that arenas verify offline, and a
