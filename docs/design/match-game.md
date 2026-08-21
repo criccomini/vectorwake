@@ -395,14 +395,14 @@ with a number later.
 
 ## The menu, and where the screens live
 
-The home experience stops being a menu. Hangar, shop and standings are
+The home experience stops being a menu. Ship, upgrades and standings are
 screens with panes and grids, and the menu tree was deliberately one narrow
 column that [menu.md](menu.md) says "falls apart at 390 points wide". So
 there are two surfaces now rather than one:
 
-- **Six tabs** at the front end, which is where you are between matches and
-  where there is time to read: play, hangar, shop, standings, pilot,
-  settings.
+- **Five tabs** at the front end, which is where you are between matches and
+  where there is time to read: play, ship, upgrades, standings, settings.
+  Your call sign at the far end of the row is the way into your account.
 - **Two tabs in a match**: settings and leave. Same row in the same place,
   carrying what you can act on from a cockpit.
 
@@ -449,7 +449,7 @@ which is the same reason the interface stays up today.
 
 None of this needs a new mechanism. `menu.home` already builds rows from the
 moment rather than declaring them, which is how the `leave` row appears only
-when there is something to leave. Hangar, shop and standings are the same
+when there is something to leave. Ship, upgrades and standings are the same
 conditional in the other direction.
 
 ### It stays navigable from a keyboard, a d-pad and a thumb
@@ -464,8 +464,8 @@ than [menu.md](menu.md)'s five inputs:
   those keys already mean everywhere else in the game.
 - **Escape** closes, or steps back to the tab row first.
 
-Every screen at the front end is the same shape, so the hangar, the shop and
-the standings inherit this rather than each inventing a focus order. The one
+Every screen at the front end is the same shape, so the ship page, upgrades
+and the standings inherit this rather than each inventing a focus order. The one
 thing it costs is that a page needs a first row and a last row that are
 obvious, which is a layout constraint worth having anyway.
 

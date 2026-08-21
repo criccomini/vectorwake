@@ -164,9 +164,10 @@ check("the lit stop with nothing behind the panel stays put",
       menu.open and menu.stack[2] == "hangar", table.concat(menu.stack, "/"))
 
 -- In a match the tab row is a different row: friends, settings and leave,
--- which is everything a pilot can act on from a cockpit. Nothing about a shop
--- or a hangar is on it, because a hull is locked for the match and a three
--- minute match is short enough that browsing one costs a real fraction of it.
+-- which is everything a pilot can act on from a cockpit. Nothing about an
+-- upgrade or a hull is on it, because a hull is locked for the match and a
+-- three minute match is short enough that browsing one costs a real fraction
+-- of it.
 --
 -- Friends is on it because the roster is here: the people to add are the
 -- people you are flying with, and the menu opens over the card at the end of

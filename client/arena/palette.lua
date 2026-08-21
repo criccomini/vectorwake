@@ -129,7 +129,11 @@ M.MODS = {
     {name = "prox",     short = "PRX", long = "proximity detonation"},
     {name = "shrapnel", short = "SHR"},
     {name = "freeze",   short = "FRZ"},
-    {name = "repel",    short = "RPL"},
+    -- Push, not repel. The core calls this one `SIM_MOD_PUSH` and the
+    -- meta-layer prices it as "push"; only this table said repel, which is
+    -- also the name of a charge, so a bomb wearing it and the charge in the
+    -- next group along both read RPL.
+    {name = "push",     short = "PSH", long = "a shove welded onto a bomb"},
     -- Barrels: more rounds a pull, abreast rather than fanned. This was
     -- DoubleBarrel, a flag on one hull, and it is an add-on so that it can be
     -- bought. Last, because the core put it last, and this table is read by

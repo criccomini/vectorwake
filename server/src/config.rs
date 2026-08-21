@@ -217,7 +217,7 @@ pub struct ShipConfig {
     /// different ships depending on what you are flying, and every pilot
     /// dealing the same thirty is the promise the match game rests on. What a
     /// hull is now is the shape it presents to a bullet, which is the one
-    /// advantage no shop could sell. See docs/design/ships.md.
+    /// advantage nobody could buy. See docs/design/ships.md.
     pub fore: Option<i32>,
     pub aft: Option<i32>,
     pub width: Option<i32>,
@@ -236,7 +236,7 @@ pub struct ShipConfig {
 ///
 /// One section for the zone, where this was a row per hull. Seven rows meant
 /// an upgrade could be bought and then refused by the hull somebody wanted to
-/// fly it on, and it meant the shop's shelf was whatever the roster happened
+/// fly it on, and it meant the shelf was whatever the roster happened
 /// to allow rather than whatever the game has. Anything left out keeps the
 /// baseline's, which is the union of what the seven rows used to allow.
 #[derive(Deserialize, Clone, Debug, Default)]

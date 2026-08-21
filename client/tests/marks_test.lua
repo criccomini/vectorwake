@@ -210,7 +210,8 @@ local function near(list, cx, cy, r)
 end
 
 local RAIL = {}
-for i, n in ipairs({"play", "hangar", "shop", "standings", "pilot", "settings"}) do
+for i, n in ipairs({"play", "ship", "upgrades", "standings", "pilot",
+                    "settings"}) do
     RAIL[i] = {label = n, icon = n, index = i}
 end
 

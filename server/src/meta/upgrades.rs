@@ -1,7 +1,7 @@
 //! What rivets buy, and what each thing costs.
 //!
 //! Slots, and looks. Never strength. Everything in a kit trades against the
-//! same thirty points, so what the shop sells is *which* upgrades a pilot may
+//! same thirty points, so what is sold is *which* upgrades a pilot may
 //! slot rather than how many, and the drill harness is the referee: anything
 //! that wins more than 55% of matched bouts against the bare kit, on at least
 //! two hulls, goes back to the bench. See docs/design/match-game.md.
@@ -9,7 +9,7 @@
 //! Every slot in the game is on this shelf, which used to be untrue and was
 //! the reason the shelf got rebuilt. Four traits sat on the roster instead of
 //! in the kit space -- a second barrel, a third bomb rung, six mines, a
-//! deeper rung of shrapnel -- and a shop cannot sell a thing that exists on
+//! deeper rung of shrapnel, and nothing can be sold that exists on
 //! one hull. They are slots now, so they are for sale, and the ceiling below
 //! is the arena's rather than any hull's: nothing here can be bought and then
 //! refused by the ship somebody wanted to fly it on.
@@ -39,7 +39,7 @@ pub(super) fn next_step(slot: usize, owned: u8) -> Option<(u8, u32)> {
         return None;
     }
 
-    // The stats, whose last two steps are the shop's. Six is exactly the
+    // The stats, whose last two steps are bought. Six is exactly the
     // budget over five of them, so this is buying the right to concentrate
     // rather than more to spend: five stats at eight is forty against a
     // budget of thirty, and the ceiling is unreachable by construction.
@@ -57,7 +57,7 @@ pub(super) fn next_step(slot: usize, owned: u8) -> Option<(u8, u32)> {
     // is dealt, and charge the same for the first step of either.
     let bought = owned.saturating_sub(sim::World::base_entitlements()[slot]) as u32;
 
-    // A rung of a trigger's ladder. Everything above the first is the shop's,
+    // A rung of a trigger's ladder. Everything above the first is bought,
     // and the ceiling is how far the arena's own ladder climbs, so a rung
     // sold is a rung something actually fires.
     if slot < sim::UP_COUNT + sim::TRIG_COUNT {
@@ -140,7 +140,7 @@ pub(super) fn note_for(slot: usize, owned: u8, next: u8) -> Option<String> {
 mod tests {
     use super::*;
 
-    /// Every ladder ends. A shop that always had something to sell in a slot
+    /// Every ladder ends. A shelf that always had something to sell in a slot
     /// would let a pilot buy a ceiling the core cannot hold, and the money
     /// would go somewhere the game does not.
     #[test]
@@ -202,7 +202,7 @@ mod tests {
     }
 
     /// Barrels are for sale, which is the whole reason the slot space was
-    /// flattened. This was DoubleBarrel, a flag one hull carried and no shop
+    /// flattened. This was DoubleBarrel, a flag one hull carried and nothing
     /// could ever offer.
     #[test]
     fn barrels_are_on_the_shelf() {
@@ -270,7 +270,7 @@ mod tests {
         }
     }
 
-    /// Nothing on the shelf is dead on arrival: every step this shop will
+    /// Nothing on the shelf is dead on arrival: every step this page will
     /// sell is a step the game's own ceiling can hold. That is the property
     /// the hull rows made impossible, and it is why they went.
     #[test]

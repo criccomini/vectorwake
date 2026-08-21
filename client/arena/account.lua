@@ -26,17 +26,18 @@ M.claimed = false
 M.note = ""
 -- What this pilot has banked, and what their account may slot. Both come back
 -- with a session and neither is asserted by this client: the arena checks a
--- kit against the entitlements the token carries, and the shop debits the
--- wallet at the meta-layer. These two copies are what the hangar and the shop
--- draw, so a client that edited them would fool only its own screen.
+-- kit against the entitlements the token carries, and a purchase debits the
+-- wallet at the meta-layer. These two copies are what the ship page and the
+-- upgrades page draw, so a client that edited them would fool only its own
+-- screen.
 M.rivets = 0
 M.entitlements = {}
 -- The kit this pilot has chosen, per hull, by the hull's own name. A hull with
--- no entry has never been taken to the hangar, and the arena deals it a
+-- no entry has never been taken to the ship page, and the arena deals it a
 -- starter kit.
 M.kits = {}
 -- What is left to buy, priced, as the meta-layer lists it: one entry a slot
--- with a step on it, `{slot, label, price, note}`. Asked for when the shop is
+-- with a step on it, `{slot, label, price, note}`. Asked for when the page is
 -- opened rather than carried by every session, because it is a page nobody is
 -- looking at most of the time.
 -- Nothing yet, which is not the same as nothing left to buy: the shelf is
@@ -365,9 +366,9 @@ end
 -- What is on the shelf, and the week's table. Both are pages somebody is
 -- looking at rather than facts a session needs, so they are asked for when
 -- the page opens and left alone otherwise.
-function M.refresh_shop()
+function M.refresh_upgrades()
     if M.base == "" then return end
-    post("/v1/shop", {secret = secret}, function(r)
+    post("/v1/upgrades", {secret = secret}, function(r)
         if r and type(r.shelf) == "table" then M.shelf = r.shelf end
     end)
 end

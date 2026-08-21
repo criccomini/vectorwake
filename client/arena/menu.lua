@@ -472,8 +472,8 @@ end
 --
 -- Two ceilings, where there were three. The hull used to carry one, and it is
 -- the one that went: a roster that said which add-ons a hull would hold was a
--- roster that could refuse an upgrade somebody had bought, and the shop could
--- never sell what only one hull had. So a hull is a shape now and the tech
+-- roster that could refuse an upgrade somebody had bought, and nothing could
+-- be sold that only one hull had. So a hull is a shape now and the tech
 -- tree is the arena's. See docs/design/ships.md.
 --
 -- The arena checks the same thing when a kit arrives, against the entitlements
@@ -602,7 +602,7 @@ local function kit_rows(class)
     if not M.kit or M.kit_class ~= class then M.open_kit(class) end
     local ceiling = kit_ceiling()
     -- What the arena alone would allow, which is a longer ladder than the
-    -- account's wherever the shop still holds a step. Drawn behind what you
+    -- account's wherever the shelf still holds a step. Drawn behind what you
     -- own, so a page says "there is more of this and it is not yours" without
     -- a word about it.
     local core = _G.sim
@@ -658,8 +658,8 @@ local function kit_rows(class)
                 group = s.group, short = s.short, tint_col = s.tint,
                 trigger = s.trigger, note = s.note,
                 -- What the account owns here, against what the arena would
-                -- take. The difference is the part of the ladder the shop is
-                -- still holding, and the page draws it as a step that is
+                -- take. The difference is the part of the ladder that is
+                -- still for sale, and the page draws it as a step that is
                 -- there and not yours.
                 owned = max, arena_max = arena_ceiling[s.slot + 1] or max,
             }
@@ -674,7 +674,7 @@ end
 -- the same pair the hangar reads. What a step costs is the meta-layer's
 -- answer and arrives with the shelf; until it has answered there is nothing
 -- to draw and the page says so rather than inventing a price.
-local function shop_rows()
+local function upgrade_rows()
     local rows = {}
     -- Which part of the kit space a slot belongs to, so the shelf reads as
     -- three short lists rather than as one long one. The meta-layer sends the
@@ -719,14 +719,14 @@ local function shop_rows()
             icon = icon_of(item.slot),
             note = item.note,
             -- Back a shade rather than hidden when the wallet is short: a
-            -- shop that shows only what you can afford is a shop that never
+            -- page that shows only what you can afford is a page that never
             -- tells you what you are saving for. `full` is the shade and
             -- nothing else; the price stays on the row, which is the whole
             -- point of leaving it there.
             full = not afford,
             -- Pressable whatever the wallet says. It used to carry an action
             -- only when it was affordable, and a row with no action publishes
-            -- no hit box, so a pilot with no rivets met a shop where the mouse
+            -- no hit box, so a pilot with no rivets met a page where the mouse
             -- did nothing at all: no hover, no click, no reason given. The
             -- keyboard still walked it, which is how it survived a playtest.
             --
@@ -738,17 +738,18 @@ local function shop_rows()
     return rows
 end
 
-local function shop_empty()
+local function upgrades_empty()
     if account.shelf and #account.shelf > 0 then return nil end
     if account.base == "" then
-        return {head = "no shop here",
+        return {head = "nothing to upgrade here",
                 line = "this deployment keeps no accounts"}
     end
     -- Asked and not yet answered. It used to say the shelf was empty, which
     -- is a sentence about the account: a new pilot owns almost nothing and
     -- was told they owned everything, because the request was still out.
     if not account.shelf then
-        return {head = "asking the shop", line = "what is on sale is coming"}
+        return {head = "asking for the shelf",
+                line = "what is on sale is coming"}
     end
     return {head = "nothing left to buy",
             line = "you own every slot the roster has"}
@@ -1081,14 +1082,14 @@ local NODES = {
     -- The tab row, and the whole of the front end's shape.
     --
     -- Six of them between matches, where there is time to read: play, hangar,
-    -- shop, standings, pilot, settings. Two in a match: settings and leave.
+    -- upgrades, standings, pilot, settings. Two in a match: settings and leave.
     -- Same row in the same place, wearing the same chrome; what differs is
     -- which tabs are on it, not how any of it looks or works, so a player
     -- learns one screen and meets it in both places.
     --
     -- Nothing you cannot act on right now is on that row while you are
     -- flying. A three minute match is short enough that a menu deep enough to
-    -- browse a shop in costs a real fraction of it, and nothing pauses: you
+    -- browse a shelf in costs a real fraction of it, and nothing pauses: you
     -- can be shot while you read. See docs/design/match-game.md.
     --
     -- It stays a tab row rather than a bare leave button for one reason that
@@ -1141,9 +1142,9 @@ local NODES = {
                  return HULLS[M.class + 1][1]
              end,
              go = "hangar"},
-            {label = "shop", icon = "shop",
+            {label = "upgrades", icon = "upgrades",
              detail = function() return (account.rivets or 0) .. " rivets" end,
-             go = "shop"},
+             go = "upgrades"},
             {label = "standings", icon = "standings", detail = "this week",
              go = "standings"},
             -- No pilot stop. The call sign is already written at the far end
@@ -1194,8 +1195,8 @@ local NODES = {
     -- a purchase says what the slot now holds and what is left in the wallet.
     -- No heading. It said what the wallet holds, which the corner of the tab
     -- row says on every page, and then explained what rivets are to somebody
-    -- who has opened the shop to spend them.
-    shop = {rows = shop_rows, empty = shop_empty},
+    -- who has opened the page to spend them.
+    upgrades = {rows = upgrade_rows, empty = upgrades_empty},
 
     -- The week: matches won, kills, and the best run, resetting Monday. The
     -- short ladder beside the rating, which answers "how good am I" on a
@@ -2134,14 +2135,14 @@ function M.tick(dt)
     -- the fleet nothing.
     --
     -- "On screen" rather than "entered". At the root the stage previews the
-    -- tab under the cursor, so a player who arrows onto the shop reads the
+    -- tab under the cursor, so a player who arrows onto upgrades reads the
     -- whole page without the stack ever naming it. It said the shelf was
     -- empty, which is a sentence about the account rather than about the
     -- request that was never sent.
     local at = M.showing()
     local arrived = at ~= was_at
     if arrived then
-        if at == "shop" then account.refresh_shop() end
+        if at == "upgrades" then account.refresh_upgrades() end
         if at == "standings" then account.refresh_week() end
         was_at = at
     end
@@ -2248,7 +2249,7 @@ function M.view()
     -- page carries both, and which of them the arrows are in.
     -- The shelf is a grid of cards rather than a list of rows, and the page
     -- says so rather than the drawing guessing from what a row carries.
-    if M.at() == "shop" and #rows > 0 then out.shelf = true end
+    if M.at() == "upgrades" and #rows > 0 then out.shelf = true end
     -- The week is a table, and the page draws it as one.
     if M.at() == "standings" and #rows > 0 then out.table = true end
     -- What pressing play would do, beside the list of things to press it on.
@@ -2333,7 +2334,7 @@ function M.view()
             end
             -- A preview of a page is that page, not a different drawing of
             -- the same rows: the hangar previews as a roster beside a kit and
-            -- the shop as its shelf, because what the tab under the cursor
+            -- upgrades as its shelf, because what the tab under the cursor
             -- leads to is the thing worth showing.
             if pick.go == "hangar" then
                 out.hulls = {}
@@ -2342,7 +2343,7 @@ function M.view()
                 end
                 out.hull_sel = M.hull_index()
                 out.kit_preview = true
-            elseif pick.go == "shop" then
+            elseif pick.go == "upgrades" then
                 out.shelf = #out.rows > 0
             elseif pick.go == "standings" then
                 out.table = #out.rows > 0

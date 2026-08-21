@@ -1848,7 +1848,7 @@ local gl_burst = gl_spokes(8)
 -- rivet seen face on, struck through twice.
 --
 -- Two bars rather than one, and overhanging on both sides. One bar through a
--- circle is a "no entry" sign, which is a poor thing to price a shop in; two
+-- circle is a "no entry" sign, which is a poor thing to price a shelf in; two
 -- is what the yen, the euro and the won all do, and the overhang is what keeps
 -- the strokes visible where the circle is only a few pixels across.
 function pages.rivet_mark(cx, cy, r, col)
@@ -1922,8 +1922,8 @@ end
 -- What a shelf card is a picture of.
 --
 -- The arena's own drawing wherever there is one, fed a hull wearing exactly
--- the thing being sold: a shop where the picture of an add-on is the round it
--- makes is a shop where you can recognize what you bought when it comes past
+-- the thing being sold: a shelf where the picture of an add-on is the round it
+-- makes is a shelf where you can recognize what you bought when it comes past
 -- you. Stats have no mark in the arena, so they wear the ladder they are drawn
 -- as on the ship page, with the step this card sells still empty at the end
 -- of it.
@@ -3418,7 +3418,7 @@ function M.hud(o)
 end
 
 
--- --- the shop --------------------------------------------------------------
+-- --- upgrades ---------------------------------------------------------------
 
 -- What rivets buy, as a grid of cards rather than a list of rows.
 --
@@ -3429,7 +3429,7 @@ end
 --
 -- The wallet stands beside the grid rather than in it, because it is the one
 -- number every price on the page is measured against.
-function pages.shop(v, x, y, w, h, focused)
+function pages.upgrades(v, x, y, w, h, focused)
     -- No column down the side. It held a balance the top bar already carries
     -- and two sentences about what rivets are for, which is a page explaining
     -- itself to somebody who is looking at it for the tenth time. What is left
@@ -3472,7 +3472,7 @@ function pages.shop(v, x, y, w, h, focused)
         local cx = gx + col * (cwid + 11 * F.scale)
         local hot = (r.index == v.sel)
         -- `full` is the wallet being short, which is a card you can read and
-        -- not press. It keeps its price, because a shop that shows only what
+        -- not press. It keeps its price, because a page that shows only what
         -- you can afford never says what you are saving for.
         local held = r.full
         rect(cx, cy, cwid, chgt, pal.rgb(0x05070c, 0.55))
@@ -3483,7 +3483,7 @@ function pages.shop(v, x, y, w, h, focused)
                  pal.a(pal.FRIEND, focused and 0.16 or 0.08))
         end
         -- The thing itself, at the far end of the card. A shelf of names is
-        -- a price list; a shelf of pictures is a shop, and every one of these
+        -- a price list; a shelf of pictures is a shelf, and every one of these
         -- already has a drawing in the arena, so what you buy here is what
         -- comes past you out there.
         pages.shelf_icon(r.icon, cx + cwid - 30 * F.scale,
@@ -3494,7 +3494,7 @@ function pages.shop(v, x, y, w, h, focused)
         -- collided the moment a name ran long or the type grew: "Energy
         -- depth40 rivets" is two facts written over each other.
         --
-        -- It stays on a card the wallet cannot reach, back a shade. A shop
+        -- It stays on a card the wallet cannot reach, back a shade. A page
         -- that shows only what you can afford never says what you are saving
         -- for.
         pages.priced(r.detail or 0, cx + 14 * F.scale, cy + 36 * F.scale,
@@ -4034,8 +4034,8 @@ function pages.kit(v, x, y, w, h, focused)
         end
         -- A step the account does not own is drawn as locked wherever it
         -- falls, not only past the divider. The first six used to be drawn
-        -- straight off the arena's ladder, so a rung the shop is still
-        -- holding looked exactly like a rung you had left unspent: the gun
+        -- straight off the arena's ladder, so a rung still for sale looked
+        -- exactly like a rung you had left unspent: the gun
         -- offered a second step, took the press and refused it, and the page
         -- gave a player no way to tell that from a bug.
         local function rung(k)
@@ -4068,7 +4068,7 @@ function pages.kit(v, x, y, w, h, focused)
     end
 
     -- The stats: five ladders of six, and the two steps past six that the
-    -- shop sells, behind a divider so the page says which is which without a
+    -- shelf sells, behind a divider so the page says which is which without a
     -- word about it.
     rule("stats", "six a stat is the whole budget, the last two are bought")
     for _, r in ipairs(stats) do ladder(r) end
@@ -4082,7 +4082,7 @@ function pages.kit(v, x, y, w, h, focused)
         -- Both ladders here are one rung long for an account that has bought
         -- nothing, so this is the row that raises the question.
         rule("weapon level", "rung zero is what the trigger already fires; "
-                             .. "a dim step is one the shop still holds")
+                             .. "a dim step is one upgrades still holds")
         for _, r in ipairs(levels) do
             ladder(r, function(n) return "L" .. (n + 1) end)
         end
@@ -4769,16 +4769,17 @@ local function mark_ship(cx, cy, r, col, cls)
     thumb(cx, cy, cls or 0, col, r / 17)
 end
 
--- The shop, as the thing it charges in. A rivet is a disc with a shank, seen
--- from just off square on, and drawn small it is a ring with a bar under it.
+-- Upgrades, as the thing they charge in.
 --
 -- Not a cart, and not a bag of coins. Nothing in this game is bought with
 -- money and nothing is carried out of a shop: what changes hands is which
 -- slots a pilot may fill, and rivets are what pays for it.
-local function mark_shop(cx, cy, r, col)
-    F.layer:ring(cx, ry(cy - r * 0.22), r * 0.62, RAIL_PEN * F.scale, 20, col)
-    F.layer:seg(cx - r * 0.34, ry(cy + r * 0.62), cx + r * 0.34,
-                ry(cy + r * 0.62), RAIL_PEN * F.scale, pal.a(col, 0.75), true)
+--
+-- The currency mark itself, at the size a tab stop draws. This was a second
+-- rivet, a ring with a bar under it, drawn before the mark on the prices
+-- existed: two drawings of one thing that disagreed about what it looks like.
+local function mark_upgrades(cx, cy, r, col)
+    pages.rivet_mark(cx, cy, r * 0.86, col)
 end
 
 -- The week's table, as three columns of different heights. The tallest is not
@@ -4797,7 +4798,7 @@ end
 local MARKS = {zones = mark_zones, pilot = mark_pilot, team = mark_team,
                settings = mark_settings, controls = mark_controls,
                about = mark_about, discord = mark_discord, leave = mark_leave,
-               shop = mark_shop, standings = mark_standings}
+               upgrades = mark_upgrades, standings = mark_standings}
 
 local function draw_mark(kind, cx, cy, r, col, cls)
     if kind == "ship" then return mark_ship(cx, cy, r, col, cls) end
@@ -4933,7 +4934,7 @@ local function stage_row(x, y, w, h, r, hot)
     -- to, is not reading them.
     -- A sentence of its own needs two lines of room. A list long enough to
     -- squeeze its rows has neither, and drew the note over the label rather
-    -- than dropping it: the shop's descriptions landed on top of the names
+    -- than dropping it: the shelf's descriptions landed on top of the names
     -- they described.
     local note = (h >= 44 * F.scale) and r.note or nil
     -- A row carrying a sentence is a row about a thing you are choosing
@@ -5599,7 +5600,7 @@ function M.menu(v)
     --
     -- The rail was a column down the left for a long time, with the page
     -- beside it. That was the right shape while the pages were lists of a few
-    -- rows each; the hangar and the shop are grids, and a grid in the two
+    -- rows each; the ship page and upgrades are grids, and a grid in the two
     -- thirds of a window left over from a rail is a grid with no room in it.
     -- `vertical` stays as a name because the drawing below still asks, and it
     -- is false everywhere now.
@@ -5785,7 +5786,7 @@ function M.menu(v)
     local words = not narrow
     local pitch = vertical and (rh / n) or (rw / n)
     -- Where each word starts, for the row of words. Measured rather than
-    -- divided: "standings" and "shop" are not the same width and a row that
+    -- divided: "standings" and "upgrades" are not the same width and a row that
     -- pretended otherwise would leave a hole beside the short ones.
     local wx, ww = {}, {}
     if words then
@@ -6054,7 +6055,7 @@ function M.menu(v)
         -- up: two different numbers under one name in one function.
         local head_y = top + hh * 0.56
         -- A hull where the page is about one, and nothing where it is not:
-        -- the shop's heading is a wallet and has no ship in it.
+        -- the upgrades heading is a wallet and has no ship in it.
         local nx = tx + 4 * F.scale
         if v.head.hull then
             thumb(tx + 16 * F.scale, head_y - 5 * F.scale, v.head.hull,
@@ -6124,7 +6125,7 @@ function M.menu(v)
                   panel_w - 14 * F.scale - GUTTER * F.scale, room, focused)
     elseif v.shelf then
         -- The shelf, as a grid of cards with the wallet beside it.
-        pages.shop(v, panel_x + GUTTER * F.scale, top,
+        pages.upgrades(v, panel_x + GUTTER * F.scale, top,
                   panel_w - 14 * F.scale - GUTTER * F.scale, room, focused)
     elseif v.rows and #v.rows > 0 and v.rows[1].hull then
         ship_grid(tx, top, avail, room, v, focused)

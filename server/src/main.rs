@@ -3066,7 +3066,7 @@ mod tests {
     }
 
     /// A kit is checked twice: against the arena's row, which is what this zone
-    /// has, and against what the account owns, which is what the shop has sold.
+    /// has, and against what the account owns, which is what has been bought.
     /// The smaller of the two wins, and a kit outside either is refused whole.
     ///
     /// Twice, not three times. The hull used to be one of the ceilings.
@@ -3113,10 +3113,7 @@ mod tests {
         if let Some(s) = a.names.get_mut(&ship) {
             s.entitlements[sim::slot_charge(sim::CHARGE_MINE) as usize] = 255;
         }
-        assert!(
-            a.set_kit(ship, &mined),
-            "what the shop sold, the hull takes"
-        );
+        assert!(a.set_kit(ship, &mined), "what was bought, the hull takes");
     }
 
     /// A barrel, bought and flown, on any hull in the roster.

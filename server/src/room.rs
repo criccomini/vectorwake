@@ -1006,7 +1006,7 @@ impl Room {
     ///
     /// The kit space is flat -- five stats, two trigger levels, twelve
     /// add-ons, four charges -- and every slot in it costs one. The names are
-    /// the ones the shop and the hangar show: a stat by itself, a level and an
+    /// the ones the upgrades and ship pages show: a stat by itself, a level and an
     /// add-on prefixed by the trigger they belong to, and a charge by what it
     /// is rather than by which of the four slots a zone parked it in.
     pub(crate) fn slot_named(name: &str) -> Option<u8> {
@@ -1664,7 +1664,7 @@ impl Room {
     ///
     /// Two ceilings rather than one because they answer different questions.
     /// The arena's row is what this zone has, and it moves when a zone is
-    /// retuned; the account's is what the shop has sold, and it moves when
+    /// retuned; the account's is what has been bought, and it moves when
     /// somebody spends. A kit legal under both is a kit the core will deal.
     ///
     /// The hull is not one of the two. It used to be, and a pilot could buy

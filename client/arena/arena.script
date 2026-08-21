@@ -2057,14 +2057,14 @@ function apply_menu(self, act)
     end
     -- One step in one slot, bought. The meta-layer prices it, checks the
     -- wallet and raises the ceiling; this asks and reports what came back, so
-    -- a purchase a player cannot afford is a line at the foot of the shop
+    -- a purchase a player cannot afford is a line at the foot of the page
     -- rather than a row that quietly did nothing.
     if act == "buy" then
         local slot = menu.pending
         account.buy(slot, function(ok, why)
             if ok then
                 menu.note = nil
-                account.refresh_shop()
+                account.refresh_upgrades()
                 sfx.ui("ui_go")
             else
                 menu.note = why or "cannot buy that"

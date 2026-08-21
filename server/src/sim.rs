@@ -519,7 +519,7 @@ pub const CHARGE_MAX: u8 = 15;
 /// The flat kit space: a stat, a rung, an add-on or a charge, all one shape.
 pub const SLOT_COUNT: usize = UP_COUNT + TRIG_COUNT + TRIG_COUNT * MOD_COUNT + MAX_CHARGES;
 /// Steps a stat may climb, and what a kit may spend in total. Six over five
-/// stats is exactly the budget; the last two of each are the shop's, and five
+/// stats is exactly the budget; the last two of each are bought, and five
 /// at eight is forty against thirty, so the budget always binds.
 pub const UP_STEPS: u8 = 8;
 pub const UP_STEPS_BASE: u8 = 6;
@@ -535,7 +535,7 @@ pub const MOD_SHRAPNEL: usize = 3;
 pub const MOD_FREEZE: usize = 4;
 pub const MOD_PUSH: usize = 5;
 /// More barrels, abreast rather than fanned. This was DoubleBarrel, a flag on
-/// one hull; it is an add-on so that the shop can sell it.
+/// one hull; it is an add-on so that it can be bought.
 pub const MOD_BARREL: usize = 6;
 
 // Where a thing sits in the flat kit space, mirroring the SIM_SLOT_ macros.
@@ -979,12 +979,12 @@ impl World {
     /// What the game itself has, before any zone tunes it: the baseline's own
     /// ceiling over the flat slot space.
     ///
-    /// The shop needs this and has no arena to ask. It sells entitlements,
+    /// Upgrades need this and have no arena to ask. What is sold is entitlements,
     /// which are an account's property rather than a room's, so the question
     /// it can answer is "does this game have such a slot at all" rather than
     /// "does the room you are standing in". A zone that narrows its own
     /// ceiling can still leave a bought upgrade unslottable there, which is
-    /// a zone's decision to make; what cannot happen any more is the shop
+    /// a zone's decision to make; what cannot happen any more is a sale
     /// selling something no arena anywhere could hold.
     ///
     /// Built once. It needs a whole settings block to read twenty-five bytes

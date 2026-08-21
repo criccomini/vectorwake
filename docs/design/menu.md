@@ -1,7 +1,7 @@
 # Landing, and the menu
 
 > **The split happened.** [match-game.md](match-game.md) moved the ship page,
-> the shop and the standings out of this tree and into pages of their own,
+> the upgrades and the standings out of this tree and into pages of their own,
 > with settings beside them, so the front end is five tabs and help folds
 > into settings with the bindings. It is one full-screen surface met in
 > both places, differing only in which tabs it carries: in a match, settings
@@ -43,7 +43,7 @@ vectorwake
 │             a section here rather than a tab of its own, for the reason
 │             Discord is a button and not a page
 ├ ship        one hull on a carousel, and the thirty points you spend on it
-├ shop        what rivets buy: slots, never strength
+├ upgrades    what rivets buy: slots, never strength
 ├ standings   the week, resetting Monday
 └ settings    sound · music · frames · fullscreen · bindings · about
 

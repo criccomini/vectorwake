@@ -32,7 +32,7 @@ use crate::token::{self, Claims, ClassRating, Kind};
 
 mod public_pilots;
 mod settlement;
-mod shop;
+mod upgrades;
 
 /// The default mode class. A zone declares which class it rates into, and a
 /// pilot carries one rating per class, per docs/design/rating.md.
@@ -245,7 +245,7 @@ create unique index if not exists pilot_events_once on pilot_events (event_id);
 -- different thing from a ladder, and the fleet's database is 25 GB.
 create index if not exists pilot_events_sweep on pilot_events (bot, at);
 -- What an account may slot beyond the baseline, over the core's flat kit
--- space: one row per slot the shop has moved. A missing row is the baseline,
+-- space: one row per slot a purchase has moved. A missing row is the baseline,
 -- so a new account needs no rows at all and buying something is one upsert.
 --
 -- The baseline itself lives in the core (`sim_base_entitlements`) rather than
@@ -267,7 +267,7 @@ create table if not exists kits (
     kit     bytea not null,
     primary key (account, class)
 );
--- Rivets: bounty taken, banked. One row an account, moved by the shop and by
+-- Rivets: bounty taken, banked. One row an account, moved by a purchase and by
 -- the kill rows the arenas file.
 create table if not exists wallets (
     account bigint primary key references accounts(id) on delete cascade,
@@ -938,7 +938,7 @@ async fn claims_for(db: &Client, account: i64) -> Result<Claims, String> {
 
     // What this account may slot, which is the baseline plus whatever it has
     // bought. An account with an empty row owns the baseline, so a pilot who
-    // has never opened the shop still flies a whole ship.
+    // has never opened the upgrades page still flies a whole ship.
     let mut entitlements = sim::World::base_entitlements().to_vec();
     let bought = db
         .query(
@@ -1445,7 +1445,7 @@ async fn route(
                             "ratings": c.ratings.iter().map(|r| serde_json::json!({
                                 "class": r.class, "rating": r.rating, "games": r.games,
                             })).collect::<Vec<_>>(),
-                            // The hangar and the shop, which are the two
+                            // The ship and upgrades pages, which are the two
                             // screens between matches. Both ride the reply
                             // rather than the token: the entitlements are in
                             // the token because an arena checks them, and
@@ -1508,8 +1508,8 @@ async fn route(
 
         // What is left to buy, priced. One entry a slot with a step on it,
         // with the name a person reads it by, so the client never has to
-        // learn the kit space's layout to draw a shop.
-        "/v1/shop" => {
+        // learn the kit space's layout to draw a shelf.
+        "/v1/upgrades" => {
             let Some(account) =
                 account_for(&db, "secret", &sha256_hex(s("secret").as_bytes())).await
             else {
@@ -1519,14 +1519,14 @@ async fn route(
             let mut shelf = Vec::new();
             for slot in 0..sim::SLOT_COUNT {
                 let owned = entitlement_of(&db, account, slot as i16, base[slot]).await;
-                let Some((next, price)) = shop::next_step(slot, owned) else {
+                let Some((next, price)) = upgrades::next_step(slot, owned) else {
                     continue;
                 };
                 shelf.push(serde_json::json!({
                     "slot": slot,
-                    "label": shop::name_of(slot),
+                    "label": upgrades::name_of(slot),
                     "price": price,
-                    "note": shop::note_for(slot, owned, next),
+                    "note": upgrades::note_for(slot, owned, next),
                 }));
             }
             (
@@ -1741,7 +1741,7 @@ async fn route(
             (200, serde_json::json!({ "week": week }))
         }
 
-        // The shop. One slot, one step, one price, and the wallet is checked
+        // A purchase. One slot, one step, one price, and the wallet is checked
         // and debited in the same statement that raises the ceiling: two
         // clients pressing buy at once must not both be told yes.
         "/v1/buy" => {
@@ -1758,7 +1758,7 @@ async fn route(
             }
             let base = sim::World::base_entitlements();
             let owned = entitlement_of(&db, account, slot as i16, base[slot as usize]).await;
-            let Some((next, price)) = shop::next_step(slot as usize, owned) else {
+            let Some((next, price)) = upgrades::next_step(slot as usize, owned) else {
                 return (
                     400,
                     serde_json::json!({ "error": "nothing left to buy there" }),
