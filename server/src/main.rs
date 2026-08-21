@@ -1922,6 +1922,7 @@ mod tests {
                 name: name.into(),
                 expires: token::now_secs() + 600,
                 ratings,
+                entitlements: Vec::new(),
             },
         )
     }
@@ -2025,6 +2026,7 @@ mod tests {
                 name: "Impostor".into(),
                 expires: token::now_secs() + 600,
                 ratings: vec![],
+                entitlements: Vec::new(),
             },
         );
         assert!(
@@ -2042,6 +2044,7 @@ mod tests {
                 name: "Yesterday".into(),
                 expires: token::now_secs() - 1,
                 ratings: vec![],
+                entitlements: Vec::new(),
             },
         );
         let why = z
@@ -2850,8 +2853,15 @@ mod tests {
 
     #[test]
     fn a_joining_pilot_does_not_inherit_the_seat() {
-        // The seat arrives with no kit, so every number below can be asserted
-        // at zero. What a hangar sends is a test of its own.
+        // Seats come back in the order they were vacated, so a player is
+        // handed their own and a room that kept anything on it reads as
+        // having saved somebody else's game.
+        //
+        // A fresh seat is not bare, though: it wears the starter kit its own
+        // account and hull agree on. So what this asserts is that the seat
+        // holds the starter kit rather than the last occupant's, which is a
+        // sharper claim than "nothing" and the one that would actually catch
+        // an inherited field.
         let def = wire_zone(1, 6, 16);
         let (cfg, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
         let mut z = ArenaServer::new(cfg, test_spool(), HashMap::new());
@@ -2883,21 +2893,128 @@ mod tests {
         let ship2 = z.rooms[0].players[&id2].ship;
         assert_eq!(ship2, ship, "the vacated seat is the one handed back");
 
+        let starter = sim::World::starter_kit(&z.rooms[0].kit_ceiling(ship2));
         let sh = z.rooms[0].world.state.ships[ship2 as usize];
+        assert_eq!(sh.kit, starter, "the seat wears a starter kit");
         assert_eq!(
-            sh.level,
-            [0; sim::TRIG_COUNT],
-            "weapon levels are not inherited"
+            sim::World::kit_cost(&sh.kit),
+            sim::KIT_BUDGET as u32,
+            "worth the whole budget, like everybody else's"
         );
-        assert_eq!(sh.mods, [0; sim::TRIG_COUNT], "nor add-ons");
-        assert_eq!(sh.charge, [0; sim::MAX_CHARGES], "nor charges");
-        assert_eq!(sh.up, [0; sim::UP_COUNT], "nor stat upgrades");
+        assert_eq!(sh.level, [1; sim::TRIG_COUNT], "dealt, not inherited");
+        assert_eq!(sh.mods, [0; sim::TRIG_COUNT], "and no add-ons of theirs");
+        assert_eq!(
+            sh.charge[sim::CHARGE_MINE],
+            0,
+            "nor a charge kind this account does not own"
+        );
         assert_eq!(sh.run, 0, "nor the run somebody else was on");
         assert_eq!(sh.points, 0, "nor their score");
         assert_eq!(sh.vx, 0, "and it arrives at rest");
         assert_ne!(
             sh.x, flown_to,
             "at a start, not where the last one left off"
+        );
+        assert_eq!(
+            sh.energy,
+            z.rooms[0].world.eff_max_energy(ship2 as usize),
+            "on a full bar of what the kit made of the hull"
+        );
+    }
+
+    /// A kit is checked twice: against the hull's row, which is the roster
+    /// expressing itself, and against what the account owns, which is what the
+    /// shop has sold. The smaller of the two wins, and a kit outside either is
+    /// refused whole.
+    #[test]
+    fn a_kit_has_to_fit_the_hull_and_the_account() {
+        let mut a = room_with_teams("teams = [\"Keel\"]\n");
+        let ship = seat_human(&mut a, "pilot");
+        let base = a.kit_ceiling(ship);
+
+        // Inside both: taken, and dealt onto the hull.
+        let mut good = [0u8; sim::SLOT_COUNT];
+        good[sim::slot_stat(sim::UP_SPEED) as usize] = 6;
+        good[sim::slot_charge(sim::CHARGE_REPEL) as usize] = 3;
+        assert!(a.set_kit(ship, &good), "a legal kit is taken");
+        let sh = a.world.state.ships[ship as usize];
+        assert_eq!(sh.up[sim::UP_SPEED], 6);
+        assert_eq!(sh.charge[sim::CHARGE_REPEL], 3);
+
+        // Past what the account owns. The core would take a seventh step of a
+        // stat happily, because the hull's ceiling is eight; the account's is
+        // six until somebody buys the last two.
+        assert_eq!(
+            base[sim::slot_stat(sim::UP_SPEED) as usize],
+            sim::UP_STEPS_BASE,
+            "a fresh account owns six of a stat, not the hull's eight"
+        );
+        let mut deep = [0u8; sim::SLOT_COUNT];
+        deep[sim::slot_stat(sim::UP_SPEED) as usize] = 7;
+        assert!(!a.set_kit(ship, &deep), "depth nobody bought is refused");
+
+        // A charge kind the account does not own, which the hull would carry.
+        let mut mined = [0u8; sim::SLOT_COUNT];
+        mined[sim::slot_charge(sim::CHARGE_MINE) as usize] = 1;
+        assert!(!a.set_kit(ship, &mined), "and so is a charge kind");
+
+        // Refused whole, so the pilot keeps what they were flying.
+        assert_eq!(
+            a.world.state.ships[ship as usize].up[sim::UP_SPEED],
+            6,
+            "a refusal changes nothing"
+        );
+
+        // And the account's ceiling can be raised, which is what buying is.
+        if let Some(s) = a.names.get_mut(&ship) {
+            s.entitlements[sim::slot_charge(sim::CHARGE_MINE) as usize] = 255;
+        }
+        assert!(
+            a.set_kit(ship, &mined),
+            "what the shop sold, the hull takes"
+        );
+    }
+
+    /// The hull is locked for a match and the kit with it, so a kit asked for
+    /// mid-match waits for the whistle. One asked for between matches is dealt
+    /// on the spot, because nobody is flying.
+    #[test]
+    fn a_kit_asked_for_mid_match_waits_for_the_whistle() {
+        let mut a = match_room(1, 1);
+        let ship = seat_human(&mut a, "pilot");
+        a.tick(); // opens the match
+        assert!(a.mode.match_state().unwrap().playing);
+
+        let starter = a.world.state.ships[ship as usize].kit;
+        let mut want = [0u8; sim::SLOT_COUNT];
+        want[sim::slot_stat(sim::UP_THRUST) as usize] = 5;
+        assert_ne!(want, starter, "pick a kit the seat is not already in");
+        if let Some(s) = a.names.get_mut(&ship) {
+            s.pending_kit = Some(want);
+        }
+        for _ in 0..40 {
+            a.tick();
+        }
+        assert_eq!(
+            a.world.state.ships[ship as usize].kit, starter,
+            "not mid-match: the hull is locked and the kit with it"
+        );
+
+        while a.match_no < 2 {
+            a.tick();
+        }
+        assert_eq!(
+            a.world.state.ships[ship as usize].kit, want,
+            "and the whistle is where it lands"
+        );
+        assert_eq!(
+            a.world.state.ships[ship as usize].up[sim::UP_THRUST],
+            5,
+            "dealt onto the hull, not merely stored"
+        );
+        assert!(
+            a.names[&ship].pending_kit.is_none(),
+            "with nothing left waiting"
         );
     }
 

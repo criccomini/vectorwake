@@ -466,6 +466,8 @@ extern "C" {
     /// and respawning: a death re-deals only the frame.
     pub fn sim_deal_kit(sh: *mut sim_ship, cfg: *const sim_settings, ammunition: c_int);
     pub fn sim_restart(s: *mut sim_state, cfg: *const sim_settings);
+    pub fn sim_base_entitlements(out: *mut u8);
+    pub fn sim_starter_kit(ceiling: *const u8, out: *mut u8) -> c_int;
     /// One named slot, with the hull's ceilings enforced.
     pub fn sim_grant(sh: *mut sim_ship, cfg: *const sim_settings, ty: u8) -> c_int;
     pub fn sim_pack(s: *const sim_state, out: *mut u8, cap: c_int) -> c_int;
@@ -932,6 +934,28 @@ impl World {
 
     /// Per-slot ceilings for a hull: how many of each a kit may ask for.
     /// Zero is a slot the roster keeps from that hull.
+    /// What a kit costs, which is the sum of its slots: every one of them is
+    /// worth exactly one. See `sim_kit_cost`.
+    pub fn kit_cost(kit: &[u8; SLOT_COUNT]) -> u32 {
+        unsafe { sim_kit_cost(kit.as_ptr()).max(0) as u32 }
+    }
+
+    /// What an account owns before it has bought anything. See
+    /// `sim_base_entitlements`.
+    pub fn base_entitlements() -> [u8; SLOT_COUNT] {
+        let mut out = [0u8; SLOT_COUNT];
+        unsafe { sim_base_entitlements(out.as_mut_ptr()) };
+        out
+    }
+
+    /// A whole budget spent inside these ceilings, which is what a seat with
+    /// no kit of its own flies. See `sim_starter_kit`.
+    pub fn starter_kit(ceiling: &[u8; SLOT_COUNT]) -> [u8; SLOT_COUNT] {
+        let mut out = [0u8; SLOT_COUNT];
+        unsafe { sim_starter_kit(ceiling.as_ptr(), out.as_mut_ptr()) };
+        out
+    }
+
     pub fn kit_ceilings(&self, cls: u8) -> [u8; SLOT_COUNT] {
         let mut out = [0u8; SLOT_COUNT];
         let c: *const sim_ship_class = &self.cfg.classes[cls as usize];

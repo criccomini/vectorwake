@@ -427,6 +427,19 @@ pub(crate) struct Seat {
     /// it was minted. This is how a career crosses zones without an arena
     /// asking anybody anything.
     pub(crate) carried: Option<Vec<token::ClassRating>>,
+    /// What this account may slot, over the core's flat kit space, out of the
+    /// token that admitted them. A kit is checked against this and against the
+    /// hull's own row, and the smaller of the two wins.
+    ///
+    /// The baseline for a guest and for a token from a meta-layer that does
+    /// not send them yet, which is the reading that lets a pilot fly a whole
+    /// ship without an account rather than a chassis.
+    pub(crate) entitlements: [u8; sim::SLOT_COUNT],
+    /// The kit this pilot asked for and has not been dealt yet. The hull is
+    /// locked for a match and the kit with it, so one that arrives mid-match
+    /// waits for the whistle; one that arrives at a join or between matches is
+    /// dealt on the spot and never lands here.
+    pub(crate) pending_kit: Option<[u8; sim::SLOT_COUNT]>,
     /// When the credential used at the door expires. Guests have no credential.
     /// A rated pilot proves their standing again through the renewable lease;
     /// a watcher has no lease, so this clock closes a session that has outlived
@@ -456,6 +469,8 @@ impl Seat {
             },
             account: None,
             carried: None,
+            entitlements: sim::World::base_entitlements(),
+            pending_kit: None,
             expires: None,
             session: pilot::Session::new("none"),
         }
@@ -1679,8 +1694,84 @@ impl Room {
         if member.is_some() {
             self.watchers.remove(&id);
         }
+        // Dressed on arrival, whatever the room is doing. A pilot who spawns
+        // into the middle of a match in a bare hull is a pilot who was better
+        // off waiting, which is the thing joining a room in progress exists to
+        // avoid.
+        self.deal_seat(ship);
+        // And a full bar again, because the kit just moved the ceiling. The
+        // energy set above was full for a bare hull; a kit with four steps of
+        // energy in it raises the maximum, and a ship one step short of full
+        // is a ship the core refuses a hull change and a side change to.
+        let full = self.world.eff_max_energy(ship as usize);
+        self.world.state.ships[ship as usize].energy = full;
         self.debug_assert_member(id, &self.players[&id].presence);
         Some(id)
+    }
+
+    /// What a hull will actually take from this seat, which is the roster's
+    /// row and the account's entitlements together, smaller wins.
+    ///
+    /// Two ceilings rather than one because they answer different questions.
+    /// The hull's row is the roster expressing itself, and it moves when a
+    /// zone retunes a ship; the account's is what the shop has sold, and it
+    /// moves when somebody spends. A kit legal under both is a kit the core
+    /// will deal.
+    pub(crate) fn kit_ceiling(&self, ship: u8) -> [u8; sim::SLOT_COUNT] {
+        let cls = self.world.state.ships[ship as usize].cls;
+        let mut ceiling = self.world.kit_ceilings(cls);
+        let owned = self
+            .names
+            .get(&ship)
+            .map(|s| s.entitlements)
+            .unwrap_or_else(sim::World::base_entitlements);
+        for (c, own) in ceiling.iter_mut().zip(owned.iter()) {
+            *c = (*c).min(*own);
+        }
+        ceiling
+    }
+
+    /// Put a kit on a seat, or say it does not fit.
+    ///
+    /// False changes nothing, which is the whole contract: a refused kit
+    /// leaves a pilot in what they were already flying rather than half
+    /// dressed. The core checks the budget and the hull again on the way
+    /// through, so this is two independent refusals rather than one.
+    pub(crate) fn set_kit(&mut self, ship: u8, kit: &[u8; sim::SLOT_COUNT]) -> bool {
+        let ceiling = self.kit_ceiling(ship);
+        if kit.iter().zip(ceiling.iter()).any(|(want, max)| want > max) {
+            return false;
+        }
+        self.world.set_kit(ship as usize, kit)
+    }
+
+    /// Deal this seat what it is flying, which is its own kit if it has one
+    /// and a starter kit if it does not.
+    ///
+    /// Every seat has to be flying something. A pilot who has never opened the
+    /// hangar, a bot, and a guest all arrive with nothing chosen, and a bare
+    /// hull against a built one is not a game.
+    pub(crate) fn deal_seat(&mut self, ship: u8) {
+        let asked = self.names.get(&ship).and_then(|s| s.pending_kit);
+        if let Some(kit) = asked {
+            if self.set_kit(ship, &kit) {
+                if let Some(s) = self.names.get_mut(&ship) {
+                    s.pending_kit = None;
+                }
+                return;
+            }
+            // A kit that no longer fits is dropped rather than kept: the hull
+            // changed under it, or the zone retuned, and holding it would mean
+            // trying it again at every whistle for the rest of the session.
+            if let Some(s) = self.names.get_mut(&ship) {
+                s.pending_kit = None;
+            }
+        }
+        if sim::World::kit_cost(&self.world.state.ships[ship as usize].kit) > 0 {
+            return;
+        }
+        let starter = sim::World::starter_kit(&self.kit_ceiling(ship));
+        self.world.set_kit(ship as usize, &starter);
     }
 
     /// Take a seat back from the bot fewest people are looking at.
@@ -2808,6 +2899,14 @@ impl Room {
             self.broadcast_settings();
         }
         self.world.restart();
+        // A whistle is where a hull and its kit are unlocked, so anything
+        // asked for during the last match lands here. After `restart`, which
+        // deals what each seat is already wearing: this deals the new one over
+        // the top, with its ammunition, which is what a match start means.
+        let seats: Vec<u8> = self.names.keys().copied().collect();
+        for ship in seats {
+            self.deal_seat(ship);
+        }
         self.broadcast_roster();
         self.broadcast_match();
     }

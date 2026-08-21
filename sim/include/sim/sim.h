@@ -639,6 +639,51 @@ int32_t sim_bounty(const sim_settings *cfg, const sim_ship *sh);
 
 int sim_kit_ceilings(const sim_ship_class *c, uint8_t *out);
 
+/* What an account owns before it has bought anything, over the same flat
+ * space, and 255 for a slot the account never limits.
+ *
+ * A kit is checked against the hull's row and the account's entitlements
+ * together, and the smaller of the two wins. The hull's row is the roster
+ * expressing itself; this is the shop's half, and it exists so that "what
+ * rivets buy is which upgrades you may slot, never how many" has somewhere to
+ * be true.
+ *
+ * Six of each stat, which is exactly the budget over five of them and is why
+ * the budget is thirty: a pilot who buys nothing can still take every stat to
+ * its base ceiling and own nothing else, which is a legibly poor ship and a
+ * useful landmark. The last two steps are the shop's.
+ *
+ * One rung of each ladder and one of each add-on, so a new account flies a
+ * whole ship rather than a chassis. Repel and burst without limit, which is
+ * what "the two everybody starts with" means; the other two charge kinds are
+ * bought. See docs/design/match-game.md. */
+void sim_base_entitlements(uint8_t *out);
+
+/* A whole budget spent on a hull, without asking anybody what they wanted.
+ *
+ * Every seat has to be flying something: a pilot who has never opened the
+ * hangar, a bot, and a new account all arrive with no kit of their own, and a
+ * bare hull against a built one is not a game. So this is the answer to "what
+ * would a sensible pilot bring", and it is here rather than in a server
+ * because the same thirty points have to land the same way for a new account,
+ * for a bot, and for the hangar drawing a starting point.
+ *
+ * One rung on each trigger the hull has, the charges it will hold, and the
+ * rest spread evenly over the five stats. That is deliberately an
+ * all-rounder: it is a decent ship on any hull and the best ship on none, so
+ * the first thing a player learns in the hangar is that spending differently
+ * is worth doing.
+ *
+ * Takes the ceilings rather than the hull, because what a pilot may slot is
+ * the hull's row and their account's entitlements together, and the account
+ * is not something this core knows about. `sim_kit_ceilings` gives the hull's
+ * half; a caller with no account to consult passes that straight in.
+ *
+ * `out` is SIM_SLOT_COUNT bytes. Returns what it spent, which is
+ * SIM_KIT_BUDGET on every hull the roster has and less on one with almost
+ * nothing to spend it on. */
+int sim_starter_kit(const uint8_t *ceiling, uint8_t *out);
+
 /* What a kit spends, which is just its sum, because every slot costs one. */
 int sim_kit_cost(const uint8_t *kit);
 

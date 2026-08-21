@@ -108,6 +108,17 @@ pub(crate) const C2S_INVITE: u8 = 8;
 /// they are hunting from a second tab is a wallhack with a menu entry, and the
 /// scout team it imitates pays for a seat, shows on radar, and can be shot.
 pub(crate) const C2S_WATCH: u8 = 9;
+/// `[C2S_KIT, kit[0..SLOT_COUNT]]`: what this pilot wants to fly, over the
+/// core's flat kit space, one byte a slot.
+///
+/// Refused whole rather than clamped. A kit over the budget, over the hull's
+/// row, or over what the account owns leaves the pilot in what they were
+/// already flying, because a truncated kit is a ship nobody chose.
+///
+/// Applied at once at a join and between matches, and held until the next
+/// whistle during one: the hull is locked for a match and the kit with it.
+/// The answer either way is the next snapshot, which carries what was dealt.
+pub(crate) const C2S_KIT: u8 = 10;
 /// This client is a bot and says so. Everything that follows from the
 /// declaration is in the arena's favor, which is why a well-behaved bot sets
 /// it: a declared bot is labeled in the roster, sits outside the human cap, and

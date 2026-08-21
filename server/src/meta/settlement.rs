@@ -615,21 +615,56 @@ async fn ingest_pilot(
         .cloned()
         .unwrap_or(serde_json::json!({}));
 
-    db.execute(
-        "insert into pilot_events
+    let rows = db
+        .execute(
+            "insert into pilot_events
            (event_id, at, session, pilot, name, bot, kind, zone, instance,
             room, tick, detail)
          values ($1, to_timestamp($2::float8), $3, $4, $5, $6, $7, $8, $9,
                  $10, $11, $12)
          on conflict (event_id) do nothing",
-        &[
-            &event_id, &at, &session, &pilot, &name, &bot, &kind, &zone, &instance, &room, &tick,
-            &detail,
-        ],
+            &[
+                &event_id, &at, &session, &pilot, &name, &bot, &kind, &zone, &instance, &room,
+                &tick, &detail,
+            ],
+        )
+        .await
+        .map_err(|error| format!("cannot store pilot event: {error}"))?;
+
+    // Rivets are bounty taken, and a kill row is where a bounty is taken.
+    //
+    // Banked here rather than summed out of the log on demand, because the
+    // log is swept and a wallet that shrank when a row aged out would be a
+    // wallet nobody could trust. `rows` is what makes it safe: delivery is
+    // at-least-once and the unique index refuses the second copy, so a retry
+    // inserts nothing and pays nothing.
+    if rows > 0 && kind == crate::pilot::KILL {
+        if let Some(account) = pilot {
+            let paid = detail
+                .get("bounty")
+                .and_then(|value| value.as_i64())
+                .unwrap_or(0)
+                .clamp(0, u16::MAX as i64);
+            if paid > 0 {
+                pay(db, account, paid).await?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Rivets into an account's wallet. An account with no row has never been
+/// paid, which is the same thing as a balance of zero, so the first payment
+/// makes the row.
+pub(super) async fn pay(db: &Client, account: i64, rivets: i64) -> Result<(), String> {
+    db.execute(
+        "insert into wallets (account, rivets) values ($1, $2)
+         on conflict (account) do update set rivets = wallets.rivets + $2",
+        &[&account, &rivets],
     )
     .await
     .map(|_| ())
-    .map_err(|error| format!("cannot store pilot event: {error}"))
+    .map_err(|error| format!("cannot bank rivets: {error}"))
 }
 
 /// One pilot's rating moves by one delta, and their game count by one.

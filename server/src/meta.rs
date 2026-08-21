@@ -27,10 +27,12 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use crate::catalog::sha256_hex;
 use crate::pilot;
 use crate::rating;
+use crate::sim;
 use crate::token::{self, Claims, ClassRating, Kind};
 
 mod public_pilots;
 mod settlement;
+mod shop;
 
 /// The default mode class. A zone declares which class it rates into, and a
 /// pilot carries one rating per class, per docs/design/rating.md.
@@ -242,6 +244,35 @@ create unique index if not exists pilot_events_once on pilot_events (event_id);
 -- nothing here is kept forever: a per-pilot behavior log with no expiry is a
 -- different thing from a ladder, and the fleet's database is 25 GB.
 create index if not exists pilot_events_sweep on pilot_events (bot, at);
+-- What an account may slot beyond the baseline, over the core's flat kit
+-- space: one row per slot the shop has moved. A missing row is the baseline,
+-- so a new account needs no rows at all and buying something is one upsert.
+--
+-- The baseline itself lives in the core (`sim_base_entitlements`) rather than
+-- being written out here as thirty-odd rows per account, because it is a rule
+-- about the game and not a fact about anybody.
+create table if not exists entitlements (
+    account bigint not null references accounts(id) on delete cascade,
+    slot    smallint not null,
+    n       smallint not null,
+    primary key (account, slot)
+);
+-- What a pilot has chosen to fly, per hull, as the kit's own bytes. Written by
+-- the hangar and read at a join; the arena checks it against the row above and
+-- against the hull before it deals it, so a stale kit from before a retune is
+-- refused rather than honored.
+create table if not exists kits (
+    account bigint not null references accounts(id) on delete cascade,
+    class   text not null,
+    kit     bytea not null,
+    primary key (account, class)
+);
+-- Rivets: bounty taken, banked. One row an account, moved by the shop and by
+-- the kill rows the arenas file.
+create table if not exists wallets (
+    account bigint primary key references accounts(id) on delete cascade,
+    rivets  bigint not null default 0
+);
 create table if not exists client_errors (
     fingerprint text primary key,
     first_at    timestamptz not null default now(),
@@ -882,6 +913,25 @@ async fn claims_for(db: &Client, account: i64) -> Result<Claims, String> {
         })
         .collect();
 
+    // What this account may slot, which is the baseline plus whatever it has
+    // bought. An account with an empty row owns the baseline, so a pilot who
+    // has never opened the shop still flies a whole ship.
+    let mut entitlements = sim::World::base_entitlements().to_vec();
+    let bought = db
+        .query(
+            "select slot, n from entitlements where account = $1",
+            &[&account],
+        )
+        .await
+        .map_err(|e| format!("cannot read entitlements: {e}"))?;
+    for r in &bought {
+        let slot: i16 = r.get(0);
+        let n: i16 = r.get(1);
+        if let Some(c) = entitlements.get_mut(slot.max(0) as usize) {
+            *c = n.clamp(0, 255) as u8;
+        }
+    }
+
     Ok(Claims {
         account: account as u64,
         kind: kind_of(kind),
@@ -889,7 +939,52 @@ async fn claims_for(db: &Client, account: i64) -> Result<Claims, String> {
         name,
         expires: token::now_secs() + token::LIFETIME_SECS,
         ratings,
+        entitlements,
     })
+}
+
+/// What an account owns in one slot, which is the baseline until it buys.
+async fn entitlement_of(db: &Client, account: i64, slot: i16, base: u8) -> u8 {
+    db.query_opt(
+        "select n from entitlements where account = $1 and slot = $2",
+        &[&account, &slot],
+    )
+    .await
+    .ok()
+    .flatten()
+    .map(|r| r.get::<_, i16>(0).clamp(0, 255) as u8)
+    .unwrap_or(base)
+}
+
+/// What an account has banked. No row is a balance of zero, which is what an
+/// account that has never been paid has.
+async fn wallet_of(db: &Client, account: i64) -> i64 {
+    db.query_opt("select rivets from wallets where account = $1", &[&account])
+        .await
+        .ok()
+        .flatten()
+        .map(|r| r.get(0))
+        .unwrap_or(0)
+}
+
+/// What this account has chosen to fly, per hull, as the kit's own bytes.
+/// A hull with no row has never been taken to the hangar, and the arena deals
+/// it a starter kit.
+async fn kits_of(db: &Client, account: i64) -> serde_json::Value {
+    let rows = db
+        .query(
+            "select class, kit from kits where account = $1",
+            &[&account],
+        )
+        .await
+        .unwrap_or_default();
+    let mut out = serde_json::Map::new();
+    for r in &rows {
+        let class: String = r.get(0);
+        let kit: Vec<u8> = r.get(1);
+        out.insert(class, serde_json::json!(kit));
+    }
+    serde_json::Value::Object(out)
 }
 
 // ------------------------------------------------------------------ routes
@@ -1145,12 +1240,131 @@ async fn route(
                             "ratings": c.ratings.iter().map(|r| serde_json::json!({
                                 "class": r.class, "rating": r.rating, "games": r.games,
                             })).collect::<Vec<_>>(),
+                            // The hangar and the shop, which are the two
+                            // screens between matches. Both ride the reply
+                            // rather than the token: the entitlements are in
+                            // the token because an arena checks them, and
+                            // these two are for drawing.
+                            "rivets": wallet_of(&db, account).await,
+                            "entitlements": c.entitlements,
+                            "kits": kits_of(&db, account).await,
                         }),
                     )
                 }
                 Err(e) if e == "banned" => (403, serde_json::json!({ "error": "banned" })),
                 Err(e) => (500, serde_json::json!({ "error": e })),
             }
+        }
+
+        // The hangar saving a kit. What is stored is what was sent, checked
+        // only for shape: an arena checks it against the hull's row and the
+        // account's entitlements before it deals it, and that check has to
+        // happen there anyway because a zone may retune a hull after this was
+        // written. Storing a kit that will not fit costs nothing and refusing
+        // one that would fit some other zone costs a player their loadout.
+        "/v1/kit" => {
+            let Some(account) =
+                account_for(&db, "secret", &sha256_hex(s("secret").as_bytes())).await
+            else {
+                return (403, serde_json::json!({ "error": "no such account" }));
+            };
+            let class = s("class");
+            if class.is_empty() || class.len() > 32 {
+                return (400, serde_json::json!({ "error": "which hull" }));
+            }
+            let kit: Vec<u8> = body
+                .get("kit")
+                .and_then(|v| v.as_array())
+                .map(|a| {
+                    a.iter()
+                        .map(|n| n.as_u64().unwrap_or(0).min(255) as u8)
+                        .collect()
+                })
+                .unwrap_or_default();
+            if kit.len() != sim::SLOT_COUNT {
+                return (400, serde_json::json!({ "error": "that is not a kit" }));
+            }
+            let cost: u32 = kit.iter().map(|n| *n as u32).sum();
+            if cost > sim::KIT_BUDGET as u32 {
+                return (400, serde_json::json!({ "error": "over the budget" }));
+            }
+            let stored = db
+                .execute(
+                    "insert into kits (account, class, kit) values ($1, $2, $3)
+                     on conflict (account, class) do update set kit = excluded.kit",
+                    &[&account, &class, &kit],
+                )
+                .await;
+            match stored {
+                Ok(_) => (200, serde_json::json!({ "ok": true })),
+                Err(e) => (500, serde_json::json!({ "error": format!("{e}") })),
+            }
+        }
+
+        // The shop. One slot, one step, one price, and the wallet is checked
+        // and debited in the same statement that raises the ceiling: two
+        // clients pressing buy at once must not both be told yes.
+        "/v1/buy" => {
+            let Some(account) =
+                account_for(&db, "secret", &sha256_hex(s("secret").as_bytes())).await
+            else {
+                return (403, serde_json::json!({ "error": "no such account" }));
+            };
+            let Some(slot) = body.get("slot").and_then(|v| v.as_u64()) else {
+                return (400, serde_json::json!({ "error": "which slot" }));
+            };
+            if slot as usize >= sim::SLOT_COUNT {
+                return (400, serde_json::json!({ "error": "no such slot" }));
+            }
+            let base = sim::World::base_entitlements();
+            let owned = entitlement_of(&db, account, slot as i16, base[slot as usize]).await;
+            let Some((next, price)) = shop::next_step(slot as usize, owned) else {
+                return (
+                    400,
+                    serde_json::json!({ "error": "nothing left to buy there" }),
+                );
+            };
+
+            // One statement, so a wallet cannot be spent twice: the update
+            // matches no row when the balance is short, and a caller that
+            // moved nothing is a caller that could not afford it.
+            let paid = db
+                .execute(
+                    "update wallets set rivets = rivets - $2
+                     where account = $1 and rivets >= $2",
+                    &[&account, &(price as i64)],
+                )
+                .await
+                .unwrap_or(0);
+            if paid == 0 {
+                return (402, serde_json::json!({ "error": "not enough rivets" }));
+            }
+            let raised = db
+                .execute(
+                    "insert into entitlements (account, slot, n) values ($1, $2, $3)
+                     on conflict (account, slot) do update set n = excluded.n",
+                    &[&account, &(slot as i16), &(next as i16)],
+                )
+                .await;
+            if let Err(e) = raised {
+                // The wallet moved and the shelf did not, which is the one
+                // ordering that costs a player something. Put it back.
+                let _ = settlement::pay(&db, account, price as i64).await;
+                return (500, serde_json::json!({ "error": format!("{e}") }));
+            }
+            note_account(
+                &db,
+                pilot::BOUGHT,
+                account,
+                serde_json::json!({ "slot": slot, "to": next, "price": price }),
+            )
+            .await;
+            (
+                200,
+                serde_json::json!({
+                    "slot": slot, "n": next, "rivets": wallet_of(&db, account).await,
+                }),
+            )
         }
 
         // Claiming attaches a way back in: a password on the name you

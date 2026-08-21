@@ -278,6 +278,61 @@ void sim_deal_kit(sim_ship *sh, const sim_settings *cfg, int ammunition) {
     }
 }
 
+void sim_base_entitlements(uint8_t *out) {
+    memset(out, 0, SIM_SLOT_COUNT);
+    for (int u = 0; u < SIM_UP_COUNT; u++)
+        out[SIM_SLOT_STAT(u)] = SIM_UP_STEPS_BASE;
+    for (int t = 0; t < SIM_TRIG_COUNT; t++) {
+        out[SIM_SLOT_LEVEL(t)] = 1;
+        for (int m = 0; m < SIM_MOD_COUNT; m++) out[SIM_SLOT_MOD(t, m)] = 1;
+    }
+    /* 255 rather than a number: the hull's row is the limit on these, and an
+     * account that never bought anything is not the thing standing in the
+     * way of a pilot slotting three repels. */
+    out[SIM_SLOT_CHARGE(SIM_CHARGE_REPEL)] = 255;
+    out[SIM_SLOT_CHARGE(SIM_CHARGE_BURST)] = 255;
+}
+
+int sim_starter_kit(const uint8_t *ceiling, uint8_t *out) {
+    memset(out, 0, SIM_SLOT_COUNT);
+    int spent = 0;
+
+    /* A rung on each trigger first, because a hull with a bomb rack and no
+     * rung on it is a hull that never uses half of what it is. */
+    for (int t = 0; t < SIM_TRIG_COUNT && spent < SIM_KIT_BUDGET; t++)
+        if (ceiling[SIM_SLOT_LEVEL(t)] > 0) {
+            out[SIM_SLOT_LEVEL(t)] = 1;
+            spent++;
+        }
+
+    /* Then the charges the hull will hold, which is the one part of a kit
+     * that runs out during a match and the one a pilot notices the absence
+     * of immediately. */
+    for (int k = 0; k < SIM_MAX_CHARGES && spent < SIM_KIT_BUDGET; k++) {
+        uint8_t want = ceiling[SIM_SLOT_CHARGE(k)];
+        if (want > 3) want = 3;
+        if (want > SIM_KIT_BUDGET - spent) want = (uint8_t)(SIM_KIT_BUDGET - spent);
+        out[SIM_SLOT_CHARGE(k)] = want;
+        spent += want;
+    }
+
+    /* And the rest over the stats, a step at a time round the five of them,
+     * so what is left lands evenly rather than filling one and starving the
+     * next. Stops when nothing moved, which is every stat at its ceiling. */
+    while (spent < SIM_KIT_BUDGET) {
+        int moved = 0;
+        for (int u = 0; u < SIM_UP_COUNT && spent < SIM_KIT_BUDGET; u++) {
+            if (out[SIM_SLOT_STAT(u)] < ceiling[SIM_SLOT_STAT(u)]) {
+                out[SIM_SLOT_STAT(u)]++;
+                spent++;
+                moved = 1;
+            }
+        }
+        if (!moved) break;
+    }
+    return spent;
+}
+
 int sim_set_kit(sim_ship *sh, const sim_settings *cfg, const uint8_t *kit) {
     uint8_t ceiling[SIM_SLOT_COUNT];
     sim_kit_ceilings(&cfg->classes[sh->cls], ceiling);

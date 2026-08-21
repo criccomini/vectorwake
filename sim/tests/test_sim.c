@@ -4007,6 +4007,46 @@ int main(void) {
         free(mm);
     }
 
+    /* A starter kit spends the whole budget on any hull, inside the ceilings
+     * it was handed, and it is what a seat with no kit of its own flies. */
+    {
+        uint8_t base[SIM_SLOT_COUNT];
+        sim_base_entitlements(base);
+        CHECK(base[SIM_SLOT_STAT(SIM_UP_SPEED)] == SIM_UP_STEPS_BASE,
+              "an account starts on six of each stat");
+        CHECK(SIM_UP_STEPS_BASE * SIM_UP_COUNT == SIM_KIT_BUDGET,
+              "which is exactly the budget, and is why the budget is thirty");
+        CHECK(base[SIM_SLOT_CHARGE(SIM_CHARGE_REPEL)] == 255
+              && base[SIM_SLOT_CHARGE(SIM_CHARGE_BURST)] == 255,
+              "repel and burst are the two everybody starts with");
+        CHECK(base[SIM_SLOT_CHARGE(SIM_CHARGE_MINE)] == 0,
+              "and the mine is bought");
+
+        for (int c = 0; c < cfg.class_count; c++) {
+            uint8_t hull[SIM_SLOT_COUNT], ceiling[SIM_SLOT_COUNT];
+            uint8_t kit[SIM_SLOT_COUNT];
+            sim_kit_ceilings(&cfg.classes[c], hull);
+            for (int i = 0; i < SIM_SLOT_COUNT; i++)
+                ceiling[i] = hull[i] < base[i] ? hull[i] : base[i];
+            int spent = sim_starter_kit(ceiling, kit);
+            CHECK(spent == SIM_KIT_BUDGET, "a starter kit spends the budget");
+            CHECK(sim_kit_cost(kit) == spent, "and costs what it spent");
+            int over = 0;
+            for (int i = 0; i < SIM_SLOT_COUNT; i++)
+                if (kit[i] > ceiling[i]) over = 1;
+            CHECK(!over, "inside every ceiling it was handed");
+            CHECK(kit[SIM_SLOT_CHARGE(SIM_CHARGE_MINE)] == 0,
+                  "and never slots what the account does not own");
+
+            /* And it is a kit a ship will actually take. */
+            sim_state ks;
+            sim_init(&ks, 4);
+            int id = sim_spawn(&ks, (uint8_t)c, 0, 8192, 8192, 0, &cfg);
+            CHECK(sim_set_kit(&ks.ships[id], &cfg, kit) == 1,
+                  "which the core accepts on the hull it was built for");
+        }
+    }
+
     free(m);
     if (failures == 0) printf("all tests passed\n");
     return failures ? 1 : 0;

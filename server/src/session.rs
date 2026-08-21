@@ -718,6 +718,36 @@ pub(crate) async fn serve_client(
                     }
                 }
             }
+            C2S_KIT => {
+                // What this pilot wants to fly. Applied at once at a join and
+                // between matches; held to the next whistle during one,
+                // because a hull is locked for a match and the kit with it.
+                //
+                // Nothing is sent back, for the same reason a hull change
+                // sends nothing: the next snapshot carries what was dealt, and
+                // a refusal leaves the old kit, which is the same answer
+                // either way.
+                if data.len() >= 1 + crate::sim::SLOT_COUNT {
+                    let mut kit = [0u8; crate::sim::SLOT_COUNT];
+                    kit.copy_from_slice(&data[1..1 + crate::sim::SLOT_COUNT]);
+                    if let Presence::Flying { room, member } = presence.current() {
+                        let mut z = zone.lock().await;
+                        if let Some(index) = z.rooms.iter().position(|a| a.number == room) {
+                            let a = &mut z.rooms[index];
+                            if let Some(ship) = a.players.get(&member).map(|p| p.ship) {
+                                let playing = a.mode.match_state().is_some_and(|m| m.playing);
+                                if playing {
+                                    if let Some(s) = a.names.get_mut(&ship) {
+                                        s.pending_kit = Some(kit);
+                                    }
+                                } else {
+                                    a.set_kit(ship, &kit);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             C2S_WATCH => {
                 // Whose eyes to borrow. From a player: sit out. From a
                 // watcher: look somewhere else. Both are requests; the

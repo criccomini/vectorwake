@@ -139,6 +139,10 @@ pub const RENAME: &str = "rename";
 pub const BAN: &str = "ban";
 pub const UNBAN: &str = "unban";
 pub const GRANT: &str = "grant";
+/// Rivets spent in the shop. `detail`: the slot, what it was raised to, and
+/// what it cost. The wallet is a number with no history of its own, so this
+/// is the only record of where it went.
+pub const BOUGHT: &str = "bought";
 pub const REVOKE: &str = "revoke";
 
 /// Why a seat ended. `Room::leave` is the one funnel for all five, and until

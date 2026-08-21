@@ -468,6 +468,8 @@ impl ArenaServer {
             rid: name.to_string(),
             account: None,
             carried: None,
+            entitlements: sim::World::base_entitlements(),
+            pending_kit: None,
             expires: None,
             session: session.clone(),
         };
@@ -505,6 +507,16 @@ impl ArenaServer {
                 "a bot account has to declare itself a bot".into()
             });
         }
+        // The baseline where the token carries none, which is a meta-layer
+        // that predates them. A pilot who owns nothing flies a whole ship;
+        // reading an absent list as an account that owns nothing would put
+        // them in a chassis.
+        let mut entitlements = sim::World::base_entitlements();
+        for (slot, n) in claims.entitlements.iter().enumerate() {
+            if let Some(c) = entitlements.get_mut(slot) {
+                *c = *n;
+            }
+        }
         Ok(Seat {
             name: claims.name.clone(),
             bot: declared_bot,
@@ -512,6 +524,8 @@ impl ArenaServer {
             rid: account_rid(claims.account),
             account: Some(claims.account),
             carried: Some(claims.ratings),
+            entitlements,
+            pending_kit: None,
             expires: Some(claims.expires),
             session: session.clone(),
         })

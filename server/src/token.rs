@@ -14,7 +14,7 @@ use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 
 /// Bumped when the payload layout changes. A token from a previous version is
 /// refused rather than misread, the same rule the client wire follows.
-const VERSION: u8 = 1;
+const VERSION: u8 = 2;
 
 /// How long a token is good for. Short enough that a ban lands within one
 /// lifetime, since the meta-layer enforces bans by refusing to mint, and long
@@ -102,6 +102,18 @@ pub struct Claims {
     pub name: String,
     pub expires: u64,
     pub ratings: Vec<ClassRating>,
+    /// What this account may slot, over the core's flat kit space, as a
+    /// ceiling per slot with 255 meaning "the hull decides".
+    ///
+    /// It rides in the token for the same reason a rating does: an arena
+    /// checks a kit against it at the door, and admission has to be
+    /// arithmetic rather than a network call. What a pilot has *chosen* is
+    /// not here, because that changes in the hangar between matches and this
+    /// only changes when something is bought.
+    ///
+    /// Empty from an older meta-layer, which an arena reads as the baseline
+    /// rather than as an account that owns nothing.
+    pub entitlements: Vec<u8>,
 }
 
 impl Claims {
@@ -134,6 +146,8 @@ impl Claims {
             p.extend_from_slice(&(r.rating.round().clamp(-32768.0, 32767.0) as i16).to_le_bytes());
             p.push(r.games.min(255) as u8);
         }
+        p.push(self.entitlements.len().min(255) as u8);
+        p.extend_from_slice(&self.entitlements[..self.entitlements.len().min(255)]);
         p
     }
 }
@@ -230,6 +244,10 @@ pub fn verify(key: &VerifyingKey, token: &str, now: u64) -> Result<Claims, Bad> 
         });
     }
 
+    let n = *payload.get(at).ok_or(Bad::Malformed)? as usize;
+    at += 1;
+    let entitlements = payload.get(at..at + n).ok_or(Bad::Malformed)?.to_vec();
+
     // Expiry last. A signature check on an expired token still tells us the
     // token was ours, which is the difference between "log in again" and
     // "something is forging tokens".
@@ -243,6 +261,7 @@ pub fn verify(key: &VerifyingKey, token: &str, now: u64) -> Result<Claims, Bad> 
         name,
         expires,
         ratings,
+        entitlements,
     })
 }
 
@@ -323,6 +342,7 @@ mod tests {
                     games: 3,
                 },
             ],
+            entitlements: vec![6, 6, 6, 6, 6, 1, 1],
         }
     }
 
@@ -410,6 +430,7 @@ mod tests {
             name: "Talon 3".into(),
             expires: 100,
             ratings: vec![],
+            entitlements: Vec::new(),
         };
         let got = verify(&k.verifying_key(), &mint(&k, &c), 1).unwrap();
         assert_eq!(got, c);
