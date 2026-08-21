@@ -2922,6 +2922,149 @@ mod tests {
         );
     }
 
+    /// The whole join sort, on the numbers the shipped melee zone runs.
+    ///
+    /// Four rules compose, and the one that matters is the second clause of
+    /// the third: bots do not count as fullness. A room holding one human and
+    /// seven bots is one eighth full, not full, so the next person to press
+    /// Melee lands beside them and a bot stands down.
+    ///
+    /// The rule this replaced said humans join at match boundaries and open a
+    /// new room when they cannot find one, which guaranteed the thing it was
+    /// meant to prevent: two people arriving ninety seconds apart would never
+    /// meet, not rarely but never. What is checked here is the property that
+    /// costs: three people pressing Melee across ten minutes land in one room.
+    #[test]
+    fn everybody_who_presses_melee_lands_in_the_same_room() {
+        // Eight seats, eight of them a person's, and a new room only when the
+        // first holds eight humans. That is `max_players` and `fill_target`
+        // both at eight, which is what catalog/zones/melee/zone.toml says.
+        let mut z = serving(10, 8, 8);
+        let first = z.room_for_join().expect("a room to start in");
+        assert_eq!(first, 0);
+
+        // The room fills with bots between arrivals, the way the bot server
+        // fills it. Nobody after this should read it as full.
+        seat_bots(&mut z.rooms[0], 8);
+        assert_eq!(z.rooms[0].bot_count(), 8);
+        assert_eq!(
+            z.room_for_join(),
+            Some(0),
+            "a room of bots is a room with eight seats going spare"
+        );
+
+        // Seven arrivals, one at a time, each finding the room the last one
+        // is in. A bot stands down for each.
+        for n in 1..=7 {
+            let i = z.room_for_join().expect("a room");
+            assert_eq!(i, 0, "arrival {n} went somewhere else");
+            seat(&mut z, i, 1);
+            assert_eq!(z.rooms.len(), 1, "and opened nothing");
+            assert_eq!(z.rooms[0].humans(), n);
+        }
+
+        // The eighth fills it, and only then does a ninth get a room of their
+        // own. This is the concentration rule doing the one thing it is for.
+        seat(&mut z, 0, 1);
+        assert_eq!(z.rooms[0].humans(), 8);
+        let next = z.room_for_join().expect("a second room");
+        assert_eq!(next, 1, "a full room is when a sibling opens");
+        assert_eq!(z.rooms.len(), 2);
+    }
+
+    /// A solo arrival takes the side with fewer humans, so four people never
+    /// stack against four bots.
+    #[test]
+    fn a_solo_arrival_takes_the_thinner_side() {
+        let mut a = room_with_teams("teams = [\"Pylon\", \"Caisson\"]\n");
+        let mut sides = Vec::new();
+        for n in 0..4 {
+            let ship = seat_human(&mut a, &format!("p{n}"));
+            sides.push(a.world.state.ships[ship as usize].team);
+        }
+        assert_eq!(
+            sides,
+            vec![0, 1, 0, 1],
+            "arrivals alternate rather than piling up"
+        );
+
+        // And a side already thick with bots is still the thin one, because
+        // what an arrival is weighed against is the humans on it.
+        let mut b = room_with_teams("teams = [\"Pylon\", \"Caisson\"]\n");
+        for i in 0..3 {
+            let (tx, rx) = mpsc::channel(OUT_QUEUE);
+            std::mem::forget(rx);
+            let id = b
+                .join(Seat::guest(format!("bot{i}"), true), 0, 32, tx)
+                .expect("a seat");
+            let ship = b.players[&id].ship;
+            b.join_team(ship, 0);
+        }
+        let human = seat_human(&mut b, "person");
+        assert_eq!(
+            b.world.state.ships[human as usize].team, 0,
+            "three bots on a side do not make it the full one"
+        );
+    }
+
+    /// A room fills between matches and the sides drift. The whistle is where
+    /// that is put right, which is the job the intermission has beyond the
+    /// podium.
+    #[test]
+    fn the_whistle_evens_the_sides_up() {
+        let mut a = match_room(1, 1);
+        // Four humans, all pushed onto one side, which is what a run of
+        // departures leaves behind.
+        let mut ships = Vec::new();
+        for n in 0..4 {
+            let ship = seat_human(&mut a, &format!("p{n}"));
+            a.world.state.ships[ship as usize].team = 0;
+            ships.push(ship);
+        }
+        let side = |a: &Room, t: u8| {
+            ships
+                .iter()
+                .filter(|s| a.world.state.ships[**s as usize].team == t)
+                .count()
+        };
+        assert_eq!((side(&a, 0), side(&a, 1)), (4, 0), "all on one side");
+
+        while a.match_no < 2 {
+            a.tick();
+        }
+        assert_eq!(
+            (side(&a, 0), side(&a, 1)),
+            (2, 2),
+            "and the whistle evens them"
+        );
+    }
+
+    /// A bot is never moved to make the sides look even. Bots fill what humans
+    /// leave, so moving one evens the roster and not the fight.
+    #[test]
+    fn evening_the_sides_moves_people_rather_than_bots() {
+        let mut a = match_room(1, 1);
+        let human = seat_human(&mut a, "person");
+        a.world.state.ships[human as usize].team = 0;
+        let bots = seat_bots(&mut a, 4);
+        for b in &bots {
+            a.world.state.ships[*b as usize].team = 0;
+        }
+
+        while a.match_no < 2 {
+            a.tick();
+        }
+        assert_eq!(
+            a.world.state.ships[human as usize].team, 0,
+            "one human on a side is already even, however many bots are on it"
+        );
+        assert!(
+            bots.iter()
+                .all(|b| a.world.state.ships[*b as usize].team == 0),
+            "and no bot was shuffled to make a number look right"
+        );
+    }
+
     /// A kit is checked twice: against the hull's row, which is the roster
     /// expressing itself, and against what the account owns, which is what the
     /// shop has sold. The smaller of the two wins, and a kit outside either is

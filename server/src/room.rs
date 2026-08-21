@@ -2907,8 +2907,75 @@ impl Room {
         for ship in seats {
             self.deal_seat(ship);
         }
+        self.rebalance();
         self.broadcast_roster();
         self.broadcast_match();
+    }
+
+    /// Even the sides up, by humans, at a whistle.
+    ///
+    /// A room fills between matches: people arrive one at a time and each
+    /// takes the thinner side, which is right at the moment and drifts. Four
+    /// humans against four bots is the arrangement the seating rule exists to
+    /// avoid and the one a run of departures produces anyway, so the
+    /// intermission is where it is put right. That is the job the twenty-five
+    /// seconds have beyond the podium.
+    ///
+    /// Whoever arrived most recently moves, because they are the one who
+    /// unbalanced it. A bot is never moved: bots fill what humans leave, and
+    /// moving one only makes the room look even while the fight is not.
+    pub(crate) fn rebalance(&mut self) {
+        if self.public_teams < 2 {
+            return;
+        }
+        // A bounded loop rather than a while: every pass moves one pilot and
+        // the gap shrinks by two, so a room of 255 settles long before this,
+        // and a rule that could not terminate has no business on a tick.
+        for _ in 0..self.world.state.ship_count as usize {
+            let mut census: Vec<(u8, usize)> = (0..self.public_teams)
+                .map(|t| {
+                    (
+                        t,
+                        self.players
+                            .values()
+                            .filter(|p| !p.bot && self.world.state.ships[p.ship as usize].team == t)
+                            .count(),
+                    )
+                })
+                .collect();
+            census.sort_by_key(|(_, n)| *n);
+            let (thin, few) = census[0];
+            let (thick, many) = census[census.len() - 1];
+            if many <= few + 1 {
+                return;
+            }
+            // The newest arrival on the fullest side. `joined` is the tick
+            // they took the seat, so the largest is the most recent.
+            let Some(ship) = self
+                .players
+                .values()
+                .filter(|p| !p.bot && self.world.state.ships[p.ship as usize].team == thick)
+                .max_by_key(|p| p.joined)
+                .map(|p| p.ship)
+            else {
+                return;
+            };
+            if !self.team_has_room(thin, false, Some(ship)) {
+                return;
+            }
+            // Straight to the side rather than through `join_team`, which
+            // gates on a full bar: a pilot who happens to be short of energy
+            // at the whistle is not a reason to leave the sides uneven, and
+            // `sim_restart` is about to refill everybody anyway.
+            self.world.state.ships[ship as usize].team = thin;
+            if let Some(seat) = self.names.get(&ship).cloned() {
+                self.note(
+                    pilot::TEAM,
+                    &seat,
+                    serde_json::json!({ "from": thick, "to": thin, "why": "rebalance" }),
+                );
+            }
+        }
     }
 
     /// The ground everybody is playing on. Sent at a join and again whenever a
