@@ -492,6 +492,13 @@ pub const PACK_MAX: usize = 64 * 1024;
 pub const PACK_PRIVATE_ALL: u8 = 0x01;
 pub const SETTINGS_PACK_MAX: usize = 8192;
 pub const UP_COUNT: usize = 5;
+/// The five stats a kit may put steps into, in `sim_up`'s own order, which is
+/// the order the slot space and every panel that draws it use.
+pub const UP_ENERGY: usize = 0;
+pub const UP_RECHARGE: usize = 1;
+pub const UP_SPEED: usize = 2;
+pub const UP_THRUST: usize = 3;
+pub const UP_ROTATION: usize = 4;
 pub const TRIG_COUNT: usize = 2;
 /// Which trigger is which, mirroring SIM_TRIG_GUN and SIM_TRIG_BOMB. The
 /// index was written out as a bare 1 wherever a bomb was meant.

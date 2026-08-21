@@ -610,6 +610,12 @@ pub(crate) struct Room {
     /// with four maps holds four sets of tiles for the whole process.
     pub(crate) maps: Vec<std::sync::Arc<sim::sim_map>>,
     pub(crate) map_at: usize,
+    /// Matches this room has opened, so the one being played is number one.
+    /// Zero is a room that has not started yet, which is the difference
+    /// between opening a match and opening the next one: the first is played
+    /// on the ground the room was built on and only the ones after it change
+    /// it.
+    pub(crate) match_no: u32,
     /// The share of this room's seats the bot server is asked to keep filled.
     /// The room does not fill anything itself; it publishes the count it would
     /// like and the bot server supplies it, per decision 29.
@@ -1271,6 +1277,7 @@ impl Room {
             last_match: None,
             maps: Vec::new(),
             map_at: 0,
+            match_no: 0,
             bot_fill: catalog::DEFAULT_BOT_FILL,
         }
     }
@@ -2781,7 +2788,9 @@ impl Room {
     /// new geometry; and the roster everybody is reading has just had every
     /// tally in it zeroed.
     pub(crate) fn open_match(&mut self) {
-        if self.maps.len() > 1 {
+        let first = self.match_no == 0;
+        self.match_no += 1;
+        if !first && self.maps.len() > 1 {
             self.map_at = (self.map_at + 1) % self.maps.len();
             // The room's size is a zone key that lives on the settings, so it
             // is read back off the running room rather than out of the tuning:

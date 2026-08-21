@@ -390,6 +390,154 @@ impl Mode for Warzone {
 }
 
 #[cfg(test)]
+mod melee_tests {
+    use super::*;
+
+    fn world_with(sides: &[(u8, u16)]) -> World {
+        let mut w = World::new(11);
+        for (team, kills) in sides.iter().copied() {
+            let i = w.spawn(0, team, 500, 500, 0);
+            assert!(i >= 0, "a seat");
+            w.state.ships[i as usize].kills = kills;
+        }
+        w
+    }
+
+    fn ctx<'a>(world: &'a mut World, names: &'a [String]) -> ModeCtx<'a> {
+        ModeCtx {
+            world,
+            seats: &[],
+            team_names: names,
+            banner: String::new(),
+            finished: false,
+            open_match: false,
+        }
+    }
+
+    fn sides() -> Vec<String> {
+        vec!["Pylon".into(), "Caisson".into()]
+    }
+
+    /// The first tick of a fresh room opens a match rather than dropping the
+    /// pilots into whatever phase the constructor happened to leave. A room
+    /// grown mid-evening would otherwise open on a podium for a match nobody
+    /// played.
+    #[test]
+    fn a_new_room_opens_a_match_on_its_first_tick() {
+        let names = sides();
+        let mut w = world_with(&[(0, 0)]);
+        let mut m = Melee::new(2, 300, 100);
+        let mut c = ctx(&mut w, &names);
+        m.tick(&mut c);
+        assert!(c.open_match, "the room is asked to open one");
+        let s = m.match_state().expect("a match game has a clock");
+        assert!(s.playing);
+        assert_eq!(s.seconds_left, 3);
+    }
+
+    /// Three minutes, a podium, and another three minutes, with the room asked
+    /// to open a match at each whistle and never in between.
+    #[test]
+    fn the_clock_runs_down_into_an_intermission_and_out_again() {
+        let names = sides();
+        let mut w = world_with(&[(0, 0)]);
+        let mut m = Melee::new(2, 300, 100);
+        let mut opens = 0;
+        let mut phases = Vec::new();
+        for _ in 0..800 {
+            let mut c = ctx(&mut w, &names);
+            m.tick(&mut c);
+            if c.open_match {
+                opens += 1;
+            }
+            let playing = m.match_state().unwrap().playing;
+            if phases.last() != Some(&playing) {
+                phases.push(playing);
+            }
+        }
+        assert_eq!(
+            phases,
+            vec![true, false, true, false, true],
+            "match, podium, match, podium, match"
+        );
+        assert_eq!(opens, 3, "one at the start and one at every whistle");
+    }
+
+    /// The score is the kills on the field while a match is being played, and
+    /// the kills it ended on for as long as the podium is up. A bomb still in
+    /// the air at the whistle must not rewrite the result underneath it.
+    #[test]
+    fn the_podium_shows_the_score_the_match_ended_on() {
+        let names = sides();
+        let mut w = world_with(&[(0, 3), (1, 5)]);
+        let mut m = Melee::new(2, 20, 100);
+        for _ in 0..19 {
+            m.tick(&mut ctx(&mut w, &names));
+        }
+        assert_eq!(m.match_state().unwrap().score, vec![3, 5], "live");
+
+        m.tick(&mut ctx(&mut w, &names)); // the whistle
+        assert!(!m.match_state().unwrap().playing);
+        w.state.ships[0].kills = 99;
+        for _ in 0..20 {
+            m.tick(&mut ctx(&mut w, &names));
+        }
+        assert_eq!(
+            m.match_state().unwrap().score,
+            vec![3, 5],
+            "the podium is not a live scoreboard"
+        );
+    }
+
+    #[test]
+    fn the_banner_names_who_took_it_and_calls_a_tie_a_draw() {
+        let names = sides();
+        let mut w = world_with(&[(0, 2), (1, 7)]);
+        let mut m = Melee::new(2, 5, 100);
+        let mut banner = String::new();
+        for _ in 0..6 {
+            let mut c = ctx(&mut w, &names);
+            m.tick(&mut c);
+            banner = c.banner;
+        }
+        assert!(banner.contains("Caisson"), "who won: {banner:?}");
+        assert!(banner.contains("2 to 7"), "and by what: {banner:?}");
+
+        let mut w = world_with(&[(0, 4), (1, 4)]);
+        let mut m = Melee::new(2, 5, 100);
+        let mut banner = String::new();
+        for _ in 0..6 {
+            let mut c = ctx(&mut w, &names);
+            m.tick(&mut c);
+            banner = c.banner;
+        }
+        assert_eq!(banner, "a draw");
+    }
+
+    /// A mode that is not a match game has no clock, and the room reads that
+    /// as "nothing to send and nobody to hold still".
+    #[test]
+    fn every_other_mode_has_no_clock() {
+        assert!(FreeForAll.match_state().is_none());
+        assert!(Warzone::new(4, 2).match_state().is_none());
+    }
+
+    #[test]
+    fn a_zone_names_the_mode_and_gets_it() {
+        let setup = Setup {
+            flags: 0,
+            teams: 2,
+            match_ticks: 18_000,
+            intermission_ticks: 2_500,
+        };
+        assert_eq!(build("melee", &setup).name(), "melee");
+        assert_eq!(build("warzone", &setup).name(), "warzone");
+        assert_eq!(build("arena", &setup).name(), "arena");
+        assert!(exists("melee"), "and the catalog will accept the name");
+    }
+}
+
+#[cfg(test)]
 mod warzone_tests {
     use super::*;
 

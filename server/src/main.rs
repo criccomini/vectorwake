@@ -2920,6 +2920,237 @@ mod tests {
         a.players[&id].ship
     }
 
+    /// The melee maps have to be a place the design describes, and the two
+    /// numbers that decide that are geometric rather than aesthetic: the
+    /// sides start apart, and there is more than one way between them.
+    ///
+    /// Sized in seconds of flight rather than in tiles, because that is the
+    /// unit `docs/design/match-game.md` argues in: first contact five to eight
+    /// seconds from the whistle. Both sides leave home at once and meet in the
+    /// middle, so what that asks of a map is ten to sixteen seconds of route
+    /// between the two pockets, flown at the top speed the baseline gives a
+    /// hull. Read off the core rather than written down here, because a
+    /// roster retune would otherwise move the thing being measured and not
+    /// the measurement.
+    ///
+    /// This is what would catch a map redrawn from a new seed that happened to
+    /// put both pockets in the same corner, which nothing else here checks and
+    /// which is invisible in a generator line that says "8 spawns".
+    #[test]
+    fn the_melee_maps_are_two_homes_with_ground_between_them() {
+        for name in ["drydock", "slipway"] {
+            let bytes = std::fs::read(format!("../catalog/zones/melee/{name}.vwmap"))
+                .unwrap_or_else(|e| panic!("{name} ships in this repository: {e}"));
+            let w = sim::World::from_packed(0x5eed, &bytes).expect("a map");
+
+            // Four starts a side, so `sim_restart` can line a side up along
+            // its own pocket rather than piling four ships on one tile.
+            let mut homes = [Vec::new(), Vec::new()];
+            for team in 0..2u8 {
+                for nth in 0..4u32 {
+                    let p = w.map_spawn(team, nth).expect("a start");
+                    if !homes[team as usize].contains(&p) {
+                        homes[team as usize].push(p);
+                    }
+                }
+            }
+            assert_eq!(homes[0].len(), 4, "{name}: four starts for side one");
+            assert_eq!(homes[1].len(), 4, "{name}: four starts for side two");
+
+            // A pocket is somewhere, not everywhere: every start of a side is
+            // within twenty tiles of its own first one.
+            for (t, side) in homes.iter().enumerate() {
+                for p in side {
+                    let d = (((p.0 - side[0].0).pow(2) + (p.1 - side[0].1).pow(2)) as f64).sqrt();
+                    assert!(
+                        d <= 20.0,
+                        "{name}: side {t} is scattered, not pocketed ({d:.0} tiles)"
+                    );
+                }
+            }
+
+            let route = nav::Nav::build(&w.map);
+            let px = |p: (i32, i32)| ((p.0 * 16 + 8) as f32, (p.1 * 16 + 8) as f32);
+            let legs = route.route(px(homes[0][0]), px(homes[1][0]));
+            assert!(
+                !legs.is_empty(),
+                "{name}: a hull can fly from one home to the other"
+            );
+            let mut flown = 0.0f32;
+            let mut at = px(homes[0][0]);
+            for leg in &legs {
+                flown += ((leg.0 - at.0).powi(2) + (leg.1 - at.1).powi(2)).sqrt();
+                at = *leg;
+            }
+            // An Apex, which is the roster's own reference hull, flying a kit
+            // that spends nothing on speed. A pilot who bought speed arrives
+            // sooner, and that is the roster expressing itself rather than a
+            // number this test should be reading.
+            let mut probe = sim::World::from_packed(0x5eed, &bytes).expect("a map");
+            let ship = probe.spawn_on_map(0, 0, 0, 0);
+            assert!(ship >= 0, "{name}: a seat");
+            let sh = probe.state.ships[ship as usize];
+            let top = unsafe { sim::sim_eff_speed(&probe.cfg.classes[0], &sh) } as f32 / 65536.0;
+            let seconds = flown / (top * 100.0);
+            let tiles = flown / 16.0;
+            // A tenth either side of the design's window. What is measured
+            // here is a router's polyline flown at a constant top speed, and
+            // a pilot does neither: they cut the corners the router rounds,
+            // and they spend the first second getting up to speed. The
+            // estimate is worth a few per cent, so the bound is too.
+            assert!(
+                (9.0..=17.6).contains(&seconds),
+                "{name}: the homes are {tiles:.0} tiles apart, {seconds:.1} s of \
+                 flight, so first contact lands at {:.1} s rather than the five \
+                 to eight the design asks for",
+                seconds / 2.0
+            );
+            println!(
+                "{name}: homes {tiles:.0} tiles apart, {seconds:.1} s of flight, \
+                 first contact about {:.1} s",
+                seconds / 2.0
+            );
+        }
+    }
+
+    /// A match room built the way the shipped zone is: two maps, two sides,
+    /// and the mode's clock read out of the file rather than out of a default.
+    fn match_room(match_seconds: u16, intermission_seconds: u16) -> Room {
+        let mut def = wire_zone(1, 8, 8);
+        def.mode = "melee".into();
+        // Two, and they have to be different tiles or the test that says the
+        // ground changed would pass on a room that never moved.
+        def.maps_b64 = vec![
+            fleet::b64(&sim::World::new(1).packed_map()),
+            fleet::b64(&sim::World::with_map(1, sim::build_pit).packed_map()),
+        ];
+        def.zone_toml = format!(
+            "description = \"a match zone\"\nteams = [\"Pylon\", \"Caisson\"]\n\
+             [arena]\nmatch_seconds = {match_seconds}\n\
+             intermission_seconds = {intermission_seconds}\n"
+        );
+        let (cfg, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
+        let mut z = ArenaServer::new(cfg, test_spool(), HashMap::new());
+        z.serve_zone(&def).expect("a room");
+        z.rooms.remove(0)
+    }
+
+    /// The room plays match after match on alternating ground, and each one
+    /// opens with everybody home and reloaded.
+    ///
+    /// The ammunition is the half worth pinning. A death re-deals the frame
+    /// and never the charges, so a pilot who spends both repels flies the rest
+    /// of the match without them; the whistle is the only thing that gives
+    /// them back, and if it did not, a kit slot would be a one-match purchase.
+    #[test]
+    fn a_whistle_changes_the_ground_and_re_deals_the_ammunition() {
+        let mut a = match_room(1, 1);
+        let ship = seat_human(&mut a, "pilot") as usize;
+
+        let mut kit = [0u8; sim::SLOT_COUNT];
+        kit[sim::slot_charge(sim::CHARGE_REPEL) as usize] = 3;
+        kit[sim::slot_stat(sim::UP_SPEED) as usize] = 4;
+        assert!(a.world.set_kit(ship, &kit), "a legal kit");
+
+        assert_eq!(a.mode.name(), "melee", "the room is a match room");
+        assert_eq!(a.maps.len(), 2, "on two maps");
+        let first = a.world.packed_map();
+        a.world.state.ships[ship].charge[sim::CHARGE_REPEL] = 0;
+        a.world.state.ships[ship].kills = 6;
+        a.world.state.ships[ship].run = 6;
+        a.world.state.ships[ship].x = 40 * 16 * 256;
+
+        // A second of play, a second of podium, and the next match opens.
+        assert_eq!(a.match_no, 0, "nothing has started yet");
+        while a.match_no < 2 {
+            a.tick();
+        }
+
+        assert_ne!(
+            a.world.packed_map(),
+            first,
+            "the next match is on the other map"
+        );
+        let sh = &a.world.state.ships[ship];
+        assert_eq!(sh.charge[sim::CHARGE_REPEL], 3, "the ammunition came back");
+        assert_eq!(sh.up[sim::UP_SPEED], 4, "and so did the frame");
+        assert_eq!((sh.kills, sh.run), (0, 0), "the tally is the match's own");
+        assert_eq!((sh.x, sh.y), (sh.spawn_x, sh.spawn_y), "on a start");
+    }
+
+    /// The zone's tuning survives the ground changing under it. Swapping a map
+    /// resets the settings to the baseline, because most of the baseline is
+    /// derived from the geometry it was built against, so a room on its second
+    /// map would otherwise quietly be a room with no zone file.
+    #[test]
+    fn the_tuning_goes_back_on_over_the_new_ground() {
+        let mut def = wire_zone(1, 8, 8);
+        def.mode = "melee".into();
+        def.maps_b64 = vec![
+            fleet::b64(&sim::World::new(1).packed_map()),
+            fleet::b64(&sim::World::with_map(1, sim::build_pit).packed_map()),
+        ];
+        def.zone_toml = "description = \"a match zone\"\nmax_ships = 8\n\
+                         teams = [\"Pylon\", \"Caisson\"]\n\
+                         [arena]\nmatch_seconds = 1\nintermission_seconds = 1\n\
+                         respawn_delay = 123\nbounty_base = 7\n"
+            .into();
+        let (cfg, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
+        let mut z = ArenaServer::new(cfg, test_spool(), HashMap::new());
+        z.serve_zone(&def).expect("a room");
+        let a = &mut z.rooms[0];
+        assert_eq!(a.world.cfg.respawn_delay, 123);
+        assert_eq!(a.world.cfg.bounty_base, 7);
+        assert_eq!(a.world.cfg.max_ships, 8);
+        let generation = a.settings_generation;
+
+        for _ in 0..201 {
+            a.tick();
+        }
+        assert_eq!(a.world.cfg.respawn_delay, 123, "the file is still in force");
+        assert_eq!(a.world.cfg.bounty_base, 7);
+        assert_eq!(
+            a.world.cfg.max_ships, 8,
+            "including the room size, which is a zone key and not an arena one"
+        );
+        assert_ne!(
+            a.settings_generation, generation,
+            "and a client cannot predict the new ground with the old pack"
+        );
+    }
+
+    /// Nobody flies during an intermission. That is the whole of what makes it
+    /// one rather than a free-for-all under a frozen scoreboard.
+    #[test]
+    fn the_controls_are_held_between_matches() {
+        let mut a = match_room(1, 2);
+        let ship = seat_human(&mut a, "pilot") as usize;
+        for _ in 0..120 {
+            a.tick();
+        }
+        assert!(
+            !a.mode.match_state().unwrap().playing,
+            "the podium is up by now"
+        );
+
+        // Full thrust, held. A ship that moves is a ship taking input.
+        let id = *a.players.keys().next().unwrap();
+        let before = (a.world.state.ships[ship].vx, a.world.state.ships[ship].vy);
+        for _ in 0..20 {
+            let now = a.world.state.tick.wrapping_add(1);
+            a.players
+                .get_mut(&id)
+                .unwrap()
+                .schedule(now, sim::BTN_THRUST, now);
+            a.tick();
+        }
+        assert_eq!(
+            (a.world.state.ships[ship].vx, a.world.state.ships[ship].vy),
+            before,
+            "thrust does nothing while the podium is up"
+        );
+    }
+
     #[test]
     fn a_zone_names_its_own_sides_and_arrivals_spread_over_them() {
         let mut a = room_with_teams("teams = [\"Keel\", \"Vantage\"]\n");
