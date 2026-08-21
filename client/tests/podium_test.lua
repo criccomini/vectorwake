@@ -216,6 +216,9 @@ check("the side that took it is named", said("caisson takes it") ~= nil,
       table.concat(words(), " | "))
 check("and the room says when the next one starts",
       said("next match in 0:23") ~= nil)
+-- Once, at the card's foot. The topbar's own caption stands down for it.
+check("and says it once", counted("next match in") == 0,
+      tostring(counted("next match in")))
 
 -- Everybody who flew it is on it, whichever side they were on.
 for _, who in ipairs({"you", "Kestrel", "Plinth", "Vesper"}) do
@@ -257,8 +260,12 @@ frame({match = {playing = false, left = 23, score = {[0] = 11, [1] = 14}},
 check("the menu covers it", said("takes it") == nil,
       tostring(said("takes it")))
 -- The clock survives, because it is the topbar's and a player reading a menu
--- still wants to know how long they have.
-check("but the clock does not", said("next match") ~= nil or said("0:23") ~= nil)
+-- still wants to know how long they have. And it takes back the caption the
+-- card was carrying, since with the card gone nothing else says what the
+-- number is counting down to.
+check("but the clock does not", said("0:23") ~= nil)
+check("and the topbar says what it is counting to",
+      said("next match in") ~= nil)
 
 print(fails == 0 and "all good" or (fails .. " failed"))
 os.exit(fails == 0 and 0 or 1)

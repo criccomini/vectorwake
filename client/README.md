@@ -155,8 +155,8 @@ works from a hosted page and `ws://<some other host>` will not. A zone that
 strangers are meant to reach needs TLS in front of it.
 
 Online, `net.lua` sends buttons, predicts this ship forward from the last
-snapshot, and accepts every correction. It decides no hit, no death, no
-pickup. Snapshots are decoded by the core's own `sim_unpack`, so client and
+snapshot, and accepts every correction. It decides no hit and no death.
+Snapshots are decoded by the core's own `sim_unpack`, so client and
 server cannot disagree about what a snapshot means.
 
 The online path still calls `sim.init` before connecting. A snapshot carries
@@ -793,8 +793,8 @@ life test: a burst puts twenty-four rounds in the air and draws itself.
 `a_repel_is_gone_before_a_snapshot_can_carry_it` in the server pins the fact
 from the other side, so the day a repel becomes packable the client can go back
 to drawing it from the weapon. `lua5.1 client/tests/charges_test.lua` covers
-what must not draw: your own hull, a pickup, a death, a respawn, a seat
-somebody new has taken, and a charge that flies before it goes off.
+what must not draw: your own hull, a death, a respawn, a seat somebody new
+has taken, and a charge that flies before it goes off.
 
 ## The games list survives its directory
 

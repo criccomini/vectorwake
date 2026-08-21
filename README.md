@@ -12,7 +12,7 @@ The browser client and live fleet work today. They include seven hulls, keyboard
 
 ## How it works
 
-The **simulation core** has no floats, I/O, or runtime dependencies. The client runs it for prediction; the server runs it to decide positions, hits, deaths, pickups, and scoring. Snapshots are packed by the core itself, so the two sides share both the rules and the wire representation.
+The **simulation core** has no floats, I/O, or runtime dependencies. The client runs it for prediction; the server runs it to decide positions, hits, deaths, and scoring. Snapshots are packed by the core itself, so the two sides share both the rules and the wire representation.
 
 The **client** draws the world as vector geometry across five mesh layers. Ships and weapons are readable by silhouette, color, and motion rather than by copied sprites. The client also synthesizes its short combat sounds from code.
 

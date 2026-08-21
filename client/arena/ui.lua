@@ -2955,7 +2955,7 @@ end
 -- Drawn under the menu as well, unlike the two big centered lines below,
 -- because the menu is a scrim rather than a curtain and "how are you doing in
 -- the thing you are in" is exactly what a player opening it wants to keep.
-local function match_clock(m, names)
+local function match_clock(m, names, alone)
     if not m then return end
     local left = m.left or 0
     local clock = string.format("%d:%02d", math.floor(left / 60), left % 60)
@@ -2970,7 +2970,10 @@ local function match_clock(m, names)
     -- down and a word saying "match" beneath it is the interface reading its
     -- own label back. The intermission does need saying, because a clock
     -- counting down to something a player cannot see is a question.
-    if not m.playing then
+    -- Only when the ending is not up. The card says the same thing at its
+    -- foot, with room for it, and two of them at once is the interface
+    -- answering a question nobody asked twice.
+    if not m.playing and alone then
         txt("NEXT MATCH IN", F.w / 2, y + 13 * F.scale, small,
             pal.a(pal.DIM, 0.8), "center")
     end
@@ -3031,8 +3034,8 @@ local function podium(o, m, names)
     local x = (F.w - w) / 2
     local line = (M.compact and 15 or 17) * F.scale
 
-    -- Which side took it, and by how much. A draw is a real result at three
-    -- minutes and says so rather than naming a winner by tie-break.
+    -- Which side took it. A draw is a real result at three minutes and says
+    -- so, rather than a winner being named by tie-break.
     local best, best_at, drawn = -1, nil, false
     for team, n in pairs(m.score or {}) do
         if n > best then best, best_at, drawn = n, team, false
@@ -3045,8 +3048,10 @@ local function podium(o, m, names)
         head = ((names and names[best_at]) or "a side") .. " takes it"
     end
 
-    -- The sides, each with its own pilots under it, best first. Two columns
-    -- where there is room for two.
+    -- The sides, each with its own pilots under it, best first, and yours on
+    -- the left however the zone numbered the teams. That is the same rule the
+    -- clock's own score follows: the reading is positional, so it never has to
+    -- be worked out from a color.
     local sides, seen = {}, {}
     for team in pairs(m.score or {}) do
         sides[#sides + 1] = team
@@ -3084,10 +3089,13 @@ local function podium(o, m, names)
     local h = 34 * F.scale + 20 * F.scale + tall * line + 40 * F.scale
     local y = math.max(72 * F.scale, (F.h - h) / 2)
 
-    -- A wash rather than a panel, the same one the menu sits on: the match is
-    -- over and the arena behind it is not hidden, because the next one starts
-    -- in the room you are looking at.
-    rect(x - pad, y - pad, w + 2 * pad, h + 2 * pad, pal.rgb(0x03050a, 0.72))
+    -- A scrim over the whole screen and a heavier wash under the card. The
+    -- match is over and the arena behind it is not hidden, because the next
+    -- one starts in the room you are looking at, but a card you can read a
+    -- wall through is a card with a wall written across it: at three quarters
+    -- the lit edge of a rock came through the type.
+    rect(0, 0, F.w, F.h, pal.rgb(0x03050a, 0.55))
+    rect(x - pad, y - pad, w + 2 * pad, h + 2 * pad, pal.rgb(0x03050a, 0.9))
     txt(head, F.w / 2, y + 6 * F.scale, (M.compact and 17 or 21) * F.scale,
         pal.a(pal.INK, 0.95), "center")
 
@@ -3101,6 +3109,10 @@ local function podium(o, m, names)
         txt(tostring(m.score and m.score[team] or 0),
             cx + cw - 12 * F.scale, y + 34 * F.scale, 12 * F.scale,
             pal.a(col, 0.9), "right")
+        -- What the two numbers on every row below are. Once per column, in
+        -- the head, rather than a word per row.
+        txt("k  d", cx + cw - 40 * F.scale, y + 34 * F.scale, 9.5 * F.scale,
+            pal.a(pal.DIM, 0.75), "right")
         F.layer:seg(cx + 12 * F.scale, ry(y + 44 * F.scale),
                     cx + cw - 12 * F.scale, ry(y + 44 * F.scale),
                     1.0 * F.scale, pal.a(pal.RADAR_TILE, 0.6), true)
@@ -3237,7 +3249,7 @@ function M.hud(o)
     -- Above the two big centered lines and above the menu's own early return:
     -- the clock is what the topbar carries and a player reading a menu still
     -- wants it. See `match_clock`.
-    match_clock(o.match, o.side_names)
+    match_clock(o.match, o.side_names, o.menu_open)
     -- The two big centered lines are the only interface that sits where the
     -- menu does. The panels can share the screen with it; these cannot.
     if o.menu_open then return end

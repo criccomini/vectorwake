@@ -16,6 +16,7 @@
 | M6 meta-layer | Done in code: calibrated bot ladder, visible tiers, touch controls, zone directory and the games list in the menu |
 | M6 platforms | Accounts live on the fleet. Steam and consoles still wait on credentials |
 | M7 the fleet | Designed, not built. The directory, catalog and zone selection below |
+| M8 the match game | Melee: three minute 4v4 matches, owned kits, rivets, two maps and six tabs. Capture and Holdfast named, not written |
 
 What M6 asked for that is code has landed. The bot ladder is calibrated by
 an offline tournament and seeds every zone; ratings show as tiers once a
@@ -336,7 +337,8 @@ feels wrong.
 A Continuum compatibility gateway, which stays a proposal in
 [decisions.md](decisions.md) until there is a game worth connecting to.
 
-Anything resembling progression, an economy, or a persistent world.
-That deferral is being reopened deliberately, and the case is in
-[design/match-game.md](../design/match-game.md): owned kits, bounty as a
-run that pays its ender, and rivets. Playtesting is what reopened it.
+Anything resembling a persistent world. Progression and an economy were on
+this list until playtesting took them off it: the case is
+[design/match-game.md](../design/match-game.md), and what came of it is
+owned kits, bounty as a run that pays its ender, rivets, and a shop that
+sells which slots a pilot may fill and never how many.
