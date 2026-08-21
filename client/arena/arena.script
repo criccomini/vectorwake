@@ -2027,6 +2027,15 @@ local function full_bar(what)
     return true
 end
 
+-- The kit that hull is saved with, sent to the room behind the hull itself.
+-- A seat wearing something is not re-dealt, so without this a hull change
+-- carried the last hull's build onto the new one and the build the pilot
+-- actually saved for it sat unread in the account.
+local function fly_kit(class)
+    menu.open_kit(class)
+    net.set_kit(menu.kit)
+end
+
 function apply_menu(self, act)
     -- A point spent or taken back in the hangar. The kit reaches the room at
     -- once, because the room is what decides whether it fits and the next
@@ -2037,7 +2046,13 @@ function apply_menu(self, act)
         local class = menu.kit_class or menu.class
         local name = TUNE.CLASS_NAMES[class + 1]
         if name then account.save_kit(name, menu.kit) end
-        if self.online then net.set_kit(menu.kit) end
+        -- To the room only where the hull being edited is the hull being
+        -- flown. The carousel turns without asking for a hull now, so a pilot
+        -- can spin to a Wedge mid-fight and spend a point on it; sending that
+        -- would have dressed the Apex they are sitting in with somebody
+        -- else's build. The account still keeps it, because it is their kit
+        -- for that hull whether or not they are in one.
+        if self.online and class == menu.class then net.set_kit(menu.kit) end
         return
     end
     -- One step in one slot, bought. The meta-layer prices it, checks the
@@ -2073,6 +2088,7 @@ function apply_menu(self, act)
         -- are, watching.
         if watching then
             net.set_class(menu.pending)
+            fly_kit(menu.pending)
             menu.spectate = false
             menu.save_identity()
             menu.close()
@@ -2090,6 +2106,7 @@ function apply_menu(self, act)
         -- answers. Nothing is predicted: a hull that flickered back would be
         -- worse than one that arrives a frame late.
         net.set_class(menu.pending)
+        fly_kit(menu.pending)
         menu.save_identity()
         menu.close()
         return
