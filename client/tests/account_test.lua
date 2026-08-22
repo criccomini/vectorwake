@@ -18,6 +18,11 @@ end
 local requests = {}
 local replies = {}
 local saved = {secret = "old-secret", account = 1}
+-- What the last body handed to the encoder was, so a request can be checked
+-- for what it carried and not only for where it went. The encoder answers
+-- with a constant, which is all the transport needs and none of what a test
+-- reading the body needs.
+local sent = nil
 
 _G.sys = {
     get_save_file = function() return "account.save" end,
@@ -27,12 +32,14 @@ _G.sys = {
 }
 _G.socket = {gettime = function() return 10 end}
 _G.json = {
-    encode = function() return "{}" end,
+    encode = function(v) sent = v return "{}" end,
     decode = function(key) return replies[key] end,
 }
 _G.http = {
     request = function(url, method, cb)
-        requests[#requests + 1] = {url = url, method = method, cb = cb}
+        requests[#requests + 1] = {url = url, method = method, cb = cb,
+                                   body = sent}
+        sent = nil
     end,
 }
 
@@ -153,6 +160,51 @@ account.room_changed()
 check("and a room change forgets who was beside you",
       account.have_friends == false and #account.here == 0,
       tostring(account.have_friends) .. "/" .. tostring(#account.here))
+
+-- A call sign rather than an account number. It is the one way onto that page
+-- that does not begin with the two of you being in the same room, and it goes
+-- out as a name because this client has no way to turn one into a number.
+at = #requests
+account.friend("Halcyon 1", true)
+check("a typed call sign goes out as a name",
+      requests[at + 1].body.name == "Halcyon 1"
+      and requests[at + 1].body.account == nil,
+      tostring(requests[at + 1].body.name))
+
+-- What came of it, in the sentence under the field. Adding somebody who had
+-- already added you closes the pair, and after the row is in, that press and
+-- the one that did not look identical: `mutual` is the only thing that
+-- separates them and it comes back with the page.
+answer(requests[at + 1], "friend",
+       {friends = {}, asked = {}, waiting = {}, here = {},
+        everybody = {{account = 7, name = "Halcyon 1", state = "friend"}},
+        mutual = true})
+check("and a pair that closed says so",
+      account.friend_note ~= nil
+      and string.find(account.friend_note, "friends", 1, true) == 1
+      and account.friend_bad == false, tostring(account.friend_note))
+check("with everybody who added you alongside the rest",
+      #account.everybody == 1 and account.everybody[1].state == "friend",
+      tostring(#account.everybody))
+
+at = #requests
+account.friend(5, true)
+answer(requests[at + 1], "friend",
+       {friends = {}, asked = {}, waiting = {}, here = {}, everybody = {},
+        mutual = false})
+check("and one that did not says what is still missing",
+      string.find(account.friend_note, "add you back", 1, true) ~= nil,
+      tostring(account.friend_note))
+
+-- Ignoring is its own route, because it is not an edge: the add stays where
+-- it is and comes off the list that asks about it.
+at = #requests
+account.ignore(9, true)
+check("ignoring names the pilot and says which way",
+      string.find(requests[at + 1].url, "/v1/friend/ignore", 1, true) ~= nil
+      and requests[at + 1].body.account == 9
+      and requests[at + 1].body.on == true,
+      tostring(requests[at + 1].url))
 
 if fails > 0 then os.exit(1) end
 print("all good")

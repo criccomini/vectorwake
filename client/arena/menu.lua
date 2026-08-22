@@ -740,6 +740,17 @@ M.filter_on = false
 -- what the meta-layer counts in.
 M.week_back = 0
 
+-- What is typed into the friends page's add field, and whether the field is
+-- taking type. The same pair the filter box keeps, and for the same reason: a
+-- printable character arriving on that page goes in the box and lights it, so
+-- a keyboard needs no click first.
+--
+-- The difference is that this one has something to send. A filter answers
+-- every letter; a call sign is only a call sign once it is finished, so there
+-- is a button beside it and enter does the same thing.
+M.add_name = ""
+M.add_on = false
+
 -- Kills over deaths, as the number everybody means by it: a pilot who has
 -- died once and killed nobody is 0.00, and one who has not died yet is
 -- however many they took. Dividing by a zero denominator is what makes the
@@ -933,6 +944,90 @@ function M.wipe_filter()
     return nil, true
 end
 
+-- The friends page's add field. The filter box's four functions again, with
+-- one more: this one has something to send.
+--
+-- A call sign is a word and a number, so 24 characters is generous and the
+-- gate is the same printable ASCII every other typed line in this client is
+-- held to.
+-- `M.at()` rather than `M.showing()`, which is the page under the rail's
+-- cursor as well as the page you are standing in. At the top of the menu the
+-- friends page is a preview with no field drawn on it, and a letter typed
+-- there would land in a box nobody can see and take the next enter with it.
+function M.type_add(ch)
+    if M.at() ~= "friends" then return false end
+    if type(ch) ~= "string" or #ch ~= 1 then return false end
+    local b = string.byte(ch)
+    if b < 32 or b > 126 then return false end
+    if #(M.add_name or "") >= 24 then return false end
+    M.add_name = (M.add_name or "") .. ch
+    M.add_on = true
+    return true
+end
+
+function M.rub_add()
+    if M.at() ~= "friends" then return false end
+    if (M.add_name or "") == "" then return false end
+    M.add_name = string.sub(M.add_name, 1, #M.add_name - 1)
+    M.add_on = true
+    return true
+end
+
+-- The box, pressed. A caret where there are keys; on glass a card, because a
+-- drawn box that raises no keyboard is a control that does nothing. The card
+-- sends on its own answer, so a thumb never has to find the button beside the
+-- box afterwards.
+function M.click_add()
+    if M.at() ~= "friends" then return nil, false end
+    if M.touching then
+        M.ask = {head = "Add a pilot", sel = 1, field = 1,
+                 note = "a call sign, spelled as they spell it",
+                 keys = {{label = "add", act = "do_add"},
+                         {label = "cancel"}},
+                 fields = {{label = "call sign", value = M.add_name or "",
+                            max = 24}}}
+        return nil, true
+    end
+    if M.add_on then return nil, false end
+    M.add_on = true
+    return nil, true
+end
+
+function M.blur_add()
+    if not M.add_on then return false end
+    M.add_on = false
+    return true
+end
+
+function M.wipe_add()
+    if (M.add_name or "") == "" then return nil, false end
+    M.add_name = ""
+    account.friend_note = ""
+    account.friend_bad = false
+    return nil, true
+end
+
+-- Sent. The field empties on the way out rather than when the answer lands:
+-- what happened is the sentence under it, and leaving the name sitting there
+-- reads as a press that did not go.
+function M.send_add()
+    local name = (M.add_name or ""):gsub("^%s+", ""):gsub("%s+$", "")
+    if name == "" then return nil, false end
+    M.add_name = ""
+    M.add_on = false
+    -- Answered here rather than by the meta-layer, which would have to be
+    -- told the call sign to say it back. Nothing goes out.
+    if string.lower(name) == string.lower(M.name or "") then
+        account.friend_note = "that is you."
+        account.friend_bad = true
+        return nil, true
+    end
+    account.friend_note = "asking"
+    account.friend_bad = false
+    account.friend(name, true)
+    return nil, true
+end
+
 local function standings_empty()
     if account.week and #account.week > 0 then
         -- A filter that matches nobody is not an empty week, and saying so
@@ -976,45 +1071,137 @@ local function name_rows(rows, head, list, fill)
     end
 end
 
+-- Seconds, as somebody says them.
+--
+-- Nothing here is exact past the first figure, because "added you 2h ago" and
+-- "added you 2h 14m ago" answer the same question and only one of them is
+-- read. A row with no clock on it at all says nothing, which is the case
+-- while an older meta-layer is still answering without one.
+local function ago_words(secs)
+    if type(secs) ~= "number" or secs < 0 then return "" end
+    if secs < 90 then return "just now" end
+    if secs < 3600 then return math.floor(secs / 60) .. "m ago" end
+    if secs < 86400 then return math.floor(secs / 3600) .. "h ago" end
+    if secs < 172800 then return "yesterday" end
+    if secs < 604800 then return math.floor(secs / 86400) .. "d ago" end
+    return math.floor(secs / 604800) .. "w ago"
+end
+
+-- The page, as a flat list of rows carrying their own section heads.
+--
+-- Every row holds what can be done to it in `acts`, in the order the buttons
+-- are drawn. That list is drawn twice and written once: a pointer gets the
+-- buttons, and a press of the row itself, which is all five inputs have, gets
+-- the same list as a card. Two places to edit is how a page ends up offering
+-- "ignore" to a thumb and not to a d-pad.
 local function friend_rows()
     local rows = {}
+
+    -- Whoever is waiting on an answer, first, because it is the only section
+    -- that is asking anything of you. Ignoring one takes it off this list for
+    -- good and puts it on the last one, where it can still be accepted.
+    local flying = 0
+    for _, f in ipairs(account.friends or {}) do
+        if f.zone ~= nil and f.zone ~= "" then flying = flying + 1 end
+    end
+    name_rows(rows, "waiting on you", account.asked, function(p)
+        return {
+            detail = "added you " .. ago_words(p.ago),
+            state = "asked",
+            acts = {{label = "accept", act = "do_befriend", go = true},
+                    {label = "ignore", act = "do_ignore"}},
+            act = "friend_card",
+        }
+    end)
+    if rows[1] then
+        rows[1].sect_note = tostring(#account.asked)
+        -- One sentence. The menu is set in a sentence's case, which
+        -- capitalizes the first letter of a line and no other, so a second
+        -- sentence here opens in lower case and reads as a typo.
+        rows[1].sect_line = "they added you; accept and you are friends,"
+                            .. " ignore and they go to everybody"
+    end
+
+    local first = #rows + 1
     name_rows(rows, "friends", account.friends, function(f)
         local where = directory.at_instance(f.instance)
-        local flying = f.zone ~= nil and f.zone ~= ""
+        local on = f.zone ~= nil and f.zone ~= ""
+        local acts = {}
+        -- Join first where there is one, since it is what somebody opening
+        -- this page is usually here for.
+        if where ~= nil then
+            acts[#acts + 1] = {label = "join", go = true,
+                               card = "join " .. (f.zone or "them"),
+                               act = "do_join_friend"}
+        end
+        -- Spelled out, on a phone as well as on a desktop. It was a cross
+        -- there, which is the mark for shutting a panel everywhere else in
+        -- this interface and a thin thing to aim a thumb at for something
+        -- that cannot be undone in one press.
+        acts[#acts + 1] = {label = "unfriend", act = "do_unfriend"}
         return {
             -- Where they are, or that they are not anywhere. A friend in an
             -- instance this client cannot see reads as in that game and is
             -- not joinable, which is the honest answer for an arena the
             -- directory has stopped listing.
-            detail = flying and f.zone or "not on",
+            detail = on and f.zone or "not on",
             live = where ~= nil,
-            zone = flying and f.zone or nil,
+            zone = on and f.zone or nil,
             joinable = where ~= nil,
-            -- A card rather than an action, because there are two things to
-            -- do with a friend and one of them takes both edges away. Five
-            -- inputs and no second button means a row has one press, so the
-            -- press asks. See docs/design/friends.md.
+            state = on and "flying" or "friend",
+            acts = acts,
             act = "friend_card",
         }
     end)
-    -- The other three are a name and one press, so they are a table rather
-    -- than three copies of the same loop. Order is what they are for: people
-    -- to answer, then people to add, then presses already made.
-    local plain = {
-        {head = "they added you", list = account.asked,
-         detail = "add back", act = "befriend"},
-        {head = "in this game", list = account.here,
-         detail = "add", act = "befriend"},
-        -- Last, because nothing happens on it. It exists so that adding
-        -- somebody has a visible consequence: without it a press took a name
-        -- off the list above and put it nowhere.
-        {head = "you added", list = account.waiting,
-         detail = "not back yet", act = "friend_card"},
-    }
-    for _, sec in ipairs(plain) do
-        name_rows(rows, sec.head, sec.list, function()
-            return {detail = sec.detail, act = sec.act}
-        end)
+    if rows[first] then
+        rows[first].sect_note = #account.friends
+            .. (flying > 0 and (", " .. flying .. " flying") or "")
+    end
+
+    -- The room you are in, which is still the way most friends are made: the
+    -- page you add somebody on is the one you are already reading.
+    first = #rows + 1
+    name_rows(rows, "in this game", account.here, function()
+        return {detail = "", state = "here",
+                acts = {{label = "add", act = "do_befriend", go = true}},
+                act = "friend_card"}
+    end)
+    if rows[first] then rows[first].sect_note = tostring(#account.here) end
+
+    -- Presses already made. It exists so that adding somebody has a visible
+    -- consequence: without it a press took a name off the list above and put
+    -- it nowhere.
+    first = #rows + 1
+    name_rows(rows, "you added", account.waiting, function(p)
+        return {detail = ago_words(p.ago), state = "sent",
+                acts = {{label = "cancel", card = "take it back",
+                         act = "do_unfriend"}},
+                act = "friend_card"}
+    end)
+    if rows[first] then rows[first].sect_note = tostring(#account.waiting) end
+
+    -- And everybody who has ever added you, whatever came of it. The ignored
+    -- are the only rows here anybody presses; the rest are context, and the
+    -- context is the point: this heading is true, so an ignore is never the
+    -- end of it.
+    first = #rows + 1
+    name_rows(rows, "everybody who added you", account.everybody, function(p)
+        local st = p.state or "waiting"
+        local line = st == "ignored" and ("ignored " .. ago_words(p.ago))
+                     or st == "friend" and "friend"
+                     or "waiting on you"
+        return {
+            detail = line, state = st, dim = st ~= "ignored",
+            acts = st == "ignored"
+                and {{label = "accept", act = "do_befriend", go = true}}
+                or {},
+            act = st == "ignored" and "friend_card" or nil,
+        }
+    end)
+    if rows[first] then
+        rows[first].sect_note = tostring(#account.everybody)
+        rows[first].sect_line = "the ones you ignored, and the ones it came"
+                                .. " to something"
     end
     return rows
 end
@@ -1043,19 +1230,12 @@ local function friends_detail()
     return "none on"
 end
 
-local function friends_lede()
-    -- One sentence. The menu is set in a sentence's case, which capitalizes
-    -- the first letter of a line and no other, so a second sentence here
-    -- opens in lower case with a full stop in front of it.
-    return "add anybody you fly with, and you are friends as soon as they"
-           .. " add you back."
-end
-
 local function friends_empty()
     -- Only where there is nothing at all. A card under a list that has rows in
     -- it is a page saying two things at once, and the second one is wrong.
     if #(account.friends or {}) + #(account.asked or {})
-        + #(account.here or {}) + #(account.waiting or {}) > 0 then
+        + #(account.here or {}) + #(account.waiting or {})
+        + #(account.everybody or {}) > 0 then
         return nil
     end
     if account.base == "" then
@@ -1066,7 +1246,8 @@ local function friends_empty()
         return {head = "asking", line = "your friends are coming"}
     end
     return {head = "nobody yet",
-            line = "fly with somebody, add them here, and they add you back"}
+            line = "type a call sign above, or fly with somebody and add them"
+                   .. " here"}
 end
 
 function hull_rows()
@@ -1348,8 +1529,7 @@ local NODES = {
     -- page, reachable from the games at home and from the tab row in a match,
     -- because those are the two places the question comes up. See
     -- docs/design/friends.md.
-    friends = {rows = friend_rows, empty = friends_empty,
-               lede = friends_lede},
+    friends = {rows = friend_rows, empty = friends_empty},
 
     -- No upgrades page. What rivets buy is a rung of a slot, and every slot
     -- is already a row of the ship page: the shelf was that page's own list,
@@ -1754,8 +1934,16 @@ local function view_row(r, i)
         -- What the hangar's page needs to draw a slot as the thing it is:
         -- its group, its short mark, its color, the trigger it hangs off, and
         -- how far the arena's own ladder runs past what the account owns.
-        -- The label a group of rows sits under, on the first row of it.
-        sect = r.sect,
+        -- The label a group of rows sits under, on the first row of it,
+        -- with the count beside it and the sentence under it where the
+        -- section has one.
+        sect = r.sect, sect_note = r.sect_note, sect_line = r.sect_line,
+        -- What the friends page needs: who this row is, what came of the
+        -- edge, whether they are flying and where, and the buttons the row
+        -- carries. `acts` is drawn as buttons for a pointer and raised as a
+        -- card for five inputs, off this one list.
+        who = r.value, state = r.state, dim = r.dim,
+        zone = r.zone, joinable = r.joinable, acts = r.acts,
         group = r.group, short = r.short, tint_col = r.tint_col,
         -- The week's own columns.
         rank = r.rank, kills = r.kills, deaths = r.deaths, run = r.run,
@@ -1952,6 +2140,25 @@ local function settle(act, asked, by)
     elseif act == "do_filter" then
         local f = asked and asked.fields and asked.fields[1]
         M.filter = f and f.value or ""
+    elseif act == "do_add" then
+        -- The call sign somebody typed. The meta-layer looks it up whole:
+        -- there is no search here and nothing is offered, so what comes back
+        -- is either that pilot or "no pilot called that".
+        local f = asked and asked.fields and asked.fields[1]
+        M.add_name = f and f.value or M.add_name
+        M.send_add()
+    elseif act == "do_befriend" then
+        -- Adding is one press and nothing else: it is not destructive, it is
+        -- reversible from the same page, and the pilot doing it is looking at
+        -- the name. The reply is the whole page back, so the row moves from
+        -- one section to another without a second request. Accepting is this
+        -- press as well, and so is taking back an ignore.
+        account.friend(asked and asked.who or 0, true)
+    elseif act == "do_ignore" then
+        -- Off the list that asks for a decision, and onto the one that does
+        -- not. Nothing is sent to them and the add itself stays where it is.
+        -- See docs/design/friends.md.
+        account.ignore(asked and asked.who or 0, true)
     elseif act == "do_unfriend" then
         -- Both directions, so a removed pilot does not keep this one on their
         -- list, visible and joinable. See docs/design/friends.md.
@@ -2010,20 +2217,18 @@ function M.ask_upgrade(slot, item)
              sel = 2, slot = slot}
 end
 
--- What there is to do with a friend, on a card, because a row has one press
--- and there are two answers.
+-- What there is to do with this pilot, on a card, because five inputs give a
+-- row one press and most of these rows have two answers.
 --
--- Join first when there is one, since it is what somebody opening this page is
--- usually here for, and it is where the cursor would be if the card had one
--- key. Removing sits under it and says what it does: both edges, so they stop
--- seeing you as well.
-function M.ask_friend(who, name, zone, joinable)
+-- The keys are the row's own `acts`, in the order the buttons are drawn, so
+-- the card and the buttons cannot come apart. A key may spell itself out at
+-- more length than the button beside a name has room for: "join Melee" is a
+-- card's answer and "join" is a button.
+function M.ask_friend(who, name, acts)
     local keys = {}
-    if joinable then
-        keys[#keys + 1] = {label = "join " .. (zone or "them"),
-                           act = "do_join_friend"}
+    for _, a in ipairs(acts or {}) do
+        keys[#keys + 1] = {label = a.card or a.label, act = a.act}
     end
-    keys[#keys + 1] = {label = "remove", act = "do_unfriend"}
     keys[#keys + 1] = {label = "never mind"}
     M.ask = {head = name or "This pilot.", keys = keys, sel = #keys, who = who}
 end
@@ -2441,6 +2646,19 @@ function M.view()
                          filter = M.filter, filter_on = M.filter_on,
                          back = M.week_back,
                          since = account.week_since or ""},
+                 -- The friends page's add field: what is in it, whether it is
+                 -- taking type, and what the last press on this page came to.
+                 -- The sentence belongs to the account layer because that is
+                 -- what is waiting for the reply that decides it.
+                 add = {name = M.add_name, on = M.add_on,
+                        note = account.friend_note or "",
+                        bad = account.friend_bad or false},
+                 -- Which button a pointer is resting on, which is a row and a
+                 -- place in that row's own list. Two numbers rather than a
+                 -- pair, because this is set every frame a pointer moves.
+                 add_hot = M.add_hot,
+                 friend_hot = M.friend_hot,
+                 friend_hot_act = M.friend_hot_act,
                  -- Whether there is a game behind the panel, which is what
                  -- decides where the block sits: clear of the corner stack
                  -- over an arena, centered over the starfield. Not whether you
@@ -2475,6 +2693,12 @@ function M.view()
     -- step out of. The table draws the card itself now, under its own
     -- heading. See `pages.week`.
     if M.at() == "standings" then out.table = true end
+    -- And the friends page is a page rather than a list: an add field over
+    -- sections whose rows carry their own buttons. Only where you are
+    -- standing on it. The rail's preview of it is the plain list every other
+    -- preview is, because a preview is a look at what is in there and not a
+    -- place to press anything.
+    if M.at() == "friends" then out.social = true end
     -- What pressing play would do, beside the list of things to press it on.
     -- The mode list is short and the panel is wide, and the question a player
     -- is actually asking is "where would this put me".
@@ -2703,25 +2927,8 @@ local function activate(by)
         -- the mouse can move the cursor here at all.
         M.note = nil
         return nil
-    elseif r.act == "befriend" then
-        -- Adding is one press and nothing else: it is not destructive, it is
-        -- reversible from the same page, and the pilot doing it is looking at
-        -- the name. The reply is the whole page back, so the row moves from
-        -- one section to another without a second request.
-        -- And says so. Adding somebody who had already added you is the
-        -- accepting this design does not have a screen for, and the two
-        -- presses are indistinguishable until the page comes back, so the
-        -- line at the foot of the stage is where the difference lands.
-        local mutual = false
-        for _, p in ipairs(account.asked or {}) do
-            if p.account == r.value then mutual = true end
-        end
-        account.friend(r.value, true)
-        M.note = mutual and "friends. they had already added you."
-                 or "added. you are friends once they add you back."
-        return nil
     elseif r.act == "friend_card" then
-        M.ask_friend(r.value, r.label, r.zone, r.joinable)
+        M.ask_friend(r.value, r.label, r.acts)
         return nil
     elseif r.act == "buy" then
         -- The meta-layer prices it, checks the wallet and raises the ceiling
@@ -2863,6 +3070,15 @@ function M.step(keys)
     -- Backspace on the week's table takes a letter back off the filter. Above
     -- the card check, because nothing is asking: the page is.
     if not M.ask and keys.rub and M.rub_filter() then return nil, true end
+    -- And on the friends page it takes a letter back off the add field.
+    if not M.ask and keys.rub and M.rub_add() then return nil, true end
+    -- Enter sends what is in that field rather than pressing the row the
+    -- cursor is on, while the field is the thing taking type. It is what
+    -- enter means in a box everywhere, and the button beside it is still
+    -- there for a hand on the mouse.
+    if not M.ask and keys.go and M.add_on and (M.add_name or "") ~= "" then
+        return M.send_add()
+    end
     if M.ask then
         local n = #M.ask.keys
         -- Backspace belongs to the fields when there are fields.
@@ -3082,6 +3298,23 @@ function M.click_kit_buy(index)
     return nil, true
 end
 
+-- One button on one friends row. `which` is its place in the row's own list
+-- of them, so the drawing and the press agree by construction rather than by
+-- both remembering the same order.
+--
+-- The cursor follows the press, the way it does everywhere a pointer touches
+-- this menu: a hand that reaches for the mouse and then goes back to the keys
+-- carries on from where it was looking.
+function M.click_friend(index, which)
+    local rows = rows_of(node())
+    local r = rows[index]
+    local a = r and r.acts and r.acts[which]
+    if not a then return nil, false end
+    M.sel[M.at()] = index
+    M.blur_add()
+    return settle(a.act, {who = r.value}, nil), true
+end
+
 -- The call sign in the corner of the tab row, pressed. It is a destination
 -- like a tab stop, so it behaves like one: home first, then into the page.
 function M.click_pilot()
@@ -3096,6 +3329,10 @@ end
 M.pilot_hot = false
 -- And the same for the button beside it.
 M.discord_hot = false
+-- And for the friends page: the add button, and one button on one row.
+M.add_hot = false
+M.friend_hot = nil
+M.friend_hot_act = nil
 
 -- A pointer landed on the rail, which names a destination whatever level the
 -- stack is at. That is the whole difference between it and a row: the rail

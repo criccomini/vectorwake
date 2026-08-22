@@ -523,6 +523,9 @@ local function hover_menu(x, y, vh)
     menu.pilot_hot = false
     menu.discord_hot = false
     menu.carousel_hot = nil
+    menu.add_hot = false
+    menu.friend_hot = nil
+    menu.friend_hot_act = nil
     if not menu.open or touch.used or not x then
         return hovering(nil, nil)
     end
@@ -535,12 +538,17 @@ local function hover_menu(x, y, vh)
             -- the panel does not light the row behind it.
             menu.pilot_hot = r.action == "pilot_page"
             menu.discord_hot = r.action == "discord_link"
+            menu.add_hot = r.action == "add_go"
             if r.action == "carousel" then menu.carousel_hot = r.value end
+            if r.action == "friend_act" then
+                menu.friend_hot, menu.friend_hot_act = r.value, r.level
+            end
             -- A pip lights the row it belongs to, so the cursor follows the
             -- pointer across a ladder the way it does down a list.
             return hovering(
                 ((r.action == "stage" or r.action == "kit_at"
-                  or r.action == "kit_buy") and r.value)
+                  or r.action == "kit_buy" or r.action == "friend_act")
+                 and r.value)
                     or nil,
                 r.action == "rail" and r.value or nil)
         end
@@ -1031,9 +1039,11 @@ local function typed(text)
     local moved = false
     for ch in string.gmatch(text, ".") do
         if menu.type_field(ch) then moved = true
-        -- Nothing is asking, so a letter is for whatever page is up. The
-        -- week's table is the one that reads them: it narrows as you type.
-        elseif menu.type_filter(ch) then moved = true end
+        -- Nothing is asking, so a letter is for whatever page is up. Two
+        -- pages read them: the week's table narrows as you type, and the
+        -- friends page collects a call sign to send.
+        elseif menu.type_filter(ch) then moved = true
+        elseif menu.type_add(ch) then moved = true end
     end
     return moved
 end
@@ -1370,12 +1380,18 @@ function update(self, dt)
         -- being thumbs at all, so a save written on a phone cannot put a
         -- desktop on a control it has no way to press.
         touch.dpad = menu.dpad and touch.used
-        -- A card with lines to fill in is being typed into, and the trigger
-        -- is the space bar. Every call sign has a space in it, so a card that
-        -- still read the trigger as "send" answered itself partway through
-        -- the first line: "Vesper 412" sent "Vesper". Enter alone sends while
-        -- a card is asking, and the space goes where it was aimed.
-        local asking = menu.ask and menu.ask.fields
+        -- Something is being typed into, and the trigger is the space bar.
+        -- Every call sign has a space in it, so a line that still read the
+        -- trigger as "send" answered itself partway through: "Vesper 412"
+        -- sent "Vesper". Enter alone sends while anything is taking type, and
+        -- the space goes where it was aimed.
+        --
+        -- Three of them now. It was cards with fields; the week's filter box
+        -- and the friends page's add field are the same line without a card
+        -- around it, and the add field sends, so it hit the same bug the same
+        -- way the first time somebody typed a call sign into it.
+        local asking = (menu.ask and menu.ask.fields) or menu.add_on
+                       or menu.filter_on
         -- The arrows themselves, not whatever is flying the ship. They were
         -- the same thing while the keys were fixed, and the moment a pilot
         -- moves thrust to W the menu would have followed it there: a page
@@ -2535,6 +2551,13 @@ function on_input(self, action_id, action)
                 -- below, so a press that also does something loses the caret
                 -- as well as doing it.
                 if r.action ~= "filter_box" then menu.blur_filter() end
+                -- And the same for the friends page's add field. The button
+                -- beside it is the exception as well as the box: a press on
+                -- "add" that dropped the caret first would send and then look
+                -- like nothing had focus.
+                if r.action ~= "add_box" and r.action ~= "add_go" then
+                    menu.blur_add()
+                end
                 -- Written out rather than as an and/or chain: that form
                 -- keeps only the first return, so `moved` came back nil and
                 -- every click was silent. The sounds are half of what makes
@@ -2575,6 +2598,18 @@ function on_input(self, action_id, action)
                     act, moved = menu.click_filter()
                 elseif r.action == "filter_wipe" then
                     act, moved = menu.wipe_filter()
+                elseif r.action == "add_box" then
+                    -- The box on the friends page. A caret where there is a
+                    -- keyboard, a card where there is not.
+                    act, moved = menu.click_add()
+                elseif r.action == "add_wipe" then
+                    act, moved = menu.wipe_add()
+                elseif r.action == "add_go" then
+                    act, moved = menu.send_add()
+                elseif r.action == "friend_act" then
+                    -- One button on one friends row: accept, ignore, join,
+                    -- unfriend. `level` is which of that row's own buttons.
+                    act, moved = menu.click_friend(r.value, r.level)
                 elseif r.action == "discord_link" then
                     -- The corner button. On the web an anchor sits over it and
                     -- the tap never gets here; everywhere else this opens it.

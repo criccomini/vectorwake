@@ -14,7 +14,7 @@ Version one is three things:
 Everything below is in service of those three and nothing else. The parts
 deliberately left out are at the end.
 
-## No chat, and no typing at all
+## No chat, and one text field
 
 [decision 28](../architecture/decisions.md#28-no-chat) is the constraint this
 design is shaped around, and it is a gift rather than an obstacle. A friends
@@ -22,11 +22,22 @@ system with no messaging has almost no moderation surface: there is no content
 to report, nothing to mute, and nobody can reach you with words at all. What
 one stranger can do to another is appear on a list.
 
-It also settles the interface question before it is asked. You cannot type a
-call sign because there is no text field and there never will be one, so a
-friend is a **selection off a roster you are already reading**, which is
-exactly how private teams work: "an invitation is a roster selection rather
-than anything typed", per [teams.md](teams.md#private-teams-are-invitations).
+This document used to go further and say there was no text field anywhere, so
+a friend was only ever a **selection off a roster you are already reading**,
+the way a private team invitation is one per
+[teams.md](teams.md#private-teams-are-invitations). That kept a real property:
+the only names the system would ever show you were people you had played with
+and people who had chosen to add you.
+
+There is a field now, on the friends page, and it takes a call sign. The
+roster is still where most friends are made and the field does not weaken it
+much, because you have to know the exact call sign already and nothing is
+searched or suggested: the meta-layer looks up the whole name and answers with
+that pilot or with "no pilot called that". What it does open is an add landing
+in a stranger's list, which is why the section below grew an ignore.
+
+The field is the whole of the typing. Nothing anybody types reaches another
+player.
 
 ## Mutual, by both sides adding
 
@@ -38,22 +49,47 @@ One row per direction, and the friendship is the pair.
 | nothing | added you | they are waiting, and you see it |
 | added them | added you | friends |
 
-There is no accept and no decline, because both are the same press seen from
-different sides: adding somebody who has already added you *is* accepting.
-That removes an entire screen, and with it the thing that screen would have
-been used for, which is an inbox strangers can fill.
+Accepting is still adding. The button says accept because that is what it does
+from your side of the table, but the press is the same insert as any other
+add: adding somebody who has already added you closes the pair, and there was
+never a second verb to write. What the accept button buys is that the press is
+labeled, on the row of the person who made the first move.
 
 Removing takes both rows. Leaving the other direction standing would mean a
 pilot who removed somebody stays on that person's list forever, visible and
 joinable, which is the opposite of what removing means.
 
-The page has to say this, because the rows cannot. A name with "add" beside it
-is a press whose consequence is invisible: the name moves to another list and
-sits there until somebody else does something, which reads as an invitation
-sent off to an approval screen. There is no approval screen. So one line
-stands over the list, "add anybody you fly with, and you are friends as soon
-as they add you back", and the press says which of the two things it just did:
-"added" when you are the first, "friends" when they had already added you.
+### Ignore
+
+An earlier version of this page had no decline, on the argument that an accept
+screen is an inbox a stranger can fill. That is true, and the field above hands
+strangers the way to fill it, so ignore is what pays for the field.
+
+Ignoring takes an add off the list that asks you for a decision. It is not a
+delete and it is not a block:
+
+- **Nothing is sent.** The pilot who added you goes on seeing "you added
+  them", which is true. There is no notification in this game for anything,
+  and this is not the place to introduce the first one.
+- **The add stays where it is.** It moves to a second list, headed *everybody
+  who added you*, which also carries the people you did accept. Accepting from
+  there is one press, so ignoring is never final and never has to be a
+  decision somebody agonizes over.
+- **It outlives the edge.** The ignore is its own row keyed on the pilot who
+  pressed it, not a flag on the row it answers. A flag would have been
+  cheaper and wrong: the row belongs to whoever pressed add, and they can
+  delete it, so add, get ignored, remove, add again, and the ignore would be
+  gone with the row that carried it. Cycling an add buys nothing.
+- **Removing a friend clears both ignores.** An unfriend puts the pair back
+  where it started. Leaving an old ignore standing would swallow their next
+  add without either of you knowing why.
+
+The one press whose consequence is still invisible is the add itself, so it
+says what it did on the line under the field: "added, you are friends once
+they add you back" when you are the first, "friends, they had already added
+you" when they were. That is the one thing the client cannot work out for
+itself, because once the row is in, the press that closed the pair and the
+press that did not look identical. It rides back with the page.
 
 ## Presence comes from the seat, not from a heartbeat
 
@@ -107,10 +143,22 @@ because that is where the roster is.
 ## What it costs a client
 
 One request. `/v1/friends` returns the whole page: your friends with their
-presence, whoever has added you and is waiting, and whoever is in your room and
-is not on either list. Asked when the page is opened and while it is on screen,
-the way the shop and the week's table already work, and not otherwise: this is
-a page somebody is looking at rather than a fact a session needs.
+presence, whoever has added you and is waiting on an answer, whoever you are
+waiting on, whoever is in your room and is on none of those, and everybody who
+has ever added you with what came of it. Asked when the page is opened and
+while it is on screen, the way the shop and the week's table already work, and
+not otherwise: this is a page somebody is looking at rather than a fact a
+session needs.
+
+Two routes change it. `/v1/friend` makes or drops an edge and takes either an
+account number off one of those lists or a call sign somebody typed;
+`/v1/friend/ignore` sets and clears an ignore. Both answer with the page,
+because a press has to redraw and the client should not be working out what an
+edge did to five lists it does not compute.
+
+The first four lists are defined against each other so that every edge has
+exactly one home in them. `everybody` is deliberately the exception: it is the
+same edges again, under a heading that says so.
 
 Joining resolves an instance id to an address through the games list the client
 already holds, which is why the directory publishes the id alongside the
@@ -129,9 +177,11 @@ minting. A pilot who adds two hundred people in a minute is farming a list of
 who is online, and the rate limit is what makes that cost something.
 
 **The roster of your room is only offered while you are in it.** The list of
-who to add is not a directory of the fleet, and there is no way to ask for one:
-the only people whose names this system will ever show you are people you are
-playing with and people who chose to add you.
+who to add is not a directory of the fleet, and there is still no way to ask
+for one. The field takes a call sign and looks it up whole: it answers about
+the one name it was given and never offers a second, so the only names this
+system shows you are people you are playing with and people who chose to add
+you.
 
 ## What is deliberately out
 
@@ -147,12 +197,13 @@ Every shipped zone runs one room per instance, so today that is the same thing.
 It stops being the same thing the first time an instance holds two, and the fix
 is a room number on the seat row rather than a new idea.
 
-**Blocking.** Removing somebody drops both rows; they may add you again, and
-you would see them waiting again. With no chat that is a name on a list and
-nothing else, so a block would be a moderation feature for a threat model this
-game does not have. Worth revisiting the first time somebody reports being
-followed around, and cheap to add: it is a third state on an edge that already
-exists.
+**Blocking.** Ignore is not one. An ignored pilot can still see you in a room,
+still join a game you are in, and still sits on a list you can accept them
+from. What ignore does is stop them asking. With no chat, the rest of what a
+block would prevent is a name on a list, which is a moderation feature for a
+threat model this game does not have. Worth revisiting the first time somebody
+reports being followed around, and cheaper now than it was: `friend_ignores`
+is the table a block would live beside.
 
 **Notifications.** Nothing pushes. You find out a friend is on by looking, and
 the page is one press from the front screen.

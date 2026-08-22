@@ -4540,6 +4540,216 @@ function pages.kit(v, x, y, w, h, focused)
     end
 end
 
+-- The friends page: a field you type a call sign into, over sections whose
+-- rows carry their own buttons.
+--
+-- It was a plain list, and the buttons are why it is not one any more. Five
+-- inputs give a row one press, so a row with two answers has to ask which,
+-- and on a page where accept, ignore, join and unfriend all live that put a
+-- card between every decision and the thing it decides. A pointer gets the
+-- buttons; the row press still raises the card, off the same list, so a
+-- d-pad loses nothing. See `menu.ask_friend`.
+--
+-- The field is pinned and the sections scroll under it, the way the ship
+-- page's band stays over its kit. Whole rows only, and nothing is drawn over
+-- a partial one: type comes from the gui and draws over every mesh this file
+-- lays down, so a row that has slid under the field cannot be covered.
+--
+-- See docs/design/friends.md.
+function pages.friends(v, x, y, w, h, focused)
+    local a = v.add or {}
+    -- One question, asked of the room rather than of the device: whether a
+    -- name, its line and two buttons fit across one row. Around 470 points
+    -- they stop fitting, and the row goes to two lines with the buttons
+    -- sharing the second.
+    local packed = w < 470 * F.scale
+    local bh = 30 * F.scale
+    local kh = 26 * F.scale
+
+    -- One button. Returns its left edge, so a row can lay them out from the
+    -- right and stop where it stops.
+    local function button(bx, cy, label, go, hot, action, val, lev)
+        local bw = text_w(label, 12 * F.scale) + 26 * F.scale
+        local by = cy - kh / 2
+        local edge = go and pal.FRIEND or pal.RADAR_TILE
+        rect(bx - bw, by, bw, kh, pal.rgb(0x070b12, hot and 0.85 or 0.55))
+        if hot then rect(bx - bw, by, bw, kh, pal.a(pal.FRIEND, 0.18)) end
+        bracket(bx - bw, by, bw, kh, pal.a(edge, hot and 0.95 or (go and 0.75 or 0.5)),
+                9 * F.scale)
+        txt(label, bx - bw / 2, cy, 12 * F.scale,
+            pal.a(go and pal.FRIEND or pal.INK, hot and 1 or 0.85), "center")
+        if action then hit(bx - bw, by, bw, kh, action, val, lev) end
+        return bx - bw
+    end
+
+    -- --- the field, pinned at the top
+    lbl("add a pilot", x, y + 8 * F.scale, pal.a(pal.DIM, 0.85))
+    local fy = y + 22 * F.scale + bh / 2
+    local aw = text_w("add", 12 * F.scale) + 26 * F.scale
+    local fw = math.min(300 * F.scale, w - aw - 12 * F.scale)
+    local fx = x
+    local by = fy - bh / 2
+    rect(fx, by, fw, bh, pal.rgb(0x070b12, 0.55))
+    if a.on then rect(fx, by, fw, bh, pal.a(pal.FRIEND, 0.1)) end
+    bracket(fx, by, fw, bh, pal.a(a.on and pal.FRIEND or pal.RADAR_TILE,
+                                 a.on and 0.9 or 0.55), 10 * F.scale)
+    local ix = fx + 11 * F.scale
+    local typed = a.name or ""
+    if typed == "" then
+        lbl("a call sign", ix, fy, pal.a(pal.DIM, a.on and 0.7 or 0.5))
+    else
+        txt(typed, ix, fy, 15 * F.scale, pal.a(pal.CHARGE_COL, 0.95), nil,
+            MENU_FONT, true)
+    end
+    if a.on then
+        rect(ix + text_w(typed, 15 * F.scale) + 2 * F.scale, fy - 8 * F.scale,
+             1.6 * F.scale, 16 * F.scale, pal.a(pal.FRIEND, 0.9))
+    end
+    -- Published before the box, because the first hit box wins and the other
+    -- way round the box swallows every press on its own mark.
+    if typed ~= "" then
+        local cx = fx + fw - 12 * F.scale
+        local k = 4 * F.scale
+        for _, d in ipairs({{-1, 1}, {1, 1}}) do
+            F.layer:seg(cx - k * d[1], ry(fy - k * d[2]),
+                        cx + k * d[1], ry(fy + k * d[2]),
+                        1.3 * F.scale, pal.a(pal.DIM, 0.9), true)
+        end
+        hit(cx - 12 * F.scale, by, 24 * F.scale, bh, "add_wipe")
+    end
+    hit(fx, by, fw, bh, "add_box")
+    button(fx + fw + 10 * F.scale + aw, fy, "add", true, v.add_hot == true,
+           "add_go")
+    -- What the last press came to, under the field, and the hint where there
+    -- is room beside it. The hint is what stops somebody typing half a name
+    -- and waiting: this looks up a call sign whole and offers nothing.
+    local note = a.note or ""
+    if note ~= "" then
+        txt(note, x, fy + bh / 2 + 12 * F.scale, 12 * F.scale,
+            pal.a(a.bad and pal.ENEMY or pal.FRIEND, 0.95))
+    elseif not packed then
+        txt("a call sign, spelled as they spell it",
+            x + fw + aw + 24 * F.scale, fy, 12 * F.scale, pal.a(pal.DIM, 0.8))
+    end
+    local BAND = 22 * F.scale + bh + 24 * F.scale
+
+    -- --- the sections, scrolling under it
+    local top = y + BAND
+    local rowh = (packed and 52 or 44) * F.scale
+    local SECT = 24 * F.scale
+    -- Laid out unscrolled and drawn shifted, so the height this page came to
+    -- is a number and not that number minus wherever the finger left it.
+    local at = top
+    local dy = M.page_scroll
+    local seen = function(t) return t >= top and t + rowh <= y + h end
+
+    for i, r in ipairs(v.rows or {}) do
+        if r.sect then
+            -- Wrapped to the room the panel has, and measured before the head
+            -- is placed so a sentence that took two lines does not draw the
+            -- second one over the row under it. On a phone this sentence is
+            -- most of the width of the screen.
+            local said = r.sect_line
+                and wrapped(cased(r.sect_line), 11.5 * F.scale,
+                            w - 10 * F.scale) or nil
+            local sh = SECT + (said and (#said * 15 * F.scale + 4 * F.scale)
+                               or 0)
+            local hy = at - dy
+            if hy >= top and hy + sh <= y + h then
+                hrule(x, hy + SECT * 0.42, w - 10 * F.scale)
+                lbl(r.sect, x, hy + SECT * 0.82)
+                if r.sect_note then
+                    lbl(r.sect_note,
+                        x + text_w(r.sect, 9 * F.scale) + 12 * F.scale,
+                        hy + SECT * 0.82, pal.a(pal.FRIEND, 0.85))
+                end
+                if said then
+                    -- Cased once over the whole sentence and drawn raw. Left
+                    -- to `txt` the case is applied per line, so a sentence
+                    -- that wrapped came out with a capital in the middle of
+                    -- itself.
+                    local ny = hy + SECT + 8 * F.scale
+                    for _, line in ipairs(said) do
+                        txt(line, x, ny, 11.5 * F.scale, pal.a(pal.DIM, 0.85),
+                            nil, nil, true)
+                        ny = ny + 15 * F.scale
+                    end
+                end
+            end
+            at = at + sh
+        end
+        local ry0 = at - dy
+        at = at + rowh
+        if seen(ry0) then
+            local hot = (focused and i == v.sel) or i == v.hover
+            if hot then wash(x - GUTTER * F.scale, ry0,
+                             w + GUTTER * F.scale, rowh,
+                             pal.a(pal.FRIEND, 0.16)) end
+            local cy = ry0 + rowh / 2
+            local col = pal.a(pal.INK, r.dim and 0.6 or (hot and 1 or 0.9))
+            -- The buttons first, from the right, because the name is what
+            -- gives way when a row runs out of width.
+            local edge = x + w - 8 * F.scale
+            for k = #(r.acts or {}), 1, -1 do
+                local act = r.acts[k]
+                edge = button(edge, cy, act.label, act.go,
+                              v.friend_hot == i and v.friend_hot_act == k,
+                              "friend_act", i, k) - 8 * F.scale
+            end
+            if packed then
+                txt(r.label or "?", x, ry0 + rowh * 0.28, 15 * F.scale, col,
+                    nil, MENU_FONT, true)
+                if r.detail and r.detail ~= "" then
+                    txt(r.detail, x, ry0 + rowh * 0.72, 11.5 * F.scale,
+                        pal.a(r.state == "flying" and pal.FRIEND or pal.DIM,
+                              0.95))
+                end
+            else
+                txt(r.label or "?", x, cy, 16 * F.scale, col, nil, MENU_FONT,
+                    true)
+                if r.detail and r.detail ~= "" then
+                    -- A friend in a game gets the dot the mocks give them,
+                    -- which is the one mark on this page that says "now".
+                    local dx = x + math.min(190 * F.scale,
+                                            w * 0.34) + 4 * F.scale
+                    if r.state == "flying" then
+                        rect(dx, cy - 3 * F.scale, 6 * F.scale, 6 * F.scale,
+                             pal.FRIEND)
+                        dx = dx + 13 * F.scale
+                    end
+                    txt(r.detail, dx, cy, 11.5 * F.scale,
+                        pal.a(r.state == "flying" and pal.FRIEND or pal.DIM,
+                              0.95))
+                end
+            end
+            -- The row itself, after its buttons, so a press on one of them
+            -- does not raise the card as well.
+            if r.pick then
+                hit(x - GUTTER * F.scale, ry0, w + GUTTER * F.scale, rowh,
+                    "stage", i)
+            end
+        end
+    end
+
+    -- Nothing at all, which is a different page from a page with one empty
+    -- section on it. Under the field rather than instead of it: the field is
+    -- how somebody with no friends gets their first one.
+    if #(v.rows or {}) == 0 and v.empty then
+        empty_state(x, top, w, h - BAND, v.empty)
+    end
+
+    M.page_extent = (at - top) + BAND + 16 * F.scale
+    if M.page_extent > h then
+        local track = h - BAND
+        local bar = math.max(30 * F.scale, track * track / M.page_extent)
+        local pos = (M.page_scroll / math.max(1, M.page_extent - h))
+                    * (track - bar)
+        local bx = x + w - 3 * F.scale
+        rect(bx, top, 3 * F.scale, track, pal.a(pal.DIM, 0.12))
+        rect(bx, top + pos, 3 * F.scale, bar, pal.a(pal.RADAR_TILE, 0.8))
+    end
+end
+
 
 -- The menu. One list, whatever level it is.
 --
@@ -6774,6 +6984,11 @@ function M.menu(v)
         -- The week, as a table with your own line in it.
         pages.week(v, panel_x + GUTTER * F.scale, top,
                   panel_w - 14 * F.scale - GUTTER * F.scale, room, focused)
+    elseif v.social then
+        -- Friends, as a field over sections whose rows carry buttons.
+        pages.friends(v, panel_x + GUTTER * F.scale, top,
+                      panel_w - 14 * F.scale - GUTTER * F.scale, room,
+                      focused)
     elseif v.rows and #v.rows > 0 and v.rows[1].hull then
         ship_grid(tx, top, avail, room, v, focused)
     else

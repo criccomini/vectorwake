@@ -46,8 +46,9 @@ vectorwake
 ├ play        the zones a directory is running and how busy each one is
 ├ ship        one hull on a carousel, the thirty points you spend on it, and
 │             what the next rung of each slot costs in rivets
-├ friends     who is on, who is waiting on you, and the people in the room
-│             with you. See friends.md
+├ friends     a field you type a call sign into, who is waiting on you, who
+│             is on, the room you are in, and everybody who ever added you.
+│             See friends.md
 ├ standings   the week, resetting Monday
 └ settings    sound · music · frames · fullscreen · bindings · about
 

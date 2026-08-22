@@ -373,6 +373,26 @@ create table if not exists friends (
 -- The other direction is read as often as the first, because who has added
 -- me is half of what the page draws.
 create index if not exists friends_by_friend on friends (friend);
+
+-- Who this pilot has ignored. One row per press: `account` looked at an add
+-- from `ignored` and decided not to answer it yet.
+--
+-- A table rather than a third state on the `friends` row it answers, which
+-- was the cheaper design and the wrong one. That row belongs to the pilot who
+-- pressed add, and they can delete it: add, get ignored, remove, add again,
+-- and the ignore is gone with the row that carried it. Here the ignore
+-- outlives the edge, so cycling one buys nothing. Ignoring is also never a
+-- delete: the add stays where it was, and the page keeps a place to accept it
+-- from later.
+--
+-- Nothing tells the ignored pilot. Their side goes on saying they added you,
+-- which is true.
+create table if not exists friend_ignores (
+    account bigint not null references accounts(id) on delete cascade,
+    ignored bigint not null references accounts(id) on delete cascade,
+    at      timestamptz not null default now(),
+    primary key (account, ignored)
+);
 ";
 
 /// How long a pilot's own rows live. Long enough to answer a report weeks after
@@ -1084,12 +1104,26 @@ fn room_for_one_more(held: i64) -> Result<(), (u16, &'static str)> {
 const MAX_FRIENDS: i64 = 100;
 
 /// An account number and the call sign against it, as the page draws a pilot
-/// who is not flying: three of the four lists are exactly this.
+/// who is not flying: most of these lists are exactly this.
+///
+/// Two columns are optional because the queries that want them are the ones
+/// drawing a clock or a state beside the name, and the room roster is neither.
+/// Reading them with `try_get` keeps one row shape for every list instead of
+/// three that differ by a field.
 fn named_pilot(r: &tokio_postgres::Row) -> serde_json::Value {
-    serde_json::json!({
+    let mut out = serde_json::json!({
         "account": r.get::<_, i64>(0),
         "name": r.get::<_, Option<String>>(1).unwrap_or_default(),
-    })
+    });
+    // Seconds, so the wording is the client's. "2h ago" and "yesterday" are
+    // the same number read two ways and the server has no business choosing.
+    if let Ok(ago) = r.try_get::<_, i64>(2) {
+        out["ago"] = serde_json::json!(ago);
+    }
+    if let Ok(state) = r.try_get::<_, String>(3) {
+        out["state"] = serde_json::json!(state);
+    }
+    out
 }
 
 /// One half-made edge, either way round. The two queries differ only in which
@@ -1110,21 +1144,28 @@ async fn one_sided(
 
 /// The friends page, whole.
 ///
-/// Three lists, defined against each other so the client never has to
-/// subtract one from another:
+/// Five lists, defined against each other so the client never has to subtract
+/// one from another:
 ///
 /// - `friends`, where both directions exist, with where each one is flying.
-/// - `asked`, where they have added you and you have not added back. The
-///   only inbox this system has, and it holds names and nothing else.
+/// - `asked`, where they have added you, you have not added back, and you
+///   have not ignored them. This is the inbox, and it is the one list that
+///   asks for a decision.
 /// - `waiting`, where you have added them and they have not added back. It is
 ///   the other half of the same edge and it is here because a press with no
 ///   visible consequence reads as a press that did nothing: adding somebody
 ///   took their name off the room list and put it nowhere.
 /// - `here`, the pilots in the room you are in who are on none of the above,
 ///   so the page you make a friend on is the one you are already reading.
+/// - `everybody`, every pilot who has ever added you, whatever came of it,
+///   each carrying `waiting`, `ignored` or `friend`. It is what makes an
+///   ignore reversible: the add is still there, on a list that is not asking
+///   anything of you, and accepting it is one press whenever you like.
 ///
-/// Every edge has exactly one home, which is what lets the client draw four
-/// sections without deciding anything.
+/// Every edge has exactly one home in the first four, which is what lets the
+/// client draw them without deciding anything. `everybody` is the exception
+/// and is meant to be: it is the same edges again, under a heading that says
+/// so.
 ///
 /// Presence is a join against `active_rated_sessions`, which an arena keeps
 /// honest because a rated seat is exclusive. Watchers hold no such row, and
@@ -1164,16 +1205,21 @@ async fn friends_page(db: &Client, account: i64) -> Result<serde_json::Value, St
         })
         .collect();
 
-    // Who is waiting on you. Their direction exists and yours does not.
+    // Who is waiting on you. Their direction exists, yours does not, and you
+    // have not ignored them. An ignored pilot leaves this list and does not
+    // come back to it: that is the whole of what ignoring does.
     let asked = one_sided(
         db,
         account,
-        "select f.account, n.call_sign
+        "select f.account, n.call_sign,
+                extract(epoch from now() - f.made)::bigint
            from friends f
            left join names n on n.account = f.account
           where f.friend = $1
             and not exists (select 1 from friends b
                              where b.account = $1 and b.friend = f.account)
+            and not exists (select 1 from friend_ignores g
+                             where g.account = $1 and g.ignored = f.account)
           order by f.made
           limit $2",
         "cannot read who is waiting",
@@ -1184,7 +1230,8 @@ async fn friends_page(db: &Client, account: i64) -> Result<serde_json::Value, St
     let waiting = one_sided(
         db,
         account,
-        "select f.friend, n.call_sign
+        "select f.friend, n.call_sign,
+                extract(epoch from now() - f.made)::bigint
            from friends f
            left join names n on n.account = f.friend
           where f.account = $1
@@ -1193,6 +1240,32 @@ async fn friends_page(db: &Client, account: i64) -> Result<serde_json::Value, St
           order by f.made
           limit $2",
         "cannot read who you are waiting on",
+    )
+    .await?;
+
+    // Everybody who has added you, with what came of it. Ignored first,
+    // because they are the only rows here anybody presses; then friends, then
+    // whoever is still in the inbox above. Newest inside each run.
+    let everybody = one_sided(
+        db,
+        account,
+        "select f.account, n.call_sign,
+                extract(epoch from now() - coalesce(g.at, f.made))::bigint,
+                case when b.account is not null then 'friend'
+                     when g.account is not null then 'ignored'
+                     else 'waiting' end
+           from friends f
+           left join names n on n.account = f.account
+           left join friends b
+                  on b.account = $1 and b.friend = f.account
+           left join friend_ignores g
+                  on g.account = $1 and g.ignored = f.account
+          where f.friend = $1
+          order by case when b.account is not null then 1
+                        when g.account is not null then 0
+                        else 2 end, f.made desc
+          limit $2",
+        "cannot read who has added you",
     )
     .await?;
 
@@ -1234,6 +1307,7 @@ async fn friends_page(db: &Client, account: i64) -> Result<serde_json::Value, St
         "asked": asked,
         "waiting": waiting,
         "here": here,
+        "everybody": everybody,
     }))
 }
 
@@ -1603,24 +1677,74 @@ async fn route(
             }
         }
 
-        // One edge, made or dropped. `add` is the whole verb: adding somebody
-        // who has already added you is what accepting is, and dropping takes
-        // both directions so a removed pilot does not stay on the other's
-        // list. See docs/design/friends.md.
+        // One edge, made or dropped. `add` is still the whole verb: adding
+        // somebody who has already added you is what accepting is, and
+        // dropping takes both directions so a removed pilot does not stay on
+        // the other's list.
+        //
+        // The pilot arrives as an account number off one of the page's lists,
+        // or as a `name` somebody typed. The typed path is the only way onto
+        // this page that does not begin with the two of you being in the same
+        // room, and it needs the call sign exactly, give or take its case.
+        // See docs/design/friends.md.
         "/v1/friend" => {
             let Some(account) =
                 account_for(&db, "secret", &sha256_hex(s("secret").as_bytes())).await
             else {
                 return (403, serde_json::json!({ "error": "no such account" }));
             };
-            let other = body
+            let mut other = body
                 .get("account")
                 .and_then(|v| v.as_i64())
                 .unwrap_or_default();
             let add = body.get("add").and_then(|v| v.as_bool()).unwrap_or(true);
+            let typed = body
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .trim()
+                .to_string();
+            // Answered separately from every other refusal, because this is
+            // the one a player is looking straight at when it happens: they
+            // typed something and want to know which half of it was wrong.
+            if other == 0 && !typed.is_empty() {
+                match db
+                    .query_opt(
+                        "select account from names where lower(call_sign) = lower($1)",
+                        &[&typed],
+                    )
+                    .await
+                {
+                    Ok(Some(row)) => other = row.get(0),
+                    Ok(None) => {
+                        return (400, serde_json::json!({ "error": "no pilot called that" }))
+                    }
+                    Err(e) => return (500, serde_json::json!({ "error": format!("{e}") })),
+                }
+                if other == account {
+                    return (400, serde_json::json!({ "error": "that is you" }));
+                }
+            }
             if let Err((code, why)) = names_a_pilot(account, other) {
                 return (code, serde_json::json!({ "error": why }));
             }
+            // Which halves of the edge exist, read before this press changes
+            // anything. Their side is the difference between "added" and
+            // "friends", and after the insert both look identical. Both sides
+            // together are the difference between unfriending somebody and
+            // taking back an add nobody answered, which the ignores below
+            // turn on.
+            let (mine, theirs): (bool, bool) = db
+                .query_one(
+                    "select exists(select 1 from friends
+                                    where account = $1 and friend = $2),
+                            exists(select 1 from friends
+                                    where account = $2 and friend = $1)",
+                    &[&account, &other],
+                )
+                .await
+                .map(|r| (r.get(0), r.get(1)))
+                .unwrap_or((false, false));
             if add {
                 // Adding is the rate-limited half. Dropping is not: a pilot
                 // clearing a list they no longer want is not something to
@@ -1666,20 +1790,109 @@ async fn route(
                 {
                     return (500, serde_json::json!({ "error": format!("{e}") }));
                 }
-            } else if let Err(e) = db
-                .execute(
-                    "delete from friends
-                     where (account = $1 and friend = $2)
-                        or (account = $2 and friend = $1)",
-                    &[&account, &other],
-                )
-                .await
-            {
-                return (500, serde_json::json!({ "error": format!("{e}") }));
+                // Adding somebody you had ignored is un-ignoring them, and
+                // there is no second press for it. Accept on the ignored list
+                // is this route.
+                if let Err(e) = db
+                    .execute(
+                        "delete from friend_ignores where account = $1 and ignored = $2",
+                        &[&account, &other],
+                    )
+                    .await
+                {
+                    return (500, serde_json::json!({ "error": format!("{e}") }));
+                }
+            } else {
+                if let Err(e) = db
+                    .execute(
+                        "delete from friends
+                         where (account = $1 and friend = $2)
+                            or (account = $2 and friend = $1)",
+                        &[&account, &other],
+                    )
+                    .await
+                {
+                    return (500, serde_json::json!({ "error": format!("{e}") }));
+                }
+                // Both ignores with it, in either direction, but only when
+                // there was a friendship to end. Unfriending somebody puts
+                // the pair back where it started, and a pair that starts with
+                // one side already ignored would swallow their next add
+                // without either of you knowing why.
+                //
+                // Taking back an add nobody answered is not that, and
+                // clearing on it would undo the whole point of the table: add,
+                // get ignored, remove, add again, and you are back in their
+                // inbox. So a one-sided drop leaves the ignores alone.
+                if mine && theirs {
+                    if let Err(e) = db
+                        .execute(
+                            "delete from friend_ignores
+                             where (account = $1 and ignored = $2)
+                                or (account = $2 and ignored = $1)",
+                            &[&account, &other],
+                        )
+                        .await
+                    {
+                        return (500, serde_json::json!({ "error": format!("{e}") }));
+                    }
+                }
             }
             // The page back, so one press redraws without a second request
-            // and without the client guessing what the edge did to the three
-            // lists it is drawn from.
+            // and without the client guessing what the edge did to the lists
+            // it is drawn from. `mutual` rides along because the sentence
+            // under the add field is the one thing the page cannot work out
+            // for itself: after the insert, the edge that closed the pair and
+            // the edge that did not look the same.
+            match friends_page(&db, account).await {
+                Ok(mut page) => {
+                    page["mutual"] = serde_json::json!(add && theirs);
+                    page["who"] = serde_json::json!(other);
+                    (200, page)
+                }
+                Err(e) => (500, serde_json::json!({ "error": e })),
+            }
+        }
+
+        // An add left where it is, and taken off the list that asks you about
+        // it. Nothing is sent to the pilot who made it: their side goes on
+        // saying they added you, which is true. See docs/design/friends.md.
+        //
+        // Not a delete, which is the point. The edge stays, so accepting it
+        // later is one press off the list of everybody who has added you, and
+        // an ignore that outlives the row would be exactly the thing this
+        // avoids: an add nobody can find and nobody can answer.
+        "/v1/friend/ignore" => {
+            let Some(account) =
+                account_for(&db, "secret", &sha256_hex(s("secret").as_bytes())).await
+            else {
+                return (403, serde_json::json!({ "error": "no such account" }));
+            };
+            let other = body
+                .get("account")
+                .and_then(|v| v.as_i64())
+                .unwrap_or_default();
+            let on = body.get("on").and_then(|v| v.as_bool()).unwrap_or(true);
+            if let Err((code, why)) = names_a_pilot(account, other) {
+                return (code, serde_json::json!({ "error": why }));
+            }
+            let sql = if on {
+                // Only against an add that exists, which is what bounds this
+                // table: an ignore is an answer to something, not a list of
+                // people to refuse in advance. A press that arrives just
+                // after they removed their add writes nothing and says
+                // nothing, because there is nothing left to be shown.
+                "insert into friend_ignores (account, ignored)
+                 select $1, $2
+                  where exists (select 1 from friends
+                                 where account = $2 and friend = $1)
+                 on conflict do nothing"
+            } else {
+                "delete from friend_ignores where account = $1 and ignored = $2"
+            };
+            if let Err(e) = db.execute(sql, &[&account, &other]).await {
+                return (500, serde_json::json!({ "error": format!("{e}") }));
+            }
             match friends_page(&db, account).await {
                 Ok(page) => (200, page),
                 Err(e) => (500, serde_json::json!({ "error": e })),

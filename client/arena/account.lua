@@ -47,17 +47,28 @@ M.shelf = nil
 M.week_since = ""
 -- The week's table, as the meta-layer publishes it. Asked for the same way.
 M.week = nil
--- The friends page's four lists: friends with where they are flying, whoever
--- has added this pilot and is waiting on them, whoever this pilot has added
+-- The friends page's lists: friends with where they are flying, whoever has
+-- added this pilot and is waiting on an answer, whoever this pilot has added
 -- and is waiting on, and whoever is in the room right now and is on none of
--- the others. Every edge has exactly one home, so the page draws four sections
--- without deciding anything. `have_friends` separates "waiting for an answer"
--- from "nobody yet", which are the same empty table and different sentences.
+-- the others. Every edge has exactly one home among those four, so the page
+-- draws them without deciding anything. `have_friends` separates "waiting for
+-- an answer" from "nobody yet", which are the same empty table and different
+-- sentences.
 M.friends = {}
 M.asked = {}
 M.waiting = {}
 M.here = {}
 M.have_friends = false
+-- And everybody who has ever added this pilot, whatever came of it, each
+-- carrying "waiting", "ignored" or "friend". The same edges again under a
+-- heading that says so, which is what makes ignoring reversible: the add is
+-- still there and accepting it later is one press.
+M.everybody = {}
+-- What the last press on this page came to, for the line under the add field.
+-- Held here rather than in the menu because the answer arrives with a reply
+-- and the menu is not the thing waiting for it.
+M.friend_note = ""
+M.friend_bad = false
 -- Whether the meta-layer has ever answered. It separates "waiting" from
 -- "there is nothing there", which are the same empty token and very different
 -- sentences to show somebody.
@@ -407,6 +418,7 @@ local function take_friends(r)
     M.asked = type(r.asked) == "table" and r.asked or {}
     M.waiting = type(r.waiting) == "table" and r.waiting or {}
     M.here = type(r.here) == "table" and r.here or {}
+    M.everybody = type(r.everybody) == "table" and r.everybody or {}
     M.have_friends = true
     return true
 end
@@ -431,21 +443,71 @@ end
 
 -- One edge, made or dropped. The reply is the page, so a press redraws
 -- without a second request and without this client guessing what the edge did
--- to three lists it does not compute.
+-- to lists it does not compute.
+--
+-- `other` is an account number off one of those lists, or a call sign
+-- somebody typed. A name is the only way onto this page that does not start
+-- with the two of you being in the same room, and it has to be exact: the
+-- meta-layer looks it up whole and answers "no pilot called that" rather than
+-- offering anybody.
 function M.friend(other, add, cb)
     if M.base == "" then
         if cb then cb(false, "no meta-layer") end
         return
     end
-    post("/v1/friend", {secret = secret, account = other, add = add ~= false},
+    local body = {secret = secret, add = add ~= false}
+    if type(other) == "string" then
+        body.name = other
+    else
+        body.account = other
+    end
+    post("/v1/friend", body,
          function(r, err)
              if not r then
-                 M.note = err or "cannot do that"
-                 if cb then cb(false, M.note) end
+                 M.friend_note = err or "cannot do that"
+                 M.friend_bad = true
+                 M.note = M.friend_note
+                 if cb then cb(false, M.friend_note) end
                  return
              end
              take_friends(r)
              M.note = ""
+             -- Which sentence the add field says back. `mutual` is the one
+             -- thing this client cannot work out for itself: once the row is
+             -- in, the press that closed the pair and the press that did not
+             -- look identical.
+             M.friend_bad = false
+             if add == false then
+                 M.friend_note = ""
+             elseif r.mutual then
+                 M.friend_note = "friends. they had already added you."
+             else
+                 M.friend_note = "added. you are friends once they add you back."
+             end
+             if cb then cb(true, nil, r.mutual == true) end
+         end)
+end
+
+-- An add taken off the list that asks about it, and put on the list of
+-- everybody who has ever added you. Nothing is sent to them. Passing `false`
+-- puts it back.
+function M.ignore(other, on, cb)
+    if M.base == "" then
+        if cb then cb(false, "no meta-layer") end
+        return
+    end
+    post("/v1/friend/ignore",
+         {secret = secret, account = other, on = on ~= false},
+         function(r, err)
+             if not r then
+                 M.friend_note = err or "cannot do that"
+                 M.friend_bad = true
+                 if cb then cb(false, M.friend_note) end
+                 return
+             end
+             take_friends(r)
+             M.friend_note = ""
+             M.friend_bad = false
              if cb then cb(true) end
          end)
 end
@@ -457,6 +519,8 @@ function M.logout()
     M.claimed = false
     M.friends, M.asked, M.here = {}, {}, {}
     M.waiting, M.have_friends = {}, false
+    M.everybody = {}
+    M.friend_note, M.friend_bad = "", false
     M.name = ""
     M.rivets = 0
     M.entitlements = {}
