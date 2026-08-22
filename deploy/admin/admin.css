@@ -875,14 +875,50 @@ dialog .field { margin-bottom: 1rem; }
    picking a tile is the thing you do most and a menu costs two clicks. Which
    one is down is `aria-pressed`, so the state is the same fact for a screen
    reader and for the stylesheet. */
-#tools .chips button[aria-pressed="true"],
+#map-palette button[aria-pressed="true"],
 #map-tools button[aria-pressed="true"] {
   color: var(--friend);
   border-color: var(--friend);
 }
 
+/* One row per pile, with the pile's name in the left margin so the rows line
+   up under each other and the eye can run down the names. There are enough
+   tiles now that a single wrapped run of them was a paragraph to read. */
+.palette { display: grid; gap: 0.35rem; margin-bottom: var(--gap); }
+
+.paints {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+/* Wide enough for the longest of them, so every row's buttons start on the
+   same column. */
+.paints > .dim { flex: 0 0 4.5rem; }
+
+@media (max-width: 40rem) {
+  /* No margin to put a name in. It becomes a heading over its own row. */
+  .paints > .dim { flex-basis: 100%; }
+}
+
 /* Small enough that a size field does not read as a search box. */
 #map-w, #map-h { width: 5rem; }
+
+/* Holds its line whether or not it has anything to say, so the canvas below it
+   does not move every time the pointer leaves it.
+
+   The two numbers have to be the same number. A min-height under the height of
+   one filled line means the element grows the moment it has something to say,
+   which pushes the canvas down by the difference, under the pointer that is
+   drawing on it. It reads as a drag landing a tile off; the page is a line
+   taller than it was when the drag started. So the readout carries its own
+   line-height rather than inheriting the body's, and reserves exactly that. */
+.readout {
+  line-height: 1.4;
+  min-height: 1.4em;
+  margin: 0;
+}
 
 .row.tight { gap: 0.4rem; align-items: center; }
 .row.wrap { align-items: center; }

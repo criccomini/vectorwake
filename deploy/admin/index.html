@@ -529,15 +529,18 @@
       <section id="editor" aria-labelledby="editor-head" hidden>
         <h3 id="editor-head">Drawing <span id="editor-name" class="mark"></span></h3>
 
-        <div class="row wrap" id="tools">
-          <span class="dim">tile</span>
-          <div class="chips" id="map-palette"></div>
-        </div>
+        <div id="map-palette" class="palette"></div>
         <div class="row wrap">
           <span class="dim">tool</span>
           <div class="chips" id="map-tools"></div>
-          <label class="row tight"><input type="checkbox" id="map-sym">
-            half-turn symmetry</label>
+          <div class="chips">
+            <label><input type="checkbox" id="map-sym"> half-turn symmetry</label>
+          </div>
+        </div>
+        <div class="row wrap">
+          <span class="dim">edit</span>
+          <button id="map-undo" class="quiet" disabled>undo</button>
+          <button id="map-redo" class="quiet" disabled>redo</button>
           <label class="row tight">size
             <input id="map-w" type="number" min="9" max="1024" step="1">
             by
@@ -548,6 +551,18 @@
             <input id="map-zoom" type="range" min="1" max="12" step="1" value="4">
           </label>
         </div>
+        <p class="dim">The right button erases whatever tile is picked, so a
+          wall can be tidied without putting the paint down. Hold shift while
+          dragging to lock a line to 45 degrees and a rectangle to a square.
+          Hold space, or drag with the middle button, to move around the map.
+          Select drags a box out, drags what is in it somewhere else, and
+          answers Ctrl+C, Ctrl+X, Ctrl+V, Ctrl+A, Delete and Escape. Ctrl+Z and
+          Ctrl+Shift+Z do what they do everywhere else.</p>
+
+        <!-- Where the pointer is, and what is under it. Not a live region:
+             this changes on every pixel of movement and announcing it would
+             be nothing but noise. -->
+        <p id="map-at" class="dim readout" aria-live="off"></p>
 
         <div class="canvas-wrap">
           <canvas id="map-canvas" width="640" height="640"

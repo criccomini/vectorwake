@@ -91,6 +91,15 @@ jobs:
       - name: admin map codec
         run: node deploy/admin/tests/pack_test.js
 
+      # The panel's two scripts are classic tags on one page and share a scope,
+      # so a name declared at the top of both is a collision. One of them
+      # silently replaces a function; the other is a SyntaxError that takes a
+      # whole file out at parse and reports itself as an unrelated variable
+      # going missing somewhere else. Both have shipped. This compiles the two
+      # as one file, which is what sharing a scope amounts to.
+      - name: admin panel scope
+        run: node deploy/admin/tests/scope_test.js
+
       # A failed native handshake formats the response into the same connection
       # buffer that held it. This pins the overlap and the length Lua may read,
       # without waiting for the remote extension builder to compile the client.

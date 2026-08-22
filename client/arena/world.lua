@@ -591,7 +591,11 @@ end
 -- What a solid tile's variant says it is. Ordinary wall and border are drawn
 -- as one mass; the rest are objects that happen to be solid, and each names
 -- its own top-left corner, so a six-tile station is drawn once rather than
--- thirty-six times. See sim/tools/lvl2vw.c, which writes these.
+-- thirty-six times.
+--
+-- These are SIM_SOLID_* in sim/include/sim/sim.h, copied because Lua cannot
+-- read a C header. It is the only place the numbering is written twice, so a
+-- variant added there has to be added here or it draws as plain wall.
 local V_BORDER = 1
 local V_ROCK_A, V_ROCK_B = 2, 3
 local V_ROCK_BIG, V_ROCK_BODY = 4, 5
