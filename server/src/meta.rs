@@ -2063,7 +2063,16 @@ async fn route(
                      ),
                      tally as (
                          select name, max(pilot) as account,
-                                count(*) filter (where kind = 'kill') as kills,
+                                -- Kills, less the ones aimed at themselves or
+                                -- their own side. The arena takes one off the
+                                -- board for a misfire and this is the same
+                                -- number a week later, so a pilot cannot read
+                                -- two different totals off two screens. It can
+                                -- go under zero, and should: a week of
+                                -- bombing your own wingmen is a fact.
+                                count(*) filter (where kind = 'kill')
+                                  - count(*) filter (where kind = 'misfire')
+                                  as kills,
                                 count(*) filter (where kind = 'died') as deaths,
                                 -- The longest run of their own that anybody
                                 -- managed to end. Filed on the death, because
@@ -2094,6 +2103,24 @@ async fn route(
                          select account, sum(delta) as delta
                            from swing group by account
                      ),
+                     -- Kills a pilot was part of and did not finish, which
+                     -- the arena counts on the ship and this counts out of
+                     -- the rated log: a credit is damage that mattered, and
+                     -- everybody credited except whoever landed the last
+                     -- round helped. Two different sources for one column,
+                     -- and there is no third place to keep it: pilot_events
+                     -- has no row for helping.
+                     assisted as (
+                         select (item.credit->>'account')::bigint as account,
+                                count(*)::bigint as n
+                           from rated_events re, bound
+                          cross join lateral
+                                jsonb_array_elements(re.credits) as item(credit)
+                          where re.at >= bound.since and re.at < bound.until
+                            and (item.credit->>'account')::bigint
+                                <> coalesce(re.killer, -1)
+                          group by 1
+                     ),
                      -- Which class each pilot actually flew this week, since
                      -- a rating is kept per class and a pilot who only flies
                      -- melee has an arena rating that has never moved. The
@@ -2109,15 +2136,17 @@ async fn route(
                             coalesce(extract(epoch from p.span), 0)::bigint,
                             coalesce(m.delta, 0)::double precision,
                             t.points,
-                            coalesce(g.rating, 0)::double precision
+                            coalesce(g.rating, 0)::double precision,
+                            coalesce(s.n, 0)::bigint
                        from tally t
                        left join played p on p.name = t.name
                        left join moved m on m.account = t.account
                        left join flew f on f.account = t.account
+                       left join assisted s on s.account = t.account
                        left join ratings g
                               on g.account = t.account
                              and g.class = coalesce(f.class, $2)
-                      where t.kills > 0 or t.deaths > 0
+                      where t.kills <> 0 or t.deaths > 0
                       order by t.kills desc, t.deaths asc
                       limit 200",
                     &[&back, &DEFAULT_CLASS],
@@ -2131,6 +2160,8 @@ async fn route(
                         "name": r.get::<_, String>(0),
                         "kills": r.get::<_, i64>(1),
                         "deaths": r.get::<_, i64>(2),
+                        // Kills they were part of and did not finish.
+                        "assists": r.get::<_, i64>(8),
                         // A bounty taken is the length of the run it ended,
                         // so the biggest one somebody collected is the
                         // longest streak they broke. Their own best run is a

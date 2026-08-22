@@ -166,11 +166,17 @@ check("and tells them when the camera moves on", not net.on_air)
 -- The roster's second section: watchers, by name, after the ships.
 -- ship 0, label 1, rating 712, games 3, team 2, then the four score fields
 -- the board reads for seats a filtered snapshot leaves out, then the name.
+-- ship, label, rating(2), games, team, kills(2), deaths(2), assists(2),
+-- points(4), earned(2), then the name.
 deliver(string.char(3, 1, 0, 1, 200, 2, 3, 2,
-                    4, 0, 1, 0, 9, 0, 0, 0, 6, 0, 5) .. "pilot"
+                    4, 0, 1, 0, 2, 0, 9, 0, 0, 0, 6, 0, 5) .. "pilot"
         .. string.char(1, 1, 7) .. "gallery")
 check("the ships section still parses", net.pilots[0] ~= nil
       and net.pilots[0].name == "pilot")
+check("with the score a filtered snapshot cannot carry",
+      net.pilots[0].k == 4 and net.pilots[0].d == 1 and net.pilots[0].a == 2,
+      tostring(net.pilots[0].k) .. "/" .. tostring(net.pilots[0].d)
+      .. "/" .. tostring(net.pilots[0].a))
 check("the watcher section names its people", #net.watchers == 1
       and net.watchers[1].name == "gallery",
       tostring(#net.watchers))

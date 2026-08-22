@@ -343,6 +343,7 @@ SHIP_GETTER(ShipClass, s->cls)
 SHIP_GETTER(ShipEnergy, s->energy)
 SHIP_GETTER(ShipKills, s->kills)
 SHIP_GETTER(ShipDeaths, s->deaths)
+SHIP_GETTER(ShipAssists, s->assists)
 
 // Velocity, in pixels per tick. The renderer leans on it for motion trails
 // and the HUD reports speed, so both would otherwise have to difference
@@ -1280,6 +1281,7 @@ const luaL_reg kFunctions[] = {
     {"ship_max_energy", ShipMaxEnergy},
     {"ship_kills", ShipKills},
     {"ship_deaths", ShipDeaths},
+    {"ship_assists", ShipAssists},
     {"ship_vel", ShipVel},
     {"ship_repel", ShipRepel},
     {"ship_up", ShipUp},

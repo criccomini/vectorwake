@@ -174,7 +174,7 @@ pub(crate) const JOIN_WATCH: u8 = 2;
 ///
 /// 15 links the rounds fired in one gun volley. A hull hit removes its
 /// siblings, matching SVS multifire without affecting wall collisions.
-pub(crate) const CLIENT_PROTOCOL: u8 = 16;
+pub(crate) const CLIENT_PROTOCOL: u8 = 17;
 
 /// The biggest message a client may send. The largest legitimate one is a join:
 /// tag, class, protocol, a zone name and a call sign. 8 KB is two orders of

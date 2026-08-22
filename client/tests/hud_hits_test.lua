@@ -78,6 +78,7 @@ local sim = {
     ship_max_energy = function() return 100 end,
     ship_kills = function(i) return i * 2 end,
     ship_deaths = function(i) return i end,
+    ship_assists = function(i) return i * 3 end,
     ship_points = function(i) return i * 10 end,
     ship_bounty = function(i) return 7 + i end,
     ship_up = function() return 0 end,
@@ -592,7 +593,7 @@ ui.details = false
 -- Kills, deaths, points and bounty, right-aligned off the panel's edge, with a
 -- name and a bot mark to the left of them. Points is the wide one: five digits
 -- after a long session, where the rest are two or three. Fixed offsets fitted
--- three columns and could not fit four, so the widths are measured off the
+-- three columns and could not fit five, so the widths are measured off the
 -- numbers in the room, and this is the question a fixed offset got wrong.
 --
 -- Asked with the widest row a room can produce. Everything on it is either
@@ -602,10 +603,12 @@ ui.details = false
 ui.details = true
 ui.sort = "name"
 room.teams = {[0] = 1, 1, 1, 1}
-local kills, deaths, points, bounty =
-    sim.ship_kills, sim.ship_deaths, sim.ship_points, sim.ship_bounty
+local kills, deaths, assists, points, bounty =
+    sim.ship_kills, sim.ship_deaths, sim.ship_assists, sim.ship_points,
+    sim.ship_bounty
 sim.ship_kills = function(i) return i == 1 and 137 or 1 end
 sim.ship_deaths = function(i) return i == 1 and 118 or 1 end
+sim.ship_assists = function(i) return i == 1 and 209 or 1 end
 sim.ship_points = function(i) return i == 1 and 12750 or 1 end
 sim.ship_bounty = function(i) return i == 1 and 812 or 1 end
 frame({pilots = {[0] = {name = "aaa", label = "human"},
@@ -631,7 +634,7 @@ do
         end
     end
     table.sort(span, function(a, b) return a.x0 < b.x0 end)
-    check("the widest row draws a name and four numbers", #span == 5,
+    check("the widest row draws a name and five numbers", #span == 6,
           "drew " .. #span)
     for k = 2, #span do
         check(string.format("%s clears %s", span[k].s, span[k - 1].s),
@@ -642,13 +645,13 @@ do
     -- the marks line up down the list rather than trailing each name. It is
     -- drawn rather than written, so what is measurable here is the gap the
     -- name gives up for it: MARK_K plus the gap either side.
-    if #span == 5 then
+    if #span == 6 then
         check("the name leaves the mark its column",
               span[2].x0 - span[1].x1 >= 11 + 7,
               string.format("%.1f of gap", span[2].x0 - span[1].x1))
     end
 end
-sim.ship_kills, sim.ship_deaths = kills, deaths
+sim.ship_kills, sim.ship_deaths, sim.ship_assists = kills, deaths, assists
 sim.ship_points, sim.ship_bounty = points, bounty
 ui.details = false
 

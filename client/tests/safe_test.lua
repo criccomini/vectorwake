@@ -86,6 +86,7 @@ local sim = {
     ship_max_energy = function() return 100 end,
     ship_kills = function() return 0 end,
     ship_deaths = function() return 0 end,
+    ship_assists = function() return 0 end,
     ship_points = function() return 0 end,
     ship_bounty = function() return 47 end,
     ship_up = function() return 0 end,

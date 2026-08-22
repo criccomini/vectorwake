@@ -71,7 +71,7 @@ M.said = {}
 -- The client wire's own version, checked by the zone before it reads anything
 -- else in a join. A stale build is told its build is stale rather than left to
 -- misparse snapshots.
-local CLIENT_PROTOCOL = 16
+local CLIENT_PROTOCOL = 17
 -- Published, because the about page says what this build talks, and a second
 -- copy of the number is a second thing to forget to bump.
 M.PROTOCOL = CLIENT_PROTOCOL
@@ -513,17 +513,17 @@ local function on_roster(s)
     local o = 3
     local pilots, ratings = {}, {}
     for _ = 1, n do
-        local len = string.byte(s, o + 16)
-        -- Seventeen bytes of header, then the name. `string.byte` answers nil
+        local len = string.byte(s, o + 18)
+        -- Nineteen bytes of header, then the name. `string.byte` answers nil
         -- past the end and the arithmetic on it raises, and an error here
         -- surfaces inside a websocket callback where nobody is looking.
-        if not len or #s < o + 16 + len then return end
+        if not len or #s < o + 18 + len then return end
         local ship = string.byte(s, o)
         local label = string.byte(s, o + 1)
         local rating = i16(string.byte(s, o + 2), string.byte(s, o + 3))
         local games = string.byte(s, o + 4)
         pilots[ship] = {
-            name = string.sub(s, o + 17, o + 16 + len),
+            name = string.sub(s, o + 19, o + 18 + len),
             -- Kept, because everything that used to ask "is this AI" still
             -- wants that answer, and both bot labels are one.
             ai = label == 2 or label == 3,
@@ -537,14 +537,17 @@ local function on_roster(s)
             -- prefers the simulation for seats it can see, because this
             -- arrives twice a second and that arrives twenty times.
             team = string.byte(s, o + 5),
-            k = u16(string.byte(s, o + 6), string.byte(s, o + 7)),
+            -- Signed, unlike everything else on this line: killing yourself
+            -- or a teammate takes one off, and a pilot at zero goes under.
+            k = i16(string.byte(s, o + 6), string.byte(s, o + 7)),
             d = u16(string.byte(s, o + 8), string.byte(s, o + 9)),
-            p = u32(string.byte(s, o + 10), string.byte(s, o + 11),
-                    string.byte(s, o + 12), string.byte(s, o + 13)),
-            b = u16(string.byte(s, o + 14), string.byte(s, o + 15)),
+            a = u16(string.byte(s, o + 10), string.byte(s, o + 11)),
+            p = u32(string.byte(s, o + 12), string.byte(s, o + 13),
+                    string.byte(s, o + 14), string.byte(s, o + 15)),
+            b = u16(string.byte(s, o + 16), string.byte(s, o + 17)),
         }
         ratings[ship] = rating
-        o = o + 17 + len
+        o = o + 19 + len
     end
     -- The watchers, after the ships: count, then label and name per row. No
     -- ship index and no rating, since a watcher is not fighting in this room.

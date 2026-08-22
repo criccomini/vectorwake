@@ -756,6 +756,7 @@ local SORTS = {
     pilot = function(p) return string.lower(p.name or "") end,
     kills = function(p) return -(p.kills or 0) end,
     deaths = function(p) return -(p.deaths or 0) end,
+    assists = function(p) return -(p.assists or 0) end,
     kd = function(p) return -ratio(p.kills, p.deaths) end,
     banked = function(p) return -(p.banked or 0) end,
     run = function(p) return -(p.run or 0) end,
@@ -801,6 +802,7 @@ local function standings_rows()
             -- the preview still shows.
             detail = (p.kills or 0) .. "k",
             rank = p.rank, kills = p.kills or 0, deaths = p.deaths or 0,
+            assists = p.assists or 0,
             kd = ratio(p.kills, p.deaths),
             -- What the week's kills paid. Not the wallet: rivets get spent,
             -- and a table of what everybody currently has left would say who
@@ -2072,6 +2074,7 @@ local function view_row(r, i)
         group = r.group, short = r.short, tint_col = r.tint_col,
         -- The week's own columns.
         rank = r.rank, kills = r.kills, deaths = r.deaths, run = r.run,
+        assists = r.assists,
         kd = r.kd, played = r.played, banked = r.banked,
         rating = r.rating, swing = r.swing,
         -- What a row costs to upgrade, and whether the wallet covers it.

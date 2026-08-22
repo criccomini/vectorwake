@@ -653,7 +653,36 @@ async fn ingest_pilot(
             }
         }
     }
+    // And a misfire costs one, which is the smallest amount a wallet can move
+    // by. It is not a fine calibrated against anything: it is there so that
+    // bombing your own feet is a number going the other way rather than a
+    // blank line, and one rivet against a kill worth dozens says exactly that.
+    //
+    // Floored at zero, unlike the kill count in the arena. A negative score is
+    // a fact about a match; a negative balance is a debt, and this game does
+    // not have those. Same `rows > 0` guard: delivery is at-least-once and a
+    // retry must not charge twice.
+    if rows > 0 && kind == crate::pilot::MISFIRE {
+        if let Some(account) = pilot {
+            charge(db, account, 1).await?;
+        }
+    }
     Ok(())
+}
+
+/// Rivets out of an account's wallet, never past empty.
+///
+/// An account with no row has never been paid, which is a balance of zero,
+/// and zero less one is zero: no row is made, because a wallet that appears
+/// the first time somebody kills themselves is a row that says nothing.
+async fn charge(db: &Client, account: i64, rivets: i64) -> Result<(), String> {
+    db.execute(
+        "update wallets set rivets = greatest(0, rivets - $2) where account = $1",
+        &[&account, &rivets],
+    )
+    .await
+    .map(|_| ())
+    .map_err(|error| format!("cannot charge rivets: {error}"))
 }
 
 /// Rivets into an account's wallet. An account with no row has never been

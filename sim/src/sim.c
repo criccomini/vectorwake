@@ -234,6 +234,8 @@ int sim_kit_cost(const uint8_t *kit) {
     return n;
 }
 
+static void clear_hurt(sim_ship *sh);
+
 void sim_deal_kit(sim_ship *sh, const sim_settings *cfg, int ammunition) {
     memset(sh->up, 0, sizeof sh->up);
     memset(sh->level, 0, sizeof sh->level);
@@ -355,6 +357,7 @@ int sim_spawn(sim_state *s, uint8_t cls, uint8_t team, int32_t x_px,
     }
     sim_ship *sh = &s->ships[i];
     memset(sh, 0, sizeof *sh);
+    clear_hurt(sh);
     sh->active = 1;
     sh->alive = 1;
     sh->cls = cls < cfg->class_count ? cls : 0;
@@ -653,6 +656,8 @@ void sim_restart(sim_state *s, const sim_settings *cfg) {
         sh->fire_cooldown[SIM_TRIG_GUN] = 0;
         sh->fire_cooldown[SIM_TRIG_BOMB] = 0;
         sh->kills = sh->deaths = 0;
+        sh->assists = 0;
+        clear_hurt(sh);
         sh->points = 0;
         sh->run = 0;
         /* With ammunition, which is the one thing a match start does that a
@@ -907,6 +912,39 @@ int32_t sim_bounty(const sim_settings *cfg, const sim_ship *sh) {
 }
 
 
+static void clear_hurt(sim_ship *sh);
+
+/* Nobody has hurt this hull. 255 rather than zero, because zero is a ship. */
+static void clear_hurt(sim_ship *sh) {
+    for (int k = 0; k < SIM_ASSIST_SLOTS; k++) {
+        sh->hurt_by[k] = 255;
+        sh->hurt_at[k] = 0;
+    }
+}
+
+/* Somebody landed something on this hull. Recorded so that a death a moment
+ * later knows who helped bring it about.
+ *
+ * The attacker's own slot is reused where they already have one, so a pilot
+ * who lands twenty rounds occupies one place and not twenty; otherwise the
+ * oldest slot goes. That is the whole of the arithmetic: an assist is not
+ * weighted here the way it is in the rating layer, because a scoreboard column
+ * is a count of the deaths you were part of and not a share of them. */
+static void note_hurt(sim_ship *v, uint8_t attacker, uint32_t tick) {
+    int oldest = 0;
+    for (int k = 0; k < SIM_ASSIST_SLOTS; k++) {
+        if (v->hurt_by[k] == attacker) {
+            v->hurt_at[k] = tick;
+            return;
+        }
+        if (v->hurt_by[oldest] != 255
+            && (v->hurt_by[k] == 255 || v->hurt_at[k] < v->hurt_at[oldest]))
+            oldest = k;
+    }
+    v->hurt_by[oldest] = attacker;
+    v->hurt_at[oldest] = tick;
+}
+
 static void apply_damage(sim_state *s, const sim_settings *cfg, uint8_t victim,
                          uint8_t attacker, int32_t amount, uint16_t stall,
                          sim_events *ev) {
@@ -920,6 +958,13 @@ static void apply_damage(sim_state *s, const sim_settings *cfg, uint8_t victim,
      * stopping the refill is its own kind of damage, and the longer of two
      * stalls wins rather than them adding up. */
     if (stall > v->stall) v->stall = stall;
+    /* Filed before the damage lands, so the round that finishes a hull is in
+     * the ledger the death is about to read. Same three exclusions the rating
+     * layer applies to credit: your own fire, your own side's, and a round
+     * that took nothing off the bar. */
+    if (attacker < s->ship_count && attacker != victim && amount > 0
+        && s->ships[attacker].team != v->team)
+        note_hurt(v, attacker, s->tick);
     v->energy -= amount;
     emit(ev, SIM_EV_HIT, victim, attacker, amount);
     if (v->energy <= 0) {
@@ -950,13 +995,21 @@ static void apply_damage(sim_state *s, const sim_settings *cfg, uint8_t victim,
          * thirty, and the levers on that were `spawn_radius` and how much a
          * spawn was handed. Neither is a lever any more. */
         int32_t paid = 0;
-        if (attacker != 255 && attacker != victim) {
+        if (attacker == victim) {
+            /* Your own bomb. It costs a kill, the same way a teammate's does
+             * below, because both are the same mistake seen from two sides
+             * and neither should be free: a scoreboard where the only way to
+             * move is up rewards throwing bombs at your own feet with a
+             * blank line rather than with a number. */
+            v->kills--;
+        } else if (attacker != 255) {
             sim_ship *k = &s->ships[attacker];
-            k->kills++;
-            /* A teammate's death pays neither points nor bounty. The rating
-             * layer already refuses to score teammate damage; this is the
-             * same rule where a player can see it. */
+            /* A teammate's death pays neither points nor bounty, and now
+             * takes a kill as well. The rating layer already refuses to score
+             * teammate damage; this is the same rule where a player can see
+             * it, and with a cost rather than a shrug. */
             if (k->team != v->team) {
+                k->kills++;
                 paid = sim_bounty(cfg, v);
                 for (int f = 0; f < s->flag_count; f++)
                     if (s->flags[f].active && s->flags[f].carried
@@ -964,8 +1017,24 @@ static void apply_damage(sim_state *s, const sim_settings *cfg, uint8_t victim,
                         paid += cfg->points_per_flag;
                 k->points += (uint32_t)paid;
                 k->run = (uint16_t)(k->run + cfg->bounty_per_kill);
+            } else {
+                k->kills--;
             }
         }
+        /* Everybody else who was shooting at them, and recently enough for it
+         * to have been the same fight. One assist each rather than a share:
+         * this column answers "how many of these did you help take apart",
+         * which is a count. The killer is not in it, having a column of their
+         * own, and neither is a slot older than the window or a pilot who has
+         * since left the room. */
+        for (int k = 0; k < SIM_ASSIST_SLOTS; k++) {
+            uint8_t who = v->hurt_by[k];
+            if (who == 255 || who == attacker || who >= s->ship_count) continue;
+            if (s->tick - v->hurt_at[k] > SIM_ASSIST_WINDOW) continue;
+            if (!s->ships[who].active) continue;
+            s->ships[who].assists++;
+        }
+        clear_hurt(v);
         /* What a death takes is the run, which is the whole of what a pilot
          * was worth, and the ammunition they had already spent, which does
          * not come back. The frame is re-dealt at the respawn: a kit is
@@ -2326,7 +2395,9 @@ uint64_t sim_hash(const sim_state *s) {
                             | ((uint32_t)sh->fire_cooldown[SIM_TRIG_BOMB] << 16));
         h = hash_u32(h, sh->respawn_at);
         h = hash_u32(h, sh->stall);
-        h = hash_u32(h, (uint32_t)sh->kills | ((uint32_t)sh->deaths << 16));
+        h = hash_u32(h, (uint32_t)(uint16_t)sh->kills
+                        | ((uint32_t)sh->deaths << 16));
+        h = hash_u32(h, sh->assists);
         for (int u = 0; u < SIM_UP_COUNT; u++) h = hash_u32(h, sh->up[u]);
         for (int t = 0; t < SIM_TRIG_COUNT; t++)
             h = hash_u32(h, (uint32_t)sh->level[t] | ((uint32_t)sh->mods[t] << 8));

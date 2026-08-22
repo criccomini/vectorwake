@@ -50,6 +50,7 @@ end
 -- that the free-for-all test can hand out a team per seat instead.
 local room = {count = 4, teams = {[0] = 0, 1, 0, 1}, active = {}, alive = {},
               kills = {[0] = 2, 5, 1, 3}, deaths = {[0] = 4, 1, 6, 2},
+              assists = {[0] = 6, 0, 2, 1},
               points = {[0] = 7, 19, 3, 11}}
 local sim = {
     ship_count = function() return room.count end,
@@ -71,6 +72,7 @@ local sim = {
     ship_max_energy = function() return 100 end,
     ship_kills = function(i) return room.kills[i] or 0 end,
     ship_deaths = function(i) return room.deaths[i] or 0 end,
+    ship_assists = function(i) return room.assists[i] or 0 end,
     ship_points = function(i) return room.points[i] or 0 end,
     ship_bounty = function(i) return 7 + i end,
     ship_up = function() return 0 end,

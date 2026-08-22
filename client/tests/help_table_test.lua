@@ -55,6 +55,7 @@ _G.sim = {
     ship_max_energy = function() return 100 end,
     ship_kills = function() return 1 end,
     ship_deaths = function() return 1 end,
+    ship_assists = function() return 0 end,
     ship_points = function() return 10 end,
     ship_bounty = function() return 34 end,
     ship_up = function() return 0 end,

@@ -928,11 +928,11 @@ do
         table = true,
         week = {sort = "kills", filter = "", back = 0, since = ""},
         rows = {
-            {label = "Halcyon 1", rank = 1, kills = 9, deaths = 3, kd = 3,
-             run = 4, banked = 180, rating = 1240, swing = 29,
+            {label = "Halcyon 1", rank = 1, kills = 9, deaths = 3, assists = 6,
+             kd = 3, run = 4, banked = 180, rating = 1240, swing = 29,
              played = "22m", index = 1, pick = true},
-            {label = "Vantage 7", rank = 2, kills = 5, deaths = 4, kd = 1.25,
-             run = 2, banked = 90, rating = 1190, swing = -12,
+            {label = "Vantage 7", rank = 2, kills = 5, deaths = 4, assists = 1,
+             kd = 1.25, run = 2, banked = 90, rating = 1190, swing = -12,
              played = "8m", index = 2, pick = true, mark = true},
         },
     })
@@ -945,6 +945,12 @@ do
     check("the ratio is a column now", has(week, "k/d") and has(week, "3.00"),
           table.concat(texts(week), " "))
     check("and so is the best run", has(week, "streak"),
+          table.concat(texts(week), " "))
+    -- Kills a pilot was part of and did not finish. A hull rarely comes apart
+    -- to one pilot's fire, and two columns told whoever did four fifths of
+    -- the work and lost the last shot that they had done nothing.
+    check("assists are a column beside the two they belong with",
+          has(week, "assists") and has(week, "6"),
           table.concat(texts(week), " "))
     -- Two different facts, and the table wants both: what somebody is rated
     -- at, and what this week did to it.
@@ -986,8 +992,8 @@ do
         table = true,
         week = {sort = "kills", filter = "", back = 0, since = ""},
         rows = {
-            {label = "Halcyon 1", rank = 1, kills = 9, deaths = 3, kd = 3,
-             run = 4, banked = 180, rating = 0, swing = 5,
+            {label = "Halcyon 1", rank = 1, kills = 9, deaths = 3, assists = 2,
+             kd = 3, run = 4, banked = 180, rating = 0, swing = 5,
              played = "22m", index = 1, pick = true},
         },
     })

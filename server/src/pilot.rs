@@ -116,6 +116,15 @@ pub const LEAVE: &str = "leave";
 pub const DIED: &str = "died";
 /// This pilot destroyed somebody. `detail`: who, and what it paid.
 pub const KILL: &str = "kill";
+/// This pilot destroyed themselves or a teammate. `detail`: who, and whether
+/// it was their own hull.
+///
+/// A kind of its own rather than a `kill` with a zero on it, because it is not
+/// one: the arena takes a kill off the board for it and the meta-layer takes a
+/// rivet, and both of those are arithmetic somebody has to be able to audit
+/// out of the log. A teamkill used to file a `kill` paying nothing, which made
+/// the week's table count it as a kill.
+pub const MISFIRE: &str = "misfire";
 
 /// The two combat kinds do not spend the session budget. The budget exists
 /// because most of this log is things a pilot can do as fast as they can
@@ -125,7 +134,7 @@ pub const KILL: &str = "kill";
 /// flying exhausts the allowance and the departure at the end of it goes
 /// unrecorded, which is the row the whole log is for.
 pub fn budgeted(kind: &str) -> bool {
-    kind != DIED && kind != KILL
+    kind != DIED && kind != KILL && kind != MISFIRE
 }
 
 /// Written by the meta-layer rather than an arena, for the handful of things

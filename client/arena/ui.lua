@@ -1302,6 +1302,8 @@ local function by_column(a, b)
         -- Fewest first: on every other column the top of the list is the
         -- pilot doing best, and this is the one where that means less.
         if a.d ~= b.d then return a.d < b.d end
+    elseif sort_key == "assists" then
+        if a.a ~= b.a then return a.a > b.a end
     else
         if a.p ~= b.p then return a.p > b.p end
     end
@@ -1412,15 +1414,16 @@ local function seat_team(i, p)
     return seat_here(i) and sim.ship_team(i) or (p and p.team)
 end
 
--- Kills, deaths, points and bounty, whichever way round they have to be got.
+-- Kills, deaths, assists, points and bounty, whichever way round they have to
+-- be got.
 local function seat_score(i, p)
     if seat_here(i) then
         -- The simulation for a seat we can see, because it lands twenty times
         -- a second and your own kill should appear the moment it happens.
-        return sim.ship_kills(i), sim.ship_deaths(i),
+        return sim.ship_kills(i), sim.ship_deaths(i), sim.ship_assists(i),
                sim.ship_points(i), sim.ship_bounty(i)
     end
-    return (p and p.k) or 0, (p and p.d) or 0,
+    return (p and p.k) or 0, (p and p.d) or 0, (p and p.a) or 0,
            (p and p.p) or 0, (p and p.b) or 0
 end
 
@@ -1442,7 +1445,7 @@ local function refresh_players(pilots, watchers, side, viewer_name)
             r.i = i
             -- Bounty is the one number on this row about the next thirty seconds
             -- rather than about the last hour.
-            r.k, r.d, r.p, r.b = seat_score(i, p)
+            r.k, r.d, r.a, r.p, r.b = seat_score(i, p)
             r.name = (p and p.name) or ("ship " .. i)
             r.lname = string.lower(r.name)
             -- The roster's own flag. This used to look for a local bot object,
@@ -1472,7 +1475,7 @@ local function refresh_players(pilots, watchers, side, viewer_name)
         local r = rows[n]
         if not r then r = {} rows[n] = r end
         r.i = nil
-        r.k, r.d, r.p, r.b = 0, 0, 0, 0
+        r.k, r.d, r.a, r.p, r.b = 0, 0, 0, 0, 0
         r.name = w.name
         r.lname = string.lower(r.name)
         r.ai = w.label == "bot" or w.label == "bot?"
@@ -1589,11 +1592,13 @@ local function scores(me, pilots, watchers, viewer_name)
         end
         return wide
     end
-    local bw, pw, dw, kw =
-        col_w("b", "BTY"), col_w("p", "PTS"), col_w("d", "D"), col_w("k", "K")
+    local bw, pw, aw, dw, kw =
+        col_w("b", "BTY"), col_w("p", "PTS"), col_w("a", "A"),
+        col_w("d", "D"), col_w("k", "K")
     local bx = x + w - 12 * F.scale
     local px = bx - bw - GAP
-    local dx = px - pw - GAP
+    local ax = px - pw - GAP
+    local dx = ax - aw - GAP
     local kx = dx - dw - GAP
     -- The marks sit in their own column left of the numbers rather than after
     -- each name, so a scan down the list finds them in a line instead of at a
@@ -1614,6 +1619,10 @@ local function scores(me, pilots, watchers, viewer_name)
     head_col("name", "PILOTS", name_x, nil)
     head_col("kills", "K", kx, "right")
     head_col("deaths", "D", dx, "right")
+    -- Kills you were part of and did not finish. A column rather than a line
+    -- in the box a row opens, because it is the same kind of fact as the two
+    -- beside it and belongs where they are.
+    head_col("assists", "A", ax, "right")
     head_col("points", "PTS", px, "right")
     head_col("bounty", "BTY", bx, "right")
     -- Hit boxes over the headings. Each takes its whole column and the gap to
@@ -1622,6 +1631,7 @@ local function scores(me, pilots, watchers, viewer_name)
     hit(x + 8 * F.scale, top_y() + 4 * F.scale, 60 * F.scale, 18 * F.scale, "sort_name")
     hit(kx - kw - GAP, top_y() + 4 * F.scale, kw + GAP, 18 * F.scale, "sort_kills")
     hit(dx - dw - GAP, top_y() + 4 * F.scale, dw + GAP, 18 * F.scale, "sort_deaths")
+    hit(ax - aw - GAP, top_y() + 4 * F.scale, aw + GAP, 18 * F.scale, "sort_assists")
     hit(px - pw - GAP, top_y() + 4 * F.scale, pw + GAP, 18 * F.scale, "sort_points")
     hit(bx - bw - GAP, top_y() + 4 * F.scale, bw + GAP, 18 * F.scale, "sort_bounty")
     ticks(x + 12 * F.scale, top_y() + 20 * F.scale, w - 24 * F.scale,
@@ -1688,6 +1698,7 @@ local function scores(me, pilots, watchers, viewer_name)
             -- while still making them read past it.
             txt(tostring(r.k), kx, cy, num, pal.a(pal.INK, 0.85), "right")
             txt(tostring(r.d), dx, cy, num, pal.a(pal.INK, 0.85), "right")
+            txt(tostring(r.a), ax, cy, num, pal.a(pal.INK, 0.85), "right")
             -- The bounty in gold, which is the color it wears on a
             -- nameplate, in the corner stack and in the box this row opens.
             -- Points held the gold while it was the only score here; with
@@ -2181,7 +2192,8 @@ local function loadout(me, class_names, top)
 
     txt(class_names[sim.ship_class(me) + 1] or "?", x + 12 * F.scale, y + 16 * F.scale,
         (FONT - 1) * F.scale, pal.FRIEND)
-    txt(sim.ship_kills(me) .. "k  " .. sim.ship_deaths(me) .. "d",
+    txt(sim.ship_kills(me) .. "k  " .. sim.ship_deaths(me) .. "d  "
+        .. sim.ship_assists(me) .. "a",
         x + w - 12 * F.scale, y + 16 * F.scale, (FONT - 3) * F.scale, pal.a(pal.DIM, 0.85),
         "right")
 
@@ -3431,9 +3443,9 @@ local function podium(o, m, names)
         -- prints the same number twice in two sizes is a card that has not
         -- decided which one anybody is meant to read.
         --
-        -- What the two numbers on every row below are, though, does belong
-        -- here: once per column, in the head, rather than a word per row.
-        txt("k  d", cx + cw - 18 * F.scale, y + 34 * F.scale, 9.5 * F.scale,
+        -- What the three numbers on every row below are, though, does belong
+        -- here: once per column, in the head, rather than three words a row.
+        txt("k  d  a", cx + cw - 18 * F.scale, y + 34 * F.scale, 9.5 * F.scale,
             pal.a(pal.DIM, 0.75), "right")
         F.layer:seg(cx + 18 * F.scale, ry(y + 44 * F.scale),
                     cx + cw - 18 * F.scale, ry(y + 44 * F.scale),
@@ -3471,7 +3483,7 @@ local function podium(o, m, names)
                 -- the other end of it.
                 local nx = cx + 26 * F.scale + text_w(sd.phrase, 12.5 * F.scale)
                 if nx + text_w(r.name, 9 * F.scale)
-                   < cx + cw - 46 * F.scale then
+                   < cx + cw - 66 * F.scale then
                     lbl(r.name, nx, ry0, pal.a(pal.DIM, 0.75))
                 end
             else
@@ -3481,10 +3493,11 @@ local function podium(o, m, names)
             -- The best gun in the room, whichever side it was on. One mark
             -- rather than a column, because it is one pilot.
             if r == mvp then
-                txt("mvp", cx + cw - 68 * F.scale, ry0, 9.5 * F.scale,
+                txt("mvp", cx + cw - 88 * F.scale, ry0, 9.5 * F.scale,
                     pal.a(pal.CHARGE_COL, 0.85), "right")
             end
-            txt(r.k .. "  " .. r.d, cx + cw - 18 * F.scale, ry0, 12 * F.scale,
+            txt(r.k .. "  " .. r.d .. "  " .. r.a,
+                cx + cw - 18 * F.scale, ry0, 12 * F.scale,
                 pal.a(pal.DIM, 0.95), "right")
         end
     end
@@ -3713,6 +3726,10 @@ function pages.week(v, x, y, w, h, focused)
     local want = {
         {"kills", 46, function(r) return tostring(r.kills or 0) end, true},
         {"deaths", 52, function(r) return tostring(r.deaths or 0) end},
+        -- Kills a pilot was part of and did not finish. Beside the two it
+        -- belongs with rather than after the ratio, so the three read as one
+        -- group the way they do on the scoreboard in a match.
+        {"assists", 56, function(r) return tostring(r.assists or 0) end},
         -- Kills over deaths, which is the number everybody argues about and
         -- the one thing in the old card worth the width it took.
         {"k/d", 50, function(r)
@@ -4150,7 +4167,7 @@ function pages.aside(a, x, y, w, h)
             lbl(M.side_names and M.side_names[team] or "side", x, ly,
                 pal.a(col, 0.9))
             local rx2 = x + w - 24 * F.scale
-            lbl("k  d", rx2, ly, pal.a(pal.DIM, 0.75), "right")
+            lbl("k  d  a", rx2, ly, pal.a(pal.DIM, 0.75), "right")
             ly = ly + 8 * F.scale
             hrule(x, ly, w - 24 * F.scale)
             ly = ly + 16 * F.scale
@@ -4158,7 +4175,8 @@ function pages.aside(a, x, y, w, h)
                 txt(r.name, x, ly, 12.5 * F.scale,
                     pal.a(r.self and pal.FRIEND or pal.INK, r.self and 1 or 0.8),
                     nil, nil, true)
-                txt(r.k .. "  " .. r.d, x + w - 24 * F.scale, ly, 11 * F.scale,
+                txt(r.k .. "  " .. r.d .. "  " .. r.a,
+                    x + w - 24 * F.scale, ly, 11 * F.scale,
                     pal.a(pal.DIM, 0.95), "right")
                 ly = ly + 17 * F.scale
             end

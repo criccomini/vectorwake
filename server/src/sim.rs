@@ -270,8 +270,16 @@ pub struct sim_ship {
     pub respawn_at: u16,
     pub spawn_x: i32,
     pub spawn_y: i32,
-    pub kills: u16,
+    /// Signed, and the only counter here that is: killing yourself or a
+    /// teammate takes one off, and a pilot at zero goes under.
+    pub kills: i16,
     pub deaths: u16,
+    /// Kills this pilot helped with and did not land.
+    pub assists: u16,
+    /// Who has hurt this hull lately, and when, which is what a death reads to
+    /// hand out the assists above. 255 is an empty slot.
+    pub hurt_by: [u8; ASSIST_SLOTS],
+    pub hurt_at: [u32; ASSIST_SLOTS],
     /// What this hull is, which is the kit dealt back at every spawn.
     pub up: [u8; UP_COUNT],
     pub level: [u8; TRIG_COUNT],
@@ -516,6 +524,9 @@ pub const MAX_RUNGS: usize = 4;
 pub const MOD_MAX: u8 = 3;
 pub const MAX_CHARGES: usize = 4;
 pub const CHARGE_MAX: u8 = 15;
+/// How many recent attackers a hull remembers, which is what an assist is
+/// made of. Mirrors SIM_ASSIST_SLOTS.
+pub const ASSIST_SLOTS: usize = 4;
 /// The flat kit space: a stat, a rung, an add-on or a charge, all one shape.
 pub const SLOT_COUNT: usize = UP_COUNT + TRIG_COUNT + TRIG_COUNT * MOD_COUNT + MAX_CHARGES;
 /// Steps a stat may climb, and what a kit may spend in total. Six over five

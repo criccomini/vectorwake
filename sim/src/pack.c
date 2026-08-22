@@ -123,8 +123,9 @@ int sim_pack_around(const sim_state *s, uint8_t *out, int cap,
         w16(&w, sh->heading);
         w16(&w, sh->repel);
         w32(&w, (uint32_t)sh->repel_speed);
-        w16(&w, sh->kills);
+        w16(&w, (uint16_t)sh->kills);
         w16(&w, sh->deaths);
+        w16(&w, sh->assists);
         w16(&w, sh->run);
         w32(&w, sh->points);
         /* Energy is the fight's health bar. Anyone who can see the hull can
@@ -302,8 +303,9 @@ int sim_unpack(sim_state *out, const uint8_t *in, int len) {
         sh->repel = (uint16_t)r16(&r);
         sh->repel_speed = (int32_t)r32(&r);
         if (!world_velocity(sh->repel_speed)) return -1;
-        sh->kills = (uint16_t)r16(&r);
+        sh->kills = (int16_t)(uint16_t)r16(&r);
         sh->deaths = (uint16_t)r16(&r);
+        sh->assists = (uint16_t)r16(&r);
         sh->run = (uint16_t)r16(&r);
         sh->points = r32(&r);
         sh->energy = (int32_t)r32(&r);

@@ -171,17 +171,29 @@ impl Melee {
     }
 
     /// Kills by side, over everybody on the field.
+    ///
+    /// Summed signed and reported unsigned. A pilot's own count goes under
+    /// zero when they keep killing themselves or their wingmen, and the side
+    /// carries that: a teamkill is a point the other side does not have to
+    /// take. What a side cannot do is go below nothing, because the score is a
+    /// pair of numbers on a wire and a bar drawn as a share of their sum, and
+    /// neither has an answer for a negative. It takes four misfires against
+    /// nothing at all to reach the floor, so the clamp is a guard rather than
+    /// a rule anybody will play against.
     fn tally(&self, ctx: &ModeCtx) -> Vec<u16> {
-        let mut score = vec![0u16; self.teams as usize];
+        let mut score = vec![0i32; self.teams as usize];
         for sh in ctx.world.state.ships.iter() {
             if sh.active == 0 {
                 continue;
             }
             if let Some(n) = score.get_mut(sh.team as usize) {
-                *n = n.saturating_add(sh.kills);
+                *n += sh.kills as i32;
             }
         }
         score
+            .into_iter()
+            .map(|n| n.clamp(0, u16::MAX as i32) as u16)
+            .collect()
     }
 
     /// Who took it, and by how much. `None` for a draw, which at four a side
@@ -399,7 +411,7 @@ impl Mode for Warzone {
 mod melee_tests {
     use super::*;
 
-    fn world_with(sides: &[(u8, u16)]) -> World {
+    fn world_with(sides: &[(u8, i16)]) -> World {
         let mut w = World::new(11);
         for (team, kills) in sides.iter().copied() {
             let i = w.spawn(0, team, 500, 500, 0);

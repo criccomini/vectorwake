@@ -2733,6 +2733,62 @@ int main(void) {
         CHECK(s.ships[1].deaths == 1, "and it is the teammate who died");
         CHECK(s.ships[0].points == 0, "a teamkill pays no points");
         CHECK(s.ships[0].run == 0, "and no bounty");
+        /* And it costs a kill, from zero, which is what makes the counter
+         * signed. It used to *credit* one: the same number went up whether
+         * you shot an enemy or your own wingman. */
+        CHECK(s.ships[0].kills == -1, "a teamkill takes a kill off the board");
+    }
+
+    {
+        /* Your own bomb, at your own feet. Same arithmetic as a teamkill and
+         * for the same reason: a scoreboard that can only go up says nothing
+         * about the pilot who is mostly killing themselves. */
+        sim_state s;
+        sim_init(&s, 1);
+        sim_spawn(&s, ANVIL, 0, 8192, 55, 0, &cfg);         /* on top of it */
+        s.ships[0].kills = 2;
+        /* Held, so the rack keeps throwing them: one bomb at this range does
+         * not empty an Anvil, and what kills the pilot is doing it again. */
+        ev_counts c = step_counting(&s, &cfg, SIM_BTN_BOMB, 0, 600);
+        CHECK(c.deaths > 0, "bombing the wall in their own lap kills them");
+        CHECK(s.ships[0].deaths >= 1, "which is a death like any other");
+        CHECK(s.ships[0].kills < 2, "and it costs them what they had taken");
+    }
+
+    {
+        /* An assist: two pilots on the victim, one of them lands the last
+         * round, and the other's column says they were there.
+         *
+         * Ship 0 opens on the victim and stops. Ship 2 finishes it a moment
+         * later, inside the window, so the kill is ship 2's and the assist is
+         * ship 0's. What this is really guarding is that the two are separate
+         * counters: the pilot who did most of the work and lost the finish
+         * used to read as a pilot who had done nothing.
+         */
+        sim_state s;
+        sim_init(&s, 1);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 32768, &cfg);         /* fires +y */
+        sim_spawn(&s, APEX, 1, 8192, 8192 + 200, 0, &cfg);       /* between */
+        sim_spawn(&s, APEX, 0, 8192, 8192 + 400, 0, &cfg);       /* fires -y */
+        /* One burst, then everything it threw runs out, so the finish below
+         * is unambiguously the other pilot's. */
+        step_counting(&s, &cfg, SIM_BTN_FIRE, 0, 20);
+        step_counting(&s, &cfg, 0, 0, 120);
+        CHECK(s.ships[1].alive, "the first pilot softens them and stops");
+        CHECK(s.ships[1].hurt_by[0] == 0, "and is on the victim's ledger");
+        s.ships[1].energy = 1;
+        for (int t = 0; t < 400 && s.ships[1].alive; t++) {
+            sim_state tmp;
+            sim_events ev;
+            sim_input in[1] = {{2, SIM_BTN_FIRE}};
+            sim_step(&tmp, &s, in, 1, &cfg, &ev);
+            s = tmp;
+        }
+        CHECK(!s.ships[1].alive, "the second one finishes it");
+        CHECK(s.ships[2].kills == 1, "whose kill it is");
+        CHECK(s.ships[2].assists == 0, "and it is not also their assist");
+        CHECK(s.ships[0].kills == 0, "the other took nothing");
+        CHECK(s.ships[0].assists == 1, "and is credited with the help");
     }
 
     {
