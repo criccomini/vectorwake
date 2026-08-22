@@ -1322,7 +1322,7 @@ do
           v.rows[2].sect == nil, said[2])
     check("and one who is not says so", v.rows[2].detail == "not on", said[2])
     check("somebody waiting on you is their own section",
-          v.rows[3].sect == "waiting on you" and v.rows[3].detail == "add back",
+          v.rows[3].sect == "they added you" and v.rows[3].detail == "add back",
           said[3])
     check("and so is the room you are in",
           v.rows[4].sect == "in this game" and v.rows[4].detail == "add",
@@ -1332,12 +1332,20 @@ do
     -- that did nothing.
     check("somebody you added and are waiting on has a home",
           v.rows[5].sect == "you added"
-          and v.rows[5].detail == "waiting on them",
+          and v.rows[5].detail == "not back yet",
           said[5])
     -- And the card that says there is nobody stays down while there is
     -- somebody: a page saying two things at once has one of them wrong.
     check("with no card saying the page is empty", v.empty == nil,
           tostring(v.empty and v.empty.head))
+
+    -- The rule, over the list. There is no approval screen and no invitation
+    -- to accept, so the page has to say what a press does before it is
+    -- pressed: a name moving from one list to another and staying there reads
+    -- as an invitation waiting on somebody's approval otherwise.
+    check("the page says how adding works", v.lede ~= nil
+          and string.find(v.lede, "add you back", 1, true) ~= nil,
+          tostring(v.lede))
 
     -- Adding is one press and reaches the account layer as an add.
     menu.sel.friends = 4
@@ -1346,6 +1354,19 @@ do
     check("adding is one press", account.friended ~= nil
           and account.friended.who == 14 and account.friended.add == true,
           tostring(pressed))
+    check("and says what it did", menu.note ~= nil
+          and string.find(menu.note, "add you back", 1, true) ~= nil,
+          tostring(menu.note))
+
+    -- Adding somebody who has already added you is the accepting this design
+    -- has no screen for, and the two presses are the same press until the
+    -- page comes back. The line at the foot is where the difference lands.
+    menu.sel.friends = 3
+    menu.step({go = true})
+    check("adding somebody already waiting on you says friends",
+          menu.note ~= nil
+          and string.find(menu.note, "friends", 1, true) == 1,
+          tostring(menu.note))
 
     -- A friend opens a card instead, because removing is on it.
     menu.sel.friends = 1

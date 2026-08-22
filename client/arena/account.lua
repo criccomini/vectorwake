@@ -397,6 +397,19 @@ local function take_friends(r)
     return true
 end
 
+-- Arriving in a room, or leaving one, makes the last answer wrong.
+--
+-- Presence is answered for the room you are in: `here` is the roster of the
+-- arena the meta-layer sees you in, so an answer given on the front end has
+-- nobody in it and stays that way until the next one lands. The page went on
+-- drawing that answer for as long as the round trip took and said "nobody
+-- yet", which is a claim this client cannot make until it has asked from
+-- where it is now. Forget it instead, and the page says it is asking.
+function M.room_changed()
+    M.here = {}
+    M.have_friends = false
+end
+
 function M.refresh_friends()
     if M.base == "" then return end
     post("/v1/friends", {secret = secret}, function(r) take_friends(r) end)

@@ -858,7 +858,7 @@ local function friend_rows()
     -- than three copies of the same loop. Order is what they are for: people
     -- to answer, then people to add, then presses already made.
     local plain = {
-        {head = "waiting on you", list = account.asked,
+        {head = "they added you", list = account.asked,
          detail = "add back", act = "befriend"},
         {head = "in this game", list = account.here,
          detail = "add", act = "befriend"},
@@ -866,7 +866,7 @@ local function friend_rows()
         -- somebody has a visible consequence: without it a press took a name
         -- off the list above and put it nowhere.
         {head = "you added", list = account.waiting,
-         detail = "waiting on them", act = "friend_card"},
+         detail = "not back yet", act = "friend_card"},
     }
     for _, sec in ipairs(plain) do
         name_rows(rows, sec.head, sec.list, function()
@@ -874,6 +874,23 @@ local function friend_rows()
         end)
     end
     return rows
+end
+
+-- What this page is, in one line over the list.
+--
+-- The rows could not say it. A name with "add" beside it is a press whose
+-- consequence is invisible: the name moves to another list and stays there
+-- until somebody else does something, and a player reasonably reads that as
+-- an invitation sent into a void, waiting on an approval screen that does not
+-- exist. There is no approval. Both sides add, and adding somebody who has
+-- already added you is the whole of accepting them. That is a rule, and a
+-- rule the rows cannot show has to be written down.
+local function friends_lede()
+    -- One sentence. The menu is set in a sentence's case, which capitalizes
+    -- the first letter of a line and no other, so a second sentence here
+    -- opens in lower case with a full stop in front of it.
+    return "add anybody you fly with, and you are friends as soon as they"
+           .. " add you back."
 end
 
 local function friends_empty()
@@ -891,7 +908,7 @@ local function friends_empty()
         return {head = "asking", line = "your friends are coming"}
     end
     return {head = "nobody yet",
-            line = "fly with somebody and add them from this page"}
+            line = "fly with somebody, add them here, and they add you back"}
 end
 
 function hull_rows()
@@ -1191,7 +1208,8 @@ local NODES = {
     -- page, reachable from the games at home and from the tab row in a match,
     -- because those are the two places the question comes up. See
     -- docs/design/friends.md.
-    friends = {rows = friend_rows, empty = friends_empty},
+    friends = {rows = friend_rows, empty = friends_empty,
+               lede = friends_lede},
 
     -- What rivets buy: slots, and looks. Never strength.
     --
@@ -2210,6 +2228,10 @@ function M.view()
                  -- What the page is about, where the tab row does not already
                  -- say it. A name, a trade and a hull to draw.
                  head = nd.head and nd.head() or nil,
+                 -- The one line a page gets when its rows cannot say what it
+                 -- is. Nearly every page here goes without: a list of games
+                 -- and a shelf of upgrades explain themselves by being read.
+                 lede = nd.lede and nd.lede() or nil,
                  -- Who is reading this and what they have to spend, which the
                  -- topbar carries at the far end of the tab row. It is the
                  -- same slot the score and the clock take in a match: the
@@ -2338,6 +2360,7 @@ function M.view()
             out.chips = nd2.chips or false
             out.empty = nd2.empty and nd2.empty() or nil
             out.head = nd2.head and nd2.head() or nil
+            out.lede = nd2.lede and nd2.lede() or nil
             out.rows = {}
             for i, r in ipairs(rows_of(nd2)) do
                 out.rows[i] = view_row(r, i)
@@ -2483,8 +2506,17 @@ local function activate(by)
         -- reversible from the same page, and the pilot doing it is looking at
         -- the name. The reply is the whole page back, so the row moves from
         -- one section to another without a second request.
+        -- And says so. Adding somebody who had already added you is the
+        -- accepting this design does not have a screen for, and the two
+        -- presses are indistinguishable until the page comes back, so the
+        -- line at the foot of the stage is where the difference lands.
+        local mutual = false
+        for _, p in ipairs(account.asked or {}) do
+            if p.account == r.value then mutual = true end
+        end
         account.friend(r.value, true)
-        M.note = nil
+        M.note = mutual and "friends. they had already added you."
+                 or "added. you are friends once they add you back."
         return nil
     elseif r.act == "friend_card" then
         M.ask_friend(r.value, r.label, r.zone, r.joinable)

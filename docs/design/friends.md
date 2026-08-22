@@ -47,6 +47,14 @@ Removing takes both rows. Leaving the other direction standing would mean a
 pilot who removed somebody stays on that person's list forever, visible and
 joinable, which is the opposite of what removing means.
 
+The page has to say this, because the rows cannot. A name with "add" beside it
+is a press whose consequence is invisible: the name moves to another list and
+sits there until somebody else does something, which reads as an invitation
+sent off to an approval screen. There is no approval screen. So one line
+stands over the list, "add anybody you fly with, and you are friends as soon
+as they add you back", and the press says which of the two things it just did:
+"added" when you are the first, "friends" when they had already added you.
+
 ## Presence comes from the seat, not from a heartbeat
 
 The meta-layer already knows who is flying. An arena claims a row in
@@ -59,6 +67,12 @@ right.
 So presence is a join, not a subscription. It costs one column: the claim now
 carries the zone the arena is serving, because an instance id alone would tell
 a player their friend is somewhere without saying where.
+
+One consequence for the client: an answer is about the room the asker was in
+when they asked. Arriving in a room or leaving one makes the last one wrong,
+and a client that keeps drawing it says "nobody yet" to a pilot sitting in a
+room full of people. So the client forgets the answer at both edges and the
+page says it is asking until the next one lands.
 
 Watchers are absent from it, and that is correct. A rated seat means flying,
 and "in a game" should mean the same thing.

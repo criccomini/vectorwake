@@ -138,5 +138,21 @@ answer(requests[before + 2], "post-buy", {
 check("and the token the arena will check carries it",
       account.token == "bought-token", account.token)
 
+-- Arriving in a room makes the last friends answer wrong: it was given for
+-- wherever this client was before, and `here` is a fact about the room. The
+-- page said "nobody yet" for the length of the round trip that followed,
+-- which is a claim it could not make until it had asked from the new room.
+local at = #requests
+account.refresh_friends()
+answer(requests[at + 1], "friends",
+       {friends = {}, asked = {}, waiting = {},
+        here = {{account = 9, name = "Kestrel 9"}}})
+check("the friends page arrives whole", account.have_friends == true
+      and #account.here == 1, tostring(#account.here))
+account.room_changed()
+check("and a room change forgets who was beside you",
+      account.have_friends == false and #account.here == 0,
+      tostring(account.have_friends) .. "/" .. tostring(#account.here))
+
 if fails > 0 then os.exit(1) end
 print("all good")

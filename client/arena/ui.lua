@@ -204,10 +204,19 @@ local function ticks(x, y, w, col, pitch)
     end
 end
 
--- A selection: bright where it meets its rule and gone across the row. It was
--- a filled rectangle.
+-- A selection: a translucent field over the whole of what is selected, a
+-- shade brighter where it meets its rule.
+--
+-- It was a skirt falling off to nothing across the full width, which on a
+-- phone row is a gradient and on a desktop row four hundred points wide is
+-- two thirds of nothing: the cursor read as brighter type with a smudge at
+-- one end. The falloff is now a short accent against the rule, and the field
+-- carries the rest of the row.
 local function wash(x, y, w, h, col)
-    F.layer:skirt(x, ry(y), x, ry(y + h), w, 0, col[4] or 0.14, col)
+    local a = col[4] or 0.14
+    rect(x, y, w, h, pal.a(col, a * 0.8))
+    F.layer:skirt(x, ry(y), x, ry(y + h),
+                  math.min(w, 130 * F.scale), 0, a * 0.6, col)
 end
 
 -- A count, as marks rather than as a number: it reads at a glance and never
@@ -3846,8 +3855,13 @@ function pages.chip(x, y, w, h, r, hot, focused)
     -- to say the thing exists and is not yours, or a pilot cannot know there
     -- is anything to buy.
     local shut = (r.owned or 0) == 0
+    -- What is on wears a field, and so does whatever the cursor is standing
+    -- on, a shade back. A frame alone said "here" in a line thinner than the
+    -- frames around every chip beside it.
     if held then
-        rect(x, y, w, h, pal.a(pal.FRIEND, 0.14))
+        rect(x, y, w, h, pal.a(pal.FRIEND, 0.2))
+    elseif hot then
+        rect(x, y, w, h, pal.a(pal.FRIEND, 0.1))
     end
     if hot then
         F.layer:frame(x, ry(y, h), w, h, 1.2 * F.scale,
@@ -4896,6 +4910,9 @@ local function stage_row(x, y, w, h, r, hot)
         local edge = pal.a(hot and pal.FRIEND or pal.RADAR_TILE,
                            hot and 0.95 or 0.6)
         rect(bx, by, bw, bh, pal.rgb(0x070b12, hot and 0.85 or 0.6))
+        -- Lit the way every other selection in this menu is lit: a field, not
+        -- a brighter word inside the same dark box.
+        if hot then rect(bx, by, bw, bh, pal.a(pal.FRIEND, 0.18)) end
         bracket(bx, by, bw, bh, edge, 13 * F.scale)
         draw_mark(r.button, bx + 22 * F.scale, by + bh / 2, 9.5 * F.scale,
                   pal.a(hot and pal.FRIEND or pal.INK, hot and 1 or 0.9))
@@ -5858,6 +5875,18 @@ function M.menu(v)
         -- field, no mark. The words are the row.
         if words then
             local px = 15 * F.scale
+            -- A field behind the tab you are on, and a fainter one under the
+            -- pointer. The row used to be words and a rule and nothing else,
+            -- which put the whole of "which tab is this" into the weight of
+            -- six words a shade apart: on a bright monitor it read as one
+            -- word being slightly bolder than its neighbours. The rule stays,
+            -- because it is what ties the tab to the panel under it.
+            local fh = 34 * F.scale
+            if sel or hot then
+                rect(wx[i] - 11 * F.scale, cy - fh / 2,
+                     ww[i] + 22 * F.scale, fh,
+                     pal.a(pal.FRIEND, sel and 0.2 or 0.1))
+            end
             txt(e.label, wx[i], cy, px,
                 pal.a(sel and pal.FRIEND or pal.INK, sel and 1
                       or (hot and 0.9 or 0.55)), nil, MENU_FONT)
@@ -6081,6 +6110,16 @@ function M.menu(v)
         end
         top = top + hh
         room = room - hh
+    end
+    -- One dim line over the list, on a page whose rows do not explain
+    -- themselves. Set in the small face the section labels are set in, so it
+    -- reads as the page talking rather than as a row you can land on: it is
+    -- not in `rows` and the cursor never touches it.
+    if v.lede then
+        local lh = 26 * F.scale
+        txt(v.lede, tx, top + lh * 0.4, 12 * F.scale, pal.a(pal.DIM, 0.9))
+        top = top + lh
+        room = room - lh
     end
     -- A list is capped: a row whose name sits at one edge and whose count
     -- sits at the other, a screen apart, is two columns nobody reads as one

@@ -696,6 +696,9 @@ function go_home(self, at)
     ui.room_scroll = 0
     ui.room_ask = nil
     menu.home = true
+    -- Who is beside you is a fact about the room you were in, and you are
+    -- not in it any more.
+    account.room_changed()
     menu.show(at)
     directory.open(menu.directory)
 end
@@ -1465,6 +1468,9 @@ function update(self, dt)
             menu.note = nil
             ui.help_prompt = menu.needs_help_prompt()
             self.joining = nil
+            -- The friends page has an answer from the front end, where
+            -- nobody is beside you. Drop it: the next one comes from here.
+            account.room_changed()
             -- And the kit this pilot built, to the room that has just seated
             -- them. Nothing else sends it on arrival: the room deals a starter
             -- kit to any seat wearing nothing, and the stored kit is the
