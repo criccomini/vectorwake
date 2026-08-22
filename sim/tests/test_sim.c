@@ -2155,10 +2155,9 @@ int main(void) {
               "MaxGuns is 3, so two rungs are buyable above the first");
         CHECK(ceil[SIM_SLOT_LEVEL(SIM_TRIG_BOMB)] == 2,
               "and MaxBombs is 3 for everybody now, so two are");
-        CHECK(ceil[SIM_SLOT_MOD(SIM_TRIG_GUN, SIM_MOD_MULTI)] == 2,
-              "multifire climbs two, which was the spread hulls' ceiling");
-        CHECK(ceil[SIM_SLOT_MOD(SIM_TRIG_GUN, SIM_MOD_BARREL)] == 2,
-              "barrels are a slot, where they were one hull's flag");
+        CHECK(ceil[SIM_SLOT_MOD(SIM_TRIG_GUN, SIM_MOD_MULTI)]
+                  == SIM_MOD_MULTI_MAX,
+              "spray climbs five, which is six rounds at a pull");
         CHECK(ceil[SIM_SLOT_MOD(SIM_TRIG_BOMB, SIM_MOD_SHRAPNEL)] == 3,
               "shrapnel climbs three, which was the bombers'");
         CHECK(ceil[SIM_SLOT_MOD(SIM_TRIG_BOMB, SIM_MOD_BOUNCE)] == 2,
@@ -2173,9 +2172,9 @@ int main(void) {
 
         /* Two combinations no hull ever had stay unbuilt, because an arena
          * ceiling of zero is a slot that does not exist. */
-        CHECK(ceil[SIM_SLOT_MOD(SIM_TRIG_BOMB, SIM_MOD_MULTI)] == 0
-                  && ceil[SIM_SLOT_MOD(SIM_TRIG_BOMB, SIM_MOD_BARREL)] == 0,
-              "bombs neither fan nor come in pairs");
+        CHECK(ceil[SIM_SLOT_MOD(SIM_TRIG_BOMB, SIM_MOD_MULTI)] == 0,
+              "bombs do not spray: a rack that throws three at a pull is a "
+              "different game");
         CHECK(ceil[SIM_SLOT_MOD(SIM_TRIG_GUN, SIM_MOD_PROX)] == 0
                   && ceil[SIM_SLOT_MOD(SIM_TRIG_GUN, SIM_MOD_SHRAPNEL)] == 0,
               "and a bullet carries no fuse and does not break up");
@@ -2193,8 +2192,8 @@ int main(void) {
             memset(&probe, 0, sizeof probe);
             probe.cls = (uint8_t)i;
             uint8_t kit[SIM_SLOT_COUNT] = {0};
-            kit[SIM_SLOT_MOD(SIM_TRIG_GUN, SIM_MOD_BARREL)] =
-                ceil[SIM_SLOT_MOD(SIM_TRIG_GUN, SIM_MOD_BARREL)];
+            kit[SIM_SLOT_MOD(SIM_TRIG_GUN, SIM_MOD_MULTI)] =
+                ceil[SIM_SLOT_MOD(SIM_TRIG_GUN, SIM_MOD_MULTI)];
             CHECK(sim_set_kit(&probe, &cfg, kit) == 1,
                   "every hull takes the same kit as every other one");
         }
@@ -2262,55 +2261,59 @@ int main(void) {
     }
 
     {
-        /* Multifire composes onto whatever rung the trigger is on, and it is
-         * the one add-on that changes what pulling the trigger costs. The
-         * original charged 20 energy for a bullet and 30 for multifire, and
-         * waited 25 ticks against 50: half again the energy and twice the
-         * cooldown for three rounds.
+        /* Spray composes onto whatever rung the trigger is on, and it is the
+         * one add-on that changes what pulling the trigger costs.
+         *
+         * The original charged 20 energy for a bullet and 30 for multifire,
+         * and waited 25 ticks against 50: half again the energy and twice the
+         * cooldown, for three rounds. Two rounds more, so per round it is a
+         * quarter of the energy and half the wait, and that is what the ladder
+         * charges. Three rounds therefore lands exactly where the original put
+         * it and the rungs above climb at the same rate rather than at one
+         * invented for the top.
          *
          * Most of the price is in the rate, which is the half a pilot cannot
          * out-recharge. */
-        uint16_t plain_wait = 0, multi_wait = 0;
+        uint16_t plain_wait = 0, two_wait = 0;
         int32_t plain = gun_cost(&cfg, (uint8_t)APEX, 0, 0, &plain_wait);
-        int32_t multi = gun_cost(&cfg, (uint8_t)APEX, 0,
-                                 sim_mod_set(0, SIM_MOD_MULTI, 1), &multi_wait);
-        CHECK(multi == plain * 3 / 2, "multifire costs half again the energy");
-        CHECK(multi_wait == plain_wait * 2, "and twice the wait");
-
-        /* A second rung is a second helping of both, because every other
-         * add-on here is linear in its rung and this one has no reason not
-         * to be. */
-        uint16_t two_wait = 0;
         int32_t two = gun_cost(&cfg, (uint8_t)APEX, 0,
                                sim_mod_set(0, SIM_MOD_MULTI, 2), &two_wait);
-        CHECK(two == plain * 2, "two rungs, twice the energy");
-        CHECK(two_wait == plain_wait * 3, "and three times the wait");
+        CHECK(two == plain * 3 / 2, "three rounds cost half again the energy");
+        CHECK(two_wait == plain_wait * 2, "and twice the wait");
 
-        /* And it is still a fan of barrels, which is what you paid for. */
+        /* Linear in the rung, because every other add-on here is and this one
+         * has no reason not to be. */
+        uint16_t one_wait = 0;
+        int32_t one = gun_cost(&cfg, (uint8_t)APEX, 0,
+                               sim_mod_set(0, SIM_MOD_MULTI, 1), &one_wait);
+        CHECK(one == plain * 5 / 4, "a pair is a quarter more energy");
+        CHECK(one_wait == plain_wait * 3 / 2, "and half again the wait");
+
+        /* And it is still a group of rounds, which is what you paid for. */
         sim_state s;
         sim_init(&s, 1);
         sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
         s.ships[0].mods[SIM_TRIG_GUN] = sim_mod_set(0, SIM_MOD_MULTI, 1);
         step_n(&s, &cfg, SIM_BTN_FIRE, 0, 1);
         CHECK(s.weapon_count == 1 + cfg.mod_step[SIM_MOD_MULTI],
-              "a rung of multifire is a pair of extra barrels");
+              "a rung of spray is one more round");
         CHECK(s.weapons[0].vx != s.weapons[1].vx, "and they fan out");
     }
 
     {
-        /* Barrels. This was DoubleBarrel, a flag the Terrier alone carried and
-         * the only weapon number besides MaxBombs the original varied by ship.
-         * It is an add-on now, held by whoever bought it and flown on whatever
-         * hull they like, which is the whole of what changed: nothing about
-         * the rounds it sends is different. */
+        /* Spray. This was two add-ons: a wide multifire fan that charged
+         * energy and cooldown, and a tight pair of barrels that charged
+         * energy alone. Both spelled "more bullets", so they are one ladder
+         * whose rung is a round, and the pair is where the second add-on
+         * used to be. */
         const int FACET = 5;
-        const uint16_t ONE = sim_mod_set(0, SIM_MOD_BARREL, 1);
+        const uint16_t ONE = sim_mod_set(0, SIM_MOD_MULTI, 1);
         sim_state s;
         sim_init(&s, 1);
         sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
         s.ships[0].mods[SIM_TRIG_GUN] = ONE;
         step_n(&s, &cfg, SIM_BTN_FIRE, 0, 1);
-        CHECK(s.weapon_count == 2, "a rung of barrels sends two rounds");
+        CHECK(s.weapon_count == 2, "one rung of spray sends two rounds");
 
         /* One either side of where the nose points. Not exact mirrors: the
          * offsets are, but a heading is quantised to 4096 entries on the way
@@ -2319,13 +2322,13 @@ int main(void) {
         CHECK((s.weapons[0].vx < 0) != (s.weapons[1].vx < 0),
               "one either side of where it is pointing");
 
-        /* And on any hull, which is the point of moving it off the roster.
-         * A Facet with no barrels fires one round like everybody else. */
+        /* And on any hull, which is the point of it being a slot. A Facet
+         * with no spray fires one round like everybody else. */
         sim_state f;
         sim_init(&f, 1);
         sim_spawn(&f, (uint8_t)FACET, 0, 8192, 8192, 0, &cfg);
         step_n(&f, &cfg, SIM_BTN_FIRE, 0, 1);
-        CHECK(f.weapon_count == 1, "and a hull is not born with them");
+        CHECK(f.weapon_count == 1, "and a hull is not born with any");
 
         /* Fanned and not scattered, which is a real distinction here: spacing
          * of zero on a pattern of many is the shrapnel encoding, and it rolls
@@ -2340,35 +2343,52 @@ int main(void) {
         CHECK(r.weapon_count == s.weapon_count
               && r.weapons[0].vx == s.weapons[0].vx
               && r.weapons[1].vx == s.weapons[1].vx,
-              "and they are barrels rather than a scatter");
+              "and they are aimed rather than scattered");
 
-        /* Four with a rung of multifire, not the six a pilot expects out of
-         * three times two. `compose` adds barrels rather than multiplying
-         * them, so the original's odd number falls out of the model rather
-         * than being special-cased for one hull. */
+        /* A rung is a round, all the way up. Three rungs is four rounds and
+         * not the eight a doubling would give: `compose` adds to the
+         * pattern's own count, which is what made the original's odd
+         * arithmetic fall out of the model. */
         sim_state m;
         sim_init(&m, 1);
         sim_spawn(&m, APEX, 0, 8192, 8192, 0, &cfg);
-        m.ships[0].mods[SIM_TRIG_GUN] = sim_mod_set(ONE, SIM_MOD_MULTI, 1);
+        m.ships[0].mods[SIM_TRIG_GUN] = sim_mod_set(0, SIM_MOD_MULTI, 3);
         step_n(&m, &cfg, SIM_BTN_FIRE, 0, 1);
-        CHECK(m.weapon_count == 4, "and four with a rung of multifire, not six");
+        CHECK(m.weapon_count == 4, "three rungs of spray sends four rounds");
 
-        /* Tight, not fanned: a pair reads as a pair. Barrels run before
-         * multifire in `compose` for exactly this, so a pilot holding both
-         * fires the close group they paid for rather than the wide one. */
-        CHECK(cfg.mod_barrel_spread < cfg.mod_spread,
-              "barrels leave closer together than a fan");
-        sim_state wide;
-        sim_init(&wide, 1);
-        sim_spawn(&wide, APEX, 0, 8192, 8192, 0, &cfg);
-        wide.ships[0].mods[SIM_TRIG_GUN] = sim_mod_set(0, SIM_MOD_MULTI, 1);
-        step_n(&wide, &cfg, SIM_BTN_FIRE, 0, 1);
+        /* And the ladder reaches six, which needs three bits of the mods
+         * word and is the reason spray has its own packing. */
+        sim_state top;
+        sim_init(&top, 1);
+        sim_spawn(&top, APEX, 0, 8192, 8192, 0, &cfg);
+        top.ships[0].mods[SIM_TRIG_GUN] =
+            sim_mod_set(0, SIM_MOD_MULTI, SIM_MOD_MULTI_MAX);
+        CHECK(sim_mod_get(top.ships[0].mods[SIM_TRIG_GUN], SIM_MOD_MULTI)
+                  == SIM_MOD_MULTI_MAX,
+              "the top of the ladder survives the word it is packed into");
+        step_n(&top, &cfg, SIM_BTN_FIRE, 0, 1);
+        CHECK(top.weapon_count == SIM_MOD_MULTI_MAX + 1,
+              "and the top of it is six rounds");
+
+        /* And the packing leaves the other six alone: they are two bits each
+         * at the bottom of the word and spray is three at the top, so a shot
+         * carrying both reads back as both. */
+        uint16_t both = sim_mod_set(sim_mod_set(0, SIM_MOD_MULTI, 5),
+                                    SIM_MOD_BOUNCE, 3);
+        CHECK(sim_mod_get(both, SIM_MOD_MULTI) == 5
+                  && sim_mod_get(both, SIM_MOD_BOUNCE) == 3,
+              "spray and a rung of bouncing do not share bits");
+
+        /* A pair leaves tight and a spray opens out, which is the step that
+         * used to be the difference between two add-ons. */
+        CHECK(cfg.mod_pair_spread < cfg.mod_spread,
+              "a pair leaves closer together than a fan");
         /* How far off the nose the outermost round leaves, which is the whole
          * of what a spread is. Every ship here points along +y, so vx is the
          * sideways half of the velocity and its largest magnitude is the edge
          * of the group. */
         int32_t widest[2] = {0, 0};
-        const sim_state *pair[2] = {&m, &wide};
+        const sim_state *pair[2] = {&s, &m};
         for (int g = 0; g < 2; g++)
             for (uint16_t k = 0; k < pair[g]->weapon_count; k++) {
                 int32_t vx = pair[g]->weapons[k].vx;
@@ -2378,21 +2398,22 @@ int main(void) {
         CHECK(widest[1] > widest[0],
               "and a fan throws its outside round wider than a pair does");
 
-        /* What a barrel costs, which is the half of this that is ours. The
+        /* What a round costs, which is the half of this that is ours. The
          * original charged nothing for DoubleBarrel, which was fine while one
          * hull had it and could not choose otherwise; as something a pilot
-         * buys, free rounds would end every argument about gun add-ons.
-         *
-         * So: energy, and no delay. That is the trade against multifire,
-         * which charges both. */
-        uint16_t plain_wait = 0, barrel_wait = 0;
+         * buys, free rounds would end every argument about gun add-ons. So
+         * every rung charges both energy and cooldown, and the pair that used
+         * to be free now pays for itself. */
+        uint16_t plain_wait = 0, one_wait = 0, three_wait = 0;
         int32_t plain = gun_cost(&cfg, APEX, 0, 0, &plain_wait);
-        int32_t barrel = gun_cost(&cfg, APEX, 0, ONE, &barrel_wait);
-        CHECK(barrel > plain, "a barrel costs energy");
-        CHECK(barrel_wait == plain_wait, "and costs no cooldown at all");
-        CHECK(barrel < gun_cost(&cfg, APEX, 0,
-                                sim_mod_set(0, SIM_MOD_MULTI, 1), NULL),
-              "and less energy than the rung of multifire it undercuts");
+        int32_t one = gun_cost(&cfg, APEX, 0, ONE, &one_wait);
+        int32_t three = gun_cost(&cfg, APEX, 0,
+                                 sim_mod_set(0, SIM_MOD_MULTI, 3),
+                                 &three_wait);
+        CHECK(one > plain, "a round of spray costs energy");
+        CHECK(one_wait > plain_wait, "and cooldown, which a barrel did not");
+        CHECK(three > one && three_wait > one_wait,
+              "and both climb with the ladder");
     }
 
     {
@@ -2785,9 +2806,9 @@ int main(void) {
         int32_t l2 = cfg.specs[cfg.patterns[c->trigger[SIM_TRIG_GUN][1]].spec].damage;
 
         s.ships[0].level[SIM_TRIG_GUN] = 1;
-        s.ships[0].mods[SIM_TRIG_GUN] = sim_mod_set(0, SIM_MOD_MULTI, 1);
+        s.ships[0].mods[SIM_TRIG_GUN] = sim_mod_set(0, SIM_MOD_MULTI, 2);
         step_n(&s, &cfg, SIM_BTN_FIRE, 0, 1);
-        CHECK(s.weapon_count == 3, "a leveled, multifired shot leaves");
+        CHECK(s.weapon_count == 3, "a leveled, sprayed shot leaves");
         uint8_t spec = s.weapons[0].spec;
         uint16_t mods = s.weapons[0].mods;
         CHECK(cfg.specs[spec].damage == l2 && l2 > l1,

@@ -3222,27 +3222,28 @@ mod tests {
         );
     }
 
-    /// A barrel, bought and flown, on any hull in the roster.
+    /// A round of spray, bought and flown, on any hull in the roster.
     ///
-    /// This is the trait the whole slot space was flattened for. It was
-    /// `DoubleBarrel`, a flag one hull carried, so it could not be sold and it
-    /// could not be chosen; as an add-on it goes through the same two ceilings
-    /// as everything else and comes out of the gun as a second round.
+    /// This is the trait the whole slot space was flattened for. The pair at
+    /// the bottom of this ladder was `DoubleBarrel`, a flag one hull carried,
+    /// so it could not be sold and it could not be chosen; as a rung it goes
+    /// through the same two ceilings as everything else and comes out of the
+    /// gun as a second round.
     ///
     /// Every hull, because the point of the change is that the roster has
     /// nothing to say about it. The old arrangement would have passed on one
     /// class and refused on six.
     #[test]
-    fn a_bought_barrel_flies_on_every_hull() {
+    fn a_bought_round_of_spray_flies_on_every_hull() {
         let mut a = room_with_teams("teams = [\"Keel\"]\n");
         let ship = seat_human(&mut a, "pilot");
-        let slot = sim::slot_mod(sim::TRIG_GUN, sim::MOD_BARREL) as usize;
+        let slot = sim::slot_mod(sim::TRIG_GUN, sim::MOD_MULTI) as usize;
 
         let mut kit = [0u8; sim::SLOT_COUNT];
         kit[slot] = 1;
         assert!(
             !a.set_kit(ship, &kit),
-            "nobody is dealt a barrel, so an unbought one is refused"
+            "nobody is dealt spray, so an unbought round is refused"
         );
 
         // What buying one does, which is raise this account's ceiling by one.
@@ -3253,13 +3254,13 @@ mod tests {
             a.world.state.ships[ship as usize].cls = cls;
             assert!(
                 a.set_kit(ship, &kit),
-                "hull {cls} refused a barrel the account owns"
+                "hull {cls} refused a round the account owns"
             );
             let sh = a.world.state.ships[ship as usize];
             assert_eq!(
-                sim::mod_get(sh.mods[sim::TRIG_GUN], sim::MOD_BARREL),
+                sim::mod_get(sh.mods[sim::TRIG_GUN], sim::MOD_MULTI),
                 1,
-                "hull {cls} was dealt the kit but not the barrel"
+                "hull {cls} was dealt the kit but not the round"
             );
         }
     }
@@ -6634,10 +6635,10 @@ mod tests {
         assert_eq!(
             w.cfg.kit_ceiling[sim::slot_mod(sim::TRIG_GUN, sim::MOD_MULTI) as usize],
             1,
-            "and one of multifire"
+            "and one round of spray"
         );
         assert_eq!(
-            w.cfg.kit_ceiling[sim::slot_mod(sim::TRIG_GUN, sim::MOD_BARREL) as usize],
+            w.cfg.kit_ceiling[sim::slot_mod(sim::TRIG_GUN, sim::MOD_BOUNCE) as usize],
             0,
             "and an add-on the map leaves out is a slot this arena does not have"
         );
@@ -6751,18 +6752,19 @@ mod tests {
         assert_eq!(w.cfg.mod_multi_energy, 200);
         assert_eq!(w.cfg.mod_multi_delay, 25);
 
-        // Untouched, these are the original's: MultiFireEnergy 30 against
-        // BulletFireEnergy 20, and MultiFireDelay 50 against BulletFireDelay
-        // 25. Reading the fields on either side too, because two u16s landing
-        // in the wrong place is exactly how this mirror drifts.
+        // Untouched, these are the original's per round: MultiFireEnergy 30
+        // against BulletFireEnergy 20 and MultiFireDelay 50 against
+        // BulletFireDelay 25, over the two extra rounds it bought. Reading the
+        // fields on either side too, because two u16s landing in the wrong
+        // place is exactly how this mirror drifts.
         let (w, _) = tuned(
             r#"
             [arena]
             mode = "warzone"
         "#,
         );
-        assert_eq!(w.cfg.mod_multi_energy, 50);
-        assert_eq!(w.cfg.mod_multi_delay, 100);
+        assert_eq!(w.cfg.mod_multi_energy, 25);
+        assert_eq!(w.cfg.mod_multi_delay, 50);
         assert_eq!(w.cfg.mod_spread, 2730, "fifteen degrees, still");
         assert_eq!(w.cfg.bounce, 10, "and the field past the splinters");
     }

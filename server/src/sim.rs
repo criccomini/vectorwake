@@ -293,15 +293,12 @@ pub struct sim_settings {
     /// moves.
     pub mod_step: [i32; MOD_COUNT],
     pub mod_spread: u16,
-    /// Percent a rung of multifire adds to the shot's energy and cooldown.
+    /// Percent one round of spray adds to the shot's energy and cooldown.
     pub mod_multi_energy: u16,
     pub mod_multi_delay: u16,
-    /// Percent a rung of barrels adds to the shot's energy. There is no delay
-    /// to match: barrels do not slow the gun, which is the trade against
-    /// multifire, which does.
-    pub mod_barrel_energy: u16,
-    /// The angle a pair of barrels leaves at, tighter than `mod_spread`.
-    pub mod_barrel_spread: u16,
+    /// The angle a pair leaves at, tighter than `mod_spread`. A spray of three
+    /// or more opens out to the fan.
+    pub mod_pair_spread: u16,
     /// What each rung of shrapnel breaks into.
     pub mod_splinter: [u8; MAX_RUNGS],
     /// Q8 px a bomb level adds to the proximity fuse.
@@ -638,9 +635,12 @@ pub const TRIG_COUNT: usize = 2;
 /// index was written out as a bare 1 wherever a bomb was meant.
 pub const TRIG_GUN: usize = 0;
 pub const TRIG_BOMB: usize = 1;
-pub const MOD_COUNT: usize = 7;
+pub const MOD_COUNT: usize = 6;
 pub const MAX_RUNGS: usize = 4;
 pub const MOD_MAX: u8 = 3;
+/// Spray is the exception: it is a count of rounds rather than a rung, and it
+/// climbs to five. Mirrors SIM_MOD_MULTI_MAX.
+pub const MOD_MULTI_MAX: u8 = 5;
 pub const MAX_CHARGES: usize = 4;
 pub const CHARGE_MAX: u8 = 15;
 /// How many recent attackers a hull remembers, which is what an assist is
@@ -666,9 +666,6 @@ pub const MOD_PROX: usize = 2;
 pub const MOD_SHRAPNEL: usize = 3;
 pub const MOD_FREEZE: usize = 4;
 pub const MOD_PUSH: usize = 5;
-/// More barrels, abreast rather than fanned. This was DoubleBarrel, a flag on
-/// one hull; it is an add-on so that it can be bought.
-pub const MOD_BARREL: usize = 6;
 
 // Where a thing sits in the flat kit space, mirroring the SIM_SLOT_ macros.
 // The space is one shape, a count with a ceiling, so a stat, a rung, an add-on
@@ -690,8 +687,25 @@ pub const fn slot_charge(k: usize) -> u8 {
 
 /// How many rungs of one add-on a packed word holds. Two bits each, mirroring
 /// `sim_mod_get`, which is a static inline and so has no symbol to link.
+///
+/// Three bits for spray at the bottom, then two bits each for the five above
+/// it: spray is a count of rounds rather than a rung of something.
 pub const fn mod_get(mods: u16, m: usize) -> u8 {
-    ((mods >> (m * 2)) & 3) as u8
+    if m == MOD_MULTI {
+        (mods & 7) as u8
+    } else {
+        ((mods >> (1 + m * 2)) & 3) as u8
+    }
+}
+
+/// The ceiling one add-on may hold, which is three for every rung and five for
+/// the count of rounds.
+pub const fn mod_max(m: usize) -> u8 {
+    if m == MOD_MULTI {
+        MOD_MULTI_MAX
+    } else {
+        MOD_MAX
+    }
 }
 
 // Safe wrappers. The core has no globals and no allocation, so a state is a

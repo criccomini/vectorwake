@@ -127,9 +127,15 @@ M.UPGRADES = {
 -- wide enough for one and three letters bought nothing. `name` is what the
 -- rows and the shelf spell out.
 M.MODS = {
-    -- Spray, not multifire. What it does is put three where one went, and
+    -- Spray, not multifire. What it does is put more where one went, and
     -- "multi" was the core's word for the mechanism rather than a name for
     -- the thing a pilot is buying.
+    --
+    -- It is a count of rounds rather than a rung of something, which is what
+    -- makes it the one row on the ship page whose readout is a number and not
+    -- a position: a spray of two is two rounds. It was two ladders, this and
+    -- a "double barrel" that also meant more rounds, and nobody could say
+    -- what the difference bought.
     {name = "spray",    short = "SPRAY"},
     {name = "bounce",   short = "BOUNCE"},
     {name = "prox",     short = "PROX", long = "proximity detonation"},
@@ -140,11 +146,6 @@ M.MODS = {
     -- also the name of a charge, so a bomb wearing it and the charge in the
     -- next group along both read RPL. Off every arena's ladder for now.
     {name = "push",     short = "PUSH", long = "a shove welded onto a bomb"},
-    -- Double barrel: more rounds a pull, abreast rather than fanned. This was
-    -- DoubleBarrel, a flag on one hull, and it is an add-on so that it can be
-    -- bought. Last, because the core put it last, and this table is read by
-    -- index against `sim_mod`.
-    {name = "double barrel", short = "DOUBLE"},
 }
 -- What a kill paid, drifting off the wreck that paid it, and the same green
 -- the feed uses for a line about a kill of yours.

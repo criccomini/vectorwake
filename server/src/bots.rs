@@ -1613,7 +1613,7 @@ mod tests {
     #[test]
     fn only_an_authenticated_house_bot_shares_a_world() {
         let mut owned = crate::sim::World::base_entitlements();
-        owned[crate::sim::slot_mod(crate::sim::TRIG_GUN, crate::sim::MOD_BARREL) as usize] = 1;
+        owned[crate::sim::slot_mod(crate::sim::TRIG_GUN, crate::sim::MOD_MULTI) as usize] = 1;
         let house = BotIdentity::House {
             token: "session-token".into(),
             entitlements: owned,

@@ -4634,8 +4634,21 @@ function pages.kit(v, x, y, w, h, focused)
     local function chips_for(list, label)
         if #list == 0 then return end
         rule(label)
-        local px = kx
+        -- Spray first, on a ladder. It is a count of rounds rather than a
+        -- switch with rungs behind it, so a chip is the wrong control for it:
+        -- what a pilot is setting is how many leave the gun, and the readout
+        -- says exactly that. Every other add-on in the group is a chip.
+        local chips = {}
         for _, r in ipairs(list) do
+            if r.ladder then
+                ladder(r, function(n) return tostring(n + 1) end)
+            else
+                chips[#chips + 1] = r
+            end
+        end
+        if #chips == 0 then return end
+        local px = kx
+        for _, r in ipairs(chips) do
             -- Wide enough for the name and whatever count sits under it.
             local cw = math.max(62 * F.scale,
                                 text_w(r.short or r.label or "",

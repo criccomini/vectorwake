@@ -175,6 +175,30 @@ goes to stall. Respawn invulnerability stays as duels specify it, long enough
 to orient and short enough to be useless offensively. Camping a spawn is
 already close to worthless, because a pilot who has just died is worth one.
 
+## Spray is one ladder
+
+How many rounds a pull throws. Nothing is one; a rung is a round; the top is
+six.
+
+It was two add-ons. "Gun spray" opened a wide fan and charged energy and
+cooldown; "gun double barrel" put a tight pair abreast and charged energy
+alone. Both of them read, on the page that sells them, as *more bullets*, and
+nobody could say what the difference bought. So they are one ladder and the
+tradeoff moved: it is no longer which add-on but how many rounds, against
+everything else thirty points could buy.
+
+What survives of the difference is the spacing. One rung is the pair, and it
+leaves at the tighter angle a pair is supposed to, so two abreast still read as
+two abreast; three or more open out to the zone's fan. A pilot climbing the
+ladder feels the group widen, which is the thing the second add-on was really
+about.
+
+Every rung costs energy and cooldown, at a quarter and a half of the shot's
+own. That lands a spray of three exactly where the original priced multifire,
+and the rest of the ladder climbs from there rather than from a number invented
+for the top of it. What the merge cost, and what it bought, is [decision
+54](../architecture/decisions.md#54-barrels-and-multifire-are-one-ladder-called-spray).
+
 ## Two charges, and which two is the choice
 
 A kit carries two kinds of charge. Which two is a decision made on the ship
@@ -393,8 +417,9 @@ to the bench.
 - **Depth on a stat**, its seventh and eighth step.
 - **Add-ons and rungs** the arena allows but your account has not bought. That
   is all of them now, which it was not twice over. First the roster held them:
-  barrels, the third bomb rung, the deepest rung of shrapnel and the mine
-  count were one hull's each, and nothing can be sold that exists on one hull.
+  the second barrel, the third bomb rung, the deepest rung of shrapnel and the
+  mine count were one hull's each, and nothing can be sold that exists on one
+  hull.
   Then the entitlements did: an account arrived owning one rung of every
   add-on, so the four whose arena ceiling is also one were free, complete and
   absent from the shelf forever. Nobody arrives with an add-on now.

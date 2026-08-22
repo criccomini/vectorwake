@@ -392,38 +392,42 @@ a cost paid in cooldown is paid every time you pull the trigger and cannot be
 out-recharged. A pilot with multifire fires fewer, wider, more expensive
 volleys, which is a different weapon rather than a better one.
 
-Ours is those two ratios as a percentage per rung (`mod_multi_energy = 50`,
-`mod_multi_delay = 100`), because we have rungs and the original did not. A
-second rung is a second helping of both, linear like every other add-on here.
+Ours is those two ratios per *round* (`mod_multi_energy = 25`,
+`mod_multi_delay = 50`), because we have a ladder and the original did not.
+Their numbers bought two extra rounds, so half of each is what one round costs,
+and a spray of three therefore lands exactly where SVS put it. Every rung above
+that climbs at the same rate, linear like every other add-on here.
 
 The base gun energy is also multiplied by its gun level, as SVS does. Before
-multifire or hull barrels, a level-one shot costs 20, level two costs 40, and
-level three costs 60. The harder bullet therefore asks for more of the same bar
-it is trying to take from its target.
+any spray, a level-one shot costs 20, level two costs 40, and level three costs
+60. The harder bullet therefore asks for more of the same bar it is trying to
+take from its target.
 
 The damage number is a ceiling. SVS left exact damage off for bullets, burst
 rounds, and shrapnel, and Vectorwake follows it. Each hit uses the same
 square-root random curve and averages near two thirds of the listed value. Bomb
 damage stays exact before blast-distance falloff.
 
-**Barrels are the hull's own.** `DoubleBarrel` was a per-ship setting and the
-Terrier alone carried it: two rounds abreast for one pull where every other
-ship sent one. The Facet has it here. It is not an add-on, so it is never picked
-up and never dropped.
+**A second barrel is one rung of spray.** `DoubleBarrel` was a per-ship setting
+and the Terrier alone carried it: two rounds abreast for one pull where every
+other ship sent one. It became an add-on of its own here, and then stopped
+being one: it and multifire were two ladders that both meant more bullets, and
+nobody could say what the difference bought. Spray is the ladder, its rung is a
+round, and one rung is the pair the Terrier had.
 
-The SVS Terrier pays the same price as the Warbird for that pull:
-`BulletFireEnergy=20` and `BulletFireDelay=25`. `DoubleBarrel` changes the two
-rounds that leave, not the trigger cost or its clock. Facet follows the same
-rule. Its gun level still multiplies the base cost, and multifire still adds its
-own energy and delay surcharge once per rung.
+What survives of the difference is the spacing. One rung leaves at
+`mod_pair_spread`, which is tighter than the fan, so two abreast still read as
+two abreast; three or more open out to `mod_spread`. The original charged
+nothing at all for `DoubleBarrel`, which was defensible while one hull had it
+and could not choose otherwise; as a rung a pilot buys, it pays like every
+other round.
 
-The arithmetic is the part worth keeping. Multifire *adds* barrels rather than
-multiplying them, so two abreast plus a rung of multifire is four rather than
-the six a pilot expects out of three times two. That was the Terrier's real
-behavior, and here it falls out of the model instead of being written down
-for one hull.
+The arithmetic is the part worth keeping. Spray *adds* rounds rather than
+multiplying them, so the ladder reads as a count: three rungs is four rounds,
+not eight. That was the Terrier's real behavior, and here it falls out of the
+model instead of being written down for one hull.
 
-The Terrier and Facet both use the baseline's 25-tick gun delay.
+Every hull uses the baseline's 25-tick gun delay.
 
 ### A shot is what it was when it left
 
@@ -467,17 +471,18 @@ arena's ceiling and everything below it is a purchase. A bomber is not the hull
 that holds the most shrapnel; a bomber is a pilot who bought three rungs of it.
 See [ships.md](ships.md#the-tech-tree).
 
-Barrels are on the matrix now. `DoubleBarrel` was the one weapon setting with
-no home in this space, being neither a ladder nor an add-on, and it stayed a
-flag on one hull for exactly as long as that was true. It is `SIM_MOD_BARREL`:
-an add-on that adds to the round count rather than multiplying it, keeps its
-own tight spacing, and charges energy without charging cooldown. That last part
-is the whole difference from multifire, which charges both: a fan throws more
-and slows you down, a pair throws fewer at the rate you already had.
+The barrel is on the matrix now, inside spray. `DoubleBarrel` was the one
+weapon setting with no home in this space, being neither a ladder nor an
+add-on, and it stayed a flag on one hull for exactly as long as that was true.
+It became `SIM_MOD_BARREL` for a while, and then stopped: it and multifire were
+two ladders that both meant more bullets. `SIM_MOD_MULTI` is the ladder, its
+rung is a round, and one rung is the pair. The pair's tight spacing is all that
+survives of the second add-on, and where a pilot stands on the ladder decides
+whether the group reads as a pair or as a fan.
 
 | | rungs above the first | add-ons |
 |---|---|---|
-| **gun** | 2 | multi ×2, bounce, freeze, barrel ×2 |
+| **gun** | 2 | multi ×5, bounce, freeze |
 | **bomb** | 2 | prox, shrapnel ×3, bounce ×2, freeze |
 
 Those are the deepest each of the seven hull rows used to reach, so nothing was
@@ -491,9 +496,9 @@ the core reads it off whichever trigger's add-ons carried it. Push is off the
 shelf until the shove has had a look of its own, so the bomb row does not
 mention it and no arena grants it.
 
-The names a player reads are not these. `multi` is **Spray** and `barrel` is
-**Double barrel** on the ship page and in upgrades; the words in this table are
-the core's, and the core's are what a zone file writes.
+The names a player reads are not these. `multi` is **Spray** on the ship page
+and in upgrades; the words in this table are the core's, and the core's are
+what a zone file writes.
 
 **A trigger's add-ons stay a trigger's.** Bullets do not carry a fuse and do
 not break up, because a bullet with a proximity fuse is a bomb and that weapon
@@ -634,7 +639,7 @@ freeze = 250              # ticks
 prox = 24                 # px of fuse
 
 [arena.kit]               # and how many rungs of each a kit may hold
-gun_mods = { multi = 2, bounce = 1, freeze = 1, barrel = 2 }
+gun_mods = { multi = 5, bounce = 1, freeze = 1 }
 bomb_mods = { prox = 1, shrapnel = 3, bounce = 2, freeze = 1 }
 charges = [3, 3, 6]       # repels, bursts, mines
 ```

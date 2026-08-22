@@ -182,7 +182,9 @@ bought; and a pilot who bought a rung anyway would find the hull they wanted to
 fly it on refused it.
 
 They are slots now, on the same shelf as everything else. What was the
-brawler's barrel is `SIM_MOD_BARREL`, an add-on anybody may buy two rungs of.
+brawler's barrel is one rung of gun spray, which anybody may buy five of: it
+was an add-on of its own for a while, and then it and multifire turned out to
+be two ladders that both meant more bullets.
 What was the heavy's third bomb rung is a rung on a ladder every hull climbs.
 Six mines is what the arena allows anyone willing to spend a fifth of their kit
 on mines, and a kit carries two kinds of charge at once, so fitting them means
@@ -211,7 +213,7 @@ three things instead.
 A hardpoint is not a claim about what the ship carries. The brawler is drawn
 with two barrels out past the nose because that is the shape it has always
 had; whether it fires two rounds is a question about the pilot's kit, and any
-hull that buys a rung of barrels fires two.
+hull that buys a rung of spray fires two.
 
 Nothing is exclusive to a hull. Not an add-on, not a rung, not a charge kind.
 A trait one hull has is a trait the shop cannot sell and a pilot cannot choose,

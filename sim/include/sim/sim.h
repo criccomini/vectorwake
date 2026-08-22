@@ -344,22 +344,24 @@ typedef enum {
     SIM_MOD_SHRAPNEL,    /* its ending fires the zone's fragment pattern */
     SIM_MOD_FREEZE,      /* it stalls the recharge of whoever it reaches */
     SIM_MOD_PUSH,        /* it shoves: a repel, welded onto something else */
-    /* More barrels, abreast rather than fanned. This was DoubleBarrel, a
-     * per-hull flag the Terrier alone carried, and it is an add-on now for
-     * the reason everything else here is one: a trait only one hull may hold
-     * is a trait the shop can never sell, and the hull rows were the only
-     * thing standing between a pilot and the upgrade they wanted to buy.
-     *
-     * It adds to the count rather than multiplying it, which is what made
-     * the original's odd arithmetic fall out: two abreast plus a rung of
-     * multifire is four rounds, not six. It keeps its own tight spacing, so
-     * a pair reads as a pair and not as a cheap rung of multifire, and it
-     * pays energy without paying cooldown. That is the whole difference
-     * between the two: multifire is a wide fan that slows your rate, barrels
-     * are a tight group that does not. Neither dominates. */
-    SIM_MOD_BARREL,
     SIM_MOD_COUNT
 } sim_mod;
+
+/* There was a seventh, and it has gone into the first.
+ *
+ * SIM_MOD_BARREL put rounds abreast at a tight spacing and charged energy
+ * without charging cooldown; SIM_MOD_MULTI put them in a wide fan and charged
+ * both. Two ladders, both spelled "more bullets", and a pilot climbing either
+ * was answering the same question with a different accent. What that produced
+ * was a shop selling "gun spray" beside "gun double barrel" and nobody able to
+ * say what the difference bought.
+ *
+ * They are one ladder. SIM_MOD_MULTI is now the number of rounds a pull throws
+ * above one: a rung is a round, one rung is the pair that used to be a second
+ * barrel, and the group opens from a pair's tight spacing into the zone's fan
+ * as it grows. The tradeoff moved from "which add-on" to "how many, against
+ * everything else thirty points could buy".
+ */
 
 /* How many recent attackers a hull remembers, and for how long, which is what
  * an assist is made of. Four is more than any death in this game has had; the
@@ -369,7 +371,19 @@ typedef enum {
 #define SIM_ASSIST_SLOTS 4
 #define SIM_ASSIST_WINDOW 600
 
-#define SIM_MOD_MAX 3    /* rungs per add-on; two bits each */
+/* Rungs an add-on may hold, and the exception.
+ *
+ * Three for everything that is a rung of something, packed two bits each into
+ * the word a projectile carries. Spray is a count of rounds rather than a rung
+ * and takes five, which needs three bits: a spray that stopped at three would
+ * be the old pair of ladders with one of them missing.
+ *
+ * Six at two bits and one at three is fifteen of the sixteen bits, which is
+ * where the five comes from. */
+#define SIM_MOD_MAX 3
+#define SIM_MOD_MULTI_MAX 5
+#define SIM_MOD_MAX_OF(m) \
+    ((m) == SIM_MOD_MULTI ? SIM_MOD_MULTI_MAX : SIM_MOD_MAX)
 #define SIM_MAX_RUNGS 4  /* levels a weapon ladder can hold */
 
 /* ---- charges ----
@@ -418,13 +432,34 @@ typedef enum {
 typedef char sim_slot_field_is_wide_enough[
     ((SIM_BTN_SLOT_MASK >> SIM_BTN_SLOT_SHIFT) + 1 >= SIM_MAX_CHARGES) ? 1 : -1];
 
-/* Add-on counts pack two bits each into one word, on the ship and on every
- * projectile it fires. */
+/* Add-on counts pack into one word, on the ship and on every projectile it
+ * fires: three bits for spray at the bottom, then two bits each for the five
+ * above it. Thirteen bits of the sixteen a projectile carries.
+ *
+ * Spray is the wide one because it is a count of rounds rather than a rung of
+ * something, and it is first because it is `SIM_MOD_MULTI`, which is zero.
+ * Nothing anywhere stores this word across a change to it: a ship's is dealt
+ * from the kit at every spawn and a projectile's is copied from the ship that
+ * fired it, so the layout is free to be the tidy one. */
+#define SIM_MOD_BITS 13
 static inline uint8_t sim_mod_get(uint16_t mods, int m) {
-    return (uint8_t)((mods >> (m * 2)) & 3u);
+    if (m == SIM_MOD_MULTI) return (uint8_t)(mods & 7u);
+    return (uint8_t)((mods >> (1 + m * 2)) & 3u);
 }
 static inline uint16_t sim_mod_set(uint16_t mods, int m, uint8_t n) {
-    return (uint16_t)((mods & ~(3u << (m * 2))) | ((uint32_t)(n & 3u) << (m * 2)));
+    if (m == SIM_MOD_MULTI)
+        return (uint16_t)((mods & ~7u) | (n & 7u));
+    return (uint16_t)((mods & ~(3u << (1 + m * 2)))
+                      | ((uint32_t)(n & 3u) << (1 + m * 2)));
+}
+
+/* Whether a word off the wire is one this build could have made: nothing above
+ * the bits it uses, and a spray inside the ladder. Both halves matter, because
+ * `compose` reads the count straight out of it and a client that could send
+ * seven would be firing a round nobody sold it. */
+static inline int sim_mods_wellformed(uint16_t mods) {
+    return (mods >> SIM_MOD_BITS) == 0
+           && sim_mod_get(mods, SIM_MOD_MULTI) <= SIM_MOD_MULTI_MAX;
 }
 
 typedef enum {
@@ -625,27 +660,27 @@ typedef struct {
     /* What one rung of each add-on is worth. Units are the field it changes:
      * extra projectiles, walls, Q8 px of fuse, ticks of stall, Q16 push. */
     int32_t mod_step[SIM_MOD_COUNT];
-    /* Spacing a multifire add-on fans to, when the pattern has none of its
-     * own. A pattern that already spreads keeps its own angle. */
+    /* Spacing a spray fans to, when the pattern has none of its own. A
+     * pattern that already spreads keeps its own angle. */
     uint16_t mod_spread;
-    /* What a rung of multifire adds to the cost of pulling the trigger, as a
-     * percentage of the shot's own energy and cooldown. The original's
-     * numbers, which are 50 and 100: three bullets for half again the energy
-     * and twice the wait. */
+    /* What one round of spray adds to the cost of pulling the trigger, as a
+     * percentage of the shot's own energy and cooldown.
+     *
+     * Free rounds are the whole of the balance problem, and the original
+     * priced them as two flat numbers rather than per round: half again the
+     * energy and twice the wait for three bullets. Ours are per rung, because
+     * we have a ladder and it did not, and most of the price is in the rate,
+     * which is the part that cannot be out-recharged. */
     uint16_t mod_multi_energy;
     uint16_t mod_multi_delay;
-    /* And what a rung of barrels adds to the energy, on the same scale. There
-     * is no delay to match it: a barrel does not slow the gun down, which is
-     * the whole reason to take one over a rung of multifire. Free rounds are
-     * the balance problem the multifire note above is about, so the energy
-     * half is not optional.
+    /* The angle a pair leaves at, which is deliberately tighter than
+     * `mod_spread`: two abreast should read as a pair rather than as a cheap
+     * fan, and that difference is what used to be a second add-on. A spray of
+     * three or more opens out to `mod_spread`.
      *
-     * `mod_barrel_spread` is the angle a pair leaves at, and it is deliberately
-     * tighter than `mod_spread`: barrels are abreast and multifire is a fan.
      * It has to be nonzero, because a pattern of many at spacing zero is the
      * shrapnel encoding and scatters. */
-    uint16_t mod_barrel_energy;
-    uint16_t mod_barrel_spread;
+    uint16_t mod_pair_spread;
     /* What each rung of shrapnel breaks into. Shrapnel is the one add-on
      * whose magnitude is another weapon rather than a number. */
     uint8_t mod_splinter[SIM_MAX_RUNGS];
