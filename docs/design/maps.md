@@ -92,11 +92,11 @@ tiles under it: the corner that would touch one is the same corner the face
 is holding up. That is what stops the staircase coming back as the square
 backing behind a smooth front.
 
-The generator does not draw them yet. Its diagonals are one tile thick, and a
-thin diagonal is the one shape a slope cannot express: half a tile of wall
-with a hole at every corner is not a barrier. A thick diagonal wall with sloped
-faces is a shape somebody should draw and then measure, which is a map editor's
-job and a drill's, not a C file's.
+The generator does not draw them. Its diagonals are one tile thick, and a thin
+diagonal is the one shape a slope cannot express: half a tile of wall with a
+hole at every corner is not a barrier. A thick diagonal wall with sloped faces
+is a shape a person draws and then measures, and there is somewhere to draw it
+now. See "Where a map comes from" below.
 
 ## The edge of the world is not a map's to draw
 
@@ -178,8 +178,8 @@ The field is a lattice of 64-tile cells, each holding one of four structures
 picked by a hash of its coordinates: a block, a cross, four pillars, or open
 space. 256 landmarks, none wider than twenty tiles, so the lanes between them
 are always at least twice the width of what is in them. A lattice rather than
-a drawn map because a drawn 1024-tile map is a job for a map editor and a
-person, and this has to stay legible from a C file until that exists. A
+a drawn map because a drawn 1024-tile map is a job for a person, and this had
+to stay legible from a C file. A
 refuge -- a small safe zone -- sits every fourth cell each way, so nowhere in
 the field is more than a couple of hundred tiles from somewhere to stop.
 
@@ -234,7 +234,7 @@ It has no wormhole. One reaches 220 px, fourteen tiles, and the bot ladder
 found what that does to a small room: pilots spawned eight tiles from one
 stopped fighting and orbited it instead, and the tournament graded a whole
 roster equal because nobody landed a shot. A map this size can hold one; where
-to put it is a map-editor decision rather than a C-file one.
+to put it is a decision for whoever draws it rather than for a C file.
 
 **Two things had to scale with the map rather than sit in it.** The client
 meshes terrain in a 113-tile window around the camera and rebuilds it when the
@@ -568,20 +568,59 @@ and neither does this one: the sides are statistically alike and
 geometrically different, which is the arrangement that stops a player learning
 one half and knowing the other.
 
-A zone names one in its own `zone.toml`, relative to the zone's directory:
+Which maps a zone plays has a section of its own below.
+
+Clients are sent the map before the welcome, since prediction runs collision
+locally and needs the room before it needs anyone in it.
+
+## Where a map comes from
+
+Three places, and they all end at the same check.
+
+`sim/tools/mapgen` draws one from a seed, which is what the shipped maps are.
+`sim/tools/lvl2vw` converts one from the original's format, which is how a room
+somebody else play-tested for years can be flown against our collision.
+And the admin panel has an editor: a canvas one square per tile, the classes
+above as a palette, and half-turn symmetry that turns a slope to its opposite
+corner and hands a start to the other side.
+
+Whichever drew it, `sim_map_check` decides whether it can be played. It asks
+about a hull rather than a point: whether a three-tile ship can fly all of the
+map with every door shut, whether each start is somewhere a ship can leave, and
+whether any open ground is a pocket nothing can reach. The generator refuses to
+write a map that fails it and the meta-layer refuses to store one, so a map
+drawn by hand is held to exactly what a generated one is.
+
+The editor does not carry its own copy of that. It packs the tiles, posts them,
+and shows what the core said, which is also what stops a browser and a
+simulation quietly disagreeing about a room. What it does have to get exactly
+right is the file, since the far end unpacks it with the same function an arena
+does and refuses anything whose bytes do not match the hash in its own header.
+
+## Which maps a zone plays
+
+A zone names its own in `zone.toml`, relative to the zone's directory:
 
 ```toml
 maps = ["drydock.vwmap", "slipway.vwmap"]
 ```
 
-More than one is a rotation, and the room takes the next one at every match.
+More than one is a rotation, and the room takes the next one at every whistle.
 Empty runs the built-in arena, so a zone with no map is still a zone. A map
 that will not load is reported and then ignored, because a zone that refuses
-to start over a bad file is worse for the people trying to play in it than
-one that runs the reference room and says so.
+to start over a bad file is worse for the people trying to play in it than one
+that runs the reference room and says so.
 
-Clients are sent the map before the welcome, since prediction runs collision
-locally and needs the room before it needs anyone in it.
+An operator can point a zone somewhere else from the panel, and that overrides
+the file for that zone until it is taken off again. The file stays the reviewed
+baseline: it is what a fresh deployment boots with and what the tests run
+against.
+
+A rotation changed under a running room does not interrupt it. The match in
+progress finishes on the ground it started on, because swapping the map under
+a live fight is a desync everybody sees, and the next whistle is seconds away.
+See [../architecture/admin.md](../architecture/admin.md) for how a publish
+reaches a fleet.
 
 ## Spawn points travel with the map
 

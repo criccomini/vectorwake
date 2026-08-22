@@ -209,6 +209,35 @@ function draw() {
       }
     }
   }
+  // The boundary the core paints on load, drawn dimmer than a wall an author
+  // put there. It is not in the file and never was: every map gets four tiles
+  // of it whatever the tiles say. Leaving it off drew an open field running to
+  // the edge, which is not the room this is.
+  g.fillStyle = "#39465c";
+  for (let i = 0; i < 4; i++) {
+    g.fillRect(0, i * zoom, doc.w * zoom, zoom);
+    g.fillRect(0, (doc.h - 1 - i) * zoom, doc.w * zoom, zoom);
+    g.fillRect(i * zoom, 0, zoom, doc.h * zoom);
+    g.fillRect((doc.w - 1 - i) * zoom, 0, zoom, doc.h * zoom);
+  }
+
+  // A grid, once the tiles are big enough for one to mean anything. Every
+  // eight, which is a landmark rather than graph paper.
+  if (zoom >= 4) {
+    g.strokeStyle = "#10161f";
+    g.lineWidth = 1;
+    g.beginPath();
+    for (let x = 0; x <= doc.w; x += 8) {
+      g.moveTo(x * zoom + 0.5, 0);
+      g.lineTo(x * zoom + 0.5, doc.h * zoom);
+    }
+    for (let y = 0; y <= doc.h; y += 8) {
+      g.moveTo(0, y * zoom + 0.5);
+      g.lineTo(doc.w * zoom, y * zoom + 0.5);
+    }
+    g.stroke();
+  }
+
   // A start is worth seeing from across the room, so it gets a ring rather
   // than a filled tile a wall would hide behind.
   if (zoom >= 3) {
@@ -319,6 +348,10 @@ function openDoc(d, name) {
   el("map-h").value = doc.h;
   draw();
   verdict();
+  // The editor sits under the list, which on a full table is most of a screen
+  // away. Opening one and being left looking at the row you clicked is the
+  // kind of thing that reads as a button that did nothing.
+  el("editor").scrollIntoView({ block: "start", behavior: "smooth" });
 }
 
 async function drawMaps() {

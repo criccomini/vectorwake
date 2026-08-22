@@ -853,13 +853,11 @@ dialog .field { margin-bottom: 1rem; }
   overflow: auto;
   max-height: 70vh;
   margin: var(--gap) 0;
-  /* Chequered, so the empty half of a slope reads as empty rather than as
-     something that failed to draw. Two hairlines, at the tile pitch of the
-     smallest zoom worth using. */
-  background-image:
-    linear-gradient(var(--hair) 1px, transparent 1px),
-    linear-gradient(90deg, var(--hair) 1px, transparent 1px);
-  background-size: 32px 32px, 32px 32px;
+  /* Only as wide as the drawing. The grid belongs on the canvas, where it is
+     drawn at the map's own pitch; a frame wider than the map with a grid in it
+     reads as more map. */
+  width: max-content;
+  max-width: 100%;
 }
 
 /* Crisp, because a tile is a square of a few pixels and smoothing turns a wall
