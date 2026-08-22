@@ -137,6 +137,7 @@ impl sim_map {
 #[derive(Clone, Copy, Default, Debug)]
 pub struct sim_map_report {
     pub regions: i32,
+    pub regions_shut: i32,
     pub reachable: i32,
     pub stranded: i32,
     pub spawns: i32,
@@ -543,6 +544,7 @@ extern "C" {
     pub fn sim_sizeof_ship() -> u32;
     pub fn sim_sizeof_events() -> u32;
     pub fn sim_sizeof_map() -> u32;
+    pub fn sim_sizeof_report() -> u32;
     pub fn sim_settings_baseline(cfg: *mut sim_settings, map: *const sim_map);
     /// The arenas live in the core so this and the client cannot disagree
     /// about the shape of the same room.
@@ -1239,6 +1241,15 @@ mod layout {
                 std::mem::size_of::<sim_map>(),
                 sim_sizeof_map() as usize,
                 "sim_map mirror is the wrong size"
+            );
+            // This one was unguarded until a field went into the middle of it.
+            // Every number after the new one would have been read off by four
+            // bytes, which on a report is a map refused for a reason that is
+            // not what is wrong with it.
+            assert_eq!(
+                std::mem::size_of::<sim_map_report>(),
+                sim_sizeof_report() as usize,
+                "sim_map_report mirror is the wrong size"
             );
         }
     }

@@ -852,8 +852,16 @@ function verdict() {
         `${Math.round((100 * (rep.solid || 0)) / (doc.w * doc.h))}% wall`,
       ];
       el("map-stats").textContent = bits.join(", ");
+      // A map whose shape depends on its doors opening is a map worth serving
+      // and worth a word, because a zone that sets `door_period` to zero never
+      // opens them and would be playing a different room than this one. Said
+      // rather than refused: which zone it lands in is not the map's business.
+      const leans = (rep.regions_shut || 0) > (rep.regions || 0);
       if (r.ok) {
-        tell("map-verdict", "a hull can fly all of this", "ok");
+        tell("map-verdict", leans
+          ? `a hull can fly all of this, through its doors: shut, it is `
+            + `${rep.regions_shut} separate rooms`
+          : "a hull can fly all of this", "ok");
       } else {
         tell("map-verdict", r.error || "not playable");
       }

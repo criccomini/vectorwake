@@ -1239,15 +1239,48 @@ int main(void) {
         CHECK(rep.spawns == 0 && !sim_map_playable(room, &rep, why, sizeof why),
               "a map with no start is not one a zone can be pointed at");
 
-        /* Doors are shut for the region count, because somewhere reachable
-         * only through one is somewhere a ship can be held. */
+        /* A door is a passage. A wall of them across a room divides it while
+         * they are shut and not otherwise, so the map is one region and the
+         * count that says two is the one nothing is refused for. */
         sim_map_size(room, 80, 60);
         SIM_MAP_AT(room, 40, 20) = SIM_TILE(SIM_TILE_SPAWN, 0);
         for (int tx = 0; tx < 80; tx++) SIM_MAP_AT(room, tx, 30) = SIM_TILE(SIM_TILE_DOOR, 0);
         sim_map_index(room);
         sim_map_check(room, sc, &rep);
-        CHECK(rep.regions == 2, "a door wall is two regions with the doors shut");
-        CHECK(rep.stranded == 0, "and nothing behind it is stranded, since it opens");
+        CHECK(rep.regions == 1, "a door wall is one region, because doors open");
+        CHECK(rep.regions_shut == 2, "and two with every one of them shut");
+        CHECK(rep.stranded == 0, "nothing behind it is stranded");
+        CHECK(sim_map_playable(room, &rep, why, sizeof why),
+              "and a room divided by doors is a room");
+
+        /* The map that found this: a start in a pocket whose only way out is a
+         * door. Refused as "a start is walled in" while the verdict was taken
+         * with the doors shut, which made a door useless for the one thing a
+         * door is for. */
+        sim_map_size(room, 80, 60);
+        for (int ty = 0; ty < 60; ty++) SIM_MAP_AT(room, 20, ty) = SIM_TILE_SOLID;
+        for (int ty = 24; ty <= 36; ty++) SIM_MAP_AT(room, 20, ty) = SIM_TILE(SIM_TILE_DOOR, 0);
+        SIM_MAP_AT(room, 10, 30) = SIM_TILE(SIM_TILE_SPAWN, 0);
+        SIM_MAP_AT(room, 50, 30) = SIM_TILE(SIM_TILE_SPAWN, 1);
+        sim_map_index(room);
+        sim_map_check(room, sc, &rep);
+        CHECK(rep.spawns == 2 && rep.spawns_team[0] == 1 && rep.spawns_team[1] == 1,
+              "a start each side of a door");
+        CHECK(rep.spawns_stranded == 0, "and neither is walled in by it");
+        CHECK(rep.regions == 1 && rep.regions_shut == 2,
+              "one room through the door, two without it");
+        CHECK(sim_map_playable(room, &rep, why, sizeof why),
+              "so a pocket gated by a door is playable");
+
+        /* Bricking the door up is the same drawing and a different map, and
+         * that one is refused: with the doors open there is still no way
+         * through, which is the question the verdict asks. */
+        for (int ty = 24; ty <= 36; ty++) SIM_MAP_AT(room, 20, ty) = SIM_TILE_SOLID;
+        sim_map_index(room);
+        sim_map_check(room, sc, &rep);
+        CHECK(rep.regions == 2, "walling the door up is two rooms");
+        CHECK(!sim_map_playable(room, &rep, why, sizeof why),
+              "and that is still refused");
 
         free(room);
         free(sc);

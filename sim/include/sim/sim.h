@@ -220,7 +220,8 @@ void sim_map_index(sim_map *m);
  * megabytes and only the tools and the panel ever build one, which is why it
  * is a struct to hand in rather than a static to trip over. */
 typedef struct {
-    int32_t regions;         /* separate places a hull can fly, doors shut */
+    int32_t regions;         /* separate places a hull can fly, doors open */
+    int32_t regions_shut;    /* and with every door shut, which is never fewer */
     int32_t reachable;       /* tiles a hull's center fits in the largest one */
     int32_t stranded;        /* open tiles no hull can reach, doors open */
     int32_t spawns;          /* starts the map names */
@@ -285,6 +286,7 @@ uint32_t sim_sizeof_events(void);
  * to fill. It grew a size of its own, which is exactly the kind of change that
  * leaves a mirror a field short and writes past the end of somebody's box. */
 uint32_t sim_sizeof_map(void);
+uint32_t sim_sizeof_report(void);
 
 void sim_map_arena(sim_map *m);
 void sim_map_pit(sim_map *m);
