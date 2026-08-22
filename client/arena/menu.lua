@@ -1326,7 +1326,7 @@ local NODES = {
         end
         if not M.touching then
             -- Last, and after every control, because it is about all of them.
-            rows[#rows + 1] = {label = "defaults", act = "defaults",
+            rows[#rows + 1] = {label = "reset to defaults", act = "defaults",
                                pick = true, reset = true}
         end
         return rows

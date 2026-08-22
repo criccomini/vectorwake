@@ -261,15 +261,18 @@ preview.hover = nil
 --
 -- Both halves mark their cursor the same way, so the one wearing the brighter
 -- of the two is the whole of the answer to what up and down will move. Read
--- off the rule under the tab you are in, which is the tab row's own mark: a
--- word with a line under it, drawn either side of the focus.
+-- off the field behind the tab you are in, which is the tab row's own mark.
+-- It used to be a rule under the word, drawn either side of the focus; the
+-- field replaced it, and a field with a line under it is one mark too many.
 
 local function rail_wash()
     local a = 0
-    for _, sg in ipairs(segs) do
-        local c = sg.col
+    for _, r in ipairs(rects) do
+        local c = r.col
+        -- The tab row's own band, which is the only blue field in the top of
+        -- the panel: a stage row's cursor is further down the screen.
         if c and c[1] == pal.FRIEND[1] and c[2] == pal.FRIEND[2]
-           and sg.y0 == sg.y1 and (c[4] or 1) > a then
+           and r.y < 120 and (c[4] or 1) > a then
             a = c[4] or 1
         end
     end
@@ -736,14 +739,15 @@ check("and draws no second line for the name", st6 ~= nil
 --
 -- The stage has worn a hover since the home screen was two panes. The tab row
 -- is the other half of the same gesture and went without one, so a mouse
--- walking along it lit nothing until it was clicked. Counted as a rule under
--- a word: the tab you are in wears a lit one, and the one under the pointer
--- wears a dim one, so a row with a hover on it carries two rather than one.
+-- walking along it lit nothing until it was clicked. Counted as fields behind
+-- the words: the tab you are in wears one and the one under the pointer wears
+-- a fainter one, so a row with a hover on it carries two rather than one.
 local function rail_fields()
     local n = 0
-    for _, sg in ipairs(segs) do
-        if sg.y0 == sg.y1 and sg.col and (sg.w or 0) >= 1.0
-           and sg.x1 - sg.x0 > 20 and sg.x1 - sg.x0 < 200 then
+    for _, r in ipairs(rects) do
+        local c = r.col
+        if c and c[1] == pal.FRIEND[1] and c[2] == pal.FRIEND[2]
+           and r.y < 120 and r.w > 20 and r.w < 200 then
             n = n + 1
         end
     end

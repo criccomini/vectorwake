@@ -369,7 +369,14 @@ end
 function M.refresh_upgrades()
     if M.base == "" then return end
     post("/v1/upgrades", {secret = secret}, function(r)
-        if r and type(r.shelf) == "table" then M.shelf = r.shelf end
+        if type(r) ~= "table" then return end
+        if type(r.shelf) == "table" then M.shelf = r.shelf end
+        -- And the wallet, which rides the same reply and was being dropped.
+        -- Rivets are bounty taken, so a pilot earns them in a match rather
+        -- than on this page: the number in hand is from whenever the session
+        -- began, and the only thing that moved it was a purchase. An evening's
+        -- kills showed up on the next reload.
+        if tonumber(r.rivets) then M.rivets = tonumber(r.rivets) end
     end)
 end
 

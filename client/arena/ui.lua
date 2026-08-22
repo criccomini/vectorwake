@@ -193,6 +193,19 @@ local function vrule(x, y, h, col, spill)
     F.layer:seg(x, ry(y), x, ry(y + h), 1.4 * F.scale, col)
 end
 
+-- A rule between things inside the menu: one straight line, in the same color
+-- and weight the panel's own left edge is drawn in.
+--
+-- These were the map border's tick, a row of little marks, which is the right
+-- thing on a map border and wrong across a page: at a group head the eye read
+-- a dotted line as something unfinished, and five of them down a page read as
+-- texture rather than as structure. The border keeps its ticks; the menu gets
+-- lines.
+local function hrule(x, y, w, alpha)
+    F.layer:seg(x, ry(y), x + w, ry(y), 1.0 * F.scale,
+                pal.a(pal.RADAR_TILE, alpha or 0.7), true)
+end
+
 -- The map border's tick, used as a rule between things.
 local function ticks(x, y, w, col, pitch)
     pitch = pitch or 12 * F.scale
@@ -3460,7 +3473,7 @@ function pages.week(v, x, y, w, h, focused)
         lbl(c[1], x + tw - c.off * F.scale, ty, nil, "right")
     end
     ty = ty + 10 * F.scale
-    ticks(x, ty, tw, pal.a(pal.RADAR_TILE, 0.45), 14 * F.scale)
+    hrule(x, ty, tw)
     ty = ty + 16 * F.scale
 
     local mine
@@ -3550,8 +3563,7 @@ function pages.week(v, x, y, w, h, focused)
         end
     end
     local ny = y + h - 60 * F.scale
-    ticks(sx2, ny, sidew - 24 * F.scale, pal.a(pal.RADAR_TILE, 0.45),
-          14 * F.scale)
+    hrule(sx2, ny, sidew - 24 * F.scale)
     ny = ny + 16 * F.scale
     for _, line in ipairs(wrapped("rating says how good you are and moves "
                                   .. "slowly; the week says what you did with "
@@ -3656,8 +3668,7 @@ function pages.aside(a, x, y, w, h)
             local rx2 = x + w - 24 * F.scale
             lbl("k  d", rx2, ly, pal.a(pal.DIM, 0.75), "right")
             ly = ly + 8 * F.scale
-            ticks(x, ly, w - 24 * F.scale, pal.a(pal.RADAR_TILE, 0.4),
-                  14 * F.scale)
+            hrule(x, ly, w - 24 * F.scale)
             ly = ly + 16 * F.scale
             for _, r in ipairs(seen[team]) do
                 txt(r.name, x, ly, 12.5 * F.scale,
@@ -3693,8 +3704,7 @@ function pages.aside(a, x, y, w, h)
     end
     if a.foot and a.foot ~= "" then
         local ny = y + h - 52 * F.scale
-        ticks(x, ny, w - 24 * F.scale, pal.a(pal.RADAR_TILE, 0.45),
-              14 * F.scale)
+        hrule(x, ny, w - 24 * F.scale)
         ny = ny + 16 * F.scale
         for _, line in ipairs(wrapped(a.foot, 11 * F.scale,
                                       w - 24 * F.scale)) do
@@ -3923,8 +3933,22 @@ function pages.kit(v, x, y, w, h, focused)
         local by = stacked and (y + 80 * F.scale) or mid
         local bx0 = stacked and x or (x + shipw + 42 * F.scale)
         lbl("kit", bx0, by + 3 * F.scale)
+        -- The wallet, at the end of the line the budget is on.
+        --
+        -- Two currencies, one beside the other, which is the whole of what
+        -- this page is about: thirty points buy the ship you are flying now,
+        -- rivets buy what you are allowed to put in them. It used to sit in
+        -- the corner of the tab row on every page, where it was a number with
+        -- nothing to do on five of them.
+        local wallet = 0
+        if v.pilot and v.pilot.rivets then
+            wallet = pages.priced(v.pilot.rivets, x + w, by + 3 * F.scale,
+                                  15 * F.scale, pal.a(pal.CHARGE_COL, 0.95),
+                                  "right") + 26 * F.scale
+        end
         local bx = bx0 + 34 * F.scale
-        local bw = math.max(24 * F.scale, x + w - bx - 150 * F.scale)
+        local bw = math.max(24 * F.scale,
+                            x + w - bx - 150 * F.scale - wallet)
         rect(bx, by, bw, 5 * F.scale, pal.a(pal.RADAR_TILE, 0.35))
         if spent > 0 then
             rect(bx, by, bw * math.min(1, spent / total), 5 * F.scale,
@@ -3935,8 +3959,8 @@ function pages.kit(v, x, y, w, h, focused)
         txt("/ " .. total, bx + bw + 12 * F.scale
             + text_w(tostring(spent), 17 * F.scale) + 6 * F.scale,
             by + 4 * F.scale, 12 * F.scale, pal.a(pal.DIM, 0.9))
-        txt(left .. " left", x + w, by + 3 * F.scale, 13 * F.scale,
-            pal.a(left == 0 and pal.DIM or pal.CHARGE_COL, 0.95), "right")
+        txt(left .. " left", x + w - wallet, by + 3 * F.scale, 13 * F.scale,
+            pal.a(left == 0 and pal.DIM or pal.INK, 0.8), "right")
     end
 
     -- --- the kit, under the band
@@ -3960,7 +3984,7 @@ function pages.kit(v, x, y, w, h, focused)
     -- has a price at the end of its row.
     local function rule(label)
         cy = cy + 6 * F.scale + pad
-        ticks(kx, cy, kw, pal.a(pal.RADAR_TILE, 0.45), 14 * F.scale)
+        hrule(kx, cy, kw)
         cy = cy + 16 * F.scale
         if label then
             lbl(label, kx, cy)
@@ -4496,14 +4520,30 @@ local function chips(x, top, w, v, rh)
             rect(cx - 6 * F.scale, cy, cw - 4 * F.scale, rh,
                  pal.a(pal.FRIEND, r.arming and 0.22 or 0.16))
         end
-        -- The row that puts everything back is not a control and wears no
-        -- swatch, so the column of colors down the left is exactly the set of
-        -- things that have a key.
         local hue = board_col(r.cat) or pal.DIM
-        if not r.reset then
-            rect(cx, cy + rh / 2 - 3.5 * F.scale, 7 * F.scale, 7 * F.scale,
-                 pal.a(hue, hot and 1 or 0.8))
+        -- The row that puts everything back is not a control. It wore no
+        -- swatch and was otherwise a row like the twenty above it, at the end
+        -- of a grid of them, which is a button nobody could find: it is drawn
+        -- as one now, framed and centered and saying the word somebody would
+        -- be looking for.
+        if r.reset then
+            local bh = math.min(rh - 6 * F.scale, 30 * F.scale)
+            local by = cy + (rh - bh) / 2
+            local bw = cw - 16 * F.scale
+            rect(cx, by, bw, bh, pal.a(pal.DIM, hot and 0.16 or 0.07))
+            -- The chamfered bracket every other button in this interface
+            -- wears, rather than a box: a frame here would also be a key, as
+            -- far as the board beside it is concerned.
+            bracket(cx, by, bw, bh, pal.a(pal.DIM, hot and 0.9 or 0.45),
+                    11 * F.scale)
+            lbl(r.label or "", cx + bw / 2, by + bh / 2 + 3 * F.scale,
+                pal.a(pal.INK, hot and 1 or 0.75), "center", fs * 0.8)
+            if r.pick then hit(cx, by, bw, bh, "stage", i) end
+            hue = nil
         end
+        if hue then
+        rect(cx, cy + rh / 2 - 3.5 * F.scale, 7 * F.scale, 7 * F.scale,
+             pal.a(hue, hot and 1 or 0.8))
         txt(r.label or "", cx + 15 * F.scale, cy + rh / 2, fs,
             pal.a(pal.INK, hot and 1 or 0.8), nil, MENU_FONT)
         -- The key, in the face the numbers in flight are set in, because it is
@@ -4537,6 +4577,7 @@ local function chips(x, top, w, v, rh)
                 pal.a(ink, hot and 1 or 0.75), "right", nil, true)
         end
         if r.pick then hit(cx - 6 * F.scale, cy, cw - 4 * F.scale, rh, "stage", i) end
+        end
     end
 end
 
@@ -5775,8 +5816,7 @@ function M.menu(v)
         -- The rule the whole thing hangs off, under the tabs rather than
         -- between a rail and a stage. The map border's own tick, which is
         -- what every rule in this interface is made of.
-        ticks(x0, sy - 6 * F.scale, total, pal.a(pal.RADAR_TILE, 0.5),
-              14 * F.scale)
+        hrule(x0, sy - 6 * F.scale, total)
         -- The far end of the row. Who you are and what you have to spend, in
         -- the slot a match fills with the score: whatever you are inside, the
         -- right-hand end of this row says how you are doing in it.
@@ -5785,14 +5825,10 @@ function M.menu(v)
         -- and a wallet would be a third thing in a corner that has two.
         if v.pilot and not v.closable then
             local rt = x0 + total
-            if v.pilot.rivets then
-                -- The mark, not the word. "0 RIVETS" spent a third of the
-                -- corner explaining its own units on every page.
-                rt = rt - pages.priced(v.pilot.rivets, rt, logo_y,
-                                       15 * F.scale, pal.a(pal.INK, 0.95),
-                                       "right")
-                rt = rt - 22 * F.scale
-            end
+            -- No wallet here. It stood in this corner on every page, which is
+            -- five pages where it is a number with nothing to do and one where
+            -- it is the number you are spending. It is on the ship page's own
+            -- line now, beside the budget it trades against.
             if v.pilot.name and v.pilot.name ~= "" then
                 local lit = v.pilot_hot
                 local nw = text_w(v.pilot.name, 15 * F.scale)
@@ -5903,23 +5939,23 @@ function M.menu(v)
             -- because it is what ties the tab to the panel under it.
             local fh = 34 * F.scale
             if sel or hot then
+                -- Brighter while the arrows are in the row, down to the weight
+                -- it keeps for saying where you are once they have gone into
+                -- the page. Both halves of the menu mark their cursor the same
+                -- way, so the one wearing the brighter of the two is the whole
+                -- of the answer to what up and down will do.
+                local a = 0.1
+                if sel then a = focused and 0.14 or 0.26 end
                 rect(wx[i] - 11 * F.scale, cy - fh / 2,
-                     ww[i] + 22 * F.scale, fh,
-                     pal.a(pal.FRIEND, sel and 0.2 or 0.1))
+                     ww[i] + 22 * F.scale, fh, pal.a(pal.FRIEND, a))
             end
             txt(e.label, wx[i], cy, px,
                 pal.a(sel and pal.FRIEND or pal.INK, sel and 1
                       or (hot and 0.9 or 0.55)), nil, MENU_FONT)
-            if sel then
-                F.layer:seg(wx[i], ry(cy + 13 * F.scale),
-                            wx[i] + ww[i], ry(cy + 13 * F.scale),
-                            1.4 * F.scale,
-                            pal.a(pal.FRIEND, focused and 0.55 or 1), true)
-            elseif hot then
-                F.layer:seg(wx[i], ry(cy + 13 * F.scale),
-                            wx[i] + ww[i], ry(cy + 13 * F.scale),
-                            1.0 * F.scale, pal.a(pal.DIM, 0.7), true)
-            end
+            -- No rule under the lit word. There was one, from when the tabs
+            -- were words and nothing else and the rule was the whole of the
+            -- selection; the field behind them says it now, and a field with
+            -- a line under it is one mark too many.
             if e.link then
                 M.link_dom = string.format("%.1f,%.1f,%.1f,%.1f,%s",
                     (wx[i] - 6 * F.scale) / F.scale,
@@ -6201,7 +6237,12 @@ function M.menu(v)
     elseif v.hulls then
         -- The hangar, which is the one page drawn as a layout rather than as
         -- a list: a roster beside the kit of the hull it is standing on.
-        pages.kit(v, panel_x, top, panel_w - 14 * F.scale, room, focused)
+        -- The same left edge every other page has. It began at the panel's
+        -- own rule while the others began a gutter in from it, which is a
+        -- quarter inch of difference nobody can name and everybody can see
+        -- when they walk the tab row.
+        pages.kit(v, panel_x + GUTTER * F.scale, top,
+                  panel_w - 14 * F.scale - GUTTER * F.scale, room, focused)
     elseif v.table then
         -- The week, as a table with your own line in it.
         pages.week(v, panel_x + GUTTER * F.scale, top,
@@ -6260,8 +6301,7 @@ function M.menu(v)
             -- row rather than laid out in advance: a list that scrolls keeps
             -- the labels it can still show and drops the ones it cannot.
             if r.sect and at + SECT + rowh <= ty + room then
-                ticks(tx, at + SECT * 0.45, lw - 20 * F.scale,
-                      pal.a(pal.RADAR_TILE, 0.45), 14 * F.scale)
+                hrule(tx, at + SECT * 0.45, lw - 20 * F.scale)
                 lbl(r.sect, tx, at + SECT * 0.85)
                 at = at + SECT
             end
