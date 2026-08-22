@@ -320,9 +320,14 @@ function verdict() {
         bytes: b64(pack(doc)),
       });
       const rep = r.report || {};
+      const per = rep.spawns_team || [0, 0];
       const bits = [
         `${doc.w} by ${doc.h}`,
-        `${rep.spawns || 0} start(s)`,
+        // The split as well as the count. A map whose starts are all on one
+        // side is playable and is not a two-sided map, and nothing else here
+        // would say so: a side with no start of its own is handed somebody
+        // else's, which puts both teams in one pocket.
+        `${rep.spawns || 0} start(s), ${per[0] || 0} and ${per[1] || 0} a side`,
         `${Math.round((100 * (rep.solid || 0)) / (doc.w * doc.h))}% wall`,
       ];
       el("map-stats").textContent = bits.join(", ");

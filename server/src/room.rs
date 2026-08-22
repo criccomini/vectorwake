@@ -2920,6 +2920,18 @@ impl Room {
         );
         if !first && self.maps.len() > 1 {
             self.map_at = (self.map_at + 1) % self.maps.len();
+            // Which ground, since a zone's rotation is something an operator
+            // can change from the panel now and "did that land" is otherwise
+            // a question with nowhere to look.
+            println!(
+                "room {}: match {} is on map {} of {} ({} by {})",
+                self.number,
+                self.match_no,
+                self.map_at + 1,
+                self.maps.len(),
+                self.maps[self.map_at].w,
+                self.maps[self.map_at].h
+            );
             // The room's size is a zone key that lives on the settings, so it
             // is read back off the running room rather than out of the tuning:
             // a `max_ships` from the zone stanza never passed through the
