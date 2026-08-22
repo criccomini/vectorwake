@@ -1827,6 +1827,25 @@ impl Room {
                     *want = *max;
                 }
             }
+            // And down to the two kinds of charge a kit may carry, keeping
+            // the first two in kind order. A build saved before that rule
+            // existed names three or four, and dropping it whole would take
+            // the twenty-eight points that are still fine along with the two
+            // that are not, which is the same mistake the ceiling trim above
+            // exists to avoid.
+            {
+                let mut kinds = 0;
+                for k in 0..sim::MAX_CHARGES {
+                    let slot = sim::slot_charge(k) as usize;
+                    if fits[slot] == 0 {
+                        continue;
+                    }
+                    kinds += 1;
+                    if kinds > sim::KIT_CHARGE_SLOTS {
+                        fits[slot] = 0;
+                    }
+                }
+            }
             if self.set_kit(ship, &fits) {
                 if let Some(s) = self.names.get_mut(&ship) {
                     s.pending_kit = None;

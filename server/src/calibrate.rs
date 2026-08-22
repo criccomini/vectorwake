@@ -922,6 +922,17 @@ fn deal_kit(world: &mut sim::World, ship: usize, budget: u32, rng: &mut u32) -> 
             *rng ^= *rng >> 17;
             *rng ^= *rng << 5;
             let k = (*rng as usize) % sim::SLOT_COUNT;
+            // Two kinds of charge, whatever the roll says: the arena refuses
+            // a third, and a bout flown on a kit the arena would not take is
+            // a bout measuring a bare hull.
+            if k >= sim::slot_charge(0) as usize && kit[k] == 0 {
+                let kinds = (0..sim::MAX_CHARGES)
+                    .filter(|c| kit[sim::slot_charge(*c) as usize] > 0)
+                    .count();
+                if kinds >= sim::KIT_CHARGE_SLOTS {
+                    continue;
+                }
+            }
             if kit[k] < ceiling[k] {
                 kit[k] += 1;
                 spent += 1;
@@ -933,6 +944,11 @@ fn deal_kit(world: &mut sim::World, ship: usize, budget: u32, rng: &mut u32) -> 
             break;
         }
     }
+    // Refused where `budget` is more than a kit may hold, which the harness
+    // does on purpose to measure a wider build than a match allows; the ship
+    // then keeps what it had. Left as it was rather than made an assertion,
+    // which is a thread of its own: what this change owes is that the charge
+    // cap above is not a new way to be refused.
     world.set_kit(ship, &kit);
     spent
 }

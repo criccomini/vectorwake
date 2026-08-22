@@ -527,6 +527,8 @@ pub const CHARGE_MAX: u8 = 15;
 /// How many recent attackers a hull remembers, which is what an assist is
 /// made of. Mirrors SIM_ASSIST_SLOTS.
 pub const ASSIST_SLOTS: usize = 4;
+/// How many kinds of charge one kit may carry. Mirrors SIM_KIT_CHARGE_SLOTS.
+pub const KIT_CHARGE_SLOTS: usize = 2;
 /// The flat kit space: a stat, a rung, an add-on or a charge, all one shape.
 pub const SLOT_COUNT: usize = UP_COUNT + TRIG_COUNT + TRIG_COUNT * MOD_COUNT + MAX_CHARGES;
 /// Steps a stat may climb, and what a kit may spend in total. Six over five

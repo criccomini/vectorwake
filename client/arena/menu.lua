@@ -525,6 +525,40 @@ function M.hull_index()
     return math.max(1, math.min(math.max(n, 1), at))
 end
 
+-- Which slots are charges, and how many kinds a kit may carry at once.
+--
+-- Two, and the arena refuses a third, so the page has to as well: a ladder
+-- that goes up and then gets the whole kit rejected on the way into a room is
+-- a page lying about what you will fly.
+local function charge_slot0()
+    return simn("SLOT_CHARGE0",
+                simn("UP_COUNT", 5) + simn("TRIG_COUNT", 2)
+                + simn("TRIG_COUNT", 2) * simn("MOD_COUNT", 7))
+end
+
+local function is_charge(slot)
+    local first = charge_slot0()
+    return slot >= first and slot < first + simn("MAX_CHARGES", 4)
+end
+
+-- Whether raising this slot off zero would be a third kind.
+local function charge_full(slot)
+    if not is_charge(slot) then return false end
+    if (M.kit[slot + 1] or 0) > 0 then return false end
+    local kinds = 0
+    local first = charge_slot0()
+    for k = 0, simn("MAX_CHARGES", 4) - 1 do
+        if (M.kit[first + k + 1] or 0) > 0 then kinds = kinds + 1 end
+    end
+    return kinds >= simn("KIT_CHARGE_SLOTS", 2)
+end
+
+-- Said once, where a press is refused for a reason a pilot cannot see on the
+-- row they pressed.
+local function charge_note()
+    M.note = "two charges at a time: take one off to fit another"
+end
+
 -- Start editing the kit for a hull, from the account where it has one and
 -- from what the ship is already wearing where it does not.
 function M.open_kit(class)
@@ -545,6 +579,25 @@ function M.open_kit(class)
     end
     if trimmed then
         M.note = "some of this build is not yours yet: see the upgrades tab"
+    end
+    -- And down to the two kinds of charge a kit may carry, keeping the first
+    -- two in kind order. A build saved before that rule existed names three,
+    -- and the arena would refuse the whole thing rather than the one slot.
+    do
+        local first = charge_slot0()
+        local kinds, dropped = 0, false
+        for k = 0, simn("MAX_CHARGES", 4) - 1 do
+            if (kit[first + k + 1] or 0) > 0 then
+                kinds = kinds + 1
+                if kinds > simn("KIT_CHARGE_SLOTS", 2) then
+                    kit[first + k + 1] = 0
+                    dropped = true
+                end
+            end
+        end
+        if dropped then
+            M.note = "two charges at a time: this build carried more"
+        end
     end
     -- Nothing saved: what the arena would deal, computed by the same core the
     -- arena deals with, so the hangar and the ship agree before anybody has
@@ -578,6 +631,7 @@ function M.kit_step(slot, by)
     local want = at + by
     if want < 0 or want > (ceiling[slot + 1] or 0) then return false end
     if by > 0 and M.kit_spent() >= simn("KIT_BUDGET", 30) then return false end
+    if by > 0 and charge_full(slot) then charge_note() return false end
     M.kit[slot + 1] = want
     return true
 end
@@ -595,6 +649,7 @@ function M.kit_set(slot, want)
     if not M.kit then return false end
     local ceiling = kit_ceiling()
     local at = M.kit[slot + 1] or 0
+    if want > at and charge_full(slot) then charge_note() return false end
     want = math.max(0, math.min(want, ceiling[slot + 1] or 0))
     if want > at then
         local left = simn("KIT_BUDGET", 30) - M.kit_spent()
@@ -614,6 +669,25 @@ end
 -- spent, so the kit a hull comes back with is the kit it was left with, and
 -- moving the cursor along the roster loads each in turn rather than editing
 -- any of them.
+-- Which key a carried charge lands on: the first kind a kit holds is on the
+-- first charge key, the second on the second, in the order the core numbers
+-- the kinds. Named off the controls list rather than written down here, so a
+-- rebound key says what it actually is.
+local function charge_key(slot)
+    local first = charge_slot0()
+    local nth = 0
+    for k = 0, simn("MAX_CHARGES", 4) - 1 do
+        if (M.kit[first + k + 1] or 0) > 0 then
+            nth = nth + 1
+            if first + k == slot then
+                local chord = binds.chord_of["charge_" .. nth]
+                return chord and keyset.chord(chord) or nil
+            end
+        end
+    end
+    return nil
+end
+
 local function kit_rows(class)
     class = class or M.kit_class or M.class
     if not M.kit or M.kit_class ~= class then M.open_kit(class) end
@@ -694,6 +768,12 @@ local function kit_rows(class)
                 -- still for sale, and the page draws it as a step that is
                 -- there and not yours.
                 owned = max, arena_max = arena_ceiling[s.slot + 1] or max,
+                -- Which key spends this one, for the two charges a kit
+                -- carries. The keys are positions and what sits in each is
+                -- this choice, so the page that makes the choice is where it
+                -- has to be said.
+                on_key = s.group == "charges" and held > 0
+                    and charge_key(s.slot) or nil,
             }
         end
     end
@@ -2072,6 +2152,7 @@ local function view_row(r, i)
         base = r.base,
         zone = r.zone, joinable = r.joinable, acts = r.acts,
         group = r.group, short = r.short, tint_col = r.tint_col,
+        on_key = r.on_key,
         -- The week's own columns.
         rank = r.rank, kills = r.kills, deaths = r.deaths, run = r.run,
         assists = r.assists,

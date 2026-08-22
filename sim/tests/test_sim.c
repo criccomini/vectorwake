@@ -2756,6 +2756,49 @@ int main(void) {
     }
 
     {
+        /* Two kinds of charge and no more, whatever the arena will sell.
+         *
+         * The kit is where a build is decided, and a pilot carrying every
+         * kind at once has decided nothing. Refused here rather than on the
+         * page that draws the ladders, because a rule in a client is a rule
+         * until somebody writes their own. */
+        sim_state s;
+        sim_init(&s, 1);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
+        uint8_t kit[SIM_SLOT_COUNT];
+        memset(kit, 0, sizeof kit);
+        kit[SIM_SLOT_CHARGE(SIM_CHARGE_REPEL)] = 1;
+        kit[SIM_SLOT_CHARGE(SIM_CHARGE_BURST)] = 1;
+        CHECK(sim_set_kit(&s.ships[0], &cfg, kit), "two kinds is a kit");
+        kit[SIM_SLOT_CHARGE(SIM_CHARGE_MINE)] = 1;
+        CHECK(!sim_set_kit(&s.ships[0], &cfg, kit), "three is not");
+        CHECK(s.ships[0].charge[SIM_CHARGE_MINE] == 0,
+              "and the refusal leaves the kit that was already on");
+        /* Swapping one out for another is fine: which two is the choice. */
+        kit[SIM_SLOT_CHARGE(SIM_CHARGE_BURST)] = 0;
+        CHECK(sim_set_kit(&s.ships[0], &cfg, kit),
+              "a repel and a mine is two kinds like any other pair");
+    }
+
+    {
+        /* A starter kit fills the first two kinds the account owns and stops.
+         * It used to fill all four, which is a kit the arena now refuses. */
+        uint8_t ceiling[SIM_SLOT_COUNT];
+        for (int i = 0; i < SIM_SLOT_COUNT; i++) ceiling[i] = 3;
+        uint8_t kit[SIM_SLOT_COUNT];
+        sim_starter_kit(ceiling, kit);
+        int kinds = 0;
+        for (int k = 0; k < SIM_MAX_CHARGES; k++)
+            if (kit[SIM_SLOT_CHARGE(k)]) kinds++;
+        CHECK(kinds == SIM_KIT_CHARGE_SLOTS, "two kinds, dealt");
+        sim_state s;
+        sim_init(&s, 1);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
+        CHECK(sim_set_kit(&s.ships[0], &cfg, kit),
+              "and the arena takes what it dealt");
+    }
+
+    {
         /* An assist: two pilots on the victim, one of them lands the last
          * round, and the other's column says they were there.
          *

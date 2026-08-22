@@ -4584,6 +4584,12 @@ function pages.kit(v, x, y, w, h, focused)
             txt(readout(r.choice or 0), px + 10 * F.scale, cy, 11 * F.scale,
                 pal.a(pal.INK, hot and 0.95 or 0.7))
         end
+        -- Which key spends it, for the two charges a kit carries. The keys
+        -- are positions and what sits in each is this choice, so this is the
+        -- page that has to say which is which.
+        if r.on_key then
+            lbl(r.on_key, kx + kw, cy, pal.a(pal.CHARGE_COL, 0.85), "right")
+        end
         -- And what the next rung costs, on the end of the ladder rather than
         -- in a control of its own.
         --

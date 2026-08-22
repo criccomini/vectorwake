@@ -292,13 +292,24 @@ int sim_starter_kit(const uint8_t *ceiling, uint8_t *out) {
      * a match and the one a pilot notices the absence of immediately. Three
      * of a kind, or the ceiling if the arena is stingier: the mine ceiling is
      * six and spending six points of thirty on mines is a build rather than a
-     * default. */
+     * default.
+     *
+     * The first two kinds the account owns, and no more, because that is what
+     * a kit may hold. In kind order, which means a pilot who has bought
+     * nothing gets the repel and the burst the baseline hands out, and one
+     * who has bought mines finds them on the ship page rather than already
+     * fitted. */
+    int kinds = 0;
     for (int k = 0; k < SIM_MAX_CHARGES && spent < SIM_KIT_BUDGET; k++) {
         uint8_t want = ceiling[SIM_SLOT_CHARGE(k)];
+        if (!want) continue;
+        if (kinds >= SIM_KIT_CHARGE_SLOTS) break;
         if (want > 3) want = 3;
         if (want > SIM_KIT_BUDGET - spent) want = (uint8_t)(SIM_KIT_BUDGET - spent);
+        if (!want) continue;
         out[SIM_SLOT_CHARGE(k)] = want;
         spent += want;
+        kinds++;
     }
 
     /* And the rest over the stats, a step at a time round the five of them,
@@ -325,6 +336,15 @@ int sim_set_kit(sim_ship *sh, const sim_settings *cfg, const uint8_t *kit) {
         cost += kit[i];
     }
     if (cost > SIM_KIT_BUDGET) return 0;
+    /* Two kinds of charge, whatever the pilot owns. The rule lives here
+     * rather than in the page that draws the ladders, because a rule in a
+     * client is a rule until somebody writes their own. */
+    {
+        int kinds = 0;
+        for (int k = 0; k < SIM_MAX_CHARGES; k++)
+            if (kit[SIM_SLOT_CHARGE(k)]) kinds++;
+        if (kinds > SIM_KIT_CHARGE_SLOTS) return 0;
+    }
     memcpy(sh->kit, kit, SIM_SLOT_COUNT);
     sim_deal_kit(sh, cfg, 1);
     return 1;

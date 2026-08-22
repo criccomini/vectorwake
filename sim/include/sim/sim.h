@@ -272,6 +272,21 @@ typedef enum {
 #define SIM_CHARGE_MINE 2
 #define SIM_CHARGE_MAX 15  /* how many of one kind a pilot can hold */
 
+/* How many kinds a pilot may carry at once, whatever they own.
+ *
+ * Two, and it is a rule of the game rather than a fact about a keyboard: the
+ * kit is where a build is decided, and a pilot who could carry every kind at
+ * once would be deciding nothing. Which two is the choice, and the arena
+ * refuses a kit that names a third, so the ship page cannot offer one and no
+ * client can send one.
+ *
+ * The two are bound to Q and W in kind order, so a pilot who carries a repel
+ * and a mine has the repel on Q, and a pilot who carries a burst and a mine
+ * has the burst there. That is the whole of the binding: there is no key for
+ * a mine and never was one worth having, since what a key spends is a slot
+ * and what a slot holds is a choice. */
+#define SIM_KIT_CHARGE_SLOTS 2
+
 /* The slot field in the buttons and the number of charge kinds are two halves
  * of one fact. Raising SIM_MAX_CHARGES without widening the field would leave
  * the top slots quietly unreachable, so say it here and fail to compile
