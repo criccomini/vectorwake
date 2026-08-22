@@ -36,6 +36,9 @@ tools/pilot/libvwprobe.so
 
 # The identity a running arena writes for itself, per host, not per repo.
 zone/instance-id
+# An arena writes one beside itself, so a server run from the repository root
+# leaves one here too.
+/instance-id
 
 # The browser bundle. Built and published by CI as an image
 # (.github/workflows/client.yml), not committed: it was 5 MB of git history per
