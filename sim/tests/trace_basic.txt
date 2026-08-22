@@ -5,8 +5,14 @@
 # Ship 0 (Apex) sits at 400,400 facing up. Ship 1 (Anvil) sits 20 tiles
 # above it facing down. They are in each other's line of fire from tick 0,
 # so the exchange lands hits and at least one kill before anybody moves.
+#
+# Ship 2 stands two hundred tiles away, out of everybody's reach, and does
+# nothing until the end. It is here for the ramp: the last lines fly it into a
+# 45 degree face, which is the one thing in the trace that turns a velocity
+# rather than reversing it.
 ship 0 0 0 400 400 0
 ship 1 3 1 400 380 32768
+ship 2 0 0 600 598 32768
 # the exchange: Apex guns against Anvil bombs
 600 16 32
 400 16 0
@@ -31,3 +37,6 @@ ship 1 3 1 400 380 32768
 2000 4 0
 1500 6 16
 2000 0 0
+# ship 2 drops onto the ramp and is turned along it
+400 0 0 4
+1200 0 0 0

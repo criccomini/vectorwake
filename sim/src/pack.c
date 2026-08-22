@@ -743,36 +743,68 @@ int sim_settings_unpack(sim_settings *out, const uint8_t *in, int len) {
 /* ---- maps ---- */
 
 #define MAP_MAGIC 0x564d4150u /* "VMAP" */
-#define MAP_VERSION 1
+/* Version 2 carries the map's size. Version 1 was always a thousand tiles
+ * square and there is no reading one as the other, which is the whole reason
+ * the version byte is here. */
+#define MAP_VERSION 2
+#define MAP_HEADER 12
 
+/* The tiles a map actually has, row by row, which is not the array they sit
+ * in. The size goes in first so two maps with the same drawing at different
+ * sizes cannot hash alike. */
 uint32_t sim_map_hash(const sim_map *m) {
     uint32_t h = 2166136261u;
-    for (size_t i = 0; i < sizeof m->tile; i++) {
-        h ^= m->tile[i];
+    uint8_t dim[4] = {(uint8_t)(m->w & 0xff), (uint8_t)(m->w >> 8),
+                      (uint8_t)(m->h & 0xff), (uint8_t)(m->h >> 8)};
+    for (int b = 0; b < 4; b++) {
+        h ^= dim[b];
         h *= 16777619u;
     }
+    for (uint32_t ty = 0; ty < m->h; ty++)
+        for (uint32_t tx = 0; tx < m->w; tx++) {
+            h ^= SIM_MAP_AT(m, tx, ty);
+            h *= 16777619u;
+        }
     return h;
+}
+
+/* A size the reader will accept: inside the array, and big enough to hold the
+ * boundary the index paints with something left over. */
+static int map_dim_ok(uint32_t w, uint32_t h) {
+    return w >= 9 && h >= 9 && w <= SIM_MAP_TILES && h <= SIM_MAP_TILES;
 }
 
 int sim_map_pack(const sim_map *m, uint8_t *out, int cap) {
     if (!m || !out || cap < 0) return -1;
-    if (cap < 12) return -1;
+    if (cap < MAP_HEADER) return -1;
+    if (!map_dim_ok(m->w, m->h)) return -1;
     int n = 0;
     uint32_t magic = MAP_MAGIC;
     for (int b = 0; b < 4; b++) out[n++] = (uint8_t)(magic >> (b * 8));
     out[n++] = MAP_VERSION;
     out[n++] = 0; /* reserved */
+    out[n++] = (uint8_t)(m->w & 0xff);
+    out[n++] = (uint8_t)(m->w >> 8);
+    out[n++] = (uint8_t)(m->h & 0xff);
+    out[n++] = (uint8_t)(m->h >> 8);
     uint32_t h = sim_map_hash(m);
     for (int b = 0; b < 4; b++) out[n++] = (uint8_t)(h >> (b * 8));
 
-    size_t total = sizeof m->tile;
+    /* Run length over the map's own tiles, read in row order. The array's
+     * stride is not in the file: a 144-tile map that carried it would spend
+     * every row saying "and then eight hundred and eighty tiles of nothing",
+     * and be a different file at a different stride. */
+    size_t total = (size_t)m->w * (size_t)m->h;
     size_t i = 0;
     while (i < total) {
-        uint8_t v = m->tile[i];
+        uint8_t v = SIM_MAP_AT(m, i % m->w, i / m->w);
         size_t run = 1;
-        /* 65535 is the longest a run can say, and an empty map is one tile
-         * short of 1048576 of them, so long runs simply repeat. */
-        while (i + run < total && m->tile[i + run] == v && run < 65535) run++;
+        /* 65535 is the longest a run can say, and a full empty map is more
+         * tiles than that, so long runs simply repeat. */
+        while (i + run < total
+               && SIM_MAP_AT(m, (i + run) % m->w, (i + run) / m->w) == v
+               && run < 65535)
+            run++;
         if (n + 3 > cap) return -1;
         out[n++] = (uint8_t)(run & 0xff);
         out[n++] = (uint8_t)(run >> 8);
@@ -784,25 +816,30 @@ int sim_map_pack(const sim_map *m, uint8_t *out, int cap) {
 
 int sim_map_unpack(sim_map *m, const uint8_t *in, int len) {
     if (!m || !in || len < 0) return -1;
-    if (len < 12) return -1;
+    if (len < MAP_HEADER) return -1;
     int n = 0;
     uint32_t magic = 0;
     for (int b = 0; b < 4; b++) magic |= (uint32_t)in[n++] << (b * 8);
     if (magic != MAP_MAGIC) return -1;
     if (in[n++] != MAP_VERSION) return -1;
     if (in[n++] != 0) return -1;
+    uint32_t w = (uint32_t)in[n] | ((uint32_t)in[n + 1] << 8);
+    uint32_t h = (uint32_t)in[n + 2] | ((uint32_t)in[n + 3] << 8);
+    n += 4;
+    if (!map_dim_ok(w, h)) return -1;
     uint32_t want = 0;
     for (int b = 0; b < 4; b++) want |= (uint32_t)in[n++] << (b * 8);
 
-    size_t total = sizeof m->tile;
+    sim_map_size(m, (int)w, (int)h);
+    size_t total = (size_t)w * (size_t)h;
     size_t i = 0;
     while (n + 3 <= len && i < total) {
         size_t run = (size_t)in[n] | ((size_t)in[n + 1] << 8);
         uint8_t v = in[n + 2];
         n += 3;
         if (run == 0 || i + run > total) return -1;
-        memset(m->tile + i, v, run);
-        i += run;
+        for (size_t k = 0; k < run; k++, i++)
+            SIM_MAP_AT(m, i % w, i / w) = v;
     }
     /* A map that stops early is a truncated map, not an empty tail. */
     if (i != total) return -1;

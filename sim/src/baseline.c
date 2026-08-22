@@ -684,25 +684,45 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
 #define BORDER_TILES 4
 #define VARIANT_BORDER 1
 
+/* The ring goes round the map's own rect, so a 144-tile room is walled at 144
+ * rather than a thousand tiles away with a field of nothing in between. */
 static void enclose(sim_map *m) {
-    const int LAST = SIM_MAP_TILES - 1;
+    const int lastx = (int)m->w - 1, lasty = (int)m->h - 1;
     uint8_t t = SIM_TILE(SIM_TILE_SOLID, VARIANT_BORDER);
     for (int i = 0; i < BORDER_TILES; i++) {
-        for (int k = 0; k <= LAST; k++) {
-            m->tile[(size_t)i * SIM_MAP_TILES + (size_t)k] = t;
-            m->tile[(size_t)(LAST - i) * SIM_MAP_TILES + (size_t)k] = t;
-            m->tile[(size_t)k * SIM_MAP_TILES + (size_t)i] = t;
-            m->tile[(size_t)k * SIM_MAP_TILES + (size_t)(LAST - i)] = t;
+        for (int k = 0; k < (int)m->w; k++) {
+            SIM_MAP_AT(m, k, i) = t;
+            SIM_MAP_AT(m, k, lasty - i) = t;
+        }
+        for (int k = 0; k < (int)m->h; k++) {
+            SIM_MAP_AT(m, i, k) = t;
+            SIM_MAP_AT(m, lastx - i, k) = t;
         }
     }
+}
+
+/* A map with no size has no inside, and every caller that draws one has to say
+ * how big it is before drawing. Refusing anything the boundary would swallow
+ * whole is the one bound worth checking here: below it the ring drawn above
+ * meets itself and there is nowhere to stand. */
+void sim_map_size(sim_map *m, int w, int h) {
+    if (w > SIM_MAP_TILES) w = SIM_MAP_TILES;
+    if (h > SIM_MAP_TILES) h = SIM_MAP_TILES;
+    if (w < BORDER_TILES * 2 + 1) w = BORDER_TILES * 2 + 1;
+    if (h < BORDER_TILES * 2 + 1) h = BORDER_TILES * 2 + 1;
+    m->w = (uint16_t)w;
+    m->h = (uint16_t)h;
+    for (int ty = 0; ty < h; ty++)
+        for (int tx = 0; tx < w; tx++) SIM_MAP_AT(m, tx, ty) = SIM_TILE_EMPTY;
+    m->feature_count = 0;
 }
 
 void sim_map_index(sim_map *m) {
     enclose(m);
     m->feature_count = 0;
-    for (int ty = 0; ty < SIM_MAP_TILES; ty++) {
-        for (int tx = 0; tx < SIM_MAP_TILES; tx++) {
-            uint8_t t = m->tile[(size_t)ty * SIM_MAP_TILES + (size_t)tx];
+    for (int ty = 0; ty < (int)m->h; ty++) {
+        for (int tx = 0; tx < (int)m->w; tx++) {
+            uint8_t t = SIM_MAP_AT(m, tx, ty);
             int cls = SIM_TILE_CLASS(t);
             if (cls != SIM_TILE_WORMHOLE && cls != SIM_TILE_GOAL
                 && cls != SIM_TILE_TURF && cls != SIM_TILE_SPAWN)
@@ -745,8 +765,7 @@ int sim_map_spawn(const sim_map *m, uint8_t team, uint32_t nth,
 
 static void fill(sim_map *m, int x0, int y0, int x1, int y1, uint8_t t) {
     for (int ty = y0; ty <= y1; ty++)
-        for (int tx = x0; tx <= x1; tx++)
-            m->tile[(size_t)ty * SIM_MAP_TILES + (size_t)tx] = t;
+        for (int tx = x0; tx <= x1; tx++) SIM_MAP_AT(m, tx, ty) = t;
 }
 
 /* A deterministic per-cell variant. Pure unsigned arithmetic, because this
@@ -789,7 +808,7 @@ static uint32_t cell_hash(uint32_t cx, uint32_t cy) {
  * a shot. A map this size can hold one now; placing it is a map-editor
  * decision rather than a C-file one. */
 void sim_map_arena(sim_map *m) {
-    memset(m->tile, SIM_TILE_EMPTY, sizeof m->tile);
+    sim_map_size(m, SIM_MAP_TILES, SIM_MAP_TILES);
 
     /* The boundary is not built here any more. `sim_map_index` closes every
      * map, this one included, with the same four tiles this used to fill. */
@@ -903,7 +922,10 @@ void sim_map_arena(sim_map *m) {
  * until duels were taken out; see docs/design/duel-mode.md. */
 void sim_map_pit(sim_map *m) {
     const int LO = 496, HI = 528;
-    memset(m->tile, SIM_TILE_EMPTY, sizeof m->tile);
+    /* Left at the full square, and drawn where it always was. It is the only
+     * room the offline ladder measures against, so moving its walls would put
+     * every number ever recorded on a different map. */
+    sim_map_size(m, SIM_MAP_TILES, SIM_MAP_TILES);
     fill(m, LO, LO, HI, LO + 1, SIM_TILE_SOLID);
     fill(m, LO, HI - 1, HI, HI, SIM_TILE_SOLID);
     fill(m, LO, LO, LO + 1, HI, SIM_TILE_SOLID);

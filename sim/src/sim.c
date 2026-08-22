@@ -336,6 +336,7 @@ uint32_t sim_sizeof_state(void) { return (uint32_t)sizeof(sim_state); }
 uint32_t sim_sizeof_settings(void) { return (uint32_t)sizeof(sim_settings); }
 uint32_t sim_sizeof_ship(void) { return (uint32_t)sizeof(sim_ship); }
 uint32_t sim_sizeof_events(void) { return (uint32_t)sizeof(sim_events); }
+uint32_t sim_sizeof_map(void) { return (uint32_t)sizeof(sim_map); }
 
 int sim_spawn(sim_state *s, uint8_t cls, uint8_t team, int32_t x_px,
               int32_t y_px, uint16_t heading, const sim_settings *cfg) {
@@ -375,10 +376,14 @@ int sim_spawn(sim_state *s, uint8_t cls, uint8_t team, int32_t x_px,
  * ship grinding along a wall does not fire a sound effect every tick. */
 #define SIM_IMPACT_MIN 32768       /* Q16: 1/2 px per tick */
 
+/* Outside the map is wall, and outside is decided by the map's own size rather
+ * than by the array's. A map that never set one has no inside at all, which is
+ * a loud failure and the right one: the alternative is a zeroed struct reading
+ * as a thousand tiles of open space with no walls anywhere in it. */
 uint8_t sim_tile_at(const sim_map *m, int32_t tx, int32_t ty) {
-    if (tx < 0 || ty < 0 || tx >= SIM_MAP_TILES || ty >= SIM_MAP_TILES)
+    if (tx < 0 || ty < 0 || tx >= (int32_t)m->w || ty >= (int32_t)m->h)
         return SIM_TILE_SOLID;
-    return m->tile[(size_t)ty * SIM_MAP_TILES + (size_t)tx];
+    return SIM_MAP_AT(m, tx, ty);
 }
 
 /* A door's variant is its phase, an eighth of the cycle apart, so a map with
@@ -401,6 +406,78 @@ static int solid(const sim_map *m, const sim_settings *cfg, uint32_t tick,
     }
 }
 
+/* ---- slopes ----
+ *
+ * A slope is half a tile, cut corner to corner, and the half that is solid is
+ * named by the variant. Everything below works in tile-local Q8 and never
+ * needs the angle: at 45 degrees the face is `u + v = S` or `u = v`, so the
+ * deepest point of an axis-aligned box is one of its own corners and the
+ * distance to the face is a subtraction.
+ *
+ * `sx, sy` is the way out, one of the four diagonals, which doubles as the
+ * face's normal for the reflection that follows.
+ *
+ * The depth is measured along the axes rather than along the normal, which is
+ * the same number scaled by root two and avoids the root: pushing half of it
+ * along each axis lands exactly on the face, so the caller pushes half of it
+ * plus one and lands just outside. */
+static int slope_hit(uint8_t variant, int32_t a, int32_t b, int32_t c,
+                     int32_t d, int32_t *depth, int32_t *sx, int32_t *sy) {
+    const int32_t S = SIM_TILE_PX * 256;
+    int32_t deep;
+    switch (variant & 3) {
+        case SIM_SLOPE_NW: deep = S - a - c; *sx = 1;  *sy = 1;  break;
+        case SIM_SLOPE_NE: deep = b - c;     *sx = -1; *sy = 1;  break;
+        case SIM_SLOPE_SE: deep = b + d - S; *sx = -1; *sy = -1; break;
+        default:           deep = d - a;     *sx = 1;  *sy = -1; break;
+    }
+    *depth = deep;
+    return deep > 0;
+}
+
+/* Whether a slope's face lies along the NE-SW diagonal rather than the NW-SE
+ * one. The two reflect differently and nothing else tells them apart. */
+static int slope_anti(uint8_t variant) {
+    return (variant & 3) == SIM_SLOPE_NW || (variant & 3) == SIM_SLOPE_SE;
+}
+
+/* The deepest slope a box reaches into, if any.
+ *
+ * Deepest rather than first because a box crossing a run of them covers two or
+ * three at once, and the one it is furthest inside is the one holding it up.
+ * Along a straight run they share a face, so freeing it from that one frees it
+ * from the rest; where they do not, the next tick sees what is left. */
+static int box_slope(const sim_map *m, int32_t x, int32_t y, int32_t rx,
+                     int32_t ry, int32_t *depth, int32_t *sx, int32_t *sy,
+                     int *anti) {
+    int32_t x0 = x - rx, x1 = x + rx, y0 = y - ry, y1 = y + ry;
+    int32_t tx0 = x0 >> 12, tx1 = x1 >> 12;
+    int32_t ty0 = y0 >> 12, ty1 = y1 >> 12;
+    int found = 0;
+    *depth = 0;
+    for (int32_t ty = ty0; ty <= ty1; ty++)
+        for (int32_t tx = tx0; tx <= tx1; tx++) {
+            uint8_t t = sim_tile_at(m, tx, ty);
+            if (SIM_TILE_CLASS(t) != SIM_TILE_SLOPE) continue;
+            int32_t ox = tx * (SIM_TILE_PX * 256), oy = ty * (SIM_TILE_PX * 256);
+            int32_t a = x0 > ox ? x0 - ox : 0;
+            int32_t b = x1 - ox, c = y0 > oy ? y0 - oy : 0, d = y1 - oy;
+            const int32_t S = SIM_TILE_PX * 256;
+            if (b > S) b = S;
+            if (d > S) d = S;
+            int32_t deep, px, py;
+            if (!slope_hit(SIM_TILE_VARIANT(t), a, b, c, d, &deep, &px, &py))
+                continue;
+            if (found && deep <= *depth) continue;
+            found = 1;
+            *depth = deep;
+            *sx = px;
+            *sy = py;
+            *anti = slope_anti(SIM_TILE_VARIANT(t));
+        }
+    return found;
+}
+
 /* Whether a tile is ground: somewhere a thing may be left lying and still be
  * there, and reachable, later.
  *
@@ -413,10 +490,17 @@ static int solid(const sim_map *m, const sim_settings *cfg, uint32_t tick,
  *
  * A hull's own center is never inside a wall, so the door is the whole of what
  * this catches today. It is written against the tile rather than against the
- * door because the property wanted is "the map will not close over this". */
+ * door because the property wanted is "the map will not close over this".
+ *
+ * A slope is half solid, and which half depends on where in the tile the thing
+ * is standing. That is worth asking of something moving through and not of
+ * something staying put: a green resting in the open half of a slope tile is
+ * drawn against the wall as far as any pilot can tell, so the whole tile is
+ * off the list. */
 static int ground(const sim_map *m, int32_t tx, int32_t ty) {
     switch (SIM_TILE_CLASS(sim_tile_at(m, tx, ty))) {
         case SIM_TILE_SOLID:
+        case SIM_TILE_SLOPE:
         case SIM_TILE_DOOR: return 0;
         default: return 1;
     }
@@ -478,14 +562,29 @@ static int box_shut_door(const sim_map *m, const sim_settings *cfg,
     return 0;
 }
 
-static int box_hits(const sim_map *m, const sim_settings *cfg, uint32_t tick,
-                    int32_t x, int32_t y, int32_t rx, int32_t ry) {
+/* Square wall under this box: the question the axis clamps ask, because the
+ * answer they give is "flush against the tile you hit". A slope is deliberately
+ * not one. Clamping to its tile would stop a ship at the edge of a tile that is
+ * half open, which is the staircase the slope exists to get rid of. */
+static int box_walls(const sim_map *m, const sim_settings *cfg, uint32_t tick,
+                     int32_t x, int32_t y, int32_t rx, int32_t ry) {
     int32_t tx0 = (x - rx) >> 12, tx1 = (x + rx) >> 12;
     int32_t ty0 = (y - ry) >> 12, ty1 = (y + ry) >> 12;
     for (int32_t ty = ty0; ty <= ty1; ty++)
         for (int32_t tx = tx0; tx <= tx1; tx++)
             if (solid(m, cfg, tick, tx, ty)) return 1;
     return 0;
+}
+
+/* Anywhere a hull may not be: a wall, a shut door, or the solid half of a
+ * slope. This is the honest "can something be here", and what everything asks
+ * except the two axis clamps. */
+static int box_hits(const sim_map *m, const sim_settings *cfg, uint32_t tick,
+                    int32_t x, int32_t y, int32_t rx, int32_t ry) {
+    if (box_walls(m, cfg, tick, x, y, rx, ry)) return 1;
+    int32_t depth, sx, sy;
+    int anti;
+    return box_slope(m, x, y, rx, ry, &depth, &sx, &sy, &anti);
 }
 
 /* The world-axis box a hull stands in at a heading: the tight bounding box of
@@ -582,7 +681,7 @@ static void pick_spawn(const sim_settings *cfg, uint32_t *rng, uint32_t tick,
      * map happens to have at the origin, and with a radius set it is also the
      * arrangement the original had before it had spawn points: everybody
      * around the center. */
-    int32_t cx = SIM_MAP_TILES / 2, cy = SIM_MAP_TILES / 2;
+    int32_t cx = cfg->map->w / 2, cy = cfg->map->h / 2;
     uint16_t mx = 0, my = 0;
     if (sim_map_spawn(cfg->map, team, nth, &mx, &my)) { cx = mx; cy = my; }
 
@@ -611,8 +710,10 @@ static void pick_spawn(const sim_settings *cfg, uint32_t *rng, uint32_t tick,
          * 1024 was. Clamped inside the border the index paints rather than
          * rejected, so a point near a corner still spreads instead of throwing
          * away every draw that lands outside. */
-        if (tx < 1) tx = 1; else if (tx > SIM_MAP_TILES - 2) tx = SIM_MAP_TILES - 2;
-        if (ty < 1) ty = 1; else if (ty > SIM_MAP_TILES - 2) ty = SIM_MAP_TILES - 2;
+        if (tx < 1) tx = 1;
+        else if (tx > (int32_t)cfg->map->w - 2) tx = (int32_t)cfg->map->w - 2;
+        if (ty < 1) ty = 1;
+        else if (ty > (int32_t)cfg->map->h - 2) ty = (int32_t)cfg->map->h - 2;
         int32_t px = tile_mid(tx), py = tile_mid(ty);
         if (!box_hits(cfg->map, cfg, tick, px + ox, py + oy, hx, hy)) {
             *x = px;
@@ -1963,7 +2064,7 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
             int32_t south = oy + hy, north = hy - oy;
 
             int32_t nx = sh->x + sh->vx / 256;
-            if (box_hits(m, cfg, next->tick, nx + ox, sh->y + oy, hx, hy)) {
+            if (box_walls(m, cfg, next->tick, nx + ox, sh->y + oy, hx, hy)) {
                 if (sh->vx > 0)
                     nx = tile_floor(sh->x + east) + 4096 - east - 1;
                 else if (sh->vx < 0)
@@ -1982,7 +2083,7 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
             sh->x = nx;
 
             int32_t ny = sh->y + sh->vy / 256;
-            if (box_hits(m, cfg, next->tick, sh->x + ox, ny + oy, hx, hy)) {
+            if (box_walls(m, cfg, next->tick, sh->x + ox, ny + oy, hx, hy)) {
                 if (sh->vy > 0)
                     ny = tile_floor(sh->y + south) + 4096 - south - 1;
                 else if (sh->vy < 0)
@@ -1997,6 +2098,56 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
                     emit(ev, SIM_EV_BOUNCE, (uint8_t)i, 0, impact);
             }
             sh->y = ny;
+
+            /* 5c. Slopes deflect, which is a different move from the clamps
+             * above and has to come after them.
+             *
+             * A wall answers per axis, so a ship hitting one keeps whatever it
+             * had along the wall and loses the rest. A 45 degree face has no
+             * axis to lose: the whole velocity turns. Splitting it into the
+             * part along the face and the part into it and rebuilding is two
+             * halves and two shifts, exact in fixed point, and the reason the
+             * slope is 45 degrees rather than any angle a map author fancies.
+             *
+             * The push is out along the face's own normal, half the depth on
+             * each axis, so a hull leaning into a diagonal is set down on it
+             * rather than shoved sideways to a tile edge. */
+            {
+                int32_t depth, sx, sy;
+                int anti;
+                if (box_slope(m, sh->x + ox, sh->y + oy, hx, hy, &depth, &sx,
+                              &sy, &anti)) {
+                    int32_t p = depth / 2 + 1;
+                    int32_t px = sh->x + sx * p, py = sh->y + sy * p;
+                    /* A slope in a slot no wider than a hull can push it into
+                     * the wall behind. Better to leave the ship on the face
+                     * than to bury it in something the clamps cannot undo. */
+                    if (!box_walls(m, cfg, next->tick, px + ox, py + oy, hx, hy)) {
+                        sh->x = px;
+                        sh->y = py;
+                    }
+
+                    int64_t into = (int64_t)sx * sh->vx + (int64_t)sy * sh->vy;
+                    if (into < 0) {
+                        int32_t impact = (int32_t)((into < 0 ? -into : into) / 2);
+                        /* Along the face and into it. Which is which is the
+                         * only thing the two diagonals disagree about. */
+                        int32_t s = (sh->vx + sh->vy) / 2;
+                        int32_t t = (sh->vx - sh->vy) / 2;
+                        int32_t n = anti ? s : t;
+                        int32_t g = anti ? t : s;
+                        n = (int32_t)(-(int64_t)n * cfg->bounce / 16);
+                        g = (int32_t)((int64_t)g * cfg->friction / 16);
+                        if (n < SIM_REST_EPS && n > -SIM_REST_EPS) n = 0;
+                        s = anti ? n : g;
+                        t = anti ? g : n;
+                        sh->vx = s + t;
+                        sh->vy = s - t;
+                        if (impact >= SIM_IMPACT_MIN)
+                            emit(ev, SIM_EV_BOUNCE, (uint8_t)i, 0, impact);
+                    }
+                }
+            }
         }
 
         {
@@ -2152,13 +2303,28 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
                 && box_hits(cfg->map, cfg, next->tick, w->x, w->y, 0, 0)) {
                 if (spec->on_wall == SIM_WALL_BOUNCE && w->left > 0) {
                     w->left--;
-                    if (box_hits(cfg->map, cfg, next->tick, w->x, py, 0, 0)) {
-                        w->vx = -w->vx;
+                    int32_t depth, sxq, syq;
+                    int anti;
+                    if (box_slope(cfg->map, w->x, w->y, 0, 0, &depth, &sxq,
+                                  &syq, &anti)) {
+                        /* A 45 degree face turns a round rather than sending
+                         * it back the way it came. Per axis it would reverse
+                         * both and fly home, which is what a corner does and
+                         * not what a diagonal does. */
+                        int32_t vx = w->vx, vy = w->vy;
+                        w->vx = anti ? -vy : vy;
+                        w->vy = anti ? -vx : vx;
                         w->x = px;
-                    }
-                    if (box_hits(cfg->map, cfg, next->tick, px, w->y, 0, 0)) {
-                        w->vy = -w->vy;
                         w->y = py;
+                    } else {
+                        if (box_hits(cfg->map, cfg, next->tick, w->x, py, 0, 0)) {
+                            w->vx = -w->vx;
+                            w->x = px;
+                        }
+                        if (box_hits(cfg->map, cfg, next->tick, px, w->y, 0, 0)) {
+                            w->vy = -w->vy;
+                            w->y = py;
+                        }
                     }
                     emit(ev, SIM_EV_RICOCHET, w->owner, w->spec,
                          pack_pos(w->x, w->y, w->level));
