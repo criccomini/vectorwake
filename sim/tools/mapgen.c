@@ -52,14 +52,19 @@ static int chance(int percent) { return (int)(rnd() % 100u) < percent; }
 
 /* ---- the canvas --------------------------------------------------------- */
 
-static uint8_t *T; /* TILES*TILES, the map under construction */
+static uint8_t *T; /* the map under construction, at the array's own stride */
+
+/* How much of that array this map is. The array is always the full square, so
+ * indexing never changes; these two say where the map stops, and everything
+ * past them is wall a pilot never reaches. */
+static int MW = TILES, MH = TILES;
 
 static uint8_t get(int x, int y) {
-    if (x < 0 || y < 0 || x >= TILES || y >= TILES) return SIM_TILE_SOLID;
+    if (x < 0 || y < 0 || x >= MW || y >= MH) return SIM_TILE_SOLID;
     return T[(size_t)y * TILES + x];
 }
 static void put(int x, int y, uint8_t t) {
-    if (x < EDGE || y < EDGE || x >= TILES - EDGE || y >= TILES - EDGE) return;
+    if (x < EDGE || y < EDGE || x >= MW - EDGE || y >= MH - EDGE) return;
     T[(size_t)y * TILES + x] = t;
 }
 static void hline(int x0, int x1, int y, uint8_t t) {
@@ -803,7 +808,10 @@ static uint8_t *nav;  /* 1 where a hull's center fits */
  * safe tiles of a berth and the wormhole. */
 static int blocks(uint8_t t, int shut) {
     uint8_t c = SIM_TILE_CLASS(t);
-    return c == SIM_TILE_SOLID || (shut && c == SIM_TILE_DOOR);
+    /* A slope counts whole, though it is half a tile. Every check below asks
+     * whether a map can be flown, and answering that generously is how a map
+     * ships with somewhere a hull cannot actually get to. */
+    return c == SIM_TILE_SOLID || c == SIM_TILE_SLOPE || (shut && c == SIM_TILE_DOOR);
 }
 
 /* Mark where a hull fits. `shut` counts every door as closed, which is the
@@ -1236,15 +1244,22 @@ static void draw_slipway(void) {
 static int generate_match(sim_map *m, uint32_t s, match_layout layout, int quiet) {
     seed(s);
     T = m->tile;
-    memset(m, 0, sizeof *m);
-    for (size_t i = 0; i < (size_t)TILES * TILES; i++) T[i] = SIM_TILE_SOLID;
+    /* Solid everywhere first, so the passes below read wall rather than
+     * whatever the caller's buffer happened to hold outside the map. */
+    memset(T, SIM_TILE_SOLID, (size_t)TILES * TILES);
 
-    arena_lo = (TILES - ARENA) / 2;
+    /* A match map is its arena and the wall around it, and nothing else. It
+     * used to be this arena drawn as a hole in the middle of a thousand tiles
+     * of solid, which every pass over the map then had to walk. */
+    MW = MH = ARENA + 2 * EDGE;
+    sim_map_size(m, MW, MH);
+    arena_lo = EDGE;
     arena_hi = arena_lo + ARENA - 1;
-    arena_cx = arena_cy = TILES / 2;
-    for (int y = arena_lo; y <= arena_hi; y++)
-        for (int x = arena_lo; x <= arena_hi; x++)
-            T[(size_t)y * TILES + x] = SIM_TILE_EMPTY;
+    arena_cx = arena_cy = MW / 2;
+    for (int y = 0; y < MH; y++)
+        for (int x = 0; x < MW; x++)
+            if (x < arena_lo || y < arena_lo || x > arena_hi || y > arena_hi)
+                T[(size_t)y * TILES + x] = SIM_TILE_SOLID;
 
     if (layout == LAYOUT_DRYDOCK) {
         pocket_x = arena_cx;
@@ -1338,7 +1353,10 @@ static int generate_match(sim_map *m, uint32_t s, match_layout layout, int quiet
 static int generate(sim_map *m, uint32_t s, int quiet) {
     seed(s);
     T = m->tile;
-    memset(T, SIM_TILE_EMPTY, (size_t)TILES * TILES);
+    /* The open arena is the whole square, which is the size it was drawn for
+     * and the size the original's maps were. */
+    MW = MH = TILES;
+    sim_map_size(m, MW, MH);
 
     /* Landmarks first, while there is room for them. Placed by hand in a
      * loose ring rather than at random, because four big rooms that land in
@@ -1548,6 +1566,12 @@ int main(int argc, char **argv) {
         s = argc > 2 ? (uint32_t)strtoul(argv[2], NULL, 10) : 1u;
         if (generate(m, s, 0) != 0) return 1;
     }
+
+    /* Index last, so the count below is the map being written rather than the
+     * map as it stood before the spawns went in. Nothing downstream depended
+     * on it, since a map is indexed again when it arrives, but a tool that
+     * reports eight spawns and no features is a tool arguing with itself. */
+    sim_map_index(m);
 
     uint8_t *buf = malloc(SIM_MAP_PACK_MAX);
     if (!buf) return 1;
