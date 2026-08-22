@@ -96,12 +96,12 @@ static void check_state_invariants(const sim_state *s, const sim_settings *cfg) 
 
 static sim_map *walled_map(void) {
     sim_map *m = malloc(sizeof *m);
-    memset(m->tile, SIM_TILE_EMPTY, sizeof m->tile);
+    sim_map_size(m, SIM_MAP_TILES, SIM_MAP_TILES);
     for (int i = 0; i < SIM_MAP_TILES; i++) {
-        m->tile[i] = SIM_TILE_SOLID;
-        m->tile[(size_t)(SIM_MAP_TILES - 1) * SIM_MAP_TILES + i] = SIM_TILE_SOLID;
-        m->tile[(size_t)i * SIM_MAP_TILES] = SIM_TILE_SOLID;
-        m->tile[(size_t)i * SIM_MAP_TILES + SIM_MAP_TILES - 1] = SIM_TILE_SOLID;
+        SIM_MAP_AT(m, i, 0) = SIM_TILE_SOLID;
+        SIM_MAP_AT(m, i, SIM_MAP_TILES - 1) = SIM_TILE_SOLID;
+        SIM_MAP_AT(m, 0, i) = SIM_TILE_SOLID;
+        SIM_MAP_AT(m, SIM_MAP_TILES - 1, i) = SIM_TILE_SOLID;
     }
     sim_map_index(m);
     return m;
@@ -1007,7 +1007,7 @@ int main(void) {
 
         /* A map with no starts says so rather than inventing one. */
         sim_map *bare = malloc(sizeof *bare);
-        memset(bare->tile, SIM_TILE_EMPTY, sizeof bare->tile);
+        sim_map_size(bare, SIM_MAP_TILES, SIM_MAP_TILES);
         sim_map_index(bare);
         CHECK(!sim_map_spawn(bare, 0, 0, &tx, &ty),
               "a map with no starts reports none");
@@ -1053,6 +1053,11 @@ int main(void) {
         /* Truncation is not an empty tail. */
         CHECK(sim_map_unpack(dst, buf, n - 3) == -1, "a short map is rejected");
         CHECK(sim_map_unpack(dst, buf, 4) == -1, "a stub is rejected");
+        /* Every length short of a whole header, since the size is read out of
+         * the header and a bound two bytes light reads it off the end. */
+        for (int k = 0; k < 14; k++)
+            CHECK(sim_map_unpack(dst, buf, k) == -1,
+                  "nothing shorter than a header is a map");
 
         buf[n] = 0x5a;
         CHECK(sim_map_unpack(dst, buf, n + 1) == -1,
@@ -1069,7 +1074,7 @@ int main(void) {
     {
         const int LAST = SIM_MAP_TILES - 1;
         sim_map *open = malloc(sizeof *open);
-        memset(open->tile, SIM_TILE_EMPTY, sizeof open->tile);
+        sim_map_size(open, SIM_MAP_TILES, SIM_MAP_TILES);
         sim_map_index(open);
 
         CHECK(SIM_TILE_CLASS(sim_tile_at(open, 0, 512)) == SIM_TILE_SOLID
@@ -1109,6 +1114,212 @@ int main(void) {
         CHECK(SIM_TILE_CLASS(sim_tile_at(back, 0, 512)) == SIM_TILE_SOLID,
               "and is still closed at the far end");
         free(ob); free(back); free(open);
+    }
+
+    /* A map is the size it says it is, and it travels at that size. */
+    {
+        sim_map *small = malloc(sizeof *small);
+        sim_map_size(small, 96, 144);
+        SIM_MAP_AT(small, 40, 40) = SIM_TILE(SIM_TILE_SPAWN, 0);
+        sim_map_index(small);
+
+        CHECK(small->w == 96 && small->h == 144, "a map keeps the size it was given");
+        CHECK(SIM_TILE_CLASS(sim_tile_at(small, 95, 70)) == SIM_TILE_SOLID
+                  && SIM_TILE_CLASS(sim_tile_at(small, 60, 143)) == SIM_TILE_SOLID,
+              "and is walled at its own edge rather than the array's");
+        CHECK(SIM_TILE_CLASS(sim_tile_at(small, 200, 70)) == SIM_TILE_SOLID
+                  && SIM_TILE_CLASS(sim_tile_at(small, 60, 900)) == SIM_TILE_SOLID,
+              "everything past that edge is wall, whatever the array holds");
+        CHECK(sim_tile_at(small, 50, 70) == SIM_TILE_EMPTY,
+              "and the inside is still the map's own ground");
+
+        uint8_t *sb = malloc(SIM_MAP_PACK_MAX);
+        int sn = sim_map_pack(small, sb, SIM_MAP_PACK_MAX);
+        CHECK(sn > 0, "a map that is not square packs");
+        /* The point of the size being in the file: a 96 by 144 room costs what
+         * 96 by 144 costs. Drawn as a hole in the full array instead, the same
+         * room spends every row saying "and then nine hundred tiles of
+         * nothing", and the empty square below is the floor on that. */
+        sim_map *full = malloc(sizeof *full);
+        sim_map_size(full, SIM_MAP_TILES, SIM_MAP_TILES);
+        sim_map_index(full);
+        uint8_t *fb = malloc(SIM_MAP_PACK_MAX);
+        CHECK(sn < sim_map_pack(full, fb, SIM_MAP_PACK_MAX) / 4,
+              "and costs its own size on the wire, not the array's");
+        free(full); free(fb);
+
+        sim_map *round = malloc(sizeof *round);
+        CHECK(sim_map_unpack(round, sb, sn) == 0, "and unpacks");
+        CHECK(round->w == 96 && round->h == 144, "with its size intact");
+        CHECK(sim_map_hash(round) == sim_map_hash(small), "and hashing alike");
+
+        /* Same drawing, different size, so the hash has to disagree: a client
+         * that decodes the wrong room would rather be told. */
+        sim_map *wider = malloc(sizeof *wider);
+        sim_map_size(wider, 97, 144);
+        SIM_MAP_AT(wider, 40, 40) = SIM_TILE(SIM_TILE_SPAWN, 0);
+        sim_map_index(wider);
+        CHECK(sim_map_hash(wider) != sim_map_hash(small),
+              "one tile of width is a different map");
+
+        /* A size the array cannot hold is refused rather than trusted. */
+        sb[6] = 0xff;
+        sb[7] = 0xff;
+        CHECK(sim_map_unpack(round, sb, sn) == -1, "a map wider than the array is refused");
+
+        free(sb); free(small); free(round); free(wider);
+    }
+
+    /* Whether a map can be flown, which is a question about a hull and not
+     * about a tile. */
+    {
+        sim_map *room = malloc(sizeof *room);
+        sim_map_scratch *sc = malloc(sizeof *sc);
+        sim_map_report rep;
+        char why[192];
+        CHECK(room && sc, "the check has room to work in");
+
+        /* An open room with a start in it and nothing else. */
+        sim_map_size(room, 80, 60);
+        SIM_MAP_AT(room, 40, 30) = SIM_TILE(SIM_TILE_SPAWN, 0);
+        sim_map_index(room);
+        sim_map_check(room, sc, &rep);
+        CHECK(rep.regions == 1, "an open room is one region");
+        CHECK(rep.stranded == 0, "with nothing stranded in it");
+        CHECK(rep.spawns == 1 && rep.spawns_team[0] == 1, "and one start, on side one");
+        CHECK(sim_map_playable(room, &rep, why, sizeof why), "so it is playable");
+
+        /* A wall straight across it is two rooms, and a hull cannot get from
+         * one to the other. */
+        for (int tx = 0; tx < 80; tx++) SIM_MAP_AT(room, tx, 30) = SIM_TILE_SOLID;
+        SIM_MAP_AT(room, 40, 20) = SIM_TILE(SIM_TILE_SPAWN, 0);
+        sim_map_index(room);
+        sim_map_check(room, sc, &rep);
+        CHECK(rep.regions == 2, "a wall across a room makes two of it");
+        CHECK(!sim_map_playable(room, &rep, why, sizeof why),
+              "which is not a map worth serving");
+
+        /* A gap one tile wide is not a way through: a hull is three across,
+         * and reading this a tile at a time is how a map ships with rooms
+         * nothing can enter. */
+        SIM_MAP_AT(room, 40, 30) = SIM_TILE_EMPTY;
+        sim_map_index(room);
+        sim_map_check(room, sc, &rep);
+        CHECK(rep.regions == 2, "a one-tile gap is still a wall to a hull");
+
+        /* Three tiles is. */
+        SIM_MAP_AT(room, 39, 30) = SIM_TILE_EMPTY;
+        SIM_MAP_AT(room, 41, 30) = SIM_TILE_EMPTY;
+        sim_map_index(room);
+        sim_map_check(room, sc, &rep);
+        CHECK(rep.regions == 1, "three tiles is a doorway");
+        CHECK(sim_map_playable(room, &rep, why, sizeof why), "and the map is whole again");
+
+        /* A closet nothing can reach is stranded ground, however open it
+         * looks on the drawing. */
+        for (int tx = 60; tx <= 70; tx++) {
+            SIM_MAP_AT(room, tx, 40) = SIM_TILE_SOLID;
+            SIM_MAP_AT(room, tx, 50) = SIM_TILE_SOLID;
+        }
+        for (int ty = 40; ty <= 50; ty++) {
+            SIM_MAP_AT(room, 60, ty) = SIM_TILE_SOLID;
+            SIM_MAP_AT(room, 70, ty) = SIM_TILE_SOLID;
+        }
+        sim_map_index(room);
+        sim_map_check(room, sc, &rep);
+        CHECK(rep.stranded > 0, "a sealed closet is ground nobody reaches");
+        CHECK(!sim_map_playable(room, &rep, why, sizeof why),
+              "and a map with one is refused");
+
+        /* A map naming no start is refused too: a zone would fall back to its
+         * own tiles, which are drawn for a different room. */
+        sim_map_size(room, 60, 60);
+        sim_map_index(room);
+        sim_map_check(room, sc, &rep);
+        CHECK(rep.spawns == 0 && !sim_map_playable(room, &rep, why, sizeof why),
+              "a map with no start is not one a zone can be pointed at");
+
+        /* Doors are shut for the region count, because somewhere reachable
+         * only through one is somewhere a ship can be held. */
+        sim_map_size(room, 80, 60);
+        SIM_MAP_AT(room, 40, 20) = SIM_TILE(SIM_TILE_SPAWN, 0);
+        for (int tx = 0; tx < 80; tx++) SIM_MAP_AT(room, tx, 30) = SIM_TILE(SIM_TILE_DOOR, 0);
+        sim_map_index(room);
+        sim_map_check(room, sc, &rep);
+        CHECK(rep.regions == 2, "a door wall is two regions with the doors shut");
+        CHECK(rep.stranded == 0, "and nothing behind it is stranded, since it opens");
+
+        free(room);
+        free(sc);
+    }
+
+    /* Slopes: the diagonal a staircase could not be. */
+    {
+        sim_map *ramp = malloc(sizeof *ramp);
+        sim_map_size(ramp, 200, 200);
+        /* A wall running down and right at 45 degrees: the face is the run of
+         * slope tiles, and everything below and left of it is the wall's body.
+         *
+         * Drawn as a continuous run on purpose. A hull is three tiles across,
+         * so it straddles several tiles of whatever it lands on, and a lone
+         * slope cut into an otherwise flat top gives it two surfaces at once
+         * to rest on. That is a rule for whoever draws a map, and the reason
+         * the generator lays these in runs. */
+        for (int ty = 100; ty <= 160; ty++) {
+            for (int tx = 60; tx < ty; tx++) SIM_MAP_AT(ramp, tx, ty) = SIM_TILE_SOLID;
+            SIM_MAP_AT(ramp, ty, ty) = SIM_TILE(SIM_TILE_SLOPE, SIM_SLOPE_SW);
+        }
+        sim_map_index(ramp);
+
+        /* The open half of a slope tile is open. A staircase spends a whole
+         * tile to say that, which is the jaggedness this replaces. */
+        sim_settings sc = cfg;
+        sc.map = ramp;
+        sim_state s;
+        sim_init(&s, 11);
+        sim_spawn(&s, APEX, 0, 130 * 16 + 14, 130 * 16 + 2, 0, &sc);
+        CHECK(s.ships[0].active, "a hull stands in the open half of a slope tile");
+
+        /* Falling onto the face is turned along it rather than stopped dead.
+         * Dropped straight down, a 45 degree plane sends a hull sideways:
+         * that is the whole difference from a wall, which would take the fall
+         * and leave it sitting there. */
+        sim_init(&s, 12);
+        sim_spawn(&s, APEX, 0, 130 * 16, 120 * 16, 0, &sc);
+        s.ships[0].vy = 3 * 65536;
+        s.ships[0].vx = 0;
+        step_n(&s, &sc, 0, 0, 200);
+        CHECK(s.ships[0].vx > 0, "a hull dropped on a 45 degree face is turned along it");
+        int32_t fx = s.ships[0].x >> 12, fy = s.ships[0].y >> 12;
+        CHECK(fy <= fx, "and is left on the open side of it, never inside the wall");
+
+        /* Which is the point: on a staircase the same drop lands on a step and
+         * stops. Here it keeps moving, and it moves along the wall. */
+        CHECK(fx > 130, "and travels along the face rather than resting on a step");
+
+        /* A round bouncing off one turns the same way a hull does. Per axis it
+         * would reverse both and fly back at whoever fired it, which is what a
+         * corner does and not what a diagonal does. */
+        sim_settings bw = sc;
+        sim_weapon_spec sp = bw.specs[gun_of(&bw, APEX)->spec];
+        sp.on_wall = SIM_WALL_BOUNCE;
+        sp.bounces = 1;
+        sim_fire_pattern fp = *gun_of(&bw, APEX);
+        fp.spec = (uint8_t)sim_add_spec(&bw, &sp);
+        bw.classes[APEX].trigger[SIM_TRIG_GUN][0] = (uint8_t)sim_add_pattern(&bw, &fp);
+
+        sim_init(&s, 13);
+        sim_spawn(&s, APEX, 0, 140 * 16, 120 * 16, 32768, &bw);
+        step_n(&s, &bw, SIM_BTN_FIRE, 0, 1);
+        CHECK(s.weapon_count == 1 && s.weapons[0].vy > 0,
+              "a round is fired down the face");
+        int32_t down = s.weapons[0].vy;
+        step_n(&s, &bw, 0, 0, 200);
+        CHECK(s.weapon_count == 1, "the face did not end it");
+        CHECK(s.weapons[0].vx == down && s.weapons[0].vy == 0,
+              "a 45 degree face turns a round square, keeping every bit of its speed");
+
+        free(ramp);
     }
 
     /* The room size is the zone's, and the array bound is only the ceiling. */
@@ -1680,10 +1891,10 @@ int main(void) {
          * off at all: the one on the safe tile keeps still and the one beside
          * it in the open is thrown. */
         sim_map *sm = malloc(sizeof *sm);
-        memcpy(sm->tile, m->tile, sizeof sm->tile);
+        memcpy(sm, m, sizeof *sm);
         for (int ty = 497; ty <= 501; ty++)
             for (int tx = 510; tx <= 514; tx++)
-                sm->tile[(size_t)ty * SIM_MAP_TILES + (size_t)tx] = SIM_TILE_SAFE;
+                SIM_MAP_AT(sm, tx, ty) = SIM_TILE_SAFE;
         sim_map_index(sm);
         w.map = sm;
 
@@ -3245,12 +3456,12 @@ int main(void) {
      * you came out. */
     {
         sim_map *wm = malloc(sizeof *wm);
-        memset(wm->tile, SIM_TILE_EMPTY, sizeof wm->tile);
+        sim_map_size(wm, SIM_MAP_TILES, SIM_MAP_TILES);
         for (int i = 0; i < SIM_MAP_TILES; i++) {
-            wm->tile[i] = SIM_TILE_SOLID;
-            wm->tile[(size_t)(SIM_MAP_TILES - 1) * SIM_MAP_TILES + i] = SIM_TILE_SOLID;
-            wm->tile[(size_t)i * SIM_MAP_TILES] = SIM_TILE_SOLID;
-            wm->tile[(size_t)i * SIM_MAP_TILES + SIM_MAP_TILES - 1] = SIM_TILE_SOLID;
+            SIM_MAP_AT(wm, i, 0) = SIM_TILE_SOLID;
+            SIM_MAP_AT(wm, i, SIM_MAP_TILES - 1) = SIM_TILE_SOLID;
+            SIM_MAP_AT(wm, 0, i) = SIM_TILE_SOLID;
+            SIM_MAP_AT(wm, SIM_MAP_TILES - 1, i) = SIM_TILE_SOLID;
         }
         wm->tile[(size_t)512 * SIM_MAP_TILES + 512] = SIM_TILE_WORMHOLE;
         /* Two of them, far apart, so "went to a spawn" cannot be satisfied by
@@ -3417,8 +3628,7 @@ int main(void) {
         memcpy(sm, m, sizeof *sm);
         const int SPAWN_TX[4] = {100, 300, 700, 900};
         for (int i = 0; i < 4; i++)
-            sm->tile[(size_t)200 * SIM_MAP_TILES + SPAWN_TX[i]] =
-                SIM_TILE(SIM_TILE_SPAWN, 0);
+            SIM_MAP_AT(sm, SPAWN_TX[i], 200) = SIM_TILE(SIM_TILE_SPAWN, 0);
         sim_map_index(sm);
 
         sim_settings sc;

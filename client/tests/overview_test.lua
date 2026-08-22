@@ -14,24 +14,28 @@
 
 package.path = "client/?.lua;" .. package.path
 
-local TILES = 1024
 local CELL = 4
 
 -- The tile classes, which the extension publishes to Lua from sim.h.
 local T_EMPTY, T_SOLID, T_SAFE, T_DOOR = 0, 1, 2, 3
-local T_WORMHOLE = 5
+local T_WORMHOLE, T_SLOPE = 5, 10
 
--- A `.vwmap` is a ten-byte header and then three-byte runs of length and tile,
--- which is `sim_map_pack` in sim/src/pack.c.
+-- A `.vwmap` is a fourteen-byte header carrying the map's size, and then
+-- three-byte runs of length and tile, which is `sim_map_pack` in
+-- sim/src/pack.c. The size is read rather than assumed: a match room is 160
+-- tiles and the open arena a thousand, and this used to be written down here
+-- as 1024 for every map there was.
 local function tiles_of(path)
     local f = assert(io.open(path, "rb"), "run me from the repository root")
     local src = f:read("*a")
     f:close()
     local byte = string.byte
     assert(src:sub(1, 4) == "PAMV", path .. " is not a packed map")
+    local w = byte(src, 7) + byte(src, 8) * 256
+    local h = byte(src, 9) + byte(src, 10) * 256
     local out, n = {}, 0
-    local at = 11
-    while at + 2 <= #src and n < TILES * TILES do
+    local at = 15
+    while at + 2 <= #src and n < w * h do
         local run = byte(src, at) + byte(src, at + 1) * 256
         local v = byte(src, at + 2)
         for _ = 1, run do
@@ -40,27 +44,29 @@ local function tiles_of(path)
         end
         at = at + 3
     end
-    assert(n == TILES * TILES, path .. " decoded to " .. n .. " tiles")
-    return out
+    assert(n == w * h, path .. " decoded to " .. n .. " tiles, wanted " .. w * h)
+    return out, w, h
 end
 
 -- What `MapCoarse` in simcore.cpp hands over: one byte per cell, holding the
 -- most important tile standing in it.
-local RANK = {[T_SOLID] = 4, [T_DOOR] = 3, [T_SAFE] = 2, [T_WORMHOLE] = 1}
-local function coarse(tiles, cell)
-    local g = TILES / cell
+local RANK = {[T_SOLID] = 4, [T_SLOPE] = 4, [T_DOOR] = 3, [T_SAFE] = 2,
+              [T_WORMHOLE] = 1}
+local function coarse(tiles, w, h, cell)
+    local gw = math.ceil(w / cell)
+    local gh = math.ceil(h / cell)
     local grid = {}
-    for i = 1, g * g do grid[i] = T_EMPTY end
-    for ty = 0, TILES - 1 do
-        local row = ty * TILES
-        local grow = math.floor(ty / cell) * g
-        for tx = 0, TILES - 1 do
+    for i = 1, gw * gh do grid[i] = T_EMPTY end
+    for ty = 0, h - 1 do
+        local row = ty * w
+        local grow = math.floor(ty / cell) * gw
+        for tx = 0, w - 1 do
             local cls = tiles[row + tx + 1]
             local i = grow + math.floor(tx / cell) + 1
             if (RANK[cls] or 0) > (RANK[grid[i]] or 0) then grid[i] = cls end
         end
     end
-    return grid, g
+    return grid, gw, gh
 end
 
 local fails = 0
@@ -71,17 +77,18 @@ end
 
 -- Every map the catalog ships, which is the melee zone's two.
 for _, name in ipairs({"melee/drydock", "melee/slipway"}) do
-    local grid, g = coarse(tiles_of("catalog/zones/" .. name .. ".vwmap"), CELL)
+    local tiles, mw, mh = tiles_of("catalog/zones/" .. name .. ".vwmap")
+    local grid, gw, gh = coarse(tiles, mw, mh, CELL)
     local bytes = {}
-    for i = 1, g * g do bytes[i] = string.char(grid[i]) end
+    for i = 1, gw * gh do bytes[i] = string.char(grid[i]) end
     local packed = table.concat(bytes)
 
     _G.sim = {
         T_SOLID = T_SOLID, T_SAFE = T_SAFE, T_DOOR = T_DOOR,
-        T_WORMHOLE = T_WORMHOLE,
+        T_WORMHOLE = T_WORMHOLE, T_SLOPE = T_SLOPE,
         map_coarse = function(cell)
             assert(cell == CELL, "the view asked for a grain this test has not built")
-            return packed, g
+            return packed, gw, gh
         end,
     }
     package.loaded["arena.world"] = nil
@@ -100,7 +107,7 @@ for _, name in ipairs({"melee/drydock", "melee/slipway"}) do
                                 ov.rect[i + 3], ov.rect[i + 4]
         for yy = y, y + h - 1 do
             for xx = x, x + w - 1 do
-                local k = yy * g + xx + 1
+                local k = yy * gw + xx + 1
                 if painted[k] and not overlap then
                     overlap = string.format("cell %d,%d covered twice", xx, yy)
                 end
@@ -110,7 +117,7 @@ for _, name in ipairs({"melee/drydock", "melee/slipway"}) do
     end
 
     local wrong, missing, extra = nil, 0, 0
-    for k = 1, g * g do
+    for k = 1, gw * gh do
         local want = grid[k]
         if RANK[want] == nil then want = T_EMPTY end
         local got = painted[k] or T_EMPTY
@@ -124,8 +131,8 @@ for _, name in ipairs({"melee/drydock", "melee/slipway"}) do
     end
 
     local n = ov.n / 5
-    print(string.format("== %s: %dx%d grid, %d rectangles, %d vertices",
-                        name, g, g, n, n * 6))
+    print(string.format("== %s: %d by %d tiles, %dx%d grid, %d rectangles, %d vertices",
+                        name, mw, mh, gw, gh, n, n * 6))
     check(name .. ": every cell is covered", missing == 0,
           missing .. " cells the map fills are not drawn")
     check(name .. ": nothing is drawn over empty ground", extra == 0,

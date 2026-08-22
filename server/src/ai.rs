@@ -425,13 +425,10 @@ fn whisker(w: &World, x: f32, y: f32, dx: f32, dy: f32, r: f32) -> f32 {
     let half = r + 4.0;
     let (px, py) = (-dy * half, dx * half);
     let wall = |sx: f32, sy: f32| {
-        let tx = (sx / 16.0) as usize;
-        let ty = (sy / 16.0) as usize;
-        if tx >= sim::MAP_TILES || ty >= sim::MAP_TILES {
+        if sx < 0.0 || sy < 0.0 {
             return true;
         }
-        let cls = w.map.tile[ty * sim::MAP_TILES + tx] & 0x0f;
-        cls == 1 || cls == 3
+        w.map.blocks((sx / 16.0) as usize, (sy / 16.0) as usize)
     };
     // A side ray that is blocked at its very first step is a wall this hull
     // is already flush against, and flying along a wall you are touching is
@@ -715,13 +712,11 @@ fn clear_line(w: &World, x0: f32, y0: f32, x1: f32, y1: f32) -> bool {
     let steps = ((dx * dx + dy * dy).sqrt() / 8.0).ceil() as i32;
     for i in 1..steps {
         let t = i as f32 / steps as f32;
-        let tx = ((x0 + dx * t) / 16.0) as usize;
-        let ty = ((y0 + dy * t) / 16.0) as usize;
-        if tx >= sim::MAP_TILES || ty >= sim::MAP_TILES {
+        let (sx, sy) = (x0 + dx * t, y0 + dy * t);
+        if sx < 0.0 || sy < 0.0 {
             return false;
         }
-        let cls = w.map.tile[ty * sim::MAP_TILES + tx] & 0x0f;
-        if cls == 1 || cls == 3 {
+        if w.map.blocks((sx / 16.0) as usize, (sy / 16.0) as usize) {
             return false;
         }
     }
@@ -2516,11 +2511,7 @@ impl Bot {
                     (ax, ay) = (a.sin(), -a.cos());
                 }
                 let n = (ax * ax + ay * ay).sqrt().max(1.0);
-                let edge = sim::MAP_TILES as f32 * 16.0 - 256.0;
-                self.shelter = Some((
-                    (o.x + ax / n * 700.0).clamp(256.0, edge),
-                    (o.y + ay / n * 700.0).clamp(256.0, edge),
-                ));
+                self.shelter = Some(nav.inside(256.0, o.x + ax / n * 700.0, o.y + ay / n * 700.0));
             }
             self.drop_route();
         }
@@ -2570,9 +2561,9 @@ impl Bot {
         // through stops dead in the one place nothing can shoot into.
         if o.in_safe {
             self.weapon = Weapon::Gun;
-            let c = (sim::MAP_TILES as f32 / 2.0) * 16.0;
-            self.plot(o, nav, (c, c));
-            self.mode = Mode::Travel(c, c, 0.0, f32::INFINITY);
+            let (cx, cy) = nav.mid();
+            self.plot(o, nav, (cx, cy));
+            self.mode = Mode::Travel(cx, cy, 0.0, f32::INFINITY);
             return;
         }
 
@@ -2979,10 +2970,11 @@ impl Bot {
             dx * dx + dy * dy < (20.0 * 16.0) * (20.0 * 16.0)
         };
         if self.roam == (0.0, 0.0) || arrived {
-            let c = (sim::MAP_TILES as f32 / 2.0) * 16.0;
-            let spread = (sim::MAP_TILES as f32 / 8.0) * 16.0;
+            let (cx, cy) = nav.mid();
             let (rx, ry) = (self.rand(), self.rand());
-            self.roam = (c + (rx - 0.5) * 2.0 * spread, c + (ry - 0.5) * 2.0 * spread);
+            /* A quarter of the map each way from the middle, which is the
+             * spread this always had when every map was the same size. */
+            self.roam = nav.inside(0.0, cx + (rx - 0.5) * cx, cy + (ry - 0.5) * cy);
         }
         // A point rolled inside a wall would otherwise be pushed at for ever:
         // nothing is nearer than twenty tiles, so `arrived` never fires, and a

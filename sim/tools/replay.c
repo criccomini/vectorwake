@@ -22,26 +22,31 @@
 /* The test map: a solid border plus a square block near the center, so
  * traces exercise open flight, wall bounces, and bombs against geometry. */
 static void build_map(sim_map *m) {
-    memset(m->tile, SIM_TILE_EMPTY, sizeof m->tile);
+    sim_map_size(m, SIM_MAP_TILES, SIM_MAP_TILES);
     for (int i = 0; i < SIM_MAP_TILES; i++) {
         for (int b = 0; b < 2; b++) {
-            m->tile[(size_t)b * SIM_MAP_TILES + i] = SIM_TILE_SOLID;
-            m->tile[(size_t)(SIM_MAP_TILES - 1 - b) * SIM_MAP_TILES + i] = SIM_TILE_SOLID;
-            m->tile[(size_t)i * SIM_MAP_TILES + b] = SIM_TILE_SOLID;
-            m->tile[(size_t)i * SIM_MAP_TILES + (SIM_MAP_TILES - 1 - b)] = SIM_TILE_SOLID;
+            SIM_MAP_AT(m, i, b) = SIM_TILE_SOLID;
+            SIM_MAP_AT(m, i, SIM_MAP_TILES - 1 - b) = SIM_TILE_SOLID;
+            SIM_MAP_AT(m, b, i) = SIM_TILE_SOLID;
+            SIM_MAP_AT(m, SIM_MAP_TILES - 1 - b, i) = SIM_TILE_SOLID;
         }
     }
     for (int ty = 500; ty < 512; ty++)
-        for (int tx = 520; tx < 532; tx++)
-            m->tile[(size_t)ty * SIM_MAP_TILES + tx] = SIM_TILE_SOLID;
-    /* A safe zone, a door and a wormhole, so the trace covers the tile
-     * behaviors as well as the walls. */
+        for (int tx = 520; tx < 532; tx++) SIM_MAP_AT(m, tx, ty) = SIM_TILE_SOLID;
+    /* A safe zone, a door, a wormhole and a pair of slopes, so the trace
+     * covers the tile behaviors as well as the walls. */
     for (int ty = 496; ty < 500; ty++)
-        for (int tx = 496; tx < 502; tx++)
-            m->tile[(size_t)ty * SIM_MAP_TILES + tx] = SIM_TILE_SAFE;
+        for (int tx = 496; tx < 502; tx++) SIM_MAP_AT(m, tx, ty) = SIM_TILE_SAFE;
     for (int tx = 508; tx < 516; tx++)
-        m->tile[(size_t)492 * SIM_MAP_TILES + tx] = SIM_TILE(SIM_TILE_DOOR, 0);
-    m->tile[(size_t)520 * SIM_MAP_TILES + 500] = SIM_TILE_WORMHOLE;
+        SIM_MAP_AT(m, tx, 492) = SIM_TILE(SIM_TILE_DOOR, 0);
+    SIM_MAP_AT(m, 500, 520) = SIM_TILE_WORMHOLE;
+    /* A ramp for the third ship to fall on: a block with one corner cut. The
+     * face is the only thing in this map that turns a velocity instead of
+     * reversing one, and turning it is two halves and a swap, so it is exactly
+     * the arithmetic worth checking on three architectures. */
+    for (int ty = 604; ty <= 612; ty++)
+        for (int tx = 600; tx <= 607; tx++) SIM_MAP_AT(m, tx, ty) = SIM_TILE_SOLID;
+    SIM_MAP_AT(m, 600, 603) = SIM_TILE(SIM_TILE_SLOPE, SIM_SLOPE_SW);
     sim_map_index(m);
 }
 

@@ -62,8 +62,10 @@ Settings reload without restarting the arena. Zone operators tune constantly.
 
 ## Maps
 
-The world is 1024x1024 tiles at 16 pixels, matching Subspace so that existing
-maps convert directly.
+A tile is 16 pixels and a map is up to 1024 of them on a side, carrying its own
+width and height. The tile size matches Subspace so that existing maps convert
+directly; the size does not have to, and a map drawn for this game says how big
+it is.
 
 Our map format carries the tile grid, the tileset reference, spawn regions, and
 named regions with attributes. Regions are Subspace's best late addition: an

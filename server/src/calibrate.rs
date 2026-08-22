@@ -1822,20 +1822,23 @@ pub(crate) fn real_map_fixture() -> (Vec<u8>, nav::Nav, ((i32, i32), (i32, i32))
 
 fn open_pair(map: &sim::sim_map) -> ((i32, i32), (i32, i32)) {
     let clear = |cx: usize, cy: usize| {
-        (cy.saturating_sub(4)..=cy + 4).all(|y| {
-            (cx.saturating_sub(4)..=cx + 4).all(|x| {
-                x < sim::MAP_TILES
-                    && y < sim::MAP_TILES
-                    && map.tile[y * sim::MAP_TILES + x] & 0x0f == 0
-            })
-        })
+        (cy.saturating_sub(4)..=cy + 4)
+            .all(|y| (cx.saturating_sub(4)..=cx + 4).all(|x| map.class_at(x, y) == 0))
     };
-    // Outward from the middle, so the pair sits in the part of the map a
-    // room actually uses rather than against the boundary.
-    for r in 0..400usize {
+    // Outward from the middle of the map, so the pair sits in the part of it a
+    // room actually uses rather than against the boundary. The map's own
+    // middle, not the array's: on a 144-tile room the array's middle is four
+    // hundred tiles past the far wall, and every candidate out there is the
+    // wall the core answers for anywhere off the map.
+    let (mx, my) = (map.w as i32 / 2, map.h as i32 / 2);
+    let reach = (map.w.min(map.h) as i32 / 2 - APART as i32).max(1);
+    for r in 0..reach {
         for (dx, dy) in [(1i32, 0i32), (0, 1), (-1, 0), (0, -1)] {
-            let cx = (512 + dx * r as i32) as usize;
-            let cy = (512 + dy * r as i32) as usize;
+            let (cx, cy) = (mx + dx * r, my + dy * r);
+            if cx < 0 || cy < 0 {
+                continue;
+            }
+            let (cx, cy) = (cx as usize, cy as usize);
             if clear(cx, cy) && clear(cx + APART, cy) {
                 return ((cx as i32, cy as i32), ((cx + APART) as i32, cy as i32));
             }

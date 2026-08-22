@@ -736,6 +736,67 @@ local function wall_mass(bg, glow, set, cells, border)
     end
 end
 
+-- A slope, by the corner it fills. Mirrors SIM_SLOPE_* in sim/include/sim/sim.h.
+--
+-- Each row is the solid triangle's three corners in tile fractions, then the
+-- two ends of its face, then the way out of that face, then the step to the
+-- next tile of a run. A run of these is one wall at 45 degrees, and drawing it
+-- a tile at a time lays a lit segment against its neighbour at every tile
+-- boundary: the same bead every sixteen pixels the orthogonal faces merge runs
+-- to avoid, and worse on a diagonal, where the beads read as the staircase the
+-- slope exists to get rid of.
+-- `fill` is the solid triangle's three corners. `from` and `to` are the ends of
+-- its face, ordered so `to` is the end a run continues through and `from` the
+-- end it started at. `out` is the way out of the face, which is what the light
+-- is thrown along. `step` is the next tile of a run.
+local R2 = 0.70710678
+local SLOPE = {
+    [0] = {fill = {0,0, 1,0, 0,1}, from = {0,1}, to = {1,0},
+           out = { R2,  R2}, step = { 1, -1}},   -- NW
+    [1] = {fill = {0,0, 1,0, 1,1}, from = {0,0}, to = {1,1},
+           out = {-R2,  R2}, step = { 1,  1}},   -- NE
+    [2] = {fill = {1,0, 1,1, 0,1}, from = {0,1}, to = {1,0},
+           out = {-R2, -R2}, step = { 1, -1}},   -- SE
+    [3] = {fill = {0,0, 0,1, 1,1}, from = {0,0}, to = {1,1},
+           out = { R2, -R2}, step = { 1,  1}},   -- SW
+}
+
+-- The diagonal half of a wall, drawn as the face it is.
+local function slope_mass(bg, glow, set, cells)
+    local lit = pal.WALL_EDGE
+    local hotline = pal.a(pal.hot(lit, 0.28, 1), 0.9)
+    local inner = pal.a(pal.WALL_LIT, 1)
+    local outer = pal.a(lit, 1)
+
+    for i = 1, #cells, 3 do
+        local tx, ty, var = cells[i], cells[i + 1], cells[i + 2]
+        local f = SLOPE[var].fill
+        local x, y = tx * TILE, ty * TILE
+        bg:tri(x + f[1] * TILE, y + f[2] * TILE,
+               x + f[3] * TILE, y + f[4] * TILE,
+               x + f[5] * TILE, y + f[6] * TILE, pal.WALL)
+    end
+
+    -- One lit segment for a whole run, drawn by the tile that starts it.
+    for i = 1, #cells, 3 do
+        local tx, ty, var = cells[i], cells[i + 1], cells[i + 2]
+        local s = SLOPE[var]
+        local sx, sy = s.step[1], s.step[2]
+        if set[key(tx - sx, ty - sy)] ~= var then
+            local ex, ey = tx, ty
+            while set[key(ex + sx, ey + sy)] == var do ex, ey = ex + sx, ey + sy end
+            local px = (tx + s.from[1]) * TILE
+            local py = (ty + s.from[2]) * TILE
+            local qx = (ex + s.to[1]) * TILE
+            local qy = (ey + s.to[2]) * TILE
+            local ox, oy = s.out[1], s.out[2]
+            glow:skirt(px, py, qx, qy, -ox * 11, -oy * 11, 0.17, inner)
+            glow:skirt(px, py, qx, qy, ox * 6, oy * 6, 0.13, outer)
+            glow:seg(px, py, qx, qy, 1.4, hotline)
+        end
+    end
+end
+
 -- A safe zone: a marked floor rather than a colored patch. A wash, a hatch
 -- that stays inside its own tiles, and a dashed rim along the outside faces.
 local function safe_zone(bg, glow, set, cells)
@@ -1019,6 +1080,11 @@ end
 local function build_terrain(bg, glow, x0, y0, x1, y1)
     local wall_set, wall_cells = {}, {}
     local bord_cells = {}
+    -- Slopes are in the wall set and not in its cells: a wall beside one must
+    -- not light the edge they share, and the slope draws its own face rather
+    -- than four square ones. The set holds the variant, since a run is a run
+    -- of one kind and the light follows the whole of it.
+    local slope_set, slope_cells = {}, {}
     local safe_set, safe_cells = {}, {}
     local rocks, stations, unders = {}, {}, {}
     local turfs, spawns, goals = {}, {}, {}
@@ -1053,6 +1119,12 @@ local function build_terrain(bg, glow, x0, y0, x1, y1)
                     wall_cells[#wall_cells + 1] = tx
                     wall_cells[#wall_cells + 1] = ty
                 end
+            elseif cls == sim.T_SLOPE then
+                wall_set[key(tx, ty)] = true
+                slope_set[key(tx, ty)] = var
+                slope_cells[#slope_cells + 1] = tx
+                slope_cells[#slope_cells + 1] = ty
+                slope_cells[#slope_cells + 1] = var
             elseif cls == sim.T_SAFE then
                 safe_set[key(tx, ty)] = true
                 safe_cells[#safe_cells + 1] = tx
@@ -1080,6 +1152,7 @@ local function build_terrain(bg, glow, x0, y0, x1, y1)
     -- faces are exposed and neither draws an edge into the other.
     wall_mass(bg, glow, wall_set, wall_cells, false)
     wall_mass(bg, glow, wall_set, bord_cells, true)
+    slope_mass(bg, glow, slope_set, slope_cells)
     safe_zone(bg, glow, safe_set, safe_cells)
 
     for i = 1, #unders, 3 do
@@ -1191,7 +1264,12 @@ function M.build_static(bg, glow, x0, y0, x1, y1)
                         best = 3
                     elseif cls == sim.T_SAFE and best < 2 then
                         best = 2
-                    elseif cls == sim.T_SOLID and best < 1 then
+                    elseif (cls == sim.T_SOLID or cls == sim.T_SLOPE)
+                           and best < 1 then
+                        -- A slope is a dot like any other wall. At two tiles
+                        -- to a sample there is nowhere to say which half of
+                        -- one is solid, and a pilot steering by the radar
+                        -- wants the wall, not its shape.
                         best = 1
                     end
                 end
@@ -1237,26 +1315,26 @@ M.overview = {grid = 0, n = 0, rect = {}}
 -- 2195 rectangles, against 3287 to 4104 for rows alone and the 6144 vertices
 -- the interface layer used to hold.
 function M.build_overview()
-    local s, g = sim.map_coarse(OVERVIEW_CELL)
+    local s, gw, gh = sim.map_coarse(OVERVIEW_CELL)
     local byte = string.byte
     local taken = {}
     local r, n = {}, 0
-    for y = 0, g - 1 do
+    for y = 0, gh - 1 do
         local x = 0
-        while x < g do
+        while x < gw do
             -- One-based, because a Lua string is.
-            local i = y * g + x + 1
+            local i = y * gw + x + 1
             local cls = byte(s, i)
             if cls == 0 or taken[i] then
                 x = x + 1
             else
                 local w = 1
-                while x + w < g and byte(s, i + w) == cls and not taken[i + w] do
+                while x + w < gw and byte(s, i + w) == cls and not taken[i + w] do
                     w = w + 1
                 end
                 local h = 1
-                while y + h < g do
-                    local j = i + h * g
+                while y + h < gh do
+                    local j = i + h * gw
                     local same = true
                     for k = 0, w - 1 do
                         if byte(s, j + k) ~= cls or taken[j + k] then
@@ -1268,7 +1346,7 @@ function M.build_overview()
                     h = h + 1
                 end
                 for yy = 0, h - 1 do
-                    local j = i + yy * g
+                    local j = i + yy * gw
                     for xx = 0, w - 1 do taken[j + xx] = true end
                 end
                 r[n + 1], r[n + 2], r[n + 3] = x, y, w
@@ -1278,11 +1356,14 @@ function M.build_overview()
             end
         end
     end
-    M.overview = {grid = g, n = n, rect = r}
+    -- `grid` is the square the view scales by, so a map that is wider than it
+    -- is tall keeps its shape inside the dial rather than being stretched to
+    -- fill it.
+    M.overview = {grid = math.max(gw, gh), gw = gw, gh = gh, n = n, rect = r}
 end
 
 function M.forget_overview()
-    M.overview = {grid = 0, n = 0, rect = {}}
+    M.overview = {grid = 0, gw = 0, gh = 0, n = 0, rect = {}}
 end
 
 -- Made once, not per frame: these are constants wearing a function's clothes,

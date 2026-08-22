@@ -842,6 +842,51 @@ dialog .field { margin-bottom: 1rem; }
   .row > button { flex: 1 1 7rem; }
 }
 
+/* ---------------------------------------------------------------- the map editor */
+
+/* The canvas scrolls inside its own frame rather than stretching the page: a
+   thousand-tile map at a readable zoom is wider than any screen, and a page
+   that scrolls sideways to hold it loses the tools at the same time. */
+.canvas-wrap {
+  border: 1px solid var(--line);
+  background: var(--bg);
+  overflow: auto;
+  max-height: 70vh;
+  margin: var(--gap) 0;
+  /* Only as wide as the drawing. The grid belongs on the canvas, where it is
+     drawn at the map's own pitch; a frame wider than the map with a grid in it
+     reads as more map. */
+  width: max-content;
+  max-width: 100%;
+}
+
+/* Crisp, because a tile is a square of a few pixels and smoothing turns a wall
+   into a smear. `block` because an inline canvas sits on a text baseline and
+   leaves a strip of ground under it that looks like a drawing error. */
+#map-canvas {
+  display: block;
+  image-rendering: pixelated;
+  cursor: crosshair;
+  /* The pointer draws; the browser's own drag and pan would fight it. */
+  touch-action: none;
+}
+
+/* The palette and the tools are rows of buttons rather than a select, because
+   picking a tile is the thing you do most and a menu costs two clicks. Which
+   one is down is `aria-pressed`, so the state is the same fact for a screen
+   reader and for the stylesheet. */
+#tools .chips button[aria-pressed="true"],
+#map-tools button[aria-pressed="true"] {
+  color: var(--friend);
+  border-color: var(--friend);
+}
+
+/* Small enough that a size field does not read as a search box. */
+#map-w, #map-h { width: 5rem; }
+
+.row.tight { gap: 0.4rem; align-items: center; }
+.row.wrap { align-items: center; }
+
 /* Motion is decoration here, so it goes when it is not wanted. */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition-duration: 0.01ms !important; }

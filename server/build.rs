@@ -5,6 +5,7 @@ fn main() {
         .file("../sim/src/sim.c")
         .file("../sim/src/baseline.c")
         .file("../sim/src/pack.c")
+        .file("../sim/src/check.c")
         .include("../sim/include")
         .std("c99")
         .opt_level(2)
@@ -16,6 +17,7 @@ fn main() {
         "../sim/src/sim.c",
         "../sim/src/baseline.c",
         "../sim/src/pack.c",
+        "../sim/src/check.c",
         "../sim/src/sintab.h",
         "../sim/include/sim/sim.h",
         "../sim/include/sim/baseline.h",

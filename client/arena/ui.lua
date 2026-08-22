@@ -1021,16 +1021,23 @@ local function overview(me)
     -- lies under the dial comes through it at half strength, in the one place
     -- a player would read it as part of the map.
     rect(ix, iy, side, side, pal.RADAR_BG)
+    -- The dial is square and a map need not be. Scaled by the longer side and
+    -- centered on the short one, so a wide room reads as a wide room instead
+    -- of being stretched to fill a square it is not.
+    local k, ox, oy = 0, ix, iy
     if ov.grid > 0 then
-        local k = side / ov.grid
+        k = side / ov.grid
+        ox = ix + (side - (ov.gw or ov.grid) * k) / 2
+        oy = iy + (side - (ov.gh or ov.grid) * k) / 2
         local r = ov.rect
         for i = 1, ov.n, 5 do
             local cls = r[i + 4]
             local col = (cls == sim.T_SOLID and MAP_WALL)
+                or (cls == sim.T_SLOPE and MAP_WALL)
                 or (cls == sim.T_SAFE and MAP_SAFE)
                 or (cls == sim.T_DOOR and MAP_DOOR)
                 or MAP_HOLE
-            rect(ix + r[i] * k, iy + r[i + 1] * k,
+            rect(ox + r[i] * k, oy + r[i + 1] * k,
                  r[i + 2] * k, r[i + 3] * k, col)
         end
     end
@@ -1045,9 +1052,8 @@ local function overview(me)
     -- by that to land in the same coordinates the rectangles above use.
     if ov.grid > 0 and me then
         local cell = 4 * 16
-        local k = side / ov.grid
-        own_arrow(ix + (sim.ship_x(me) / cell) * k,
-                  iy + (sim.ship_y(me) / cell) * k, ix, iy, side, me)
+        own_arrow(ox + (sim.ship_x(me) / cell) * k,
+                  oy + (sim.ship_y(me) / cell) * k, ix, iy, side, me)
     end
     -- Clicking it again puts the radar back, which is the same gesture that
     -- opened it.

@@ -73,11 +73,12 @@ extern "C" {
  * magic constant, and a map editor had to know all of them.
  *
  * Here a tile is its behavior and nothing else. How it is drawn is the
- * client's business, which is why there are nine of these rather than 190.
+ * client's business, which is why there are ten of these rather than 190.
  *
  * The byte is class in the low nibble and a variant in the high one: doors
  * use the variant as a channel, so a map can open one set while another
- * closes, and goals use it as the team that scores there. */
+ * closes, goals use it as the team that scores there, and a slope uses it as
+ * the corner the tile is filled from. */
 #define SIM_TILE_CLASS(t) ((t) & 0x0f)
 #define SIM_TILE_VARIANT(t) ((t) >> 4)
 #define SIM_TILE(cls, var) ((uint8_t)(((var) << 4) | (cls)))
@@ -93,8 +94,28 @@ typedef enum {
     SIM_TILE_UNDER,      /* scenery drawn under them */
     SIM_TILE_TURF,       /* a flag stand a mode can find */
     SIM_TILE_SPAWN,      /* where a ship of the variant's team starts */
+    SIM_TILE_SLOPE,      /* half a wall, cut corner to corner, by variant */
     SIM_TILE_COUNT
 } sim_tile;
+
+/* Which corner of its tile a slope fills, and so which way its face points.
+ *
+ * A wall drawn diagonally out of square tiles is a staircase, and a staircase
+ * is not a shape a ship can fly along: every step is a fresh axis-aligned
+ * bounce, so a hull skimming one rattles down it instead of sliding. A slope
+ * is the same wall with the steps cut off. Two of these meeting at a corner
+ * make one continuous 45 degree face however long the run is.
+ *
+ * The four are named for the corner that stays solid, so the face is the
+ * diagonal opposite it. Reflecting off a 45 degree plane costs no table and no
+ * root: the face through NW and SE turns a velocity into (vy, vx), and the one
+ * through NE and SW turns it into (-vy, -vx). Both are exact in fixed point,
+ * which is the whole reason the slope is 45 degrees and not an arbitrary
+ * angle. */
+#define SIM_SLOPE_NW 0
+#define SIM_SLOPE_NE 1
+#define SIM_SLOPE_SE 2
+#define SIM_SLOPE_SW 3
 
 /* Tiles a rule has to reach without walking a million of them every tick.
  * Filled by sim_map_index once, after the tiles are set. */
@@ -106,17 +127,41 @@ typedef struct {
 
 #define SIM_MAX_FEATURES 256
 
+/* A map is `w` by `h` tiles of the square below, laid out at the full stride
+ * so the array never moves and nothing allocates.
+ *
+ * The size is the map's own rather than the engine's because a 144-tile match
+ * room and a 1024-tile arena are not the same room with different furniture.
+ * Before this the small ones were drawn as a hole in a solid megabyte: every
+ * pass over the map paid for the 1024 square whatever it held, the overview
+ * drew a match map as a speck in a black field, and "how big is this map" had
+ * no answer to ask for. Outside the declared rect `sim_tile_at` answers solid,
+ * so the world ends at the edge a map says it has. */
 typedef struct {
     uint8_t tile[SIM_MAP_TILES * SIM_MAP_TILES];
+    uint16_t w, h;
     uint16_t feature_count;
     sim_feature features[SIM_MAX_FEATURES];
 } sim_map;
 
+/* The stride of the tile array, which is not the map's width. A row starts
+ * every SIM_MAP_TILES tiles whatever `w` says, so indexing is a constant and
+ * resizing a map moves nothing. */
+#define SIM_MAP_AT(m, tx, ty) ((m)->tile[(size_t)(ty) * SIM_MAP_TILES + (size_t)(tx)])
+
+/* Set a map's size and clear it to empty. Call before drawing one; a zeroed
+ * map has no size, and a map with no size is solid everywhere.
+ *
+ * Clamped to SIM_MAP_TILES, and refused below the boundary the index paints,
+ * since a map smaller than its own walls is a map with no inside. */
+void sim_map_size(sim_map *m, int w, int h);
+
 /* Make a map ready to play, which is two things.
  *
- * It closes the world: four tiles of boundary around the square, whatever the
- * map said was there. Every map wants one, so a map that had to carry its own
- * is a map that can be missing it, and a converted one always is. Four tiles
+ * It closes the world: four tiles of boundary around the declared rect,
+ * whatever the map said was there. Every map wants one, so a map that had to
+ * carry its own is a map that can be missing it, and a converted one always
+ * is. Four tiles
  * and not one, because a hull at full speed crosses more than a tile in a tick
  * and axis-by-axis collision cannot push it back out of a wall it has already
  * passed through.
@@ -127,6 +172,45 @@ typedef struct {
  * Call after building or loading a map, before stepping it. `sim_map_unpack`
  * and the reference maps below already do. */
 void sim_map_index(sim_map *m);
+
+/* Whether a map can be flown, asked of a hull rather than of a point.
+ *
+ * Three callers want the same answer and a second opinion about a map is worth
+ * nothing: the generator refuses to write a map that fails, the meta-layer
+ * refuses to store one, and an editor says what is wrong while somebody is
+ * still drawing. sim/src/check.c has the reasoning; the short version is that
+ * a hull is three tiles across, so the connectivity of a map is not the
+ * connectivity of its open tiles.
+ *
+ * The scratch is the caller's because the core does not allocate. It is nine
+ * megabytes and only the tools and the panel ever build one, which is why it
+ * is a struct to hand in rather than a static to trip over. */
+typedef struct {
+    int32_t regions;         /* separate places a hull can fly, doors shut */
+    int32_t reachable;       /* tiles a hull's center fits in the largest one */
+    int32_t stranded;        /* open tiles no hull can reach, doors open */
+    int32_t spawns;          /* starts the map names */
+    int32_t spawns_team[2];  /* and how they are split */
+    int32_t spawns_stranded; /* starts a ship could not leave */
+    int32_t solid;           /* wall, slopes counted whole */
+    int32_t open;            /* everything a ship flies through */
+} sim_map_report;
+
+typedef struct {
+    uint8_t nav[SIM_MAP_TILES * SIM_MAP_TILES];
+    int32_t comp[SIM_MAP_TILES * SIM_MAP_TILES];
+    int32_t stack[SIM_MAP_TILES * SIM_MAP_TILES];
+} sim_map_scratch;
+
+void sim_map_check(const sim_map *m, sim_map_scratch *s, sim_map_report *r);
+
+/* Whether that report is a map worth serving, and why not when it is not.
+ * `why` takes a sentence naming the first thing wrong with it, which is a
+ * message for whoever drew it rather than a code to look up. */
+int sim_map_playable(const sim_map *m, const sim_map_report *r, char *why, int cap);
+/* `m` is unused today and named anyway: every future rule this could grow
+ * (a size a mode needs, a spawn count a roster wants) is a question about the
+ * map rather than about the count of what is in it. */
 
 /* The reference arenas, in the core so the client and the server cannot hold
  * different ideas of the same room. They used to be the same magic numbers
@@ -163,6 +247,10 @@ uint32_t sim_offsetof_settings_max_ships(void);
 uint32_t sim_sizeof_settings(void);
 uint32_t sim_sizeof_ship(void);
 uint32_t sim_sizeof_events(void);
+/* The map too, since the server allocates one and hands the core the pointer
+ * to fill. It grew a size of its own, which is exactly the kind of change that
+ * leaves a mirror a field short and writes past the end of somebody's box. */
+uint32_t sim_sizeof_map(void);
 
 void sim_map_arena(sim_map *m);
 void sim_map_pit(sim_map *m);

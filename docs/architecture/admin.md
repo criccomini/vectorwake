@@ -339,7 +339,57 @@ the catalog that is not the public half of the meta-layer's signing key means
 every session token fails its check: pilots keep flying, as guests, rating
 nothing, with nothing on fire to say so.
 
-The catalog editor is still in front of it.
+The maps page is beside it, and is the first thing in the panel that changes
+what the fleet serves rather than what it says about a pilot.
+
+## Maps, and what a zone plays
+
+The page has two halves because the job does: you draw a room, then you say
+where it is played. A canvas one square per tile with the tile classes as a
+palette, and below it one card per zone naming what it plays, in order, at one
+match each.
+
+**What is drawn goes in the database, not the repository.** The catalog on
+disk stays the reviewed baseline: it is what a fresh deployment boots with,
+what the tests run against, and what serves when nothing has been published. A
+map made at a click is operational data, the same kind of thing as a ban or an
+admin flag, and it goes where those went. The alternative considered and
+rejected was the panel committing to git and CI rebuilding the image, which is
+a multi-minute wait per tweak, push credentials on an internet-facing box, and
+binary blobs accreting in a repository that has evicted 5 MB of them once
+already.
+
+**A publish reaches the fleet through the machinery a catalog edit already
+used.** Every publish takes the next serial, and a directory serves the
+catalog's own version plus that serial. An arena takes the highest version it
+is offered, so a rotation lands the way a new catalog does, and a running room
+takes it without dropping anybody: the match in progress finishes on the
+ground it started on, because swapping the map under a live fight is a desync
+everybody sees. Rolling one back is another publish rather than a smaller
+number.
+
+The push goes over the same loopback socket the panel commands the fleet
+through, and it is the only direction there is: a directory holds no
+credential the meta-layer would accept, so it cannot ask. The meta-layer
+therefore insists once a minute as well, since a directory that restarts comes
+back serving the maps on disk and nothing else would ever tell it otherwise.
+
+**The browser packs the file and does not judge it.** Whether a map is worth
+serving is a question with one right answer, and it is the core's:
+`sim_map_check` asks whether a three-tile hull can fly all of it, whether each
+side has somewhere to start, and whether any ground is a trap a ship could be
+shoved into and never leave. The generator takes its own verdict from the same
+function, so a map somebody drew is held to what a generated one is. The page
+asks while somebody is still drawing, so "a start is walled in" arrives when
+they wall it in.
+
+What the browser does have to get exactly right is the file. The far end
+unpacks it with the same function an arena does and refuses anything whose
+bytes disagree with the hash in its own header, which is the design rather
+than an inconvenience: a browser cannot be trusted to agree with the
+simulation, so it is never asked to. `deploy/admin/tests/pack_test.js` reads
+the shipped maps and writes them back byte for byte to prove the codec has not
+drifted.
 
 ## What an operator may edit about a pilot
 

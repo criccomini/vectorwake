@@ -88,6 +88,15 @@ int Init(lua_State* L) {
     return 0;
 }
 
+// How big this map is, in tiles. Not the array's bound: a match room is 160
+// and the arena is a thousand, and anything drawing the whole of one wants to
+// know which it is holding.
+int MapSize(lua_State* L) {
+    lua_pushnumber(L, g_map.w);
+    lua_pushnumber(L, g_map.h);
+    return 2;
+}
+
 // Where the map says a ship of this team starts, or nil when it names none.
 int MapSpawn(lua_State* L) {
     uint16_t tx = 0, ty = 0;
@@ -949,10 +958,12 @@ int TileAt(lua_State* L) {
 
 // What a cell of the overview shows when several kinds of tile stand in it.
 // A wall beats a door beats a safe zone beats a wormhole, and everything else
-// a map can hold is scenery the overview leaves out.
+// a map can hold is scenery the overview leaves out. A slope is wall: at four
+// tiles to a cell there is no room to say which half of one is solid.
 int OverviewRank(int cls) {
     switch (cls) {
         case SIM_TILE_SOLID: return 4;
+        case SIM_TILE_SLOPE: return 4;
         case SIM_TILE_DOOR: return 3;
         case SIM_TILE_SAFE: return 2;
         case SIM_TILE_WORMHOLE: return 1;
@@ -960,37 +971,50 @@ int OverviewRank(int cls) {
     }
 }
 
-// The whole map at one cell per `cell` tiles, as a string of tile classes.
+// The whole map at one cell per `cell` tiles, as a string of tile classes,
+// with the grid it came out as.
 //
-// Showing all thousand tiles at once means reading all of them, and from Lua
-// that is a call per tile: a million of those is a stall a player sees. Here
-// it is one pass over an array this module already holds, which costs about a
+// Showing every tile at once means reading every tile, and from Lua that is a
+// call apiece: a million of those is a stall a player sees. Here it is one
+// pass over an array this module already holds, which costs about a
 // millisecond and happens once per map.
 //
 // A cell reports the most important thing standing in it rather than whatever
 // tile a stride happened to land on. At this scale a wall is a pixel or two
 // wide, and sampling drops one between samples, which is a map with gaps in
 // it exactly where the rooms are.
+//
+// The map's own rect, so a 144-tile room comes back as a 144-tile room. Read
+// across the whole array instead it came back as a speck in the corner of a
+// field of nothing, which is what the overview drew before a map had a size.
 int MapCoarse(lua_State* L) {
     // Two tiles is the finest this will go, which is what the buffer below is
     // sized for and finer than any screen can show a thousand of.
     int cell = (int)luaL_checkinteger(L, 1);
     if (cell < 2) cell = 2;
     if (cell > SIM_MAP_TILES) cell = SIM_MAP_TILES;
-    const int g = SIM_MAP_TILES / cell;
+    const int gw = (g_map.w + cell - 1) / cell;
+    const int gh = (g_map.h + cell - 1) / cell;
     static uint8_t out[(SIM_MAP_TILES / 2) * (SIM_MAP_TILES / 2)];
-    memset(out, 0, (size_t)g * (size_t)g);
-    for (int ty = 0; ty < g * cell; ty++) {
-        uint8_t* row = out + (ty / cell) * g;
-        for (int tx = 0; tx < g * cell; tx++) {
+    if (gw <= 0 || gh <= 0) {
+        lua_pushlstring(L, "", 0);
+        lua_pushnumber(L, 0);
+        lua_pushnumber(L, 0);
+        return 3;
+    }
+    memset(out, 0, (size_t)gw * (size_t)gh);
+    for (int ty = 0; ty < g_map.h; ty++) {
+        uint8_t* row = out + (ty / cell) * gw;
+        for (int tx = 0; tx < g_map.w; tx++) {
             int cls = SIM_TILE_CLASS(sim_tile_at(&g_map, tx, ty));
             uint8_t* cur = row + tx / cell;
             if (OverviewRank(cls) > OverviewRank(*cur)) *cur = (uint8_t)cls;
         }
     }
-    lua_pushlstring(L, (const char*)out, (size_t)g * (size_t)g);
-    lua_pushnumber(L, g);
-    return 2;
+    lua_pushlstring(L, (const char*)out, (size_t)gw * (size_t)gh);
+    lua_pushnumber(L, gw);
+    lua_pushnumber(L, gh);
+    return 3;
 }
 
 int DoorOpen(lua_State* L) {
@@ -1278,6 +1302,7 @@ const luaL_reg kFunctions[] = {
     {"init", Init},
     {"spawn", Spawn},
     {"map_spawn", MapSpawn},
+    {"map_size", MapSize},
     {"set_class", SetClass},
     {"step", Step},
     {"replay", Replay},
@@ -1385,6 +1410,7 @@ void LuaInit(lua_State* L) {
     lua_pushnumber(L, SIM_TILE_UNDER);    lua_setfield(L, -2, "T_UNDER");
     lua_pushnumber(L, SIM_TILE_TURF);     lua_setfield(L, -2, "T_TURF");
     lua_pushnumber(L, SIM_TILE_SPAWN);    lua_setfield(L, -2, "T_SPAWN");
+    lua_pushnumber(L, SIM_TILE_SLOPE);    lua_setfield(L, -2, "T_SLOPE");
 
     // Event and weapon kinds, so the client never hard-codes an enum the
     // core is free to renumber.

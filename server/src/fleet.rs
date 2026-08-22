@@ -39,6 +39,17 @@ pub const D2O_FLEET: u8 = 0x61;
 /// the fleet view carries. Same gate as `O2D_FLEET`.
 pub const O2D_COMMAND: u8 = 0x62;
 pub const D2O_COMMAND: u8 = 0x63;
+/// And an operator handing a directory the maps an admin drew, with the zone
+/// rotations that name them. Same gate as the two above, and the same reason:
+/// the meta-layer is the only process that can tell an operator from anybody
+/// else, so it speaks for them over loopback.
+///
+/// A push rather than a pull because a rotation should land at the next
+/// whistle rather than the next restart. It is not how a publication survives,
+/// though: that is the meta-layer's table, and a directory that missed a push
+/// asks for the current one when it next comes up.
+pub const O2D_MAPS: u8 = 0x64;
+pub const D2O_MAPS: u8 = 0x65;
 
 /// Every operator verb. The admin surface checks against this so a typo is a
 /// refusal rather than a message an arena answers with `unknown_verb`.
@@ -331,6 +342,50 @@ pub struct CommandSent {
     pub sent: u32,
     #[serde(default)]
     pub error: String,
+}
+
+/// One map as it travels from the meta-layer to a directory: the name a
+/// rotation calls it by, and the packed `.vwmap` behind that name.
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
+pub struct PublishedMap {
+    pub name: String,
+    pub bytes_b64: String,
+}
+
+/// What one zone plays, in the order it plays them.
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
+pub struct PublishedZone {
+    pub zone: String,
+    pub maps: Vec<PublishedMap>,
+}
+
+/// Everything an operator has published, and how many times they have
+/// published anything.
+///
+/// The serial is what makes it arrive. A directory serves `catalog.version +
+/// serial`, and an arena takes the highest version it is offered, so a publish
+/// reaches a fleet through the machinery a catalog edit already used. It only
+/// ever counts up, so a directory that missed one is behind rather than wrong,
+/// and rolling back is a further publish rather than a smaller number.
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
+pub struct Published {
+    pub serial: u32,
+    pub zones: Vec<PublishedZone>,
+}
+
+impl Published {
+    /// The maps this publication gives a zone, already decoded, or nothing
+    /// when it says nothing about that zone. Nothing means the catalog on disk
+    /// keeps the zone, which is what makes a rotation removable.
+    pub fn zone(&self, name: &str) -> Option<Vec<Vec<u8>>> {
+        let z = self.zones.iter().find(|z| z.zone == name)?;
+        let maps: Vec<Vec<u8>> = z.maps.iter().filter_map(|m| unb64(&m.bytes_b64)).collect();
+        if maps.len() == z.maps.len() && !maps.is_empty() {
+            Some(maps)
+        } else {
+            None
+        }
+    }
 }
 
 /// The catalog as it travels. A subset of what is on disk: the zone definitions

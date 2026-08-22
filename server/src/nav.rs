@@ -96,6 +96,12 @@ pub struct Nav {
     /// whole server's CPU. A mutex, because the bot server shares one Nav per
     /// map across its tasks; the lock is held for a hash probe.
     failed: std::sync::Mutex<std::collections::HashSet<u64>>,
+    /// The map's own size in pixels, carried here because a pilot deciding
+    /// where to shelter or roam holds a Nav and no map, and "the middle" and
+    /// "the far edge" are answers only the map can give. Taken off the array's
+    /// bound instead, every bot on a 144-tile map heads for a point eight
+    /// hundred tiles outside it.
+    extent: (f32, f32),
 }
 
 fn cell_of(px: f32) -> usize {
@@ -154,8 +160,20 @@ impl Nav {
     pub fn build(map: &sim::sim_map) -> Nav {
         let mut cost = vec![1u8; W * W].into_boxed_slice();
         let mut safe = vec![false; W * W].into_boxed_slice();
+        // The grid is the array's size and the map is whatever fraction of it
+        // this map declares. Past that edge the tiles are simply whatever the
+        // buffer held, and the core answers wall there however they read, so
+        // anything out there is blocked rather than believed. Read the other
+        // way a 144-tile room comes with a quarter million cells of open
+        // nothing around it, and a route across it.
+        let gw = (map.w as usize).div_ceil(CELL);
+        let gh = (map.h as usize).div_ceil(CELL);
         for cy in 0..W {
             for cx in 0..W {
+                if cx >= gw || cy >= gh {
+                    cost[cy * W + cx] = BLOCKED;
+                    continue;
+                }
                 let mut shut = false;
                 let mut calm = false;
                 for ty in cy * CELL..(cy + 1) * CELL {
@@ -164,8 +182,10 @@ impl Nav {
                         let cls = map.tile[row + tx] & 0x0f;
                         // A door is a wall whenever it is shut, and a route
                         // that depends on catching one open strands a pilot for
-                        // four seconds at a time.
-                        if cls == 1 || cls == 3 {
+                        // four seconds at a time. A slope is half a wall and
+                        // counts whole: routing is about where a hull fits,
+                        // and half a tile is not where one fits.
+                        if cls == 1 || cls == 3 || cls == 10 {
                             shut = true;
                         }
                         if cls == 2 {
@@ -273,7 +293,23 @@ impl Nav {
             safe,
             comp,
             failed: std::sync::Mutex::new(std::collections::HashSet::new()),
+            extent: (map.w as f32 * 16.0, map.h as f32 * 16.0),
         }
+    }
+
+    /// The middle of the map, which is where a pilot with nowhere else to be
+    /// heads for.
+    pub fn mid(&self) -> (f32, f32) {
+        (self.extent.0 / 2.0, self.extent.1 / 2.0)
+    }
+
+    /// How far a point may sit from the origin and still be on the map, with
+    /// `margin` pixels of room kept between it and the boundary.
+    pub fn inside(&self, margin: f32, x: f32, y: f32) -> (f32, f32) {
+        (
+            x.clamp(margin, (self.extent.0 - margin).max(margin)),
+            y.clamp(margin, (self.extent.1 - margin).max(margin)),
+        )
     }
 
     /// Somewhere to be nobody: the open cell within `within` pixels that is
@@ -613,7 +649,7 @@ mod tests {
     /// A wall across the middle with one gap in it. A route has to find the gap;
     /// a straight line has to say it cannot.
     fn walled() -> Box<sim::sim_map> {
-        let mut m: Box<sim::sim_map> = crate::sim::zeroed_box();
+        let mut m: Box<sim::sim_map> = crate::sim::blank_map();
         for tx in 100..400 {
             if (240..248).contains(&tx) {
                 continue; // the doorway
@@ -670,7 +706,7 @@ mod tests {
 
     #[test]
     fn nowhere_to_go_is_an_empty_route_rather_than_a_hang() {
-        let mut m: Box<sim::sim_map> = crate::sim::zeroed_box();
+        let mut m: Box<sim::sim_map> = crate::sim::blank_map();
         // Seal a pilot in.
         for ty in 300..311 {
             for tx in 300..311 {
@@ -691,7 +727,7 @@ mod tests {
 
     #[test]
     fn somewhere_quiet_is_away_from_people_and_reachable() {
-        let n = Nav::build(&crate::sim::zeroed_box());
+        let n = Nav::build(&crate::sim::blank_map());
         let me = (500.0 * 16.0, 500.0 * 16.0);
         // A crowd immediately west of this pilot. Anywhere east of them will
         // do; what must not happen is a pick in among them.
@@ -722,7 +758,7 @@ mod tests {
         // beautifully and cannot be flown to. Reachability is a component
         // compare and it is the difference between a pilot leaving and a pilot
         // spending its whole budget pushing at the wall around the answer.
-        let mut m: Box<sim::sim_map> = crate::sim::zeroed_box();
+        let mut m: Box<sim::sim_map> = crate::sim::blank_map();
         for ty in 300..321 {
             for tx in 300..321 {
                 if ty == 300 || ty == 320 || tx == 300 || tx == 320 {
@@ -757,7 +793,7 @@ mod tests {
         let (scx, scy) = (268usize, 252usize);
         assert_eq!(scx % REFUGE_STRIDE, REFUGE_STRIDE / 2, "a sampled cell");
         assert_eq!(scy % REFUGE_STRIDE, REFUGE_STRIDE / 2, "a sampled cell");
-        let mut m: Box<sim::sim_map> = crate::sim::zeroed_box();
+        let mut m: Box<sim::sim_map> = crate::sim::blank_map();
         for ty in scy * CELL..(scy + 1) * CELL {
             for tx in scx * CELL..(scx + 1) * CELL {
                 m.tile[ty * sim::MAP_TILES + tx] = 2; // SIM_TILE_SAFE

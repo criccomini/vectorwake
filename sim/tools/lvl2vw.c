@@ -422,7 +422,9 @@ static uint8_t *slurp(const char *path, size_t *len) {
 
 static int convert(const uint8_t *buf, size_t len, sim_map *m, report *rp,
                    int spawns) {
-    memset(m, 0, sizeof *m);
+    /* A .lvl is a thousand tiles square and says so nowhere: the size is the
+     * one thing about the original's format that was never in the file. */
+    sim_map_size(m, TILES, TILES);
     memset(rp, 0, sizeof *rp);
     size_t n = 0;
     const uint8_t *tiles = tile_section(buf, len, &n, rp);

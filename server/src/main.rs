@@ -2658,7 +2658,7 @@ mod tests {
         let a = &mut z.rooms[0];
         a.add_default_flags();
         assert!(a.world.state.flag_count > 0, "flags were placed");
-        let mid = (sim::MAP_TILES as f32 / 2.0) * 16.0;
+        let (mid, _) = a.world.map.mid();
 
         let mut spacing = f32::MAX;
         for i in 0..a.world.state.flag_count as usize {

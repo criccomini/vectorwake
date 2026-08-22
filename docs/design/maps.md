@@ -1,10 +1,9 @@
 # Maps
 
-> **A second shape is proposed.** [match-game.md](match-game.md) wants small
-> point-symmetric match maps, roughly 96 to 128 tiles square, with a home
-> pocket per side and two or three routes between them, sized in seconds of
-> flight. Everything below is about the 1024-tile arena map and stays true
-> of it.
+> **Two shapes, and a map now says which it is.** The match maps are 160 tiles
+> and the open arena a thousand; a map carries its own width and height, so the
+> sections below that talk about a thousand tiles are about that map rather
+> than about every map.
 
 The original's map was a 1024x1024 grid of 16-pixel tiles, and a tile's
 number was its behavior: 1 through 160 were walls, 162 through 169 were
@@ -12,7 +11,8 @@ doors, 171 was a safe zone, 176 through 190 were scenery you flew under. Every
 rule in the engine was a range check against a constant, and a map editor had
 to know all of them.
 
-The grid is the same. The numbering is not.
+The tile is the same size. The numbering is not, and neither is the grid: a
+map here says how big it is.
 
 ## A tile is its behavior
 
@@ -27,20 +27,83 @@ The grid is the same. The numbering is not.
 | `OVER` | scenery drawn over the ships, never solid |
 | `UNDER` | scenery drawn under them |
 | `TURF` | a flag stand a mode can find |
+| `SLOPE` | half a wall, cut corner to corner |
 
-Nine classes rather than 190 numbers, and how a tile is *drawn* is not in that
+Ten classes rather than 190 numbers, and how a tile is *drawn* is not in that
 list at all -- that is the client's business, and the reason the original
 needed 160 wall values where this needs one.
 
 The byte is class in the low nibble and a variant in the high one. Doors use
 the variant as a channel, so a map can open one set while another shuts;
-goals use it as the team that scores there.
+goals use it as the team that scores there; a slope uses it as the corner it
+fills.
+
+## A map is the size it says it is
+
+The size is in the file, up to 1024 each way, and the two need not match. A
+match room is 160 tiles and the open arena is a thousand, and the world ends
+at the edge a map declares: `sim_tile_at` answers solid past it, so nothing
+outside is anywhere.
+
+Before this every map was the full square and a small one was drawn as a hole
+in the middle of a solid megabyte. It worked and it cost: every pass over the
+map paid for the thousand-tile square whatever the map held, the file carried
+it, and the overview drew a match map as a speck in a black field with no way
+to ask how big the room actually was. An empty 96 by 144 room is 833 bytes
+where the same drawing inside a full square was six thousand.
+
+The tile array does not change size. It is always the full square, so indexing
+is a constant, nothing allocates, and a map that grows or shrinks moves
+nothing; the declared size only says how much of it is the map. Sizes below
+nine tiles are refused, since the boundary is four tiles thick each side and a
+map smaller than its own walls has no inside.
+
+## A wall can be diagonal
+
+A diagonal built from square tiles is a staircase, and a staircase is not a
+shape a ship can fly along: every step is a fresh axis-aligned bounce, so a
+hull skimming one rattles down it instead of sliding, and a round fired along
+it skips. A `SLOPE` is that wall with the steps cut off. Its variant names the
+corner that stays solid, so the face is the diagonal opposite it, and two of
+them meeting at a corner make one continuous face however long the run.
+
+**The angle is 45 degrees because that is the one that is exact.** Reflecting a
+velocity off a 45 degree plane is a swap and a negate: a face through NW and SE
+turns `(vx, vy)` into `(vy, vx)`, and one through NE and SW into `(-vy, -vx)`.
+There is no table to read and no root to take, so there is nothing to round. A
+round bouncing off one keeps every bit of its speed and leaves square to how it
+arrived. An arbitrary angle costs a trigonometric table and a rounding rule,
+and both are places two architectures can disagree, which in this core is the
+one bug worth never having.
+
+A hull's box is resolved out along the face's own normal, half the depth on
+each axis, so a ship leaning into a diagonal is set down on it rather than
+shoved sideways to a tile edge. The velocity is split into the part along the
+face and the part into it; the first keeps `friction` and the second reverses
+with `bounce`, which is what a wall does per axis, said in the face's own
+frame.
+
+**Slopes go in runs.** A hull is three tiles across, so it rests on several
+tiles at once, and a lone slope cut into an otherwise flat top gives it two
+surfaces that disagree about where it should be: the flat clamps it down and
+the diagonal pushes it out, every tick. Drawn as a continuous face with the
+wall's body behind it, a box resting on the plane never reaches the square
+tiles under it: the corner that would touch one is the same corner the face
+is holding up. That is what stops the staircase coming back as the square
+backing behind a smooth front.
+
+The generator does not draw them. Its diagonals are one tile thick, and a thin
+diagonal is the one shape a slope cannot express: half a tile of wall with a
+hole at every corner is not a barrier. A thick diagonal wall with sloped faces
+is a shape a person draws and then measures, and there is somewhere to draw it
+now. See "Where a map comes from" below.
 
 ## The edge of the world is not a map's to draw
 
 Every map is closed on four sides by a boundary four tiles thick, painted by
-`sim_map_index` when a map is built or arrives, whatever the file said was
-there. A map author does not draw one and cannot leave one out.
+`sim_map_index` around the map's own rect when it is built or arrives,
+whatever the file said was there. A map author does not draw one and cannot
+leave one out.
 
 Four tiles rather than one, and a wall rather than a rule about coordinates,
 because a hull at full speed crosses more than a tile in a tick. Collision
@@ -115,8 +178,8 @@ The field is a lattice of 64-tile cells, each holding one of four structures
 picked by a hash of its coordinates: a block, a cross, four pillars, or open
 space. 256 landmarks, none wider than twenty tiles, so the lanes between them
 are always at least twice the width of what is in them. A lattice rather than
-a drawn map because a drawn 1024-tile map is a job for a map editor and a
-person, and this has to stay legible from a C file until that exists. A
+a drawn map because a drawn 1024-tile map is a job for a person, and this had
+to stay legible from a C file. A
 refuge -- a small safe zone -- sits every fourth cell each way, so nowhere in
 the field is more than a couple of hundred tiles from somewhere to stop.
 
@@ -171,7 +234,7 @@ It has no wormhole. One reaches 220 px, fourteen tiles, and the bot ladder
 found what that does to a small room: pilots spawned eight tiles from one
 stopped fighting and orbited it instead, and the tournament graded a whole
 roster equal because nobody landed a shot. A map this size can hold one; where
-to put it is a map-editor decision rather than a C-file one.
+to put it is a decision for whoever draws it rather than for a C file.
 
 **Two things had to scale with the map rather than sit in it.** The client
 meshes terrain in a 113-tile window around the camera and rebuilds it when the
@@ -237,11 +300,15 @@ rendering concern that has no business in a simulation.
 
 ## Map files
 
-A map travels as a run-length encoded tile array behind a twelve byte header:
-magic, version, and an FNV-1a hash of the tiles. The full-size reference arena
-is 28 KB and the duel room 487 bytes, out of a megabyte of tiles. It was 1615
-bytes when the arena was one room; the difference is the 256 structures in the
-field, and it is sent once when a client joins.
+A map travels as a run-length encoded tile array behind a fourteen byte header:
+magic, version, the map's width and height, and an FNV-1a hash. The full-size
+reference arena is 28 KB and a match room under four, and it is sent once when
+a client joins.
+
+Runs are read in the map's own row order, and the array's stride is not in the
+file. A small map that carried it would spend every row saying "and then eight
+hundred and eighty tiles of nothing", and would be a different file at a
+different stride.
 
 The encoding lives in the core, next to snapshot packing and for the same
 reason: the client has to decode it identically or it predicts collisions
@@ -251,7 +318,13 @@ The hash is the point of the header. A client that decodes a map and gets a
 different number has a different map, and would rather be told than spend a
 match wondering why it keeps hitting nothing. The original checksummed its
 maps too; this just refuses to play rather than reporting a mismatch and
-carrying on.
+carrying on. The size is hashed along with the tiles, so the same drawing at
+two sizes is two maps and cannot be mistaken for one.
+
+The size is also what the reader checks first, and the length bound has to
+cover the whole header: it was still version 1's ten bytes for a while, and a
+file truncated between the two got past the check and had its size read off the
+end of the buffer.
 
 `mapdump` writes one of the built-in rooms out as a file:
 
@@ -271,12 +344,20 @@ make -C sim build/mapgen
 ./sim/build/mapgen --match slipway catalog/zones/melee/slipway.vwmap 11
 ```
 
-A match arena is 144 tiles square in the middle of the world, and everything
-outside it is solid, which is the border a pilot actually meets. How far in
-the pockets sit is two numbers pulling against each other: near the wall, a
-spawning pilot's camera is a fifth full of solid, and far from it the two
-homes are too close for the flight times below. Twenty-two tiles down and
-forty-one across is where both hold.
+A match arena is 144 tiles square with eight tiles of wall around it, so the
+map is 160 and there is nothing outside it: it used to be the same 144 tiles
+carved out of the middle of a thousand, which is what a map having no size of
+its own forced. How far in the pockets sit is two numbers pulling against each
+other: near the wall, a spawning pilot's camera is a fifth full of solid, and
+far from it the two homes are too close for the flight times below.
+Twenty-two tiles down and forty-one across is where both hold.
+
+**The seeds are 7 and 11, and they are the whole provenance of both maps.**
+The zone file beside them named 22 and 24 for a while, which draws a different
+pair of rooms that pass every check the generator makes and put the homes ten
+tiles wrong. Nothing catches that except the flight time between the pockets,
+which is measured in the server's own tests and did catch it. A seed is only
+provenance if it is the seed.
 
 Both layouts are **point symmetric**: the generator draws one half and `sym_put` turns it a
 half turn into the other, so the two sides face identical approach geometry
@@ -487,20 +568,59 @@ and neither does this one: the sides are statistically alike and
 geometrically different, which is the arrangement that stops a player learning
 one half and knowing the other.
 
-A zone names one in its own `zone.toml`, relative to the zone's directory:
+Which maps a zone plays has a section of its own below.
+
+Clients are sent the map before the welcome, since prediction runs collision
+locally and needs the room before it needs anyone in it.
+
+## Where a map comes from
+
+Three places, and they all end at the same check.
+
+`sim/tools/mapgen` draws one from a seed, which is what the shipped maps are.
+`sim/tools/lvl2vw` converts one from the original's format, which is how a room
+somebody else play-tested for years can be flown against our collision.
+And the admin panel has an editor: a canvas one square per tile, the classes
+above as a palette, and half-turn symmetry that turns a slope to its opposite
+corner and hands a start to the other side.
+
+Whichever drew it, `sim_map_check` decides whether it can be played. It asks
+about a hull rather than a point: whether a three-tile ship can fly all of the
+map with every door shut, whether each start is somewhere a ship can leave, and
+whether any open ground is a pocket nothing can reach. The generator refuses to
+write a map that fails it and the meta-layer refuses to store one, so a map
+drawn by hand is held to exactly what a generated one is.
+
+The editor does not carry its own copy of that. It packs the tiles, posts them,
+and shows what the core said, which is also what stops a browser and a
+simulation quietly disagreeing about a room. What it does have to get exactly
+right is the file, since the far end unpacks it with the same function an arena
+does and refuses anything whose bytes do not match the hash in its own header.
+
+## Which maps a zone plays
+
+A zone names its own in `zone.toml`, relative to the zone's directory:
 
 ```toml
 maps = ["drydock.vwmap", "slipway.vwmap"]
 ```
 
-More than one is a rotation, and the room takes the next one at every match.
+More than one is a rotation, and the room takes the next one at every whistle.
 Empty runs the built-in arena, so a zone with no map is still a zone. A map
 that will not load is reported and then ignored, because a zone that refuses
-to start over a bad file is worse for the people trying to play in it than
-one that runs the reference room and says so.
+to start over a bad file is worse for the people trying to play in it than one
+that runs the reference room and says so.
 
-Clients are sent the map before the welcome, since prediction runs collision
-locally and needs the room before it needs anyone in it.
+An operator can point a zone somewhere else from the panel, and that overrides
+the file for that zone until it is taken off again. The file stays the reviewed
+baseline: it is what a fresh deployment boots with and what the tests run
+against.
+
+A rotation changed under a running room does not interrupt it. The match in
+progress finishes on the ground it started on, because swapping the map under
+a live fight is a desync everybody sees, and the next whistle is seconds away.
+See [../architecture/admin.md](../architecture/admin.md) for how a publish
+reaches a fleet.
 
 ## Spawn points travel with the map
 

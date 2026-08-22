@@ -3023,6 +3023,18 @@ impl Room {
     pub(crate) fn close_match(&mut self) {
         if self.maps.len() > 1 {
             self.map_at = (self.map_at + 1) % self.maps.len();
+            // Which ground, since a zone's rotation is something an operator
+            // can change from the panel now and "did that land" is otherwise
+            // a question with nowhere to look. The next match rather than this
+            // one: the whistle changes the ground and the podium waits on it.
+            println!(
+                "room {}: next match is on map {} of {} ({} by {})",
+                self.number,
+                self.map_at + 1,
+                self.maps.len(),
+                self.maps[self.map_at].w,
+                self.maps[self.map_at].h
+            );
             // The room's size is a zone key that lives on the settings, so it
             // is read back off the running room rather than out of the tuning:
             // a `max_ships` from the zone stanza never passed through the

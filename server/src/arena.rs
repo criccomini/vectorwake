@@ -775,6 +775,41 @@ impl ArenaServer {
         // next drain. A catalog edit is not a reason to disconnect anybody.
         if !self.zone_name.is_empty() {
             if let Some(z) = c.zone(&self.zone_name).cloned() {
+                // The rotation is taken here too, and it is the reason an
+                // operator can change what a zone plays without emptying it.
+                // Unpacked once for the whole process rather than per room,
+                // the way `build_room` shares one set of tiles between rooms
+                // serving the same zone.
+                //
+                // The match in progress finishes on the ground it started on:
+                // swapping the map under a live fight is a desync everybody
+                // sees, and the next whistle is seconds away.
+                let maps: Vec<std::sync::Arc<sim::sim_map>> = z
+                    .maps_b64
+                    .iter()
+                    .filter_map(|m| fleet::unb64(m))
+                    .filter_map(|b| sim::unpack_map(&b).ok())
+                    .collect();
+                if !maps.is_empty() {
+                    for r in self.rooms.iter_mut() {
+                        let same = r.maps.len() == maps.len()
+                            && r.maps
+                                .iter()
+                                .zip(maps.iter())
+                                .all(|(a, b)| std::sync::Arc::ptr_eq(a, b) || a.tile == b.tile);
+                        if same {
+                            continue;
+                        }
+                        println!("room {}: rotation is now {} map(s)", r.number, maps.len());
+                        r.maps = maps.clone();
+                        // Whatever the room is standing on stays under it, so
+                        // the index only has to be somewhere the next whistle
+                        // can step from.
+                        if r.map_at >= r.maps.len() {
+                            r.map_at = 0;
+                        }
+                    }
+                }
                 if let Ok(def) = toml::from_str::<catalog::ZoneDef>(&z.zone_toml) {
                     let name = self.zone_name.clone();
                     for r in self.rooms.iter_mut() {

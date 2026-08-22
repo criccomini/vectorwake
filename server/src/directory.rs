@@ -65,6 +65,16 @@ pub struct Directory {
     /// Commands and their outcomes, newest last, for the admin surface. Bounded,
     /// because an audit log that grows without limit is an outage waiting.
     pub audit: Vec<AuditRow>,
+    /// What an operator has published from the panel: maps they drew, and the
+    /// zone rotations naming them. Laid over the catalog on disk rather than
+    /// replacing it, so a zone nobody has published keeps the file's maps and
+    /// the file stays the thing a fresh deployment boots with.
+    ///
+    /// Held in memory only. The meta-layer's table is where a publication
+    /// lives; this is a copy that arrives by push and is asked for again at
+    /// startup, so a directory that restarts is briefly behind rather than
+    /// permanently wrong.
+    pub published: fleet::Published,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -156,6 +166,7 @@ impl Directory {
             regs: HashMap::new(),
             next_command: 1,
             audit: Vec::new(),
+            published: fleet::Published::default(),
         }
     }
 
@@ -164,7 +175,7 @@ impl Directory {
     pub fn wire_catalog(&self) -> fleet::WireCatalog {
         let c = &self.catalog;
         fleet::WireCatalog {
-            version: c.version,
+            version: self.version(),
             name: c.name.clone(),
             default_zone: c.default_zone.clone(),
             bans: c.bans.clone(),
@@ -193,12 +204,46 @@ impl Directory {
                         bot_fill: z.bot_fill(),
                         max_rooms: z.max_rooms() as u32,
                         admission: z.admission.clone(),
-                        maps_b64: c.map_bytes(n).iter().map(|b| fleet::b64(b)).collect(),
+                        // A published rotation wins over the file, and a zone
+                        // without one keeps the file. That is the whole of the
+                        // override: everything else in the stanza is still the
+                        // reviewed text on disk.
+                        maps_b64: self
+                            .published
+                            .zone(n)
+                            .unwrap_or_else(|| c.map_bytes(n))
+                            .iter()
+                            .map(|b| fleet::b64(b))
+                            .collect(),
                         zone_toml: z.raw.clone(),
                     })
                 })
                 .collect(),
         }
+    }
+
+    /// The version this directory serves: the catalog's own, plus how many
+    /// times anything has been published.
+    ///
+    /// Added rather than replaced, so both sources of change still count up
+    /// and an arena's "highest version wins" holds across both. Bumping the
+    /// file while publications exist stays a bigger number, and rolling a
+    /// publication back is another publication rather than a smaller serial.
+    pub fn version(&self) -> u32 {
+        self.catalog.version.saturating_add(self.published.serial)
+    }
+
+    /// Take a publication from the operator. Returns what version the fleet
+    /// will now be offered, or nothing when this is one it already holds.
+    ///
+    /// Refused when it is not newer, for the reason an arena refuses an older
+    /// catalog: two pushes can cross, and the loser must not undo the winner.
+    pub fn publish(&mut self, p: fleet::Published) -> Option<u32> {
+        if p.serial < self.published.serial {
+            return None;
+        }
+        self.published = p;
+        Some(self.version())
     }
 
     /// Drop registrations whose socket has gone quiet. A delisting has to be
@@ -215,7 +260,7 @@ impl Directory {
     pub fn view(&self) -> fleet::View {
         let now = now_ms();
         fleet::View {
-            catalog_version: self.catalog.version,
+            catalog_version: self.version(),
             meta_key: self.catalog.meta.key.clone(),
             build: crate::metrics::commit().to_string(),
             instances: self
@@ -317,7 +362,7 @@ impl Directory {
         Browse {
             name: self.catalog.name.clone(),
             description: self.catalog.description.clone(),
-            catalog_version: self.catalog.version,
+            catalog_version: self.version(),
             meta,
             zones,
         }
@@ -575,7 +620,7 @@ async fn serve_registration(
                     );
                     let accepted = fleet::Accepted {
                         pool: pool.clone(),
-                        catalog_version: d.catalog.version,
+                        catalog_version: d.version(),
                         catalog: d.wire_catalog(),
                         verified: false,
                     };
@@ -715,6 +760,54 @@ async fn serve_registration(
                 body["audit"] = serde_json::to_value(rows).unwrap_or_default();
                 let mut m = vec![fleet::D2O_FLEET];
                 m.extend_from_slice(body.to_string().as_bytes());
+                if tx.try_send(Message::Binary(m)).is_err() {
+                    break;
+                }
+            }
+            // An operator handing over the maps an admin drew and the zone
+            // rotations naming them. Same gate as the view above, and the same
+            // reason: the meta-layer is the only process that can tell an
+            // operator from anybody else.
+            //
+            // Taking one bumps the version this directory serves, so every
+            // arena registered to it takes the new catalog on its next
+            // heartbeat and every room swaps ground at its next whistle. That
+            // is the whole of the delivery: the machinery a catalog edit
+            // already used, reached by a different door.
+            Some(t) if t == fleet::O2D_MAPS => {
+                if !local {
+                    println!("refused a publication from a proxied peer");
+                    continue;
+                }
+                let Some(p) = fleet::parse::<fleet::Published>(&data, fleet::O2D_MAPS) else {
+                    continue;
+                };
+                let (serial, zones) = (p.serial, p.zones.len());
+                let mut d = dir.lock().await;
+                let reply = match d.publish(p) {
+                    Some(v) => {
+                        println!(
+                            "catalog: publication {serial} taken, {zones} zone(s), serving v{v}"
+                        );
+                        serde_json::json!({ "version": v, "serial": serial, "taken": true })
+                    }
+                    None => serde_json::json!({
+                        "version": d.version(),
+                        "serial": d.published.serial,
+                        "taken": false,
+                        "why": "this directory already holds a later publication",
+                    }),
+                };
+                // Every registered arena hears about it now rather than at its
+                // next heartbeat, because a rotation an operator just set is
+                // one they are about to go and look at.
+                let catalog = d.wire_catalog();
+                let frame = fleet::frame(fleet::D2A_CATALOG, &catalog);
+                for r in d.regs.values() {
+                    let _ = r.tx.try_send(Message::Binary(frame.clone()));
+                }
+                let mut m = vec![fleet::D2O_MAPS];
+                m.extend_from_slice(reply.to_string().as_bytes());
                 if tx.try_send(Message::Binary(m)).is_err() {
                     break;
                 }
@@ -1013,6 +1106,110 @@ mod tests {
             );
         }
         c
+    }
+
+    /// A publication naming one zone, with tiles that are not a real map: the
+    /// directory carries bytes and never reads them, which is the property
+    /// these check.
+    fn publication(serial: u32, zone: &str, maps: &[(&str, &[u8])]) -> fleet::Published {
+        fleet::Published {
+            serial,
+            zones: vec![fleet::PublishedZone {
+                zone: zone.into(),
+                maps: maps
+                    .iter()
+                    .map(|(n, b)| fleet::PublishedMap {
+                        name: (*n).into(),
+                        bytes_b64: fleet::b64(b),
+                    })
+                    .collect(),
+            }],
+        }
+    }
+
+    #[test]
+    fn a_publication_replaces_one_zone_and_leaves_the_rest_on_the_file() {
+        let mut d = Directory::new(cat());
+        assert_eq!(d.version(), 7, "with nothing published, the file's version");
+
+        let v = d
+            .publish(publication(3, "chaos", &[("drawn", b"tiles")]))
+            .expect("a first publication is taken");
+        assert_eq!(v, 10, "the served version is the file's plus the serial");
+
+        let w = d.wire_catalog();
+        assert_eq!(w.version, 10, "and that is the version an arena is offered");
+        let chaos = w.zones.iter().find(|z| z.name == "chaos").expect("chaos");
+        assert_eq!(
+            chaos.maps_b64,
+            vec![fleet::b64(b"tiles")],
+            "the published rotation is what the zone plays"
+        );
+        let war = w.zones.iter().find(|z| z.name == "war").expect("war");
+        assert!(
+            war.maps_b64.is_empty(),
+            "a zone nobody published still reads its maps off the file"
+        );
+    }
+
+    #[test]
+    fn a_later_publication_wins_and_an_earlier_one_is_refused() {
+        let mut d = Directory::new(cat());
+        d.publish(publication(2, "chaos", &[("first", b"one")]));
+        let v = d
+            .publish(publication(5, "chaos", &[("second", b"two")]))
+            .expect("a later serial is taken");
+        assert_eq!(v, 12);
+
+        // Two pushes can cross on the wire. The loser must not undo the
+        // winner, which is the same rule an arena applies to a catalog.
+        assert!(
+            d.publish(publication(4, "chaos", &[("stale", b"old")]))
+                .is_none(),
+            "an older publication is refused"
+        );
+        let w = d.wire_catalog();
+        assert_eq!(w.version, 12, "and the version does not go backwards");
+        let chaos = w.zones.iter().find(|z| z.name == "chaos").expect("chaos");
+        assert_eq!(
+            chaos.maps_b64,
+            vec![fleet::b64(b"two")],
+            "nor does the ground"
+        );
+    }
+
+    #[test]
+    fn a_publication_and_a_file_bump_both_count_up() {
+        // The two sources of change are added rather than one replacing the
+        // other, so "highest version wins" still holds when an operator has
+        // published and somebody then ships a new catalog.
+        let mut d = Directory::new(cat());
+        d.publish(publication(4, "chaos", &[("drawn", b"tiles")]));
+        let published = d.version();
+        d.catalog.version = 9;
+        assert!(
+            d.version() > published,
+            "a newer file still outranks what it replaced"
+        );
+    }
+
+    #[test]
+    fn an_empty_rotation_hands_the_zone_back_to_the_file() {
+        let mut d = Directory::new(cat());
+        d.publish(publication(1, "chaos", &[("drawn", b"tiles")]));
+        // A publication that names no maps for a zone is how a rotation is
+        // taken off: the meta-layer deletes the row rather than storing an
+        // empty list, so the zone simply stops appearing here.
+        d.publish(fleet::Published {
+            serial: 2,
+            zones: vec![],
+        });
+        let w = d.wire_catalog();
+        let chaos = w.zones.iter().find(|z| z.name == "chaos").expect("chaos");
+        assert!(
+            chaos.maps_b64.is_empty(),
+            "with no publication the zone reads the file again"
+        );
     }
 
     fn reg(d: &mut Directory, id: &str, zone: &str, players: u32, verified: bool) {
