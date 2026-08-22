@@ -1053,6 +1053,11 @@ int main(void) {
         /* Truncation is not an empty tail. */
         CHECK(sim_map_unpack(dst, buf, n - 3) == -1, "a short map is rejected");
         CHECK(sim_map_unpack(dst, buf, 4) == -1, "a stub is rejected");
+        /* Every length short of a whole header, since the size is read out of
+         * the header and a bound two bytes light reads it off the end. */
+        for (int k = 0; k < 14; k++)
+            CHECK(sim_map_unpack(dst, buf, k) == -1,
+                  "nothing shorter than a header is a map");
 
         buf[n] = 0x5a;
         CHECK(sim_map_unpack(dst, buf, n + 1) == -1,

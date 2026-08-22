@@ -747,7 +747,10 @@ int sim_settings_unpack(sim_settings *out, const uint8_t *in, int len) {
  * square and there is no reading one as the other, which is the whole reason
  * the version byte is here. */
 #define MAP_VERSION 2
-#define MAP_HEADER 12
+/* magic, version, reserved, width, height, hash. Version 1's was ten, and the
+ * reader's bound has to be this one exactly: short by two and a truncated file
+ * gets past the length check and the size is read off the end of it. */
+#define MAP_HEADER 14
 
 /* The tiles a map actually has, row by row, which is not the array they sit
  * in. The size goes in first so two maps with the same drawing at different
