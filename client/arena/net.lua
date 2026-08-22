@@ -1161,11 +1161,17 @@ local function on_snapshot(s)
         if not large then debug_small_reports = debug_small_reports + 1 end
         last_debug_tick = from
         if large then last_large_debug_tick = from end
+        -- The zone's name, which is the first line of what the room sends:
+        -- the rest is the sentence under it on the games page, and a column
+        -- of "meleefour a side, three minutes" is a column nobody can group
+        -- by. The menu already reads it this way to put a name in the corner.
+        local zone_line = (M.zone ~= "" and M.zone
+                           or (M.joined and M.joined.zone or ""))
+                          :match("^[^\n]*")
         account.report_debug({
             kind = "local_correction",
             account = M.joined and M.joined.account or 0,
-            zone = M.zone ~= "" and M.zone
-                or (M.joined and M.joined.zone or ""),
+            zone = zone_line,
             room = M.room,
             wire = M.stats.wire,
             client_tick = client_tick,

@@ -707,7 +707,14 @@ fn client_error_of(body: &serde_json::Value) -> Result<ClientError, &'static str
     })
 }
 
-fn client_debug_of(body: &serde_json::Value) -> Result<ClientDebug, &'static str> {
+/// Read one correction report, or say which field is wrong.
+///
+/// The refusal names the field. It used to say "an integer diagnostic field is
+/// outside its range", which is true of thirty-one fields and useful about
+/// none of them: this endpoint refused nearly every report a browser sent for
+/// weeks and the reply gave nobody a way to find out why. A diagnostic channel
+/// that cannot be diagnosed is worse than no channel.
+fn client_debug_of(body: &serde_json::Value) -> Result<ClientDebug, String> {
     let text = |name: &str, limit: usize| {
         clean_client_text(
             body.get(name).and_then(|v| v.as_str()).unwrap_or(""),
@@ -720,37 +727,37 @@ fn client_debug_of(body: &serde_json::Value) -> Result<ClientDebug, &'static str
             .and_then(|v| v.as_u64())
             .filter(|v| *v <= u32::MAX as u64)
             .map(|v| v as i64)
-            .ok_or("a tick or mask is outside u32")
+            .ok_or_else(|| format!("{name} is not a whole number inside u32"))
     };
     let integer = |name: &str, lo: i64, hi: i64| {
         body.get(name)
             .and_then(|v| v.as_i64())
             .filter(|v| *v >= lo && *v <= hi)
             .map(|v| v as i32)
-            .ok_or("an integer diagnostic field is outside its range")
+            .ok_or_else(|| format!("{name} is not a whole number in {lo}..{hi}"))
     };
     let number = |name: &str, lo: f64, hi: f64| {
         body.get(name)
             .and_then(|v| v.as_f64())
             .filter(|v| v.is_finite() && *v >= lo && *v <= hi)
-            .ok_or("a numeric diagnostic field is outside its range")
+            .ok_or_else(|| format!("{name} is not a number in {lo}..{hi}"))
     };
 
     if body.get("kind").and_then(|v| v.as_str()) != Some("local_correction") {
-        return Err("unknown client diagnostic kind");
+        return Err("unknown client diagnostic kind".into());
     }
     if body.get("alive_before").and_then(|v| v.as_bool()) != Some(true)
         || body.get("alive_after").and_then(|v| v.as_bool()) != Some(true)
     {
-        return Err("only continuous living corrections are diagnostics");
+        return Err("only continuous living corrections are diagnostics".into());
     }
     let wire = text("wire", 8);
     if !matches!(wire.as_str(), "ws" | "wt") {
-        return Err("unknown client wire");
+        return Err("unknown client wire".into());
     }
     let correction_px = number("correction_px", 0.5, 20_000_000.0)?;
     if correction_px <= 0.5 {
-        return Err("a client correction must exceed the diagnostic threshold");
+        return Err("a client correction must exceed the diagnostic threshold".into());
     }
 
     Ok(ClientDebug {
@@ -791,7 +798,15 @@ fn client_debug_of(body: &serde_json::Value) -> Result<ClientDebug, &'static str
         input_ack: u32_field("input_ack")?,
         input_mask: u32_field("input_mask")?,
         input_margin: integer("input_margin", -1000, 1000)?,
-        input_lead: integer("input_lead", 0, 1000)?,
+        // Signed, because a lead is. It is how far the client's predicted
+        // tick is ahead of the snapshot it is reconciling against, and a
+        // snapshot that arrives ahead of the prediction puts it below zero:
+        // the client fell behind, which is one of the states most worth having
+        // a correction report about. Bounded at zero, this refused the report
+        // and took the other thirty fields with it. `input_margin` beside it
+        // was signed from the start; this is the same quantity read from the
+        // other end of the wire.
+        input_lead: integer("input_lead", -1000, 1000)?,
         input_holes: integer("input_holes", 0, 31)?,
         user_agent: text("user_agent", 256),
     })
@@ -4674,8 +4689,32 @@ mod tests {
         respawn["alive_before"] = serde_json::json!(false);
         assert!(client_debug_of(&respawn).is_err());
 
-        let mut bad_wire = valid;
+        let mut bad_wire = valid.clone();
         bad_wire["wire"] = serde_json::json!("invented");
         assert!(client_debug_of(&bad_wire).is_err());
+
+        // A lead below zero is a client reconciling against a tick it had not
+        // predicted yet, which is a correction worth reading rather than a
+        // report to throw away. Bounded at zero, this endpoint refused
+        // twenty-three of twenty-four reports from a two-browser session and
+        // said only that "an integer diagnostic field" was wrong.
+        let mut behind = valid.clone();
+        behind["input_lead"] = serde_json::json!(-2);
+        assert_eq!(
+            client_debug_of(&behind)
+                .expect("a client that fell behind still reports")
+                .input_lead,
+            -2
+        );
+
+        // And a refusal names the field, because thirty-one of them go
+        // through the same three checks.
+        let mut silly = valid;
+        silly["input_holes"] = serde_json::json!(99);
+        let why = match client_debug_of(&silly) {
+            Err(why) => why,
+            Ok(_) => panic!("99 holes is not a report"),
+        };
+        assert!(why.contains("input_holes"), "{why}");
     }
 }
