@@ -3952,16 +3952,18 @@ function pages.kit(v, x, y, w, h, focused)
     -- nothing beneath it. Set per column from what that column came to.
     local pad = 0
     local HEAD = 36 * F.scale
-    local function rule(label, note)
+    -- A label and nothing beside it. Each of these heads carried a sentence
+    -- about its group: what six of a stat costs, what a dim step means, that
+    -- spent charges do not come back. They were rules of the game printed on
+    -- the furniture, read once and then in the way of the thing they
+    -- introduced, and the page says most of it now by drawing it: a dim step
+    -- has a price at the end of its row.
+    local function rule(label)
         cy = cy + 6 * F.scale + pad
         ticks(kx, cy, kw, pal.a(pal.RADAR_TILE, 0.45), 14 * F.scale)
         cy = cy + 16 * F.scale
         if label then
             lbl(label, kx, cy)
-            if note then
-                lbl(note, kx + text_w(label, 9 * F.scale) + 16 * F.scale, cy,
-                    pal.a(pal.DIM, 0.55), nil, 8.5 * F.scale)
-            end
             cy = cy + 14 * F.scale
         end
     end
@@ -4069,14 +4071,10 @@ function pages.kit(v, x, y, w, h, focused)
     -- is is a position on a ladder, so it is drawn as one and reads as L1,
     -- L2, L3.
     local function ladders()
-        rule("stats", "six a stat is the whole budget, the last two are bought")
+        rule("stats")
         for _, r in ipairs(stats) do ladder(r) end
         if #levels > 0 then
-            -- What the dim step means, written where a player first meets
-            -- one. Both ladders here are one rung long for an account that
-            -- has bought nothing, so this is the row that raises the question.
-            rule("weapon level", "rung zero is what the trigger already fires; "
-                                 .. "a dim step is one upgrades still holds")
+            rule("weapon level")
             for _, r in ipairs(levels) do
                 ladder(r, function(n) return "L" .. (n + 1) end)
             end
@@ -4119,10 +4117,8 @@ function pages.kit(v, x, y, w, h, focused)
     local function triggers()
         chips_for(guns, "gun")
         chips_for(bombs, "bomb")
-        -- The charges, which are the one thing on this page a death does not
-        -- give back, so the page says so where they are chosen.
         if #charges > 0 then
-            rule("charges", "spent charges do not come back when you die")
+            rule("charges")
             -- On the same ladder as everything else. These were the one group
             -- with a row shape of their own: the name on the left, the pips
             -- at an offset of their own, and no count at the end, so a page
