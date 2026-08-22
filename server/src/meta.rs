@@ -1104,9 +1104,16 @@ fn room_for_one_more(held: i64) -> Result<(), (u16, &'static str)> {
 const MAX_FRIENDS: i64 = 100;
 
 /// How much of a call sign has to be typed before the add field is answered,
-/// and how many names come back. Both are small on purpose: this is help
-/// finishing a name somebody already knows, not a way to read the fleet.
-const NAME_PREFIX_MIN: usize = 2;
+/// and how many names come back.
+///
+/// One character, because a field that answers nothing to the first letter
+/// reads as a field that does not answer at all, and that is how it was
+/// reported. It was two, on the argument that one letter is closer to
+/// browsing; what actually bounds this is the eight below and the throttle,
+/// neither of which cares how long the prefix is. Eight names from the start
+/// of the alphabet is the same eight however many pilots there are, so the
+/// answer does not grow into a directory as the fleet does.
+const NAME_PREFIX_MIN: usize = 1;
 const NAME_MATCHES: i64 = 8;
 
 /// What somebody has typed, as a `like` pattern, or nothing where it is too
@@ -5039,13 +5046,20 @@ mod tests {
     /// The add field's lookup is the one place this meta-layer will name a
     /// pilot you have never met, so what it will answer to matters.
     ///
-    /// Two characters before it says anything, and the pattern characters are
+    /// It answers from the first letter, and the pattern characters are
     /// escaped: a single `%` is a request for the whole fleet, and that is the
-    /// one thing this route exists not to hand over.
+    /// one thing this route exists not to hand over. What bounds the answer is
+    /// the eight names it returns, not how much was typed, which is why the
+    /// two-character floor went: it made a field that looks broken until the
+    /// second letter and stopped nothing.
     #[test]
     fn a_name_lookup_answers_a_prefix_and_not_a_wildcard() {
-        assert_eq!(name_prefix("c"), None, "one letter is not a prefix");
-        assert_eq!(name_prefix(" "), None);
+        assert_eq!(
+            name_prefix("c"),
+            Some("c%".into()),
+            "one letter is a prefix"
+        );
+        assert_eq!(name_prefix(" "), None, "and nothing is not");
         assert_eq!(name_prefix(""), None);
         assert_eq!(name_prefix("co"), Some("co%".into()));
         assert_eq!(name_prefix("  co  "), Some("co%".into()), "trimmed");

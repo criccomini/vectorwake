@@ -941,23 +941,38 @@ end
 -- cursor as well as the page you are standing in. At the top of the menu the
 -- friends page is a preview with no field drawn on it, and a letter typed
 -- there would land in a box nobody can see and take the next enter with it.
+-- What the last press came to, dropped.
+--
+-- The sentence under the box is about a name that was sent, and the moment
+-- somebody types the next letter it is about a name that is no longer in the
+-- box. Left standing it reads as an answer to what is being typed now:
+-- "Cobalt" with "no pilot called that" under it is a field saying no to a
+-- name nobody has asked about yet, which is how the completion came to be
+-- reported as broken.
+local function forget_add_note()
+    account.friend_note = ""
+    account.friend_bad = false
+end
+
 function M.type_add(ch)
-    if M.at() ~= "friends" then return false end
+    if M.showing() ~= "friends" then return false end
     if type(ch) ~= "string" or #ch ~= 1 then return false end
     local b = string.byte(ch)
     if b < 32 or b > 126 then return false end
     if #(M.add_name or "") >= 24 then return false end
     M.add_name = (M.add_name or "") .. ch
     M.add_on = true
+    forget_add_note()
     account.find_pilots(M.add_name)
     return true
 end
 
 function M.rub_add()
-    if M.at() ~= "friends" then return false end
+    if M.showing() ~= "friends" then return false end
     if (M.add_name or "") == "" then return false end
     M.add_name = string.sub(M.add_name, 1, #M.add_name - 1)
     M.add_on = true
+    forget_add_note()
     account.find_pilots(M.add_name)
     return true
 end
@@ -967,7 +982,7 @@ end
 -- sends on its own answer, so a thumb never has to find the button beside the
 -- box afterwards.
 function M.click_add()
-    if M.at() ~= "friends" then return nil, false end
+    if M.showing() ~= "friends" then return nil, false end
     if M.touching then
         M.ask = {head = "Add a pilot", sel = 1, field = 1,
                  note = "a call sign, spelled as they spell it",
@@ -2810,22 +2825,31 @@ function M.view()
     -- The hangar is two levels of the stack drawn at once: the roster down
     -- the left and the kit of the hull it is standing on beside it. So the
     -- page carries both, and which of them the arrows are in.
+    -- Three pages that are pages rather than lists of rows, and each of them
+    -- draws that way wherever it is on screen.
+    --
+    -- `M.showing()` rather than `M.at()`, which is the fix for a page that
+    -- looked like two different pages depending on how you got to it: at the
+    -- root the stage is a preview of the tab under the cursor, and these read
+    -- the page you are standing in, so resting on Upgrades showed a column of
+    -- slot names with no ladders and no prices and entering it showed the
+    -- shelf. A preview is the page. The standings already worked this way,
+    -- one branch further down, and the other two are now the same rule rather
+    -- than a special case that had to be remembered.
+    local page = M.showing()
     -- The week is a table, and the page draws it as one. Whatever is in it,
     -- including nothing: the line above the table is how a week is picked and
     -- how the table is narrowed, so a page that swapped it for a card the
     -- moment a week came back empty was a page you could step into and not
     -- step out of. The table draws the card itself now, under its own
     -- heading. See `pages.week`.
-    if M.at() == "standings" then out.table = true end
-    -- And the friends page is a page rather than a list: an add field over
-    -- sections whose rows carry their own buttons. Only where you are
-    -- standing on it. The rail's preview of it is the plain list every other
-    -- preview is, because a preview is a look at what is in there and not a
-    -- place to press anything.
-    if M.at() == "friends" then out.social = true end
+    if page == "standings" then out.table = true end
+    -- And the friends page: an add field over sections whose rows carry their
+    -- own buttons.
+    if page == "friends" then out.social = true end
     -- And the catalog is a ladder and a price a row rather than a list of
     -- names. Same reason: the page is two facts about each slot at once.
-    if M.at() == "upgrades" then out.shop = true end
+    if page == "upgrades" then out.shop = true end
     -- What pressing play would do, beside the list of things to press it on.
     -- The mode list is short and the panel is wide, and the question a player
     -- is actually asking is "where would this put me".
@@ -2918,8 +2942,6 @@ function M.view()
                 end
                 out.hull_sel = M.hull_index()
                 out.kit_preview = true
-            elseif pick.go == "standings" then
-                out.table = #out.rows > 0
             end
             -- Nothing in the preview is selected, because the cursor is on
             -- the rail. `sel` at this level counts rail stops, and left where

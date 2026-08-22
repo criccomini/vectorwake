@@ -324,9 +324,16 @@ check("combat news waits for its snapshot",
       #net.kills == 0 and #net.charge_events == 0)
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = snapshot(3, 5010)})
 check("combat news lands with its authoritative tick",
-      #net.kills == 2 and #net.charge_events == 1)
-check("a stranger killing a stranger is not a feed notice",
-      net.kills[1].killer == 3 and net.kills[2].victim == 3)
+      #net.kills == 3 and #net.charge_events == 1)
+-- Every kill in the room, in the order the wire carried them, whoever was in
+-- it. The queue used to hold only the two you were part of, which left the
+-- feed unable to say who was doing the killing while it happened; a melee room
+-- is eight ships and the whole fight is a few lines a minute. Which of them is
+-- yours is decided where the line is written, not here.
+check("every kill in the room is news, not only yours",
+      net.kills[1].killer == 0 and net.kills[1].victim == 1
+      and net.kills[2].killer == 3 and net.kills[3].victim == 3,
+      #net.kills .. " kills")
 -- The delayed room channel may carry the same event again. Tick identity keeps
 -- that second copy from printing twice when a pilot has just sat out.
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = remote_kill})
@@ -334,7 +341,7 @@ wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = my_kill})
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = my_death})
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = charge})
 check("combat news is idempotent",
-      #net.kills == 2 and #net.charge_events == 1)
+      #net.kills == 3 and #net.charge_events == 1)
 
 -- A pack the core refuses has not happened. It is not counted, and the client
 -- reports that this build cannot read the zone rather than calling a broken

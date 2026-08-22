@@ -38,19 +38,22 @@ the only names the system would ever show you were people you had played with
 and people who had chosen to add you.
 
 There is a field now, on the friends page, and it takes a call sign. It
-answers as you type: two characters in, the meta-layer sends back up to eight
-call signs beginning with what is there, and pressing one adds that pilot by
-account number, so two names that open the same way cannot be confused for
-each other. A call sign is a word and three digits and it has to be exact,
+answers as you type: from the first letter, the meta-layer sends back up to
+eight call signs beginning with what is there, and pressing one adds that
+pilot by account number, so two names that open the same way cannot be
+confused for each other. A call sign is a word and three digits and it has to be exact,
 which is a small task nobody should have to be careful about.
 
 That is a real change to what this system will tell you, and worth naming.
 Before it, the only pilots the meta-layer would ever put in front of you were
 people you had played with and people who had chosen to add you. Now it will
 complete a name you have most of. What bounds it is that it only ever
-completes: two characters minimum, eight names, matched from the start of the
-name rather than anywhere inside it, and nothing comes back but the call sign
-and the number needed to add them. There is no browsing, no listing, and no
+completes: eight names, matched from the start of the name rather than
+anywhere inside it, and nothing comes back but the call sign and the number
+needed to add them. It was two characters before it answered at all, which
+made a field that looks broken until the second letter and bounded nothing
+the eight does not: eight names from the front of the alphabet is the same
+eight however many pilots there are. There is no browsing, no listing, and no
 way to ask it for everybody: `%` is escaped, so a pilot typing one gets
 nothing. It is throttled per account, because a client asking on every
 keystroke is the honest use and a script walking the alphabet is not.
@@ -202,9 +205,8 @@ who is online, and the rate limit is what makes that cost something.
 
 **The roster of your room is only offered while you are in it**, and the field
 completes rather than searches. Neither is a directory of the fleet and there
-is no way to ask for one: two characters before the field answers at all,
-eight names back, matched only from the start, and the pattern characters
-escaped so nobody can ask for everything. A pilot who has most of a call sign
+is no way to ask for one: eight names back, matched only from the start, and
+the pattern characters escaped so nobody can ask for everything. A pilot who has most of a call sign
 gets the rest of it; a pilot who has none of one gets nothing.
 
 ## What is deliberately out

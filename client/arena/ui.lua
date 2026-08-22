@@ -122,6 +122,15 @@ local pen = marks.pen
 -- week's table reaches it several hundred lines earlier and a local declared
 -- after its first use is a global lookup that comes back nil.
 local GUTTER = 22
+-- How far a lit row reaches past the column of type it is about, either side.
+--
+-- The field used to run from the panel's own edge to the far end of the
+-- stage, which is a gutter wider than the content on the left and a gutter
+-- wider on the right. Against a section head, whose rule and label sit on the
+-- content column exactly, that reads as a button nudged out of line with the
+-- heading over it, and it was reported that way. Sixteen points is padding
+-- around a control; a gutter is a column somebody else's type lives in.
+local ROW_PAD = 16
 
 local pages = {}
 
@@ -3875,15 +3884,38 @@ function pages.week(v, x, y, w, h, focused)
     -- "# pilot # pilot".
     local sorted = (v.week or {}).sort
     local up = (v.week or {}).sort_up
+    -- Which way the column is ordered, as a triangle rather than as a caret
+    -- and a letter v. Those were the two characters nearest to the shape at
+    -- the size a column head is set, and at that size they read as a caret
+    -- and a letter v. Everything else in this menu that points somewhere is
+    -- drawn, including the pair of arrows the packed heading already carries
+    -- twenty points to the left of this one.
+    local MARK_W = 7 * F.scale
+    local function sort_mark(cx, cy, rising, col)
+        local hw, hh = MARK_W / 2, 3.4 * F.scale
+        local tip = rising and (cy - hh) or (cy + hh)
+        local base = rising and (cy + hh) or (cy - hh)
+        F.layer:tri(cx, ry(tip), cx - hw, ry(base), cx + hw, ry(base), col)
+    end
     local function head(key, hx, align, sorts)
         sorts = sorts or key
         local on = sorted == sorts
-        local word = on and (key .. (up and " ^" or " v")) or key
-        lbl(word, hx, ty, pal.a(on and pal.FRIEND or pal.DIM, on and 1 or 0.9),
-            align)
-        local ww = text_w(word, 9 * F.scale)
-        local left = align == "right" and (hx - ww) or hx
-        hit(left - 8 * F.scale, ty - 16 * F.scale, ww + 16 * F.scale,
+        local col = pal.a(on and pal.FRIEND or pal.DIM, on and 1 or 0.9)
+        local ww = text_w(key, 9 * F.scale)
+        -- The word and its mark are one lockup, aligned together: right of a
+        -- right-hand column the mark is the rightmost thing, so the word
+        -- steps left by what the mark takes rather than the mark hanging off
+        -- into the next column.
+        local wide = ww + (on and (MARK_W + 6 * F.scale) or 0)
+        local left = align == "right" and (hx - wide) or hx
+        lbl(key, left, ty, col)
+        if on then
+            -- On the label's own middle rather than on `ty`, which is where
+            -- the line is placed and not where its type sits inside it.
+            sort_mark(left + ww + 3 * F.scale + MARK_W / 2, ty - 1 * F.scale,
+                      up, col)
+        end
+        hit(left - 8 * F.scale, ty - 16 * F.scale, wide + 16 * F.scale,
             22 * F.scale, "sort", sorts)
     end
     -- The rank column's head is the mark it has always been, not the word:
@@ -3904,18 +3936,19 @@ function pages.week(v, x, y, w, h, focused)
     -- menu.
     if packed then
         local word = sorted_col[1]
-            .. (((v.week or {}).sort_up) and " ^" or " v")
-        local ww2 = text_w(word, 9 * F.scale)
+        local ww2 = text_w(word, 9 * F.scale) + MARK_W + 6 * F.scale
         local hx = x + tw - 16 * F.scale
-        lbl(word, hx, ty, pal.a(pal.FRIEND, 1), "right")
+        lbl(word, hx - ww2, ty, pal.a(pal.FRIEND, 1))
+        sort_mark(hx - MARK_W / 2, ty - 1 * F.scale,
+                  (v.week or {}).sort_up, pal.a(pal.FRIEND, 1))
         hit(hx - ww2 - 8 * F.scale, ty - 15 * F.scale, ww2 + 16 * F.scale,
             22 * F.scale, "sort", sorted_col[5] or sorted_col[1])
         for _, side in ipairs({{-1, hx - ww2 - 20 * F.scale},
                                {1, hx + 10 * F.scale}}) do
             local dir, ax = side[1], side[2]
-            F.layer:tri(ax + dir * 4 * F.scale, ry(ty - 3 * F.scale),
-                        ax - dir * 3 * F.scale, ry(ty - 8 * F.scale),
-                        ax - dir * 3 * F.scale, ry(ty + 2 * F.scale),
+            F.layer:tri(ax + dir * 4 * F.scale, ry(ty - 1 * F.scale),
+                        ax - dir * 3 * F.scale, ry(ty - 6 * F.scale),
+                        ax - dir * 3 * F.scale, ry(ty + 4 * F.scale),
                         pal.a(pal.FRIEND, 0.9))
             hit(ax - 12 * F.scale, ty - 15 * F.scale, 24 * F.scale,
                 22 * F.scale, "sort_step", dir)
@@ -4820,7 +4853,7 @@ function pages.friends(v, x, y, w, h, focused)
                                or 0)
             local hy = at - dy
             if hy >= top and hy + sh <= y + h then
-                hrule(x, hy + SECT * 0.42, w - 10 * F.scale)
+                hrule(x, hy + SECT * 0.42, w)
                 lbl(r.sect, x, hy + SECT * 0.82)
                 if r.sect_note then
                     lbl(r.sect_note,
@@ -4846,8 +4879,8 @@ function pages.friends(v, x, y, w, h, focused)
         at = at + rowh
         if seen(ry0) then
             local hot = (focused and i == v.sel) or i == v.hover
-            if hot then wash(x - GUTTER * F.scale, ry0,
-                             w + GUTTER * F.scale, rowh,
+            if hot then wash(x - ROW_PAD * F.scale, ry0,
+                             w + 2 * ROW_PAD * F.scale, rowh,
                              pal.a(pal.FRIEND, 0.16)) end
             local cy = ry0 + rowh / 2
             local col = pal.a(pal.INK, r.dim and 0.6 or (hot and 1 or 0.9))
@@ -4980,8 +5013,8 @@ function pages.shop(v, x, y, w, h, focused)
         if ry0 >= top and ry0 + rowh <= y + h then
             local hot = (focused and i == v.sel) or i == v.hover
             if hot then
-                wash(x - GUTTER * F.scale, ry0, w + GUTTER * F.scale, rowh,
-                     pal.a(pal.FRIEND, 0.16))
+                wash(x - ROW_PAD * F.scale, ry0, w + 2 * ROW_PAD * F.scale,
+                     rowh, pal.a(pal.FRIEND, 0.16))
             end
             local cy = ry0 + rowh / 2
             local ny = packed and (ry0 + rowh * 0.3) or cy
@@ -5893,7 +5926,11 @@ local function stage_row(x, y, w, h, r, hot)
     -- is what a selection is everywhere else in this interface. It was a flat
     -- field, and a flat field on a page that has a lit edge reads as a second
     -- panel laid over the first.
-    if hot then wash(x, y, w, h, pal.a(pal.FRIEND, 0.18)) end
+    if hot then
+        wash(x + GUTTER * F.scale - ROW_PAD * F.scale, y,
+             w - 2 * GUTTER * F.scale + 2 * ROW_PAD * F.scale, h,
+             pal.a(pal.FRIEND, 0.18))
+    end
     -- One text column, whatever the row is, and it is the column the title
     -- above the list is set in. The wedge that says "this is the one you are
     -- already on" lives in the gutter to the left of that column, off the type
@@ -7155,8 +7192,15 @@ function M.menu(v)
     local panel_x, panel_w = sx, avail
     if not narrow then
         local ph = sh - 6 * F.scale
+        -- The ground, and nothing down the side of it.
+        --
+        -- There was a lit rule at the left edge, on the argument that a page
+        -- is a panel and every instrument in the arena hangs off one. Over
+        -- there a rule is the edge of a thing that has an edge; here it ran
+        -- the height of the screen a gutter left of the first letter of every
+        -- row and marked nothing, which is furniture. Gone, along with the
+        -- overhang the rows had so they could reach it.
         rect(panel_x, sy, panel_w, ph, pal.rgb(0x05070c, 0.5))
-        vrule(panel_x, sy, ph, pal.a(pal.RADAR_TILE, 0.7))
     end
     local asidew = 0
     if listy then

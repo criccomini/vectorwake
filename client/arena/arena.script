@@ -797,8 +797,12 @@ local function drain_kills()
         -- Yours outranks theirs when you managed both at once, which is a
         -- pilot who blew themselves up with the kill: that is your kill, and
         -- it is the line you will want to see.
+        --
+        -- Never while watching. From that seat `me` is the sentinel 255,
+        -- which is also the killer on a wall death, so every rock somebody
+        -- flew into would have been lit as a kill of your own.
         local col, mine = nil, false
-        if k.killer == me and k.victim ~= me then
+        if not watching and k.killer == me and k.victim ~= me then
             col, mine = pal.PAID, true
             -- And the same number again, off the wreck rather than in the
             -- feed. A kill is read where it happened: a pilot who just took
@@ -809,7 +813,7 @@ local function drain_kills()
             if k.paid > 0 then
                 ui.payout(sim.ship_x(k.victim), sim.ship_y(k.victim), k.paid)
             end
-        elseif k.victim == me then
+        elseif not watching and k.victim == me then
             col, mine = pal.HURT, true
         end
         notify((k.victim == k.killer) and {vn, " killed by self"}

@@ -493,8 +493,8 @@ end
 -- Call signs beginning with what has been typed into the add field.
 --
 -- The one request in this client that names a pilot you have never met, and
--- the meta-layer keeps it small: nothing under two characters, eight names
--- back, matched from the start. `serial` throws away an answer to a prefix
+-- the meta-layer keeps it small: eight names back, matched from the start of
+-- the call sign. `serial` throws away an answer to a prefix
 -- that is no longer what is in the box, because a keystroke and a round trip
 -- do not arrive in order and a list that flickers back to an older prefix is
 -- worse than no list.
@@ -506,9 +506,13 @@ M.found = {}
 -- on screen.
 M.found_for = ""
 local finding, asking = 0, ""
+-- How little can be in the box and still be worth asking about. One
+-- character: the meta-layer answers from the first letter, and a client that
+-- held the first one back made a field that looks broken until the second.
+local FIND_MIN = 1
 function M.find_pilots(prefix)
     prefix = tostring(prefix or "")
-    if M.base == "" or #prefix < 2 then
+    if M.base == "" or #prefix < FIND_MIN then
         M.found, M.found_for, asking = {}, prefix, prefix
         return
     end

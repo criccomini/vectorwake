@@ -661,13 +661,20 @@ local function publish_kill(e)
     -- padded with `or 0`: the padding was there for a deploy window against a
     -- zone one image older, and a zone one image older cannot be reached at
     -- all, because the protocol number is checked before a join is answered.
-    -- A watcher has no hull in the fight. In particular, its sentinel ship is
-    -- 255, which is also the killer on a wall death and must not make every
-    -- collision look personal. Ratings still move below for every death; only
-    -- the presentation queue is local.
-    if not M.watching and (victim == M.me or killer == M.me) then
-        M.kills[#M.kills + 1] = {victim = victim, killer = killer, paid = e.paid}
-    end
+    -- Every kill in the room, not only the two you were in.
+    --
+    -- It was filtered to yours, on the argument that a feed where everything
+    -- lands is a log running down the side of the screen. That was written
+    -- for a zone holding whoever turned up; a melee room is eight ships, so
+    -- the whole fight is a few lines a minute and the two that are yours are
+    -- still the only two that are lit. What the filter cost is the thing a
+    -- scoreboard cannot tell you: who is doing the killing while it happens.
+    --
+    -- Which of them is yours is decided where the line is written rather than
+    -- here, because a watcher's sentinel ship is 255 and so is the killer on
+    -- a wall death: asking "is this me" from a seat that has no hull makes
+    -- every collision in the room look personal.
+    M.kills[#M.kills + 1] = {victim = victim, killer = killer, paid = e.paid}
     M.ratings[victim] = vr
     M.ratings[killer] = kr
     -- A rated death is a game played, which is what decides whether the number

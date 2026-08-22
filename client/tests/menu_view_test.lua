@@ -962,6 +962,20 @@ do
     check("and there is no card beside any of it",
           not has(week, "your week") and not has(week, "kills per death"),
           table.concat(texts(week), " "))
+    -- Which way the sorted column runs is a triangle, not a caret and a
+    -- letter v. Those were the two characters nearest the shape and read as
+    -- exactly what they are at nine points. Checked as an absence, because
+    -- the mark itself is geometry and nothing this test reads can see it: the
+    -- head is the bare word and the direction is drawn.
+    local heading = nil
+    for _, t in ipairs(texts(week)) do
+        if string.lower(t) == "kills" then heading = t end
+    end
+    check("the sorted head is the word alone", heading ~= nil,
+          table.concat(texts(week), " "))
+    check("with no caret or vee standing in for an arrow",
+          not has(week, "^") and not has(week, "kills v"),
+          table.concat(texts(week), " "))
 
     -- A guest has no account to keep a rating under, and a zero drawn as a
     -- number would read as a very bad pilot rather than as nobody's rating.
