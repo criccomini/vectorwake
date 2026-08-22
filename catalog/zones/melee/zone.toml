@@ -54,9 +54,11 @@ max_bots_per_team = 4
 channel_delay_ticks = 500
 
 [arena]
-# Three minutes of play, twenty-five seconds of podium.
+# Three minutes of play, fifteen seconds of podium. It was twenty-five, which
+# is a long time to look at a result on an empty arena: the wait is for reading
+# the podium and getting to the hangar, and both fit inside fifteen.
 match_seconds = 180
-intermission_seconds = 25
+intermission_seconds = 15
 
 # A wall gives back twelve sixteenths of what hit it. There is no separate term
 # for speed along a wall, so both take the same number.

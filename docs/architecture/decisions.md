@@ -1009,6 +1009,11 @@ which means the community's real home is somewhere we do not control.
 Fixed phrases, a ping wheel, or team-only signals cost no moderation because there
 is nothing unsafe to say, and they recover most of the coordination a flag game
 wants. That is a different feature from chat and it would get its own record.
+It did: [decision 51](#51-six-phrases-and-no-way-to-add-a-seventh) is six
+phrases on the podium between matches, which is the smallest version of this
+that is worth anything. Nothing about it changes what is written above: no text
+reaches the server, nothing can be aimed at a person, and there is still
+nothing to moderate.
 
 **Cascades:** [decision
 11](#11-nakama-for-the-meta-layer-never-for-the-arena-tick) no longer wants
@@ -2204,3 +2209,50 @@ The answer then is more shape, not a stat table coming back: extents that vary
 more, or something a silhouette can express that a number cannot. Bringing
 per-hull flight back means giving up "everyone deals thirty", and that trade
 should be made deliberately rather than by adding a line to a zone file.
+
+---
+
+## 51. Six phrases, and no way to add a seventh
+
+**Status:** accepted
+
+Between matches, a player can press one of six chips and put a phrase on their
+own row of the podium: "gg", "nice shot", "close one", "good luck", "thanks",
+"sorry". Every other client in the room draws it for four seconds beside the
+name it belongs to, and then it is gone. That is the whole feature.
+
+[Decision 28](#28-no-chat) said what would make this worth doing and named it
+as a separate record: "Fixed phrases, a ping wheel, or team-only signals cost
+no moderation because there is nothing unsafe to say." This is the first half
+of that, built because the intermission was fifteen seconds of nobody being
+able to acknowledge the match they had just played.
+
+What keeps it costing no moderation is the shape of the wire rather than a
+policy. `C2S_SAY` carries one byte and it is an index; the room checks it
+against a count and drops anything past the end. No text goes to the server, so
+there is nothing to filter, nothing to log, and nothing to report. A phrase
+cannot be aimed: there is no recipient field, only the room, and no phrase on
+the list means anything unpleasant no matter who is meant to read it. The list
+lives in the client build, so an operator cannot extend it by editing a config,
+and a client that shipped with a shorter list draws nothing for a number it
+does not have rather than a blank.
+
+Two more rules, both about the same thing. It is refused while a match is
+running, so nothing here can be used to talk over somebody trying to play. And
+it is one every two seconds a seat, which is slower than the line takes to
+read, so it cannot be used to shout.
+
+**Cost:** it is a moderation surface that is exactly zero today and will be
+argued about the first time somebody wants a seventh phrase. Every addition is
+a judgment about what six strangers can say to each other, and the list is
+short enough that "sorry" and "nice shot" carry sarcasm in the right hands. We
+think a sarcastic "nice shot" is a game, not an incident, and the answer to
+being tired of one is that it is gone in four seconds. It is also duplicated:
+the phrases are written down in the client and the count in the server, and
+adding one means touching both.
+
+**Reconsider if:** somebody wants a phrase aimed at a person, or wants one
+during a match. Both are chat with a smaller vocabulary and the argument in
+decision 28 applies to them unchanged. Team-only signals during play are the
+one thing on the reconsider list that is still open, and they would be a
+different feature again: a ping on the radar rather than a word on a card.

@@ -440,6 +440,9 @@ pub(crate) struct Seat {
     /// waits for the whistle; one that arrives at a join or between matches is
     /// dealt on the spot and never lands here.
     pub(crate) pending_kit: Option<[u8; sim::SLOT_COUNT]>,
+    /// The tick this seat last said one of the fixed things, so it cannot say
+    /// them faster than anybody wants to read them. Zero is never.
+    pub(crate) said_at: u32,
     /// Whether this seat has ever worn a kit its owner chose.
     ///
     /// False until the first one lands, which is what separates a change from
@@ -482,6 +485,7 @@ impl Seat {
             entitlements: sim::World::base_entitlements(),
             pending_kit: None,
             kitted: false,
+            said_at: 0,
             expires: None,
             session: pilot::Session::new("none"),
         }
@@ -1578,7 +1582,6 @@ impl Room {
         // longer allows that, and this no longer asks for it.
         let full = self.world.eff_max_energy(ship as usize);
         self.world.state.ships[ship as usize].energy = full;
-
         let id = match member {
             Some(id) => id,
             None => {
@@ -1666,6 +1669,22 @@ impl Room {
         // is a ship the core refuses a hull change and a side change to.
         let full = self.world.eff_max_energy(ship as usize);
         self.world.state.ships[ship as usize].energy = full;
+        // Unless the podium is up, in which case they join the wait rather
+        // than a match that is not running. `close_match` benched everybody at
+        // the whistle and the controls are held until the next one, so a pilot
+        // seated alive now would be the one hull on an empty map, unable to
+        // move it and hearing their own engine. Benched on the same terms as
+        // everybody else, and `open_match` puts the whole room back.
+        //
+        // Last, after the kit and the bar, because both of those write the
+        // fields this clears: the seat is dealt exactly as it would be for a
+        // match, and then sat down.
+        if self.mode.match_state().is_some_and(|m| !m.playing) {
+            let sh = &mut self.world.state.ships[ship as usize];
+            sh.alive = 0;
+            sh.energy = 0;
+            sh.respawn_at = 0;
+        }
         self.debug_assert_member(id, &self.players[&id].presence);
         Some(id)
     }
@@ -1715,6 +1734,41 @@ impl Room {
             }
         }
         ok
+    }
+
+    /// One of the fixed things, said to the room.
+    ///
+    /// Between matches only. That is where it is for, and it is also what
+    /// keeps it out of a fight: nothing here can be used to talk over somebody
+    /// who is trying to play. The phrase is an index into a list the clients
+    /// hold, so this never sees a word and there is nothing here to moderate.
+    ///
+    /// Throttled to one every two seconds a seat. A line nobody can repeat
+    /// faster than it can be read is a line that cannot be used to shout.
+    pub(crate) fn say(&mut self, ship: u8, phrase: u8) {
+        if phrase >= crate::protocol::SAY_COUNT {
+            return;
+        }
+        if self.mode.match_state().is_some_and(|m| m.playing) {
+            return;
+        }
+        let now = self.world.state.tick;
+        match self.names.get_mut(&ship) {
+            Some(seat) => {
+                if seat.said_at != 0 && now.wrapping_sub(seat.said_at) < 200 {
+                    return;
+                }
+                seat.said_at = now;
+            }
+            None => return,
+        }
+        let msg = vec![crate::protocol::S2C_SAID, ship, phrase];
+        for p in self.players.values() {
+            let _ = p.tx.try_send(Message::Binary(msg.clone()));
+        }
+        for w in self.watchers.values() {
+            let _ = w.tx.try_send(Message::Binary(msg.clone()));
+        }
     }
 
     /// A kit the pilot in this seat asked for: dealt now, or held to the
@@ -2872,13 +2926,21 @@ impl Room {
             banner: std::mem::take(&mut self.banner),
             finished: false,
             open_match: false,
+            close_match: false,
         };
         self.mode.tick(&mut ctx);
         self.banner = std::mem::take(&mut ctx.banner);
-        if ctx.finished {
+        let (finished, closed, opened) = (ctx.finished, ctx.close_match, ctx.open_match);
+        // The context holds the world, so it has to go before the room can act
+        // on what the mode asked for.
+        drop(ctx);
+        if finished {
             self.finished = true;
         }
-        if ctx.open_match {
+        if closed {
+            self.close_match();
+        }
+        if opened {
             self.open_match();
         }
         let now_match = self.match_msg();
@@ -2902,31 +2964,30 @@ impl Room {
         player_count_changed
     }
 
-    /// Open a fresh match: new ground, everybody home, kits re-dealt.
+    /// The whistle at the end of a match: clear the arena, and move to the
+    /// ground the next one is played on.
     ///
-    /// The room does this rather than the mode because all three halves of it
-    /// belong to the room. The map is one of several the zone named and the
-    /// clients have to be told which; the tuning has to go back on over the
-    /// new geometry; and the roster everybody is reading has just had every
-    /// tally in it zeroed.
-    pub(crate) fn open_match(&mut self) {
-        let first = self.match_no == 0;
-        self.match_no += 1;
-        println!(
-            "room {}: match {} opens, {} pilot(s)",
-            self.number,
-            self.match_no,
-            self.players.len()
-        );
-        if !first && self.maps.len() > 1 {
+    /// Both halves of that are about the wait rather than about the match that
+    /// just ended. A podium over the arena you were fighting in, with the
+    /// wrecks and the last bomb still hanging there and the map you have just
+    /// finished with underneath, is fifteen seconds of looking at something
+    /// over. So the map changes here rather than at the next whistle, and the
+    /// arena empties: nothing in the air, and nobody on the ground.
+    ///
+    /// Nothing a pilot earned is touched. The tallies the podium is reading
+    /// live on the ships, and `restart` zeroes them, which is why this is not
+    /// that: it benches everybody instead. A ship with no respawn scheduled
+    /// stays down until something puts it back, and `open_match` is what does.
+    pub(crate) fn close_match(&mut self) {
+        if self.maps.len() > 1 {
             self.map_at = (self.map_at + 1) % self.maps.len();
             // Which ground, since a zone's rotation is something an operator
             // can change from the panel now and "did that land" is otherwise
-            // a question with nowhere to look.
+            // a question with nowhere to look. The next match rather than this
+            // one: the whistle changes the ground and the podium waits on it.
             println!(
-                "room {}: match {} is on map {} of {} ({} by {})",
+                "room {}: next match is on map {} of {} ({} by {})",
                 self.number,
-                self.match_no,
                 self.map_at + 1,
                 self.maps.len(),
                 self.maps[self.map_at].w,
@@ -2947,6 +3008,42 @@ impl Room {
             self.broadcast_map();
             self.broadcast_settings();
         }
+        // Nothing left in the air. A bomb thrown in the last second would
+        // otherwise still be travelling over ground nobody is standing on.
+        self.world.state.weapon_count = 0;
+        // And nobody on it. Benched rather than killed: writing the fields is
+        // not the death path, so no event is filed, nothing is paid, and the
+        // numbers the podium is drawing stay where the match left them.
+        //
+        // The energy goes with the life, because the wire says it must: a
+        // snapshot carrying a ship that is down with charge still in it is
+        // refused by `sim_unpack`, and refused by every client at once. That
+        // is a good rule and this is the code that has to keep it. Leaving it
+        // out emptied a room the first time a match ended, with every player
+        // told the zone had sent a snapshot they could not read.
+        for sh in self.world.state.ships.iter_mut() {
+            if sh.active != 0 {
+                sh.alive = 0;
+                sh.energy = 0;
+                sh.respawn_at = 0;
+            }
+        }
+    }
+
+    /// Open a fresh match: everybody home, kits re-dealt.
+    ///
+    /// The room does this rather than the mode because both halves of it
+    /// belong to the room: the sockets are the room's, and so is the roster
+    /// everybody is reading, which has just had every tally in it zeroed. The
+    /// ground was changed at the last whistle, so the wait happened on it.
+    pub(crate) fn open_match(&mut self) {
+        self.match_no += 1;
+        println!(
+            "room {}: match {} opens, {} pilot(s)",
+            self.number,
+            self.match_no,
+            self.players.len()
+        );
         self.world.restart();
         // A whistle is where a hull and its kit are unlocked, so anything
         // asked for during the last match lands here. After `restart`, which
@@ -3176,6 +3273,7 @@ impl Room {
                 banner: std::mem::take(&mut self.banner),
                 finished: false,
                 open_match: false,
+                close_match: false,
             };
             self.mode.on_death(&mut ctx, victim, killer);
             self.banner = std::mem::take(&mut ctx.banner);

@@ -122,7 +122,7 @@ pub struct ArenaConfig {
     /// no spread of its own.
     pub mod_spread: Option<i32>,
     /// A match game's two clocks, in seconds. Three minutes of play and
-    /// twenty-five seconds of podium is what `docs/design/match-game.md`
+    /// fifteen seconds of podium is what `docs/design/match-game.md`
     /// settles on: long enough for a match to have a shape, short enough that
     /// a bad one is nearly over. Only `mode = "melee"` reads them.
     pub match_seconds: Option<u16>,
