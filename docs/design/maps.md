@@ -511,15 +511,13 @@ Then it checks, and refuses to write a map that fails:
 
 - sixteen spawns placed, eight a side, north and south
 - nine safe zones placed
-- **one** region a hull can fly, with doors counted as shut
+- **one** region a hull can fly, with the doors open
 - no spawn, safe tile or wormhole out of reach of it
 - no open tile a hull cannot reach with the doors open
 - solid between 2% and 4.5% of the interior
 
-The connectivity check counts a door as a wall throughout. A place reachable
-only through a door is still stranded, since its channel shuts for part of
-every cycle and a ship inside would be held until it opened. Halls are drawn
-to suit: one axis of a hall is hung with doors and the other is left open,
+The generator draws its halls as though a door were a wall: one axis of a hall
+is hung with doors and the other is left open,
 rather than all four being doors and the connectivity pass tearing a hole in
 a wall to undo it.
 
@@ -611,8 +609,27 @@ too wide for the frame.
 
 Whichever drew it, `sim_map_check` decides whether it can be played. It asks
 about a hull rather than a point: whether a three-tile ship can fly all of the
-map with every door shut, whether each start is somewhere a ship can leave, and
-whether any open ground is a pocket nothing can reach. The generator refuses to
+map, whether each start is somewhere a ship can leave, and whether any open
+ground is a pocket nothing can reach.
+
+All of that with the doors open, because a door is a wall on a clock and the
+clock keeps running: at the baseline it is shut two seconds in every six, and a
+pocket behind one is somewhere you wait to get into rather than somewhere you
+cannot go. The worst case is already the engine's, since a ship caught by a
+closing door is warped home.
+
+It used to ask with every door shut, on the argument that a route through one
+can be held against you for a third of the cycle. That is an argument for a
+door-gated pocket being awkward, not for it being unplayable, and the cost was
+the whole class: a door could never be the only way into anywhere, so it could
+never gate a pocket, so it was a second entrance to somewhere already open with
+eight channels of timing on it. The first map drawn with doors in it came back
+"a start is walled in", and the map was right.
+
+The shut count survives as `regions_shut`, and the editor says so when it
+exceeds the open one: that map's shape depends on its doors opening, which a
+zone setting `door_period` to zero would not do. Which zone it lands in is not
+the map's business, so it is a note rather than a refusal. The generator refuses to
 write a map that fails it and the meta-layer refuses to store one, so a map
 drawn by hand is held to exactly what a generated one is.
 

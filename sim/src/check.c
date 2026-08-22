@@ -26,13 +26,31 @@
  * ground it could not reach, on a generator that had checked it and reported
  * one region.
  *
- * ## Doors count both ways
+ * ## A door is a passage, not a wall
  *
- * Connectivity is measured with every door shut, which is the worst a channel
- * can do to a route: somewhere reachable only through a door is somewhere a
- * ship can be held for a third of every cycle. Stranded ground is measured
- * with them open, because a tile a hull can reach when the door opens is not
- * stranded, it is behind a door.
+ * Everything the verdict rests on is measured with the doors open, because a
+ * door is a wall on a clock and the clock keeps running. At the baseline it is
+ * shut two seconds in every six. A pocket behind one is somewhere you wait to
+ * get into, which is what a door is for, and the one genuinely bad case is
+ * already the engine's: a ship caught by a closing door is warped home, which
+ * is `SIM_EV_WARP` and not a map fault.
+ *
+ * This used to be the other way round: connectivity was measured with every
+ * door shut, on the argument that a route through one can be held against you
+ * for a third of the cycle. True, and an argument that a door-gated pocket is
+ * awkward rather than unplayable. What it cost was the whole class. A door
+ * could never be the only way into anywhere, so it could never gate a pocket,
+ * so it could only ever be a second entrance to somewhere already open, which
+ * is a decoration with eight channels of timing on it. The first map anybody
+ * drew with doors in it was refused with "a start is walled in", and the map
+ * was right and the check was wrong.
+ *
+ * The shut count is still worth knowing and still measured, as `regions_shut`.
+ * A map where it exceeds `regions` is a map whose shape depends on its doors
+ * opening, which is true of any map that uses them properly and is worth
+ * saying out loud to whoever drew it, because a zone that sets `door_period`
+ * to zero never opens them. That is a zone's business and not a map's, so it
+ * is a note rather than a refusal.
  */
 #include <stdio.h>
 #include <string.h>
@@ -123,8 +141,18 @@ void sim_map_check(const sim_map *m, sim_map_scratch *s, sim_map_report *r) {
     memset(r, 0, sizeof *r);
     if (!m || !s || m->w == 0 || m->h == 0) return;
 
-    /* Connectivity, with every door shut. */
+    /* What the doors cost when they are all shut. Nothing here decides
+     * anything; it is the number that says a map leans on its doors. Taken
+     * first because the pass below leaves the scratch labelled the way the
+     * rest of this function needs it. */
     mark(m, s, 1);
+    int32_t shut_biggest = 0;
+    (void)label(m, s, &shut_biggest);
+    for (size_t i = 0; i < (size_t)m->w * (size_t)m->h; i++)
+        if (s->comp[i] > r->regions_shut) r->regions_shut = s->comp[i];
+
+    /* Connectivity, with the doors open, which is the shape of the map. */
+    mark(m, s, 0);
     int32_t biggest = 0;
     int32_t main = label(m, s, &biggest);
     r->reachable = biggest;
@@ -141,13 +169,11 @@ void sim_map_check(const sim_map *m, sim_map_scratch *s, sim_map_report *r) {
         if (!served_by(m, s, ft->tx, ft->ty, main)) r->spawns_stranded++;
     }
 
-    /* Ground nobody can reach, with the doors open: a place behind a door is
-     * awkward, and a place behind a wall is a trap. A ship shoved into one
-     * cannot leave, a prize landing there is gone, and a bot routing toward it
-     * grinds on the wall in front of it. */
-    mark(m, s, 0);
-    int32_t open_main = 0;
-    int32_t open_id = label(m, s, &open_main);
+    /* Ground nobody can reach: a place behind a wall is a trap. A ship shoved
+     * into one cannot leave, a prize landing there is gone, and a bot routing
+     * toward it grinds on the wall in front of it. The labelling from the pass
+     * above is the one this wants, so it is reused rather than redone. */
+    int32_t open_id = main;
     for (int32_t y = 0; y < (int32_t)m->h; y++)
         for (int32_t x = 0; x < (int32_t)m->w; x++) {
             uint8_t c = SIM_TILE_CLASS(sim_tile_at(m, x, y));
@@ -170,11 +196,11 @@ int sim_map_playable(const sim_map *m, const sim_map_report *r, char *why, int c
     } else if (r->spawns_stranded > 0) {
         fault = "a start is walled in";
     } else if (r->regions > 1) {
-        /* Doors are shut for this count, so two regions is two rooms, not one
-         * room with a channel between them. */
+        /* Doors are open for this count, so two regions is two rooms with no
+         * way between them at all, rather than one room on a clock. */
         snprintf(line, sizeof line,
-                 "a hull cannot fly between all of it: %d separate regions with the "
-                 "doors shut",
+                 "a hull cannot fly between all of it: %d separate regions, and "
+                 "that is with every door open",
                  r->regions);
         fault = line;
     } else if (r->regions == 0) {

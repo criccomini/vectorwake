@@ -149,6 +149,7 @@ pub(crate) async fn push(db: &Client) -> Option<String> {
 fn report_json(r: &crate::sim::sim_map_report) -> serde_json::Value {
     serde_json::json!({
         "regions": r.regions,
+        "regions_shut": r.regions_shut,
         "reachable": r.reachable,
         "stranded": r.stranded,
         "spawns": r.spawns,

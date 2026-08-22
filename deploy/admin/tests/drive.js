@@ -386,6 +386,41 @@ const server = http.createServer((req, res) => {
   await page.mouse.move(frame.x - 40, frame.y - 40);
   check("leaving the canvas clears the readout", (await says()) === "", await says());
 
+  // --- the verdict a door-gated map gets ----------------------------------
+  //
+  // The check itself is the core's and is tested there. What this asks is that
+  // the panel says the useful thing when a map leans on its doors, rather than
+  // the flat "a hull can fly all of this" that hides it.
+
+  await page.evaluate(() => {
+    window.__answers = [];
+    // Stand in for the meta layer, which stands in for sim_map_check.
+    window.post = (url, body) => {
+      const r = window.__answers.shift();
+      return Promise.resolve(r || { ok: true, report: {} });
+    };
+  });
+
+  const verdictFor = async (report, ok) => {
+    await page.evaluate((a) => { window.__answers = [a]; },
+                        { ok, report, error: "a start is walled in" });
+    // Nudge the map so the debounced check runs.
+    await pickTool("pencil");
+    await pickPaint("wall");
+    await page.mouse.click(...Object.values(await at(70, 30)));
+    await page.waitForTimeout(700);
+    return page.$eval("#map-verdict", (n) => n.textContent);
+  };
+
+  const plain = await verdictFor({ regions: 1, regions_shut: 1, spawns: 2 }, true);
+  check("a map with no doors reads plainly",
+        plain === "a hull can fly all of this", plain);
+
+  const leaning = await verdictFor({ regions: 1, regions_shut: 3, spawns: 2 }, true);
+  check("a map that leans on its doors says so",
+        leaning.includes("through its doors") && leaning.includes("3 separate rooms"),
+        leaning);
+
   // --- the map still packs ---------------------------------------------------
 
   const size = await page.evaluate(() => {

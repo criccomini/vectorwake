@@ -359,6 +359,7 @@ uint32_t sim_sizeof_settings(void) { return (uint32_t)sizeof(sim_settings); }
 uint32_t sim_sizeof_ship(void) { return (uint32_t)sizeof(sim_ship); }
 uint32_t sim_sizeof_events(void) { return (uint32_t)sizeof(sim_events); }
 uint32_t sim_sizeof_map(void) { return (uint32_t)sizeof(sim_map); }
+uint32_t sim_sizeof_report(void) { return (uint32_t)sizeof(sim_map_report); }
 
 int sim_spawn(sim_state *s, uint8_t cls, uint8_t team, int32_t x_px,
               int32_t y_px, uint16_t heading, const sim_settings *cfg) {
