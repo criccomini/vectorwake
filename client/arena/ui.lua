@@ -4021,34 +4021,20 @@ function pages.chip(x, y, w, h, r, hot, focused)
     lbl(r.short or r.label, x + w / 2, y + h * 0.42,
         pal.a(held and pal.FRIEND or pal.DIM,
               held and 1 or (shut and 0.4 or 0.8)), "center", 9 * F.scale)
-    -- The line under the name, which is two facts and often only one of them.
+    -- The line under the name: how many of it you hold, out of how many the
+    -- account may, since a rung is a ladder in a chip's clothing and two of
+    -- them is level two. A chip nobody owns says nothing, because zero of
+    -- zero is a sum rather than a fact.
     --
-    -- What it costs, because a chip is a thing you press and the press on one
-    -- you do not own asks to buy it: the price belongs on the face of the
-    -- control rather than on a shelf somewhere else with the same word on it.
-    -- And how many of it you hold, out of how many the account may, since a
-    -- rung is a ladder in a chip's clothing and two of them is level two.
-    --
-    -- A chip nobody owns says nothing about counts, because zero of zero is a
-    -- sum rather than a fact, and one that is fully bought has no price.
+    -- A price used to sit here too, on the argument that a chip is a control
+    -- and the press on one you do not own should buy it. That put a wallet
+    -- and a budget on one screen with the word "spend" meaning both, and
+    -- buying is the upgrades tab again.
     local count = (r.owned or 0) > 1 and ((r.choice or 0) .. "/" .. r.owned)
         or nil
-    local ly = y + h * 0.74
-    local cheap = r.afford == false
-    if r.price and count then
-        txt(count, x + 7 * F.scale, ly, 8.5 * F.scale, pal.a(pal.DIM, 0.85))
-        pages.priced(r.price, x + w - 7 * F.scale, ly, 8.5 * F.scale,
-                     pal.a(cheap and pal.DIM or pal.CHARGE_COL,
-                           cheap and 0.6 or 0.9), "right")
-    elseif r.price then
-        pages.priced(r.price, x + w / 2
-                     + (text_w(tostring(r.price), 9.5 * F.scale)
-                        + 9.5 * F.scale * 1.1) * 0.5,
-                     ly, 9.5 * F.scale,
-                     pal.a(cheap and pal.DIM or pal.CHARGE_COL,
-                           cheap and 0.6 or 0.9), "right")
-    elseif count then
-        txt(count, x + w / 2, ly, 9 * F.scale, pal.a(pal.DIM, 0.85), "center")
+    if count then
+        txt(count, x + w / 2, y + h * 0.74, 9 * F.scale,
+            pal.a(pal.DIM, 0.85), "center")
     end
 end
 
@@ -4385,32 +4371,6 @@ function pages.kit(v, x, y, w, h, focused)
         -- Every upgradable row wore a framed button, which on a full page is
         -- fourteen of them: the heaviest mark this interface has, in a column,
         -- most of them asking for money nobody had. A price is the whole of
-        -- what a button was saying, and the ladder was already saying the rest
-        -- of it: the dim pips are the rungs that are not yours, so the price
-        -- of the next one belongs on the end of that sentence.
-        --
-        -- Written in the same column on every row, past the longest ladder
-        -- this page draws, so the prices line up under each other whatever
-        -- each ladder came to.
-        --
-        -- Amber where the wallet covers it and the same grey as the locked
-        -- rung where it does not. That is the second half of the complaint:
-        -- on the evening you have twelve rivets the page has nothing to shout
-        -- about, and it stops shouting.
-        local pricex = kx + NAMEW + 132 * F.scale
-        if r.price and live then
-            local can = r.afford ~= false
-            local pw = pages.priced(r.price, pricex, cy, 11.5 * F.scale,
-                                    pal.a(can and pal.CHARGE_COL or pal.DIM,
-                                          can and (hot and 1 or 0.9) or 0.5))
-            -- The number is a target too. The rung it buys is the other one,
-            -- and a pointer that came to spend rivets should not have to know
-            -- which dim diamond is next.
-            if r.pick then
-                hit(pricex - 8 * F.scale, cy - srow / 2, pw + 16 * F.scale,
-                    srow, "kit_buy", r.index)
-            end
-        end
         if live and r.pick then hit(kx - 14 * F.scale, cy - srow / 2, kw, srow,
                            "stage", r.index) end
         cy = cy + srow
@@ -4445,9 +4405,8 @@ function pages.kit(v, x, y, w, h, focused)
         rule(label)
         local px = kx
         for _, r in ipairs(list) do
-            -- Wide enough for the name, and for a count and a price under it
-            -- where the chip carries both.
-            local cw = math.max((r.price and 74 or 62) * F.scale,
+            -- Wide enough for the name and whatever count sits under it.
+            local cw = math.max(62 * F.scale,
                                 text_w(r.short or r.label or "",
                                        9 * F.scale) + 24 * F.scale)
             if px + cw > kx + kw then px = kx cy = cy + ch + 6 * F.scale end
@@ -4456,17 +4415,6 @@ function pages.kit(v, x, y, w, h, focused)
             -- where the next chip goes depends on how wide this one was.
             if seen(cy - 2 * F.scale, cy - 2 * F.scale + ch) then
                 pages.chip(px, cy - 2 * F.scale, cw, ch, r, cursor(r), focused)
-                -- The price on a chip you already hold a rung of is its own
-                -- target. The box itself is the slot control, and on an
-                -- add-on at the top of what the account owns that press takes
-                -- it off again, which is the only way a pointer can: a chip
-                -- has no arrows. So the rung above is bought from the line it
-                -- is written on. Published first, because the first box under
-                -- a press wins.
-                if live and r.pick and r.price and (r.owned or 0) > 0 then
-                    hit(px, cy - 2 * F.scale + ch * 0.56, cw, ch * 0.44,
-                        "kit_buy", r.index)
-                end
                 if live and r.pick then
                     hit(px, cy - 2 * F.scale, cw, ch, "stage", r.index)
                 end
@@ -4496,7 +4444,7 @@ function pages.kit(v, x, y, w, h, focused)
         if #list == 0 then return 0 end
         local lines, px = 1, 0
         for _, r in ipairs(list) do
-            local cw = math.max((r.price and 74 or 62) * F.scale,
+            local cw = math.max(62 * F.scale,
                                 text_w(r.short or r.label or "",
                                        9 * F.scale) + 24 * F.scale)
             if px > 0 and px + cw > width then lines = lines + 1 px = 0 end
@@ -4760,6 +4708,144 @@ function pages.friends(v, x, y, w, h, focused)
                     * (track - bar)
         local bx = x + w - 3 * F.scale
         rect(bx, top, 3 * F.scale, track, pal.a(pal.DIM, 0.12))
+        rect(bx, top + pos, 3 * F.scale, bar, pal.a(pal.RADAR_TILE, 0.8))
+    end
+end
+
+-- The upgrades page: every slot the game has, what this account owns of it,
+-- and what the next rung costs.
+--
+-- Two things a row has to say at once, which is why it is a page rather than
+-- a list of names and prices. What you own is a ladder, drawn as the same
+-- pips the ship page spends points on, so the two pages read as the same
+-- object seen twice: filled is yours, hollow is for sale, and buying is
+-- watching one turn into the other. What it costs sits at the end, amber
+-- where the wallet covers it and the same grey as a locked rung where it does
+-- not, because a page that shouts on the evening you have twelve rivets is a
+-- page that shouts at nothing.
+--
+-- Rungs everybody is dealt are drawn as a run rather than as pips. Nobody
+-- bought them and nobody can, so pips would be a ladder with its bottom half
+-- permanently lit and no way to read where the buying starts.
+--
+-- See docs/design/match-game.md.
+function pages.shop(v, x, y, w, h, focused)
+    -- Whether a name, its ladder and its price fit across one row. Under
+    -- about 430 points they do not, and the ladder moves under the name with
+    -- the price beside it.
+    local packed = w < 430 * F.scale
+    local rowh = (packed and 50 or 40) * F.scale
+    local SECT = 24 * F.scale
+    local top = y
+    local at = top
+    local dy = M.page_scroll
+
+    -- How wide the widest ladder is, so every price lands in one column. A
+    -- price that moved left and right down the page is a column nobody can
+    -- add up.
+    local pitch = 13 * F.scale
+    -- The dealt run is a bar and the rungs for sale are pips, so the widest
+    -- ladder is the most rungs anybody could buy rather than the tallest slot.
+    -- The bar's width is reserved on every row whether or not the row has one,
+    -- which is what puts the first buyable rung in the same column all the way
+    -- down: a stat opens at six and a charge kind at nothing, and pips that
+    -- started where each row's own dealt part ended made a ragged edge out of
+    -- the one column worth comparing.
+    local DEALT = 28 * F.scale
+    local most = 1
+    for _, r in ipairs(v.rows or {}) do
+        most = math.max(most, (r.arena_max or 0) - (r.base or 0))
+    end
+    local NAMEW = math.min(packed and w or w * 0.42, 210 * F.scale)
+    local ladx = x + NAMEW
+    local pricex = math.min(ladx + DEALT + most * pitch + 26 * F.scale,
+                            x + w - 8 * F.scale)
+
+    for i, r in ipairs(v.rows or {}) do
+        if r.sect then
+            local hy = at - dy
+            if hy >= top and hy + SECT <= y + h then
+                hrule(x, hy + SECT * 0.42, w - 10 * F.scale)
+                lbl(r.sect, x, hy + SECT * 0.82)
+            end
+            at = at + SECT
+        end
+        local ry0 = at - dy
+        at = at + rowh
+        -- Whole rows only. There is no scissor to clip against and type comes
+        -- from the gui, which draws over every mesh laid down here.
+        if ry0 >= top and ry0 + rowh <= y + h then
+            local hot = (focused and i == v.sel) or i == v.hover
+            if hot then
+                wash(x - GUTTER * F.scale, ry0, w + GUTTER * F.scale, rowh,
+                     pal.a(pal.FRIEND, 0.16))
+            end
+            local cy = ry0 + rowh / 2
+            local ny = packed and (ry0 + rowh * 0.3) or cy
+            local col = r.tint_col or pal.INK
+            txt(r.label or "", x, ny, (packed and 14 or 15) * F.scale,
+                pal.a(col, hot and 1 or 0.88), nil, MENU_FONT)
+            -- The ladder. Where the whole of it was dealt there is nothing to
+            -- sell and nothing to draw: the price column says so instead.
+            local lx = packed and x or ladx
+            local ly = packed and (ry0 + rowh * 0.72) or cy
+            local owned = r.owned or 0
+            local base = r.base or 0
+            local ceil = r.arena_max or 0
+            if base > 0 then
+                -- What everybody is dealt, as one bar. Pips would be a ladder
+                -- with its bottom half permanently lit and nothing to say
+                -- where the buying starts, and on a stat that is six of the
+                -- eight.
+                rect(lx, ly - 1.5 * F.scale, DEALT - 10 * F.scale,
+                     3 * F.scale, pal.a(pal.DIM, 0.45))
+            end
+            for k = base + 1, ceil do
+                local cx = lx + DEALT + (k - base - 1) * pitch
+                pages.pip(cx, ly, 4.5 * F.scale,
+                          k <= owned and "on" or "off",
+                          k <= owned and pal.a(col, 0.95) or pal.DIM)
+            end
+            -- And what the next one costs, or that there is no next one.
+            local px = packed and (x + w - 8 * F.scale) or pricex
+            local py = packed and ly or cy
+            if r.price then
+                local can = r.afford ~= false
+                pages.priced(r.price, px, py, 11.5 * F.scale,
+                             pal.a(can and pal.CHARGE_COL or pal.DIM,
+                                   can and (hot and 1 or 0.9) or 0.5),
+                             packed and "right" or nil)
+            else
+                lbl(owned > base and "yours" or "dealt", px, py,
+                    pal.a(pal.DIM, 0.55), packed and "right" or nil)
+            end
+            -- The note, where the row has one and the room for it. It says
+            -- what the rung being sold actually does, which is the one thing
+            -- a name and a number cannot.
+            if r.note and not packed and rowh >= 40 * F.scale then
+                local nx = pricex + 60 * F.scale
+                if nx < x + w - 80 * F.scale then
+                    txt(r.note, nx, cy, 11 * F.scale, pal.a(pal.DIM, 0.8))
+                end
+            end
+            if r.pick then
+                hit(x - GUTTER * F.scale, ry0, w + GUTTER * F.scale, rowh,
+                    "stage", i)
+            end
+        end
+    end
+
+    if #(v.rows or {}) == 0 and v.empty then
+        empty_state(x, top, w, h, v.empty)
+    end
+    M.page_extent = (at - top) + 16 * F.scale
+    M.page_room = h
+    if M.page_extent > h then
+        local bar = math.max(30 * F.scale, h * h / M.page_extent)
+        local pos = (M.page_scroll / math.max(1, M.page_extent - h))
+                    * (h - bar)
+        local bx = x + w - 3 * F.scale
+        rect(bx, top, 3 * F.scale, h, pal.a(pal.DIM, 0.12))
         rect(bx, top + pos, 3 * F.scale, bar, pal.a(pal.RADAR_TILE, 0.8))
     end
 end
@@ -5481,10 +5567,17 @@ local function mark_standings(cx, cy, r, col)
     end
 end
 
+-- What rivets buy, as the rivet itself: a ring with a bar under it, the same
+-- mark that stands in front of every price on the page it leads to.
+local function mark_upgrades(cx, cy, r, col)
+    pages.rivet_mark(cx, cy, r * 0.86, col)
+end
+
 local MARKS = {zones = mark_zones, pilot = mark_pilot, team = mark_team,
                settings = mark_settings, controls = mark_controls,
                about = mark_about, discord = mark_discord, leave = mark_leave,
-               friends = mark_friends, standings = mark_standings}
+               friends = mark_friends, standings = mark_standings,
+               upgrades = mark_upgrades}
 
 local function draw_mark(kind, cx, cy, r, col, cls)
     if kind == "ship" then return mark_ship(cx, cy, r, col, cls) end
@@ -7008,6 +7101,10 @@ function M.menu(v)
         pages.friends(v, panel_x + GUTTER * F.scale, top,
                       panel_w - 14 * F.scale - GUTTER * F.scale, room,
                       focused)
+    elseif v.shop then
+        -- The catalog, as a ladder and a price a row.
+        pages.shop(v, panel_x + GUTTER * F.scale, top,
+                   panel_w - 14 * F.scale - GUTTER * F.scale, room, focused)
     elseif v.rows and #v.rows > 0 and v.rows[1].hull then
         ship_grid(tx, top, avail, room, v, focused)
     else

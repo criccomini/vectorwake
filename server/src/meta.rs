@@ -1625,9 +1625,18 @@ async fn route(
             }
         }
 
-        // What is left to buy, priced. One entry a slot with a step on it,
-        // with the name a person reads it by, so the client never has to
-        // learn the kit space's layout to draw a shelf.
+        // The catalog: every slot the game has, with how far this account owns
+        // it, how far it goes, and what the next rung costs. The name a person
+        // reads it by comes with it, so the client never has to learn the kit
+        // space's layout.
+        //
+        // It used to answer with what was left to buy and nothing else, which
+        // is a page that cannot say what you already own: a slot came off the
+        // list the moment it was full, so the shelf shrank as a pilot got
+        // stronger and the last purchase in a ladder made the whole ladder
+        // vanish. Everything is listed now and `price` is what is missing on a
+        // slot with nothing left. Bots read the same reply and skip a row
+        // without one, which is the same set they used to be handed.
         "/v1/upgrades" => {
             let Some(account) =
                 account_for(&db, "secret", &sha256_hex(s("secret").as_bytes())).await
@@ -1635,22 +1644,35 @@ async fn route(
                 return (403, serde_json::json!({ "error": "no such account" }));
             };
             let base = sim::World::base_entitlements();
-            let mut shelf = Vec::new();
+            let ceiling = sim::World::baseline_kit_ceiling();
+            let mut slots = Vec::new();
             for slot in 0..sim::SLOT_COUNT {
-                let owned = entitlement_of(&db, account, slot as i16, base[slot]).await;
-                let Some((next, price)) = upgrades::next_step(slot, owned) else {
+                // A slot the game does not have. Not a thing you own none of:
+                // a bullet with a proximity fuse does not exist, and a row
+                // saying so is a row about nothing.
+                if ceiling[slot] == 0 {
                     continue;
-                };
-                shelf.push(serde_json::json!({
+                }
+                let owned = entitlement_of(&db, account, slot as i16, base[slot]).await;
+                let step = upgrades::next_step(slot, owned);
+                let mut row = serde_json::json!({
                     "slot": slot,
                     "label": upgrades::name_of(slot),
-                    "price": price,
-                    "note": upgrades::note_for(slot, owned, next),
-                }));
+                    "owned": owned,
+                    "ceiling": ceiling[slot],
+                    // What everybody starts with, so the page can tell a rung
+                    // that was dealt from one that was paid for.
+                    "base": base[slot],
+                });
+                if let Some((next, price)) = step {
+                    row["price"] = serde_json::json!(price);
+                    row["note"] = serde_json::json!(upgrades::note_for(slot, owned, next));
+                }
+                slots.push(row);
             }
             (
                 200,
-                serde_json::json!({ "shelf": shelf, "rivets": wallet_of(&db, account).await }),
+                serde_json::json!({ "slots": slots, "rivets": wallet_of(&db, account).await }),
             )
         }
 

@@ -145,8 +145,9 @@ local ship_at = top_index("ship")
 local settings_at = top_index("settings")
 local tabs = {}
 for _, r in ipairs(menu.view().rail) do tabs[#tabs + 1] = r.label end
-check("the tab row is play, ship, friends, standings, settings",
-      table.concat(tabs, "/") == "play/ship/friends/standings/settings",
+check("the tab row is play, ship, upgrades, friends, standings, settings",
+      table.concat(tabs, "/")
+      == "play/ship/upgrades/friends/standings/settings",
       table.concat(tabs, "/"))
 check("the rail carries the destinations", ship_at and settings_at,
       "ship " .. tostring(ship_at) .. ", settings " .. tostring(settings_at))
@@ -1738,26 +1739,26 @@ do
     check("and a saved kit is left alone", menu.kit[1] == 2 and menu.kit[6] == 0,
           tostring(menu.kit[1]) .. "/" .. tostring(menu.kit[6]))
 
-    -- The shelf is on this page now, one price per row. There is no upgrades
-    -- tab: what rivets buy is a rung of a slot, and every slot is already a
-    -- row here.
+    -- Nothing on this page is for sale. The prices rode these rows for a
+    -- while and buying is the upgrades tab again: a panel with a wallet and a
+    -- budget on it has the word "spend" meaning two things at once.
     account.entitlements = {[1] = 1}
     account.rivets = 500
-    account.shelf = {{slot = 0, label = "energy depth", price = 40,
-                      note = "a 7th step, on this stat alone"}}
+    account.catalog = {{slot = 0, label = "energy depth", price = 40,
+                        owned = 1, ceiling = 2, base = 0,
+                        note = "a 7th step, on this stat alone"}}
     menu.kit = nil
     menu.open_kit(0)
     local priced = nil
     for _, r in ipairs(menu.view().rows) do
         if r.label == "energy" then priced = r end
     end
-    check("a row with a rung left to sell carries its price",
-          priced ~= nil and priced.price == 40 and priced.afford == true,
+    check("the ship page carries no price",
+          priced ~= nil and priced.price == nil,
           priced and tostring(priced.price) or "no energy row")
 
-    -- And the press that cannot spend asks to buy it. A stat at the top of
-    -- what the account owns is a pilot who wants the next rung, which is the
-    -- thing on sale, so the refusal became the offer.
+    -- And a press that cannot spend says which of the two refusals it is,
+    -- rather than offering to sell the way out of one of them.
     menu.sel.hangar = 3
     menu.ask = nil
     for _ = 1, 4 do menu.step({right = true}) end
@@ -1766,7 +1767,55 @@ do
     check("and an arrow at the top of it raises no card", menu.ask == nil,
           menu.ask and menu.ask.head or "quiet")
     menu.step({go = true})
-    check("and the next press offers the rung above it",
+    check("and the next press points at the page that sells it",
+          menu.ask == nil and menu.note ~= nil
+          and string.find(menu.note, "upgrades", 1, true) ~= nil,
+          tostring(menu.note))
+
+    -- A rung nobody owns, pressed directly. Same answer: the pip has been
+    -- advertising something this page does not sell.
+    menu.ask = nil
+    menu.click_kit_at(3, 2)
+    check("a rung nobody owns says where it is sold",
+          menu.ask == nil and menu.note ~= nil
+          and string.find(menu.note, "upgrades", 1, true) ~= nil,
+          tostring(menu.note))
+    menu.click_kit_at(3, 1)
+    check("and a rung you own is still just a rung",
+          menu.ask == nil and menu.kit[1] == 1,
+          tostring(menu.kit[1]))
+
+    -- --- the page that does sell it
+    --
+    -- Every slot the game has, owned marked, with the price of the next rung
+    -- on the ones that have one. It listed only what was left to buy once,
+    -- which is a page that shrinks as a pilot gets stronger and loses the
+    -- whole ladder on the last purchase in it.
+    account.rivets = 500
+    account.catalog = {
+        {slot = 0, label = "energy depth", owned = 1, ceiling = 2, base = 0,
+         price = 40, note = "a 7th step, on this stat alone"},
+        {slot = 1, label = "recharge depth", owned = 2, ceiling = 2, base = 0},
+    }
+    menu.stack = {"root", "upgrades"}
+    menu.sel = {}
+    local shop = menu.view()
+    check("the catalog is drawn as its own page", shop.shop == true,
+          tostring(shop.shop))
+    check("and lists what is owned as well as what is for sale",
+          #shop.rows == 2, tostring(#shop.rows))
+    check("a slot with a rung left carries its price",
+          shop.rows[1].price == 40 and shop.rows[1].afford == true
+          and shop.rows[1].owned == 1 and shop.rows[1].arena_max == 2,
+          tostring(shop.rows[1].price))
+    check("and one taken to the top of its ladder carries none",
+          shop.rows[2].price == nil and shop.rows[2].owned == 2,
+          tostring(shop.rows[2].price))
+
+    menu.sel.upgrades = 1
+    menu.ask = nil
+    menu.step({go = true})
+    check("pressing a priced row asks before it spends",
           menu.ask ~= nil and string.find(menu.ask.head, "40", 1, true),
           menu.ask and menu.ask.head or "no card")
     check("with the answer that changes nothing under the cursor",
@@ -1778,22 +1827,16 @@ do
           bought == "buy" and menu.pending == 0,
           tostring(bought) .. "/" .. tostring(menu.pending))
 
-    -- The rung above what you own is the thing the price is for, so pressing
-    -- it is the same question the price is. This is what a dim pip has been
-    -- advertising since the ladder learned to draw one.
+    -- A row with nothing left to sell is not a control.
+    menu.sel.upgrades = 2
     menu.ask = nil
-    menu.click_kit_at(3, 2)
-    check("a rung nobody owns asks what it costs",
-          menu.ask ~= nil and string.find(menu.ask.head, "40", 1, true),
-          menu.ask and menu.ask.head or "no card")
-    menu.ask = nil
-    menu.click_kit_at(3, 1)
-    check("and a rung you own is still just a rung",
-          menu.ask == nil and menu.kit[1] == 1,
-          tostring(menu.kit[1]))
+    menu.step({go = true})
+    check("a slot you have taken to the top presses nothing",
+          menu.ask == nil, menu.ask and menu.ask.head or "quiet")
 
     -- A wallet too light is told so instead of being asked a question whose
     -- only answer is a refusal.
+    menu.sel.upgrades = 1
     account.rivets = 10
     menu.ask = nil
     menu.step({go = true})

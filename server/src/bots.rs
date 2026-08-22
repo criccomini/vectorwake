@@ -1016,8 +1016,11 @@ async fn spend(meta: &str, secret: &str, who: &str, session: &serde_json::Value)
     let Ok(shelf) = crate::meta::call(meta, "/v1/upgrades", &body).await else {
         return false;
     };
+    // Rows with no price on them are slots this account has already taken to
+    // the top of its ladder. `?` on the price drops them, which is exactly the
+    // set this used to be handed before the catalog started listing them.
     let offered: Vec<(usize, u32)> = shelf
-        .get("shelf")
+        .get("slots")
         .and_then(|v| v.as_array())
         .map(|rows| {
             rows.iter()

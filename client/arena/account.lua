@@ -36,13 +36,15 @@ M.entitlements = {}
 -- no entry has never been taken to the ship page, and the arena deals it a
 -- starter kit.
 M.kits = {}
--- What is left to buy, priced, as the meta-layer lists it: one entry a slot
--- with a step on it, `{slot, label, price, note}`. Asked for when the page is
--- opened rather than carried by every session, because it is a page nobody is
--- looking at most of the time.
--- Nothing yet, which is not the same as nothing left to buy: the shelf is
+-- The catalog, as the meta-layer lists it: one entry a slot the game has,
+-- `{slot, label, owned, ceiling, base}`, with `price` and `note` on the ones
+-- with a rung left to sell. Asked for when the page is opened rather than
+-- carried by every session, because it is a page nobody is looking at most of
+-- the time.
+--
+-- Nothing yet, which is not the same as a catalog with nothing in it: this is
 -- the meta-layer's answer and a page that has not had one has to say so.
-M.shelf = nil
+M.catalog = nil
 -- Which Monday the table in hand starts on, as the meta-layer spells it.
 M.week_since = ""
 -- The week's table, as the meta-layer publishes it. Asked for the same way.
@@ -376,14 +378,14 @@ function M.buy(slot, cb)
     end)
 end
 
--- What is on the shelf, and the week's table. Both are pages somebody is
--- looking at rather than facts a session needs, so they are asked for when
--- the page opens and left alone otherwise.
+-- The catalog, and the week's table. Both are pages somebody is looking at
+-- rather than facts a session needs, so they are asked for when the page opens
+-- and left alone otherwise.
 function M.refresh_upgrades()
     if M.base == "" then return end
     post("/v1/upgrades", {secret = secret}, function(r)
         if type(r) ~= "table" then return end
-        if type(r.shelf) == "table" then M.shelf = r.shelf end
+        if type(r.slots) == "table" then M.catalog = r.slots end
         -- And the wallet, which rides the same reply and was being dropped.
         -- Rivets are bounty taken, so a pilot earns them in a match rather
         -- than on this page: the number in hand is from whenever the session
@@ -525,7 +527,7 @@ function M.logout()
     M.rivets = 0
     M.entitlements = {}
     M.kits = {}
-    M.shelf = nil
+    M.catalog = nil
     save()
     if M.base ~= "" then make_guest() end
 end

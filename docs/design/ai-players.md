@@ -307,7 +307,7 @@ player spends theirs on. It is the visible half of the career above: a pilot
 you met a month ago comes back in a ship it paid for.
 
 Nothing about this is privileged. A bot walks the three endpoints a person's
-client walks, holding its own account's secret: `/v1/upgrades` for the shelf,
+client walks, holding its own account's secret: `/v1/upgrades` for the catalog,
 `/v1/buy` for a rung, and `C2S_KIT` to the arena for what it is flying. The
 meta-layer prices it, checks the wallet and refuses what the account cannot
 afford, and the arena checks the kit against the zone's ceiling and the

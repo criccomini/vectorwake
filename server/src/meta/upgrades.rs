@@ -141,7 +141,11 @@ pub(super) fn name_of(slot: usize) -> String {
 /// do not: "gun bounce, 35 rivets" is already a sentence.
 pub(super) fn note_for(slot: usize, owned: u8, next: u8) -> Option<String> {
     if slot < sim::UP_COUNT {
-        return Some(format!("a {}th step, on this stat alone", next));
+        // "an 8th", not "a 8th". Only the eighth needs it here, because a
+        // stat's last two steps are the seventh and the eighth and nothing
+        // else in this sentence changes.
+        let article = if next == 8 { "an" } else { "a" };
+        return Some(format!("{article} {next}th step, on this stat alone"));
     }
     let charges = sim::UP_COUNT + sim::TRIG_COUNT + sim::TRIG_COUNT * sim::MOD_COUNT;
     if slot >= charges && owned == 0 {

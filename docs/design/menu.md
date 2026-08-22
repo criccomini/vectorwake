@@ -2,13 +2,14 @@
 
 > **The split happened.** [match-game.md](match-game.md) moved the ship page,
 > the upgrades and the standings out of this tree and into pages of their own,
-> with settings beside them, so the front end is five tabs and help folds
-> into settings with the bindings. Friends is one of them, and upgrades is not
-> any more: what
-> rivets buy is a rung of a slot, every slot is already a row of the ship
-> page, and a shelf listing those same rows on a tab of its own meant buying
-> in one place and spending the point in another. The price sits at the end
-> of the row it belongs to. It is one full-screen surface met in
+> with settings beside them, so the front end is six tabs and help folds
+> into settings with the bindings. Friends is one of them and upgrades is
+> another. Upgrades was folded into the ship page for a while, with the price
+> of each rung written on the row that spends it, on the argument that picking
+> a slot and paying for it are one act. What that produced was a panel doing
+> two jobs at once: a wallet and a budget on one screen, and the word "spend"
+> meaning both. They are two questions asked at different times and they are
+> two stops again. It is one full-screen surface met in
 > both places, differing only in which tabs it carries: in a match, settings
 > and leave, because nothing pauses and anything you cannot act on now costs
 > match time to read. It is still driven by the five inputs below, with left
@@ -37,15 +38,16 @@ starfield with no way back, which is a button that breaks the game.
 
 ## A tab row, and a page under it
 
-Five tabs at the front end and three in a match, with one page under whichever
+Six tabs at the front end and three in a match, with one page under whichever
 is lit. Left and right walk the row, down enters the page, up from its first
 row comes back to the row, and left and right on a row set that row's value.
 
 ```
 vectorwake
 ├ play        the zones a directory is running and how busy each one is
-├ ship        one hull on a carousel, the thirty points you spend on it, and
-│             what the next rung of each slot costs in rivets
+├ ship        one hull on a carousel, and the thirty points you spend on it
+├ upgrades    every slot the game has, how far you own it, and what the next
+│             rung costs. Slots, never strength: see match-game.md
 ├ friends     a field you type a call sign into, who is waiting on you, who
 │             is on, the room you are in, and everybody who ever added you.
 │             See friends.md
@@ -54,7 +56,7 @@ vectorwake
 
               your call sign sits at the far end of the row and is the way
               into your account and career: a page reached from the one
-              place already naming it, rather than a fifth stop. Beside it,
+              place already naming it, rather than a seventh stop. Beside it,
               the way out to Discord. Both are drawn as buttons, which on a
               phone there is no corner for: there the play page carries the
               Discord one and the top of the screen is the wordmark alone

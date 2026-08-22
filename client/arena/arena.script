@@ -547,7 +547,7 @@ local function hover_menu(x, y, vh)
             -- pointer across a ladder the way it does down a list.
             return hovering(
                 ((r.action == "stage" or r.action == "kit_at"
-                  or r.action == "kit_buy" or r.action == "friend_act")
+                  or r.action == "friend_act")
                  and r.value)
                     or nil,
                 r.action == "rail" and r.value or nil)
@@ -2578,10 +2578,6 @@ function on_input(self, action_id, action)
                     -- slot goes to that step, which is what a press on the
                     -- fourth dot of a five-dot row means.
                     act, moved = menu.click_kit_at(r.value, r.level)
-                elseif r.action == "kit_buy" then
-                    -- The price at the end of a kit row. Same question the
-                    -- row raises when it has no rung left to spend.
-                    act, moved = menu.click_kit_buy(r.value)
                 elseif r.action == "sort" then
                     -- A column head on the week's table. The same one again
                     -- turns the order over.

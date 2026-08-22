@@ -643,14 +643,12 @@ local function kit_rows(class)
     -- carousel there is no level above this one left to stand on, so the
     -- preview became a page that looked exactly like the editor and answered
     -- nothing. See docs/design/ships.md.
-    -- What the next rung of each slot costs, from the same shelf the upgrades
-    -- page used to be a list of. That page was this page's rows, priced, on a
-    -- tab of its own: a pilot picked a slot there and came back here to spend
-    -- the point it bought. The price lives on the row now and the tab is gone.
-    local shelf = {}
-    for _, item in ipairs(account.shelf or {}) do
-        if item.slot then shelf[item.slot + 1] = item end
-    end
+    -- No prices on this page. They rode the rows for a while, on the argument
+    -- that picking a slot and paying for it are one act; what that produced
+    -- was a panel doing two jobs at once, a wallet and a budget side by side,
+    -- and two different meanings for the word "spend" on one screen. Buying
+    -- is the upgrades tab again. This page is the thirty points and nothing
+    -- else. See docs/design/match-game.md.
     local hulls = hull_rows()
     local at = M.hull_index()
     local cell = hulls[at]
@@ -674,23 +672,9 @@ local function kit_rows(class)
         -- Nothing is granted now, so that test would have emptied the page.
         if (arena_ceiling[s.slot + 1] or 0) > 0 then
             local held = M.kit[s.slot + 1] or 0
-            -- Priced only where this arena would honour the rung. The shelf
-            -- is written against the game's own ceiling, and a zone can cap a
-            -- slot lower: selling a rung nobody here can fly is taking money
-            -- for nothing.
-            local sold = shelf[s.slot + 1]
-            if sold and (arena_ceiling[s.slot + 1] or 0) <= max then
-                sold = nil
-            end
             rows[#rows + 1] = {
                 label = s.label,
                 detail = tostring(held),
-                -- What the next rung costs, and whether the wallet covers it.
-                -- The price stays on the row when it does not: a page that
-                -- shows only what you can afford never says what you are
-                -- saving for.
-                shelf = sold, price = sold and sold.price or nil,
-                afford = (account.rivets or 0) >= ((sold and sold.price) or 0),
                 -- The range as steps with the one it is on lit, which is what
                 -- every other setting in this menu draws and says "four of
                 -- six" in the shape of the thing rather than in a number that
@@ -1069,6 +1053,96 @@ local function name_rows(rows, head, list, fill)
         if i == 1 then r.sect = head end
         rows[#rows + 1] = r
     end
+end
+
+-- The upgrades page: every slot the game has, with what this account owns of
+-- it and what the next rung costs.
+--
+-- It lists the whole catalog rather than what is left to buy. A shelf that
+-- only carried what was for sale shrank as a pilot got stronger, and the last
+-- purchase in a ladder made the whole ladder disappear from the page that had
+-- been selling it. Owned rungs are marked instead, so the page is a stable
+-- thing to read and buying is watching a row fill up.
+--
+-- Grouped the way the ship page groups the same slots, and in the same order,
+-- because they are the same list read for two different reasons: what may I
+-- own, and what am I flying. See docs/design/match-game.md.
+local function upgrade_rows()
+    local have = {}
+    for _, it in ipairs(account.catalog or {}) do
+        if it.slot then have[it.slot + 1] = it end
+    end
+    local heads = {flight = "stats", levels = "weapon level",
+                   charges = "charges"}
+    local rows = {}
+    local was = nil
+    for _, sl in ipairs(kit_slots()) do
+        local it = have[sl.slot + 1]
+        if it then
+            -- The add-ons split by trigger, because twelve of them under one
+            -- heading is a list nobody can find a bomb in.
+            local key = sl.group
+            local head = heads[key]
+            if key == "weapons" then
+                key = "weapons" .. tostring(sl.trigger or 0)
+                head = (sl.trigger == 0 and "gun" or "bomb") .. " add-ons"
+            end
+            local sect = (key ~= was) and head or nil
+            was = key
+            local price = tonumber(it.price)
+            rows[#rows + 1] = {
+                -- A string or nothing. The meta-layer sends null where a slot
+                -- has no sentence to its name, and a decoder's null is not a
+                -- Lua nil: drawn, it is a userdata where a word should be.
+                sect = sect, label = sl.label,
+                -- Two names for one slot, and the page wants the short one.
+                -- "Energy" reads down a column beside "Recharge" and
+                -- "Speed"; "energy depth" is what the card asking you to buy
+                -- it should say, because a card is one sentence with no
+                -- column to be read against.
+                sold = it.label,
+                note = type(it.note) == "string" and it.note or nil,
+                group = sl.group, short = sl.short, tint_col = sl.tint,
+                trigger = sl.trigger,
+                -- What is owned, how far the ladder runs, and how much of it
+                -- was dealt rather than bought. The last one is what lets the
+                -- page draw a rung everybody starts with differently from one
+                -- somebody paid for.
+                owned = tonumber(it.owned) or 0,
+                arena_max = tonumber(it.ceiling) or 0,
+                base = tonumber(it.base) or 0,
+                price = price,
+                -- Back a shade when the wallet is short, and still on the
+                -- page: one that shows only what you can afford never says
+                -- what you are saving for.
+                afford = price ~= nil and (account.rivets or 0) >= price,
+                -- Pressable whatever the wallet says. A row with no action
+                -- publishes no hit box, so a pilot with no rivets met a page
+                -- where the mouse did nothing at all: no hover, no click, no
+                -- reason given. The refusal is the meta-layer's and it
+                -- already exists.
+                act = price and "buy" or nil, value = sl.slot,
+            }
+        end
+    end
+    return rows
+end
+
+local function upgrades_empty()
+    if account.catalog and #account.catalog > 0 then return nil end
+    if account.base == "" then
+        return {head = "nothing to upgrade here",
+                line = "this deployment keeps no accounts"}
+    end
+    -- Asked and not yet answered. It used to say the catalog was empty, which
+    -- is a sentence about the account rather than about the request still
+    -- being out.
+    if not account.catalog then
+        return {head = "asking for the catalog",
+                line = "what rivets buy is coming"}
+    end
+    return {head = "nothing to buy",
+            line = "this arena sells no slots at all"}
 end
 
 -- Seconds, as somebody says them.
@@ -1487,6 +1561,15 @@ local NODES = {
                  return HULLS[M.class + 1][1]
              end,
              go = "hangar"},
+            -- And what rivets buy, beside it. The two were one page for a
+            -- while, with the price of each rung written on the row that
+            -- spends it. What that produced was a panel doing two jobs at
+            -- once: a wallet and a budget on one screen, and the word "spend"
+            -- meaning both. They are two questions asked at different times,
+            -- so they are two stops again. See docs/design/match-game.md.
+            {label = "upgrades", icon = "upgrades",
+             detail = function() return (account.rivets or 0) .. " rivets" end,
+             go = "upgrades"},
             -- Who is on, next to where you would go with them. It was a
             -- section of the play page, which is a stop on the way to
             -- somewhere else; this is a question a player asks from wherever
@@ -1522,6 +1605,17 @@ local NODES = {
     -- cell opened a second page for the kit. The roster is a carousel at the
     -- head of this page now, so both levels are this one.
     hangar = {rows = kit_rows},
+
+    -- What rivets buy: which slots a pilot may put on a ship. Never how many
+    -- points they have to spend on them, and never strength: everything in a
+    -- kit trades against the same thirty points, so this sells the right to
+    -- concentrate rather than more to concentrate with. See
+    -- docs/design/match-game.md.
+    --
+    -- The prices are the meta-layer's and are not written down here: a client
+    -- that knew them would be a second copy to keep in step, and the reply to
+    -- a purchase says what the slot now holds and what is left in the wallet.
+    upgrades = {rows = upgrade_rows, empty = upgrades_empty},
 
     play = {rows = play_rows, empty = zone_empty},
 
@@ -1943,6 +2037,9 @@ local function view_row(r, i)
         -- carries. `acts` is drawn as buttons for a pointer and raised as a
         -- card for five inputs, off this one list.
         who = r.value, state = r.state, dim = r.dim,
+        -- What the catalog needs beyond the kit's own fields: how much of a
+        -- ladder everybody is dealt, which is the part nobody buys.
+        base = r.base,
         zone = r.zone, joinable = r.joinable, acts = r.acts,
         group = r.group, short = r.short, tint_col = r.tint_col,
         -- The week's own columns.
@@ -2531,19 +2628,25 @@ function M.tick(dt)
     end
     if M.at() ~= "controls" then M.foot = nil end
     -- Two pages ask the meta-layer for their contents when they open. Asked
-    -- on the edge rather than every frame: a shelf and a week's table are
+    -- on the edge rather than every frame: a catalog and a week's table are
     -- read while somebody looks at them, and a page nobody is on should cost
     -- the fleet nothing.
     --
     -- "On screen" rather than "entered". At the root the stage previews the
     -- tab under the cursor, so a player who arrows onto upgrades reads the
-    -- whole page without the stack ever naming it. It said the shelf was
+    -- whole page without the stack ever naming it. It said the catalog was
     -- empty, which is a sentence about the account rather than about the
     -- request that was never sent.
     local at = M.showing()
     local arrived = at ~= was_at
     if arrived then
-        if at == "hangar" then account.refresh_upgrades() end
+        -- The ship page asks too, and does not draw a price anywhere. It is
+        -- the wallet it is after: a purchase made here has to be visible on
+        -- the tab beside it without a reload, and the ladders the ship page
+        -- draws are bounded by what this reply says the account owns.
+        if at == "upgrades" or at == "hangar" then
+            account.refresh_upgrades()
+        end
         if at == "standings" then account.refresh_week(M.week_back) end
         was_at = at
     end
@@ -2699,6 +2802,9 @@ function M.view()
     -- preview is, because a preview is a look at what is in there and not a
     -- place to press anything.
     if M.at() == "friends" then out.social = true end
+    -- And the catalog is a ladder and a price a row rather than a list of
+    -- names. Same reason: the page is two facts about each slot at once.
+    if M.at() == "upgrades" then out.shop = true end
     -- What pressing play would do, beside the list of things to press it on.
     -- The mode list is short and the panel is wide, and the question a player
     -- is actually asking is "where would this put me".
@@ -2873,26 +2979,21 @@ local function activate(by)
             M.note = nil
             return "kit"
         end
-        -- Refused. A press that cannot spend is a press that wanted the rung
-        -- above what the account owns, which is the thing the shelf sells, so
-        -- the press asks to buy it rather than leaving a line at the foot of
-        -- the page pointing at a tab that no longer exists.
+        -- Refused, and why. Two different refusals wearing one shape: a
+        -- ladder with no rung left for this account, and a budget with no
+        -- point left to spend. The second is the common one and the answer is
+        -- not to sell anything, so this says which happened rather than
+        -- offering to fix it.
         --
-        -- Only when the ladder is out of rungs. A pilot who has run out of
-        -- budget with steps still to climb wants the budget back, not another
-        -- purchase, and being asked to buy at that moment reads as the page
-        -- trying to sell rather than answer.
+        -- It used to raise a purchase card here, from the days when the price
+        -- rode the row. Buying is the upgrades tab again, and a page that
+        -- interrupts a build to sell is the reason the two came apart.
         if (by or 1) > 0 then
-            -- On enter, not on an arrow. A hand holding right to fill a stat
-            -- is walking a ladder, and a card in the face at the top of it is
-            -- the page interrupting a gesture that was going fine. Enter is
-            -- the deliberate press, and the price at the end of the row is
-            -- the same question for a pointer.
-            if not by and at >= top and r.shelf then
-                M.ask_upgrade(r.value, r.shelf)
-            elseif top == 0 and (r.arena_max or 0) > 0 then
-                M.note = "not yours yet, and not for sale here"
-            elseif at < top then
+            if at >= top and (r.arena_max or 0) > top then
+                M.note = "not yours yet: it is on the upgrades page"
+            elseif at >= top then
+                M.note = "that is as far as this one goes"
+            else
                 M.note = "no kit points left"
             end
         end
@@ -2931,11 +3032,17 @@ local function activate(by)
         M.ask_friend(r.value, r.label, r.acts)
         return nil
     elseif r.act == "buy" then
-        -- The meta-layer prices it, checks the wallet and raises the ceiling
-        -- in one call. Nothing here decides whether it can be afforded: this
-        -- asks, and the reply is the answer.
-        M.pending = r.value
-        return "buy"
+        -- A card first, naming what is being bought and what it costs. Rivets
+        -- are slow to earn and a row that spends them on the press it takes to
+        -- read it is a page nobody trusts to walk with the arrows.
+        --
+        -- The card is where the wallet is checked too, and only to choose the
+        -- sentence: the meta-layer prices it, checks the wallet and raises the
+        -- ceiling in one call, and its refusal is the answer. See
+        -- `M.ask_upgrade` and the `do_buy` answer.
+        M.ask_upgrade(r.value, {label = r.sold or r.label,
+                                price = r.price, note = r.note})
+        return nil
     elseif r.act == "discord" then
         -- A new tab, and the game keeps running behind it: nothing here is
         -- paused, and a player who came to ask a question has not asked to
@@ -3270,31 +3377,18 @@ function M.click_kit_at(index, level)
     local r = rows[index]
     if not r or r.act ~= "kit_step" then return nil, false end
     M.sel[M.at()] = index
-    -- A rung above what the account owns is the thing the shelf sells, and a
-    -- press on it has always meant "I want this many of these". The answer
-    -- used to be a refusal nothing said out loud; it is the price now, which
-    -- is what the dim pip has been advertising all along.
+    -- A rung above what the account owns is what the upgrades page sells, and
+    -- a press on it means "I want this many of these". It cannot be had here,
+    -- and the dim pip that has been advertising it says where it can.
     local top = kit_ceiling()[r.value + 1] or 0
-    if level > top and r.shelf then
-        M.ask_upgrade(r.value, r.shelf)
+    if level > top then
+        M.note = "not yours yet: it is on the upgrades page"
         return nil, true
     end
     if M.kit_set(r.value, level) then
         M.note = nil
         return "kit", true
     end
-    return nil, true
-end
-
--- The price at the end of a kit row, pressed. Same question the row itself
--- raises when it has no rung left to spend on; this is the target for a hand
--- that came to buy rather than to spend.
-function M.click_kit_buy(index)
-    local rows = rows_of(node())
-    local r = rows[index]
-    if not r or not r.shelf then return nil, false end
-    M.sel[M.at()] = index
-    M.ask_upgrade(r.value, r.shelf)
     return nil, true
 end
 
