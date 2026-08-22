@@ -536,8 +536,14 @@
         <div class="row wrap">
           <span class="dim">tool</span>
           <div class="chips" id="map-tools"></div>
-          <label class="row tight"><input type="checkbox" id="map-sym">
-            half-turn symmetry</label>
+          <div class="chips">
+            <label><input type="checkbox" id="map-sym"> half-turn symmetry</label>
+          </div>
+        </div>
+        <div class="row wrap">
+          <span class="dim">edit</span>
+          <button id="map-undo" class="quiet" disabled>undo</button>
+          <button id="map-redo" class="quiet" disabled>redo</button>
           <label class="row tight">size
             <input id="map-w" type="number" min="9" max="1024" step="1">
             by
@@ -548,6 +554,9 @@
             <input id="map-zoom" type="range" min="1" max="12" step="1" value="4">
           </label>
         </div>
+        <p class="dim">The right button erases whatever tile is picked, so a
+          wall can be tidied without putting the paint down. Ctrl+Z and
+          Ctrl+Shift+Z do what they do everywhere else.</p>
 
         <div class="canvas-wrap">
           <canvas id="map-canvas" width="640" height="640"

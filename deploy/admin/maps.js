@@ -35,7 +35,7 @@ const T_SLOPE = 10;
 // simulation calls them, and drawn as the triangle they are.
 const PAINTS = [
   { key: "wall", cls: T_SOLID, v: 0, label: "wall" },
-  { key: "empty", cls: T_EMPTY, v: 0, label: "empty" },
+  { key: "empty", cls: T_EMPTY, v: 0, label: "eraser" },
   { key: "nw", cls: T_SLOPE, v: 0, label: "slope NW" },
   { key: "ne", cls: T_SLOPE, v: 1, label: "slope NE" },
   { key: "se", cls: T_SLOPE, v: 2, label: "slope SE" },
@@ -86,6 +86,23 @@ let dragging = null;
 let checking = null;
 let known = { maps: [], rotations: [], zones: [] };
 
+// What can be taken back, and what taking it back would put back.
+//
+// One entry per gesture rather than per tile: a dragged line is one thing a
+// person did, and undoing it a pixel at a time is not undo. `pending` is what
+// the gesture in progress has changed so far, keyed by tile so a stroke that
+// crosses itself records the tile once with the byte it started with.
+let past = [];
+let future = [];
+let pending = null;
+
+// Deltas rather than snapshots. A map is up to a megabyte of tiles and a
+// stroke touches a handful of them, so a stack of whole maps would cost a
+// megabyte a step to record what a person can see is a line. The exception is
+// a resize, which changes the shape of the array and is stored whole.
+const HISTORY_STEPS = 60;
+const HISTORY_BYTES = 32 * 1024 * 1024;
+
 function blank(w, h) {
   return { name: "", w, h, tiles: new Uint8Array(w * h), dirty: false };
 }
@@ -106,14 +123,151 @@ function turned(byte) {
   return byte;
 }
 
+// Whether the far half is drawing itself. Asked through a function because
+// this module is loaded without a page by its own tests, and a checkbox that
+// is not there means the box is not ticked.
+function symmetric() {
+  if (typeof document === "undefined") return false;
+  const box = el("map-sym");
+  return !!(box && box.checked);
+}
+
+// One tile, and the tile opposite it when the far half is drawing itself.
+//
+// Every write to the map goes through here, which is what makes undo possible
+// without every tool having to remember anything: the record is taken where
+// the change happens rather than where it was asked for.
 function put(x, y, byte) {
   if (!doc || x < 0 || y < 0 || x >= doc.w || y >= doc.h) return;
-  doc.tiles[y * doc.w + x] = byte;
+  write(y * doc.w + x, byte);
   doc.dirty = true;
-  if (el("map-sym").checked) {
+  if (symmetric()) {
     const mx = doc.w - 1 - x, my = doc.h - 1 - y;
-    if (mx !== x || my !== y) doc.tiles[my * doc.w + mx] = turned(byte);
+    if (mx !== x || my !== y) write(my * doc.w + mx, turned(byte));
   }
+}
+
+function write(at, byte) {
+  if (doc.tiles[at] === byte) return;
+  // The byte it held when this gesture started, not the one it held a moment
+  // ago: a stroke that crosses itself must undo to before the stroke.
+  if (pending && !pending.has(at)) pending.set(at, doc.tiles[at]);
+  doc.tiles[at] = byte;
+}
+
+// --- taking it back --------------------------------------------------------
+
+/// How much a step costs to hold, so a stack of them can be bounded by
+/// something truer than a count. Six bytes a tile: where it was, what it was,
+/// what it became.
+function weigh(step) {
+  return step.kind === "tiles" ? step.at.length * 6 : step.before.tiles.length * 2;
+}
+
+function trim() {
+  let bytes = past.reduce((n, s) => n + weigh(s), 0);
+  while (past.length > HISTORY_STEPS || (bytes > HISTORY_BYTES && past.length > 1)) {
+    bytes -= weigh(past.shift());
+  }
+}
+
+// Start recording. Every gesture that changes the map opens one of these and
+// closes it, so that what a person did once is undone once.
+function beginStep() {
+  pending = new Map();
+}
+
+function endStep() {
+  if (!pending || pending.size === 0) {
+    pending = null;
+    return;
+  }
+  const at = new Int32Array(pending.size);
+  const before = new Uint8Array(pending.size);
+  const after = new Uint8Array(pending.size);
+  let i = 0;
+  for (const [index, was] of pending) {
+    at[i] = index;
+    before[i] = was;
+    after[i] = doc.tiles[index];
+    i++;
+  }
+  pending = null;
+  past.push({ kind: "tiles", at, before, after });
+  // A new stroke is a new branch: what was undone is not coming back.
+  future = [];
+  trim();
+  historyChanged();
+}
+
+// A resize changes the shape of the array rather than tiles in it, so it is
+// the one step held whole. There is one per press of `apply`, and a map is not
+// resized in a loop.
+function pushDoc(before) {
+  past.push({ kind: "doc", before, after: snapshot() });
+  future = [];
+  trim();
+  historyChanged();
+}
+
+function snapshot() {
+  return { w: doc.w, h: doc.h, tiles: doc.tiles.slice(), name: doc.name };
+}
+
+function restore(shot) {
+  doc.w = shot.w;
+  doc.h = shot.h;
+  doc.tiles = shot.tiles.slice();
+  doc.dirty = true;
+  el("map-w").value = doc.w;
+  el("map-h").value = doc.h;
+}
+
+function apply(step, back) {
+  if (step.kind === "doc") {
+    restore(back ? step.before : step.after);
+    return;
+  }
+  const to = back ? step.before : step.after;
+  for (let i = 0; i < step.at.length; i++) doc.tiles[step.at[i]] = to[i];
+  doc.dirty = true;
+}
+
+function undo() {
+  if (!doc || !past.length) return;
+  const step = past.pop();
+  apply(step, true);
+  future.push(step);
+  historyChanged();
+  draw();
+  verdict();
+}
+
+function redo() {
+  if (!doc || !future.length) return;
+  const step = future.pop();
+  apply(step, false);
+  past.push(step);
+  historyChanged();
+  draw();
+  verdict();
+}
+
+// Opening a map is not something to undo past: what came before it is a
+// different drawing.
+function forgetHistory() {
+  past = [];
+  future = [];
+  pending = null;
+  historyChanged();
+}
+
+function historyChanged() {
+  if (typeof document === "undefined") return;
+  const u = el("map-undo");
+  const r = el("map-redo");
+  if (u) u.disabled = past.length === 0;
+  if (r) r.disabled = future.length === 0;
 }
 
 // --- what the file looks like ----------------------------------------------
@@ -175,7 +329,9 @@ const unb64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
 // --- drawing ---------------------------------------------------------------
 
 function draw() {
-  if (!doc) return;
+  // Nothing to draw on when this module is loaded by its own tests, which
+  // exercise the tools and the history rather than the canvas.
+  if (!doc || typeof document === "undefined") return;
   const c = el("map-canvas");
   c.width = doc.w * zoom;
   c.height = doc.h * zoom;
@@ -311,6 +467,7 @@ function tileAt(ev) {
 // hard: this packs the whole map and the far end floods it twice.
 
 function verdict() {
+  if (typeof document === "undefined") return;
   if (checking) clearTimeout(checking);
   checking = setTimeout(async () => {
     if (!doc) return;
@@ -351,6 +508,7 @@ function openDoc(d, name) {
   el("editor-name").textContent = name || "a new map";
   el("map-w").value = doc.w;
   el("map-h").value = doc.h;
+  forgetHistory();
   draw();
   verdict();
   // The editor sits under the list, which on a full table is most of a screen
@@ -586,43 +744,64 @@ function wire() {
         (i) => { tool = TOOLS[i].key; });
 
   const c = el("map-canvas");
+
+  // What this gesture is laying down, decided when it starts and held for the
+  // whole of it. The right button erases whatever the palette says, so a wall
+  // can be tidied without losing the paint you were using; the palette's own
+  // eraser is the same thing for anybody who would rather pick it.
+  let laying = 0;
+
+  // The right button is a tool here, so the menu it usually opens is not.
+  c.addEventListener("contextmenu", (ev) => ev.preventDefault());
+
   c.addEventListener("pointerdown", (ev) => {
     if (!doc) return;
     ev.preventDefault();
     c.setPointerCapture(ev.pointerId);
+    const erase = ev.button === 2 || ev.ctrlKey;
+    laying = erase ? T_EMPTY : byteOf(PAINTS[paint_at]);
     const [x, y] = tileAt(ev);
-    const byte = byteOf(PAINTS[paint_at]);
-    if (tool === "pencil") { put(x, y, byte); dragging = [x, y]; }
-    else if (tool === "fill") flood(x, y, byte);
-    else dragging = [x, y];
+    beginStep();
+    if (tool === "pencil") put(x, y, laying);
+    else if (tool === "fill") flood(x, y, laying);
+    dragging = [x, y];
     draw();
   });
   c.addEventListener("pointermove", (ev) => {
     if (!doc || !dragging) return;
     const [x, y] = tileAt(ev);
     if (tool === "pencil") {
-      stroke(dragging[0], dragging[1], x, y, byteOf(PAINTS[paint_at]));
+      stroke(dragging[0], dragging[1], x, y, laying);
       dragging = [x, y];
       draw();
     }
   });
-  c.addEventListener("pointerup", (ev) => {
+
+  // One end for every gesture, however it ends. A pointer that leaves the
+  // window or is taken away by the browser still closes the step it opened,
+  // or the next stroke would be undone together with it.
+  const finish = (ev) => {
     if (!doc || !dragging) return;
-    const [x, y] = tileAt(ev);
-    const byte = byteOf(PAINTS[paint_at]);
-    if (tool === "line") stroke(dragging[0], dragging[1], x, y, byte);
-    if (tool === "rect") rect(dragging[0], dragging[1], x, y, byte, false);
-    if (tool === "box") rect(dragging[0], dragging[1], x, y, byte, true);
+    const [x, y] = ev ? tileAt(ev) : dragging;
+    if (tool === "line") stroke(dragging[0], dragging[1], x, y, laying);
+    if (tool === "rect") rect(dragging[0], dragging[1], x, y, laying, false);
+    if (tool === "box") rect(dragging[0], dragging[1], x, y, laying, true);
     dragging = null;
+    endStep();
     draw();
     verdict();
-  });
+  };
+  c.addEventListener("pointerup", finish);
+  c.addEventListener("pointercancel", () => finish(null));
+  c.addEventListener("lostpointercapture", () => finish(null));
 
   el("map-zoom").oninput = (ev) => { zoom = Number(ev.target.value); draw(); };
   el("map-resize").onclick = () => {
     if (!doc) return;
     const w = Math.max(9, Math.min(1024, Number(el("map-w").value) | 0));
     const h = Math.max(9, Math.min(1024, Number(el("map-h").value) | 0));
+    if (w === doc.w && h === doc.h) return;
+    const before = snapshot();
     // Kept from the top left, which is where the drawing is anchored: a resize
     // that recentered would move every wall against every start.
     const next = blank(w, h);
@@ -634,9 +813,27 @@ function wire() {
     next.name = doc.name;
     next.dirty = true;
     doc = next;
+    pushDoc(before);
     draw();
     verdict();
   };
+  el("map-undo").onclick = undo;
+  el("map-redo").onclick = redo;
+
+  // The two shortcuts everybody already has in their hands. Not while a field
+  // has focus, where they mean what they mean everywhere else: the name
+  // dialog is a text box and undo in it is the browser's.
+  addEventListener("keydown", (ev) => {
+    if (!doc || el("editor").hidden) return;
+    const on = ev.target;
+    if (on && (on.tagName === "INPUT" || on.tagName === "TEXTAREA" || on.tagName === "SELECT")) {
+      return;
+    }
+    if (!(ev.ctrlKey || ev.metaKey)) return;
+    const key = ev.key.toLowerCase();
+    if (key === "z" && !ev.shiftKey) { ev.preventDefault(); undo(); }
+    else if ((key === "z" && ev.shiftKey) || key === "y") { ev.preventDefault(); redo(); }
+  });
   el("map-save").onclick = save;
   el("map-close").onclick = closeEditor;
   el("map-new").onclick = () => {
@@ -652,4 +849,14 @@ function wire() {
 // bytes `sim_map_pack` writes is a question worth answering without a browser,
 // because the answer is what decides whether a drawing can be saved at all.
 if (typeof document !== "undefined") wire();
-if (typeof module !== "undefined") module.exports = { pack, unpack, fnv, blank, turned };
+if (typeof module !== "undefined") {
+  module.exports = {
+    pack, unpack, fnv, blank, turned,
+    // The history, which is worth testing without a page: undo is the kind of
+    // thing that quietly loses a drawing rather than failing loudly.
+    put, beginStep, endStep, undo, redo, forgetHistory, flood, stroke, rect,
+    open: (d) => { doc = d; forgetHistory(); },
+    tiles: () => doc.tiles,
+    depth: () => [past.length, future.length],
+  };
+}
