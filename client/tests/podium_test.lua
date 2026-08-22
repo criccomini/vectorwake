@@ -115,12 +115,14 @@ local ui = require("arena.ui")
 
 local W, H = 1280, 800
 
--- One frame, with whatever the caller wants to be true about the room.
+-- One frame, with whatever the caller wants to be true about the room. `w` and
+-- `h` are for the handful of checks about a phone: the card lays out against
+-- the screen it is on, and the narrow one is where things stop fitting.
 local function frame(o)
     o = o or {}
     rects = {}
     package.loaded["arena.state"].n = 0
-    ui.begin(layer, W, H, 1, false)
+    ui.begin(layer, o.w or W, o.h or H, 1, false)
     ui.hud({
         me = o.me or 0,
         watch = o.watch,
@@ -140,6 +142,7 @@ local function frame(o)
         teams = o.teams or {},
         match = o.match,
         side_names = o.side_names,
+        sayings = o.sayings, said = o.said,
         feed = o.feed or {},
         hurt = 0,
         charges = {},
@@ -188,6 +191,20 @@ local function said(what)
     return nil
 end
 
+-- The two pieces of type either side of one join, found by the second of
+-- them. The card sets several of its lines as two draws rather than one so
+-- that half of it can be in a side's color, and a test that only ever reads
+-- the strings cannot tell those from two unrelated lines that happen to be
+-- next to each other.
+local function abutting(second)
+    for i = 2, state.n do
+        if string.lower(state.text[i].s) == string.lower(second) then
+            return state.text[i - 1], state.text[i]
+        end
+    end
+    return nil, nil
+end
+
 local function counted(what)
     local n = 0
     for _, s in ipairs(words()) do
@@ -211,8 +228,19 @@ check("nothing is settled while the clock is running",
 frame({match = {playing = false, left = 23, score = {[0] = 11, [1] = 14}},
        side_names = NAMES, side = 0})
 
-check("the side that took it is named", said("caisson takes it") ~= nil,
+-- The result is two draws rather than one line: the winner's name in the
+-- winner's color, and the verb after it in ink. So the card names the side in
+-- the color the scoreboard has been using for them all match, which is what
+-- makes it readable before it is read.
+local who_t, verb_t = abutting("takes it")
+check("the side that took it is named",
+      who_t ~= nil and string.lower(who_t.s) == "caisson",
       table.concat(words(), " | "))
+check("the verb follows it on the same line",
+      who_t ~= nil and math.abs(who_t.y - verb_t.y) < 0.01
+      and verb_t.x > who_t.x)
+check("and the name is in the winner's color rather than the verb's",
+      who_t ~= nil and who_t.col ~= verb_t.col)
 check("and the room says when the next one starts",
       said("next match in 0:23") ~= nil)
 -- Once, at the card's foot. The topbar's own caption stands down for it.
@@ -262,6 +290,114 @@ frame({match = {playing = false, left = 9, score = {[0] = 9, [1] = 9}},
 check("level at the whistle is a draw rather than a winner",
       said("drawn") ~= nil and said("takes it") == nil,
       table.concat(words(), " | "))
+
+-- --- the scoreline ---------------------------------------------------------
+--
+-- Two numbers set large either side of a bar, which is the shape of the match
+-- in one mark. The check that matters is which figure is on which side: your
+-- own side is on the left however the zone numbered the teams, the same rule
+-- the clock's own score follows, and a card that reversed them would be
+-- telling everybody in the losing half that they won.
+
+frame({match = {playing = false, left = 23, score = {[0] = 11, [1] = 14}},
+       side_names = NAMES, side = 0})
+local big = nil
+for i = 1, state.n do
+    local t = state.text[i]
+    if t.px >= 40 and (t.s == "11" or t.s == "14") then
+        big = big or {}
+        big[#big + 1] = t
+    end
+end
+check("the score is set large", big ~= nil and #big == 2,
+      tostring(big and #big))
+check("and your own side is the left of the two",
+      big ~= nil and big[1].s == "11" and big[1].x < big[2].x,
+      big and (big[1].s .. " at " .. math.floor(big[1].x)))
+
+-- --- what there is to say --------------------------------------------------
+--
+-- The closed phrase list, drawn as chips at the foot of the card and as one
+-- line on the sayer's own row. There is nothing else in this game a player
+-- can send another player, so what this test is really guarding is that the
+-- list on screen is the list the wire has and nothing else can get onto it.
+
+local SAYS = {"gg", "nice shot", "close one", "good luck", "thanks", "sorry"}
+ui.hits = {}
+frame({match = {playing = false, left = 23, score = {[0] = 11, [1] = 14}},
+       side_names = NAMES, side = 0, sayings = SAYS})
+for _, phrase in ipairs(SAYS) do
+    check("you can say " .. phrase, said(phrase) ~= nil)
+end
+local chips = 0
+for _, r in ipairs(ui.hits) do
+    if r.action == "say" then chips = chips + 1 end
+end
+check("every phrase is a press", chips == #SAYS, tostring(chips))
+check("and each one carries its number on the wire",
+      (function()
+          local seen_n = {}
+          for _, r in ipairs(ui.hits) do
+              if r.action == "say" then seen_n[r.value] = true end
+          end
+          for i = 0, #SAYS - 1 do if not seen_n[i] then return false end end
+          return true
+      end)())
+
+-- Somebody said one. It lands on their row, in place of their name, with the
+-- name kept small after it: a phrase in a column of its own would be a chat
+-- window, and a row that lost its name for four seconds is a card you cannot
+-- find yourself on.
+frame({match = {playing = false, left = 23, score = {[0] = 11, [1] = 14}},
+       side_names = NAMES, side = 0, sayings = SAYS,
+       said = {[1] = {phrase = "nice shot", n = 1, t = 0.2}}})
+local line, name_after = nil, nil
+for i = 1, state.n - 1 do
+    if state.text[i].s == "NICE SHOT" and state.text[i].px > 11 then
+        line, name_after = state.text[i], state.text[i + 1]
+    end
+end
+check("what a pilot said is on their own row", line ~= nil,
+      table.concat(words(), " | "))
+check("and it is where their name was rather than over it",
+      counted("kestrel") == 1, tostring(counted("kestrel")))
+check("with the name kept, small, after the words",
+      name_after ~= nil and string.lower(name_after.s) == "kestrel"
+      and name_after.x > line.x
+      and math.abs(name_after.y - line.y) < 0.01,
+      name_after and name_after.s)
+
+-- On a phone the column is half of three hundred and ninety points, and the
+-- phrase and a call sign together ran through the kills and deaths at the
+-- other end of it. The name is what goes.
+ui.compact = nil
+frame({match = {playing = false, left = 23, score = {[0] = 11, [1] = 14}},
+       side_names = NAMES, side = 0, sayings = SAYS, w = 390, h = 844,
+       said = {[1] = {phrase = "nice shot", n = 1, t = 0.2}}})
+local narrow, beside = nil, nil
+for i = 1, state.n do
+    if state.text[i].s == "NICE SHOT" then narrow = state.text[i] end
+end
+for i = 1, state.n do
+    if narrow and string.lower(state.text[i].s) == "kestrel"
+       and math.abs(state.text[i].y - narrow.y) < 0.01 then
+        beside = state.text[i]
+    end
+end
+check("a narrow column keeps the phrase and drops the name",
+      narrow ~= nil and beside == nil,
+      table.concat(words(), " | "))
+
+-- A phrase this build does not have is an arena talking about a list it does
+-- not share. Nothing is drawn for it rather than a number or a blank chip.
+ui.hits = {}
+frame({match = {playing = false, left = 23, score = {[0] = 11, [1] = 14}},
+       side_names = NAMES, side = 0})
+local none = 0
+for _, r in ipairs(ui.hits) do
+    if r.action == "say" then none = none + 1 end
+end
+check("a room with no phrase list draws no chips", none == 0, tostring(none))
 
 -- --- and it stands down for the menu ---------------------------------------
 --

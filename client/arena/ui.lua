@@ -3196,6 +3196,16 @@ end
 -- It sits where the menu sits and stands down for it, the way the two big
 -- centered lines do, because a player who opens the menu during an
 -- intermission is doing the one thing the intermission is for.
+-- How long a phrase stands on somebody's row. Long enough to read across the
+-- card without looking for it, short enough that the roster is a roster again
+-- before the next match starts. Counted down by the frame, the way a kill
+-- line is, so it is published here for the frame to read.
+M.SAY_LIFE = 4.0
+
+-- Which phrase the pointer is over, by its number on the wire, or nil. Set by
+-- the same pass that lights every other control under the cursor.
+M.hover_say = nil
+
 local function podium(o, m, names)
     -- The roster, asked for here rather than assumed: the scoreboard fills it
     -- when somebody opens the scoreboard, and this page is on screen whether
@@ -3239,7 +3249,12 @@ local function podium(o, m, names)
     -- in the same place on every machine rather than on whoever the roster
     -- happened to name first.
     local mvp = nil
+    -- Your own seat, which is not `o.me` while you are watching: the chips
+    -- send from this connection whoever the camera is behind, so the one that
+    -- lights is this account's row rather than the subject's.
+    local my_seat = nil
     for _, r in ipairs(rows) do
+        if r.self and r.i ~= nil then my_seat = r.i end
         if not r.watch and seen[r.team] then
             local list = seen[r.team]
             list[#list + 1] = r
@@ -3258,8 +3273,62 @@ local function podium(o, m, names)
 
     local tall = 0
     for _, list in pairs(seen) do tall = math.max(tall, #list) end
-    local h = 34 * F.scale + 20 * F.scale + tall * line + 40 * F.scale
+
+    -- --- what there is to say
+    --
+    -- The closed list, packed into as many lines as the card is wide enough
+    -- for, before the card knows how tall it is. Six phrases are one row on a
+    -- monitor and two on a phone, and rather than write both numbers down the
+    -- row wraps against the width it was given and the card grows by what
+    -- came out.
+    local SAY_H = (M.compact and 22 or 25) * F.scale
+    local SAY_GAP = 7 * F.scale
+    local say_rows, say_wide = {}, {}
+    do
+        local room = w - 24 * F.scale
+        local run, wide = {}, 0
+        for i, phrase in ipairs(o.sayings or {}) do
+            local cw = text_w(phrase, 10 * F.scale) + 22 * F.scale
+            local step = (#run > 0 and SAY_GAP or 0) + cw
+            if #run > 0 and wide + step > room then
+                say_rows[#say_rows + 1] = run
+                say_wide[#say_wide + 1] = wide
+                run, wide, step = {}, 0, cw
+            end
+            run[#run + 1] = {phrase = phrase, n = i - 1, w = cw}
+            wide = wide + step
+        end
+        if #run > 0 then
+            say_rows[#say_rows + 1] = run
+            say_wide[#say_wide + 1] = wide
+        end
+    end
+    local SAY = 0
+    if #say_rows > 0 then
+        SAY = #say_rows * SAY_H + (#say_rows - 1) * SAY_GAP + 14 * F.scale
+    end
+
+    -- The scoreline block between the heading and the rosters: two numbers set
+    -- large with the split of the match drawn between them. It is the one
+    -- thing anybody wants off this card in the first half second, and it used
+    -- to be a twelve point number in a column head beside a word.
+    local SCORE = (M.compact and 58 or 74) * F.scale
+    local h = 34 * F.scale + SCORE + 20 * F.scale + tall * line + SAY
+        + 40 * F.scale
     local y = math.max(72 * F.scale, (F.h - h) / 2)
+    -- Where the card starts, kept because `y` walks down it from here and the
+    -- foot is measured off the top rather than off wherever the walk stopped.
+    local top = y
+
+    -- How long the card has been up, so the bar can arrive rather than appear.
+    -- Latched here rather than counted from the clock the server sends, which
+    -- is whole seconds and would step the animation four times.
+    if M.podium_at == nil then M.podium_at = F.now end
+    local age = math.max(0, (F.now or 0) - (M.podium_at or 0))
+    -- Eased out over a third of a second. One movement on this card, on the
+    -- one thing it is about.
+    local grow = math.min(1, age / 0.34)
+    grow = 1 - (1 - grow) * (1 - grow)
 
     -- A scrim over the whole screen and a heavier wash under the card. The
     -- match is over and the arena behind it is not hidden, because the next
@@ -3268,8 +3337,70 @@ local function podium(o, m, names)
     -- the lit edge of a rock came through the type.
     rect(0, 0, F.w, F.h, pal.rgb(0x03050a, 0.55))
     rect(x - pad, y - pad, w + 2 * pad, h + 2 * pad, pal.rgb(0x03050a, 0.9))
-    txt(head, F.w / 2, y + 6 * F.scale, (M.compact and 17 or 21) * F.scale,
-        pal.a(pal.INK, 0.95), "center")
+    bracket(x - pad, y - pad, w + 2 * pad, h + 2 * pad,
+            pal.a(pal.RADAR_TILE, 0.55), 22 * F.scale)
+    -- The winner's name in the winner's color, and the verb after it in ink.
+    -- One flat line said the same thing and made the result a caption.
+    do
+        local hp = (M.compact and 17 or 21) * F.scale
+        local who = (not drawn and best_at ~= nil)
+            and ((names and names[best_at]) or "a side") or nil
+        if who then
+            local verb = "takes it"
+            -- The gap is written down rather than carried in the string. This
+            -- heading is set in the menu's face and `text_w` measures the
+            -- mono's advance, so a space between the two draws is a space of
+            -- roughly the wrong width; a fixed step is at least the same
+            -- width every time. Same arrangement as the role beside a hull's
+            -- name on the ship page.
+            local gap = hp * 0.42
+            local ww = text_w(who, hp) + gap + text_w(verb, hp)
+            local hx = F.w / 2 - ww / 2
+            local hcol = (best_at == view_team) and pal.FRIEND or pal.ENEMY
+            txt(who, hx, y + 6 * F.scale, hp, pal.a(hcol, 1), nil, MENU_FONT)
+            txt(verb, hx + text_w(who, hp) + gap, y + 6 * F.scale, hp,
+                pal.a(pal.INK, 0.9), nil, MENU_FONT)
+        else
+            txt(head, F.w / 2, y + 6 * F.scale, hp, pal.a(pal.INK, 0.95),
+                "center", MENU_FONT)
+        end
+    end
+
+    -- --- the scoreline
+    --
+    -- Two numbers set large either side of the split, which is the shape of
+    -- the match in one mark: a side that ran away with it has most of the bar
+    -- and you can see that before you have read either figure.
+    do
+        local sy = y + 34 * F.scale + SCORE * 0.42
+        local big = (M.compact and 34 or 44) * F.scale
+        local bw = math.min(w * 0.42, 260 * F.scale)
+        local bh = 9 * F.scale
+        local bx = F.w / 2 - bw / 2
+        local left = sides[1]
+        local right = sides[2]
+        local ls = (left ~= nil and m.score and m.score[left]) or 0
+        local rs = (right ~= nil and m.score and m.score[right]) or 0
+        local lcol = (left == view_team) and pal.FRIEND or pal.ENEMY
+        local rcol = (right == view_team) and pal.FRIEND or pal.ENEMY
+        -- Half and half where nobody scored, because a bar with nothing in it
+        -- is a bar that failed to draw rather than a nil-all match.
+        local part = (ls + rs) > 0 and (ls / (ls + rs)) or 0.5
+        rect(bx, sy - bh / 2, bw, bh, pal.a(pal.DIM, 0.16))
+        rect(bx, sy - bh / 2, bw * part * grow, bh, pal.a(lcol, 0.85))
+        rect(bx + bw - bw * (1 - part) * grow, sy - bh / 2,
+             bw * (1 - part) * grow, bh, pal.a(rcol, 0.85))
+        txt(tostring(ls), bx - 18 * F.scale, sy, big, pal.a(lcol, 1),
+            "right", MENU_FONT)
+        txt(tostring(rs), bx + bw + 18 * F.scale, sy, big, pal.a(rcol, 1),
+            nil, MENU_FONT)
+        -- No name under either figure. There was one, and it put the word
+        -- PYLON twenty points above a column head that says PYLON, which is
+        -- the same stutter the score had. What ties a number to a side is its
+        -- color and the column it is standing over, which is how every other
+        -- instrument in this game says the same thing.
+    end
+    y = y + SCORE
 
     local cw = w / math.max(1, #sides)
     for i, team in ipairs(sides) do
@@ -3286,12 +3417,14 @@ local function podium(o, m, names)
         local nm = (names and names[team]) or ""
         txt(nm, cx + 18 * F.scale, y + 34 * F.scale, 12 * F.scale,
             pal.a(col, 0.9))
-        txt(tostring(m.score and m.score[team] or 0),
-            cx + cw - 18 * F.scale, y + 34 * F.scale, 12 * F.scale,
-            pal.a(col, 0.9), "right")
-        -- What the two numbers on every row below are. Once per column, in
-        -- the head, rather than a word per row.
-        txt("k  d", cx + cw - 46 * F.scale, y + 34 * F.scale, 9.5 * F.scale,
+        -- The side's score used to sit at the other end of this line. It is
+        -- the figure set forty points high directly above, and a card that
+        -- prints the same number twice in two sizes is a card that has not
+        -- decided which one anybody is meant to read.
+        --
+        -- What the two numbers on every row below are, though, does belong
+        -- here: once per column, in the head, rather than a word per row.
+        txt("k  d", cx + cw - 18 * F.scale, y + 34 * F.scale, 9.5 * F.scale,
             pal.a(pal.DIM, 0.75), "right")
         F.layer:seg(cx + 18 * F.scale, ry(y + 44 * F.scale),
                     cx + cw - 18 * F.scale, ry(y + 44 * F.scale),
@@ -3299,14 +3432,43 @@ local function podium(o, m, names)
         for k, r in ipairs(seen[team] or {}) do
             local ry0 = y + 54 * F.scale + (k - 1) * line
             local a = r.self and 1 or 0.8
+            -- What this pilot just said, if anything, which is the one thing
+            -- that changes what a row is. It takes the place of the name
+            -- rather than sitting beside it: a phrase on the line you are
+            -- already reading is somebody speaking, and a phrase in a column
+            -- of its own is a chat window.
+            local sd = o.said and r.i ~= nil and o.said[r.i] or nil
             -- Your own row keeps the field the scoreboard gives it, so the
-            -- one line you are looking for is the one that is lit.
-            if r.self then
+            -- one line you are looking for is the one that is lit. A row with
+            -- a phrase on it takes a field of its own instead, on either side,
+            -- because what it is saying is the thing to notice.
+            if sd then
+                wash(cx + 10 * F.scale, ry0 - line / 2, cw - 20 * F.scale, line,
+                     pal.a(pal.CHARGE_COL, 0.14))
+            elseif r.self then
                 wash(cx + 10 * F.scale, ry0 - line / 2, cw - 20 * F.scale, line,
                      pal.a(pal.FRIEND, 0.12))
             end
-            txt(r.name, cx + 18 * F.scale, ry0, 12.5 * F.scale,
-                pal.a(r.self and pal.FRIEND or pal.INK, a), nil, nil, true)
+            if sd then
+                txt(sd.phrase, cx + 18 * F.scale, ry0, 12.5 * F.scale,
+                    pal.a(pal.CHARGE_COL, 0.95))
+                -- The name kept, small, after the words. Losing it outright
+                -- for four seconds leaves a card where the row somebody was
+                -- looking for is not there.
+                --
+                -- Where both do not fit, the name is what goes. A phone gives
+                -- a column half of three hundred and ninety points, and "nice
+                -- shot" and a call sign ran through the kills and deaths at
+                -- the other end of it.
+                local nx = cx + 26 * F.scale + text_w(sd.phrase, 12.5 * F.scale)
+                if nx + text_w(r.name, 9 * F.scale)
+                   < cx + cw - 46 * F.scale then
+                    lbl(r.name, nx, ry0, pal.a(pal.DIM, 0.75))
+                end
+            else
+                txt(r.name, cx + 18 * F.scale, ry0, 12.5 * F.scale,
+                    pal.a(r.self and pal.FRIEND or pal.INK, a), nil, nil, true)
+            end
             -- The best gun in the room, whichever side it was on. One mark
             -- rather than a column, because it is one pilot.
             if r == mvp then
@@ -3318,9 +3480,40 @@ local function podium(o, m, names)
         end
     end
 
+    -- The chips, at the foot of the card. This list is the whole of what
+    -- anybody can say in this game: a press puts the words on your own row on
+    -- every screen in the room for a few seconds, and there is nothing to
+    -- type and nothing to aim at a person. See decision 28.
+    for i, run in ipairs(say_rows) do
+        local sy = top + h - 40 * F.scale - SAY + 7 * F.scale
+            + (i - 1) * (SAY_H + SAY_GAP)
+        local sx = F.w / 2 - say_wide[i] / 2
+        for _, c in ipairs(run) do
+            -- Lit while your own line is the one standing, so the press has
+            -- an answer on the button as well as up in the roster.
+            local said = o.said and my_seat ~= nil and o.said[my_seat]
+            local mine = said and said.phrase == c.phrase
+            local hot = M.hover_say == c.n
+            if mine then
+                rect(sx, sy, c.w, SAY_H, pal.a(pal.CHARGE_COL, 0.18))
+            elseif hot then
+                rect(sx, sy, c.w, SAY_H, pal.a(pal.FRIEND, 0.1))
+            end
+            F.layer:frame(sx, ry(sy, SAY_H), c.w, SAY_H, 0.9 * F.scale,
+                          pal.a(mine and pal.CHARGE_COL
+                                or (hot and pal.FRIEND or pal.RADAR_TILE),
+                                mine and 0.7 or (hot and 0.9 or 0.55)))
+            lbl(c.phrase, sx + c.w / 2, sy + SAY_H * 0.62,
+                pal.a(mine and pal.CHARGE_COL or pal.INK, mine and 1 or 0.85),
+                "center", 10 * F.scale)
+            hit(sx, sy, c.w, SAY_H, "say", c.n)
+            sx = sx + c.w + SAY_GAP
+        end
+    end
+
     -- What the match paid you, and when the next one starts. The payout is
     -- your own bounty taken, which is the number the wallet moves by.
-    local foot = y + h - 6 * F.scale
+    local foot = top + h - 6 * F.scale
     local mine
     for _, r in ipairs(rows) do if r.self then mine = r end end
     if mine then

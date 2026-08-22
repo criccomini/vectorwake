@@ -26,10 +26,15 @@ pub struct ModeCtx<'a> {
     pub banner: String,
     /// Set when the mode is finished and the arena should be torn down.
     pub finished: bool,
-    /// Set when the mode wants a fresh match opened: new ground, everybody
-    /// home, kits re-dealt with their ammunition. The mode says when, the
-    /// room does it, because the map and the sockets are the room's.
+    /// Set when the mode wants a fresh match opened: everybody home, kits
+    /// re-dealt with their ammunition. The mode says when, the room does it,
+    /// because the map and the sockets are the room's.
     pub open_match: bool,
+    /// And set on the whistle the other way, when a match has just ended and
+    /// the podium is going up. The room clears the arena and moves to the next
+    /// map on this, so the wait happens on the ground the next match is played
+    /// on rather than on the one that just finished.
+    pub close_match: bool,
 }
 
 /// What a match game is doing right now.
@@ -43,7 +48,7 @@ pub struct MatchState {
     /// flying.
     pub playing: bool,
     /// Seconds left in whichever of the two this is. A match is three minutes
-    /// and an intermission is twenty-five seconds, so a byte is plenty and
+    /// and an intermission is fifteen, so a byte is plenty and
     /// the client only ever draws whole seconds of it.
     pub seconds_left: u8,
     /// Kills per public side, in the order the zone named them.
@@ -222,6 +227,7 @@ impl Mode for Melee {
                 ctx.open_match = true;
             } else {
                 self.left = self.intermission_ticks.max(1);
+                ctx.close_match = true;
             }
         }
 
@@ -411,6 +417,7 @@ mod melee_tests {
             banner: String::new(),
             finished: false,
             open_match: false,
+            close_match: false,
         }
     }
 
@@ -558,6 +565,7 @@ mod warzone_tests {
             banner: String::new(),
             finished: false,
             open_match: false,
+            close_match: false,
         }
     }
 

@@ -52,11 +52,26 @@ local S2C_ONAIR = 13
 -- kill count per side. A second's resolution, which is what the clock draws.
 local S2C_MATCH, S2C_CHARGE = 14, 15
 local S2C_LAG = 16
+-- Somebody said one of the fixed things. The wire carries which, never the
+-- words: the list is here and on every other client, and an arena cannot put a
+-- sentence in it that this build does not already hold. See
+-- docs/design/match-game.md.
+local S2C_SAID = 17
+local C2S_SAY = 11
+
+-- The fixed things, in the order the wire numbers them. Short, positive, and
+-- few: this is not chat and it does not become chat by growing, so anything
+-- that could be aimed at somebody is not on it.
+M.SAYINGS = {"gg", "nice shot", "close one", "good luck", "thanks", "sorry"}
+
+-- Who said what, and when, keyed by ship. The podium reads it and lets a line
+-- go after a few seconds; nothing here is a log.
+M.said = {}
 
 -- The client wire's own version, checked by the zone before it reads anything
 -- else in a join. A stale build is told its build is stale rather than left to
 -- misparse snapshots.
-local CLIENT_PROTOCOL = 15
+local CLIENT_PROTOCOL = 16
 -- Published, because the about page says what this build talks, and a second
 -- copy of the number is a second thing to forget to bump.
 M.PROTOCOL = CLIENT_PROTOCOL
@@ -1292,6 +1307,17 @@ local function on_message(s)
         M.on_air = string.byte(s, 2) == 1
     elseif kind == S2C_MATCH and #s >= 4 then
         on_match(s)
+    elseif kind == S2C_SAID and #s >= 3 then
+        local ship = string.byte(s, 2)
+        local phrase = string.byte(s, 3)
+        -- A phrase this build does not have is an arena talking about a list
+        -- it does not share. Dropped rather than drawn as a number.
+        if M.SAYINGS[phrase + 1] then
+            -- The words rather than the number, because everything that reads
+            -- this draws them, and `t` from zero because the frame ages it the
+            -- way it ages a kill line rather than against a wall clock.
+            M.said[ship] = {phrase = M.SAYINGS[phrase + 1], n = phrase, t = 0}
+        end
     elseif kind == S2C_CHARGE then
         on_charge(s)
     elseif kind == S2C_LAG and #s >= 10 then
@@ -1477,6 +1503,10 @@ function M.connect(url, class, name, on_lost, zone, watch, wt, room)
     M.my_team = 0
     M.may_found = false
     M.invited = {}
+    -- And nobody has said anything in a room nobody is in yet. Seat numbers
+    -- are per room, so a line left over from the last one would land on
+    -- whoever inherits that seat here.
+    M.said = {}
     M.snap_deaths = {}
     M.snap_blasts = {}
     -- Built whole rather than cleared field by field, so a field added above
@@ -1582,6 +1612,14 @@ end
 
 function M.set_team(team)
     return ask(string.char(C2S_TEAM, team))
+end
+
+-- Say one of the fixed things. One byte, naming a line rather than carrying
+-- one: there is nothing to type here and nothing this arena has not shipped.
+-- The room refuses it while a match is running, so this does not check.
+function M.say(phrase)
+    if not M.SAYINGS[(phrase or 0) + 1] then return false end
+    return ask(string.char(C2S_SAY, phrase))
 end
 
 function M.found_team()

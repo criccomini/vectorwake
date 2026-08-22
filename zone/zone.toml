@@ -101,7 +101,7 @@ wormhole_range = 220
 # one runs until nobody is in it.
 #
 # match_seconds = 180
-# intermission_seconds = 25
+# intermission_seconds = 15
 
 # What a kill is worth. A killer is paid the victim's whole bounty, and a
 # bounty is `bounty_base` plus `bounty_per_kill` for every kill since that

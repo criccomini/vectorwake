@@ -57,7 +57,7 @@ own it.
 ```toml
 [arena]
 match_seconds = 180
-intermission_seconds = 25
+intermission_seconds = 15
 team_size = 4
 ```
 
@@ -107,7 +107,7 @@ room, which is the property that matters and the one the old rule destroyed.
 **A solo arrival takes the side with fewer humans**, so four humans never
 stack against four bots. A party stays together, because that is what a party
 is for. The intermission is where the room rebalances and sorts whoever
-arrived late, which gives those twenty five seconds a job beyond the podium.
+arrived late, which gives those fifteen seconds a job beyond the podium.
 
 There are three ways to end up beside a person, and a player should be able to
 name all of them: the mode list says where the humans are, the sort puts you
@@ -127,7 +127,28 @@ happens to a half-spent charge ledger across two different charge rows. The
 honest answer is to not let the question exist.
 
 **The ending is a podium and a payday**, and the intermission is where the
-hangar is one key away.
+hangar is one key away. The card leads with the scoreline, set large with the
+split of the match drawn between the two figures, because that is the one thing
+anybody wants off it in the first half second; the rosters are underneath for
+whoever reads further. The last five seconds are counted out loud, one pip a
+second and a different sound at nought, since a pilot picking a hull is not
+looking at the clock.
+
+**And six things a player can say**, off chips at the foot of the card: "gg",
+"nice shot", "close one", "good luck", "thanks", "sorry". A press puts the
+words on your own row on every screen in the room for four seconds. It is a
+closed list, one byte on the wire, refused while a match is running and
+throttled to one every two seconds, which is what makes it cost nothing to
+moderate. See [decision
+51](../architecture/decisions.md#51-six-phrases-and-no-way-to-add-a-seventh).
+
+**The arena empties at that whistle, and the next map goes down under it.** A
+podium drawn over the fight you have just finished, with the wrecks and the
+last bomb still in the air, is fifteen seconds of looking at something that is
+over. So the whistle clears the arena, benches everybody, and moves the room to
+the ground the next match is played on, which is the one you spend the wait
+looking at. Nothing anybody earned is touched: the tallies the podium is
+reading live on the ships, and nobody is killed to take them off the map.
 
 ## What a death costs
 

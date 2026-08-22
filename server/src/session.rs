@@ -757,6 +757,22 @@ pub(crate) async fn serve_client(
                     }
                 }
             }
+            C2S_SAY => {
+                // One of the fixed things, to the room. The room decides
+                // whether it is a moment to say anything and how often; this
+                // only carries the byte across.
+                if data.len() >= 2 {
+                    if let Some((room, member)) = presence.current().flying() {
+                        let mut z = zone.lock().await;
+                        if let Some(index) = z.rooms.iter().position(|a| a.number == room) {
+                            let a = &mut z.rooms[index];
+                            if let Some(ship) = a.players.get(&member).map(|p| p.ship) {
+                                a.say(ship, data[1]);
+                            }
+                        }
+                    }
+                }
+            }
             C2S_WATCH => {
                 // Whose eyes to borrow. From a player: sit out. From a
                 // watcher: look somewhere else. Both are requests; the

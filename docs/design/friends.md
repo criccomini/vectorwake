@@ -22,6 +22,14 @@ system with no messaging has almost no moderation surface: there is no content
 to report, nothing to mute, and nobody can reach you with words at all. What
 one stranger can do to another is appear on a list.
 
+One thing has moved since that was written, and it is not on this page. The
+podium between matches carries six fixed phrases anybody in the room can press
+([decision
+51](../architecture/decisions.md#51-six-phrases-and-no-way-to-add-a-seventh)),
+so a stranger can now say "gg" to you. Nothing about the friends system
+changes: the phrases go to a room rather than to a person, they are a closed
+list nobody can add to, and no friend edge is what carries them.
+
 This document used to go further and say there was no text field anywhere, so
 a friend was only ever a **selection off a roster you are already reading**,
 the way a private team invitation is one per

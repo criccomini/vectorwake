@@ -1003,6 +1003,29 @@ static void k_ui_go(voice *v) {
     v_drive(v, 1.4);
 }
 
+// The last five seconds of an intermission, one a second.
+//
+// A flat pip rather than a rising one: it is said five times in five seconds
+// and anything with a shape to it starts being a tune by the third. Low enough
+// to sit under the podium's music without cutting through it, and short enough
+// that the ear reads it as a clock rather than as a thing that happened.
+static void k_count(voice *v) {
+    v_sine(v, 660, 660, 0.30, 2.6);
+    v_sine(v, 1320, 1320, 0.08, 2.6);
+}
+
+// And the one at zero, which is the only one that means go.
+//
+// The same note an octave up with the fifth over it, so it lands as the answer
+// to the five under it rather than as a sixth of them. Longer, because this
+// one is allowed to be an event.
+static void k_start(voice *v) {
+    v_sine(v, 880, 1320, 0.34, 1.1);
+    v_sine(v, 1320, 1760, 0.16, 1.3);
+    v_square(v, 440, 660, 0.10, 0.25, 1.2);
+    v_drive(v, 1.3);
+}
+
 // --- the soundtrack --------------------------------------------------------
 //
 // One track, eight bars, playing under everything for as long as the game is
@@ -1531,6 +1554,8 @@ static const entry KIT[] = {
     {"thrust",  0.5,   1, k_thrust},
     {"ui_move", 0.035, 0, k_ui_move},
     {"ui_go",   0.16,  0, k_ui_go},
+    {"count",   0.10,  0, k_count},
+    {"start",   0.40,  0, k_start},
     // The soundtrack has two components and no maker. Which of the eight
     // tracks is in one changes while the game runs, so they are built through
     // sfx_music_begin rather than rendered from a name, and there are two of
@@ -1548,6 +1573,7 @@ const char *const sfx_names[] = {
     "blast0", "blast1", "blast2", "blast3",
     "death", "hit", "bounce", "spawn", "prize",
     "rust", "charge", "flag", "thrust", "ui_move", "ui_go",
+    "count", "start",
     "music_a", "music_b", NULL,
 };
 

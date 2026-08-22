@@ -3570,6 +3570,208 @@ mod tests {
         );
     }
 
+    /// The whistle at the end of a match empties the arena and moves the room
+    /// to the ground the next one is played on.
+    ///
+    /// A podium drawn over the fight you just finished, with the wrecks and
+    /// the last bomb still hanging there, is fifteen seconds of looking at
+    /// something that is over. Both halves are about the wait: the map goes
+    /// down before it rather than after, and nothing is left on it.
+    ///
+    /// Nothing anybody earned is touched by that. The tallies the podium is
+    /// reading live on the ships, so the arena is cleared by benching rather
+    /// than by restarting, which is what zeroes them.
+    #[test]
+    fn the_arena_empties_at_the_whistle_and_the_next_map_goes_down() {
+        let mut a = match_room(1, 3);
+        let ship = seat_human(&mut a, "pilot") as usize;
+        a.tick();
+        assert!(a.mode.match_state().unwrap().playing);
+        let ground = a.map_at;
+
+        // Something in the air and something on the board, so there is
+        // anything to clear at all.
+        a.world.state.weapon_count = 1;
+        a.world.state.ships[ship].kills = 3;
+        a.world.state.ships[ship].deaths = 1;
+        assert_eq!(a.world.state.ships[ship].alive, 1);
+
+        for _ in 0..120 {
+            a.tick();
+        }
+        assert!(
+            !a.mode.match_state().unwrap().playing,
+            "the podium is up by now"
+        );
+        assert_ne!(a.map_at, ground, "the wait happens on the next map");
+        assert_eq!(a.world.state.weapon_count, 0, "nothing left in the air");
+        assert_eq!(a.world.state.ships[ship].alive, 0, "and nobody on the map");
+        assert_eq!(
+            a.world.state.ships[ship].respawn_at, 0,
+            "benched rather than dead: nothing is coming back on its own"
+        );
+        // The whole point of benching rather than restarting.
+        assert_eq!(
+            (
+                a.world.state.ships[ship].kills,
+                a.world.state.ships[ship].deaths
+            ),
+            (3, 1),
+            "the numbers the podium is reading survive the whistle"
+        );
+
+        // And the room a client is looking at is one it can still read.
+        //
+        // `sim_unpack` refuses a ship that is down with charge still in it,
+        // and it is right to: alive and energy are one fact told twice, and a
+        // snapshot that disagrees with itself describes a game nobody can
+        // play. Benching without clearing the energy broke that on the first
+        // whistle, and every client in the room was disconnected at once and
+        // told the zone had sent a snapshot it could not read. So the whistle
+        // is checked against the wire rather than only against the fields it
+        // wrote.
+        assert_eq!(
+            a.world.state.ships[ship].energy, 0,
+            "a ship that is down carries nothing"
+        );
+        let mut wire = vec![0u8; 64 * 1024];
+        let n = a.world.pack(&mut wire);
+        assert!(n > 0, "the room packs a snapshot");
+        let mut reader = sim::World::new(1);
+        assert!(
+            reader.apply_snapshot(&wire[..n as usize]),
+            "and a client can read the one the podium is drawn over"
+        );
+
+        // And the next whistle puts everybody back on it.
+        for _ in 0..400 {
+            a.tick();
+            if a.mode.match_state().unwrap().playing {
+                break;
+            }
+        }
+        assert!(a.mode.match_state().unwrap().playing, "a match opened");
+        assert_eq!(
+            a.world.state.ships[ship].alive, 1,
+            "and the pilot is flying again"
+        );
+        assert_eq!(
+            a.world.state.ships[ship].kills, 0,
+            "on a board the whistle zeroed"
+        );
+    }
+
+    /// The one thing a player can send another player, and the rules that
+    /// keep it from becoming chat.
+    ///
+    /// Between matches only, one every two seconds, and an index into a list
+    /// the clients hold rather than a word. That last one is what makes this
+    /// a closed set rather than a channel: the room never sees text, so there
+    /// is nothing here anybody could put a sentence through. See decision 28,
+    /// which this does not overturn.
+    #[test]
+    fn a_phrase_reaches_the_room_between_matches_and_no_faster_than_it_reads() {
+        let mut a = match_room(1, 3);
+        let (ship, _, mut rx) = seat_rx(&mut a, "pilot");
+        let heard = |rx: &mut mpsc::Receiver<Message>| -> Option<Vec<u8>> {
+            drain(rx)
+                .into_iter()
+                .find(|m| m.first() == Some(&crate::protocol::S2C_SAID))
+        };
+
+        a.tick(); // opens the match
+        assert!(a.mode.match_state().unwrap().playing);
+        a.say(ship, 0);
+        assert!(
+            heard(&mut rx).is_none(),
+            "nothing is said over a fight somebody is trying to play"
+        );
+
+        // To the whistle.
+        for _ in 0..120 {
+            a.tick();
+        }
+        assert!(!a.mode.match_state().unwrap().playing, "the podium is up");
+        let _ = drain(&mut rx);
+
+        a.say(ship, 2);
+        assert_eq!(
+            heard(&mut rx),
+            Some(vec![crate::protocol::S2C_SAID, ship, 2]),
+            "the room hears which line, and whose"
+        );
+
+        // Twice in a row is once. A line nobody can repeat faster than it can
+        // be read is a line nobody can shout with.
+        a.say(ship, 3);
+        assert!(
+            heard(&mut rx).is_none(),
+            "the second one inside two seconds"
+        );
+
+        // And a number off the end of the list is nothing at all, whatever a
+        // client sends. The wire carries an index and the room owns the range.
+        for _ in 0..220 {
+            a.tick();
+            if a.mode.match_state().is_some_and(|m| m.playing) {
+                break;
+            }
+        }
+        let _ = drain(&mut rx);
+        a.say(ship, crate::protocol::SAY_COUNT);
+        assert!(heard(&mut rx).is_none(), "there is no phrase past the list");
+    }
+
+    /// Somebody who arrives during an intermission joins the wait, not a
+    /// match that is not running.
+    ///
+    /// The whistle benches the room and the controls are held until the next
+    /// one, so a pilot seated alive in between is the one hull on an empty map
+    /// who cannot move it and can hear their own engine. Reported exactly that
+    /// way: thrust audible, ship going nowhere.
+    #[test]
+    fn a_pilot_who_arrives_at_the_podium_waits_with_everybody_else() {
+        let mut a = match_room(1, 3);
+        for _ in 0..120 {
+            a.tick();
+        }
+        assert!(
+            !a.mode.match_state().unwrap().playing,
+            "the podium is up by now"
+        );
+
+        let late = seat_human(&mut a, "late") as usize;
+        assert_eq!(
+            a.world.state.ships[late].alive, 0,
+            "an arrival at the podium is benched with the rest of the room"
+        );
+        assert_eq!(
+            a.world.state.ships[late].energy, 0,
+            "and carries nothing, which is what the wire demands of a ship \
+             that is down"
+        );
+        let mut wire = vec![0u8; 64 * 1024];
+        let n = a.world.pack(&mut wire);
+        let mut reader = sim::World::new(1);
+        assert!(
+            reader.apply_snapshot(&wire[..n as usize]),
+            "and the room is still one a client can read"
+        );
+
+        // And the next whistle puts them in it.
+        for _ in 0..400 {
+            a.tick();
+            if a.mode.match_state().unwrap().playing {
+                break;
+            }
+        }
+        assert!(a.mode.match_state().unwrap().playing, "a match opened");
+        assert_eq!(
+            a.world.state.ships[late].alive, 1,
+            "and the pilot who waited is flying it"
+        );
+    }
+
     /// Nobody flies during an intermission. That is the whole of what makes it
     /// one rather than a free-for-all under a frozen scoreboard.
     #[test]
@@ -6725,7 +6927,7 @@ mod tests {
         // The clock, which is the whole of what makes this a match game and is
         // the one setting no other zone in the history of this repository had.
         assert_eq!(z.arena.match_seconds, Some(180));
-        assert_eq!(z.arena.intermission_seconds, Some(25));
+        assert_eq!(z.arena.intermission_seconds, Some(15));
         assert_eq!(z.mode, "melee");
         assert_eq!(z.maps.len(), 2, "two maps, alternating");
         assert_eq!(z.max_humans_per_team, Some(4), "four a side");

@@ -479,6 +479,7 @@ impl ArenaServer {
             entitlements: sim::World::base_entitlements(),
             pending_kit: None,
             kitted: false,
+            said_at: 0,
             expires: None,
             session: session.clone(),
         };
@@ -536,6 +537,7 @@ impl ArenaServer {
             entitlements,
             pending_kit: None,
             kitted: false,
+            said_at: 0,
             expires: Some(claims.expires),
             session: session.clone(),
         })

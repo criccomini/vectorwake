@@ -83,6 +83,10 @@ local me = 0
 -- which is the backstop under every branch below that goes through `eye()`
 -- instead.
 local watching = false
+-- What the intermission clock last said out loud, so a message that repeats
+-- says nothing twice. Nil before a match has been seen at all, which is what
+-- keeps the whistle quiet for somebody who arrived mid-match.
+local counted_at = nil
 
 -- The ship whose perspective drives the camera, the colors and the sounds:
 -- your own hull, or the snapshot's subject while watching. Nil when there is
@@ -527,6 +531,21 @@ local function hover_menu(x, y, vh)
     menu.found_hot = nil
     menu.friend_hot = nil
     menu.friend_hot_act = nil
+    ui.hover_say = nil
+    -- The phrase chips are the one control outside the menu a pointer lights,
+    -- because they are on the card that is up while the menu is shut. Walked
+    -- before the early return below, and only ever for a chip: everything
+    -- else on screen with the menu down is an instrument.
+    if not touch.used and x then
+        local cx, cy = x, vh - y
+        for _, r in ipairs(ui.hits) do
+            if r.action == "say" and cx >= r.x and cx <= r.x + r.w
+               and cy >= r.y and cy <= r.y + r.h then
+                ui.hover_say = r.value
+                break
+            end
+        end
+    end
     if not menu.open or touch.used or not x then
         return hovering(nil, nil)
     end
@@ -1540,6 +1559,14 @@ function update(self, dt)
         if feed[i].t > ui.FEED_LIFE then table.remove(feed, i) end
     end
 
+    -- And so do the phrases. Same shape as the feed above and for the same
+    -- reason: a "gg" still on the card two matches later is a chat log, and
+    -- this is not one.
+    for ship, said in pairs(net.said) do
+        said.t = said.t + dt
+        if said.t > ui.SAY_LIFE then net.said[ship] = nil end
+    end
+
     kb_locked = frame.sample(self, dt, net, html5, kb_locked)
 
     -- Where this frame falls between the two ticks either side of it, and how
@@ -1672,6 +1699,35 @@ function update(self, dt)
         local t = sim.tick() / TUNE.TICK_HZ
         local my_team = eye_team()
         local mine_buttons = my_buttons()
+
+        -- The last five seconds of an intermission, said out loud.
+        --
+        -- A podium with a number on it says when the next match starts, and a
+        -- pilot in the hangar picking a hull is not looking at it. So the
+        -- clock speaks: a pip a second from five down to one, and a different
+        -- sound at nought, which is the only one that means go.
+        --
+        -- Driven off the number the server sends rather than off a local
+        -- timer, and only on the change, because a message repeats and a
+        -- frame runs a hundred times a second. `counted_at` is what was last
+        -- said, so a clock that stalls says nothing twice and one that jumps
+        -- says only where it landed.
+        local m = net.match
+        if m and not m.playing and m.left and m.left <= 5 and m.left >= 1 then
+            if counted_at ~= m.left then
+                counted_at = m.left
+                sfx.ui("count")
+            end
+        elseif m and m.playing then
+            -- The whistle. Said once on the edge into a match, which is the
+            -- one place this client knows a match began without being told.
+            if counted_at ~= 0 then
+                if counted_at ~= nil then sfx.ui("start") end
+                counted_at = 0
+            end
+        else
+            counted_at = nil
+        end
 
         -- Held thrust is the one sound with a duration rather than an instant,
         -- so it is a loop the frame turns on and off rather than an event.
@@ -1944,6 +2000,11 @@ function update(self, dt)
             -- clock at all.
             match = net.match,
             side_names = side_names(),
+            -- The closed list of phrases and who has just used one. Both come
+            -- from the connection: the list is the wire's own, since a number
+            -- on it is what travels, and the table is what the zone has said
+            -- since the whistle.
+            sayings = net.SAYINGS, said = net.said,
             -- Whether that box should also offer to invite whoever it is
             -- describing, and who has already been asked. Both are the
             -- connection's business, so they are read here rather than in the
@@ -2530,6 +2591,15 @@ function on_input(self, action_id, action)
                 if r.action == "debug" then
                     ui.debug = not ui.debug
                     sfx.ui("ui_move")
+                    return true
+                end
+                -- One of the fixed phrases, off the card between matches. The
+                -- room refuses it while a match is running, so a press that
+                -- lands late is a press that does nothing rather than one the
+                -- client has to guard.
+                if r.action == "say" then
+                    net.say(r.value)
+                    sfx.ui("ui_go")
                     return true
                 end
                 -- A heading picks the column and takes the list back to the
