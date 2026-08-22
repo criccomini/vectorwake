@@ -4819,27 +4819,60 @@ end
 -- Three columns, because the full list down one column is a list that scrolls,
 -- and a list scrolling under a picture is no longer the same page as the
 -- picture: you would be moving the answers past a diagram that stayed still.
-local CHIP_COLS = 3
-local CHIP_ROW = 26      -- * S
--- Between the last row of keys and the first row of chips.
-local CHIP_GAP = 18      -- * S
+-- The chip grid's numbers and the arithmetic over them, on one table.
+--
+-- This chunk sits at the two hundred local ceiling a Lua function has, and
+-- the house answer is to gather a coherent group onto one name, since a table
+-- is one local however much it holds. See client/tests/upvalues_test.lua.
+local CHIP = {
+    cols = 3,
+    row = 26,            -- * S
+    -- Between the last row of keys and the first row of chips.
+    gap = 18,            -- * S
+}
 
-local function chip_lines(n)
-    return math.ceil(n / CHIP_COLS)
+-- How many columns a width will carry. Three where there is room, and fewer
+-- where there is not: a phone's stage is about 340 points across, and
+-- "Previous player" with the key it is bound to beside it is 150 of them, so
+-- three columns there was three chips written over each other and the reset
+-- button drawn on top of the one before it.
+function CHIP.of(w)
+    return math.max(1, math.min(CHIP.cols,
+                                math.floor(w / (172 * F.scale))))
+end
+
+function CHIP.lines(n, w)
+    return math.ceil(n / CHIP.of(w))
 end
 
 -- `rh` is a row's height, which the caller works out rather than this: what
 -- the board can give up and what the chips need are one sum, and it is done
 -- once where the page is measured.
-local function chips(x, top, w, v, rh)
-    local cw = w / CHIP_COLS
+function CHIP.draw(x, top, w, v, rh)
+    local cols = CHIP.of(w)
+    local cw = w / cols
     -- Type off the row, the same way the board sizes a letter off its key, so
     -- a page squeezed into a short window comes out smaller rather than
     -- overlapping itself.
     local fs = math.min(12.5 * F.scale, rh * 0.48)
+    -- And off the column as well. The key beside a name was already set down
+    -- until the pair fitted, but the name itself never was, so a long one ran
+    -- under the chip in the next column rather than into the gap. Measured
+    -- against the longest label on the page, so the grid stays one size.
+    local longest = 0
+    for _, r in ipairs(v.rows) do
+        if not r.reset then
+            longest = math.max(longest, glyph_w(r.label or "", fs))
+        end
+    end
+    local budget = cw - 15 * F.scale - 34 * F.scale - 10 * F.scale
+    while fs > 8 * F.scale and longest > budget do
+        fs = fs * 0.94
+        longest = longest * 0.94
+    end
     for i, r in ipairs(v.rows) do
-        local cx = x + ((i - 1) % CHIP_COLS) * cw
-        local cy = top + math.floor((i - 1) / CHIP_COLS) * rh
+        local cx = x + ((i - 1) % cols) * cw
+        local cy = top + math.floor((i - 1) / cols) * rh
         local hot = i == v.sel
         if hot then
             rect(cx - 6 * F.scale, cy, cw - 4 * F.scale, rh,
@@ -5484,8 +5517,20 @@ function empty_state(x, y, w, h, e)
     local ty = cy + r + 30 * F.scale
     txt(e.head or "", cx, ty, (M.compact and 17 or 19) * F.scale,
         pal.a(pal.INK, 0.85), "center", MENU_FONT)
+    -- Wrapped to the room it has. It was one centred line whatever it said,
+    -- so on a phone "fly with somebody, add them here, and they add you back"
+    -- ran off both edges at once and the sentence was missing a word at each
+    -- end.
     if e.line and e.line ~= "" then
-        txt(e.line, cx, ty + 24 * F.scale, 12 * F.scale, pal.a(pal.DIM, 0.95), "center")
+        local px = 12 * F.scale
+        local ly = ty + 24 * F.scale
+        -- Cased once, over the whole sentence, and then drawn raw. Left to
+        -- `txt` it is applied per line, so a sentence that wrapped came out
+        -- with a capital in the middle of itself.
+        for _, line in ipairs(wrapped(cased(e.line), px, w - 16 * F.scale)) do
+            txt(line, cx, ly, px, pal.a(pal.DIM, 0.95), "center", nil, true)
+            ly = ly + 17 * F.scale
+        end
     end
 end
 
@@ -6675,18 +6720,19 @@ function M.menu(v)
         -- The chip's own row height, which is not the stage row height below:
         -- one is a line in a grid of names and keys, the other is a row of a
         -- list, and they are sized against different things.
-        local chip_h = CHIP_ROW * F.scale
+        local chip_h = CHIP.row * F.scale
         if v.chips then
-            local lines = chip_lines(#v.rows)
+            local lines = CHIP.lines(#v.rows, avail - 14 * F.scale)
             -- The board gives way first, down to its floor, and then the
             -- chips do. That order is the argument for the page: a keyboard
             -- drawn smaller is still a picture of where your hand goes, and a
             -- chip drawn smaller is a key you cannot read.
             while bw > 240 * F.scale
-                  and board_height(bw) + lines * chip_h + CHIP_GAP * F.scale > room do
+                  and board_height(bw) + lines * chip_h
+                      + CHIP.gap * F.scale > room do
                 bw = bw * 0.94
             end
-            local left = room - board_height(bw) - CHIP_GAP * F.scale
+            local left = room - board_height(bw) - CHIP.gap * F.scale
             if lines * chip_h > left then
                 chip_h = math.max(left / lines, 0)
             end
@@ -6699,8 +6745,8 @@ function M.menu(v)
         -- the name it belongs to, and there is nothing above them to line up
         -- with in any case.
         if v.chips then
-            chips(tx, top + used + CHIP_GAP * F.scale, avail - 14 * F.scale, v,
-                  chip_h)
+            CHIP.draw(tx, top + used + CHIP.gap * F.scale,
+                      avail - 14 * F.scale, v, chip_h)
         end
     elseif v.hulls then
         -- The hangar, which is the one page drawn as a layout rather than as
@@ -6861,14 +6907,23 @@ function M.menu(v)
     -- row they sat under and moving every time the cursor did. What is left is
     -- the one thing that was never a label on anything: something that just
     -- happened.
-    if v.note then
-        txt(v.note, tx, sy + sh - 4 * F.scale, 12 * F.scale, pal.a(pal.HURT, 0.95))
-    elseif v.foot then
-        -- The same line, for something that worked. It is the one thing on the
-        -- controls page that is about the whole page rather than about a row,
-        -- which is why it is down here and not in a column: what the page is
-        -- waiting for, or what it just did.
-        txt(v.foot, tx, sy + sh - 4 * F.scale, 12 * F.scale, pal.a(pal.DIM, 0.9))
+    -- Wrapped to the stage's own measure, and climbing rather than growing
+    -- down: the foot is the foot. Written as one line whatever it said, "press
+    -- a key for repel, or two together; escape leaves it alone" ran off the
+    -- right of a phone with the last four words missing.
+    local said = v.note or v.foot
+    if said then
+        local px = 12 * F.scale
+        local col = v.note and pal.a(pal.HURT, 0.95) or pal.a(pal.DIM, 0.9)
+        -- Cased once over the whole sentence and drawn raw, since `txt`
+        -- would capitalise each line it was handed and a wrapped sentence
+        -- would come out with a capital in the middle of itself.
+        local lines = wrapped(cased(said), px, sw - 8 * F.scale)
+        local fy = sy + sh - 4 * F.scale - (#lines - 1) * 16 * F.scale
+        for _, line in ipairs(lines) do
+            txt(line, tx, fy, px, col, nil, nil, true)
+            fy = fy + 16 * F.scale
+        end
     end
 
     -- A press that missed everything is a press on the arena behind, and over
