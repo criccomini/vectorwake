@@ -1619,6 +1619,23 @@ do
     menu.open_kit(0)
     check("and a saved kit is left alone", menu.kit[1] == 2 and menu.kit[6] == 0,
           tostring(menu.kit[1]) .. "/" .. tostring(menu.kit[6]))
+
+    -- A build can outgrow its owner: add-ons stopped being granted, so every
+    -- kit saved with one in it holds a slot the account no longer owns. The
+    -- room trims such a kit on the way in, and the page has to show the same
+    -- thing or it is promising a ship nobody will fly.
+    account.kits = {Apex = {[1] = 2, [12] = 1}}
+    account.entitlements = {[1] = 6, [12] = 0}
+    menu.kit = nil
+    menu.note = nil
+    menu.open_kit(0)
+    check("a slot the account no longer owns comes off the build",
+          menu.kit[12] == 0 and menu.kit[1] == 2,
+          tostring(menu.kit[1]) .. "/" .. tostring(menu.kit[12]))
+    check("and the page says why rather than quietly shrinking",
+          menu.note ~= nil and string.find(menu.note, "upgrades", 1, true),
+          tostring(menu.note))
+    account.entitlements = {}
     account.kits = {}
 
     _G.sim = nil

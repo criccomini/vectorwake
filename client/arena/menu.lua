@@ -529,9 +529,22 @@ end
 -- from what the ship is already wearing where it does not.
 function M.open_kit(class)
     local saved = account.kits and account.kits[HULLS[class + 1][1]]
+    local ceiling = kit_ceiling()
     local kit = {}
+    -- Held to what this account and this arena will take, which is what the
+    -- room does with it on the way in. A build can outgrow its owner: an
+    -- add-on that stopped being granted, a zone retuned under it. The page
+    -- promises that what you see is what you fly, so the slots that no longer
+    -- fit come off here rather than in the arena where nobody is looking.
+    local trimmed = false
     for i = 1, simn("SLOT_COUNT", 25) do
-        kit[i] = tonumber(saved and saved[i]) or 0
+        local want = tonumber(saved and saved[i]) or 0
+        local max = ceiling[i] or 0
+        if want > max then want, trimmed = max, true end
+        kit[i] = want
+    end
+    if trimmed then
+        M.note = "some of this build is not yours yet: see upgrades"
     end
     -- Nothing saved: what the arena would deal, computed by the same core the
     -- arena deals with, so the hangar and the ship agree before anybody has

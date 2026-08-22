@@ -3118,6 +3118,109 @@ mod tests {
         assert!(a.set_kit(ship, &mined), "what was bought, the hull takes");
     }
 
+    /// A death costs the ammunition it spent and nothing else.
+    ///
+    /// The kit is re-dealt at the respawn from the slots the pilot owns, so
+    /// what they come back in is what they walked in wearing. Reported from a
+    /// playtest as bombs that stopped bouncing after a death, which would be
+    /// the respawn re-dealing from something other than the kit.
+    #[test]
+    fn a_death_does_not_undress_a_pilot() {
+        let mut a = room_with_teams("teams = [\"Keel\"]\n");
+        let ship = seat_human(&mut a, "pilot");
+        let bounce = sim::slot_mod(sim::TRIG_BOMB, sim::MOD_BOUNCE) as usize;
+        let prox = sim::slot_mod(sim::TRIG_BOMB, sim::MOD_PROX) as usize;
+
+        // What buying them does.
+        if let Some(s) = a.names.get_mut(&ship) {
+            s.entitlements[bounce] = 1;
+            s.entitlements[prox] = 1;
+        }
+        let mut kit = [0u8; sim::SLOT_COUNT];
+        kit[bounce] = 1;
+        kit[prox] = 1;
+        kit[sim::slot_level(sim::TRIG_BOMB) as usize] = 1;
+        kit[sim::slot_charge(sim::CHARGE_REPEL) as usize] = 1;
+        assert!(a.set_kit(ship, &kit), "a bought kit is taken");
+        let worn = |a: &Room| {
+            let sh = a.world.state.ships[ship as usize];
+            (
+                sim::mod_get(sh.mods[sim::TRIG_BOMB], sim::MOD_BOUNCE),
+                sim::mod_get(sh.mods[sim::TRIG_BOMB], sim::MOD_PROX),
+            )
+        };
+        assert_eq!(worn(&a), (1, 1), "and dealt onto the hull");
+
+        // Killed, and left alone long enough to come back.
+        a.world.state.ships[ship as usize].energy = 0;
+        a.world.state.ships[ship as usize].alive = 0;
+        a.world.state.ships[ship as usize].respawn_at = 1;
+        for _ in 0..600 {
+            a.tick();
+            if a.world.state.ships[ship as usize].alive != 0 {
+                break;
+            }
+        }
+        assert_eq!(
+            a.world.state.ships[ship as usize].alive, 1,
+            "the pilot comes back at all"
+        );
+        assert_eq!(worn(&a), (1, 1), "wearing what they were wearing");
+    }
+
+    /// A build that no longer fits is trimmed, not thrown away.
+    ///
+    /// Add-ons used to be granted to everybody, so a kit could hold one
+    /// nobody had bought. When that grant went, every saved build carrying an
+    /// add-on stopped fitting the account that saved it, and a kit is refused
+    /// whole: the pilot was dealt a starter kit and lost the twenty-eight
+    /// points that were still theirs along with the two that were not.
+    ///
+    /// Reported from a playtest as bounce and proximity disappearing after a
+    /// death, which is where the next re-deal happens to fall.
+    #[test]
+    fn a_kit_that_outgrew_the_account_is_trimmed_not_dropped() {
+        let mut a = match_room(1, 1);
+        let ship = seat_human(&mut a, "pilot");
+        let prox = sim::slot_mod(sim::TRIG_BOMB, sim::MOD_PROX) as usize;
+        let speed = sim::slot_stat(sim::UP_SPEED) as usize;
+
+        // What a build saved under the old grant looks like: mostly slots the
+        // account owns, and one it does not.
+        let mut want = [0u8; sim::SLOT_COUNT];
+        want[speed] = 6;
+        want[sim::slot_level(sim::TRIG_BOMB) as usize] = 1;
+        want[sim::slot_charge(sim::CHARGE_REPEL) as usize] = 1;
+        want[prox] = 1;
+        assert_eq!(
+            a.kit_ceiling(ship)[prox],
+            0,
+            "nobody is dealt proximity any more"
+        );
+        assert!(!a.set_kit(ship, &want), "and a kit holding it does not fit");
+
+        if let Some(s) = a.names.get_mut(&ship) {
+            s.pending_kit = Some(want);
+        }
+        a.deal_seat(ship);
+        let sh = a.world.state.ships[ship as usize];
+        assert_eq!(
+            sh.up[sim::UP_SPEED],
+            6,
+            "the part of the build the account owns is flown"
+        );
+        assert_eq!(
+            sh.charge[sim::CHARGE_REPEL],
+            1,
+            "all of it, not just the stats"
+        );
+        assert_eq!(
+            sim::mod_get(sh.mods[sim::TRIG_BOMB], sim::MOD_PROX),
+            0,
+            "and only the slot nobody bought is missing"
+        );
+    }
+
     /// A barrel, bought and flown, on any hull in the roster.
     ///
     /// This is the trait the whole slot space was flattened for. It was

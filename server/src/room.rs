@@ -1707,16 +1707,35 @@ impl Room {
     pub(crate) fn deal_seat(&mut self, ship: u8) {
         let asked = self.names.get(&ship).and_then(|s| s.pending_kit);
         if let Some(kit) = asked {
-            if self.set_kit(ship, &kit) {
+            // Trimmed to what fits, rather than refused whole.
+            //
+            // `set_kit` is all or nothing and has to be: a kit arriving over
+            // the wire is a claim, and half of a claim is not a build anybody
+            // asked for. This is the other case. The build is the pilot's own,
+            // saved by them, and what it outgrew is one slot: an add-on that
+            // stopped being granted, or a zone that retuned under it. Refusing
+            // it whole cost them the twenty-eight points that were still
+            // theirs along with the two that were not, and dealt a starter kit
+            // over the top without saying so. Found in a playtest, reported as
+            // bounce and proximity going missing after a death, which is
+            // simply where the next re-deal fell.
+            let ceiling = self.kit_ceiling(ship);
+            let mut fits = kit;
+            for (want, max) in fits.iter_mut().zip(ceiling.iter()) {
+                if *want > *max {
+                    *want = *max;
+                }
+            }
+            if self.set_kit(ship, &fits) {
                 if let Some(s) = self.names.get_mut(&ship) {
                     s.pending_kit = None;
                 }
                 return;
             }
-            // A kit that no longer fits is dropped rather than kept: the
-            // zone retuned under it, which is the only way that can happen now
-            // that a hull has no say. Holding it would mean trying it again at
-            // every whistle for the rest of the session.
+            // Still refused, which the core does for reasons of its own: a
+            // rung whose ladder has no step there, a budget the trim did not
+            // bring under. Dropped rather than kept, so it is not tried again
+            // at every whistle for the rest of the session.
             if let Some(s) = self.names.get_mut(&ship) {
                 s.pending_kit = None;
             }
