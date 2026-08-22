@@ -1676,9 +1676,10 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
          * rather than at each of the three places a rung can leave a ship;
          * a dead hull skips this loop, so the clear lands on the first tick
          * of the next life, before there is anything to pick up. */
+        uint16_t was = sh->btn_prev;
         if (!ship_has_multi(sh)) {
             sh->multi_off = 0;
-        } else if ((b & SIM_BTN_MULTI) && !(sh->btn_prev & SIM_BTN_MULTI)) {
+        } else if ((b & SIM_BTN_MULTI) && !(was & SIM_BTN_MULTI)) {
             sh->multi_off = (uint8_t)(sh->multi_off ? 0 : 1);
         }
         sh->btn_prev = b;
@@ -1686,9 +1687,20 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
         /* 3a. A charge: a weapon carried by the count and spent. The slot
          * comes down in the buttons rather than living on the ship, so
          * choosing which one is ready is the client's business and costs the
-         * simulation nothing -- no selection byte in a snapshot, and no edge
-         * detection to get wrong when a shot is replayed. */
-        if (!in_safe && (b & SIM_BTN_USE)) {
+         * simulation nothing: no selection byte in a snapshot, and nothing
+         * to get wrong when a shot is replayed.
+         *
+         * It goes on the press, not while the key is down. A charge is a
+         * thing you have three of, and a trigger with no cooldown fired one
+         * every tick: a thumb held for thirty milliseconds spent the whole
+         * rack, and three bursts leaving one muzzle three ticks apart is
+         * three rounds down every angle of the rosette. It read as a burst
+         * that fires triple bullets, which is what it was.
+         *
+         * Edge-detected here for the same reason the multifire switch is.
+         * A client that pulsed the button instead would spend two charges on
+         * an input that arrived twice and none on one that was lost. */
+        if (!in_safe && (b & SIM_BTN_USE) && !(was & SIM_BTN_USE)) {
             int k = (int)SIM_BTN_SLOT(b);
             uint8_t pat = cfg->charge[k];
             sim_fire_pattern cp;

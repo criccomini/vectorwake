@@ -2505,13 +2505,22 @@ int main(void) {
         CHECK(s.ships[0].charge[0] == 1, "one repel is spent");
         CHECK(c.fires > 0, "and it counts as a shot");
 
-        /* Inventory, not a cooldown, is the limit. The next held tick spends
-         * the second charge while the first one lands. */
+        /* A charge goes on the press. Keeping the button down spends nothing
+         * more: a rack is a count of presses, not a rate of fire. */
+        step_n(&s, &cfg, use, 0, 3);
+        CHECK(s.ships[0].charge[0] == 1, "holding it down spends no more");
+
+        /* Inventory, not a cooldown, is the limit. Let go, press again, and
+         * the second one goes at once while the first is still in the air. */
+        step_n(&s, &cfg, 0, 0, 1);
         step_n(&s, &cfg, use, 0, 1);
         CHECK(s.ships[0].charge[0] == 0, "the second follows immediately");
         CHECK(s.ships[1].vy < vy0, "the neighbour is shoved away");
         CHECK(s.ships[1].energy >= e1, "and not hurt");
-        step_n(&s, &cfg, use, 0, 10);
+        for (int i = 0; i < 5; i++) {
+            step_n(&s, &cfg, 0, 0, 1);
+            step_n(&s, &cfg, use, 0, 1);
+        }
         CHECK(s.ships[0].charge[0] == 0, "and an empty slot fires nothing");
     }
 
@@ -3993,8 +4002,12 @@ int main(void) {
         CHECK(s.weapons[0].vx == 0 && s.weapons[0].vy == 0,
               "a mine is left where it was put, not thrown at ship speed");
 
-        /* And it runs out, which is what a count means. */
-        step_n(&s, &cfg, lay, 0, 200);
+        /* And it runs out, which is what a count means. One press lays one,
+         * so the pilot has to let go and press again for the next. */
+        for (int i = 0; i < 100; i++) {
+            step_n(&s, &cfg, 0, 0, 1);
+            step_n(&s, &cfg, lay, 0, 1);
+        }
         CHECK(sh->charge[SIM_CHARGE_MINE] == 0, "the last one is spent");
         int mines = 0;
         for (uint16_t w = 0; w < s.weapon_count; w++)
