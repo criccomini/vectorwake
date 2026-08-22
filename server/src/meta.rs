@@ -397,6 +397,36 @@ const PASSWORD_WORKERS: usize = 4;
 /// registration into an unbounded namespace and database write.
 const OWNED_BOT_LIMIT: i64 = 16;
 
+/// The most an operator may put in a wallet by hand.
+///
+/// Not a rule about the economy: the column is a bigint and a wallet earned
+/// through play has no ceiling at all. It is a rule about typing, and the
+/// number it stops is the one with an extra digit on the end. The dearest
+/// rung on the shelf is ninety, so a million is more than anybody spends and
+/// far less than a slip of the finger.
+const WALLET_CEILING: i64 = 1_000_000;
+
+/// What a request asked a wallet to become, or why it cannot.
+///
+/// Absent is not zero. A body with no `rivets` in it is a request that lost a
+/// field on the way, and emptying somebody's wallet is the wrong thing to do
+/// about that. A fraction is not a rivet either: rivets are counted, and JSON
+/// hands you 12.5 for one if somebody types it.
+fn wallet_asked(v: Option<&serde_json::Value>) -> Result<i64, String> {
+    let Some(v) = v else {
+        return Err("how many rivets?".into());
+    };
+    let Some(n) = v.as_i64() else {
+        return Err("rivets are counted, so that has to be a whole number".into());
+    };
+    if !(0..=WALLET_CEILING).contains(&n) {
+        return Err(format!(
+            "a wallet holds between 0 and {WALLET_CEILING} rivets"
+        ));
+    }
+    Ok(n)
+}
+
 pub struct Meta {
     pool: Pool,
     signing: ed25519_dalek::SigningKey,
@@ -2365,8 +2395,11 @@ async fn route(
                             to_char(a.created at time zone 'utc', 'YYYY-MM-DD'),
                             to_char(a.last_seen at time zone 'utc', 'YYYY-MM-DD HH24:MI'),
                             exists (select 1 from credentials c
-                                    where c.account = a.id and c.method <> 'secret')
-                     from accounts a left join names n on n.account = a.id";
+                                    where c.account = a.id and c.method <> 'secret'),
+                            coalesce(w.rivets, 0)
+                     from accounts a
+                     left join names n on n.account = a.id
+                     left join wallets w on w.account = a.id";
             let row = match by_id {
                 Some(id) => db.query_opt(&format!("{q} where a.id = $1"), &[&id]).await,
                 None => {
@@ -2396,6 +2429,10 @@ async fn route(
                             "created": r.get::<_, String>(6),
                             "last_seen": r.get::<_, String>(7),
                             "claimed": r.get::<_, bool>(8),
+                            // What they have banked. No row is a balance of
+                            // zero, which is what an account that has never
+                            // been paid has.
+                            "rivets": r.get::<_, i64>(9),
                         }),
                     )
                 }
@@ -2937,6 +2974,75 @@ async fn route(
                 }
                 Err(e) => (500, serde_json::json!({ "error": format!("{e}") })),
             }
+        }
+
+        // A wallet, set by hand.
+        //
+        // Absolute rather than a delta: an operator typing into a field
+        // pre-filled with the current balance can see what they are about to
+        // make it, and a delta box is a subtraction done in somebody's head
+        // over an account they cannot see the history of. The log records
+        // both ends anyway, so a correction is still readable as one
+        // afterwards.
+        //
+        // Refused for a bot. A house bot buys its own kit out of what it has
+        // killed for, which is the whole of docs/design/ai-players.md: handing
+        // one a balance is deciding what it flies, and that is a decision the
+        // roster and the shelf make between them.
+        "/v1/admin/rivets" => {
+            let Some(actor) = admin_for(&db, &s("secret")).await else {
+                return (403, serde_json::json!({ "error": "not an admin" }));
+            };
+            let account = body.get("account").and_then(|v| v.as_i64()).unwrap_or(0);
+            let want = match wallet_asked(body.get("rivets")) {
+                Ok(n) => n,
+                Err(e) => return (400, serde_json::json!({ "error": e })),
+            };
+            let (kind, was): (i16, i64) = match db
+                .query_opt(
+                    "select a.kind, coalesce(w.rivets, 0) from accounts a
+                     left join wallets w on w.account = a.id where a.id = $1",
+                    &[&account],
+                )
+                .await
+            {
+                Ok(Some(r)) => (r.get(0), r.get(1)),
+                Ok(None) => return (404, serde_json::json!({ "error": "no such account" })),
+                Err(e) => return (500, serde_json::json!({ "error": format!("{e}") })),
+            };
+            if kind_of(kind).is_bot() {
+                return (
+                    400,
+                    serde_json::json!({
+                        "error": "a bot buys its kit out of what it has killed for; \
+                                  handing it a balance decides what it flies"
+                    }),
+                );
+            }
+            // An upsert, because an account that has never been paid has no
+            // row at all and a wallet is the absence of one.
+            if let Err(e) = db
+                .execute(
+                    "insert into wallets (account, rivets) values ($1, $2)
+                     on conflict (account) do update set rivets = $2",
+                    &[&account, &want],
+                )
+                .await
+            {
+                return (500, serde_json::json!({ "error": format!("{e}") }));
+            }
+            println!("meta: admin {actor} set account {account} wallet {was} -> {want}");
+            note_account(
+                &db,
+                pilot::WALLET,
+                account,
+                serde_json::json!({ "from": was, "to": want, "by": actor }),
+            )
+            .await;
+            (
+                200,
+                serde_json::json!({ "account": account, "rivets": want, "was": was }),
+            )
         }
 
         // Every account currently marked, which is the half of banning the
@@ -4427,6 +4533,34 @@ mod tests {
     /// against itself and draw as a friendship on the page, which is a thing
     /// somebody would report as a bug in the friends list rather than as a
     /// hole in this check.
+    /// A wallet an operator typed, and the ways of getting it wrong.
+    ///
+    /// The ceiling is not a rule about the economy: a wallet earned through
+    /// play has none and the column is a bigint. It is a rule about typing,
+    /// and what it stops is the number with an extra digit on the end.
+    #[test]
+    fn a_wallet_an_operator_typed_is_a_whole_count_inside_the_ceiling() {
+        let n = |v: serde_json::Value| wallet_asked(Some(&v));
+        let num = |i: i64| serde_json::json!(i);
+        assert_eq!(n(num(0)), Ok(0), "an emptied wallet is a thing to ask for");
+        assert_eq!(n(num(500)), Ok(500));
+        assert_eq!(
+            n(num(WALLET_CEILING)),
+            Ok(WALLET_CEILING),
+            "the ceiling itself"
+        );
+        assert!(n(num(WALLET_CEILING + 1)).is_err(), "one past it is a slip");
+        assert!(n(num(-1)).is_err(), "a wallet does not go negative");
+        assert!(n(serde_json::json!(12.5)).is_err(), "rivets are counted");
+        assert!(
+            n(serde_json::json!("500")).is_err(),
+            "and counted as a number, not a string"
+        );
+        // Absent is not zero: a body that lost the field is a broken request,
+        // and emptying somebody's wallet is the wrong answer to one.
+        assert!(wallet_asked(None).is_err());
+    }
+
     #[test]
     fn a_pilot_cannot_add_themselves() {
         assert_eq!(names_a_pilot(7, 7), Err((400, "no such pilot")));

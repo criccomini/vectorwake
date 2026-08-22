@@ -1137,6 +1137,9 @@ function describe(e) {
                   ["by", d.by === "self" ? "self" : d.by && `#${d.by}`]);
     case "ban":
       return bits(["by", d.by && `#${d.by}`], [null, d.reason]);
+    case "wallet":
+      return bits([null, `${d.from} rivets`], ["to", d.to],
+                  ["by", d.by && `#${d.by}`]);
     case "unban":
     case "grant":
     case "revoke":
@@ -1247,6 +1250,7 @@ function drawPilot(p) {
   row("last seen", p.last_seen);
   row("standing", p.banned ? `banned: ${p.reason || "no reason recorded"}` : "in good standing",
       p.banned ? "bad" : "good");
+  row("rivets", (p.rivets ?? 0).toLocaleString());
   if (p.admin) row("admin", "yes", "good");
 
   el("pilot-card").hidden = false;
@@ -1255,6 +1259,13 @@ function drawPilot(p) {
   // it in a refusal.
   el("name-text").value = "";
   el("name-form").hidden = p.kind !== "human";
+
+  // The wallet, in a field already holding what they have, so setting it is
+  // typing over a number rather than into a blank. A bot buys its own kit out
+  // of what it has killed for, which is the whole of ai-players.md, so the
+  // server refuses one and the form is not drawn for one.
+  el("rivets-count").value = String(p.rivets ?? 0);
+  el("rivets-form").hidden = p.kind !== "human";
 
   const form = el("ban-form"), button = el("ban-button");
   form.hidden = false;
@@ -1493,6 +1504,49 @@ el("reroll-button").addEventListener("click", () => {
       "goes back into it.",
     ok: "reroll",
   });
+});
+
+// The wallet, set. Rivets are earned by killing and spent on the shelf, so
+// this is the only way one moves without somebody having played for it: a
+// refund, a prize, a correction. Which is exactly why it asks, says both
+// numbers while it does, and lands in the pilot log afterwards.
+el("rivets-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  if (!shown) return;
+  const field = el("rivets-count");
+  const want = Number(field.value);
+  if (!Number.isInteger(want) || want < 0) {
+    tell("lookup-note", "rivets are a whole count, zero or more");
+    return;
+  }
+  const was = shown.rivets ?? 0;
+  if (want === was) {
+    tell("lookup-note", `${shown.name} already has ${was.toLocaleString()}`);
+    return;
+  }
+  const up = want > was;
+  const yes = await ask({
+    title: "Set this wallet?",
+    // Both numbers and the difference between them, because the mistake this
+    // is guarding against is a digit, and a digit is invisible in one number
+    // and obvious in three.
+    body: `${shown.name} has ${was.toLocaleString()} rivets and will have ` +
+      `${want.toLocaleString()}, which is ${up ? "an extra " : "a loss of "}` +
+      `${Math.abs(want - was).toLocaleString()}. Nothing else moves: their ` +
+      "kit, their rating and what they already own are untouched.",
+    ok: up ? "add them" : "take them",
+  });
+  if (yes === null) return;
+  try {
+    await post("/v1/admin/rivets", { secret, account: shown.account, rivets: want });
+    // Re-read rather than guess, the way the ban does: what the page shows is
+    // what the database holds, including anything another operator did in
+    // between.
+    await lookup(`#${shown.account}`);
+    tell("lookup-note", `now holds ${want.toLocaleString()} rivets`, "ok");
+  } catch (e) {
+    tell("lookup-note", e.message);
+  }
 });
 
 el("ban-form").addEventListener("submit", async (ev) => {

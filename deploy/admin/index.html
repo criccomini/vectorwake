@@ -223,6 +223,21 @@
             <button id="name-button">rename</button>
             <button id="reroll-button" type="button">reroll</button>
           </form>
+          <!-- The wallet, set by hand.
+               A rivet is what a kill pays and what a rung costs, so an
+               operator refunding a bug or handing out a prize has no other way
+               to move one: everything else in the economy is earned. Absolute
+               rather than a delta, and the field arrives holding what they
+               have, so what you are about to make it is on screen while you
+               type it. -->
+          <form id="rivets-form" class="row">
+            <div class="field grow">
+              <label for="rivets-count">rivets</label>
+              <input id="rivets-count" type="number" min="0" max="1000000"
+                     step="1" inputmode="numeric">
+            </div>
+            <button id="rivets-button">set</button>
+          </form>
           <form id="ban-form" class="row">
             <div class="field grow">
               <label for="ban-reason">standing</label>
@@ -312,6 +327,7 @@
             <label><input type="checkbox" name="kind" value="on_air"> on air</label>
             <label><input type="checkbox" name="kind" value="login"> login</label>
             <label><input type="checkbox" name="kind" value="rename"> rename</label>
+            <label><input type="checkbox" name="kind" value="wallet"> wallet</label>
             <label><input type="checkbox" name="kind" value="ban"> ban</label>
           </div>
         </fieldset>

@@ -363,6 +363,32 @@ leave the scoreboard disagreeing with the roster that seeded its rating.
 takes effect within one token lifetime because this is where tokens are
 minted.
 
+**A wallet is editable**, and it is the one number on this page that is. A
+rivet is what a kill pays and what a rung on the shelf costs, so every other
+way one moves involves somebody having played for it: an operator refunding a
+lost purchase, handing out a prize, or correcting a mistake has nothing else
+to reach for. The field arrives holding what the pilot has, so setting it is
+typing over a number rather than into a blank, and the confirmation says both
+ends and the difference, because the mistake worth guarding against is a digit
+and a digit is invisible in one number and obvious in three.
+
+It lands in the pilot log as a `wallet` event carrying both figures and who
+moved them, for the reason `bought` exists: the wallet keeps no history of its
+own, so without the log a balance that grew by five hundred overnight is a
+number nobody can account for, not the player who did not earn it and not the
+next operator who cannot tell a correction from a compromise.
+
+The ceiling on it is a million, which is not a rule about the economy. A
+wallet earned through play has no ceiling and the column is a bigint. It is a
+rule about typing, and what it stops is the number with an extra digit on the
+end.
+
+A bot is refused, on the same argument as the rename: a house bot buys its own
+kit out of what it has killed for, which is the whole of
+[ai-players.md](../design/ai-players.md), so handing one a balance is deciding
+what it flies, and that is a decision the roster and the shelf make between
+them.
+
 Three things stay uneditable on purpose. A rating is a projection of
 `rated_events`, so setting one by hand would leave the number disagreeing with
 the history it is supposed to be derived from; the way to move a rating is to

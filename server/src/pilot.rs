@@ -144,6 +144,14 @@ pub const GRANT: &str = "grant";
 /// is the only record of where it went.
 pub const BOUGHT: &str = "bought";
 pub const REVOKE: &str = "revoke";
+/// An operator set a wallet by hand. `detail`: what it held, what it holds,
+/// and who moved it.
+///
+/// For the same reason `BOUGHT` exists. The wallet keeps no history, so
+/// without this a balance that grew by five hundred overnight is a number
+/// nobody can account for: not the player, who did not earn it, and not the
+/// next operator, who cannot tell a correction from a compromise.
+pub const WALLET: &str = "wallet";
 
 /// Why a seat ended. `Room::leave` is the one funnel for all five, and until
 /// this existed they were indistinguishable afterwards: the commonest question
