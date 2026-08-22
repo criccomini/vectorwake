@@ -50,7 +50,7 @@ pub fn wants(name: &str, class: u8) -> Vec<usize> {
             s(sim::UP_ENERGY),
             s(sim::UP_RECHARGE),
             gun,
-            m(sim::TRIG_GUN, sim::MOD_BARREL),
+            m(sim::TRIG_GUN, sim::MOD_MULTI),
             s(sim::UP_ENERGY),
             m(sim::TRIG_GUN, sim::MOD_MULTI),
             c(sim::CHARGE_REPEL),

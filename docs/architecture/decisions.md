@@ -2352,3 +2352,54 @@ notices, in which case the answer is to file assists as pilot-log rows from the
 arena, so both surfaces read the same source. That is a bigger change than it
 sounds: it means the arena has to know which contributor is which account at
 the moment of the kill, which today only the rating layer does.
+
+---
+
+## 54. Barrels and multifire are one ladder called spray
+
+**Status:** accepted
+
+There were two add-ons that bought a pilot more bullets. Barrels put a second
+round abreast of the first and charged energy for it. Multifire opened a wide
+fan of three and charged energy and cooldown both. A pilot shopping for either
+was shopping for the same thing, and the shelf asked them to learn which of two
+names meant a tighter pair and which meant a wider spread before they could
+answer a question they did not have.
+
+Now there is one: `SIM_MOD_MULTI`, a six-rung ladder from 0 to 5, sold as
+"spray". A rung is a round. Zero rungs is the single barrel every gun already
+had, one rung is the old pair, and the rest keep going. The pair's tight
+spacing survives as the first rung's angle: a pattern that does not already fan
+gets `mod_pair_spread` at one rung and the zone's `mod_spread` above it, so the
+step that used to be the choice between two add-ons is now the step between the
+first rung and the second.
+
+The pricing came out of the old numbers rather than out of the air. Spray is
+the only add-on that costs anything to pull the trigger with, so each rung adds
+25 % to a shot's energy and 50 % to its cooldown; three rounds therefore land
+exactly where multifire used to sit, and the rungs on either side of it fall
+where you would guess.
+
+Merging them freed a slot. The flat kit space went from 25 to 23 and
+`SIM_MOD_COUNT` from 7 to 6. The packed word narrowed too, from fourteen bits
+of two-bit pairs to thirteen: three at the bottom for the ladder, then two each
+for the five above it. That moves every mod and charge slot
+underneath, so the wire went to protocol 17 and the meta layer runs a one-shot
+`spray_merged` migration: barrel entitlements fold into the spray of the same
+trigger at `2 * multi + barrels`, capped at the ceiling, and then everything
+below shifts down. Saved kits are dropped rather than remapped. A kit is a
+preference a pilot re-sets in a few seconds; a purchase is money, and only one
+of those is worth the risk of a subtle remap.
+
+**Cost:** a pilot who owned both add-ons at once gets a ladder position that is
+worth roughly what they had, not exactly. The fold treats a multifire rung as
+two barrels because that is what it threw, but multifire also bought cooldown,
+which the fold does not refund. Nobody outside our own test accounts has both,
+which is the only reason a one-line `case` is an acceptable answer here.
+
+**Reconsider if:** the top of the ladder is never worth buying, which would mean
+the compounding cost outruns the extra rounds before rung five. The fix then is
+the two zone knobs rather than the shape: `multi_energy` and `multi_delay` are
+per-rung percentages and can taper. And if some future weapon wants a tight
+pair specifically, that is a weapon with its own `spacing`, not a second add-on
+coming back.

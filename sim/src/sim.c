@@ -885,47 +885,30 @@ static void spawn_weapon(sim_state *s, uint8_t spec, uint8_t owner,
 static void compose(const sim_settings *cfg, uint16_t mods, uint8_t level,
                     sim_weapon_spec *sp, sim_fire_pattern *p) {
     uint8_t n;
-    /* Barrels first, and the order is load-bearing. A barrel sets the tight
-     * spacing a pair is supposed to leave at; multifire below only reaches for
-     * the zone's wide fan when the pattern has none of its own, so running
-     * this first is what makes a pilot holding both fire a tight group rather
-     * than a wide one. It is also the arrangement the Terrier had, back when
-     * this was a flag on that hull and the spacing was baked into its pattern.
+    /* Spray: how many rounds a pull throws above one.
      *
-     * Adding rather than multiplying, for the same reason the note below the
-     * multifire block gives: two abreast plus a rung of multifire is four
-     * rounds, not six. */
-    if (p && (n = sim_mod_get(mods, SIM_MOD_BARREL)) != 0) {
-        int32_t base = (int32_t)(p->count ? p->count : 1);
-        int32_t total = base + n * cfg->mod_step[SIM_MOD_BARREL];
-        p->count = (uint8_t)(total > 255 ? 255 : total);
-        if (p->spacing == 0) p->spacing = cfg->mod_barrel_spread;
-        /* Energy, and no delay. Rounds that cost nothing are the whole of the
-         * balance problem; a rate that is never punished is what a pilot is
-         * actually buying when they take this over a rung of multifire. */
-        p->energy = (int32_t)((int64_t)p->energy
-                              * (100 + n * cfg->mod_barrel_energy) / 100);
-    }
+     * This was two add-ons. Barrels put a tight pair abreast and charged
+     * energy alone; multifire opened a wide fan and charged energy and
+     * cooldown both. A pilot climbing either was buying more bullets, so they
+     * are one ladder, and what used to be the choice between them is now a
+     * position on it: one rung is the pair, and the group opens out from
+     * there.
+     *
+     * Adding to the pattern's own count rather than multiplying it, which is
+     * what made the original's odd arithmetic fall out. */
     if (p && (n = sim_mod_get(mods, SIM_MOD_MULTI)) != 0) {
         int32_t base = (int32_t)(p->count ? p->count : 1);
-        int32_t extra = n * cfg->mod_step[SIM_MOD_MULTI];
-        int32_t total = base + extra;
+        int32_t total = base + n * cfg->mod_step[SIM_MOD_MULTI];
         p->count = (uint8_t)(total > 255 ? 255 : total);
         /* A pattern that already fans keeps its own angle; one that does not
-         * gets the zone's, or the extra barrels would all fire down the
-         * same line. */
-        if (p->spacing == 0) p->spacing = cfg->mod_spread;
-        /* Multifire is the one add-on that costs more to pull the trigger
-         * with. Everything else here is a shape or a fuse; this is literally
-         * more bullets, and free bullets is the whole of the balance problem.
-         *
-         * The original priced it as two separate numbers rather than per
-         * round -- `BulletFireEnergy=20` against `MultiFireEnergy=30`, and
-         * `BulletFireDelay=25` against `MultiFireDelay=50` -- so three
-         * bullets cost half again as much energy and twice the cooldown. Most
-         * of the price is in the rate, which is the part that cannot be
-         * out-recharged. Ours is those two ratios as a percentage per rung,
-         * because we have rungs and it did not. */
+         * gets a pair's tight spacing at one rung and the zone's fan above
+         * it, or the extra rounds would all fire down the same line. The step
+         * between those two is the whole of what the second add-on was. */
+        if (p->spacing == 0)
+            p->spacing = (n == 1) ? cfg->mod_pair_spread : cfg->mod_spread;
+        /* Spray is the one add-on that costs more to pull the trigger with.
+         * Everything else here is a shape or a fuse; this is literally more
+         * bullets, and free bullets is the whole of the balance problem. */
         p->energy = (int32_t)((int64_t)p->energy
                               * (100 + n * cfg->mod_multi_energy) / 100);
         {

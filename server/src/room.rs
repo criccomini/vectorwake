@@ -1047,9 +1047,8 @@ impl Room {
     /// Add-ons are named in a zone file and numbered in the core. The order
     /// is `sim_mod`'s and the names are the ones the design doc uses.
     pub(crate) fn mod_index(name: &str) -> Option<usize> {
-        const NAMES: [&str; sim::MOD_COUNT] = [
-            "multi", "bounce", "prox", "shrapnel", "freeze", "push", "barrel",
-        ];
+        const NAMES: [&str; sim::MOD_COUNT] =
+            ["multi", "bounce", "prox", "shrapnel", "freeze", "push"];
         NAMES.iter().position(|n| n.eq_ignore_ascii_case(name))
     }
 

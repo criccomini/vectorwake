@@ -326,7 +326,7 @@ int sim_unpack(sim_state *out, const uint8_t *in, int len) {
                 sh->level[t] = (uint8_t)r8(&r);
                 sh->mods[t] = (uint16_t)r16(&r);
                 if (sh->level[t] >= SIM_MAX_RUNGS
-                    || (sh->mods[t] >> (SIM_MOD_COUNT * 2)) != 0)
+                    || !sim_mods_wellformed(sh->mods[t]))
                     return -1;
             }
             for (int k = 0; k < SIM_MAX_CHARGES; k++) {
@@ -352,7 +352,7 @@ int sim_unpack(sim_state *out, const uint8_t *in, int len) {
         p->depth = (uint8_t)r8(&r);
         if (p->depth > SIM_MAX_SPLINTER_DEPTH) return -1;
         p->mods = (uint16_t)r16(&r);
-        if ((p->mods >> (SIM_MOD_COUNT * 2)) != 0) return -1;
+        if (!sim_mods_wellformed(p->mods)) return -1;
         p->link = r32(&r);
         p->owner = (uint8_t)r8(&r);
         if (p->owner >= ships) return -1;

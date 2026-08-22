@@ -68,9 +68,15 @@ static const sim_class_units flight = {
 #define CH_BURST 1
 
 /* Two bits per add-on, so a row reads as a list rather than a number. */
-#define M1(a) ((uint16_t)(1u << ((a) * 2)))
-#define M2(a) ((uint16_t)(2u << ((a) * 2)))
-#define M3(a) ((uint16_t)(3u << ((a) * 2)))
+/* One add-on's ceiling, packed the way `sim_mod_get` reads it: two bits for
+ * everything that is a rung of something, three at the top of the word for
+ * spray, which is a count of rounds. */
+#define MN(a, n) ((uint16_t)((a) == SIM_MOD_MULTI \
+    ? (uint32_t)(n) \
+    : ((uint32_t)(n) << (1 + (a) * 2))))
+#define M1(a) MN(a, 1)
+#define M2(a) MN(a, 2)
+#define M3(a) MN(a, 3)
 
 /* Each hull's footprint, in pixels from the point it turns about: past the
    nose, behind the tail, to either side. client/tests/hull_fit_test.lua reads
@@ -145,12 +151,12 @@ static const uint8_t hull_extent[SIM_MAX_CLASSES][3] = {
  * whole clock either way -- 69 tiles of reach against a life it cannot spend
  * -- so a second rung would buy literally nothing.
  *
- * Multifire at two is what the Chord and the Facet had. Barrels at two is a
- * choice of ours: the original's DoubleBarrel is a flag with no second step
- * to copy, and two rungs makes it a ladder the shop can sell twice rather
- * than a switch it sells once. */
-#define GUN_MODS  (M2(SIM_MOD_MULTI) | M1(SIM_MOD_BOUNCE) \
-                   | M1(SIM_MOD_FREEZE) | M2(SIM_MOD_BARREL))
+ * Spray to five, which is six rounds at a pull. It was multifire at two and
+ * barrels at two, on two ladders that both spelled "more bullets"; folded
+ * into one, the ceiling is the rounds those two could reach together, less
+ * the one nobody would have bought. */
+#define GUN_MODS  (MN(SIM_MOD_MULTI, SIM_MOD_MULTI_MAX) | M1(SIM_MOD_BOUNCE) \
+                   | M1(SIM_MOD_FREEZE))
 
 /* Bombs bounce, sense, shatter and freeze. They do not fan and they do not
  * come in pairs, which is the other combination no hull ever had: a rack that
@@ -311,7 +317,7 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
      * moves. These are the numbers that decide whether an add-on is a nice
      * surprise or the thing everyone chases, so they live here in the open
      * rather than inside the transform that applies them. */
-    cfg->mod_step[SIM_MOD_MULTI] = 2;              /* a pair of extra barrels */
+    cfg->mod_step[SIM_MOD_MULTI] = 1;              /* one more round abreast */
     cfg->mod_step[SIM_MOD_BOUNCE] = 1;             /* one more wall survived */
     /* ProximityDistance=3, in tiles. Binary in the original: a bomb is a
      * contact bomb until the prize makes it a proximity one, and the radius
@@ -344,23 +350,21 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
     cfg->mod_step[SIM_MOD_SHRAPNEL] = 0;           /* a pattern, not a number */
     cfg->mod_step[SIM_MOD_FREEZE] = 100;           /* a second of no recharge */
     cfg->mod_step[SIM_MOD_PUSH] = sim_units_speed(1200);
-    cfg->mod_step[SIM_MOD_BARREL] = 1;             /* one more barrel abreast */
     cfg->mod_spread = 65536 / 24;                  /* fifteen degrees */
-    /* Straight from the original: 20 energy a bullet against 30 for multifire,
-     * and 25 ticks of cooldown against 50. Three rounds for half again the
-     * energy and twice the wait. */
-    cfg->mod_multi_energy = 50;
-    cfg->mod_multi_delay = 100;
-    /* A barrel is half a rung of multifire in rounds, so it is half of one in
-     * energy too, and it costs no cooldown at all. That is the trade the two
-     * add-ons are: multifire throws more and throws it slower, barrels throw
-     * fewer at the rate you already had.
+    /* What one more round costs, as a percentage of the shot's own energy and
+     * cooldown.
      *
-     * The original priced DoubleBarrel at nothing, which was defensible when
-     * exactly one hull had it and could not choose otherwise. As something a
-     * pilot buys, free rounds would make every other gun add-on pointless. */
-    cfg->mod_barrel_energy = 25;
-    cfg->mod_barrel_spread = BARREL_SPREAD;
+     * The original charged 20 energy a bullet against 30 for multifire, and 25
+     * ticks of cooldown against 50: three rounds for half again the energy and
+     * twice the wait. That is 25 and 50 a round over two rounds, and it is
+     * what these are, so a spray of three still lands where the original put
+     * it and the ladder above it keeps climbing at the same rate rather than
+     * at a rate invented for the top of it. Six rounds is two and a quarter
+     * times the energy and three and a half times the wait, which is a build
+     * rather than an upgrade. */
+    cfg->mod_multi_energy = 25;
+    cfg->mod_multi_delay = 50;
+    cfg->mod_pair_spread = BARREL_SPREAD;
     fill_kit_ceiling(cfg);
 
     /* Shrapnel, one pattern per rung: four fragments, then eight, then

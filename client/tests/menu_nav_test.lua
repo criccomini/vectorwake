@@ -1616,18 +1616,19 @@ do
     -- publishes them: an arena that will take four steps of the first stat,
     -- one rung of the gun, and three repels, and nothing else.
     --
-    -- Seven add-ons rather than six, and twenty-five slots rather than
-    -- twenty-three: barrels are an add-on now, where DoubleBarrel used to be a
-    -- flag on one hull. And `kit_ceilings` takes no argument, because the
-    -- roster has nothing to say about what a kit may hold.
+    -- Six add-ons and twenty-three slots. It was seven and twenty-five: gun
+    -- spray and a "double barrel" were two ladders that both meant more
+    -- bullets, and they are one. `kit_ceilings` takes no argument, because
+    -- the roster has nothing to say about what a kit may hold.
     local CEIL = {}
-    for i = 1, 25 do CEIL[i] = 0 end
+    for i = 1, 23 do CEIL[i] = 0 end
     CEIL[1] = 4          -- the first stat
     CEIL[6] = 2          -- the gun's ladder
-    CEIL[22] = 3         -- the first charge
+    CEIL[20] = 3         -- the first charge
     _G.sim = {
-        UP_COUNT = 5, TRIG_COUNT = 2, MOD_COUNT = 7, MAX_CHARGES = 4,
-        SLOT_COUNT = 25, SLOT_LEVEL0 = 5, SLOT_MOD0 = 7, SLOT_CHARGE0 = 21,
+        UP_COUNT = 5, TRIG_COUNT = 2, MOD_COUNT = 6, MAX_CHARGES = 4,
+        MOD_MULTI = 0, KIT_CHARGE_SLOTS = 2,
+        SLOT_COUNT = 23, SLOT_LEVEL0 = 5, SLOT_MOD0 = 7, SLOT_CHARGE0 = 19,
         KIT_BUDGET = 6,
         kit_ceilings = function(cls)
             assert(cls == nil, "the hangar asks the arena, not a hull")
@@ -1724,8 +1725,8 @@ do
     -- makes has to be a row the arrows can do something to, and between them
     -- they have to cover every such row exactly once before wrapping: a slot
     -- the cursor cannot reach is a slot a player with no mouse cannot spend.
-    for i = 1, 25 do CEIL[i] = 2 end
-    CEIL[22], CEIL[23], CEIL[24] = 3, 3, 3
+    for i = 1, 23 do CEIL[i] = 2 end
+    CEIL[20], CEIL[21], CEIL[22] = 3, 3, 3
     _G.sim.KIT_BUDGET = 30
     menu.kit = nil
     menu.open_kit(0)
@@ -1938,12 +1939,13 @@ do
     -- An arena with one stat, the gun's ladder, two of the gun's add-ons and
     -- one charge. The walk test above filled every slot; this is a shape small
     -- enough to name every row it should produce.
-    for i = 1, 25 do CEIL[i] = 0 end
+    for i = 1, 23 do CEIL[i] = 0 end
     CEIL[1] = 4          -- the first stat
     CEIL[6] = 2          -- the gun's ladder
-    CEIL[8] = 1          -- gun spray, one rung
-    CEIL[9] = 2          -- gun bounce, two
-    CEIL[22] = 3         -- the first charge
+    CEIL[8] = 3          -- gun spray, three rounds' worth
+    CEIL[9] = 2          -- gun bounce, two rungs
+    CEIL[12] = 1         -- gun freeze, one
+    CEIL[20] = 3         -- the first charge
     -- Back on the ship page, which the upgrades block above left.
     account.catalog = nil
     account.entitlements = {}
@@ -1954,10 +1956,10 @@ do
     local owned = {}
     for _, r in ipairs(menu.view().rows) do owned[#owned + 1] = r.label end
     check("every slot the arena takes is on the page while the account owns it",
-          #owned == 7, table.concat(owned, ", "))
+          #owned == 8, table.concat(owned, ", "))
 
     -- Now the account owns none of the gun's ladder and one of three repels.
-    account.entitlements = {[6] = 0, [22] = 1}
+    account.entitlements = {[6] = 0, [20] = 1}
     menu.kit = nil
     menu.open_kit(0)
     local mine, charge = {}, nil
@@ -1966,7 +1968,7 @@ do
         if r.label == "repel" then charge = r end
     end
     check("a slot the account owns none of is off the page altogether",
-          #mine == 6 and not string.find(table.concat(mine, ","),
+          #mine == 7 and not string.find(table.concat(mine, ","),
                                          "gun level", 1, true),
           table.concat(mine, ", "))
     check("and a ladder stops at what the account owns, not at the arena's",
@@ -1988,31 +1990,53 @@ do
     menu.kit = nil
     menu.open_kit(0)
     menu.sel = {}
-    local spray, bounce = nil, nil
+    local spray, bounce, freeze = nil, nil, nil
     for i, r in ipairs(menu.view().rows) do
         if r.label == "gun spray" then spray = i end
         if r.label == "gun bounce" then bounce = i end
+        if r.label == "gun freeze" then freeze = i end
     end
     check("the add-ons are on the page as chips",
-          spray ~= nil and bounce == spray + 1,
-          tostring(spray) .. "/" .. tostring(bounce))
-    menu.sel.hangar = spray
+          bounce ~= nil and freeze == bounce + 1,
+          tostring(bounce) .. "/" .. tostring(freeze))
+    menu.sel.hangar = bounce
     menu.step({right = true})
-    check("right goes to the chip beside it", menu.sel.hangar == bounce,
+    check("right goes to the chip beside it", menu.sel.hangar == freeze,
           "cursor " .. tostring(menu.sel.hangar))
-    check("and nothing was switched on the way", (menu.kit[8] or 0) == 0,
-          tostring(menu.kit[8]))
+    check("and nothing was switched on the way", (menu.kit[9] or 0) == 0,
+          tostring(menu.kit[9]))
     menu.step({left = true})
-    check("and left comes back", menu.sel.hangar == spray,
+    check("and left comes back", menu.sel.hangar == bounce,
           "cursor " .. tostring(menu.sel.hangar))
 
     -- Enter throws it, and the trigger is enter here: a switch wants one
     -- press, and at the top the next press takes it off again.
     menu.step({go = true})
-    check("enter switches the chip on", (menu.kit[8] or 0) == 1,
-          tostring(menu.kit[8]))
+    check("enter switches the chip on", (menu.kit[9] or 0) == 1,
+          tostring(menu.kit[9]))
     menu.step({go = true})
-    check("and enter again takes it off", (menu.kit[8] or 0) == 0,
+    check("and enter walks it up the rungs it has", (menu.kit[9] or 0) == 2,
+          tostring(menu.kit[9]))
+    menu.step({go = true})
+    check("and off again at the top", (menu.kit[9] or 0) == 0,
+          tostring(menu.kit[9]))
+
+    -- Spray is the exception in that group, because it is a count of rounds
+    -- rather than a switch with rungs behind it: it takes the arrows the way
+    -- a stat does. It used to be a chip beside a second chip called "double
+    -- barrel", and both of them meant more bullets.
+    check("spray is on the page", spray ~= nil, tostring(spray))
+    menu.sel.hangar = spray
+    menu.step({right = true})
+    check("spray takes a step from the arrows", (menu.kit[8] or 0) == 1,
+          tostring(menu.kit[8]))
+    menu.step({right = true})
+    check("and another", (menu.kit[8] or 0) == 2, tostring(menu.kit[8]))
+    check("without the cursor leaving it", menu.sel.hangar == spray,
+          "cursor " .. tostring(menu.sel.hangar))
+    menu.step({left = true})
+    menu.step({left = true})
+    check("and gives them back", (menu.kit[8] or 0) == 0,
           tostring(menu.kit[8]))
 
     -- A stat is still a ladder, because that is what it is: left and right

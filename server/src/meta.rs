@@ -268,6 +268,53 @@ create table if not exists kits (
     kit     bytea not null,
     primary key (account, class)
 );
+-- One-shot migrations that have run, so a schema step that cannot be written
+-- as `if not exists` runs once and not on every boot.
+create table if not exists schema_marks (
+    name text primary key,
+    at   timestamptz not null default now()
+);
+-- Gun spray and a second barrel were two add-ons that both meant more
+-- bullets, and they are one ladder now. Dropping the seventh add-on moved
+-- every slot after it: the six gun add-ons stay where they were, the bomb ones
+-- come down by one and the charges by two.
+--
+-- Purchases are remapped rather than lost, because they were paid for. A
+-- barrel is folded into the spray it became, at two rounds per old multifire
+-- rung and one per barrel, capped at the ladder's five. Kits are deleted
+-- rather than remapped: a loadout is a preference and the ship page rebuilds
+-- one in ten seconds, where a byte array read against the wrong space is a
+-- build nobody chose and nobody can see is wrong.
+do $$
+declare
+    old_gun_barrel constant int := 13;
+    old_bomb_first constant int := 14;
+    old_bomb_barrel constant int := 20;
+    old_charge_first constant int := 21;
+begin
+    if exists (select 1 from schema_marks where name = 'spray_merged') then
+        return;
+    end if;
+    -- The barrels first, into the spray of the same trigger, before the slots
+    -- underneath them move.
+    insert into entitlements (account, slot, n)
+    select b.account, (case when b.slot = old_gun_barrel then 7 else 13 end)::smallint,
+           least(5, coalesce(m.n, 0) * 2 + b.n)::smallint
+      from entitlements b
+      left join entitlements m
+             on m.account = b.account
+            and m.slot = (case when b.slot = old_gun_barrel then 7 else 14 end)
+     where b.slot in (old_gun_barrel, old_bomb_barrel)
+    on conflict (account, slot) do update set n = excluded.n;
+    delete from entitlements where slot in (old_gun_barrel, old_bomb_barrel);
+    -- Then the shift. Downwards, so an update never lands on a row it has not
+    -- moved yet.
+    update entitlements set slot = slot - 1
+     where slot >= old_bomb_first and slot < old_charge_first;
+    update entitlements set slot = slot - 2 where slot >= old_charge_first;
+    delete from kits;
+    insert into schema_marks (name) values ('spray_merged');
+end $$;
 -- Rivets: bounty taken, banked. One row an account, moved by a purchase and by
 -- the kill rows the arenas file.
 create table if not exists wallets (

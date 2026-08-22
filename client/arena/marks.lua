@@ -203,7 +203,7 @@ local function mk_bolt(hx, cy, k)
             -- Nothing on this mark rings the head except the add-ons that
             -- ring any mark. The fan hangs off the muzzle and the bounce
             -- ring sits on a dot, so neither takes a share of the room.
-            radial = {false, false, false, true, false, true, false}}
+            radial = {false, false, false, true, false, true}}
 end
 
 local function mk_bomb(hx, cy, k)
@@ -222,8 +222,8 @@ end
 -- Every add-on takes the mark, a color and how many rungs deep it is, and
 -- draws its rungs rather than reporting them. A number beside a symbol was
 -- what the stack did before, and it made a corner of arithmetic out of six
--- facts a shape can carry: one rung of multifire is two more barrels, one rung
--- of bouncing is one more wall, a rung of proximity is a wider reach. The zone
+-- facts a shape can carry: a rung of spray is one more round, a rung of
+-- bouncing is one more wall, a rung of proximity is a wider reach. The zone
 -- says so in mod_step, and this draws what the zone said.
 --
 -- Most of the six ring the head, and those share out `m.step`: one ring of
@@ -235,22 +235,55 @@ end
 -- actually got drawn. They are not the same number: a mark that spends less
 -- than its share should not claim the width it did not use.
 
+-- Spray: one rung is a pair, and everything above it is a fan.
+--
+-- This was two decorations because it was two add-ons, and the split survives
+-- as the shape of the first rung. A pair leaves from beside the round and does
+-- not spread, so its strokes are parallel and offset sideways; a fan leaves
+-- from the one muzzle and opens out. The mark says the difference the arena
+-- says, which is the spacing: a pair covers a line and a fan covers ground.
+--
+-- Above the first rung it is the fan and stays the fan, at one angle however
+-- deep the ladder runs. Two reasons, and either would do. A corner that
+-- answers "how many rounds" with a count of lines stops being a shape and
+-- starts being a tally; and the fan at its current angle already reaches the
+-- top and bottom of the row it lives in, so opening it further would draw over
+-- the rows either side. How many rounds a pull throws is on the ship page,
+-- where there is room to read a number.
 local function dec_multi(m, col, n)
-    -- On a gun, two more barrels off the same muzzle and that is all: one line
-    -- or three, never five. The rungs widen the fan instead of adding lines,
-    -- because a corner that answers "how many barrels" with a count of strokes
-    -- stops being a shape and starts being a tally.
     if m.bolt then
+        if n == 1 then
+            -- A second barrel, abreast and parallel. Declined, it stays on the
+            -- mark and stops being a round: see barrel.
+            local ox = m.origin + m.k * 0.10
+            local dy = -m.k * 0.16
+            local dx = ox + m.k * (M.BOLT_LEN - 0.10)
+            u:seg(ox, m.y + dy, dx, m.y + dy, M.pen(m.k, 0.068), col)
+            u:disc(dx, m.y + dy, m.k * M.BOLT_DOT * 0.8, 10, col)
+            if not m.off then m.dots[#m.dots + 1] = {dx, m.y + dy} end
+            m.far = math.max(m.far, dx - m.x + m.k * M.BOLT_DOT)
+            return
+        end
         -- Declined, the extra barrels stay on the mark and stop being rounds:
         -- see barrel.
         barrel(m, -M.BOLT_FAN, col, m.off)
         barrel(m, M.BOLT_FAN, col, m.off)
         return
     end
-    -- On a bomb, rounds leaving together from where this one came from. These
-    -- are the only strokes a bomb mark has now that the body is gone, and that
-    -- is the right way round: a lone bomb is a thing, and several of them are
-    -- several things going somewhere at once.
+    -- On a bomb, heads abreast at one rung and rounds leaving together above
+    -- it, from where this one came from. Those strokes are the only ones a
+    -- bomb mark has now that the body is gone, and that is the right way
+    -- round: a lone bomb is a thing, and several of them are several things
+    -- going somewhere at once.
+    --
+    -- No shipped arena racks bombs in pairs, but the slot is per trigger and a
+    -- zone may fill it, so the bomb answers the same sentence in its own
+    -- alphabet.
+    if n == 1 then
+        u:ring(m.x, m.y - m.k * M.BOMB_R * 0.9, m.k * M.BOMB_R * 0.62,
+               M.pen(m.k, 0.1), 12, col)
+        return
+    end
     local len = m.x - m.tail
     for i = 1, math.min(n, 3) do
         local a = 0.26 * i
@@ -262,39 +295,6 @@ local function dec_multi(m, col, n)
                        M.pen(m.k, 0.078), M.pen(m.k, 0.222), 0,
                        (col[4] or 1) * 0.85, col)
         end
-    end
-end
-
--- Barrels: rounds abreast, which is not the same drawing as a fan.
---
--- Multifire above leaves from one muzzle and spreads; this leaves from beside
--- it and does not. So the strokes are parallel and offset sideways, and the
--- mark says the difference the arena says: a fan covers ground, a pair covers
--- a line. A rung adds a barrel, up to the two the arena allows, which is few
--- enough that counting strokes is still a shape rather than a tally.
---
--- No shipped arena has a rack that comes in pairs, but the slot is per trigger
--- and a zone may fill it, so the bomb answers too: heads abreast of the one
--- being thrown, at the same size, tight against it. Same sentence as the gun's
--- in a different alphabet.
-local function dec_barrel(m, col, n)
-    if m.bolt then
-        local off = m.k * 0.16
-        local ox = m.origin + m.k * 0.10
-        for i = 1, math.min(n, 2) do
-            local dy = ((i % 2 == 1) and -1 or 1) * off * math.ceil(i / 2)
-            local dx, dot = ox + m.k * (M.BOLT_LEN - 0.10), m.y + dy
-            u:seg(ox, m.y + dy, dx, dot, M.pen(m.k, 0.068), col)
-            u:disc(dx, dot, m.k * M.BOLT_DOT * 0.8, 10, col)
-            m.dots[#m.dots + 1] = {dx, dot}
-            m.far = math.max(m.far, dx - m.x + m.k * M.BOLT_DOT)
-        end
-        return
-    end
-    local step = m.k * M.BOMB_R * 0.9
-    for i = 1, math.min(n, 2) do
-        local dy = ((i % 2 == 1) and -1 or 1) * step * math.ceil(i / 2)
-        u:ring(m.x, m.y + dy, m.k * M.BOMB_R * 0.62, M.pen(m.k, 0.1), 12, col)
     end
 end
 
@@ -414,16 +414,15 @@ end
 -- that rings the head takes the next ring of room out from the last, so the
 -- fragments sit inside the shove. Reorder this list and they land on top of
 -- each other.
-local MOD_DECOR = {dec_multi, dec_bounce, nil, dec_shrap, dec_freeze, dec_push,
-                   dec_barrel}
+local MOD_DECOR = {dec_multi, dec_bounce, nil, dec_shrap, dec_freeze, dec_push}
 -- And the one that goes down before the round rather than onto it.
 local MOD_GROUND = {nil, nil, ground_prox}
 -- Which of them ring the head, and so want a share of the room around it.
--- Multifire leaves from the tail, freeze sits on the body and the fuse is
+-- Spray leaves from the tail, freeze sits on the body and the fuse is
 -- ground; none of the three costs the mark any width. This is the bomb's
 -- answer; a bolt carries its own, since it draws its fan and its bounce into
 -- the mark itself.
-local MOD_RADIAL = {false, true, false, true, false, true, false}
+local MOD_RADIAL = {false, true, false, true, false, true}
 -- How far out from the head a mark may reach, against its own size. In the
 -- stack the row is 22 points tall and a mark has to live inside it however
 -- loaded it is; on a pad the ring is what it has to live inside. Each caller
@@ -531,11 +530,11 @@ end
 -- also the color those fragments come out in across the arena, which is the
 -- point of there being one ramp.
 --
--- Multifire is the one add-on that decorates nothing. Its extra barrels are
--- the round itself, fired from the same muzzle on the same spec, which is why
--- the arena draws all three bullets in one color. Run hot with the rest, the
--- mark said the middle bullet was a different weapon from the two beside it,
--- and disagreed with the arena about the only fact this ramp exists to carry.
+-- Spray is the one add-on that decorates nothing. Its extra rounds are the
+-- round itself, fired on the same spec, which is why the arena draws a whole
+-- spray in one color. Run hot with the rest, the mark said the middle bullet
+-- was a different weapon from the two beside it, and disagreed with the arena
+-- about the only fact this ramp exists to carry.
 --
 -- The room outside the round is shared out before anything draws rather than
 -- spent first come. Two add-ons take half of it each and read clearly; four
@@ -590,7 +589,7 @@ function M.weapon(cx, cy, k, me, t)
             -- same color as the rest, which is the honest answer.
             if i == 4 then col = frag end
             -- Except when you have declined it, which is the one time the
-            -- barrels either side really are not the round you are firing.
+            -- rounds either side really are not the round you are firing.
             if off and i == 1 then col = pal.a(pal.DIM, 0.45) end
             if MOD_DECOR[i] then MOD_DECOR[i](m, col, n) end
         end

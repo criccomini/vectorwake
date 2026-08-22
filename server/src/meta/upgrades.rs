@@ -100,7 +100,6 @@ pub(super) fn name_of(slot: usize) -> String {
         "shrapnel",
         "freeze",
         "push",
-        "double barrel",
     ];
     const CHARGES: [&str; 4] = ["repel", "burst", "mine", "charge 4"];
     if slot < sim::UP_COUNT {
@@ -249,20 +248,29 @@ mod tests {
         }
     }
 
-    /// Barrels are for sale, which is the whole reason the slot space was
-    /// flattened. This was DoubleBarrel, a flag one hull carried and nothing
-    /// could ever offer.
+    /// Spray is for sale all the way up, which is the whole reason the slot
+    /// space was flattened: the top of this ladder was DoubleBarrel, a flag
+    /// one hull carried and nothing could ever offer.
     #[test]
-    fn barrels_are_on_the_shelf() {
-        let slot = sim::slot_mod(sim::TRIG_GUN, sim::MOD_BARREL) as usize;
+    fn spray_is_on_the_shelf_to_the_top() {
+        let slot = sim::slot_mod(sim::TRIG_GUN, sim::MOD_MULTI) as usize;
         let base = sim::World::base_entitlements();
-        assert_eq!(base[slot], 0, "nobody is dealt one");
-        let (first, cheap) = next_step(slot, 0).expect("a first barrel is for sale");
-        assert_eq!(first, 1);
-        let (second, dear) = next_step(slot, first).expect("and a second");
-        assert_eq!(second, 2);
-        assert!(dear > cheap, "the second costs more than the first");
-        assert_eq!(next_step(slot, second), None, "and then it is finished");
+        assert_eq!(base[slot], 0, "nobody is dealt any");
+        let mut owned = base[slot];
+        let mut last = 0;
+        let mut steps = 0;
+        while let Some((next, price)) = next_step(slot, owned) {
+            assert_eq!(next, owned + 1, "one round at a time");
+            assert!(price > last, "and each one costs more than the last");
+            owned = next;
+            last = price;
+            steps += 1;
+        }
+        assert_eq!(
+            steps,
+            sim::MOD_MULTI_MAX,
+            "five rungs, which is six rounds at a pull"
+        );
     }
 
     /// The three other traits the roster used to hoard, now that they are
@@ -308,7 +316,6 @@ mod tests {
     fn a_slot_that_does_not_exist_is_not_sold() {
         for slot in [
             sim::slot_mod(sim::TRIG_BOMB, sim::MOD_MULTI),
-            sim::slot_mod(sim::TRIG_BOMB, sim::MOD_BARREL),
             sim::slot_mod(sim::TRIG_GUN, sim::MOD_PROX),
             sim::slot_mod(sim::TRIG_GUN, sim::MOD_SHRAPNEL),
         ] {

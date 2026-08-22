@@ -454,6 +454,11 @@ local function kit_slots()
                         (mod and mod.name or ("add-on " .. m)),
                 short = mod and mod.short or ("add-on " .. m),
                 note = mod and mod.long or nil,
+                -- Spray is a count of rounds rather than a rung of something,
+                -- so it is drawn as a ladder and read as a number: a spray of
+                -- two is two rounds. Every other add-on in this group is a
+                -- switch with three rungs behind it and reads as a chip.
+                ladder = m == simn("MOD_MULTI", 0),
                 trigger = t, group = "weapons",
             }
         end
@@ -495,7 +500,7 @@ local function kit_ceiling()
     local base = (core and core.base_entitlements and core.base_entitlements())
         or {}
     local out = {}
-    for i = 1, simn("SLOT_COUNT", 25) do
+    for i = 1, simn("SLOT_COUNT", 23) do
         local h = hull and hull[i] or 0
         local o = own[i] or base[i] or 255
         out[i] = math.min(h, o)
@@ -533,7 +538,7 @@ end
 local function charge_slot0()
     return simn("SLOT_CHARGE0",
                 simn("UP_COUNT", 5) + simn("TRIG_COUNT", 2)
-                + simn("TRIG_COUNT", 2) * simn("MOD_COUNT", 7))
+                + simn("TRIG_COUNT", 2) * simn("MOD_COUNT", 6))
 end
 
 local function is_charge(slot)
@@ -571,7 +576,7 @@ function M.open_kit(class)
     -- promises that what you see is what you fly, so the slots that no longer
     -- fit come off here rather than in the arena where nobody is looking.
     local trimmed = false
-    for i = 1, simn("SLOT_COUNT", 25) do
+    for i = 1, simn("SLOT_COUNT", 23) do
         local want = tonumber(saved and saved[i]) or 0
         local max = ceiling[i] or 0
         if want > max then want, trimmed = max, true end
@@ -762,7 +767,7 @@ local function kit_rows(class)
                 -- rather than as another row: which group it belongs to, its
                 -- own short mark, its color, and which trigger it hangs off.
                 group = s.group, short = s.short, tint_col = s.tint,
-                trigger = s.trigger, note = s.note,
+                trigger = s.trigger, note = s.note, ladder = s.ladder,
                 -- What the account owns here, against what the arena would
                 -- take. The difference is the part of the ladder that is
                 -- still for sale, and the page draws it as a step that is
@@ -2152,7 +2157,7 @@ local function view_row(r, i)
         base = r.base,
         zone = r.zone, joinable = r.joinable, acts = r.acts,
         group = r.group, short = r.short, tint_col = r.tint_col,
-        on_key = r.on_key,
+        on_key = r.on_key, ladder = r.ladder,
         -- The week's own columns.
         rank = r.rank, kills = r.kills, deaths = r.deaths, run = r.run,
         assists = r.assists,
@@ -3445,7 +3450,7 @@ function M.step(keys)
     -- ladder wants: a hand walking the group had to press up and down through
     -- a row that reads left to right, and the arrow pointing at the next chip
     -- turned the one it was already on off.
-    local chip = here ~= nil and here.group == "weapons"
+    local chip = here ~= nil and here.group == "weapons" and not here.ladder
     local ranged = here ~= nil and here.choice ~= nil and here.act ~= nil
         and not chip
     if keys.left then

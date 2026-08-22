@@ -439,12 +439,17 @@ end
 -- Bouncing is the exception, on both triggers: a ring or no ring, at any
 -- depth. That is a decision rather than an oversight. How many walls deep it
 -- runs is for the ladder beside the row to carry, and a ring three points
--- across cannot hold a count as well as an identity. The gun's fan goes the
--- same way, since the alternative is answering "how many barrels" with a
--- count of strokes. Pinned here rather than left out, so that putting depth
--- back into either shape reads as contradicting a decision instead of passing
--- quietly.
-local FIXED = {[0] = {[0] = true, [1] = true}, [1] = {[1] = true}}
+-- across cannot hold a count as well as an identity. Pinned here rather than
+-- left out, so that putting depth back into that shape reads as contradicting
+-- a decision instead of passing quietly.
+--
+-- Spray used to be pinned the same way and is not any more. It was two
+-- add-ons, and when they became one ladder the difference between them became
+-- the difference between its first rung and its second: one rung is a pair,
+-- abreast and parallel, and above that it is the fan. So the shape carries the
+-- one step that means something, and the rest of the depth stays where a
+-- number can be read.
+local FIXED = {[0] = {[1] = true}, [1] = {[1] = true}}
 
 for _, t in ipairs({{0, "gun"}, {1, "bomb"}}) do
     for i = 1, #pal.MODS do
@@ -480,40 +485,49 @@ end
 -- in the catalog hands out and a layout this has to survive anyway: the room
 -- around the round is shared out ahead of the drawing so that it does.
 local worst_over, worst_case = 0, nil
-for bits = 0, 63 do
-    local set = {}
-    local named = {}
-    for i = 1, 6 do
-        if math.floor(bits / 2 ^ (i - 1)) % 2 == 1 then
-            set[i - 1] = 3
-            named[#named + 1] = pal.MODS[i].name
+-- Twice over, because spray draws two different shapes: the pair at its first
+-- rung and the fan above it. The rest of the ladder is one shape however deep
+-- it runs, so the top of it stands for all of them.
+local function sweep(spray)
+    for bits = 0, 63 do
+        local set = {}
+        local named = {}
+        for i = 1, 6 do
+            if math.floor(bits / 2 ^ (i - 1)) % 2 == 1 then
+                set[i - 1] = (i == 1) and spray or 3
+                named[#named + 1] = pal.MODS[i].name
+                    .. ((i == 1) and (" " .. spray) or "")
+            end
         end
-    end
-    mods = {[0] = set, [1] = set}
-    frame()
-    for _, key in ipairs({"gun", "bomb"}) do
-        local b = row_box(key)
-        if b then
-            local c = cell(b)
-            local _, y0, _, y1 = extent(c)
-            -- The row's own band, and a mark that leaves it is drawing over
-            -- whatever the stack put above or below it.
-            local over = math.max((b.y0 - (y0 or b.y0)), ((y1 or b.y1) - b.y1))
-            if over > worst_over then
-                worst_over = over
-                worst_case = key .. " with " .. table.concat(named, "+")
+        mods = {[0] = set, [1] = set}
+        frame()
+        for _, key in ipairs({"gun", "bomb"}) do
+            local b = row_box(key)
+            if b then
+                local c = cell(b)
+                local _, y0, _, y1 = extent(c)
+                -- The row's own band, and a mark that leaves it is drawing
+                -- over whatever the stack put above or below it.
+                local over = math.max((b.y0 - (y0 or b.y0)),
+                                      ((y1 or b.y1) - b.y1))
+                if over > worst_over then
+                    worst_over = over
+                    worst_case = key .. " with " .. table.concat(named, "+")
+                end
             end
         end
     end
 end
+sweep(1)
+sweep(5)
 check("no loadout pushes a mark out of its own row", worst_over <= 2,
       string.format("%.1f points over on %s", worst_over,
                     tostring(worst_case)))
 
 -- The counting column is the other edge. A mark that reaches it is drawn over
 -- the pips the rows below it count in.
-mods = {[0] = {[0] = 3, [1] = 3, [2] = 3, [3] = 3, [4] = 3, [5] = 3},
-        [1] = {[0] = 3, [1] = 3, [2] = 3, [3] = 3, [4] = 3, [5] = 3}}
+mods = {[0] = {[0] = 5, [1] = 3, [2] = 3, [3] = 3, [4] = 3, [5] = 3},
+        [1] = {[0] = 5, [1] = 3, [2] = 3, [3] = 3, [4] = 3, [5] = 3}}
 frame()
 local reach = 0
 for _, key in ipairs({"gun", "bomb"}) do
@@ -858,6 +872,15 @@ end
 mods = {[0] = {}}
 frame()
 local plain_dot = dots_on_gun()[1]
+-- One rung is the pair the second add-on used to be, and the shape says so:
+-- two rounds, not three. This is the step the merge is really about, so it is
+-- checked on the count of rounds a pilot can see rather than on the spacing,
+-- which is the arena's business.
+mods = {[0] = {[0] = 1}}
+frame()
+local paired = dots_on_gun()
+check("one rung of spray draws two rounds", #paired == 2, #paired .. " dots")
+
 mods = {[0] = {[0] = 2}}
 frame()
 local fanned = dots_on_gun()
@@ -875,7 +898,8 @@ check("a declined fan tells the two apart", distinct(off_dots) == 2,
       distinct(off_dots) .. " colors across " .. #off_dots .. " dots")
 
 -- The bomb's fan is the same argument: rounds leaving together, in the color
--- of the round. Measured on the strokes, since a bomb's fan has no dots.
+-- of the round. Measured on the strokes, since a bomb's fan has no dots, and
+-- taken at the second rung, since the first is the pair rather than the fan.
 local function bomb_hues()
     local b = row_box("bomb")
     local out = {}
@@ -888,7 +912,7 @@ local function bomb_hues()
     end
     return out
 end
-mods = {[1] = {[0] = 1}}
+mods = {[1] = {[0] = 2}}
 frame()
 local bomb_fan = bomb_hues()
 mods = {[1] = {}}
