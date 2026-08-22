@@ -1675,14 +1675,27 @@ async fn route(
             // log does not carry a number the rating model owns. It joins by
             // account, not by call sign: a guest has no rating to move, and a
             // call sign is not what the rating is kept under.
+            // Which week. Zero is the one running, one is the week before it,
+            // and so on back: a table that only ever showed the current week
+            // threw the whole record away every Monday morning, which is a
+            // ladder nobody can look back at.
+            let back = body
+                .get("back")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0)
+                .clamp(0, 52) as f64;
             let rows = db
                 .query(
                     "with bound as (
-                         select date_trunc('week', now() at time zone 'utc') as since
+                         select date_trunc('week', now() at time zone 'utc')
+                                - ($1 * interval '1 week') as since,
+                                date_trunc('week', now() at time zone 'utc')
+                                - (($1 - 1) * interval '1 week') as until
                      ),
                      wk as (
                          select * from pilot_events, bound
                           where not bot and at >= bound.since
+                            and at < bound.until
                      ),
                      sess as (
                          select name, session, max(at) - min(at) as span
@@ -1696,15 +1709,22 @@ async fn route(
                          select name, max(pilot) as account,
                                 count(*) filter (where kind = 'kill') as kills,
                                 count(*) filter (where kind = 'died') as deaths,
-                                coalesce(max((detail->>'bounty')::int)
-                                         filter (where kind = 'kill'), 0) as run
+                                -- The longest run of their own that anybody
+                                -- managed to end. Filed on the death, because
+                                -- that is the pilot it belonged to.
+                                coalesce(max((detail->>'run')::int)
+                                         filter (where kind = 'died'), 0) as run,
+                                -- Every bounty they collected, which is what a
+                                -- week's play came to.
+                                coalesce(sum((detail->>'bounty')::int)
+                                         filter (where kind = 'kill'), 0) as points
                            from wk group by name
                      ),
                      swing as (
                          select re.victim as account,
                                 re.victim_after - re.victim_before as delta
                            from rated_events re, bound
-                          where re.at >= bound.since
+                          where re.at >= bound.since and re.at < bound.until
                           union all
                          select (item.credit->>'account')::bigint,
                                 (item.credit->>'after')::double precision
@@ -1712,7 +1732,7 @@ async fn route(
                            from rated_events re, bound
                           cross join lateral
                                 jsonb_array_elements(re.credits) as item(credit)
-                          where re.at >= bound.since
+                          where re.at >= bound.since and re.at < bound.until
                      ),
                      moved as (
                          select account, sum(delta) as delta
@@ -1720,14 +1740,16 @@ async fn route(
                      )
                      select t.name, t.kills, t.deaths, t.run,
                             coalesce(extract(epoch from p.span), 0)::bigint,
-                            coalesce(m.delta, 0)::double precision
+                            coalesce(m.delta, 0)::double precision,
+                            t.points,
+                            (select to_char(since, 'Mon DD') from bound)
                        from tally t
                        left join played p on p.name = t.name
                        left join moved m on m.account = t.account
                       where t.kills > 0 or t.deaths > 0
                       order by t.kills desc, t.deaths asc
-                      limit 20",
-                    &[],
+                      limit 200",
+                    &[&back],
                 )
                 .await
                 .unwrap_or_default();
@@ -1750,10 +1772,22 @@ async fn route(
                         // these rows, so the sum of the week's rows is the
                         // week's change.
                         "rating": r.get::<_, f64>(5).round() as i64,
+                        // What the week's kills paid, which is the number a
+                        // pilot's rivets came out of.
+                        "points": r.get::<_, i64>(6),
                     })
                 })
                 .collect();
-            (200, serde_json::json!({ "week": week }))
+            // What Monday this table is about, so the page can name the week
+            // it is showing rather than counting backwards itself.
+            let since = rows
+                .first()
+                .map(|r| r.get::<_, String>(7))
+                .unwrap_or_default();
+            (
+                200,
+                serde_json::json!({ "week": week, "since": since, "back": back as i64 }),
+            )
         }
 
         // A purchase. One slot, one step, one price, and the wallet is checked

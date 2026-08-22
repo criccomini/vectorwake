@@ -2257,12 +2257,22 @@ impl Room {
     /// docs/design/ai-players.md.
     pub(crate) fn note_death(&self, victim: u8, killer: u8, paid: i32) {
         let bounty = paid.clamp(0, u16::MAX as i32);
+        // The run the victim was on, which is the bounty minus what a fresh
+        // spawn is worth: `sim_bounty` is the base plus the run and nothing
+        // else. Filed on the death rather than on the kill because it belongs
+        // to whoever was on it, and a pilot's best week is the longest one of
+        // theirs that anybody managed to end.
+        let run = (bounty - self.world.cfg.bounty_base as i32).max(0);
         if let Some(seat) = self.names.get(&victim) {
             let seat = seat.clone();
             self.note(
                 pilot::DIED,
                 &seat,
-                serde_json::json!({ "by": self.name_of(killer), "bounty": bounty }),
+                serde_json::json!({
+                    "by": self.name_of(killer),
+                    "bounty": bounty,
+                    "run": run,
+                }),
             );
         }
         // A self-kill has no second party to credit, and crediting the victim

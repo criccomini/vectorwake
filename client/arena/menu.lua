@@ -724,9 +724,55 @@ local function spell_time(secs)
     return math.floor(mins / 60) .. "h " .. (mins % 60) .. "m"
 end
 
+-- How the table is read: which column it is ordered on, which way, and what
+-- has been typed to narrow it. All three belong to the page rather than to
+-- the reply, so they survive the table being asked for again.
+M.sort = "kills"
+M.sort_up = false
+M.filter = ""
+-- Which week. Zero is the one running and one is the week before it, which is
+-- what the meta-layer counts in.
+M.week_back = 0
+
+-- What each column is worth, for the ordering. A name sorts as a name and
+-- everything else as a number, and the rank column is the order the fleet
+-- sent it in, which is by kills.
+local SORTS = {
+    rank = function(p, i) return i end,
+    pilot = function(p) return string.lower(p.name or "") end,
+    kills = function(p) return -(p.kills or 0) end,
+    deaths = function(p) return -(p.deaths or 0) end,
+    points = function(p) return -(p.points or 0) end,
+    run = function(p) return -(p.run or 0) end,
+    rating = function(p) return -(p.rating or 0) end,
+    time = function(p) return -(p.seconds or 0) end,
+}
+
 local function standings_rows()
-    local rows = {}
+    local want = string.lower(M.filter or "")
+    -- Filtered first, so the rank a row carries is its place in the week
+    -- rather than its place in what somebody typed: a pilot who is 14th does
+    -- not become 1st because the other thirteen were filtered away.
+    local shown = {}
     for i, p in ipairs(account.week or {}) do
+        p.rank = i
+        if want == "" or string.find(string.lower(p.name or ""), want, 1, true) then
+            shown[#shown + 1] = p
+        end
+    end
+    local key = SORTS[M.sort] or SORTS.kills
+    -- A stable order under a stable sort: two pilots with the same number keep
+    -- the order the fleet sent them in, which is by kills.
+    local seq = {}
+    for i, p in ipairs(shown) do seq[p] = i end
+    table.sort(shown, function(a, b)
+        local ka, kb = key(a, a.rank), key(b, b.rank)
+        if ka == kb then return seq[a] < seq[b] end
+        if M.sort_up then return ka > kb end
+        return ka < kb
+    end)
+    local rows = {}
+    for i, p in ipairs(shown) do
         rows[#rows + 1] = {
             label = p.name or "?", named = true,
             -- Pressable, so the panel beside the table can say more about one
@@ -738,22 +784,78 @@ local function standings_rows()
             -- of them. `detail` is what a list would have shown and is what
             -- the preview still shows.
             detail = (p.kills or 0) .. "k",
-            rank = i, kills = p.kills or 0, deaths = p.deaths or 0,
+            rank = p.rank, kills = p.kills or 0, deaths = p.deaths or 0,
+            points = p.points or 0,
             run = p.run or 0, played = spell_time(p.seconds),
             -- Signed, because a week that cost you rating is the fact
             -- somebody is looking for and an unsigned 40 reads as a gain.
             rating = p.rating or 0,
             mark = function() return p.name == M.name end,
         }
-        if i >= 20 then break end
+        if i >= 60 then break end
     end
     return rows
 end
 
+-- A column header, pressed. The same column again turns the order over.
+function M.click_sort(key)
+    if not SORTS[key] then return nil, false end
+    if M.sort == key then
+        M.sort_up = not M.sort_up
+    else
+        M.sort, M.sort_up = key, false
+    end
+    return nil, true
+end
+
+-- One week along, either way. Zero is the week running, and there is no
+-- forward from it: a table of a week that has not happened is an empty page
+-- with a date on it.
+function M.step_week(by)
+    local want = math.max(0, math.min(52, (M.week_back or 0) + by))
+    if want == M.week_back then return nil, false end
+    M.week_back = want
+    account.refresh_week(want)
+    return nil, true
+end
+
+-- Typing on the standings page narrows it. The menu has no text field outside
+-- a card, and this does not want one: there is nothing to submit, the table
+-- answers every letter, and a page that filters as you type has no use for a
+-- caret you have to click into first.
+function M.type_filter(ch)
+    if M.showing() ~= "standings" then return false end
+    if type(ch) ~= "string" or #ch ~= 1 then return false end
+    local b = string.byte(ch)
+    if b < 32 or b > 126 then return false end
+    if #(M.filter or "") >= 24 then return false end
+    M.filter = (M.filter or "") .. ch
+    return true
+end
+
+function M.rub_filter()
+    if M.showing() ~= "standings" then return false end
+    if (M.filter or "") == "" then return false end
+    M.filter = string.sub(M.filter, 1, #M.filter - 1)
+    return true
+end
+
 local function standings_empty()
-    if account.week and #account.week > 0 then return nil end
+    if account.week and #account.week > 0 then
+        -- A filter that matches nobody is not an empty week, and saying so
+        -- would blame the fleet for what somebody typed.
+        if #standings_rows() == 0 then
+            return {head = "nobody by that name",
+                    line = "backspace to widen it again"}
+        end
+        return nil
+    end
     if not account.week then
         return {head = "asking for the table", line = "the week is coming"}
+    end
+    if (M.week_back or 0) > 0 then
+        return {head = "nobody played that week",
+                line = "the weeks before it are still there"}
     end
     return {head = "nobody has played this week yet",
             line = "the table resets on Monday"}
@@ -1569,7 +1671,7 @@ local function view_row(r, i)
         group = r.group, short = r.short, tint_col = r.tint_col,
         -- The week's own columns.
         rank = r.rank, kills = r.kills, deaths = r.deaths, run = r.run,
-        played = r.played, rating = r.rating,
+        played = r.played, rating = r.rating, points = r.points,
         -- What a row costs to upgrade, and whether the wallet covers it.
         icon = r.icon, price = r.price, afford = r.afford,
         -- A row the page draws as a button, and which mark goes on it.
@@ -2145,7 +2247,7 @@ function M.tick(dt)
     local arrived = at ~= was_at
     if arrived then
         if at == "hangar" then account.refresh_upgrades() end
-        if at == "standings" then account.refresh_week() end
+        if at == "standings" then account.refresh_week(M.week_back) end
         was_at = at
     end
     -- Friends is asked for on two pages rather than one, and again while
@@ -2226,6 +2328,13 @@ function M.view()
                  -- well; the rail does that from every level now, and this is
                  -- only the way out.
                  note = M.note, closable = not M.home,
+                 -- How the week's table is being read: which column it is
+                 -- ordered on, which way, what has been typed to narrow it,
+                 -- and which week it is. All four belong to the page rather
+                 -- than to the reply.
+                 week = {sort = M.sort, sort_up = M.sort_up,
+                         filter = M.filter, back = M.week_back,
+                         since = account.week_since or ""},
                  -- Whether there is a game behind the panel, which is what
                  -- decides where the block sits: clear of the corner stack
                  -- over an arena, centered over the starfield. Not whether you
@@ -2640,6 +2749,9 @@ function M.step(keys)
     -- A question owns the keys while it is up, which is the whole of what
     -- makes it a question rather than a notice: the list underneath cannot be
     -- walked, and nothing behind it can be pressed by accident.
+    -- Backspace on the week's table takes a letter back off the filter. Above
+    -- the card check, because nothing is asking: the page is.
+    if not M.ask and keys.rub and M.rub_filter() then return nil, true end
     if M.ask then
         local n = #M.ask.keys
         -- Backspace belongs to the fields when there are fields.

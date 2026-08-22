@@ -38,6 +38,9 @@ local account = {
     asked_friends = 0,
     friended = nil,
 }
+function account.refresh_week(back)
+    account.asked_week = back or 0
+end
 function account.refresh_friends()
     account.asked_friends = account.asked_friends + 1
 end
@@ -1698,6 +1701,81 @@ do
     account.kits = {}
 
     _G.sim = nil
+end
+
+-- --- the week's table is read four ways ------------------------------------
+--
+-- One reply, and a page that orders it, narrows it, and asks for another week.
+-- All four belong to the page: the fleet sends a week and has no opinion about
+-- how somebody wants to look at it.
+do
+    account.week = {
+        {name = "Sable", kills = 14, deaths = 6, points = 210, run = 42,
+         rating = 38, seconds = 720},
+        {name = "Ozone", kills = 9, deaths = 9, points = 130, run = 12,
+         rating = -4, seconds = 900},
+        {name = "Kestrel", kills = 2, deaths = 11, points = 30, run = 4,
+         rating = -22, seconds = 640},
+    }
+    account.week_since = "Aug 17"
+    account.asked_week = 0
+    menu.home = true
+    menu.stack = {"root", "standings"}
+    menu.sel = {}
+    menu.sort, menu.sort_up, menu.filter, menu.week_back = "kills", false, "", 0
+
+    local function names()
+        local out = {}
+        for _, r in ipairs(menu.view().rows) do out[#out + 1] = r.label end
+        return table.concat(out, "/")
+    end
+    check("the table opens ordered by kills", names() == "Sable/Ozone/Kestrel",
+          names())
+    check("and carries what a week came to",
+          menu.view().rows[1].points == 210 and menu.view().rows[1].run == 42,
+          tostring(menu.view().rows[1].points))
+
+    menu.click_sort("deaths")
+    check("a column head orders by it", names() == "Kestrel/Ozone/Sable",
+          names())
+    menu.click_sort("deaths")
+    check("and the same one again turns it over",
+          names() == "Sable/Ozone/Kestrel", names())
+    menu.click_sort("pilot")
+    check("a name column sorts as names", names() == "Kestrel/Ozone/Sable",
+          names())
+    menu.sort, menu.sort_up = "kills", false
+
+    -- Typing narrows it, and a rank stays the rank it had in the week: a
+    -- pilot who is third does not become first because two rows were hidden.
+    for ch in string.gmatch("kes", ".") do menu.type_filter(ch) end
+    check("typing narrows the table", names() == "Kestrel", names())
+    check("and a rank is a place in the week, not in the filter",
+          menu.view().rows[1].rank == 3, tostring(menu.view().rows[1].rank))
+    menu.rub_filter()
+    menu.rub_filter()
+    menu.rub_filter()
+    check("and backspace widens it again", names() == "Sable/Ozone/Kestrel",
+          names())
+
+    for ch in string.gmatch("zzz", ".") do menu.type_filter(ch) end
+    local card = menu.view().empty
+    check("a filter matching nobody is not an empty week",
+          card ~= nil and string.find(card.head, "name", 1, true),
+          card and card.head or "no card")
+    menu.filter = ""
+
+    -- And the week itself steps back, which is a fresh request rather than a
+    -- different reading of the one in hand.
+    menu.step_week(1)
+    check("a week back is asked for", menu.week_back == 1
+          and account.asked_week == 1, tostring(account.asked_week))
+    check("and there is no forward from the week that is running",
+          select(2, menu.step_week(-1)) == true and menu.week_back == 0
+          and select(2, menu.step_week(-1)) == false,
+          tostring(menu.week_back))
+    account.week = nil
+    account.week_since = ""
 end
 
 print(fails == 0 and "all good" or (fails .. " failed"))

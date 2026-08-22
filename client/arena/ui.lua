@@ -3450,8 +3450,11 @@ function pages.week(v, x, y, w, h, focused)
     local want = {
         {"kills", 46, function(r) return tostring(r.kills or 0) end, true},
         {"deaths", 52, function(r) return tostring(r.deaths or 0) end},
+        {"points", 58, function(r) return tostring(r.points or 0) end},
         {"rating", 56, function(r) return signed(r.rating or 0) end},
-        {"run", 46, function(r) return tostring(r.run or 0) end},
+        -- The longest run of their own that anybody ended, which is the
+        -- number a pilot brags about and the one this table was missing.
+        {"best", 46, function(r) return tostring(r.run or 0) end},
         {"time", 52, function(r) return r.played or "0s" end},
     }
     local cols, used = {}, 0
@@ -3467,10 +3470,80 @@ function pages.week(v, x, y, w, h, focused)
     end
     local rowh = 26 * F.scale
     local ty = y + 14 * F.scale
+
+    -- Which week, and what has been typed to narrow it. One line above the
+    -- table, because both of them are about the whole of it.
+    --
+    -- The week steps with the arrows the way every other value in this menu
+    -- steps, and there is no forward from the week that is running: a table
+    -- of a week that has not happened is a date over an empty page.
+    do
+        local wk = v.week or {}
+        local name = wk.since ~= "" and ("week of " .. tostring(wk.since))
+            or "this week"
+        if (wk.back or 0) == 0 then name = "this week" end
+        local px = 12.5 * F.scale
+        local arrow = function(dir, ax, on)
+            local col = pal.a(pal.FRIEND, on and 0.95 or 0.25)
+            F.layer:tri(ax + dir * 4 * F.scale, ry(ty - 3 * F.scale),
+                        ax - dir * 3 * F.scale, ry(ty - 9 * F.scale),
+                        ax - dir * 3 * F.scale, ry(ty + 3 * F.scale), col)
+            if on then
+                hit(ax - 11 * F.scale, ty - 17 * F.scale, 22 * F.scale,
+                    26 * F.scale, "week", dir)
+            end
+        end
+        arrow(-1, x + 8 * F.scale, true)
+        txt(name, x + 24 * F.scale, ty, px, pal.a(pal.INK, 0.9), nil, MENU_FONT)
+        local nw = text_w(name, px)
+        arrow(1, x + 34 * F.scale + nw, (wk.back or 0) > 0)
+
+        -- What has been typed, where it is being typed. No box and no caret
+        -- to click into: the table answers every letter, so the line is a
+        -- reading of what the page is doing rather than a field to fill in.
+        local f = wk.filter or ""
+        if f ~= "" then
+            local shown = f .. "_"
+            local sw = text_w(shown, px)
+            txt(shown, x + tw - 10 * F.scale, ty, px,
+                pal.a(pal.CHARGE_COL, 0.95), "right", MENU_FONT, true)
+            local lx = x + tw - sw - 20 * F.scale
+            lbl("filter", lx, ty, nil, "right")
+        else
+            lbl("type to filter", x + tw - 10 * F.scale, ty,
+                pal.a(pal.DIM, 0.5), "right")
+        end
+        ty = ty + 24 * F.scale
+    end
+
     lbl("#", x + 6 * F.scale, ty)
     lbl("pilot", x + 34 * F.scale, ty)
+    -- Every heading is a control: pressing one orders the table by it, and
+    -- pressing it again turns the order over. The lit one is the order in
+    -- force, with a mark for which way it is running.
+    local sorted = (v.week or {}).sort
+    local up = (v.week or {}).sort_up
+    local function head(key, hx, align, sorts)
+        sorts = sorts or key
+        local on = sorted == sorts
+        local word = on and (key .. (up and " ^" or " v")) or key
+        lbl(word, hx, ty, pal.a(on and pal.FRIEND or pal.DIM, on and 1 or 0.9),
+            align)
+        local ww = text_w(word, 9 * F.scale)
+        local left = align == "right" and (hx - ww) or hx
+        hit(left - 8 * F.scale, ty - 16 * F.scale, ww + 16 * F.scale,
+            22 * F.scale, "sort", sorts)
+    end
+    -- The rank column's head is the mark it has always been, not the word:
+    -- "rank" beside "pilot" at this size is two words touching.
+    local rankx = x + 6 * F.scale
+    head("#", rankx, nil, "rank")
+    head("pilot", x + 34 * F.scale)
     for _, c in ipairs(cols) do
-        lbl(c[1], x + tw - c.off * F.scale, ty, nil, "right")
+        -- The column reads "best" and sorts on the run behind it, which is
+        -- the name the row carries and the reply spells.
+        head(c[1], x + tw - c.off * F.scale, "right",
+             c[1] == "best" and "run" or c[1])
     end
     ty = ty + 10 * F.scale
     hrule(x, ty, tw)
