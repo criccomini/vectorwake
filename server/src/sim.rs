@@ -107,6 +107,24 @@ impl sim_map {
         matches!(self.class_at(tx, ty), 1 | 3 | 10)
     }
 
+    /// How many starts this map names, per team and in total. A map with none
+    /// leaves a zone standing on its own configured tiles, which is worth
+    /// telling whoever just drew it.
+    pub fn spawns(&self) -> (usize, [usize; 2]) {
+        let mut per = [0usize; 2];
+        let mut all = 0;
+        for f in self.features.iter().take(self.feature_count as usize) {
+            if f.kind == 9 {
+                // SIM_TILE_SPAWN
+                all += 1;
+                if (f.variant as usize) < per.len() {
+                    per[f.variant as usize] += 1;
+                }
+            }
+        }
+        (all, per)
+    }
+
     /// The middle of the map, in pixels.
     pub fn mid(&self) -> (f32, f32) {
         (self.w as f32 * 16.0 / 2.0, self.h as f32 * 16.0 / 2.0)
@@ -489,6 +507,7 @@ extern "C" {
         y: *mut i32,
     );
     pub fn sim_map_size(map: *mut sim_map, w: i32, h: i32);
+    pub fn sim_map_hash(map: *const sim_map) -> u32;
     pub fn sim_map_arena(map: *mut sim_map);
     pub fn sim_map_pit(map: *mut sim_map);
     pub fn sim_eff_max_energy(c: *const sim_ship_class, s: *const sim_ship) -> i32;

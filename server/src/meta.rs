@@ -30,6 +30,7 @@ use crate::rating;
 use crate::sim;
 use crate::token::{self, Claims, ClassRating, Kind};
 
+mod maps;
 mod public_pilots;
 mod settlement;
 mod upgrades;
@@ -392,6 +393,49 @@ create table if not exists friend_ignores (
     ignored bigint not null references accounts(id) on delete cascade,
     at      timestamptz not null default now(),
     primary key (account, ignored)
+);
+
+-- Maps an operator drew in the panel, and which of them each zone plays.
+--
+-- The catalog on disk stays the reviewed baseline: it is what a fresh
+-- deployment boots with and what serves when nothing here says otherwise. A
+-- drawing made at a click is operational data, like a ban or an admin flag,
+-- and it lives where those live rather than in a commit and an image build.
+--
+-- The bytes are a packed `.vwmap` and nothing writes one without the core
+-- having read it back first, so a row here is a map the arena will load. The
+-- size and hash beside it are for the panel to show; the file carries both.
+create table if not exists maps (
+    name    text primary key,
+    bytes   bytea not null,
+    hash    bigint not null,
+    w       integer not null,
+    h       integer not null,
+    author  bigint references accounts(id) on delete set null,
+    made    timestamptz not null default now(),
+    edited  timestamptz not null default now()
+);
+
+-- A zone's rotation, overriding the `maps` line in its zone.toml. No row is
+-- the way back to the file, which is why an empty rotation deletes rather than
+-- stores an empty array.
+create table if not exists zone_maps (
+    zone       text primary key,
+    maps       text[] not null,
+    by_account bigint references accounts(id) on delete set null,
+    edited     timestamptz not null default now()
+);
+
+-- Every publish, in order. The serial is what carries a change to an arena:
+-- a directory serves the catalog's own version plus the highest serial here,
+-- and an arena takes the highest version it is offered. A row rather than a
+-- counter written over, so what changed the fleet's ground and when is a
+-- question the table answers.
+create table if not exists catalog_publishes (
+    serial bigserial primary key,
+    actor  bigint references accounts(id) on delete set null,
+    what   text not null,
+    at     timestamptz not null default now()
 );
 ";
 
@@ -1384,6 +1428,9 @@ async fn route(
         return reply;
     }
     if let Some(reply) = public_pilots::route(&meta.throttle, &db, path, body, ip).await {
+        return reply;
+    }
+    if let Some(reply) = maps::route(&db, path, body).await {
         return reply;
     }
 
@@ -4724,6 +4771,42 @@ pub async fn run() {
                 {
                     Ok(n) if n > 0 => println!("meta: released {n} idle guest account(s)"),
                     _ => {}
+                }
+            }
+        });
+    }
+
+    // What an operator published, pushed at the directory until it holds it.
+    //
+    // A publish pushes once, immediately, which is what makes a rotation land
+    // at the next whistle. This is the other half: the directory keeps the
+    // publication in memory, so a directory that restarts comes back serving
+    // the maps on disk, and nothing else would ever tell it otherwise.
+    //
+    // The push is the only direction that exists. A directory holds no
+    // credential this process would accept, so it cannot ask; this can, and
+    // pushing an unchanged publication is a comparison and a dropped frame at
+    // the far end. A minute is far below how long anybody waits before
+    // wondering why the map is wrong, and far above how often either process
+    // restarts.
+    {
+        let pool = pool.clone();
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(std::time::Duration::from_secs(60));
+            loop {
+                tick.tick().await;
+                let Ok(db) = pool.get().await else { continue };
+                // Nothing published is nothing to insist on: a fleet running
+                // the catalog on disk is the state this whole mechanism
+                // starts from.
+                match maps::published(&db).await {
+                    Ok(p) if p.serial == 0 => {}
+                    Ok(_) => {
+                        if let Some(why) = maps::push(&db).await {
+                            println!("meta: cannot hand the directory its maps: {why}");
+                        }
+                    }
+                    Err(e) => println!("meta: cannot read what is published: {e}"),
                 }
             }
         });
