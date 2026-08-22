@@ -13,7 +13,7 @@ use crate::{ai, config, nav, rating, sim};
 
 /// A match ends at this many kills, or this many ticks if the two are too
 /// evenly matched to settle it. 100 ticks is a second.
-const KILL_TARGET: u16 = 5;
+const KILL_TARGET: i16 = 5;
 const MATCH_TICKS: u32 = 30_000; // five minutes of arena time
 
 /// What the ladder ranks pilots in.
@@ -922,6 +922,17 @@ fn deal_kit(world: &mut sim::World, ship: usize, budget: u32, rng: &mut u32) -> 
             *rng ^= *rng >> 17;
             *rng ^= *rng << 5;
             let k = (*rng as usize) % sim::SLOT_COUNT;
+            // Two kinds of charge, whatever the roll says: the arena refuses
+            // a third, and a bout flown on a kit the arena would not take is
+            // a bout measuring a bare hull.
+            if k >= sim::slot_charge(0) as usize && kit[k] == 0 {
+                let kinds = (0..sim::MAX_CHARGES)
+                    .filter(|c| kit[sim::slot_charge(*c) as usize] > 0)
+                    .count();
+                if kinds >= sim::KIT_CHARGE_SLOTS {
+                    continue;
+                }
+            }
             if kit[k] < ceiling[k] {
                 kit[k] += 1;
                 spent += 1;
@@ -933,6 +944,11 @@ fn deal_kit(world: &mut sim::World, ship: usize, budget: u32, rng: &mut u32) -> 
             break;
         }
     }
+    // Refused where `budget` is more than a kit may hold, which the harness
+    // does on purpose to measure a wider build than a match allows; the ship
+    // then keeps what it had. Left as it was rather than made an assertion,
+    // which is a thread of its own: what this change owes is that the charge
+    // cap above is not a new way to be refused.
     world.set_kit(ship, &kit);
     spent
 }
@@ -1845,7 +1861,7 @@ pub(crate) fn duel(
     salt: u32,
     budget: u32,
     handicap: Option<(ai::Knob, f32)>,
-) -> (u16, u16) {
+) -> (i16, i16) {
     let mut world = sim::World::from_packed(0xd0e1 ^ salt, bytes).expect("a map");
     // The kit is handed out here rather than inherited from the zone, so both
     // pilots carry exactly `budget` and the only thing left varying between
@@ -3157,7 +3173,7 @@ mod draws {
             skill: 0.30,
         };
         let mut r = rating::Rating::new();
-        let mut tally: std::collections::BTreeMap<u16, u32> = Default::default();
+        let mut tally: std::collections::BTreeMap<i16, u32> = Default::default();
         let mut decided = 0u32;
         for salt in 0..60u32 {
             let (ka, kb) = duel(&bytes, &route, at, &mut r, &a, &b, salt, 30, None);

@@ -313,11 +313,25 @@ local function side_names()
     return out
 end
 
+-- The charge kinds this pilot is actually carrying, in kind order, which is
+-- the order Q and W spend them in.
+--
+-- Off the ship's own kit rather than off the arena's ceiling. The ceiling says
+-- what a kit may hold and every hull in the zone shares it, so it answered
+-- "repel, burst, mine" for everybody and put a mine on E whether the pilot had
+-- one or not. A kit carries two kinds and which two is the pilot's choice, so
+-- the kit is the only thing that can say which key spends what.
+--
+-- The kit, not the count in hand: the corner shows what is left, and binding
+-- to that would move Q onto the burst the moment the last repel went, which is
+-- a key that spends the wrong thing exactly when a fight is going badly.
 local function my_slots()
     local out = {}
     if watching then return out end
     for k = 0, sim.MAX_CHARGES - 1 do
-        if sim.charge_max(me, k) > 0 then out[#out + 1] = k end
+        if sim.ship_kit(me, sim.SLOT_CHARGE0 + k) > 0 then
+            out[#out + 1] = k
+        end
     end
     return out
 end
@@ -409,9 +423,12 @@ local function charge_row()
             -- "RPL" is three letters nobody has been taught.
             name = c and c.name or "charge",
             count = held_kit and held_kit.charge[k] or sim.ship_charge(me, k),
-            -- How many this hull can hold, so the row can draw the empties
-            -- as well as the full ones.
-            max = sim.charge_max(me, k),
+            -- How many the kit put in the rack, so the row draws the empties
+            -- as well as the full ones. The kit's own number rather than the
+            -- arena's ceiling: the ceiling is what a kit may hold and is the
+            -- same fifteen for everybody, so the rail drew a pilot carrying
+            -- three repels as three of fifteen.
+            max = sim.ship_kit(me, sim.SLOT_CHARGE0 + k),
         }
     end
     return out
@@ -797,8 +814,12 @@ local function drain_kills()
         -- Yours outranks theirs when you managed both at once, which is a
         -- pilot who blew themselves up with the kill: that is your kill, and
         -- it is the line you will want to see.
+        --
+        -- Never while watching. From that seat `me` is the sentinel 255,
+        -- which is also the killer on a wall death, so every rock somebody
+        -- flew into would have been lit as a kill of your own.
         local col, mine = nil, false
-        if k.killer == me and k.victim ~= me then
+        if not watching and k.killer == me and k.victim ~= me then
             col, mine = pal.PAID, true
             -- And the same number again, off the wreck rather than in the
             -- feed. A kill is read where it happened: a pilot who just took
@@ -809,7 +830,7 @@ local function drain_kills()
             if k.paid > 0 then
                 ui.payout(sim.ship_x(k.victim), sim.ship_y(k.victim), k.paid)
             end
-        elseif k.victim == me then
+        elseif not watching and k.victim == me then
             col, mine = pal.HURT, true
         end
         notify((k.victim == k.killer) and {vn, " killed by self"}
@@ -1183,7 +1204,7 @@ function update(self, dt)
     -- Latched like the pad's tap, and for the same reason: the press has to
     -- survive until a simulation step spends it.
     if not menu.open then
-        for i = 1, sim.MAX_CHARGES do
+        for i = 1, sim.KIT_CHARGE_SLOTS do
             if tapped[hash("charge_" .. i)] then
                 tapped[hash("charge_" .. i)] = nil
                 local slot = my_slots()[i]
@@ -1900,7 +1921,7 @@ function update(self, dt)
         for _, k in ipairs(touch.charges) do
             touch.counts[k] = held_kit and held_kit.charge[k]
                 or sim.ship_charge(me, k)
-            touch.maxes[k] = sim.charge_max(me, k)
+            touch.maxes[k] = sim.ship_kit(me, sim.SLOT_CHARGE0 + k)
         end
 
         -- Doors and wormholes: world geometry that moves, so it cannot live in

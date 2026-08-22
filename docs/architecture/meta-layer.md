@@ -269,6 +269,7 @@ where they live.
 | `leave` | the seat ended | why, the slot, ticks held, and whether it settled as a quit |
 | `died` | their hull was destroyed | who by, and what it paid |
 | `kill` | they destroyed somebody | who, what it paid, and whether the victim quit the fight |
+| `misfire` | they destroyed themselves or a teammate | who, and whether it was their own hull |
 
 `leave` is the one that repays the most work. Five callers reach `Room::leave`,
 a quit, a sit-out, a bot evicted for an arriving human, a bot sent home by a

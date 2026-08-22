@@ -352,6 +352,7 @@ SHIP_GETTER(ShipClass, s->cls)
 SHIP_GETTER(ShipEnergy, s->energy)
 SHIP_GETTER(ShipKills, s->kills)
 SHIP_GETTER(ShipDeaths, s->deaths)
+SHIP_GETTER(ShipAssists, s->assists)
 
 // Velocity, in pixels per tick. The renderer leans on it for motion trails
 // and the HUD reports speed, so both would otherwise have to difference
@@ -618,6 +619,20 @@ int TriggerRate(lua_State* L) {
         return 2;
     }
     return 2;
+}
+
+// What this seat's kit holds at one slot of the flat space.
+//
+// The kit rides the snapshot, so this answers for anybody the client can see
+// and not only for the pilot at the keyboard. What reads it is the binding of
+// the charge keys: which kinds a pilot carries is a choice made on the ship
+// page, and the kit is the only thing that records it.
+int ShipKit(lua_State* L) {
+    int i = CheckShip(L);
+    int slot = (int)luaL_checkinteger(L, 2);
+    if (slot < 0 || slot >= SIM_SLOT_COUNT) { lua_pushnumber(L, 0); return 1; }
+    lua_pushnumber(L, g_cur->ships[i].kit[slot]);
+    return 1;
 }
 
 // How many of a charge kind a kit may hold here. The arena's number, not the
@@ -1305,6 +1320,7 @@ const luaL_reg kFunctions[] = {
     {"ship_max_energy", ShipMaxEnergy},
     {"ship_kills", ShipKills},
     {"ship_deaths", ShipDeaths},
+    {"ship_assists", ShipAssists},
     {"ship_vel", ShipVel},
     {"ship_repel", ShipRepel},
     {"ship_up", ShipUp},
@@ -1319,6 +1335,7 @@ const luaL_reg kFunctions[] = {
     {"ship_run", ShipRun},
     {"ship_points", ShipPoints},
     {"charge_max", ChargeMax},
+    {"ship_kit", ShipKit},
     {"mines_out", MinesOut},
     {"has_trigger", HasTrigger},
     {"trigger_rate", TriggerRate},
@@ -1424,6 +1441,8 @@ void LuaInit(lua_State* L) {
     lua_pushnumber(L, SIM_UP_STEPS);     lua_setfield(L, -2, "UP_STEPS");
     lua_pushnumber(L, SIM_UP_STEPS_BASE); lua_setfield(L, -2, "UP_STEPS_BASE");
     lua_pushnumber(L, SIM_MAX_CHARGES);  lua_setfield(L, -2, "MAX_CHARGES");
+    lua_pushnumber(L, SIM_KIT_CHARGE_SLOTS);
+    lua_setfield(L, -2, "KIT_CHARGE_SLOTS");
     lua_pushnumber(L, SIM_CHARGE_REPEL); lua_setfield(L, -2, "CHARGE_REPEL");
     lua_pushnumber(L, SIM_CHARGE_BURST); lua_setfield(L, -2, "CHARGE_BURST");
     lua_pushnumber(L, SIM_CHARGE_MINE);  lua_setfield(L, -2, "CHARGE_MINE");

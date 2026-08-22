@@ -70,11 +70,13 @@ local function roster(seats, watchers)
     local out = {string.char(3, #seats)}
     for _, s in ipairs(seats) do
         -- ship, label, rating(2), games, team, kills(2), deaths(2),
-        -- points(4), earned(2), then the name's length. The scores joined the
-        -- roster when snapshots stopped carrying every seat: a board has to be
-        -- able to name and score a pilot it is not being shown.
+        -- assists(2), points(4), earned(2), then the name's length. The scores
+        -- joined the roster when snapshots stopped carrying every seat: a
+        -- board has to be able to name and score a pilot it is not being
+        -- shown.
         out[#out + 1] = string.char(s.ship, s.bot and 2 or 1, 0, 0, 0,
-                                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, #s.name)
+                                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                                    #s.name)
             .. s.name
     end
     out[#out + 1] = string.char(#(watchers or {}))

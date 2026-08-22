@@ -175,6 +175,75 @@ goes to stall. Respawn invulnerability stays as duels specify it, long enough
 to orient and short enough to be useless offensively. Camping a spawn is
 already close to worthless, because a pilot who has just died is worth one.
 
+## Two charges, and which two is the choice
+
+A kit carries two kinds of charge. Which two is a decision made on the ship
+page, and Q and W spend them in the order the core numbers the kinds.
+
+There are three kinds today and the shelf sells them: a repel and a burst come
+with the account, and mines are bought. Carrying all of them at once would mean
+there was nothing to decide, so the arena refuses a kit that names a third and
+the page will not offer one. Taking one off to fit another is the whole of the
+interaction.
+
+That is also what the mine key was in the way of. Mines used to sit on Shift
+and the bomb trigger, then on a key of their own, which is a key that does
+nothing on a ship carrying no mines and a row on the controls page describing a
+weapon most pilots have never bought. What a key spends is a slot; what a slot
+holds is the pilot's business. So the two keys are named for their positions,
+the corner stack says what is in each while you fly, and the ship page says
+which key each row landed on.
+
+## Assists
+
+A hull rarely comes apart to one pilot's fire. Two columns told the pilot who
+did four fifths of the work and lost the last shot that they had done nothing,
+so there is a third: kills you were part of and did not finish.
+
+An assist is not a share. Every pilot who damaged the victim recently and was
+not the one who landed the last round gets one, whole, and the column counts
+deaths you were in rather than how much of each you did. The rating layer
+already weighs the damage properly, and it is the thing that should: a rating
+is a judgment and a scoreboard column is a count.
+
+"Recently" is six seconds, against the rating layer's four-second half-life. A
+pilot who softened somebody and lost the finish is inside it; a shot traded in
+a previous engagement is not. A hull remembers four attackers, which is more
+than any death in this game has had.
+
+It sits beside kills and deaths everywhere the two of them do: the scoreboard
+in a match, the podium card, the corner readout, and the week's table. See
+[decision 53](../architecture/decisions.md#53-assists-are-counted-in-the-core).
+
+## What a misfire costs
+
+A kill, and a rivet.
+
+Killing yourself with your own bomb, or killing a wingman with it, takes one
+off your kills and one off your wallet. The kill count goes under zero and is
+meant to: clamping it at nothing makes the first mistake free and every one
+after it visible, which is the wrong way round, and a pilot who has spent a
+match bombing their own side should be able to read that off the card. The
+wallet does not go under zero, because a negative score is a fact about a match
+and a negative balance is a debt, and this game does not have those.
+
+One rivet is not a fine calibrated against anything. A kill is worth dozens, so
+this is the smallest amount a wallet can move by, and the point is that the
+number goes the other way rather than that it hurts.
+
+Flying into a rock is free. It is a death and not a mistake anybody aimed, and
+the walk back is already what it costs. The two that are charged are the two
+with a thrower: your own hull, and your own side's.
+
+The side's score carries it too, since a side's score is the sum of what its
+pilots have taken. It cannot go below nothing, because the score is a pair of
+numbers on a wire and a bar drawn as a share of their sum, and neither has an
+answer for a negative one.
+
+A misfire is a row in the pilot log of its own, so the week's table subtracts
+it from that pilot's kills as well: two screens, one number. See [decision
+52](../architecture/decisions.md#52-a-misfire-costs-a-kill-and-a-rivet).
+
 ## Maps
 
 Small, and symmetric.
@@ -371,10 +440,11 @@ Two slots to start, four in the core (`SIM_MAX_CHARGES`). One repel and one
 burst is what an account begins with, against the three of each the arena
 allows; the rest of both racks, and every other kind, are bought.
 
-**A mine is a charge.** It is the bomb trigger's other posture today, limited
-by how many of yours are already lying about. As a charge it is a count you
-carry and spend, which is what the kit makes coherent: how many mines you
-bring is a loadout decision priced against everything else.
+**A mine is a charge.** It was the bomb trigger's other posture, limited by how
+many of yours were already lying about. As a charge it is a count you carry and
+spend, which is what the kit makes coherent: how many mines you bring is a
+loadout decision priced against everything else, and fitting them means taking
+a repel or a burst off, because a kit carries two kinds.
 
 Two changes ride along. A mine currently wears its layer's bomb rung, and a
 charge fires one pattern that means the same thing to everybody, so mines
@@ -382,7 +452,8 @@ standardize. And the mining role stops belonging to a hull. Six mines was the
 Lattice's row, which was exactly the shape of problem this whole space was
 flattened to fix: six is the arena's ceiling now, the kind is a purchase, and
 whoever is willing to spend a fifth of their kit on mines is the miner.
-`mine_max` went with the Shift+Tab chord and its touch cell.
+`mine_max` went with the Shift+Tab chord and its touch cell, and so, in the
+end, did the key of its own that replaced them.
 
 ## Friends
 

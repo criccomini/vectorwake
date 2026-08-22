@@ -185,7 +185,9 @@ They are slots now, on the same shelf as everything else. What was the
 brawler's barrel is `SIM_MOD_BARREL`, an add-on anybody may buy two rungs of.
 What was the heavy's third bomb rung is a rung on a ladder every hull climbs.
 Six mines is what the arena allows anyone willing to spend a fifth of their kit
-on mines. See [match-game.md](match-game.md#what-rivets-buy).
+on mines, and a kit carries two kinds of charge at once, so fitting them means
+taking a repel or a burst off. See
+[match-game.md](match-game.md#two-charges-and-which-two-is-the-choice).
 
 ## Design rules that hold across the roster
 

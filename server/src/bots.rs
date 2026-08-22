@@ -206,8 +206,8 @@ impl Standings {
         for _ in 0..n {
             // A short read keeps the rows already parsed and abandons the
             // rest, which is what the client does with the same message.
-            let Some(&len) = m.get(o + 16) else { break };
-            if m.len() < o + 17 + len as usize {
+            let Some(&len) = m.get(o + 18) else { break };
+            if m.len() < o + 19 + len as usize {
                 break;
             }
             let ship = m[o] as usize;
@@ -219,7 +219,7 @@ impl Standings {
                     bot: label == 2 || label == 3,
                 });
             }
-            o += 17 + len as usize;
+            o += 19 + len as usize;
         }
         self.0 = next;
     }

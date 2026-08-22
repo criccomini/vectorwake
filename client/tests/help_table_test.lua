@@ -55,6 +55,7 @@ _G.sim = {
     ship_max_energy = function() return 100 end,
     ship_kills = function() return 1 end,
     ship_deaths = function() return 1 end,
+    ship_assists = function() return 0 end,
     ship_points = function() return 10 end,
     ship_bounty = function() return 34 end,
     ship_up = function() return 0 end,
@@ -293,8 +294,12 @@ end
 do
     -- Wearing no label a player can read, so a phone learns them here or not
     -- at all. The dial is a picture and the pads are marks.
-    local MUST_SAY = {"turn left", "thrust", "reverse", "guns", "bombs", "repel",
-                      "burst", "mine", "multifire", "map", "players"}
+    -- The charge keys are named for the slot they spend rather than for a
+    -- weapon, because a kit carries two kinds and which two is the pilot's
+    -- choice. They still need the sentence: what a thumb has to be told is
+    -- where the cell is, and that is the same wherever the choice landed.
+    local MUST_SAY = {"turn left", "thrust", "reverse", "guns", "bombs",
+                      "charge 1", "charge 2", "multifire", "map", "players"}
     local pad = {}
     for _, r in ipairs(ROWS) do pad[r.name] = r.pad end
 

@@ -2256,3 +2256,99 @@ during a match. Both are chat with a smaller vocabulary and the argument in
 decision 28 applies to them unchanged. Team-only signals during play are the
 one thing on the reconsider list that is still open, and they would be a
 different feature again: a ping on the radar rather than a word on a card.
+
+---
+
+## 52. A misfire costs a kill and a rivet
+
+**Status:** accepted
+
+Killing yourself with your own bomb, or killing a teammate with it, takes one
+off your kill count in the arena and one rivet off your wallet. The kill count
+goes below zero. The wallet does not.
+
+Before this, a teamkill *credited* a kill. It paid no points and no bounty,
+which was the rating layer's rule made visible, but the number on the
+scoreboard went up either way: the same figure moved whether you shot an enemy
+or your own wingman. A self-kill moved nothing at all, so the pilot who spent a
+match bombing their own feet read as a pilot who had simply not managed
+anything.
+
+The signed counter is the part worth arguing about, and it is the part that
+makes this work. Clamping at zero would make the first mistake free and every
+one after it visible, which is exactly backwards: the pilot most in need of the
+signal is the one at zero. `sim_ship.kills` is `int16_t` now and it is the only
+counter in that struct that is signed; deaths only ever climb.
+
+The rivet is not a fine. A kill is worth dozens, so one is the smallest amount
+a wallet can move by, and the point is the direction rather than the size. It
+is floored at zero because a negative score is a fact about a match and a
+negative balance is a debt, and there is nothing in this game that could ever
+collect one.
+
+Flying into a rock is free. A wall death has no thrower: the arena reports seat
+255, which is nobody, and the walk back is already what it costs. What is
+charged is the two deaths somebody aimed.
+
+**Cost:** two surfaces have to agree about one number and they are computed
+differently. The arena counts on the ship; the week's table counts rows in the
+pilot log, so a `misfire` row is a new kind there and the query subtracts it.
+Add a third surface and it will need the same subtraction. The side's score in
+a match is also clamped at zero, because the wire carries it as a pair of
+unsigned numbers and the podium draws a bar as a share of their sum, so a side
+four misfires under with no kills at all reads as nil rather than as minus
+four. That is a guard, not a rule anybody will play against.
+
+**Reconsider if:** the penalty turns out to change nothing, in which case it is
+too small rather than wrong, and the lever is the rivet rather than the kill. Or
+if repel becomes a way to push somebody into their own bomb, which would make
+this a thing done *to* a pilot rather than by one. The arena knows who threw the
+round and not who arranged for it to matter, and if that becomes a way to play
+the answer is a rule about the shove rather than a softer rule about the bomb.
+
+---
+
+## 53. Assists are counted in the core
+
+**Status:** accepted
+
+The simulation counts assists on the ship, beside kills and deaths, and packs
+them into the snapshot. A hull remembers the last four pilots to damage it and
+when; a death hands one assist to each of them inside a six-second window,
+except the pilot who landed the finish.
+
+The alternative was to derive them on the server. The rating layer already
+computes exactly this and better: `rating::death` returns a weighted credit per
+contributor, decayed on a four-second half-life, and the kill message on the
+wire already carries a contributor count. Counting them there would have been
+no new state anywhere.
+
+What it could not do is answer for a pilot who was not watching. A scoreboard
+column has to be right for somebody who joined thirty seconds ago, for a
+watcher who joined this second, and for a seat on the far side of the map that
+the snapshot filter is not sending. Kills and deaths are right for all three
+because they live on the ship and ride the snapshot, and a column that was
+right only for clients present since the whistle would be a different kind of
+number sitting in the same row.
+
+So it is core state, and it is deliberately cruder than the rating layer's
+version. An assist is whole rather than a share: this column counts deaths you
+were part of, and how much of each you did is a judgment, which is the rating's
+job. Four slots and a flat window, in fixed point, because the core has no
+floats and a decaying weight per attacker per ship is a ledger the wire would
+then have to carry.
+
+**Cost:** two definitions of an assist now exist, and they can disagree at the
+edges. The week's table counts them out of `rated_events.credits`, because the
+pilot log has no row for helping, so a pilot who is credited with a sliver of
+damage gets a week's assist and might not have got an arena one, or the other
+way round past the window. Both are "kills you helped with" to a player and
+neither is the authority on the other. The ledger is also four bytes and a byte
+per attacker on every ship in the state, which is small but is memory the core
+did not want before, and it is one more thing a snapshot has to agree about.
+
+**Reconsider if:** the two numbers visibly disagree often enough that somebody
+notices, in which case the answer is to file assists as pilot-log rows from the
+arena, so both surfaces read the same source. That is a bigger change than it
+sounds: it means the arena has to know which contributor is which account at
+the moment of the kill, which today only the rating layer does.

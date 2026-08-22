@@ -325,6 +325,14 @@ typedef enum {
     SIM_MOD_COUNT
 } sim_mod;
 
+/* How many recent attackers a hull remembers, and for how long, which is what
+ * an assist is made of. Four is more than any death in this game has had; the
+ * window is six seconds, against the rating layer's four-second half-life, so
+ * a pilot who did real damage and then lost the finish is inside it and one
+ * who traded a shot in a previous engagement is not. */
+#define SIM_ASSIST_SLOTS 4
+#define SIM_ASSIST_WINDOW 600
+
 #define SIM_MOD_MAX 3    /* rungs per add-on; two bits each */
 #define SIM_MAX_RUNGS 4  /* levels a weapon ladder can hold */
 
@@ -351,6 +359,21 @@ typedef enum {
 #define SIM_CHARGE_BURST 1
 #define SIM_CHARGE_MINE 2
 #define SIM_CHARGE_MAX 15  /* how many of one kind a pilot can hold */
+
+/* How many kinds a pilot may carry at once, whatever they own.
+ *
+ * Two, and it is a rule of the game rather than a fact about a keyboard: the
+ * kit is where a build is decided, and a pilot who could carry every kind at
+ * once would be deciding nothing. Which two is the choice, and the arena
+ * refuses a kit that names a third, so the ship page cannot offer one and no
+ * client can send one.
+ *
+ * The two are bound to Q and W in kind order, so a pilot who carries a repel
+ * and a mine has the repel on Q, and a pilot who carries a burst and a mine
+ * has the burst there. That is the whole of the binding: there is no key for
+ * a mine and never was one worth having, since what a key spends is a slot
+ * and what a slot holds is a choice. */
+#define SIM_KIT_CHARGE_SLOTS 2
 
 /* The slot field in the buttons and the number of charge kinds are two halves
  * of one fact. Raising SIM_MAX_CHARGES without widening the field would leave
@@ -725,7 +748,34 @@ typedef struct {
     int32_t repel_speed;
     uint16_t respawn_at;    /* ticks remaining while dead */
     int32_t spawn_x, spawn_y;
-    uint16_t kills, deaths;
+    /* Kills is signed, and it is the only counter here that is.
+     *
+     * Killing yourself or a teammate takes one off it, which is a number a
+     * pilot at zero has to be able to go under: clamping at zero would make
+     * the first mistake free and every one after it visible, which is the
+     * wrong way round. Deaths only ever climb. */
+    int16_t kills;
+    uint16_t deaths;
+    /* Kills this pilot helped with and did not land.
+     *
+     * A hull rarely comes apart to one pilot's fire, and a scoreboard with two
+     * columns tells the pilot who did four fifths of the work and lost the
+     * last shot that they did nothing. This is that work, counted. */
+    uint16_t assists;
+    /* Who has hurt this hull lately, so a death knows who to thank.
+     *
+     * A ring rather than a ledger: four attackers is more than any death in
+     * this game has, and the alternative is a matrix of every ship against
+     * every other. `hurt_at` is the tick each landed, absolute, so nothing
+     * has to be aged tick by tick; a slot older than SIM_ASSIST_WINDOW is
+     * simply not read. 255 is an empty slot.
+     *
+     * Deliberately not in the snapshot. What a client needs is the count,
+     * which is packed with the other two; the ledger is the arena's working
+     * and a client that predicts an assist the zone does not award has it
+     * corrected by the next snapshot, exactly as it does a kill. */
+    uint8_t hurt_by[SIM_ASSIST_SLOTS];
+    uint32_t hurt_at[SIM_ASSIST_SLOTS];
     /* What this hull is, which is the kit dealt back at every spawn. These
      * are not accumulated any more and are not lost by dying: a death
      * re-deals the frame. */

@@ -4102,10 +4102,10 @@ mod tests {
         assert_eq!(n, a.names.len(), "the count has to match what follows it");
         assert!(n >= 2, "the bots and the player we seated");
 
-        // Seventeen bytes of header now, not six: the scores came here when
+        // Nineteen bytes of header now, not six: the scores came here when
         // snapshots stopped carrying every seat, and a board reading a seat it
         // can no longer see reads it off this message.
-        const HEAD: usize = 17;
+        const HEAD: usize = 19;
         let mut o = 2;
         let mut read: HashMap<u8, (String, u8)> = HashMap::new();
         for _ in 0..n {
@@ -4115,11 +4115,12 @@ mod tests {
             let _rating = i16::from_le_bytes([m[o + 2], m[o + 3]]);
             let _games = m[o + 4];
             let _team = m[o + 5];
-            let _kills = u16::from_le_bytes([m[o + 6], m[o + 7]]);
+            let _kills = i16::from_le_bytes([m[o + 6], m[o + 7]]);
             let _deaths = u16::from_le_bytes([m[o + 8], m[o + 9]]);
-            let _points = u32::from_le_bytes([m[o + 10], m[o + 11], m[o + 12], m[o + 13]]);
-            let _earned = u16::from_le_bytes([m[o + 14], m[o + 15]]);
-            let len = m[o + 16] as usize;
+            let _assists = u16::from_le_bytes([m[o + 10], m[o + 11]]);
+            let _points = u32::from_le_bytes([m[o + 12], m[o + 13], m[o + 14], m[o + 15]]);
+            let _earned = u16::from_le_bytes([m[o + 16], m[o + 17]]);
+            let len = m[o + 18] as usize;
             assert!(o + HEAD + len <= m.len(), "a name ran off the end");
             let name = String::from_utf8(m[o + HEAD..o + HEAD + len].to_vec())
                 .expect("names are sanitised to printable ascii before they get here");
@@ -4552,6 +4553,7 @@ mod tests {
         send_far(&mut a, far);
         a.world.state.ships[far as usize].kills = 7;
         a.world.state.ships[far as usize].deaths = 3;
+        a.world.state.ships[far as usize].assists = 5;
 
         let m = a.roster_msg();
         let n = m[1] as usize;
@@ -4559,15 +4561,20 @@ mod tests {
         let mut found = None;
         for _ in 0..n {
             let ship = m[o];
-            let kills = u16::from_le_bytes([m[o + 6], m[o + 7]]);
+            let kills = i16::from_le_bytes([m[o + 6], m[o + 7]]);
             let deaths = u16::from_le_bytes([m[o + 8], m[o + 9]]);
-            let len = m[o + 16] as usize;
+            let assists = u16::from_le_bytes([m[o + 10], m[o + 11]]);
+            let len = m[o + 18] as usize;
             if ship == far {
-                found = Some((kills, deaths));
+                found = Some((kills, deaths, assists));
             }
-            o += 17 + len;
+            o += 19 + len;
         }
-        assert_eq!(found, Some((7, 3)), "the far seat's score is on the roster");
+        assert_eq!(
+            found,
+            Some((7, 3, 5)),
+            "the far seat's score is on the roster"
+        );
     }
 
     #[test]
@@ -5779,12 +5786,55 @@ mod tests {
         );
         let filed = with_bots;
 
-        // A self-kill is one row: crediting the victim with their own
-        // destruction would say it twice.
+        // A self-kill is a death and a misfire, and the misfire is filed
+        // against the pilot who threw it, which is the same pilot. Not a
+        // kill: crediting the victim with their own destruction would say it
+        // twice, and it is not a thing anybody should be paid for. The
+        // meta-layer takes a rivet off the wallet for this row.
         a.note_death(hs, hs, 0);
         let after = rows(&pilots);
-        assert_eq!(after.len(), filed.len() + 1);
-        assert_eq!(after.last().unwrap().kind, pilot::DIED);
+        assert_eq!(after.len(), filed.len() + 2);
+        assert_eq!(
+            (
+                after[after.len() - 2].kind.as_str(),
+                after[after.len() - 2].name.as_str()
+            ),
+            ("died", "Hunter"),
+        );
+        assert_eq!(
+            (
+                after.last().unwrap().kind.as_str(),
+                after.last().unwrap().name.as_str()
+            ),
+            ("misfire", "Hunter"),
+        );
+        assert_eq!(
+            after.last().unwrap().detail["own"],
+            serde_json::json!(true),
+            "and it says whose hull it was"
+        );
+        let filed = after;
+
+        // And a teammate's death is the same mistake pointed at somebody
+        // else. It filed a `kill` paying nothing before, which the week's
+        // table counted as a kill.
+        let team = a.world.state.ships[hs as usize].team;
+        a.world.state.ships[ps as usize].team = team;
+        a.note_death(ps, hs, 0);
+        let after = rows(&pilots);
+        assert_eq!(after.len(), filed.len() + 2);
+        assert_eq!(
+            (
+                after.last().unwrap().kind.as_str(),
+                after.last().unwrap().name.as_str()
+            ),
+            ("misfire", "Hunter"),
+        );
+        assert_eq!(
+            after.last().unwrap().detail["own"],
+            serde_json::json!(false),
+            "somebody else's, this time"
+        );
         let _ = std::fs::remove_dir_all(&d);
     }
 

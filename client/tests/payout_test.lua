@@ -45,6 +45,7 @@ local sim = {
     ship_max_energy = function() return 100 end,
     ship_kills = function() return 0 end,
     ship_deaths = function() return 0 end,
+    ship_assists = function() return 0 end,
     ship_points = function() return 0 end,
     -- Nobody carries a bounty here, so the only number on the field is the
     -- one under test and a stray match cannot be a nameplate's.

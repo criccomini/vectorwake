@@ -1827,6 +1827,25 @@ impl Room {
                     *want = *max;
                 }
             }
+            // And down to the two kinds of charge a kit may carry, keeping
+            // the first two in kind order. A build saved before that rule
+            // existed names three or four, and dropping it whole would take
+            // the twenty-eight points that are still fine along with the two
+            // that are not, which is the same mistake the ceiling trim above
+            // exists to avoid.
+            {
+                let mut kinds = 0;
+                for k in 0..sim::MAX_CHARGES {
+                    let slot = sim::slot_charge(k) as usize;
+                    if fits[slot] == 0 {
+                        continue;
+                    }
+                    kinds += 1;
+                    if kinds > sim::KIT_CHARGE_SLOTS {
+                        fits[slot] = 0;
+                    }
+                }
+            }
             if self.set_kit(ship, &fits) {
                 if let Some(s) = self.names.get_mut(&ship) {
                     s.pending_kit = None;
@@ -2376,9 +2395,32 @@ impl Room {
                 }),
             );
         }
-        // A self-kill has no second party to credit, and crediting the victim
-        // with their own destruction would count it twice.
-        if victim == killer {
+        // Whose mistake it was, if it was one. Two shapes of the same thing:
+        // your own bomb at your own feet, and your own bomb at your wingman's.
+        // Both file a misfire against whoever threw it rather than a kill, and
+        // a misfire costs a rivet on the way through the meta-layer, the way
+        // the arena has already taken a kill off the board for it.
+        //
+        // A wall death has no thrower at all: seat 255 is nobody and
+        // `self.names` has no row for it, so nothing is filed and nothing is
+        // charged. Flying into a rock is a death and not a mistake anybody
+        // aimed.
+        let own = victim == killer;
+        let friendly = !own
+            && (killer as usize) < self.world.state.ships.len()
+            && (victim as usize) < self.world.state.ships.len()
+            && self.world.state.ships[killer as usize].team
+                == self.world.state.ships[victim as usize].team;
+        if own || friendly {
+            let at = if own { victim } else { killer };
+            if let Some(seat) = self.names.get(&at) {
+                let seat = seat.clone();
+                self.note(
+                    pilot::MISFIRE,
+                    &seat,
+                    serde_json::json!({ "of": self.name_of(victim), "own": own }),
+                );
+            }
             return;
         }
         if let Some(seat) = self.names.get(&killer) {
@@ -3783,6 +3825,7 @@ impl Room {
             m.push(sh.team);
             m.extend_from_slice(&sh.kills.to_le_bytes());
             m.extend_from_slice(&sh.deaths.to_le_bytes());
+            m.extend_from_slice(&sh.assists.to_le_bytes());
             m.extend_from_slice(&sh.points.to_le_bytes());
             let bounty = self.world.bounty(*ship as usize).clamp(0, u16::MAX as i32) as u16;
             m.extend_from_slice(&bounty.to_le_bytes());

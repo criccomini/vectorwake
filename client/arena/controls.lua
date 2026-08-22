@@ -52,29 +52,24 @@ return {
     {id = "bombs", name = "bombs", cat = "bomb", keys = {"tab"},
      what = "Fires a heavy weapon that detonates on impact.",
      pad = "the smaller pad beside the guns"},
-    -- The charge keys are positions under the skin: each spends the next slot
-    -- the hull you are in actually carries, so on a ship with no repel the
-    -- first key spends the burst. They are named for what the slots hold,
-    -- because that is what the corner stack calls them while you fly and a
-    -- page that called them "charge 1" was asking a pilot to learn a second
-    -- name for the same thing.
+    -- Two charge keys, and they are positions rather than weapons.
     --
-    -- Three, not four. The core carries four slots and the baseline fills
-    -- three: a repel, a burst and a mine. The fourth is a zone's to fill, and
-    -- a key for a charge no hull can carry is a row on this page that does
-    -- nothing when pressed.
+    -- A kit carries two kinds of charge and the pilot chooses which, so what
+    -- Q spends is whatever they put in the first slot on the ship page. There
+    -- were three keys named repel, burst and mine, on the argument that a
+    -- pilot should not have to learn a second name for a thing the corner
+    -- stack already calls by its own; that was true while every hull carried
+    -- all three and it stopped being true the moment the pair became a
+    -- choice. A key named for a weapon that is not fitted is worse than one
+    -- named for the slot it spends.
     --
-    -- The mine used to be the bomb trigger's other posture, on Shift+Tab. It
-    -- is a count you carry and spend now, so it is a charge like the other
-    -- two and it lost the chord along with the special case.
-    {id = "charge_1", name = "repel", cat = "charge", keys = {"q"},
-     what = "Pushes enemy fire and ships away from you.",
+    -- The corner stack still says what is in each, which is where a pilot
+    -- reads it in a fight, and the ship page says which key each row is on.
+    {id = "charge_1", name = "charge 1", cat = "charge", keys = {"q"},
+     what = "Spends the first charge on your ship.",
      pad = "tap its fixed cell above the weapons"},
-    {id = "charge_2", name = "burst", cat = "charge", keys = {"w"},
-     what = "Fires bullets in every direction at once.",
-     pad = "tap its fixed cell above the weapons"},
-    {id = "charge_3", name = "mine", cat = "charge", keys = {"e"},
-     what = "Leaves a mine where you are.",
+    {id = "charge_2", name = "charge 2", cat = "charge", keys = {"w"},
+     what = "Spends the second charge on your ship.",
      pad = "tap its fixed cell above the weapons"},
     {id = "multi", name = "multifire", cat = "multi", keys = {"tick"},
      what = "Fans your gun wider for more energy per shot.",

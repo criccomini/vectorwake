@@ -122,6 +122,15 @@ local pen = marks.pen
 -- week's table reaches it several hundred lines earlier and a local declared
 -- after its first use is a global lookup that comes back nil.
 local GUTTER = 22
+-- How far a lit row reaches past the column of type it is about, either side.
+--
+-- The field used to run from the panel's own edge to the far end of the
+-- stage, which is a gutter wider than the content on the left and a gutter
+-- wider on the right. Against a section head, whose rule and label sit on the
+-- content column exactly, that reads as a button nudged out of line with the
+-- heading over it, and it was reported that way. Sixteen points is padding
+-- around a control; a gutter is a column somebody else's type lives in.
+local ROW_PAD = 16
 
 local pages = {}
 
@@ -1299,6 +1308,8 @@ local function by_column(a, b)
         -- Fewest first: on every other column the top of the list is the
         -- pilot doing best, and this is the one where that means less.
         if a.d ~= b.d then return a.d < b.d end
+    elseif sort_key == "assists" then
+        if a.a ~= b.a then return a.a > b.a end
     else
         if a.p ~= b.p then return a.p > b.p end
     end
@@ -1409,15 +1420,16 @@ local function seat_team(i, p)
     return seat_here(i) and sim.ship_team(i) or (p and p.team)
 end
 
--- Kills, deaths, points and bounty, whichever way round they have to be got.
+-- Kills, deaths, assists, points and bounty, whichever way round they have to
+-- be got.
 local function seat_score(i, p)
     if seat_here(i) then
         -- The simulation for a seat we can see, because it lands twenty times
         -- a second and your own kill should appear the moment it happens.
-        return sim.ship_kills(i), sim.ship_deaths(i),
+        return sim.ship_kills(i), sim.ship_deaths(i), sim.ship_assists(i),
                sim.ship_points(i), sim.ship_bounty(i)
     end
-    return (p and p.k) or 0, (p and p.d) or 0,
+    return (p and p.k) or 0, (p and p.d) or 0, (p and p.a) or 0,
            (p and p.p) or 0, (p and p.b) or 0
 end
 
@@ -1439,7 +1451,7 @@ local function refresh_players(pilots, watchers, side, viewer_name)
             r.i = i
             -- Bounty is the one number on this row about the next thirty seconds
             -- rather than about the last hour.
-            r.k, r.d, r.p, r.b = seat_score(i, p)
+            r.k, r.d, r.a, r.p, r.b = seat_score(i, p)
             r.name = (p and p.name) or ("ship " .. i)
             r.lname = string.lower(r.name)
             -- The roster's own flag. This used to look for a local bot object,
@@ -1469,7 +1481,7 @@ local function refresh_players(pilots, watchers, side, viewer_name)
         local r = rows[n]
         if not r then r = {} rows[n] = r end
         r.i = nil
-        r.k, r.d, r.p, r.b = 0, 0, 0, 0
+        r.k, r.d, r.a, r.p, r.b = 0, 0, 0, 0, 0
         r.name = w.name
         r.lname = string.lower(r.name)
         r.ai = w.label == "bot" or w.label == "bot?"
@@ -1586,11 +1598,13 @@ local function scores(me, pilots, watchers, viewer_name)
         end
         return wide
     end
-    local bw, pw, dw, kw =
-        col_w("b", "BTY"), col_w("p", "PTS"), col_w("d", "D"), col_w("k", "K")
+    local bw, pw, aw, dw, kw =
+        col_w("b", "BTY"), col_w("p", "PTS"), col_w("a", "A"),
+        col_w("d", "D"), col_w("k", "K")
     local bx = x + w - 12 * F.scale
     local px = bx - bw - GAP
-    local dx = px - pw - GAP
+    local ax = px - pw - GAP
+    local dx = ax - aw - GAP
     local kx = dx - dw - GAP
     -- The marks sit in their own column left of the numbers rather than after
     -- each name, so a scan down the list finds them in a line instead of at a
@@ -1611,6 +1625,10 @@ local function scores(me, pilots, watchers, viewer_name)
     head_col("name", "PILOTS", name_x, nil)
     head_col("kills", "K", kx, "right")
     head_col("deaths", "D", dx, "right")
+    -- Kills you were part of and did not finish. A column rather than a line
+    -- in the box a row opens, because it is the same kind of fact as the two
+    -- beside it and belongs where they are.
+    head_col("assists", "A", ax, "right")
     head_col("points", "PTS", px, "right")
     head_col("bounty", "BTY", bx, "right")
     -- Hit boxes over the headings. Each takes its whole column and the gap to
@@ -1619,6 +1637,7 @@ local function scores(me, pilots, watchers, viewer_name)
     hit(x + 8 * F.scale, top_y() + 4 * F.scale, 60 * F.scale, 18 * F.scale, "sort_name")
     hit(kx - kw - GAP, top_y() + 4 * F.scale, kw + GAP, 18 * F.scale, "sort_kills")
     hit(dx - dw - GAP, top_y() + 4 * F.scale, dw + GAP, 18 * F.scale, "sort_deaths")
+    hit(ax - aw - GAP, top_y() + 4 * F.scale, aw + GAP, 18 * F.scale, "sort_assists")
     hit(px - pw - GAP, top_y() + 4 * F.scale, pw + GAP, 18 * F.scale, "sort_points")
     hit(bx - bw - GAP, top_y() + 4 * F.scale, bw + GAP, 18 * F.scale, "sort_bounty")
     ticks(x + 12 * F.scale, top_y() + 20 * F.scale, w - 24 * F.scale,
@@ -1685,6 +1704,7 @@ local function scores(me, pilots, watchers, viewer_name)
             -- while still making them read past it.
             txt(tostring(r.k), kx, cy, num, pal.a(pal.INK, 0.85), "right")
             txt(tostring(r.d), dx, cy, num, pal.a(pal.INK, 0.85), "right")
+            txt(tostring(r.a), ax, cy, num, pal.a(pal.INK, 0.85), "right")
             -- The bounty in gold, which is the color it wears on a
             -- nameplate, in the corner stack and in the box this row opens.
             -- Points held the gold while it was the only score here; with
@@ -2178,7 +2198,8 @@ local function loadout(me, class_names, top)
 
     txt(class_names[sim.ship_class(me) + 1] or "?", x + 12 * F.scale, y + 16 * F.scale,
         (FONT - 1) * F.scale, pal.FRIEND)
-    txt(sim.ship_kills(me) .. "k  " .. sim.ship_deaths(me) .. "d",
+    txt(sim.ship_kills(me) .. "k  " .. sim.ship_deaths(me) .. "d  "
+        .. sim.ship_assists(me) .. "a",
         x + w - 12 * F.scale, y + 16 * F.scale, (FONT - 3) * F.scale, pal.a(pal.DIM, 0.85),
         "right")
 
@@ -3428,9 +3449,9 @@ local function podium(o, m, names)
         -- prints the same number twice in two sizes is a card that has not
         -- decided which one anybody is meant to read.
         --
-        -- What the two numbers on every row below are, though, does belong
-        -- here: once per column, in the head, rather than a word per row.
-        txt("k  d", cx + cw - 18 * F.scale, y + 34 * F.scale, 9.5 * F.scale,
+        -- What the three numbers on every row below are, though, does belong
+        -- here: once per column, in the head, rather than three words a row.
+        txt("k  d  a", cx + cw - 18 * F.scale, y + 34 * F.scale, 9.5 * F.scale,
             pal.a(pal.DIM, 0.75), "right")
         F.layer:seg(cx + 18 * F.scale, ry(y + 44 * F.scale),
                     cx + cw - 18 * F.scale, ry(y + 44 * F.scale),
@@ -3468,7 +3489,7 @@ local function podium(o, m, names)
                 -- the other end of it.
                 local nx = cx + 26 * F.scale + text_w(sd.phrase, 12.5 * F.scale)
                 if nx + text_w(r.name, 9 * F.scale)
-                   < cx + cw - 46 * F.scale then
+                   < cx + cw - 66 * F.scale then
                     lbl(r.name, nx, ry0, pal.a(pal.DIM, 0.75))
                 end
             else
@@ -3478,10 +3499,11 @@ local function podium(o, m, names)
             -- The best gun in the room, whichever side it was on. One mark
             -- rather than a column, because it is one pilot.
             if r == mvp then
-                txt("mvp", cx + cw - 68 * F.scale, ry0, 9.5 * F.scale,
+                txt("mvp", cx + cw - 88 * F.scale, ry0, 9.5 * F.scale,
                     pal.a(pal.CHARGE_COL, 0.85), "right")
             end
-            txt(r.k .. "  " .. r.d, cx + cw - 18 * F.scale, ry0, 12 * F.scale,
+            txt(r.k .. "  " .. r.d .. "  " .. r.a,
+                cx + cw - 18 * F.scale, ry0, 12 * F.scale,
                 pal.a(pal.DIM, 0.95), "right")
         end
     end
@@ -3710,6 +3732,10 @@ function pages.week(v, x, y, w, h, focused)
     local want = {
         {"kills", 46, function(r) return tostring(r.kills or 0) end, true},
         {"deaths", 52, function(r) return tostring(r.deaths or 0) end},
+        -- Kills a pilot was part of and did not finish. Beside the two it
+        -- belongs with rather than after the ratio, so the three read as one
+        -- group the way they do on the scoreboard in a match.
+        {"assists", 56, function(r) return tostring(r.assists or 0) end},
         -- Kills over deaths, which is the number everybody argues about and
         -- the one thing in the old card worth the width it took.
         {"k/d", 50, function(r)
@@ -3881,15 +3907,38 @@ function pages.week(v, x, y, w, h, focused)
     -- "# pilot # pilot".
     local sorted = (v.week or {}).sort
     local up = (v.week or {}).sort_up
+    -- Which way the column is ordered, as a triangle rather than as a caret
+    -- and a letter v. Those were the two characters nearest to the shape at
+    -- the size a column head is set, and at that size they read as a caret
+    -- and a letter v. Everything else in this menu that points somewhere is
+    -- drawn, including the pair of arrows the packed heading already carries
+    -- twenty points to the left of this one.
+    local MARK_W = 7 * F.scale
+    local function sort_mark(cx, cy, rising, col)
+        local hw, hh = MARK_W / 2, 3.4 * F.scale
+        local tip = rising and (cy - hh) or (cy + hh)
+        local base = rising and (cy + hh) or (cy - hh)
+        F.layer:tri(cx, ry(tip), cx - hw, ry(base), cx + hw, ry(base), col)
+    end
     local function head(key, hx, align, sorts)
         sorts = sorts or key
         local on = sorted == sorts
-        local word = on and (key .. (up and " ^" or " v")) or key
-        lbl(word, hx, ty, pal.a(on and pal.FRIEND or pal.DIM, on and 1 or 0.9),
-            align)
-        local ww = text_w(word, 9 * F.scale)
-        local left = align == "right" and (hx - ww) or hx
-        hit(left - 8 * F.scale, ty - 16 * F.scale, ww + 16 * F.scale,
+        local col = pal.a(on and pal.FRIEND or pal.DIM, on and 1 or 0.9)
+        local ww = text_w(key, 9 * F.scale)
+        -- The word and its mark are one lockup, aligned together: right of a
+        -- right-hand column the mark is the rightmost thing, so the word
+        -- steps left by what the mark takes rather than the mark hanging off
+        -- into the next column.
+        local wide = ww + (on and (MARK_W + 6 * F.scale) or 0)
+        local left = align == "right" and (hx - wide) or hx
+        lbl(key, left, ty, col)
+        if on then
+            -- On the label's own middle rather than on `ty`, which is where
+            -- the line is placed and not where its type sits inside it.
+            sort_mark(left + ww + 3 * F.scale + MARK_W / 2, ty - 1 * F.scale,
+                      up, col)
+        end
+        hit(left - 8 * F.scale, ty - 16 * F.scale, wide + 16 * F.scale,
             22 * F.scale, "sort", sorts)
     end
     -- The rank column's head is the mark it has always been, not the word:
@@ -3910,18 +3959,19 @@ function pages.week(v, x, y, w, h, focused)
     -- menu.
     if packed then
         local word = sorted_col[1]
-            .. (((v.week or {}).sort_up) and " ^" or " v")
-        local ww2 = text_w(word, 9 * F.scale)
+        local ww2 = text_w(word, 9 * F.scale) + MARK_W + 6 * F.scale
         local hx = x + tw - 16 * F.scale
-        lbl(word, hx, ty, pal.a(pal.FRIEND, 1), "right")
+        lbl(word, hx - ww2, ty, pal.a(pal.FRIEND, 1))
+        sort_mark(hx - MARK_W / 2, ty - 1 * F.scale,
+                  (v.week or {}).sort_up, pal.a(pal.FRIEND, 1))
         hit(hx - ww2 - 8 * F.scale, ty - 15 * F.scale, ww2 + 16 * F.scale,
             22 * F.scale, "sort", sorted_col[5] or sorted_col[1])
         for _, side in ipairs({{-1, hx - ww2 - 20 * F.scale},
                                {1, hx + 10 * F.scale}}) do
             local dir, ax = side[1], side[2]
-            F.layer:tri(ax + dir * 4 * F.scale, ry(ty - 3 * F.scale),
-                        ax - dir * 3 * F.scale, ry(ty - 8 * F.scale),
-                        ax - dir * 3 * F.scale, ry(ty + 2 * F.scale),
+            F.layer:tri(ax + dir * 4 * F.scale, ry(ty - 1 * F.scale),
+                        ax - dir * 3 * F.scale, ry(ty - 6 * F.scale),
+                        ax - dir * 3 * F.scale, ry(ty + 4 * F.scale),
                         pal.a(pal.FRIEND, 0.9))
             hit(ax - 12 * F.scale, ty - 15 * F.scale, 24 * F.scale,
                 22 * F.scale, "sort_step", dir)
@@ -4123,7 +4173,7 @@ function pages.aside(a, x, y, w, h)
             lbl(M.side_names and M.side_names[team] or "side", x, ly,
                 pal.a(col, 0.9))
             local rx2 = x + w - 24 * F.scale
-            lbl("k  d", rx2, ly, pal.a(pal.DIM, 0.75), "right")
+            lbl("k  d  a", rx2, ly, pal.a(pal.DIM, 0.75), "right")
             ly = ly + 8 * F.scale
             hrule(x, ly, w - 24 * F.scale)
             ly = ly + 16 * F.scale
@@ -4131,7 +4181,8 @@ function pages.aside(a, x, y, w, h)
                 txt(r.name, x, ly, 12.5 * F.scale,
                     pal.a(r.self and pal.FRIEND or pal.INK, r.self and 1 or 0.8),
                     nil, nil, true)
-                txt(r.k .. "  " .. r.d, x + w - 24 * F.scale, ly, 11 * F.scale,
+                txt(r.k .. "  " .. r.d .. "  " .. r.a,
+                    x + w - 24 * F.scale, ly, 11 * F.scale,
                     pal.a(pal.DIM, 0.95), "right")
                 ly = ly + 17 * F.scale
             end
@@ -4539,6 +4590,12 @@ function pages.kit(v, x, y, w, h, focused)
             txt(readout(r.choice or 0), px + 10 * F.scale, cy, 11 * F.scale,
                 pal.a(pal.INK, hot and 0.95 or 0.7))
         end
+        -- Which key spends it, for the two charges a kit carries. The keys
+        -- are positions and what sits in each is this choice, so this is the
+        -- page that has to say which is which.
+        if r.on_key then
+            lbl(r.on_key, kx + kw, cy, pal.a(pal.CHARGE_COL, 0.85), "right")
+        end
         -- And what the next rung costs, on the end of the ladder rather than
         -- in a control of its own.
         --
@@ -4826,7 +4883,7 @@ function pages.friends(v, x, y, w, h, focused)
                                or 0)
             local hy = at - dy
             if hy >= top and hy + sh <= y + h then
-                hrule(x, hy + SECT * 0.42, w - 10 * F.scale)
+                hrule(x, hy + SECT * 0.42, w)
                 lbl(r.sect, x, hy + SECT * 0.82)
                 if r.sect_note then
                     lbl(r.sect_note,
@@ -4852,8 +4909,8 @@ function pages.friends(v, x, y, w, h, focused)
         at = at + rowh
         if seen(ry0) then
             local hot = (focused and i == v.sel) or i == v.hover
-            if hot then wash(x - GUTTER * F.scale, ry0,
-                             w + GUTTER * F.scale, rowh,
+            if hot then wash(x - ROW_PAD * F.scale, ry0,
+                             w + 2 * ROW_PAD * F.scale, rowh,
                              pal.a(pal.FRIEND, 0.16)) end
             local cy = ry0 + rowh / 2
             local col = pal.a(pal.INK, r.dim and 0.6 or (hot and 1 or 0.9))
@@ -4986,8 +5043,8 @@ function pages.shop(v, x, y, w, h, focused)
         if ry0 >= top and ry0 + rowh <= y + h then
             local hot = (focused and i == v.sel) or i == v.hover
             if hot then
-                wash(x - GUTTER * F.scale, ry0, w + GUTTER * F.scale, rowh,
-                     pal.a(pal.FRIEND, 0.16))
+                wash(x - ROW_PAD * F.scale, ry0, w + 2 * ROW_PAD * F.scale,
+                     rowh, pal.a(pal.FRIEND, 0.16))
             end
             local cy = ry0 + rowh / 2
             local ny = packed and (ry0 + rowh * 0.3) or cy
@@ -5899,7 +5956,11 @@ local function stage_row(x, y, w, h, r, hot)
     -- is what a selection is everywhere else in this interface. It was a flat
     -- field, and a flat field on a page that has a lit edge reads as a second
     -- panel laid over the first.
-    if hot then wash(x, y, w, h, pal.a(pal.FRIEND, 0.18)) end
+    if hot then
+        wash(x + GUTTER * F.scale - ROW_PAD * F.scale, y,
+             w - 2 * GUTTER * F.scale + 2 * ROW_PAD * F.scale, h,
+             pal.a(pal.FRIEND, 0.18))
+    end
     -- One text column, whatever the row is, and it is the column the title
     -- above the list is set in. The wedge that says "this is the one you are
     -- already on" lives in the gutter to the left of that column, off the type
@@ -7161,8 +7222,15 @@ function M.menu(v)
     local panel_x, panel_w = sx, avail
     if not narrow then
         local ph = sh - 6 * F.scale
+        -- The ground, and nothing down the side of it.
+        --
+        -- There was a lit rule at the left edge, on the argument that a page
+        -- is a panel and every instrument in the arena hangs off one. Over
+        -- there a rule is the edge of a thing that has an edge; here it ran
+        -- the height of the screen a gutter left of the first letter of every
+        -- row and marked nothing, which is furniture. Gone, along with the
+        -- overhang the rows had so they could reach it.
         rect(panel_x, sy, panel_w, ph, pal.rgb(0x05070c, 0.5))
-        vrule(panel_x, sy, ph, pal.a(pal.RADAR_TILE, 0.7))
     end
     local asidew = 0
     if listy then
