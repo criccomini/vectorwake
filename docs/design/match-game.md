@@ -408,12 +408,12 @@ panes and grids, and the menu tree was deliberately one narrow column that
 [menu.md](menu.md) says "falls apart at 390 points wide". So there are two
 surfaces now rather than one:
 
-- **Four tabs** at the front end, which is where you are between matches and
-  where there is time to read: play, ship, standings, settings. Your call
-  sign at the far end of the row is the way into your account. Upgrades was
-  the fifth and is not a tab any more: the shelf was the ship page's own rows
+- **Five tabs** at the front end, which is where you are between matches and
+  where there is time to read: play, ship, friends, standings, settings. Your
+  call sign at the far end of the row is the way into your account. Upgrades
+  was one of them and is not any more: the shelf was the ship page's own rows
   listed again and priced, so the price moved onto the row and the tab went.
-  See [menu.md](menu.md).
+  Friends took the place it left. See [menu.md](menu.md).
 - **Two tabs in a match**: settings and leave. Same row in the same place,
   carrying what you can act on from a cockpit.
 

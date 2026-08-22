@@ -2,8 +2,9 @@
 
 > **The split happened.** [match-game.md](match-game.md) moved the ship page,
 > the upgrades and the standings out of this tree and into pages of their own,
-> with settings beside them, so the front end is four tabs and help folds
-> into settings with the bindings. Upgrades is not one of them any more: what
+> with settings beside them, so the front end is five tabs and help folds
+> into settings with the bindings. Friends is one of them, and upgrades is not
+> any more: what
 > rivets buy is a rung of a slot, every slot is already a row of the ship
 > page, and a shelf listing those same rows on a tab of its own meant buying
 > in one place and spending the point in another. The price sits at the end
@@ -36,18 +37,19 @@ starfield with no way back, which is a button that breaks the game.
 
 ## A tab row, and a page under it
 
-Four tabs at the front end and three in a match, with one page under whichever
+Five tabs at the front end and three in a match, with one page under whichever
 is lit. Left and right walk the row, down enters the page, up from its first
 row comes back to the row, and left and right on a row set that row's value.
 
 ```
 vectorwake
-├ play        three sections: the zones a directory is running and how busy
-│             each one is, who is on, and the way out to Discord. Friends is
-│             a section here rather than a tab of its own, for the reason
-│             Discord is a button and not a page
+├ play        two sections: the zones a directory is running and how busy
+│             each one is, and the way out to Discord, which is a button
+│             rather than a page
 ├ ship        one hull on a carousel, the thirty points you spend on it, and
 │             what the next rung of each slot costs in rivets
+├ friends     who is on, who is waiting on you, and the people in the room
+│             with you. See friends.md
 ├ standings   the week, resetting Monday
 └ settings    sound · music · frames · fullscreen · bindings · about
 

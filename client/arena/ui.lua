@@ -4638,6 +4638,16 @@ local function mark_pilot(cx, cy, r, col)
     pilot_mark(cx, cy, col, r * 1.6, RAIL_PEN * F.scale)
 end
 
+-- Two helmets, one behind the other: people rather than a person. The single
+-- helmet already stands for you, at the far end of this row beside your name,
+-- so the stop about everybody else cannot wear the same mark.
+local function mark_friends(cx, cy, r, col)
+    pilot_mark(cx - r * 0.46, cy - r * 0.16, pal.a(col, 0.55), r * 1.15,
+               RAIL_PEN * F.scale)
+    pilot_mark(cx + r * 0.36, cy + r * 0.2, col, r * 1.3,
+               RAIL_PEN * F.scale)
+end
+
 local function mark_team(cx, cy, r, col)
     -- Two pennants, which is what a flag is drawn as in the world.
     for i, k in ipairs({{-0.5, 0.85}, {0.35, 1.0}}) do
@@ -4834,7 +4844,7 @@ end
 local MARKS = {zones = mark_zones, pilot = mark_pilot, team = mark_team,
                settings = mark_settings, controls = mark_controls,
                about = mark_about, discord = mark_discord, leave = mark_leave,
-               standings = mark_standings}
+               friends = mark_friends, standings = mark_standings}
 
 local function draw_mark(kind, cx, cy, r, col, cls)
     if kind == "ship" then return mark_ship(cx, cy, r, col, cls) end
@@ -6126,10 +6136,22 @@ function M.menu(v)
     -- reads as the page talking rather than as a row you can land on: it is
     -- not in `rows` and the cursor never touches it.
     if v.lede then
-        local lh = 26 * F.scale
-        txt(v.lede, tx, top + lh * 0.4, 12 * F.scale, pal.a(pal.DIM, 0.9))
-        top = top + lh
-        room = room - lh
+        -- Wrapped to the list's own measure. One line is what it is on a
+        -- monitor and two on a phone, where it ran off the right edge and the
+        -- sentence stopped mid-word.
+        local px = 12 * F.scale
+        local lines = wrapped(v.lede, px, lw)
+        local lh = 17 * F.scale
+        for i, line in ipairs(lines) do
+            -- Only the first line is a sentence opening. The menu capitalizes
+            -- the first letter of whatever it is handed, and handed two lines
+            -- it capitalized both: "as / Soon as they add you back".
+            txt(line, tx, top + 10 * F.scale + (i - 1) * lh, px,
+                pal.a(pal.DIM, 0.9), nil, nil, i > 1)
+        end
+        local used = #lines * lh + 12 * F.scale
+        top = top + used
+        room = room - used
     end
     -- A list is capped: a row whose name sits at one edge and whose count
     -- sits at the other, a screen apart, is two columns nobody reads as one

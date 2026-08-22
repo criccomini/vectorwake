@@ -833,6 +833,21 @@ end
 -- exist. There is no approval. Both sides add, and adding somebody who has
 -- already added you is the whole of accepting them. That is a rule, and a
 -- rule the rows cannot show has to be written down.
+-- What the tab says under its own name: the answer to "who is on", in the
+-- fewest words that are true.
+local function friends_detail()
+    if account.base == "" then return "" end
+    local on = 0
+    for _, f in ipairs(account.friends or {}) do
+        if f.zone ~= nil and f.zone ~= "" then on = on + 1 end
+    end
+    if on > 0 then return on .. " in a game" end
+    local waiting = #(account.asked or {})
+    if waiting > 0 then return waiting .. " waiting on you" end
+    if #(account.friends or {}) == 0 then return "nobody yet" end
+    return "none on"
+end
+
 local function friends_lede()
     -- One sentence. The menu is set in a sentence's case, which capitalizes
     -- the first letter of a line and no other, so a second sentence here
@@ -1008,28 +1023,12 @@ local function play_rows()
             return net.my_team_name()
         end, go = "teams"}
     end
-    -- Who is on. A row here rather than a seventh tab, for the reason the
-    -- Discord row below is a row: this is where somebody is already thinking
-    -- about who to play with. A tab would put "who is on" beside "how loud is
-    -- the music" in a row of six equals, and it is not one of six equals, it
-    -- is the other way into a game. See docs/design/friends.md.
-    if account.base ~= "" then
-        rows[#rows + 1] = {label = "friends", go = "friends",
-                           sect = "friends", detail = function()
-            local on = 0
-            for _, f in ipairs(account.friends or {}) do
-                if f.zone ~= nil and f.zone ~= "" then on = on + 1 end
-            end
-            if on > 0 then return on .. " in a game" end
-            local waiting = #(account.asked or {})
-            if waiting > 0 then
-                return waiting .. (waiting == 1 and " waiting on you"
-                                                 or " waiting on you")
-            end
-            if #(account.friends or {}) == 0 then return "nobody yet" end
-            return "none on"
-        end}
-    end
+    -- No friends row here. It was one, on the argument that this is where
+    -- somebody is already thinking about who to play with, and that a tab
+    -- would put "who is on" beside "how loud is the music". It is a tab now:
+    -- a row on a page is a place you find by going somewhere else first, and
+    -- who is on is a question asked from wherever you are standing.
+    -- See docs/design/friends.md.
     -- Where the community is, and the only outbound link in the game. It sits
     -- here because this is where somebody is already thinking about who to
     -- play with, which is the argument `community.md` makes and the reason it
@@ -1090,7 +1089,7 @@ local NODES = {
             -- made. One press from the card at the end of a match, because the
             -- menu opens over it.
             if account.base ~= "" then
-                rows[#rows + 1] = {label = "friends", icon = "pilot",
+                rows[#rows + 1] = {label = "friends", icon = "friends",
                                    go = "friends", detail = function()
                     local n = #(account.here or {})
                     if n > 0 then return n .. " to add" end
@@ -1117,6 +1116,12 @@ local NODES = {
                  return HULLS[M.class + 1][1]
              end,
              go = "hangar"},
+            -- Who is on, next to where you would go with them. It was a
+            -- section of the play page, which is a stop on the way to
+            -- somewhere else; this is a question a player asks from wherever
+            -- they are standing. See docs/design/friends.md.
+            {label = "friends", icon = "friends", go = "friends",
+             detail = friends_detail},
             {label = "standings", icon = "standings", detail = "this week",
              go = "standings"},
             -- No pilot stop. The call sign is already written at the far end

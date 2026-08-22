@@ -88,11 +88,18 @@ a friend is made: you played, it was good, and their name is in front of you.
 **Seeing and joining** happen on the friends page too, at the top. A friend in
 a game reads as their name, the game, and a press that puts you in it.
 
-**The page** is one row on the play page rather than a seventh tab, for the
+**The page** is a tab of its own. It was a row on the play page first, for the
 reason [menu.md](menu.md) gives about Discord: "this is where somebody is
-already thinking about who to play with". A tab for it would put the question
-"who is on" beside "how loud is the music" in a row of six equals, and it is
-not one of six equals: it is the other way into a game.
+already thinking about who to play with", and a tab would have put "who is on"
+beside "how loud is the music" in a row of equals.
+
+That argument had it backwards. The play page is somewhere you go in order to
+join a game, so a row on it answers "who is on" only for a player who was
+already on their way somewhere; the question is asked from wherever you happen
+to be standing. And a tab carries its own line under its name, so "two in a
+game" is legible from every page in the menu rather than from the one page you
+had to open to find out. The row was a good answer to where the *adding*
+happens, which is the roster in a match, and that half has not moved.
 
 In a match the same page hangs off the in-match tab row, beside the hangar,
 because that is where the roster is.

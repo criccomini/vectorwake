@@ -135,11 +135,11 @@ menu.sel = {}
 
 local ship_at = top_index("ship")
 local settings_at = top_index("settings")
-local no_shop = true
-for _, r in ipairs(menu.view().rail) do
-    if r.label == "upgrades" then no_shop = false end
-end
-check("the tab row has no upgrades stop", no_shop, "upgrades is still a tab")
+local tabs = {}
+for _, r in ipairs(menu.view().rail) do tabs[#tabs + 1] = r.label end
+check("the tab row is play, ship, friends, standings, settings",
+      table.concat(tabs, "/") == "play/ship/friends/standings/settings",
+      table.concat(tabs, "/"))
 check("the rail carries the destinations", ship_at and settings_at,
       "ship " .. tostring(ship_at) .. ", settings " .. tostring(settings_at))
 
@@ -493,26 +493,25 @@ menu.zone = "chaos"
 menu.ask = nil
 menu.show("play")
 local zones = menu.view()
--- One game, the friends row and the community row. Neither of the last two
--- is a way out of the game: they are where somebody thinking about who to
--- play with already is, which is the argument for both being here rather than
--- on the tab row. See docs/design/friends.md.
--- Three questions, headed as three. Run together they read as one list where
--- Discord is a game you could join and friends is a room with nobody in it.
+-- One game and the community row, headed as two. Discord is not a way out of
+-- the game: it is where somebody thinking about who to play with already is,
+-- which is the argument for it being here rather than on the tab row. Friends
+-- was the third section and is a tab of its own now, because who is on is a
+-- question asked from wherever you are standing rather than one you go to the
+-- games page to ask. See docs/design/friends.md.
 local heads = {}
 for _, r in ipairs(zones.rows) do
     if r.sect then heads[#heads + 1] = r.sect end
 end
-check("the play page is three sections",
-      table.concat(heads, "/") == "zones/friends/community",
+check("the play page is two sections",
+      table.concat(heads, "/") == "zones/community",
       table.concat(heads, "/"))
 check("and the way out to Discord is a button rather than a row",
-      zones.rows[3].button == "discord", tostring(zones.rows[3].button))
+      zones.rows[2].button == "discord", tostring(zones.rows[2].button))
 
 check("nothing at the foot of the list leaves the game",
-      #zones.rows == 3 and zones.rows[1].label == "chaos"
-          and zones.rows[2].label == "friends"
-          and zones.rows[3].label == "Talk on Discord",
+      #zones.rows == 2 and zones.rows[1].label == "chaos"
+          and zones.rows[2].label == "Talk on Discord",
       table.concat(texts_of(zones), ", "))
 
 local act2 = menu.step({go = true})
