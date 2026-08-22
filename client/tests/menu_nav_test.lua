@@ -39,6 +39,7 @@ local account = {
     asked_friends = 0,
     friended = nil, ignored = nil,
     friend_note = "", friend_bad = false,
+    found = {}, found_for = "", asked_for = nil,
 }
 function account.refresh_week(back)
     account.asked_week = back or 0
@@ -51,6 +52,18 @@ function account.friend(who, add)
 end
 function account.ignore(who, on)
     account.ignored = {who = who, on = on}
+end
+function account.find_pilots(prefix)
+    -- What the real one does with anything under two characters: nothing, and
+    -- it forgets whatever was there. Above that it asks and leaves the names
+    -- in hand alone until a reply lands, which is the state this page has to
+    -- draw correctly.
+    if #prefix < 2 then
+        account.asked_for = ""
+        account.found, account.found_for = {}, prefix
+        return
+    end
+    account.asked_for = prefix
 end
 function account.online()
     return account.base ~= ""
@@ -1510,6 +1523,45 @@ do
 
     -- Answered here, because the meta-layer would have to be told the call
     -- sign to say it back and nothing needs to go out to know this.
+    -- --- and what the box turns up as you type
+    --
+    -- A call sign is a word and three digits and it has to be exact, which is
+    -- a small task nobody should have to be careful about. So the meta-layer
+    -- answers a prefix and the names land under the box.
+    account.found, account.found_for = {}, ""
+    menu.add_name, menu.add_on = "", false
+    menu.type_add("H")
+    check("one letter asks for nothing",
+          account.asked_for == nil or account.asked_for == "",
+          tostring(account.asked_for))
+    menu.type_add("a")
+    check("and two asks", account.asked_for == "Ha", tostring(account.asked_for))
+    account.found_for = "Ha"
+    account.found = {{account = 31, name = "Halcyon 1"},
+                     {account = 32, name = "Halcyon 12"}}
+    check("the page draws what came back",
+          #menu.view().add.found == 2, tostring(#menu.view().add.found))
+    -- Only while the answer is about what is in the box. A reply to an older
+    -- prefix is a list of the wrong names sitting under the right ones.
+    menu.type_add("l")
+    check("and drops it the moment the box says something else",
+          #menu.view().add.found == 0, tostring(#menu.view().add.found))
+
+    -- Pressed, it adds that pilot by number rather than by the letters in the
+    -- box: two call signs can open the same way and only one was pressed.
+    account.found_for = menu.add_name
+    account.found = {{account = 31, name = "Halcyon 1"},
+                     {account = 32, name = "Halcyon 12"}}
+    account.friended = nil
+    menu.click_found(2)
+    check("pressing a name adds that pilot by number",
+          account.friended ~= nil and account.friended.who == 32
+          and account.friended.add == true,
+          tostring(account.friended and account.friended.who))
+    check("and the box empties behind it",
+          menu.add_name == "" and #account.found == 0,
+          menu.add_name .. "/" .. tostring(#account.found))
+
     account.friended = nil
     menu.name = "Quarrel 214"
     menu.add_name, menu.add_on = "quarrel 214", true
@@ -1876,6 +1928,105 @@ do
     account.entitlements = {}
     account.kits = {}
 
+    -- --- what is on the page is what you can fly
+    --
+    -- A slot the arena has and the account does not own used to be drawn here
+    -- anyway, backed off, so the page could say "this exists and is not
+    -- yours". The upgrades tab says that now, with the price attached, and
+    -- here it left unreachable rows and chips too dim to read taking the room
+    -- a legible one would have.
+    -- An arena with one stat, the gun's ladder, two of the gun's add-ons and
+    -- one charge. The walk test above filled every slot; this is a shape small
+    -- enough to name every row it should produce.
+    for i = 1, 25 do CEIL[i] = 0 end
+    CEIL[1] = 4          -- the first stat
+    CEIL[6] = 2          -- the gun's ladder
+    CEIL[8] = 1          -- gun spray, one rung
+    CEIL[9] = 2          -- gun bounce, two
+    CEIL[22] = 3         -- the first charge
+    -- Back on the ship page, which the upgrades block above left.
+    account.catalog = nil
+    account.entitlements = {}
+    menu.stack = {"root", "hangar"}
+    menu.sel = {}
+    menu.kit = nil
+    menu.open_kit(0)
+    local owned = {}
+    for _, r in ipairs(menu.view().rows) do owned[#owned + 1] = r.label end
+    check("every slot the arena takes is on the page while the account owns it",
+          #owned == 7, table.concat(owned, ", "))
+
+    -- Now the account owns none of the gun's ladder and one of three repels.
+    account.entitlements = {[6] = 0, [22] = 1}
+    menu.kit = nil
+    menu.open_kit(0)
+    local mine, charge = {}, nil
+    for _, r in ipairs(menu.view().rows) do
+        mine[#mine + 1] = r.label
+        if r.label == "repel" then charge = r end
+    end
+    check("a slot the account owns none of is off the page altogether",
+          #mine == 6 and not string.find(table.concat(mine, ","),
+                                         "gun level", 1, true),
+          table.concat(mine, ", "))
+    check("and a ladder stops at what the account owns, not at the arena's",
+          charge ~= nil and charge.owned == 1 and charge.choices == 1,
+          charge and (tostring(charge.owned) .. "/" .. tostring(charge.choices))
+              or "no repel row")
+
+    -- --- an add-on is a switch, and the arrows walk them
+    --
+    -- The chips are drawn as a row of boxes across the page, so left and right
+    -- go to the chip beside this one. They set the value before, which is a
+    -- ladder's control: the arrow pointing at the next chip turned the one it
+    -- was on off, and walking the group meant pressing up and down through a
+    -- row that reads left to right.
+    account.entitlements = {}
+    -- A build with a point already on it, so `open_kit` does not fall back to
+    -- the starter kit and hand this test a chip that is already switched on.
+    account.kits = {Apex = {[1] = 1}}
+    menu.kit = nil
+    menu.open_kit(0)
+    menu.sel = {}
+    local spray, bounce = nil, nil
+    for i, r in ipairs(menu.view().rows) do
+        if r.label == "gun spray" then spray = i end
+        if r.label == "gun bounce" then bounce = i end
+    end
+    check("the add-ons are on the page as chips",
+          spray ~= nil and bounce == spray + 1,
+          tostring(spray) .. "/" .. tostring(bounce))
+    menu.sel.hangar = spray
+    menu.step({right = true})
+    check("right goes to the chip beside it", menu.sel.hangar == bounce,
+          "cursor " .. tostring(menu.sel.hangar))
+    check("and nothing was switched on the way", (menu.kit[8] or 0) == 0,
+          tostring(menu.kit[8]))
+    menu.step({left = true})
+    check("and left comes back", menu.sel.hangar == spray,
+          "cursor " .. tostring(menu.sel.hangar))
+
+    -- Enter throws it, and the trigger is enter here: a switch wants one
+    -- press, and at the top the next press takes it off again.
+    menu.step({go = true})
+    check("enter switches the chip on", (menu.kit[8] or 0) == 1,
+          tostring(menu.kit[8]))
+    menu.step({go = true})
+    check("and enter again takes it off", (menu.kit[8] or 0) == 0,
+          tostring(menu.kit[8]))
+
+    -- A stat is still a ladder, because that is what it is: left and right
+    -- spend and unspend along it.
+    menu.sel.hangar = 3
+    menu.step({right = true})
+    check("but a stat still takes a step from the arrows",
+          (menu.kit[1] or 0) == 2, tostring(menu.kit[1]))
+    menu.step({left = true})
+    check("and gives it back", (menu.kit[1] or 0) == 1, tostring(menu.kit[1]))
+
+    account.entitlements = {}
+    account.kits = {}
+    menu.kit = nil
     _G.sim = nil
 end
 

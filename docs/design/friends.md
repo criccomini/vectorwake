@@ -29,12 +29,26 @@ the way a private team invitation is one per
 the only names the system would ever show you were people you had played with
 and people who had chosen to add you.
 
-There is a field now, on the friends page, and it takes a call sign. The
-roster is still where most friends are made and the field does not weaken it
-much, because you have to know the exact call sign already and nothing is
-searched or suggested: the meta-layer looks up the whole name and answers with
-that pilot or with "no pilot called that". What it does open is an add landing
-in a stranger's list, which is why the section below grew an ignore.
+There is a field now, on the friends page, and it takes a call sign. It
+answers as you type: two characters in, the meta-layer sends back up to eight
+call signs beginning with what is there, and pressing one adds that pilot by
+account number, so two names that open the same way cannot be confused for
+each other. A call sign is a word and three digits and it has to be exact,
+which is a small task nobody should have to be careful about.
+
+That is a real change to what this system will tell you, and worth naming.
+Before it, the only pilots the meta-layer would ever put in front of you were
+people you had played with and people who had chosen to add you. Now it will
+complete a name you have most of. What bounds it is that it only ever
+completes: two characters minimum, eight names, matched from the start of the
+name rather than anywhere inside it, and nothing comes back but the call sign
+and the number needed to add them. There is no browsing, no listing, and no
+way to ask it for everybody: `%` is escaped, so a pilot typing one gets
+nothing. It is throttled per account, because a client asking on every
+keystroke is the honest use and a script walking the alphabet is not.
+
+The other thing a field opens is an add landing in a stranger's list, which is
+why the section below grew an ignore.
 
 The field is the whole of the typing. Nothing anybody types reaches another
 player.
@@ -150,9 +164,11 @@ while it is on screen, the way the shop and the week's table already work, and
 not otherwise: this is a page somebody is looking at rather than a fact a
 session needs.
 
-Two routes change it. `/v1/friend` makes or drops an edge and takes either an
-account number off one of those lists or a call sign somebody typed;
-`/v1/friend/ignore` sets and clears an ignore. Both answer with the page,
+Three routes change it or feed it. `/v1/friend` makes or drops an edge and
+takes either an account number off one of those lists or a call sign somebody
+typed; `/v1/friend/ignore` sets and clears an ignore; `/v1/friend/find`
+answers a prefix with call signs, which is what the add field draws under
+itself as you type. Both answer with the page,
 because a press has to redraw and the client should not be working out what an
 edge did to five lists it does not compute.
 
@@ -176,12 +192,12 @@ than playing with friends.
 minting. A pilot who adds two hundred people in a minute is farming a list of
 who is online, and the rate limit is what makes that cost something.
 
-**The roster of your room is only offered while you are in it.** The list of
-who to add is not a directory of the fleet, and there is still no way to ask
-for one. The field takes a call sign and looks it up whole: it answers about
-the one name it was given and never offers a second, so the only names this
-system shows you are people you are playing with and people who chose to add
-you.
+**The roster of your room is only offered while you are in it**, and the field
+completes rather than searches. Neither is a directory of the fleet and there
+is no way to ask for one: two characters before the field answers at all,
+eight names back, matched only from the start, and the pattern characters
+escaped so nobody can ask for everything. A pilot who has most of a call sign
+gets the rest of it; a pilot who has none of one gets nothing.
 
 ## What is deliberately out
 

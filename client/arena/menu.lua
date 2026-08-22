@@ -544,7 +544,7 @@ function M.open_kit(class)
         kit[i] = want
     end
     if trimmed then
-        M.note = "some of this build is not yours yet: its price is on the row"
+        M.note = "some of this build is not yours yet: see the upgrades tab"
     end
     -- Nothing saved: what the arena would deal, computed by the same core the
     -- arena deals with, so the hangar and the ship agree before anybody has
@@ -664,13 +664,16 @@ local function kit_rows(class)
     }}
     for _, s in ipairs(kit_slots()) do
         local max = ceiling[s.slot + 1] or 0
-        -- On the page if the arena has the slot at all, not if the account
-        -- owns a rung of it. The two used to be the same test, so a slot you
-        -- owned none of had no row: add-ons arrived granted, so only barrels
-        -- and the mine were ever missing, and nobody could see that the one
-        -- trait the whole slot space was flattened to make sellable existed.
-        -- Nothing is granted now, so that test would have emptied the page.
-        if (arena_ceiling[s.slot + 1] or 0) > 0 then
+        -- On the page if this account can actually fly it, not if the arena
+        -- merely has it.
+        --
+        -- It was the arena's row for a while, so the page could say "this
+        -- exists and is not yours" and a pilot would know there was something
+        -- to buy. That is the upgrades tab's whole job now, and it does it
+        -- with the price attached; here it left four unreachable chips in
+        -- every group, drawn back far enough to be unreadable and still taking
+        -- the room a legible one would have. This page is what you fly.
+        if max > 0 then
             local held = M.kit[s.slot + 1] or 0
             rows[#rows + 1] = {
                 label = s.label,
@@ -946,6 +949,7 @@ function M.type_add(ch)
     if #(M.add_name or "") >= 24 then return false end
     M.add_name = (M.add_name or "") .. ch
     M.add_on = true
+    account.find_pilots(M.add_name)
     return true
 end
 
@@ -954,6 +958,7 @@ function M.rub_add()
     if (M.add_name or "") == "" then return false end
     M.add_name = string.sub(M.add_name, 1, #M.add_name - 1)
     M.add_on = true
+    account.find_pilots(M.add_name)
     return true
 end
 
@@ -986,6 +991,7 @@ end
 function M.wipe_add()
     if (M.add_name or "") == "" then return nil, false end
     M.add_name = ""
+    account.find_pilots("")
     account.friend_note = ""
     account.friend_bad = false
     return nil, true
@@ -999,6 +1005,7 @@ function M.send_add()
     if name == "" then return nil, false end
     M.add_name = ""
     M.add_on = false
+    account.find_pilots("")
     -- Answered here rather than by the meta-layer, which would have to be
     -- told the call sign to say it back. Nothing goes out.
     if string.lower(name) == string.lower(M.name or "") then
@@ -2761,11 +2768,19 @@ function M.view()
                  -- what is waiting for the reply that decides it.
                  add = {name = M.add_name, on = M.add_on,
                         note = account.friend_note or "",
-                        bad = account.friend_bad or false},
+                        bad = account.friend_bad or false,
+                        -- Call signs beginning with what is in the box, from
+                        -- the meta-layer, drawn under it as you type. Only
+                        -- while the answer is about what is actually there:
+                        -- a reply to an older prefix is a list of the wrong
+                        -- names sitting under the right ones.
+                        found = (account.found_for == M.add_name)
+                            and account.found or {}},
                  -- Which button a pointer is resting on, which is a row and a
                  -- place in that row's own list. Two numbers rather than a
                  -- pair, because this is set every frame a pointer moves.
                  add_hot = M.add_hot,
+                 found_hot = M.found_hot,
                  friend_hot = M.friend_hot,
                  friend_hot_act = M.friend_hot_act,
                  -- Whether there is a game behind the panel, which is what
@@ -3314,13 +3329,33 @@ function M.step(keys)
     -- right set it. Everywhere else left is the way back and right is enter,
     -- which is what a one-column list of places wants.
     local here = rows[row_index(rows)]
+    -- An add-on is not a range. It is drawn as a chip, in a row of chips
+    -- across the page, and left and right walk them the way that drawing
+    -- reads: what is beside a chip is another chip, so the arrow that points
+    -- at it should go there. Enter throws the one you are on, and so does the
+    -- trigger, which is what a switch wants from five inputs.
+    --
+    -- They answered left and right as a range before, which is the control a
+    -- ladder wants: a hand walking the group had to press up and down through
+    -- a row that reads left to right, and the arrow pointing at the next chip
+    -- turned the one it was already on off.
+    local chip = here ~= nil and here.group == "weapons"
     local ranged = here ~= nil and here.choice ~= nil and here.act ~= nil
+        and not chip
     if keys.left then
         if ranged then return activate(-1), true end
+        if chip and row_index(rows) > 1 then
+            M.sel[id] = next_stop(rows, row_index(rows), -1)
+            return nil, true
+        end
         return back()
     end
     if keys.right then
         if ranged then return activate(1), true end
+        if chip then
+            M.sel[id] = next_stop(rows, row_index(rows), 1)
+            return nil, true
+        end
         return activate(), true
     end
 
@@ -3398,6 +3433,21 @@ function M.click_kit_at(index, level)
     return nil, true
 end
 
+-- One of the names the add field turned up, pressed. It adds that pilot by
+-- number rather than by the letters in the box, so what was pressed is what is
+-- added even where two call signs share a prefix.
+function M.click_found(index)
+    local p = (account.found or {})[index]
+    if not p or not p.account then return nil, false end
+    M.add_name = ""
+    M.add_on = false
+    account.find_pilots("")
+    account.friend_note = "asking"
+    account.friend_bad = false
+    account.friend(p.account, true)
+    return nil, true
+end
+
 -- One button on one friends row. `which` is its place in the row's own list
 -- of them, so the drawing and the press agree by construction rather than by
 -- both remembering the same order.
@@ -3431,6 +3481,7 @@ M.pilot_hot = false
 M.discord_hot = false
 -- And for the friends page: the add button, and one button on one row.
 M.add_hot = false
+M.found_hot = nil
 M.friend_hot = nil
 M.friend_hot_act = nil
 

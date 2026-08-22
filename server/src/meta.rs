@@ -1103,6 +1103,33 @@ fn room_for_one_more(held: i64) -> Result<(), (u16, &'static str)> {
 /// something other than playing with friends.
 const MAX_FRIENDS: i64 = 100;
 
+/// How much of a call sign has to be typed before the add field is answered,
+/// and how many names come back. Both are small on purpose: this is help
+/// finishing a name somebody already knows, not a way to read the fleet.
+const NAME_PREFIX_MIN: usize = 2;
+const NAME_MATCHES: i64 = 8;
+
+/// What somebody has typed, as a `like` pattern, or nothing where it is too
+/// little to answer.
+///
+/// The escaping is the point. A call sign is somebody else's text going into a
+/// pattern language: `%` matches anything and `_` matches one of anything, so
+/// a pilot typing a single `%` would be handed the fleet, which is the one
+/// thing this route exists not to do. Done here rather than in the query so it
+/// can be read, and tested, without a database.
+fn name_prefix(typed: &str) -> Option<String> {
+    let typed = typed.trim();
+    if typed.chars().count() < NAME_PREFIX_MIN {
+        return None;
+    }
+    // The backslash first, or the escapes added after it get escaped again.
+    let safe = typed
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_");
+    Some(format!("{safe}%"))
+}
+
 /// An account number and the call sign against it, as the page draws a pilot
 /// who is not flying: most of these lists are exactly this.
 ///
@@ -1873,6 +1900,58 @@ async fn route(
                     (200, page)
                 }
                 Err(e) => (500, serde_json::json!({ "error": e })),
+            }
+        }
+
+        // Call signs beginning with what somebody has typed, so the add field
+        // can answer as they type rather than only when they stop.
+        //
+        // This is the one place the meta-layer will name a pilot you have
+        // never met, and it is bounded so it cannot become a directory of the
+        // fleet: two characters before it answers at all, eight names back,
+        // matched from the start of the name rather than anywhere inside it,
+        // and nothing but the call sign and the number needed to add them. A
+        // prefix of two is already most of a word, and the names are a word
+        // and three digits, so what this offers is a finished-typing aid
+        // rather than a way to browse. See docs/design/friends.md.
+        //
+        // Throttled per account, because a client that asks on every keystroke
+        // is the honest use and a script walking the alphabet is not.
+        "/v1/friend/find" => {
+            let Some(account) =
+                account_for(&db, "secret", &sha256_hex(s("secret").as_bytes())).await
+            else {
+                return (403, serde_json::json!({ "error": "no such account" }));
+            };
+            if !meta.throttle.allow(&format!("find:{account}"), 600, hour) {
+                return (429, serde_json::json!({ "error": "too many at once" }));
+            }
+            let Some(like) = name_prefix(&s("q")) else {
+                return (200, serde_json::json!({ "pilots": [] }));
+            };
+            let rows = db
+                .query(
+                    "select n.account, n.call_sign
+                       from names n
+                       join accounts a on a.id = n.account
+                      where lower(n.call_sign) like lower($1) escape '\\'
+                        and not a.banned
+                        and a.kind = 0
+                        and n.account <> $2
+                      order by n.call_sign
+                      limit $3",
+                    &[&like, &account, &NAME_MATCHES],
+                )
+                .await;
+            match rows {
+                Ok(rows) => (
+                    200,
+                    serde_json::json!({
+                        "pilots": rows.iter().map(named_pilot)
+                            .collect::<Vec<serde_json::Value>>()
+                    }),
+                ),
+                Err(e) => (500, serde_json::json!({ "error": format!("{e}") })),
             }
         }
 
@@ -4955,6 +5034,28 @@ mod tests {
     fn an_account_number_has_to_be_one() {
         assert_eq!(names_a_pilot(7, 0), Err((400, "no such pilot")));
         assert_eq!(names_a_pilot(7, -3), Err((400, "no such pilot")));
+    }
+
+    /// The add field's lookup is the one place this meta-layer will name a
+    /// pilot you have never met, so what it will answer to matters.
+    ///
+    /// Two characters before it says anything, and the pattern characters are
+    /// escaped: a single `%` is a request for the whole fleet, and that is the
+    /// one thing this route exists not to hand over.
+    #[test]
+    fn a_name_lookup_answers_a_prefix_and_not_a_wildcard() {
+        assert_eq!(name_prefix("c"), None, "one letter is not a prefix");
+        assert_eq!(name_prefix(" "), None);
+        assert_eq!(name_prefix(""), None);
+        assert_eq!(name_prefix("co"), Some("co%".into()));
+        assert_eq!(name_prefix("  co  "), Some("co%".into()), "trimmed");
+        // The wildcards, which are the whole reason this is a function.
+        assert_eq!(name_prefix("%%"), Some("\\%\\%%".into()));
+        assert_eq!(name_prefix("__"), Some("\\_\\_%".into()));
+        assert_eq!(name_prefix("a%"), Some("a\\%%".into()));
+        // A backslash escapes itself, and does it first, or the escapes above
+        // would be escaped a second time and stop escaping.
+        assert_eq!(name_prefix("a\\"), Some("a\\\\%".into()));
     }
 
     /// The list has a bound, and it is what makes the page, the query and the

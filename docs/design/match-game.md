@@ -325,6 +325,13 @@ to the bench.
   the admin panel's rename tooling. It also needs a reserved list, because
   the tier names and the team names are words that must not become people.
 
+The two pages divide by ownership. The ship page carries what this account can
+actually fly, and nothing else: a ladder stops at the rung you own, and a slot
+you own none of has no row. It used to draw the arena's whole row with the
+rest locked, so the page could say "this exists and is not yours", and what
+that produced was four unreachable chips in every group, backed off far enough
+to be unreadable and still taking the room a legible one would have.
+
 The page listing all of it shows every slot the game has, not what is left to
 buy. A list of what is for sale shrinks as a pilot gets stronger, and the last
 purchase in a ladder takes the whole ladder off the page that was selling it:

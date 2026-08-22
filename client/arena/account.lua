@@ -490,6 +490,40 @@ function M.friend(other, add, cb)
          end)
 end
 
+-- Call signs beginning with what has been typed into the add field.
+--
+-- The one request in this client that names a pilot you have never met, and
+-- the meta-layer keeps it small: nothing under two characters, eight names
+-- back, matched from the start. `serial` throws away an answer to a prefix
+-- that is no longer what is in the box, because a keystroke and a round trip
+-- do not arrive in order and a list that flickers back to an older prefix is
+-- worse than no list.
+M.found = {}
+-- The prefix the names in hand are an answer to, which is not the same as the
+-- one being asked about: a keystroke lands now and its reply lands later, and
+-- in between the box says something the list does not. Set when the reply
+-- arrives, so the page can tell whether what it is holding is about what is
+-- on screen.
+M.found_for = ""
+local finding, asking = 0, ""
+function M.find_pilots(prefix)
+    prefix = tostring(prefix or "")
+    if M.base == "" or #prefix < 2 then
+        M.found, M.found_for, asking = {}, prefix, prefix
+        return
+    end
+    if prefix == asking then return end
+    asking = prefix
+    finding = finding + 1
+    local mine = finding
+    post("/v1/friend/find", {secret = secret, q = prefix}, function(r)
+        if mine ~= finding then return end
+        M.found = (type(r) == "table" and type(r.pilots) == "table")
+            and r.pilots or {}
+        M.found_for = prefix
+    end)
+end
+
 -- An add taken off the list that asks about it, and put on the list of
 -- everybody who has ever added you. Nothing is sent to them. Passing `false`
 -- puts it back.
@@ -522,6 +556,7 @@ function M.logout()
     M.friends, M.asked, M.here = {}, {}, {}
     M.waiting, M.have_friends = {}, false
     M.everybody = {}
+    M.found, M.found_for = {}, ""
     M.friend_note, M.friend_bad = "", false
     M.name = ""
     M.rivets = 0

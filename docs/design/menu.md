@@ -41,11 +41,16 @@ starfield with no way back, which is a button that breaks the game.
 Six tabs at the front end and three in a match, with one page under whichever
 is lit. Left and right walk the row, down enters the page, up from its first
 row comes back to the row, and left and right on a row set that row's value.
+The exception is a row drawn as a chip rather than as a ladder: the ship
+page's add-ons are a line of boxes across the page, so left and right go to
+the box beside this one and enter throws the one you are on. An arrow points
+at what is next to a thing; on a chip that is another chip.
 
 ```
 vectorwake
 ├ play        the zones a directory is running and how busy each one is
-├ ship        one hull on a carousel, and the thirty points you spend on it
+├ ship        one hull on a carousel, and the thirty points you spend on it.
+│             Only slots this account owns: what it does not is the tab below
 ├ upgrades    every slot the game has, how far you own it, and what the next
 │             rung costs. Slots, never strength: see match-game.md
 ├ friends     a field you type a call sign into, who is waiting on you, who

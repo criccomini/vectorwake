@@ -3997,14 +3997,15 @@ end
 -- are chips because they are not ladders you climb but switches you throw.
 function pages.chip(x, y, w, h, r, hot, focused)
     local held = (r.choice or 0) > 0
-    -- A slot the arena has and the account does not own a rung of. Drawn back
-    -- the way a dim pip on a ladder is, and for the same reason: the page has
-    -- to say the thing exists and is not yours, or a pilot cannot know there
-    -- is anything to buy.
-    local shut = (r.owned or 0) == 0
-    -- What is on wears a field, and so does whatever the cursor is standing
-    -- on, a shade back. A frame alone said "here" in a line thinner than the
-    -- frames around every chip beside it.
+    -- Every chip on this page is one this account owns and can put on the
+    -- ship, so there are two states rather than three: on, and off.
+    --
+    -- There was a third. A slot the arena had and the account did not own was
+    -- drawn back at 0.4 of a dim grey, to say the thing existed and was not
+    -- yours. On a dark ground that is a word you cannot read, four of them to
+    -- a group, taking the room a legible chip would have; and the page that
+    -- sells them says it properly now. Off is written in the same ink the
+    -- rest of the page is, because a chip you can throw is a control.
     if held then
         rect(x, y, w, h, pal.a(pal.FRIEND, 0.2))
     elseif hot then
@@ -4016,11 +4017,11 @@ function pages.chip(x, y, w, h, r, hot, focused)
     else
         F.layer:frame(x, ry(y, h), w, h, 0.9 * F.scale,
                       pal.a(held and pal.FRIEND or pal.RADAR_TILE,
-                            held and 0.55 or (shut and 0.22 or 0.5)))
+                            held and 0.55 or 0.6))
     end
     lbl(r.short or r.label, x + w / 2, y + h * 0.42,
-        pal.a(held and pal.FRIEND or pal.DIM,
-              held and 1 or (shut and 0.4 or 0.8)), "center", 9 * F.scale)
+        pal.a(held and pal.FRIEND or pal.INK, held and 1 or 0.8),
+        "center", 9 * F.scale)
     -- The line under the name: how many of it you hold, out of how many the
     -- account may, since a rung is a ladder in a chip's clothing and two of
     -- them is level two. A chip nobody owns says nothing, because zero of
@@ -4303,52 +4304,26 @@ function pages.kit(v, x, y, w, h, focused)
         txt(r.label, kx, cy, 12.5 * F.scale,
             pal.a(pal.INK, hot and 0.95 or 0.8), nil, MENU_FONT)
         local px = kx + NAMEW
-        local base = math.min(6, r.arena_max or 6)
         local step = 13 * F.scale
         -- The pips first, so a press on one beats the row behind it: hit boxes
         -- are tested in the order they were published.
-        -- Where the first rung nobody owns sits, so the price can say which
-        -- one it is buying by lighting it.
-        local lockx = nil
-        local function pip_at(k, lit)
-            if lit == "locked" and not lockx then lockx = px end
-            -- The one the price would buy, lit behind the pip where the
-            -- wallet covers it. A rung you can have this evening reads
-            -- differently from one you are saving for, and this is the
-            -- difference drawn on the thing itself rather than said in a
-            -- second control beside it.
-            if lit == "locked" and px == lockx and r.price
-               and r.afford ~= false then
-                -- A ring rather than a field. Filled, it read as a coin
-                -- sitting on the ladder and swallowed the divider beside it.
-                F.layer:ring(px, ry(cy), 7.5 * F.scale, 1.0 * F.scale, 14,
-                             pal.a(pal.CHARGE_COL, 0.5))
-            end
-            pages.pip(px, cy, 4.4 * F.scale, lit, col)
+        local function pip_at(k)
+            pages.pip(px, cy, 4.4 * F.scale,
+                      (r.choice or 0) >= k and "on" or "off", col)
             if live and r.pick then
                 hit(px - step / 2, cy - srow / 2, step, srow,
                     "kit_at", r.index, k)
             end
             px = px + step
         end
-        -- A step the account does not own is drawn as locked wherever it
-        -- falls, not only past the divider. The first six used to be drawn
-        -- straight off the arena's ladder, so a rung still for sale looked
-        -- exactly like a rung you had left unspent: the gun
-        -- offered a second step, took the press and refused it, and the page
-        -- gave a player no way to tell that from a bug.
-        local function rung(k)
-            if k > (r.owned or 0) then return "locked" end
-            return (r.choice or 0) >= k and "on" or "off"
-        end
-        for k = 1, base do pip_at(k, rung(k)) end
-        if (r.arena_max or 0) > base then
-            F.layer:seg(px - 3 * F.scale, ry(cy - 5.5 * F.scale),
-                        px - 3 * F.scale, ry(cy + 5.5 * F.scale),
-                        1.0 * F.scale, pal.a(pal.RADAR_TILE, 0.6), true)
-            px = px + 5 * F.scale
-            for k = base + 1, r.arena_max do pip_at(k, rung(k)) end
-        end
+        -- As far as this account owns, and no further. There used to be a
+        -- divider here with the arena's remaining rungs drawn past it, locked,
+        -- so the page could say "there is more of this and it is not yours".
+        -- The upgrades tab says that now, with the price attached and the
+        -- ladder drawn the same way, so the two pages are the same object read
+        -- for two questions: what may I own, and what am I flying. Here every
+        -- pip is a point you can actually spend.
+        for k = 1, (r.owned or 0) do pip_at(k) end
         -- Zero is a step too: a ladder you can climb has to be one you can
         -- come back down, and dragging back to nothing needs somewhere to
         -- land. It sits under the mark, where there are no pips.
@@ -4593,6 +4568,41 @@ function pages.friends(v, x, y, w, h, focused)
             x + fw + aw + 24 * F.scale, fy, 12 * F.scale, pal.a(pal.DIM, 0.8))
     end
     local BAND = 22 * F.scale + bh + 24 * F.scale
+
+    -- --- what the box found, under it
+    --
+    -- A call sign is a word and three digits, and typing one exactly is the
+    -- kind of small task nobody should have to be careful about. So the
+    -- meta-layer answers a prefix and the names land here, under the box, and
+    -- pressing one adds that pilot by number: what you pressed is what is
+    -- added even where two call signs open the same way.
+    --
+    -- Drawn over the sections rather than pushing them down. A list that
+    -- appears and disappears as you type would walk the whole page up and
+    -- down with it, and the rows underneath are not what anybody is looking
+    -- at while the box has a caret in it.
+    local hits = a.found or {}
+    if #hits > 0 then
+        local rh = 28 * F.scale
+        local ly = fy + bh / 2 + 6 * F.scale
+        local lw = fw
+        rect(fx, ly, lw, #hits * rh, pal.rgb(0x070b12, 0.96))
+        bracket(fx, ly, lw, #hits * rh, pal.a(pal.RADAR_TILE, 0.7),
+                10 * F.scale)
+        for i, p in ipairs(hits) do
+            local ry0 = ly + (i - 1) * rh
+            local on = v.found_hot == i
+            if on then
+                rect(fx, ry0, lw, rh, pal.a(pal.FRIEND, 0.16))
+            end
+            txt(p.name or "?", fx + 11 * F.scale, ry0 + rh / 2, 14 * F.scale,
+                pal.a(pal.INK, on and 1 or 0.85), nil, MENU_FONT, true)
+            hit(fx, ry0, lw, rh, "found", i)
+        end
+        -- The band grows to clear them, so the first section is not drawn
+        -- underneath a name somebody is about to press.
+        BAND = BAND + #hits * rh + 6 * F.scale
+    end
 
     -- --- the sections, scrolling under it
     local top = y + BAND

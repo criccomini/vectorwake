@@ -524,6 +524,7 @@ local function hover_menu(x, y, vh)
     menu.discord_hot = false
     menu.carousel_hot = nil
     menu.add_hot = false
+    menu.found_hot = nil
     menu.friend_hot = nil
     menu.friend_hot_act = nil
     if not menu.open or touch.used or not x then
@@ -539,6 +540,7 @@ local function hover_menu(x, y, vh)
             menu.pilot_hot = r.action == "pilot_page"
             menu.discord_hot = r.action == "discord_link"
             menu.add_hot = r.action == "add_go"
+            if r.action == "found" then menu.found_hot = r.value end
             if r.action == "carousel" then menu.carousel_hot = r.value end
             if r.action == "friend_act" then
                 menu.friend_hot, menu.friend_hot_act = r.value, r.level
@@ -2555,9 +2557,13 @@ function on_input(self, action_id, action)
                 -- beside it is the exception as well as the box: a press on
                 -- "add" that dropped the caret first would send and then look
                 -- like nothing had focus.
-                if r.action ~= "add_box" and r.action ~= "add_go" then
+                if r.action ~= "add_box" and r.action ~= "add_go"
+                   and r.action ~= "found" then
                     menu.blur_add()
                 end
+                -- A press on one of the names under the box is a press on the
+                -- box as far as the caret goes, so the list does not vanish
+                -- under the finger reaching for it.
                 -- Written out rather than as an and/or chain: that form
                 -- keeps only the first return, so `moved` came back nil and
                 -- every click was silent. The sounds are half of what makes
@@ -2602,6 +2608,11 @@ function on_input(self, action_id, action)
                     act, moved = menu.wipe_add()
                 elseif r.action == "add_go" then
                     act, moved = menu.send_add()
+                elseif r.action == "found" then
+                    -- One of the call signs the box turned up. Added by
+                    -- number, so two names sharing a prefix cannot be
+                    -- confused for each other.
+                    act, moved = menu.click_found(r.value)
                 elseif r.action == "friend_act" then
                     -- One button on one friends row: accept, ignore, join,
                     -- unfriend. `level` is which of that row's own buttons.
