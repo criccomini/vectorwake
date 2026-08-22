@@ -953,7 +953,7 @@ async fn claims_for(db: &Client, account: i64) -> Result<Claims, String> {
 
     // What this account may slot, which is the baseline plus whatever it has
     // bought. An account with an empty row owns the baseline, so a pilot who
-    // has never opened the upgrades page still flies a whole ship.
+    // has never bought anything still flies a whole ship.
     let mut entitlements = sim::World::base_entitlements().to_vec();
     let bought = db
         .query(
@@ -1460,11 +1460,11 @@ async fn route(
                             "ratings": c.ratings.iter().map(|r| serde_json::json!({
                                 "class": r.class, "rating": r.rating, "games": r.games,
                             })).collect::<Vec<_>>(),
-                            // The ship and upgrades pages, which are the two
-                            // screens between matches. Both ride the reply
-                            // rather than the token: the entitlements are in
-                            // the token because an arena checks them, and
-                            // these two are for drawing.
+                            // The ship page, which is where a kit is built
+                            // and where its rungs are bought. Both ride the
+                            // reply rather than the token: the entitlements
+                            // are in the token because an arena checks them,
+                            // and these two are for drawing.
                             "rivets": wallet_of(&db, account).await,
                             "entitlements": c.entitlements,
                             "kits": kits_of(&db, account).await,

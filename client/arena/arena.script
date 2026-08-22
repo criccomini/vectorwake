@@ -537,7 +537,8 @@ local function hover_menu(x, y, vh)
             -- A pip lights the row it belongs to, so the cursor follows the
             -- pointer across a ladder the way it does down a list.
             return hovering(
-                ((r.action == "stage" or r.action == "kit_at") and r.value)
+                ((r.action == "stage" or r.action == "kit_at"
+                  or r.action == "kit_buy") and r.value)
                     or nil,
                 r.action == "rail" and r.value or nil)
         end
@@ -2533,6 +2534,10 @@ function on_input(self, action_id, action)
                     -- slot goes to that step, which is what a press on the
                     -- fourth dot of a five-dot row means.
                     act, moved = menu.click_kit_at(r.value, r.level)
+                elseif r.action == "kit_buy" then
+                    -- The price at the end of a kit row. Same question the
+                    -- row raises when it has no rung left to spend.
+                    act, moved = menu.click_kit_buy(r.value)
                 elseif r.action == "pilot_page" then
                     -- The call sign at the far end of the tab row. There is no
                     -- pilot stop on that row any more: the name is the stop.

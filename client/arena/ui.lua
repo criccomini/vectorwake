@@ -1894,6 +1894,34 @@ function pages.priced(n, x, y, px, col, align)
     return lead + w
 end
 
+-- The other end of a kit row: what the next rung costs, drawn as a thing to
+-- press rather than as a number to read.
+--
+-- Right-aligned, because the ladders are ragged and a price hung off the end
+-- of each one would step in and out with them. `right` is where it ends and
+-- the return is how wide it came out, which is what the caller needs to put a
+-- hit box under it.
+--
+-- Dim where the wallet is short. The price stays on the row either way: a
+-- page that hides what you cannot afford never says what you are saving for.
+function pages.buy_button(right, y, h, price, hot, afford)
+    local px = 9.5 * F.scale
+    local word = "upgrade"
+    local ww = text_w(word, px)
+    local pw = text_w(tostring(price), 11 * F.scale) + 11 * F.scale * 1.1
+    local w = ww + pw + 26 * F.scale
+    local x = right - w
+    local col = afford and pal.CHARGE_COL or pal.DIM
+    rect(x, y, w, h, pal.a(col, hot and 0.16 or 0.08))
+    F.layer:frame(x, ry(y, h), w, h, 1.0 * F.scale,
+                  pal.a(col, hot and 0.9 or 0.45))
+    lbl(word, x + 9 * F.scale, y + h * 0.5 + 3 * F.scale,
+        pal.a(col, hot and 1 or 0.75), nil, px)
+    pages.priced(price, x + w - 9 * F.scale, y + h * 0.5 + 4 * F.scale,
+                 11 * F.scale, pal.a(col, hot and 1 or 0.8), "right")
+    return w
+end
+
 -- What a green is, worn by the row that counts what greens made you worth.
 local function gl_diamond(cx, cy, k, col)
     local pts = {cx, ry(cy - k), cx + k * 0.8, ry(cy),
@@ -1927,56 +1955,6 @@ local CHARGE_HUES = {repel = pal.CHARGE_COL, burst = pal.BURST}
 local function weapon_mark(cx, cy, k, me, t)
     return marks.weapon(cx, ry(cy), k, me, t)
 end
-
--- What a shelf card is a picture of.
---
--- The arena's own drawing wherever there is one, fed a hull wearing exactly
--- the thing being sold: a shelf where the picture of an add-on is the round it
--- makes is a shelf where you can recognize what you bought when it comes past
--- you. Stats have no mark in the arena, so they wear the ladder they are drawn
--- as on the ship page, with the step this card sells still empty at the end
--- of it.
-function pages.shelf_icon(ic, cx, cy, k)
-    if type(ic) ~= "table" then return end
-    if ic.kind == "stat" then
-        local u = pal.UPGRADES[(ic.i or 0) + 1]
-        local col = pal.a(u and u.col or pal.FRIEND, 0.95)
-        local step = k * 0.62
-        for j = 0, 3 do
-            pages.pip(cx + step * (j - 1.5), cy, k * 0.24,
-                      j < 3 and "on" or "off", col)
-        end
-        return
-    end
-    if ic.kind == "charge" then
-        local c = pal.CHARGES[(ic.i or 0) + 1]
-        local name = c and c.name or ""
-        local col = pal.a(CHARGE_HUES[name] or pal.CHARGE_COL, 0.95)
-        local g = CHARGE_GLYPHS[name]
-        if g then
-            g(cx, cy, k * 0.9, col)
-        else
-            -- A mine is the one charge that leaves something behind, so it is
-            -- drawn as the thing it leaves rather than as a spoke pattern.
-            marks.mine(cx, ry(cy), k * 0.62, col)
-        end
-        return
-    end
-    if not (sim and sim.TRIG_GUN) then return end
-    local t = ic.trigger or 0
-    local mods = {}
-    if ic.kind == "mod" then mods[ic.mod or 0] = 1 end
-    -- One rung on the ladder this card is about, so a level card shows the
-    -- round a step buys and an add-on card shows a plain round wearing it.
-    marks.hold({level = {[t] = ic.kind == "level" and 1 or 0},
-                mods = {[t] = mods}, multi_off = false})
-    weapon_mark(cx - k * 0.5, cy, k, nil, t)
-    marks.hold(nil)
-end
-
--- How much bigger than the rest of the interface the corner stack draws, and
--- the share of the window it may take doing it.
---
 -- This corner is the one thing a pilot reads without looking away from their
 -- own hull, and it was laid out to the same metric as panels you stop and
 -- read: rows of drawings eight or nine points across, glanced at from the
@@ -3425,105 +3403,6 @@ function M.hud(o)
         safe_note(o.safe, o.safe_limit or 0)
     end
 end
-
-
--- --- upgrades ---------------------------------------------------------------
-
--- What rivets buy, as a grid of cards rather than a list of rows.
---
--- A card because a shelf item is three things at once: what it is, what it
--- costs, and what it does. A row can hold two of those and the third goes
--- into a sentence nobody has room for, which is how the description ended up
--- being dropped the first time this page was drawn.
---
--- The wallet stands beside the grid rather than in it, because it is the one
--- number every price on the page is measured against.
-function pages.upgrades(v, x, y, w, h, focused)
-    -- No column down the side. It held a balance the top bar already carries
-    -- and two sentences about what rivets are for, which is a page explaining
-    -- itself to somebody who is looking at it for the tenth time. What is left
-    -- is the shelf, across the whole page.
-    local gx, gw = x, w
-
-    -- The grid. Three across on a desktop, which is what leaves a card wide
-    -- enough for a sentence at a size somebody would read.
-    -- Wider than they were, because a card now sets a name, a price and a
-    -- sentence in three lines rather than two.
-    local cols = math.max(1, math.floor(gw / (230 * F.scale)))
-    local cwid = (gw - (cols - 1) * 11 * F.scale) / cols
-    -- A card is as tall as what it has to say. Everything in one group says
-    -- the same amount, so the height is decided per group rather than per
-    -- card and a row of them still lines up.
-    local tall = {}
-    for _, r in ipairs(v.rows or {}) do
-        if r.sect then tall[r.sect] = 58 * F.scale end
-    end
-    local sect = nil
-    for _, r in ipairs(v.rows or {}) do
-        if r.sect then sect = r.sect end
-        if sect and r.note and r.note ~= "" then
-            tall[sect] = 84 * F.scale
-        end
-    end
-    local chgt = 84 * F.scale
-    local cy = y + 8 * F.scale
-    local col = 0
-    sect = nil
-    for _, r in ipairs(v.rows or {}) do
-        if r.sect and r.sect ~= sect then
-            sect = r.sect
-            if col > 0 then cy = cy + chgt + 11 * F.scale col = 0 end
-            if cy > y + 8 * F.scale then cy = cy + 6 * F.scale end
-            lbl(sect, gx, cy + 10 * F.scale)
-            cy = cy + 20 * F.scale
-            chgt = tall[sect] or 84 * F.scale
-        end
-        local cx = gx + col * (cwid + 11 * F.scale)
-        local hot = (r.index == v.sel)
-        -- `full` is the wallet being short, which is a card you can read and
-        -- not press. It keeps its price, because a page that shows only what
-        -- you can afford never says what you are saving for.
-        local held = r.full
-        rect(cx, cy, cwid, chgt, pal.rgb(0x05070c, 0.55))
-        vrule(cx, cy, chgt, pal.a(hot and pal.FRIEND or pal.RADAR_TILE,
-                                  hot and 0.9 or 0.55), 18 * F.scale)
-        if hot then
-            wash(cx, cy, cwid, chgt,
-                 pal.a(pal.FRIEND, focused and 0.16 or 0.08))
-        end
-        -- The thing itself, at the far end of the card. A shelf of names is
-        -- a price list; a shelf of pictures is a shelf, and every one of these
-        -- already has a drawing in the arena, so what you buy here is what
-        -- comes past you out there.
-        pages.shelf_icon(r.icon, cx + cwid - 30 * F.scale,
-                         cy + 22 * F.scale, 13 * F.scale)
-        txt(r.label or "", cx + 14 * F.scale, cy + 16 * F.scale, 15 * F.scale,
-            pal.a(pal.INK, held and 0.6 or 0.95), nil, MENU_FONT)
-        -- The price under the name rather than beside it. Beside it they
-        -- collided the moment a name ran long or the type grew: "Energy
-        -- depth40 rivets" is two facts written over each other.
-        --
-        -- It stays on a card the wallet cannot reach, back a shade. A page
-        -- that shows only what you can afford never says what you are saving
-        -- for.
-        pages.priced(r.detail or 0, cx + 14 * F.scale, cy + 36 * F.scale,
-                     12 * F.scale, pal.a(held and pal.DIM or pal.CHARGE_COL,
-                                         held and 0.8 or 0.95))
-        local ly = cy + 54 * F.scale
-        for _, line in ipairs(wrapped(r.note or "", 11 * F.scale,
-                                      cwid - 26 * F.scale)) do
-            txt(line, cx + 14 * F.scale, ly, 11 * F.scale,
-                pal.a(pal.DIM, 0.85), nil, nil, true)
-            ly = ly + 14 * F.scale
-        end
-        if r.pick then hit(cx, cy, cwid, chgt, "stage", r.index) end
-        col = col + 1
-        if col >= cols then col = 0 cy = cy + chgt + 11 * F.scale end
-    end
-end
-
--- --- the week --------------------------------------------------------------
-
 -- The standings, as a table with a column apiece and the reader's own line
 -- lit wherever it falls.
 --
@@ -3874,12 +3753,34 @@ function pages.chip(x, y, w, h, r, hot, focused)
     lbl(r.short or r.label, x + w / 2, y + h * 0.42,
         pal.a(held and pal.FRIEND or pal.DIM,
               held and 1 or (shut and 0.4 or 0.8)), "center", 9 * F.scale)
-    -- How many of it, out of how many this account may hold. A rung is a
-    -- ladder in a chip's clothing: two of them is level two. A chip nobody
-    -- owns says nothing, because zero of zero is a sum rather than a fact.
-    if (r.owned or 0) > 1 then
-        txt((r.choice or 0) .. " of " .. r.owned, x + w / 2, y + h * 0.74,
-            9 * F.scale, pal.a(pal.DIM, 0.85), "center")
+    -- The line under the name, which is two facts and often only one of them.
+    --
+    -- What it costs, because a chip is a thing you press and the press on one
+    -- you do not own asks to buy it: the price belongs on the face of the
+    -- control rather than on a shelf somewhere else with the same word on it.
+    -- And how many of it you hold, out of how many the account may, since a
+    -- rung is a ladder in a chip's clothing and two of them is level two.
+    --
+    -- A chip nobody owns says nothing about counts, because zero of zero is a
+    -- sum rather than a fact, and one that is fully bought has no price.
+    local count = (r.owned or 0) > 1 and ((r.choice or 0) .. "/" .. r.owned)
+        or nil
+    local ly = y + h * 0.74
+    local cheap = r.afford == false
+    if r.price and count then
+        txt(count, x + 7 * F.scale, ly, 8.5 * F.scale, pal.a(pal.DIM, 0.85))
+        pages.priced(r.price, x + w - 7 * F.scale, ly, 8.5 * F.scale,
+                     pal.a(cheap and pal.DIM or pal.CHARGE_COL,
+                           cheap and 0.6 or 0.9), "right")
+    elseif r.price then
+        pages.priced(r.price, x + w / 2
+                     + (text_w(tostring(r.price), 9.5 * F.scale)
+                        + 9.5 * F.scale * 1.1) * 0.5,
+                     ly, 9.5 * F.scale,
+                     pal.a(cheap and pal.DIM or pal.CHARGE_COL,
+                           cheap and 0.6 or 0.9), "right")
+    elseif count then
+        txt(count, x + w / 2, ly, 9 * F.scale, pal.a(pal.DIM, 0.85), "center")
     end
 end
 
@@ -4087,9 +3988,12 @@ function pages.kit(v, x, y, w, h, focused)
                          kw + 14 * F.scale, srow - 2 * F.scale,
                          pal.a(pal.FRIEND, focused and 0.2 or 0.1)) end
         local col = r.tint_col or pal.FRIEND
-        lbl(r.short or "", kx, cy, pal.a(col, hot and 1 or 0.8), nil,
-            9.5 * F.scale)
-        txt(r.label, kx + 38 * F.scale, cy, 12.5 * F.scale,
+        -- The name, in words. Every row opened with its three letter code as
+        -- well, on the argument that the corner stack in flight is written in
+        -- those codes and this is where they would be taught. Two names for
+        -- one row is what it actually read as, and the row has a price on its
+        -- other end now, which is the thing that wants the room.
+        txt(r.label, kx, cy, 12.5 * F.scale,
             pal.a(pal.INK, hot and 0.95 or 0.8), nil, MENU_FONT)
         local px = kx + NAMEW
         local base = math.min(6, r.arena_max or 6)
@@ -4129,9 +4033,29 @@ function pages.kit(v, x, y, w, h, focused)
             hit(kx - 14 * F.scale, cy - srow / 2, NAMEW - 6 * F.scale, srow,
                 "kit_at", r.index, 0)
         end
-        txt(readout and readout(r.choice or 0) or tostring(r.choice or 0),
-            px + 10 * F.scale, cy, 11 * F.scale,
-            pal.a(pal.INK, hot and 0.95 or 0.7))
+        -- What it is set to, where the count is a word rather than a number:
+        -- a rung reads L1, L2, L3, because that is what a level is called
+        -- everywhere else. The plain count went. Six pips with a 6 after them
+        -- is the same fact said twice, and the second saying was sitting
+        -- where the price is now.
+        if readout then
+            txt(readout(r.choice or 0), px + 10 * F.scale, cy, 11 * F.scale,
+                pal.a(pal.INK, hot and 0.95 or 0.7))
+        end
+        -- And what the next rung costs, at the far end, on the rows that have
+        -- one left to sell. This is the whole of the old upgrades page: a
+        -- shelf is a list of the same slots this page already draws, so it
+        -- was one page listing every row of another and pricing it.
+        if r.price and live then
+            local bw = pages.buy_button(kx + kw - 14 * F.scale,
+                                        cy - srow / 2 + 3 * F.scale,
+                                        srow - 6 * F.scale, r.price, hot,
+                                        (r.afford ~= false))
+            if r.pick then
+                hit(kx + kw - 14 * F.scale - bw, cy - srow / 2, bw, srow,
+                    "kit_buy", r.index)
+            end
+        end
         if live and r.pick then hit(kx - 14 * F.scale, cy - srow / 2, kw, srow,
                            "stage", r.index) end
         cy = cy + srow
@@ -4170,11 +4094,23 @@ function pages.kit(v, x, y, w, h, focused)
         rule(label)
         local px = kx
         for _, r in ipairs(list) do
-            local cw = math.max(62 * F.scale,
+            -- Wide enough for the name, and for a count and a price under it
+            -- where the chip carries both.
+            local cw = math.max((r.price and 74 or 62) * F.scale,
                                 text_w(r.short or r.label or "",
                                        9 * F.scale) + 24 * F.scale)
             if px + cw > kx + kw then px = kx cy = cy + ch + 6 * F.scale end
             pages.chip(px, cy - 2 * F.scale, cw, ch, r, cursor(r), focused)
+            -- The price on a chip you already hold a rung of is its own
+            -- target. The box itself is the slot control, and on an add-on at
+            -- the top of what the account owns that press takes it off again,
+            -- which is the only way a pointer can: a chip has no arrows. So
+            -- the rung above is bought from the line it is written on.
+            -- Published first, because the first box under a press wins.
+            if live and r.pick and r.price and (r.owned or 0) > 0 then
+                hit(px, cy - 2 * F.scale + ch * 0.56, cw, ch * 0.44,
+                    "kit_buy", r.index)
+            end
             if live and r.pick then hit(px, cy - 2 * F.scale, cw, ch, "stage", r.index) end
             px = px + cw + 8 * F.scale
         end
@@ -4203,7 +4139,7 @@ function pages.kit(v, x, y, w, h, focused)
         if #list == 0 then return 0 end
         local lines, px = 1, 0
         for _, r in ipairs(list) do
-            local cw = math.max(62 * F.scale,
+            local cw = math.max((r.price and 74 or 62) * F.scale,
                                 text_w(r.short or r.label or "",
                                        9 * F.scale) + 24 * F.scale)
             if px > 0 and px + cw > width then lines = lines + 1 px = 0 end
@@ -4886,13 +4822,6 @@ end
 -- money and nothing is carried out of a shop: what changes hands is which
 -- slots a pilot may fill, and rivets are what pays for it.
 --
--- The currency mark itself, at the size a tab stop draws. This was a second
--- rivet, a ring with a bar under it, drawn before the mark on the prices
--- existed: two drawings of one thing that disagreed about what it looks like.
-local function mark_upgrades(cx, cy, r, col)
-    pages.rivet_mark(cx, cy, r * 0.86, col)
-end
-
 -- The week's table, as three columns of different heights. The tallest is not
 -- in the middle: a symmetric podium reads as a logo, and three bars that step
 -- read as a ranking.
@@ -4909,7 +4838,7 @@ end
 local MARKS = {zones = mark_zones, pilot = mark_pilot, team = mark_team,
                settings = mark_settings, controls = mark_controls,
                about = mark_about, discord = mark_discord, leave = mark_leave,
-               upgrades = mark_upgrades, standings = mark_standings}
+               standings = mark_standings}
 
 local function draw_mark(kind, cx, cy, r, col, cls)
     if kind == "ship" then return mark_ship(cx, cy, r, col, cls) end
@@ -6102,7 +6031,7 @@ function M.menu(v)
     -- Lists only. The hull grid and the keyboard are drawings, and they take
     -- everything there is.
     local listy = not (v.board and not M.touching) and not v.hulls
-        and not v.shelf and not v.table
+        and not v.table
         and not (v.rows and v.rows[1] and v.rows[1].hull)
     -- A page is a panel: a translucent ground hung off a lit rule down its left
     -- edge, with the light spilling across it. It is the shape every
@@ -6258,10 +6187,6 @@ function M.menu(v)
     elseif v.table then
         -- The week, as a table with your own line in it.
         pages.week(v, panel_x + GUTTER * F.scale, top,
-                  panel_w - 14 * F.scale - GUTTER * F.scale, room, focused)
-    elseif v.shelf then
-        -- The shelf, as a grid of cards with the wallet beside it.
-        pages.upgrades(v, panel_x + GUTTER * F.scale, top,
                   panel_w - 14 * F.scale - GUTTER * F.scale, room, focused)
     elseif v.rows and #v.rows > 0 and v.rows[1].hull then
         ship_grid(tx, top, avail, room, v, focused)

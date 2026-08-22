@@ -135,6 +135,11 @@ menu.sel = {}
 
 local ship_at = top_index("ship")
 local settings_at = top_index("settings")
+local no_shop = true
+for _, r in ipairs(menu.view().rail) do
+    if r.label == "upgrades" then no_shop = false end
+end
+check("the tab row has no upgrades stop", no_shop, "upgrades is still a tab")
 check("the rail carries the destinations", ship_at and settings_at,
       "ship " .. tostring(ship_at) .. ", settings " .. tostring(settings_at))
 
@@ -1620,6 +1625,61 @@ do
     check("and a saved kit is left alone", menu.kit[1] == 2 and menu.kit[6] == 0,
           tostring(menu.kit[1]) .. "/" .. tostring(menu.kit[6]))
 
+    -- The shelf is on this page now, one price per row. There is no upgrades
+    -- tab: what rivets buy is a rung of a slot, and every slot is already a
+    -- row here.
+    account.entitlements = {[1] = 1}
+    account.rivets = 500
+    account.shelf = {{slot = 0, label = "energy depth", price = 40,
+                      note = "a 7th step, on this stat alone"}}
+    menu.kit = nil
+    menu.open_kit(0)
+    local priced = nil
+    for _, r in ipairs(menu.view().rows) do
+        if r.label == "energy" then priced = r end
+    end
+    check("a row with a rung left to sell carries its price",
+          priced ~= nil and priced.price == 40 and priced.afford == true,
+          priced and tostring(priced.price) or "no energy row")
+
+    -- And the press that cannot spend asks to buy it. A stat at the top of
+    -- what the account owns is a pilot who wants the next rung, which is the
+    -- thing on sale, so the refusal became the offer.
+    menu.sel.hangar = 3
+    menu.ask = nil
+    for _ = 1, 4 do menu.step({right = true}) end
+    check("the ladder stops at what the account owns", menu.kit[1] == 1,
+          tostring(menu.kit[1]))
+    check("and an arrow at the top of it raises no card", menu.ask == nil,
+          menu.ask and menu.ask.head or "quiet")
+    menu.step({go = true})
+    check("and the next press offers the rung above it",
+          menu.ask ~= nil and string.find(menu.ask.head, "40", 1, true),
+          menu.ask and menu.ask.head or "no card")
+    check("with the answer that changes nothing under the cursor",
+          menu.ask.keys[menu.ask.sel].act == nil,
+          tostring(menu.ask.sel))
+    menu.pending = nil
+    local bought = menu.click_answer(1)
+    check("and answering it buys that slot",
+          bought == "buy" and menu.pending == 0,
+          tostring(bought) .. "/" .. tostring(menu.pending))
+
+    -- A wallet too light is told so instead of being asked a question whose
+    -- only answer is a refusal.
+    account.rivets = 10
+    menu.ask = nil
+    menu.step({go = true})
+    check("a short wallet is told the price rather than asked to pay it",
+          menu.ask ~= nil and #menu.ask.keys == 1
+          and string.find(menu.ask.note or "", "10", 1, true),
+          menu.ask and (menu.ask.head .. "/" .. tostring(menu.ask.note))
+              or "no card")
+    menu.ask = nil
+    account.shelf = nil
+    account.rivets = 0
+    account.entitlements = {}
+
     -- A build can outgrow its owner: add-ons stopped being granted, so every
     -- kit saved with one in it holds a slot the account no longer owns. The
     -- room trims such a kit on the way in, and the page has to show the same
@@ -1633,7 +1693,7 @@ do
           menu.kit[12] == 0 and menu.kit[1] == 2,
           tostring(menu.kit[1]) .. "/" .. tostring(menu.kit[12]))
     check("and the page says why rather than quietly shrinking",
-          menu.note ~= nil and string.find(menu.note, "upgrades", 1, true),
+          menu.note ~= nil and string.find(menu.note, "not yours yet", 1, true),
           tostring(menu.note))
     account.entitlements = {}
     account.kits = {}

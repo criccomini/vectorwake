@@ -2,8 +2,12 @@
 
 > **The split happened.** [match-game.md](match-game.md) moved the ship page,
 > the upgrades and the standings out of this tree and into pages of their own,
-> with settings beside them, so the front end is five tabs and help folds
-> into settings with the bindings. It is one full-screen surface met in
+> with settings beside them, so the front end is four tabs and help folds
+> into settings with the bindings. Upgrades is not one of them any more: what
+> rivets buy is a rung of a slot, every slot is already a row of the ship
+> page, and a shelf listing those same rows on a tab of its own meant buying
+> in one place and spending the point in another. The price sits at the end
+> of the row it belongs to. It is one full-screen surface met in
 > both places, differing only in which tabs it carries: in a match, settings
 > and leave, because nothing pauses and anything you cannot act on now costs
 > match time to read. It is still driven by the five inputs below, with left
@@ -32,7 +36,7 @@ starfield with no way back, which is a button that breaks the game.
 
 ## A tab row, and a page under it
 
-Five tabs at the front end and three in a match, with one page under whichever
+Four tabs at the front end and three in a match, with one page under whichever
 is lit. Left and right walk the row, down enters the page, up from its first
 row comes back to the row, and left and right on a row set that row's value.
 
@@ -42,14 +46,14 @@ vectorwake
 │             each one is, who is on, and the way out to Discord. Friends is
 │             a section here rather than a tab of its own, for the reason
 │             Discord is a button and not a page
-├ ship        one hull on a carousel, and the thirty points you spend on it
-├ upgrades    what rivets buy: slots, never strength
+├ ship        one hull on a carousel, the thirty points you spend on it, and
+│             what the next rung of each slot costs in rivets
 ├ standings   the week, resetting Monday
 └ settings    sound · music · frames · fullscreen · bindings · about
 
               your call sign sits at the far end of the row and is the way
               into your account and career: a page reached from the one
-              place already naming it, rather than a sixth stop
+              place already naming it, rather than a fifth stop
 
 in a match
 ├ friends     the people you are flying with, and who else is on

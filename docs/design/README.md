@@ -10,7 +10,7 @@ engineering, see [docs/architecture](../architecture/README.md).
 | [weapons.md](weapons.md) | One model for everything that leaves a ship: fire patterns, projectile specs, and the recipes for every weapon in the original |
 | [audio.md](audio.md) | What the game sounds like: the kit, weapon rungs, what stays silent, and why a sound that answers your hands is engineered differently from one that describes a state |
 | [maps.md](maps.md) | Tile classes, the arenas, and what a map carries so a zone does not have to |
-| [menu.md](menu.md) | Landing in the game, the six tabs, changing hull, and the loading hand-off |
+| [menu.md](menu.md) | Landing in the game, the tab row, changing hull, and the loading hand-off |
 | [ai-players.md](ai-players.md) | AI opponents that fill empty arenas and yield to humans: styles, skill, the long-lived roster, and the population director |
 | [duel-mode.md](duel-mode.md) | One on one against a rating-matched human or bot: format, queue, rating, replays |
 | [bounty.md](bounty.md) | What you are worth and what you have been paid: bounty derived from what you carry, points paid as the victim's bounty |

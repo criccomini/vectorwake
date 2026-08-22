@@ -27,8 +27,8 @@ M.note = ""
 -- What this pilot has banked, and what their account may slot. Both come back
 -- with a session and neither is asserted by this client: the arena checks a
 -- kit against the entitlements the token carries, and a purchase debits the
--- wallet at the meta-layer. These two copies are what the ship page and the
--- upgrades page draw, so a client that edited them would fool only its own
+-- wallet at the meta-layer. These two copies are what the ship page draws,
+-- with the shelf, so a client that edited them would fool only its own
 -- screen.
 M.rivets = 0
 M.entitlements = {}
