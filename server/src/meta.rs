@@ -3045,6 +3045,153 @@ async fn route(
             )
         }
 
+        // What one account owns, slot by slot, and what each slot could hold.
+        //
+        // Its own route rather than a field on the pilot card, because it is
+        // nineteen rows and the card is read far more often than it is edited.
+        // Slots the game does not have are left out entirely: a bullet with a
+        // proximity fuse has a ceiling of zero, and a row offering to grant
+        // one is a row that can only refuse.
+        "/v1/admin/entitlements" => {
+            if admin_for(&db, &s("secret")).await.is_none() {
+                return (403, serde_json::json!({ "error": "not an admin" }));
+            }
+            let account = body.get("account").and_then(|v| v.as_i64()).unwrap_or(0);
+            let base = sim::World::base_entitlements();
+            let ceiling = sim::World::baseline_kit_ceiling();
+            let held = match db
+                .query(
+                    "select slot, n from entitlements where account = $1",
+                    &[&account],
+                )
+                .await
+            {
+                Ok(rows) => rows,
+                Err(e) => return (500, serde_json::json!({ "error": format!("{e}") })),
+            };
+            let mut owned = base.to_vec();
+            for r in &held {
+                let slot: i16 = r.get(0);
+                let n: i16 = r.get(1);
+                if let Some(c) = owned.get_mut(slot.max(0) as usize) {
+                    *c = n.clamp(0, 255) as u8;
+                }
+            }
+            let slots: Vec<serde_json::Value> = (0..sim::SLOT_COUNT)
+                .filter(|slot| ceiling[*slot] > 0)
+                .map(|slot| {
+                    serde_json::json!({
+                        "slot": slot,
+                        "label": upgrades::name_of(slot),
+                        // What everybody is dealt, which is the floor a revoke
+                        // stops at, and how far the game itself goes.
+                        "base": base[slot],
+                        "ceiling": ceiling[slot],
+                        "owned": owned[slot],
+                    })
+                })
+                .collect();
+            (
+                200,
+                serde_json::json!({ "account": account, "slots": slots }),
+            )
+        }
+
+        // One slot, granted or revoked.
+        //
+        // The floor is the baseline rather than zero. An upgrade is a rung
+        // above what everybody is dealt, so revoking one means taking back a
+        // purchase; setting a slot below the baseline is not revoking an
+        // upgrade, it is crippling an account, and the game has no concept for
+        // a pilot who owns less than a fresh one. Where the baseline is zero,
+        // which is most add-ons, the two are the same number anyway.
+        //
+        // Nothing is refunded. This is an operator deciding rather than a
+        // trade being unwound, and the wallet is editable beside it for an
+        // operator who means to hand the rivets back as well.
+        "/v1/admin/entitle" => {
+            let Some(actor) = admin_for(&db, &s("secret")).await else {
+                return (403, serde_json::json!({ "error": "not an admin" }));
+            };
+            let account = body.get("account").and_then(|v| v.as_i64()).unwrap_or(0);
+            let Some(slot) = body.get("slot").and_then(|v| v.as_u64()) else {
+                return (400, serde_json::json!({ "error": "which slot?" }));
+            };
+            let slot = slot as usize;
+            if slot >= sim::SLOT_COUNT {
+                return (400, serde_json::json!({ "error": "no such slot" }));
+            }
+            let base = sim::World::base_entitlements()[slot];
+            let ceiling = sim::World::baseline_kit_ceiling()[slot];
+            if ceiling == 0 {
+                return (
+                    400,
+                    serde_json::json!({
+                        "error": "the game has nothing in that slot, so there is \
+                                  nothing to own there"
+                    }),
+                );
+            }
+            let Some(n) = body.get("n").and_then(|v| v.as_u64()) else {
+                return (400, serde_json::json!({ "error": "how many rungs?" }));
+            };
+            let n = n as u8;
+            if n < base || n > ceiling {
+                return (
+                    400,
+                    serde_json::json!({
+                        "error": format!(
+                            "{} holds between {base} and {ceiling}",
+                            upgrades::name_of(slot)
+                        )
+                    }),
+                );
+            }
+            let kind: i16 = match db
+                .query_opt("select kind from accounts where id = $1", &[&account])
+                .await
+            {
+                Ok(Some(r)) => r.get(0),
+                Ok(None) => return (404, serde_json::json!({ "error": "no such account" })),
+                Err(e) => return (500, serde_json::json!({ "error": format!("{e}") })),
+            };
+            if kind_of(kind).is_bot() {
+                return (
+                    400,
+                    serde_json::json!({
+                        "error": "a bot buys its own kit out of what it has killed for; \
+                                  granting it a rung decides what it flies"
+                    }),
+                );
+            }
+            let was = entitlement_of(&db, account, slot as i16, base).await;
+            if let Err(e) = db
+                .execute(
+                    "insert into entitlements (account, slot, n) values ($1, $2, $3)
+                     on conflict (account, slot) do update set n = excluded.n",
+                    &[&account, &(slot as i16), &(n as i16)],
+                )
+                .await
+            {
+                return (500, serde_json::json!({ "error": format!("{e}") }));
+            }
+            let label = upgrades::name_of(slot);
+            println!("meta: admin {actor} set account {account} {label} {was} -> {n}");
+            note_account(
+                &db,
+                pilot::ENTITLEMENT,
+                account,
+                serde_json::json!({
+                    "slot": slot, "label": label, "from": was, "to": n, "by": actor,
+                }),
+            )
+            .await;
+            (
+                200,
+                serde_json::json!({ "account": account, "slot": slot, "n": n, "was": was }),
+            )
+        }
+
         // Every account currently marked, which is the half of banning the
         // panel could not show: you could mark somebody and never see the
         // list you had built.

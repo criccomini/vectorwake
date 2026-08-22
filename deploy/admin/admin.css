@@ -621,7 +621,31 @@ td {
 tr:has(button) td { vertical-align: middle; }
 tr:last-child td { border-bottom: none; }
 th.n, td.n { text-align: right; padding-right: 1.25rem; }
+
+/* The upgrades stepper: two square buttons, sized to the row rather than to
+   their own words, so eighteen rows of them read as a column and not as a
+   column of buttons. */
+#owns-table td:last-child { text-align: right; white-space: nowrap; }
+#owns-table td:last-child button {
+  width: 2rem;
+  padding: 0.15rem 0;
+  margin-left: 0.4rem;
+  font-size: 1rem;
+  line-height: 1.1;
+}
+#owns-table td:last-child button[disabled] {
+  color: var(--hair);
+  border-color: var(--hair);
+  cursor: default;
+}
+#owns-table td:last-child button[disabled]:hover {
+  color: var(--hair);
+  border-color: var(--hair);
+}
 td.bad { color: var(--enemy); }
+/* A slot this account has moved off the baseline everybody is dealt, so an
+   operator can see at a glance which rows are theirs rather than the game's. */
+td.good { color: var(--friend); }
 td.warn { color: var(--burst); }
 
 /* A call sign, an instance id and a timestamp are single things and never

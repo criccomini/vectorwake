@@ -245,6 +245,7 @@ const NOTES = {
   bans: "bans-note",
   admins: "admins-note",
   activity: "activity-note",
+  owns: "owns-note",
   errors: "errors-note",
   debug: "debug-note",
 };
@@ -1140,6 +1141,9 @@ function describe(e) {
     case "wallet":
       return bits([null, `${d.from} rivets`], ["to", d.to],
                   ["by", d.by && `#${d.by}`]);
+    case "entitlement":
+      return bits([null, d.label], [null, `${d.from} to ${d.to}`],
+                  ["by", d.by && `#${d.by}`]);
     case "unban":
     case "grant":
     case "revoke":
@@ -1226,6 +1230,85 @@ async function drawEvents() {
   }
 }
 
+// ---------------------------------------------------------------- upgrades
+
+// What this account may slot, a rung at a time.
+//
+// Two buttons and no field, because an operator granting an upgrade is
+// deciding one step at a time rather than entering a number: a stepper cannot
+// be typed wrong, and either direction is undone by the button next to it. No
+// confirmation for the same reason. The wallet asks because it takes a number
+// somebody typed and a stray digit is invisible in it; a rung is one rung, it
+// says so on the row, and it is in the log either way.
+async function drawOwns() {
+  const box = el("owns");
+  el("owns-none").hidden = Boolean(shown);
+  if (!shown) { box.hidden = true; return; }
+  // A bot buys its own kit out of what it has killed for, which is the whole
+  // of ai-players.md, so the server refuses one and the section is not drawn
+  // for one.
+  if (shown.kind !== "human") {
+    box.hidden = true;
+    el("owns-none").hidden = false;
+    el("owns-none").textContent =
+      "A bot buys its own kit out of what it has killed for.";
+    return;
+  }
+  el("owns-none").textContent = "No pilot loaded.";
+  box.hidden = false;
+  const who = shown.account;
+  const r = await post("/v1/admin/entitlements", { secret, account: who });
+  // The pilot moved out from under a slow answer. Drawing it would put one
+  // pilot's rows under another one's name.
+  if (!shown || shown.account !== who) return;
+  const body = el("owns-table").querySelector("tbody");
+  body.textContent = "";
+  for (const s of r.slots) {
+    const tr = document.createElement("tr");
+    const name = document.createElement("td");
+    name.textContent = s.label;
+    const owns = document.createElement("td");
+    owns.className = "n";
+    owns.textContent = `${s.owned} / ${s.ceiling}`;
+    // What is bought rather than dealt, so an operator can see at a glance
+    // which rows this account has moved off the baseline.
+    if (s.owned > s.base) owns.classList.add("good");
+    const act = document.createElement("td");
+    const step = (to, label, on) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = label;
+      b.disabled = !on;
+      b.setAttribute("aria-label", `${label === "+" ? "grant" : "revoke"} ${s.label}`);
+      b.addEventListener("click", () => entitle(s.slot, to, s.label));
+      act.append(b);
+    };
+    step(s.owned - 1, "\u2212", s.owned > s.base);
+    step(s.owned + 1, "+", s.owned < s.ceiling);
+    tr.append(name, owns, act);
+    body.append(tr);
+  }
+  const moved = r.slots.filter((s) => s.owned > s.base).length;
+  tell("owns-note", moved
+    ? `${moved} slot${moved === 1 ? "" : "s"} above the baseline`
+    : "everything at the baseline everybody is dealt");
+}
+
+// One rung, granted or revoked. Re-read rather than guess, the way the ban
+// does: what the page shows is what the database holds, including anything
+// another operator did in between.
+async function entitle(slot, n, label) {
+  if (!shown) return;
+  try {
+    await post("/v1/admin/entitle", { secret, account: shown.account, slot, n });
+    await drawOwns();
+    paint("activity", drawEvents);
+    tell("owns-note", `${label} is now ${n}`, "ok");
+  } catch (e) {
+    tell("owns-note", e.message);
+  }
+}
+
 // ------------------------------------------------------------------- pilot
 
 function drawPilot(p) {
@@ -1290,6 +1373,7 @@ function drawPilot(p) {
   // whichever stay the last one was opened to.
   if (!shownWas || shownWas !== p.account) stay = null;
   shownWas = p.account;
+  paint("owns", drawOwns);
   paint("activity", drawEvents);
 }
 

@@ -389,6 +389,32 @@ kit out of what it has killed for, which is the whole of
 what it flies, and that is a decision the roster and the shelf make between
 them.
 
+**Upgrades are granted and revoked a rung at a time**, in a table under the
+card: every slot the game actually has, what this account owns in it, and how
+far it goes. Two buttons and no field, because an operator granting one is
+deciding one step at a time rather than entering a number, a stepper cannot be
+typed wrong, and either direction is undone by the button beside it. There is
+no confirmation for the same reason: the wallet asks because a stray digit is
+invisible in a number somebody typed, and a rung is one rung with its own
+count on the row.
+
+The floor is the baseline rather than zero. An upgrade is a rung above what
+everybody is dealt, so revoking one means taking back a purchase; setting a
+slot below the baseline is not revoking an upgrade, it is crippling an
+account, and the game has no concept for a pilot who owns less than a fresh
+one. Where the baseline is zero, which is most add-ons, the two are the same
+number. Slots the game does not have are left out of the table entirely: a
+bullet with a proximity fuse has a ceiling of zero, and a row offering to
+grant one could only ever refuse.
+
+Nothing is refunded. This is an operator deciding rather than a trade being
+unwound, and the wallet sits above it for an operator who means to hand the
+rivets back as well. It lands in the log as an `entitlement` event, kept apart
+from the `bought` a purchase writes: one is a pilot spending what they earned
+and the other is an operator deciding, and a log that called both "bought"
+would hide the second inside the first. A bot is refused, on the argument the
+wallet is refused on.
+
 Three things stay uneditable on purpose. A rating is a projection of
 `rated_events`, so setting one by hand would leave the number disagreeing with
 the history it is supposed to be derived from; the way to move a rating is to

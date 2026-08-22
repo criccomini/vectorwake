@@ -152,6 +152,14 @@ pub const REVOKE: &str = "revoke";
 /// nobody can account for: not the player, who did not earn it, and not the
 /// next operator, who cannot tell a correction from a compromise.
 pub const WALLET: &str = "wallet";
+/// An operator moved what an account owns in one slot. `detail`: the slot, its
+/// name, what it held, what it holds, and who moved it.
+///
+/// The counterpart to `BOUGHT`, and kept apart from it on purpose: one is a
+/// pilot spending what they earned and the other is an operator deciding, and
+/// a log that called both "bought" would make the second invisible inside the
+/// first.
+pub const ENTITLEMENT: &str = "entitlement";
 
 /// Why a seat ended. `Room::leave` is the one funnel for all five, and until
 /// this existed they were indistinguishable afterwards: the commonest question
