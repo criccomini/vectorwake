@@ -529,10 +529,7 @@
       <section id="editor" aria-labelledby="editor-head" hidden>
         <h3 id="editor-head">Drawing <span id="editor-name" class="mark"></span></h3>
 
-        <div class="row wrap" id="tools">
-          <span class="dim">tile</span>
-          <div class="chips" id="map-palette"></div>
-        </div>
+        <div id="map-palette" class="palette"></div>
         <div class="row wrap">
           <span class="dim">tool</span>
           <div class="chips" id="map-tools"></div>
@@ -555,7 +552,11 @@
           </label>
         </div>
         <p class="dim">The right button erases whatever tile is picked, so a
-          wall can be tidied without putting the paint down. Ctrl+Z and
+          wall can be tidied without putting the paint down. Hold shift while
+          dragging to lock a line to 45 degrees and a rectangle to a square.
+          Hold space, or drag with the middle button, to move around the map.
+          Select drags a box out, drags what is in it somewhere else, and
+          answers Ctrl+C, Ctrl+X, Ctrl+V, Ctrl+A, Delete and Escape. Ctrl+Z and
           Ctrl+Shift+Z do what they do everywhere else.</p>
 
         <div class="canvas-wrap">

@@ -58,23 +58,17 @@ static uint32_t rd32(const uint8_t *p) {
            | ((uint32_t)p[3] << 24);
 }
 
-/* A solid tile's variant says what kind of solid it is. Every one of them
- * stops a ship in exactly the same way -- the core masks the class off and
- * never looks at the variant -- so this costs nothing in the simulation and
- * buys the renderer the difference between a wall, the map's own edge, and a
- * rock somebody put there.
- *
- * The objects name their own top-left corner, so a six-tile station is drawn
- * once rather than thirty-six times. The body tiles are still solid; they are
- * simply not the tile that carries the picture. */
-#define V_WALL 0
-#define V_BORDER 1
-#define V_ROCK_A 2
-#define V_ROCK_B 3
-#define V_ROCK_BIG 4
-#define V_ROCK_BODY 5
-#define V_STATION 6
-#define V_STATION_BODY 7
+/* The solid variants are sim.h's now, because the editor writes them too and
+ * two files guessing at the same numbering is how a rock becomes a station.
+ * Short names because this file is thick with them. */
+#define V_WALL SIM_SOLID_WALL
+#define V_BORDER SIM_SOLID_BORDER
+#define V_ROCK_A SIM_SOLID_ROCK_A
+#define V_ROCK_B SIM_SOLID_ROCK_B
+#define V_ROCK_BIG SIM_SOLID_ROCK_BIG
+#define V_ROCK_BODY SIM_SOLID_ROCK_BODY
+#define V_STATION SIM_SOLID_STATION
+#define V_STATION_BODY SIM_SOLID_STATION_BODY
 
 /* Twenty is the border in every tileset the original shipped. */
 #define LVL_BORDER 20

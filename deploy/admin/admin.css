@@ -875,10 +875,31 @@ dialog .field { margin-bottom: 1rem; }
    picking a tile is the thing you do most and a menu costs two clicks. Which
    one is down is `aria-pressed`, so the state is the same fact for a screen
    reader and for the stylesheet. */
-#tools .chips button[aria-pressed="true"],
+#map-palette button[aria-pressed="true"],
 #map-tools button[aria-pressed="true"] {
   color: var(--friend);
   border-color: var(--friend);
+}
+
+/* One row per pile, with the pile's name in the left margin so the rows line
+   up under each other and the eye can run down the names. There are enough
+   tiles now that a single wrapped run of them was a paragraph to read. */
+.palette { display: grid; gap: 0.35rem; margin-bottom: var(--gap); }
+
+.paints {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+/* Wide enough for the longest of them, so every row's buttons start on the
+   same column. */
+.paints > .dim { flex: 0 0 4.5rem; }
+
+@media (max-width: 40rem) {
+  /* No margin to put a name in. It becomes a heading over its own row. */
+  .paints > .dim { flex-basis: 100%; }
 }
 
 /* Small enough that a size field does not read as a search box. */

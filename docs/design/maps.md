@@ -36,7 +36,13 @@ needed 160 wall values where this needs one.
 The byte is class in the low nibble and a variant in the high one. Doors use
 the variant as a channel, so a map can open one set while another shuts;
 goals use it as the team that scores there; a slope uses it as the corner it
-fills.
+fills. A solid uses it for what kind of solid it is, which the core never
+reads: every one of them stops a ship the same way, so the whole vocabulary of
+wall, map edge, rock and station costs the simulation nothing and buys the
+renderer a room that does not look poured from one mold. Those live in
+`sim.h` as `SIM_SOLID_*` with the classes, because the client and the map
+editor both copy them and a numbering two files disagree about is a station
+that saves as a rock.
 
 ## A map is the size it says it is
 
@@ -580,9 +586,28 @@ Three places, and they all end at the same check.
 `sim/tools/mapgen` draws one from a seed, which is what the shipped maps are.
 `sim/tools/lvl2vw` converts one from the original's format, which is how a room
 somebody else play-tested for years can be flown against our collision.
-And the admin panel has an editor: a canvas one square per tile, the classes
+And the admin panel has an editor: a canvas one square per tile, every class
 above as a palette, and half-turn symmetry that turns a slope to its opposite
 corner and hands a start to the other side.
+
+Every class, and every variant of one worth placing. A solid tile is not one
+thing: its variant is the difference between a wall somebody built, the map's
+own edge, two sizes of rock and a station, and the renderer draws each of them
+differently. Two of those are larger than a tile, and only the top-left of a
+big rock or a station carries the picture while the rest is body, so the editor
+places one as a block snapped to the object's own grid. That snapping is not
+tidiness. A station dropped one tile off another buries a corner under
+somebody's body tile, and a buried corner draws as nothing while staying every
+bit as solid, which is an invisible wall.
+
+Drawing is the usual set: pencil, line, rectangle, outline, fill, and a
+marquee that moves what is inside it and answers the clipboard keys. Held
+shift locks a line to the nearest eighth of a turn and a rectangle to a square,
+which is how a run of slopes gets drawn exactly diagonal rather than nearly so.
+A drag shows what it would leave before it leaves it, computed by running the
+tool itself against a bucket rather than the map, so the preview cannot drift
+from the thing it is previewing. Space or the middle button moves around a map
+too wide for the frame.
 
 Whichever drew it, `sim_map_check` decides whether it can be played. It asks
 about a hull rather than a point: whether a three-tile ship can fly all of the

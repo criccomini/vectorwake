@@ -117,6 +117,40 @@ typedef enum {
 #define SIM_SLOPE_SE 2
 #define SIM_SLOPE_SW 3
 
+/* What kind of solid a solid tile is.
+ *
+ * Every one of these stops a ship in exactly the same way. The core masks the
+ * class off and never reads the variant, so this costs the simulation nothing
+ * and buys the renderer the difference between a wall somebody built, the
+ * map's own edge, and a rock that was there first.
+ *
+ * The big rock and the station are larger than a tile, and only their top-left
+ * tile carries the picture: the rest are body, which is solid and drawn by
+ * whatever hangs off that corner. That is what keeps a six-tile station from
+ * being drawn thirty-six times.
+ *
+ * These lived in sim/tools/lvl2vw.c, which is where the first map that needed
+ * them came from, and were copied into the client to draw them. They belong
+ * here with the class enum: a variant is part of what a tile byte means, and
+ * anything that writes one, converter and editor alike, has to agree. The
+ * client keeps its own copy because Lua cannot read a C header; it is the one
+ * place these numbers are written down twice, and it says so. */
+#define SIM_SOLID_WALL 0
+#define SIM_SOLID_BORDER 1       /* the map's own edge */
+#define SIM_SOLID_ROCK_A 2       /* one tile of rock */
+#define SIM_SOLID_ROCK_B 3       /* the other one tile of rock */
+#define SIM_SOLID_ROCK_BIG 4     /* corner of a 2x2 rock */
+#define SIM_SOLID_ROCK_BODY 5
+#define SIM_SOLID_STATION 6      /* corner of a 6x6 station */
+#define SIM_SOLID_STATION_BODY 7
+
+/* Doors run on one clock with eight phases, and a door's variant picks which.
+ * A map that wants two sets opening against each other puts them four apart. */
+#define SIM_DOOR_CHANNELS 8
+
+/* Sides. A start and a goal name one, and the check counts them per side. */
+#define SIM_SIDES 2
+
 /* Tiles a rule has to reach without walking a million of them every tick.
  * Filled by sim_map_index once, after the tiles are set. */
 typedef struct {

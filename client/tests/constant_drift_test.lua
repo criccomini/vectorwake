@@ -139,18 +139,22 @@ check("the terrain window's slack clears its step",
       slack and step and slack > step,
       "slack " .. tostring(slack) .. ", step " .. tostring(step))
 
--- --- the tile variants the map tool writes ----------------------------------
+-- --- what kind of solid a solid tile is --------------------------------------
 --
 -- The renderer draws rocks and stations from these, and an unknown variant
 -- falls through to a plain wall without complaining, so a renumbering here is
 -- silent at build time and at run time both.
-
-local lvl = read("sim/tools/lvl2vw.c")
+--
+-- Three files carry the numbering now. sim.h is where it is defined, and the
+-- other two copy it because neither Lua nor a browser can read a C header: the
+-- renderer, which turns a variant into a picture, and the map editor, which is
+-- the thing that writes one in the first place. An editor a rung out of step
+-- with the renderer draws a station and saves a rock.
 
 -- The renderer declares these singly and in pairs, so both shapes are read.
-local variants = {}
 -- [%w_] rather than %w: Lua's %w is letters and digits and stops at the
 -- underscore in the middle of a name like V_ROCK_BODY.
+local variants = {}
 for name, val in worldsrc:gmatch("local (V_[%w_]+) = (%d+)") do
     variants[name] = tonumber(val)
 end
@@ -158,13 +162,34 @@ for a, b, x, y in worldsrc:gmatch("local (V_[%w_]+), (V_[%w_]+) = (%d+), (%d+)")
     variants[a], variants[b] = tonumber(x), tonumber(y)
 end
 
-for _, name in ipairs({"V_BORDER", "V_ROCK_A", "V_ROCK_B", "V_ROCK_BIG",
-                       "V_ROCK_BODY", "V_STATION", "V_STATION_BODY"}) do
-    local want = define(lvl, name)
-    check("world.lua's " .. name .. " is the map tool's",
-          want ~= nil and variants[name] == want,
-          "lvl2vw.c says " .. tostring(want) ..
-              ", world.lua " .. tostring(variants[name]))
+-- The editor declares them in runs on one line, which one pattern covers.
+local editor = read("deploy/admin/maps.js")
+local paints = {}
+for name, val in editor:gmatch("(S_[%w_]+) = (%d+)") do
+    paints[name] = tonumber(val)
+end
+
+for _, name in ipairs({"BORDER", "ROCK_A", "ROCK_B", "ROCK_BIG",
+                       "ROCK_BODY", "STATION", "STATION_BODY"}) do
+    local want = define(simh, "SIM_SOLID_" .. name)
+    check("world.lua's V_" .. name .. " is the core's",
+          want ~= nil and variants["V_" .. name] == want,
+          "sim.h says " .. tostring(want) ..
+              ", world.lua " .. tostring(variants["V_" .. name]))
+    check("the editor's S_" .. name .. " is the core's",
+          want ~= nil and paints["S_" .. name] == want,
+          "sim.h says " .. tostring(want) ..
+              ", maps.js " .. tostring(paints["S_" .. name]))
+end
+
+-- The editor offers one paint per kind of solid, so a variant added to the
+-- core and drawn by the client is a variant somebody can actually place. The
+-- two body tiles are not paints of their own: they are what a stamp fills in
+-- around the corner that carries the picture.
+for _, name in ipairs({"S_WALL", "S_BORDER", "S_ROCK_A", "S_ROCK_B",
+                       "S_ROCK_BIG", "S_STATION"}) do
+    check("the editor can place " .. name,
+          editor:find("v: " .. name, 1, true) ~= nil)
 end
 
 -- --- the rating bands -------------------------------------------------------
