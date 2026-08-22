@@ -4,6 +4,24 @@
 // and `ask` are script-scope bindings from that file, which is what a classic
 // script gives a later one.
 //
+// ## One scope, two files
+//
+// That sharing runs both ways, and the second way is a trap. Two classic
+// scripts share one global scope, so every name declared at the top level here
+// is declared in the same place admin.js declares its own. A collision between
+// two `function`s is silent and the later file wins, which is a function
+// quietly replaced. A collision between a `function` here and a `let` there is
+// a SyntaxError, and it takes this whole file with it: nothing runs, the
+// editor never wires up, and what the page says is that some later call cannot
+// see a variable.
+//
+// Both happened. `repaint` is `repaint` rather than `draw` because admin.js
+// draws the fleet table with a `draw` of its own, and `inField` is not
+// `typing` because admin.js debounces its pilot search with a `let typing`.
+// deploy/admin/tests/scope_test.js runs the two files into one scope the way a
+// browser does and fails on any name they both claim, so the next one of these
+// is caught before it ships rather than by reading the panel.
+//
 // ## The core is the judge, not this file
 //
 // A map has to be a great deal more than well formed. It has to be a room a
@@ -370,7 +388,7 @@ function undo() {
   apply(step, true);
   future.push(step);
   historyChanged();
-  draw();
+  repaint();
   verdict();
 }
 
@@ -380,7 +398,7 @@ function redo() {
   apply(step, false);
   past.push(step);
   historyChanged();
-  draw();
+  repaint();
   verdict();
 }
 
@@ -496,7 +514,9 @@ function tile(g, x, y, b) {
 }
 
 // `over` is what a drag would write if it ended now, as tile index to byte.
-function draw(over) {
+// Named for what it does rather than the obvious `draw`, which belongs to
+// admin.js: see the note at the top of this file about the shared scope.
+function repaint(over) {
   // Nothing to draw on when this module is loaded by its own tests, which
   // exercise the tools and the history rather than the canvas.
   if (!doc || typeof document === "undefined") return;
@@ -841,7 +861,7 @@ function openDoc(d, name) {
   el("map-w").value = doc.w;
   el("map-h").value = doc.h;
   forgetHistory();
-  draw();
+  repaint();
   verdict();
   // The editor sits under the list, which on a full table is most of a screen
   // away. Opening one and being left looking at the row you clicked is the
@@ -1099,8 +1119,9 @@ function chips(host, items, current, onPick) {
   });
 }
 
-// Whether a key belongs to whatever has focus rather than to the editor.
-function typing(on) {
+// Whether a key belongs to whatever has focus rather than to the editor. Not
+// `typing`, which admin.js holds a debounce timer in; see the note at the top.
+function inField(on) {
   return !!on && (on.tagName === "INPUT" || on.tagName === "TEXTAREA"
                   || on.tagName === "SELECT" || on.isContentEditable);
 }
@@ -1121,7 +1142,7 @@ function wire() {
           // A marquee left lying under a pencil is a rectangle nobody can get
           // rid of, because the keys that clear it belong to the other tool.
           if (tool !== "select") sel = null;
-          draw();
+          repaint();
         });
 
   const c = el("map-canvas");
@@ -1189,7 +1210,7 @@ function wire() {
       // Inside the marquee is a move, outside it starts a new one.
       kind = inside(sel, x, y) ? "move" : "marquee";
       if (kind === "marquee") sel = null;
-      draw();
+      repaint();
       return;
     }
 
@@ -1203,7 +1224,7 @@ function wire() {
       if (rub) flood(x, y, { cls: T_EMPTY, v: 0 });
       else flood(x, y, laying);
     }
-    draw();
+    repaint();
   });
 
   c.addEventListener("pointermove", (ev) => {
@@ -1221,22 +1242,22 @@ function wire() {
       const lay = laying === T_EMPTY ? (ax, ay) => put(ax, ay, T_EMPTY) : layer(laying);
       stroke(dragging[0], dragging[1], x, y, lay);
       dragging = [x, y];
-      draw();
+      repaint();
       return;
     }
-    if (kind === "paint") { draw(preview(x, y, ev.shiftKey)); return; }
+    if (kind === "paint") { repaint(preview(x, y, ev.shiftKey)); return; }
     if (kind === "marquee") {
       let [ex, ey] = [x, y];
       if (ev.shiftKey) [ex, ey] = lock(dragging[0], dragging[1], x, y, true);
       sel = norm(dragging[0], dragging[1], ex, ey);
-      draw();
+      repaint();
       return;
     }
     if (kind === "move") {
       // The block where it would land, drawn over where it still is.
       const dx = x - dragging[0], dy = y - dragging[1];
       const buf = lift(sel);
-      draw(ghost(() => blit(buf, sel.x + dx, sel.y + dy)));
+      repaint(ghost(() => blit(buf, sel.x + dx, sel.y + dy)));
     }
   });
 
@@ -1261,13 +1282,13 @@ function wire() {
       // one tile, which is what everybody expects of empty space.
       if (sel.w === 1 && sel.h === 1) sel = null;
       dragging = null; kind = null;
-      draw();
+      repaint();
       return;
     }
     if (kind === "move") {
       shift(x - dragging[0], y - dragging[1]);
       dragging = null; kind = null;
-      draw();
+      repaint();
       verdict();
       return;
     }
@@ -1282,7 +1303,7 @@ function wire() {
     dragging = null;
     kind = null;
     endStep();
-    draw();
+    repaint();
     verdict();
   };
   c.addEventListener("pointerup", finish);
@@ -1293,7 +1314,7 @@ function wire() {
   // it is swallowed only while the editor is open and nothing is being typed
   // into.
   addEventListener("keydown", (ev) => {
-    if (ev.code !== "Space" || el("editor").hidden || typing(ev.target)) return;
+    if (ev.code !== "Space" || el("editor").hidden || inField(ev.target)) return;
     ev.preventDefault();
     if (!spacing) { spacing = true; cursor(); }
   });
@@ -1305,7 +1326,7 @@ function wire() {
   // A window that loses focus with the key down would come back still panning.
   addEventListener("blur", () => { spacing = false; cursor(); });
 
-  el("map-zoom").oninput = (ev) => { zoom = Number(ev.target.value); draw(); };
+  el("map-zoom").oninput = (ev) => { zoom = Number(ev.target.value); repaint(); };
   el("map-resize").onclick = () => {
     if (!doc) return;
     const w = Math.max(9, Math.min(1024, Number(el("map-w").value) | 0));
@@ -1324,7 +1345,7 @@ function wire() {
     next.dirty = true;
     doc = next;
     pushDoc(before);
-    draw();
+    repaint();
     verdict();
   };
   el("map-undo").onclick = undo;
@@ -1334,16 +1355,16 @@ function wire() {
   // focus, where they mean what they mean everywhere else: the name dialog is
   // a text box and undo in it is the browser's.
   addEventListener("keydown", (ev) => {
-    if (!doc || el("editor").hidden || typing(ev.target)) return;
+    if (!doc || el("editor").hidden || inField(ev.target)) return;
 
     // The two that are not chords.
-    if (ev.key === "Escape" && sel) { ev.preventDefault(); sel = null; draw(); return; }
+    if (ev.key === "Escape" && sel) { ev.preventDefault(); sel = null; repaint(); return; }
     if ((ev.key === "Delete" || ev.key === "Backspace") && sel) {
       ev.preventDefault();
       beginStep();
       erase(sel);
       endStep();
-      draw();
+      repaint();
       verdict();
       return;
     }
@@ -1357,17 +1378,17 @@ function wire() {
       ev.preventDefault();
       copy(true);
       note();
-      draw();
+      repaint();
       verdict();
     } else if (key === "v") {
       ev.preventDefault();
       paste();
-      draw();
+      repaint();
       verdict();
     } else if (key === "a") {
       ev.preventDefault();
       sel = norm(0, 0, doc.w - 1, doc.h - 1);
-      draw();
+      repaint();
     }
   });
   el("map-save").onclick = save;

@@ -62,6 +62,24 @@ const server = http.createServer((req, res) => {
   page.on("requestfailed", (r) => errors.push(`failed ${r.url()}`));
   page.on("response", (r) => { if (r.status() === 404) errors.push(`404 ${r.url()}`); });
 
+  // The real page first, before the harness. The harness stubs admin.js,
+  // which is exactly the file maps.js shares a scope with, so a collision
+  // between the two is invisible to every check below. One shipped: a
+  // `function typing` here against a `let typing` there took maps.js out at
+  // parse and the editor never wired up at all.
+  await page.goto(`http://127.0.0.1:${port}/index.html`);
+  await page.waitForTimeout(300);
+  check("the panel loads with both scripts", errors.length === 0, errors.join(" | "));
+  const whose = await page.evaluate(() => {
+    if (typeof doc === "undefined") return "maps.js did not run";
+    if (typeof draw !== "function") return "admin.js did not run";
+    // admin.js draws the fleet table off f.instances. If this is somebody
+    // else's draw, a redeclaration took it.
+    return String(draw).includes("f.instances") ? "ok" : "draw was redeclared";
+  });
+  check("and neither took a name off the other", whose === "ok", whose);
+  errors.length = 0;
+
   await page.goto(`http://127.0.0.1:${port}/drive.html`);
   await page.click("#map-new");
 
