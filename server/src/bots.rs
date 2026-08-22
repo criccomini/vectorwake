@@ -867,20 +867,36 @@ async fn ask(addr: &str) -> Option<u32> {
 /// still allowed to fly bots, but each one must use its own filtered world.
 #[derive(Debug, PartialEq, Eq)]
 enum BotIdentity {
-    House(String),
+    /// A token, and what the account behind it owns. The entitlements come
+    /// back with the session the way they do for a player's client, and they
+    /// are what a kit is built inside: an individual flies what it has bought
+    /// and nothing else, checked at the arena's door like anybody's.
+    House {
+        token: String,
+        entitlements: [u8; crate::sim::SLOT_COUNT],
+    },
     Unaccounted,
 }
 
 impl BotIdentity {
     fn session(&self) -> &str {
         match self {
-            BotIdentity::House(token) => token,
+            BotIdentity::House { token, .. } => token,
             BotIdentity::Unaccounted => "",
         }
     }
 
     fn shares_world(&self) -> bool {
-        matches!(self, BotIdentity::House(_))
+        matches!(self, BotIdentity::House { .. })
+    }
+
+    /// What this pilot owns, which for a bot with no meta-layer behind it is
+    /// what everybody is dealt.
+    fn entitlements(&self) -> [u8; crate::sim::SLOT_COUNT] {
+        match self {
+            BotIdentity::House { entitlements, .. } => *entitlements,
+            BotIdentity::Unaccounted => crate::sim::World::base_entitlements(),
+        }
     }
 }
 
@@ -931,16 +947,112 @@ async fn bot_identity(
     // joined tokenless, and no death a bot was part of could file. The pilot
     // log kept flowing, which is what made the ladder's silence look like a
     // rating bug instead of this.
-    let body = serde_json::json!({ "secret": secret }).to_string();
-    let reply = crate::meta::call(&meta, "/v1/session", &body)
-        .await
-        .map_err(|e| format!("{who} cannot begin a session: {e}"))?;
+    let session = |secret: String| {
+        let meta = meta.clone();
+        async move {
+            let body = serde_json::json!({ "secret": secret }).to_string();
+            crate::meta::call(&meta, "/v1/session", &body)
+                .await
+                .map_err(|e| format!("{who} cannot begin a session: {e}"))
+        }
+    };
+    let mut reply = session(secret.clone()).await?;
+
+    // The shopping, which happens between sessions and never during one.
+    //
+    // A career that improves is what docs/design/ai-players.md asks for, and
+    // this is the half of it a player can see: an individual banks the bounty
+    // it takes and comes back next session in a ship it paid for. Career
+    // movement between sessions and never inside one is the same rule the
+    // skill numbers follow, and for the same reason: a pilot that got better
+    // in the middle of a fight is rubber-banding.
+    //
+    // Through the endpoints a person's client uses, with nothing added for
+    // being ours: the shelf prices it, the wallet is checked at the meta-layer
+    // and the refusal is the same one a player gets.
+    if spend(&meta, &secret, who, &reply).await {
+        // A purchase moves the ceiling and the arena reads its copy off the
+        // token, so the one in hand is already out of date. This is why the
+        // client asks for a fresh one after buying too.
+        reply = session(secret).await?;
+    }
+
     let token = reply
         .get("token")
         .and_then(|v| v.as_str())
         .filter(|token| !token.is_empty())
-        .ok_or_else(|| format!("{who} cannot begin a session: response had no token"))?;
-    Ok(BotIdentity::House(token.to_string()))
+        .ok_or_else(|| format!("{who} cannot begin a session: response had no token"))?
+        .to_string();
+    let mut entitlements = crate::sim::World::base_entitlements();
+    if let Some(owned) = reply.get("entitlements").and_then(|v| v.as_array()) {
+        for (slot, n) in owned.iter().enumerate() {
+            if let (Some(c), Some(n)) = (entitlements.get_mut(slot), n.as_u64()) {
+                *c = n.min(u8::MAX as u64) as u8;
+            }
+        }
+    }
+    Ok(BotIdentity::House {
+        token,
+        entitlements,
+    })
+}
+
+/// One session's worth of shopping, and whether anything was bought.
+///
+/// One rung at a time. A bot that emptied its wallet the moment it could would
+/// arrive one evening in a ship three weeks ahead of the pilots it is filling a
+/// room for, and the roster's job is to inhabit every rating band rather than
+/// to climb out of the bottom of one. Buying a rung a session is a career at
+/// the speed careers move here.
+async fn spend(meta: &str, secret: &str, who: &str, session: &serde_json::Value) -> bool {
+    let rivets = session
+        .get("rivets")
+        .and_then(|v| v.as_i64())
+        .unwrap_or_default();
+    if rivets <= 0 {
+        return false;
+    }
+    let body = serde_json::json!({ "secret": secret }).to_string();
+    let Ok(shelf) = crate::meta::call(meta, "/v1/upgrades", &body).await else {
+        return false;
+    };
+    let offered: Vec<(usize, u32)> = shelf
+        .get("shelf")
+        .and_then(|v| v.as_array())
+        .map(|rows| {
+            rows.iter()
+                .filter_map(|row| {
+                    let slot = row.get("slot")?.as_u64()? as usize;
+                    let price = row.get("price")?.as_u64()? as u32;
+                    Some((slot, price))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let class = crate::ai::CALIBRATED
+        .iter()
+        .find(|(name, ..)| *name == who)
+        .map(|(_, class, _)| *class)
+        .unwrap_or(0);
+    let Some(slot) = crate::shopper::next_buy(&crate::shopper::wants(who, class), &offered, rivets)
+    else {
+        return false;
+    };
+    let body = serde_json::json!({ "secret": secret, "slot": slot }).to_string();
+    match crate::meta::call(meta, "/v1/buy", &body).await {
+        Ok(bought) => {
+            let left = bought.get("rivets").and_then(|v| v.as_i64()).unwrap_or(0);
+            println!("{who} bought slot {slot}; {left} rivets left");
+            true
+        }
+        // A refusal is the meta-layer's answer and is not an error here: a
+        // wallet that moved between the shelf and the purchase is a race this
+        // pilot loses by flying what it already owns.
+        Err(why) => {
+            println!("{who} could not buy slot {slot}: {why}");
+            false
+        }
+    }
 }
 
 /// The join a bot sends, built where something can check it.
@@ -1123,6 +1235,39 @@ async fn fly(
                     Some(crate::S2C_WELCOME) if data.len() >= 16 => {
                         ship = data[1];
                         let lifecycle = u32::from_le_bytes(data[2..6].try_into().unwrap());
+                        // What this pilot is flying, sent the way a player's
+                        // client sends it: the arena deals a starter kit to a
+                        // seat wearing nothing, so without this every bot in
+                        // the fleet flew the same thirty points however long
+                        // its career and whatever it had bought.
+                        //
+                        // Inside both ceilings, which is the pair the arena
+                        // checks it against: the zone's own row and what this
+                        // account owns. A kit outside either is refused whole
+                        // and leaves the pilot in the starter kit, which is
+                        // the same answer a player gets.
+                        let arena_ceiling = match &sight {
+                            Sight::Shared(rig) => rig.lock_world().kit_ceilings(),
+                            // No shared world to read it off yet. The game's
+                            // own row is right for every zone that has not
+                            // tuned one, and a zone that has will refuse the
+                            // kit and leave the starter one, which is a safe
+                            // way to be wrong.
+                            Sight::Dark => *crate::sim::World::baseline_kit_ceiling(),
+                        };
+                        let owned = identity.entitlements();
+                        let mut ceiling = arena_ceiling;
+                        for (slot, top) in ceiling.iter_mut().enumerate() {
+                            *top = (*top).min(owned[slot]);
+                        }
+                        let kit = crate::shopper::build(
+                            &crate::shopper::wants(&who.name, who.class),
+                            &ceiling,
+                        );
+                        let mut m = Vec::with_capacity(1 + kit.len());
+                        m.push(crate::C2S_KIT);
+                        m.extend_from_slice(&kit);
+                        let _ = ctl_tx.try_send(Ctl::Frame(m));
                         let mut b = ai::Bot::new(ship, who.skill);
                         // Luck of its own, so two pilots of one skill in one
                         // room do not fly the same match.
@@ -1464,13 +1609,28 @@ mod tests {
 
     #[test]
     fn only_an_authenticated_house_bot_shares_a_world() {
-        let house = BotIdentity::House("session-token".into());
+        let mut owned = crate::sim::World::base_entitlements();
+        owned[crate::sim::slot_mod(crate::sim::TRIG_GUN, crate::sim::MOD_BARREL) as usize] = 1;
+        let house = BotIdentity::House {
+            token: "session-token".into(),
+            entitlements: owned,
+        };
         assert!(house.shares_world());
         assert_eq!(house.session(), "session-token");
+        assert_eq!(
+            house.entitlements(),
+            owned,
+            "a house bot flies what its account has bought"
+        );
 
         let unaccounted = BotIdentity::Unaccounted;
         assert!(!unaccounted.shares_world());
         assert_eq!(unaccounted.session(), "");
+        assert_eq!(
+            unaccounted.entitlements(),
+            crate::sim::World::base_entitlements(),
+            "and one with no account behind it flies what everybody is dealt"
+        );
     }
 
     #[test]

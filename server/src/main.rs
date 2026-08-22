@@ -29,6 +29,7 @@ mod rating;
 mod room;
 mod select;
 mod session;
+mod shopper;
 mod sim;
 mod spool;
 mod token;
@@ -5489,10 +5490,11 @@ mod tests {
 
     /// Combat is the story of a session, and the log left it out for a day:
     /// a join and a leave with an hour of silence between them. A death files
-    /// a row for each human in it and nothing for the machines, which are
-    /// most of every hour.
+    /// a row for each pilot in it, machines included: a roster individual is
+    /// an account with a career, and a kill row is where a bounty is taken,
+    /// so skipping them was the whole reason a bot's wallet stayed empty.
     #[test]
-    fn a_death_is_two_rows_for_people_and_none_for_machines() {
+    fn a_death_is_two_rows_for_every_pilot_in_it() {
         let (mut z, pilots, d) = logging_arena("death");
         let cap = z.max_players();
         let a = &mut z.rooms[0];
@@ -5517,7 +5519,18 @@ mod tests {
         );
 
         a.note_death(bots[0], bots[1], 60);
-        assert_eq!(rows(&pilots).len(), filed.len(), "machines file nothing");
+        let with_bots = rows(&pilots);
+        assert_eq!(
+            with_bots.len(),
+            filed.len() + 2,
+            "a machine's death is a row and so is the kill that took it"
+        );
+        assert!(
+            with_bots[with_bots.len() - 1].bot && with_bots[with_bots.len() - 2].bot,
+            "and both are marked as machines, which is what keeps them out \
+             of the week's table"
+        );
+        let filed = with_bots;
 
         // A self-kill is one row: crediting the victim with their own
         // destruction would say it twice.

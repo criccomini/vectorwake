@@ -2241,24 +2241,29 @@ impl Room {
 
     /// One death, into the pilot log, from whichever path resolved it.
     ///
-    /// A row for the human who died and a row for the human who did it, and
-    /// nothing when both parties are machines, which is most of every hour.
-    /// `rated_events` remains the authority on what the death did to the
-    /// ladder; these rows are what put it in the story of a session, where a
-    /// join followed by an hour of silence used to stand in for the whole
-    /// evening. Assists are deliberately left to the rated log: one death is
-    /// at most two rows here, not one per contributor.
+    /// A row for whoever died and a row for whoever did it. `rated_events`
+    /// remains the authority on what the death did to the ladder; these rows
+    /// are what put it in the story of a session, where a join followed by an
+    /// hour of silence used to stand in for the whole evening. Assists are
+    /// deliberately left to the rated log: one death is at most two rows here,
+    /// not one per contributor.
+    ///
+    /// Bots file too. They used to be skipped, which was cheap and was the
+    /// reason a bot's wallet was permanently empty: rivets are bounty taken,
+    /// and a kill row is where a bounty is taken. A roster individual is an
+    /// account with a career, and now it earns on that account the way a
+    /// person does. The week's table reads `where not bot`, so what this adds
+    /// is a wallet and a log, not a machine in the standings. See
+    /// docs/design/ai-players.md.
     pub(crate) fn note_death(&self, victim: u8, killer: u8, paid: i32) {
         let bounty = paid.clamp(0, u16::MAX as i32);
         if let Some(seat) = self.names.get(&victim) {
-            if !seat.bot {
-                let seat = seat.clone();
-                self.note(
-                    pilot::DIED,
-                    &seat,
-                    serde_json::json!({ "by": self.name_of(killer), "bounty": bounty }),
-                );
-            }
+            let seat = seat.clone();
+            self.note(
+                pilot::DIED,
+                &seat,
+                serde_json::json!({ "by": self.name_of(killer), "bounty": bounty }),
+            );
         }
         // A self-kill has no second party to credit, and crediting the victim
         // with their own destruction would count it twice.
@@ -2266,14 +2271,12 @@ impl Room {
             return;
         }
         if let Some(seat) = self.names.get(&killer) {
-            if !seat.bot {
-                let seat = seat.clone();
-                self.note(
-                    pilot::KILL,
-                    &seat,
-                    serde_json::json!({ "of": self.name_of(victim), "bounty": bounty }),
-                );
-            }
+            let seat = seat.clone();
+            self.note(
+                pilot::KILL,
+                &seat,
+                serde_json::json!({ "of": self.name_of(victim), "bounty": bounty }),
+            );
         }
     }
 
@@ -2370,13 +2373,11 @@ impl Room {
                     // the LEAVE below, marked as a quit; a `died` here too
                     // would say the same thing twice about one departure.
                     if let Some(kseat) = self.names.get(&ks).cloned() {
-                        if !kseat.bot {
-                            self.note(
-                                pilot::KILL,
-                                &kseat,
-                                serde_json::json!({ "of": p.name, "quit": true }),
-                            );
-                        }
+                        self.note(
+                            pilot::KILL,
+                            &kseat,
+                            serde_json::json!({ "of": p.name, "quit": true }),
+                        );
                     }
                     let vr = self.rating.rating_of(&p.rid).round() as i16;
                     let kr = self.rating.rating_of(&krid).round() as i16;

@@ -300,6 +300,47 @@ schedule exists for rhythm and ladder health rather than mimicry, and bots do
 not perform humanity: no fake excuses, no fake typing, no pretending to have a
 life the label contradicts. Recognition never becomes deception.
 
+## They buy their own ships
+
+An individual banks the bounty it takes and spends it on the same shelf a
+player spends theirs on. It is the visible half of the career above: a pilot
+you met a month ago comes back in a ship it paid for.
+
+Nothing about this is privileged. A bot walks the three endpoints a person's
+client walks, holding its own account's secret: `/v1/upgrades` for the shelf,
+`/v1/buy` for a rung, and `C2S_KIT` to the arena for what it is flying. The
+meta-layer prices it, checks the wallet and refuses what the account cannot
+afford, and the arena checks the kit against the zone's ceiling and the
+account's entitlements, exactly as it does for a person. A bot that has bought
+nothing flies what a new player flies.
+
+**Bots earn by killing, like everybody.** Rivets are bounty taken, and a kill
+row is where a bounty is taken. Bot kills used to be left out of the pilot log
+on the argument that machines killing machines is most of every hour and none
+of it is anybody's story. That was cheap and it was the whole reason a bot's
+wallet was permanently empty. They file now. The rows are marked as machines
+and the week's table reads `where not bot`, so what this adds is a wallet and a
+log, not a bot in the standings.
+
+**One rung a session.** Shopping happens when an individual begins a session
+and never during one, which is the same rule career movement follows and for
+the same reason: a pilot that got better in the middle of a fight is
+rubber-banding. One rung at a time, so a bot that saved for a month arrives in
+a ship a month ahead rather than a year ahead, and the roster goes on
+inhabiting every rating band instead of climbing out of the bottom of one.
+
+**Taste, so a room is not eight of one ship.** Each individual has an order it
+wants slots in, hashed from its name and tilted by its hull: a gunner, a
+bomber, a runner. The order does two jobs. It decides what to buy next, and it
+decides how the thirty points are spent once the rungs are owned, so what a
+pilot saved for is what it flies. That is what makes "Ozone throws shrapnel"
+a fact worth learning rather than a thing to say about all of them.
+
+The rating side takes care of itself: a bought-up bot wins more, its rating
+rises with its build, and the fill rule matches bots to the humans present by
+rating. The case to watch is the other one, a long-lived individual meeting a
+first-week player, which is the fill rule's job rather than the shelf's.
+
 ## The population director
 
 The director decides how many bots exist and which ones. It is a deployment
