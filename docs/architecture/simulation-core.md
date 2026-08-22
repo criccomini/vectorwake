@@ -82,13 +82,18 @@ and particles. Nothing outside the core interprets game rules.
 
 ## Collision against tiles
 
-The map is a 1024x1024 grid of 16-pixel tiles. Collision is a swept test against
-the grid rather than a physics engine: step along the movement vector in tile
-increments, stop at the first solid tile, reflect the component that hit.
+The map is a grid of 16-pixel tiles, up to 1024 on a side and carrying its own
+width and height, so a match room is 160 tiles and the open arena a thousand.
+Collision is a swept test against the grid rather than a physics engine: step
+along the movement vector in tile increments, stop at the first solid tile,
+reflect the component that hit.
 
 A tile is not a boolean. It carries a behavior class and a variant -- safe
 zones, doors on a clock, wormholes, goals -- so "solid" is a question asked of
-the tile and the tick rather than a bit read out of an array. A door is solid
+the tile and the tick rather than a bit read out of an array. One class is
+solid for half of itself: a slope fills the tile corner to corner, and a hull
+meeting one is pushed out along that face and turned along it rather than
+stopped on a tile edge. docs/design/maps.md has the shape of both. A door is solid
 for part of its cycle and not for the rest, which is why collision takes the
 settings and the tick at all. See [design/maps.md](../design/maps.md).
 
