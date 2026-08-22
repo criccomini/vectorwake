@@ -440,6 +440,16 @@ pub(crate) struct Seat {
     /// waits for the whistle; one that arrives at a join or between matches is
     /// dealt on the spot and never lands here.
     pub(crate) pending_kit: Option<[u8; sim::SLOT_COUNT]>,
+    /// Whether this seat has ever worn a kit its owner chose.
+    ///
+    /// False until the first one lands, which is what separates a change from
+    /// an arrival. A pilot joining a room is dealt a starter kit, because the
+    /// arena has no way to know what they fly until their client says so; the
+    /// kit that follows a second later is not a re-spec, it is the build they
+    /// came in with, and holding it to the next whistle left them flying a
+    /// bare hull for up to three minutes with everything they own sitting in
+    /// `pending_kit`. Reported as bought add-ons doing nothing.
+    pub(crate) kitted: bool,
     /// When the credential used at the door expires. Guests have no credential.
     /// A rated pilot proves their standing again through the renewable lease;
     /// a watcher has no lease, so this clock closes a session that has outlived
@@ -471,6 +481,7 @@ impl Seat {
             carried: None,
             entitlements: sim::World::base_entitlements(),
             pending_kit: None,
+            kitted: false,
             expires: None,
             session: pilot::Session::new("none"),
         }
@@ -1695,7 +1706,43 @@ impl Room {
         if kit.iter().zip(ceiling.iter()).any(|(want, max)| want > max) {
             return false;
         }
-        self.world.set_kit(ship as usize, kit)
+        let ok = self.world.set_kit(ship as usize, kit);
+        if ok {
+            // This seat is wearing a build its owner chose, so the next one to
+            // arrive mid-match is a change and waits for the whistle.
+            if let Some(s) = self.names.get_mut(&ship) {
+                s.kitted = true;
+            }
+        }
+        ok
+    }
+
+    /// A kit the pilot in this seat asked for: dealt now, or held to the
+    /// whistle.
+    ///
+    /// The hull is locked for a match and the kit with it, so a change made
+    /// mid-match waits. The first kit of a session is not a change. A pilot
+    /// who has just joined is wearing the starter kit `deal_seat` gave them,
+    /// because nothing here knows what they fly until their client says so,
+    /// and the message saying so arrives a moment after they are already in
+    /// the room. Held, that pilot spent the rest of the match in a bare hull
+    /// with everything they own sitting in `pending_kit`; joining during an
+    /// intermission worked, so the same build flew or did not depending on
+    /// where the clock happened to be. Reported as bought add-ons doing
+    /// nothing.
+    ///
+    /// Once per seat, because `set_kit` marks it: everything after the first
+    /// is a re-spec and waits, which is the rule this was always meant to be.
+    pub(crate) fn ask_kit(&mut self, ship: u8, kit: &[u8; sim::SLOT_COUNT]) {
+        let playing = self.mode.match_state().is_some_and(|m| m.playing);
+        let settled = self.names.get(&ship).is_some_and(|s| s.kitted);
+        if playing && settled {
+            if let Some(s) = self.names.get_mut(&ship) {
+                s.pending_kit = Some(*kit);
+            }
+        } else {
+            self.set_kit(ship, kit);
+        }
     }
 
     /// Deal this seat what it is flying, which is its own kit if it has one

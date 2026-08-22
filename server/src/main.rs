@@ -3264,6 +3264,51 @@ mod tests {
         }
     }
 
+    /// The first kit of a session is dealt at once, whatever the clock says.
+    ///
+    /// A pilot who has just joined is wearing the starter kit the arena gave
+    /// them, because nothing there knows what they fly until their client says
+    /// so, and that message arrives a moment after they are already in the
+    /// room. Held to the whistle, they spent the rest of the match in a bare
+    /// hull with everything they own unused: joining during an intermission
+    /// worked and joining mid-match did not, so the same build flew or did not
+    /// depending on where the clock happened to be. Reported as bought add-ons
+    /// doing nothing.
+    #[test]
+    fn the_kit_a_pilot_arrives_with_is_dealt_mid_match() {
+        let mut a = match_room(1, 1);
+        let ship = seat_human(&mut a, "pilot");
+        a.tick(); // opens the match
+        assert!(a.mode.match_state().unwrap().playing);
+
+        // What a join deals: a starter, with none of this pilot's own choices
+        // on it.
+        let starter = a.world.state.ships[ship as usize].kit;
+        let mut mine = [0u8; sim::SLOT_COUNT];
+        mine[sim::slot_stat(sim::UP_THRUST) as usize] = 5;
+        assert_ne!(mine, starter, "pick a kit the seat is not already in");
+
+        a.ask_kit(ship, &mine);
+        assert_eq!(
+            a.world.state.ships[ship as usize].kit, mine,
+            "the build a pilot arrived with is dealt at once, mid-match or not"
+        );
+        assert_eq!(
+            a.names[&ship].pending_kit, None,
+            "and nothing is left waiting for a whistle"
+        );
+
+        // The second one is a change, and a change is what the rule is about.
+        let mut again = [0u8; sim::SLOT_COUNT];
+        again[sim::slot_stat(sim::UP_SPEED) as usize] = 5;
+        a.ask_kit(ship, &again);
+        assert_eq!(
+            a.world.state.ships[ship as usize].kit, mine,
+            "a re-spec mid-match still waits"
+        );
+        assert_eq!(a.names[&ship].pending_kit, Some(again), "and is held");
+    }
+
     /// The hull is locked for a match and the kit with it, so a kit asked for
     /// mid-match waits for the whistle. One asked for between matches is dealt
     /// on the spot, because nobody is flying.

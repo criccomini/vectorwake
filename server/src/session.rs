@@ -748,14 +748,10 @@ pub(crate) async fn serve_client(
                         if let Some(index) = z.rooms.iter().position(|a| a.number == room) {
                             let a = &mut z.rooms[index];
                             if let Some(ship) = a.players.get(&member).map(|p| p.ship) {
-                                let playing = a.mode.match_state().is_some_and(|m| m.playing);
-                                if playing {
-                                    if let Some(s) = a.names.get_mut(&ship) {
-                                        s.pending_kit = Some(kit);
-                                    }
-                                } else {
-                                    a.set_kit(ship, &kit);
-                                }
+                                // Dealt now or held to the whistle, which is
+                                // the room's rule rather than this socket's.
+                                // See `Room::ask_kit`.
+                                a.ask_kit(ship, &kit);
                             }
                         }
                     }
