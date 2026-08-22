@@ -1907,34 +1907,6 @@ function pages.priced(n, x, y, px, col, align)
     return lead + w
 end
 
--- The other end of a kit row: what the next rung costs, drawn as a thing to
--- press rather than as a number to read.
---
--- Right-aligned, because the ladders are ragged and a price hung off the end
--- of each one would step in and out with them. `right` is where it ends and
--- the return is how wide it came out, which is what the caller needs to put a
--- hit box under it.
---
--- Dim where the wallet is short. The price stays on the row either way: a
--- page that hides what you cannot afford never says what you are saving for.
-function pages.buy_button(right, y, h, price, hot, afford)
-    local px = 9.5 * F.scale
-    local word = "upgrade"
-    local ww = text_w(word, px)
-    local pw = text_w(tostring(price), 11 * F.scale) + 11 * F.scale * 1.1
-    local w = ww + pw + 26 * F.scale
-    local x = right - w
-    local col = afford and pal.CHARGE_COL or pal.DIM
-    rect(x, y, w, h, pal.a(col, hot and 0.16 or 0.08))
-    F.layer:frame(x, ry(y, h), w, h, 1.0 * F.scale,
-                  pal.a(col, hot and 0.9 or 0.45))
-    lbl(word, x + 9 * F.scale, y + h * 0.5 + 3 * F.scale,
-        pal.a(col, hot and 1 or 0.75), nil, px)
-    pages.priced(price, x + w - 9 * F.scale, y + h * 0.5 + 4 * F.scale,
-                 11 * F.scale, pal.a(col, hot and 1 or 0.8), "right")
-    return w
-end
-
 -- What a green is, worn by the row that counts what greens made you worth.
 local function gl_diamond(cx, cy, k, col)
     local pts = {cx, ry(cy - k), cx + k * 0.8, ry(cy),
@@ -4099,7 +4071,23 @@ function pages.kit(v, x, y, w, h, focused)
         local step = 13 * F.scale
         -- The pips first, so a press on one beats the row behind it: hit boxes
         -- are tested in the order they were published.
+        -- Where the first rung nobody owns sits, so the price can say which
+        -- one it is buying by lighting it.
+        local lockx = nil
         local function pip_at(k, lit)
+            if lit == "locked" and not lockx then lockx = px end
+            -- The one the price would buy, lit behind the pip where the
+            -- wallet covers it. A rung you can have this evening reads
+            -- differently from one you are saving for, and this is the
+            -- difference drawn on the thing itself rather than said in a
+            -- second control beside it.
+            if lit == "locked" and px == lockx and r.price
+               and r.afford ~= false then
+                -- A ring rather than a field. Filled, it read as a coin
+                -- sitting on the ladder and swallowed the divider beside it.
+                F.layer:ring(px, ry(cy), 7.5 * F.scale, 1.0 * F.scale, 14,
+                             pal.a(pal.CHARGE_COL, 0.5))
+            end
             pages.pip(px, cy, 4.4 * F.scale, lit, col)
             if live and r.pick then
                 hit(px - step / 2, cy - srow / 2, step, srow,
@@ -4141,18 +4129,36 @@ function pages.kit(v, x, y, w, h, focused)
             txt(readout(r.choice or 0), px + 10 * F.scale, cy, 11 * F.scale,
                 pal.a(pal.INK, hot and 0.95 or 0.7))
         end
-        -- And what the next rung costs, at the far end, on the rows that have
-        -- one left to sell. This is the whole of the old upgrades page: a
-        -- shelf is a list of the same slots this page already draws, so it
-        -- was one page listing every row of another and pricing it.
+        -- And what the next rung costs, on the end of the ladder rather than
+        -- in a control of its own.
+        --
+        -- Every upgradable row wore a framed button, which on a full page is
+        -- fourteen of them: the heaviest mark this interface has, in a column,
+        -- most of them asking for money nobody had. A price is the whole of
+        -- what a button was saying, and the ladder was already saying the rest
+        -- of it: the dim pips are the rungs that are not yours, so the price
+        -- of the next one belongs on the end of that sentence.
+        --
+        -- Written in the same column on every row, past the longest ladder
+        -- this page draws, so the prices line up under each other whatever
+        -- each ladder came to.
+        --
+        -- Amber where the wallet covers it and the same grey as the locked
+        -- rung where it does not. That is the second half of the complaint:
+        -- on the evening you have twelve rivets the page has nothing to shout
+        -- about, and it stops shouting.
+        local pricex = kx + NAMEW + 132 * F.scale
         if r.price and live then
-            local bw = pages.buy_button(kx + kw - 14 * F.scale,
-                                        cy - srow / 2 + 3 * F.scale,
-                                        srow - 6 * F.scale, r.price, hot,
-                                        (r.afford ~= false))
+            local can = r.afford ~= false
+            local pw = pages.priced(r.price, pricex, cy, 11.5 * F.scale,
+                                    pal.a(can and pal.CHARGE_COL or pal.DIM,
+                                          can and (hot and 1 or 0.9) or 0.5))
+            -- The number is a target too. The rung it buys is the other one,
+            -- and a pointer that came to spend rivets should not have to know
+            -- which dim diamond is next.
             if r.pick then
-                hit(kx + kw - 14 * F.scale - bw, cy - srow / 2, bw, srow,
-                    "kit_buy", r.index)
+                hit(pricex - 8 * F.scale, cy - srow / 2, pw + 16 * F.scale,
+                    srow, "kit_buy", r.index)
             end
         end
         if live and r.pick then hit(kx - 14 * F.scale, cy - srow / 2, kw, srow,

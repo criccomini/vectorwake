@@ -1667,6 +1667,20 @@ do
           bought == "buy" and menu.pending == 0,
           tostring(bought) .. "/" .. tostring(menu.pending))
 
+    -- The rung above what you own is the thing the price is for, so pressing
+    -- it is the same question the price is. This is what a dim pip has been
+    -- advertising since the ladder learned to draw one.
+    menu.ask = nil
+    menu.click_kit_at(3, 2)
+    check("a rung nobody owns asks what it costs",
+          menu.ask ~= nil and string.find(menu.ask.head, "40", 1, true),
+          menu.ask and menu.ask.head or "no card")
+    menu.ask = nil
+    menu.click_kit_at(3, 1)
+    check("and a rung you own is still just a rung",
+          menu.ask == nil and menu.kit[1] == 1,
+          tostring(menu.kit[1]))
+
     -- A wallet too light is told so instead of being asked a question whose
     -- only answer is a refusal.
     account.rivets = 10

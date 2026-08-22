@@ -2943,6 +2943,15 @@ function M.click_kit_at(index, level)
     local r = rows[index]
     if not r or r.act ~= "kit_step" then return nil, false end
     M.sel[M.at()] = index
+    -- A rung above what the account owns is the thing the shelf sells, and a
+    -- press on it has always meant "I want this many of these". The answer
+    -- used to be a refusal nothing said out loud; it is the price now, which
+    -- is what the dim pip has been advertising all along.
+    local top = kit_ceiling()[r.value + 1] or 0
+    if level > top and r.shelf then
+        M.ask_upgrade(r.value, r.shelf)
+        return nil, true
+    end
     if M.kit_set(r.value, level) then
         M.note = nil
         return "kit", true
