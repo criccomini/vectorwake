@@ -804,6 +804,11 @@ static int place_dock(int n) {
 static int32_t *comp; /* region id per tile, 0 = outside the set */
 static uint8_t *nav;  /* 1 where a hull's center fits */
 
+/* What the core's own check needs, allocated once for the whole run: it is
+ * nine megabytes, and a selftest draws a dozen maps. */
+static sim_map_scratch *scratch;
+static sim_map_report report;
+
 /* Only these stop a ship. Everything else is flown through, including the
  * safe tiles of a berth and the wormhole. */
 static int blocks(uint8_t t, int shut) {
@@ -1004,27 +1009,6 @@ static int fill_dead(void) {
     return filled;
 }
 
-/* Ground a hull can reach with the doors open, for the checks at the end. */
-static int dead_ground(void) {
-    size_t main_n = 0;
-    mark_nav(0);
-    int32_t main = label(nav, &main_n);
-    int dead = 0;
-    for (int y = 0; y < TILES; y++)
-        for (int x = 0; x < TILES; x++) {
-            size_t i = (size_t)y * TILES + x;
-            if (blocks(T[i], 0)) continue;
-            int seen = 0;
-            for (int j = -(HULL / 2); j <= HULL / 2 && !seen; j++)
-                for (int i2 = -(HULL / 2); i2 <= HULL / 2; i2++) {
-                    int nx = x + i2, ny = y + j;
-                    if (nx < 0 || ny < 0 || nx >= TILES || ny >= TILES) continue;
-                    if (comp[(size_t)ny * TILES + nx] == main) { seen = 1; break; }
-                }
-            if (!seen) dead++;
-        }
-    return dead;
-}
 
 /* A spawn needs room around it: a ship that materialises against a wall is a
  * ship that spends its first second stuck to one. */
@@ -1305,12 +1289,26 @@ static int generate_match(sim_map *m, uint32_t s, match_layout layout, int quiet
     int spawns = match_spawns(main_c, px, py, 0);
     spawns += match_spawns(main_c, arena_cx * 2 - px, arena_cy * 2 - py, 1);
 
+    /* The verdict is the core's, not this file's. Everything above decides
+     * where to dig; whether digging worked is the same question the meta-layer
+     * asks of a map somebody drew by hand, and it has to be the same answer.
+     * The passes above still run, because a generator that only knew whether
+     * it had failed could not fix anything. */
+    sim_map_index(m);
+    sim_map_check(m, scratch, &report);
+
+    /* Density is measured over the arena rather than over the map, because the
+     * wall around a match room is the border a pilot meets and not cover to
+     * fight behind. That is why this one number is still counted here: the
+     * core's report is about the whole map, which is the right frame for
+     * everything except this. */
     size_t solid = 0;
     for (int y = arena_lo; y <= arena_hi; y++)
         for (int x = arena_lo; x <= arena_hi; x++)
             if (SIM_TILE_CLASS(T[(size_t)y * TILES + x]) == SIM_TILE_SOLID) solid++;
     double solid_pct = 100.0 * (double)solid / (double)(ARENA * ARENA);
-    int dead = dead_ground();
+    int dead = report.stranded;
+    nav_regions = report.regions;
 
     if (!quiet)
         printf("seed %u %s: %d tiles square, %.2f%% solid, %d spawns,"
@@ -1428,6 +1426,12 @@ static int generate(sim_map *m, uint32_t s, int quiet) {
         if (comp[i] > nav_regions) nav_regions = comp[i];
     int spawns = place_spawns(main_c);
 
+    /* And here too the verdict is the core's. See the note in
+     * `generate_match`: what decides where to dig is this file's business,
+     * whether the digging worked is the whole fleet's. */
+    sim_map_index(m);
+    sim_map_check(m, scratch, &report);
+
     /* Report, and refuse to write a map that cannot be played. */
     size_t solid = 0, safe = 0, door = 0;
     for (size_t i = 0; i < (size_t)TILES * TILES; i++) {
@@ -1460,7 +1464,8 @@ static int generate(sim_map *m, uint32_t s, int quiet) {
             if (!seen) stranded++;
         }
 
-    int dead = dead_ground();
+    int dead = report.stranded;
+    nav_regions = report.regions;
     if (!quiet) {
         printf("seed %u: solid %.2f%% of interior, %zu safe, %zu door (%d in"
                " barriers), %d structures, %d docks, %d spawns\n", s, solid_pct,
@@ -1530,7 +1535,8 @@ int main(int argc, char **argv) {
     comp = malloc(sizeof(int32_t) * TILES * TILES);
     nav = malloc((size_t)TILES * TILES);
     dist = malloc(sizeof(int32_t) * TILES * TILES);
-    if (!m || !comp || !nav || !dist) return 1;
+    scratch = malloc(sizeof *scratch);
+    if (!m || !comp || !nav || !dist || !scratch) return 1;
 
     /* Twelve seeds, none of them the shipped one, because the check worth
      * having is that the generator produces a playable map generally and not

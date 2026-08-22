@@ -173,6 +173,45 @@ void sim_map_size(sim_map *m, int w, int h);
  * and the reference maps below already do. */
 void sim_map_index(sim_map *m);
 
+/* Whether a map can be flown, asked of a hull rather than of a point.
+ *
+ * Three callers want the same answer and a second opinion about a map is worth
+ * nothing: the generator refuses to write a map that fails, the meta-layer
+ * refuses to store one, and an editor says what is wrong while somebody is
+ * still drawing. sim/src/check.c has the reasoning; the short version is that
+ * a hull is three tiles across, so the connectivity of a map is not the
+ * connectivity of its open tiles.
+ *
+ * The scratch is the caller's because the core does not allocate. It is nine
+ * megabytes and only the tools and the panel ever build one, which is why it
+ * is a struct to hand in rather than a static to trip over. */
+typedef struct {
+    int32_t regions;         /* separate places a hull can fly, doors shut */
+    int32_t reachable;       /* tiles a hull's center fits in the largest one */
+    int32_t stranded;        /* open tiles no hull can reach, doors open */
+    int32_t spawns;          /* starts the map names */
+    int32_t spawns_team[2];  /* and how they are split */
+    int32_t spawns_stranded; /* starts a ship could not leave */
+    int32_t solid;           /* wall, slopes counted whole */
+    int32_t open;            /* everything a ship flies through */
+} sim_map_report;
+
+typedef struct {
+    uint8_t nav[SIM_MAP_TILES * SIM_MAP_TILES];
+    int32_t comp[SIM_MAP_TILES * SIM_MAP_TILES];
+    int32_t stack[SIM_MAP_TILES * SIM_MAP_TILES];
+} sim_map_scratch;
+
+void sim_map_check(const sim_map *m, sim_map_scratch *s, sim_map_report *r);
+
+/* Whether that report is a map worth serving, and why not when it is not.
+ * `why` takes a sentence naming the first thing wrong with it, which is a
+ * message for whoever drew it rather than a code to look up. */
+int sim_map_playable(const sim_map *m, const sim_map_report *r, char *why, int cap);
+/* `m` is unused today and named anyway: every future rule this could grow
+ * (a size a mode needs, a spawn count a roster wants) is a question about the
+ * map rather than about the count of what is in it. */
+
 /* The reference arenas, in the core so the client and the server cannot hold
  * different ideas of the same room. They used to be the same magic numbers
  * written out in C++ and in Rust, which is one edit away from a client that

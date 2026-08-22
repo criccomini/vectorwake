@@ -145,6 +145,20 @@ pub(crate) async fn push(db: &Client) -> Option<String> {
     }
 }
 
+/// What the core made of a map, as the panel reads it.
+fn report_json(r: &crate::sim::sim_map_report) -> serde_json::Value {
+    serde_json::json!({
+        "regions": r.regions,
+        "reachable": r.reachable,
+        "stranded": r.stranded,
+        "spawns": r.spawns,
+        "spawns_team": r.spawns_team,
+        "spawns_stranded": r.spawns_stranded,
+        "solid": r.solid,
+        "open": r.open,
+    })
+}
+
 /// Handle the meta routes owned by maps. `None` leaves the request alone.
 pub(super) async fn route(db: &Client, path: &str, body: &serde_json::Value) -> Option<Reply> {
     if !path.starts_with("/v1/admin/map") && path != "/v1/admin/zone-maps" {
@@ -282,6 +296,21 @@ pub(super) async fn route(db: &Client, path: &str, body: &serde_json::Value) -> 
             let hash =
                 unsafe { crate::sim::sim_map_hash(&*map as *const crate::sim::sim_map) } as i64;
             let (spawns, per_team) = map.spawns();
+            // The other check, and the one that matters: whether a hull can
+            // fly the thing. A map that unpacks is a map the wire agrees
+            // about; a map that passes this is a map somebody can play. It is
+            // the same function the generator takes its verdict from, so a map
+            // drawn by hand is held to what a generated one is.
+            let (report, fault) = crate::sim::check_map(&map);
+            if let Some(why) = fault {
+                return Some((
+                    400,
+                    serde_json::json!({
+                        "error": format!("this map cannot be played: {why}"),
+                        "report": report_json(&report),
+                    }),
+                ));
+            }
             if let Err(e) = db
                 .execute(
                     "insert into maps (name, bytes, hash, w, h, author)
@@ -313,7 +342,42 @@ pub(super) async fn route(db: &Client, path: &str, body: &serde_json::Value) -> 
                     "name": name, "w": w, "h": h, "bytes": bytes.len(),
                     "hash": format!("{:08x}", hash as u32), "spawns": spawns,
                     "starts_per_team": per_team,
+                    "report": report_json(&report),
                     "serial": serial, "warning": warn,
+                }),
+            )
+        }
+
+        // What the core makes of a drawing, without storing it. The editor
+        // asks while somebody is drawing, so it can say "a start is walled in"
+        // at the moment they wall it in rather than when they press save.
+        "/v1/admin/map/check" => {
+            let Some(bytes) = unb64(&s("bytes")) else {
+                return Some((400, serde_json::json!({ "error": "the map is not base64" })));
+            };
+            if bytes.is_empty() || bytes.len() > MAX_BYTES {
+                return Some((400, serde_json::json!({ "error": "not a map this size" })));
+            }
+            let map = match crate::sim::unpack_map(&bytes) {
+                Ok(m) => m,
+                Err(e) => {
+                    return Some((
+                        200,
+                        serde_json::json!({
+                            "ok": false,
+                            "error": format!("not a map the core will load: {e}"),
+                        }),
+                    ))
+                }
+            };
+            let (report, fault) = crate::sim::check_map(&map);
+            (
+                200,
+                serde_json::json!({
+                    "ok": fault.is_none(),
+                    "error": fault,
+                    "w": map.w, "h": map.h,
+                    "report": report_json(&report),
                 }),
             )
         }

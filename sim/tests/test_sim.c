@@ -1170,6 +1170,89 @@ int main(void) {
         free(sb); free(small); free(round); free(wider);
     }
 
+    /* Whether a map can be flown, which is a question about a hull and not
+     * about a tile. */
+    {
+        sim_map *room = malloc(sizeof *room);
+        sim_map_scratch *sc = malloc(sizeof *sc);
+        sim_map_report rep;
+        char why[192];
+        CHECK(room && sc, "the check has room to work in");
+
+        /* An open room with a start in it and nothing else. */
+        sim_map_size(room, 80, 60);
+        SIM_MAP_AT(room, 40, 30) = SIM_TILE(SIM_TILE_SPAWN, 0);
+        sim_map_index(room);
+        sim_map_check(room, sc, &rep);
+        CHECK(rep.regions == 1, "an open room is one region");
+        CHECK(rep.stranded == 0, "with nothing stranded in it");
+        CHECK(rep.spawns == 1 && rep.spawns_team[0] == 1, "and one start, on side one");
+        CHECK(sim_map_playable(room, &rep, why, sizeof why), "so it is playable");
+
+        /* A wall straight across it is two rooms, and a hull cannot get from
+         * one to the other. */
+        for (int tx = 0; tx < 80; tx++) SIM_MAP_AT(room, tx, 30) = SIM_TILE_SOLID;
+        SIM_MAP_AT(room, 40, 20) = SIM_TILE(SIM_TILE_SPAWN, 0);
+        sim_map_index(room);
+        sim_map_check(room, sc, &rep);
+        CHECK(rep.regions == 2, "a wall across a room makes two of it");
+        CHECK(!sim_map_playable(room, &rep, why, sizeof why),
+              "which is not a map worth serving");
+
+        /* A gap one tile wide is not a way through: a hull is three across,
+         * and reading this a tile at a time is how a map ships with rooms
+         * nothing can enter. */
+        SIM_MAP_AT(room, 40, 30) = SIM_TILE_EMPTY;
+        sim_map_index(room);
+        sim_map_check(room, sc, &rep);
+        CHECK(rep.regions == 2, "a one-tile gap is still a wall to a hull");
+
+        /* Three tiles is. */
+        SIM_MAP_AT(room, 39, 30) = SIM_TILE_EMPTY;
+        SIM_MAP_AT(room, 41, 30) = SIM_TILE_EMPTY;
+        sim_map_index(room);
+        sim_map_check(room, sc, &rep);
+        CHECK(rep.regions == 1, "three tiles is a doorway");
+        CHECK(sim_map_playable(room, &rep, why, sizeof why), "and the map is whole again");
+
+        /* A closet nothing can reach is stranded ground, however open it
+         * looks on the drawing. */
+        for (int tx = 60; tx <= 70; tx++) {
+            SIM_MAP_AT(room, tx, 40) = SIM_TILE_SOLID;
+            SIM_MAP_AT(room, tx, 50) = SIM_TILE_SOLID;
+        }
+        for (int ty = 40; ty <= 50; ty++) {
+            SIM_MAP_AT(room, 60, ty) = SIM_TILE_SOLID;
+            SIM_MAP_AT(room, 70, ty) = SIM_TILE_SOLID;
+        }
+        sim_map_index(room);
+        sim_map_check(room, sc, &rep);
+        CHECK(rep.stranded > 0, "a sealed closet is ground nobody reaches");
+        CHECK(!sim_map_playable(room, &rep, why, sizeof why),
+              "and a map with one is refused");
+
+        /* A map naming no start is refused too: a zone would fall back to its
+         * own tiles, which are drawn for a different room. */
+        sim_map_size(room, 60, 60);
+        sim_map_index(room);
+        sim_map_check(room, sc, &rep);
+        CHECK(rep.spawns == 0 && !sim_map_playable(room, &rep, why, sizeof why),
+              "a map with no start is not one a zone can be pointed at");
+
+        /* Doors are shut for the region count, because somewhere reachable
+         * only through one is somewhere a ship can be held. */
+        sim_map_size(room, 80, 60);
+        SIM_MAP_AT(room, 40, 20) = SIM_TILE(SIM_TILE_SPAWN, 0);
+        for (int tx = 0; tx < 80; tx++) SIM_MAP_AT(room, tx, 30) = SIM_TILE(SIM_TILE_DOOR, 0);
+        sim_map_index(room);
+        sim_map_check(room, sc, &rep);
+        CHECK(rep.regions == 2, "a door wall is two regions with the doors shut");
+        CHECK(rep.stranded == 0, "and nothing behind it is stranded, since it opens");
+
+        free(room);
+        free(sc);
+    }
+
     /* Slopes: the diagonal a staircase could not be. */
     {
         sim_map *ramp = malloc(sizeof *ramp);

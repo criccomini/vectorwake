@@ -25,22 +25,25 @@ $(B)/baseline.o: src/baseline.c include/sim/baseline.h include/sim/sim.h | $(B)
 $(B)/pack.o: src/pack.c include/sim/pack.h include/sim/sim.h | $(B)
 	$(CC) $(ALL_CFLAGS) -c src/pack.c -o $@
 
-$(B)/libsim.a: $(B)/sim.o $(B)/baseline.o $(B)/pack.o
+$(B)/check.o: src/check.c include/sim/sim.h | $(B)
+	$(CC) $(ALL_CFLAGS) -c src/check.c -o $@
+
+$(B)/libsim.a: $(B)/sim.o $(B)/baseline.o $(B)/pack.o $(B)/check.o
 	$(AR) rcs $@ $^
 
-$(B)/replay: tools/replay.c $(B)/sim.o $(B)/baseline.o $(B)/pack.o
+$(B)/replay: tools/replay.c $(B)/sim.o $(B)/baseline.o $(B)/pack.o $(B)/check.o
 	$(CC) $(ALL_CFLAGS) $^ $(LDFLAGS) -o $@
 
-$(B)/mapdump: tools/mapdump.c $(B)/sim.o $(B)/baseline.o $(B)/pack.o
+$(B)/mapdump: tools/mapdump.c $(B)/sim.o $(B)/baseline.o $(B)/pack.o $(B)/check.o
 	$(CC) $(ALL_CFLAGS) $^ $(LDFLAGS) -o $@
 
-$(B)/lvl2vw: tools/lvl2vw.c $(B)/sim.o $(B)/baseline.o $(B)/pack.o
+$(B)/lvl2vw: tools/lvl2vw.c $(B)/sim.o $(B)/baseline.o $(B)/pack.o $(B)/check.o
 	$(CC) $(ALL_CFLAGS) $^ $(LDFLAGS) -o $@
 
-$(B)/mapgen: tools/mapgen.c $(B)/sim.o $(B)/baseline.o $(B)/pack.o
+$(B)/mapgen: tools/mapgen.c $(B)/sim.o $(B)/baseline.o $(B)/pack.o $(B)/check.o
 	$(CC) $(ALL_CFLAGS) $^ $(LDFLAGS) -o $@
 
-$(B)/test_sim: tests/test_sim.c $(B)/sim.o $(B)/baseline.o $(B)/pack.o
+$(B)/test_sim: tests/test_sim.c $(B)/sim.o $(B)/baseline.o $(B)/pack.o $(B)/check.o
 	$(CC) $(ALL_CFLAGS) $^ $(LDFLAGS) -o $@
 
 # Regenerate the committed sine table. Deliberately not a file rule: a fresh
@@ -86,7 +89,7 @@ check: $(B)/test_sim $(B)/replay $(B)/lvl2vw $(B)/mapgen cxx
 cxx:
 	@if command -v $(CXX) >/dev/null 2>&1; then \
 	  $(CXX) -std=c++11 -Wall -Wextra -Werror -Iinclude -x c++ -fsyntax-only \
-	    src/sim.c src/baseline.c src/pack.c \
+	    src/sim.c src/baseline.c src/pack.c src/check.c \
 	  && echo "the client's dialect accepts these too"; \
 	else \
 	  echo "no $(CXX); skipping the C++ dialect check"; \
@@ -109,12 +112,12 @@ cxx:
 ubsan: | $(B)
 	$(CC) $(BASE) -O1 -g -fsanitize=undefined,signed-integer-overflow \
 	  -fno-sanitize-recover=all \
-	  tests/test_sim.c src/sim.c src/baseline.c src/pack.c $(LDFLAGS) -lm \
+	  tests/test_sim.c src/sim.c src/baseline.c src/pack.c src/check.c $(LDFLAGS) -lm \
 	  -o $(B)/test_sim_ubsan
 	$(B)/test_sim_ubsan
 	$(CC) $(BASE) -O1 -g -fsanitize=undefined,signed-integer-overflow \
 	  -fno-sanitize-recover=all \
-	  tools/replay.c src/sim.c src/baseline.c src/pack.c $(LDFLAGS) -lm \
+	  tools/replay.c src/sim.c src/baseline.c src/pack.c src/check.c $(LDFLAGS) -lm \
 	  -o $(B)/replay_ubsan
 	$(B)/replay_ubsan tests/trace_basic.txt > $(B)/out-ubsan.txt
 	cmp tests/golden.txt $(B)/out-ubsan.txt
@@ -126,7 +129,7 @@ ubsan: | $(B)
 fuzz: | $(B)
 	$(FUZZ_CC) $(BASE) -O1 -g -fsanitize=fuzzer,address,undefined \
 	  -fno-sanitize-recover=all \
-	  fuzz/fuzz_unpack.c src/sim.c src/baseline.c src/pack.c $(LDFLAGS) -lm \
+	  fuzz/fuzz_unpack.c src/sim.c src/baseline.c src/pack.c src/check.c $(LDFLAGS) -lm \
 	  -o $(B)/fuzz_unpack
 
 # Every input that ever crashed replays first, so a fixed bug stays fixed
@@ -140,7 +143,7 @@ fuzz-smoke: fuzz
 # read the trace file directly.
 wasm:
 	mkdir -p $(B)
-	emcc -O2 -std=c99 -Iinclude src/sim.c src/baseline.c src/pack.c tools/replay.c \
+	emcc -O2 -std=c99 -Iinclude src/sim.c src/baseline.c src/pack.c src/check.c tools/replay.c \
 	  -sNODERAWFS=1 -sALLOW_MEMORY_GROWTH=1 -o $(B)/replay.js
 
 check-wasm: wasm

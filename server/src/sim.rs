@@ -131,6 +131,59 @@ impl sim_map {
     }
 }
 
+/// What the core made of a map: whether a hull can fly all of it, where the
+/// starts are, and how much of it is wall. Mirrors `sim_map_report`.
+#[repr(C)]
+#[derive(Clone, Copy, Default, Debug)]
+pub struct sim_map_report {
+    pub regions: i32,
+    pub reachable: i32,
+    pub stranded: i32,
+    pub spawns: i32,
+    pub spawns_team: [i32; 2],
+    pub spawns_stranded: i32,
+    pub solid: i32,
+    pub open: i32,
+}
+
+/// The working set a check needs. Nine megabytes, which is why it is boxed at
+/// every call site and never held: a panel checking a map is a rare thing next
+/// to everything else this process does.
+#[repr(C)]
+pub struct sim_map_scratch {
+    pub nav: [u8; MAP_TILES * MAP_TILES],
+    pub comp: [i32; MAP_TILES * MAP_TILES],
+    pub stack: [i32; MAP_TILES * MAP_TILES],
+}
+
+/// Run the core's own playability check over a map.
+///
+/// The same function the generator takes its verdict from, so a map somebody
+/// drew is held to what a generated one is. Returns the report and, when the
+/// map is not worth serving, the first thing wrong with it in words.
+pub fn check_map(map: &sim_map) -> (sim_map_report, Option<String>) {
+    let mut scratch: Box<sim_map_scratch> = zeroed_box();
+    let mut report = sim_map_report::default();
+    let mut why = [0u8; 192];
+    let ok = unsafe {
+        sim_map_check(map as *const sim_map, &mut *scratch, &mut report);
+        sim_map_playable(
+            map as *const sim_map,
+            &report,
+            why.as_mut_ptr(),
+            why.len() as i32,
+        )
+    };
+    if ok != 0 {
+        return (report, None);
+    }
+    let end = why.iter().position(|b| *b == 0).unwrap_or(why.len());
+    (
+        report,
+        Some(String::from_utf8_lossy(&why[..end]).to_string()),
+    )
+}
+
 /// One projectile: how it flies, what ends it, and what happens where it
 /// ends. Mirrors `sim_weapon_spec`; the model is documented in
 /// sim/include/sim/sim.h and docs/design/weapons.md.
@@ -508,6 +561,17 @@ extern "C" {
     );
     pub fn sim_map_size(map: *mut sim_map, w: i32, h: i32);
     pub fn sim_map_hash(map: *const sim_map) -> u32;
+    pub fn sim_map_check(
+        map: *const sim_map,
+        scratch: *mut sim_map_scratch,
+        out: *mut sim_map_report,
+    );
+    pub fn sim_map_playable(
+        map: *const sim_map,
+        report: *const sim_map_report,
+        why: *mut u8,
+        cap: i32,
+    ) -> i32;
     pub fn sim_map_arena(map: *mut sim_map);
     pub fn sim_map_pit(map: *mut sim_map);
     pub fn sim_eff_max_energy(c: *const sim_ship_class, s: *const sim_ship) -> i32;
