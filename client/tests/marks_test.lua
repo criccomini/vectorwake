@@ -219,11 +219,11 @@ local function menu(rows)
     return frame(function()
         ui.menu({depth = 1, sel = 0, rail = RAIL, rail_sel = 3,
                  focus = "rail", home = true, closable = false,
-                 -- The helmet moved off the tab row and onto the topbar's
-                 -- other end, beside the name it stands for. On a desktop the
-                 -- tabs are words with a rule under the lit one and carry no
-                 -- marks at all; the mark that says "you" is the one drawn
-                 -- next to your call sign.
+                 -- Nothing wears the person's helmet in the furniture:
+                 -- the desktop's tabs are words with a rule under the lit
+                 -- one, and the far end of that row is two buttons. Where the
+                 -- mark still appears is where it counts people, which is a
+                 -- games row and a nameplate.
                  pilot = {name = "Quarrel", rivets = 342},
                  rows = rows or {}})
     end)
@@ -231,13 +231,17 @@ end
 
 -- --- the person is round ---------------------------------------------------
 
--- The topbar's helmet, alone: no games list, so the only helmet on screen is
--- the one that names the player.
-local rail_frame = menu({{label = "a row"}})
+-- One helmet on screen: a games row counting the people in a zone.
+--
+-- It was the topbar's, beside the call sign, and the topbar's far end is two
+-- buttons now with no mark on either. Every check below is about how the
+-- shell itself is drawn, so what it wants is one of them alone on a frame and
+-- not which frame that is.
+local rail_frame = menu({{label = "chaos", players = 3, bots = 48,
+                          live = true}})
 local rail_only = crowns(rail_frame)
-check("the topbar names the pilot with a helmet", #rail_only == 1,
-      #rail_only .. " helmets with no games listed")
-local RAIL_HELMETS = #rail_only
+check("a games row counts people with a helmet", #rail_only == 1,
+      #rail_only .. " helmets in one zone row")
 
 if rail_only[1] then
     local shell = rail_only[1]
@@ -463,19 +467,12 @@ local list_frame = menu({{label = "chaos", players = 3, bots = 48,
 local listed_round = crowns(list_frame)
 local listed_square = boxes(list_frame)
 check("the games list counts people with a helmet, not a dot",
-      #listed_round == RAIL_HELMETS + 1,
-      #listed_round .. " helmets against " .. (RAIL_HELMETS + 1)
-      .. " expected")
+      #listed_round == 1, #listed_round .. " helmets against 1 expected")
 check("and counts machines with a box", #listed_square == 1,
       #listed_square .. " boxes in the row")
 
-if #listed_round == RAIL_HELMETS + 1 and #listed_square == 1 then
-    -- The row's own helmet is the one that is not the rail's.
-    local rail_x = rail_only[1] and rail_only[1].cx
-    local person
-    for _, sh in ipairs(listed_round) do
-        if not rail_x or math.abs(sh.cx - rail_x) > 1 then person = sh end
-    end
+if #listed_round == 1 and #listed_square == 1 then
+    local person = listed_round[1]
     local machine = listed_square[1]
     -- One height, not one width. The person's shell is drawn narrower than
     -- its box on purpose, which is what stopped it reading as a fishbowl, so

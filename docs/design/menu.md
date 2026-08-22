@@ -43,9 +43,7 @@ row comes back to the row, and left and right on a row set that row's value.
 
 ```
 vectorwake
-├ play        two sections: the zones a directory is running and how busy
-│             each one is, and the way out to Discord, which is a button
-│             rather than a page
+├ play        the zones a directory is running and how busy each one is
 ├ ship        one hull on a carousel, the thirty points you spend on it, and
 │             what the next rung of each slot costs in rivets
 ├ friends     who is on, who is waiting on you, and the people in the room
@@ -55,7 +53,10 @@ vectorwake
 
               your call sign sits at the far end of the row and is the way
               into your account and career: a page reached from the one
-              place already naming it, rather than a fifth stop
+              place already naming it, rather than a fifth stop. Beside it,
+              the way out to Discord. Both are drawn as buttons, which on a
+              phone there is no corner for: there the play page carries the
+              Discord one and the top of the screen is the wordmark alone
 
 in a match
 ├ friends     the people you are flying with, and who else is on
@@ -87,16 +88,17 @@ opens on the tab row.
 
 ## The play tab
 
-Three sections, headed: zones, friends, community. They are three different
-questions, and run together in one column they read as one list where Discord
-is a game you could join and friends is a room with nobody in it. A heading and
-the map border's tick between them costs two lines and says which question you
-are looking at.
+The zones, under a heading, and on a phone the way out to Discord under a
+second one. They were three sections at one point, zones and friends and
+community, because run together in one column they read as one list where
+Discord is a game you could join and friends is a room with nobody in it.
+Friends is a tab of its own now, and Discord is a corner button wherever there
+is a corner to put it in.
 
-Discord is a button rather than a row, with its own mark on it and its name
-spelled the way Discord spells it. It is the one thing on this page that is not
-a place inside the game, and a row is how the menu writes places inside the
-game.
+Where Discord is drawn it is a button rather than a row, with its own mark on
+it and its name spelled the way Discord spells it. It is the one thing here
+that is not a place inside the game, and a row is how the menu writes places
+inside the game.
 
 `client/arena/directory.lua` asks a directory what is running. Opening the list
 asks at once, and it re-asks every three seconds for as long as the list is the

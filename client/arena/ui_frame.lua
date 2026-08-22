@@ -10,6 +10,12 @@ function M.new(state)
         w = 0,
         h = 0,
         scale = 1,
+        -- What a CSS pixel is worth in drawable ones. Normally the same as
+        -- `scale`, and not while the menu is up: the menu multiplies `scale`
+        -- to set its type larger than the HUD's, and anything handed to the
+        -- page has to be measured against the browser's own pixel rather than
+        -- against that. See `MENU_ZOOM` in ui.lua.
+        density = 1,
         layer = nil,
         text = nil,
         text_count = 0,
@@ -39,6 +45,7 @@ function M:begin(layer, w, h, density, now)
     self.w = w
     self.h = h
     self.scale = density
+    self.density = density
     self.now = now or 0
     self.text = self.state.text
     self.text_count = 0

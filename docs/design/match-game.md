@@ -487,11 +487,30 @@ games list stops being a menu node, because picking a mode is a screen now.
 ## The week
 
 Rating answers "how good am I" on a career scale and moves slowly. The week
-is the short ladder beside it: matches won, podiums, kills and the best run,
-resetting Monday 00:00 UTC, with livery paid to the top of a closing week.
+is the short ladder beside it: kills, deaths, the ratio, the best run anybody
+ended, what the week's bounties banked, and how long each pilot was actually
+in a room. It resets Monday 00:00 UTC, with livery paid to the top of a
+closing week.
 
 Rating measures skill and ignores attendance. The week measures what you did
 with it lately, and starts again often enough that tonight is worth playing.
+So the table carries both, side by side and named apart: the rating a pilot
+is at, and the swing this week put on it. The rating is read in whichever
+class the week's own rated rows say they flew, because a rating is kept per
+class and somebody who only plays melee has an arena rating that has never
+moved.
+
+There was a card down the right hand side saying more about whichever row the
+cursor stood on. Every line in it was a column the table could carry instead,
+so it is columns, and the quarter of the page the card took is what pays for
+them.
+
+Nothing about how the table is read belongs to the fleet. It answers with a
+week; the page orders it by any column, turns that order over, narrows it to
+a name typed into the box above it, and asks for a week further back. A rank
+stays the place a pilot held in the week rather than in the filter: somebody
+who is fourteenth does not become first because the other thirteen were
+hidden.
 
 ## What goes
 

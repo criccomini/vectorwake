@@ -1674,7 +1674,12 @@ async fn route(
             // The rating swing comes from the other log, because the pilot
             // log does not carry a number the rating model owns. It joins by
             // account, not by call sign: a guest has no rating to move, and a
-            // call sign is not what the rating is kept under.
+            // call sign is not what the rating is kept under. The rating
+            // itself comes off `ratings` by the same join, since the swing
+            // alone says how a week went without ever saying who is good, and
+            // in whichever class the week's own rated rows say they flew: a
+            // rating is kept per class, and somebody who only plays melee has
+            // an arena rating that has never moved.
             // Which week. Zero is the one running, one is the week before it,
             // and so on back: a table that only ever showed the current week
             // threw the whole record away every Monday morning, which is a
@@ -1721,12 +1726,12 @@ async fn route(
                            from wk group by name
                      ),
                      swing as (
-                         select re.victim as account,
+                         select re.victim as account, re.class,
                                 re.victim_after - re.victim_before as delta
                            from rated_events re, bound
                           where re.at >= bound.since and re.at < bound.until
                           union all
-                         select (item.credit->>'account')::bigint,
+                         select (item.credit->>'account')::bigint, re.class,
                                 (item.credit->>'after')::double precision
                               - (item.credit->>'before')::double precision
                            from rated_events re, bound
@@ -1737,19 +1742,34 @@ async fn route(
                      moved as (
                          select account, sum(delta) as delta
                            from swing group by account
+                     ),
+                     -- Which class each pilot actually flew this week, since
+                     -- a rating is kept per class and a pilot who only flies
+                     -- melee has an arena rating that has never moved. The
+                     -- one they were rated in most, and the fleet's default
+                     -- where the week has no rated rows to say.
+                     flew as (
+                         select distinct on (account) account, class
+                           from (select account, class, count(*) as n
+                                   from swing group by account, class) c
+                          order by account, n desc, class
                      )
                      select t.name, t.kills, t.deaths, t.run,
                             coalesce(extract(epoch from p.span), 0)::bigint,
                             coalesce(m.delta, 0)::double precision,
                             t.points,
-                            (select to_char(since, 'Mon DD') from bound)
+                            coalesce(g.rating, 0)::double precision
                        from tally t
                        left join played p on p.name = t.name
                        left join moved m on m.account = t.account
+                       left join flew f on f.account = t.account
+                       left join ratings g
+                              on g.account = t.account
+                             and g.class = coalesce(f.class, $2)
                       where t.kills > 0 or t.deaths > 0
                       order by t.kills desc, t.deaths asc
                       limit 200",
-                    &[&back],
+                    &[&back, &DEFAULT_CLASS],
                 )
                 .await
                 .unwrap_or_default();
@@ -1771,18 +1791,38 @@ async fn route(
                         // shooter, summed. Rating only ever moves through
                         // these rows, so the sum of the week's rows is the
                         // week's change.
-                        "rating": r.get::<_, f64>(5).round() as i64,
+                        "swing": r.get::<_, f64>(5).round() as i64,
                         // What the week's kills paid, which is the number a
                         // pilot's rivets came out of.
-                        "points": r.get::<_, i64>(6),
+                        "banked": r.get::<_, i64>(6),
+                        // And what they are rated at now. Two different
+                        // facts and the table wants both: the rating says
+                        // how good somebody is and moves slowly, the swing
+                        // says what this week did to it. A guest has no
+                        // account to keep a rating under and comes back
+                        // zero, which the page draws as nothing rather than
+                        // as a very bad pilot.
+                        "rating": r.get::<_, f64>(7).round() as i64,
                     })
                 })
                 .collect();
             // What Monday this table is about, so the page can name the week
             // it is showing rather than counting backwards itself.
-            let since = rows
-                .first()
-                .map(|r| r.get::<_, String>(7))
+            //
+            // Its own query, because it rode along on every row of the table
+            // and was read off the first of them: a week nobody played has no
+            // first row, so it came back empty and the page called a week from
+            // last month "this week". The date is a fact about the question,
+            // not about the answer, and asking for it separately is what makes
+            // it one.
+            let since: String = db
+                .query_one(
+                    "select to_char(date_trunc('week', now() at time zone 'utc')
+                                    - ($1 * interval '1 week'), 'Mon DD')",
+                    &[&back],
+                )
+                .await
+                .map(|r| r.get(0))
                 .unwrap_or_default();
             (
                 200,

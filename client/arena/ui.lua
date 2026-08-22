@@ -112,6 +112,12 @@ local pen = marks.pen
 -- on it are drawn by things a long way above them.
 local pages = {}
 
+-- A page with nothing on it, said with the dial that means "looking". Forward
+-- declared because it is written where the other whole-page drawings are, a
+-- long way below the week's table, which is the one page that draws it under
+-- its own heading rather than instead of itself.
+local empty_state
+
 -- `font` names one of the faces the gui scene carries: nil for the mono
 -- everything in flight is set in, "menu" for the menu's own. It is passed
 -- through rather than looked up, so a caller that says nothing gets what the
@@ -184,6 +190,43 @@ local function bracket(x, y, w, h, col, arm, chamfer)
         F.layer:seg(cx + sx * chamfer, ry(cy), cx, ry(cy + sy * chamfer), F.scale, col,
               true)
     end
+end
+
+-- A rounded rectangle with a border all the way round it, filled.
+--
+-- The one closed box in this interface. Everything else is held together by
+-- `bracket` above, which is four chamfered corners and nothing between them,
+-- because a box drawn all the way round is a shape this game does not
+-- otherwise contain. These two are not furniture on a page: they are the way
+-- to an account and the way out to Discord, sitting in the corner of the tab
+-- row on every page, and Chris asked for the shape the web puts a link in,
+-- which is what people already read as pressable.
+--
+-- The fill is a cross rather than a rectangle, so no square corner shows
+-- past the round one, and four discs finish it.
+local function pill(x, y, w, h, fill, edge)
+    local r = math.min(h * 0.3, 9 * F.scale)
+    rect(x + r, y, w - 2 * r, h, fill)
+    rect(x, y + r, w, h - 2 * r, fill)
+    for _, c in ipairs({{x + r, y + r}, {x + w - r, y + r},
+                        {x + w - r, y + h - r}, {x + r, y + h - r}}) do
+        F.layer:disc(c[1], ry(c[2]), r, 12, fill)
+    end
+    -- Six samples to a corner, which at nine points of radius is a step of
+    -- under half a point: any smoother is vertices spent below the pixel.
+    local pts = {}
+    -- The four corner centers, walked the way the arcs run in screen space:
+    -- right-down, down-left, left-up, up-right. The quarter each one turns
+    -- through is its index times a right angle.
+    for _, c in ipairs({{x + w - r, y + h - r, 0}, {x + r, y + h - r, 1},
+                        {x + r, y + r, 2}, {x + w - r, y + r, 3}}) do
+        for k = 0, 6 do
+            local a = c[3] * math.pi / 2 + k * math.pi / 12
+            pts[#pts + 1] = c[1] + math.cos(a) * r
+            pts[#pts + 1] = ry(c[2] + math.sin(a) * r)
+        end
+    end
+    F.layer:outline(pts, 1.1 * F.scale, edge, true)
 end
 
 -- A lit rule with the light falling off one side of it, which is a wall face
@@ -3404,29 +3447,49 @@ function pages.week(v, x, y, w, h, focused)
     local function signed(n)
         return (n > 0 and "+" or "") .. tostring(n)
     end
-    local sidew = math.min(250 * F.scale, w * 0.28)
-    local gap = 22 * F.scale
-    local tw = w - sidew - gap
-    local sx2 = x + tw + gap
+    -- The whole width. There was a card down the right hand side of this
+    -- page saying more about whichever row the cursor was on, and every line
+    -- in it was a column this table could carry instead: kills, deaths, the
+    -- ratio, the best run, time, what the week did to a rating. A panel
+    -- repeating one row of the thing beside it is a second table with one row
+    -- in it, and it cost the first one a quarter of the page.
+    local tw = w
 
     -- The columns, right-aligned off the table's own right edge so the
-    -- numbers line up under their names. Kills, deaths, what the rating did,
-    -- the longest run ended, and time in a room. A `won` column stood at the
-    -- end of this and every number in it was a zero: nothing files a match
-    -- result, so it was a heading over an empty column.
+    -- numbers line up under their names. A `won` column stood at the end of
+    -- this and every number in it was a zero: nothing files a match result,
+    -- so it was a heading over an empty column.
     --
     -- Written most important first and laid out left to right in that order,
-    -- so a table too narrow to carry all five loses time before it loses
-    -- kills. The old version hardcoded four offsets and would have drawn the
-    -- fifth off the edge of a phone.
+    -- so a table too narrow to carry all of them loses time before it loses
+    -- kills.
     local want = {
         {"kills", 46, function(r) return tostring(r.kills or 0) end, true},
         {"deaths", 52, function(r) return tostring(r.deaths or 0) end},
-        {"points", 58, function(r) return tostring(r.points or 0) end},
-        {"rating", 56, function(r) return signed(r.rating or 0) end},
-        -- The longest run of their own that anybody ended, which is the
-        -- number a pilot brags about and the one this table was missing.
-        {"best", 46, function(r) return tostring(r.run or 0) end},
+        -- Kills over deaths, which is the number everybody argues about and
+        -- the one thing in the old card worth the width it took.
+        {"k/d", 50, function(r)
+            return string.format("%.2f", r.kd or 0)
+        end, nil, "kd"},
+        -- The longest run of their own that anybody ended. It read "best",
+        -- which is a superlative with no noun on it: best what.
+        {"streak", 58, function(r) return tostring(r.run or 0) end, nil, "run"},
+        -- What the week's kills paid. Not "points", which is a word this
+        -- game does not otherwise use and which reads as a score rather than
+        -- as money, and not "rivets" either: rivets are the wallet, this is
+        -- what went into it, and a pilot who spent theirs on a barrel has not
+        -- had a worse week for it.
+        {"banked", 62, function(r) return tostring(r.banked or 0) end},
+        -- What they are rated at, which says how good somebody is and moves
+        -- slowly. It is the number the whole page is named after and it was
+        -- not on it: the column called "rating" carried the week's movement,
+        -- which is the other fact.
+        {"rating", 58, function(r)
+            local n = r.rating or 0
+            return n > 0 and tostring(n) or "-"
+        end},
+        -- And what this week did to it.
+        {"swing", 54, function(r) return signed(r.swing or 0) end},
         {"time", 52, function(r) return r.played or "0s" end},
     }
     local cols, used = {}, 0
@@ -3455,44 +3518,94 @@ function pages.week(v, x, y, w, h, focused)
             or "this week"
         if (wk.back or 0) == 0 then name = "this week" end
         local px = 12.5 * F.scale
+        -- Centered on the line the word is centered on. The triangle used to
+        -- run from six points above the middle to three below it, which put
+        -- both arrows three points high beside their own label: close enough
+        -- to look like a mistake rather than like a style.
+        --
+        -- `dir` is which way the triangle points, and what a press asks for
+        -- is its opposite: `week_back` counts weeks behind the one running,
+        -- so the arrow pointing left, which means earlier, asks for one more
+        -- of them. Written as one number they were the same number, and both
+        -- arrows were dead: the left one asked to go forward from the week
+        -- that is running, which is refused, and the right one asked to go
+        -- back and was drawn dark until you were already there.
         local arrow = function(dir, ax, on)
             local col = pal.a(pal.FRIEND, on and 0.95 or 0.25)
-            F.layer:tri(ax + dir * 4 * F.scale, ry(ty - 3 * F.scale),
-                        ax - dir * 3 * F.scale, ry(ty - 9 * F.scale),
-                        ax - dir * 3 * F.scale, ry(ty + 3 * F.scale), col)
+            F.layer:tri(ax + dir * 4.5 * F.scale, ry(ty),
+                        ax - dir * 3.5 * F.scale, ry(ty - 6 * F.scale),
+                        ax - dir * 3.5 * F.scale, ry(ty + 6 * F.scale), col)
             if on then
-                hit(ax - 11 * F.scale, ty - 17 * F.scale, 22 * F.scale,
-                    26 * F.scale, "week", dir)
+                hit(ax - 12 * F.scale, ty - 14 * F.scale, 24 * F.scale,
+                    28 * F.scale, "week", -dir)
             end
         end
         arrow(-1, x + 8 * F.scale, true)
-        txt(name, x + 24 * F.scale, ty, px, pal.a(pal.INK, 0.9), nil, MENU_FONT)
+        txt(name, x + 26 * F.scale, ty, px, pal.a(pal.INK, 0.9), nil, MENU_FONT)
         local nw = text_w(name, px)
-        arrow(1, x + 34 * F.scale + nw, (wk.back or 0) > 0)
+        arrow(1, x + 40 * F.scale + nw, (wk.back or 0) > 0)
 
-        -- What has been typed, where it is being typed. No box and no caret
-        -- to click into: the table answers every letter, so the line is a
-        -- reading of what the page is doing rather than a field to fill in.
+        -- Where a name is typed to narrow the table, drawn as the box it is.
+        --
+        -- It was a dim line of type at the end of the rule saying "type to
+        -- filter", which is a control that looks like a caption: a page that
+        -- answers the keyboard without ever showing where the keys land is
+        -- one nobody finds, and on glass there is no keyboard to find it
+        -- with. A box is what a search field looks like everywhere, so this
+        -- is one, and pressing it does the thing pressing one does. See
+        -- `menu.click_filter`.
         local f = wk.filter or ""
-        if f ~= "" then
-            local shown = f .. "_"
-            local sw = text_w(shown, px)
-            txt(shown, x + tw - 10 * F.scale, ty, px,
-                pal.a(pal.CHARGE_COL, 0.95), "right", MENU_FONT, true)
-            local lx = x + tw - sw - 20 * F.scale
-            lbl("filter", lx, ty, nil, "right")
+        local on = wk.filter_on
+        local bw = 168 * F.scale
+        local bh = 24 * F.scale
+        local bx = x + tw - bw
+        local by = ty - bh / 2
+        rect(bx, by, bw, bh, pal.rgb(0x070b12, 0.55))
+        if on then rect(bx, by, bw, bh, pal.a(pal.FRIEND, 0.1)) end
+        bracket(bx, by, bw, bh, pal.a(on and pal.FRIEND or pal.RADAR_TILE,
+                                      on and 0.9 or 0.55), 9 * F.scale)
+        local ix = bx + 10 * F.scale
+        if f == "" then
+            lbl("filter by pilot", ix, ty, pal.a(pal.DIM, on and 0.7 or 0.5))
         else
-            lbl("type to filter", x + tw - 10 * F.scale, ty,
-                pal.a(pal.DIM, 0.5), "right")
+            txt(f, ix, ty, px, pal.a(pal.CHARGE_COL, 0.95), nil, MENU_FONT,
+                true)
         end
-        ty = ty + 24 * F.scale
+        -- A caret, where the next letter goes, and only while the box is
+        -- taking them.
+        if on then
+            rect(ix + text_w(f, px) + 2 * F.scale, ty - 8 * F.scale,
+                 1.6 * F.scale, 16 * F.scale, pal.a(pal.FRIEND, 0.9))
+        end
+        -- The way out of a filter, on the end of the box: holding backspace
+        -- is the other way and it is not one anybody finds either.
+        --
+        -- Published before the box it sits inside. Hit boxes are tested in
+        -- the order they went out and the first one wins, so the other way
+        -- round the box swallows every press on its own mark.
+        if f ~= "" then
+            local cx = bx + bw - 12 * F.scale
+            local k = 4 * F.scale
+            for _, d in ipairs({{-1, 1}, {1, 1}}) do
+                F.layer:seg(cx - k * d[1], ry(ty - k * d[2]),
+                            cx + k * d[1], ry(ty + k * d[2]),
+                            1.3 * F.scale, pal.a(pal.DIM, 0.9), true)
+            end
+            hit(cx - 12 * F.scale, by, 24 * F.scale, bh, "filter_wipe")
+        end
+        hit(bx, by, bw, bh, "filter_box")
+        ty = ty + 26 * F.scale
     end
 
-    lbl("#", x + 6 * F.scale, ty)
-    lbl("pilot", x + 34 * F.scale, ty)
     -- Every heading is a control: pressing one orders the table by it, and
     -- pressing it again turns the order over. The lit one is the order in
     -- force, with a mark for which way it is running.
+    --
+    -- The rank and name heads were drawn twice, once as plain labels and
+    -- again as heads when the columns learned to sort, with the second pair
+    -- landing exactly on the first. Two glyphs to a pixel is invisible and
+    -- was: what found it was a test reading the page as text and getting
+    -- "# pilot # pilot".
     local sorted = (v.week or {}).sort
     local up = (v.week or {}).sort_up
     local function head(key, hx, align, sorts)
@@ -3512,21 +3625,27 @@ function pages.week(v, x, y, w, h, focused)
     head("#", rankx, nil, "rank")
     head("pilot", x + 34 * F.scale)
     for _, c in ipairs(cols) do
-        -- The column reads "best" and sorts on the run behind it, which is
-        -- the name the row carries and the reply spells.
-        head(c[1], x + tw - c.off * F.scale, "right",
-             c[1] == "best" and "run" or c[1])
+        -- A column heading and the key it sorts on are not always the same
+        -- word: "streak" orders on the run the row carries, "k/d" on the
+        -- ratio. The fifth slot is that key where they differ.
+        head(c[1], x + tw - c.off * F.scale, "right", c[5] or c[1])
     end
     ty = ty + 10 * F.scale
     hrule(x, ty, tw)
     ty = ty + 16 * F.scale
 
-    local mine
+    -- A week with nobody in it, or a filter matching nobody, said where the
+    -- rows would have been. Under the heading rather than instead of the
+    -- page: the line above carries the way to another week and the box that
+    -- narrows this one, and a card drawn over the whole page takes both away
+    -- along with the way back.
+    if #(v.rows or {}) == 0 and v.empty then
+        empty_state(x, ty, tw, y + h - ty, v.empty)
+    end
     for i, r in ipairs(v.rows or {}) do
         local ry0 = ty + (i - 1) * rowh
         if ry0 + rowh > y + h then break end
         local hot = (r.index == v.sel)
-        if r.mark then mine = r end
         if hot then
             wash(x - 8 * F.scale, ry0 - rowh / 2 + 2 * F.scale,
                  tw + 8 * F.scale, rowh - 4 * F.scale,
@@ -3544,8 +3663,8 @@ function pages.week(v, x, y, w, h, focused)
         for _, c in ipairs(cols) do
             local shade = pal.DIM
             if c[4] then shade = col
-            elseif c[1] == "rating" then
-                shade = (r.rating or 0) < 0 and pal.BOMB or pal.CHARGE_COL
+            elseif c[1] == "swing" then
+                shade = (r.swing or 0) < 0 and pal.BOMB or pal.CHARGE_COL
             end
             txt(c[3](r), x + tw - c.off * F.scale, ry0, 12 * F.scale,
                 pal.a(shade, 0.95), "right")
@@ -3556,67 +3675,6 @@ function pages.week(v, x, y, w, h, focused)
         end
     end
 
-    vrule(sx2 - 18 * F.scale, y + 6 * F.scale, h - 12 * F.scale,
-          pal.a(pal.RADAR_TILE, 0.45), 18 * F.scale)
-
-    -- What the week says about you, which is the one row in it you came to
-    -- read. A pilot who has not played this week is told that rather than
-    -- shown an empty card.
-    -- Whoever the cursor is on, or you where it is on nobody. Standing on a
-    -- row is how a table of twenty says more about one of them than a row has
-    -- room for, and it is the whole reason the rows take a press.
-    local look = nil
-    for _, r in ipairs(v.rows or {}) do
-        if r.index == v.sel then look = r end
-    end
-    look = look or mine
-    lbl(look and (look == mine and "your week" or "this pilot") or "your week",
-        sx2, y + 16 * F.scale)
-    if look then
-        txt("#" .. tostring(look.rank or 0), sx2, y + 46 * F.scale,
-            25 * F.scale, pal.a(pal.FRIEND, 0.95))
-        txt(look.label or "", sx2 + text_w("#" .. tostring(look.rank or 0),
-                                           25 * F.scale) + 12 * F.scale,
-            y + 46 * F.scale, 15 * F.scale,
-            pal.a(pal.INK, 0.9), nil, MENU_FONT, true)
-        local ly = y + 82 * F.scale
-        local kills, deaths = look.kills or 0, look.deaths or 0
-        local card = {{"kills", kills}, {"deaths", deaths},
-                      {"kills per death",
-                       deaths > 0 and string.format("%.2f", kills / deaths)
-                                  or tostring(kills)},
-                      {"best run ended", look.run or 0},
-                      {"time in a room", look.played or "0s"},
-                      {"rating this week", signed(look.rating or 0)}}
-        if look == mine then
-            card[#card + 1] = {"banked", v.pilot and v.pilot.rivets or 0}
-        end
-        for _, e in ipairs(card) do
-            lbl(e[1], sx2, ly, pal.a(pal.DIM, 0.85))
-            txt(tostring(e[2]), sx2 + sidew - 24 * F.scale, ly, 12 * F.scale,
-                pal.a(pal.INK, 0.9), "right")
-            ly = ly + 20 * F.scale
-        end
-    else
-        local ly = y + 46 * F.scale
-        for _, line in ipairs(wrapped("nothing yet this week: the table takes "
-                                      .. "a kill to put you on it",
-                                      11.5 * F.scale, sidew - 24 * F.scale)) do
-            txt(line, sx2, ly, 11.5 * F.scale, pal.a(pal.DIM, 0.85),
-                nil, nil, true)
-            ly = ly + 16 * F.scale
-        end
-    end
-    local ny = y + h - 60 * F.scale
-    hrule(sx2, ny, sidew - 24 * F.scale)
-    ny = ny + 16 * F.scale
-    for _, line in ipairs(wrapped("rating says how good you are and moves "
-                                  .. "slowly; the week says what you did with "
-                                  .. "it lately", 11 * F.scale,
-                                  sidew - 24 * F.scale)) do
-        txt(line, sx2, ny, 11 * F.scale, pal.a(pal.DIM, 0.7), nil, nil, true)
-        ny = ny + 15 * F.scale
-    end
 end
 
 -- --- the menu --------------------------------------------------------------
@@ -5223,7 +5281,7 @@ end
 -- The address being asked used to sit under those two, small and dim, for
 -- whoever is running this rather than whoever is playing. Whoever is running
 -- it reads logs.
-local function empty_state(x, y, w, h, e)
+function empty_state(x, y, w, h, e)
     local cx = x + w / 2
     local r = math.max(22 * F.scale, math.min(56 * F.scale, h * 0.26))
     -- Centered in whatever room is left rather than hung off the top of it: on
@@ -5317,8 +5375,9 @@ local function ask_spec(fx, fy, fw, a)
     local out = {}
     local y = fy
     for i, f in ipairs(a.fields) do
-        out[i] = string.format("%.1f,%.1f,%.1f,%d,%s,%d", fx / F.scale,
-                               (y + 22 * F.scale) / F.scale - FIELD_H / 2, fw / F.scale,
+        out[i] = string.format("%.1f,%.1f,%.1f,%d,%s,%d", fx / F.density,
+                               (y + 22 * F.scale) / F.density - FIELD_H / 2,
+                               fw / F.density,
                                FIELD_H, f.kind or "current-password",
                                f.max or 64)
         y = y + 48 * F.scale
@@ -5908,29 +5967,54 @@ function M.menu(v)
             -- five pages where it is a number with nothing to do and one where
             -- it is the number you are spending. It is on the ship page's own
             -- line now, beside the budget it trades against.
-            if v.pilot.name and v.pilot.name ~= "" then
-                local lit = v.pilot_hot
-                local nw = text_w(v.pilot.name, 15 * F.scale)
-                txt(v.pilot.name, rt, logo_y, 15 * F.scale,
-                    pal.a(pal.INK, lit and 1 or 0.9), "right", MENU_FONT, true)
-                -- Underlined when the pointer is on it, the same way a lit tab
-                -- is: the name is the way to the pilot page, so it has to read
-                -- as something you can press rather than as a caption.
-                if lit then
-                    F.layer:seg(rt - nw, ry(logo_y + 13 * F.scale), rt,
-                                ry(logo_y + 13 * F.scale),
-                                1.2 * F.scale, pal.a(pal.FRIEND, 0.9), true)
+            --
+            -- Two buttons instead, the same shape: where you are signed in as,
+            -- and the way out to where the talking happens. The name used to
+            -- be type with a mark beside it and a rule under it when the
+            -- pointer landed, which is three different ways of saying "this is
+            -- pressable" and none of them the way anything else in this corner
+            -- says it. The mark is gone with them.
+            local bh = 30 * F.scale
+            local by = logo_y - bh / 2
+            local function corner_button(label, on, act, mark, caps)
+                local px = 12 * F.scale
+                local lw = text_w(caps and string.upper(label) or label, px)
+                local bw = lw + (mark and 52 or 30) * F.scale
+                local bx = rt - bw
+                pill(bx, by, bw, bh, pal.rgb(0x0a0f18, on and 0.95 or 0.7),
+                     pal.a(on and pal.FRIEND or pal.RADAR_TILE,
+                           on and 0.95 or 0.7))
+                local ink = pal.a(on and pal.FRIEND or pal.INK, on and 1 or 0.85)
+                local tx = bx + (mark and 38 or 15) * F.scale
+                if mark then
+                    draw_mark(mark, bx + 21 * F.scale, logo_y, 8.5 * F.scale,
+                              ink)
                 end
-                rt = rt - nw - 10 * F.scale
-                pilot_mark(rt - 7 * F.scale, logo_y, pal.a(pal.FRIEND, 0.9),
-                           7 * F.scale, 1.1 * F.scale)
-                -- The whole lockup, mark and name, takes the press.
-                -- Not "pilot", which the scoreboard's own rows already
-                -- publish for the box about one of them. The press dispatch
-                -- reads that one first and swallowed this one whole: the name
-                -- underlined under the pointer and answered nothing.
-                hit(rt - 16 * F.scale, logo_y - 14 * F.scale,
-                    nw + 26 * F.scale, 28 * F.scale, "pilot_page")
+                if caps then
+                    lbl(label, tx, logo_y, ink, nil, px)
+                else
+                    txt(label, tx, logo_y, px, ink, nil, MENU_FONT, true)
+                end
+                hit(bx, by, bw, bh, act)
+                rt = bx - 10 * F.scale
+                return bx, bw
+            end
+            if v.pilot.name and v.pilot.name ~= "" then
+                -- A name is quoted rather than said, so it keeps the case its
+                -- owner gave it while the button beside it shouts a brand.
+                corner_button(v.pilot.name, v.pilot_hot, "pilot_page")
+            end
+            if v.discord then
+                local bx, bw = corner_button("discord", v.discord_hot,
+                                             "discord_link", "discord", true)
+                -- A real anchor over it, laid by the page. Nothing this
+                -- client does from its own loop is inside the tap that asked
+                -- for it, and a tab opened outside one is what a popup
+                -- blocker stops. CSS pixels, which is the page's unit.
+                M.link_dom = string.format("%.1f,%.1f,%.1f,%.1f,%s",
+                                           bx / F.density, by / F.density,
+                                           bw / F.density, bh / F.density,
+                                           v.discord)
             end
         end
     end
@@ -6037,10 +6121,10 @@ function M.menu(v)
             -- a line under it is one mark too many.
             if e.link then
                 M.link_dom = string.format("%.1f,%.1f,%.1f,%.1f,%s",
-                    (wx[i] - 6 * F.scale) / F.scale,
-                    (cy - 14 * F.scale) / F.scale,
-                    (ww[i] + 12 * F.scale) / F.scale,
-                    (28 * F.scale) / F.scale, e.link)
+                    (wx[i] - 6 * F.scale) / F.density,
+                    (cy - 14 * F.scale) / F.density,
+                    (ww[i] + 12 * F.scale) / F.density,
+                    (28 * F.scale) / F.density, e.link)
             end
             hit(wx[i] - 8 * F.scale, ry_, ww[i] + 16 * F.scale, rh, "rail", i)
         end
@@ -6097,8 +6181,8 @@ function M.menu(v)
                 lw, lh = pitch - 6 * F.scale, tab_h
             end
             M.link_dom = string.format("%.1f,%.1f,%.1f,%.1f,%s",
-                                       lx / F.scale, ly / F.scale,
-                                       lw / F.scale, lh / F.scale, e.link)
+                                       lx / F.density, ly / F.density,
+                                       lw / F.density, lh / F.density, e.link)
         end
         if not words then
         draw_mark(e.icon, cx, cy, r, col, v.class or 0)
@@ -6403,9 +6487,9 @@ function M.menu(v)
             -- ones.
             if r.link then
                 M.link_dom = string.format("%.1f,%.1f,%.1f,%.1f,%s",
-                                           sx / F.scale, y / F.scale,
-                                           (GUTTER * F.scale + lw) / F.scale,
-                                           rowh / F.scale, r.link)
+                                           sx / F.density, y / F.density,
+                                           (GUTTER * F.scale + lw) / F.density,
+                                           rowh / F.density, r.link)
             end
         end
         -- What is off the ends, as the same tick the map border uses. It says

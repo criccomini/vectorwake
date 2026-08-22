@@ -1724,12 +1724,12 @@ end
 -- how somebody wants to look at it.
 do
     account.week = {
-        {name = "Sable", kills = 14, deaths = 6, points = 210, run = 42,
-         rating = 38, seconds = 720},
-        {name = "Ozone", kills = 9, deaths = 9, points = 130, run = 12,
-         rating = -4, seconds = 900},
-        {name = "Kestrel", kills = 2, deaths = 11, points = 30, run = 4,
-         rating = -22, seconds = 640},
+        {name = "Sable", kills = 14, deaths = 6, banked = 210, run = 42,
+         rating = 1310, swing = 38, seconds = 720},
+        {name = "Ozone", kills = 9, deaths = 9, banked = 130, run = 12,
+         rating = 1204, swing = -4, seconds = 900},
+        {name = "Kestrel", kills = 2, deaths = 11, banked = 30, run = 4,
+         rating = 1118, swing = -22, seconds = 640},
     }
     account.week_since = "Aug 17"
     account.asked_week = 0
@@ -1746,8 +1746,27 @@ do
     check("the table opens ordered by kills", names() == "Sable/Ozone/Kestrel",
           names())
     check("and carries what a week came to",
-          menu.view().rows[1].points == 210 and menu.view().rows[1].run == 42,
-          tostring(menu.view().rows[1].points))
+          menu.view().rows[1].banked == 210 and menu.view().rows[1].run == 42,
+          tostring(menu.view().rows[1].banked))
+    -- Two rating numbers, and they are not the same fact: what a pilot is
+    -- rated at, and what this week did to it.
+    check("with a rating and the week's swing kept apart",
+          menu.view().rows[1].rating == 1310
+          and menu.view().rows[1].swing == 38,
+          tostring(menu.view().rows[1].rating))
+    -- The ratio the old card worked out, worked out here instead, where the
+    -- table can order on it.
+    check("and a ratio the column can sort by",
+          math.abs(menu.view().rows[1].kd - 14 / 6) < 1e-9,
+          tostring(menu.view().rows[1].kd))
+
+    menu.click_sort("kd")
+    check("the ratio orders the table",
+          names() == "Sable/Ozone/Kestrel", names())
+    menu.click_sort("rating")
+    check("and so does the rating itself",
+          names() == "Sable/Ozone/Kestrel", names())
+    menu.sort, menu.sort_up = "kills", false
 
     menu.click_sort("deaths")
     check("a column head orders by it", names() == "Kestrel/Ozone/Sable",
@@ -1788,6 +1807,40 @@ do
           select(2, menu.step_week(-1)) == true and menu.week_back == 0
           and select(2, menu.step_week(-1)) == false,
           tostring(menu.week_back))
+    -- The box the letters land in. Typing lights it without a click, a press
+    -- lights it on its own, and a press anywhere else lets it go.
+    menu.filter_on = false
+    menu.type_filter("k")
+    check("typing lights the box", menu.filter_on == true,
+          tostring(menu.filter_on))
+    menu.wipe_filter()
+    check("and the mark on its end empties it", menu.filter == "",
+          "'" .. tostring(menu.filter) .. "'")
+    menu.filter_on = false
+    menu.click_filter()
+    check("pressing it puts a caret in it", menu.filter_on == true,
+          tostring(menu.filter_on))
+    check("and letting go says so once",
+          menu.blur_filter() == true and menu.blur_filter() == false,
+          tostring(menu.filter_on))
+
+    -- On glass there are no keys, so the press raises the card instead: a
+    -- card's line is a real input element on the web, which is the only thing
+    -- that raises a phone's keyboard.
+    menu.touching = true
+    menu.ask = nil
+    menu.click_filter()
+    check("a thumb gets a card it can type into",
+          menu.ask ~= nil and menu.ask.fields ~= nil,
+          menu.ask and menu.ask.head or "no card")
+    if menu.ask then menu.ask.fields[1].value = "ozo" end
+    menu.click_answer(1)
+    check("and what it answers is the filter",
+          menu.filter == "ozo" and names() == "Ozone",
+          "'" .. tostring(menu.filter) .. "' " .. names())
+    menu.touching = false
+    menu.filter = ""
+
     account.week = nil
     account.week_since = ""
 end

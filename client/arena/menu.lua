@@ -62,6 +62,17 @@ M.hover = nil           -- the stage row a pointer is resting on
 M.rail_hover = nil      -- and the rail stop, which works the same way
 M.note = nil            -- set by the arena when a connection fails
 M.screen = nil          -- the drawable and its insets, for the about page
+-- Whether the window is wide enough for the desktop's row of tabs, which is
+-- the layout with a corner to hang buttons off. The same 620 points ui.lua
+-- measures, from the same two numbers, because a row that exists in one file
+-- and a row that is drawn in the other have to agree about which layout is
+-- up. Narrow until the arena has said otherwise: a menu drawn before the
+-- first frame is the phone's, and a desktop corrects itself the same frame.
+local function wide()
+    local s = M.screen
+    if not (s and s.d and s.d > 0) then return false end
+    return s.w / s.d >= 620
+end
 -- Whether a thumb is driving this rather than a keyboard, set by the arena
 -- each frame. The controls page is the one page whose rows depend on it: on
 -- glass there is no board to draw and no key column to fill in, so the same
@@ -730,9 +741,25 @@ end
 M.sort = "kills"
 M.sort_up = false
 M.filter = ""
+-- Whether the box is taking type, which is what the caret in it says. The
+-- table filters as you type either way: a printable character arriving on
+-- this page goes in the box and lights it, so a keyboard needs no click
+-- first. What the flag buys is a box that reads as a control rather than as a
+-- readout, and somewhere for a pointer to press.
+M.filter_on = false
 -- Which week. Zero is the one running and one is the week before it, which is
 -- what the meta-layer counts in.
 M.week_back = 0
+
+-- Kills over deaths, as the number everybody means by it: a pilot who has
+-- died once and killed nobody is 0.00, and one who has not died yet is
+-- however many they took. Dividing by a zero denominator is what makes the
+-- second case worth writing down.
+local function ratio(kills, deaths)
+    kills, deaths = kills or 0, deaths or 0
+    if deaths > 0 then return kills / deaths end
+    return kills
+end
 
 -- What each column is worth, for the ordering. A name sorts as a name and
 -- everything else as a number, and the rank column is the order the fleet
@@ -742,9 +769,11 @@ local SORTS = {
     pilot = function(p) return string.lower(p.name or "") end,
     kills = function(p) return -(p.kills or 0) end,
     deaths = function(p) return -(p.deaths or 0) end,
-    points = function(p) return -(p.points or 0) end,
+    kd = function(p) return -ratio(p.kills, p.deaths) end,
+    banked = function(p) return -(p.banked or 0) end,
     run = function(p) return -(p.run or 0) end,
     rating = function(p) return -(p.rating or 0) end,
+    swing = function(p) return -(p.swing or 0) end,
     time = function(p) return -(p.seconds or 0) end,
 }
 
@@ -785,11 +814,17 @@ local function standings_rows()
             -- the preview still shows.
             detail = (p.kills or 0) .. "k",
             rank = p.rank, kills = p.kills or 0, deaths = p.deaths or 0,
-            points = p.points or 0,
+            kd = ratio(p.kills, p.deaths),
+            -- What the week's kills paid. Not the wallet: rivets get spent,
+            -- and a table of what everybody currently has left would say who
+            -- has been saving rather than who has been playing.
+            banked = p.banked or 0,
             run = p.run or 0, played = spell_time(p.seconds),
-            -- Signed, because a week that cost you rating is the fact
-            -- somebody is looking for and an unsigned 40 reads as a gain.
-            rating = p.rating or 0,
+            -- What they are rated at, and what this week did to it. The
+            -- swing is signed, because a week that cost you rating is the
+            -- fact somebody is looking for and an unsigned 40 reads as a
+            -- gain.
+            rating = p.rating or 0, swing = p.swing or 0,
             mark = function() return p.name == M.name end,
         }
         if i >= 60 then break end
@@ -819,10 +854,10 @@ function M.step_week(by)
     return nil, true
 end
 
--- Typing on the standings page narrows it. The menu has no text field outside
--- a card, and this does not want one: there is nothing to submit, the table
--- answers every letter, and a page that filters as you type has no use for a
--- caret you have to click into first.
+-- Typing on the standings page narrows it. There is nothing to submit and the
+-- table answers every letter, so a character arriving here goes straight in
+-- rather than waiting to be clicked into first; what it also does is light
+-- the box, so the page shows where the letters are landing.
 function M.type_filter(ch)
     if M.showing() ~= "standings" then return false end
     if type(ch) ~= "string" or #ch ~= 1 then return false end
@@ -830,6 +865,7 @@ function M.type_filter(ch)
     if b < 32 or b > 126 then return false end
     if #(M.filter or "") >= 24 then return false end
     M.filter = (M.filter or "") .. ch
+    M.filter_on = true
     return true
 end
 
@@ -837,7 +873,47 @@ function M.rub_filter()
     if M.showing() ~= "standings" then return false end
     if (M.filter or "") == "" then return false end
     M.filter = string.sub(M.filter, 1, #M.filter - 1)
+    M.filter_on = true
     return true
+end
+
+-- The box, pressed.
+--
+-- On a machine with keys this is a caret: what is typed from here lands in
+-- it. On glass there are no keys, and a drawn box that raises no keyboard is
+-- a control that does nothing, so a thumb gets the card instead. A card's
+-- line is a real input element on the web, which is the only thing that
+-- raises a phone's keyboard, and that machinery already exists for logging
+-- in. See `pull`.
+function M.click_filter()
+    if M.showing() ~= "standings" then return nil, false end
+    if M.touching then
+        M.ask = {head = "Filter by pilot", sel = 1, field = 1,
+                 keys = {{label = "filter", act = "do_filter"},
+                         {label = "cancel"}},
+                 fields = {{label = "call sign", value = M.filter or "",
+                            max = 24}}}
+        return nil, true
+    end
+    if M.filter_on then return nil, false end
+    M.filter_on = true
+    return nil, true
+end
+
+-- And let go of it, which is a press landing anywhere else.
+function M.blur_filter()
+    if not M.filter_on then return false end
+    M.filter_on = false
+    return true
+end
+
+-- Emptied, from the mark on the end of the box. A filter you cannot see the
+-- end of is one you clear by holding backspace, and the table under it is
+-- the wrong table until you do.
+function M.wipe_filter()
+    if (M.filter or "") == "" then return nil, false end
+    M.filter = ""
+    return nil, true
 end
 
 local function standings_empty()
@@ -1138,9 +1214,15 @@ local function play_rows()
     -- people should be honest about where the talking happens.
     -- Drawn as a button rather than as a row, with the mark on it. It is not
     -- a page of this menu and reading as one is what it did.
-    rows[#rows + 1] = {label = "Talk on Discord",
-                       sect = "community", button = "discord",
-                       act = "discord", link = DISCORD}
+    --
+    -- Only on a phone. The desktop rail carries the same button in its top
+    -- corner, on every page rather than on this one, and drawing both put the
+    -- one outbound link in this game on screen twice.
+    if not wide() then
+        rows[#rows + 1] = {label = "Talk on Discord",
+                           sect = "community", button = "discord",
+                           act = "discord", link = DISCORD}
+    end
     -- Nothing about leaving down here. The way out of a game is the tab row's
     -- own leave, which is on it whenever there is something to leave.
     return rows
@@ -1671,7 +1753,8 @@ local function view_row(r, i)
         group = r.group, short = r.short, tint_col = r.tint_col,
         -- The week's own columns.
         rank = r.rank, kills = r.kills, deaths = r.deaths, run = r.run,
-        played = r.played, rating = r.rating, points = r.points,
+        kd = r.kd, played = r.played, banked = r.banked,
+        rating = r.rating, swing = r.swing,
         -- What a row costs to upgrade, and whether the wallet covers it.
         icon = r.icon, price = r.price, afford = r.afford,
         -- A row the page draws as a button, and which mark goes on it.
@@ -1860,6 +1943,9 @@ local function settle(act, asked, by)
         -- asks, and the reply is the answer.
         M.pending = asked and asked.slot or 0
         return "buy"
+    elseif act == "do_filter" then
+        local f = asked and asked.fields and asked.fields[1]
+        M.filter = f and f.value or ""
     elseif act == "do_unfriend" then
         -- Both directions, so a removed pilot does not keep this one on their
         -- list, visible and joinable. See docs/design/friends.md.
@@ -2315,6 +2401,12 @@ function M.view()
                  -- in the thing I am in".
                  pilot = {name = M.name, rivets = account.rivets or 0},
                  pilot_hot = M.pilot_hot,
+                 -- The one outbound link in this game, as the address the
+                 -- corner button carries. Only where there is a corner to
+                 -- carry it: on a phone the play page has the button and the
+                 -- top of the screen is the wordmark alone.
+                 discord = wide() and DISCORD or nil,
+                 discord_hot = M.discord_hot,
                  carousel_hot = M.carousel_hot,
                  -- The question, if one is up. Everything else in the view is
                  -- still filled in: the panel is drawn and then stood down
@@ -2333,7 +2425,8 @@ function M.view()
                  -- and which week it is. All four belong to the page rather
                  -- than to the reply.
                  week = {sort = M.sort, sort_up = M.sort_up,
-                         filter = M.filter, back = M.week_back,
+                         filter = M.filter, filter_on = M.filter_on,
+                         back = M.week_back,
                          since = account.week_since or ""},
                  -- Whether there is a game behind the panel, which is what
                  -- decides where the block sits: clear of the corner stack
@@ -2362,8 +2455,13 @@ function M.view()
     -- The hangar is two levels of the stack drawn at once: the roster down
     -- the left and the kit of the hull it is standing on beside it. So the
     -- page carries both, and which of them the arrows are in.
-    -- The week is a table, and the page draws it as one.
-    if M.at() == "standings" and #rows > 0 then out.table = true end
+    -- The week is a table, and the page draws it as one. Whatever is in it,
+    -- including nothing: the line above the table is how a week is picked and
+    -- how the table is narrowed, so a page that swapped it for a card the
+    -- moment a week came back empty was a page you could step into and not
+    -- step out of. The table draws the card itself now, under its own
+    -- heading. See `pages.week`.
+    if M.at() == "standings" then out.table = true end
     -- What pressing play would do, beside the list of things to press it on.
     -- The mode list is short and the panel is wide, and the question a player
     -- is actually asking is "where would this put me".
@@ -2639,7 +2737,7 @@ local function activate(by)
         -- and asking is what put a card with the address on it up before.
         -- Only ever reached off the web, or from a key. In a browser the
         -- page has a real anchor over this stop and the tap never gets here.
-        pcall(sys.open_url, DISCORD, {target = "_blank"})
+        M.click_discord()
         return nil
     elseif r.act == "bind" then
         -- The row stops saying where its control is and starts asking where
@@ -2980,9 +3078,11 @@ function M.click_pilot()
     return nil, true
 end
 
--- Whether the pointer is on that name, so it can be underlined the way a lit
--- tab is. The arena sets it from the same hit list the press comes off.
+-- Whether the pointer is on that button, so it can light the way a lit tab
+-- does. The arena sets it from the same hit list the press comes off.
 M.pilot_hot = false
+-- And the same for the button beside it.
+M.discord_hot = false
 
 -- A pointer landed on the rail, which names a destination whatever level the
 -- stack is at. That is the whole difference between it and a row: the rail
@@ -3134,6 +3234,14 @@ end
 -- The x on the panel. It shuts the menu rather than stepping back a level,
 -- which is what a cross means everywhere else, and it is drawn only where
 -- there is a game behind to shut it onto.
+-- The corner button on the tab row, pressed, which is the same act the play
+-- page's own button carries. Off the web, or from a key: in a browser an
+-- anchor sits over it and the tap never arrives here at all.
+function M.click_discord()
+    pcall(sys.open_url, DISCORD, {target = "_blank"})
+    return nil, true
+end
+
 function M.click_close()
     if not M.open then return nil, false end
     return nil, M.close()

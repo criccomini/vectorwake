@@ -121,6 +121,21 @@ local function has(st, s)
     return false
 end
 
+-- What the last draw published, by action. `ui.hits` is rebuilt every draw,
+-- so these read whichever one just ran.
+local function hit_named(action)
+    for _, h in ipairs(ui.hits) do
+        if h.action == action then return h end
+    end
+    return nil
+end
+
+local function actions()
+    local out = {}
+    for _, h in ipairs(ui.hits) do out[#out + 1] = h.action end
+    return out
+end
+
 -- --- the rail is always there, and every stop is reachable by pointer ------
 
 local rows = {}
@@ -899,18 +914,25 @@ end
 --
 -- A `won` column stood at the end of this with a zero in every cell, because
 -- nothing files a match result. What is here instead is what the log actually
--- holds, and the panel beside it follows the cursor rather than only ever
--- describing you.
+-- holds.
+--
+-- There was also a card down the right hand side saying more about whichever
+-- row the cursor was on, and every line in it was a column this table could
+-- carry instead. It is columns now, and the quarter of the page the card took
+-- is what pays for them.
 do
     local week = draw({
         depth = 2, sel = 2, rail = RAIL, rail_sel = 1, focus = "stage",
         home = true, closable = false, page = "week",
         pilot = {name = "Vantage 7", rivets = 12},
         table = true,
+        week = {sort = "kills", filter = "", back = 0, since = ""},
         rows = {
-            {label = "Halcyon 1", rank = 1, kills = 9, deaths = 3, run = 4,
+            {label = "Halcyon 1", rank = 1, kills = 9, deaths = 3, kd = 3,
+             run = 4, banked = 180, rating = 1240, swing = 29,
              played = "22m", index = 1, pick = true},
-            {label = "Vantage 7", rank = 2, kills = 5, deaths = 4, run = 2,
+            {label = "Vantage 7", rank = 2, kills = 5, deaths = 4, kd = 1.25,
+             run = 2, banked = 90, rating = 1190, swing = -12,
              played = "8m", index = 2, pick = true, mark = true},
         },
     })
@@ -919,30 +941,151 @@ do
     check("and carries deaths and time instead",
           has(week, "deaths") and has(week, "time"),
           table.concat(texts(week), " "))
-    -- The cursor is on row two, which is this pilot, so the panel is theirs.
-    check("the panel follows the cursor", has(week, "your week"),
+    -- Every line the card used to hold, as a column of the table beside it.
+    check("the ratio is a column now", has(week, "k/d") and has(week, "3.00"),
           table.concat(texts(week), " "))
-    check("and works out a ratio the table has no room for",
-          has(week, "kills per death"), table.concat(texts(week), " "))
+    check("and so is the best run", has(week, "streak"),
+          table.concat(texts(week), " "))
+    -- Two different facts, and the table wants both: what somebody is rated
+    -- at, and what this week did to it.
+    check("a rating is what a pilot is rated at",
+          has(week, "rating") and has(week, "1240"),
+          table.concat(texts(week), " "))
+    check("and the swing is what the week did to it",
+          has(week, "swing") and has(week, "+29") and has(week, "-12"),
+          table.concat(texts(week), " "))
+    -- The week's earnings, and the word for them. Not "points", which is a
+    -- score, and not "rivets", which is the wallet they went into.
+    check("what the week paid is banked",
+          has(week, "banked") and has(week, "180"),
+          table.concat(texts(week), " "))
+    check("and there is no card beside any of it",
+          not has(week, "your week") and not has(week, "kills per death"),
+          table.concat(texts(week), " "))
 
-    -- On somebody else it says so, and drops the wallet, which is yours.
-    local other = draw({
+    -- A guest has no account to keep a rating under, and a zero drawn as a
+    -- number would read as a very bad pilot rather than as nobody's rating.
+    local guest = draw({
         depth = 2, sel = 1, rail = RAIL, rail_sel = 1, focus = "stage",
         home = true, closable = false, page = "week",
         pilot = {name = "Vantage 7", rivets = 12},
         table = true,
+        week = {sort = "kills", filter = "", back = 0, since = ""},
         rows = {
-            {label = "Halcyon 1", rank = 1, kills = 9, deaths = 3, run = 4,
+            {label = "Halcyon 1", rank = 1, kills = 9, deaths = 3, kd = 3,
+             run = 4, banked = 180, rating = 0, swing = 5,
              played = "22m", index = 1, pick = true},
-            {label = "Vantage 7", rank = 2, kills = 5, deaths = 4, run = 2,
-             played = "8m", index = 2, pick = true, mark = true},
         },
     })
-    check("standing on somebody else names them",
-          has(other, "this pilot") and has(other, "halcyon 1"),
-          table.concat(texts(other), " "))
-    check("and keeps your wallet out of their card",
-          not has(other, "banked"), table.concat(texts(other), " "))
+    check("an unrated pilot is drawn as nothing, not as zero",
+          has(guest, "-") and not has(guest, "0"),
+          table.concat(texts(guest), " "))
+end
+
+-- --- the week steps the way it points --------------------------------------
+--
+-- `week_back` counts weeks behind the one running, so the arrow pointing left
+-- asks for one more of them. Both arrows once published the direction they
+-- pointed, which is the opposite, and both were dead: left asked to go
+-- forward from the week that is running and right was drawn dark until you
+-- were already back.
+do
+    local wk = function(back)
+        return draw({
+            depth = 2, sel = 1, rail = RAIL, rail_sel = 1, focus = "stage",
+            home = true, closable = false, page = "week",
+            pilot = {name = "Vantage 7", rivets = 12}, table = true,
+            week = {sort = "kills", filter = "", back = back, since = ""},
+            rows = {{label = "Halcyon 1", rank = 1, kills = 9, deaths = 3,
+                     kd = 3, run = 4, banked = 180, rating = 1240, swing = 29,
+                     played = "22m", index = 1, pick = true}},
+        })
+    end
+    local function offered()
+        local out = {}
+        for _, h in ipairs(ui.hits) do
+            if h.action == "week" then out[#out + 1] = h.value end
+        end
+        table.sort(out)
+        return out
+    end
+    wk(0)
+    local one = offered()
+    check("the week that is running offers one step, and it goes back",
+          #one == 1 and one[1] == 1, table.concat(one, "/"))
+    wk(2)
+    local both = offered()
+    check("and a week already back offers both ways",
+          #both == 2 and both[1] == -1 and both[2] == 1,
+          table.concat(both, "/"))
+
+    -- A week nobody played says so under its own heading. Drawn instead of
+    -- the page, as it was, the line carrying the way to another week goes
+    -- with it and a pilot who stepped back one week could not step forward.
+    local bare = draw({
+        depth = 2, sel = 1, rail = RAIL, rail_sel = 1, focus = "stage",
+        home = true, closable = false, page = "week",
+        pilot = {name = "Vantage 7", rivets = 12}, table = true,
+        week = {sort = "kills", filter = "", back = 2, since = "Aug 3"},
+        rows = {},
+        empty = {head = "nobody played that week",
+                 line = "the weeks before it are still there"},
+    })
+    check("an empty week still says which week it is",
+          has(bare, "week of Aug 3") and has(bare, "nobody played that week"),
+          table.concat(texts(bare), " "))
+    check("and still offers the way out of it", #offered() == 2,
+          table.concat(actions(), " "))
+end
+
+-- --- the filter is a box ---------------------------------------------------
+--
+-- It was a dim line of type at the end of the rule saying "type to filter",
+-- which is a control that looks like a caption. On glass there is no keyboard
+-- to find it with at all.
+do
+    local empty = draw({
+        depth = 2, sel = 1, rail = RAIL, rail_sel = 1, focus = "stage",
+        home = true, closable = false, page = "week",
+        pilot = {name = "Vantage 7", rivets = 12}, table = true,
+        week = {sort = "kills", filter = "", back = 0, since = ""},
+        rows = {{label = "Halcyon 1", rank = 1, kills = 9, deaths = 3,
+                 kd = 3, run = 4, banked = 180, rating = 1240, swing = 29,
+                 played = "22m", index = 1, pick = true}},
+    })
+    check("the empty box says what it takes",
+          has(empty, "filter by pilot"), table.concat(texts(empty), " "))
+    check("and it is a thing to press",
+          hit_named("filter_box") ~= nil, table.concat(actions(), " "))
+    check("with nothing to clear yet",
+          hit_named("filter_wipe") == nil, table.concat(actions(), " "))
+
+    local typed = draw({
+        depth = 2, sel = 1, rail = RAIL, rail_sel = 1, focus = "stage",
+        home = true, closable = false, page = "week",
+        pilot = {name = "Vantage 7", rivets = 12}, table = true,
+        week = {sort = "kills", filter = "hal", filter_on = true,
+                back = 0, since = ""},
+        rows = {{label = "Halcyon 1", rank = 1, kills = 9, deaths = 3,
+                 kd = 3, run = 4, banked = 180, rating = 1240, swing = 29,
+                 played = "22m", index = 1, pick = true}},
+    })
+    check("what was typed is in the box",
+          has(typed, "hal") and not has(typed, "filter by pilot"),
+          table.concat(texts(typed), " "))
+    check("and there is a way to empty it",
+          hit_named("filter_wipe") ~= nil, table.concat(actions(), " "))
+    -- The mark sits inside the box, and hit boxes are tested in the order
+    -- they went out with the first one winning. Published the other way round
+    -- the box swallows every press on its own mark.
+    local wipe, box
+    for i, h in ipairs(ui.hits) do
+        if h.action == "filter_wipe" and not wipe then wipe = i end
+        if h.action == "filter_box" and not box then box = i end
+    end
+    check("and the mark is reachable inside the box it sits in",
+          wipe and box and wipe < box,
+          tostring(wipe) .. " against " .. tostring(box))
 end
 
 -- --- the ship page is a ship and its thirty points ------------------------
