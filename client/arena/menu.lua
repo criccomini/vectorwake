@@ -1049,6 +1049,7 @@ function M.type_add(ch)
     if #(M.add_name or "") >= 24 then return false end
     M.add_name = (M.add_name or "") .. ch
     M.add_on = true
+    M.found_sel = nil
     forget_add_note()
     account.find_pilots(M.add_name)
     return true
@@ -1059,6 +1060,7 @@ function M.rub_add()
     if (M.add_name or "") == "" then return false end
     M.add_name = string.sub(M.add_name, 1, #M.add_name - 1)
     M.add_on = true
+    M.found_sel = nil
     forget_add_note()
     account.find_pilots(M.add_name)
     return true
@@ -1087,12 +1089,14 @@ end
 function M.blur_add()
     if not M.add_on then return false end
     M.add_on = false
+    M.found_sel = nil
     return true
 end
 
 function M.wipe_add()
     if (M.add_name or "") == "" then return nil, false end
     M.add_name = ""
+    M.found_sel = nil
     account.find_pilots("")
     account.friend_note = ""
     account.friend_bad = false
@@ -2873,6 +2877,10 @@ function M.view()
                  add = {name = M.add_name, on = M.add_on,
                         note = account.friend_note or "",
                         bad = account.friend_bad or false,
+                        -- Which completion the arrows are standing on, if
+                        -- they have walked down into the list. Nil is the box
+                        -- itself, which is where they start.
+                        sel = M.found_sel,
                         -- Call signs beginning with what is in the box, from
                         -- the meta-layer, drawn under it as you type. Only
                         -- while the answer is about what is actually there:
@@ -3084,6 +3092,11 @@ local function activate(by)
     if r.go then
         M.stack[#M.stack + 1] = r.go
         M.note = nil
+        -- The friends page opens with the cursor in its field, which is the
+        -- one page here whose first control is not a row. A hand coming down
+        -- off the tabs lands in the box and can type; everything else on the
+        -- page is one press further down, which is where it was anyway.
+        if r.go == "friends" then M.add_on = true end
         return nil
     end
     if not r.act then return nil end
@@ -3315,7 +3328,11 @@ function M.step(keys)
     -- cursor is on, while the field is the thing taking type. It is what
     -- enter means in a box everywhere, and the button beside it is still
     -- there for a hand on the mouse.
-    if not M.ask and keys.go and M.add_on and (M.add_name or "") ~= "" then
+    -- Except while the arrows are standing on one of the names the box
+    -- turned up, which is a press on that name rather than on the letters
+    -- that found it. See the friends block below.
+    if not M.ask and keys.go and M.add_on and M.found_sel == nil
+       and (M.add_name or "") ~= "" then
         return M.send_add()
     end
     if M.ask then
@@ -3350,6 +3367,75 @@ function M.step(keys)
     local nd = node()
     local rows = rows_of(nd)
     local n = #rows
+
+    -- The friends page's field is a stop above the first row.
+    --
+    -- It is not a row, because it is not in the list, but the arrows have to
+    -- reach it or the only way to type a call sign is to guess that typing
+    -- works at all. Down off the tabs lands in it, down again goes to the
+    -- list, up out of the first row comes back to it, and up out of it goes
+    -- to the tabs. What a page owes five inputs is that everything on it is
+    -- somewhere an arrow can get to.
+    --
+    -- Above the empty-page check, and not below it, because a page with
+    -- nobody on it is exactly the page a new player is looking at when they
+    -- go to add their first friend. Under that check the field was reachable
+    -- on every friends page except the one that needs it.
+    if M.at() == "friends" then
+        -- What the box has turned up, which the arrows walk before they walk
+        -- the page: the list is drawn over the sections, so a cursor that
+        -- stepped past it into the rows underneath would be a cursor nobody
+        -- can see. `M.found_sel` is nil in the box itself and an index in the
+        -- list, and it is cleared wherever the list can change under it.
+        local found = (account.found_for == M.add_name) and account.found or {}
+        -- The list arrives on the meta-layer's schedule, so a cursor standing
+        -- in it can find itself past the end between one key and the next.
+        if M.found_sel ~= nil and M.found_sel > #found then M.found_sel = nil end
+        if M.add_on then
+            if keys.back or keys.left then
+                M.add_on = false
+                M.found_sel = nil
+            end
+            if keys.up then
+                if M.found_sel ~= nil then
+                    M.found_sel = (M.found_sel > 1) and (M.found_sel - 1)
+                        or nil
+                    return nil, true
+                end
+                M.add_on = false
+                return back()
+            end
+            if keys.down then
+                if #found > 0 and (M.found_sel or 0) < #found then
+                    M.found_sel = (M.found_sel or 0) + 1
+                    return nil, true
+                end
+                -- Nothing on the page to go on to, so the cursor stays in the
+                -- box rather than leaving it for a list of none.
+                if n == 0 then
+                    if M.found_sel == nil then return nil, false end
+                    M.found_sel = nil
+                    return nil, true
+                end
+                M.add_on = false
+                M.found_sel = nil
+                return nil, true
+            end
+            -- Enter on a name adds that pilot by number, which is the whole
+            -- reason the list is there: what you pressed is what is added,
+            -- even where two call signs open the same way. Enter in the box
+            -- with something typed sent it already, above. With nothing in it
+            -- there is nothing to send and nothing below to press: the cursor
+            -- is up here.
+            if keys.go then
+                if M.found_sel ~= nil then return M.click_found(M.found_sel) end
+                return nil, false
+            end
+        elseif keys.up and (n == 0 or row_index(rows) <= 1) then
+            M.add_on = true
+            return nil, true
+        end
+    end
 
     -- A page can hold nothing at all: the games, before a directory has
     -- answered. Escape and left still work; there is no row for anything else
@@ -3552,6 +3638,7 @@ function M.click_found(index)
     if not p or not p.account then return nil, false end
     M.add_name = ""
     M.add_on = false
+    M.found_sel = nil
     account.find_pilots("")
     account.friend_note = "asking"
     account.friend_bad = false

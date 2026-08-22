@@ -44,6 +44,12 @@ pilot by account number, so two names that open the same way cannot be
 confused for each other. A call sign is a word and three digits and it has to be exact,
 which is a small task nobody should have to be careful about.
 
+The arrows reach it. Down off the tab row lands in the box, down again walks
+the names it turned up, and enter on one of those is the press a pointer
+makes. That matters most on the page a new player sees, which has nothing on
+it but this field: a control you can only use by guessing that typing works is
+not a control a keyboard has.
+
 That is a real change to what this system will tell you, and worth naming.
 Before it, the only pilots the meta-layer would ever put in front of you were
 people you had played with and people who had chosen to add you. Now it will

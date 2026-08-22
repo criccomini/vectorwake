@@ -401,6 +401,58 @@ for _, r in ipairs(ui.hits) do
 end
 check("a room with no phrase list draws no chips", none == 0, tostring(none))
 
+-- --- three columns, not one string -----------------------------------------
+--
+-- The three figures on a row were one right-aligned string, so a pilot with a
+-- two-figure count pushed the two beside it left: every row on the card lined
+-- up differently from every other and none of them lined up with the heads.
+-- Each column has its own edge now, the same edge on every row and on both
+-- sides of the card.
+
+local kept_k, kept_d, kept_a = room.kills, room.deaths, room.assists
+room.kills = {[0] = 4, 14, 1, 0}
+room.deaths = {[0] = 3, 6, 6, 3}
+room.assists = {[0] = 2, 2, 6, 11}
+frame({match = {playing = false, left = 12, score = {[0] = 5, [1] = 8}},
+       side_names = NAMES, side = 0})
+-- Every right-aligned figure on the card, gathered by the line it sits on.
+-- Both sides draw a row at the same height, so a line carries six of them:
+-- three columns twice, and the whole card is checked at once.
+local lines = {}
+for i = 1, state.n do
+    local t = state.text[i]
+    if t.pivot == "right" and string.match(t.s, "^%-?%d+$") then
+        local key = string.format("%.1f", t.y)
+        lines[key] = lines[key] or {}
+        table.insert(lines[key], t.x)
+    end
+end
+local rows = {}
+for _, xs in pairs(lines) do
+    if #xs == 6 then
+        table.sort(xs)
+        rows[#rows + 1] = table.concat(xs, ",")
+    end
+end
+check("both sides draw a pilot line at each height", #rows == 2,
+      tostring(#rows))
+check("and every figure on the card stands in one of six columns",
+      #rows == 2 and rows[1] == rows[2], table.concat(rows, "  vs  "))
+-- And the heads stand over them. One letter each, at the edge the figures
+-- under it end at.
+local heads = {}
+for i = 1, state.n do
+    local t = state.text[i]
+    if t.pivot == "right" and (t.s == "K" or t.s == "D" or t.s == "A") then
+        heads[#heads + 1] = t.x
+    end
+end
+table.sort(heads)
+check("with a head over each column",
+      #heads == 6 and table.concat(heads, ",") == rows[1],
+      table.concat(heads, ",") .. "  vs  " .. tostring(rows[1]))
+room.kills, room.deaths, room.assists = kept_k, kept_d, kept_a
+
 -- --- and it stands down for the menu ---------------------------------------
 --
 -- The intermission is when the hangar opens, so the one thing a player is

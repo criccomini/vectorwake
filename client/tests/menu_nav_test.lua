@@ -1581,6 +1581,98 @@ do
           account.friended ~= nil and account.friended.who == "Ozone 42",
           tostring(account.friended and account.friended.who))
 
+    -- --- and the arrows reach it
+    --
+    -- The field is a stop above the first row. Before this the only way into
+    -- it was to start typing, which is a control you have to already know is
+    -- there: nothing on the page said so and no arrow went anywhere near it.
+    account.found, account.found_for = {}, ""
+    menu.add_name, menu.add_on, menu.found_sel = "", false, nil
+    menu.stack = {"root"}
+    menu.sel = {root = 4}
+    menu.step({down = true})
+    check("down off the tabs opens friends with the cursor in the field",
+          menu.at() == "friends" and menu.add_on == true,
+          menu.at() .. "/" .. tostring(menu.add_on))
+    menu.step({down = true})
+    check("and down again goes on to the list",
+          menu.at() == "friends" and menu.add_on == false,
+          tostring(menu.add_on))
+    menu.sel.friends = 1
+    menu.step({up = true})
+    check("up off the first row comes back to it", menu.add_on == true,
+          tostring(menu.add_on))
+    menu.step({up = true})
+    check("and up out of it goes back to the tabs",
+          menu.at() == "root" and menu.add_on == false,
+          menu.at() .. "/" .. tostring(menu.add_on))
+
+    -- With names under the box the arrows walk those first. The list is drawn
+    -- over the sections, so a cursor stepping straight past it into the rows
+    -- underneath would be a cursor nobody can see.
+    menu.stack = {"root", "friends"}
+    menu.sel = {friends = 1}
+    menu.add_name, menu.add_on, menu.found_sel = "Ha", true, nil
+    account.found_for = "Ha"
+    account.found = {{account = 31, name = "Halcyon 1"},
+                     {account = 32, name = "Halcyon 12"}}
+    menu.step({down = true})
+    check("down out of the field walks what it turned up",
+          menu.found_sel == 1 and menu.add_on == true,
+          tostring(menu.found_sel))
+    menu.step({down = true})
+    check("and the next name after that", menu.found_sel == 2,
+          tostring(menu.found_sel))
+    check("and the page says which one is lit",
+          menu.view().add.sel == 2, tostring(menu.view().add.sel))
+    -- Enter on a name is a press on that name, not on the letters that found
+    -- it: two call signs can open the same way.
+    account.friended = nil
+    menu.step({go = true})
+    check("enter on one adds that pilot by number",
+          account.friended ~= nil and account.friended.who == 32
+          and menu.found_sel == nil,
+          tostring(account.friended and account.friended.who))
+
+    menu.add_name, menu.add_on, menu.found_sel = "Ha", true, 1
+    account.found_for = "Ha"
+    account.found = {{account = 31, name = "Halcyon 1"}}
+    menu.step({down = true})
+    check("and down off the last name goes on to the page",
+          menu.add_on == false and menu.found_sel == nil,
+          tostring(menu.add_on) .. "/" .. tostring(menu.found_sel))
+    account.found, account.found_for = {}, ""
+    menu.add_name, menu.add_on = "", false
+
+    -- The page a new player sees is the one that most needs this: nobody on
+    -- it, nothing to walk, and a field that is the only thing there. The page
+    -- gives up on the arrows when it has no rows, and under that the box was
+    -- reachable on every friends page except that one.
+    do
+        local kept = {account.friends, account.asked, account.here,
+                      account.waiting, account.everybody}
+        account.friends, account.asked, account.here = {}, {}, {}
+        account.waiting, account.everybody = {}, {}
+        menu.stack = {"root", "friends"}
+        menu.sel = {}
+        menu.add_name, menu.add_on, menu.found_sel = "", false, nil
+        check("an empty friends page lists nobody", #menu.view().rows == 0,
+              tostring(#menu.view().rows))
+        menu.step({up = true})
+        check("and the arrows still reach its field",
+              menu.at() == "friends" and menu.add_on == true,
+              menu.at() .. "/" .. tostring(menu.add_on))
+        menu.step({down = true})
+        check("and stay in it, since there is nothing below to go to",
+              menu.add_on == true, tostring(menu.add_on))
+        menu.step({up = true})
+        check("and up out of it still goes back to the tabs",
+              menu.at() == "root" and menu.add_on == false,
+              menu.at() .. "/" .. tostring(menu.add_on))
+        account.friends, account.asked, account.here = kept[1], kept[2], kept[3]
+        account.waiting, account.everybody = kept[4], kept[5]
+    end
+
     -- And the field is the page's, not the rail's preview of it. A letter
     -- typed at the top of the menu would land in a box nobody can see.
     menu.stack = {"root"}

@@ -3429,6 +3429,30 @@ local function podium(o, m, names)
     end
     y = y + SCORE
 
+    -- The three figures on a row are three columns, not one string.
+    --
+    -- They were one, right-aligned, and so they agreed on nothing but their
+    -- last digit: a pilot with eleven assists pushed their own kills and
+    -- deaths left out from under the heads, and every row on the card lined
+    -- up differently from every other.
+    --
+    -- Sized off the widest figure anybody on this card holds, both sides at
+    -- once, so the two blocks agree with each other as well as with
+    -- themselves. Two figures at the least, because a column one character
+    -- wide reads as a gap, and kills go negative on a misfire.
+    local NUM = 12 * F.scale
+    local figs = 2
+    for _, list in pairs(seen) do
+        for _, r in ipairs(list) do
+            figs = math.max(figs, #tostring(r.k), #tostring(r.d),
+                            #tostring(r.a))
+        end
+    end
+    local numw = text_w(string.rep("0", figs), NUM)
+    local numgap = 8 * F.scale
+    -- What the block takes, from the right edge of a side's column inwards.
+    local numrun = 3 * numw + 2 * numgap
+
     local cw = w / math.max(1, #sides)
     for i, team in ipairs(sides) do
         local cx = x + (i - 1) * cw
@@ -3451,8 +3475,15 @@ local function podium(o, m, names)
         --
         -- What the three numbers on every row below are, though, does belong
         -- here: once per column, in the head, rather than three words a row.
-        txt("k  d  a", cx + cw - 18 * F.scale, y + 34 * F.scale, 9.5 * F.scale,
-            pal.a(pal.DIM, 0.75), "right")
+        -- One letter over each column, right-aligned on the same edge the
+        -- figures under it end at.
+        local acx = cx + cw - 18 * F.scale
+        local dcx = acx - numw - numgap
+        local kcx = dcx - numw - numgap
+        for _, head_at in ipairs({{"k", kcx}, {"d", dcx}, {"a", acx}}) do
+            txt(head_at[1], head_at[2], y + 34 * F.scale, 9.5 * F.scale,
+                pal.a(pal.DIM, 0.75), "right")
+        end
         F.layer:seg(cx + 18 * F.scale, ry(y + 44 * F.scale),
                     cx + cw - 18 * F.scale, ry(y + 44 * F.scale),
                     1.0 * F.scale, pal.a(pal.RADAR_TILE, 0.6), true)
@@ -3489,7 +3520,7 @@ local function podium(o, m, names)
                 -- the other end of it.
                 local nx = cx + 26 * F.scale + text_w(sd.phrase, 12.5 * F.scale)
                 if nx + text_w(r.name, 9 * F.scale)
-                   < cx + cw - 66 * F.scale then
+                   < cx + cw - 26 * F.scale - numrun then
                     lbl(r.name, nx, ry0, pal.a(pal.DIM, 0.75))
                 end
             else
@@ -3499,12 +3530,13 @@ local function podium(o, m, names)
             -- The best gun in the room, whichever side it was on. One mark
             -- rather than a column, because it is one pilot.
             if r == mvp then
-                txt("mvp", cx + cw - 88 * F.scale, ry0, 9.5 * F.scale,
+                txt("mvp", kcx - numw - 10 * F.scale, ry0, 9.5 * F.scale,
                     pal.a(pal.CHARGE_COL, 0.85), "right")
             end
-            txt(r.k .. "  " .. r.d .. "  " .. r.a,
-                cx + cw - 18 * F.scale, ry0, 12 * F.scale,
-                pal.a(pal.DIM, 0.95), "right")
+            for _, fig in ipairs({{r.k, kcx}, {r.d, dcx}, {r.a, acx}}) do
+                txt(tostring(fig[1]), fig[2], ry0, NUM,
+                    pal.a(pal.DIM, 0.95), "right")
+            end
         end
     end
 
@@ -3926,17 +3958,23 @@ function pages.week(v, x, y, w, h, focused)
         local col = pal.a(on and pal.FRIEND or pal.DIM, on and 1 or 0.9)
         local ww = text_w(key, 9 * F.scale)
         -- The word and its mark are one lockup, aligned together: right of a
-        -- right-hand column the mark is the rightmost thing, so the word
-        -- steps left by what the mark takes rather than the mark hanging off
-        -- into the next column.
-        local wide = ww + (on and (MARK_W + 6 * F.scale) or 0)
+        -- right-hand column the lockup is what ends at the column's edge, so
+        -- the word steps left by what the mark takes rather than the mark
+        -- hanging off into the next column.
+        --
+        -- The mark leads. A column of figures is read up its right edge, and
+        -- a triangle sitting on that edge is the first thing in the column
+        -- that is not a number: it took the place the widest figure would
+        -- have and made the head disagree with the rows under it. In front of
+        -- the word it is a mark on the word, which is what it is.
+        local step = on and (MARK_W + 6 * F.scale) or 0
+        local wide = ww + step
         local left = align == "right" and (hx - wide) or hx
-        lbl(key, left, ty, col)
+        lbl(key, left + step, ty, col)
         if on then
             -- On the label's own middle rather than on `ty`, which is where
             -- the line is placed and not where its type sits inside it.
-            sort_mark(left + ww + 3 * F.scale + MARK_W / 2, ty - 1 * F.scale,
-                      up, col)
+            sort_mark(left + MARK_W / 2, ty - 1 * F.scale, up, col)
         end
         hit(left - 8 * F.scale, ty - 16 * F.scale, wide + 16 * F.scale,
             22 * F.scale, "sort", sorts)
@@ -3961,8 +3999,10 @@ function pages.week(v, x, y, w, h, focused)
         local word = sorted_col[1]
         local ww2 = text_w(word, 9 * F.scale) + MARK_W + 6 * F.scale
         local hx = x + tw - 16 * F.scale
-        lbl(word, hx - ww2, ty, pal.a(pal.FRIEND, 1))
-        sort_mark(hx - MARK_W / 2, ty - 1 * F.scale,
+        -- Mark first, as in the wide table: one lockup laid out one way, so a
+        -- phone and a desktop do not disagree about where a sort mark lives.
+        lbl(word, hx - ww2 + MARK_W + 6 * F.scale, ty, pal.a(pal.FRIEND, 1))
+        sort_mark(hx - ww2 + MARK_W / 2, ty - 1 * F.scale,
                   (v.week or {}).sort_up, pal.a(pal.FRIEND, 1))
         hit(hx - ww2 - 8 * F.scale, ty - 15 * F.scale, ww2 + 16 * F.scale,
             22 * F.scale, "sort", sorted_col[5] or sorted_col[1])
@@ -4860,7 +4900,9 @@ function pages.friends(v, x, y, w, h, focused)
                 10 * F.scale)
         for i, p in ipairs(hits) do
             local ry0 = ly + (i - 1) * rh
-            local on = v.found_hot == i
+            -- Lit by a pointer resting on it or by the arrows standing on
+            -- it, which are the same fact about the same row.
+            local on = v.found_hot == i or a.sel == i
             if on then
                 rect(fx, ry0, lw, rh, pal.a(pal.FRIEND, 0.16))
             end
@@ -4921,7 +4963,10 @@ function pages.friends(v, x, y, w, h, focused)
         local ry0 = at - dy
         at = at + rowh
         if seen(ry0) then
-            local hot = (focused and i == v.sel) or i == v.hover
+            -- Nothing in the list is the cursor while the field above has
+            -- it. Two lit things on one page is a page that cannot say where
+            -- a press would go.
+            local hot = (focused and not a.on and i == v.sel) or i == v.hover
             if hot then wash(x - ROW_PAD * F.scale, ry0,
                              w + 2 * ROW_PAD * F.scale, rowh,
                              pal.a(pal.FRIEND, 0.16)) end
