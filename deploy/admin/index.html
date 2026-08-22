@@ -559,6 +559,11 @@
           answers Ctrl+C, Ctrl+X, Ctrl+V, Ctrl+A, Delete and Escape. Ctrl+Z and
           Ctrl+Shift+Z do what they do everywhere else.</p>
 
+        <!-- Where the pointer is, and what is under it. Not a live region:
+             this changes on every pixel of movement and announcing it would
+             be nothing but noise. -->
+        <p id="map-at" class="dim readout" aria-live="off"></p>
+
         <div class="canvas-wrap">
           <canvas id="map-canvas" width="640" height="640"
                   aria-label="The map, one square per tile"></canvas>

@@ -61,11 +61,17 @@ const S_ROCK_BIG = 4, S_ROCK_BODY = 5, S_STATION = 6, S_STATION_BODY = 7;
 // station once rather than thirty-six times; an editor that wrote the corner
 // without the body would be drawing a station one tile wide.
 //
+// `name` is what the readout calls the tile, where that differs from what the
+// chip calls it. A chip sells what pressing it does, so it says "(6x6)" and
+// "(eraser)"; a readout names what is already there, and the size of a station
+// is not news once one is in front of you. Most paints need only the one word.
+//
 // `group` is only how the palette is laid out. Twenty-five chips in one row is
 // a wall of text, and these fall into four honest piles.
 const PAINTS = [
   { key: "wall", cls: T_SOLID, v: S_WALL, label: "wall", group: "ground" },
-  { key: "empty", cls: T_EMPTY, v: 0, label: "empty (eraser)", group: "ground" },
+  { key: "empty", cls: T_EMPTY, v: 0, label: "empty (eraser)", name: "empty",
+    group: "ground" },
   { key: "edge", cls: T_SOLID, v: S_BORDER, label: "map edge", group: "ground" },
   { key: "nw", cls: T_SLOPE, v: 0, label: "slope NW", group: "ground" },
   { key: "ne", cls: T_SLOPE, v: 1, label: "slope NE", group: "ground" },
@@ -75,9 +81,9 @@ const PAINTS = [
   { key: "rocka", cls: T_SOLID, v: S_ROCK_A, label: "rock", group: "objects" },
   { key: "rockb", cls: T_SOLID, v: S_ROCK_B, label: "rock, the other one", group: "objects" },
   { key: "rockbig", cls: T_SOLID, v: S_ROCK_BIG, body: S_ROCK_BODY, size: 2,
-    label: "big rock (2x2)", group: "objects" },
+    label: "big rock (2x2)", name: "big rock", group: "objects" },
   { key: "station", cls: T_SOLID, v: S_STATION, body: S_STATION_BODY, size: 6,
-    label: "station (6x6)", group: "objects" },
+    label: "station (6x6)", name: "station", group: "objects" },
   { key: "over", cls: T_OVER, v: 0, label: "scenery, over", group: "objects" },
   { key: "under", cls: T_UNDER, v: 0, label: "scenery, under", group: "objects" },
 
@@ -161,8 +167,14 @@ let sel = null;
 let clip = null;
 
 // The last tile the pointer was over, which is where a paste goes when there
-// is no selection to put it back into.
+// is no selection to put it back into. It keeps the last tile it saw after the
+// pointer leaves, rather than going to nothing: a paste aimed at where you
+// were last looking is right, and one aimed off the map is clipped.
 let hover = [0, 0];
+
+// Whether the pointer is on the canvas at all, which only the readout cares
+// about. Kept apart from `hover` so that leaving does not move the paste.
+let onCanvas = false;
 
 // What can be taken back, and what taking it back would put back.
 //
@@ -861,6 +873,8 @@ function openDoc(d, name) {
   el("map-w").value = doc.w;
   el("map-h").value = doc.h;
   forgetHistory();
+  onCanvas = false;
+  readout();
   repaint();
   verdict();
   // The editor sits under the list, which on a full table is most of a screen
@@ -1119,6 +1133,39 @@ function chips(host, items, current, onPick) {
   });
 }
 
+// What a tile is, in words, for the readout under the pointer.
+//
+// The two body variants have no paint of their own, because you place the
+// object rather than its middle. They still have to answer, or hovering the
+// far corner of a station would say nothing at all.
+function nameAt(x, y) {
+  const b = at(x, y);
+  const cls = b & 15, v = b >> 4;
+  if (cls === T_EMPTY) return "empty";
+  if (cls === T_SOLID && v === S_ROCK_BODY) return "big rock";
+  if (cls === T_SOLID && v === S_STATION_BODY) return "station";
+  const p = PAINTS.find((q) => q.cls === cls && q.v === v);
+  if (!p) return `class ${cls}, variant ${v}`;
+  return p.name || p.label;
+}
+
+// Where the pointer is and what is under it.
+//
+// Tiles are counted from zero at the top left, which is how the file counts
+// them and how `sim_map_check` names one when it refuses a map. A readout that
+// counted from one would be a second numbering to translate between.
+function readout() {
+  if (typeof document === "undefined") return;
+  const n = el("map-at");
+  if (!n) return;
+  const [x, y] = hover;
+  if (!doc || !onCanvas || x < 0 || y < 0 || x >= doc.w || y >= doc.h) {
+    n.textContent = "";
+    return;
+  }
+  n.textContent = `${x}, ${y}   ${nameAt(x, y)}`;
+}
+
 // Whether a key belongs to whatever has focus rather than to the editor. Not
 // `typing`, which admin.js holds a debounce timer in; see the note at the top.
 function inField(on) {
@@ -1230,6 +1277,8 @@ function wire() {
   c.addEventListener("pointermove", (ev) => {
     if (!doc) return;
     hover = tileAt(ev);
+    onCanvas = true;
+    readout();
     if (!dragging) return;
     const [x, y] = hover;
 
@@ -1306,6 +1355,10 @@ function wire() {
     repaint();
     verdict();
   };
+  c.addEventListener("pointerleave", () => {
+    onCanvas = false;
+    readout();
+  });
   c.addEventListener("pointerup", finish);
   c.addEventListener("pointercancel", () => finish(null));
   c.addEventListener("lostpointercapture", () => finish(null));
@@ -1416,7 +1469,7 @@ if (typeof module !== "undefined") {
     // reason: a station written a tile off its grid is a wall nobody can see.
     lock, stamp, layer, ghost, byteOf,
     // The clipboard, whose failure mode is losing the thing you were carrying.
-    lift, blit, erase, copy, paste, shift, norm, inside,
+    lift, blit, erase, copy, paste, shift, norm, inside, nameAt,
     paint: (key) => PAINTS.find((p) => p.key === key),
     select: (r) => { sel = r; },
     selection: () => sel,

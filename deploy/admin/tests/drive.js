@@ -81,6 +81,11 @@ const server = http.createServer((req, res) => {
   errors.length = 0;
 
   await page.goto(`http://127.0.0.1:${port}/drive.html`);
+  // Opening a map scrolls the editor into view, smoothly. That animation moves
+  // the canvas under the pointer while a drag is being driven, which makes
+  // every coordinate here a guess about when it was measured. Nothing to do
+  // with the editor; a person scrolls and then draws.
+  await page.addStyleTag({ content: "* { scroll-behavior: auto !important; }" });
   await page.click("#map-new");
 
   // Small enough to see all of at a readable zoom, and not a multiple of six,
@@ -334,6 +339,52 @@ const server = http.createServer((req, res) => {
   check("and the cursor goes back",
         (await page.$eval(".canvas-wrap", (n) => n.style.cursor)) === "");
   check("and space drew nothing either", (await pick(90, 72)) === EMPTY, await pick(90, 72));
+
+  // Back to the top left, since panning left the frame scrolled and a tile
+  // outside it is a tile the pointer cannot reach.
+  await page.evaluate(() => {
+    const w = document.querySelector(".canvas-wrap");
+    w.scrollLeft = 0; w.scrollTop = 0;
+  });
+
+  // --- the readout ------------------------------------------------------------
+
+  const says = () => page.$eval("#map-at", (n) => n.textContent);
+
+  await page.mouse.move(...Object.values(await at(37, 21)));
+  check("hovering names the tile under the pointer", (await says()).startsWith("37, 21"),
+        await says());
+
+  await page.mouse.move(...Object.values(await at(0, 0)));
+  check("and counts from zero at the top left", (await says()).startsWith("0, 0"),
+        await says());
+
+  // What is there, not just where. Open ground first.
+  await page.mouse.move(...Object.values(await at(95, 40)));
+  check("empty ground says so", (await says()).endsWith("empty"), await says());
+
+  await pickTool("pencil");
+  await pickPaint("wall");
+  await page.mouse.click(...Object.values(await at(80, 40)));
+  await page.mouse.move(...Object.values(await at(80, 40)));
+  check("a wall says wall", (await says()).endsWith("wall"), await says());
+
+  // The far corner of an object is body, which is nobody's paint. It still has
+  // to name the object it belongs to rather than going blank.
+  await pickPaint("station (6x6)");
+  await page.mouse.click(...Object.values(await at(50, 50)));
+  await page.mouse.move(...Object.values(await at(48, 48)));
+  check("a station's corner names it", (await says()).endsWith("   station"), await says());
+  await page.mouse.move(...Object.values(await at(53, 53)));
+  check("and so does its far body tile", (await says()).endsWith("   station"), await says());
+
+  // Off the canvas there is no tile to name.
+  const frame = await page.$eval(".canvas-wrap", (n) => {
+    const r = n.getBoundingClientRect();
+    return { x: r.x, y: r.y };
+  });
+  await page.mouse.move(frame.x - 40, frame.y - 40);
+  check("leaving the canvas clears the readout", (await says()) === "", await says());
 
   // --- the map still packs ---------------------------------------------------
 
