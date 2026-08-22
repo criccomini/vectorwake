@@ -110,6 +110,19 @@ local pen = marks.pen
 --
 -- Declared up here rather than beside the pages themselves, because the marks
 -- on it are drawn by things a long way above them.
+-- One inset, used on both sides of everything in the menu: the gutter a row's
+-- type is set in from its left edge, and the same number again as the inset
+-- its numbers keep from its right.
+--
+-- The right one was sixteen against a left of twenty-two, so the selection
+-- field behind a row was padded further on one side than the other and the
+-- group rule above it stopped somewhere between the two.
+--
+-- Up here with the primitives rather than beside the marks, because the
+-- week's table reaches it several hundred lines earlier and a local declared
+-- after its first use is a global lookup that comes back nil.
+local GUTTER = 22
+
 local pages = {}
 
 -- A page with nothing on it, said with the dial that means "looking". Forward
@@ -3527,12 +3540,18 @@ function pages.week(v, x, y, w, h, focused)
     local cols, used = {}, 0
     if not packed then
         for _, c in ipairs(want) do
-            if (34 + NAMEW + used + c[2]) * F.scale > tw then break end
+            if (34 + NAMEW + used + c[2] + GUTTER) * F.scale > tw then
+                break
+            end
             cols[#cols + 1] = c
             used = used + c[2]
         end
     end
-    local off = 0
+    -- The rightmost column keeps the same inset from the table's edge that a
+    -- row's numbers keep from theirs. It started at zero, so the last column
+    -- was drawn flush against the panel's own edge: on a phone held sideways
+    -- every figure under TIME was cut down the middle by the wash.
+    local off = GUTTER
     for i = #cols, 1, -1 do
         cols[i].off = off
         off = off + cols[i][2]
@@ -4978,12 +4997,6 @@ local STAGE_TOP = 30
 -- The strip down the left of the stage that the type does not enter. The mark
 -- on the row you are already in sits there, off the column rather than in it,
 -- and it is what gives a lit row its left margin.
-local GUTTER = 22
--- The same number again, as the inset a row's numbers keep from its right
--- edge. It was sixteen, against a gutter of twenty-two on the left, so the
--- selection field behind a row was padded further on one side than the other
--- and the group rule above it stopped somewhere between the two.
-
 -- --- marks -----------------------------------------------------------------
 --
 -- Every destination gets a drawing rather than a word, in the same strokes
