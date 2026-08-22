@@ -67,6 +67,7 @@
   <a href="#activity" id="nav-activity" data-view="activity">Activity</a>
   <a href="#errors" id="nav-errors" data-view="errors">Errors</a>
   <a href="#debug" id="nav-debug" data-view="debug">Debug</a>
+  <a href="#maps" id="nav-maps" data-view="maps">Maps</a>
   <a href="#access" id="nav-access" data-view="access">Access</a>
 </nav>
 
@@ -494,6 +495,80 @@
     <!-- Bans and admins together, because both answer one question: who is
          allowed to do what. They were two sections at opposite ends of a long
          page, which is two scrolls to compare a list against its opposite. -->
+    <!-- Maps, and what each zone plays.
+         Two halves of one page because they are two halves of one job: you
+         draw a room and then you say where it is played. Neither is much use
+         without the other, and a rotation naming a map that does not exist yet
+         is the reason they are not two pages. -->
+    <section class="view" id="view-maps" aria-labelledby="maps-head" hidden>
+      <h2 id="maps-head">Maps</h2>
+
+      <div class="row">
+        <button id="map-new" class="go">new map</button>
+        <span id="map-count" class="dim"></span>
+      </div>
+      <div class="scroller">
+        <table id="maps">
+          <caption class="sr">Maps drawn in this panel</caption>
+          <thead><tr>
+            <th scope="col">name</th><th scope="col">size</th>
+            <th scope="col">bytes</th><th scope="col">played in</th>
+            <th scope="col">edited</th><th scope="col">by</th>
+            <th scope="col"><span class="sr">actions</span></th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p id="maps-empty" class="dim" hidden>Nothing drawn yet. A zone with no
+        map here plays what its zone file names.</p>
+      <p id="maps-note" class="note" role="status" aria-live="polite"></p>
+
+      <!-- The editor. Hidden until there is something open, because an empty
+           canvas with no name is a thing you can spend a while drawing and
+           then fail to save. -->
+      <section id="editor" aria-labelledby="editor-head" hidden>
+        <h3 id="editor-head">Drawing <span id="editor-name" class="mark"></span></h3>
+
+        <div class="row wrap" id="tools">
+          <span class="dim">tile</span>
+          <div class="chips" id="map-palette"></div>
+        </div>
+        <div class="row wrap">
+          <span class="dim">tool</span>
+          <div class="chips" id="map-tools"></div>
+          <label class="row tight"><input type="checkbox" id="map-sym">
+            half-turn symmetry</label>
+          <label class="row tight">size
+            <input id="map-w" type="number" min="9" max="1024" step="1">
+            by
+            <input id="map-h" type="number" min="9" max="1024" step="1">
+            <button id="map-resize" class="quiet">apply</button>
+          </label>
+          <label class="row tight">zoom
+            <input id="map-zoom" type="range" min="1" max="12" step="1" value="4">
+          </label>
+        </div>
+
+        <div class="canvas-wrap">
+          <canvas id="map-canvas" width="640" height="640"
+                  aria-label="The map, one square per tile"></canvas>
+        </div>
+
+        <p id="map-verdict" class="note" role="status" aria-live="polite"></p>
+        <div class="row">
+          <button id="map-save" class="go">save and publish</button>
+          <button id="map-close" class="quiet">close</button>
+          <span id="map-stats" class="dim"></span>
+        </div>
+      </section>
+
+      <h3 id="rotations-head">Rotations</h3>
+      <p class="dim">What each zone plays, in order, at one match each. A zone
+        with nothing here plays what its zone file names.</p>
+      <div id="rotations"></div>
+      <p id="rot-note" class="note" role="status" aria-live="polite"></p>
+    </section>
+
     <section class="view" id="view-access" aria-labelledby="access-head" hidden>
       <h2 id="access-head">Access</h2>
 
@@ -550,5 +625,6 @@
 </dialog>
 
 <script src="admin.js"></script>
+<script src="maps.js"></script>
 </body>
 </html>

@@ -155,7 +155,7 @@ for (const [name, redraw] of [
 // would need a rewrite rule in Caddy to survive a reload. A hash is still
 // somewhere you can bookmark, still what the back button walks, and costs
 // none of that.
-const VIEWS = ["fleet", "pilots", "activity", "errors", "debug", "access", "pilot"];
+const VIEWS = ["fleet", "pilots", "activity", "errors", "debug", "maps", "access", "pilot"];
 
 // The rail holds the main views; `pilot` is reached by link rather than
 // by nav, because there is no such thing as "the pilot page" until you have
@@ -201,6 +201,9 @@ addEventListener("hashchange", () => {
   if (view === "debug") paint("debug", drawDebug);
   if (view === "pilots") paint("pilots", () => drawPilots(el("lookup-q").value.trim()));
   if (view === "access") { paint("bans", drawBans); paint("admins", drawAdmins); }
+  // Defined in maps.js, which loads after this file: by the time a hash can
+  // change, both are here.
+  if (view === "maps") paint("maps", drawMaps);
   if (view === "pilot") paint("pilot", () => lookup(`#${onPilot}`));
 });
 
@@ -296,6 +299,7 @@ function refresh() {
   paint("pilots", () => drawPilots(el("lookup-q").value.trim()));
   paint("bans", drawBans);
   paint("admins", drawAdmins);
+  paint("maps", drawMaps);
 }
 
 async function boot() {

@@ -20,6 +20,10 @@ on:
       - "client/**"
       - "sim/**"
       - "deploy/Dockerfile.client"
+      # The panel's map codec is checked in this job, so a change to it has to
+      # run the job. Nothing else here builds the panel: it is static files
+      # Caddy serves, and this is the one thing about it a machine can check.
+      - "deploy/admin/**"
       - ".github/workflows/client.yml"
   workflow_dispatch:
 
@@ -78,6 +82,14 @@ jobs:
 
       - name: browser viewport tests
         run: node client/tests/viewport_test.js
+
+      # The admin panel writes `.vwmap` files in a browser and the meta-layer
+      # reads them with the core, which refuses anything whose bytes do not
+      # match the hash in its own header. So the panel's codec has to agree
+      # with sim/src/pack.c exactly, and this reads the shipped maps back out
+      # to prove it does.
+      - name: admin map codec
+        run: node deploy/admin/tests/pack_test.js
 
       # A failed native handshake formats the response into the same connection
       # buffer that held it. This pins the overlap and the length Lua may read,

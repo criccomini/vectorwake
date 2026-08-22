@@ -160,7 +160,12 @@ fn report_json(r: &crate::sim::sim_map_report) -> serde_json::Value {
 }
 
 /// Handle the meta routes owned by maps. `None` leaves the request alone.
-pub(super) async fn route(db: &Client, path: &str, body: &serde_json::Value) -> Option<Reply> {
+pub(super) async fn route(
+    catalog: &crate::catalog::Catalog,
+    db: &Client,
+    path: &str,
+    body: &serde_json::Value,
+) -> Option<Reply> {
     if !path.starts_with("/v1/admin/map") && path != "/v1/admin/zone-maps" {
         return None;
     }
@@ -229,9 +234,17 @@ pub(super) async fn route(db: &Client, path: &str, body: &serde_json::Value) -> 
                     })
                 })
                 .collect();
+            // The zones the catalog names, so the rotation half of the page
+            // knows what it may point at. A retired zone with a rotation still
+            // stored shows up anyway, through the rotations: somebody has to
+            // be able to take that off.
             (
                 200,
-                serde_json::json!({ "maps": maps, "rotations": rotations }),
+                serde_json::json!({
+                    "maps": maps,
+                    "rotations": rotations,
+                    "zones": catalog.order,
+                }),
             )
         }
 

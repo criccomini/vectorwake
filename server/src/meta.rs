@@ -1430,7 +1430,7 @@ async fn route(
     if let Some(reply) = public_pilots::route(&meta.throttle, &db, path, body, ip).await {
         return reply;
     }
-    if let Some(reply) = maps::route(&db, path, body).await {
+    if let Some(reply) = maps::route(&meta.catalog, &db, path, body).await {
         return reply;
     }
 
