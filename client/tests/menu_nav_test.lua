@@ -506,15 +506,18 @@ local heads = {}
 for _, r in ipairs(zones.rows) do
     if r.sect then heads[#heads + 1] = r.sect end
 end
-check("the play page is two sections",
-      table.concat(heads, "/") == "zones/community",
-      table.concat(heads, "/"))
-check("and the way out to Discord is a button rather than a row",
-      zones.rows[2].button == "discord", tostring(zones.rows[2].button))
+check("the play page is the zones and nothing else",
+      table.concat(heads, "/") == "zones", table.concat(heads, "/"))
+-- Discord left this page for the same reason friends did: a row on a page is
+-- a place you find by going somewhere else first. It is a button in the
+-- corner of the top line now, on every page and both layouts, and the view
+-- carries the address for it.
+check("and the way out to Discord is a corner button, not a row",
+      zones.discord ~= nil and zones.rows[1].button == nil,
+      tostring(zones.discord))
 
 check("nothing at the foot of the list leaves the game",
-      #zones.rows == 2 and zones.rows[1].label == "chaos"
-          and zones.rows[2].label == "Talk on Discord",
+      #zones.rows == 1 and zones.rows[1].label == "chaos",
       table.concat(texts_of(zones), ", "))
 
 local act2 = menu.step({go = true})
@@ -1177,11 +1180,12 @@ do
     end
 
     menu.open = true
-    local at = discord_row()
-    check("the play page carries a discord row", at ~= nil, "absent")
-
-    menu.click_stage(at)
-    check("tapping it asks the browser to open the invite",
+    -- No row to press any more: Discord is a button in the corner of the top
+    -- line, on every page and both layouts, and this is the press it takes.
+    check("the play page has no discord row left", discord_row() == nil,
+          "still a row")
+    menu.click_discord()
+    check("the corner button asks the browser to open the invite",
           asked and asked.url == "https://play.vectorwake.net/discord",
           asked and asked.url or "nothing asked")
     check("in a new tab", asked and asked.target == "_blank",
@@ -1238,26 +1242,24 @@ end
 -- Nothing the client does from its own loop is inside the tap that asked for
 -- it, and a browser will not open a tab for anything else: desktop allowed a
 -- frame-late window.open, every phone called it a popup and blocked it. So
--- the row carries its address for the page to lay an anchor over, and the
+-- the view carries the address for the page to lay an anchor over, and the
 -- finger lands on that rather than on the canvas.
 
 do
     menu.open = true
-    discord_row()
-    local link, strays = nil, {}
-    for _, r in ipairs(menu.view().rows) do
-        if r.button == "discord" then
-            link = r.link
-        elseif r.link then
-            strays[#strays + 1] = r.label
-        end
-    end
-    check("the row carries its address", link ~= nil, "none")
+    menu.stack = {"root", "play"}
+    local view = menu.view()
+    check("the view carries the address", view.discord ~= nil, "none")
     check("and it is the redirect",
-          link == "https://play.vectorwake.net/discord", tostring(link))
-    -- No other row does, or the page would put a link over a page of the
-    -- game's own.
-    check("and no other row does", #strays == 0, table.concat(strays, ", "))
+          view.discord == "https://play.vectorwake.net/discord",
+          tostring(view.discord))
+    -- No row does, or the page would put a link over a page of the game's
+    -- own. It is one button in the corner and nothing else.
+    local strays = {}
+    for _, r in ipairs(view.rows) do
+        if r.link then strays[#strays + 1] = r.label end
+    end
+    check("and no row does", #strays == 0, table.concat(strays, ", "))
 end
 
 -- `about` is a page under settings rather than a tab of its own, on the same

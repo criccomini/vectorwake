@@ -62,17 +62,6 @@ M.hover = nil           -- the stage row a pointer is resting on
 M.rail_hover = nil      -- and the rail stop, which works the same way
 M.note = nil            -- set by the arena when a connection fails
 M.screen = nil          -- the drawable and its insets, for the about page
--- Whether the window is wide enough for the desktop's row of tabs, which is
--- the layout with a corner to hang buttons off. The same 620 points ui.lua
--- measures, from the same two numbers, because a row that exists in one file
--- and a row that is drawn in the other have to agree about which layout is
--- up. Narrow until the arena has said otherwise: a menu drawn before the
--- first frame is the phone's, and a desktop corrects itself the same frame.
-local function wide()
-    local s = M.screen
-    if not (s and s.d and s.d > 0) then return false end
-    return s.w / s.d >= 620
-end
 -- Whether a thumb is driving this rather than a keyboard, set by the arena
 -- each frame. The controls page is the one page whose rows depend on it: on
 -- glass there is no board to draw and no key column to fill in, so the same
@@ -832,6 +821,34 @@ local function standings_rows()
     return rows
 end
 
+-- The order the columns step in, for a table with no room to draw them as a
+-- row of headings.
+--
+-- A phone gets one column at a time and a stepper to choose which, which is
+-- the control the week above it already uses, so the page teaches it once.
+-- Rank and pilot ride at the end: they are the two orders somebody asks for
+-- least and the two the first line of every row already carries.
+local SORT_ORDER = {"kills", "deaths", "kd", "banked", "run", "rating",
+                    "swing", "time", "pilot", "rank"}
+
+-- What a packed row writes on its second line, in this order, minus whichever
+-- one is the column it is sorted by. The names are the headings the wide
+-- table uses, so nothing is learned twice.
+M.SORT_ORDER = SORT_ORDER
+
+-- One column along, wrapping. Always down from the top of that column's
+-- order: stepping onto a new column and landing on it backwards is a table
+-- that reordered itself twice for one press.
+function M.step_sort(by)
+    local at = 1
+    for i, k in ipairs(SORT_ORDER) do
+        if k == M.sort then at = i end
+    end
+    M.sort = SORT_ORDER[(at - 1 + (by or 1)) % #SORT_ORDER + 1]
+    M.sort_up = false
+    return nil, true
+end
+
 -- A column header, pressed. The same column again turns the order over.
 function M.click_sort(key)
     if not SORTS[key] then return nil, false end
@@ -1207,22 +1224,11 @@ local function play_rows()
     -- a row on a page is a place you find by going somewhere else first, and
     -- who is on is a question asked from wherever you are standing.
     -- See docs/design/friends.md.
-    -- Where the community is, and the only outbound link in the game. It sits
-    -- here because this is where somebody is already thinking about who to
-    -- play with, which is the argument `community.md` makes and the reason it
-    -- is not a tab: the game carries no chat, and the panel about finding
-    -- people should be honest about where the talking happens.
-    -- Drawn as a button rather than as a row, with the mark on it. It is not
-    -- a page of this menu and reading as one is what it did.
-    --
-    -- Only on a phone. The desktop rail carries the same button in its top
-    -- corner, on every page rather than on this one, and drawing both put the
-    -- one outbound link in this game on screen twice.
-    if not wide() then
-        rows[#rows + 1] = {label = "Talk on Discord",
-                           sect = "community", button = "discord",
-                           act = "discord", link = DISCORD}
-    end
+    -- No community section here either, and for the reason the friends row
+    -- went: a row on a page is a place you find by going somewhere else
+    -- first. Discord is a button in the corner of the top line now, on every
+    -- page and on both layouts, which is where the one outbound link in this
+    -- game belongs. See docs/design/community.md.
     -- Nothing about leaving down here. The way out of a game is the tab row's
     -- own leave, which is on it whenever there is something to leave.
     return rows
@@ -2402,10 +2408,12 @@ function M.view()
                  pilot = {name = M.name, rivets = account.rivets or 0},
                  pilot_hot = M.pilot_hot,
                  -- The one outbound link in this game, as the address the
-                 -- corner button carries. Only where there is a corner to
-                 -- carry it: on a phone the play page has the button and the
-                 -- top of the screen is the wordmark alone.
-                 discord = wide() and DISCORD or nil,
+                 -- corner button carries. On every layout: a phone drew it as
+                 -- a row on the play page and had no account button anywhere,
+                 -- which is two different answers to one question and no
+                 -- answer at all to the other. Both buttons ride the line the
+                 -- wordmark is on now, wherever that line happens to be.
+                 discord = DISCORD,
                  discord_hot = M.discord_hot,
                  carousel_hot = M.carousel_hot,
                  -- The question, if one is up. Everything else in the view is
@@ -2420,6 +2428,11 @@ function M.view()
                  -- well; the rail does that from every level now, and this is
                  -- only the way out.
                  note = M.note, closable = not M.home,
+                 -- Which page this is, by name. The drawing keeps a scroll
+                 -- position and has to know when it is looking at something
+                 -- else: carried across, opening standings from the bottom of
+                 -- the ship page would open it halfway down.
+                 at = M.at(),
                  -- How the week's table is being read: which column it is
                  -- ordered on, which way, what has been typed to narrow it,
                  -- and which week it is. All four belong to the page rather
