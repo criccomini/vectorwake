@@ -1217,6 +1217,17 @@ M.scroll = 0
 -- when the window does or a page is opened.
 M.page_scroll = 0
 M.page_extent = 0
+-- And the window that extent was measured against, published beside it for
+-- the same reason and read back the same frame later.
+--
+-- It has to come from the page rather than from the stage, because the pages
+-- do not all measure from the same line. The stage's own rectangle starts at
+-- the top of the panel; the ship page, the week's table and the friends page
+-- are handed a shorter box that begins under the heading. Clamped against the
+-- stage, every one of them stopped short by the difference: the last rows of
+-- a week were reachable by nothing, and a page whose overflow was smaller
+-- than that difference would not move at all.
+M.page_room = 0
 M.page_at = nil
 
 -- Where that page was drawn, for a finger to be tested against. Four returns
@@ -3808,6 +3819,7 @@ function pages.week(v, x, y, w, h, focused)
         end
     end
     M.page_extent = (ty - y) + #(v.rows or {}) * rowh + 12 * F.scale
+    M.page_room = h
     if M.page_extent > h then
         local track = h - (ty - y)
         local bar = math.max(30 * F.scale, track * track / M.page_extent)
@@ -4527,6 +4539,7 @@ function pages.kit(v, x, y, w, h, focused)
         low = cy
     end
     M.page_extent = (low - top) + BAND + 16 * F.scale
+    M.page_room = h
     -- And a thumb down the edge where there is more than fits, which is the
     -- only thing on the page that says a page can be moved at all.
     if M.page_extent > h then
@@ -4739,6 +4752,7 @@ function pages.friends(v, x, y, w, h, focused)
     end
 
     M.page_extent = (at - top) + BAND + 16 * F.scale
+    M.page_room = h
     if M.page_extent > h then
         local track = h - BAND
         local bar = math.max(30 * F.scale, track * track / M.page_extent)
@@ -6561,13 +6575,18 @@ function M.menu(v)
         M.page_at = v.at
         M.page_scroll = 0
     end
-    local slack = math.max(0, M.page_extent - sh)
+    -- Against the page's own window where it published one, and the stage
+    -- otherwise. A page that has never drawn has published neither, and both
+    -- being zero holds the scroll at zero, which is right.
+    local slack = math.max(0, M.page_extent
+                              - (M.page_room > 0 and M.page_room or sh))
     M.page_scroll = math.max(0, math.min(M.page_scroll, slack))
     M.page_x, M.page_y, M.page_w, M.page_h = sx, sy, sw, sh
-    -- Whoever draws sets this. Nothing does on a page that fits, and the
+    -- Whoever draws sets these. Nothing does on a page that fits, and the
     -- clamp above then holds the scroll at zero, which is what a page that
     -- fits wants.
     M.page_extent = 0
+    M.page_room = 0
 
     -- --- the rail
     --
@@ -7046,6 +7065,9 @@ function M.menu(v)
             full = full + rowh
         end
         M.page_extent = (top - sy) + full + 20 * F.scale
+        -- This one measures from the top of the stage, because its rows do,
+        -- so its window is the stage down to the end of the list.
+        M.page_room = (top - sy) + room
         -- The arrows still drag the page rather than walking off the edge of
         -- it, which is what a d-pad and a keyboard need and what a finger
         -- does not care about either way.

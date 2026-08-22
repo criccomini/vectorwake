@@ -1132,5 +1132,72 @@ do
           table.concat(texts(hangar), " "))
 end
 
+-- --- a page that overflows can be scrolled to the end of itself ------------
+--
+-- The scroll was clamped against the stage rectangle while the pages that
+-- overflow are handed a shorter box that starts under the heading. Every one
+-- of them stopped 56 points short on a phone: a week with a dozen pilots on
+-- it would not move at all, and a longer one would not reach its last row.
+-- Both were reported as the standings not scrolling.
+--
+-- Measured rather than looked at, because the difference is a heading's worth
+-- of pixels and it looks like the page simply ending.
+do
+    local function week_rows(n)
+        local out = {}
+        for i = 1, n do
+            out[i] = {label = "Pilot " .. i, rank = i, kills = n - i,
+                      deaths = 1, kd = 1, run = 2, banked = 10 * i,
+                      rating = 1200, swing = 3, played = "9m", index = i,
+                      pick = true}
+        end
+        return out
+    end
+    local function week_view(n)
+        return {depth = 2, sel = 1, rail = RAIL, rail_sel = 1,
+                focus = "stage", home = true, closable = false,
+                at = "standings", table = true,
+                pilot = {name = "Vantage 7", rivets = 0},
+                week = {sort = "kills", filter = "", back = 0, since = ""},
+                rows = week_rows(n)}
+    end
+
+    -- The window a page publishes is its own, and it is shorter than the
+    -- stage. Clamping against the stage is what lost the difference.
+    ui.page_scroll = 0
+    draw(week_view(20), 390, 844, true)
+    check("a page publishes the box it drew into",
+          ui.page_room > 0 and ui.page_room < 844,
+          tostring(ui.page_room))
+
+    -- A phone-sized week with a dozen pilots on it overflows by less than a
+    -- heading, which is exactly the case that would not move at all.
+    ui.page_scroll = 0
+    draw(week_view(13), 390, 844, true)
+    local over = ui.page_extent - ui.page_room
+    check("a week that overflows by a little still has somewhere to go",
+          over > 0, "overflow " .. string.format("%.0f", over))
+    ui.page_scroll = 9999
+    draw(week_view(13), 390, 844, true)
+    check("and a finger can reach all of it",
+          math.abs(ui.page_scroll - over) < 1,
+          string.format("%.0f of %.0f", ui.page_scroll, over))
+
+    -- And the last row is on the screen once it has, in both orientations.
+    -- The clamp and the draw read the same numbers, so a scroll that stops in
+    -- the right place and a row that is drawn are two different claims.
+    for _, size in ipairs({{390, 844, 20}, {844, 390, 20}}) do
+        ui.page_scroll = 0
+        draw(week_view(size[3]), size[1], size[2], true)
+        ui.page_scroll = 9999
+        local drawn = draw(week_view(size[3]), size[1], size[2], true)
+        check("the last pilot of a week is reachable at "
+              .. size[1] .. "x" .. size[2],
+              has(drawn, "Pilot " .. size[3]),
+              "scrolled " .. string.format("%.0f", ui.page_scroll))
+    end
+    ui.page_scroll = 0
+end
+
 print(fails == 0 and "all good" or (fails .. " failed"))
 os.exit(fails == 0 and 0 or 1)
