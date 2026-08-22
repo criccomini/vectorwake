@@ -77,8 +77,40 @@ pub struct sim_feature {
 #[repr(C)]
 pub struct sim_map {
     pub tile: [u8; MAP_TILES * MAP_TILES],
+    /// How much of the array above is the map. The array is always the full
+    /// square so nothing here allocates or moves; these say where the map
+    /// stops, and everything past them the core answers as wall.
+    pub w: u16,
+    pub h: u16,
     pub feature_count: u16,
     pub features: [sim_feature; MAX_FEATURES],
+}
+
+impl sim_map {
+    /// The class of a tile, answering wall for anything off the map, which is
+    /// what `sim_tile_at` answers in the core. Read the array directly and a
+    /// small map is surrounded by whatever its buffer held, which zeroes to
+    /// empty: open ground, as far as anything asking is concerned, in the one
+    /// direction where there is no ground at all.
+    pub fn class_at(&self, tx: usize, ty: usize) -> u8 {
+        if tx >= self.w as usize || ty >= self.h as usize {
+            return 1; // SIM_TILE_SOLID
+        }
+        self.tile[ty * MAP_TILES + tx] & 0x0f
+    }
+
+    /// Whether a hull is stopped by what is on that tile. A shut door and the
+    /// solid half of a slope both count: this is asked by things that route
+    /// and things that look, and both would rather be told no wrongly than
+    /// yes wrongly.
+    pub fn blocks(&self, tx: usize, ty: usize) -> bool {
+        matches!(self.class_at(tx, ty), 1 | 3 | 10)
+    }
+
+    /// The middle of the map, in pixels.
+    pub fn mid(&self) -> (f32, f32) {
+        (self.w as f32 * 16.0 / 2.0, self.h as f32 * 16.0 / 2.0)
+    }
 }
 
 /// One projectile: how it flies, what ends it, and what happens where it
@@ -431,6 +463,7 @@ extern "C" {
     pub fn sim_sizeof_settings() -> u32;
     pub fn sim_sizeof_ship() -> u32;
     pub fn sim_sizeof_events() -> u32;
+    pub fn sim_sizeof_map() -> u32;
     pub fn sim_settings_baseline(cfg: *mut sim_settings, map: *const sim_map);
     /// The arenas live in the core so this and the client cannot disagree
     /// about the shape of the same room.
@@ -455,6 +488,7 @@ extern "C" {
         x: *mut i32,
         y: *mut i32,
     );
+    pub fn sim_map_size(map: *mut sim_map, w: i32, h: i32);
     pub fn sim_map_arena(map: *mut sim_map);
     pub fn sim_map_pit(map: *mut sim_map);
     pub fn sim_eff_max_energy(c: *const sim_ship_class, s: *const sim_ship) -> i32;
@@ -731,6 +765,17 @@ impl World {
 
     fn build(seed: u32, build: fn(&mut sim_map)) -> Self {
         let mut map: Box<sim_map> = zeroed_box();
+        // Full size before the builder draws, so one that only lays a few
+        // tiles gets the whole square to lay them on. A map with no size is
+        // solid everywhere, which is the right answer for a struct nobody
+        // filled in and the wrong one for a canvas.
+        unsafe {
+            sim_map_size(
+                &mut *map as *mut sim_map,
+                MAP_TILES as i32,
+                MAP_TILES as i32,
+            )
+        };
         build(&mut map);
         Self::on_map(seed, std::sync::Arc::from(map))
     }
@@ -1014,6 +1059,21 @@ impl World {
 ///
 /// The error is the reason rather than a number, because the only person who
 /// ever reads one is an operator holding a file they believed was a map.
+/// An empty map at the full size, which is what a caller drawing one by hand
+/// wants: a zeroed struct has no size at all, and a map with no size is solid
+/// everywhere rather than empty everywhere.
+pub fn blank_map() -> Box<sim_map> {
+    let mut map: Box<sim_map> = zeroed_box();
+    unsafe {
+        sim_map_size(
+            &mut *map as *mut sim_map,
+            MAP_TILES as i32,
+            MAP_TILES as i32,
+        )
+    };
+    map
+}
+
 pub fn unpack_map(bytes: &[u8]) -> Result<std::sync::Arc<sim_map>, String> {
     let mut map: Box<sim_map> = zeroed_box();
     let r = unsafe {
@@ -1078,6 +1138,11 @@ mod layout {
                 std::mem::size_of::<sim_events>(),
                 sim_sizeof_events() as usize,
                 "sim_events mirror is the wrong size"
+            );
+            assert_eq!(
+                std::mem::size_of::<sim_map>(),
+                sim_sizeof_map() as usize,
+                "sim_map mirror is the wrong size"
             );
         }
     }
