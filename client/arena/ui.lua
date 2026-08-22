@@ -3889,18 +3889,33 @@ end
 -- are one page rather than two levels of a stack. A page that showed one at a
 -- time made a player memorise the ship they had just left.
 function pages.kit(v, x, y, w, h, focused)
-    -- One ship on a carousel, not a roster in a column.
+    -- One ship in a header band, and the kit under it in two columns.
     --
     -- This was three columns: every hull listed down the left, a detail panel
     -- beside it carrying the role, a sentence and three footprint numbers, and
     -- the kit third. Two thirds of the page went to choosing between seven
     -- things you choose between once, and the numbers were reference material
-    -- on a page about spending points. A ship is a drawing with arrows either
-    -- side of it now, and the kit gets the room.
-    local shipw = math.min(300 * F.scale, w * 0.30)
-    local gap = 24 * F.scale
-    local kx = x + shipw + gap
-    local kw = w - shipw - gap
+    -- on a page about spending points.
+    --
+    -- Then it was a carousel in a column of its own, which is the same
+    -- complaint one size smaller: a drawing and two arrows do not justify a
+    -- third of a monitor, and the kit was reading as one long column beside a
+    -- mostly empty panel. The hull, its name and the budget are one line
+    -- across the top now, which says "this is what you are spending, on this"
+    -- in the space a heading would take anyway, and everything below it is
+    -- kit. See the mocks: this is option B.
+    -- One line where the band has the width for two halves, two where it does
+    -- not: on a phone the budget bar would be a negative number of points
+    -- wide, which draws as a smear over the count beside it.
+    local BAND = 66 * F.scale
+    -- Two columns where there is room for two. Ordered down the left and then
+    -- down the right, which is the order `v.rows` is in, so the cursor walks
+    -- the page in the order the eye reads it.
+    local cols = (w >= 720 * F.scale) and 2 or 1
+    local colgap = 34 * F.scale
+    local colw = (w - colgap * (cols - 1)) / cols
+    local stacked = w < 560 * F.scale
+    if stacked then BAND = 104 * F.scale end
 
     local ship, budget, stats, levels, guns, bombs, charges =
         nil, nil, {}, {}, {}, {}, {}
@@ -3921,63 +3936,75 @@ function pages.kit(v, x, y, w, h, focused)
         if e.index == v.hull_sel then pick = e end
     end
 
+    -- --- the band
+    --
+    -- Hull, name, and the budget it is being spent against, on one line. The
+    -- hull is drawn small because it is a label for which ship this is rather
+    -- than a portrait of it: the roster is eight silhouettes and the name
+    -- under the cursor says which one you are on.
+    local mid = y + (stacked and 34 * F.scale or BAND * 0.46)
+    local shipw = 210 * F.scale
     do
-        local cx = x + shipw / 2
-        local cy = y + 96 * F.scale
         -- The ship is a row of the page like any other, so it takes the
         -- cursor like any other: the arrows either side are what left and
         -- right do while it has it.
         local on = ship ~= nil and cursor(ship)
         if on then
-            wash(x, y + 10 * F.scale, shipw, 190 * F.scale,
-                 pal.a(pal.FRIEND, focused and 0.12 or 0.06))
+            wash(x - 8 * F.scale, y, shipw + 8 * F.scale, BAND - 8 * F.scale,
+                 pal.a(pal.FRIEND, focused and 0.2 or 0.1))
         end
+        local cx = x + 56 * F.scale
         if pick and pick.figure == "pilot" then
-            pilot_mark(cx, cy, pal.a(pal.FRIEND, 0.95), 52 * F.scale,
-                       2.0 * F.scale)
+            pilot_mark(cx, mid, pal.a(pal.FRIEND, 0.95), 30 * F.scale,
+                       1.8 * F.scale)
         elseif pick then
             -- Turning, because it is the one drawing on this page that is
             -- about the ship rather than about the choosing, and a hull seen
             -- from one angle is a silhouette rather than a shape.
-            thumb(cx, cy, pick.hull or 0, pal.a(pal.FRIEND, 0.95),
-                  2.6, F.now * 0.7)
+            thumb(cx, mid, pick.hull or 0, pal.a(pal.FRIEND, 0.95),
+                  1.7, F.now * 0.7)
         end
         -- The arrows, either side, at the ship's own height. They are the
         -- control: a press moves to the next ship along and wraps, so the
         -- whole roster is reachable without a list of it.
         local n = #(v.hulls or {})
         if n > 1 then
-            local ax = 26 * F.scale
-            for _, side in ipairs({{-1, cx - shipw / 2 + ax * 0.4},
-                                   {1, cx + shipw / 2 - ax * 0.4}}) do
+            local ax = 24 * F.scale
+            for _, side in ipairs({{-1, x + 8 * F.scale},
+                                   {1, cx + 48 * F.scale}}) do
                 local dir, px = side[1], side[2]
                 local lit = v.carousel_hot == dir
                 local col = pal.a(pal.FRIEND,
-                                  lit and 1 or (on and 0.8 or 0.55))
-                F.layer:tri(px + dir * 5 * F.scale, ry(cy),
-                            px - dir * 4 * F.scale, ry(cy - 8 * F.scale),
-                            px - dir * 4 * F.scale, ry(cy + 8 * F.scale), col)
-                hit(px - ax / 2, cy - 22 * F.scale, ax, 44 * F.scale,
+                                  lit and 1 or (on and 0.9 or 0.6))
+                F.layer:tri(px + dir * 5 * F.scale, ry(mid),
+                            px - dir * 4 * F.scale, ry(mid - 8 * F.scale),
+                            px - dir * 4 * F.scale, ry(mid + 8 * F.scale), col)
+                hit(px - ax / 2, mid - 20 * F.scale, ax, 40 * F.scale,
                     "carousel", dir)
             end
         end
-        local ty = y + 168 * F.scale
-        txt(pick and pick.label or "", cx, ty, 26 * F.scale,
-            pal.a(pal.INK, on and 1 or 0.95), "center", MENU_FONT)
-        -- Which of the seven this is, so the arrows say where they are going.
+        local nx = cx + 68 * F.scale
+        txt(pick and pick.label or "", nx, mid - 6 * F.scale, 20 * F.scale,
+            pal.a(pal.INK, on and 1 or 0.95), nil, MENU_FONT)
+        -- Which of the eight this is, so the arrows say where they are going.
         if n > 1 and pick then
-            lbl(tostring(pick.index) .. " of " .. tostring(n), cx,
-                ty + 20 * F.scale, pal.a(pal.DIM, 0.7), "center")
+            lbl(tostring(pick.index) .. " of " .. tostring(n), nx,
+                mid + 14 * F.scale, pal.a(pal.DIM, 0.7))
         end
         -- Published last, so the arrows beat it: a press on one of them is a
         -- press on the arrow rather than on the ship behind it.
         if live and ship then
-            hit(x, y + 10 * F.scale, shipw, 190 * F.scale, "stage", ship.index)
+            hit(x - 8 * F.scale, y, shipw + 8 * F.scale, BAND - 8 * F.scale,
+                "stage", ship.index)
         end
     end
-
-    vrule(kx - 16 * F.scale, y + 6 * F.scale, h - 12 * F.scale,
-          pal.a(pal.RADAR_TILE, 0.45), 16 * F.scale)
+    -- The one rule on the page that is not a group head: it separates the ship
+    -- from what is being spent on it, which are the two halves of the line.
+    -- Stacked, they are not halves of a line and there is nothing to separate.
+    if not stacked then
+        vrule(x + shipw + 16 * F.scale, y + 6 * F.scale, BAND - 20 * F.scale,
+              pal.a(pal.RADAR_TILE, 0.45), 14 * F.scale)
+    end
 
     -- The kit. `v.rows` is the model in the order a pilot thinks about it, and
     -- the groups are drawn where they belong rather than where they fall.
@@ -3986,34 +4013,46 @@ function pages.kit(v, x, y, w, h, focused)
     -- are standing on, so nothing in it is the cursor and nothing in it takes
     -- a press. `v.sel` indexes the roster then, and a kit row whose index
     -- happened to match would light for no reason a player could explain.
-    local cy = y + 14 * F.scale
-
-    -- What the budget is, as a bar and as a number. It is the one figure the
-    -- whole page is spending against, so it stands at the head of it.
+    -- What the budget is, as a bar and as a number, on the band's other half.
+    -- It is the one figure the whole page is spending against, and the ship it
+    -- is being spent on is at the far end of the same line.
     if budget then
         local spent, total = budget.choice or 0, budget.choices or 30
         local left = total - spent
-        lbl("kit", kx, cy + 8 * F.scale)
-        local bx = kx + 34 * F.scale
-        local bw = kw - 34 * F.scale - 150 * F.scale
-        rect(bx, cy + 5 * F.scale, bw, 5 * F.scale,
-             pal.a(pal.RADAR_TILE, 0.35))
+        local by = stacked and (y + 80 * F.scale) or mid
+        local bx0 = stacked and x or (x + shipw + 42 * F.scale)
+        lbl("kit", bx0, by + 3 * F.scale)
+        local bx = bx0 + 34 * F.scale
+        local bw = math.max(24 * F.scale, x + w - bx - 150 * F.scale)
+        rect(bx, by, bw, 5 * F.scale, pal.a(pal.RADAR_TILE, 0.35))
         if spent > 0 then
-            rect(bx, cy + 5 * F.scale, bw * math.min(1, spent / total),
-                 5 * F.scale, pal.a(pal.FRIEND, 0.9))
+            rect(bx, by, bw * math.min(1, spent / total), 5 * F.scale,
+                 pal.a(pal.FRIEND, 0.9))
         end
-        txt(tostring(spent), bx + bw + 12 * F.scale, cy + 8 * F.scale,
+        txt(tostring(spent), bx + bw + 12 * F.scale, by + 3 * F.scale,
             17 * F.scale, pal.a(pal.INK, 0.95))
         txt("/ " .. total, bx + bw + 12 * F.scale
             + text_w(tostring(spent), 17 * F.scale) + 6 * F.scale,
-            cy + 9 * F.scale, 12 * F.scale, pal.a(pal.DIM, 0.9))
-        txt(left .. " left", kx + kw, cy + 8 * F.scale, 13 * F.scale,
+            by + 4 * F.scale, 12 * F.scale, pal.a(pal.DIM, 0.9))
+        txt(left .. " left", x + w, by + 3 * F.scale, 13 * F.scale,
             pal.a(left == 0 and pal.DIM or pal.CHARGE_COL, 0.95), "right")
-        cy = cy + 24 * F.scale
     end
 
+    -- --- the kit, under the band
+    --
+    -- `kx`, `kw` and `cy` are where the next group goes. A column sets them
+    -- and the group helpers below read them, which is what lets the same
+    -- helpers lay out one column on a phone and two on a monitor.
+    local kx, kw = x, colw
+    local cy = y + BAND + 4 * F.scale
+
+    -- Air over each group head, so a short kit stands in the room it has
+    -- rather than piling up under the band with three hundred points of
+    -- nothing beneath it. Set per column from what that column came to.
+    local pad = 0
+    local HEAD = 36 * F.scale
     local function rule(label, note)
-        cy = cy + 6 * F.scale
+        cy = cy + 6 * F.scale + pad
         ticks(kx, cy, kw, pal.a(pal.RADAR_TILE, 0.45), 14 * F.scale)
         cy = cy + 16 * F.scale
         if label then
@@ -4100,22 +4139,23 @@ function pages.kit(v, x, y, w, h, focused)
 
     -- The stats: five ladders of six, and the two steps past six that the
     -- shelf sells, behind a divider so the page says which is which without a
-    -- word about it.
-    rule("stats", "six a stat is the whole budget, the last two are bought")
-    for _, r in ipairs(stats) do ladder(r) end
-
-    -- The two weapons, on the same ladders. These were chips, both wearing the
-    -- word "rung": one word for two different weapons, and no way to see which
-    -- rung you were on or to climb one. What a level is is a position on a
-    -- ladder, so it is drawn as one and reads as L1, L2, L3.
-    if #levels > 0 then
-        -- What the dim step means, written where a player first meets one.
-        -- Both ladders here are one rung long for an account that has bought
-        -- nothing, so this is the row that raises the question.
-        rule("weapon level", "rung zero is what the trigger already fires; "
-                             .. "a dim step is one upgrades still holds")
-        for _, r in ipairs(levels) do
-            ladder(r, function(n) return "L" .. (n + 1) end)
+    -- word about it. Then the two weapons, on the same ladders. Those were
+    -- chips, both wearing the word "rung": one word for two different weapons,
+    -- and no way to see which rung you were on or to climb one. What a level
+    -- is is a position on a ladder, so it is drawn as one and reads as L1,
+    -- L2, L3.
+    local function ladders()
+        rule("stats", "six a stat is the whole budget, the last two are bought")
+        for _, r in ipairs(stats) do ladder(r) end
+        if #levels > 0 then
+            -- What the dim step means, written where a player first meets
+            -- one. Both ladders here are one rung long for an account that
+            -- has bought nothing, so this is the row that raises the question.
+            rule("weapon level", "rung zero is what the trigger already fires; "
+                                 .. "a dim step is one upgrades still holds")
+            for _, r in ipairs(levels) do
+                ladder(r, function(n) return "L" .. (n + 1) end)
+            end
         end
     end
 
@@ -4140,18 +4180,63 @@ function pages.kit(v, x, y, w, h, focused)
         end
         cy = cy + ch + 8 * F.scale
     end
-    chips_for(guns, "gun")
-    chips_for(bombs, "bomb")
+    local function triggers()
+        chips_for(guns, "gun")
+        chips_for(bombs, "bomb")
+        -- The charges, which are the one thing on this page a death does not
+        -- give back, so the page says so where they are chosen.
+        if #charges > 0 then
+            rule("charges", "spent charges do not come back when you die")
+            -- On the same ladder as everything else. These were the one group
+            -- with a row shape of their own: the name on the left, the pips
+            -- at an offset of their own, and no count at the end, so a page
+            -- that is one kind of control all the way down had two.
+            for _, r in ipairs(charges) do ladder(r) end
+        end
+    end
 
-    -- The charges, which are the one thing on this page a death does not give
-    -- back, so the page says so where they are chosen.
-    if #charges > 0 then
-        rule("charges", "spent charges do not come back when you die")
-        -- On the same ladder as everything else. These were the one group
-        -- with a row shape of their own: the name on the left, the pips at an
-        -- offset of their own, and no count at the end, so a page that is one
-        -- kind of control all the way down had two.
-        for _, r in ipairs(charges) do ladder(r) end
+    -- What a column comes to before any air is added, so the air can be
+    -- shared out between its heads rather than left at the bottom. The chips
+    -- are measured by the same wrap the drawing uses, since a narrow column
+    -- puts them on two lines and a wide one on one.
+    local function chip_lines(list, width)
+        if #list == 0 then return 0 end
+        local lines, px = 1, 0
+        for _, r in ipairs(list) do
+            local cw = math.max(62 * F.scale,
+                                text_w(r.short or r.label or "",
+                                       9 * F.scale) + 24 * F.scale)
+            if px > 0 and px + cw > width then lines = lines + 1 px = 0 end
+            px = px + cw + 8 * F.scale
+        end
+        return lines
+    end
+    local function share(heads, natural)
+        local room = h - BAND - 10 * F.scale
+        if heads < 1 then return 0 end
+        return math.max(0, math.min(52 * F.scale, (room - natural) / heads))
+    end
+
+    local top = cy
+    local width = (cols == 2) and colw or w
+    local lad_heads = 1 + ((#levels > 0) and 1 or 0)
+    local lad_high = lad_heads * HEAD + (#stats + #levels) * srow
+    local trg_heads = ((#guns > 0) and 1 or 0) + ((#bombs > 0) and 1 or 0)
+                      + ((#charges > 0) and 1 or 0)
+    local trg_high = trg_heads * HEAD + #charges * srow
+        + (chip_lines(guns, width) + chip_lines(bombs, width))
+          * (ch + 6 * F.scale) + 16 * F.scale
+
+    if cols == 2 then
+        pad = share(lad_heads, lad_high)
+        ladders()
+        kx, kw, cy = x + colw + colgap, colw, top
+        pad = share(trg_heads, trg_high)
+        triggers()
+    else
+        pad = share(lad_heads + trg_heads, lad_high + trg_high)
+        ladders()
+        triggers()
     end
 end
 
