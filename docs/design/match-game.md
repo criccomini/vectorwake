@@ -512,6 +512,14 @@ stays the place a pilot held in the week rather than in the filter: somebody
 who is fourteenth does not become first because the other thirteen were
 hidden.
 
+Under about five hundred points of width a row stops being a line of columns.
+Two of them fitted on a phone and the second was drawn half off the panel's
+edge, so a leaderboard's entire content was how many times everybody died. A
+packed row is two lines instead: who, with the one number the table is ordered
+on, and the rest underneath in the small face. Which number that is, is a
+stepper, the same control the week's own name already uses, and the filter box
+takes a line of its own rather than sharing one.
+
 ## What goes
 
 The direction is mostly subtraction. Named here because a design document

@@ -72,8 +72,48 @@ descends where it has somewhere to go, though the ship page no longer does:
 picking a hull and spending its thirty points are the same act seen twice, so
 the carousel and the ladders are one page rather than two levels.
 
-The tab row sits on top on a desktop and on the bottom edge of a phone, where
-a thumb reaches it. That is the only thing about the layout that varies.
+## What the window decides
+
+Two questions, not one, and for a while it was only the first.
+
+**Width** decides where the tabs go. Under 620 points they are a bar along the
+bottom edge, where a thumb reaches them; over it they are a row across the top
+beside the wordmark. That is a question about width because what it settles is
+whether five words fit up there.
+
+**Height** decides how much room there is to spend. Under 500 points the type
+zoom comes off and the margins pull in. This is the question that was missing:
+a phone held sideways is 844 points wide and 390 tall, which is how anybody
+plays a game like this, and measuring width alone gave it the desktop layout
+at desktop size in 390 points of screen. Every page lost its bottom half.
+
+Landscape therefore takes the top row, which is the right answer for it: 56
+points of height against the bottom bar's 84, at the size a phone reads.
+
+The far end of the top line carries two buttons on both layouts, the account
+and the way out to Discord, with the wordmark giving up size to make room and
+Discord wearing its mark alone where the word will not fit. The tab row is
+bounded by them and gives up its gaps before its type. Laid out from opposite
+ends and never told about each other, the two ran into the middle of a
+landscape phone and the last tab was drawn under a pill that took its taps.
+
+## Scrolling
+
+Pages scroll, in pixels, dragged by a finger and pushed by a wheel notch. The
+offset is reset when the page changes and clamped against what the page came
+to on the last frame, since only the page knows how tall it is and it does not
+know until it has drawn.
+
+Every page draws whole rows only. There is no scissor to clip a half row
+against, and there could not be one that helped: type comes from the gui,
+which draws over every mesh the interface lays down, so nothing behind a
+heading can cover a row that has slid under it. What a row does at the edge is
+appear whole or not at all.
+
+The ship page keeps its band pinned and slides the kit under it, because the
+band carries the budget every row below it is spent against. The week's table
+keeps its heading for the same reason. A list still follows the cursor as well,
+so the arrows and a d-pad drag the page rather than walking off the edge of it.
 
 Adding a level costs a table in `client/arena/menu.lua` and nothing in the
 drawing code. `menu.view()` hands the interface a title, rows, and which one is
