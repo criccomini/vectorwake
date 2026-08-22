@@ -1377,15 +1377,16 @@ do
           #v.rows[3].acts == 1 and v.rows[3].acts[1].label == "unfriend",
           tostring(#v.rows[3].acts))
 
-    check("the room you are in is its own section",
-          v.rows[4].sect == "in this game"
-          and v.rows[4].acts[1].act == "do_befriend", said[4])
-    -- Adding takes a name off the room list, and this is where it goes. A
-    -- press whose whole visible effect is a row disappearing reads as a press
-    -- that did nothing.
-    check("somebody you added and are waiting on has a home",
-          v.rows[5].sect == "you added" and v.rows[5].detail == "yesterday",
-          said[5])
+    -- Adds nobody has answered, straight under the friends they are trying to
+    -- join: they asked you, it closed, you asked them, in that order. It was
+    -- headed "you added", which names the press rather than what is sitting
+    -- there, and it sat below the room roster.
+    check("what you sent sits under the friends it is trying to join",
+          v.rows[4].sect == "sent" and v.rows[4].detail == "yesterday",
+          said[4])
+    check("the room you are in comes after it",
+          v.rows[5].sect == "in this game"
+          and v.rows[5].acts[1].act == "do_befriend", said[5])
 
     -- And the list that makes an ignore reversible. The ignored are the only
     -- rows on it anybody presses; the rest are what makes the heading true.
@@ -1424,6 +1425,13 @@ do
     menu.click_friend(3, 1)
     check("unfriending takes both directions", account.friended ~= nil
           and account.friended.who == 12 and account.friended.add == false,
+          tostring(account.friended and account.friended.who))
+    -- And taking back an add you sent is the same call from the other end.
+    account.friended = nil
+    menu.click_friend(4, 1)
+    check("and cancelling what you sent takes it back",
+          account.friended ~= nil and account.friended.who == 15
+          and account.friended.add == false,
           tostring(account.friended and account.friended.who))
     account.friended = nil
     menu.click_friend(6, 1)

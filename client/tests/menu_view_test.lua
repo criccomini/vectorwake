@@ -1199,5 +1199,80 @@ do
     ui.page_scroll = 0
 end
 
+-- --- the tab row tiles, and no two tabs share a pixel -------------------
+--
+-- The field behind a lit tab was a flat eleven points either side of the word,
+-- against a gap that starts at twenty-one and shrinks to nine as the window
+-- narrows. So two lit fields overlapped at every width: by a point on the
+-- widest, by thirteen on the narrowest, which is what a hovered tab beside the
+-- one you are on looked like. The hit boxes had the same defect at eight
+-- points, and the first box published wins, so the left-hand tab quietly took
+-- a few points of its neighbour.
+--
+-- Both are half the gap now, which makes the row a tiling: nothing overlaps
+-- and nothing between two tabs belongs to neither.
+do
+    local function tab_boxes()
+        local out = {}
+        for _, hbox in ipairs(ui.hits) do
+            if hbox.action == "rail" then out[#out + 1] = hbox end
+        end
+        table.sort(out, function(a, b) return a.x < b.x end)
+        return out
+    end
+    -- The lit fields, by the color and the height only they wear: team blue
+    -- at the weights a tab uses, in a band 34 points tall.
+    local function lit_fields(scale)
+        local out = {}
+        for _, r in ipairs(rects) do
+            local c = r.col
+            if c and c[1] == pal.FRIEND[1] and c[2] == pal.FRIEND[2]
+               and c[3] == pal.FRIEND[3]
+               and math.abs(r.h - 34 * scale) < 1.5 and r.w < 300 then
+                out[#out + 1] = r
+            end
+        end
+        table.sort(out, function(a, b) return a.x < b.x end)
+        return out
+    end
+
+    -- Wide and squeezed. The gap is 21 points at the top and floors at 9, and
+    -- the old field overlapped at both ends of that range.
+    for _, wide in ipairs({1600, 1280, 900, 700}) do
+        -- The tab you are on, with the pointer resting on the one before it,
+        -- which is the pair that has to be looked at.
+        draw({depth = 1, sel = 0, rail = RAIL, rail_sel = 2, rail_hover = 1,
+              focus = "rail", home = true, closable = false,
+              pilot = {name = "Vantage 7", rivets = 0}, rows = {}}, wide, 800)
+        local boxes = tab_boxes()
+        local worst, at = 0, nil
+        for i = 1, #boxes - 1 do
+            local over = (boxes[i].x + boxes[i].w) - boxes[i + 1].x
+            if over > worst then worst, at = over, i end
+        end
+        check("no tab takes a press meant for the next at " .. wide,
+              #boxes == #RAIL and worst <= 0.01,
+              string.format("%d boxes, %.1f points over at %s",
+                            #boxes, worst, tostring(at)))
+        -- And nothing between two of them belongs to neither, which is the
+        -- other half of tiling: a press in the gap has to land somewhere.
+        local hole = 0
+        for i = 1, #boxes - 1 do
+            hole = math.max(hole, boxes[i + 1].x - (boxes[i].x + boxes[i].w))
+        end
+        check("and nothing between two tabs is dead at " .. wide,
+              hole <= 0.01, string.format("%.1f points of hole", hole))
+
+        local fields = lit_fields(1.18)
+        local lap = 0
+        for i = 1, #fields - 1 do
+            lap = math.max(lap, (fields[i].x + fields[i].w) - fields[i + 1].x)
+        end
+        check("the lit tab and the hovered one do not overlap at " .. wide,
+              #fields == 2 and lap <= 0.01,
+              string.format("%d fields, %.1f points over", #fields, lap))
+    end
+end
+
 print(fails == 0 and "all good" or (fails .. " failed"))
 os.exit(fails == 0 and 0 or 1)

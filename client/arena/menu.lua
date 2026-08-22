@@ -1232,6 +1232,24 @@ local function friend_rows()
             .. (flying > 0 and (", " .. flying .. " flying") or "")
     end
 
+    -- Adds you have made and nobody has answered, straight under the friends
+    -- they are trying to join. Those are the three states of one relationship,
+    -- read in order: they asked you, it closed, you asked them. The room
+    -- roster below is a different kind of list, of people you could ask.
+    --
+    -- "Sent" rather than "you added", which named the press rather than what
+    -- is sitting there. The section exists so that adding somebody has a
+    -- visible consequence: without it a press took a name off a list and put
+    -- it nowhere.
+    first = #rows + 1
+    name_rows(rows, "sent", account.waiting, function(p)
+        return {detail = ago_words(p.ago), state = "sent",
+                acts = {{label = "cancel", card = "take it back",
+                         act = "do_unfriend"}},
+                act = "friend_card"}
+    end)
+    if rows[first] then rows[first].sect_note = tostring(#account.waiting) end
+
     -- The room you are in, which is still the way most friends are made: the
     -- page you add somebody on is the one you are already reading.
     first = #rows + 1
@@ -1241,18 +1259,6 @@ local function friend_rows()
                 act = "friend_card"}
     end)
     if rows[first] then rows[first].sect_note = tostring(#account.here) end
-
-    -- Presses already made. It exists so that adding somebody has a visible
-    -- consequence: without it a press took a name off the list above and put
-    -- it nowhere.
-    first = #rows + 1
-    name_rows(rows, "you added", account.waiting, function(p)
-        return {detail = ago_words(p.ago), state = "sent",
-                acts = {{label = "cancel", card = "take it back",
-                         act = "do_unfriend"}},
-                act = "friend_card"}
-    end)
-    if rows[first] then rows[first].sect_note = tostring(#account.waiting) end
 
     -- And everybody who has ever added you, whatever came of it. The ignored
     -- are the only rows here anybody presses; the rest are context, and the

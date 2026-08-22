@@ -6698,6 +6698,10 @@ function M.menu(v)
     -- where they are drawn. It was written twice, which is how a row that
     -- shrank to fit could still be drawn at the size it did not fit in.
     local tab_px = 15 * F.scale
+    -- And what stands between them. Hoisted for the same reason `tab_px` is:
+    -- the field behind a lit tab is measured against this gap, and a number
+    -- the drawing had to guess at is a field that overlaps its neighbour.
+    local tab_gap = 21 * F.scale
     if words then
         local at0 = rx + wordmark_w((tall and 26 or 22) * F.scale)
                     + 40 * F.scale
@@ -6707,7 +6711,6 @@ function M.menu(v)
         -- pills publish their hit boxes first: on a phone held sideways,
         -- settings was drawn on screen and could not be tapped.
         local room = (corner_left or (rx + rw)) - 12 * F.scale - at0
-        local gap = 21 * F.scale
         local function span(p, g)
             local w = 0
             for i, e in ipairs(rail) do
@@ -6719,17 +6722,17 @@ function M.menu(v)
         -- point smaller still reads and a row that overlaps does not. Both
         -- stop at a floor: past it the answer is not a smaller row, and the
         -- window is narrow enough for the bottom bar anyway.
-        while gap > 9 * F.scale and span(tab_px, gap) > room do
-            gap = gap - F.scale
+        while tab_gap > 9 * F.scale and span(tab_px, tab_gap) > room do
+            tab_gap = tab_gap - F.scale
         end
-        while tab_px > 10.5 * F.scale and span(tab_px, gap) > room do
+        while tab_px > 10.5 * F.scale and span(tab_px, tab_gap) > room do
             tab_px = tab_px - 0.5 * F.scale
         end
         local at = at0
         for i, e in ipairs(rail) do
             ww[i] = text_w(e.label or "", tab_px)
             wx[i] = at
-            at = at + ww[i] + gap
+            at = at + ww[i] + tab_gap
         end
     elseif not vertical then
         local cap = 170 * F.scale
@@ -6786,6 +6789,14 @@ function M.menu(v)
             -- word being slightly bolder than its neighbours. The rule stays,
             -- because it is what ties the tab to the panel under it.
             local fh = 34 * F.scale
+            -- Half the gap either side, so the fields meet exactly and the
+            -- row tiles. It was a flat eleven points, against a gap that
+            -- starts at twenty-one and shrinks to nine as the window narrows,
+            -- so two lit fields overlapped by a point on the widest window
+            -- and by thirteen on the narrowest. A tab you are on drawn under
+            -- the tab beside it is the one thing this row exists to say,
+            -- said wrong.
+            local pad = tab_gap / 2
             if sel or hot then
                 -- Brighter while the arrows are in the row, down to the weight
                 -- it keeps for saying where you are once they have gone into
@@ -6794,8 +6805,8 @@ function M.menu(v)
                 -- of the answer to what up and down will do.
                 local a = 0.1
                 if sel then a = focused and 0.14 or 0.26 end
-                rect(wx[i] - 11 * F.scale, cy - fh / 2,
-                     ww[i] + 22 * F.scale, fh, pal.a(pal.FRIEND, a))
+                rect(wx[i] - pad, cy - fh / 2, ww[i] + 2 * pad, fh,
+                     pal.a(pal.FRIEND, a))
             end
             txt(e.label, wx[i], cy, px,
                 pal.a(sel and pal.FRIEND or pal.INK, sel and 1
@@ -6806,12 +6817,16 @@ function M.menu(v)
             -- a line under it is one mark too many.
             if e.link then
                 M.link_dom = string.format("%.1f,%.1f,%.1f,%.1f,%s",
-                    (wx[i] - 6 * F.scale) / F.density,
+                    (wx[i] - pad) / F.density,
                     (cy - 14 * F.scale) / F.density,
-                    (ww[i] + 12 * F.scale) / F.density,
+                    (ww[i] + 2 * pad) / F.density,
                     (28 * F.scale) / F.density, e.link)
             end
-            hit(wx[i] - 8 * F.scale, ry_, ww[i] + 16 * F.scale, rh, "rail", i)
+            -- The same measure again, so what a press lands on is the field
+            -- it landed in. At a flat eight points the boxes overlapped once
+            -- the gap fell under sixteen, and the first box published wins:
+            -- the left-hand tab quietly took a few points of its neighbour.
+            hit(wx[i] - pad, ry_, ww[i] + 2 * pad, rh, "rail", i)
         end
         if not words and hot then
             -- The stage's own hover weight, and only the field: the lit rule
