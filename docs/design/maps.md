@@ -98,10 +98,12 @@ tiles under it: the corner that would touch one is the same corner the face
 is holding up. That is what stops the staircase coming back as the square
 backing behind a smooth front.
 
-The generator draws its diagonals this way, as a pair: a run leaning one way
-beside a run leaning the other, their solid halves facing away from each other
-so the material between them is the wall. Two tiles across, and not a solid
-tile in it.
+The generator draws its diagonals this way, as a pair of tiles side by side,
+each filling the corner nearest the other. Their solid halves meet along the
+whole of the edge they share and their open halves fall outside, which leaves
+**one stripe** with a face down each side. Two tiles across, not a solid tile
+in it, and the two faces are parallel: both are the run's own line, a tile
+apart. A stripe, not a vee and not a zigzag.
 
 Two and not one, because a single run is a **one-way wall**. Tiles of one
 variant meet corner to corner, so the face they make is continuous and the

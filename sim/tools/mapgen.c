@@ -226,17 +226,20 @@ static void m_lattice(int x, int y, int w, int h, uint8_t wall) {
 /* A 45-degree run, drawn as a wall a ship slides along rather than a staircase
  * it rattles down.
  *
- * Two tiles across, and no solid tile in it: a run of slopes leaning one way
- * beside a run leaning the other, their solid halves facing away from each
- * other so the material between them is the wall. Two tiles rather than one
- * because a single run is a one-way wall, and rather than three because the
- * pair needs no spine down the middle.
+ * Two tiles across, and no solid tile in it. The two are side by side and each
+ * fills the corner nearest the other, so their solid halves meet along the
+ * whole of the edge they share and their open halves fall outside. What that
+ * leaves is one stripe with a face down each side, and the two faces are
+ * parallel: both are the run's own line, a tile apart. It is a stripe rather
+ * than a vee or a zigzag, which is worth saying because "one leaning each way"
+ * describes the corners and reads like the faces.
  *
- * What makes the pair work is that the two runs share a whole edge. A tile's
- * solid half reaches its neighbour's solid half along the full length of the
- * side they have in common, going across the run and along it both. That is
- * the difference from every other diagonal a square grid can draw, all of
- * which meet corner to corner and pinch to a point there.
+ * Two tiles rather than one because a single run is a one-way wall, and rather
+ * than three because the pair needs no spine down the middle.
+ *
+ * The shared edge is the whole trick. Every other diagonal a square grid can
+ * draw meets corner to corner and pinches to a point there; this one does not,
+ * across the run or along it.
  *
  * A pinch is not a hole to a hull, which is three tiles across and cannot fit
  * through a point. It is a hole to a bullet. The stepped diagonal this
