@@ -232,7 +232,7 @@ fn newest(pattern: &str) -> Vec<(PathBuf, SystemTime)> {
                 .collect()
         })
         .unwrap_or_default();
-    found.sort_by(|a, b| b.1.cmp(&a.1));
+    found.sort_by_key(|f| std::cmp::Reverse(f.1));
     found
 }
 
