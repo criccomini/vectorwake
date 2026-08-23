@@ -165,6 +165,54 @@ check("the tab row is play, ship, upgrades, friends, standings, settings",
 check("the rail carries the destinations", ship_at and settings_at,
       "ship " .. tostring(ship_at) .. ", settings " .. tostring(settings_at))
 
+-- The week's filter is the same field the friends page takes a call sign in,
+-- and it answers the same arrows: down off the tabs lands in it, down again is
+-- the table, up comes back, up again is the tabs.
+do
+    local kept_stack, kept_sel = menu.stack, menu.sel
+    menu.open, menu.home = true, true
+    menu.stack = {"root"}
+    menu.sel = {root = top_index("standings")}
+    menu.filter_on = false
+    menu.step({down = true})
+    check("down off the tabs opens standings with the cursor in its filter",
+          menu.at() == "standings" and menu.filter_on == true,
+          menu.at() .. "/" .. tostring(menu.filter_on))
+    check("and the page says so", menu.view().week.filter_on == true,
+          tostring(menu.view().week.filter_on))
+    menu.step({down = true})
+    check("and down again goes to the table", menu.filter_on == false,
+          tostring(menu.filter_on))
+    menu.sel.standings = 1
+    menu.step({up = true})
+    check("up off the first row comes back to it", menu.filter_on == true,
+          tostring(menu.filter_on))
+    menu.step({up = true})
+    check("and up out of it goes back to the tabs",
+          menu.at() == "root" and menu.filter_on == false,
+          menu.at() .. "/" .. tostring(menu.filter_on))
+    menu.stack, menu.sel = kept_stack, kept_sel
+end
+
+-- Right is enter on a list of places and nothing on a list of games. An arrow
+-- is how a list is read, and reading the third game on it should not put you
+-- in the second.
+do
+    local kept_stack, kept_sel = menu.stack, menu.sel
+    menu.open, menu.home = true, true
+    menu.stack = {"root", "play"}
+    menu.sel = {play = 1}
+    local joined, moved = menu.step({right = true})
+    check("right on a game does not join it",
+          joined == nil and moved == false and menu.at() == "play",
+          tostring(joined) .. "/" .. tostring(moved) .. "/" .. menu.at())
+    -- And the row under the cursor really was a game, which is what makes the
+    -- check above about right rather than about an empty list.
+    check("and enter on the same row still does",
+          menu.step({go = true}) == "join", "nothing joined")
+    menu.stack, menu.sel = kept_stack, kept_sel
+end
+
 -- --- and the two buttons at the end of that row are on the row -------------
 --
 -- They sit beside the tabs, they do what a tab does, and until now a hand on
@@ -1800,6 +1848,64 @@ do
     }
     account.entitlements = {}
     account.kits = {}
+
+    -- --- which key throws which charge -------------------------------------
+    --
+    -- A kit carries two kinds, and which of them the first key spends is the
+    -- only thing left to decide once both are aboard. The kit is counts by
+    -- kind and the core numbers the kinds, so without a preference the
+    -- lower-numbered one always came first.
+    do
+        -- Two kinds aboard, which is what a slot each means. The ceiling this
+        -- block sets up carries one, so the second is opened for this check
+        -- and shut again after it.
+        CEIL[21] = 3
+        menu.charge_flip = false
+        menu.kit, menu.kit_class = nil, nil
+        menu.stack = {"root", "hangar"}
+        menu.sel = {}
+        menu.open_kit(0)
+        menu.kit_set(19, 1)
+        menu.kit_set(20, 1)
+        local function charges()
+            local out = {}
+            for _, r in ipairs(menu.view().rows) do
+                if r.charge_slot then out[r.charge_slot] = r.label end
+            end
+            return out
+        end
+        local first = charges()
+        check("both charges say which slot they are in",
+              first[1] ~= nil and first[2] ~= nil and first[1] ~= first[2],
+              tostring(first[1]) .. "/" .. tostring(first[2]))
+        menu.swap_charges()
+        local swapped = charges()
+        check("and swapping them trades the two",
+              swapped[1] == first[2] and swapped[2] == first[1],
+              tostring(swapped[1]) .. "/" .. tostring(swapped[2]))
+        check("which is a preference rather than a change to the ship",
+              menu.charge_flip == true, tostring(menu.charge_flip))
+        menu.swap_charges()
+        check("and swapping again puts them back",
+              charges()[1] == first[1], tostring(charges()[1]))
+        -- And enter on a charge row is that press. On a ladder enter only
+        -- ever repeated what right does, so the row spends it on the other
+        -- question it answers.
+        local at = nil
+        for i, r in ipairs(menu.view().rows) do
+            if r.charge_slot == 1 then at = i end
+        end
+        check("a charge row is on the page", at ~= nil, "none")
+        menu.sel.hangar = at
+        menu.step({go = true})
+        check("and enter on it swaps the two",
+              charges()[1] == first[2], tostring(charges()[1]))
+        menu.swap_charges()
+        CEIL[21] = 0
+        menu.charge_flip = false
+        menu.kit, menu.kit_class = nil, nil
+    end
+
 
     menu.home = true
     menu.class = 0

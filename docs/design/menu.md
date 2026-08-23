@@ -112,6 +112,20 @@ on a tab: what is under one of these is a page or the place the talking
 happens. Before that a hand on the arrows could not reach either, so the way
 to an account was a mouse or nothing.
 
+## Behind it, the sky the game is played under
+
+The home screen's ground is the arena's own starfield: three parallax layers
+and the nebula behind them, drifting slowly and diagonally because nothing is
+looking at anything. It is the same routine the game draws its sky with, so
+the screen a stranger lands on is made of the thing they are about to be
+inside.
+
+A hull used to cross it on a closed loop, trailing a wake, on the argument
+that a text column in the middle of an empty field carried nothing. What it
+actually did was put a ship nobody was flying in front of a menu about flying
+one, moving against a field that was already moving. The field alone is the
+picture.
+
 ## A button is a stroked box
 
 One shape for a thing to press: a rectangle outlined all the way round with a

@@ -233,6 +233,9 @@ function M.save_identity()
         name = M.name, class = M.class, volume = M.volume, music = M.music,
         cap = M.cap, zone = M.zone, spectate = M.spectate,
         help_prompt_seen = M.help_prompt_seen, dpad = M.dpad,
+        -- Which charge the first key throws, which is a preference about a
+        -- keyboard and belongs beside the bindings.
+        charge_flip = M.charge_flip,
         -- Only the keys that have been moved, so a stock keyboard writes
         -- nothing here at all and a control this build stops carrying does
         -- not leave a line behind it. See arena/binds.lua.
@@ -267,6 +270,7 @@ function M.load_identity()
         -- else under this name lands on the stick rather than on a value the
         -- touch layer would try to steer with.
         M.dpad = d.dpad == true
+        M.charge_flip = d.charge_flip == true
         -- Whatever survives being read against this build's key list. A
         -- missing table is a stock keyboard, which is what `load` does with
         -- nothing.
@@ -678,19 +682,50 @@ end
 -- first charge key, the second on the second, in the order the core numbers
 -- the kinds. Named off the controls list rather than written down here, so a
 -- rebound key says what it actually is.
-local function charge_key(slot)
+-- Which of the two the arrows and the keys call first.
+--
+-- The kit carries counts by kind and the core numbers the kinds, so without
+-- this the first key always throws the lower-numbered one: a pilot carrying
+-- repel and mines got repel on Q whatever they would rather have. It is a
+-- preference about a keyboard rather than a fact about a ship, so it lives
+-- here and on this device, beside the bindings it is really part of.
+M.charge_flip = false
+
+-- The kinds a kit carries, in the order the keys spend them.
+local function charge_order()
     local first = charge_slot0()
-    local nth = 0
+    local out = {}
     for k = 0, simn("MAX_CHARGES", 4) - 1 do
-        if (M.kit[first + k + 1] or 0) > 0 then
-            nth = nth + 1
-            if first + k == slot then
-                local chord = binds.chord_of["charge_" .. nth]
-                return chord and keyset.chord(chord) or nil
-            end
-        end
+        if (M.kit[first + k + 1] or 0) > 0 then out[#out + 1] = first + k end
+    end
+    if M.charge_flip and #out > 1 then out[1], out[2] = out[2], out[1] end
+    return out
+end
+
+-- Which slot of the two a kind sits in, or nil for a kind the kit does not
+-- carry. One and two, which is what the box on the row says.
+local function charge_slot(slot)
+    for nth, at in ipairs(charge_order()) do
+        if at == slot then return nth end
     end
     return nil
+end
+
+local function charge_key(slot)
+    local nth = charge_slot(slot)
+    if not nth then return nil end
+    local chord = binds.chord_of["charge_" .. nth]
+    return chord and keyset.chord(chord) or nil
+end
+
+-- The two of them exchanged, which is the whole of what the box on a charge
+-- row does. Nothing about the ship changes: the same two kinds are carried in
+-- the same numbers, and the keys that throw them trade places.
+function M.swap_charges()
+    if #charge_order() < 2 then return nil, false end
+    M.charge_flip = not M.charge_flip
+    M.save_identity()
+    return nil, true
 end
 
 local function kit_rows(class)
@@ -779,6 +814,11 @@ local function kit_rows(class)
                 -- has to be said.
                 on_key = s.group == "charges" and held > 0
                     and charge_key(s.slot) or nil,
+                -- And which of the two it is, so the row can say "charge 1"
+                -- rather than leaving a lone letter on the far side of the
+                -- page to be worked out.
+                charge_slot = s.group == "charges" and held > 0
+                    and charge_slot(s.slot) or nil,
             }
         end
     end
@@ -2161,7 +2201,7 @@ local function view_row(r, i)
         base = r.base,
         zone = r.zone, joinable = r.joinable, acts = r.acts,
         group = r.group, short = r.short, tint_col = r.tint_col,
-        on_key = r.on_key, ladder = r.ladder,
+        on_key = r.on_key, ladder = r.ladder, charge_slot = r.charge_slot,
         -- The week's own columns.
         rank = r.rank, kills = r.kills, deaths = r.deaths, run = r.run,
         assists = r.assists,
@@ -3126,16 +3166,28 @@ local function activate(by)
     if r.go then
         M.stack[#M.stack + 1] = r.go
         M.note = nil
-        -- The friends page opens with the cursor in its field, which is the
-        -- one page here whose first control is not a row. A hand coming down
-        -- off the tabs lands in the box and can type; everything else on the
-        -- page is one press further down, which is where it was anyway.
+        -- A page whose first control is a field opens with the cursor in it.
+        -- A hand coming down off the tabs lands in the box and can type;
+        -- everything else on the page is one press further down, which is
+        -- where it was anyway. The two fields answer the same keys, so they
+        -- take them at the same moment.
         if r.go == "friends" then M.add_on = true end
+        if r.go == "standings" then M.filter_on = true end
         return nil
     end
     if not r.act then return nil end
 
     -- The ones this file can settle itself.
+    --
+    -- Enter on a charge that sits in a slot swaps the two. On a ladder enter
+    -- is the one press that says nothing the arrows do not: left and right
+    -- set the pips and enter adds one more, which right already did. So the
+    -- row spends it on the other question a charge row answers, which is
+    -- which key throws it.
+    if r.act == "kit_step" and not by and r.charge_slot then
+        M.swap_charges()
+        return nil
+    end
     if r.act == "kit_step" then
         -- One point spent or taken back. Enter spends, because a hand walking
         -- the list with enter is adding to a ship; the arrows do both.
@@ -3402,6 +3454,36 @@ function M.step(keys)
     local rows = rows_of(nd)
     local n = #rows
 
+    -- And the week's filter is the same stop on the standings page. It is the
+    -- same object as the friends field now, so it answers the same arrows:
+    -- up off the first row of the table lights it, down goes back to the
+    -- table, up out of it goes to the tabs.
+    --
+    -- No list of names under this one, which is the difference between the
+    -- two: a call sign has to be exact before it can be added, and a filter
+    -- narrows the table as it is typed. Enter here does nothing, because
+    -- there is nothing to send.
+    if M.at() == "standings" then
+        if M.filter_on then
+            if keys.back or keys.left then
+                M.filter_on = false
+            end
+            if keys.up then
+                M.filter_on = false
+                return back()
+            end
+            if keys.down then
+                M.filter_on = false
+                if n == 0 then return nil, false end
+                return nil, true
+            end
+            if keys.go then return nil, false end
+        elseif keys.up and (n == 0 or row_index(rows) <= 1) then
+            M.filter_on = true
+            return nil, true
+        end
+    end
+
     -- The friends page's field is a stop above the first row.
     --
     -- It is not a row, because it is not in the list, but the arrows have to
@@ -3639,6 +3721,12 @@ function M.step(keys)
             M.sel[id] = next_stop(rows, row_index(rows), 1)
             return nil, true
         end
+        -- Right is enter on a list of places, which is what a one-column list
+        -- of them wants. Not on a row that takes you out of the menu and into
+        -- a game: an arrow is how somebody reads a list, and reading the third
+        -- game on it should not put them in the second. Enter is the press
+        -- that commits, and it is the only one.
+        if here ~= nil and here.act == "join" then return nil, false end
         return activate(), true
     end
 
