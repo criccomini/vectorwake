@@ -181,12 +181,21 @@ local function txt(s, x, y, px, col, pivot, font, raw)
 end
 
 -- The small label the mocks head every group with: mono, upper, dim, and
--- tiny. It is the one piece of type in this interface that is neither a name
+-- small. It is the one piece of type in this interface that is neither a name
 -- nor a number, and it is drawn raw because it is already in the case it
 -- wants and the menu is otherwise set in a sentence's.
+--
+-- Ten points is the floor for authored type, this register included, and the
+-- register was under it: nine-point dim mono at nine tenths of its own alpha
+-- came out near 3.9:1 against the field, short of the 4.5:1 small type wants,
+-- on the labels that name every group on every page. One point and the last
+-- tenth of alpha carry it over the line. The constant is what a caller that
+-- measures this register measures with, so a head cannot be measured at one
+-- size and drawn at another.
+local LBL_PX = 10
 local function lbl(s, x, y, col, align, px)
-    txt(string.upper(s or ""), x, y, px or 9 * F.scale,
-        col or pal.a(pal.DIM, 0.9), align, nil, true)
+    txt(string.upper(s or ""), x, y, px or LBL_PX * F.scale,
+        col or pal.a(pal.DIM, 1), align, nil, true)
 end
 
 -- A rectangle the pointer can land on, published in the same coordinates it
@@ -195,9 +204,64 @@ end
 -- the file that the first function to call it from above found nil.
 -- `level` is for the one control that has a position as well as an identity:
 -- a pip on a ladder, where the press means "this much" rather than "this row".
-local function hit(x, y, w, h, action, value, level)
+-- `pri` is for the handful of boxes that exist to stand behind other boxes: a
+-- panel that swallows the press between two rows, the screen-wide box that
+-- shuts the menu. See `M.pick`.
+local function hit(x, y, w, h, action, value, level, pri)
     M.hits[#M.hits + 1] = {x = x, y = y, w = w, h = h,
-                           action = action, value = value, level = level}
+                           action = action, value = value, level = level,
+                           pri = pri}
+end
+
+-- The touch target floor, in points: what every platform's own ruler says a
+-- fingertip is. Nothing here draws at that size, deliberately, and nothing
+-- has to: a control keeps the shape the design gives it and makes up the
+-- difference in `M.pick`, where a near miss on glass reaches the box it was
+-- aimed at.
+M.TARGET = 44
+
+-- Which published box a press at (px, py) belongs to, or nil. The one copy of
+-- the rule: `on_input`, the hover pass and the tests all ask this rather than
+-- each walking the list with an idea of their own.
+--
+-- Containment first. Of the boxes under the point, the highest `pri` wins and
+-- publish order breaks the tie, which is the first-box-wins rule every
+-- existing pair was laid out against: a pip still beats the row behind it and
+-- a close mark still beats the button it sits in, by order, while a backdrop
+-- says out loud that it stands behind everything rather than depending on
+-- being published last.
+--
+-- Then, for a finger only, the near miss. Each box is measured against the
+-- TARGET floor and grown to it on any axis it falls short, and a press inside
+-- the grown box belongs to the nearest of them: between two pips thirteen
+-- points apart the closer one wins, and a box already a fingertip wide gains
+-- nothing. Backdrops sit out, since nobody aims at a panel and forgiveness
+-- toward one would swallow the miss meant for the control in front of it.
+function M.pick(px, py, touching)
+    local best, bestpri
+    for _, r in ipairs(M.hits) do
+        if px >= r.x and px <= r.x + r.w
+           and py >= r.y and py <= r.y + r.h then
+            local pri = r.pri or 0
+            if not best or pri > bestpri then best, bestpri = r, pri end
+        end
+    end
+    if best or not touching then return best end
+    local floor = M.TARGET * F.scale
+    local near, dist
+    for _, r in ipairs(M.hits) do
+        if (r.pri or 0) >= 0 then
+            local gx = math.max(0, (floor - r.w) / 2)
+            local gy = math.max(0, (floor - r.h) / 2)
+            local dx = math.max(r.x - px, px - r.x - r.w, 0)
+            local dy = math.max(r.y - py, py - r.y - r.h, 0)
+            if dx <= gx and dy <= gy then
+                local d = dx * dx + dy * dy
+                if not near or d < dist then near, dist = r, d end
+            end
+        end
+    end
+    return near
 end
 
 -- Four chamfered corners and nothing between them. It is what holds a cluster
@@ -1401,8 +1465,9 @@ local function rooms_panel(rooms, here)
     end
     -- The whole panel takes the wheel, rather than a strip beside it, which is
     -- how the scoreboard behaves: a list is the thing you point at when you
-    -- mean to scroll it. Published after the rows so a row wins the press.
-    hit(x, y, w, h, "rooms_list")
+    -- mean to scroll it. A backdrop by declaration, so the rows in front of it
+    -- win the press whatever order anything was published in.
+    hit(x, y, w, h, "rooms_list", nil, nil, -1)
     return y + h
 end
 
@@ -1752,7 +1817,7 @@ local function scores(me, pilots, watchers, viewer_name)
     if watching > 0 then
         line = line .. string.format(", %d WATCHING", watching)
     end
-    txt(line, x + 12 * F.scale, fy, (FONT - 4) * F.scale, pal.a(pal.DIM, 0.8))
+    txt(line, x + 12 * F.scale, fy, (FONT - 3) * F.scale, pal.a(pal.DIM, 0.8))
 
     -- Only when there is something to scroll to. A bar on a list that fits is
     -- a control that does nothing.
@@ -1767,8 +1832,10 @@ local function scores(me, pilots, watchers, viewer_name)
     end
 
     -- The whole panel takes the wheel, rather than a strip beside it: a list
-    -- is the thing you point at when you mean to scroll it.
-    hit(x, top_y(), w, h, "scores")
+    -- is the thing you point at when you mean to scroll it. A backdrop, so
+    -- every row in front of it wins the press by rank rather than by the luck
+    -- of publish order.
+    hit(x, top_y(), w, h, "scores", nil, nil, -1)
 
     -- The bottom edge, not the height: what the loadout below needs to know
     -- is where this ends, and it does not start at the top of the screen.
@@ -2178,9 +2245,9 @@ local function status(me, charges, lift)
         run > 0 and pal.a(pal.BOUNTY, 0.95) or pal.a(pal.DIM, 0.6))
     local bw = val + text_w(tostring(bty), (FONT - 2) * z)
     if run > 0 then
-        txt("x" .. run, bw + 6 * z, y + rows_h / 2, (FONT - 4) * z,
+        txt("x" .. run, bw + 6 * z, y + rows_h / 2, (FONT - 3) * z,
             pal.a(pal.PAID, 0.8))
-        bw = bw + 6 * z + text_w("x" .. run, (FONT - 4) * z)
+        bw = bw + 6 * z + text_w("x" .. run, (FONT - 3) * z)
     end
     zone("bounty", x, y, bw - x, rows_h)
 
@@ -2221,7 +2288,7 @@ local function loadout(me, class_names, top)
     for i, up in ipairs(pal.UPGRADES) do
         local held = sim.ship_up(me, i - 1)
         local sx = x + 14 * F.scale + (i - 1) * gap
-        txt(up.short, sx, y + 32 * F.scale, (FONT - 4) * F.scale, pal.a(pal.DIM, 0.75))
+        txt(up.short, sx, y + 32 * F.scale, (FONT - 3) * F.scale, pal.a(pal.DIM, 0.75))
         pips(sx + 3 * F.scale, y + 42 * F.scale, steps, held, up.col,
              1.7 * F.scale, 4.6 * F.scale)
     end
@@ -2329,7 +2396,7 @@ local function inspect(o, top)
     hit(x + w - 26 * F.scale, y + 4 * F.scale, 26 * F.scale, 22 * F.scale, "uninspect")
 
     local ry_ = y + 30 * F.scale
-    local lab = (FONT - 4) * F.scale
+    local lab = (FONT - 3) * F.scale
     local val = (FONT - 2) * F.scale
     local function row(k, v, vcol, raw)
         txt(k, x + 12 * F.scale, ry_ + rowh / 2, lab, pal.a(pal.DIM, 0.8))
@@ -3046,6 +3113,14 @@ local function debug_hud(o, top)
                                  (L.dropped > 0 and (" +" .. L.dropped) or "")}
         end
     end
+    -- And the text budget, which is the third capacity a frame can quietly
+    -- run out of. `state.n` is what the last frame queued and the pool is
+    -- what the gui will draw; the `+` is glyphs that did not appear, which
+    -- is how the podium's chips lost their words with nothing saying so.
+    local over = state.n - state.TEXT_POOL
+    lines[#lines + 1] = {"text",
+                         string.format("%d / %d", state.n, state.TEXT_POOL)
+                         .. (over > 0 and (" +" .. over) or "")}
     -- Wrapped into as many columns as the room below the dial can hold. A
     -- phone in landscape is about four hundred points tall and the dial has
     -- most of that: one column of twelve rows at a size worth reading runs
@@ -3103,8 +3178,10 @@ local function debug_hud(o, top)
     --
     -- Filed here rather than beside the bars, because it is this rectangle,
     -- and it is this rectangle only once the wrapping above has decided how
-    -- many columns the window can hold.
-    if not F.menu_up then hit(x, y, w, h, "debug") end
+    -- many columns the window can hold. A backdrop: it holds no controls
+    -- today, and a slab of text that closes on a press is the same kind of
+    -- thing as the panels that do.
+    if not F.menu_up then hit(x, y, w, h, "debug", nil, nil, -1) end
 end
 
 -- Where you are, over the dial's other top corner from the link readout.
@@ -3487,7 +3564,7 @@ local function podium(o, m, names)
         local dcx = acx - numw - numgap
         local kcx = dcx - numw - numgap
         for _, head_at in ipairs({{"k", kcx}, {"d", dcx}, {"a", acx}}) do
-            txt(head_at[1], head_at[2], y + 34 * F.scale, 9.5 * F.scale,
+            txt(head_at[1], head_at[2], y + 34 * F.scale, 10 * F.scale,
                 pal.a(pal.DIM, 0.75), "right")
         end
         F.layer:seg(cx + 18 * F.scale, ry(y + 44 * F.scale),
@@ -3525,7 +3602,7 @@ local function podium(o, m, names)
                 -- shot" and a call sign ran through the kills and deaths at
                 -- the other end of it.
                 local nx = cx + 26 * F.scale + text_w(sd.phrase, 12.5 * F.scale)
-                if nx + text_w(r.name, 9 * F.scale)
+                if nx + text_w(r.name, LBL_PX * F.scale)
                    < cx + cw - 26 * F.scale - numrun then
                     lbl(r.name, nx, ry0, pal.a(pal.DIM, 0.75))
                 end
@@ -3536,7 +3613,7 @@ local function podium(o, m, names)
             -- The best gun in the room, whichever side it was on. One mark
             -- rather than a column, because it is one pilot.
             if r == mvp then
-                txt("mvp", kcx - numw - 10 * F.scale, ry0, 9.5 * F.scale,
+                txt("mvp", kcx - numw - 10 * F.scale, ry0, 10 * F.scale,
                     pal.a(pal.CHARGE_COL, 0.85), "right")
             end
             for _, fig in ipairs({{r.k, kcx}, {r.d, dcx}, {r.a, acx}}) do
@@ -3565,7 +3642,10 @@ local function podium(o, m, names)
             elseif hot then
                 rect(sx, sy, c.w, SAY_H, pal.a(pal.FRIEND, 0.1))
             end
-            F.layer:frame(sx, ry(sy, SAY_H), c.w, SAY_H, 0.9 * F.scale,
+            -- A whole pixel, for the reason the kit's chips are: 0.9 of one
+            -- rasterizes by luck, and these six share a row, so the same
+            -- edge went missing on all of them at once.
+            F.layer:frame(sx, ry(sy, SAY_H), c.w, SAY_H, 1.0 * F.scale,
                           pal.a(mine and pal.CHARGE_COL
                                 or (hot and pal.FRIEND or pal.RADAR_TILE),
                                 mine and 0.7 or (hot and 0.9 or 0.55)))
@@ -3963,7 +4043,7 @@ function pages.week(v, x, y, w, h, focused)
         sorts = sorts or key
         local on = sorted == sorts
         local col = pal.a(on and pal.FRIEND or pal.DIM, on and 1 or 0.9)
-        local ww = text_w(key, 9 * F.scale)
+        local ww = text_w(key, LBL_PX * F.scale)
         -- The word and its mark are one lockup, aligned together: right of a
         -- right-hand column the lockup is what ends at the column's edge, so
         -- the word steps left by what the mark takes rather than the mark
@@ -4004,7 +4084,7 @@ function pages.week(v, x, y, w, h, focused)
     -- menu.
     if packed then
         local word = sorted_col[1]
-        local ww2 = text_w(word, 9 * F.scale) + MARK_W + 6 * F.scale
+        local ww2 = text_w(word, LBL_PX * F.scale) + MARK_W + 6 * F.scale
         local hx = x + tw - 16 * F.scale
         -- Mark first, as in the wide table: one lockup laid out one way, so a
         -- phone and a desktop do not disagree about where a sort mark lives.
@@ -4312,13 +4392,17 @@ function pages.chip(x, y, w, h, r, hot, focused)
         F.layer:frame(x, ry(y, h), w, h, 1.2 * F.scale,
                       pal.a(pal.FRIEND, focused and 1 or 0.5))
     else
-        F.layer:frame(x, ry(y, h), w, h, 0.9 * F.scale,
+        -- A whole pixel. At 0.9 on a density-1 screen a hard-edged stroke
+        -- covers a pixel center or misses it on where the chip happens to
+        -- sit; the layer floors it now, and the authored width should not
+        -- pretend to a weight the screen cannot draw.
+        F.layer:frame(x, ry(y, h), w, h, 1.0 * F.scale,
                       pal.a(held and pal.FRIEND or pal.RADAR_TILE,
                             held and 0.55 or 0.6))
     end
     lbl(r.short or r.label, x + w / 2, y + h * 0.42,
         pal.a(held and pal.FRIEND or pal.INK, held and 1 or 0.8),
-        "center", 9 * F.scale)
+        "center", LBL_PX * F.scale)
     -- The line under the name: how many of it you hold, out of how many the
     -- account may, since a rung is a ladder in a chip's clothing and two of
     -- them is level two. A chip nobody owns says nothing, because zero of
@@ -4331,7 +4415,7 @@ function pages.chip(x, y, w, h, r, hot, focused)
     local count = (r.owned or 0) > 1 and ((r.choice or 0) .. "/" .. r.owned)
         or nil
     if count then
-        txt(count, x + w / 2, y + h * 0.74, 9 * F.scale,
+        txt(count, x + w / 2, y + h * 0.74, 10 * F.scale,
             pal.a(pal.DIM, 0.85), "center")
     end
 end
@@ -4699,7 +4783,7 @@ function pages.kit(v, x, y, w, h, focused)
             -- Wide enough for the name and whatever count sits under it.
             local cw = math.max(62 * F.scale,
                                 text_w(r.short or r.label or "",
-                                       9 * F.scale) + 24 * F.scale)
+                                       LBL_PX * F.scale) + 24 * F.scale)
             if px + cw > kx + kw then px = kx cy = cy + ch + 6 * F.scale end
             -- Nothing drawn and nothing published where the scroll has
             -- carried this line off the page. The walk still happens, because
@@ -4737,7 +4821,7 @@ function pages.kit(v, x, y, w, h, focused)
         for _, r in ipairs(list) do
             local cw = math.max(62 * F.scale,
                                 text_w(r.short or r.label or "",
-                                       9 * F.scale) + 24 * F.scale)
+                                       LBL_PX * F.scale) + 24 * F.scale)
             if px > 0 and px + cw > width then lines = lines + 1 px = 0 end
             px = px + cw + 8 * F.scale
         end
@@ -4952,7 +5036,7 @@ function pages.friends(v, x, y, w, h, focused)
                 lbl(r.sect, x, hy + SECT * 0.82)
                 if r.sect_note then
                     lbl(r.sect_note,
-                        x + text_w(r.sect, 9 * F.scale) + 12 * F.scale,
+                        x + text_w(r.sect, LBL_PX * F.scale) + 12 * F.scale,
                         hy + SECT * 0.82, pal.a(pal.FRIEND, 0.85))
                 end
                 if said then
@@ -7655,13 +7739,13 @@ function M.menu(v)
     -- swallows its own, so the space between two rows is not a way out, and
     -- everything left over is one.
     --
-    -- Published here because the first box a press lands in wins and every
-    -- control on the panel has already had its turn. The instruments behind
-    -- are published before the menu is drawn at all, so a dimmed scoreboard
-    -- row still answers to a click rather than being a hole in the way out.
+    -- Two backdrops, ranked rather than ordered: the panel stands behind
+    -- every control on it and the way out stands behind the panel, so a
+    -- dimmed scoreboard row still answers to a click rather than being a
+    -- hole in the way out.
     if v.closable then
-        hit(px0, py0, px1 - px0, py1 - py0, "panel")
-        hit(0, 0, F.w, F.h, "close")
+        hit(px0, py0, px1 - px0, py1 - py0, "panel", nil, nil, -1)
+        hit(0, 0, F.w, F.h, "close", nil, nil, -2)
     end
 
     -- Last, over all of it, because it is the only thing being read.

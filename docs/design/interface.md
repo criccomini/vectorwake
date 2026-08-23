@@ -39,7 +39,7 @@ capitals, because "OZONE KILLED KESTREL" is an announcement and the feed
 reports things that happened to people.
 
 The same split decides what each surface is made of. The HUD is marks and
-counts, words an ask away (the hover card, the held H). The menu is words,
+counts, words an ask away (the hover card, the H table). The menu is words,
 with marks confirming them. A corner read in a tenth of a second cannot be a
 column of reading, and a settings page read once a week does not need to be
 memorized as pictograms.
@@ -97,8 +97,12 @@ Past those, a hue means one thing, one thing per hue, across every screen:
 A round's rung is the one scale nobody has to be taught, green, yellow,
 orange, red (`#62cc35 #f7dd0b #ff7000 #f42e3d`), one ramp for every weapon and
 every owner. What that ramp gives up is deliberate: a round no longer says
-whose it is. Ships and names carry the team; every round was worth dodging
-anyway.
+whose it is, and in the 4v4 game that is a real price, since the core never
+lands a teammate's bullet and a friendly stream is a flinch the paint asks
+for. Decision 55 re-made the call on the live facts and kept the ramp: a
+three-pixel round has room for one reading and the rung is the one that says
+what a hit costs, bomb blasts hurt everyone in radius whoever threw them, and
+the team already lives on the hull and the plate.
 
 Two rules keep this system honest. First, before a new thing gets a color,
 check what already owns the nearest hue; the doors are green because pink
@@ -129,6 +133,13 @@ menu face. A row's label is menu face; the count at the end of it is mono. A
 call sign in the roster is menu face because it is being read as a name; the
 same call sign beside a nameplate in flight is mono because everything in
 flight is.
+
+Ten points is the floor for authored type, the small label register included
+(`LBL_PX` in ui.lua), and dim labels at that size draw at DIM's full alpha:
+nine-point dim mono at nine tenths of itself measured about 3.9:1 against the
+field, under the 4.5:1 small type wants, on the labels that name every group.
+The only type below the floor is squeezed there by a window too small for the
+authored size, where the alternative is overlap.
 
 The menu sets its type 1.18 larger than the HUD on a desktop window
 (`MENU_ZOOM`), and not on a phone or a short window, which are already showing
@@ -224,7 +235,11 @@ one never loses its hairlines. The exception is a set: the menu rail's marks
 and the hull thumbnails hold one line weight against the screen
 (`RAIL_PEN`, `HULL_PEN`), because a column of six marks in six sizes of line
 reads as six styles. Anything that draws itself into such a set has to be
-told the set's weight.
+told the set's weight. The floor bites hardest on hard edges: a segment's
+edges carry falloff and survive under a pixel, a stroked box's do not, so the
+layer floors a frame's stroke at one device pixel (`vec.lua`), after the
+podium's chips, stroked at 0.9 on a density-1 screen, drew three edges each
+and lost their tops.
 
 The rivet deserves its own note because it is the currency. It is the
 fastener seen from the side, cap, shank, two strikes through, following the
@@ -328,6 +343,15 @@ quiet a label is to quiet the label (`text_dim`), a wash can never do it. It
 is why rows draw whole or not at all, and why the podium takes the
 nameplates down while it is up.
 
+Text is also a budget. The gui draws `TEXT_POOL` strings a frame (declared in
+`state.lua`, where the side that writes them can be tested against it) and
+drops the rest, so the worst frame the interface composes, the ending with
+the scoreboard and pilot box open, is measured against the budget in
+podium_test, and the debug readout shows the count beside the mesh layers'
+own. The pool was once a number only the gui knew, at 128, and the podium's
+phrase chips queued past it: their boxes drew and their words did not, and
+nothing anywhere said so.
+
 ## Words
 
 The interface says a thing once, in one place, and mostly in one sentence.
@@ -364,14 +388,22 @@ a grid is the one place arrows mean rows and columns. A pointer is additive:
 resting on a row moves the same cursor the arrows move, and lights it the
 same way.
 
-Hit boxes are rectangles published in draw order and the first box a press
-lands in wins, which makes precedence a layout decision: a pip publishes
-before its row, a close mark before the button it sits in, a row before the
-panel that takes the wheel. The field of play publishes no boxes at all,
-because the left button is the gun and a box over a hull would eat the shot
-at the moment a player is lined up on somebody. Anything a thumb must press
-is at least a finger tall, and a corner target runs into its corner, where a
-thumb cannot overshoot off the screen.
+Hit boxes are rectangles resolved by one function, `ui.pick`, which the press
+path, the hover pass and the tests all ask. Containment decides by rank:
+a backdrop (a panel's ground, the screen-wide box that shuts the menu)
+declares itself behind everything with a negative priority, and among equals
+publish order breaks the tie, which is how a pip beats its row and a close
+mark beats the button it sits in. The field of play publishes no boxes at
+all, because the left button is the gun and a box over a hull would eat the
+shot at the moment a player is lined up on somebody.
+
+The touch floor is declared, 44 points (`ui.TARGET`), which is what every
+platform's own ruler says a fingertip is. Controls keep the shapes the design
+gives them, and the resolver makes up the difference: on glass, a press that
+missed everything reaches the nearest control within the floor, so a
+26-point button answers a 44-point finger without drawing like one, and
+between two pips the nearer one wins. A corner target still runs into its
+corner, where a thumb cannot overshoot off the screen.
 
 Anything destructive or costly asks first, on a card that states the cost in
 its note ("MOVING RESPAWNS YOU"), and the last answer is always the one that

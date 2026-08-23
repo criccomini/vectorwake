@@ -2403,3 +2403,39 @@ the two zone knobs rather than the shape: `multi_energy` and `multi_delay` are
 per-rung percentages and can taper. And if some future weapon wants a tight
 pair specifically, that is a weapon with its own `spacing`, not a second add-on
 coming back.
+
+---
+
+## 55. One rung ramp for every round, re-decided for the team game
+
+**Status:** accepted
+
+The projectile ramp is one scale for every round in the game: green, yellow,
+orange, red by rung, the same four for a bullet and a bomb, for yours and for
+theirs. The argument that closed it was written for the open arena: in a
+free-for-all every round is worth dodging, so a round that stopped saying
+whose it was gave up nothing. The game is exclusively three-minute 4v4 melee
+now, and the core never lands a teammate's bullet, since contact damage and
+the push add-on both skip the firer's side. Half the bullets crossing a
+pilot's screen are harmless to them, the paint says nothing about which half,
+and the old rationale is dead. This entry is the re-decision the palette was
+resting on, made on the live facts rather than inherited.
+
+The ramp stays, for three reasons that are still true. The team ramps this
+replaced were removed on measurement, not taste: rungs sat ten units of color
+apart, and blending toward white converged the teams exactly where the rungs
+mattered most, so a three-pixel round crossing the screen has room for one
+reading and the rung is the one that says what a hit costs. Bomb blasts are
+team-blind, and deliberately so: `sim.c` applies blast damage to every hull in
+radius, the thrower and their side included, so the class of round that
+actually kills is worth dodging whoever threw it. And the team read already
+lives on the hull, the plate and the radar, at sizes where it works.
+
+**Cost:** a teammate's bullet stream reads as a threat and buys a flinch that
+a fully honest screen would not. In a 4v4 room where half the ships are
+hostile, a flinch at a crossing stream is usually the right reflex anyway.
+
+**Reconsider if:** players report giving up position to dodge friendly
+streams often enough to name it, or a mode with more sides lands. The first
+thing to try then is luminance rather than hue: a friendly round drawn a step
+dimmer keeps the whole ramp and spends a channel the ramp does not use.

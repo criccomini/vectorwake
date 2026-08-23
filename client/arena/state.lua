@@ -15,4 +15,12 @@ return {
     text = {},
     n = 0,          -- how many entries of `text` are live
     version = 0,    -- bumped on every rebuild, so the gui can skip idle frames
+    -- How many of those the gui will actually draw. The gui script builds
+    -- this many nodes and silently drops the rest, so the number lives here,
+    -- where the writer can be tested against it: the podium with the
+    -- scoreboard open queued past the old pool of 128 and the phrase chips,
+    -- drawn last, lost their words with nothing anywhere saying so.
+    -- podium_test measures the worst frame against this; vwui.gui must hold
+    -- at least this many nodes.
+    TEXT_POOL = 320,
 }

@@ -96,7 +96,9 @@ _G.sim = sim
 
 -- `state` is a plain table of text the gui script drains, and `touch` only
 -- has to answer that nothing is being touched.
-package.loaded["arena.state"] = {text = {}, n = 0, version = 0}
+-- The real module: it is plain data, and the budget check below reads
+-- its TEXT_POOL.
+package.loaded["arena.state"] = dofile("client/arena/state.lua")
 package.loaded["arena.touch"] = {
     layout = function() return {charge = {}} end,
     used = false,
@@ -469,6 +471,74 @@ check("the menu covers it", said("takes it") == nil,
 check("but the clock does not", said("0:23") ~= nil)
 check("and the topbar says what it is counting to",
       said("next match in") ~= nil)
+
+-- --- the whole ending, against the text budget -----------------------------
+--
+-- The worst frame this interface draws is the one this file is about: a full
+-- room at the whistle, the scoreboard open, the pilot box open, the feed
+-- still holding lines, a phrase standing on a row and every chip on the
+-- card. The gui draws state.TEXT_POOL strings and silently drops the rest,
+-- which is how a live podium lost the words off its chips while their boxes,
+-- being mesh, stayed: the pool was 128 and the chips queue last. So the
+-- worst frame is built whole and measured against the budget, and the
+-- phrases have to land inside it, not merely in the queue.
+
+room.count = 8
+for i = 4, 7 do
+    room.teams[i] = i % 2
+    room.kills[i] = i
+    room.deaths[i] = 9 - i
+    room.assists[i] = i
+    room.points[i] = 2 * i
+end
+local eight = {
+    [0] = {name = "you", label = "human"},
+    [1] = {name = "Kestrel", label = "human"},
+    [2] = {name = "Plinth", label = "bot", ai = true, house = true},
+    [3] = {name = "Vesper", label = "bot", ai = true, house = true},
+    [4] = {name = "Ridgeline", label = "bot", ai = true, house = true},
+    [5] = {name = "Halcyon", label = "bot", ai = true, house = true},
+    [6] = {name = "Tessellate", label = "bot", ai = true, house = true},
+    [7] = {name = "Ozone", label = "bot", ai = true, house = true},
+}
+-- The chip outlines have to hold a whole pixel as well: a hard-edged rect
+-- thinner than one covers a pixel center or misses it on where the row
+-- happens to sit, and the six chips share a row, so the same edge went
+-- missing on all of them at once. Thickness is recorded rather than trusted.
+local thinnest = nil
+layer.frame = function(self, _, _, _, _, t)
+    self.n = self.n + 1
+    if not thinnest or t < thinnest then thinnest = t end
+end
+ui.details = true
+ui.inspect = 1
+frame({match = {playing = false, left = 23, score = {[0] = 11, [1] = 14}},
+       side_names = NAMES, side = 0, sayings = SAYS, pilots = eight,
+       said = {[1] = {phrase = "nice shot", n = 1, t = 0.2}},
+       feed = {{text = "sable killed cirrus (+3)", t = 1},
+               {text = "kestrel killed halcyon (+1)", t = 2},
+               {text = "tessellate killed ozone (+2)", t = 3},
+               {text = "ridgeline killed vesper (+3)", t = 4},
+               {text = "plinth killed kestrel (+1)", t = 5}}})
+check("the budget is a number both sides share",
+      type(state.TEXT_POOL) == "number" and state.TEXT_POOL > 0,
+      tostring(state.TEXT_POOL))
+check("the whole ending fits the text budget",
+      state.n <= state.TEXT_POOL,
+      state.n .. " queued of " .. tostring(state.TEXT_POOL))
+for _, phrase in ipairs(SAYS) do
+    local at = nil
+    for i = 1, state.n do
+        if string.lower(state.text[i].s) == phrase then at = i break end
+    end
+    check("the chip for " .. phrase .. " lands inside the pool",
+          at ~= nil and at <= state.TEXT_POOL,
+          tostring(at) .. " of " .. tostring(state.TEXT_POOL))
+end
+check("no outline on the ending is thinner than a pixel",
+      thinnest ~= nil and thinnest >= 1, tostring(thinnest))
+ui.details = false
+ui.inspect = nil
 
 print(fails == 0 and "all good" or (fails .. " failed"))
 os.exit(fails == 0 and 0 or 1)

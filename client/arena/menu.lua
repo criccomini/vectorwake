@@ -961,7 +961,7 @@ end
 -- rather than waiting to be clicked into first; what it also does is light
 -- the box, so the page shows where the letters are landing.
 function M.type_filter(ch)
-    if M.showing() ~= "standings" then return false end
+    if not M.open or M.showing() ~= "standings" then return false end
     if type(ch) ~= "string" or #ch ~= 1 then return false end
     local b = string.byte(ch)
     if b < 32 or b > 126 then return false end
@@ -972,7 +972,7 @@ function M.type_filter(ch)
 end
 
 function M.rub_filter()
-    if M.showing() ~= "standings" then return false end
+    if not M.open or M.showing() ~= "standings" then return false end
     if (M.filter or "") == "" then return false end
     M.filter = string.sub(M.filter, 1, #M.filter - 1)
     M.filter_on = true
@@ -1024,10 +1024,14 @@ end
 -- A call sign is a word and a number, so 24 characters is generous and the
 -- gate is the same printable ASCII every other typed line in this client is
 -- held to.
--- `M.at()` rather than `M.showing()`, which is the page under the rail's
--- cursor as well as the page you are standing in. At the top of the menu the
--- friends page is a preview with no field drawn on it, and a letter typed
--- there would land in a box nobody can see and take the next enter with it.
+-- Only while the menu is up. `M.showing()` answers for a shut menu too,
+-- because the model keeps its stack, and in a match the shut menu is parked
+-- at a root whose first tab is friends: every printable key pressed in the
+-- fight, the P and M and H that drive the HUD included, was landing in a box
+-- nobody could see and surfacing as a garbage call sign the next time the
+-- menu opened. The goldens run is what caught it. A previewed field with the
+-- menu open stays typable, since the preview draws it and the caret shows
+-- where the letters land.
 -- What the last press came to, dropped.
 --
 -- The sentence under the box is about a name that was sent, and the moment
@@ -1042,7 +1046,7 @@ local function forget_add_note()
 end
 
 function M.type_add(ch)
-    if M.showing() ~= "friends" then return false end
+    if not M.open or M.showing() ~= "friends" then return false end
     if type(ch) ~= "string" or #ch ~= 1 then return false end
     local b = string.byte(ch)
     if b < 32 or b > 126 then return false end
@@ -1056,7 +1060,7 @@ function M.type_add(ch)
 end
 
 function M.rub_add()
-    if M.showing() ~= "friends" then return false end
+    if not M.open or M.showing() ~= "friends" then return false end
     if (M.add_name or "") == "" then return false end
     M.add_name = string.sub(M.add_name, 1, #M.add_name - 1)
     M.add_on = true
