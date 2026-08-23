@@ -431,16 +431,17 @@ language:
 
 The client gives those materials one visual grammar without flattening them
 into one tileset. A bulkhead keeps a continuous bright collision edge, but the
-structure behind it comes from the station kit and changes on a seeded macro
-rhythm: notched armor, recessed service hatches, vents, trusses, elbowed pipe
-runs, couplers, warning teeth, and riveted field repairs. Warning paint marks
-an access threshold instead of floating on an empty strip. Bay widths and the
-dark gaps between them vary, so a long wall does not become one fitting stamped
-every few tiles. A rock is warmer, faceted, cratered, and carries sparse mineral
-seams while it tumbles. A station fills the whole six-tile square the simulation
-collides with, then cuts docking throats, armor quarters, trusses, and a cold
-reactor into that mass. The detail is subordinate to the outside edge at combat
-zoom. A player reads collision first and fiction on the second look.
+structure behind it borrows a sparse set of compact machines from the station:
+square access hatches, vents, right-angle pipes, X braces, warning teeth, and
+open T supports. Their lines are horizontal, vertical, or 45 degrees. Broad
+stretches of bare armor separate the machines, so a long wall does not become a
+strip of repeated fittings. The schedule is anchored to world coordinates. A
+wall keeps the same fittings as the camera's terrain window moves across it. A
+rock is warmer, faceted, cratered, and carries sparse mineral seams while it
+tumbles. A station fills the whole six-tile square the simulation collides
+with, then cuts docking throats, armor quarters, trusses, and a cold reactor
+into that mass. The detail is subordinate to the outside edge at combat zoom.
+A player reads collision first and fiction on the second look.
 
 The thick perimeter mass uses the same service bays at a slower rhythm. Its
 long dark rests distinguish the arena boundary from an interior partition, but

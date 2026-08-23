@@ -647,7 +647,6 @@ local function wall_mass(bg, glow, set, cells, border)
     local lit = pal.WALL_EDGE
     local hotline = pal.a(pal.hot(lit, 0.28, 1), 0.9)
     local bevel = pal.a(lit, 0.26)
-    local tick = pal.a(lit, 0.42)
     local edge2 = pal.a(lit, 0.5)
     local inner = pal.a(pal.WALL_LIT, 1)
     local outer = pal.a(lit, 1)
@@ -656,17 +655,14 @@ local function wall_mass(bg, glow, set, cells, border)
     local warning = pal.a(pal.STATION_WARM, 0.70)
     local recess = pal.a(pal.STATION_RECESS, 0.96)
     local plate = pal.a(pal.STATION_PLATE, 0.94)
-    local plate_dim = pal.a(pal.STATION_PLATE, 0.72)
     local structure = pal.a(pal.PANEL_INK, 0.24)
     local seam = pal.a(pal.STATION_COLD, 0.20)
 
-    -- A run is divided into irregular bays, and each bay gets one of several
-    -- jobs. The collision edge stays continuous, because it is the line a
-    -- pilot has to read at speed. Behind it, the wall uses the station's own
-    -- kit: notched armor, recessed service panels, trusses, warning teeth,
-    -- pipes, couplers, and field repairs. Those pieces trade places on a
-    -- seeded macro rhythm rather than repeating on a tile pitch. The same map
-    -- always builds the same wall without storing art in its tile data.
+    -- The collision edge is continuous because it is the line a pilot has to
+    -- read at speed. Machinery is rare and compact. Its schedule is anchored
+    -- to world coordinates, not the ends of the visible run: the terrain mesh
+    -- is a moving window, and seeding from that window made a thick wall swap
+    -- its fittings while the camera crossed the arena.
     local function bay_point(px, py, ux, uy, ox, oy, at, depth)
         return px + ux * at - ox * depth, py + uy * at - oy * depth
     end
@@ -684,18 +680,12 @@ local function wall_mass(bg, glow, set, cells, border)
                 p5x,p5y, p6x,p6y, p7x,p7y, p8x,p8y}
     end
 
-    local function armor_panel(px, py, ux, uy, ox, oy, a, b, col, cut)
+    local function armor_panel(px, py, ux, uy, ox, oy, a, b, cut)
         local shape = panel_shape(px, py, ux, uy, ox, oy,
                                   a, b, 2.8, 12.2, cut or 2.4)
-        bg:fan(shape, col or plate)
+        bg:fan(shape, plate)
         glow:outline(shape, 0.65, structure, true)
         return shape
-    end
-
-    local function fastener(px, py, ux, uy, ox, oy, at, depth)
-        local x, y = bay_point(px, py, ux, uy, ox, oy, at, depth)
-        bg:disc(x, y, 1.35, 8, recess)
-        glow:ring(x, y, 1.15, 0.48, 8, hardware)
     end
 
     local function inset_panel(px, py, ux, uy, ox, oy, a, b, near, far)
@@ -706,140 +696,145 @@ local function wall_mass(bg, glow, set, cells, border)
         return shape
     end
 
+    local function mount_box(px, py, ux, uy, ox, oy, at, depth, half)
+        half = half or 1.7
+        local x1, y1 = bay_point(px, py, ux, uy, ox, oy,
+                                 at - half, depth - half)
+        local x2, y2 = bay_point(px, py, ux, uy, ox, oy,
+                                 at + half, depth - half)
+        local x3, y3 = bay_point(px, py, ux, uy, ox, oy,
+                                 at + half, depth + half)
+        local x4, y4 = bay_point(px, py, ux, uy, ox, oy,
+                                 at - half, depth + half)
+        bg:quad(x1, y1, x2, y2, x3, y3, x4, y4, recess)
+        glow:outline({x1,y1, x2,y2, x3,y3, x4,y4},
+                     0.55, hardware_hot, true)
+    end
+
     local function pipe_segment(x1, y1, x2, y2)
         bg:seg(x1, y1, x2, y2, 2.8, recess, true)
         glow:seg(x1, y1, x2, y2, 1.25, hardware, true)
         glow:seg(x1, y1, x2, y2, 0.42, hardware_hot, true)
     end
 
-    local function pipe_coupler(x, y)
-        bg:disc(x, y, 2.05, 8, recess)
-        glow:ring(x, y, 1.65, 0.68, 8, hardware_hot)
-    end
-
     local function draw_bay(px, py, ux, uy, ox, oy, a, b, motif)
         local span = b - a
-        if span < 24 then return end
+        if span < 28 then return end
         local mid = (a + b) * 0.5
         if motif == 0 then
-            -- Quiet armor still has weight. One offset seam and two dark
-            -- fasteners keep it from becoming an empty gap, while leaving a
-            -- long rest between the busier machines.
-            armor_panel(px, py, ux, uy, ox, oy, a, b, plate_dim, 3.2)
-            local at = a + span * 0.62
-            local x1, y1 = bay_point(px, py, ux, uy, ox, oy, at - 2, 3.4)
-            local x2, y2 = bay_point(px, py, ux, uy, ox, oy, at + 2, 11.6)
-            glow:seg(x1, y1, x2, y2, 0.7, seam)
-            fastener(px, py, ux, uy, ox, oy, a + 6, 7.5)
-            fastener(px, py, ux, uy, ox, oy, b - 6, 7.5)
+            -- A compact inspection hatch. Its cross is orthogonal and the
+            -- clipped corners are 45 degrees, so it reads as one square
+            -- machine rather than another long capsule.
+            armor_panel(px, py, ux, uy, ox, oy, a, b, 2.5)
+            inset_panel(px, py, ux, uy, ox, oy, a + 6, b - 6, 5.0, 10.0)
+            local x1, y1 = bay_point(px, py, ux, uy, ox, oy, mid - 4, 7.5)
+            local x2, y2 = bay_point(px, py, ux, uy, ox, oy, mid + 4, 7.5)
+            local x3, y3 = bay_point(px, py, ux, uy, ox, oy, mid, 5.2)
+            local x4, y4 = bay_point(px, py, ux, uy, ox, oy, mid, 9.8)
+            glow:seg(x1, y1, x2, y2, 0.7, hardware)
+            glow:seg(x3, y3, x4, y4, 0.7, hardware)
         elseif motif == 1 then
-            -- A service hatch, inset inside its own armor collar. The lamps
-            -- and center rail use the same cold service light as the station.
-            armor_panel(px, py, ux, uy, ox, oy, a, b, plate, 2.2)
-            inset_panel(px, py, ux, uy, ox, oy, a + 6, b - 6, 5.0, 10.4)
-            local lx, ly = bay_point(px, py, ux, uy, ox, oy, a + 10, 7.7)
-            local rx, ry = bay_point(px, py, ux, uy, ox, oy, b - 10, 7.7)
-            glow:seg(lx, ly, rx, ry, 0.72, hardware)
-            glow:disc(lx, ly, 1.05, 8, hardware_hot)
-            glow:disc(rx, ry, 1.05, 8, hardware_hot)
+            -- An exposed service pipe with two right-angle elbows. Square
+            -- clamps replace the row of circular couplers.
+            local p1x, p1y = bay_point(px, py, ux, uy, ox, oy, a + 3, 5.0)
+            local p2x, p2y = bay_point(px, py, ux, uy, ox, oy, mid - 4, 5.0)
+            local p3x, p3y = bay_point(px, py, ux, uy, ox, oy, mid - 4, 10.0)
+            local p4x, p4y = bay_point(px, py, ux, uy, ox, oy, b - 3, 10.0)
+            pipe_segment(p1x, p1y, p2x, p2y)
+            pipe_segment(p2x, p2y, p3x, p3y)
+            pipe_segment(p3x, p3y, p4x, p4y)
+            mount_box(px, py, ux, uy, ox, oy, a + 3, 5.0, 1.5)
+            mount_box(px, py, ux, uy, ox, oy, mid - 4, 7.5, 1.8)
+            mount_box(px, py, ux, uy, ox, oy, b - 3, 10.0, 1.5)
         elseif motif == 2 then
-            -- A broad station truss over a recessed bay. The dark underlay
-            -- makes each brace feel structural instead of like a scratch.
-            armor_panel(px, py, ux, uy, ox, oy, a, b, plate_dim, 2.8)
-            inset_panel(px, py, ux, uy, ox, oy, a + 7, b - 7, 4.5, 10.9)
-            local ax, ay = bay_point(px, py, ux, uy, ox, oy, a + 8, 10.0)
-            local mx, my = bay_point(px, py, ux, uy, ox, oy, mid, 4.1)
-            local bx, by = bay_point(px, py, ux, uy, ox, oy, b - 8, 10.0)
-            bg:seg(ax, ay, mx, my, 3.2, plate, true)
-            bg:seg(mx, my, bx, by, 3.2, plate, true)
-            glow:seg(ax, ay, mx, my, 0.72, hardware, true)
-            glow:seg(mx, my, bx, by, 0.72, hardware, true)
-            pipe_coupler(mx, my)
+            -- A square X brace. Both strokes are exactly 45 degrees in the
+            -- wall's own axes.
+            armor_panel(px, py, ux, uy, ox, oy, a, b, 2.0)
+            local a1x, a1y = bay_point(px, py, ux, uy, ox, oy, mid - 4, 3.5)
+            local a2x, a2y = bay_point(px, py, ux, uy, ox, oy, mid + 4, 11.5)
+            local b1x, b1y = bay_point(px, py, ux, uy, ox, oy, mid + 4, 3.5)
+            local b2x, b2y = bay_point(px, py, ux, uy, ox, oy, mid - 4, 11.5)
+            bg:seg(a1x, a1y, a2x, a2y, 2.6, recess, true)
+            bg:seg(b1x, b1y, b2x, b2y, 2.6, recess, true)
+            glow:seg(a1x, a1y, a2x, a2y, 0.78, hardware, true)
+            glow:seg(b1x, b1y, b2x, b2y, 0.78, hardware, true)
+            mount_box(px, py, ux, uy, ox, oy, mid, 7.5, 1.8)
         elseif motif == 3 then
-            -- A deep intake with enough slats to read as a vent, bounded by
-            -- a heavy collar and bolts instead of drawn loose on the wall.
-            armor_panel(px, py, ux, uy, ox, oy, a, b, plate, 2.0)
+            -- A compact intake. Three perpendicular slats are enough at this
+            -- scale; the old six and seven slat bays became visual noise.
+            armor_panel(px, py, ux, uy, ox, oy, a, b, 2.0)
             inset_panel(px, py, ux, uy, ox, oy, a + 6, b - 6, 4.6, 10.7)
-            local n = math.max(4, math.min(7, math.floor(span / 10)))
-            for k = 1, n do
-                local at = a + 7 + (span - 14) * k / (n + 1)
+            for k = -1, 1 do
+                local at = mid + k * 5
                 local sx, sy = bay_point(px, py, ux, uy, ox, oy, at, 5.4)
                 local ex2, ey2 = bay_point(px, py, ux, uy, ox, oy, at, 9.9)
                 glow:seg(sx, sy, ex2, ey2, 0.78, hardware)
             end
-            fastener(px, py, ux, uy, ox, oy, a + 4, 7.7)
-            fastener(px, py, ux, uy, ox, oy, b - 4, 7.7)
         elseif motif == 4 then
-            -- Warning teeth mark the threshold of a maintenance enclosure.
-            -- The paint belongs to a hatch, rather than floating down a run.
-            armor_panel(px, py, ux, uy, ox, oy, a, b, plate, 3.0)
-            local hatch_a = math.max(a + 6, mid - 18)
-            local hatch_b = math.min(b - 6, mid + 18)
-            inset_panel(px, py, ux, uy, ox, oy,
-                        hatch_a, hatch_b, 4.5, 10.9)
-            local first = hatch_a + 3
-            local last = hatch_b - 3
-            local n = math.max(3, math.floor((last - first) / 7))
-            for k = 0, n - 1 do
-                local at = first + (last - first) * k / math.max(1, n - 1)
-                local sx, sy = bay_point(px, py, ux, uy, ox, oy, at - 2, 5.0)
-                local ex2, ey2 = bay_point(px, py, ux, uy, ox, oy, at + 2, 10.3)
+            -- Three 45 degree warning teeth on one square access plate.
+            armor_panel(px, py, ux, uy, ox, oy, a, b, 2.5)
+            inset_panel(px, py, ux, uy, ox, oy, a + 5, b - 5, 4.3, 10.7)
+            for k = -1, 1 do
+                local at = mid + k * 7
+                local sx, sy = bay_point(px, py, ux, uy, ox, oy, at - 3, 4.5)
+                local ex2, ey2 = bay_point(px, py, ux, uy, ox, oy, at + 3, 10.5)
                 glow:seg(sx, sy, ex2, ey2, 1.3, warning, true)
             end
-            fastener(px, py, ux, uy, ox, oy, hatch_a - 2, 7.7)
-            fastener(px, py, ux, uy, ox, oy, hatch_b + 2, 7.7)
-        elseif motif == 5 then
-            -- An exposed pipe changes depth through two hard elbows. Coupler
-            -- rings and a junction box keep it from reading as another seam.
-            armor_panel(px, py, ux, uy, ox, oy, a, b, plate_dim, 2.6)
-            local p1x, p1y = bay_point(px, py, ux, uy, ox, oy, a + 6, 5.0)
-            local p2x, p2y = bay_point(px, py, ux, uy, ox, oy, mid - 5, 5.0)
-            local p3x, p3y = bay_point(px, py, ux, uy, ox, oy, mid - 5, 9.8)
-            local p4x, p4y = bay_point(px, py, ux, uy, ox, oy, b - 6, 9.8)
-            pipe_segment(p1x, p1y, p2x, p2y)
-            pipe_segment(p2x, p2y, p3x, p3y)
-            pipe_segment(p3x, p3y, p4x, p4y)
-            pipe_coupler(p1x, p1y)
-            pipe_coupler(p2x, p2y)
-            pipe_coupler(p3x, p3y)
-            pipe_coupler(p4x, p4y)
-        elseif motif == 6 then
-            -- A field patch interrupts the original plate at an odd angle.
-            -- Rivets and a short weld bead explain the second layer of armor.
-            armor_panel(px, py, ux, uy, ox, oy, a, b, plate_dim, 3.1)
-            local pa = a + span * 0.20
-            local pb = b - span * 0.16
-            local patch = panel_shape(px, py, ux, uy, ox, oy,
-                                      pa, pb, 4.2, 10.9, 1.6)
-            bg:fan(patch, plate)
-            glow:outline(patch, 0.72, hardware, true)
-            fastener(px, py, ux, uy, ox, oy, pa + 4, 6.0)
-            fastener(px, py, ux, uy, ox, oy, pb - 4, 9.0)
-            local w1x, w1y = bay_point(px, py, ux, uy, ox, oy,
-                                       pa + span * 0.18, 10.2)
-            local w2x, w2y = bay_point(px, py, ux, uy, ox, oy,
-                                       pa + span * 0.34, 8.2)
-            local w3x, w3y = bay_point(px, py, ux, uy, ox, oy,
-                                       pa + span * 0.48, 10.0)
-            glow:seg(w1x, w1y, w2x, w2y, 0.75, hardware_hot)
-            glow:seg(w2x, w2y, w3x, w3y, 0.75, hardware_hot)
         else
-            -- Three capped buttresses divide one armor bay. A few warm teeth
-            -- mark the center foot where maintenance crews cross the brace.
-            armor_panel(px, py, ux, uy, ox, oy, a, b, plate_dim, 2.4)
-            for k = 1, 3 do
-                local at = a + span * k / 4
-                local sx, sy = bay_point(px, py, ux, uy, ox, oy, at, 3.2)
-                local ex2, ey2 = bay_point(px, py, ux, uy, ox, oy, at, 11.3)
-                bg:seg(sx, sy, ex2, ey2, 3.0, plate, true)
-                glow:seg(sx, sy, ex2, ey2, 0.68, hardware, true)
-                fastener(px, py, ux, uy, ox, oy, at, 10.7)
-            end
-            for k = -1, 1 do
-                local at = mid + k * 4
-                local sx, sy = bay_point(px, py, ux, uy, ox, oy, at - 1.5, 4)
-                local ex2, ey2 = bay_point(px, py, ux, uy, ox, oy, at + 1.5, 7)
-                glow:seg(sx, sy, ex2, ey2, 0.9, warning, true)
+            -- A T support with two 45 degree gussets. This family has no
+            -- enclosing panel, so the wall does not become a row of bars.
+            local sx, sy = bay_point(px, py, ux, uy, ox, oy, mid, 3.0)
+            local ex2, ey2 = bay_point(px, py, ux, uy, ox, oy, mid, 12.0)
+            local c1x, c1y = bay_point(px, py, ux, uy, ox, oy, mid - 6, 11.0)
+            local c2x, c2y = bay_point(px, py, ux, uy, ox, oy, mid + 6, 11.0)
+            bg:seg(sx, sy, ex2, ey2, 3.2, plate, true)
+            glow:seg(sx, sy, ex2, ey2, 0.75, hardware, true)
+            glow:seg(c1x, c1y, c2x, c2y, 0.75, hardware, true)
+            local g1x, g1y = bay_point(px, py, ux, uy, ox, oy, mid - 5, 9.0)
+            local g2x, g2y = bay_point(px, py, ux, uy, ox, oy, mid, 4.0)
+            local g3x, g3y = bay_point(px, py, ux, uy, ox, oy, mid + 5, 9.0)
+            glow:seg(g1x, g1y, g2x, g2y, 0.65, structure, true)
+            glow:seg(g2x, g2y, g3x, g3y, 0.65, structure, true)
+            mount_box(px, py, ux, uy, ox, oy, mid, 11.0, 1.7)
+        end
+    end
+
+    local MODULE_WIDTH = {36, 48, 32, 32, 36, 32}
+
+    local function draw_modules(px, py, qx, qy, ox, oy, side_index,
+                                is_border)
+        local dx, dy = qx - px, qy - py
+        local len = math.sqrt(dx * dx + dy * dy)
+        if len < 48 then return end
+        local ux, uy = dx / len, dy / len
+        local horizontal = math.abs(dx) > math.abs(dy)
+        local axis0 = horizontal and px or py
+        local axis1 = horizontal and qx or qy
+        local line = math.floor(((horizontal and py or px) + 0.5) / TILE)
+        local pitch = is_border and 320 or 224
+        local first = math.floor(axis0 / pitch) - 1
+        local last = math.floor(axis1 / pitch) + 1
+
+        for slot = first, last do
+            local salt = is_border and 104729 or 0
+            local seed = lcg(((slot + 4096) * 7907 + (line + 1) * 15551
+                              + side_index * 26699 + salt)
+                             % 2147483646 + 1)
+            -- One slot in three is deliberately empty. Combined with the
+            -- large pitch, that leaves hundreds of pixels of bare armor
+            -- between compact service clusters.
+            if seed % 3 ~= 0 then
+                seed = lcg(seed)
+                local motif = seed % #MODULE_WIDTH
+                seed = lcg(seed)
+                local center = slot * pitch + pitch * 0.5
+                               + ((seed % 5) - 2) * 8
+                local width = MODULE_WIDTH[motif + 1]
+                local a = center - width * 0.5 - axis0
+                local b = center + width * 0.5 - axis0
+                if a >= 20 and b <= len - 20 then
+                    draw_bay(px, py, ux, uy, ox, oy, a, b, motif)
+                end
             end
         end
     end
@@ -859,7 +854,7 @@ local function wall_mass(bg, glow, set, cells, border)
                and set[key(tx - 1, ty)] and set[key(tx + 1, ty)] then
                 local x, y = tx * TILE, ty * TILE
                 local mark = lcg((tx * 7907 + ty * 15551 + 977)
-                                 % 2147483646 + 1) % 31
+                                 % 2147483646 + 1) % 113
                 if mark == 0 then
                     bg:rect(x + 2, y + 3, 12, 10, recess)
                     glow:outline({x + 2, y + 3, x + 14, y + 3,
@@ -869,10 +864,9 @@ local function wall_mass(bg, glow, set, cells, border)
                         glow:seg(x + 5, y + 6 + k * 2,
                                  x + 11, y + 6 + k * 2, 0.6, hardware)
                     end
-                elseif mark == 1 or mark == 2 then
-                    glow:seg(x + 3, y + 8, x + 13, y + 8, 0.7, seam)
-                    glow:disc(x + 4, y + 8, 0.9, 6, hardware_hot)
-                    glow:disc(x + 12, y + 8, 0.9, 6, hardware_hot)
+                elseif mark == 1 then
+                    glow:seg(x + 4, y + 4, x + 12, y + 12,
+                             0.7, seam)
                 end
             end
         end
@@ -898,64 +892,18 @@ local function wall_mass(bg, glow, set, cells, border)
             glow:skirt(px, py, qx, qy, ox * 6, oy * 6, 0.13, outer)
             glow:seg(px, py, qx, qy, 1.4, hotline)
             if border then
-                -- The map's own edge, said twice. Small fittings and full
-                -- service bays both use an irregular pitch. The bays sit
-                -- farther apart than they do on an interior bulkhead, so the
-                -- boundary stays calm without becoming an empty black slab.
+                -- The map's own edge, said twice. Its modules use the same
+                -- world-anchored schedule as an interior wall, with a wider
+                -- pitch so the boundary remains the calmer structure.
                 glow:seg(px - ox * 3, py - oy * 3, qx - ox * 3, qy - oy * 3,
                          0.8, edge2)
-                local len = math.abs(qx - px) + math.abs(qy - py)
-                local ux, uy = (qx - px) / len, (qy - py) / len
-                local seed = lcg((tx * 7907 + ty * 15551 + s * 26699)
-                                 % 2147483646 + 1)
-                local at = 18 + seed % 29
-                while at < len - 10 do
-                    seed = lcg(seed)
-                    local mx, my = px + ux * at, py + uy * at
-                    if seed % 4 == 0 then
-                        glow:seg(mx, my, mx - ox * 5, my - oy * 5,
-                                 0.8, tick)
-                    elseif seed % 4 == 1 then
-                        glow:seg(mx - ux * 7 - ox * 5, my - uy * 7 - oy * 5,
-                                 mx + ux * 7 - ox * 5, my + uy * 7 - oy * 5,
-                                 0.8, hardware)
-                    elseif seed % 4 == 2 then
-                        glow:disc(mx - ox * 4, my - oy * 4,
-                                  1.0, 6, hardware_hot)
-                    end
-                    at = at + 38 + seed % 59
-                end
-                seed = lcg(seed)
-                at = 28 + seed % 41
-                while at < len - 28 do
-                    seed = lcg(seed)
-                    local stop = math.min(len - 18,
-                                          at + 58 + seed % 79)
-                    seed = lcg(seed)
-                    draw_bay(px, py, ux, uy, ox, oy,
-                             at, stop, seed % 8)
-                    seed = lcg(seed)
-                    at = stop + 26 + seed % 43
+                if long then
+                    draw_modules(px, py, qx, qy, ox, oy, s, true)
                 end
             elseif long then
                 glow:seg(px - ox * 3.5, py - oy * 3.5,
                          qx - ox * 3.5, qy - oy * 3.5, 0.7, bevel)
-
-                local dx, dy = qx - px, qy - py
-                local len = math.sqrt(dx * dx + dy * dy)
-                local ux, uy = dx / len, dy / len
-                local seed = lcg((tx * 7907 + ty * 15551 + ex * 1973
-                                  + ey * 9277 + s * 26699)
-                                 % 2147483646 + 1)
-                local at = 12 + seed % 17
-                while at < len - 16 do
-                    seed = lcg(seed)
-                    local stop = math.min(len - 12, at + 44 + seed % 53)
-                    seed = lcg(seed)
-                    draw_bay(px, py, ux, uy, ox, oy, at, stop, seed % 8)
-                    seed = lcg(seed)
-                    at = stop + 10 + seed % 23
-                end
+                draw_modules(px, py, qx, qy, ox, oy, s, false)
             end
         end)
     end
