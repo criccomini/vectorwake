@@ -98,23 +98,40 @@ tiles under it: the corner that would touch one is the same corner the face
 is holding up. That is what stops the staircase coming back as the square
 backing behind a smooth front.
 
-The generator draws its diagonals this way, and a run is three tiles across: a
-solid spine with a face either side of it, each filling the corner that points
-back at the spine.
+The generator draws its diagonals this way, as a pair of tiles side by side,
+each filling the corner nearest the other. Their solid halves meet along the
+whole of the edge they share and their open halves fall outside, which leaves
+**one stripe** with a face down each side. Two tiles across, not a solid tile
+in it, and the two faces are parallel: both are the run's own line, a tile
+apart. A stripe, not a vee and not a zigzag.
 
-Three and not one, because a run of slopes one tile thick is a **one-way wall**.
-Consecutive tiles of one variant meet at a point, so the face they make is
-continuous and the material behind it is not: coming at the side the solid
-halves face, a hull is stopped, and coming at the other it goes straight
-through, because the open halves line up into a corridor. Sixteen hulls out of
-sixteen, at every speed from one pixel a tick to twenty-four. It looks like a
-wall on the drawing either way, which is why there is a test for it rather than
-a sentence.
+Two and not one, because a single run is a **one-way wall**. Tiles of one
+variant meet corner to corner, so the face they make is continuous and the
+material behind it is not: coming at the side the solid halves face a hull is
+stopped, and coming at the other it goes straight through, because the open
+halves line up into a corridor. Sixteen hulls out of sixteen, at every speed
+measured. It looks like a wall on the drawing from both sides, which is why
+that is a test rather than a sentence.
 
-That makes a diagonal about twice the thickness of a straight wall on the same
-map, which is why these were stepped single tiles for so long: at radar scale a
-thick diagonal reads as a smear rather than a line. It reads that way and it is
-flyable, and between those two the collision wins.
+What makes the pair work is that the two runs **share a whole edge**. Each tile
+is solid the entire length of the side it hands its neighbour, across the run
+and along it both. Every other diagonal a square grid can draw meets corner to
+corner and pinches to a point there, and that pinch is the interesting part:
+
+**A pinch is no hole to a hull and it is a hole to a bullet.** A hull is three
+tiles across and cannot fit through a point. A round can. Fired square at a
+stepped diagonal, a round travels along the other diagonal, which takes it
+exactly through the corners where the tiles touch, and it passes through a wall
+that stops every ship in the game. One heading in thirty-two, and the heading
+is the shot anybody would take. That was true of the generator's diagonals for
+as long as they were stepped, and of a sloped run with a solid spine down the
+middle, which has the same stepped line inside it. The pair leaks on none of
+the thirty-two.
+
+The pair is also *thinner* than the staircase it replaces: seed 3 of the open
+arena goes from 3.06% solid to 2.91%. A thick diagonal reading as a smear at
+radar scale was the reason these stayed single stepped tiles for so long, and
+it turns out not to be a cost that had to be paid.
 
 The match maps are untouched by this. `--match` builds its pockets and lanes
 from its own pipeline rather than from the shape vocabulary the open arena
