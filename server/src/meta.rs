@@ -297,21 +297,41 @@ begin
     end if;
     -- The barrels first, into the spray of the same trigger, before the slots
     -- underneath them move.
+    --
+    -- Each is written at its spray's *pre-shift* slot, so the shift below
+    -- carries it home with everything else. The bomb one used to be written at
+    -- 13, the slot it ends up on, which is also `old_gun_barrel`: the delete on
+    -- the next line then threw away the entitlement that had just been folded,
+    -- and every pilot who had bought a bomb barrel lost it.
     insert into entitlements (account, slot, n)
-    select b.account, (case when b.slot = old_gun_barrel then 7 else 13 end)::smallint,
+    select b.account, (case when b.slot = old_gun_barrel then 7 else old_bomb_first end)::smallint,
            least(5, coalesce(m.n, 0) * 2 + b.n)::smallint
       from entitlements b
       left join entitlements m
              on m.account = b.account
-            and m.slot = (case when b.slot = old_gun_barrel then 7 else 14 end)
+            and m.slot = (case when b.slot = old_gun_barrel then 7 else old_bomb_first end)
      where b.slot in (old_gun_barrel, old_bomb_barrel)
     on conflict (account, slot) do update set n = excluded.n;
     delete from entitlements where slot in (old_gun_barrel, old_bomb_barrel);
-    -- Then the shift. Downwards, so an update never lands on a row it has not
-    -- moved yet.
-    update entitlements set slot = slot - 1
-     where slot >= old_bomb_first and slot < old_charge_first;
-    update entitlements set slot = slot - 2 where slot >= old_charge_first;
+    -- Then the shift, through a scratch range clear of the slot space.
+    --
+    -- `slot = slot - 1` in place looks safe and is not. A primary key is
+    -- checked per row rather than at the end of the statement, so the moment
+    -- Postgres moves a row onto a slot it has not vacated yet the update fails
+    -- with a duplicate key. Whether it does is a question about physical row
+    -- order: ascending, every row lands on ground the one before it just left
+    -- and the shift works; in any other order it does not. A table filled by
+    -- purchases over months is in no order at all.
+    --
+    -- It failed on the fleet and passed everywhere else, and because the whole
+    -- schema goes in on one implicit transaction the rollback took the
+    -- `spray_merged` mark with it. So every restart ran it again, each new
+    -- connection queued behind the last one's locks, and a one-vCPU database
+    -- sat at ninety percent until somebody stopped the container.
+    update entitlements set slot = slot + 100 where slot >= old_bomb_first;
+    update entitlements set slot = slot - 101
+     where slot >= 100 + old_bomb_first and slot < 100 + old_charge_first;
+    update entitlements set slot = slot - 102 where slot >= 100 + old_charge_first;
     delete from kits;
     insert into schema_marks (name) values ('spray_merged');
 end $$;
@@ -4699,6 +4719,32 @@ async fn reply(
 }
 
 /// `vectorwake-server meta [catalog-dir]`
+/// What a database error actually says.
+///
+/// `tokio_postgres::Error` renders as the words "db error" and nothing else.
+/// The message, the failing constraint and the statement it happened in are
+/// all in the source chain behind it, and a `{e}` never reaches them.
+///
+/// That cost a fleet an evening. The schema stopped applying, every boot
+/// printed `meta: cannot apply schema: db error`, and the line named neither
+/// what was wrong nor where; the answer came from reading `pg_stat_activity`
+/// on the live database instead. A log line whose whole job is to say what
+/// went wrong should say it.
+fn why(e: &(dyn std::error::Error + 'static)) -> String {
+    let mut out = e.to_string();
+    let mut src = e.source();
+    while let Some(c) = src {
+        let s = c.to_string();
+        // The outer layers are often just "db error" again.
+        if !out.contains(&s) {
+            out.push_str(": ");
+            out.push_str(&s);
+        }
+        src = c.source();
+    }
+    out
+}
+
 pub async fn run() {
     crate::metrics::spawn("meta", "");
     let dir = std::env::args().nth(2).unwrap_or_else(|| ".".into());
@@ -4814,12 +4860,12 @@ pub async fn run() {
     match pool.get().await {
         Ok(db) => {
             if let Err(e) = db.batch_execute(SCHEMA).await {
-                eprintln!("meta: cannot apply schema: {e}");
+                eprintln!("meta: cannot apply schema: {}", why(&e));
                 std::process::exit(1);
             }
         }
         Err(e) => {
-            eprintln!("meta: cannot reach the database: {e}");
+            eprintln!("meta: cannot reach the database: {}", why(&e));
             std::process::exit(1);
         }
     }
