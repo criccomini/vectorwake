@@ -89,6 +89,17 @@ check("a long bulkhead mixes structural treatments",
       count("glow:seg") > 80 and count("glow:disc") > 4,
       count("glow:seg") .. "/" .. count("glow:disc") .. " fittings")
 
+-- The thick map boundary uses the same machinery at a slower rhythm. It is a
+-- calmer wall, not an undecorated void between two bright collision lines.
+world = reset()
+for x = 10, 140 do put(x, 12, T_SOLID, 1) end
+world.build_static(writer("border-fill"), writer("border-glow"),
+                   6, 8, 144, 16)
+check("a perimeter mass carries sparse service bays",
+      count("border-fill:fan") > 4 and count("border-glow:outline") > 4,
+      count("border-fill:fan") .. "/" .. count("border-glow:outline")
+      .. " bays")
+
 -- A big rock is still one collision object, but it is no longer one flat
 -- polygon. Facet triangles, ridges, pits, and a mineral seam give it volume.
 world = reset()

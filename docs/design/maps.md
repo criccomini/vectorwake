@@ -442,6 +442,10 @@ collides with, then cuts docking throats, armor quarters, trusses, and a cold
 reactor into that mass. The detail is subordinate to the outside edge at combat
 zoom. A player reads collision first and fiction on the second look.
 
+The thick perimeter mass uses the same service bays at a slower rhythm. Its
+long dark rests distinguish the arena boundary from an interior partition, but
+machinery still reaches into the slab from each exposed face.
+
 This keeps theme and topology independent. Ring and spokes can be a relay or a
 dockyard without becoming the same room with a different seed. Large objects
 are stamped as objects, so a station's six-tile body cannot be mistaken for

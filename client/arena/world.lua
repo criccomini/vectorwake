@@ -898,9 +898,10 @@ local function wall_mass(bg, glow, set, cells, border)
             glow:skirt(px, py, qx, qy, ox * 6, oy * 6, 0.13, outer)
             glow:seg(px, py, qx, qy, 1.4, hotline)
             if border then
-                -- The map's own edge, said twice. Its sparse fittings use an
-                -- irregular pitch, so a long boundary does not turn into a
-                -- ruler laid against the playfield.
+                -- The map's own edge, said twice. Small fittings and full
+                -- service bays both use an irregular pitch. The bays sit
+                -- farther apart than they do on an interior bulkhead, so the
+                -- boundary stays calm without becoming an empty black slab.
                 glow:seg(px - ox * 3, py - oy * 3, qx - ox * 3, qy - oy * 3,
                          0.8, edge2)
                 local len = math.abs(qx - px) + math.abs(qy - py)
@@ -923,6 +924,18 @@ local function wall_mass(bg, glow, set, cells, border)
                                   1.0, 6, hardware_hot)
                     end
                     at = at + 38 + seed % 59
+                end
+                seed = lcg(seed)
+                at = 28 + seed % 41
+                while at < len - 28 do
+                    seed = lcg(seed)
+                    local stop = math.min(len - 18,
+                                          at + 58 + seed % 79)
+                    seed = lcg(seed)
+                    draw_bay(px, py, ux, uy, ox, oy,
+                             at, stop, seed % 8)
+                    seed = lcg(seed)
+                    at = stop + 26 + seed % 43
                 end
             elseif long then
                 glow:seg(px - ox * 3.5, py - oy * 3.5,
