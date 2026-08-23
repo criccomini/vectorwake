@@ -2439,3 +2439,33 @@ hostile, a flinch at a crossing stream is usually the right reflex anyway.
 streams often enough to name it, or a mode with more sides lands. The first
 thing to try then is luminance rather than hue: a friendly round drawn a step
 dimmer keeps the whole ramp and spends a channel the ramp does not use.
+
+## 56. The landing shows the game, and the shop teaches it
+
+**Decision:** the play page joins the selected zone as a watcher while it is
+on screen, so the actual match plays behind the menu; one panel on the left
+carries the zone carousel, the room's own clock and split score bar, the
+standings with the ground beside them, and the deploy key, which converts
+the standing watch connection into the seat rather than re-dialling. The
+zones list is gone from the landing: with three to five game types the
+carousel on the name is the whole picker. The shop gained a reading pane
+(a drill-in page on a phone) with an animated firing-range demo and a
+client-side teaching sentence per slot.
+
+**Why:** the landing described the game in labeled numbers and asked a new
+player to want it anyway. An arcade cabinet runs its attract loop instead,
+and this game's honest draw is that a match is always on: the clock, the
+score, the fight and who is winning are all real and all live, and pressing
+deploy drops into exactly what the screen was showing. The shop knew every
+price and could not say what a fuse was for; thirty points of animation and
+one sentence per slot answer what a name and a ladder cannot.
+
+**Cost:** an idle landing holds a live connection per viewer, and the
+directory's people count includes watchers, so a browsing player reads as a
+person in the room. The backdrop also brings the battle's sounds to the
+menu, which is either atmosphere or noise depending on who is asked.
+
+**Reconsider if:** landing connections become a real load on small hosts
+(gate the attract on desktop or on focus), or watchers inflating the room
+count starts steering players at fleet scale (count seated humans in the
+directory instead).

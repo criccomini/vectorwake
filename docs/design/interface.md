@@ -200,11 +200,13 @@ thirty-point budget) is a bar. A switch you throw is a chip: a small stroked
 box with its word inside, on or off, lit when held.
 
 **Everything that points is drawn.** Sort order is a triangle, never a caret
-character or a letter v. The carousel's arrows, the week stepper, the "you
-are here" wedge in a row's gutter, the watching play-mark, the board's arrow
-keys: all triangles from the mesh layer, weighted like the line work around
-them. The gui font's glyphs never stand in for marks, which is also why close
-is four drawn spokes and not the letter x.
+character or a letter v. The carousel's arrows, the week stepper, the back
+caret on a page a phone has drilled into, the "you are here" wedge in a row's
+gutter, the watching play-mark, the board's arrow keys: all triangles from
+the mesh layer, weighted like the line work around them. A "<" set in type is
+a picture of a mathematical symbol, not of going back. The gui font's glyphs
+never stand in for marks, which is also why close is four drawn spokes and
+not the letter x.
 
 ## Marks
 

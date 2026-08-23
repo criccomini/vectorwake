@@ -37,6 +37,9 @@ local REFRESH = 3
 local RETRY_FIRST, RETRY_MAX = 2, 15
 
 M.rows = {}
+-- Seconds since the last good reply landed. The clocks on the rows were true
+-- at that moment and count down from it.
+M.aged = 0
 -- What the list says when it has nothing to list: a heading and the line
 -- under it. Two strings rather than one, because an empty page has room to
 -- say what is happening as well as what will happen.
@@ -99,6 +102,8 @@ local function zone_rooms(z)
                     players = rm.players or 0,
                     bots = rm.bots or 0,
                     full = rm.full == true,
+                    clock = rm.clock or 0,
+                    playing = rm.playing == true,
                 }
             end
         end
@@ -141,6 +146,24 @@ function M.at_instance(id)
     return type(id) == "string" and M.instances[id] or nil
 end
 
+-- The room a press on the zone's row would put you in: the head instance's
+-- first room with a seat, or its first room when every one is full. This is
+-- the room whose clock the play page counts down, so it has to be the same
+-- pick the join makes; a clock read off one room and a whistle heard in
+-- another is worse than no clock.
+local function join_room(z)
+    local up = z.instances and z.instances[1] or nil
+    if not up or type(up.rooms) ~= "table" then return nil end
+    local first = nil
+    for _, rm in ipairs(up.rooms) do
+        if type(rm) == "table" then
+            first = first or rm
+            if rm.full ~= true then return rm end
+        end
+    end
+    return first
+end
+
 local function on_message(s)
     if string.byte(s, 1) ~= S2C_STATUS then return end
     local ok, reply = pcall(json.decode, string.sub(s, 2))
@@ -157,6 +180,7 @@ local function on_message(s)
     local rows = {}
     for _, z in ipairs(reply.zones) do
         local up = z.instances and z.instances[1] or nil
+        local landing = join_room(z)
         local players = z.players or 0
         rows[#rows + 1] = {
             zone = z.name,
@@ -182,6 +206,15 @@ local function on_message(s)
             -- as "3 playing, 51 AI" read and compared against the next line.
             players = players,
             bots = z.bots or 0,
+            -- One room's seats, for drawing the room as a row of them. Zero
+            -- from a directory that predates the field, and the drawing
+            -- falls back to bare marks.
+            seats = z.seats or 0,
+            -- The clock of the room a join would land in, in whole seconds,
+            -- and whether that room is mid-match or between them. Zero from
+            -- a fleet that predates the field, and the page draws no clock.
+            clock = landing and landing.clock or 0,
+            playing = landing ~= nil and landing.playing == true,
             live = up ~= nil,
             -- No seat and no headroom to make one, as the instance at the head
             -- of the list reports it. The row keeps its counts rather than
@@ -213,6 +246,10 @@ local function on_message(s)
     -- parse halfway leaves the last good list up, which is a better answer
     -- than an empty one.
     M.rows = rows
+    -- The room clocks in this reply are as fresh as they will ever be. The
+    -- page subtracts this age from a row's clock so the count moves every
+    -- second instead of every refresh.
+    M.aged = 0
     M.note = (#rows == 0) and "no games are running" or ""
     M.why = "the list fills in by itself when one starts"
 end
@@ -312,6 +349,10 @@ function M.tick(dt)
         end
         return
     end
+    -- The reply's clocks keep ageing whether or not the socket is up: a row
+    -- from a directory that has just gone quiet counts down honestly until
+    -- the next reply replaces it or the drawing clamps it at zero.
+    M.aged = M.aged + dt
     -- The socket went and nothing else will replace it. Without this the list
     -- is a dead end for the life of the process: the fleet restarts, the
     -- directory comes back, and the only way to see it is to reload the whole

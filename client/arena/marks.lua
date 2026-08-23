@@ -543,9 +543,7 @@ end
 --
 -- Returns how far right the whole thing reached, since a hull holding three
 -- add-ons draws a good deal wider than one holding none.
-function M.weapon(cx, cy, k, me, t)
-    local gun = t == sim.TRIG_GUN
-    local lvl = ship_lvl(me, t)
+local function dressed(cx, cy, k, gun, lvl, modn, gun_lvl, off)
     local base = pal.a(pal.rung(lvl), 0.9)
     local at = cx + k * (gun and M.BOLT_BIAS or M.BOMB_BIAS)
     local m = gun and mk_bolt(at, cy, k) or mk_bomb(at, cy, k)
@@ -555,20 +553,19 @@ function M.weapon(cx, cy, k, me, t)
     local radial = m.radial or MOD_RADIAL
     local rings = 0
     for i = 1, #pal.MODS do
-        if radial[i] and ship_mod(me, t, i - 1) > 0 then rings = rings + 1 end
+        if radial[i] and (modn[i] or 0) > 0 then rings = rings + 1 end
     end
     m.step = rings > 0 and (k * M.MARK_REACH - m.out) / rings or 0
     -- A declined add-on is drawn dimmed rather than dropped. You still hold
     -- it, and a fan that quietly stopped fanning with nothing on screen to say
     -- so is a weapon that looks broken.
-    local off = ship_multi_off(me)
     m.off = off and true or false
     -- What goes under the round goes down first, in the round's own color
     -- rather than the add-on's hot one: a fuse is not a thing stuck on a bomb,
     -- it is how far the bomb reaches, so it is the bomb faintly over the area
     -- it reaches. Then the round, then everything worn on it.
     for i = 1, #pal.MODS do
-        local n = ship_mod(me, t, i - 1)
+        local n = modn[i] or 0
         if n > 0 and MOD_GROUND[i] then MOD_GROUND[i](m, base, n) end
     end
     draw_round(m, base)
@@ -577,9 +574,9 @@ function M.weapon(cx, cy, k, me, t)
     -- different color stuck on the side of it.
     local add = pal.a(pal.hot(pal.rung(lvl), 0.45), 0.95)
     -- And the one add-on whose magnitude lives on the other ladder.
-    local frag = pal.a(pal.hot(pal.rung(ship_lvl(me, sim.TRIG_GUN)), 0.45), 0.95)
+    local frag = pal.a(pal.hot(pal.rung(gun_lvl), 0.45), 0.95)
     for i = 1, #pal.MODS do
-        local n = ship_mod(me, t, i - 1)
+        local n = modn[i] or 0
         if n > 0 then
             -- More of the round is the round's own color; everything else is
             -- the round run hot. See above.
@@ -595,6 +592,22 @@ function M.weapon(cx, cy, k, me, t)
         end
     end
     return m.x + m.far
+end
+
+function M.weapon(cx, cy, k, me, t)
+    local modn = {}
+    for i = 1, #pal.MODS do modn[i] = ship_mod(me, t, i - 1) end
+    return dressed(cx, cy, k, t == sim.TRIG_GUN, ship_lvl(me, t), modn,
+                   ship_lvl(me, sim.TRIG_GUN), ship_multi_off(me))
+end
+
+-- The round with a named kit, for a caller that has no ship to read: the
+-- shelf sells an add-on by drawing the round wearing the one on offer, and a
+-- shelf that read a live hull would be selling whatever the pilot happened
+-- to be flying. `modn` is counts in sim_mod order, and fragments take the
+-- round's own rung, which on a mark about one trigger is the honest answer.
+function M.round(cx, cy, k, gun, lvl, modn)
+    return dressed(cx, cy, k, gun, lvl, modn or {}, lvl, false)
 end
 
 return M
