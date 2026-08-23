@@ -215,6 +215,45 @@ static void random_kit(sim_ship *sh, const sim_settings *cfg, uint32_t *rng) {
     sim_set_kit(sh, cfg, kit);
 }
 
+/* Does a bomb thrown up the screen end on a hull, with an enemy parked `off`
+ * px to the side of the line it flies along? Answers with the tick it ended
+ * on that hull, or -1 for anything else.
+ *
+ * Ending on a hull and running out of life both report SIM_EV_EXPIRE, and the
+ * second is not an explosion: a bomb that crosses the arena and times out has
+ * arrived at nothing. Only the hull the round ended on tells them apart, which
+ * is what `b` carries, so that is what this reads. Counting the expiry as a
+ * hit is exactly the mistake this test was written to catch, and the first cut
+ * of it made that mistake itself.
+ *
+ * The settings come from the caller, so the same scene can be put to a zone
+ * and to a prediction client and the two answers compared. `prox` is the
+ * proximity rung; with none the bomb has to actually touch the hull, which is
+ * a different question and worth asking separately. */
+static int bombed(const sim_settings *c, int cls, int off, int prox) {
+    sim_state s;
+    sim_init(&s, 1);
+    sim_spawn(&s, (uint8_t)cls, 0, 8192, 8192, 0, c);
+    sim_spawn(&s, (uint8_t)cls, 1, 8192 + off, 8192 - 300, 0, c);
+    if (prox)
+        s.ships[0].mods[SIM_TRIG_BOMB] =
+            sim_mod_set(0, SIM_MOD_PROX, (uint8_t)prox);
+    sim_state tmp;
+    sim_events ev;
+    for (int t = 0; t < 400; t++) {
+        sim_input in[2];
+        in[0].ship = 0;
+        in[0].buttons = (uint16_t)(t == 0 ? SIM_BTN_BOMB : 0);
+        in[1].ship = 1;
+        in[1].buttons = 0;
+        sim_step(&tmp, &s, in, 2, c, &ev);
+        s = tmp;
+        for (int i = 0; i < ev.count; i++)
+            if (ev.e[i].type == SIM_EV_EXPIRE && ev.e[i].b != 255) return t;
+    }
+    return -1;
+}
+
 /* Why so many `static sim_state` below: the struct is 79 KB, main is one
  * long function, and most blocks in it declare one. gcc at -O0 reuses a
  * slot between locals whose lifetimes cannot overlap; clang gives each its
@@ -1668,6 +1707,60 @@ int main(void) {
         CHECK(s.ships[0].kills == 0, "and no kill is credited");
     }
 
+
+    /* How far out a bomb's fate is settled, which is the whole of why a
+     * prediction client should not settle it.
+     *
+     * Sweeping the enemy sideways off the bomb's line: on contact alone the
+     * bomb has to reach the hull, and 11 px to the side it misses. Give it a
+     * fuse and the decision moves out to 49, 103 and 157 px by rung, because
+     * arming is the decision. Once a fuse has somebody it goes off at closest
+     * approach whatever that turns out to be, so what the whole explosion
+     * rests on is whether a hull was inside that circle.
+     *
+     * A client is wrong about where a remote hull is by tens of pixels as a
+     * matter of course. It coasts them from the last snapshot, and the
+     * correction it eases rather than gives up and snaps runs to 48 px
+     * (REMOTE_POS_SNAP, client/ext/simcore/src/smoothing.h). That is the same
+     * size as the circle it was deciding inside. */
+    {
+        CHECK(bombed(&cfg, APEX, 0, 0) > 0, "a bomb on contact reaches a hull");
+        CHECK(bombed(&cfg, APEX, 20, 0) < 0, "and misses one 20 px to the side");
+        CHECK(bombed(&cfg, APEX, 40, 1) > 0, "one rung of fuse reaches 40 px");
+        CHECK(bombed(&cfg, APEX, 100, 2) > 0, "two rungs reach 100");
+        CHECK(bombed(&cfg, APEX, 200, 3) < 0, "and three still do not reach 200");
+    }
+
+    /* So a prediction client arms no fuse on a hull it is only guessing at.
+     * It used to, and then fired: the client blew its own bomb up on somebody
+     * who was never inside the circle, the snapshot handed the bomb back, the
+     * next prediction blew it up again, and one bomb crossing a fight drew a
+     * string of explosions it never had while the bomb itself flew on. */
+    {
+        sim_settings dc = cfg;
+        dc.deathless = 1;
+        dc.mortal_ship = 0;
+        CHECK(bombed(&dc, APEX, 100, 2) < 0,
+              "a client's own bomb does not go off on a hull it guessed at");
+        /* Not because the fuse stopped working. Pointed at the one hull this
+         * instance simulates for real, it arms and fires as it always did, so
+         * being bombed yourself stays as immediate as it ever was. */
+        dc.mortal_ship = 1;
+        CHECK(bombed(&dc, APEX, 100, 2) == bombed(&cfg, APEX, 100, 2),
+              "on the hull it does simulate, the same fuse fires the same tick");
+    }
+
+    /* Contact is untouched, which is why the fuse is singled out rather than
+     * the whole of decision 40 being widened. A round has to reach the hull,
+     * the hit reports either way so the spark still draws, and predicting it
+     * is what keeps shooting feel immediate. */
+    {
+        sim_settings dc = cfg;
+        dc.deathless = 1;
+        dc.mortal_ship = 255;
+        CHECK(bombed(&dc, APEX, 0, 0) == bombed(&cfg, APEX, 0, 0),
+              "a client still lands a bomb it flew into somebody");
+    }
 
     /* The one hull named mortal still dies, which is how the client keeps
      * its own death immediate while everyone else's waits for the zone. */

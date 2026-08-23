@@ -789,7 +789,15 @@ typedef struct {
      * conclusion for measurement only. A kill a client concludes about a
      * coasting remote hull is an explosion the next snapshot may take back,
      * so a remote death only ever arrives as a snapshot state change, which the
-     * client already turns into light and sound (decision 40). A deathless
+     * client already turns into light and sound (decision 40).
+     *
+     * A proximity fuse follows the same rule, for the same reason and one
+     * step further out: a deathless instance arms one on its own pilot's hull
+     * and on nobody else's. Arming is where a fuse decides, it happens up to
+     * 157 px from a hull, and that is the same size as the error a client
+     * carries about where a remote hull is. Contact hits are unaffected, and
+     * so are walls.
+     *
      * Neither field is packed or hashed: this is a fact about who is
      * simulating, not about the world. */
     uint8_t deathless;
