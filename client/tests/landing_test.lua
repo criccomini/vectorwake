@@ -55,6 +55,7 @@ package.loaded["arena.world"] = {
 
 local ui = require("arena.ui")
 local state = package.loaded["arena.state"]
+local pal = require("arena.palette")
 
 local function view()
     return {
@@ -126,19 +127,40 @@ local function summary_checks(name, w, h)
           has(texts, "Four a side, three minutes"))
     check(name .. " carries the live clock and score",
           has(texts, "On the clock") and has(texts, "2:40")
-              and has(texts, "The score") and has(texts, "1 : 1"))
+              and has(texts, "The score") and has(texts, " : "))
+    local blue, orange = false, false
+    for _, t in ipairs(texts) do
+        if t.s == "1" then
+            local col = t.col or {}
+            if col[1] == pal.FRIEND[1] and col[2] == pal.FRIEND[2] then
+                blue = true
+            end
+            if col[1] == pal.ENEMY[1] and col[2] == pal.ENEMY[2] then
+                orange = true
+            end
+        end
+    end
+    check(name .. " colors the two scores by side", blue and orange)
     check(name .. " carries the room",
           has(texts, "The room") and has(texts, "8 seats"))
     check(name .. " says which ship arrives",
           has(texts, "You arrive as") and has(texts, "Apex"))
     check(name .. " ends in one Deploy action", has(texts, "Deploy"))
 
-    local stage = 0
+    local stage, ship_page, pilot_page = 0, 0, 0
     for _, hit in ipairs(hits or {}) do
         if hit.action == "stage" then stage = stage + 1 end
+        if hit.action == "ship_page" then ship_page = ship_page + 1 end
+        if hit.action == "pilot_page" then pilot_page = pilot_page + 1 end
     end
     check(name .. " publishes one Deploy target", stage == 1,
           stage .. " stage targets")
+    check(name .. " makes the ship name a destination", ship_page == 1,
+          ship_page .. " ship targets")
+    -- One target is the account button in the header. The second is the
+    -- account name beside Deploy.
+    check(name .. " makes the account name a destination", pilot_page == 2,
+          pilot_page .. " account targets")
     return texts
 end
 

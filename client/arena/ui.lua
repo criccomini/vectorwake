@@ -4688,11 +4688,16 @@ local function compact_deploy(a, x, y, w, h)
     local ky = y + h - kh - 10 * F.scale
     local room_bottom = ky - 8 * F.scale
     local available = math.max(0, room_bottom - at)
-    local band = math.min(76 * F.scale, available / 3)
-    local gap = math.max(0, (available - band * 3) / 2)
+    -- These readings belong to Deploy, so they gather above it. Any spare
+    -- height stays between the description and this block, where it shows the
+    -- arena instead of stretching three short facts across the screen.
+    local gap = math.min(10 * F.scale,
+                         math.max(0, (available - 126 * F.scale) / 2))
+    local band = math.min(54 * F.scale,
+                          math.max(0, (available - gap * 2) / 3))
+    local cy = room_bottom - band * 3 - gap * 2
 
     -- The clock and score share one line, as they do on the full landing.
-    local cy = at
     if a.clock then
         lbl(a.playing and "on the clock" or "next match in", x,
             cy + 8 * F.scale)
@@ -4704,14 +4709,24 @@ local function compact_deploy(a, x, y, w, h)
         txt(string.format("%d:%02d", math.floor(a.clock / 60), a.clock % 60),
             x - 1 * F.scale, value_y, 28 * F.scale, pal.a(pal.INK, 0.95))
         if a.score then
-            txt(a.score[1] .. " : " .. a.score[2], x + rmargin, value_y,
-                21 * F.scale, pal.a(pal.INK, 0.9), "right")
+            local score_px = 21 * F.scale
+            local left = tostring(a.score[1])
+            local right = tostring(a.score[2])
+            local middle = " : "
+            local right_w = text_w(right, score_px)
+            local middle_w = text_w(middle, score_px)
+            txt(right, x + rmargin, value_y, score_px,
+                pal.a(pal.ENEMY, 0.95), "right", nil, true)
+            txt(middle, x + rmargin - right_w, value_y, score_px,
+                pal.a(pal.INK, 0.8), "right", nil, true)
+            txt(left, x + rmargin - right_w - middle_w, value_y, score_px,
+                pal.a(pal.FRIEND, 0.95), "right", nil, true)
         end
     end
 
     -- Occupancy becomes two marked counts. The full seat strip is still used
     -- wherever the column has enough height to draw it.
-    local room_y = at + band + gap
+    local room_y = cy + band + gap
     if a.room then
         lbl("the room", x, room_y + 8 * F.scale)
         if (a.room.seats or 0) > 0 then
@@ -4723,7 +4738,7 @@ local function compact_deploy(a, x, y, w, h)
                    11 * F.scale)
         txt(tostring(a.room.players or 0), x + 17 * F.scale, count_y,
             11 * F.scale, pal.a(pal.INK, 0.95), nil, nil, true)
-        bot_mark(x + 54 * F.scale, count_y - 5 * F.scale,
+        bot_mark(x + 54 * F.scale, count_y,
                  pal.a(pal.DIM, 0.8), 11 * F.scale)
         txt(tostring(a.room.bots or 0), x + 70 * F.scale, count_y,
             11 * F.scale, pal.a(pal.DIM, 0.9), nil, nil, true)
@@ -4742,10 +4757,24 @@ local function compact_deploy(a, x, y, w, h)
             thumb(x + 12 * F.scale, hull_y, a.arrive.hull or 0,
                   pal.a(pal.FRIEND, 0.95), 1.3, F.now * 0.5)
         end
-        txt(a.arrive.name or "", x + 34 * F.scale, hull_y,
+        local ship = a.arrive.name or ""
+        local ship_x = x + 34 * F.scale
+        txt(ship, ship_x, hull_y,
             15 * F.scale, pal.a(pal.INK, 0.95), nil, MENU_FONT)
-        txt(a.arrive.call or "", x + rmargin, hull_y, 11 * F.scale,
+        if ship ~= "" then
+            hit(ship_x - 8 * F.scale, hull_y - 22 * F.scale,
+                text_w(ship, 15 * F.scale, MENU_FONT) + 16 * F.scale,
+                44 * F.scale, "ship_page")
+        end
+        local call = a.arrive.call or ""
+        txt(call, x + rmargin, hull_y, 11 * F.scale,
             pal.a(pal.PANEL_INK, 0.95), "right", nil, true)
+        if call ~= "" then
+            local call_w = text_w(call, 11 * F.scale)
+            hit(x + rmargin - call_w - 8 * F.scale,
+                hull_y - 22 * F.scale, call_w + 16 * F.scale,
+                44 * F.scale, "pilot_page")
+        end
     end
 
     if a.room and a.row then

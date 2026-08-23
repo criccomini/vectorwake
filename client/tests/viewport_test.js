@@ -13,6 +13,15 @@ const appleBody = source.slice(
   appleStart + "// apple-test:start".length, appleEnd);
 const apple = Function(appleBody + "\nreturn apple;")();
 
+const insetsStart = source.indexOf("// insets-test:start");
+const insetsEnd = source.indexOf("// insets-test:end");
+if (insetsStart < 0 || insetsEnd < insetsStart) {
+  throw new Error("Safe-area test boundary is missing from engine_template.html");
+}
+const insetsBody = source.slice(
+  insetsStart + "// insets-test:start".length, insetsEnd);
+const safeInsets = Function(insetsBody + "\nreturn vwSafeInsets;")();
+
 const start = source.indexOf("// viewport-test:start");
 const end = source.indexOf("// viewport-test:end");
 if (start < 0 || end < start) {
@@ -50,5 +59,22 @@ check("a Mac with the same user agent is not an iPad",
   apple("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)", 0), false);
 check("another touch desktop is not mistaken for an iPad",
   apple("Mozilla/5.0 (Windows NT 10.0; Win64; x64)", 5), false);
+
+let safe = safeInsets(true, 390, 844, 844, 0, 0, 0, 390, 844, true);
+check("a long portrait iPhone clears the status area when CSS reports zero",
+  safe.top, 44);
+check("and clears its home indicator", safe.bottom, 34);
+check("the inferred home indicator is bare glass", safe.bare, true);
+
+safe = safeInsets(true, 390, 844, 844, 0, 59, 34, 390, 844, true);
+check("reported iPhone top insets win over the fallback", safe.top, 59);
+check("reported iPhone bottom insets win over the fallback", safe.bottom, 34);
+
+safe = safeInsets(true, 375, 667, 667, 0, 0, 0, 375, 667, true);
+check("a home-button iPhone does not gain a notch", safe.top, 0);
+check("a home-button iPhone does not gain an indicator", safe.bottom, 0);
+
+safe = safeInsets(true, 844, 390, 390, 0, 0, 0, 390, 844, true);
+check("the portrait fallback does not leak into landscape", safe.top, 0);
 
 if (failures > 0) process.exit(1);

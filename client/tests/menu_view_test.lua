@@ -22,7 +22,7 @@ local function check(name, ok, detail)
 end
 
 local W, H = 1280, 800
-local frames, rects, segs = {}, {}, {}
+local frames, rects, segs, outlines = {}, {}, {}, {}
 local layer = {}
 local function noop() end
 for _, name in ipairs({"arc", "disc", "flush", "outline", "quad", "reset", "ring",
@@ -48,6 +48,9 @@ layer.rect = function(_, x, y, w, h, col)
 end
 layer.seg = function(_, x0, y0, x1, y1, w, col)
     segs[#segs + 1] = {x0 = x0, y0 = y0, x1 = x1, y1 = y1, w = w, col = col}
+end
+layer.outline = function(_, pts)
+    outlines[#outlines + 1] = pts
 end
 
 _G.sim = setmetatable({}, {__index = function() return function() return 0 end end})
@@ -94,7 +97,7 @@ end
 
 local function draw(view, w, h, touching)
     W, H = w or 1280, h or 800
-    frames, rects, segs = {}, {}, {}
+    frames, rects, segs, outlines = {}, {}, {}, {}
     local st = package.loaded["arena.state"]
     st.n = 0
     ui.begin(layer, W, H, 1, touching or false)
@@ -239,6 +242,43 @@ do
         return nil
     end
 
+    local function text_named(frame_state, word)
+        for i = 1, frame_state.n do
+            if is(frame_state.text[i], word) then return frame_state.text[i] end
+        end
+        return nil
+    end
+
+    local function machine_mid(cx)
+        local top, bottom
+        for _, s in ipairs(segs) do
+            if math.abs(s.y0 - s.y1) < 0.01
+               and math.abs((s.x0 + s.x1) / 2 - cx) < 0.5 then
+                top = math.min(top or s.y0, s.y0)
+                bottom = math.max(bottom or s.y0, s.y0)
+            end
+        end
+        return top and (top + bottom) / 2 or nil
+    end
+
+    local function person_mid(cx, beside)
+        local best, distance
+        for _, pts in ipairs(outlines) do
+            local x0, x1 = math.huge, -math.huge
+            local y0, y1 = math.huge, -math.huge
+            for i = 1, #pts, 2 do
+                x0, x1 = math.min(x0, pts[i]), math.max(x1, pts[i])
+                y0, y1 = math.min(y0, pts[i + 1]), math.max(y1, pts[i + 1])
+            end
+            if math.abs((x0 + x1) / 2 - cx) < 0.5 then
+                local mid = (y0 + y1) / 2
+                local d = math.abs(mid - beside)
+                if not distance or d < distance then best, distance = mid, d end
+            end
+        end
+        return best
+    end
+
     for _, shape in ipairs({{320, 480}, {320, 568}, {360, 640},
                              {375, 667}, {390, 664}, {390, 844},
                              {844, 390}}) do
@@ -275,6 +315,33 @@ do
         check(string.format("%dx%d keeps DEPLOY above the tab rail",
                             shape[1], shape[2]), not crosses_rail,
               crosses_rail and "the hit boxes overlap" or nil)
+        if shape[1] == 390 and shape[2] == 844 then
+            local note = baseline(landing,
+                "Everybody against everybody until the whistle")
+            local clock = baseline(landing, "On the clock")
+            local arrival = baseline(landing, "You arrive as")
+            check("portrait leaves the arena between the description and facts",
+                  note and clock and clock - note > 200,
+                  string.format("description %.0f, facts %.0f",
+                                note or -1, clock or -1))
+            check("portrait keeps the deployment facts in one bottom block",
+                  clock and arrival and arrival - clock < 150,
+                  string.format("clock %.0f, arrival %.0f",
+                                clock or -1, arrival or -1))
+
+            local human = text_named(landing, "1")
+            local robot = text_named(landing, "7")
+            local robot_y = robot and machine_mid(robot.x - 10.5) or nil
+            local human_y = human and robot_y
+                and person_mid(human.x - 11, robot_y) or nil
+            check("the human and robot marks share a baseline",
+                  human_y and robot_y and math.abs(human_y - robot_y) < 0.1,
+                  string.format("human %.1f, robot %.1f",
+                                human_y or -1, robot_y or -1))
+            check("the arrival names publish both page destinations",
+                  hit_named("ship_page") and hit_named("pilot_page"),
+                  table.concat(actions(), ", "))
+        end
     end
 end
 

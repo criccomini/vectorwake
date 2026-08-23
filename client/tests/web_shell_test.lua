@@ -58,7 +58,9 @@ check("the iPhone canvas continues behind Safari's lower toolbar",
       and has(game, "document.documentElement.classList.toggle('vw-ios-surface', extended_page)")
       and has(game, "if (root.style.height !== page) root.style.height = page")
       and has(game, "if (body.style.height !== page) body.style.height = page")
-      and has(game, "var bottom = Math.max(padB, covered)")
+      and has(game, "function vwSafeInsets(")
+      and has(game, "var bottom = Math.max(padBottom, covered)")
+      and has(game, "var safe = vwSafeInsets(")
       and has(arena, "touch.safe_b = (self.safe_b or 0) * density"))
 check("the reported account crosses the Lua page boundary",
       has(account, "window.vwAccount=")

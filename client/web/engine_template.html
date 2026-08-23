@@ -568,6 +568,29 @@
 		// translucent chrome. The reconciler below keeps those two jobs apart.
 		(function() {
 			var is_iOS = apple() && !window.MSStream;
+			// insets-test:start
+			function vwSafeInsets(ios, width, visible, pageH, viewportTop,
+					padTop, padBottom, screenW, screenH, standalone) {
+				var covered = Math.max(0, pageH - visible - viewportTop);
+				var top = Math.max(padTop, viewportTop);
+				var bottom = Math.max(padBottom, covered);
+				var shortAxis = Math.min(screenW, screenH);
+				var longAxis = Math.max(screenW, screenH);
+				var longPortrait = ios && pageH > width && shortAxis > 0
+					&& longAxis / shortAxis >= 2;
+
+				// Some installed iPhones report zero CSS insets even though the
+				// status area and home indicator still cover the canvas. The long
+				// portrait shape distinguishes those phones from home-button models.
+				if (longPortrait && top < 1) top = 44;
+				if (longPortrait && bottom < 1) bottom = 34;
+				return {
+					top: top,
+					bottom: bottom,
+					bare: standalone || (bottom > 0 && covered < 1)
+				};
+			}
+			// insets-test:end
 			// viewport-test:start
 			function vwPageHeight(extended, standalone, width, visible,
 					layoutH, innerH, outerH, largeH, screenW, screenH) {
@@ -619,6 +642,7 @@
 						&& window.matchMedia('(display-mode: standalone)').matches);
 				var probe = document.getElementById('vw-safe');
 				var cs = probe ? getComputedStyle(probe) : null;
+				var padT = cs ? (parseFloat(cs.paddingTop) || 0) : 0;
 				var padB = cs ? (parseFloat(cs.paddingBottom) || 0) : 0;
 				var scr = window.screen || {};
 				var innerH = Math.round(window.innerHeight || 0);
@@ -662,8 +686,9 @@
 					// furniture above it. The CSS inset may describe the same
 					// obstruction, so take the larger value instead of adding both.
 					var viewportTop = Math.round(vp ? vp.offsetTop : 0);
-					var covered = Math.max(0, pageH - visible - viewportTop);
-					var bottom = Math.max(padB, covered);
+					var safe = vwSafeInsets(
+						is_iOS, width, visible, pageH, viewportTop,
+						padT, padB, screenW, screenH, standalone);
 					// Asked of the geometry rather than of the browser. The
 					// question the rail has is "is there anything between me
 					// and the glass", and a hardware inset with nothing
@@ -674,7 +699,6 @@
 					// layout bug rather than a detection one. This also
 					// follows a browser that has scrolled its toolbar away,
 					// which is the same screen by then.
-					var bare = standalone || (padB > 0 && covered < 1);
 					// And the four numbers this whole reconciler is derived
 					// from, published so a phone can be asked what it thinks
 					// its own screen is. They are how the 62 points above were
@@ -683,8 +707,8 @@
 					window.vwInsets =
 						(parseFloat(cs.paddingLeft) || 0) + ' ' +
 						(parseFloat(cs.paddingRight) || 0) + ' ' +
-						(parseFloat(cs.paddingTop) || 0) + ' ' +
-						bottom + ' ' + (bare ? 1 : 0) + ' ' +
+						safe.top + ' ' + safe.bottom + ' '
+						+ (safe.bare ? 1 : 0) + ' ' +
 						layoutH + ' ' + (vp ? Math.round(vp.height) : 0) +
 						' ' + innerH + ' ' + outerH + ' ' +
 						(scr.height || 0) + ' ' +
