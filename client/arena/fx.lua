@@ -340,6 +340,14 @@ function M.bend(x, y, k)
     -- which reads as distance without arguing the effect away. Debris passes
     -- 1 and is unaffected by this.
     k = 0.45 + 0.55 * k
+    -- Every wave is measured against where the point really is, and the
+    -- shoves are added up and paid at the end. Moving the point inside the
+    -- loop let each wave bend what the last one had already bent, so a piece
+    -- shoved out by one ring landed on the crest of the next and was shoved
+    -- again by nearly the full amount. The two multiplied instead of adding,
+    -- and a death throws two rings wide enough to ripple at the same instant
+    -- from the same place.
+    local ox, oy = 0, 0
     for i = 0, rip.n - 1 do
         local b = i * RIP_STRIDE
         local dx, dy = x - rip[b + 1], y - rip[b + 2]
@@ -351,16 +359,36 @@ function M.bend(x, y, k)
             if inner <= 0 or d2 > inner * inner then
                 local d = math.sqrt(d2)
                 if d > 1 then
-                    -- Peak on the ring, nothing at the band's edges.
-                    local q = 1 - math.abs(d - r) / RIP_BAND
+                    -- Peak on the ring, nothing at the band's edges. Behind
+                    -- the front the taper is the ring's own radius rather
+                    -- than the band's fixed 260, so the shove reaches zero at
+                    -- the center however small the ring still is.
+                    --
+                    -- Symmetrical, it did not. A young ring is a few pixels
+                    -- across and 260 of band reaches straight past the middle
+                    -- of it, so a point standing on the epicenter took the
+                    -- full crest shove. What is always standing there is the
+                    -- wreck of the ship that just went up. Its pieces sat a
+                    -- mean of four pixels from the hull three frames after
+                    -- the death and were drawn at fifty-seven; a third of a
+                    -- second later they had really travelled out to
+                    -- twenty-one and were drawn at thirty. So the one event
+                    -- this game gives a whole second to spent most of that
+                    -- second visibly closing, which is a ship imploding.
+                    local q
+                    if d < r then
+                        q = 1 - (r - d) / (r < RIP_BAND and r or RIP_BAND)
+                    else
+                        q = 1 - (d - r) / RIP_BAND
+                    end
                     local push = rip[b + 4] * q * q * k / d
-                    x = x + dx * push
-                    y = y + dy * push
+                    ox = ox + dx * push
+                    oy = oy + dy * push
                 end
             end
         end
     end
-    return x, y
+    return x + ox, y + oy
 end
 
 -- Every live shockwave, as a light, handed to whatever collects them. Split
