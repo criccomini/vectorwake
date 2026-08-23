@@ -429,6 +429,15 @@ language:
 - Derelict convoy uses station hulls, broken spars, and overhead debris.
 - Relay ring uses stations, signal marks, and paired slope runs.
 
+The client gives those materials one visual grammar without flattening them
+into one tileset. A bulkhead is a continuous armored mass with recessed access
+plates, spaced clamps, and a bright collision edge. A rock is warmer, faceted,
+cratered, and carries sparse mineral seams while it tumbles. A station fills
+the whole six-tile square the simulation collides with, then cuts docking
+throats, armor quarters, trusses, and a cold reactor into that mass. The detail
+is subordinate to the outside edge at combat zoom. A player reads collision
+first and fiction on the second look.
+
 This keeps theme and topology independent. Ring and spokes can be a relay or a
 dockyard without becoming the same room with a different seed. Large objects
 are stamped as objects, so a station's six-tile body cannot be mistaken for

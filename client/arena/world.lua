@@ -651,14 +651,19 @@ local function wall_mass(bg, glow, set, cells, border)
     local edge2 = pal.a(lit, 0.5)
     local inner = pal.a(pal.WALL_LIT, 1)
     local outer = pal.a(lit, 1)
+    local hardware = pal.a(pal.WALL_HARDWARE, 0.34)
+    local hardware_hot = pal.a(pal.WALL_HARDWARE, 0.62)
+    local warning = pal.a(pal.WALL_WARNING, 0.54)
+    local recess = pal.a(pal.WALL_RECESS, 0.88)
 
     for i = 1, #cells, 2 do
         bg:rect(cells[i] * TILE, cells[i + 1] * TILE, TILE, TILE, pal.WALL)
     end
 
     -- Structure inside a mass, so a big block is not a void. Only where every
-    -- neighbour is solid, and only on a three-tile pitch: bordering every tile
-    -- turns a wall into graph paper, which this client has already done once.
+    -- neighbour is solid. Large recessed access plates replace the old even
+    -- grid: a built surface has modules, while a line at every tile boundary
+    -- turns it into graph paper.
     if not border then
         local seam = pal.a(lit, 0.18)
         for i = 1, #cells, 2 do
@@ -666,8 +671,21 @@ local function wall_mass(bg, glow, set, cells, border)
             if set[key(tx, ty - 1)] and set[key(tx, ty + 1)]
                and set[key(tx - 1, ty)] and set[key(tx + 1, ty)] then
                 local x, y = tx * TILE, ty * TILE
-                if tx % 3 == 0 then glow:seg(x, y, x, y + TILE, 0.7, seam) end
-                if ty % 3 == 0 then glow:seg(x, y, x + TILE, y, 0.7, seam) end
+                local mark = (tx * 37 + ty * 61) % 19
+                if mark == 0 then
+                    bg:rect(x + 2, y + 3, 12, 10, recess)
+                    glow:outline({x + 2, y + 3, x + 14, y + 3,
+                                  x + 14, y + 13, x + 2, y + 13},
+                                 0.7, seam, true)
+                    for k = 0, 2 do
+                        glow:seg(x + 5, y + 6 + k * 2,
+                                 x + 11, y + 6 + k * 2, 0.6, hardware)
+                    end
+                elseif tx % 5 == 0 and ty % 4 == 0 then
+                    glow:seg(x + 3, y + 8, x + 13, y + 8, 0.7, seam)
+                    glow:disc(x + 4, y + 8, 0.9, 6, hardware_hot)
+                    glow:disc(x + 12, y + 8, 0.9, 6, hardware_hot)
+                end
             end
         end
     end
@@ -706,6 +724,36 @@ local function wall_mass(bg, glow, set, cells, border)
             elseif long then
                 glow:seg(px - ox * 3.5, py - oy * 3.5,
                          qx - ox * 3.5, qy - oy * 3.5, 0.7, bevel)
+
+                -- Clamps turn a continuous face into armored infrastructure.
+                -- They sit inside the collision edge, on a loose pitch, so a
+                -- long lane has rhythm without a tile-sized picket fence.
+                local dx, dy = qx - px, qy - py
+                local len = math.sqrt(dx * dx + dy * dy)
+                local ux, uy = dx / len, dy / len
+                local at = 28 + ((tx * 13 + ty * 7) % 17)
+                local module = 0
+                while at < len - 12 do
+                    local bx, by = px + ux * at, py + uy * at
+                    local ix, iy = bx - ox * 4, by - oy * 4
+                    glow:seg(ix - ux * 5, iy - uy * 5,
+                             ix + ux * 5, iy + uy * 5,
+                             1.0, hardware)
+                    glow:seg(bx - ux * 3, by - uy * 3,
+                             ix - ux * 3, iy - uy * 3, 0.8, hardware_hot)
+                    glow:seg(bx + ux * 3, by + uy * 3,
+                             ix + ux * 3, iy + uy * 3, 0.8, hardware_hot)
+                    if module % 3 == 1 then
+                        glow:seg(ix - ux * 3, iy - uy * 3,
+                                 bx, by, 1.0, warning)
+                        glow:seg(ix + ux * 3, iy + uy * 3,
+                                 bx, by, 1.0, warning)
+                    else
+                        glow:disc(ix, iy, 1.0, 6, hardware_hot)
+                    end
+                    module = module + 1
+                    at = at + 56
+                end
             end
         end)
     end
@@ -843,6 +891,17 @@ end
 -- a map with a hundred of them holds a hundred small tables.
 local rock_shapes = {}
 
+local ROCK_FACETS = {
+    pal.a(pal.ROCK_DARK, 1),
+    pal.a(pal.ROCK, 1),
+    pal.a(pal.ROCK_MID, 1),
+    pal.a(pal.ROCK_LIT, 1),
+}
+local ROCK_RIDGE = pal.a(pal.ROCK_EDGE, 0.20)
+local ROCK_CRACK = pal.a(pal.ROCK_DARK, 0.95)
+local ROCK_CRATER = pal.a(pal.ROCK_EDGE, 0.17)
+local ROCK_ORE = pal.a(pal.ROCK_ORE, 0.52)
+
 local function rock_shape(seed, sides, r)
     local k = seed .. ":" .. sides .. ":" .. r
     local s = rock_shapes[k]
@@ -869,12 +928,27 @@ local function rock_shape(seed, sides, r)
     -- silhouette foreshortens, how fast that cycle runs, and how fast the
     -- axis it happens about wanders round the screen plane.
     local q = (seed % 97) / 97
-    s = {pts = pts, nrm = nrm, sides = sides,
+    local craters = {}
+    local crater_count = sides >= 10 and 2 or 1
+    for _ = 1, crater_count do
+        local a = rnd() * TAU
+        local d = r * (0.18 + rnd() * 0.24)
+        craters[#craters + 1] = math.cos(a) * d
+        craters[#craters + 1] = math.sin(a) * d
+        craters[#craters + 1] = r * (0.10 + rnd() * 0.07)
+    end
+    local ridges = {}
+    local ridge_count = sides >= 10 and 3 or 1
+    for _ = 1, ridge_count do
+        ridges[#ridges + 1] = math.floor(rnd() * sides)
+    end
+    s = {pts = pts, nrm = nrm, sides = sides, seed = seed,
          rate = ((seed % 2 == 0) and 1 or -1) * (0.10 + q * 0.22),
          depth = 0.14 + q * 0.16,
          trate = 0.23 + q * 0.30,
          drift = ((seed % 3 == 0) and 1 or -1) * (0.05 + q * 0.07),
          phase = q * TAU,
+         craters = craters, ridges = ridges,
          tmp = {}, ntmp = {}}
     rock_shapes[k] = s
     return s
@@ -917,69 +991,165 @@ local function draw_rock(fill, glow, cx, cy, s, now)
     -- about its own center and nothing else, and a vertex fan on a shape with
     -- one notch in it paints outside the rock.
     local sides = s.sides
-    local body = pal.a(pal.ROCK, 1)
     for i = 0, sides - 1 do
         local j = (i + 1) % sides
         fill:tri(cx, cy, pts[i * 2 + 1], pts[i * 2 + 2],
-                 pts[j * 2 + 1], pts[j * 2 + 2], body)
+                 pts[j * 2 + 1], pts[j * 2 + 2],
+                 ROCK_FACETS[(s.seed + i * 5) % #ROCK_FACETS + 1])
+    end
+
+    -- Facet ridges do not all meet at the center. Each joins two interior
+    -- points on separated faces, which reads as fractured volume rather than
+    -- spokes painted on a wheel.
+    for i = 1, #s.ridges do
+        local a = s.ridges[i]
+        local b = (a + 2 + i) % sides
+        local ax, ay = pts[a * 2 + 1], pts[a * 2 + 2]
+        local bx, by = pts[b * 2 + 1], pts[b * 2 + 2]
+        local af = 0.46 + (i % 2) * 0.08
+        local bf = 0.58 + (i % 3) * 0.05
+        glow:seg(cx + (ax - cx) * af, cy + (ay - cy) * af,
+                 cx + (bx - cx) * bf, cy + (by - cy) * bf,
+                 0.7, ROCK_RIDGE)
+    end
+
+    -- Pits and one mineral seam survive the tumble because their centers are
+    -- passed through the same matrix as the silhouette. They stay subordinate
+    -- to the collision outline; a rock is still one dark mass at speed.
+    local craters = s.craters
+    for i = 1, #craters, 3 do
+        local px, py = craters[i], craters[i + 1]
+        local x = cx + px * m11 + py * m12
+        local y = cy + px * m21 + py * m22
+        local rr = craters[i + 2] * (0.75 + squash * 0.25)
+        fill:disc(x, y, rr, 8, ROCK_FACETS[1])
+        glow:ring(x, y, rr, 0.6, 8, ROCK_CRATER)
+    end
+    local vi = s.seed % sides
+    local vj = (vi + math.floor(sides / 3)) % sides
+    local vx, vy = pts[vi * 2 + 1], pts[vi * 2 + 2]
+    local wx, wy = pts[vj * 2 + 1], pts[vj * 2 + 2]
+    local mx, my = cx + (vx - cx) * 0.30, cy + (vy - cy) * 0.30
+    local ex, ey = cx + (wx - cx) * 0.66, cy + (wy - cy) * 0.66
+    fill:seg(mx, my, ex, ey, 1.1, ROCK_CRACK)
+    if sides >= 10 then
+        glow:seg(mx, my, ex, ey, 0.55, ROCK_ORE)
+        glow:seg(mx + (vx - cx) * 0.12, my + (vy - cy) * 0.12,
+                 mx, my, 0.5, ROCK_ORE)
     end
     glow:glow_band(pts, nrm, 5, 0.12, pal.a(pal.ROCK_EDGE, 1))
     glow:outline(pts, 1.2, pal.a(pal.hot(pal.ROCK_EDGE, 0.15, 1), 0.8), true)
 end
 
--- Six tiles square, and the one piece of terrain with room to spend: a
--- hexagonal core on four docking arms, windows, and a lit heart.
+-- Six tiles square, and the one piece of terrain with room to spend: an
+-- armored service platform built around a cold reactor and four recessed
+-- docking throats.
+--
+-- The fill reaches the whole six-tile stamp. The old picture was a hexagon on
+-- four arms inside that square, which left transparent corners a ship still
+-- bounced off. Decoration may suggest depth, but the bright outside edge is
+-- the collision shape and tells the truth everywhere.
 local function station(bg, glow, tx, ty)
-    local cx, cy = (tx + 3) * TILE, (ty + 3) * TILE
-    local R = 40
-    local hex, hexn, inner = {}, {}, {}
-    for i = 0, 5 do
-        local a = i / 6 * TAU
-        hex[i * 2 + 1] = cx + math.cos(a) * R
-        hex[i * 2 + 2] = cy + math.sin(a) * R
-        hexn[i * 2 + 1] = math.cos(a)
-        hexn[i * 2 + 2] = math.sin(a)
-        inner[i * 2 + 1] = cx + math.cos(a) * (R - 7)
-        inner[i * 2 + 2] = cy + math.sin(a) * (R - 7)
+    local x, y = tx * TILE, ty * TILE
+    local size = TILE * 6
+    local cx, cy = x + size / 2, y + size / 2
+    local body = pal.a(pal.STATION_BODY, 1)
+    local plate = pal.a(pal.STATION_PLATE, 1)
+    local recess = pal.a(pal.STATION_RECESS, 0.96)
+    local edge = pal.a(pal.WALL_EDGE, 0.88)
+    local edge_hot = pal.a(pal.hot(pal.WALL_EDGE, 0.45, 1), 0.96)
+    local structure = pal.a(pal.PANEL_INK, 0.25)
+    local cold = pal.a(pal.STATION_COLD, 0.58)
+    local cold_hot = pal.a(pal.hot(pal.STATION_COLD, 0.35, 1), 0.86)
+    local warm = pal.a(pal.STATION_WARM, 0.68)
+
+    bg:rect(x, y, size, size, body)
+
+    -- Four armor quarters, each with an angled inside corner. Their seams aim
+    -- at the reactor instead of following the tile grid.
+    local q = 31
+    local c = 18
+    local plates = {
+        {x + 4,y + 4, x + q,y + 4, x + q,y + c, x + c,y + q, x + 4,y + q},
+        {x + size - 4,y + 4, x + size - q,y + 4, x + size - q,y + c,
+         x + size - c,y + q, x + size - 4,y + q},
+        {x + size - 4,y + size - 4, x + size - q,y + size - 4,
+         x + size - q,y + size - c, x + size - c,y + size - q,
+         x + size - 4,y + size - q},
+        {x + 4,y + size - 4, x + q,y + size - 4,
+         x + q,y + size - c, x + c,y + size - q,
+         x + 4,y + size - q},
+    }
+    for i = 1, #plates do
+        bg:fan(plates[i], plate)
+        glow:outline(plates[i], 0.7, structure, true)
     end
-    local edge = pal.a(pal.WALL_EDGE, 0.75)
-    local lit = pal.a(pal.hot(pal.WALL_EDGE, 0.5, 1), 0.85)
-    for i = 0, 3 do
-        local a = i / 4 * TAU + TAU / 8
+
+    -- Docking throats are recesses painted into the solid mass. A ship cannot
+    -- enter them, so the outside edge stays unbroken and bright; the paired
+    -- rails lead inward only as visual machinery.
+    bg:rect(cx - 10, y, 20, 29, recess)
+    bg:rect(cx - 10, y + size - 29, 20, 29, recess)
+    bg:rect(x, cy - 10, 29, 20, recess)
+    bg:rect(x + size - 29, cy - 10, 29, 20, recess)
+    for _, off in ipairs({-6, 6}) do
+        glow:seg(cx + off, y + 3, cx + off, cy - 19, 0.8, cold)
+        glow:seg(cx + off, y + size - 3, cx + off, cy + 19, 0.8, cold)
+        glow:seg(x + 3, cy + off, cx - 19, cy + off, 0.8, cold)
+        glow:seg(x + size - 3, cy + off, cx + 19, cy + off, 0.8, cold)
+    end
+
+    -- Warning teeth live on the thresholds. Four short diagonals read as
+    -- painted hazard marks without borrowing the enemy's bright silhouette.
+    for k = -2, 1 do
+        local d = k * 4
+        glow:seg(cx + d, y + 3, cx + d + 3, y + 7, 1.0, warm)
+        glow:seg(cx + d, y + size - 3, cx + d + 3, y + size - 7, 1.0, warm)
+        glow:seg(x + 3, cy + d, x + 7, cy + d + 3, 1.0, warm)
+        glow:seg(x + size - 3, cy + d, x + size - 7, cy + d + 3, 1.0, warm)
+    end
+
+    local outer = {x,y, x + size,y, x + size,y + size, x,y + size}
+    local outer_n = {0,-1, 1,0, 0,1, -1,0}
+    glow:glow_band(outer, outer_n, 9, 0.11, pal.a(pal.WALL_LIT, 1))
+    glow:glow_band(outer, outer_n, 3, 0.22, pal.a(pal.WALL_LIT, 1))
+    glow:outline(outer, 1.6, edge_hot, true)
+    glow:outline({x + 4,y + 4, x + size - 4,y + 4,
+                  x + size - 4,y + size - 4, x + 4,y + size - 4},
+                 0.8, edge, true)
+
+    -- The octagonal machine at the middle gives the platform one landmark.
+    -- Trusses join it to the armor quarters, while the cold core stays below
+    -- the brightness of a ship or a live round.
+    local core, core_n, inner = {}, {}, {}
+    for i = 0, 7 do
+        local a = i / 8 * TAU + TAU / 16
         local ca, sa = math.cos(a), math.sin(a)
-        local nx, ny = -sa, ca
-        local arm = {cx + ca * 22 + nx * 7, cy + sa * 22 + ny * 7,
-                     cx + ca * 46 + nx * 5, cy + sa * 46 + ny * 5,
-                     cx + ca * 46 - nx * 5, cy + sa * 46 - ny * 5,
-                     cx + ca * 22 - nx * 7, cy + sa * 22 - ny * 7}
-        bg:fan(arm, pal.WALL)
-        glow:outline(arm, 1.1, edge, true)
-        glow:seg(cx + ca * 44 + nx * 6, cy + sa * 44 + ny * 6,
-                 cx + ca * 44 - nx * 6, cy + sa * 44 - ny * 6, 2.2, lit)
+        core[i * 2 + 1], core[i * 2 + 2] = cx + ca * 24, cy + sa * 24
+        core_n[i * 2 + 1], core_n[i * 2 + 2] = ca, sa
+        inner[i * 2 + 1], inner[i * 2 + 2] = cx + ca * 18, cy + sa * 18
     end
-    bg:fan(hex, pal.WALL)
-    glow:glow_band(hex, hexn, 9, 0.10, pal.a(pal.WALL_LIT, 1))
-    glow:glow_band(hex, hexn, 3, 0.22, pal.a(pal.WALL_LIT, 1))
-    glow:outline(hex, 1.5, pal.a(pal.hot(pal.WALL_EDGE, 0.5, 1), 1), true)
-    local ink = pal.a(pal.PANEL_INK, 0.28)
-    glow:outline(inner, 0.8, ink, true)
-    for i = 0, 5 do
-        glow:seg(hex[i * 2 + 1], hex[i * 2 + 2],
-                 inner[i * 2 + 1], inner[i * 2 + 2], 0.7, ink)
+    bg:fan(core, plate)
+    glow:glow_band(core, core_n, 5, 0.10, pal.a(pal.STATION_COLD, 1))
+    glow:outline(core, 1.2, edge_hot, true)
+    glow:outline(inner, 0.8, structure, true)
+    for i = 0, 7 do
+        glow:seg(core[i * 2 + 1], core[i * 2 + 2],
+                 inner[i * 2 + 1], inner[i * 2 + 2], 0.7, structure)
     end
-    local win = pal.a(pal.FRIEND, 0.5)
-    for _, i in ipairs({0, 2, 4}) do
-        local j = (i + 1) % 6
-        for k = 1, 4 do
-            local t = k / 5
-            glow:disc(inner[i * 2 + 1] + (inner[j * 2 + 1] - inner[i * 2 + 1]) * t,
-                      inner[i * 2 + 2] + (inner[j * 2 + 2] - inner[i * 2 + 2]) * t,
-                      1.1, 6, win)
-        end
+    for _, p in ipairs({{x + 17,y + 17}, {x + size - 17,y + 17},
+                        {x + size - 17,y + size - 17},
+                        {x + 17,y + size - 17}}) do
+        glow:seg(p[1], p[2],
+                 cx + (p[1] - cx) * 0.44, cy + (p[2] - cy) * 0.44,
+                 0.8, structure)
+        glow:disc(p[1], p[2], 1.2, 6, cold)
     end
-    glow:ring(cx, cy, 11, 1.2, 16, pal.a(pal.PANEL_INK, 0.5))
-    glow:halo(cx, cy, 16, 10, pal.a(pal.FRIEND, 0.22))
-    glow:disc(cx, cy, 3.2, 8, pal.a(pal.hot(pal.FRIEND, 0.5, 1), 0.8))
+    bg:disc(cx, cy, 13, 16, recess)
+    glow:ring(cx, cy, 12, 1.2, 20, cold)
+    glow:ring(cx, cy, 7, 1.0, 16, cold_hot)
+    glow:halo(cx, cy, 16, 12, pal.a(pal.STATION_COLD, 0.15))
+    glow:disc(cx, cy, 3.0, 10, cold_hot)
 end
 
 -- Floor markings, beneath the ships and in instrument gray, so decoration is

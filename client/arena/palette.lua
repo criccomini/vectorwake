@@ -65,11 +65,30 @@ M.BTN_SEL   = rgb(0x0d1826)
 M.WALL      = rgb(0x080d16)
 M.WALL_EDGE = rgb(0x22344f)
 M.WALL_LIT  = rgb(0x5b82b8)
+-- Two materials inside the same neutral terrain family. Hardware is cold
+-- steel rather than team cyan; warning paint is oxidized brass rather than
+-- the enemy's live amber. Both stay dim until the wall edge gives them shape.
+M.WALL_HARDWARE = rgb(0x6f8da8)
+M.WALL_WARNING  = rgb(0xb8783f)
+M.WALL_RECESS   = rgb(0x04070c)
 
 -- Rock is warmer and grayer than anything built, so an asteroid field never
 -- reads as architecture and a big one is never mistaken for an Anvil.
 M.ROCK      = rgb(0x14131a)
 M.ROCK_EDGE = rgb(0x8a8794)
+M.ROCK_DARK = rgb(0x0d0c12)
+M.ROCK_MID  = rgb(0x1d1a22)
+M.ROCK_LIT  = rgb(0x2b252c)
+M.ROCK_ORE  = rgb(0xa85f43)
+
+-- A station is built from the wall palette but has enough room to name its
+-- machinery. The cold line is service light, not team identity, and the warm
+-- line is paint on a threshold rather than a projectile or a pilot.
+M.STATION_BODY   = rgb(0x090f19)
+M.STATION_PLATE  = rgb(0x111b2a)
+M.STATION_RECESS = rgb(0x03060b)
+M.STATION_COLD   = rgb(0x78a9c3)
+M.STATION_WARM   = rgb(0xc78346)
 
 -- A gravity well gets a band nothing else uses. Pink belongs to the bomb and
 -- orange to a team; a wormhole wearing either is a wormhole people shoot at.
