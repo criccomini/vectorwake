@@ -1,9 +1,9 @@
 # Maps
 
-> **Two shapes, and a map now says which it is.** The match maps are 160 tiles
-> and the open arena a thousand; a map carries its own width and height, so the
-> sections below that talk about a thousand tiles are about that map rather
-> than about every map.
+> **A map says how large it is and why it exists.** Match maps now span square,
+> wide, and tall envelopes. The open arena remains a thousand tiles. A map
+> carries its own width and height, so sections below that discuss a thousand
+> tiles apply to that arena rather than every map.
 
 The original's map was a 1024x1024 grid of 16-pixel tiles, and a tile's
 number was its behavior: 1 through 160 were walls, 162 through 169 were
@@ -385,48 +385,88 @@ make -C sim build/mapdump
 
 ## The match maps
 
-Two, and the melee zone rotates between them. `sim/tools/mapgen --match`
-draws each from a seed:
+Six ship in the first melee rotation. They cross four topologies, four visual
+themes, three aspect ratios, and two arena silhouettes:
+
+| Map | Topology | Theme | Envelope |
+|---|---|---|---|
+| drydock | three lanes | dockyard | 192 by 144, offset bays |
+| relay | ring and spokes | relay ring | 160 square, cut corners |
+| convoy | twin hubs | derelict convoy | 144 by 192, cut corners |
+| shoal | archipelago | asteroid reef | 192 by 144, offset bays |
+| breakwater | three lanes | asteroid reef | 160 square, cut corners |
+| switchyard | ring and spokes | dockyard | 144 by 192, cut corners |
+
+They come from `mapforge`, the server binary's offline map tool. Each `.vwmap`
+has three files beside it: a `.recipe.toml` source, a `.metrics.json` review
+report, and an `.svg` preview with its accepted routes drawn over it. The
+recipe pins the output hash, so provenance is the full design brief rather than
+a seed that only makes sense inside one generator version.
 
 ```sh
-make -C sim build/mapgen
-./sim/build/mapgen --match drydock catalog/zones/melee/drydock.vwmap 7
-./sim/build/mapgen --match slipway catalog/zones/melee/slipway.vwmap 11
+cargo run --manifest-path server/Cargo.toml -- \
+  mapforge verify catalog/zones/melee/drydock.recipe.toml \
+  catalog/zones/melee/drydock.vwmap
 ```
 
-A match arena is 144 tiles square with eight tiles of wall around it, so the
-map is 160 and there is nothing outside it: it used to be the same 144 tiles
-carved out of the middle of a thousand, which is what a map having no size of
-its own forced. How far in the pockets sit is two numbers pulling against each
-other: near the wall, a spawning pilot's camera is a fifth full of solid, and
-far from it the two homes are too close for the flight times below.
-Twenty-two tiles down and forty-one across is where both hold.
+### The generation pipeline
 
-**The seeds are 7 and 11, and they are the whole provenance of both maps.**
-The zone file beside them named 22 and 24 for a while, which draws a different
-pair of rooms that pass every check the generator makes and put the homes ten
-tiles wrong. Nothing catches that except the flight time between the pockets,
-which is measured in the server's own tests and did catch it. A seed is only
-provenance if it is the seed.
+A map starts as a `MapBrief`: mode, topology, theme, arena envelope, symmetry,
+route count, minimum opening, and contact-time window. The seed chooses small
+details inside that brief. It does not choose what sort of map is being made.
 
-Both layouts are **point symmetric**: the generator draws one half and `sym_put` turns it a
-half turn into the other, so the two sides face identical approach geometry
-rather than handed versions of it, and neither can be drawn out of step with
-its twin.
+The brief becomes a `LayoutGraph`. Homes, junctions, landmarks, and edges are
+named before a tile is placed. Geometry reserves every graph edge at the
+brief's opening width, draws the topology's deliberate wall skeleton, and
+shapes the perimeter. There is no connectivity repair. A layout that fails is
+rejected instead of having a random tunnel cut through it after the fact.
 
-**Drydock** puts the pockets north and south with three lanes between them:
-broken spines part the lanes, the breaks are five tiles because a hull is
-three wide and a gap it cannot fly is a wall with a picture of a door on it,
-and the middle is a room to fight through rather than a block to go past.
+The theme pass uses the same reserved graph and contributes its own material
+language:
 
-**Slipway** puts them at opposite corners with a lattice down the diagonal, so
-the short way between the homes is the dangerous one and going round is a real
-choice. One long bar with a way through in the middle of it is what makes the
-long way passable at all.
+- Dockyard uses gantries, stations, and under-floor service marks.
+- Asteroid reef uses small rocks and complete two-tile rock objects.
+- Derelict convoy uses station hulls, broken spars, and overhead debris.
+- Relay ring uses stations, signal marks, and paired slope runs.
 
-Both are checked before they are written: the arena has to be connected, the
-pockets have to hold their spawns, and cover has to land between four and
-sixteen per cent. `mapgen --selftest` runs that over a set of seeds.
+This keeps theme and topology independent. Ring and spokes can be a relay or a
+dockyard without becoming the same room with a different seed. Large objects
+are stamped as objects, so a station's six-tile body cannot be mistaken for
+accidental wall thickness.
+
+### Gates and review scores
+
+Every candidate first passes `sim_map_check`, the same hull-sized validator the
+server and editor use. Mapforge then requires exactly four starts per side,
+exact half-turn competitive symmetry, the brief's two or three separated
+routes at least seven tiles wide, two spawn exits, the requested home-flight
+time, and no mode-incompatible features. Generic wall in playable space must
+remain a centerline. Perimeter masses and complete rocks or stations are
+intentional solids and are measured separately.
+
+Passing is not the same as being good. The report also scores route balance,
+line-of-sight distribution, dead ends, cover balance by quadrant, landmark
+count, material mix, theme fidelity, and spawn exits. A batch can add two short
+bot drills, recording travel, fighting, crawling, bounces, weapon use, and map
+coverage across seeds.
+
+The review command produces 48 candidates, one for every combination of four
+topologies, four themes, and three envelopes:
+
+```sh
+cargo run --manifest-path server/Cargo.toml -- \
+  mapforge batch /tmp/vectorwake-maps 20260823
+```
+
+`index.html` is the contact sheet. Each card links through the files beside
+it, so a person selects a candidate with its picture and evidence together.
+`--no-simulate` skips the bot pass when the job is only a quick geometry
+iteration.
+
+The old `sim/tools/mapgen --match` path remains frozen for reproducing the two
+maps that preceded this rotation. It is not the source of new match maps. The
+same C tool still owns the separate thousand-tile open-arena family described
+below.
 
 ## Where the open arena's map came from
 
@@ -623,9 +663,10 @@ locally and needs the room before it needs anyone in it.
 
 ## Where a map comes from
 
-Three places, and they all end at the same check.
+Four places, and they all end at the same check.
 
-`sim/tools/mapgen` draws one from a seed, which is what the shipped maps are.
+`mapforge` builds match candidates from recipes. `sim/tools/mapgen` draws the
+large open-arena family from a seed.
 `sim/tools/lvl2vw` converts one from the original's format, which is how a room
 somebody else play-tested for years can be flown against our collision.
 And the admin panel has an editor: a canvas one square per tile, every class
@@ -650,6 +691,12 @@ A drag shows what it would leave before it leaves it, computed by running the
 tool itself against a bucket rather than the map, so the preview cannot drift
 from the thing it is previewing. Space or the middle button moves around a map
 too wide for the frame.
+
+The editor can also open a local `.vwmap` candidate without publishing it and
+load the candidate's metrics JSON. Route overlays draw the three separated
+paths over the tiles, while the cover overlay shows the quadrant distribution.
+The score panel keeps flight time, balance, wall share, dead ends, theme
+fidelity, and hash beside the drawing while a person makes the final call.
 
 Whichever drew it, `sim_map_check` decides whether it can be played. It asks
 about a hull rather than a point: whether a three-tile ship can fly all of the
@@ -704,7 +751,7 @@ does and refuses anything whose bytes do not match the hash in its own header.
 A zone names its own in `zone.toml`, relative to the zone's directory:
 
 ```toml
-maps = ["drydock.vwmap", "slipway.vwmap"]
+maps = ["drydock.vwmap", "relay.vwmap", "convoy.vwmap"]
 ```
 
 More than one is a rotation, and the room takes the next one at every whistle.

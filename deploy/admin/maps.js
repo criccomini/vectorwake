@@ -184,6 +184,12 @@ let onCanvas = false;
 // is obvious at a glance and invisible in a number.
 let stranded = [];
 
+// A mapforge sidecar, when one has been loaded beside a candidate. It stays
+// separate from the map bytes because metrics are evidence about one output,
+// not part of the format an arena has to understand.
+let mapMetricsDoc = null;
+let mapOverlay = "routes";
+
 // What can be taken back, and what taking it back would put back.
 //
 // One entry per gesture rather than per tile: a dragged line is one thing a
@@ -642,6 +648,37 @@ function repaint(over) {
     g.restore();
   }
 
+  if (mapMetricsDoc && mapOverlay === "cover") {
+    const cover = mapMetricsDoc.cover_quadrants_percent || [];
+    g.save();
+    for (let q = 0; q < 4; q++) {
+      const x = (q % 2) * c.width / 2;
+      const y = Math.floor(q / 2) * c.height / 2;
+      g.fillStyle = q % 3 === 0 ? "#4fd6ff" : "#ffa552";
+      g.globalAlpha = Math.min(0.28, Number(cover[q] || 0) / 100);
+      g.fillRect(x, y, c.width / 2, c.height / 2);
+    }
+    g.restore();
+  }
+
+  if (mapMetricsDoc && mapOverlay === "routes") {
+    const colors = ["#50fa7b", "#ff79c6", "#f1fa8c"];
+    g.save();
+    g.globalAlpha = 0.8;
+    g.lineWidth = Math.max(1, zoom / 3);
+    for (const [n, route] of (mapMetricsDoc.route_overlay || []).entries()) {
+      if (!route.length) continue;
+      g.strokeStyle = colors[n % colors.length];
+      g.beginPath();
+      g.moveTo((route[0][0] + 0.5) * zoom, (route[0][1] + 0.5) * zoom);
+      for (const point of route.slice(1)) {
+        g.lineTo((point[0] + 0.5) * zoom, (point[1] + 0.5) * zoom);
+      }
+      g.stroke();
+    }
+    g.restore();
+  }
+
   if (sel) {
     g.save();
     g.strokeStyle = "#e6edf7";
@@ -913,6 +950,7 @@ function verdict() {
 
 function openDoc(d, name) {
   doc = d;
+  mapMetricsDoc = null;
   doc.name = name || "";
   el("editor").hidden = false;
   el("editor-name").textContent = name || "a new map";
@@ -927,6 +965,41 @@ function openDoc(d, name) {
   // away. Opening one and being left looking at the row you clicked is the
   // kind of thing that reads as a button that did nothing.
   el("editor").scrollIntoView({ block: "start", behavior: "smooth" });
+}
+
+function checkedMapMetrics(metrics, drawing) {
+  if (!drawing) throw new Error("open a candidate before loading its metrics");
+  if (Number(metrics.width) !== drawing.w || Number(metrics.height) !== drawing.h) {
+    throw new Error(`metrics are for ${metrics.width} by ${metrics.height}, not this map`);
+  }
+  return metrics;
+}
+
+function showMapMetrics(metrics) {
+  metrics = checkedMapMetrics(metrics, doc);
+  mapMetricsDoc = metrics;
+  const facts = [
+    ["quality", Number(metrics.quality || 0).toFixed(1)],
+    ["home flight", `${Number(metrics.contact_seconds || 0).toFixed(1)} seconds`],
+    ["routes", `${metrics.routes_found || 0} of ${metrics.route_target || 0}`],
+    ["route balance", `${Math.round(100 * Number(metrics.route_balance || 0))}%`],
+    ["wall", `${Number(metrics.wall_percent || 0).toFixed(1)}%`],
+    ["theme fidelity", `${Math.round(100 * Number(metrics.theme_fidelity || 0))}%`],
+    ["dead ends", String(metrics.dead_ends || 0)],
+    ["hash", metrics.hash || "unknown"],
+  ];
+  const panel = el("map-score");
+  panel.replaceChildren(...facts.map(([term, value]) => {
+    const box = document.createElement("div");
+    const dt = document.createElement("dt");
+    const dd = document.createElement("dd");
+    dt.textContent = term;
+    dd.textContent = value;
+    box.append(dt, dd);
+    return box;
+  }));
+  panel.hidden = false;
+  repaint();
 }
 
 async function drawMaps() {
@@ -992,6 +1065,8 @@ async function remove(name) {
 
 function closeEditor() {
   doc = null;
+  mapMetricsDoc = null;
+  el("map-score").hidden = true;
   el("editor").hidden = true;
 }
 
@@ -1426,6 +1501,35 @@ function wire() {
   addEventListener("blur", () => { spacing = false; cursor(); });
 
   el("map-zoom").oninput = (ev) => { zoom = Number(ev.target.value); repaint(); };
+  el("map-overlay").onchange = (ev) => {
+    mapOverlay = ev.target.value;
+    repaint();
+  };
+  el("map-import").onchange = async (ev) => {
+    const file = ev.target.files && ev.target.files[0];
+    if (!file) return;
+    try {
+      const d = unpack(new Uint8Array(await file.arrayBuffer()));
+      openDoc(d, file.name.replace(/\.vwmap$/i, ""));
+      tell("maps-note", `${file.name} is open as an unpublished candidate`, "ok");
+    } catch (e) {
+      tell("maps-note", e.message);
+    } finally {
+      ev.target.value = "";
+    }
+  };
+  el("map-metrics").onchange = async (ev) => {
+    const file = ev.target.files && ev.target.files[0];
+    if (!file) return;
+    try {
+      showMapMetrics(JSON.parse(await file.text()));
+      tell("map-verdict", `${file.name} is shown over this candidate`, "ok");
+    } catch (e) {
+      tell("map-verdict", e.message);
+    } finally {
+      ev.target.value = "";
+    }
+  };
   el("map-resize").onclick = () => {
     if (!doc) return;
     const w = Math.max(9, Math.min(1024, Number(el("map-w").value) | 0));
@@ -1517,6 +1621,7 @@ if (typeof module !== "undefined") {
     // The clipboard, whose failure mode is losing the thing you were carrying.
     lift, blit, erase, copy, paste, shift, norm, inside, nameAt,
     paint: (key) => PAINTS.find((p) => p.key === key),
+    showMapMetrics, checkedMapMetrics,
     select: (r) => { sel = r; },
     selection: () => sel,
     clipboard: () => clip,

@@ -1,0 +1,19 @@
+version = 1
+name = "switchyard"
+seed = 6006
+mode = "melee"
+archetype = "ring_spokes"
+theme = "dockyard"
+symmetry = "half_turn"
+routes = 3
+min_opening_tiles = 7
+contact_seconds_min = 9.0
+contact_seconds_max = 17.6
+allow_doors = false
+allow_wormholes = false
+expected_hash = "68e8e949"
+
+[envelope]
+width = 144
+height = 192
+shape = "cut_corners"

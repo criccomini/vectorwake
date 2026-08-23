@@ -1,0 +1,19 @@
+version = 1
+name = "relay"
+seed = 2002
+mode = "melee"
+archetype = "ring_spokes"
+theme = "relay_ring"
+symmetry = "half_turn"
+routes = 3
+min_opening_tiles = 7
+contact_seconds_min = 9.0
+contact_seconds_max = 17.6
+allow_doors = false
+allow_wormholes = false
+expected_hash = "712a7b21"
+
+[envelope]
+width = 160
+height = 160
+shape = "cut_corners"

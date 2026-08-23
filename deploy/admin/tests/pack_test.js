@@ -23,7 +23,16 @@ function check(what, ok, why) {
   console.log(`${what.padEnd(52)} ${ok ? "ok" : "FAIL: " + why}`);
 }
 
-for (const name of ["melee/drydock", "melee/slipway"]) {
+for (const name of [
+  "melee/drydock",
+  "melee/relay",
+  "melee/convoy",
+  "melee/shoal",
+  "melee/breakwater",
+  "melee/switchyard",
+  // The frozen legacy file remains useful as a second codec fixture.
+  "melee/slipway",
+]) {
   const file = path.join("catalog", "zones", `${name}.vwmap`);
   const raw = new Uint8Array(fs.readFileSync(file));
   let map;

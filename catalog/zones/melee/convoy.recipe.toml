@@ -1,0 +1,19 @@
+version = 1
+name = "convoy"
+seed = 3003
+mode = "melee"
+archetype = "twin_hubs"
+theme = "derelict_convoy"
+symmetry = "half_turn"
+routes = 3
+min_opening_tiles = 7
+contact_seconds_min = 9.0
+contact_seconds_max = 17.6
+allow_doors = false
+allow_wormholes = false
+expected_hash = "81e164f1"
+
+[envelope]
+width = 144
+height = 192
+shape = "cut_corners"

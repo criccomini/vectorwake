@@ -613,6 +613,7 @@ extern "C" {
         y: *mut i32,
     );
     pub fn sim_map_size(map: *mut sim_map, w: i32, h: i32);
+    pub fn sim_map_index(map: *mut sim_map);
     pub fn sim_map_hash(map: *const sim_map) -> u32;
     pub fn sim_map_check(
         map: *const sim_map,
@@ -702,9 +703,9 @@ pub const ASSIST_SLOTS: usize = 4;
 pub const KIT_CHARGE_SLOTS: usize = 2;
 /// The flat kit space: a stat, a rung, an add-on or a charge, all one shape.
 pub const SLOT_COUNT: usize = UP_COUNT + TRIG_COUNT + TRIG_COUNT * MOD_COUNT + MAX_CHARGES;
-/// Steps a stat may climb, and what a kit may spend in total. Six over five
-/// stats is exactly the budget; the last two of each are bought, and five
-/// at eight is forty against thirty, so the budget always binds.
+/// Wire capacity for a stat and what a kit may spend in total. Effective stat
+/// ceilings come from the flight rows and are lower where physics clamps
+/// sooner; eight remains the representation bound.
 pub const UP_STEPS: u8 = 8;
 pub const UP_STEPS_BASE: u8 = 6;
 pub const KIT_BUDGET: u32 = 30;
@@ -1192,13 +1193,8 @@ impl World {
     /// What the game itself has, before any zone tunes it: the baseline's own
     /// ceiling over the flat slot space.
     ///
-    /// Upgrades need this and have no arena to ask. What is sold is entitlements,
-    /// which are an account's property rather than a room's, so the question
-    /// it can answer is "does this game have such a slot at all" rather than
-    /// "does the room you are standing in". A zone that narrows its own
-    /// ceiling can still leave a bought upgrade unslottable there, which is
-    /// a zone's decision to make; what cannot happen any more is a sale
-    /// selling something no arena anywhere could hold.
+    /// Used by tests and offline tools that have no catalog. The live shop
+    /// applies the selected zone and reads its ceiling instead.
     ///
     /// Built once. It needs a whole settings block to read twenty-five bytes
     /// out of, and that block is a megabyte of specs and patterns.
@@ -1240,6 +1236,26 @@ pub fn blank_map() -> Box<sim_map> {
         )
     };
     map
+}
+
+/// Finish a map after a tool has drawn its tiles.
+///
+/// Indexing paints the shared boundary and rebuilds the feature table. Keeping
+/// that operation here prevents a Rust tool from producing bytes that unpack
+/// differently from the map it just checked.
+pub fn index_map(map: &mut sim_map) {
+    unsafe { sim_map_index(map as *mut sim_map) }
+}
+
+/// The file representation used by zones and clients.
+pub fn pack_map(map: &sim_map) -> Result<Vec<u8>, String> {
+    let mut buf = vec![0u8; MAP_PACK_MAX];
+    let n = unsafe { sim_map_pack(map as *const sim_map, buf.as_mut_ptr(), buf.len() as i32) };
+    if n < 0 {
+        return Err("the map could not be packed".into());
+    }
+    buf.truncate(n as usize);
+    Ok(buf)
 }
 
 pub fn unpack_map(bytes: &[u8]) -> Result<std::sync::Arc<sim_map>, String> {

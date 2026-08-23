@@ -15,22 +15,18 @@ description = "four a side, three minutes"
 # The clock and the score are the mode's; kills are what it counts.
 mode = "melee"
 
-# Both maps, in the order a room takes them: one match on each, alternating,
-# so two matches back to back are never the same ground. Drawn by
-# `sim/tools/mapgen --match`, which builds two pockets with real distance
-# between them and guarantees the lanes are wide enough to fly.
-#
-#   ./sim/build/mapgen --match drydock catalog/zones/melee/drydock.vwmap 12
-#   ./sim/build/mapgen --match slipway catalog/zones/melee/slipway.vwmap 11
-#
-# Drydock was seed 7 while every piece of cover on these maps was a rectangle.
-# The cover is drawn from the same shapes the open arena uses now, and on seed
-# 7 that gave a room a bot told to leave could not find a quiet corner in
-# within its forty seconds, which server/src/ai.rs has a test for. Seed 12 is
-# the same generator and a room that works. The seed is a choice and not a
-# tuning: what makes a map good is checked, and a seed that fails the check is
-# simply not the one to ship.
-maps = ["drydock.vwmap", "slipway.vwmap"]
+# Six maps, each from the recipe and metrics beside it. The rotation crosses
+# four topologies, four visual themes, three arena envelopes, and two arena
+# silhouettes before it repeats a concept. `mapforge verify` proves that a map is
+# the exact output its recipe names.
+maps = [
+  "drydock.vwmap",
+  "relay.vwmap",
+  "convoy.vwmap",
+  "shoal.vwmap",
+  "breakwater.vwmap",
+  "switchyard.vwmap",
+]
 
 # Eight seats, all eight of them a person's if eight people want them. The bot
 # server holds every empty one and stands down the moment somebody arrives,

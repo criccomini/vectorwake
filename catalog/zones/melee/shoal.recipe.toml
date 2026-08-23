@@ -1,0 +1,19 @@
+version = 1
+name = "shoal"
+seed = 4004
+mode = "melee"
+archetype = "archipelago"
+theme = "asteroid_reef"
+symmetry = "half_turn"
+routes = 3
+min_opening_tiles = 7
+contact_seconds_min = 9.0
+contact_seconds_max = 17.6
+allow_doors = false
+allow_wormholes = false
+expected_hash = "1b7d3b4f"
+
+[envelope]
+width = 192
+height = 144
+shape = "offset_bays"

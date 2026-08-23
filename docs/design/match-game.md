@@ -2,7 +2,7 @@
 
 > **Built, for Melee.** Everything below through the week is running: three
 > minute matches with an intermission, the kit and the shop that sells slots
-> for it, bounty paid as rivets, two match maps, and the six tabs. Capture and
+> for it, bounty paid as rivets, six match maps, and the six tabs. Capture and
 > Holdfast are named here and not written; so are friends, parties and livery.
 > Alpha did not survive this document, and greens, gunners and turrets went
 > with it.
@@ -300,23 +300,25 @@ cost that never eats a quarter of the match. Hulls will differ, and that is
 the roster expressing itself: an Apex arriving first and an Anvil arriving
 last is both ships doing their job.
 
-`sim/tools/mapgen --match` draws them. Two are shipped and the zone rotates
-between them: **drydock**, pockets north and south with three lanes and a
-room in the middle worth fighting through, and **slipway**, pockets at
-opposite corners with a lattice down the diagonal, so the short way is the
-dangerous one. Both are point symmetric by construction, since the generator
-draws one half and `sym_put` turns it, and both are checked for a connected
-arena and a cover density between four and sixteen percent before they are
-written.
+`mapforge` draws them from authored recipes. Six ship in the first rotation:
+drydock, relay, convoy, shoal, breakwater, and switchyard. Together they use
+three lanes, ring and spokes, twin hubs, and archipelago layouts in square,
+wide, and tall arenas. Dockyard, relay, derelict, and asteroid themes decide
+what the structures are without deciding how the routes work.
+
+Every map is point symmetric by construction. Each recipe asks for three
+separated routes at least seven tiles wide, and generation stops if the shared
+core validator, route gate, symmetry gate, spawn gate, or contact-time gate
+fails. The metrics and preview beside each map make the remaining judgment,
+such as whether cover feels purposeful, visible before it joins the rotation.
 
 The flight time between the homes is held by a test rather than by a comment.
 `the_melee_maps_are_two_homes_with_ground_between_them` routes a hull from one
-pocket to the other on the shipped file and flies the polyline at an Apex's
-top speed with a kit that spends nothing on speed, which puts both maps at
-about nine and a half seconds and first contact a hair under five. It caught
-the pockets being moved in for the camera's sake: at twenty seven tiles from
-the wall drydock came in under the floor, and twenty two is where the two
-constraints meet.
+pocket to the other on each shipped file and flies the polyline at an Apex's
+top speed with a kit that spends nothing on speed. Every map stays between
+nine and seventeen and a half seconds of home-to-home flight. First contact
+therefore lands inside the five-to-eight second design window when both sides
+leave together.
 
 ## The kit
 

@@ -505,6 +505,9 @@
 
       <div class="row">
         <button id="map-new" class="go">new map</button>
+        <label class="quiet file-button">import candidate
+          <input id="map-import" type="file" accept=".vwmap,application/octet-stream">
+        </label>
         <span id="map-count" class="dim"></span>
       </div>
       <div class="scroller">
@@ -550,6 +553,16 @@
           <label class="row tight">zoom
             <input id="map-zoom" type="range" min="1" max="12" step="1" value="4">
           </label>
+          <label class="quiet file-button">load metrics
+            <input id="map-metrics" type="file" accept=".json,application/json">
+          </label>
+          <label class="row tight">overlay
+            <select id="map-overlay">
+              <option value="routes">routes</option>
+              <option value="cover">cover</option>
+              <option value="none">none</option>
+            </select>
+          </label>
         </div>
         <p class="dim">The right button erases whatever tile is picked, so a
           wall can be tidied without putting the paint down. Hold shift while
@@ -570,6 +583,7 @@
         </div>
 
         <p id="map-verdict" class="note" role="status" aria-live="polite"></p>
+        <dl id="map-score" class="map-score" hidden></dl>
         <div class="row">
           <button id="map-save" class="go">save and publish</button>
           <button id="map-close" class="quiet">close</button>

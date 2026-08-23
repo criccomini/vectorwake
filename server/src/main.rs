@@ -18,6 +18,7 @@ mod delivery;
 mod directory;
 mod drill;
 mod fleet;
+mod mapforge;
 mod meta;
 mod metrics;
 mod modes;
@@ -560,6 +561,10 @@ async fn main() {
     // What the ladder cannot see: the roster on a real map, with walls in it.
     if std::env::args().nth(1).as_deref() == Some("drill") {
         drill::run_check();
+        return;
+    }
+    if std::env::args().nth(1).as_deref() == Some("mapforge") {
+        mapforge::run();
         return;
     }
     // The meta-layer: accounts, ratings, and the rated event log. The one
@@ -3403,7 +3408,14 @@ mod tests {
     /// which is invisible in a generator line that says "8 spawns".
     #[test]
     fn the_melee_maps_are_two_homes_with_ground_between_them() {
-        for name in ["drydock", "slipway"] {
+        for name in [
+            "drydock",
+            "relay",
+            "convoy",
+            "shoal",
+            "breakwater",
+            "switchyard",
+        ] {
             let bytes = std::fs::read(format!("../catalog/zones/melee/{name}.vwmap"))
                 .unwrap_or_else(|e| panic!("{name} ships in this repository: {e}"));
             let w = sim::World::from_packed(0x5eed, &bytes).expect("a map");
@@ -7021,7 +7033,18 @@ mod tests {
         assert_eq!(z.arena.match_seconds, Some(180));
         assert_eq!(z.arena.intermission_seconds, Some(15));
         assert_eq!(z.mode, "melee");
-        assert_eq!(z.maps.len(), 2, "two maps, alternating");
+        assert_eq!(
+            z.maps,
+            [
+                "drydock.vwmap",
+                "relay.vwmap",
+                "convoy.vwmap",
+                "shoal.vwmap",
+                "breakwater.vwmap",
+                "switchyard.vwmap",
+            ],
+            "the curated rotation"
+        );
         assert_eq!(z.max_humans_per_team, Some(4), "four a side");
         assert_eq!(z.teams.len(), 2);
         // Six mines, for anybody who buys the kind and spends six of thirty

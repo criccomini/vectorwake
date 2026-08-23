@@ -1,0 +1,19 @@
+version = 1
+name = "breakwater"
+seed = 7983568130
+mode = "melee"
+archetype = "three_lanes"
+theme = "asteroid_reef"
+symmetry = "half_turn"
+routes = 3
+min_opening_tiles = 7
+contact_seconds_min = 9.0
+contact_seconds_max = 17.6
+allow_doors = false
+allow_wormholes = false
+expected_hash = "c0a0e631"
+
+[envelope]
+width = 160
+height = 160
+shape = "cut_corners"

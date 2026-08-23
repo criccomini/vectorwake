@@ -905,6 +905,38 @@ dialog .field { margin-bottom: 1rem; }
 /* Small enough that a size field does not read as a search box. */
 #map-w, #map-h { width: 5rem; }
 
+/* A native file input is still the reliable picker, but its generated button
+   does not match the panel. The label is the visible control and the input
+   fills it without adding a second control to the row. */
+.file-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.file-button input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.map-score {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 0.5rem 1rem;
+  margin: var(--gap) 0;
+}
+
+.map-score div {
+  border-left: 2px solid var(--line);
+  padding-left: 0.55rem;
+}
+
+.map-score dt { color: var(--dim); }
+.map-score dd { margin: 0.15rem 0 0; font-variant-numeric: tabular-nums; }
+
 /* Holds its line whether or not it has anything to say, so the canvas below it
    does not move every time the pointer leaves it.
 
