@@ -1231,6 +1231,50 @@ int main(void) {
         CHECK(!sim_map_playable(room, &rep, why, sizeof why),
               "and a map with one is refused");
 
+        /* Two rocks with one tile between them. A hull is three across, so
+         * nothing can come within a tile of that gap, and it counts as ground
+         * no hull can reach. It is also just a gap between two rocks, which is
+         * what an asteroid field is made of, so it is reported and not
+         * refused: the first map anybody scattered rocks over came back with
+         * thirty-eight of these and nothing wrong with it. */
+        sim_map_size(room, 80, 60);
+        SIM_MAP_AT(room, 40, 30) = SIM_TILE(SIM_TILE_SPAWN, 0);
+        SIM_MAP_AT(room, 20, 20) = SIM_TILE(SIM_TILE_SOLID, SIM_SOLID_ROCK_A);
+        SIM_MAP_AT(room, 22, 20) = SIM_TILE(SIM_TILE_SOLID, SIM_SOLID_ROCK_A);
+        sim_map_index(room);
+        sim_map_check(room, sc, &rep);
+        CHECK(rep.stranded == 1, "a gap between two rocks is ground no hull reaches");
+        CHECK(rep.regions == 1, "and it is still one room");
+        CHECK(sim_map_playable(room, &rep, why, sizeof why),
+              "so a rock field is a map worth serving");
+
+        /* And the editor can be told which tile, rather than only how many. */
+        {
+            uint32_t at[8];
+            int n = sim_map_stranded(room, sc, at, 8);
+            CHECK(n == 1, "the stranded tile is named");
+            CHECK(at[0] == 20 * 80 + 21, "and it is the one between the rocks");
+        }
+
+        /* A sealed room is still refused, and by the region count rather than
+         * by the tile count: it is somewhere a hull fits and cannot reach,
+         * which is the thing that was ever worth refusing. */
+        sim_map_size(room, 80, 60);
+        SIM_MAP_AT(room, 40, 30) = SIM_TILE(SIM_TILE_SPAWN, 0);
+        for (int tx = 60; tx <= 70; tx++) {
+            SIM_MAP_AT(room, tx, 40) = SIM_TILE_SOLID;
+            SIM_MAP_AT(room, tx, 50) = SIM_TILE_SOLID;
+        }
+        for (int ty = 40; ty <= 50; ty++) {
+            SIM_MAP_AT(room, 60, ty) = SIM_TILE_SOLID;
+            SIM_MAP_AT(room, 70, ty) = SIM_TILE_SOLID;
+        }
+        sim_map_index(room);
+        sim_map_check(room, sc, &rep);
+        CHECK(rep.regions == 2, "a sealed room a hull fits in is a second region");
+        CHECK(!sim_map_playable(room, &rep, why, sizeof why),
+              "and that is still refused");
+
         /* A map naming no start is refused too: a zone would fall back to its
          * own tiles, which are drawn for a different room. */
         sim_map_size(room, 60, 60);

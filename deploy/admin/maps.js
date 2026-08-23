@@ -176,6 +176,14 @@ let hover = [0, 0];
 // about. Kept apart from `hover` so that leaving does not move the paste.
 let onCanvas = false;
 
+// Tiles the core says no hull can reach, as indices into the map.
+//
+// Drawn rather than only counted. Most of them are the gaps inside an asteroid
+// field, which is a hull being three tiles across and nothing being wrong; the
+// ones that matter are a passage drawn too narrow to fly, and the difference
+// is obvious at a glance and invisible in a number.
+let stranded = [];
+
 // What can be taken back, and what taking it back would put back.
 //
 // One entry per gesture rather than per tile: a dragged line is one thing a
@@ -623,6 +631,17 @@ function repaint(over) {
     g.restore();
   }
 
+  if (stranded.length && zoom >= 2) {
+    g.save();
+    g.fillStyle = "#ffa552";
+    g.globalAlpha = 0.5;
+    for (const k of stranded) {
+      const x = k % doc.w, y = Math.floor(k / doc.w);
+      if (x < doc.w && y < doc.h) g.fillRect(x * zoom, y * zoom, zoom, zoom);
+    }
+    g.restore();
+  }
+
   if (sel) {
     g.save();
     g.strokeStyle = "#e6edf7";
@@ -856,12 +875,31 @@ function verdict() {
       // and worth a word, because a zone that sets `door_period` to zero never
       // opens them and would be playing a different room than this one. Said
       // rather than refused: which zone it lands in is not the map's business.
+      // Redrawn here rather than left for the next stroke: the check comes
+      // back a few hundred milliseconds after somebody stopped drawing, and
+      // marks that appear on the next unrelated click read as a glitch.
+      const marks = r.stranded_at || [];
+      const moved = marks.length !== stranded.length
+                    || marks.some((k, i) => k !== stranded[i]);
+      stranded = marks;
+      if (moved) repaint();
       const leans = (rep.regions_shut || 0) > (rep.regions || 0);
+      const notes = [];
+      if (leans) {
+        notes.push(`through its doors: shut, it is ${rep.regions_shut} separate rooms`);
+      }
+      // Reported rather than refused, and drawn so it can be judged. A hull is
+      // three tiles across, so any two rocks with a tile between them leave
+      // one no hull can reach, and an asteroid field is hundreds of those.
+      if (rep.stranded > 0) {
+        notes.push(`${rep.stranded} tile(s) marked in orange are ground no hull `
+                   + `can reach, which between rocks is a crevice and along a `
+                   + `wall is a passage too narrow to fly`);
+      }
       if (r.ok) {
-        tell("map-verdict", leans
-          ? `a hull can fly all of this, through its doors: shut, it is `
-            + `${rep.regions_shut} separate rooms`
-          : "a hull can fly all of this", "ok");
+        tell("map-verdict",
+             notes.length ? `a hull can fly all of this, ${notes.join("; ")}`
+                          : "a hull can fly all of this", "ok");
       } else {
         tell("map-verdict", r.error || "not playable");
       }

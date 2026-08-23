@@ -163,25 +163,55 @@ pub struct sim_map_scratch {
 /// drew is held to what a generated one is. Returns the report and, when the
 /// map is not worth serving, the first thing wrong with it in words.
 pub fn check_map(map: &sim_map) -> (sim_map_report, Option<String>) {
+    let (report, why, _) = check_map_at(map);
+    (report, why)
+}
+
+/// The same, and where the stranded ground is.
+///
+/// A count of tiles no hull can reach is not something an author can act on;
+/// the tiles themselves are, because most of them turn out to be the gaps
+/// inside an asteroid field and the rest are a passage drawn too narrow to
+/// fly. The editor draws them and lets a person tell those apart.
+///
+/// Bounded, because a map is a million tiles and this ends up in a JSON body:
+/// past a few thousand the answer is "a great deal of it" and one more marker
+/// says nothing new.
+pub fn check_map_at(map: &sim_map) -> (sim_map_report, Option<String>, Vec<u32>) {
+    const MARKS: usize = 4096;
     let mut scratch: Box<sim_map_scratch> = zeroed_box();
     let mut report = sim_map_report::default();
     let mut why = [0u8; 192];
-    let ok = unsafe {
+    let mut at = vec![0u32; MARKS];
+    let (ok, found) = unsafe {
         sim_map_check(map as *const sim_map, &mut *scratch, &mut report);
-        sim_map_playable(
+        let ok = sim_map_playable(
             map as *const sim_map,
             &report,
             why.as_mut_ptr(),
             why.len() as i32,
-        )
+        );
+        let found = if report.stranded > 0 {
+            sim_map_stranded(
+                map as *const sim_map,
+                &mut *scratch,
+                at.as_mut_ptr(),
+                MARKS as i32,
+            )
+        } else {
+            0
+        };
+        (ok, found)
     };
+    at.truncate(found.max(0) as usize);
     if ok != 0 {
-        return (report, None);
+        return (report, None, at);
     }
     let end = why.iter().position(|b| *b == 0).unwrap_or(why.len());
     (
         report,
         Some(String::from_utf8_lossy(&why[..end]).to_string()),
+        at,
     )
 }
 
@@ -577,6 +607,12 @@ extern "C" {
         map: *const sim_map,
         report: *const sim_map_report,
         why: *mut u8,
+        cap: i32,
+    ) -> i32;
+    pub fn sim_map_stranded(
+        map: *const sim_map,
+        scratch: *mut sim_map_scratch,
+        out: *mut u32,
         cap: i32,
     ) -> i32;
     pub fn sim_map_arena(map: *mut sim_map);

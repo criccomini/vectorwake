@@ -384,7 +384,10 @@ pub(super) async fn route(
                     ))
                 }
             };
-            let (report, fault) = crate::sim::check_map(&map);
+            // The live check an editor runs while somebody draws, so it also
+            // carries where the stranded ground is: a count is a fact and the
+            // tiles are something to look at.
+            let (report, fault, stranded_at) = crate::sim::check_map_at(&map);
             (
                 200,
                 serde_json::json!({
@@ -392,6 +395,7 @@ pub(super) async fn route(
                     "error": fault,
                     "w": map.w, "h": map.h,
                     "report": report_json(&report),
+                    "stranded_at": stranded_at,
                 }),
             )
         }

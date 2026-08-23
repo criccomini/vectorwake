@@ -609,8 +609,24 @@ too wide for the frame.
 
 Whichever drew it, `sim_map_check` decides whether it can be played. It asks
 about a hull rather than a point: whether a three-tile ship can fly all of the
-map, whether each start is somewhere a ship can leave, and whether any open
-ground is a pocket nothing can reach.
+map, and whether each start is somewhere a ship can leave.
+
+Ground no hull can reach is reported and not refused. It sounds like the worst
+thing on the list and mostly is not: a hull is three tiles across, so any two
+rocks with a single tile between them leave a tile no hull's center can come
+within one of, and a drawn asteroid field is hundreds of them. The first map
+anybody scattered rocks over came back with thirty-eight and nothing wrong with
+it. The three things the refusal was guarding are all somewhere else now. A
+ship cannot be shoved into a gap it does not fit in; a prize cannot land there,
+because prizes came out of the core; and a bot cannot route there, because nav
+counts a tile blocked unless a hull fits on it. What is left is worth knowing
+and is not a verdict: a two-tile passage that looks like a route and is not,
+against a crevice between two rocks. The editor draws those tiles in orange so
+an author can tell which they are drawing, since the difference is obvious at a
+glance and invisible in a number.
+
+A place a hull could fly and cannot reach is still refused, by the region
+count: that is the same fact said about ground a ship can actually be on.
 
 All of that with the doors open, because a door is a wall on a clock and the
 clock keeps running: at the baseline it is shut two seconds in every six, and a

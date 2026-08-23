@@ -421,6 +421,40 @@ const server = http.createServer((req, res) => {
         leaning.includes("through its doors") && leaning.includes("3 separate rooms"),
         leaning);
 
+  // --- ground no hull can reach --------------------------------------------
+  //
+  // The count used to be a refusal and is a note now, because a hull is three
+  // tiles across and any two rocks a tile apart leave one of these. What the
+  // panel has to do is draw them, so an author can tell a crevice from a
+  // passage they meant to fly down.
+
+  const at2 = at;
+  const strandedFor = async (report, marks, ok) => {
+    await page.evaluate((a) => { window.__answers = [a]; },
+                        { ok, report, stranded_at: marks, error: null });
+    await pickTool("pencil");
+    await pickPaint("wall");
+    await page.mouse.click(...Object.values(await at2(72, 30)));
+    await page.waitForTimeout(700);
+    return page.$eval("#map-verdict", (n) => n.textContent);
+  };
+
+  const clean = await strandedFor({ regions: 1, regions_shut: 1, stranded: 0 }, [], true);
+  check("a map with no stranded ground says nothing about it",
+        !clean.includes("no hull"), clean);
+
+  // Two tiles the core called stranded, at 40,20 and 41,20 on a 300-wide map.
+  const marked = await strandedFor(
+    { regions: 1, regions_shut: 1, stranded: 2 }, [20 * 300 + 40, 20 * 300 + 41], true);
+  check("and one with it is still playable", marked.startsWith("a hull can fly all of this"),
+        marked);
+  check("and says how many and what to make of them",
+        marked.includes("2 tile(s)") && marked.includes("orange"), marked);
+  const painted = await pick(40, 20);
+  check("and paints them on the canvas", painted !== EMPTY, painted);
+  const away = await pick(120, 40);
+  check("and leaves the rest of the room alone", away === EMPTY, away);
+
   // --- the map still packs ---------------------------------------------------
 
   const size = await page.evaluate(() => {
