@@ -223,55 +223,57 @@ static void m_lattice(int x, int y, int w, int h, uint8_t wall) {
         for (int i = 0; i < nx; i++) put(sx + i * step, sy + j * step, wall);
 }
 
-/* A 45-degree run, drawn as a wall a ship can slide along rather than a
- * staircase it rattles down.
+/* A 45-degree run, drawn as a wall a ship slides along rather than a staircase
+ * it rattles down.
  *
- * These were bare stepped tiles, which is the only diagonal a square grid has
- * and the reason a shot fired along one skipped instead of sliding. A slope is
- * that wall with the steps taken off, and the shape below is what it costs.
+ * Two tiles across, and no solid tile in it: a run of slopes leaning one way
+ * beside a run leaning the other, their solid halves facing away from each
+ * other so the material between them is the wall. Two tiles rather than one
+ * because a single run is a one-way wall, and rather than three because the
+ * pair needs no spine down the middle.
  *
- * A single run of slopes will not do, which is worth writing down because it
- * looks like it should. Consecutive tiles of one variant meet at a point, so
- * the face is continuous and the material behind it is not, and what that
- * gives you is a one-way wall: a hull is stopped from the side the solid half
- * faces and goes straight through from the other, at every speed there is.
- * Sixteen hulls out of sixteen, measured, before this shape was settled on.
+ * What makes the pair work is that the two runs share a whole edge. A tile's
+ * solid half reaches its neighbour's solid half along the full length of the
+ * side they have in common, going across the run and along it both. That is
+ * the difference from every other diagonal a square grid can draw, all of
+ * which meet corner to corner and pinch to a point there.
  *
- * So a run is three tiles across: a solid spine, and either side of it a face
- * filling the corner that points back at the spine, because a face has to
- * present its solid half to whatever is coming at it. That is a diagonal about
- * twice the thickness of a straight wall on the same map, which is the reason
- * this was one tile for so long: at radar scale a thick diagonal reads as a
- * smear rather than a line. It reads that way and it is flyable, and between
- * those two the collision wins.
+ * A pinch is not a hole to a hull, which is three tiles across and cannot fit
+ * through a point. It is a hole to a bullet. The stepped diagonal this
+ * replaced let a round through on one heading in thirty-two, and the heading
+ * was the shot fired square at the wall: travelling along the other diagonal a
+ * round passes exactly through the corners where the tiles touch. It had been
+ * there as long as the shape had. The pair leaks on none of the thirty-two,
+ * and neither hulls nor rounds get through it at any speed measured, which is
+ * up to three tiles a tick.
  *
- * `pass` is which half of the shape is being drawn. Every spine tile in a
- * shape goes down before any face does, so an arm laid second cannot cut a
- * face into the arm laid first, and a face never lands on ground that is
- * already wall: at a crossing the spine stays solid. */
-static void m_slope_step(int x, int y, int lean, int pass, uint8_t wall) {
-    if (pass == 0) {
+ * Which variant goes on which side is decided by the shared edge and nothing
+ * else: each tile has to be solid all the way along the side it hands to its
+ * neighbour, so the left of a pair fills the corner on its right and the right
+ * one fills the corner on its left.
+ *
+ * Where two arms cross, whichever gets there first lays its slope and the
+ * second finds the tile taken and writes wall instead, so a crossing is a
+ * solid knot rather than two half tiles arguing over one square. */
+static void m_slope_step(int x, int y, int lean, uint8_t wall) {
+    /* A face belongs to a wall. A door drawn as a diagonal would want its
+     * faces to open with it, and a slope does not do that, so a run of
+     * anything but solid stays the stepped line it always was. */
+    if (SIM_TILE_CLASS(wall) != SIM_TILE_SOLID) {
         put(x, y, wall);
         return;
     }
-    /* A face belongs to a wall. Every caller draws these in solid today, and a
-     * door drawn as a diagonal would want its faces to open with it, which a
-     * slope does not do: it would leave a pair of fixed triangles across the
-     * opening. So a run of anything else stays stepped rather than half
-     * sloped. */
-    if (SIM_TILE_CLASS(wall) != SIM_TILE_SOLID) return;
-    /* Across the run, which is the other diagonal. A face fills the corner
-     * nearest the spine, so the flat it presents outward is the run's own
-     * line. */
-    static const struct { int ox, oy; uint8_t var; } BACK[2][2] = {
-        /* the run leans '\' */ {{ 1, -1, SIM_SLOPE_SW }, { -1, 1, SIM_SLOPE_NE }},
-        /* the run leans '/'  */ {{ 1, 1, SIM_SLOPE_NW }, { -1, -1, SIM_SLOPE_SE }},
+    static const uint8_t PAIR[2][2] = {
+        /* '\' leaning down */ { SIM_SLOPE_NE, SIM_SLOPE_SW },
+        /* '/' leaning up   */ { SIM_SLOPE_SE, SIM_SLOPE_NW },
     };
     for (int i = 0; i < 2; i++) {
-        int fx = x + BACK[lean][i].ox, fy = y + BACK[lean][i].oy;
+        int fx = x + i, fy = y;
         if (fx < EDGE || fy < EDGE || fx >= MW - EDGE || fy >= MH - EDGE) continue;
-        if (T[(size_t)fy * TILES + fx] != SIM_TILE_EMPTY) continue;
-        put(fx, fy, SIM_TILE(SIM_TILE_SLOPE, BACK[lean][i].var));
+        uint8_t there = T[(size_t)fy * TILES + fx];
+        put(fx, fy, there == SIM_TILE_EMPTY
+                        ? SIM_TILE(SIM_TILE_SLOPE, PAIR[lean][i])
+                        : SIM_TILE_SOLID);
     }
 }
 
@@ -290,32 +292,30 @@ static void m_chevron(int x, int y, int w, int h, uint8_t wall) {
     if (form == 2) { /* two arms meeting at a point: V, its mirror, < or > */
         int m = (n + 1) / 2, far = chance(50), down = chance(50);
         int off = (n - m) / 2; /* the point and its arms span half the box */
-        for (int pass = 0; pass < 2; pass++)
-            for (int i = 0; i < m; i++) {
-                int lo = m - 1 - i, hi = m - 1 + i;
-                int at = off + (far ? m - 1 - i : i);
-                /* The two arms of a V lean opposite ways, and which way each
-                 * leans turns over with `far`: the point is at the near end of
-                 * the box or the far one. */
-                int a = far ? LEAN_UP : LEAN_DOWN;
-                int b = far ? LEAN_DOWN : LEAN_UP;
-                if (down) {
-                    m_slope_step(ox + at, oy + lo, b, pass, wall);
-                    m_slope_step(ox + at, oy + hi, a, pass, wall);
-                } else {
-                    m_slope_step(ox + lo, oy + at, b, pass, wall);
-                    m_slope_step(ox + hi, oy + at, a, pass, wall);
-                }
+        for (int i = 0; i < m; i++) {
+            int lo = m - 1 - i, hi = m - 1 + i;
+            int at = off + (far ? m - 1 - i : i);
+            /* The two arms of a V lean opposite ways, and which way each leans
+             * turns over with `far`: the point is at the near end of the box
+             * or the far one. */
+            int a = far ? LEAN_UP : LEAN_DOWN;
+            int b = far ? LEAN_DOWN : LEAN_UP;
+            if (down) {
+                m_slope_step(ox + at, oy + lo, b, wall);
+                m_slope_step(ox + at, oy + hi, a, wall);
+            } else {
+                m_slope_step(ox + lo, oy + at, b, wall);
+                m_slope_step(ox + hi, oy + at, a, wall);
             }
+        }
         return;
     }
     int cross = chance(45); /* an X, or the single arm on its own */
     int back = chance(50);  /* which way a single arm leans */
-    for (int pass = 0; pass < 2; pass++)
-        for (int i = 0; i < n; i++) {
-            if (cross || !back) m_slope_step(ox + i, oy + i, LEAN_DOWN, pass, wall);
-            if (cross || back) m_slope_step(ox + n - 1 - i, oy + i, LEAN_UP, pass, wall);
-        }
+    for (int i = 0; i < n; i++) {
+        if (cross || !back) m_slope_step(ox + i, oy + i, LEAN_DOWN, wall);
+        if (cross || back) m_slope_step(ox + n - 1 - i, oy + i, LEAN_UP, wall);
+    }
 }
 
 /* A bar with a cap at each end. Blocks along its length, and the caps stop a

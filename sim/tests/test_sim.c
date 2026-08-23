@@ -1412,18 +1412,22 @@ int main(void) {
             free(thin);
         }
 
-        /* A spine with a face on each side, which is what that costs and what
-         * the generator draws. It holds both ways. */
+        /* Two runs leaning opposite ways, which is the shape the generator
+         * draws: no solid tile in it, two tiles across, and the only diagonal
+         * of the three that nothing gets through.
+         *
+         * What makes it work is the shared edge. Each tile is solid the whole
+         * length of the side it hands its neighbour, across the run and along
+         * it both, where every other diagonal a square grid can draw meets
+         * corner to corner and pinches to a point. */
         {
             sim_map *band = malloc(sizeof *band);
             sim_map_size(band, 200, 200);
             for (int i = 0; i <= 80; i++) {
-                int tx = 40 + i, ty = 40 + i;
-                SIM_MAP_AT(band, tx, ty) = SIM_TILE_SOLID;
-                SIM_MAP_AT(band, tx + 1, ty - 1) =
-                    SIM_TILE(SIM_TILE_SLOPE, SIM_SLOPE_SW);
-                SIM_MAP_AT(band, tx - 1, ty + 1) =
+                SIM_MAP_AT(band, 40 + i, 40 + i) =
                     SIM_TILE(SIM_TILE_SLOPE, SIM_SLOPE_NE);
+                SIM_MAP_AT(band, 41 + i, 40 + i) =
+                    SIM_TILE(SIM_TILE_SLOPE, SIM_SLOPE_SW);
             }
             sim_map_index(band);
             sim_settings bc = cfg;
@@ -1436,7 +1440,7 @@ int main(void) {
             t.ships[0].vy = 6 * 65536;
             step_n(&t, &bc, 0, 0, 300);
             CHECK((t.ships[0].y >> 12) <= (t.ships[0].x >> 12) + 3,
-                  "a sloped run with a body behind it holds from the north-east");
+                  "two opposing runs hold a hull from the north-east");
 
             sim_init(&t, 24);
             sim_spawn(&t, APEX, 0, 60 * 16, 90 * 16, 0, &bc);
@@ -1444,8 +1448,60 @@ int main(void) {
             t.ships[0].vy = -6 * 65536;
             step_n(&t, &bc, 0, 0, 300);
             CHECK((t.ships[0].x >> 12) <= (t.ships[0].y >> 12) + 3,
-                  "and from the south-west, which a thin one does not");
+                  "and from the south-west, which one run does not");
             free(band);
+        }
+
+        /* And the reason it is that shape rather than a stepped line with the
+         * steps filed off.
+         *
+         * A pinch is no hole to a hull, which is three tiles across and cannot
+         * fit through a point. It is a hole to a bullet. A round fired square
+         * at a stepped diagonal travels along the other diagonal, which takes
+         * it exactly through the corners where the tiles touch, and it goes
+         * straight through a wall that stops every ship. That was true of the
+         * generator's diagonals for as long as they were stepped. */
+        {
+            sim_map *step_wall = malloc(sizeof *step_wall);
+            sim_map *pair_wall = malloc(sizeof *pair_wall);
+            sim_map_size(step_wall, 200, 200);
+            sim_map_size(pair_wall, 200, 200);
+            for (int i = -80; i <= 80; i++) {
+                int tx = 100 + i, ty = 100 + i;
+                if (tx < 1 || ty < 1 || tx > 198 || ty > 198) continue;
+                SIM_MAP_AT(step_wall, tx, ty) = SIM_TILE_SOLID;
+                SIM_MAP_AT(pair_wall, tx, ty) = SIM_TILE(SIM_TILE_SLOPE, SIM_SLOPE_NE);
+                SIM_MAP_AT(pair_wall, tx + 1, ty) = SIM_TILE(SIM_TILE_SLOPE, SIM_SLOPE_SW);
+            }
+            sim_map_index(step_wall);
+            sim_map_index(pair_wall);
+
+            /* Twenty of thirty-two of a turn, which from north-east of the
+             * line is the shot aimed square at it. */
+            const uint16_t square_on = (uint16_t)(20 * (65536 / 32));
+            int got_through[2] = {0, 0};
+            sim_map *walls[2] = {step_wall, pair_wall};
+            for (int which = 0; which < 2; which++) {
+                sim_settings wc = cfg;
+                wc.map = walls[which];
+                sim_state t;
+                sim_init(&t, 25 + which);
+                sim_spawn(&t, APEX, 0, 130 * 16, 70 * 16, square_on, &wc);
+                sim_deal_kit(&t.ships[0], &wc, 1);
+                for (int k = 0; k < 400 && !got_through[which]; k++) {
+                    step_n(&t, &wc, k < 3 ? SIM_BTN_FIRE : 0, 0, 1);
+                    for (int wpn = 0; wpn < SIM_MAX_WEAPONS; wpn++) {
+                        if (!t.weapons[wpn].life) continue;
+                        int32_t wx = t.weapons[wpn].x >> 8;
+                        int32_t wy = t.weapons[wpn].y >> 8;
+                        if (wy > wx + 48) { got_through[which] = 1; break; }
+                    }
+                }
+            }
+            CHECK(got_through[0], "a round fired square at a stepped diagonal goes through it");
+            CHECK(!got_through[1], "and the same round is stopped by two opposing runs");
+            free(step_wall);
+            free(pair_wall);
         }
 
         /* Which is the point: on a staircase the same drop lands on a step and
