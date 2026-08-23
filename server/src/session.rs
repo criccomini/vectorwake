@@ -740,7 +740,7 @@ pub(crate) async fn serve_client(
                 // sends nothing: the next snapshot carries what was dealt, and
                 // a refusal leaves the old kit, which is the same answer
                 // either way.
-                if data.len() >= 1 + crate::sim::SLOT_COUNT {
+                if data.len() > crate::sim::SLOT_COUNT {
                     let mut kit = [0u8; crate::sim::SLOT_COUNT];
                     kit.copy_from_slice(&data[1..1 + crate::sim::SLOT_COUNT]);
                     if let Presence::Flying { room, member } = presence.current() {
@@ -814,16 +814,14 @@ pub(crate) async fn serve_client(
                 // whole, which is the gate a hull change gets and for
                 // the same reason. Nothing is sent back but the team
                 // list, whose "you are on" byte is the whole answer.
-                if data.len() >= 2 {
-                    if presence.current().flying().is_some() {
-                        let want = data[1];
-                        let mut z = zone.lock().await;
-                        if let Some((room, member)) = presence.current().flying() {
-                            if let Some(index) = z.rooms.iter().position(|a| a.number == room) {
-                                let a = &mut z.rooms[index];
-                                if let Some(ship) = a.players.get(&member).map(|p| p.ship) {
-                                    a.join_team(ship, want);
-                                }
+                if data.len() >= 2 && presence.current().flying().is_some() {
+                    let want = data[1];
+                    let mut z = zone.lock().await;
+                    if let Some((room, member)) = presence.current().flying() {
+                        if let Some(index) = z.rooms.iter().position(|a| a.number == room) {
+                            let a = &mut z.rooms[index];
+                            if let Some(ship) = a.players.get(&member).map(|p| p.ship) {
+                                a.join_team(ship, want);
                             }
                         }
                     }
@@ -848,16 +846,14 @@ pub(crate) async fn serve_client(
                 // actually forms. There is no kick to go with it: a
                 // team that wants somebody gone walks away and founds
                 // another, which costs a respawn and no machinery.
-                if data.len() >= 2 {
-                    if presence.current().flying().is_some() {
-                        let guest = data[1];
-                        let mut z = zone.lock().await;
-                        if let Some((room, member)) = presence.current().flying() {
-                            if let Some(index) = z.rooms.iter().position(|a| a.number == room) {
-                                let a = &mut z.rooms[index];
-                                if let Some(ship) = a.players.get(&member).map(|p| p.ship) {
-                                    a.invite(ship, guest);
-                                }
+                if data.len() >= 2 && presence.current().flying().is_some() {
+                    let guest = data[1];
+                    let mut z = zone.lock().await;
+                    if let Some((room, member)) = presence.current().flying() {
+                        if let Some(index) = z.rooms.iter().position(|a| a.number == room) {
+                            let a = &mut z.rooms[index];
+                            if let Some(ship) = a.players.get(&member).map(|p| p.ship) {
+                                a.invite(ship, guest);
                             }
                         }
                     }

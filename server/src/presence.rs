@@ -184,6 +184,9 @@ pub(crate) struct PresenceHandle {
 }
 
 impl PresenceHandle {
+    /// A handle nobody is listening to, for a seat with no connection behind
+    /// it. `connected` is the one every live session takes.
+    #[allow(dead_code)]
     pub(crate) fn new() -> Self {
         Self {
             state: Arc::new(std::sync::Mutex::new(Presence::Unjoined)),

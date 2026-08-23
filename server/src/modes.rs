@@ -13,7 +13,10 @@ use crate::sim::{self, World};
 
 pub struct ModeCtx<'a> {
     pub world: &'a mut World,
-    /// Ships in this arena, and whether each is a bot.
+    /// Ships in this arena, and whether each is a bot. Handed to every mode
+    /// whether or not the three shipped ones ask: a mode that seats sides,
+    /// and any mode that treats a bot differently from a person, reads it.
+    #[allow(dead_code)]
     pub seats: &'a [(u8, bool)],
     /// The zone's own sides, by name, in the order it scores them. A mode
     /// writes banners about the game, and a side is a name to everybody
@@ -107,6 +110,10 @@ pub fn build(name: &str, s: &Setup) -> Box<dyn Mode> {
 pub trait Mode: Send {
     fn tick(&mut self, ctx: &mut ModeCtx);
     fn on_death(&mut self, ctx: &mut ModeCtx, victim: u8, killer: u8);
+    /// What the zone file calls this mode. Read by the tests that build one
+    /// from a name, which is the only caller that has to check it came back
+    /// with what it asked for.
+    #[allow(dead_code)]
     fn name(&self) -> &'static str;
     /// The clock and the score, for a mode that has them. The room sends this
     /// to its clients and holds their controls while it says nobody is
@@ -563,8 +570,8 @@ mod warzone_tests {
     fn arena_with_flags(n: usize) -> World {
         let mut w = World::new(3);
         let spots = [(486, 486), (538, 486), (538, 538), (486, 538), (512, 512)];
-        for i in 0..n {
-            w.add_flag(spots[i].0, spots[i].1);
+        for spot in spots.iter().take(n) {
+            w.add_flag(spot.0, spot.1);
         }
         w
     }
@@ -642,10 +649,10 @@ mod warzone_tests {
             m.tick(&mut ctx(&mut w));
         }
         assert_eq!(m.round, 2, "the round ended");
-        for i in 0..2 {
+        for (i, was) in home.iter().enumerate() {
             assert_eq!(
                 (w.state.flags[i].x, w.state.flags[i].y),
-                home[i],
+                *was,
                 "flag {i} did not go home"
             );
             assert_eq!(w.state.flags[i].team, sim::TEAM_NONE);

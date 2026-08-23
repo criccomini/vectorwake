@@ -364,7 +364,7 @@ pub(super) fn validate_rated_event(event: &serde_json::Value) -> Result<(), Stri
     }
 
     if let Some(killer) = event.get("killer").filter(|value| !value.is_null()) {
-        if !killer.as_i64().is_some_and(|account| account > 0) {
+        if killer.as_i64().is_none_or(|account| account <= 0) {
             return Err("invalid killer".into());
         }
     }

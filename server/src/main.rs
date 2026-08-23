@@ -106,10 +106,7 @@ fn run_calibration() {
     println!("calibrating: {rounds} rounds of round-robin matches");
     let r = calibrate::run(rounds, true);
 
-    println!(
-        "\n{:<12} {:>7}  {:>6}  {}",
-        "pilot", "rating", "games", "tier"
-    );
+    println!("\n{:<12} {:>7}  {:>6}  tier", "pilot", "rating", "games");
     let mut ladder = std::collections::HashMap::new();
     for (name, score, games, tier) in calibrate::table(&r) {
         let pin = if name == ai::ANCHOR { " (anchor)" } else { "" };
@@ -782,7 +779,7 @@ async fn main() {
                 ticker.tick().await;
                 let mut z = zone.lock().await;
                 n += 1;
-                if n % 300 == 0 {
+                if n.is_multiple_of(300) {
                     z.reload();
                 }
                 // Offset by one so the first pass is the first tick rather
@@ -815,7 +812,7 @@ async fn main() {
                 // The message is about 125 bytes, so a player taking 20 Hz
                 // snapshots at 30 KB/s pays two thousandths of that for a roster
                 // that repairs itself.
-                let roster = n % 200 == 0;
+                let roster = n.is_multiple_of(200);
                 let t0 = std::time::Instant::now();
                 let mut player_count_changed = false;
                 for a in z.rooms.iter_mut() {
@@ -862,7 +859,7 @@ async fn main() {
 
                 // A drain that has finished is an instance free to choose again,
                 // and an empty extra room is memory to give back.
-                if n % 100 == 0 {
+                if n.is_multiple_of(100) {
                     z.reclaim_rooms();
                     if z.draining && z.total_players() == 0 {
                         // The last player is gone, so the watchers go too: a
@@ -1314,8 +1311,10 @@ mod tests {
 
     #[test]
     fn snapshot_receipts_cross_sequence_and_tick_rollovers() {
-        let mut lag = LagTracker::default();
-        lag.snapshot_seq = u32::MAX - 1;
+        let mut lag = LagTracker {
+            snapshot_seq: u32::MAX - 1,
+            ..Default::default()
+        };
         let before = lag.sent_snapshot(u32::MAX - 2, false, 500);
         let after = lag.sent_snapshot(1, false, 500);
 
@@ -1439,12 +1438,14 @@ mod tests {
     #[test]
     fn path_measurements_never_restrict_gameplay() {
         let cfg = config::LagConfig::default();
-        let mut lag = LagTracker::default();
-        lag.rtt_ticks = 500.0;
-        lag.jitter_ticks = 500.0;
+        let mut lag = LagTracker {
+            rtt_ticks: 500.0,
+            jitter_ticks: 500.0,
+            combat_active: true,
+            ..Default::default()
+        };
         lag.down_loss.value = 1.0;
         lag.combat_loss.value = 1.0;
-        lag.combat_active = true;
 
         assert!(
             lag.tick(&cfg, false, 1, 0).decision == LagDecision::default(),
@@ -2522,12 +2523,9 @@ mod tests {
             .expect("a seat");
 
         let a = &z.rooms[0];
-        assert_eq!(
-            a.names[&ship].bot, true,
-            "the bot says so on the scoreboard"
-        );
+        assert!(a.names[&ship].bot, "the bot says so on the scoreboard");
         let human = a.names.iter().find(|(_, k)| k.name == "Person").unwrap();
-        assert_eq!(human.1.bot, false);
+        assert!(!human.1.bot);
         // A generated pilot is as much a bot as a calibrated one.
         let generated = ai::individual(ai::CALIBRATED.len());
         assert!(!ai::CALIBRATED.iter().any(|(n, _, _)| *n == generated.name));
@@ -2899,7 +2897,7 @@ mod tests {
         assert_eq!(sh.kit, starter, "the seat wears a starter kit");
         assert_eq!(
             sim::World::kit_cost(&sh.kit),
-            sim::KIT_BUDGET as u32,
+            sim::KIT_BUDGET,
             "worth the whole budget, like everybody else's"
         );
         assert_eq!(sh.level, [1; sim::TRIG_COUNT], "dealt, not inherited");
@@ -4975,7 +4973,7 @@ mod tests {
         {
             let z = zone.lock().await;
             let room = &z.rooms[0];
-            assert!(room.watchers.get(&id).is_none(), "the watcher row is gone");
+            assert!(!room.watchers.contains_key(&id), "the watcher row is gone");
             let player = room
                 .players
                 .values()
@@ -6423,7 +6421,7 @@ mod tests {
         );
         // The cap matches the roster wire format, so what is stored is what
         // every other player is shown.
-        assert_eq!(sanitize_name(&huge).len(), 24usize.min(24));
+        assert_eq!(sanitize_name(&huge).len(), 24);
     }
 
     #[test]

@@ -96,11 +96,15 @@ const GONE_AFTER: u32 = 5;
 /// argument: it is derived from the map and nothing else, so fifty pilots on
 /// one map want one of them rather than fifty. Building it reads a million
 /// tiles, which is a cost worth paying once.
+/// The pair every pilot on one map shares: the map itself and the routes
+/// through it.
+type Ground = (Arc<sim::sim_map>, Arc<nav::Nav>);
+
 #[derive(Default)]
-struct Maps(Mutex<HashMap<u64, (Arc<sim::sim_map>, Arc<nav::Nav>)>>);
+struct Maps(Mutex<HashMap<u64, Ground>>);
 
 impl Maps {
-    fn get(&self, packed: &[u8]) -> Option<(Arc<sim::sim_map>, Arc<nav::Nav>)> {
+    fn get(&self, packed: &[u8]) -> Option<Ground> {
         let key = fingerprint(packed);
         if let Some((m, n)) = self.0.lock().ok()?.get(&key) {
             return Some((Arc::clone(m), Arc::clone(n)));

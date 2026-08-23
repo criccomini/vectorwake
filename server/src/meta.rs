@@ -849,10 +849,7 @@ fn client_error_of(body: &serde_json::Value) -> Result<ClientError, &'static str
     if message.is_empty() {
         return Err("an error report needs a message");
     }
-    let page = field("page")
-        .split(|c| c == '?' || c == '#')
-        .next()
-        .unwrap_or("");
+    let page = field("page").split(['?', '#']).next().unwrap_or("");
     Ok(ClientError {
         kind,
         message,
@@ -1757,7 +1754,7 @@ async fn route(
                 return (400, serde_json::json!({ "error": "that is not a kit" }));
             }
             let cost: u32 = kit.iter().map(|n| *n as u32).sum();
-            if cost > sim::KIT_BUDGET as u32 {
+            if cost > sim::KIT_BUDGET {
                 return (400, serde_json::json!({ "error": "over the budget" }));
             }
             let stored = db

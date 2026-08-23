@@ -686,7 +686,7 @@ fn incoming(w: &World, mx: f32, my: f32, team: u8, ship: u8) -> Option<Threat> {
         if miss > blast + 40.0 {
             continue;
         }
-        if best.map_or(true, |b| t < b.eta) {
+        if best.is_none_or(|b| t < b.eta) {
             best = Some(Threat {
                 x: p.x as f32 / 256.0,
                 y: p.y as f32 / 256.0,
@@ -1134,6 +1134,9 @@ const REROUTE_PX: f32 = 128.0;
 /// between two skills cannot say which of the six it measured. `Bot::tune`
 /// holds five still so a harness can ask.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+// Both knobs are named whether or not a harness is holding one still today:
+// the list is what says how many there are.
+#[allow(dead_code)]
 pub enum Knob {
     AimErr,
     Permission,
@@ -1225,35 +1228,35 @@ fn bearing_err(skill: f32, u_mag: f32, u_sign: f32) -> f32 {
 const REPLAN_TICKS: u32 = 20;
 const LOOK_TICKS: u32 = 7;
 
-/// Why there is no reaction time in this file.
-///
-/// Two implementations have failed now, in different ways, and the second is
-/// worth writing down because it looks obviously right.
-///
-/// The first gated `decide`, so skill bought how often a pilot changed its
-/// mind while `drive`, `trigger` and `charge` re-solved every tick underneath
-/// it. Ablated on two hulls in two economies it came back a coin every time,
-/// which makes sense: in a duel the plan is "fight the one person here", and a
-/// slower re-plan has nothing much to get wrong.
-///
-/// The second put the lag where it belongs, on the hands. A delay line on the
-/// button word, so a pilot was late to start turning and late to stop, late
-/// onto the trigger and late off it, with the lag redrawn every re-plan so
-/// nobody was uniformly slow. It reads as the correct model and it destroyed
-/// the dial: Apex on a thirty-point kit fell from a pooled 59.7% at z 5.4 to
-/// 48.5% at z -1.2, and Facet inverted to z -4.7.
-///
-/// The reason is control rather than tuning. Aim updates every `REPLAN_TICKS`
-/// and `drive` steers toward it every tick, which is a stable loop: a slow
-/// setpoint and a fast corrector. Delaying the corrector's output makes every
-/// turn command answer an error the ship no longer has, so it overshoots and
-/// hunts, and a hunting ship cannot shoot. That costs every pilot, not the
-/// slow ones, which is exactly what the tournament showed.
-///
-/// If reaction is worth a third attempt, the lag belongs on what a pilot
-/// *knows* rather than on what its hands do: aim at where the target was a
-/// fifth of a second ago and steer toward that accurately. The loop stays
-/// closed, which is also how a person works. Unbuilt and unmeasured.
+// Why there is no reaction time in this file.
+//
+// Two implementations have failed now, in different ways, and the second is
+// worth writing down because it looks obviously right.
+//
+// The first gated `decide`, so skill bought how often a pilot changed its
+// mind while `drive`, `trigger` and `charge` re-solved every tick underneath
+// it. Ablated on two hulls in two economies it came back a coin every time,
+// which makes sense: in a duel the plan is "fight the one person here", and a
+// slower re-plan has nothing much to get wrong.
+//
+// The second put the lag where it belongs, on the hands. A delay line on the
+// button word, so a pilot was late to start turning and late to stop, late
+// onto the trigger and late off it, with the lag redrawn every re-plan so
+// nobody was uniformly slow. It reads as the correct model and it destroyed
+// the dial: Apex on a thirty-point kit fell from a pooled 59.7% at z 5.4 to
+// 48.5% at z -1.2, and Facet inverted to z -4.7.
+//
+// The reason is control rather than tuning. Aim updates every `REPLAN_TICKS`
+// and `drive` steers toward it every tick, which is a stable loop: a slow
+// setpoint and a fast corrector. Delaying the corrector's output makes every
+// turn command answer an error the ship no longer has, so it overshoots and
+// hunts, and a hunting ship cannot shoot. That costs every pilot, not the
+// slow ones, which is exactly what the tournament showed.
+//
+// If reaction is worth a third attempt, the lag belongs on what a pilot
+// *knows* rather than on what its hands do: aim at where the target was a
+// fifth of a second ago and steer toward that accurately. The loop stays
+// closed, which is also how a person works. Unbuilt and unmeasured.
 
 /// The slack a pilot allows itself on the aim before it fires, and how far out
 /// it is willing to engage, both at the same 0.60 the two above are set at.
@@ -1454,7 +1457,7 @@ impl Bot {
     /// then pays for a `scan`; the offset in `timer` spreads that cost across
     /// ticks rather than landing every bot on the same one.
     pub fn looks_due(&self) -> bool {
-        self.timer % self.look_every == 0
+        self.timer.is_multiple_of(self.look_every)
     }
 
     /// Nobody in sight and no flag to run. Asked by the bot server when this
@@ -1594,7 +1597,7 @@ impl Bot {
             let (dx, dy) = (self.detour_dir.sin(), -self.detour_dir.cos());
             self.seek(o, (dx * o.top, dy * o.top), (dx * 100.0, dy * 100.0))
         } else {
-            if self.timer % self.react == 0 {
+            if self.timer.is_multiple_of(self.react) {
                 self.decide(o, nav);
                 self.breaking_off((o.x, o.y));
             }
@@ -1698,7 +1701,7 @@ impl Bot {
         // and spends the charge on it; a poor one fires the moment anything is
         // in the air, which is a charge gone and the round still arriving.
         let notice = 45.0 + (1.0 - dial) * 90.0;
-        let shoved = threat.map_or(false, |t| t.eta < notice && t.miss < t.blast + 24.0);
+        let shoved = threat.is_some_and(|t| t.eta < notice && t.miss < t.blast + 24.0);
         let crowded = self.dist < 150.0 && matches!(self.mode, Mode::Fight(_));
         if o.charges[0] > 0 && (shoved || (crowded && o.energy < 0.45)) {
             return sim::BTN_USE;
@@ -2145,7 +2148,7 @@ impl Bot {
         // Nothing is shot through a wall. The bomb already asked this and the
         // gun never did, so a pilot with a target behind a pillar emptied its
         // bar into the pillar: on the drill, one shot in seventy-seven landed.
-        if !self.seen.foe.map_or(false, |f| f.clear) {
+        if !self.seen.foe.is_some_and(|f| f.clear) {
             return 0;
         }
         // How wide the target is from here, which is the tolerance the shot
@@ -2205,7 +2208,7 @@ impl Bot {
             self.goal = None;
             return;
         }
-        let same = self.goal.map_or(false, |(og, ox, oy)| {
+        let same = self.goal.is_some_and(|(og, ox, oy)| {
             og == g && (ox - tx).abs() < SAME_GOAL_PX && (oy - ty).abs() < SAME_GOAL_PX
         });
         if !same {
@@ -2461,7 +2464,7 @@ impl Bot {
         let immediate = self
             .seen
             .threat
-            .map_or(false, |t| t.eta < 65.0 && t.miss < t.blast + o.radius);
+            .is_some_and(|t| t.eta < 65.0 && t.miss < t.blast + o.radius);
         if o.energy >= self.recovered_at(o) && close > 420.0 && !immediate {
             self.posture = Posture::Normal;
             self.retreat_completed += 1;
@@ -2493,9 +2496,9 @@ impl Bot {
         }
 
         let foes: Vec<(f32, f32)> = self.seen.contacts.iter().map(|f| (f.x, f.y)).collect();
-        let shelter_stale = self.shelter.map_or(true, |p| {
-            (p.0 - o.x).hypot(p.1 - o.y) < 180.0 && (close < 360.0 || immediate)
-        });
+        let shelter_stale = self
+            .shelter
+            .is_none_or(|p| (p.0 - o.x).hypot(p.1 - o.y) < 180.0 && (close < 360.0 || immediate));
         if shelter_stale {
             self.shelter = nav.refuge((o.x, o.y), &foes, 1_200.0, true);
             if self.shelter.is_none() {
@@ -2583,7 +2586,7 @@ impl Bot {
         // bury behavior in a learned model nobody can debug.
         let mut choice: Option<(f32, Choice)> = None;
         let mut offer = |score: f32, candidate: Choice| {
-            if choice.map_or(true, |(best, _)| score > best) {
+            if choice.is_none_or(|(best, _)| score > best) {
                 choice = Some((score, candidate));
             }
         };
@@ -2880,7 +2883,7 @@ impl Bot {
         let step = std::f32::consts::TAU / WHISKERS as f32;
         let k0 = (want / step).round() as i32;
         let at = |k: i32| c[k.rem_euclid(WHISKERS as i32) as usize];
-        let need = dist.min(96.0).max(24.0);
+        let need = dist.clamp(24.0, 96.0);
         if at(k0) >= need {
             return want;
         }
@@ -3024,7 +3027,7 @@ fn nearest_flag(w: &World, mx: f32, my: f32, team: u8, within: f32) -> Option<(f
         }
         let (fx, fy) = (f.x as f32 / 256.0, f.y as f32 / 256.0);
         let d2 = (fx - mx) * (fx - mx) + (fy - my) * (fy - my);
-        if d2 <= within * within && best.map_or(true, |b| d2 < b.0) {
+        if d2 <= within * within && best.is_none_or(|b| d2 < b.0) {
             best = Some((d2, fx, fy));
         }
     }
@@ -3103,7 +3106,6 @@ mod tests {
         assert!(bearing_err(0.05, 0.5, 0.1) < 0.0);
     }
 
-    use super::*;
     use crate::sim;
 
     #[test]
@@ -3698,11 +3700,14 @@ mod tests {
         // Long enough that the room is a going concern and the pilot being
         // sent home is in the middle of something.
         let mut inputs = Vec::new();
+        // A caller that wants to see each pilot's buttons as they are
+        // pressed rather than only the state they left behind.
+        type Watch<'a> = Option<&'a mut dyn FnMut(&Bot, u16)>;
         let run = |w: &mut sim::World,
                    bots: &mut Vec<Bot>,
                    inputs: &mut Vec<sim::sim_input>,
                    ticks: u32,
-                   mut watch: Option<&mut dyn FnMut(&Bot, u16)>| {
+                   mut watch: Watch| {
             for _ in 0..ticks {
                 inputs.clear();
                 for b in bots.iter_mut() {
@@ -3751,9 +3756,9 @@ mod tests {
             }
         }
 
-        let done_at = done_at.expect(&format!(
-            "salt {salt:#x}: a pilot told to leave never finished leaving"
-        ));
+        let done_at = done_at.unwrap_or_else(|| {
+            panic!("salt {salt:#x}: a pilot told to leave never finished leaving")
+        });
         // 40 seconds is the bot server's ceiling. Reaching it is the backstop
         // firing, not the ordinary way out, so this asserts the ordinary way
         // out actually happens.
@@ -3817,15 +3822,15 @@ mod tests {
         }
     }
 
-    /// The failure a player reports as "bots sit still until I shoot at
-    /// them", measured as the longest run of ticks any bot spends alive, in
-    /// travel, and not moving. Four minutes of the shipped Chaos map with the
-    /// calibrated roster: before the unstick reflex learned to escalate, this
-    /// harness measured freezes of 1,473, 7,327 and 1,818 ticks across three
-    /// salts, the worst of them a minute and a quarter of a bot standing
-    /// against a wall re-firing the same escape. The bound is three times the worst this
-    /// code measures now and eight times an ordinary corner scrape, so it
-    /// catches the loop coming back without breaking on tuning noise.
+    // The failure a player reports as "bots sit still until I shoot at
+    // them", measured as the longest run of ticks any bot spends alive, in
+    // travel, and not moving. Four minutes of the shipped Chaos map with the
+    // calibrated roster: before the unstick reflex learned to escalate, this
+    // harness measured freezes of 1,473, 7,327 and 1,818 ticks across three
+    // salts, the worst of them a minute and a quarter of a bot standing
+    // against a wall re-firing the same escape. The bound is three times the worst this
+    // code measures now and eight times an ordinary corner scrape, so it
+    // catches the loop coming back without breaking on tuning noise.
 
     /// Two enemies at the same coordinate, which is what a shared spawn point
     /// hands out: a respawn puts a ship back at exactly `spawn_x, spawn_y`, so
@@ -3854,7 +3859,7 @@ mod tests {
             sh.vy = 0;
         }
         let route = crate::nav::Nav::build(&w.map);
-        let mut bots = vec![Bot::new(a, 0.7), Bot::new(b, 0.7)];
+        let mut bots = [Bot::new(a, 0.7), Bot::new(b, 0.7)];
         bots[0].reseed(11);
         bots[1].reseed(29);
 

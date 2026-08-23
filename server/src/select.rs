@@ -157,10 +157,12 @@ pub fn may_commit(union: &Union, want: &str, me: &str) -> Result<(), String> {
     // Ties break on the id, which both sides can see and neither can dispute.
     let mut rival: Option<&str> = None;
     for o in union.live(want, me) {
-        if o.intent == want && o.intent_ms > 0 && o.instance.as_str() < me {
-            if rival.map(|r| o.instance.as_str() < r).unwrap_or(true) {
-                rival = Some(&o.instance);
-            }
+        if o.intent == want
+            && o.intent_ms > 0
+            && o.instance.as_str() < me
+            && rival.map(|r| o.instance.as_str() < r).unwrap_or(true)
+        {
+            rival = Some(&o.instance);
         }
     }
     match rival {
@@ -195,13 +197,16 @@ mod tests {
         assert_eq!(retry_ceiling_ms(&outage), RETRY_MAX_MS);
         assert_eq!(retry_ceiling_ms(&clean), RETRY_MAX_MS);
         assert_eq!(retry_ceiling_ms(&refused), REFUSED_MAX_MS);
-        assert!(
+        // Both of these are relations between two constants, so they are
+        // checked where the constants are rather than when a test runs: a
+        // compile-time assertion cannot be got wrong by a test nobody ran.
+        const _: () = assert!(
             REFUSED_MAX_MS >= RETRY_MAX_MS * 10,
             "a refusal should not be retried at anything like outage pace"
         );
         // Still retried at all: a token can be added to a catalog while an
         // arena is running, so this must not become "give up".
-        assert!(REFUSED_MAX_MS < 10 * 60 * 1000);
+        const _: () = assert!(REFUSED_MAX_MS < 10 * 60 * 1000);
     }
 
     fn cat(names: &[&str]) -> fleet::WireCatalog {
@@ -781,7 +786,7 @@ async fn run_one(
 pub async fn decide_loop(zone: std::sync::Arc<tokio::sync::Mutex<crate::ArenaServer>>) {
     // Jitter once at the start too, so a deploy does not have every process
     // reach its first decision in the same instant.
-    let spread = (now_ms() % DECIDE_JITTER_MS.max(1)) as u64;
+    let spread = now_ms() % DECIDE_JITTER_MS.max(1);
     tokio::time::sleep(std::time::Duration::from_millis(spread)).await;
 
     loop {

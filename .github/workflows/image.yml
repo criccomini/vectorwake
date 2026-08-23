@@ -40,6 +40,20 @@ jobs:
           workspaces: server
       - name: Rust formatting
         run: cargo fmt --manifest-path server/Cargo.toml -- --check
+      # And every lint, as an error rather than a line in a log nobody reads.
+      #
+      # A warning that does not fail a build is a warning that accumulates:
+      # this repository had a hundred and twenty-three of them the day the gate
+      # went in, and none of them had ever stopped anything. `--all-targets`
+      # covers the tests too, since a test is code and goes wrong the same way.
+      #
+      # Where a lint is wrong about this codebase the answer is an `allow` at
+      # the site with the reason written beside it, which is a sentence a
+      # reviewer can disagree with. `sim.rs` carries the one file-wide allow:
+      # it mirrors the C header in full, so items nothing calls yet are what
+      # that file is for.
+      - name: Rust lints
+        run: cargo clippy --manifest-path server/Cargo.toml --all-targets -- -D warnings
       # The determinism gate, repeated here rather than depended on across
       # workflows. sim.yml proves the same property on three ABIs and is the
       # real authority; this is the cheap version, thirty seconds, so that this
