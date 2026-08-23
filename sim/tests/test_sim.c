@@ -215,6 +215,15 @@ static void random_kit(sim_ship *sh, const sim_settings *cfg, uint32_t *rng) {
     sim_set_kit(sh, cfg, kit);
 }
 
+/* Why so many `static sim_state` below: the struct is 79 KB, main is one
+ * long function, and most blocks in it declare one. gcc at -O0 reuses a
+ * slot between locals whose lifetimes cannot overlap; clang gives each its
+ * own, so the frame reached 11 MB and the binary segfaulted before printing
+ * a line. A block that is entered exactly once gets the same value from
+ * .bss, so those are static. The ones inside loops are not: there a stale
+ * copy would carry into the next iteration, and eighteen frames is cheap.
+ * The Makefile now caps the frame, so the next time this creeps up it is a
+ * compile error naming the function rather than a silent crash. */
 int main(void) {
     sim_map *m = walled_map();
     sim_settings cfg;
@@ -227,7 +236,7 @@ int main(void) {
 
     /* Thrust at heading 0 moves up (-y) and nowhere else. */
     {
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 1);
         sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
         step_n(&s, &cfg, SIM_BTN_THRUST, 0, 100);
@@ -238,7 +247,7 @@ int main(void) {
 
     /* No drag: coasting preserves velocity exactly, forever. */
     {
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 1);
         sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
         step_n(&s, &cfg, SIM_BTN_THRUST, 0, 50);
@@ -249,7 +258,7 @@ int main(void) {
 
     /* Speed clamps at the class maximum. */
     {
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 1);
         sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
         step_n(&s, &cfg, SIM_BTN_THRUST, 0, 400);
@@ -263,7 +272,7 @@ int main(void) {
 
     /* Energy recharges to the cap and stops there. */
     {
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 1);
         sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
         s.ships[0].energy = 0;
@@ -280,7 +289,7 @@ int main(void) {
 
     /* Firing costs energy, respects the cooldown, and creates a weapon. */
     {
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 1);
         sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
         int32_t e0 = s.ships[0].energy;
@@ -295,7 +304,7 @@ int main(void) {
 
     /* A bullet travels away from its firer and expires on its own. */
     {
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 1);
         sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
         step_n(&s, &cfg, SIM_BTN_FIRE, 0, 1);
@@ -308,7 +317,7 @@ int main(void) {
 
     /* A bullet damages an enemy in its path and eventually kills it. */
     {
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 1);
         sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);   /* faces up */
         sim_spawn(&s, APEX, 1, 8192, 8192 - 200, 0, &cfg); /* directly above */
@@ -330,7 +339,7 @@ int main(void) {
      * long before the target was in danger, and nothing could ever die at
      * range. That was a bug wearing a test as an alibi. */
     {
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 1);
         sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
         sim_spawn(&s, APEX, 1, 8192, 8192 - 200, 0, &cfg);
@@ -343,7 +352,7 @@ int main(void) {
      * costs 300 against a fresh bar of 1000 in the original -- three of them
      * -- so a fight has bombs in it rather than one opening move. */
     {
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 1);
         int id = sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
         int32_t full = sim_eff_max_energy(&cfg.classes[APEX], &s.ships[id]);
@@ -455,7 +464,7 @@ int main(void) {
         }
 
         /* Closing holds the shot; opening takes it. */
-        sim_state chase;
+        static sim_state chase;
         sim_init(&chase, 1);
         sim_spawn(&chase, APEX, 0, 8192, 8192, 0, &w);
         sim_spawn(&chase, APEX, 1, 8192, 8192 - 200, 0, &w);
@@ -498,7 +507,7 @@ int main(void) {
             }
         }
         /* A plain bomb has no sensor and so no safety on it. */
-        sim_state d;
+        static sim_state d;
         sim_init(&d, 1);
         sim_spawn(&d, APEX, 0, 8192, 8192, 0, &w);
         sim_spawn(&d, APEX, 1, 8192, 8192 - 40, 0, &w);
@@ -662,7 +671,7 @@ int main(void) {
         /* The rung is the thrower's at the moment of the throw. A gun found
          * while the bomb is in the air does not improve the burst it is on
          * its way to making. */
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 1);
         int me = sim_spawn(&s, APEX, 0, 8192, 300, 0, &w);
         s.ships[me].mods[SIM_TRIG_BOMB] = sim_mod_set(0, SIM_MOD_SHRAPNEL, 3);
@@ -694,7 +703,7 @@ int main(void) {
         memset(&sc, 0, sizeof sc);
         sim_settings_baseline(&sc, sm);
 
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 1);
         int id = sim_spawn(&s, APEX, 0, 502 * 16, 502 * 16, 0, &sc);
         CHECK(sim_in_safe(sm, s.ships[id].x, s.ships[id].y),
@@ -718,7 +727,7 @@ int main(void) {
             sim_settings oc;
             memset(&oc, 0, sizeof oc);
             sim_settings_baseline(&oc, om);
-            sim_state in_zone, open;
+            static sim_state in_zone, open;
             sim_init(&in_zone, 1);
             sim_init(&open, 1);
             int a_id = sim_spawn(&in_zone, APEX, 0, 502 * 16, 502 * 16, 0, &sc);
@@ -741,7 +750,7 @@ int main(void) {
 
         /* Whatever was already in the air comes down. Firing and running for
          * cover must not score from inside the one place nothing answers. */
-        sim_state g;
+        static sim_state g;
         sim_init(&g, 1);
         int gid = sim_spawn(&g, APEX, 0, 502 * 16, 516 * 16, 0, &sc);
         step_n(&g, &sc, SIM_BTN_FIRE, 0, 1);
@@ -761,7 +770,7 @@ int main(void) {
               "and its shots are gone with it");
 
         /* And nothing reaches in. */
-        sim_state t;
+        static sim_state t;
         sim_init(&t, 1);
         int a_id = sim_spawn(&t, APEX, 0, 502 * 16, 520 * 16, 0, &sc);
         int v_id = sim_spawn(&t, APEX, 1, 502 * 16, 502 * 16, 0, &sc);
@@ -818,7 +827,7 @@ int main(void) {
          * it was, both axes are blocked and the collision below cannot free
          * it: it would sit inside a wall until something killed it. */
         {
-            sim_state s;
+            static sim_state s;
             sim_init(&s, 1);
             uint32_t t0 = 0;
             while (!sim_door_open(&dc, t0, 0)) t0++;
@@ -859,7 +868,7 @@ int main(void) {
             memset(&gc, 0, sizeof gc);
             sim_settings_baseline(&gc, gm);
 
-            sim_state s;
+            static sim_state s;
             sim_init(&s, 1);
             uint32_t t0 = 0;
             while (!sim_door_open(&gc, t0, 0)) t0++;
@@ -889,7 +898,7 @@ int main(void) {
          * round nobody can finish. */
         {
             sim_settings dc2 = dc;
-            sim_state s;
+            static sim_state s;
             sim_init(&s, 3);
             uint32_t t0 = 0;
             while (!sim_door_open(&dc2, t0, 0)) t0++;
@@ -934,7 +943,7 @@ int main(void) {
         memset(&wc, 0, sizeof wc);
         sim_settings_baseline(&wc, wm);
 
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 1);
         int id = sim_spawn(&s, APEX, 0, 512 * 16, 520 * 16, 0, &wc);
         int32_t y0 = s.ships[id].y;
@@ -943,7 +952,7 @@ int main(void) {
         CHECK(s.ships[id].vy < 0, "and keeps accelerating into it");
 
         /* Out of range it is not felt at all, or the whole map would sag. */
-        sim_state f;
+        static sim_state f;
         sim_init(&f, 1);
         int fid = sim_spawn(&f, APEX, 0, 512 * 16, 700 * 16, 0, &wc);
         int32_t fy = f.ships[fid].y;
@@ -1097,7 +1106,7 @@ int main(void) {
          * there is nothing left to push it back out of. */
         sim_settings edge = cfg;
         edge.map = open;
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 5);
         sim_spawn(&s, APEX, 0, 40 * 16, 512 * 16, 49152, &edge);
         s.ships[0].vx = -edge.classes[APEX].max_speed * 4;
@@ -1352,7 +1361,7 @@ int main(void) {
          * tile to say that, which is the jaggedness this replaces. */
         sim_settings sc = cfg;
         sc.map = ramp;
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 11);
         sim_spawn(&s, APEX, 0, 130 * 16 + 14, 130 * 16 + 2, 0, &sc);
         CHECK(s.ships[0].active, "a hull stands in the open half of a slope tile");
@@ -1392,7 +1401,7 @@ int main(void) {
 
             /* North-east of the line, pushed south-west at it. The solid
              * halves face north-east, so this is the side that holds. */
-            sim_state t;
+            static sim_state t;
             sim_init(&t, 21);
             sim_spawn(&t, APEX, 0, 60 * 16, 90 * 16, 0, &tc);
             t.ships[0].vx = 6 * 65536;
@@ -1433,7 +1442,7 @@ int main(void) {
             sim_settings bc = cfg;
             bc.map = band;
 
-            sim_state t;
+            static sim_state t;
             sim_init(&t, 23);
             sim_spawn(&t, APEX, 0, 90 * 16, 60 * 16, 0, &bc);
             t.ships[0].vx = -6 * 65536;
@@ -1537,7 +1546,7 @@ int main(void) {
     {
         sim_settings small = cfg;
         small.max_ships = 3;
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 1);
         for (int i = 0; i < 3; i++)
             CHECK(sim_spawn(&s, APEX, 0, 8192, 8192, 0, &small) == i,
@@ -1560,7 +1569,7 @@ int main(void) {
     {
         sim_settings full = cfg;
         full.max_ships = SIM_MAX_SHIPS;
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 1);
         for (int i = 0; i < SIM_MAX_SHIPS; i++)
             CHECK(sim_spawn(&s, APEX, (uint8_t)(i % 4),
@@ -1606,7 +1615,7 @@ int main(void) {
 
     /* Friendly fire passes through: same team, no damage. */
     {
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 1);
         sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
         sim_spawn(&s, APEX, 0, 8192, 8192 - 200, 0, &cfg); /* same team */
@@ -1618,7 +1627,7 @@ int main(void) {
 
     /* Death respawns at the spawn point after the configured delay. */
     {
-        sim_state s;
+        static sim_state s;
         sim_settings w = cfg;
         sim_init(&s, 1);
         sim_spawn(&s, APEX, 0, 8192, 8192, 0, &w);
@@ -1641,7 +1650,7 @@ int main(void) {
      * draws; the hull keeps a sliver and flies on, and no kill is credited,
      * because the death is the zone's to announce. */
     {
-        sim_state s;
+        static sim_state s;
         sim_settings dc = cfg;
         dc.deathless = 1;
         dc.mortal_ship = 255;
@@ -1663,7 +1672,7 @@ int main(void) {
     /* The one hull named mortal still dies, which is how the client keeps
      * its own death immediate while everyone else's waits for the zone. */
     {
-        sim_state s;
+        static sim_state s;
         sim_settings dc = cfg;
         dc.deathless = 1;
         dc.mortal_ship = 1;
@@ -1686,7 +1695,7 @@ int main(void) {
      * now, so one that fits anywhere fits everywhere and taking it away was a
      * price for a rule that no longer exists. */
     {
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 1);
         sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
         sim_spawn(&s, APEX, 1, 8500, 8192, 0, &cfg);
@@ -1722,7 +1731,7 @@ int main(void) {
      * what you were carrying for the other side away with it. What it does
      * not take is the ship: crossing over is not a new hull. */
     {
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 1);
         sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
         sim_spawn(&s, APEX, 1, 8500, 8192, 0, &cfg);
@@ -1767,7 +1776,7 @@ int main(void) {
     /* And the gate itself, which is the only thing standing between a team
      * list and a heal button. */
     {
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 1);
         sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
         s.ships[0].energy /= 2;
@@ -1783,7 +1792,7 @@ int main(void) {
     /* Only from a full bar. A fresh hull is a full bar, so without this the
      * ship list is a way out of a fight you are losing. */
     {
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 1);
         sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
         s.ships[0].up[SIM_UP_SPEED] = 2;
@@ -1800,7 +1809,7 @@ int main(void) {
     /* Nor while dead: this sets `alive`, so allowing it would hand out an
      * early respawn to anybody who opened the menu on the way down. */
     {
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 1);
         sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
         s.ships[0].alive = 0;
@@ -1813,7 +1822,7 @@ int main(void) {
     /* The hull you are already in is not a change, and must not cost you the
      * upgrades that picking it would otherwise throw away. */
     {
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 1);
         sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
         s.ships[0].up[SIM_UP_ENERGY] = 4;
@@ -1824,7 +1833,7 @@ int main(void) {
 
     /* A bomb detonating on a wall damages a nearby enemy through splash. */
     {
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 1);
         /* Anvil at the left wall firing into it, enemy just behind it.
          * Assert on the hit event rather than on energy: recharge erases
@@ -1840,7 +1849,7 @@ int main(void) {
      * hurt -- otherwise a well aimed bomb is a slow bullet, and the area is
      * the whole point of the weapon. */
     {
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 1);
         /* Firing east into a target, with a second enemy a ship's length
          * past it and well inside the 48px blast. */
@@ -1859,7 +1868,7 @@ int main(void) {
 
     /* Out of range is not a detonation: a bomb has to arrive somewhere. */
     {
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 1);
         sim_spawn(&s, ANVIL, 0, 8192, 8192, 16384, &cfg);
         sim_settings brief = cfg;
@@ -1893,7 +1902,7 @@ int main(void) {
         fp.spacing = 65536 / 18;          /* twenty degrees */
         w.classes[APEX].trigger[SIM_TRIG_GUN][0] = (uint8_t)sim_add_pattern(&w, &fp);
 
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 1);
         sim_spawn(&s, APEX, 0, 8192, 8192, 0, &w);
         step_n(&s, &w, SIM_BTN_FIRE, 0, 1);
@@ -1914,7 +1923,7 @@ int main(void) {
         fp.spec = (uint8_t)sim_add_spec(&w, &sp);
         w.classes[APEX].trigger[SIM_TRIG_GUN][0] = (uint8_t)sim_add_pattern(&w, &fp);
 
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 1);
         /* Two tiles clear of the top wall, facing it. The boundary is four
          * tiles thick, so "clear of it" starts at 64 px. */
@@ -1943,7 +1952,7 @@ int main(void) {
         fp.spec = (uint8_t)sim_add_spec(&w, &sp);
         w.classes[APEX].trigger[SIM_TRIG_GUN][0] = (uint8_t)sim_add_pattern(&w, &fp);
 
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 1);
         sim_spawn(&s, APEX, 0, 8192, 40, 0, &w);
         step_n(&s, &w, SIM_BTN_FIRE, 0, 1);
@@ -1963,7 +1972,7 @@ int main(void) {
         w.classes[APEX].trigger[SIM_TRIG_GUN][0] = (uint8_t)sim_add_pattern(&w, &fp);
 
         /* Dead on, the round reaches the hull before its armed clock ends. */
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 1);
         sim_spawn(&s, APEX, 0, 8192, 8192, 0, &w);
         sim_spawn(&s, APEX, 1, 8192, 8192 - 140, 0, &w);
@@ -1994,7 +2003,7 @@ int main(void) {
          * span the round is level with the hull, and only grows once the
          * round is forty past. A round measuring the diagonal would have
          * fired at the crossing. */
-        sim_state p;
+        static sim_state p;
         sim_init(&p, 1);
         sim_spawn(&p, APEX, 0, 8192, 8192, 0, &w);
         sim_spawn(&p, APEX, 1, 8192 + 40, 8192 - 140, 0, &w);
@@ -2035,7 +2044,7 @@ int main(void) {
         fp.spec = (uint8_t)sim_add_spec(&w, &sp);
         w.classes[APEX].trigger[SIM_TRIG_GUN][0] = (uint8_t)sim_add_pattern(&w, &fp);
 
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 1);
         sim_spawn(&s, APEX, 0, 8192, 8192, 0, &w);
         step_n(&s, &w, SIM_BTN_FIRE, 0, 1);
@@ -2053,7 +2062,7 @@ int main(void) {
          * trigger and puts the noise on the hull that pulled it, so a
          * fragment counted here was a gunshot at the shooter every time one
          * of their rounds broke, from wherever on the map it broke. */
-        sim_state t;
+        static sim_state t;
         sim_init(&t, 1);
         sim_spawn(&t, APEX, 0, 8192, 8192, 0, &w);
         ev_counts pull = step_counting(&t, &w, SIM_BTN_FIRE, 0, 1);
@@ -2081,7 +2090,7 @@ int main(void) {
         fp.delay = 25;
         w.classes[APEX].trigger[SIM_TRIG_GUN][0] = (uint8_t)sim_add_pattern(&w, &fp);
 
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 1);
         sim_spawn(&s, APEX, 0, 8192, 8192, 0, &w);
         sim_spawn(&s, APEX, 1, 8192, 8192 - 200, 0, &w);
@@ -2162,7 +2171,7 @@ int main(void) {
          * than the hull's center, so two victims level with the firer are on
          * slightly different bearings from it, and the whole point of this is
          * that the magnitude does not care. */
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 1);
         sim_spawn(&s, APEX, 0, 8192, 8192, 0, &w);
         sim_spawn(&s, APEX, 1, 8192 + 40, 8192, 0, &w);
@@ -2246,7 +2255,7 @@ int main(void) {
          *
          * The shipped charge rather than a spec built here, because this is a
          * claim about the item a player picks up. */
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 1);
         sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);         /* lets it off */
         sim_spawn(&s, APEX, 0, 8192 + 200, 8192, 0, &cfg);   /* team mate   */
@@ -2256,7 +2265,7 @@ int main(void) {
         /* A round of each side's in the air when it goes off. Both hulls face
          * north, so a bullet leaves with no sideways speed at all and any x
          * it has afterwards came from the shove. */
-        sim_state tmp;
+        static sim_state tmp;
         sim_input in[3] = {{0, 0}, {1, SIM_BTN_FIRE}, {2, SIM_BTN_FIRE}};
         sim_step(&tmp, &s, in, 3, &cfg, NULL); s = tmp;
         CHECK(s.weapon_count >= 2, "both sides have a round in the air");
@@ -2297,7 +2306,7 @@ int main(void) {
         fp.spec = (uint8_t)sim_add_spec(&w, &sp);
         w.classes[APEX].trigger[SIM_TRIG_GUN][0] = (uint8_t)sim_add_pattern(&w, &fp);
 
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 1);
         sim_spawn(&s, APEX, 0, 8192, 8192, 0, &w);
         sim_spawn(&s, APEX, 1, 8192, 8192 - 140, 0, &w);
@@ -2468,7 +2477,7 @@ int main(void) {
         CHECK(one_wait == plain_wait * 3 / 2, "and half again the wait");
 
         /* And it is still a group of rounds, which is what you paid for. */
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 1);
         sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
         s.ships[0].mods[SIM_TRIG_GUN] = sim_mod_set(0, SIM_MOD_MULTI, 1);
@@ -2486,7 +2495,7 @@ int main(void) {
          * used to be. */
         const int FACET = 5;
         const uint16_t ONE = sim_mod_set(0, SIM_MOD_MULTI, 1);
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 1);
         sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
         s.ships[0].mods[SIM_TRIG_GUN] = ONE;
@@ -2502,7 +2511,7 @@ int main(void) {
 
         /* And on any hull, which is the point of it being a slot. A Facet
          * with no spray fires one round like everybody else. */
-        sim_state f;
+        static sim_state f;
         sim_init(&f, 1);
         sim_spawn(&f, (uint8_t)FACET, 0, 8192, 8192, 0, &cfg);
         step_n(&f, &cfg, SIM_BTN_FIRE, 0, 1);
@@ -2512,7 +2521,7 @@ int main(void) {
          * of zero on a pattern of many is the shrapnel encoding, and it rolls
          * every round's heading off the state's own generator. So move the
          * generator and fire again. A fan cannot notice. */
-        sim_state r;
+        static sim_state r;
         sim_init(&r, 1);
         sim_spawn(&r, APEX, 0, 8192, 8192, 0, &cfg);
         r.ships[0].mods[SIM_TRIG_GUN] = ONE;
@@ -2527,7 +2536,7 @@ int main(void) {
          * not the eight a doubling would give: `compose` adds to the
          * pattern's own count, which is what made the original's odd
          * arithmetic fall out of the model. */
-        sim_state m;
+        static sim_state m;
         sim_init(&m, 1);
         sim_spawn(&m, APEX, 0, 8192, 8192, 0, &cfg);
         m.ships[0].mods[SIM_TRIG_GUN] = sim_mod_set(0, SIM_MOD_MULTI, 3);
@@ -2536,7 +2545,7 @@ int main(void) {
 
         /* And the ladder reaches six, which needs three bits of the mods
          * word and is the reason spray has its own packing. */
-        sim_state top;
+        static sim_state top;
         sim_init(&top, 1);
         sim_spawn(&top, APEX, 0, 8192, 8192, 0, &cfg);
         top.ships[0].mods[SIM_TRIG_GUN] =
@@ -2597,7 +2606,7 @@ int main(void) {
     {
         /* Climbing a rung swaps which pattern the trigger fires, and the one
          * above hits harder and costs its level's multiple of base energy. */
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 1);
         sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
         const sim_ship_class *c = &cfg.classes[APEX];
@@ -2623,7 +2632,7 @@ int main(void) {
          * stationary hull so flight and recharge cannot muddy the sample. */
         sim_settings w = cfg;
         w.classes[APEX].recharge = 0;
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 0x5eed1234u);
         sim_spawn(&s, APEX, 0, 8192, 8192, 0, &w);
         sim_spawn(&s, APEX, 1, 8200, 8192, 0, &w);
@@ -2666,7 +2675,7 @@ int main(void) {
         sim_settings w = cfg;
         uint8_t bullet = gun_of(&w, APEX)->spec;
         w.specs[bullet].stall = 1; /* even a zero-damage roll reports the hit */
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 1);
         sim_spawn(&s, APEX, 0, 8192, 8192, 0, &w);
         sim_spawn(&s, APEX, 1, 8200, 8192, 0, &w);
@@ -2682,7 +2691,7 @@ int main(void) {
             round->life = 10;
             round->fuse_target = 255;
         }
-        sim_state next;
+        static sim_state next;
         sim_events ev;
         sim_input in[2] = {{0, 0}, {1, 0}};
         sim_step(&next, &s, in, 2, &w, &ev);
@@ -2698,7 +2707,7 @@ int main(void) {
         /* A wall is not a hull. Put one linked round a tick from the top wall
          * and its sibling in open space. Only the one that reaches masonry
          * should end. */
-        sim_state wall;
+        static sim_state wall;
         sim_init(&wall, 1);
         sim_spawn(&wall, APEX, 0, 8192, 100, 0, &w);
         for (int n = 0; n < 2; n++) {
@@ -2725,7 +2734,7 @@ int main(void) {
          * projectile, so losing them does not reach back and disarm what is
          * already in the air. */
         sim_settings w = cfg;
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 1);
         /* Two tiles under the wall, which is four tiles thick and so ends at
          * 64 px: a round travels 2 px a tick, and a distant wall would outlast
@@ -2763,7 +2772,7 @@ int main(void) {
         const int LATTICE = 6;
         sim_settings w = cfg;
 
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 1);
         sim_spawn(&s, LATTICE, 0, 8192, 8192, 0, &w);
         s.ships[0].mods[SIM_TRIG_GUN] = sim_mod_set(0, SIM_MOD_BOUNCE, 1);
@@ -2801,7 +2810,7 @@ int main(void) {
          * come out of. Two ways for this to fail for a reason that is not
          * shrapnel. */
         sim_settings w = cfg;
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 1);
         /* Broken on a ship out in the open rather than against a wall, so
          * that what this watches is the hull: fragments born at the point of
@@ -2919,7 +2928,7 @@ int main(void) {
         fp.spec = (uint8_t)sim_add_spec(&w, &sp);
         w.classes[APEX].trigger[SIM_TRIG_GUN][0] = (uint8_t)sim_add_pattern(&w, &fp);
 
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 1);
         sim_spawn(&s, APEX, 0, 8192, 8192, 0, &w);
         s.ships[0].mods[SIM_TRIG_GUN] = sim_mod_set(0, SIM_MOD_BOUNCE, 1);
@@ -2934,7 +2943,7 @@ int main(void) {
          * shape the weapon model has been able to express since it was
          * written, now with an inventory in front of it. */
         const int LATTICE = 6;
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 1);
         sim_spawn(&s, LATTICE, 0, 8192, 8192, 0, &cfg);
         sim_spawn(&s, APEX, 1, 8192, 8192 - 120, 0, &cfg);
@@ -2975,7 +2984,7 @@ int main(void) {
          * -- exactly as the add-ons are baked into its `mods`. So the
          * inventory a death clears is what gates *firing*, and nothing that
          * is already in the air reads it. */
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 1);
         sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
         sim_spawn(&s, APEX, 1, 8192, 8192 - 300, 0, &cfg);
@@ -3028,7 +3037,7 @@ int main(void) {
          * really is gone: the burst is spent at the trigger, and the sixteen
          * rounds it made are ordinary projectiles from that moment on. */
         const int CIPHER = 4;
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 1);
         sim_spawn(&s, CIPHER, 0, 8192, 8192, 0, &cfg);
         /* Close, because twenty-four is an even count, which straddles the
@@ -3057,7 +3066,7 @@ int main(void) {
          * respawn, dealt from the kit that was bought for it. */
         sim_settings dk = cfg;
         dk.respawn_delay = 4;
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 1);
         sim_spawn(&s, APEX, 0, 8192, 8192, 0, &dk);
         sim_spawn(&s, APEX, 1, 8192, 8192 - 200, 32768, &dk);
@@ -3110,7 +3119,7 @@ int main(void) {
         /* A kill pays the victim's bounty, and nothing at all for a pilot
          * who was carrying nothing. Camping a respawn is worthless without
          * an anti-farming rule, because a fresh spawn is worth zero. */
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 1);
         sim_spawn(&s, APEX, 0, 8192, 8192, 32768, &cfg);      /* faces down */
         sim_spawn(&s, APEX, 1, 8192, 8192 + 200, 0, &cfg);    /* the victim */
@@ -3144,7 +3153,7 @@ int main(void) {
     {
         /* Points are the score and survive dying; bounty is the price and
          * does not. */
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 1);
         sim_spawn(&s, APEX, 0, 8192, 8192, 32768, &cfg);
         sim_spawn(&s, APEX, 1, 8192, 8192 + 200, 0, &cfg);
@@ -3165,7 +3174,7 @@ int main(void) {
          * A weapon never arrives at a teammate, so the only way to kill one
          * is a blast -- which does not check teams, and is exactly why the
          * rule has to exist. */
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 1);
         sim_spawn(&s, ANVIL, 0, 8192, 120, 0, &cfg);        /* faces the wall */
         sim_spawn(&s, APEX, 0, 8192, 55, 0, &cfg);          /* same team, near it */
@@ -3186,7 +3195,7 @@ int main(void) {
         /* Your own bomb, at your own feet. Same arithmetic as a teamkill and
          * for the same reason: a scoreboard that can only go up says nothing
          * about the pilot who is mostly killing themselves. */
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 1);
         sim_spawn(&s, ANVIL, 0, 8192, 55, 0, &cfg);         /* on top of it */
         s.ships[0].kills = 2;
@@ -3205,7 +3214,7 @@ int main(void) {
          * kind at once has decided nothing. Refused here rather than on the
          * page that draws the ladders, because a rule in a client is a rule
          * until somebody writes their own. */
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 1);
         sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
         uint8_t kit[SIM_SLOT_COUNT];
@@ -3234,7 +3243,7 @@ int main(void) {
         for (int k = 0; k < SIM_MAX_CHARGES; k++)
             if (kit[SIM_SLOT_CHARGE(k)]) kinds++;
         CHECK(kinds == SIM_KIT_CHARGE_SLOTS, "two kinds, dealt");
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 1);
         sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
         CHECK(sim_set_kit(&s.ships[0], &cfg, kit),
@@ -3251,7 +3260,7 @@ int main(void) {
          * counters: the pilot who did most of the work and lost the finish
          * used to read as a pilot who had done nothing.
          */
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 1);
         sim_spawn(&s, APEX, 0, 8192, 8192, 32768, &cfg);         /* fires +y */
         sim_spawn(&s, APEX, 1, 8192, 8192 + 200, 0, &cfg);       /* between */
@@ -3280,7 +3289,7 @@ int main(void) {
     {
         /* Flags a victim was carrying are worth extra, on top of what they
          * were carrying in upgrades. */
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 1);
         sim_spawn(&s, APEX, 0, 8192, 8192, 32768, &cfg);
         sim_spawn(&s, APEX, 1, 8192, 8192 + 200, 0, &cfg);
@@ -3303,12 +3312,12 @@ int main(void) {
     /* Walls are inelastic: a bounce returns less speed than it took, and a
      * ship resting against one settles rather than buzzing. */
     {
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 1);
         sim_spawn(&s, APEX, 0, 8192, 2000, 0, &cfg);  /* faces the top wall */
         step_n(&s, &cfg, SIM_BTN_THRUST, 0, 100);     /* build speed, coast in */
 
-        sim_state before, tmp;
+        static sim_state before, tmp;
         sim_events ev;
         int bounced = 0;
         for (int i = 0; i < 4000 && !bounced; i++) {
@@ -3342,7 +3351,7 @@ int main(void) {
      * and could not tell. The client's was drawing and sounding every one of
      * its own ricochets on its own hull. */
     {
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 5);
         /* Well clear of every wall but the one it is aimed at, and told to
          * hold still, so the only thing that can reach a wall is the bullet. */
@@ -3350,7 +3359,7 @@ int main(void) {
         s.ships[0].mods[SIM_TRIG_GUN] =
             sim_mod_set(s.ships[0].mods[SIM_TRIG_GUN], SIM_MOD_BOUNCE, 1);
 
-        sim_state tmp;
+        static sim_state tmp;
         sim_events ev;
         int ricochets = 0, bounces = 0;
         int32_t where = 0;
@@ -3418,7 +3427,7 @@ int main(void) {
         CHECK(sim_settings_unpack(&got, buf, n) == 0, "settings unpack");
         CHECK(got.map == m, "and leave the map alone");
 
-        sim_state s1, s2;
+        static sim_state s1, s2;
         sim_init(&s1, 7);
         sim_init(&s2, 7);
         sim_spawn(&s1, APEX, 0, 8192, 300, 0, &zone);
@@ -3430,7 +3439,7 @@ int main(void) {
         /* Which is a claim about the zone's numbers, not about any numbers:
          * the same run on the baseline must reach somewhere else, or the
          * test would pass with the message thrown away. */
-        sim_state s3;
+        static sim_state s3;
         sim_init(&s3, 7);
         sim_spawn(&s3, APEX, 0, 8192, 300, 0, &cfg);
         step_n(&s3, &cfg, SIM_BTN_THRUST | SIM_BTN_FIRE, 0, 200);
@@ -3451,7 +3460,7 @@ int main(void) {
 
     /* Determinism: identical runs give identical hashes and bytes. */
     {
-        sim_state s1, s2;
+        static sim_state s1, s2;
         sim_init(&s1, 42);
         sim_init(&s2, 42);
         sim_spawn(&s1, APEX, 0, 5000, 5000, 1234, &cfg);
@@ -3468,7 +3477,7 @@ int main(void) {
 
     /* Rollback: a saved state replayed forward reproduces the future. */
     {
-        sim_state s, saved, tmp;
+        static sim_state s, saved, tmp;
         sim_init(&s, 7);
         sim_spawn(&s, APEX, 0, 6000, 6000, 0, &cfg);
         sim_spawn(&s, APEX, 1, 6000, 5800, 0, &cfg);
@@ -3491,7 +3500,7 @@ int main(void) {
      * that could make this core step differently on different platforms, which
      * is the property everything else here depends on. */
     {
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 1);
         sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
         int32_t cap = sim_eff_max_energy(&cfg.classes[APEX], &s.ships[0]);
@@ -3516,7 +3525,7 @@ int main(void) {
      * while held: this is a state, and a state you have to keep a finger on is
      * a state you cannot fly with. */
     {
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 1);
         int id = sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
         s.ships[id].mods[SIM_TRIG_GUN] = sim_mod_set(0, SIM_MOD_MULTI, 1);
@@ -3554,7 +3563,7 @@ int main(void) {
          * ten snapshots a second one deliberate press becomes four. */
         {
             static uint8_t buf[1 << 16];
-            sim_state s2;
+            static sim_state s2;
             step_n(&s, &cfg, SIM_BTN_MULTI, 0, 1);   /* down: toggles once */
             CHECK(s.ships[id].multi_off, "the key goes down and it toggles");
             int m = sim_pack_around(&s, buf, sizeof buf, 0, 0, -1, 255, 255,
@@ -3590,7 +3599,7 @@ int main(void) {
      * changes no shot, and the client says the key landed by watching this
      * flag, so a flag that moved would be a sound about nothing. */
     {
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 1);
         int id = sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
         CHECK(sim_mod_get(s.ships[id].mods[SIM_TRIG_GUN], SIM_MOD_MULTI) == 0,
@@ -3625,7 +3634,7 @@ int main(void) {
      * retunes its weapons faster than the baseline flies. */
     {
         const int CIPHER = 4;
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 1);
         sim_spawn(&s, CIPHER, 0, 8192, 8192, 0, &cfg);
 
@@ -3653,7 +3662,7 @@ int main(void) {
             m->tile[(size_t)ty * SIM_MAP_TILES + 512] = SIM_TILE_SOLID;
         sim_map_index(m);
 
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 1);
         sim_weapon *w = &s.weapons[s.weapon_count++];
         memset(w, 0, sizeof *w);
@@ -3705,7 +3714,7 @@ int main(void) {
         memset(&wc, 0, sizeof wc);
         sim_settings_baseline(&wc, wm);
 
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 1);
         /* Four tiles above the hole, pointing down at it. Stepped one tick at
          * a time because the interesting state is the tick the warp lands on:
@@ -3762,7 +3771,7 @@ int main(void) {
         /* Nose-first: thrust straight up at the wall and take the closest
          * approach, since holding thrust against a wall bounces. */
         {
-            sim_state s;
+            static sim_state s;
             sim_init(&s, 1);
             int id = sim_spawn(&s, APEX, 0, 512 * 16, 60 * 16, 0, &hc);
             int32_t lo = s.ships[id].y;
@@ -3780,7 +3789,7 @@ int main(void) {
          * the nose pointing along it. The stop is the half-width, which for
          * an Apex is ten pixels closer than the nose gets. */
         {
-            sim_state s;
+            static sim_state s;
             sim_init(&s, 1);
             /* Heading east, so the hull lies along x and its flank faces
              * the wall above. */
@@ -3803,7 +3812,7 @@ int main(void) {
          * nudged out or the turn is refused; either way the box never ends a
          * tick inside the wall, and the ship never teleports. */
         {
-            sim_state s;
+            static sim_state s;
             sim_init(&s, 1);
             int id = sim_spawn(&s, APEX, 0, 512 * 16,
                                41 * 16 + hc.classes[APEX].halfw / 256 + 1,
@@ -3876,7 +3885,7 @@ int main(void) {
          * put a ship, which left a hull sitting eight pixels out of the gap
          * its tile had been checked for. */
         {
-            sim_state s;
+            static sim_state s;
             sim_init(&s, 7);
             int32_t x = 0, y = 0;
             int seen[4] = {0, 0, 0, 0};
@@ -3898,7 +3907,7 @@ int main(void) {
          * so this asks for more than one tile across a run of deaths rather
          * than for any particular one. */
         {
-            sim_state s;
+            static sim_state s;
             sim_init(&s, 11);
             sim_spawn(&s, APEX, 0, 500 * SIM_TILE_PX, 500 * SIM_TILE_PX, 0, &sc);
             int32_t first = 0;
@@ -3923,7 +3932,7 @@ int main(void) {
         {
             sim_settings rc = sc;
             rc.spawn_radius = 40;
-            sim_state s;
+            static sim_state s;
             sim_init(&s, 3);
             const int32_t reach = 40 * SIM_TILE_PX * 256;
             const int32_t row = 200 * SIM_TILE_PX * 256 + SIM_TILE_PX * 128;
@@ -3955,7 +3964,7 @@ int main(void) {
             memset(&bc, 0, sizeof bc);
             sim_settings_baseline(&bc, m);   /* the plain walled map: no spawns */
             bc.spawn_radius = 30;
-            sim_state s;
+            static sim_state s;
             sim_init(&s, 17);
             const int32_t mid = (SIM_MAP_TILES / 2) * SIM_TILE_PX * 256
                               + SIM_TILE_PX * 128;
@@ -3975,7 +3984,7 @@ int main(void) {
         {
             sim_settings rc = sc;
             rc.spawn_radius = 60;
-            sim_state a, b;
+            static sim_state a, b;
             sim_init(&a, 99);
             sim_init(&b, 99);
             int same = 1;
@@ -3993,7 +4002,7 @@ int main(void) {
         {
             sim_settings rc = sc;
             rc.spawn_radius = 4000;
-            sim_state s;
+            static sim_state s;
             sim_init(&s, 5);
             for (uint32_t n = 0; n < 200; n++) {
                 int32_t x = 0, y = 0;
@@ -4031,7 +4040,7 @@ int main(void) {
         sim_settings mixed = cfg;
         mixed.respawn_delay = 25;
         mixed.flag_drop_cooldown = 5;
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 0x71a9c3u);
         uint32_t random = 0x4d3b2a19u;
         for (int i = 0; i < 12; i++) {
@@ -4092,7 +4101,7 @@ int main(void) {
     /* A snapshot round trip reproduces the state exactly. This is what lets
      * a client accept the server's word without drifting from it. */
     {
-        sim_state s, back;
+        static sim_state s, back;
         sim_init(&s, 11);
         sim_spawn(&s, APEX, 0, 8000, 8000, 900, &cfg);
         sim_spawn(&s, ANVIL, 1, 8000, 7800, 32768, &cfg);
@@ -4143,7 +4152,7 @@ int main(void) {
             static uint8_t longer[SIM_PACK_MAX + 8];
             memcpy(longer, buf, (size_t)n);
             longer[n] = 0x5a;
-            sim_state ignored;
+            static sim_state ignored;
             CHECK(sim_unpack(&ignored, longer, n + 1) != 0,
                   "a snapshot with bytes this build cannot read is refused");
             CHECK(sim_unpack(&ignored, buf, n) == 0,
@@ -4172,7 +4181,7 @@ int main(void) {
 
         /* And an unpacked state steps identically to the original, which is
          * the property client prediction actually depends on. */
-        sim_state a2, b2;
+        static sim_state a2, b2;
         sim_input in = {0, SIM_BTN_THRUST};
         sim_step(&a2, &s, &in, 1, &cfg, NULL);
         sim_step(&b2, &back, &in, 1, &cfg, NULL);
@@ -4211,7 +4220,7 @@ int main(void) {
 
             int m = sim_pack_around(&s, buf, sizeof buf, cx, cy, R, 255, 0, 0);
             CHECK(m > 0 && m < n, "a filtered snapshot is smaller");
-            sim_state cut;
+            static sim_state cut;
             CHECK(sim_unpack(&cut, buf, m) == 0, "and unpacks");
 
 
@@ -4309,7 +4318,7 @@ int main(void) {
             rc.spawn_radius = 40;      /* a scatter, so the draw decides a tile */
             rc.respawn_delay = 2;
 
-            sim_state s;
+            static sim_state s;
             sim_init(&s, 12345);
             /* The unseen hull takes the lower seat, because the step walks
              * seats in order: the arena's draw for it lands before the
@@ -4331,7 +4340,7 @@ int main(void) {
             int n = sim_pack_around(&s, buf, sizeof buf, s.ships[near].x,
                                     s.ships[near].y, R, (uint8_t)near,
                                     (uint8_t)near, 0);
-            sim_state client;
+            static sim_state client;
             CHECK(n > 0 && sim_unpack(&client, buf, n) == 0, "the snapshot reads");
             CHECK(!client.ships[far].active,
                   "and the far hull is not in it, which is the whole point");
@@ -4362,7 +4371,7 @@ int main(void) {
          * own: their bullets are inside the radius by construction, so the
          * narrower rule buys nothing and reads as a special case. */
         {
-            sim_state m;
+            static sim_state m;
             sim_init(&m, 3);
             int layer = sim_spawn(&m, APEX, 0, 2048, 2048, 0, &cfg);
             int other = sim_spawn(&m, APEX, 1, 2200, 2048, 0, &cfg);
@@ -4379,7 +4388,7 @@ int main(void) {
             const int32_t R = 84 * 16 * 256;    /* the floor a client gets */
             int32_t vx = m.ships[0].x, vy = m.ships[0].y;
             int n2 = sim_pack_around(&m, buf, sizeof buf, vx, vy, R, 0, 0, 0);
-            sim_state mine_seen;
+            static sim_state mine_seen;
             CHECK(n2 > 0 && sim_unpack(&mine_seen, buf, n2) == 0,
                   "the layer's own snapshot packs");
             CHECK(mine_seen.weapon_count == 1,
@@ -4390,7 +4399,7 @@ int main(void) {
                   "at the pixel and on the clock it actually has");
 
             int n3 = sim_pack_around(&m, buf, sizeof buf, vx, vy, R, 1, 1, 0);
-            sim_state stranger;
+            static sim_state stranger;
             CHECK(n3 > 0 && sim_unpack(&stranger, buf, n3) == 0,
                   "and so does somebody else's from the same place");
             CHECK(stranger.weapon_count == 0,
@@ -4399,7 +4408,7 @@ int main(void) {
             /* 255 is nobody, and it has to be: every round is owned by a seat,
              * so the sentinel can never be somebody by accident. */
             int n5 = sim_pack_around(&m, buf, sizeof buf, vx, vy, R, 255, 255, 0);
-            sim_state nobody;
+            static sim_state nobody;
             CHECK(n5 > 0 && sim_unpack(&nobody, buf, n5) == 0, "packs");
             CHECK(nobody.weapon_count == 0, "and carries no round's exception");
 
@@ -4407,7 +4416,7 @@ int main(void) {
              * next to the mine, everybody is told about it. */
             int n4 = sim_pack_around(&m, buf, sizeof buf,
                                      m.weapons[0].x, m.weapons[0].y, R, 1, 1, 0);
-            sim_state near_by;
+            static sim_state near_by;
             CHECK(n4 > 0 && sim_unpack(&near_by, buf, n4) == 0, "packs");
             CHECK(near_by.weapon_count == 1,
                   "a stranger standing on the minefield sees it");
@@ -4421,7 +4430,7 @@ int main(void) {
             int whole = sim_pack_around(&s, buf, sizeof buf, 0, 0, -1, 255, 255,
                                         SIM_PACK_PRIVATE_ALL);
             CHECK(whole == n, "an unfiltered pack is the same size as sim_pack");
-            sim_state all;
+            static sim_state all;
             CHECK(sim_unpack(&all, buf, whole) == 0, "and unpacks");
             CHECK(sim_hash(&all) == sim_hash(&s),
                   "and carries the whole arena");
@@ -4461,7 +4470,7 @@ int main(void) {
      * checked against. */
     {
         sim_settings kc = cfg;
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 3);
         int id = sim_spawn(&s, APEX, 0, 8192, 8192, 0, &kc);
         sim_ship *sh = &s.ships[id];
@@ -4523,7 +4532,7 @@ int main(void) {
      * rather than thrown. It used to be the bomb trigger's other posture,
      * limited by how many of yours were already lying about. */
     {
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 5);
         const int LATTICE = 6;
         int id = sim_spawn(&s, LATTICE, 0, 8192, 8192, 0, &cfg);
@@ -4569,7 +4578,7 @@ int main(void) {
         memset(&mc, 0, sizeof mc);
         sim_settings_baseline(&mc, mm);
         mc.spawn_radius = 0;
-        sim_state s;
+        static sim_state s;
         sim_init(&s, 9);
         int a = sim_spawn(&s, APEX, 0, 8192, 8192, 0, &mc);
         int b = sim_spawn(&s, APEX, 1, 9216, 9216, 0, &mc);

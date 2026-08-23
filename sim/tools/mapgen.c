@@ -1202,28 +1202,48 @@ static int in_pocket(int x, int y, int pad) {
     return dx * dx + dy * dy < pad * pad;
 }
 
-/* Four spawn tiles per side, inside the pocket, spread so a wiped team does
- * not come back stacked on one tile. */
+/* Four spawn tiles per side, inside the pocket and no two within five tiles
+ * of each other, so a wiped team does not come back stacked on one tile.
+ *
+ * The pocket is what retries, not the seat. Seats picked one after another
+ * can fence the last one out: three of them in a box nineteen tiles across
+ * leave a fourth position that satisfies both rules only sometimes, and no
+ * number of further draws inside that round will find one. Seed 28 sat there
+ * and came back with seven of the eight seats it wanted. Clearing four and
+ * dealing again is the cheap way out, and a pocket that has room at all takes
+ * it in the first round or two.
+ *
+ * A round that succeeds draws the same numbers the single pass before it
+ * drew, in the same order, so this change on its own moves no spawn on any
+ * arena that already placed eight. */
 static int match_spawns(int32_t main, int px, int py, int team) {
-    int placed = 0;
-    for (int i = 0; i < 4; i++) {
-        int ok = 0;
-        for (int tries = 0; tries < 4000 && !ok; tries++) {
-            int x = px + rr(-9, 9), y = py + rr(-6, 6);
-            if (!open_around(x, y, 4, main)) continue;
-            /* Not on top of one already placed: four ships want four tiles. */
-            int near = 0;
-            for (int j = -5; j <= 5 && !near; j++)
-                for (int k = -5; k <= 5; k++)
-                    if (SIM_TILE_CLASS(get(x + k, y + j)) == SIM_TILE_SPAWN)
-                        near = 1;
-            if (near) continue;
-            put(x, y, SIM_TILE(SIM_TILE_SPAWN, (uint8_t)team));
-            ok = 1;
-            placed++;
+    int sx[4], sy[4];
+    for (int round = 0; round < 64; round++) {
+        int placed = 0;
+        for (int i = 0; i < 4; i++) {
+            int ok = 0;
+            for (int tries = 0; tries < 4000 && !ok; tries++) {
+                int x = px + rr(-9, 9), y = py + rr(-6, 6);
+                if (!open_around(x, y, 4, main)) continue;
+                /* Not on top of one already placed: four ships want four
+                 * tiles. */
+                int near = 0;
+                for (int j = -5; j <= 5 && !near; j++)
+                    for (int k = -5; k <= 5; k++)
+                        if (SIM_TILE_CLASS(get(x + k, y + j)) == SIM_TILE_SPAWN)
+                            near = 1;
+                if (near) continue;
+                put(x, y, SIM_TILE(SIM_TILE_SPAWN, (uint8_t)team));
+                sx[placed] = x;
+                sy[placed] = y;
+                placed++;
+                ok = 1;
+            }
         }
+        if (placed == 4) return 4;
+        for (int i = 0; i < placed; i++) put(sx[i], sy[i], SIM_TILE(SIM_TILE_EMPTY, 0));
     }
-    return placed;
+    return 0;
 }
 
 /* The two shipped layouts. Both are point symmetric and both leave three
@@ -1327,9 +1347,18 @@ static void draw_drydock(void) {
         int bw = rr(8, 14), bh = rr(7, 12);
         if (in_pocket(x, y, 20) || !clear_box(x, y, bw, bh, 5)) continue;
         /* A quarter of it stays a plain block. A field of nothing but figures
-         * has no plain ground in it to read them against. */
-        if (chance(BLOCK_SHARE)) sym_rect(x, y, rr(4, 8), rr(3, 6), SIM_TILE_SOLID);
-        else sym_motif(x, y, bw, bh);
+         * has no plain ground in it to read them against.
+         *
+         * The two sides are drawn one to a line, not passed straight into the
+         * call. C does not say which argument is evaluated first, and the two
+         * compilers here disagree: the same seed gave gcc and clang different
+         * arenas, and the selftest failed under one of them on a map the other
+         * had just passed. A generator reading a stream has to spell out the
+         * order it reads it in. */
+        if (chance(BLOCK_SHARE)) {
+            int pw = rr(4, 8), ph = rr(3, 6);
+            sym_rect(x, y, pw, ph, SIM_TILE_SOLID);
+        } else sym_motif(x, y, bw, bh);
     }
     /* And a pair of stubs off each pocket, so a spawn is not an open field. */
     for (int k = 0; k < 4; k++)
@@ -1377,8 +1406,11 @@ static void draw_slipway(void) {
         int x = lo + 10 + rr(0, ARENA - 24), y = lo + 10 + rr(0, ARENA - 24);
         int bw = rr(8, 13), bh = rr(8, 13);
         if (in_pocket(x, y, 20) || !clear_box(x, y, bw, bh, 5)) continue;
-        if (chance(BLOCK_SHARE)) sym_rect(x, y, rr(4, 7), rr(4, 7), SIM_TILE_SOLID);
-        else sym_motif(x, y, bw, bh);
+        /* One to a line, for the reason given in the drydock above. */
+        if (chance(BLOCK_SHARE)) {
+            int pw = rr(4, 7), ph = rr(4, 7);
+            sym_rect(x, y, pw, ph, SIM_TILE_SOLID);
+        } else sym_motif(x, y, bw, bh);
     }
 }
 
@@ -1601,10 +1633,10 @@ static int generate(sim_map *m, uint32_t s, int quiet) {
 
     /* Report, and refuse to write a map that cannot be played. */
     /* Halves here too, and for the same reason: see the match generator. */
-    size_t solid = 0, halves = 0, safe = 0, door = 0;
+    size_t halves = 0, safe = 0, door = 0;
     for (size_t i = 0; i < (size_t)TILES * TILES; i++) {
         uint8_t c = SIM_TILE_CLASS(T[i]);
-        if (c == SIM_TILE_SOLID) { solid++; halves += 2; }
+        if (c == SIM_TILE_SOLID) halves += 2;
         else if (c == SIM_TILE_SLOPE) halves += 1;
         else if (c == SIM_TILE_SAFE) safe++;
         else if (c == SIM_TILE_DOOR) door++;
