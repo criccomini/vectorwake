@@ -333,6 +333,11 @@ local function my_slots()
             out[#out + 1] = k
         end
     end
+    -- Which of the two the first key throws is the pilot's to decide, and the
+    -- ship page is where they decide it. Read here rather than sent: the kit
+    -- carries how many of each kind, and which key spends which is a fact
+    -- about this keyboard. See `menu.swap_charges`.
+    if menu.charge_flip and #out > 1 then out[1], out[2] = out[2], out[1] end
     return out
 end
 
@@ -1680,13 +1685,13 @@ function update(self, dt)
     -- arena's, which is one routine either way.
     world.stars(fill, glow, cx + sx, cy + sy, self.hw, self.hh)
 
-    -- The home screen's own art, over the starfield and under the menu. Only
-    -- there: with a game behind it the arena is the picture, and a hull
-    -- nobody is flying crossing the middle of it would be a lie.
-    if not live then
-        world.home_art(fill, glow, cx, cy, self.hw or 0, self.hh or 0,
-                       self.drift / 7)
-    end
+    -- Nothing over the starfield on the home screen. A hull used to cross it
+    -- on a closed loop, trailing a wake, on the argument that a text column in
+    -- the middle of an empty field carried nothing. What it actually did was
+    -- put a ship nobody is flying in front of a menu about flying one, moving
+    -- against a field that is already moving. The field on its own is the
+    -- picture: it drifts, it is the same sky the game is played under, and
+    -- there is nothing on it pretending to be a game.
 
     if live then
         -- A zone's map replaces whatever was there, and the terrain mesh is
@@ -2675,6 +2680,10 @@ function on_input(self, action_id, action)
                     -- slot goes to that step, which is what a press on the
                     -- fourth dot of a five-dot row means.
                     act, moved = menu.click_kit_at(r.value, r.level)
+                elseif r.action == "charge_swap" then
+                    -- The box beside a charge's pips. The two charges trade
+                    -- keys; nothing about the ship changes.
+                    act, moved = menu.swap_charges()
                 elseif r.action == "sort" then
                     -- A column head on the week's table. The same one again
                     -- turns the order over.
