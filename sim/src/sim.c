@@ -249,77 +249,71 @@ void sim_deal_kit(sim_ship *sh, const sim_settings *cfg, int ammunition) {
 
 /* What an account owns before it has bought anything.
  *
- * The rule is that everything with a rung above what this hands out is on the
- * shelf, and the shelf is the whole of what rivets are for. Add-ons used to
- * arrive with one rung of each already granted, and the four whose arena
- * ceiling is also one -- gun bouncing, gun freeze, bomb proximity, and now
- * bomb freeze -- were therefore free, complete, and absent from the shelf
- * forever. A pilot could see them on the ship page and never find out they
- * were things anybody bought.
- *
- * So: no add-ons at all. It costs a new pilot nothing they were using, since
- * the starter kit spends its thirty on stats, rungs and charges and never had
- * a rung of an add-on in it; what it changes is that an add-on is now a thing
- * you go and get. */
+ * This is the union of the three starter profiles, plus every effective stat
+ * step because stats are not shop items. Progression unlocks deeper
+ * specialization, while a first-session pilot begins with three complete
+ * competitive choices and can remix every point in them. */
 void sim_base_entitlements(uint8_t *out) {
     memset(out, 0, SIM_SLOT_COUNT);
-    for (int u = 0; u < SIM_UP_COUNT; u++)
-        out[SIM_SLOT_STAT(u)] = SIM_UP_STEPS_BASE;
-    for (int t = 0; t < SIM_TRIG_COUNT; t++) out[SIM_SLOT_LEVEL(t)] = 1;
-    /* One of each rather than the arena's three. These were 255, which meant
-     * the arena's row was the only limit and neither charge was ever for
-     * sale; nobody could buy a deeper rack because everybody already had the
-     * deepest one. One is enough to fly with and leaves two rungs of each on
-     * the shelf, which is what makes a rack something a pilot builds towards
-     * rather than something they were handed. */
-    out[SIM_SLOT_CHARGE(SIM_CHARGE_REPEL)] = 1;
-    out[SIM_SLOT_CHARGE(SIM_CHARGE_BURST)] = 1;
+    /* The union of Gunner, Bomber and Control. A new pilot owns all three
+     * complete thirty-point builds and can remix them immediately; the shelf
+     * starts beyond this union and unlocks specialization, never basic
+     * competitiveness. The stat counts are their effective physics ceilings,
+     * so none of these points disappear into a clamp. */
+    static const uint8_t stats[SIM_UP_COUNT] = {7, 5, 5, 1, 1};
+    for (int u = 0; u < SIM_UP_COUNT; u++) out[SIM_SLOT_STAT(u)] = stats[u];
+    out[SIM_SLOT_LEVEL(SIM_TRIG_GUN)] = 2;
+    out[SIM_SLOT_LEVEL(SIM_TRIG_BOMB)] = 1;
+    out[SIM_SLOT_MOD(SIM_TRIG_GUN, SIM_MOD_MULTI)] = 2;
+    out[SIM_SLOT_MOD(SIM_TRIG_GUN, SIM_MOD_BOUNCE)] = 1;
+    out[SIM_SLOT_MOD(SIM_TRIG_GUN, SIM_MOD_FREEZE)] = 1;
+    out[SIM_SLOT_MOD(SIM_TRIG_BOMB, SIM_MOD_BOUNCE)] = 2;
+    out[SIM_SLOT_MOD(SIM_TRIG_BOMB, SIM_MOD_PROX)] = 1;
+    out[SIM_SLOT_MOD(SIM_TRIG_BOMB, SIM_MOD_SHRAPNEL)] = 1;
+    out[SIM_SLOT_MOD(SIM_TRIG_BOMB, SIM_MOD_FREEZE)] = 1;
+    out[SIM_SLOT_CHARGE(SIM_CHARGE_REPEL)] = 2;
+    out[SIM_SLOT_CHARGE(SIM_CHARGE_BURST)] = 2;
 }
 
 int sim_starter_kit(const uint8_t *ceiling, uint8_t *out) {
     memset(out, 0, SIM_SLOT_COUNT);
     int spent = 0;
 
-    /* A rung on each trigger first, because a ship with a bomb rack and no
-     * rung on it is a ship that never uses half of what it is. */
-    for (int t = 0; t < SIM_TRIG_COUNT && spent < SIM_KIT_BUDGET; t++)
-        if (ceiling[SIM_SLOT_LEVEL(t)] > 0) {
-            out[SIM_SLOT_LEVEL(t)] = 1;
-            spent++;
-        }
-
-    /* Then the charges, which are the one part of a kit that runs out during
-     * a match and the one a pilot notices the absence of immediately. Three
-     * of a kind, or the ceiling if the arena is stingier: the mine ceiling is
-     * six and spending six points of thirty on mines is a build rather than a
-     * default.
-     *
-     * The first two kinds the account owns, and no more, because that is what
-     * a kit may hold. In kind order, which means a pilot who has bought
-     * nothing gets the repel and the burst the baseline hands out, and one
-     * who has bought mines finds them on the ship page rather than already
-     * fitted. */
-    int kinds = 0;
-    for (int k = 0; k < SIM_MAX_CHARGES && spent < SIM_KIT_BUDGET; k++) {
-        uint8_t want = ceiling[SIM_SLOT_CHARGE(k)];
-        if (!want) continue;
-        if (kinds >= SIM_KIT_CHARGE_SLOTS) break;
-        if (want > 3) want = 3;
+    /* Gunner is the neutral fallback when no saved profile has arrived yet.
+     * The account layer offers the other two named builds. Keeping this one in
+     * the core makes an offline arena and a joining client agree. */
+    uint8_t target[SIM_SLOT_COUNT] = {0};
+    static const uint8_t stats[SIM_UP_COUNT] = {6, 5, 5, 1, 1};
+    for (int u = 0; u < SIM_UP_COUNT; u++) target[SIM_SLOT_STAT(u)] = stats[u];
+    target[SIM_SLOT_LEVEL(SIM_TRIG_GUN)] = 2;
+    target[SIM_SLOT_LEVEL(SIM_TRIG_BOMB)] = 1;
+    target[SIM_SLOT_MOD(SIM_TRIG_GUN, SIM_MOD_MULTI)] = 2;
+    target[SIM_SLOT_MOD(SIM_TRIG_GUN, SIM_MOD_BOUNCE)] = 1;
+    target[SIM_SLOT_MOD(SIM_TRIG_GUN, SIM_MOD_FREEZE)] = 1;
+    target[SIM_SLOT_MOD(SIM_TRIG_BOMB, SIM_MOD_PROX)] = 1;
+    target[SIM_SLOT_CHARGE(SIM_CHARGE_REPEL)] = 2;
+    target[SIM_SLOT_CHARGE(SIM_CHARGE_BURST)] = 2;
+    for (int i = 0; i < SIM_SLOT_COUNT && spent < SIM_KIT_BUDGET; i++) {
+        uint8_t want = target[i] < ceiling[i] ? target[i] : ceiling[i];
         if (want > SIM_KIT_BUDGET - spent) want = (uint8_t)(SIM_KIT_BUDGET - spent);
-        if (!want) continue;
-        out[SIM_SLOT_CHARGE(k)] = want;
+        out[i] = want;
         spent += want;
-        kinds++;
     }
 
-    /* And the rest over the stats, a step at a time round the five of them,
-     * so what is left lands evenly rather than filling one and starving the
-     * next. Stops when nothing moved, which is every stat at its ceiling. */
+    /* A reduced custom zone may omit part of Gunner. Fill any remaining
+     * budget from what that zone does allow, still never carrying a third
+     * charge kind. */
     while (spent < SIM_KIT_BUDGET) {
         int moved = 0;
-        for (int u = 0; u < SIM_UP_COUNT && spent < SIM_KIT_BUDGET; u++) {
-            if (out[SIM_SLOT_STAT(u)] < ceiling[SIM_SLOT_STAT(u)]) {
-                out[SIM_SLOT_STAT(u)]++;
+        for (int i = 0; i < SIM_SLOT_COUNT && spent < SIM_KIT_BUDGET; i++) {
+            if (i >= SIM_SLOT_CHARGE(0) && out[i] == 0) {
+                int kinds = 0;
+                for (int k = 0; k < SIM_MAX_CHARGES; k++)
+                    if (out[SIM_SLOT_CHARGE(k)] > 0) kinds++;
+                if (kinds >= SIM_KIT_CHARGE_SLOTS) continue;
+            }
+            if (out[i] < ceiling[i]) {
+                out[i]++;
                 spent++;
                 moved = 1;
             }
@@ -947,9 +941,8 @@ static void compose(const sim_settings *cfg, uint16_t mods, uint8_t level,
     }
     if ((n = sim_mod_get(mods, SIM_MOD_BOUNCE)) != 0) {
         sp->on_wall = SIM_WALL_BOUNCE;
-        /* Saturating, not wrapping. Shrapnel's base is already 255, and a
-         * fragment inherits its parent's mods, so a bounce add-on under a
-         * u8 wrap would hand whole-life fragments a handful of bounces. */
+        /* Saturating, not wrapping. A fragment inherits its parent's mods,
+         * and custom zones may still put a high base count in its spec. */
         int32_t b = sp->bounces + n * cfg->mod_step[SIM_MOD_BOUNCE];
         sp->bounces = (uint8_t)(b > 255 ? 255 : b);
     }

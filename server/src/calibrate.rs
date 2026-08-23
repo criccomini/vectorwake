@@ -9,7 +9,7 @@
 //! rating math. Nothing here models an outcome, because a model of a fight is
 //! exactly the thing that would drift away from the fight.
 
-use crate::{ai, config, nav, rating, sim};
+use crate::{ai, config, nav, profiles, rating, sim};
 
 /// A match ends at this many kills, or this many ticks if the two are too
 /// evenly matched to settle it. 100 ticks is a second.
@@ -1409,6 +1409,10 @@ impl TeamRow {
 pub struct Seat {
     pub class: u8,
     pub team: u8,
+    /// Signed match score. Team kills and suicides are scored exactly as the
+    /// live melee mode scores them; `kills` below remains a nonnegative combat
+    /// counter for the aggregate report.
+    pub score: i32,
     pub kills: u32,
     pub deaths: u32,
     pub shots: [u32; sim::TRIG_COUNT],
@@ -1440,13 +1444,27 @@ fn team_world(salt: u32, tuning: Option<&config::ArenaConfig>, map: &Arena) -> O
     Some(world)
 }
 
-pub fn team_match(
+struct TeamMatchOptions<'a> {
+    kits: Option<&'a [[u8; sim::SLOT_COUNT]; 2]>,
+    tick_limit: u32,
+}
+
+fn live_team_score(world: &sim::World, ships: &[u8], seats: &[Seat]) -> [i32; 2] {
+    let mut side = [0i32; 2];
+    for i in 0..ships.len() {
+        side[seats[i].team as usize] += i32::from(world.state.ships[ships[i] as usize].kills);
+    }
+    side
+}
+
+fn team_match_with_options(
     lineup: &[u8],
     skill: f32,
     budget: u32,
     salt: u32,
     tuning: Option<&config::ArenaConfig>,
     map: &Arena,
+    options: TeamMatchOptions<'_>,
 ) -> (Vec<Seat>, bool) {
     let per_side = lineup.len() / 2;
     let Some(mut world) = team_world(salt, tuning, map) else {
@@ -1468,7 +1486,7 @@ pub fn team_match(
         prng.push(
             (salt
                 .wrapping_mul(2654435761)
-                .wrapping_add(i as u32 * 2246822519)
+                .wrapping_add((i as u32).wrapping_mul(2246822519))
                 ^ 0x9E37_79B9)
                 | 1,
         );
@@ -1479,7 +1497,18 @@ pub fn team_match(
         });
     }
     for i in 0..ships.len() {
-        seats[i].converted += deal_kit(&mut world, ships[i] as usize, budget, &mut prng[i]);
+        let converted = match options.kits {
+            Some(kits) => {
+                let kit = &kits[seats[i].team as usize];
+                if world.set_kit(ships[i] as usize, kit) {
+                    sim::World::kit_cost(kit)
+                } else {
+                    0
+                }
+            }
+            None => deal_kit(&mut world, ships[i] as usize, budget, &mut prng[i]),
+        };
+        seats[i].converted += converted;
         seats[i].budget += budget;
     }
 
@@ -1498,10 +1527,10 @@ pub fn team_match(
         .map(|&c| spec_triggers(&world.cfg, c))
         .collect();
     let mut alive_was = vec![true; ships.len()];
-    let target = KILL_TARGET as u32 * per_side as u32;
+    let target = KILL_TARGET as i32 * per_side as i32;
     let mut decided = false;
 
-    for _ in 0..MATCH_TICKS {
+    for _ in 0..options.tick_limit {
         // The look is decided before the think, because `think` takes the bot
         // mutably and `looks_due` reads it: asking inside the call borrows the
         // same bot twice.
@@ -1556,7 +1585,7 @@ pub fn team_match(
 
         for i in 0..ships.len() {
             let alive = world.state.ships[ships[i] as usize].alive != 0;
-            if alive && !alive_was[i] {
+            if alive && !alive_was[i] && options.kits.is_none() {
                 seats[i].converted += deal_kit(&mut world, ships[i] as usize, budget, &mut prng[i]);
                 seats[i].budget += budget;
             }
@@ -1566,10 +1595,7 @@ pub fn team_match(
             alive_was[i] = alive;
         }
 
-        let mut side = [0u32; 2];
-        for i in 0..ships.len() {
-            side[seats[i].team as usize] += world.state.ships[ships[i] as usize].kills as u32;
-        }
+        let side = live_team_score(&world, &ships, &seats);
         if side[0] >= target || side[1] >= target {
             decided = true;
             break;
@@ -1577,9 +1603,253 @@ pub fn team_match(
     }
 
     for i in 0..ships.len() {
-        seats[i].kills = world.state.ships[ships[i] as usize].kills as u32;
+        let score = i32::from(world.state.ships[ships[i] as usize].kills);
+        seats[i].score = score;
+        seats[i].kills = score.max(0) as u32;
     }
     (seats, decided)
+}
+
+pub fn team_match(
+    lineup: &[u8],
+    skill: f32,
+    budget: u32,
+    salt: u32,
+    tuning: Option<&config::ArenaConfig>,
+    map: &Arena,
+) -> (Vec<Seat>, bool) {
+    team_match_with_options(
+        lineup,
+        skill,
+        budget,
+        salt,
+        tuning,
+        map,
+        TeamMatchOptions {
+            kits: None,
+            tick_limit: MATCH_TICKS,
+        },
+    )
+}
+
+/// One full-loadout comparison from mirrored live-format matches.
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct ProfileResult {
+    pub a: &'static str,
+    pub b: &'static str,
+    pub paired_seeds: u32,
+    pub matches: u32,
+    pub win_rate: f64,
+    pub win_rate_low: f64,
+    pub win_rate_high: f64,
+    pub kill_difference: f64,
+    pub kill_difference_low: f64,
+    pub kill_difference_high: f64,
+    pub verdict: &'static str,
+}
+
+pub const PROFILE_MIN_PAIRS: u32 = 100;
+const PROFILE_BALANCE_LOW: f64 = 0.45;
+const PROFILE_BALANCE_HIGH: f64 = 0.55;
+// Four profiles make six comparisons. 2.70 is a conservative two-sided
+// Student t critical value at the hundred-pair floor after a Bonferroni
+// correction. The six reported intervals therefore retain at least 95%
+// family confidence rather than each spending 5% alone.
+const PROFILE_FAMILY_T: f64 = 2.70;
+
+fn mean_interval(samples: &[f64]) -> (f64, f64, f64) {
+    if samples.is_empty() {
+        return (0.0, f64::NEG_INFINITY, f64::INFINITY);
+    }
+    let n = samples.len() as f64;
+    let mean = samples.iter().sum::<f64>() / n;
+    if samples.len() < 2 {
+        return (mean, f64::NEG_INFINITY, f64::INFINITY);
+    }
+    let variance = samples
+        .iter()
+        .map(|sample| (sample - mean).powi(2))
+        .sum::<f64>()
+        / (n - 1.0);
+    let margin = PROFILE_FAMILY_T * (variance / n).sqrt();
+    (mean, mean - margin, mean + margin)
+}
+
+fn profile_verdict(pairs: u32, low: f64, high: f64) -> &'static str {
+    if pairs < PROFILE_MIN_PAIRS {
+        "inconclusive: below minimum sample"
+    } else if low > PROFILE_BALANCE_HIGH {
+        "overpowered"
+    } else if high < PROFILE_BALANCE_LOW {
+        "underpowered"
+    } else if low >= PROFILE_BALANCE_LOW && high <= PROFILE_BALANCE_HIGH {
+        "balanced"
+    } else {
+        "inconclusive"
+    }
+}
+
+fn profile_game(
+    a: &[u8; sim::SLOT_COUNT],
+    b: &[u8; sim::SLOT_COUNT],
+    flip: bool,
+    skill: f32,
+    salt: u32,
+    tuning: Option<&config::ArenaConfig>,
+    map: &Arena,
+) -> (f64, f64) {
+    // The same four hulls on each side. Profile, side, spawn and bot seed are
+    // the only things the mirrored pair exchanges.
+    let lineup = [0, 1, 3, 4, 0, 1, 3, 4];
+    let kits = if flip { [*b, *a] } else { [*a, *b] };
+    let seconds = tuning
+        .and_then(|config| config.match_seconds)
+        .unwrap_or(180) as u32;
+    let (seats, _) = team_match_with_options(
+        &lineup,
+        skill,
+        sim::KIT_BUDGET,
+        salt,
+        tuning,
+        map,
+        TeamMatchOptions {
+            kits: Some(&kits),
+            tick_limit: seconds * 100,
+        },
+    );
+    let mut kills = [0i32; 2];
+    for seat in seats {
+        kills[seat.team as usize] += seat.score;
+    }
+    let (ours, theirs) = if flip {
+        (kills[1], kills[0])
+    } else {
+        (kills[0], kills[1])
+    };
+    let result = match ours.cmp(&theirs) {
+        std::cmp::Ordering::Greater => 1.0,
+        std::cmp::Ordering::Equal => 0.5,
+        std::cmp::Ordering::Less => 0.0,
+    };
+    (result, f64::from(ours - theirs))
+}
+
+/// Compare the three starter profiles and a bought-up specialization in
+/// four-a-side, three-minute matches on the shipped map rotation. Each seed is
+/// played twice with the profiles exchanging sides, then treated as one paired
+/// observation.
+pub fn run_profiles(
+    paired_seeds: u32,
+    skill: f32,
+    tuning: Option<&config::ArenaConfig>,
+    maps: &[(String, Arena)],
+    verbose: bool,
+) -> Vec<ProfileResult> {
+    if maps.is_empty() {
+        return Vec::new();
+    }
+    let choices = profiles::calibration_profiles();
+    let mut out = Vec::new();
+    for i in 0..choices.len() {
+        for j in (i + 1)..choices.len() {
+            let mut outcomes = Vec::with_capacity(paired_seeds as usize);
+            let mut differences = Vec::with_capacity(paired_seeds as usize);
+            for sample in 0..paired_seeds {
+                let map = &maps[sample as usize % maps.len()].1;
+                // Every comparison gets the same map, spawn and bot streams.
+                // Bonferroni does not require comparisons to be independent,
+                // and common random numbers make differences between rows far
+                // easier to attribute to the profiles they name.
+                let salt = sample.wrapping_mul(2654435761);
+                let first = profile_game(
+                    &choices[i].kit,
+                    &choices[j].kit,
+                    false,
+                    skill,
+                    salt,
+                    tuning,
+                    map,
+                );
+                let second = profile_game(
+                    &choices[i].kit,
+                    &choices[j].kit,
+                    true,
+                    skill,
+                    salt,
+                    tuning,
+                    map,
+                );
+                outcomes.push((first.0 + second.0) / 2.0);
+                differences.push((first.1 + second.1) / 2.0);
+            }
+            let (win_rate, win_rate_low, win_rate_high) = mean_interval(&outcomes);
+            let (kill_difference, kill_difference_low, kill_difference_high) =
+                mean_interval(&differences);
+            let verdict = profile_verdict(paired_seeds, win_rate_low, win_rate_high);
+            out.push(ProfileResult {
+                a: choices[i].name,
+                b: choices[j].name,
+                paired_seeds,
+                matches: paired_seeds * 2,
+                win_rate,
+                win_rate_low,
+                win_rate_high,
+                kill_difference,
+                kill_difference_low,
+                kill_difference_high,
+                verdict,
+            });
+            if verbose {
+                println!(
+                    "{} vs {} done: {paired_seeds} paired seeds",
+                    choices[i].name, choices[j].name
+                );
+            }
+        }
+    }
+    out
+}
+
+pub fn report_profiles(
+    results: &[ProfileResult],
+    paired_seeds: u32,
+    zone: &str,
+    maps: &[(String, Arena)],
+) -> serde_json::Value {
+    println!(
+        "\nprofile balance: {zone}, {paired_seeds} paired seeds and {} matches per comparison",
+        paired_seeds * 2
+    );
+    println!(
+        "family-wise 95% intervals across six comparisons; balance band 45% to 55%; minimum {PROFILE_MIN_PAIRS} paired seeds"
+    );
+    println!(
+        "\n{:<18} {:>7} {:>19} {:>8} {:>19}  verdict",
+        "comparison", "win%", "family 95%", "kill +/-", "family 95%"
+    );
+    for result in results {
+        println!(
+            "{:<18} {:>7.1} {:>8.1} to {:>7.1} {:>8.2} {:>8.2} to {:>7.2}  {}",
+            format!("{} / {}", result.a, result.b),
+            result.win_rate * 100.0,
+            result.win_rate_low * 100.0,
+            result.win_rate_high * 100.0,
+            result.kill_difference,
+            result.kill_difference_low,
+            result.kill_difference_high,
+            result.verdict,
+        );
+    }
+    serde_json::json!({
+        "zone": zone,
+        "maps": maps.iter().map(|(name, _)| name).collect::<Vec<_>>(),
+        "paired_seeds": paired_seeds,
+        "matches_per_comparison": paired_seeds * 2,
+        "confidence": "family-wise 95% Bonferroni paired t intervals",
+        "balance_band": [PROFILE_BALANCE_LOW, PROFILE_BALANCE_HIGH],
+        "minimum_paired_seeds": PROFILE_MIN_PAIRS,
+        "results": results,
+    })
 }
 
 /// Fill both sides at random, `matches` times, and read each hull off its seats.
@@ -1636,9 +1906,9 @@ pub fn run_teams(
         if !decided {
             undecided += 1;
         }
-        let mut side = [0u32; 2];
+        let mut side = [0i32; 2];
         for s in &seats {
-            side[s.team as usize] += s.kills;
+            side[s.team as usize] += s.score;
         }
         let winner = match side[0].cmp(&side[1]) {
             std::cmp::Ordering::Greater => Some(0u8),
@@ -2004,6 +2274,77 @@ pub(crate) fn duel(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn profile_balance_requires_the_declared_sample_and_whole_interval() {
+        assert_eq!(
+            profile_verdict(PROFILE_MIN_PAIRS - 1, 0.60, 0.70),
+            "inconclusive: below minimum sample"
+        );
+        assert_eq!(
+            profile_verdict(PROFILE_MIN_PAIRS, 0.56, 0.63),
+            "overpowered"
+        );
+        assert_eq!(profile_verdict(PROFILE_MIN_PAIRS, 0.46, 0.54), "balanced");
+        assert_eq!(
+            profile_verdict(PROFILE_MIN_PAIRS, 0.44, 0.56),
+            "inconclusive"
+        );
+    }
+
+    #[test]
+    fn paired_interval_tightens_when_the_same_evidence_repeats() {
+        let noisy = [0.0, 1.0, 0.0, 1.0];
+        let repeated: Vec<f64> = noisy.into_iter().cycle().take(400).collect();
+        let (_, low_small, high_small) = mean_interval(&noisy);
+        let (mean, low_large, high_large) = mean_interval(&repeated);
+        assert_eq!(mean, 0.5);
+        assert!(high_large - low_large < high_small - low_small);
+    }
+
+    #[test]
+    fn team_score_keeps_suicide_penalties_signed() {
+        let mut world = sim::World::with_map(7, sim::build_pit);
+        let first = world.spawn(0, 0, 505, 522, 0) as u8;
+        let second = world.spawn(0, 1, 519, 522, 32768) as u8;
+        world.state.ships[first as usize].kills = -1;
+        world.state.ships[second as usize].kills = 2;
+        let seats = [
+            Seat {
+                team: 0,
+                ..Default::default()
+            },
+            Seat {
+                team: 1,
+                ..Default::default()
+            },
+        ];
+
+        assert_eq!(live_team_score(&world, &[first, second], &seats), [-1, 2]);
+    }
+
+    #[test]
+    fn explicit_profiles_are_dealt_once_per_match() {
+        let kit = profiles::builtins()[0].kit;
+        let (seats, _) = team_match_with_options(
+            &[0, 1, 0, 1],
+            0.5,
+            sim::KIT_BUDGET,
+            19,
+            None,
+            &Arena::Built(sim::build_pit),
+            TeamMatchOptions {
+                kits: Some(&[kit, kit]),
+                tick_limit: 12_000,
+            },
+        );
+
+        assert!(seats.iter().map(|seat| seat.deaths).sum::<u32>() > 0);
+        for seat in seats {
+            assert_eq!(seat.budget, sim::KIT_BUDGET);
+            assert_eq!(seat.converted, sim::KIT_BUDGET);
+        }
+    }
 
     /// Skill has to be worth something in the game it actually controls.
     ///

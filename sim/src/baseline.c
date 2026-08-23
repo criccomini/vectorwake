@@ -31,6 +31,11 @@ static const sim_class_units flight = {
     400,  166, 1150,      /* recharge */
 };
 
+/* The useful kit depth of those five rows, in kit order. `eff` clamps at the
+ * last number in each triplet, so selling or spending past these counts would
+ * buy nothing. Keep the ceiling beside the arithmetic that determines it. */
+static const uint8_t flight_steps[SIM_UP_COUNT] = {7, 5, 5, 1, 1};
+
 /* The weapons, also identical on every hull, from the same files and the
  * arena settings beside them. */
 #define BULLET_DAMAGE   200   /* BulletDamageLevel: what an L1 bullet does */
@@ -188,7 +193,7 @@ static const uint8_t hull_extent[SIM_MAX_CLASSES][3] = {
 static void fill_kit_ceiling(sim_settings *cfg) {
     memset(cfg->kit_ceiling, 0, sizeof cfg->kit_ceiling);
     for (int u = 0; u < SIM_UP_COUNT; u++)
-        cfg->kit_ceiling[SIM_SLOT_STAT(u)] = SIM_UP_STEPS;
+        cfg->kit_ceiling[SIM_SLOT_STAT(u)] = flight_steps[u];
     /* A ladder of N rungs is N-1 steps to buy: rung zero is what the trigger
      * already fires. */
     cfg->kit_ceiling[SIM_SLOT_LEVEL(SIM_TRIG_GUN)] = GUN_RUNGS - 1;
@@ -348,7 +353,7 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
     cfg->shrap_inactive = sim_units_energy(3);
     cfg->shrap_inactive_ticks = 25;
     cfg->mod_step[SIM_MOD_SHRAPNEL] = 0;           /* a pattern, not a number */
-    cfg->mod_step[SIM_MOD_FREEZE] = 100;           /* a second of no recharge */
+    cfg->mod_step[SIM_MOD_FREEZE] = 50;            /* half a second without recharge */
     cfg->mod_step[SIM_MOD_PUSH] = sim_units_speed(1200);
     cfg->mod_spread = 65536 / 24;                  /* fifteen degrees */
     /* What one more round costs, as a percentage of the shot's own energy and
@@ -367,8 +372,8 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
     cfg->mod_pair_spread = BARREL_SPREAD;
     fill_kit_ceiling(cfg);
 
-    /* Shrapnel, one pattern per rung: four fragments, then eight, then
-     * sixteen. The fragments themselves are one spec -- a rung of shrapnel
+    /* Shrapnel, one pattern per rung: four fragments, then six, then eight.
+     * The fragments themselves are one spec, so a rung of shrapnel
      * buys more of them rather than better ones, so the add-on reads as
      * "more" the way every other add-on does. */
     {
@@ -381,13 +386,12 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
          * BulletAliveTime, since it has no shrapnel clock of its own.
          *
          * ShrapnelRate=2, which its help calls the shrapnel "gained by a
-         * 'Shrapnel Upgrade' prize", so a rung buys two more fragments.
+         * 'Shrapnel Upgrade' prize". The first rung starts at four so one
+         * point produces a visible attack; later rungs add two more.
          *
          * The cap is where this stops matching. ShrapnelMax is 8 on seven of
          * the original's ships and 31 on the Shark, and an add-on here is two
-         * bits, so three rungs and six fragments is the ceiling however many
-         * prizes a pilot finds. Reaching eight would mean a fourth rung and a
-         * wider field, which is a wire change rather than a number. */
+         * bits, so three rungs and eight fragments are the ceiling. */
         frag.speed = sim_units_speed(3000);
         frag.life = 550;
         /* A fragment is a bullet, which is the whole of what shrapnel is in
@@ -406,13 +410,10 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
          * the guns lift them off, which is `on_wall` here and the add-on
          * carried from the guns.
          *
-         * And then for as long as they live, which is `bounces`. See the gun
-         * ladder below: the original counts a bomb's bounces and never a
-         * bullet's, and a fragment is a bullet. The count is spent only once
-         * `on_wall` is BOUNCE, so a base of 255 changes nothing for a pilot
-         * without the add-on. */
+         * The gun's bounce add-on changes `on_wall` and adds one to
+         * `bounces`, so a fragment wearing it survives one wall. */
         frag.on_wall = SIM_WALL_END;
-        frag.bounces = 255;
+        frag.bounces = 0;
         frag.damage = sim_units_energy(BULLET_DAMAGE);
         frag.damage_up = sim_units_energy(BULLET_UPGRADE);
         frag.splinter = SIM_NO_PATTERN;
@@ -422,11 +423,9 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
             sim_fire_pattern shell;
             memset(&shell, 0, sizeof shell);
             shell.spec = frag_spec;
-            /* ShrapnelRate is two a prize and ShrapnelMax is eight, which is
-             * four prizes. An add-on here is two bits, so three rungs have to
-             * carry four prizes' worth: the first two are the rate and the
-             * last one reaches the cap. */
-            static const uint8_t frags[SIM_MAX_RUNGS] = {0, 2, 4, 8};
+            /* The first rung must read as a weapon rather than two stray
+             * rounds. Later rungs climb by two until the eight-fragment cap. */
+            static const uint8_t frags[SIM_MAX_RUNGS] = {0, 4, 6, 8};
             shell.count = frags[k];
             /* Shrapnel:Random is 1 in the original's own arena file, so
              * fragments scatter rather than leaving on an even ring. Spacing
@@ -590,25 +589,10 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
             bolt.speed = sim_units_speed(2000);
             bolt.life = 550;    /* BulletAliveTime: 5.5 s, 69 tiles of reach */
             bolt.on_wall = SIM_WALL_END;
-            /* A bouncing bullet bounces until its clock runs out, and 255 is
-             * how this table spells that: a bullet reaches 69 tiles in its
-             * whole life, so it cannot spend them.
-             *
-             * The original counts bombs and never bullets. `BombBounceCount`
-             * is a per-ship setting, 1 on the Lancaster alone, and there is
-             * `BBombDamagePercent` beside it for what a bounced bomb hits
-             * for; bullets have no such pair, and on the wire bouncing is a
-             * weapon *type* rather than a budget, 1 against 2 in the five
-             * bits that name a round. A prize you either hold or do not.
-             *
-             * So the count belongs to the bomb, and one rung of the add-on
-             * buying one more wall is right there and wrong here. It made a
-             * bouncing bullet a trick shot when the original's is an area
-             * weapon: a corridor full of ricochets is the whole reason
-             * anybody picks the green up. Sitting in the spec rather than in
-             * `mod_step` is what lets the two differ, since a step is one
-             * number for every weapon that takes the add-on. */
-            bolt.bounces = 255;
+            /* The add-on buys one wall, as its single rung says. Infinite
+             * ricochets made that one point dominate whole corridors and
+             * made the displayed rung count false. */
+            bolt.bounces = 0;
             bolt.damage = sim_units_energy(BULLET_DAMAGE + BULLET_UPGRADE * k);
             bolt.splinter = SIM_NO_PATTERN;
 

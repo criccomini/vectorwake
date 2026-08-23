@@ -125,10 +125,13 @@ check("the diagnostic carries public context only",
 -- watching a single round leave the gun.
 local before = #requests
 local bought = nil
-account.buy(13, function(ok) bought = ok end)
+account.buy(13, "melee", function(ok) bought = ok end)
 check("buying asks the meta-layer", #requests == before + 1
       and requests[before + 1].url == "https://meta/v1/buy",
       requests[before + 1] and requests[before + 1].url or "no request")
+check("the shop asks against the game being played",
+      requests[before + 1].body.zone == "melee",
+      tostring(requests[before + 1].body.zone))
 answer(requests[before + 1], "buy", {slot = 13, n = 1, rivets = 65})
 check("the purchase lands", bought == true and account.rivets == 65,
       tostring(bought) .. "/" .. tostring(account.rivets))
@@ -144,6 +147,31 @@ answer(requests[before + 2], "post-buy", {
 })
 check("and the token the arena will check carries it",
       account.token == "bought-token", account.token)
+
+-- Profiles travel with the account rather than one hull. Saving one returns
+-- its canonical spelling and makes it available immediately, while the
+-- session response remains the durable source on another device.
+local profile_kit = {}
+for i = 1, 23 do profile_kit[i] = 0 end
+profile_kit[1] = 7
+local profile_saved = nil
+local profile_request_at = #requests
+account.save_profile("Screen", profile_kit, function(ok, why, profile)
+    profile_saved = {ok = ok, why = why, profile = profile}
+end)
+check("saving a profile names the build and carries its kit",
+      requests[profile_request_at + 1].url == "https://meta/v1/profile"
+      and requests[profile_request_at + 1].body.name == "Screen"
+      and requests[profile_request_at + 1].body.kit == profile_kit,
+      requests[profile_request_at + 1]
+          and requests[profile_request_at + 1].url or "no request")
+local returned_profile = {name = "Screen", builtin = false, kit = profile_kit}
+answer(requests[profile_request_at + 1], "profile", {profile = returned_profile})
+check("the saved profile is selectable without another session",
+      profile_saved and profile_saved.ok
+      and profile_saved.profile == returned_profile
+      and account.profiles[#account.profiles] == returned_profile,
+      tostring(profile_saved and profile_saved.why))
 
 -- Arriving in a room makes the last friends answer wrong: it was given for
 -- wherever this client was before, and `here` is a fact about the room. The

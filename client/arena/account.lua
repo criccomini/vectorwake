@@ -36,6 +36,10 @@ M.entitlements = {}
 -- no entry has never been taken to the ship page, and the arena deals it a
 -- starter kit.
 M.kits = {}
+-- Three built-in templates followed by the builds this pilot has named.
+-- Templates are hull-independent; `kits` above is still the active build for
+-- each hull.
+M.profiles = {}
 -- The catalog, as the meta-layer lists it: one entry a slot the game has,
 -- `{slot, label, owned, ceiling, base}`, with `price` and `note` on the ones
 -- with a rung left to sell. Asked for when the page is opened rather than
@@ -199,6 +203,7 @@ local function session(done, force)
         M.rivets = tonumber(r.rivets) or 0
         M.entitlements = type(r.entitlements) == "table" and r.entitlements or {}
         M.kits = type(r.kits) == "table" and r.kits or {}
+        M.profiles = type(r.profiles) == "table" and r.profiles or {}
         M.note = ""
         refreshed_at = now()
         publish_account()
@@ -346,15 +351,45 @@ function M.save_kit(class, kit)
     end)
 end
 
--- One step in one slot, bought. The price and what is left to buy are the
--- meta-layer's to decide: this asks, and the reply says what the slot now
--- holds and what is left in the wallet.
-function M.buy(slot, cb)
+-- Keep the build in hand as a named template. The meta-layer returns the
+-- canonical name, which matters when this updates an existing profile whose
+-- capitalization differs from what was typed.
+function M.save_profile(name, kit, cb)
     if M.base == "" then
         if cb then cb(false, "no meta-layer") end
         return
     end
-    post("/v1/buy", {secret = secret, slot = slot}, function(r, err)
+    post("/v1/profile", {secret = secret, name = name, kit = kit},
+         function(r, err)
+             local profile = r and r.profile
+             if type(profile) ~= "table" then
+                 if cb then cb(false, err or "cannot save that profile") end
+                 return
+             end
+             local replaced = false
+             for i, old in ipairs(M.profiles) do
+                 if old.builtin ~= true and type(old.name) == "string"
+                    and string.lower(old.name) == string.lower(profile.name or "") then
+                     M.profiles[i] = profile
+                     replaced = true
+                     break
+                 end
+             end
+             if not replaced then M.profiles[#M.profiles + 1] = profile end
+             if cb then cb(true, nil, profile) end
+         end)
+end
+
+-- One step in one slot, bought. The price and what is left to buy are the
+-- meta-layer's to decide: this asks, and the reply says what the slot now
+-- holds and what is left in the wallet.
+function M.buy(slot, zone, cb)
+    if type(zone) == "function" then cb, zone = zone, "" end
+    if M.base == "" then
+        if cb then cb(false, "no meta-layer") end
+        return
+    end
+    post("/v1/buy", {secret = secret, slot = slot, zone = zone or ""}, function(r, err)
         if not r then
             M.note = err or "cannot buy that"
             if cb then cb(false, M.note) end
@@ -381,9 +416,9 @@ end
 -- The catalog, and the week's table. Both are pages somebody is looking at
 -- rather than facts a session needs, so they are asked for when the page opens
 -- and left alone otherwise.
-function M.refresh_upgrades()
+function M.refresh_upgrades(zone)
     if M.base == "" then return end
-    post("/v1/upgrades", {secret = secret}, function(r)
+    post("/v1/upgrades", {secret = secret, zone = zone or ""}, function(r)
         if type(r) ~= "table" then return end
         if type(r.slots) == "table" then M.catalog = r.slots end
         -- And the wallet, which rides the same reply and was being dropped.
@@ -573,6 +608,7 @@ function M.logout()
     M.rivets = 0
     M.entitlements = {}
     M.kits = {}
+    M.profiles = {}
     M.catalog = nil
     save()
     if M.base ~= "" then make_guest() end

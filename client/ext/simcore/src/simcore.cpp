@@ -1427,7 +1427,6 @@ void LuaInit(lua_State* L) {
     lua_pushnumber(L, SIM_SLOT_CHARGE(0)); lua_setfield(L, -2, "SLOT_CHARGE0");
     lua_pushnumber(L, SIM_KIT_BUDGET);   lua_setfield(L, -2, "KIT_BUDGET");
     lua_pushnumber(L, SIM_UP_STEPS);     lua_setfield(L, -2, "UP_STEPS");
-    lua_pushnumber(L, SIM_UP_STEPS_BASE); lua_setfield(L, -2, "UP_STEPS_BASE");
     lua_pushnumber(L, SIM_MAX_CHARGES);  lua_setfield(L, -2, "MAX_CHARGES");
     lua_pushnumber(L, SIM_KIT_CHARGE_SLOTS);
     lua_setfield(L, -2, "KIT_CHARGE_SLOTS");

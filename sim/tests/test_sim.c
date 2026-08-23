@@ -2471,9 +2471,10 @@ int main(void) {
          * hull no longer has a say: seven identical answers, one per class. */
         const uint8_t *ceil = cfg.kit_ceiling;
         const int CIPHER = 4, LATTICE = 6;
+        const uint8_t stat_steps[SIM_UP_COUNT] = {7, 5, 5, 1, 1};
         for (int u = 0; u < SIM_UP_COUNT; u++)
-            CHECK(ceil[SIM_SLOT_STAT(u)] == SIM_UP_STEPS,
-                  "every stat climbs to the same ceiling");
+            CHECK(ceil[SIM_SLOT_STAT(u)] == stat_steps[u],
+                  "every stat stops at its last effective step");
         CHECK(ceil[SIM_SLOT_LEVEL(SIM_TRIG_GUN)] == 2,
               "MaxGuns is 3, so two rungs are buyable above the first");
         CHECK(ceil[SIM_SLOT_LEVEL(SIM_TRIG_BOMB)] == 2,
@@ -2521,13 +2522,14 @@ int main(void) {
                   "every hull takes the same kit as every other one");
         }
 
-        /* Five stats at six steps is exactly the budget, and at eight it is
-         * forty against thirty, so no purchase ever stops a kit being a set
-         * of tradeoffs. docs/design/match-game.md. */
-        CHECK(SIM_UP_STEPS_BASE * SIM_UP_COUNT == SIM_KIT_BUDGET,
-              "six a stat is exactly what a kit spends");
-        CHECK(SIM_UP_STEPS * SIM_UP_COUNT > SIM_KIT_BUDGET,
-              "and the bought ceiling stays out of reach");
+        /* The useful stat depths total less than a whole kit, so every full
+         * build also makes weapon and charge choices. */
+        int useful_stats = 0;
+        for (int u = 0; u < SIM_UP_COUNT; u++)
+            useful_stats += ceil[SIM_SLOT_STAT(u)];
+        CHECK(useful_stats == 19, "the effective stat depths are explicit");
+        CHECK(useful_stats < SIM_KIT_BUDGET,
+              "and stats alone cannot fill a build");
 
         /* What is left of a hull is its footprint, and it had better still
          * differ or the roster is seven names for one ship. */
@@ -2889,22 +2891,9 @@ int main(void) {
     }
 
     {
-        /* One add-on, two weapons, two different budgets: a bouncing bullet
-         * bounces for as long as it lives and a bouncing bomb bounces once a
-         * rung.
-         *
-         * The original counts a bomb's bounces and never a bullet's.
-         * `BombBounceCount` is per ship, 1 on the Lancaster and 0 elsewhere,
-         * and `BBombDamagePercent` sits beside it; bullets have neither,
-         * because on the wire bouncing is a weapon *type* rather than a
-         * budget, 1 against 2 in the five bits that name a round. Ours
-         * counted both, so a bouncing bullet died on its second wall when
-         * the original's fills a corridor for five and a half seconds.
-         *
-         * `mod_step` cannot say this: a step is one number for every weapon
-         * that takes the add-on. The base count in each spec can, and does.
-         * Measured on the Lattice because it is the Lancaster, the one hull
-         * whose bombs may bounce at all. */
+        /* One bounce rung buys one wall on either weapon. The visible ladder
+         * and the physics now make the same promise; the old bullet spec gave
+         * that one point 255 walls. */
         const int LATTICE = 6;
         sim_settings w = cfg;
 
@@ -2914,8 +2903,8 @@ int main(void) {
         s.ships[0].mods[SIM_TRIG_GUN] = sim_mod_set(0, SIM_MOD_BOUNCE, 1);
         step_n(&s, &w, SIM_BTN_FIRE, 0, 1);
         CHECK(s.weapon_count == 1, "a bullet away");
-        CHECK(s.weapons[0].left == 255,
-              "and it bounces for its whole life rather than once");
+        CHECK(s.weapons[0].left == 1,
+              "and its one rung buys exactly one wall");
 
         sim_init(&s, 1);
         sim_spawn(&s, LATTICE, 0, 8192, 8192, 0, &w);
@@ -2925,13 +2914,12 @@ int main(void) {
         CHECK(s.weapons[0].left == 1,
               "and the same rung buys the bomb exactly one wall");
 
-        /* A fragment is a bullet, so it takes the bullet's answer. Read off
-         * the shrapnel spec rather than fired, since what a bomb breaks into
-         * is composed where it lands. */
+        /* A fragment starts with no free wall and inherits the parent's one
+         * bounce rung when the shrapnel is composed. */
         for (int k = 1; k < SIM_MAX_RUNGS; k++) {
             const sim_weapon_spec *fs =
                 &w.specs[w.patterns[w.mod_splinter[k]].spec];
-            CHECK(fs->bounces == 255, "and a fragment bounces like the bullet it is");
+            CHECK(fs->bounces == 0, "and a fragment has no hidden free walls");
         }
     }
 
@@ -3372,7 +3360,7 @@ int main(void) {
         /* A starter kit fills the first two kinds the account owns and stops.
          * It used to fill all four, which is a kit the arena now refuses. */
         uint8_t ceiling[SIM_SLOT_COUNT];
-        for (int i = 0; i < SIM_SLOT_COUNT; i++) ceiling[i] = 3;
+        memcpy(ceiling, cfg.kit_ceiling, sizeof ceiling);
         uint8_t kit[SIM_SLOT_COUNT];
         sim_starter_kit(ceiling, kit);
         int kinds = 0;
@@ -4625,8 +4613,9 @@ int main(void) {
         sim_ship *sh = &s.ships[id];
 
         uint8_t kit[SIM_SLOT_COUNT] = {0};
-        kit[SIM_SLOT_STAT(SIM_UP_SPEED)] = 6;
-        kit[SIM_SLOT_STAT(SIM_UP_THRUST)] = 5;
+        kit[SIM_SLOT_STAT(SIM_UP_ENERGY)] = 5;
+        kit[SIM_SLOT_STAT(SIM_UP_SPEED)] = 5;
+        kit[SIM_SLOT_STAT(SIM_UP_THRUST)] = 1;
         kit[SIM_SLOT_LEVEL(SIM_TRIG_GUN)] = 1;
         kit[SIM_SLOT_MOD(SIM_TRIG_GUN, SIM_MOD_MULTI)] = 1;
         kit[SIM_SLOT_CHARGE(SIM_CHARGE_REPEL)] = 3;
@@ -4634,7 +4623,8 @@ int main(void) {
         CHECK(sim_kit_cost(kit) == 18, "a kit costs the sum of its slots");
         CHECK(sim_set_kit(sh, &kc, kit) == 1, "and a legal one is accepted");
 
-        CHECK(sh->up[SIM_UP_SPEED] == 6 && sh->up[SIM_UP_THRUST] == 5,
+        CHECK(sh->up[SIM_UP_ENERGY] == 5 && sh->up[SIM_UP_SPEED] == 5
+              && sh->up[SIM_UP_THRUST] == 1,
               "the stats it asked for are dealt");
         CHECK(sh->level[SIM_TRIG_GUN] == 1, "so is the rung");
         CHECK(sim_mod_get(sh->mods[SIM_TRIG_GUN], SIM_MOD_MULTI) == 1,
@@ -4651,13 +4641,13 @@ int main(void) {
         for (int u = 0; u < SIM_UP_COUNT; u++) fat[SIM_SLOT_STAT(u)] = 7;
         CHECK(sim_kit_cost(fat) > SIM_KIT_BUDGET, "thirty-five is over");
         CHECK(sim_set_kit(sh, &kc, fat) == 0, "and is refused");
-        CHECK(sh->up[SIM_UP_SPEED] == 6, "leaving the old kit untouched");
+        CHECK(sh->up[SIM_UP_SPEED] == 5, "leaving the old kit untouched");
 
-        /* Past a hull ceiling is refused for the same reason. An Apex tops
-         * out at gun rung two, so asking for three is not a kit. */
+        /* Past the arena ceiling is refused for the same reason. The gun tops
+         * out at rung two, so asking for three is not a kit. */
         uint8_t tall[SIM_SLOT_COUNT] = {0};
         tall[SIM_SLOT_LEVEL(SIM_TRIG_GUN)] = 3;
-        CHECK(sim_set_kit(sh, &kc, tall) == 0, "a rung the hull lacks is refused");
+        CHECK(sim_set_kit(sh, &kc, tall) == 0, "a rung the arena lacks is refused");
 
         /* Death re-deals the frame and never the ammunition. */
         sh->charge[SIM_CHARGE_REPEL] = 1;
@@ -4669,7 +4659,7 @@ int main(void) {
         sh->respawn_at = 1;
         step_n(&s, &kc, 0, 0, 2);
         CHECK(sh->alive, "the pilot comes back");
-        CHECK(sh->up[SIM_UP_SPEED] == 6, "with the frame the kit says");
+        CHECK(sh->up[SIM_UP_SPEED] == 5, "with the frame the kit says");
         CHECK(sim_mod_get(sh->mods[SIM_TRIG_GUN], SIM_MOD_MULTI) == 1,
               "add-ons and all");
         CHECK(sh->charge[SIM_CHARGE_REPEL] == 1
@@ -4788,30 +4778,26 @@ int main(void) {
     {
         uint8_t base[SIM_SLOT_COUNT];
         sim_base_entitlements(base);
-        CHECK(base[SIM_SLOT_STAT(SIM_UP_SPEED)] == SIM_UP_STEPS_BASE,
-              "an account starts on six of each stat");
-        CHECK(SIM_UP_STEPS_BASE * SIM_UP_COUNT == SIM_KIT_BUDGET,
-              "which is exactly the budget, and is why the budget is thirty");
-        CHECK(base[SIM_SLOT_CHARGE(SIM_CHARGE_REPEL)] == 1
-              && base[SIM_SLOT_CHARGE(SIM_CHARGE_BURST)] == 1,
-              "one repel and one burst, and the other two rungs of each are "
-              "bought");
+        CHECK(base[SIM_SLOT_STAT(SIM_UP_ENERGY)] == 7
+              && base[SIM_SLOT_STAT(SIM_UP_RECHARGE)] == 5
+              && base[SIM_SLOT_STAT(SIM_UP_SPEED)] == 5
+              && base[SIM_SLOT_STAT(SIM_UP_THRUST)] == 1
+              && base[SIM_SLOT_STAT(SIM_UP_ROTATION)] == 1,
+              "an account owns every effective stat step");
+        CHECK(base[SIM_SLOT_CHARGE(SIM_CHARGE_REPEL)] == 2
+              && base[SIM_SLOT_CHARGE(SIM_CHARGE_BURST)] == 2,
+              "two repels and two bursts support the starter profiles");
         CHECK(base[SIM_SLOT_CHARGE(SIM_CHARGE_MINE)] == 0,
               "and the mine is bought from nothing");
-        /* Every add-on, not just barrels. An add-on granted at one rung whose
-         * arena ceiling is also one is an add-on nobody can ever buy and
-         * everybody already has, which is a slot the shelf cannot mention. */
-        for (int t = 0; t < SIM_TRIG_COUNT; t++)
-            for (int m = 0; m < SIM_MOD_COUNT; m++)
-                CHECK(base[SIM_SLOT_MOD(t, m)] == 0,
-                      "no add-on arrives granted");
-        /* The property that rule exists for: nothing this arena allows is
-         * already owned to its ceiling, so every slot with a rung on it is a
-         * slot the shelf has something to say about. */
+        CHECK(base[SIM_SLOT_LEVEL(SIM_TRIG_GUN)] == 2
+              && base[SIM_SLOT_LEVEL(SIM_TRIG_BOMB)] == 1
+              && base[SIM_SLOT_MOD(SIM_TRIG_GUN, SIM_MOD_MULTI)] == 2
+              && base[SIM_SLOT_MOD(SIM_TRIG_BOMB, SIM_MOD_SHRAPNEL)] == 1,
+              "the starter profile specialties are owned");
+        /* Nothing granted exceeds what the arena can resolve. */
         for (int i = 0; i < SIM_SLOT_COUNT; i++)
-            CHECK(cfg.kit_ceiling[i] == 0 || base[i] < cfg.kit_ceiling[i],
-                  "every slot this arena has is a slot with something left "
-                  "to buy");
+            CHECK(base[i] <= cfg.kit_ceiling[i],
+                  "every granted starter slot fits the arena");
 
         for (int c = 0; c < cfg.class_count; c++) {
             uint8_t ceiling[SIM_SLOT_COUNT], kit[SIM_SLOT_COUNT];

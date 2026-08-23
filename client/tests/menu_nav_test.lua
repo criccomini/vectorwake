@@ -31,6 +31,7 @@ local account = {
     name = "", aim = function() end,
     claimed = true, base = "https://meta",
     refuse = nil, password = nil, logged = nil, renamed = 0,
+    profiles = {},
     -- The friends page's lists and the one call the menu makes to fill them.
     -- Empty is a pilot with nobody yet, which is what most of this file is
     -- testing around.
@@ -463,7 +464,11 @@ menu.stack = {"root"}
 menu.sel = {}
 menu.click_rail(ship_at)
 menu.pending = nil
-menu.click_stage(1)
+local landing_hull = nil
+for i, row in ipairs(menu.view().rows) do
+    if row.ship then landing_hull = i end
+end
+menu.click_stage(landing_hull)
 check("a stage tap picks from the page it is on", menu.pending == 0,
       "asked for hull " .. tostring(menu.pending))
 
@@ -2090,12 +2095,12 @@ do
         if r.ship then hull_at2 = i end
         if r.group == "flair" and not r.ship then wake_at2 = i end
     end
-    check("only the slots this arena will take are on the page",
-          #v.rows == 5, table.concat(labels, ", "))
-    -- The slots first, then the flair: the hull with the wake beside it at
-    -- the foot, since choosing a shape and choosing a wake are the same
-    -- kind of choice. No budget row anywhere: the figure rides the view,
-    -- so the cursor never opens on a readout.
+    check("the arena's slots and the two profile controls are on the page",
+          #v.rows == 7, table.concat(labels, ", "))
+    -- The slots first, then profiles, then flair: the hull with the wake
+    -- beside it at the foot, since choosing a shape and choosing a wake are
+    -- the same kind of choice. No budget row anywhere: the figure rides the
+    -- view, so the cursor never opens on a readout.
     check("with the hull and the wake in the flair at the foot",
           hull_at2 == #v.rows - 1 and wake_at2 == #v.rows
               and v.rows[hull_at2].detail == "Apex",
@@ -2227,6 +2232,50 @@ do
     menu.open_kit(0)
     check("and a saved kit is left alone", menu.kit[1] == 2 and menu.kit[6] == 0,
           tostring(menu.kit[1]) .. "/" .. tostring(menu.kit[6]))
+
+    -- The three starter profiles and any named builds ride above the flair.
+    -- Choosing one replaces the editor whole; changing a point makes it
+    -- custom, and saving that custom build raises a named field.
+    CEIL[1], CEIL[6] = 4, 2
+    local first_profile, second_profile = {}, {}
+    for i = 1, 23 do
+        first_profile[i], second_profile[i] = 0, 0
+    end
+    first_profile[1] = 2
+    second_profile[1], second_profile[6] = 4, 2
+    account.profiles = {
+        {name = "Gunner", builtin = true, kit = first_profile},
+        {name = "Bomber", builtin = true, kit = second_profile},
+    }
+    menu.kit = nil
+    menu.open_kit(0)
+    check("a saved hull build recognizes its matching profile",
+          menu.profile_at == 1, tostring(menu.profile_at))
+    local profile_row, save_row = nil, nil
+    for i, row in ipairs(menu.view().rows) do
+        if row.act == "profile" then profile_row = i end
+        if row.act == "save_profile" then save_row = i end
+    end
+    menu.sel.hangar = profile_row
+    local selected_profile = menu.step({right = true})
+    check("the profile row loads the next complete build",
+          selected_profile == "kit" and menu.profile_at == 2
+          and menu.kit[1] == 4 and menu.kit[6] == 2,
+          tostring(selected_profile) .. "/" .. tostring(menu.profile_at))
+    menu.kit_step(0, -1)
+    check("editing a profile turns it into a custom build",
+          menu.profile_at == nil, tostring(menu.profile_at))
+    menu.sel.hangar = save_row
+    menu.step({go = true})
+    check("a custom build can be named",
+          menu.ask ~= nil and menu.ask.fields[1].label == "profile name",
+          menu.ask and menu.ask.head or "no card")
+    menu.ask.fields[1].value = "Screen"
+    local save_action = menu.click_answer(1)
+    check("saving hands the named profile to the arena",
+          save_action == "save_profile" and menu.pending_profile == "Screen",
+          tostring(save_action) .. "/" .. tostring(menu.pending_profile))
+    account.profiles = {}
 
     -- Nothing on this page is for sale. The prices rode these rows for a
     -- while and buying is the upgrades tab again: a panel with a wallet and a
@@ -2413,7 +2462,7 @@ do
     local owned = {}
     for _, r in ipairs(menu.view().rows) do owned[#owned + 1] = r.label end
     check("every slot the arena takes is on the page while the account owns it",
-          #owned == 8, table.concat(owned, ", "))
+          #owned == 10, table.concat(owned, ", "))
 
     -- Now the account owns none of the gun's ladder and one of three repels.
     account.entitlements = {[6] = 0, [20] = 1}
@@ -2425,7 +2474,7 @@ do
         if r.label == "repel" then charge = r end
     end
     check("a slot the account owns none of is off the page altogether",
-          #mine == 7 and not string.find(table.concat(mine, ","),
+          #mine == 9 and not string.find(table.concat(mine, ","),
                                          "gun level", 1, true),
           table.concat(mine, ", "))
     check("and a ladder stops at what the account owns, not at the arena's",

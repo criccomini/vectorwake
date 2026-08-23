@@ -557,6 +557,22 @@ end
 -- until you leave the page.
 M.kit = nil
 M.kit_class = nil
+M.profile_at = nil
+
+local function same_kit(a, b)
+    if type(a) ~= "table" or type(b) ~= "table" then return false end
+    for i = 1, simn("SLOT_COUNT", 23) do
+        if (tonumber(a[i]) or 0) ~= (tonumber(b[i]) or 0) then return false end
+    end
+    return true
+end
+
+local function matching_profile(kit)
+    for i, profile in ipairs(account.profiles or {}) do
+        if same_kit(kit, profile.kit) then return i end
+    end
+    return nil
+end
 
 -- Which cell of the roster the carousel is showing. An index rather than a
 -- hull, because the last cell is not one: sitting out is the ninth answer to
@@ -659,6 +675,7 @@ function M.open_kit(class)
         kit = core.starter_kit(kit_ceiling())
     end
     M.kit, M.kit_class = kit, class
+    M.profile_at = matching_profile(kit)
 end
 
 function M.kit_spent(kit)
@@ -681,6 +698,7 @@ function M.kit_step(slot, by)
     if by > 0 and M.kit_spent() >= simn("KIT_BUDGET", 30) then return false end
     if by > 0 and charge_full(slot) then charge_note() return false end
     M.kit[slot + 1] = want
+    M.profile_at = matching_profile(M.kit)
     return true
 end
 
@@ -705,6 +723,39 @@ function M.kit_set(slot, want)
     end
     if want == at then return false end
     M.kit[slot + 1] = want
+    M.profile_at = matching_profile(M.kit)
+    return true
+end
+
+local function profile_name()
+    local profile = M.profile_at and (account.profiles or {})[M.profile_at]
+    return profile and profile.name or "custom"
+end
+
+-- Put one named template in the editor. It is trimmed through the same two
+-- ceilings as a saved hull build, so a profile made in another zone can be
+-- opened here without showing a kit this arena will refuse.
+local function choose_profile(by)
+    local profiles = account.profiles or {}
+    if #profiles == 0 then return false end
+    local at = M.profile_at or ((by or 1) < 0 and 1 or 0)
+    at = (at - 1 + (by or 1)) % #profiles + 1
+    local source = profiles[at] and profiles[at].kit or {}
+    local ceiling = kit_ceiling()
+    local kit, spent, kinds = {}, 0, 0
+    local first = charge_slot0()
+    for i = 1, simn("SLOT_COUNT", 23) do
+        local want = math.min(tonumber(source[i]) or 0, ceiling[i] or 0)
+        if i - 1 >= first and want > 0 then
+            kinds = kinds + 1
+            if kinds > simn("KIT_CHARGE_SLOTS", 2) then want = 0 end
+        end
+        want = math.min(want, math.max(0, simn("KIT_BUDGET", 30) - spent))
+        kit[i], spent = want, spent + want
+    end
+    M.kit, M.profile_at = kit, at
+    M.note = spent < simn("KIT_BUDGET", 30)
+        and "this game trims that profile below thirty points" or nil
     return true
 end
 
@@ -848,6 +899,17 @@ local function kit_rows(class)
             }
         end
     end
+    rows[#rows + 1] = {
+        sect = "profiles", label = "profile", detail = profile_name(),
+        choice = function()
+            return M.profile_at or 0, #(account.profiles or {})
+        end,
+        act = "profile",
+    }
+    rows[#rows + 1] = {
+        label = "save as profile", detail = "name this build",
+        act = "save_profile",
+    }
     -- Flair: what the ship looks like, apart from what it can do. The hull
     -- is here now rather than standing as its own stop at the head of the
     -- page: choosing a shape and choosing a wake are the same kind of
@@ -1292,8 +1354,8 @@ local TEACH = {
     levels = {
         [0] = "each rung is a hotter round: more damage a hit, wearing the"
             .. " next color up. every gun add-on rides the rung you fire.",
-        [1] = "each rung is a bigger bomb: more damage across a wider"
-            .. " blast. the blast is team blind, so mind your own.",
+        [1] = "each rung widens the bomb's blast without raising its center"
+            .. " damage. the blast is team blind, so mind your own.",
     },
     weapons = {
         [0] = "more rounds in one pull, opening from a pair into a fan."
@@ -2485,7 +2547,7 @@ local function view_row(r, i)
         -- is the row that puts everything back.
         cat = r.cat, control = r.control, keys = r.keys, fixed = r.fixed,
         arming = r.arming, reset = r.reset,
-        pick = (r.go or r.act) ~= nil,
+        pick = (r.go or r.act) ~= nil, act = r.act,
         mark = r.mark and r.mark() or false,
         -- A row that leaves the game gets a real anchor laid over it by the
         -- page. Nothing the client does from its own loop is inside the tap
@@ -2672,6 +2734,10 @@ local function settle(act, asked, by)
         local f = asked and asked.fields and asked.fields[1]
         M.add_name = f and f.value or M.add_name
         M.send_add()
+    elseif act == "do_save_profile" then
+        local field = asked and asked.fields and asked.fields[1]
+        M.pending_profile = field and field.value or ""
+        return "save_profile"
     elseif act == "do_befriend" then
         -- Adding is one press and nothing else: it is not destructive, it is
         -- reversible from the same page, and the pilot doing it is looking at
@@ -3073,7 +3139,7 @@ function M.tick(dt)
         -- the tab beside it without a reload, and the ladders the ship page
         -- draws are bounded by what this reply says the account owns.
         if at == "upgrades" or at == "hangar" then
-            account.refresh_upgrades()
+            account.refresh_upgrades(M.zone)
         end
         if at == "standings" then account.refresh_week(M.week_back) end
         was_at = at
@@ -3599,6 +3665,19 @@ local function activate(by)
                 M.note = "no kit points left"
             end
         end
+        return nil
+    elseif r.act == "profile" then
+        if choose_profile(by or 1) then return "kit" end
+        M.note = "profiles arrive with your account"
+        return nil
+    elseif r.act == "save_profile" then
+        M.ask = {
+            head = "Save this build as a profile.",
+            keys = {{label = "save", act = "do_save_profile"},
+                    {label = "cancel"}},
+            sel = 1, field = 1,
+            fields = {{label = "profile name", value = "", max = 24}},
+        }
         return nil
     elseif r.act == "hull" then
         -- The carousel at the head of the ship page. Left and right turn it,

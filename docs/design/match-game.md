@@ -335,7 +335,7 @@ costs exactly one:
 
 | kind | ceiling |
 |---|---|
-| a step of a stat | six over five stats, and eight once bought |
+| a step of a stat | the depth that changes physics: 7, 5, 5, 1, 1 |
 | a rung of a trigger's ladder | the arena's row |
 | an add-on on a trigger | the arena's row |
 | a charge carried | the arena's row |
@@ -348,32 +348,21 @@ find the ship they wanted to fly it on would not take it, and it meant four
 traits could never be sold at all because they existed on one hull each. See
 [ships.md](ships.md#the-tech-tree).
 
-**Everyone deals thirty**, new pilot and veteran alike. A new account gets a
-sensible starter kit, worth the same thirty. What rivets buy is *which*
-upgrades you may slot, never how many.
+**Everyone deals thirty**, new pilot and veteran alike. A new account owns
+three complete profiles: Gunner, Bomber and Control. Choosing one takes a
+press; changing its slots makes a custom build, and that build can be saved
+under a new profile name. Profiles are ordinary hull-independent kits, so
+there is no second balance system hiding behind the convenience.
 
-**Six a stat is exactly the budget**, and that is the reason for the number.
-Five stats at six steps is thirty, so a pilot can take every stat to its base
-ceiling and own nothing else: no charges, base rungs, no add-ons. It is a
-legibly poor ship and a useful one to be able to build, because it turns
-thirty from an allowance into a landmark. Every other kit reads as a trade
-away from a reference point rather than as an arbitrary allocation.
+The stat ceilings are the counts that still change the resolved ship: seven
+energy, five recharge, five speed, one thrust and one rotation. The old flat
+ceiling of eight sold and spent points after several of those values had
+already clamped. A point that changes no physics is not a subtle tradeoff. It
+is a broken contract, so those steps do not exist on the page or in the shop.
 
-**The last two steps of each stat are the shop's**, up to the eight the core
-allows. That is a purchase worth being suspicious of, since this document's
-one rule is that nothing persistent makes a ship stronger, and buying the
-right to concentrate looks like buying power.
-
-Two things answer it. Reaching the eighth step still costs two of the same
-thirty, so depth buys permission to spend in one place rather than more to
-spend. And five stats at eight is forty against a budget of thirty, so no
-amount of buying ever makes the kit stop being a set of tradeoffs: the
-ceiling being bought toward is unreachable by construction.
-
-It is still a measurement rather than an argument. The drill runs a
-concentrated kit against a spread one of the same thirty, on two hulls, and
-the 45 to 55 band decides. Depth is the item in this document most likely to
-fail that test.
+The useful stat depths total nineteen. A full kit therefore has to make at
+least eleven points of weapon and charge decisions, which gives thirty a
+clearer identity than the old all-stat reference build did.
 
 **Death re-deals the frame, never the ammunition.** Stats, rungs and add-ons
 come back at every spawn, because they are what your ship is. Charge counts
@@ -410,10 +399,12 @@ a flag, carrying it makes you worth more while you hold it, and capping banks
 it. A flag runner should be the most valuable thing on the field, and this is
 the way to say so without inventing a second currency for objective play.
 
-**The ending pays a little.** A win, a podium place and the first win of a
-day are small flat bonuses. Small because kills already pay continuously and
-the bonuses exist to make the ending feel like an ending; nonzero because a
-mode where only kills pay is a mode where nobody contests the objective.
+**The ending always pays a participant.** Thirty seconds in the match earns
+five rivets at the whistle. Winning adds three, and each assist adds one up to
+five. Bounty still pays continuously. The completion grant means a first
+session advances before its first kill; the win and assist pieces reward
+helping the side; the time floor keeps the closing seconds from becoming a
+login bonus.
 
 Every price in the shop is denominated in this, which means prices are tens
 rather than thousands. A match pays a pilot something in the low tens.
@@ -421,23 +412,23 @@ rather than thousands. A match pays a pilot something in the low tens.
 ## What rivets buy
 
 **Slots, and looks. Never strength.** Everything trades against the same
-thirty, and the drill harness is the referee: anything that wins more than
-55% of matched bouts against the bare kit, on at least two hulls, goes back
-to the bench.
+thirty. The balance harness compares the three starters and a bought-up
+specialization in mirrored four-a-side matches across the live map rotation.
+Each result carries its paired sample size, a family-wise 95% confidence
+interval, and a verdict against the 45 to 55 band. Under one hundred paired
+seeds is inconclusive by definition. A point estimate does not get to call
+itself balance.
 
-- **Depth on a stat**, its seventh and eighth step.
-- **Add-ons and rungs** the arena allows but your account has not bought. That
-  is all of them now, which it was not twice over. First the roster held them:
+- **Add-ons and rungs** the arena allows but your account has not bought. Those
+  are the purchasable combat upgrades. First the roster held several of them:
   the second barrel, the third bomb rung, the deepest rung of shrapnel and the
   mine count were one hull's each, and nothing can be sold that exists on one
   hull.
-  Then the entitlements did: an account arrived owning one rung of every
-  add-on, so the four whose arena ceiling is also one were free, complete and
-  absent from the shelf forever. Nobody arrives with an add-on now.
-- **Deeper racks.** One repel and one burst is what an account starts with,
-  against the three the arena allows, so the other two rungs of each are
-  bought. They used to be granted without limit, which meant neither was ever
-  for sale.
+  A new account now owns the union of the three starter profiles. The shop
+  begins beyond that union, where deeper spray, shrapnel and racks create
+  specialization rather than basic competitiveness.
+- **Deeper racks.** Two repels and two bursts support the starters, against
+  the three the arena allows, so the last rung of each is bought.
 - **Charge kinds** beyond those two.
 - **Livery.** Decoration, under the art direction's law: hull paint is the
   team read and weapon hues are semantic bands, so livery lives on the wake,
@@ -466,15 +457,20 @@ the ladder with the rungs you own filled in, the rungs you do not left hollow,
 and what everybody is dealt drawn as a bar rather than as rungs, since nobody
 bought those and nobody can. Buying is watching a hollow rung fill.
 
-`/v1/upgrades` is where that comes from, and the bots read the same reply: a
+`/v1/upgrades` is where that comes from. Its ceiling is built from the game the
+pilot selected, through the same config path as a live room, so a narrowed
+zone cannot leave an unusable slot on the shelf. Bots read the same reply: a
 row with no price on it is a slot with nothing left to sell, and they skip it.
+Inside a mixed room, a bot's usable ceiling is also clamped slot by slot to
+what every human there owns. Bot careers still progress in bot-only play, but
+a veteran machine cannot turn a new pilot's first match into a gear check.
 See [ai-players.md](ai-players.md).
 
 ## Charges
 
-Two slots to start, four in the core (`SIM_MAX_CHARGES`). One repel and one
-burst is what an account begins with, against the three of each the arena
-allows; the rest of both racks, and every other kind, are bought.
+Two slots to start, four in the core (`SIM_MAX_CHARGES`). Two repels and two
+bursts are in the starter union, against the three of each the arena allows;
+the last rung of both racks, and every other kind, are bought.
 
 **A mine is a charge.** It was the bomb trigger's other posture, limited by how
 many of yours were already lying about. As a charge it is a count you carry and
@@ -731,9 +727,9 @@ Each step leaves a running game. The first five are done, for Melee.
 2. **The kit**, and greens out. A spawn is dealt the thirty its pilot chose,
    or the starter kit the core works out for the hull when they have chosen
    nothing. The prize table, the pickup and the death drop are gone.
-3. **Bounty and rivets.** One counter, one wallet, prices in tens. Rivets are
-   banked from the kill rows the pilot log already carries, and the unique
-   index on those rows is what makes an at-least-once delivery pay once.
+3. **Bounty and rivets.** One counter, one wallet, prices in tens. Kill bounty
+   and the completion, win and assist grant are banked from the pilot log. Its
+   unique event index makes an at-least-once delivery pay once.
 4. **Maps.** Two pockets, point symmetry, two layouts, and the zone rotates
    between them.
 5. **Charges.** Mines as one, match-scoped counts, and the shop selling the

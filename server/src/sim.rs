@@ -707,7 +707,6 @@ pub const SLOT_COUNT: usize = UP_COUNT + TRIG_COUNT + TRIG_COUNT * MOD_COUNT + M
 /// ceilings come from the flight rows and are lower where physics clamps
 /// sooner; eight remains the representation bound.
 pub const UP_STEPS: u8 = 8;
-pub const UP_STEPS_BASE: u8 = 6;
 pub const KIT_BUDGET: u32 = 30;
 /// Charge kinds. A mine is one: a count you carry and spend.
 pub const CHARGE_REPEL: usize = 0;

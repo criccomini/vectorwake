@@ -291,13 +291,23 @@ create table if not exists entitlements (
 );
 -- What a pilot has chosen to fly, per hull, as the kit's own bytes. Written by
 -- the hangar and read at a join; the arena checks it against the row above and
--- against the hull before it deals it, so a stale kit from before a retune is
--- refused rather than honored.
+-- the live zone before it deals it, so a stale kit from before a retune is
+-- trimmed rather than honored beyond either ceiling.
 create table if not exists kits (
     account bigint not null references accounts(id) on delete cascade,
     class   text not null,
     kit     bytea not null,
     primary key (account, class)
+);
+-- Named kit templates. The three starter profiles are code-owned and never
+-- written here; these are the builds a pilot makes from them and names. A
+-- profile is independent of hull, while `kits` above remains the active build
+-- saved for each hull.
+create table if not exists kit_profiles (
+    account bigint not null references accounts(id) on delete cascade,
+    name    text not null,
+    kit     bytea not null,
+    primary key (account, name)
 );
 -- Gun spray and a second barrel were two add-ons that both meant more
 -- bullets, and they are one ladder now. Dropping the seventh add-on moved
@@ -1170,7 +1180,7 @@ async fn claims_for(db: &Client, account: i64) -> Result<Claims, String> {
     let mut entitlements = sim::World::base_entitlements().to_vec();
     for (slot, n) in bought_entitlements(db, account).await? {
         if let Some(c) = entitlements.get_mut(slot.max(0) as usize) {
-            *c = n.clamp(0, 255) as u8;
+            *c = (*c).max(n.clamp(0, 255) as u8);
         }
     }
 
@@ -1203,7 +1213,7 @@ async fn entitlement_of(db: &Client, account: i64, slot: i16, base: u8) -> Resul
     )
     .await
     .map(|row| {
-        row.map(|r| r.get::<_, i16>(0).clamp(0, 255) as u8)
+        row.map(|r| base.max(r.get::<_, i16>(0).clamp(0, 255) as u8))
             .unwrap_or(base)
     })
     .map_err(|e| format!("cannot read entitlement: {e}"))
@@ -1236,6 +1246,71 @@ async fn kits_of(db: &Client, account: i64) -> Result<serde_json::Value, String>
         out.insert(class, serde_json::json!(kit));
     }
     Ok(serde_json::Value::Object(out))
+}
+
+const KIT_PROFILE_LIMIT: i64 = 24;
+
+/// The built-in choices followed by this pilot's saved templates.
+async fn profiles_of(db: &Client, account: i64) -> Result<serde_json::Value, String> {
+    let mut out: Vec<serde_json::Value> = crate::profiles::builtins()
+        .into_iter()
+        .map(|profile| serde_json::json!(profile))
+        .collect();
+    let rows = db
+        .query(
+            "select name, kit from kit_profiles where account = $1 order by lower(name), name",
+            &[&account],
+        )
+        .await
+        .map_err(|e| format!("cannot read kit profiles: {e}"))?;
+    for row in rows {
+        out.push(serde_json::json!({
+            "name": row.get::<_, String>(0),
+            "builtin": false,
+            "kit": row.get::<_, Vec<u8>>(1),
+        }));
+    }
+    Ok(serde_json::Value::Array(out))
+}
+
+fn kit_profile_name(value: &str) -> Result<String, &'static str> {
+    let name = value.trim();
+    if name.is_empty() || name.len() > 24 {
+        return Err("a profile name is 1 to 24 characters");
+    }
+    if !name
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b' ' | b'-' | b'_'))
+    {
+        return Err("profile names use letters, numbers, spaces, dashes, and underscores");
+    }
+    if crate::profiles::is_builtin_name(name) {
+        return Err("that starter profile already has a name");
+    }
+    Ok(name.to_string())
+}
+
+fn kit_from_body(body: &serde_json::Value) -> Result<Vec<u8>, &'static str> {
+    let values = body
+        .get("kit")
+        .and_then(|value| value.as_array())
+        .ok_or("that is not a kit")?;
+    if values.len() != sim::SLOT_COUNT {
+        return Err("that is not a kit");
+    }
+    let kit: Vec<u8> = values
+        .iter()
+        .map(|value| {
+            value
+                .as_u64()
+                .and_then(|value| u8::try_from(value).ok())
+                .ok_or("a kit step is not a count")
+        })
+        .collect::<Result<_, _>>()?;
+    if kit.iter().map(|value| *value as u32).sum::<u32>() > sim::KIT_BUDGET {
+        return Err("over the budget");
+    }
+    Ok(kit)
 }
 
 /// Whether an account number is somebody this pilot could be friends with,
@@ -1766,6 +1841,10 @@ async fn route(
                         Ok(kits) => kits,
                         Err(error) => return database_error(error),
                     };
+                    let profiles = match profiles_of(&db, account).await {
+                        Ok(profiles) => profiles,
+                        Err(error) => return database_error(error),
+                    };
                     (
                         200,
                         serde_json::json!({
@@ -1787,6 +1866,7 @@ async fn route(
                             "rivets": rivets,
                             "entitlements": c.entitlements,
                             "kits": kits,
+                            "profiles": profiles,
                         }),
                     )
                 }
@@ -1810,22 +1890,10 @@ async fn route(
             if class.is_empty() || class.len() > 32 {
                 return (400, serde_json::json!({ "error": "which hull" }));
             }
-            let kit: Vec<u8> = body
-                .get("kit")
-                .and_then(|v| v.as_array())
-                .map(|a| {
-                    a.iter()
-                        .map(|n| n.as_u64().unwrap_or(0).min(255) as u8)
-                        .collect()
-                })
-                .unwrap_or_default();
-            if kit.len() != sim::SLOT_COUNT {
-                return (400, serde_json::json!({ "error": "that is not a kit" }));
-            }
-            let cost: u32 = kit.iter().map(|n| *n as u32).sum();
-            if cost > sim::KIT_BUDGET {
-                return (400, serde_json::json!({ "error": "over the budget" }));
-            }
+            let kit = match kit_from_body(body) {
+                Ok(kit) => kit,
+                Err(error) => return (400, serde_json::json!({ "error": error })),
+            };
             let stored = db
                 .execute(
                     "insert into kits (account, class, kit) values ($1, $2, $3)
@@ -1837,6 +1905,88 @@ async fn route(
                 Ok(_) => (200, serde_json::json!({ "ok": true })),
                 Err(e) => (500, serde_json::json!({ "error": format!("{e}") })),
             }
+        }
+
+        // Save the build in hand as a named template. Built-ins are reserved,
+        // and a repeated custom name updates that template rather than adding
+        // another row with different capitalization.
+        "/v1/profile" => {
+            let account = match account_from_secret(&db, &s("secret")).await {
+                Ok(account) => account,
+                Err(reply) => return reply,
+            };
+            let name = match kit_profile_name(&s("name")) {
+                Ok(name) => name,
+                Err(error) => return (400, serde_json::json!({ "error": error })),
+            };
+            let kit = match kit_from_body(body) {
+                Ok(kit) => kit,
+                Err(error) => return (400, serde_json::json!({ "error": error })),
+            };
+            let transaction = match db.transaction().await {
+                Ok(transaction) => transaction,
+                Err(error) => return database_error(error),
+            };
+            if let Err(error) = transaction
+                .query_one(
+                    "select id from accounts where id = $1 for update",
+                    &[&account],
+                )
+                .await
+            {
+                return database_error(error);
+            }
+            let existing = match transaction
+                .query_opt(
+                    "select name from kit_profiles
+                     where account = $1 and lower(name) = lower($2)",
+                    &[&account, &name],
+                )
+                .await
+            {
+                Ok(row) => row.map(|row| row.get::<_, String>(0)),
+                Err(error) => return database_error(error),
+            };
+            if existing.is_none() {
+                let count: i64 = match transaction
+                    .query_one(
+                        "select count(*) from kit_profiles where account = $1",
+                        &[&account],
+                    )
+                    .await
+                {
+                    Ok(row) => row.get(0),
+                    Err(error) => return database_error(error),
+                };
+                if count >= KIT_PROFILE_LIMIT {
+                    return (
+                        409,
+                        serde_json::json!({
+                            "error": format!("a pilot may save {KIT_PROFILE_LIMIT} profiles")
+                        }),
+                    );
+                }
+            }
+            let stored_name = existing.as_deref().unwrap_or(&name);
+            if let Err(error) = transaction
+                .execute(
+                    "insert into kit_profiles (account, name, kit) values ($1, $2, $3)
+                     on conflict (account, name) do update set kit = excluded.kit",
+                    &[&account, &stored_name, &kit],
+                )
+                .await
+            {
+                return database_error(error);
+            }
+            if let Err(error) = transaction.commit().await {
+                return database_error(error);
+            }
+            (
+                200,
+                serde_json::json!({
+                    "profile": {"name": stored_name, "builtin": false, "kit": kit}
+                }),
+            )
         }
 
         // The catalog: every slot the game has, with how far this account owns
@@ -1857,7 +2007,14 @@ async fn route(
                 Err(reply) => return reply,
             };
             let base = sim::World::base_entitlements();
-            let ceiling = sim::World::baseline_kit_ceiling();
+            let zone = s("zone");
+            if !zone.is_empty() && meta.catalog.zone(&zone).is_none() {
+                return (400, serde_json::json!({ "error": "no such game" }));
+            }
+            let ceiling = crate::profiles::zone_ceiling(
+                &meta.catalog,
+                (!zone.is_empty()).then_some(zone.as_str()),
+            );
             let mut owned = base.to_vec();
             let bought = match bought_entitlements(&db, account).await {
                 Ok(bought) => bought,
@@ -1865,7 +2022,7 @@ async fn route(
             };
             for (slot, n) in bought {
                 if let Some(value) = owned.get_mut(slot.max(0) as usize) {
-                    *value = n.clamp(0, 255) as u8;
+                    *value = (*value).max(n.clamp(0, 255) as u8);
                 }
             }
             let mut slots = Vec::new();
@@ -1876,8 +2033,8 @@ async fn route(
                 if ceiling[slot] == 0 {
                     continue;
                 }
-                let owned = owned[slot];
-                let step = upgrades::next_step(slot, owned);
+                let owned = owned[slot].min(ceiling[slot]);
+                let step = upgrades::next_step(slot, owned, ceiling[slot]);
                 let mut row = serde_json::json!({
                     "slot": slot,
                     "label": upgrades::name_of(slot),
@@ -2482,6 +2639,14 @@ async fn route(
                 return (400, serde_json::json!({ "error": "no such slot" }));
             }
             let base = sim::World::base_entitlements();
+            let zone = s("zone");
+            if !zone.is_empty() && meta.catalog.zone(&zone).is_none() {
+                return (400, serde_json::json!({ "error": "no such game" }));
+            }
+            let ceiling = crate::profiles::zone_ceiling(
+                &meta.catalog,
+                (!zone.is_empty()).then_some(zone.as_str()),
+            );
             let transaction = match db.transaction().await {
                 Ok(transaction) => transaction,
                 Err(e) => return (500, serde_json::json!({ "error": format!("{e}") })),
@@ -2505,11 +2670,13 @@ async fn route(
                 )
                 .await
             {
-                Ok(Some(row)) => row.get::<_, i16>(0).clamp(0, 255) as u8,
+                Ok(Some(row)) => base[slot as usize].max(row.get::<_, i16>(0).clamp(0, 255) as u8),
                 Ok(None) => base[slot as usize],
                 Err(e) => return (500, serde_json::json!({ "error": format!("{e}") })),
             };
-            let Some((next, price)) = upgrades::next_step(slot as usize, owned) else {
+            let Some((next, price)) =
+                upgrades::next_step(slot as usize, owned, ceiling[slot as usize])
+            else {
                 return (
                     400,
                     serde_json::json!({ "error": "nothing left to buy there" }),
@@ -3753,7 +3920,7 @@ async fn route(
                 let slot: i16 = r.get(0);
                 let n: i16 = r.get(1);
                 if let Some(c) = owned.get_mut(slot.max(0) as usize) {
-                    *c = n.clamp(0, 255) as u8;
+                    *c = (*c).max(n.clamp(0, 255) as u8);
                 }
             }
             let slots: Vec<serde_json::Value> = (0..sim::SLOT_COUNT)
@@ -5426,6 +5593,36 @@ mod tests {
     #[test]
     fn a_well_formed_pilot_event_is_accepted() {
         assert_eq!(settlement::validate_pilot_event(&pilot_event()), Ok(()));
+    }
+
+    #[test]
+    fn a_custom_profile_has_a_short_distinct_name() {
+        assert_eq!(kit_profile_name("  Screen  "), Ok("Screen".into()));
+        assert_eq!(kit_profile_name("bomb_run-2"), Ok("bomb_run-2".into()));
+        assert!(kit_profile_name("").is_err(), "an empty name is not a name");
+        assert!(kit_profile_name("name/with/path").is_err());
+        assert!(kit_profile_name("1234567890123456789012345").is_err());
+        assert!(
+            kit_profile_name("gunner").is_err(),
+            "built-ins are reserved"
+        );
+        assert!(kit_profile_name("CONTROL").is_err());
+    }
+
+    #[test]
+    fn a_profile_kit_is_a_bounded_vector_of_counts() {
+        let mut kit = vec![0u8; sim::SLOT_COUNT];
+        kit[0] = sim::KIT_BUDGET as u8;
+        let body = serde_json::json!({"kit": kit});
+        assert_eq!(kit_from_body(&body).unwrap()[0], sim::KIT_BUDGET as u8);
+
+        assert!(kit_from_body(&serde_json::json!({"kit": [1, 2]})).is_err());
+        let mut over = vec![0u8; sim::SLOT_COUNT];
+        over[0] = sim::KIT_BUDGET as u8 + 1;
+        assert!(kit_from_body(&serde_json::json!({"kit": over})).is_err());
+        let mut malformed = vec![serde_json::json!(0); sim::SLOT_COUNT];
+        malformed[0] = serde_json::json!("one");
+        assert!(kit_from_body(&serde_json::json!({"kit": malformed})).is_err());
     }
 
     #[test]

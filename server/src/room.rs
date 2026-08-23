@@ -1753,11 +1753,21 @@ impl Room {
     /// an upgrade and then find the ship they wanted refused it.
     pub(crate) fn kit_ceiling(&self, ship: u8) -> [u8; sim::SLOT_COUNT] {
         let mut ceiling = self.world.kit_ceilings();
-        let owned = self
-            .names
-            .get(&ship)
-            .map(|s| s.entitlements)
+        let seat = self.names.get(&ship);
+        let mut owned = seat
+            .map(|seat| seat.entitlements)
             .unwrap_or_else(sim::World::base_entitlements);
+        // A bot may earn and buy its own specialties, but it does not bring a
+        // deeper shelf into a room than the least-equipped human there. That
+        // keeps bot careers real in bot-only play and makes the first person
+        // through the door the field's progression floor, not its target.
+        if seat.is_some_and(|seat| seat.bot) {
+            for human in self.names.values().filter(|other| !other.bot) {
+                for (value, floor) in owned.iter_mut().zip(human.entitlements) {
+                    *value = (*value).min(floor);
+                }
+            }
+        }
         for (c, own) in ceiling.iter_mut().zip(owned.iter()) {
             *c = (*c).min(*own);
         }

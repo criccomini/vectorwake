@@ -103,12 +103,11 @@ points_per_flag = 0
 mod_spread = 5
 
 # What one more round costs, as a percentage of the shot's own energy and
-# cooldown. A quarter and a half: three rounds therefore land where the
-# original put them, at half again the energy and twice the wait, and the rest
-# of the ladder climbs at that same rate rather than at one invented for the
-# top of it.
+# cooldown. Energy and cooldown each rise by a quarter per extra round, so the
+# high spray rungs remain usable instead of paying more trigger delay than
+# their extra coverage returns.
 multi_energy = 25
-multi_delay = 50
+multi_delay = 25
 
 # Three tiles of fuse, and a tile more for each rung of the bomb carrying it. A
 # fuse that has found somebody waits `prox_delay` for them to start pulling
@@ -148,16 +147,6 @@ life = 3000
 name = "burst"
 damage = 515
 
-# Cipher's bombs stop a hit pilot recharging for four seconds, which is what
-# makes them a different weapon rather than a better one.
-[[arena.weapons]]
-name = "cipher-bomb"
-stall = 400
-
-[[arena.weapons]]
-name = "cipher-bomb-2"
-stall = 400
-
 # The ships.
 #
 # There is no ships section. Every hull here flies alike, climbs alike and
@@ -181,7 +170,7 @@ stall = 400
 #
 # These are the baseline's own numbers, written out because this is the zone
 # people actually play and the ceilings are worth reading in one place. Guns
-# spray, bounce and freeze. Bombs bounce, sense, shatter and shove. Neither
+# spray, bounce and freeze. Bombs bounce, sense, shatter and freeze. Neither
 # crosses over: a bullet with a fuse is a bomb, and a rack that throws three at
 # a pull is a different game.
 #
@@ -189,7 +178,7 @@ stall = 400
 # and a second barrel, and both of them spelled "more bullets".
 [arena.kit]
 gun_mods = { multi = 5, bounce = 1, freeze = 1 }
-bomb_mods = { prox = 1, shrapnel = 3, bounce = 2, push = 2 }
+bomb_mods = { prox = 1, shrapnel = 3, bounce = 2, freeze = 1 }
 
 # Three repels, three bursts, and six mines for anyone who buys the kind and
 # is willing to spend a fifth of their kit on them. Six was the denial hull's

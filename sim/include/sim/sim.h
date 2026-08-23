@@ -583,13 +583,10 @@ typedef enum {
                               + SIM_MAX_CHARGES)
 #define SIM_SLOT_NONE 255
 
-/* Steps a stat may climb, and what a kit may spend in total. Six over five
- * stats is exactly the budget, so an all-stats kit is exactly achievable and
- * exactly exhausting; the last two steps of each are the shop's, and five at
- * eight is forty against a budget of thirty, so no purchase ever stops the
- * kit being a set of tradeoffs. docs/design/match-game.md. */
+/* Wire capacity for a stat and what a kit may spend in total. The effective
+ * depth of each stat comes from its flight row and may be lower than this
+ * representation bound. docs/design/match-game.md. */
 #define SIM_UP_STEPS 8
-#define SIM_UP_STEPS_BASE 6
 #define SIM_KIT_BUDGET 30
 
 

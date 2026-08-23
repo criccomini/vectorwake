@@ -26,6 +26,7 @@ mod modes;
 mod nav;
 mod pilot;
 mod presence;
+mod profiles;
 mod protocol;
 mod rating;
 mod room;
@@ -207,6 +208,61 @@ fn run_stage_tournament() {
     ) {
         Ok(()) => println!("\nwrote {path}"),
         Err(e) => println!("\ncould not write {path}: {e}"),
+    }
+}
+
+/// `calibrate profiles <paired_seeds> <zone> <dir>`: the three starter
+/// profiles and a bought-up specialization, four a side on the zone's full map
+/// rotation. Every seed is mirrored with the two profiles exchanging sides.
+fn run_profile_tournament() {
+    let paired_seeds: u32 = std::env::args()
+        .nth(3)
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(200);
+    if paired_seeds < calibrate::PROFILE_MIN_PAIRS {
+        println!(
+            "profiles: exploratory run only; at least {} paired seeds are required for a balance verdict",
+            calibrate::PROFILE_MIN_PAIRS
+        );
+    }
+    let requested = std::env::args().nth(4);
+    let dir = std::env::args().nth(5).unwrap_or_else(|| ".".into());
+    let cat = match catalog::load("catalog") {
+        Ok(catalog) => catalog,
+        Err(error) => {
+            println!("profiles: {error}");
+            std::process::exit(1);
+        }
+    };
+    let zone = requested
+        .or_else(|| cat.fallback_zone())
+        .unwrap_or_default();
+    let Some(definition) = cat.zone(&zone) else {
+        println!("profiles: no zone named {zone:?} in the catalog");
+        std::process::exit(1);
+    };
+    let maps: Vec<(String, calibrate::Arena)> = cat
+        .map_bytes(&zone)
+        .into_iter()
+        .map(|(name, bytes)| (name, calibrate::Arena::Packed(std::sync::Arc::new(bytes))))
+        .collect();
+    if maps.is_empty() {
+        println!("profiles: {zone:?} has no readable maps");
+        std::process::exit(1);
+    }
+    println!(
+        "comparing full profiles in {zone}: {paired_seeds} paired seeds across {} maps",
+        maps.len()
+    );
+    let results = calibrate::run_profiles(paired_seeds, 0.50, Some(&definition.arena), &maps, true);
+    let report = calibrate::report_profiles(&results, paired_seeds, &zone, &maps);
+    let path = format!("{dir}/profiles.json");
+    match std::fs::write(
+        &path,
+        serde_json::to_string_pretty(&report).expect("serialize profile report"),
+    ) {
+        Ok(()) => println!("\nwrote {path}"),
+        Err(error) => println!("\ncould not write {path}: {error}"),
     }
 }
 
@@ -548,7 +604,9 @@ async fn main() {
         // What the ladder holds still is the tech tree, so it can never price
         // one. That is this, the same harness with the pilots held still and
         // the kit varying instead.
-        if std::env::args().nth(2).as_deref() == Some("stages") {
+        if std::env::args().nth(2).as_deref() == Some("profiles") {
+            run_profile_tournament();
+        } else if std::env::args().nth(2).as_deref() == Some("stages") {
             run_stage_tournament();
         } else if std::env::args().nth(2).as_deref() == Some("hulls") {
             run_hull_tournament();
@@ -1584,8 +1642,8 @@ mod tests {
 
         a.tick();
 
-        assert_eq!(
-            a.world.state.weapon_count, 1,
+        assert!(
+            a.world.state.weapon_count > 0,
             "path diagnostics must not remove the shot"
         );
     }
@@ -2922,8 +2980,12 @@ mod tests {
             sim::KIT_BUDGET,
             "worth the whole budget, like everybody else's"
         );
-        assert_eq!(sh.level, [1; sim::TRIG_COUNT], "dealt, not inherited");
-        assert_eq!(sh.mods, [0; sim::TRIG_COUNT], "and no add-ons of theirs");
+        assert_eq!(sh.level, [2, 1], "dealt from Gunner, not inherited");
+        assert_eq!(
+            sim::mod_get(sh.mods[sim::TRIG_GUN], sim::MOD_MULTI),
+            2,
+            "with Gunner's spray rather than the old pilot's add-ons"
+        );
         assert_eq!(
             sh.charge[sim::CHARGE_MINE],
             0,
@@ -3097,28 +3159,28 @@ mod tests {
         let ship = seat_human(&mut a, "pilot");
         let base = a.kit_ceiling(ship);
 
-        // Inside both: taken, and dealt onto the hull. One repel rather than
-        // three, which is what a fresh account is entitled to: the other two
-        // rungs of the rack are bought.
+        // Inside both: taken, and dealt onto the hull.
         let mut good = [0u8; sim::SLOT_COUNT];
-        good[sim::slot_stat(sim::UP_SPEED) as usize] = 6;
-        good[sim::slot_charge(sim::CHARGE_REPEL) as usize] = 1;
+        good[sim::slot_stat(sim::UP_SPEED) as usize] = 5;
+        good[sim::slot_charge(sim::CHARGE_REPEL) as usize] = 2;
         assert!(a.set_kit(ship, &good), "a legal kit is taken");
         let sh = a.world.state.ships[ship as usize];
-        assert_eq!(sh.up[sim::UP_SPEED], 6);
-        assert_eq!(sh.charge[sim::CHARGE_REPEL], 1);
+        assert_eq!(sh.up[sim::UP_SPEED], 5);
+        assert_eq!(sh.charge[sim::CHARGE_REPEL], 2);
 
-        // Past what the account owns. The core would take a seventh step of a
-        // stat happily, because the arena's ceiling is eight; the account's is
-        // six until somebody buys the last two.
+        // Past what the account owns. The arena has five spray steps and the
+        // starter profile union owns two.
+        let spray = sim::slot_mod(sim::TRIG_GUN, sim::MOD_MULTI) as usize;
         assert_eq!(
-            base[sim::slot_stat(sim::UP_SPEED) as usize],
-            sim::UP_STEPS_BASE,
-            "a fresh account owns six of a stat, not the hull's eight"
+            base[spray], 2,
+            "a fresh account owns the starter profiles' spray"
         );
         let mut deep = [0u8; sim::SLOT_COUNT];
-        deep[sim::slot_stat(sim::UP_SPEED) as usize] = 7;
-        assert!(!a.set_kit(ship, &deep), "depth nobody bought is refused");
+        deep[spray] = 3;
+        assert!(
+            !a.set_kit(ship, &deep),
+            "a specialty nobody bought is refused"
+        );
 
         // A charge kind the account does not own, which the hull would carry.
         let mut mined = [0u8; sim::SLOT_COUNT];
@@ -3128,7 +3190,7 @@ mod tests {
         // Refused whole, so the pilot keeps what they were flying.
         assert_eq!(
             a.world.state.ships[ship as usize].up[sim::UP_SPEED],
-            6,
+            5,
             "a refusal changes nothing"
         );
 
@@ -3137,6 +3199,30 @@ mod tests {
             s.entitlements[sim::slot_charge(sim::CHARGE_MINE) as usize] = 255;
         }
         assert!(a.set_kit(ship, &mined), "what was bought, the hull takes");
+    }
+
+    #[test]
+    fn a_bot_cannot_outspend_the_least_equipped_human_in_its_room() {
+        let mut room = Room::new();
+        let mut bot = Seat::guest("bot", true);
+        bot.entitlements = *sim::World::baseline_kit_ceiling();
+        let human = Seat::guest("human", false);
+        room.names.insert(0, bot);
+        room.names.insert(1, human);
+
+        let spray = sim::slot_mod(sim::TRIG_GUN, sim::MOD_MULTI) as usize;
+        assert_eq!(room.kit_ceiling(0)[spray], 2, "the human owns two");
+        assert_eq!(
+            room.kit_ceiling(1)[spray],
+            2,
+            "and their own ceiling is unchanged"
+        );
+        room.names.remove(&1);
+        assert_eq!(
+            room.kit_ceiling(0)[spray],
+            5,
+            "a bot-only room still uses the bot's career"
+        );
     }
 
     /// A death costs the ammunition it spent and nothing else.
@@ -3203,22 +3289,25 @@ mod tests {
     fn a_kit_that_outgrew_the_account_is_trimmed_not_dropped() {
         let mut a = match_room(1, 1);
         let ship = seat_human(&mut a, "pilot");
-        let prox = sim::slot_mod(sim::TRIG_BOMB, sim::MOD_PROX) as usize;
+        let spray = sim::slot_mod(sim::TRIG_GUN, sim::MOD_MULTI) as usize;
         let speed = sim::slot_stat(sim::UP_SPEED) as usize;
 
         // What a build saved under the old grant looks like: mostly slots the
         // account owns, and one it does not.
         let mut want = [0u8; sim::SLOT_COUNT];
-        want[speed] = 6;
+        want[speed] = 5;
         want[sim::slot_level(sim::TRIG_BOMB) as usize] = 1;
         want[sim::slot_charge(sim::CHARGE_REPEL) as usize] = 1;
-        want[prox] = 1;
+        want[spray] = 3;
         assert_eq!(
-            a.kit_ceiling(ship)[prox],
-            0,
-            "nobody is dealt proximity any more"
+            a.kit_ceiling(ship)[spray],
+            2,
+            "a starter owns two spray steps"
         );
-        assert!(!a.set_kit(ship, &want), "and a kit holding it does not fit");
+        assert!(
+            !a.set_kit(ship, &want),
+            "and a kit holding three does not fit"
+        );
 
         if let Some(s) = a.names.get_mut(&ship) {
             s.pending_kit = Some(want);
@@ -3227,7 +3316,7 @@ mod tests {
         let sh = a.world.state.ships[ship as usize];
         assert_eq!(
             sh.up[sim::UP_SPEED],
-            6,
+            5,
             "the part of the build the account owns is flown"
         );
         assert_eq!(
@@ -3236,9 +3325,9 @@ mod tests {
             "all of it, not just the stats"
         );
         assert_eq!(
-            sim::mod_get(sh.mods[sim::TRIG_BOMB], sim::MOD_PROX),
-            0,
-            "and only the slot nobody bought is missing"
+            sim::mod_get(sh.mods[sim::TRIG_GUN], sim::MOD_MULTI),
+            2,
+            "and only the unowned part of the specialty is missing"
         );
     }
 
@@ -3260,15 +3349,15 @@ mod tests {
         let slot = sim::slot_mod(sim::TRIG_GUN, sim::MOD_MULTI) as usize;
 
         let mut kit = [0u8; sim::SLOT_COUNT];
-        kit[slot] = 1;
+        kit[slot] = 3;
         assert!(
             !a.set_kit(ship, &kit),
-            "nobody is dealt spray, so an unbought round is refused"
+            "the third spray step is not in the starter union"
         );
 
         // What buying one does, which is raise this account's ceiling by one.
         if let Some(s) = a.names.get_mut(&ship) {
-            s.entitlements[slot] = 1;
+            s.entitlements[slot] = 3;
         }
         for cls in 0..a.world.cfg.class_count {
             a.world.state.ships[ship as usize].cls = cls;
@@ -3279,7 +3368,7 @@ mod tests {
             let sh = a.world.state.ships[ship as usize];
             assert_eq!(
                 sim::mod_get(sh.mods[sim::TRIG_GUN], sim::MOD_MULTI),
-                1,
+                3,
                 "hull {cls} was dealt the kit but not the round"
             );
         }
@@ -3305,13 +3394,13 @@ mod tests {
         // What a join deals: a starter, with none of this pilot's own choices
         // on it.
         let starter = a.world.state.ships[ship as usize].kit;
-        let mut mine = [0u8; sim::SLOT_COUNT];
-        mine[sim::slot_stat(sim::UP_THRUST) as usize] = 5;
-        assert_ne!(mine, starter, "pick a kit the seat is not already in");
+        let mut arrived = [0u8; sim::SLOT_COUNT];
+        arrived[sim::slot_stat(sim::UP_ENERGY) as usize] = 1;
+        assert_ne!(arrived, starter, "pick a kit the seat is not already in");
 
-        a.ask_kit(ship, &mine);
+        a.ask_kit(ship, &arrived);
         assert_eq!(
-            a.world.state.ships[ship as usize].kit, mine,
+            a.world.state.ships[ship as usize].kit, arrived,
             "the build a pilot arrived with is dealt at once, mid-match or not"
         );
         assert_eq!(
@@ -3324,7 +3413,7 @@ mod tests {
         again[sim::slot_stat(sim::UP_SPEED) as usize] = 5;
         a.ask_kit(ship, &again);
         assert_eq!(
-            a.world.state.ships[ship as usize].kit, mine,
+            a.world.state.ships[ship as usize].kit, arrived,
             "a re-spec mid-match still waits"
         );
         assert_eq!(a.names[&ship].pending_kit, Some(again), "and is held");
@@ -3342,7 +3431,7 @@ mod tests {
 
         let starter = a.world.state.ships[ship as usize].kit;
         let mut want = [0u8; sim::SLOT_COUNT];
-        want[sim::slot_stat(sim::UP_THRUST) as usize] = 5;
+        want[sim::slot_stat(sim::UP_ENERGY) as usize] = 1;
         assert_ne!(want, starter, "pick a kit the seat is not already in");
         if let Some(s) = a.names.get_mut(&ship) {
             s.pending_kit = Some(want);
@@ -3363,8 +3452,8 @@ mod tests {
             "and the whistle is where it lands"
         );
         assert_eq!(
-            a.world.state.ships[ship as usize].up[sim::UP_THRUST],
-            5,
+            a.world.state.ships[ship as usize].up[sim::UP_ENERGY],
+            1,
             "dealt onto the hull, not merely stored"
         );
         assert!(
@@ -6941,7 +7030,7 @@ mod tests {
         let shell = w.cfg.patterns[w.cfg.mod_splinter[2] as usize];
         assert_eq!(shell.count, 12, "a second rung of shrapnel is twelve now");
         assert_eq!(
-            w.cfg.patterns[w.cfg.mod_splinter[1] as usize].count, 2,
+            w.cfg.patterns[w.cfg.mod_splinter[1] as usize].count, 4,
             "and the rung below it is untouched"
         );
     }

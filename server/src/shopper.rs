@@ -142,7 +142,31 @@ pub fn build(wants: &[usize], ceiling: &[u8; sim::SLOT_COUNT]) -> [u8; sim::SLOT
             }
         }
         if !moved {
-            break;
+            // A taste can saturate before the budget does, especially now
+            // that thrust and rotation stop after their first effective step.
+            // Flow the remainder across the live ceiling rather than flying
+            // points short. This is still the last choice: every weighted
+            // preference above has already reached its top.
+            let charge0 = sim::slot_charge(0) as usize;
+            for slot in 0..sim::SLOT_COUNT {
+                if spent >= sim::KIT_BUDGET {
+                    break;
+                }
+                if slot >= charge0 && kit[slot] == 0 {
+                    let kinds = kit[charge0..].iter().filter(|count| **count > 0).count();
+                    if kinds >= sim::KIT_CHARGE_SLOTS {
+                        continue;
+                    }
+                }
+                if kit[slot] < ceiling[slot] {
+                    kit[slot] += 1;
+                    spent += 1;
+                    moved = true;
+                }
+            }
+            if !moved {
+                break;
+            }
         }
     }
     kit
