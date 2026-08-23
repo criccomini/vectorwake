@@ -224,17 +224,20 @@ do
     check("a bare trigger claims no level", not shows("level"))
 end
 
--- --- the bounty ------------------------------------------------------------
+-- --- the bounty is not in the corner ---------------------------------------
 
 do
-    local px, py = point_on("bounty")
-    check("the bounty publishes a row", px ~= nil)
+    -- It was a row here: a diamond, the number, and the run beside it. The
+    -- corner is what your triggers do and what you carry, and a bounty is
+    -- neither; it is what other people see when they look at you, and it is
+    -- said over every nameplate and in the scoreboard's own column. A row
+    -- that is not drawn publishes nothing to rest a pointer on.
+    check("the corner has no bounty row to point at",
+          point_on("bounty") == nil, "still publishing one")
+    local px, py = point_on("gun")
     frame(px, py)
-    check("the bounty says what it is",
-          string.find(all_said(),
-                      "your ship's bounty. enemies get these points when "
-                      .. "you're destroyed.", 1, true) ~= nil,
-          all_said())
+    check("and no card in the corner talks about one",
+          not shows("bounty"), all_said())
 end
 
 -- --- and nothing at all otherwise ------------------------------------------
@@ -242,21 +245,32 @@ end
 do
     -- The corner is unchanged for everybody flying, which is most of the
     -- reason this is a hover and not a label.
-    frame(nil, nil)
-    check("no pointer draws no card", not shows("your ship's bounty"))
+    --
+    -- Probed with an add-on's long form, because that phrase belongs to the
+    -- card and to nothing else on the screen. A row's own name will not do
+    -- it: the table under H names every key including the guns, so "guns"
+    -- reads as a card being up when the table is what is up.
+    kit.mods = {[0] = {[2] = 1}}
+    local px, py = point_on("gun")
+    frame(px, py)
+    check("a pointer on a row draws the card", shows("proximity detonation"))
 
-    local px, py = point_on("bounty")
+    frame(nil, nil)
+    check("no pointer draws no card", not shows("proximity detonation"))
+
     frame(px, 40)
-    check("a pointer off the stack draws no card", not shows("your ship's bounty"))
+    check("a pointer off the stack draws no card",
+          not shows("proximity detonation"))
 
     frame(px, py, true)
-    check("a thumb gets no card", not shows("your ship's bounty"))
+    check("a thumb gets no card", not shows("proximity detonation"))
 
     ui.help = true
     frame(px, py)
     check("nor does the table that covers the corner",
-          not shows("your ship's bounty"))
+          not shows("proximity detonation"))
     ui.help = false
+    kit.mods = {}
 end
 
 if fails > 0 then

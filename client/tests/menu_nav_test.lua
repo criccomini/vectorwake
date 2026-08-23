@@ -1407,17 +1407,36 @@ do
     check("and nothing has left for the browser yet", asked == nil,
           asked and asked.url or "")
 
-    -- The first row is the way out, so a hand on the arrows presses enter
-    -- twice and is there.
-    local page = menu.view().rows
-    check("its first row is the invite, and is pressable",
-          page[1] and page[1].pick == true,
-          page[1] and page[1].label or "no rows")
+    -- One row, and it is the way out, so a hand on the arrows presses enter
+    -- twice and is there. Everything else the page says it says as words
+    -- rather than as rows: three of the four rows this used to have went
+    -- nowhere and were set in the face and size of rows that do.
+    local view = menu.view()
+    local page = view.rows
+    check("the page has one row and it is the invite",
+          #page == 1 and page[1].pick == true,
+          #page .. " rows")
     check("carrying the address, so the browser can lay an anchor over it",
           page[1] and page[1].link == "https://play.vectorwake.net/discord",
           page[1] and tostring(page[1].link))
-    check("and the rest of the page says what the room is for",
-          #page >= 3, #page .. " rows")
+    check("and it is drawn as the page about the door",
+          view.door == true, tostring(view.door))
+    check("which says why there is a room at all",
+          type(view.door_why) == "string"
+          and string.find(view.door_why, "chat", 1, true) ~= nil,
+          tostring(view.door_why))
+    check("and what happens in it, in sentences rather than rows",
+          type(view.door_for) == "table" and #view.door_for == 3,
+          tostring(view.door_for and #view.door_for))
+    -- The one address, cut from the one constant. Two copies of an address is
+    -- one address that goes stale.
+    check("and the address a player can retype, with no scheme on it",
+          view.door_addr == "play.vectorwake.net/discord",
+          tostring(view.door_addr))
+    check("which is the address the button opens",
+          view.door_addr and page[1].link:sub(-#view.door_addr)
+              == view.door_addr,
+          tostring(view.door_addr) .. " against " .. tostring(page[1].link))
 
     menu.step({go = true})
     check("pressing it asks the browser to open the invite",
@@ -2265,6 +2284,35 @@ do
     check("and answering it buys that slot",
           bought == "buy" and menu.pending == 0,
           tostring(bought) .. "/" .. tostring(menu.pending))
+
+    -- And the two hands do different things here, which is the one page
+    -- where they should. A press of the key acts on the cursor, and the
+    -- thing it acts on is the button beside the pane. A pointer landing on a
+    -- row is reading: it moves the cursor there and spends nothing, because
+    -- what the pane fills up with is the answer to why you clicked.
+    menu.sel.upgrades = 2
+    menu.ask = nil
+    account.rivets = 500
+    local act = menu.click(1)
+    check("a pointer on a row moves the cursor to it",
+          menu.sel.upgrades == 1, tostring(menu.sel.upgrades))
+    check("and spends nothing",
+          menu.ask == nil and act == nil,
+          menu.ask and menu.ask.head or tostring(act))
+
+    -- The button does. It names its own row rather than reading the cursor,
+    -- since the pane it sits under follows the pointer.
+    menu.sel.upgrades = 2
+    menu.ask = nil
+    menu.click_buy(1)
+    check("the buy button asks about the row it was drawn for",
+          menu.ask ~= nil and string.find(menu.ask.head, "40", 1, true),
+          menu.ask and menu.ask.head or "no card")
+    check("and takes the cursor there, so the pane agrees with the card",
+          menu.sel.upgrades == 1, tostring(menu.sel.upgrades))
+    menu.ask = nil
+    check("a row with nothing to sell has no buy in it",
+          select(2, menu.click_buy(2)) == false, "bought a topped-out slot")
 
     -- A row with nothing left to sell is not a control.
     menu.sel.upgrades = 2

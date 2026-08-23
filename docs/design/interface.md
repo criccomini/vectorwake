@@ -416,9 +416,13 @@ changes nothing, which is what escape gives.
 The corner stack is the model of the whole surface: rows of marks and
 counts, no panel, no rules between rows, the color separation doing the
 grouping (what a trigger does is drawn in its round's rung color, what you
-carry is gold, what you are worth is bounty gold). Energy is not in it; your
-own hull carries the same pip every hull carries, and a corner bar was the
-same number twice in the place you least look. Damage is the vignette, red
+carry is gold). Two numbers are not in it, and for the same reason: the
+corner is what a press changes. Energy is not, because your own hull carries
+the same pip every hull carries and a corner bar was the same number twice in
+the place you least look. Your bounty is not, because it is what other people
+see when they look at you rather than anything you can spend, and it is
+already said over every nameplate and in the scoreboard column that sorts by
+it. Damage is the vignette, red
 creeping in from the edges, which never hides the ship shooting you. The
 words for any row are an ask away: rest the pointer and a card names it,
 lists what the greens taught it, and says which key spends it.
@@ -427,7 +431,7 @@ Panels appear because they were asked for. The scoreboard and loadout are a
 toggle; the pilot box opens from a scoreboard row and closes with the
 scoreboard; the map replaces the radar in its own corner and the same click
 puts it back. What was not asked for stays off, and what cannot be used is
-not drawn: a scrollbar on a list that fits, a bounty row at zero, empty
+not drawn: a scrollbar on a list that fits, a spent charge's row, empty
 charge slots.
 
 On a phone, the pads carry the weapon marks themselves, so the stack stands

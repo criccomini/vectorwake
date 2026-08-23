@@ -83,9 +83,10 @@ local me = 0
 -- which is the backstop under every branch below that goes through `eye()`
 -- instead.
 local watching = false
--- What the intermission clock last said out loud, so a message that repeats
--- says nothing twice. Nil before a match has been seen at all, which is what
--- keeps the whistle quiet for somebody who arrived mid-match.
+-- What the clock last said out loud, so a message that repeats says nothing
+-- twice. Either clock: the one counting down to a match and the one counting
+-- down inside it both spend their last five seconds out loud. The rule is
+-- `net.clock_says`; this is the half of its state that fits up here.
 local counted_at = nil
 
 -- The ship whose perspective drives the camera, the colors and the sounds:
@@ -586,6 +587,7 @@ local function hover_menu(x, y, vh)
             menu.pilot_hot = r.action == "pilot_page"
             menu.discord_hot = r.action == "discord_link"
             menu.add_hot = r.action == "add_go"
+            menu.buy_hot = r.action == "buy_go"
             if r.action == "found" then menu.found_hot = r.value end
             if r.action == "carousel" then menu.carousel_hot = r.value end
             if r.action == "friend_act" then
@@ -1790,33 +1792,21 @@ function update(self, dt)
         local my_team = eye_team()
         local mine_buttons = my_buttons()
 
-        -- The last five seconds of an intermission, said out loud.
+        -- The last five seconds of whichever clock is running, said out
+        -- loud. The rule is net.lua's, beside the message it reads; this is
+        -- the two pieces of state it needs and the sound it asks for.
         --
-        -- A podium with a number on it says when the next match starts, and a
-        -- pilot in the hangar picking a hull is not looking at it. So the
-        -- clock speaks: a pip a second from five down to one, and a different
-        -- sound at nought, which is the only one that means go.
-        --
-        -- Driven off the number the server sends rather than off a local
-        -- timer, and only on the change, because a message repeats and a
-        -- frame runs a hundred times a second. `counted_at` is what was last
-        -- said, so a clock that stalls says nothing twice and one that jumps
-        -- says only where it landed.
-        local m = net.match
-        if m and not m.playing and m.left and m.left <= 5 and m.left >= 1 then
-            if counted_at ~= m.left then
-                counted_at = m.left
-                sfx.ui("count")
-            end
-        elseif m and m.playing then
-            -- The whistle. Said once on the edge into a match, which is the
-            -- one place this client knows a match began without being told.
-            if counted_at ~= 0 then
-                if counted_at ~= nil then sfx.ui("start") end
-                counted_at = 0
-            end
-        else
-            counted_at = nil
+        -- The state rides on `self` rather than beside `counted_at` up top,
+        -- because this file has one function holding every local in it and
+        -- Lua stops a closure at sixty enclosing ones. `upvalues_test` is
+        -- what says so.
+        local rang
+        rang, counted_at, self.was_playing =
+            net.clock_says(counted_at, self.was_playing)
+        if rang == "tick" then
+            sfx.ui("count")
+        elseif rang == "start" then
+            sfx.ui("start")
         end
 
         -- Held thrust is the one sound with a duration rather than an instant,
@@ -2889,6 +2879,11 @@ function on_input(self, action_id, action)
                 -- One button on one friends row: accept, ignore, join,
                 -- unfriend. `level` is which of that row's own buttons.
                 act, moved = menu.click_friend(r.value, r.level)
+            elseif r.action == "buy_go" then
+                -- The BUY beside the reading pane, or the one under the
+                -- item page. `value` is the row the pane is reading, and
+                -- nothing at all on the page about a single thing.
+                act, moved = menu.click_buy(r.value)
             elseif r.action == "discord_link" then
                 -- The corner button, which opens the page about the server
                 -- rather than the server. No anchor over it any more: the

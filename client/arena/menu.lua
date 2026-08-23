@@ -76,6 +76,17 @@ M.compact = false
 -- The slot that item page is about. The slot number rather than a row index,
 -- so the catalog refreshing under it cannot swap the subject.
 M.item_slot = nil
+-- Whether the activation running right now came from a pointer landing on a
+-- row rather than from the key that acts on the cursor.
+--
+-- The shop is the one page where those two want different answers. Buying
+-- used to be the row itself: press one and a card asked whether to spend, so
+-- reading a thing and buying it were the same gesture and the only place that
+-- said so was a line of grey type in the pane. There is a button now, and a
+-- click on a row does what a click on a row does everywhere else on this
+-- page, which is move the cursor to it. The key still acts, because a key
+-- press is already aimed at the cursor and the button is what it is aimed at.
+local from_row = false
 -- The clock and score of the match behind the landing, set by the arena
 -- while the backdrop is up and nil otherwise. See deploying().
 M.live_match = nil
@@ -2020,22 +2031,22 @@ local NODES = {
     -- players in a match is most of the people who see it. A page costs one
     -- press and answers the question the button was silently assuming.
     --
-    -- The press that leaves is the first row, so a hand that came here on the
-    -- arrows can press enter twice and be there. The lines under it are what
-    -- actually happens in the room rather than an argument for community: a
-    -- reason to open something is a thing you would get out of it.
+    -- It was four rows and it should never have been a list. Three of the
+    -- four answered nothing: they were set in the same face at the same size
+    -- as every row in the game that goes somewhere, and a hand walking down
+    -- them with the arrows found one control and three impersonations of one.
+    -- Each also carried a note underneath finishing its own sentence, which
+    -- is the caption the design language does not have.
+    --
+    -- So it is a page rather than a list, with one thing to press on it. The
+    -- row below is that one thing, kept as a row so the cursor and the key
+    -- still work the way they do everywhere; `pages.door` draws it as the
+    -- button it always was. See docs/design/community.md, which is where the
+    -- words come from and why the address is on it.
     discord = {off_rail = true, rows = function()
         return {
-            {label = "open the invite", sect = "vectorwake on discord",
-             detail = "a new tab", act = "discord", link = DISCORD,
-             pick = true,
-             note = "the game keeps running behind it"},
-            {label = "say when you are flying", sect = "what it is for",
-             note = "a match wants eight and the room is how they meet"},
-            {label = "report what broke",
-             note = "the people who wrote this read it"},
-            {label = "argue about the next ship",
-             note = "hulls, maps and rules, before they are built"},
+            {label = "open the invite", act = "discord", link = DISCORD,
+             pick = true},
         }
     end},
 
@@ -3212,6 +3223,7 @@ function M.view()
                  found_hot = M.found_hot,
                  friend_hot = M.friend_hot,
                  friend_hot_act = M.friend_hot_act,
+                 buy_hot = M.buy_hot,
                  -- Whether there is a game behind the panel, which is what
                  -- decides where the block sits: clear of the corner stack
                  -- over an arena, centered over the starfield. Not whether you
@@ -3279,6 +3291,29 @@ function M.view()
     -- And the catalog is a ladder and a price a row rather than a list of
     -- names. Same reason: the page is two facts about each slot at once.
     if page == "upgrades" then out.shop = true end
+    -- The door, and what a page about it says. The words are here because
+    -- this file decides what pages say; the wrapping and the shapes are
+    -- ui.lua's. All of it is docs/design/community.md put on a screen: what
+    -- the room is for, and the one address that reaches it.
+    if page == "discord" then
+        out.door = true
+        -- Why there is a room at all. Decision 28 took chat out and meant it,
+        -- and a player who does not know that reads an invite as an advert.
+        out.door_why = "This game carries no chat, and will not. "
+            .. "The room is where everything a fight cannot say gets said."
+        -- What actually happens in it, one sentence each and none of them a
+        -- reason to like community in general.
+        out.door_for = {
+            "A match wants eight, and this is where they arrange to meet.",
+            "What broke is read by the people who wrote it.",
+            "Hulls, maps and rules are argued about here before they exist.",
+        }
+        -- The address, in words, because a link that a popup blocker eats is
+        -- not a way in and this is. Cut from the one constant rather than
+        -- written out again: two copies of an address is one address that
+        -- goes stale. The scheme comes off because nobody types it.
+        out.door_addr = (DISCORD:gsub("^https?://", ""))
+    end
     -- One item as a page: the row travels as `item` and the generic list
     -- stands down, so the drawing is the reading pane at page size with the
     -- buy as its key. The row list stays a row long for the arrows: enter
@@ -3590,9 +3625,16 @@ local function activate(by)
             M.note = nil
             return nil
         end
+        -- A pointer on the row moves the cursor and stops. What spends is the
+        -- button, which says so. See `from_row`.
+        if from_row then
+            M.note = nil
+            return nil
+        end
         -- A card first, naming what is being bought and what it costs. Rivets
-        -- are slow to earn and a row that spends them on the press it takes to
-        -- read it is a page nobody trusts to walk with the arrows.
+        -- are slow to earn, and the card is also where a wallet too light for
+        -- the price gets said in a sentence rather than as a button that does
+        -- nothing.
         --
         -- The card is where the wallet is checked too, and only to choose the
         -- sentence: the meta-layer prices it, checks the wallet and raises the
@@ -4227,6 +4269,7 @@ M.add_hot = false
 M.found_hot = nil
 M.friend_hot = nil
 M.friend_hot_act = nil
+M.buy_hot = false
 
 -- A pointer landed on the rail, which names a destination whatever level the
 -- stack is at. That is the whole difference between it and a row: the rail
@@ -4345,7 +4388,35 @@ function M.click_stage(index)
     local id = M.stack[#M.stack]
     if not row_at(index) then return nil, false end
     M.sel[id] = index
-    return activate(), true
+    from_row = true
+    local act = activate()
+    from_row = false
+    return act, true
+end
+
+-- The BUY button, beside the reading pane or under the item page.
+--
+-- `index` is the row the pane is reading, which is not always the row the
+-- arrows are standing on: the pane follows the pointer, so a button that
+-- bought the cursor's row would buy the wrong rung every time the mouse
+-- moved. With no index this is the item page, which is about one thing and
+-- keeps which one in `M.item_slot`.
+function M.click_buy(index)
+    if not M.open then return nil, false end
+    local r
+    if index then
+        if not row_at(index) then return nil, false end
+        M.sel[M.stack[#M.stack]] = index
+        r = row_at(index)
+    else
+        local rows = rows_of(node())
+        r = rows[1]
+    end
+    if not (r and r.act == "buy") then return nil, false end
+    M.ask_upgrade(r.value, {label = r.sold or r.label,
+                            price = r.price, note = r.note})
+    M.note = nil
+    return nil, true
 end
 
 -- A pointer landed on a row the interface published.
@@ -4353,7 +4424,10 @@ function M.click(index)
     if not M.open then return nil, false end
     if not row_at(index) then return nil, false end
     M.sel[M.stack[#M.stack]] = index
-    return activate(), true
+    from_row = true
+    local act = activate()
+    from_row = false
+    return act, true
 end
 
 -- A key on the drawn board was clicked. It goes to whichever control is

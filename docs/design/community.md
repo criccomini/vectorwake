@@ -72,15 +72,19 @@ the page, so an invite embedded there would outlive every attempt to revoke
 it. Behind the redirect, rotating a leaked or raided invite is editing one
 Caddy line, and every place that ever named the address stays correct.
 
-In the client, the about page can name the address in words for free, the way
-it already names the transport. Making it tappable is a real question rather
-than a given: browsers allow `window.open` only inside a user gesture, and
-Defold polls input once a frame, so by the time Lua acts the gesture may
-already be spent and the popup blocker eats the call. The login card solved
-this class of problem with real DOM elements laid over the canvas, per
+In the client, the page about the room names the address in words, under the
+button that opens it: `play.vectorwake.net/discord`, set in the mono because
+an address is a machine reading and this interface quotes those verbatim. It
+is cut from the same constant the button carries, so the two cannot disagree.
+Making it tappable is a real question rather than a given: browsers allow
+`window.open` only inside a user gesture, and Defold polls input once a frame,
+so by the time Lua acts the gesture may already be spent and the popup blocker
+eats the call. The login card solved this class of problem with real DOM
+elements laid over the canvas, per
 [decision 37](../architecture/decisions.md#37-the-phones-own-keyboard-through-an-element-the-canvas-cannot-be),
 and a link that must open on tap would ride the same pattern. An address a
-player can read and retype is the floor, and it ships first.
+player can read and retype is the floor, and it is what shipped: the button
+tries, and the address is what works when the browser refuses.
 
 ## The wire
 

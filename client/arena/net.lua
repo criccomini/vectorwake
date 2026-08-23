@@ -1763,6 +1763,48 @@ function M.step(buttons)
     return true
 end
 
+-- What the match clock just did that is worth saying out loud.
+--
+-- Two clocks run in this game and both spend their last five seconds
+-- speaking: the one counting down to a match, watched from a hangar where
+-- nobody is looking at the podium, and the one inside a match, watched from a
+-- fight where nobody is looking at the top of the screen either. Same pip on
+-- both, so it is one thing to learn rather than two.
+--
+-- It lives here because the match message does, and it is a function rather
+-- than four lines in the frame loop because a sound that fires twice, or
+-- never, or on the wrong edge is invisible in a screenshot. It keeps no state
+-- of its own: the caller holds what was last said and whether a match was on,
+-- and hands both back, so a test can put it in any state directly.
+--
+-- Returns what happened, or nil: "tick" for a second of either countdown,
+-- "start" for the edge into a match. Then the two pieces of state to keep.
+function M.clock_says(said, playing)
+    local m = M.match
+    if not m then return nil, nil, nil end
+    local now = m.playing and true or false
+    -- The whistle, on the edge into a match, and only for somebody who was
+    -- here to hear the clock reach it: arriving mid-match is not a start.
+    -- Hung on the change of state rather than on the count, because the count
+    -- runs during a match too and a clock that ticks back up would otherwise
+    -- blow the whistle in the middle of one.
+    local what = (now and playing == false) and "start" or nil
+    local left = m.left
+    if left and left <= 5 and left >= 1 then
+        if said ~= left then
+            said = left
+            -- Only where the whistle did not already claim the frame. The two
+            -- cannot collide on any real match length, since a match starts
+            -- with its whole clock in front of it, and if one ever did the
+            -- start is the larger news.
+            what = what or "tick"
+        end
+    else
+        said = nil
+    end
+    return what, said, now
+end
+
 function M.disconnect()
     -- Bumped whether or not there was a socket, so that anything still in
     -- flight from the last one is stale from here on.

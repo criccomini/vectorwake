@@ -621,6 +621,36 @@ local function text_w(s, px, font, raw)
     return w * px
 end
 
+-- A key with a word in it: the shape every page presses to do a thing.
+--
+-- Laid out from its right edge and handing back its left, so a row can hang
+-- two or three of them off its own end and let the name give way. `go` is
+-- whether the thing it does is the encouraging one, which is the difference
+-- between "accept" and "ignore" sitting side by side.
+--
+-- It lived inside the friends page, which was the first page to need one.
+-- The shop needs the same shape for its BUY, and two of these would be two
+-- chances to change the look of a button and only remember one of them.
+local function row_button_w(label)
+    return text_w(label, 12 * F.scale) + 26 * F.scale
+end
+
+local function row_button(bx, cy, h, label, go, hot, action, val, lev)
+    local bw = row_button_w(label)
+    local by = cy - h / 2
+    local edge = go and pal.FRIEND or pal.RADAR_TILE
+    rect(bx - bw, by, bw, h, pal.rgb(0x070b12, hot and 0.85 or 0.55))
+    if hot then rect(bx - bw, by, bw, h, pal.a(pal.FRIEND, 0.18)) end
+    -- The wash goes down before the outline, so the stroke is the last
+    -- thing drawn on the shape rather than a line under a field.
+    key_box(bx - bw, by, bw, h, nil,
+            pal.a(edge, hot and 0.95 or (go and 0.75 or 0.5)))
+    txt(label, bx - bw / 2, cy, 12 * F.scale,
+        pal.a(go and pal.FRIEND or pal.INK, hot and 1 or 0.85), "center")
+    if action then hit(bx - bw, by, bw, h, action, val, lev) end
+    return bx - bw
+end
+
 local function population(x, y, players, bots, col)
     local right = x
     if bots and bots > 0 then
@@ -2243,7 +2273,12 @@ local function status(me, charges, lift)
     for t = 0, SIM_TRIGGERS - 1 do
         if sim.has_trigger(me, t) then trigs = trigs + 1 end
     end
-    local n = trigs + #slots + 1
+    -- The rows this will actually draw. The extra one was the bounty's, and
+    -- with that gone it reserved a row of nothing at the bottom: the block
+    -- hangs off the bottom of the window and grows upward, so an unused row
+    -- in the count lifts everything a row clear of where it belongs and
+    -- changes the scale the whole block is drawn at.
+    local n = trigs + #slots
 
     -- One number the whole block is measured in, so it grows as a drawing
     -- rather than as a pile of separately tuned constants. Everything below
@@ -2318,23 +2353,14 @@ local function status(me, charges, lift)
         y = y + rows_h
     end
 
-    -- What you are worth, which is the number that decides who comes for
-    -- you. It is the base plus your run, so this row says how long you have
-    -- been alive and killing rather than what you own: the run is drawn
-    -- beside it so a pilot reads "worth five, on a run of four" without
-    -- having to subtract.
-    gl_diamond(mid, y + rows_h / 2, 6 * z, pal.a(pal.BOUNTY, 0.8))
-    local bty = sim.ship_bounty(me)
-    local run = sim.ship_run and sim.ship_run(me) or 0
-    txt(tostring(bty), val, y + rows_h / 2, (FONT - 2) * z,
-        run > 0 and pal.a(pal.BOUNTY, 0.95) or pal.a(pal.DIM, 0.6))
-    local bw = val + text_w(tostring(bty), (FONT - 2) * z)
-    if run > 0 then
-        txt("x" .. run, bw + 6 * z, y + rows_h / 2, (FONT - 3) * z,
-            pal.a(pal.PAID, 0.8))
-        bw = bw + 6 * z + text_w("x" .. run, (FONT - 3) * z)
-    end
-    zone("bounty", x, y, bw - x, rows_h)
+    -- What you are worth is not in here. It was: a diamond, the number, and
+    -- the run beside it. The corner is what your triggers do and what you
+    -- carry, which are the things a press changes, and a bounty is neither.
+    -- It is also the one number in the corner that is about how other people
+    -- see you rather than about what you can do next, and it is already said
+    -- in the two places that ask that question: over every pilot's nameplate,
+    -- your own included when somebody is watching you, and in the scoreboard
+    -- column that sorts by it.
 
     return 0
 end
@@ -2818,12 +2844,6 @@ end
 -- What the row under the pointer is called, what it is carrying, and what
 -- spends it. Nil for a row with nothing to say.
 local function stack_card_lines(key, o, me)
-    if key == "bounty" then
-        -- Fixed words, because the number is the whole of what the row shows
-        -- and the question it raises is always the same one.
-        return "bounty", {}, nil,
-               "Your ship's bounty. Enemies get these points when you're destroyed."
-    end
     if key == "gun" or key == "bomb" then
         local t = (key == "gun") and sim.TRIG_GUN or sim.TRIG_BOMB
         local id = (key == "gun") and "guns" or "bombs"
@@ -5451,22 +5471,6 @@ function pages.friends(v, x, y, w, h, focused)
 
     -- One button. Returns its left edge, so a row can lay them out from the
     -- right and stop where it stops.
-    local function button(bx, cy, label, go, hot, action, val, lev)
-        local bw = text_w(label, 12 * F.scale) + 26 * F.scale
-        local by = cy - kh / 2
-        local edge = go and pal.FRIEND or pal.RADAR_TILE
-        rect(bx - bw, by, bw, kh, pal.rgb(0x070b12, hot and 0.85 or 0.55))
-        if hot then rect(bx - bw, by, bw, kh, pal.a(pal.FRIEND, 0.18)) end
-        -- The wash goes down before the outline, so the stroke is the last
-        -- thing drawn on the shape rather than a line under a field.
-        key_box(bx - bw, by, bw, kh, nil,
-                pal.a(edge, hot and 0.95 or (go and 0.75 or 0.5)))
-        txt(label, bx - bw / 2, cy, 12 * F.scale,
-            pal.a(go and pal.FRIEND or pal.INK, hot and 1 or 0.85), "center")
-        if action then hit(bx - bw, by, bw, kh, action, val, lev) end
-        return bx - bw
-    end
-
     -- --- the field, pinned at the top
     lbl("add a pilot", x, y + 8 * F.scale, pal.a(pal.DIM, 0.85))
     local fy = y + 22 * F.scale + bh / 2
@@ -5476,8 +5480,8 @@ function pages.friends(v, x, y, w, h, focused)
     local by = fy - bh / 2
     local typed = a.name or ""
     pages.field(fx, by, fw, typed, "a call sign", a.on, "add_box", "add_wipe")
-    button(fx + fw + 10 * F.scale + aw, fy, "add", true, v.add_hot == true,
-           "add_go")
+    row_button(fx + fw + 10 * F.scale + aw, fy, kh, "add", true,
+           v.add_hot == true, "add_go")
     -- What the last press came to, under the field, and the hint where there
     -- is room beside it. The hint is what stops somebody typing half a name
     -- and waiting: this looks up a call sign whole and offers nothing.
@@ -5607,7 +5611,7 @@ function pages.friends(v, x, y, w, h, focused)
             local edge = x + w - 8 * F.scale
             for k = #(r.acts or {}), 1, -1 do
                 local act = r.acts[k]
-                edge = button(edge, cy, act.label, act.go,
+                edge = row_button(edge, cy, kh, act.label, act.go,
                               v.friend_hot == i and v.friend_hot_act == k,
                               "friend_act", i, k) - 8 * F.scale
             end
@@ -5980,7 +5984,7 @@ end
 -- under the cursor, at reading size. The list keeps the comparing (every
 -- ladder in one column, every price in another) and this pane keeps the
 -- learning, which is the half a row thirteen points tall could never hold.
-function pages.shop_pane(r, x, y, w, h, standalone)
+function pages.shop_pane(r, x, y, w, h, standalone, index, buy_hot)
     -- Beside the list the pane hangs off a lit rule like every column; as a
     -- page of its own it is the page, and a rule down its left edge would
     -- mark nothing.
@@ -6067,13 +6071,23 @@ function pages.shop_pane(r, x, y, w, h, standalone)
         local used = pages.priced(r.price, x, ly, 15 * F.scale,
                                   pal.a(can and pal.CHARGE_COL or pal.DIM,
                                         can and 0.95 or 0.55))
-        -- What acting costs, in words that name the control that acts: the
-        -- row when the pane sits beside the list, the key under this when
-        -- the pane is the page.
-        lbl(can and (standalone and "buys the next rung"
-                     or "buys the next rung: press the row")
-            or "more than the wallet holds",
+        lbl(can and "buys the next rung" or "more than the wallet holds",
             x + used + 14 * F.scale, ly, pal.a(pal.DIM, 0.85))
+        -- And the thing that spends it, said in a word on a shape you press.
+        --
+        -- Buying used to be the row: standing on one and pressing again
+        -- bought it, and the only place that said so was this line, which
+        -- read "press the row". A control whose name is a sentence in the
+        -- margin is a control nobody finds. So the row selects, this buys,
+        -- and the page has one button on it that says what it does.
+        --
+        -- Not on the page version, which already ends in a full-width BUY of
+        -- its own: that is the phone's shape for the same act.
+        if not standalone then
+            row_button(x + row_button_w("buy"), ly + 34 * F.scale,
+                       30 * F.scale, "buy", can, buy_hot,
+                       index and "buy_go" or nil, index)
+        end
     elseif top > 0 then
         lbl(owned > base and "yours, all the way up" or "dealt to everybody",
             x, ly, pal.a(pal.DIM, 0.7))
@@ -6116,8 +6130,12 @@ function pages.shop_item(v, x, y, w, h)
                 pal.a(can and pal.CHARGE_COL or pal.DIM, can and 0.9 or 0.5))
         txt("BUY", x + rw / 2, ky + kh / 2, 17 * F.scale,
             pal.a(can and pal.INK or pal.DIM, can and 1 or 0.8), "center")
+        -- The same action the pane's button publishes, with no row named:
+        -- this page is one thing, so there is nothing to pick out of a list.
+        -- It used to press the page's own row through the stage, which meant
+        -- the key and the row it stood for could come apart.
         hit(x - 6 * F.scale, ky - 6 * F.scale, rw + 12 * F.scale,
-            kh + 12 * F.scale, "stage", 1)
+            kh + 12 * F.scale, "buy_go")
     end
 end
 
@@ -6145,8 +6163,14 @@ function pages.shop(v, x, y, w, h, focused)
     -- things never said what you hold: the number lived on the ship page
     -- and the refusal card, so a pilot priced a row by pressing it.
     local BAND = 34 * F.scale
+    -- Over the shelf, and only as wide as the shelf. Everything on this page
+    -- that belongs to the list is measured against `lw`: the rows, the wash
+    -- under the cursor, the price column, the scrollbar. The wallet and the
+    -- section rules were measured against `w`, which is the whole page, so
+    -- both ran out over the reading pane and the rules crossed it end to end.
+    -- One column, one right edge.
     lbl("wallet", x, y + 12 * F.scale)
-    pages.priced((v.pilot and v.pilot.rivets) or 0, x + w - 8 * F.scale,
+    pages.priced((v.pilot and v.pilot.rivets) or 0, x + lw - 8 * F.scale,
                  y + 12 * F.scale, 15 * F.scale,
                  pal.a(pal.CHARGE_COL, 0.95), "right")
     local top = y + BAND
@@ -6197,7 +6221,7 @@ function pages.shop(v, x, y, w, h, focused)
         if r.sect then
             local hy = at - dy
             if hy >= top and hy + SECT <= y + h then
-                hrule(x, hy + SECT * 0.42, w - 10 * F.scale)
+                hrule(x, hy + SECT * 0.42, lw - 10 * F.scale)
                 lbl(r.sect, x, hy + SECT * 0.82)
             end
             at = at + SECT
@@ -6283,7 +6307,7 @@ function pages.shop(v, x, y, w, h, focused)
     end
 
     if #(v.rows or {}) == 0 and v.empty then
-        empty_state(x, top, w, h, v.empty)
+        empty_state(x, top, lw, h, v.empty)
     end
     M.page_extent = (at - top) + 16 * F.scale
     -- The window is what is under the band, since the band does not move.
@@ -6302,10 +6326,19 @@ function pages.shop(v, x, y, w, h, focused)
     -- page that opens saying nothing.
     if pane > 0 then
         local rows2 = v.rows or {}
-        local cur = rows2[v.sel or 0] or rows2[v.hover or 0] or rows2[1]
-        if cur then
-            pages.shop_pane(cur, x + lw + 30 * F.scale, y + BAND,
-                            pane, h - BAND)
+        -- Which row, and not only which row's contents: the button under
+        -- the pane spends money on it, so it has to be the row the pane is
+        -- describing and not one worked out a second time. The pane reads
+        -- the cursor, or the pointer where there is no cursor yet, or the
+        -- first row on a page nothing has touched; a button that read any
+        -- other of those three would buy something the reader was not
+        -- looking at.
+        local at2 = (rows2[v.sel or 0] and v.sel)
+                    or (rows2[v.hover or 0] and v.hover)
+                    or (rows2[1] and 1)
+        if at2 then
+            pages.shop_pane(rows2[at2], x + lw + 30 * F.scale, y + BAND,
+                            pane, h - BAND, false, at2, v.buy_hot)
         end
     end
 end
@@ -7095,6 +7128,111 @@ function sweep_dial(cx, cy, r)
               pal.a(pal.FRIEND, 0.32 * f * f), true)
     end
     F.layer:disc(cx, ry(cy), math.max(1.2 * F.scale, r * 0.05), 10, pal.a(pal.DIM, 0.9))
+end
+
+-- The door: one page about the room the game points at.
+--
+-- Everything here is docs/design/community.md. The room exists because
+-- decision 28 took chat out and meant it, so the page says that first: an
+-- invite with no reason attached reads as an advert, and the reason is a fact
+-- about this game that a player has no other way of learning.
+--
+-- One control, drawn as a control. What was here before was four rows in the
+-- face and size every row that goes somewhere is set in, three of which went
+-- nowhere. A button is a stroked box in this interface and always has been,
+-- so the press that leaves is one, and nothing else on the page wears a shape
+-- that answers.
+--
+-- And the address, set in the mono, because an address is a machine reading
+-- and this interface quotes those verbatim. It is here rather than only
+-- behind the button because a browser hands a popup blocker every tab a game
+-- opens for you, and an address a player can read and retype is the floor
+-- that always works. It is cut from the same constant the button carries.
+function pages.door(v, x, y, w, h, focused)
+    local col = math.min(w, 520 * F.scale)
+    local at = y + 16 * F.scale
+
+    -- The heading: a hairline with a small dim label under it, which is what
+    -- a group of anything wears in this menu.
+    hrule(x, at, col)
+    at = at + 11 * F.scale
+    -- And the mark beside the label, at the size it is drawn at everywhere
+    -- else. Clyde is baked from forty samples around the official path,
+    -- chosen and checked at the thirteen points the rail gives it; at a
+    -- headline's size those samples would be corners. So the words carry the
+    -- heading and the mark confirms them, which is the way round this
+    -- interface works anyway.
+    draw_mark("discord", x + 7 * F.scale, at - 3 * F.scale, 7 * F.scale,
+              pal.a(pal.PANEL_INK, 0.9))
+    lbl("vectorwake on discord", x + 20 * F.scale, at)
+    at = at + 30 * F.scale
+
+    -- Why there is a room.
+    for _, line in ipairs(wrapped(v.door_why or "", 14 * F.scale, col)) do
+        txt(line, x, at, 14 * F.scale, pal.a(pal.PANEL_INK, 0.95), nil, nil,
+            true)
+        at = at + 21 * F.scale
+    end
+    at = at + 18 * F.scale
+
+    -- The press that leaves. Lit by the cursor the way every control is, and
+    -- the only thing on the page with a box round it.
+    local hot = focused and (v.sel or 1) == 1
+    local bw = math.min(220 * F.scale, col)
+    local bh = 38 * F.scale
+    key_box(x, at, bw, bh, pal.a(pal.FRIEND, hot and 0.16 or 0.06),
+            pal.a(pal.FRIEND, hot and 0.95 or 0.6))
+    txt("open the invite", x + bw / 2, at + bh / 2, 15 * F.scale,
+        pal.a(pal.INK, hot and 1 or 0.85), "center", MENU_FONT)
+    if (v.rows or {})[1] then hit(x, at, bw, bh, "stage", 1) end
+    -- What the press does, in a sentence rather than in the small label's
+    -- capitals: a whole sentence shouted is a sentence nobody reads twice.
+    -- Beside the button where the column is wide enough to hold it and under
+    -- it where it is not, which on a phone it never is.
+    local said = "a new tab, and the game keeps running behind it"
+    local sx = x + bw + 14 * F.scale
+    if sx + text_w(said, 11.5 * F.scale) <= x + col then
+        txt(said, sx, at + bh / 2, 11.5 * F.scale, pal.a(pal.DIM, 0.9),
+            nil, nil, true)
+        at = at + bh + 30 * F.scale
+    else
+        at = at + bh + 16 * F.scale
+        for _, line in ipairs(wrapped(said, 11.5 * F.scale, col)) do
+            txt(line, x, at, 11.5 * F.scale, pal.a(pal.DIM, 0.9), nil, nil,
+                true)
+            at = at + 16 * F.scale
+        end
+        at = at + 16 * F.scale
+    end
+
+    -- The address.
+    hrule(x, at, col)
+    at = at + 11 * F.scale
+    lbl("or type this", x, at)
+    at = at + 28 * F.scale
+    -- Raw, and in the mono. An address is a machine reading and this
+    -- interface quotes those exactly as they are; the page's own sentence
+    -- case had capitalized the host.
+    txt(v.door_addr or "", x, at, 15 * F.scale, pal.a(pal.INK, 0.95), nil,
+        nil, true)
+    at = at + 34 * F.scale
+
+    -- What happens in it. Lines, not rows: each one is a whole sentence and
+    -- none of them is a place to go.
+    hrule(x, at, col)
+    at = at + 11 * F.scale
+    lbl("what it is for", x, at)
+    at = at + 28 * F.scale
+    for _, line in ipairs(v.door_for or {}) do
+        for _, part in ipairs(wrapped(line, 13 * F.scale, col)) do
+            txt(part, x, at, 13 * F.scale, pal.a(pal.PANEL_INK, 0.9), nil,
+                nil, true)
+            at = at + 19 * F.scale
+        end
+        at = at + 7 * F.scale
+    end
+    M.page_extent = (at - y) + 16 * F.scale
+    M.page_room = h
 end
 
 -- One row of the stage: a mark for the one you are on, the name, and
@@ -8649,6 +8787,10 @@ function M.menu(v)
     elseif v.shop then
         -- The catalog, as a ladder and a price a row.
         pages.shop(v, panel_x + GUTTER * F.scale, top,
+                   panel_w - 14 * F.scale - GUTTER * F.scale, room, focused)
+    elseif v.door then
+        -- The room the game points at, as a page with one thing to press.
+        pages.door(v, panel_x + GUTTER * F.scale, top,
                    panel_w - 14 * F.scale - GUTTER * F.scale, room, focused)
     elseif v.item then
         -- One thing off that catalog, as a page: where a phone's tap on a
