@@ -133,10 +133,20 @@ arena goes from 3.06% solid to 2.91%. A thick diagonal reading as a smear at
 radar scale was the reason these stayed single stepped tiles for so long, and
 it turns out not to be a cost that had to be paid.
 
-The match maps are untouched by this. `--match` builds its pockets and lanes
-from its own pipeline rather than from the shape vocabulary the open arena
-draws from, so drydock and slipway generate byte for byte what they did before,
-and nothing anybody has drilled against has moved.
+The match maps draw from that vocabulary now too. They used to build their
+cover from two shapes, a filled rectangle and a hollow room, so every piece of
+it was a box; there was never an argument for the smaller maps having a smaller
+vocabulary, it just never got written. A shape is drawn once into its box and
+then read back and laid down half a turn away, rather than drawn twice, because
+the shapes make their own random choices as they go and drawing one twice draws
+two different shapes.
+
+Two things had to move with them. A slope names the corner it fills, so half a
+turn flips that corner to the opposite one, and a mirrored diagonal without
+that comes out inside out. And the wall fraction a match arena is held to
+counted whole solid tiles only, so a diagonal drawn as slopes vanished from the
+measure: converting one read as the map losing wall it had not lost. A slope is
+half a tile of wall and counts as half now, in both generators.
 
 ## The edge of the world is not a map's to draw
 

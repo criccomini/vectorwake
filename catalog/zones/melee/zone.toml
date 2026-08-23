@@ -20,8 +20,16 @@ mode = "melee"
 # `sim/tools/mapgen --match`, which builds two pockets with real distance
 # between them and guarantees the lanes are wide enough to fly.
 #
-#   ./sim/build/mapgen --match drydock catalog/zones/melee/drydock.vwmap 7
+#   ./sim/build/mapgen --match drydock catalog/zones/melee/drydock.vwmap 12
 #   ./sim/build/mapgen --match slipway catalog/zones/melee/slipway.vwmap 11
+#
+# Drydock was seed 7 while every piece of cover on these maps was a rectangle.
+# The cover is drawn from the same shapes the open arena uses now, and on seed
+# 7 that gave a room a bot told to leave could not find a quiet corner in
+# within its forty seconds, which server/src/ai.rs has a test for. Seed 12 is
+# the same generator and a room that works. The seed is a choice and not a
+# tuning: what makes a map good is checked, and a seed that fails the check is
+# simply not the one to ship.
 maps = ["drydock.vwmap", "slipway.vwmap"]
 
 # Eight seats, all eight of them a person's if eight people want them. The bot
