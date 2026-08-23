@@ -859,16 +859,14 @@ pub async fn run() {
         // stops the population being tended anywhere. Measured before it was
         // fixed: two dead addresses in the list turned a one second cycle into
         // a ten second one.
-        let mut want: HashMap<String, (u32, String)> = HashMap::new();
+        let mut want: HashMap<String, u32> = HashMap::new();
         let asked = futures_util::future::join_all(dirs.iter().map(|u| browse(u))).await;
-        for (addr, n, zone) in asked.into_iter().flatten() {
+        for (addr, n, _) in asked.into_iter().flatten() {
             // The most any directory says, because a directory relays only what
             // it observed itself and one may have heard more recently than
             // another.
-            let e = want.entry(addr).or_insert((0, zone.clone()));
-            if n >= e.0 {
-                *e = (n, zone);
-            }
+            let e = want.entry(addr).or_insert(0);
+            *e = (*e).max(n);
         }
         let asked = futures_util::future::join_all(
             direct
@@ -877,8 +875,8 @@ pub async fn run() {
         )
         .await;
         for (addr, status) in asked {
-            if let Some((n, zone)) = status {
-                want.insert(addr, (n, zone));
+            if let Some((n, _)) = status {
+                want.insert(addr, n);
             }
         }
 
@@ -894,12 +892,12 @@ pub async fn run() {
             } else {
                 inst.misses += 1;
                 if inst.misses >= GONE_AFTER {
-                    want.insert(addr.clone(), (0, String::new()));
+                    want.insert(addr.clone(), 0);
                 }
             }
         }
 
-        for (addr, (n, zone)) in want {
+        for (addr, n) in want {
             let inst = fleet.entry(addr.clone()).or_default();
             // Bots on their way out still hold their seat, so they count. The
             // difference is what stops the supervisor asking a second one to
@@ -927,7 +925,6 @@ pub async fn run() {
                         Arc::clone(&rigs),
                         Arc::clone(&yielding),
                         Arc::clone(&accounts),
-                        zone.clone(),
                     ));
                     inst.bots.push(Live {
                         name: who.name,
@@ -1273,7 +1270,6 @@ async fn fly(
     rigs: Arc<Rigs>,
     yielding: Arc<AtomicBool>,
     accounts: Arc<Accounts>,
-    zone: String,
 ) -> FlightEnd {
     let cfg = tokio_tungstenite::tungstenite::protocol::WebSocketConfig {
         max_message_size: Some(2 * 1024 * 1024),
@@ -1307,10 +1303,7 @@ async fn fly(
             return FlightEnd::AuthFailed;
         }
     };
-    fly_socket(
-        addr, who, maps, rigs, yielding, accounts, identity, zone, ws,
-    )
-    .await
+    fly_socket(addr, who, maps, rigs, yielding, accounts, identity, ws).await
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1322,30 +1315,14 @@ async fn fly_socket<S>(
     yielding: Arc<AtomicBool>,
     accounts: Arc<Accounts>,
     identity: BotIdentity,
-    zone: String,
     ws: tokio_tungstenite::WebSocketStream<S>,
 ) -> FlightEnd
 where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send,
 {
-    let daily = zone == "daily";
-    let day = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs()
-        / 86_400;
-    let class = if daily {
-        (day as usize % ai::CLASS_NAMES.len()) as u8
-    } else {
-        who.class
-    };
-    let skill = if daily { 0.55 } else { who.skill };
-    let behavior_seed = if daily {
-        fingerprint(format!("vectorwake daily {day}").as_bytes()) as u32
-    } else {
-        fingerprint(who.name.as_bytes()) as u32
-    };
-    let wants_name = if daily { "Daily Rival" } else { &who.name };
+    let class = who.class;
+    let skill = who.skill;
+    let behavior_seed = fingerprint(who.name.as_bytes()) as u32;
     let share_world = identity.shares_world();
     let (mut sink, mut source) = ws.split();
 
@@ -1544,18 +1521,13 @@ where
                             // way to be wrong.
                             Sight::Dark => *crate::sim::World::baseline_kit_ceiling(),
                         };
-                        let daily_owned = sim::World::base_entitlements();
-                        let owned = if daily {
-                            daily_owned
-                        } else {
-                            identity.entitlements()
-                        };
+                        let owned = identity.entitlements();
                         let mut ceiling = arena_ceiling;
                         for (slot, top) in ceiling.iter_mut().enumerate() {
                             *top = (*top).min(owned[slot]);
                         }
                         let kit = crate::shopper::build(
-                            &crate::shopper::wants(wants_name, class),
+                            &crate::shopper::wants(&who.name, class),
                             &ceiling,
                         );
                         let mut m = Vec::with_capacity(1 + kit.len());
@@ -2238,7 +2210,6 @@ mod tests {
             Arc::new(AtomicBool::new(false)),
             Arc::new(Accounts::default()),
             BotIdentity::Unaccounted,
-            "melee".into(),
             ws,
         ));
 
@@ -2292,7 +2263,6 @@ mod tests {
             Arc::new(AtomicBool::new(false)),
             Arc::new(Accounts::default()),
             BotIdentity::Unaccounted,
-            "melee".into(),
             ws,
         )
         .await;

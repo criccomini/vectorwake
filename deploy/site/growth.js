@@ -117,23 +117,5 @@ async function weekPage() {
   sharePage("This week in Vectorwake");
 }
 
-async function dailyPage() {
-  const payload = await request("/v1/daily", {});
-  const rows = payload.board || [];
-  text("[data-day]", payload.day || "");
-  text("[data-status]", rows.length ? `${rows.length} pilots have taken today’s run.` : "The board is clean. First launch owns the target.");
-  const lead = document.querySelector("[data-lead]");
-  if (rows.length) {
-    lead.hidden = false;
-    lead.innerHTML = `<p>score to beat</p><strong>${Number(rows[0].kills) || 0}</strong><span>${html(rows[0].name)} / ${Number(rows[0].deaths) || 0} lost</span>`;
-  }
-  const ladder = document.querySelector("[data-ladder]");
-  ladder.hidden = !rows.length;
-  document.querySelector("[data-rows]").innerHTML = rows.map((row, index) =>
-    `<div class="ladder-row daily-row"><span>${index + 1}. ${html(row.name)}</span><span>${Number(row.kills) || 0}</span><span>${Number(row.deaths) || 0}</span><span><a href="/matches/${Number(row.match) || 0}">film</a></span></div>`
-  ).join("");
-  sharePage("Vectorwake daily run");
-}
-
-const run = page === "match" ? matchPage : page === "week" ? weekPage : dailyPage;
+const run = page === "match" ? matchPage : weekPage;
 run().catch((error) => text("[data-status]", error.message));

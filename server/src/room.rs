@@ -1701,8 +1701,8 @@ impl Room {
         // Bot-filled match rooms may have been running for minutes before a
         // person arrives. On the transition from none to one, put the mode's
         // opening edge back so the next tick starts a full match for them. In
-        // the daily room this is what makes every run the same minute rather
-        // than the remainder of a bot match.
+        // That gives them a whole match rather than the remainder of a bot
+        // match.
         if !bot && self.humans() == 1 && self.mode.match_state().is_some_and(|state| state.playing)
         {
             self.mode.first_human();

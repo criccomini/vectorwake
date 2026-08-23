@@ -31,7 +31,6 @@ local arena = read("client/arena/arena.script")
 local account = read("client/arena/account.lua")
 local admin = read("deploy/admin/admin.js")
 local match_page = read("deploy/site/match.html")
-local daily_page = read("deploy/site/daily.html")
 local week_page = read("deploy/site/week.html")
 local growth = read("deploy/site/growth.js")
 
@@ -92,9 +91,6 @@ check("public match pages expose score, film, and sharing",
       has(match_page, "data-score") and has(match_page, "data-replay")
       and has(match_page, "data-share") and has(growth, 'request("/v1/match"')
       and has(growth, "error.status !== 404"))
-check("the daily challenge has a stable one-press launch",
-      has(daily_page, "#join/daily") and has(daily_page, "data-ladder")
-      and has(growth, 'request("/v1/daily"'))
 check("the weekly recap is a shareable public artifact",
       has(week_page, "data-stories") and has(week_page, "data-share")
       and has(growth, 'request("/v1/week"'))
