@@ -214,41 +214,27 @@ local function bracket(x, y, w, h, col, arm, chamfer)
     end
 end
 
--- A rounded rectangle with a border all the way round it, filled.
+-- A button's outline: a rectangle stroked all the way round, with a wash
+-- inside it.
 --
--- The one closed box in this interface. Everything else is held together by
--- `bracket` above, which is four chamfered corners and nothing between them,
--- because a box drawn all the way round is a shape this game does not
--- otherwise contain. These two are not furniture on a page: they are the way
--- to an account and the way out to Discord, sitting in the corner of the tab
--- row on every page, and Chris asked for the shape the web puts a link in,
--- which is what people already read as pressable.
+-- The one shape a thing to press wears. The corner's MENU and PLAYERS have
+-- worn it from the start, and it is what the help page draws a key as, so a
+-- hand that has learned one has learned all of them.
 --
--- The fill is a cross rather than a rectangle, so no square corner shows
--- past the round one, and four discs finish it.
-local function pill(x, y, w, h, fill, edge)
-    local r = math.min(h * 0.3, 9 * F.scale)
-    rect(x + r, y, w - 2 * r, h, fill)
-    rect(x, y + r, w, h - 2 * r, fill)
-    for _, c in ipairs({{x + r, y + r}, {x + w - r, y + r},
-                        {x + w - r, y + h - r}, {x + r, y + h - r}}) do
-        F.layer:disc(c[1], ry(c[2]), r, 12, fill)
-    end
-    -- Six samples to a corner, which at nine points of radius is a step of
-    -- under half a point: any smoother is vertices spent below the pixel.
-    local pts = {}
-    -- The four corner centers, walked the way the arcs run in screen space:
-    -- right-down, down-left, left-up, up-right. The quarter each one turns
-    -- through is its index times a right angle.
-    for _, c in ipairs({{x + w - r, y + h - r, 0}, {x + r, y + h - r, 1},
-                        {x + r, y + r, 2}, {x + w - r, y + r, 3}}) do
-        for k = 0, 6 do
-            local a = c[3] * math.pi / 2 + k * math.pi / 12
-            pts[#pts + 1] = c[1] + math.cos(a) * r
-            pts[#pts + 1] = ry(c[2] + math.sin(a) * r)
-        end
-    end
-    F.layer:outline(pts, 1.1 * F.scale, edge, true)
+-- The menu's own buttons wore two other shapes until now. The friends page
+-- drew them with `bracket` above, which is what holds a cluster together, and
+-- the pair at the end of the top line were rounded pills, on the argument that
+-- a pill is the shape the web puts a link in. Both were true about the shape
+-- and wrong about the object: three controls that do what MENU does looked
+-- like three other kinds of thing, on pages where MENU itself is one press
+-- away.
+--
+-- What keeps the bracket is everything that is not a button: a field, a card,
+-- a panel. So the two shapes now say which of those a rectangle is, which is
+-- more than either was saying before.
+local function key_box(x, y, w, h, fill, edge)
+    if fill then rect(x, y, w, h, fill) end
+    F.layer:frame(x, ry(y, h), w, h, 1.1 * F.scale, edge)
 end
 
 -- A lit rule with the light falling off one side of it, which is a wall face
@@ -569,8 +555,8 @@ local function key_w(label) return text_w(label, key_size()) + 2 * KEY_PAD * F.s
 local function key_frame(x, y, w, on)
     local col = on and pal.FRIEND or pal.DIM
     local h = KEY_H * F.scale
-    rect(x, y, w, h, pal.a(col, on and 0.16 or 0.07))
-    F.layer:frame(x, ry(y, h), w, h, 1.1 * F.scale, pal.a(col, on and 0.95 or 0.55))
+    key_box(x, y, w, h, pal.a(col, on and 0.16 or 0.07),
+            pal.a(col, on and 0.95 or 0.55))
     return col, h
 end
 local function key_cap(x, y, w, label, on)
@@ -4819,8 +4805,10 @@ function pages.friends(v, x, y, w, h, focused)
         local edge = go and pal.FRIEND or pal.RADAR_TILE
         rect(bx - bw, by, bw, kh, pal.rgb(0x070b12, hot and 0.85 or 0.55))
         if hot then rect(bx - bw, by, bw, kh, pal.a(pal.FRIEND, 0.18)) end
-        bracket(bx - bw, by, bw, kh, pal.a(edge, hot and 0.95 or (go and 0.75 or 0.5)),
-                9 * F.scale)
+        -- The wash goes down before the outline, so the stroke is the last
+        -- thing drawn on the shape rather than a line under a field.
+        key_box(bx - bw, by, bw, kh, nil,
+                pal.a(edge, hot and 0.95 or (go and 0.75 or 0.5)))
         txt(label, bx - bw / 2, cy, 12 * F.scale,
             pal.a(go and pal.FRIEND or pal.INK, hot and 1 or 0.85), "center")
         if action then hit(bx - bw, by, bw, kh, action, val, lev) end
@@ -5542,9 +5530,9 @@ function CHIP.draw(x, top, w, v, rh)
             local by = cy + (rh - bh) / 2
             local bw = cw - 16 * F.scale
             rect(cx, by, bw, bh, pal.a(pal.DIM, hot and 0.16 or 0.07))
-            -- The chamfered bracket every other button in this interface
-            -- wears, rather than a box: a frame here would also be a key, as
-            -- far as the board beside it is concerned.
+            -- The one button that keeps the chamfered bracket, against the
+            -- rule the rest of them follow: this page draws a keyboard, and a
+            -- stroked box on it is a key. See `key_box`.
             bracket(cx, by, bw, bh, pal.a(pal.DIM, hot and 0.9 or 0.45),
                     11 * F.scale)
             lbl(r.label or "", cx + bw / 2, by + bh / 2 + 3 * F.scale,
@@ -5973,10 +5961,11 @@ end
 local function stage_row(x, y, w, h, r, hot)
     -- A row drawn as a button rather than as a line of a list.
     --
-    -- One row in this game is one. Discord is not a page of this menu and
-    -- should not read as a stop on the way to one: it is the way out to where
-    -- the talking happens, and the mocks draw it as a thing you press. See
-    -- docs/design/community.md.
+    -- For a row that is not a stop on the way anywhere. Discord was the one,
+    -- until it moved to the corner of the top line where the game's one
+    -- outbound link belongs; no page hands this a row today, and the branch
+    -- stays because the next one that is not a destination will want it.
+    -- See docs/design/community.md.
     if r.button then
         local bh = math.min(h - 6 * F.scale, 38 * F.scale)
         local bw = math.min(w - GUTTER * F.scale,
@@ -5990,7 +5979,8 @@ local function stage_row(x, y, w, h, r, hot)
         -- Lit the way every other selection in this menu is lit: a field, not
         -- a brighter word inside the same dark box.
         if hot then rect(bx, by, bw, bh, pal.a(pal.FRIEND, 0.18)) end
-        bracket(bx, by, bw, bh, edge, 13 * F.scale)
+        -- The outline every button wears. See `key_box`.
+        key_box(bx, by, bw, bh, nil, edge)
         draw_mark(r.button, bx + 22 * F.scale, by + bh / 2, 9.5 * F.scale,
                   pal.a(hot and pal.FRIEND or pal.INK, hot and 1 or 0.9))
         -- Quoted rather than said: it is the name of somewhere else, and the
@@ -6680,8 +6670,8 @@ function pages.corner(v, right, cy, wordless)
             or text_w(caps and string.upper(label) or label, px)
         local bw = lw + (mark and (bare and 40 or 52) or 30) * F.scale
         local bx = rt - bw
-        pill(bx, by, bw, bh, pal.rgb(0x0a0f18, on and 0.95 or 0.7),
-             pal.a(on and pal.FRIEND or pal.RADAR_TILE, on and 0.95 or 0.7))
+        key_box(bx, by, bw, bh, pal.rgb(0x0a0f18, on and 0.95 or 0.7),
+                pal.a(on and pal.FRIEND or pal.RADAR_TILE, on and 0.95 or 0.7))
         local ink = pal.a(on and pal.FRIEND or pal.INK, on and 1 or 0.85)
         if mark then
             draw_mark(mark, bx + (bare and bw / 2 or 21 * F.scale), cy,

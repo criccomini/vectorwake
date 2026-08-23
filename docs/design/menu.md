@@ -103,7 +103,25 @@ and the way out to Discord, with the wordmark giving up size to make room and
 Discord wearing its mark alone where the word will not fit. The tab row is
 bounded by them and gives up its gaps before its type. Laid out from opposite
 ends and never told about each other, the two ran into the middle of a
-landscape phone and the last tab was drawn under a pill that took its taps.
+landscape phone and the last tab was drawn under a button that took its taps.
+
+## A button is a stroked box
+
+One shape for a thing to press: a rectangle outlined all the way round with a
+wash inside it. That is what MENU and PLAYERS wear in the corner of a game and
+what the help page draws a key as, so a hand that has learned one has learned
+all of them.
+
+Three controls used to say otherwise. Add on the friends page wore the
+chamfered bracket that holds a cluster together, and the account and Discord
+buttons at the end of the top line were rounded pills, on the argument that a
+pill is the shape the web puts a link in. Each was a fair reading of its own
+shape and the wrong answer about the object: they do what MENU does, on pages
+where MENU itself is one press away.
+
+The bracket keeps everything that is not a button, which is a field, a card or
+a panel. So the two shapes now say which of those a rectangle is, and that is
+more than either of them was saying before.
 
 ## Scrolling
 
