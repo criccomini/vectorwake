@@ -6837,16 +6837,11 @@ function pages.corner(v, right, cy, wordless)
                "pilot_page", nil, true)
     end
     if v.discord then
-        local bx, bw = button("discord",
-                              v.discord_hot or v.corner_sel == "discord",
-                              "discord_link", "discord")
-        -- A real anchor over it, laid by the page. Nothing this client does
-        -- from its own loop is inside the tap that asked for it, and a tab
-        -- opened outside one is what a popup blocker stops. CSS pixels, which
-        -- is the page's unit.
-        M.link_dom = string.format("%.1f,%.1f,%.1f,%.1f,%s",
-                                   bx / F.density, by / F.density,
-                                   bw / F.density, bh / F.density, v.discord)
+        -- No anchor over this one. It opens the page about the server, which
+        -- is inside the game, and the row on that page that leaves for the
+        -- server is where the anchor goes: see `r.link` in the stage.
+        button("discord", v.discord_hot or v.corner_sel == "discord",
+               "discord_link", "discord")
     end
     return rt + 10 * F.scale
 end

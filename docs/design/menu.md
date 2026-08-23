@@ -62,9 +62,10 @@ vectorwake
               your call sign sits at the far end of the row and is the way
               into your account and career: a page reached from the one
               place already naming it, rather than a seventh stop. Beside it,
-              the way out to Discord. Both are drawn as buttons, which on a
-              phone there is no corner for: there the play page carries the
-              Discord one and the top of the screen is the wordmark alone
+              Discord, which opens a page about the room rather than the
+              room. Both are drawn as buttons, which on a phone there is no
+              corner for: there the play page carries the Discord one and the
+              top of the screen is the wordmark alone
 
 in a match
 ├ friends     the people you are flying with, and who else is on
@@ -79,6 +80,35 @@ horizontal, the page is vertical, and nothing needs a pointer. A page still
 descends where it has somewhere to go, though the ship page no longer does:
 picking a hull and spending its thirty points are the same act seen twice, so
 the carousel and the ladders are one page rather than two levels.
+
+### A page you cannot stand on is not a page you can enter
+
+The catalog and the games list arrive over the wire. Until they do, those
+pages hold one line saying so, and down off the tab used to step into them
+anyway: the cursor landed on a list of none, the arrows left the tab row, and
+the next press did nothing anybody could see. So the step is refused while
+there is nothing to stand on, silently, with the cursor left on the tab. The
+stage previews the page from the tab above it either way, so the same words
+are on screen; the press starts working the moment the rows arrive. A page
+whose first control is a text field counts as standable even with no rows,
+because a friends page with nobody on it is the whole reason somebody opens
+it.
+
+### Lit and hovered are two marks
+
+The lit stop is where you are. The hovered one is what a press would open,
+and it never moves the cursor. That was one mark for a while, on the reading
+that a hover is the cursor wherever the cursor lives, and the cursor lives in
+the rail at the root and in the stage below it. What came out was a tab row
+that changed the page under the mouse on the home screen and did nothing from
+inside a page, told apart only by how you had got there. Inside the stage a
+hover is still the cursor, because there is one cursor and it is the list you
+are reading; on the rail, crossing the row on the way to somewhere else can
+no longer take a page off the screen.
+
+The two buttons at the far end of the row are stops on it, so they are lit on
+the same rule: the account button while the account page is up, the Discord
+button while its page is.
 
 ## What the window decides
 

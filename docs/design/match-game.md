@@ -658,6 +658,13 @@ stays the place a pilot held in the week rather than in the filter: somebody
 who is fourteenth does not become first because the other thirteen were
 hidden.
 
+The table has two axes and uses both. Down the page is the ladder, and across
+it is time: left and right on any row are the pair of arrows drawn over the
+table, one week back and one week forward, and there is no forward from the
+week that is running. There is nothing else to the side of a pilot's row, and
+the way back up to the tabs is up, out of the first row into the filter box
+and out of the box to the row of tabs.
+
 Under about five hundred points of width a row stops being a line of columns.
 Two of them fitted on a phone and the second was drawn half off the panel's
 edge, so a leaderboard's entire content was how many times everybody died. A
