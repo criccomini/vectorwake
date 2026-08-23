@@ -80,10 +80,13 @@ world.build_static(writer("fill"), writer("glow"), 6, 8, 144, 16)
 check("a long bulkhead has hardware nodes", count("glow:disc") > 0,
       count("glow:disc") .. " nodes")
 check("a long bulkhead has recessed equipment bays",
-      count("fill:quad") > 0 and count("glow:outline") > 0,
-      count("fill:quad") .. "/" .. count("glow:outline") .. " bays")
+      count("fill:fan") > 8 and count("glow:outline") > 8,
+      count("fill:fan") .. "/" .. count("glow:outline") .. " bays")
+check("a long bulkhead has pipe couplers",
+      count("glow:ring") > 4 and count("fill:seg") > 4,
+      count("glow:ring") .. "/" .. count("fill:seg") .. " fittings")
 check("a long bulkhead mixes structural treatments",
-      count("glow:seg") > 30 and count("glow:disc") > 4,
+      count("glow:seg") > 80 and count("glow:disc") > 4,
       count("glow:seg") .. "/" .. count("glow:disc") .. " fittings")
 
 -- A big rock is still one collision object, but it is no longer one flat

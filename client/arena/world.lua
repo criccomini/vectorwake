@@ -651,22 +651,70 @@ local function wall_mass(bg, glow, set, cells, border)
     local edge2 = pal.a(lit, 0.5)
     local inner = pal.a(pal.WALL_LIT, 1)
     local outer = pal.a(lit, 1)
-    local hardware = pal.a(pal.WALL_HARDWARE, 0.34)
-    local hardware_hot = pal.a(pal.WALL_HARDWARE, 0.62)
-    local warning = pal.a(pal.WALL_WARNING, 0.54)
-    local recess = pal.a(pal.WALL_RECESS, 0.88)
-    local plate = pal.a(pal.WALL_PLATE, 0.76)
-    local seam = pal.a(lit, 0.18)
+    local hardware = pal.a(pal.STATION_COLD, 0.34)
+    local hardware_hot = pal.a(pal.hot(pal.STATION_COLD, 0.28, 1), 0.68)
+    local warning = pal.a(pal.STATION_WARM, 0.70)
+    local recess = pal.a(pal.STATION_RECESS, 0.96)
+    local plate = pal.a(pal.STATION_PLATE, 0.94)
+    local plate_dim = pal.a(pal.STATION_PLATE, 0.72)
+    local structure = pal.a(pal.PANEL_INK, 0.24)
+    local seam = pal.a(pal.STATION_COLD, 0.20)
 
     -- A run is divided into irregular bays, and each bay gets one of several
     -- jobs. The collision edge stays continuous, because it is the line a
-    -- pilot has to read at speed. The machinery behind it does not repeat on
-    -- a tile pitch: quiet armor, hatches, braces, vents, warning paint,
-    -- conduits, field repairs, and buttresses trade places on a seeded macro
-    -- rhythm. The same map always builds the same wall without storing art in
-    -- its tile data.
+    -- pilot has to read at speed. Behind it, the wall uses the station's own
+    -- kit: notched armor, recessed service panels, trusses, warning teeth,
+    -- pipes, couplers, and field repairs. Those pieces trade places on a
+    -- seeded macro rhythm rather than repeating on a tile pitch. The same map
+    -- always builds the same wall without storing art in its tile data.
     local function bay_point(px, py, ux, uy, ox, oy, at, depth)
         return px + ux * at - ox * depth, py + uy * at - oy * depth
+    end
+
+    local function panel_shape(px, py, ux, uy, ox, oy, a, b, near, far, cut)
+        local p1x, p1y = bay_point(px, py, ux, uy, ox, oy, a, near + cut)
+        local p2x, p2y = bay_point(px, py, ux, uy, ox, oy, a + cut, near)
+        local p3x, p3y = bay_point(px, py, ux, uy, ox, oy, b - cut, near)
+        local p4x, p4y = bay_point(px, py, ux, uy, ox, oy, b, near + cut)
+        local p5x, p5y = bay_point(px, py, ux, uy, ox, oy, b, far - cut)
+        local p6x, p6y = bay_point(px, py, ux, uy, ox, oy, b - cut, far)
+        local p7x, p7y = bay_point(px, py, ux, uy, ox, oy, a + cut, far)
+        local p8x, p8y = bay_point(px, py, ux, uy, ox, oy, a, far - cut)
+        return {p1x,p1y, p2x,p2y, p3x,p3y, p4x,p4y,
+                p5x,p5y, p6x,p6y, p7x,p7y, p8x,p8y}
+    end
+
+    local function armor_panel(px, py, ux, uy, ox, oy, a, b, col, cut)
+        local shape = panel_shape(px, py, ux, uy, ox, oy,
+                                  a, b, 2.8, 12.2, cut or 2.4)
+        bg:fan(shape, col or plate)
+        glow:outline(shape, 0.65, structure, true)
+        return shape
+    end
+
+    local function fastener(px, py, ux, uy, ox, oy, at, depth)
+        local x, y = bay_point(px, py, ux, uy, ox, oy, at, depth)
+        bg:disc(x, y, 1.35, 8, recess)
+        glow:ring(x, y, 1.15, 0.48, 8, hardware)
+    end
+
+    local function inset_panel(px, py, ux, uy, ox, oy, a, b, near, far)
+        local shape = panel_shape(px, py, ux, uy, ox, oy,
+                                  a, b, near, far, 1.5)
+        bg:fan(shape, recess)
+        glow:outline(shape, 0.65, seam, true)
+        return shape
+    end
+
+    local function pipe_segment(x1, y1, x2, y2)
+        bg:seg(x1, y1, x2, y2, 2.8, recess, true)
+        glow:seg(x1, y1, x2, y2, 1.25, hardware, true)
+        glow:seg(x1, y1, x2, y2, 0.42, hardware_hot, true)
+    end
+
+    local function pipe_coupler(x, y)
+        bg:disc(x, y, 2.05, 8, recess)
+        glow:ring(x, y, 1.65, 0.68, 8, hardware_hot)
     end
 
     local function draw_bay(px, py, ux, uy, ox, oy, a, b, motif)
@@ -674,98 +722,124 @@ local function wall_mass(bg, glow, set, cells, border)
         if span < 24 then return end
         local mid = (a + b) * 0.5
         if motif == 0 then
-            -- A quiet plate. Only the two end seams remain, leaving a long
-            -- dark rest between busier systems.
-            local ax, ay = bay_point(px, py, ux, uy, ox, oy, a, 2.5)
-            local bx, by = bay_point(px, py, ux, uy, ox, oy, a, 9.5)
-            local cx, cy = bay_point(px, py, ux, uy, ox, oy, b, 2.5)
-            local dx, dy = bay_point(px, py, ux, uy, ox, oy, b, 9.5)
-            glow:seg(ax, ay, bx, by, 0.7, seam)
-            glow:seg(cx, cy, dx, dy, 0.7, seam)
-        elseif motif == 1 or motif == 3 or motif == 6 then
-            -- Three different things share a recessed bay: a service hatch,
-            -- an intake grille, or a repair plate. What sits inside it keeps
-            -- the silhouette different without inventing three enclosures.
-            local x1, y1 = bay_point(px, py, ux, uy, ox, oy, a + 3, 3)
-            local x2, y2 = bay_point(px, py, ux, uy, ox, oy, b - 3, 3)
-            local x3, y3 = bay_point(px, py, ux, uy, ox, oy, b - 3, 11)
-            local x4, y4 = bay_point(px, py, ux, uy, ox, oy, a + 3, 11)
-            bg:quad(x1, y1, x2, y2, x3, y3, x4, y4,
-                    motif == 6 and plate or recess)
-            glow:outline({x1, y1, x2, y2, x3, y3, x4, y4},
-                         0.7, seam, true)
-            if motif == 1 then
-                local lx, ly = bay_point(px, py, ux, uy, ox, oy, a + 8, 7)
-                local rx, ry = bay_point(px, py, ux, uy, ox, oy, b - 8, 7)
-                glow:disc(lx, ly, 1.0, 6, hardware_hot)
-                glow:disc(rx, ry, 1.0, 6, hardware_hot)
-                glow:seg(lx, ly, rx, ry, 0.65, hardware)
-            elseif motif == 3 then
-                local n = math.max(3, math.min(6, math.floor(span / 12)))
-                for k = 1, n do
-                    local at = a + span * k / (n + 1)
-                    local sx, sy = bay_point(px, py, ux, uy, ox, oy, at, 4.5)
-                    local ex2, ey2 = bay_point(px, py, ux, uy, ox, oy, at, 9.5)
-                    glow:seg(sx, sy, ex2, ey2, 0.8, hardware)
-                end
-            else
-                local p1x, p1y = bay_point(px, py, ux, uy, ox, oy,
-                                           a + span * 0.18, 4)
-                local p2x, p2y = bay_point(px, py, ux, uy, ox, oy,
-                                           a + span * 0.42, 8)
-                local p3x, p3y = bay_point(px, py, ux, uy, ox, oy,
-                                           a + span * 0.63, 5.5)
-                local p4x, p4y = bay_point(px, py, ux, uy, ox, oy,
-                                           a + span * 0.82, 10)
-                glow:seg(p1x, p1y, p2x, p2y, 0.8, hardware)
-                glow:seg(p2x, p2y, p3x, p3y, 0.8, hardware)
-                glow:seg(p3x, p3y, p4x, p4y, 0.8, hardware)
-                glow:disc(p2x, p2y, 0.9, 6, hardware_hot)
-                glow:disc(p3x, p3y, 0.9, 6, hardware_hot)
-            end
+            -- Quiet armor still has weight. One offset seam and two dark
+            -- fasteners keep it from becoming an empty gap, while leaving a
+            -- long rest between the busier machines.
+            armor_panel(px, py, ux, uy, ox, oy, a, b, plate_dim, 3.2)
+            local at = a + span * 0.62
+            local x1, y1 = bay_point(px, py, ux, uy, ox, oy, at - 2, 3.4)
+            local x2, y2 = bay_point(px, py, ux, uy, ox, oy, at + 2, 11.6)
+            glow:seg(x1, y1, x2, y2, 0.7, seam)
+            fastener(px, py, ux, uy, ox, oy, a + 6, 7.5)
+            fastener(px, py, ux, uy, ox, oy, b - 6, 7.5)
+        elseif motif == 1 then
+            -- A service hatch, inset inside its own armor collar. The lamps
+            -- and center rail use the same cold service light as the station.
+            armor_panel(px, py, ux, uy, ox, oy, a, b, plate, 2.2)
+            inset_panel(px, py, ux, uy, ox, oy, a + 6, b - 6, 5.0, 10.4)
+            local lx, ly = bay_point(px, py, ux, uy, ox, oy, a + 10, 7.7)
+            local rx, ry = bay_point(px, py, ux, uy, ox, oy, b - 10, 7.7)
+            glow:seg(lx, ly, rx, ry, 0.72, hardware)
+            glow:disc(lx, ly, 1.05, 8, hardware_hot)
+            glow:disc(rx, ry, 1.05, 8, hardware_hot)
         elseif motif == 2 then
-            -- A deep V brace, wide enough to read as structure rather than a
-            -- diagonal scratch.
-            local ax, ay = bay_point(px, py, ux, uy, ox, oy, a + 4, 10.5)
-            local mx, my = bay_point(px, py, ux, uy, ox, oy, mid, 3)
-            local bx, by = bay_point(px, py, ux, uy, ox, oy, b - 4, 10.5)
-            glow:seg(ax, ay, mx, my, 1.15, hardware)
-            glow:seg(mx, my, bx, by, 1.15, hardware)
-            glow:disc(mx, my, 1.1, 6, hardware_hot)
-        elseif motif == 4 then
-            -- Warning paint appears in one compact patch. Spreading it down
-            -- the whole run would turn a navigation aid into wallpaper.
-            local first = mid - 12
-            for k = 0, 3 do
-                local sx, sy = bay_point(px, py, ux, uy, ox, oy,
-                                         first + k * 7, 3)
-                local ex2, ey2 = bay_point(px, py, ux, uy, ox, oy,
-                                           first + k * 7 + 5, 10)
-                glow:seg(sx, sy, ex2, ey2, 1.15, warning)
+            -- A broad station truss over a recessed bay. The dark underlay
+            -- makes each brace feel structural instead of like a scratch.
+            armor_panel(px, py, ux, uy, ox, oy, a, b, plate_dim, 2.8)
+            inset_panel(px, py, ux, uy, ox, oy, a + 7, b - 7, 4.5, 10.9)
+            local ax, ay = bay_point(px, py, ux, uy, ox, oy, a + 8, 10.0)
+            local mx, my = bay_point(px, py, ux, uy, ox, oy, mid, 4.1)
+            local bx, by = bay_point(px, py, ux, uy, ox, oy, b - 8, 10.0)
+            bg:seg(ax, ay, mx, my, 3.2, plate, true)
+            bg:seg(mx, my, bx, by, 3.2, plate, true)
+            glow:seg(ax, ay, mx, my, 0.72, hardware, true)
+            glow:seg(mx, my, bx, by, 0.72, hardware, true)
+            pipe_coupler(mx, my)
+        elseif motif == 3 then
+            -- A deep intake with enough slats to read as a vent, bounded by
+            -- a heavy collar and bolts instead of drawn loose on the wall.
+            armor_panel(px, py, ux, uy, ox, oy, a, b, plate, 2.0)
+            inset_panel(px, py, ux, uy, ox, oy, a + 6, b - 6, 4.6, 10.7)
+            local n = math.max(4, math.min(7, math.floor(span / 10)))
+            for k = 1, n do
+                local at = a + 7 + (span - 14) * k / (n + 1)
+                local sx, sy = bay_point(px, py, ux, uy, ox, oy, at, 5.4)
+                local ex2, ey2 = bay_point(px, py, ux, uy, ox, oy, at, 9.9)
+                glow:seg(sx, sy, ex2, ey2, 0.78, hardware)
             end
+            fastener(px, py, ux, uy, ox, oy, a + 4, 7.7)
+            fastener(px, py, ux, uy, ox, oy, b - 4, 7.7)
+        elseif motif == 4 then
+            -- Warning teeth mark the threshold of a maintenance enclosure.
+            -- The paint belongs to a hatch, rather than floating down a run.
+            armor_panel(px, py, ux, uy, ox, oy, a, b, plate, 3.0)
+            local hatch_a = math.max(a + 6, mid - 18)
+            local hatch_b = math.min(b - 6, mid + 18)
+            inset_panel(px, py, ux, uy, ox, oy,
+                        hatch_a, hatch_b, 4.5, 10.9)
+            local first = hatch_a + 3
+            local last = hatch_b - 3
+            local n = math.max(3, math.floor((last - first) / 7))
+            for k = 0, n - 1 do
+                local at = first + (last - first) * k / math.max(1, n - 1)
+                local sx, sy = bay_point(px, py, ux, uy, ox, oy, at - 2, 5.0)
+                local ex2, ey2 = bay_point(px, py, ux, uy, ox, oy, at + 2, 10.3)
+                glow:seg(sx, sy, ex2, ey2, 1.3, warning, true)
+            end
+            fastener(px, py, ux, uy, ox, oy, hatch_a - 2, 7.7)
+            fastener(px, py, ux, uy, ox, oy, hatch_b + 2, 7.7)
         elseif motif == 5 then
-            -- Paired conduits with junction boxes. The parallel lines make a
-            -- long bay, unlike the hatch and brace motifs around it.
-            local a1x, a1y = bay_point(px, py, ux, uy, ox, oy, a + 5, 5)
-            local b1x, b1y = bay_point(px, py, ux, uy, ox, oy, b - 5, 5)
-            local a2x, a2y = bay_point(px, py, ux, uy, ox, oy, a + 5, 9)
-            local b2x, b2y = bay_point(px, py, ux, uy, ox, oy, b - 5, 9)
-            local mx, my = bay_point(px, py, ux, uy, ox, oy, mid, 7)
-            glow:seg(a1x, a1y, b1x, b1y, 0.75, hardware)
-            glow:seg(a2x, a2y, b2x, b2y, 0.75, hardware)
-            glow:disc(a1x, a1y, 0.9, 6, hardware_hot)
-            glow:disc(b2x, b2y, 0.9, 6, hardware_hot)
-            glow:disc(mx, my, 1.2, 6, hardware_hot)
+            -- An exposed pipe changes depth through two hard elbows. Coupler
+            -- rings and a junction box keep it from reading as another seam.
+            armor_panel(px, py, ux, uy, ox, oy, a, b, plate_dim, 2.6)
+            local p1x, p1y = bay_point(px, py, ux, uy, ox, oy, a + 6, 5.0)
+            local p2x, p2y = bay_point(px, py, ux, uy, ox, oy, mid - 5, 5.0)
+            local p3x, p3y = bay_point(px, py, ux, uy, ox, oy, mid - 5, 9.8)
+            local p4x, p4y = bay_point(px, py, ux, uy, ox, oy, b - 6, 9.8)
+            pipe_segment(p1x, p1y, p2x, p2y)
+            pipe_segment(p2x, p2y, p3x, p3y)
+            pipe_segment(p3x, p3y, p4x, p4y)
+            pipe_coupler(p1x, p1y)
+            pipe_coupler(p2x, p2y)
+            pipe_coupler(p3x, p3y)
+            pipe_coupler(p4x, p4y)
+        elseif motif == 6 then
+            -- A field patch interrupts the original plate at an odd angle.
+            -- Rivets and a short weld bead explain the second layer of armor.
+            armor_panel(px, py, ux, uy, ox, oy, a, b, plate_dim, 3.1)
+            local pa = a + span * 0.20
+            local pb = b - span * 0.16
+            local patch = panel_shape(px, py, ux, uy, ox, oy,
+                                      pa, pb, 4.2, 10.9, 1.6)
+            bg:fan(patch, plate)
+            glow:outline(patch, 0.72, hardware, true)
+            fastener(px, py, ux, uy, ox, oy, pa + 4, 6.0)
+            fastener(px, py, ux, uy, ox, oy, pb - 4, 9.0)
+            local w1x, w1y = bay_point(px, py, ux, uy, ox, oy,
+                                       pa + span * 0.18, 10.2)
+            local w2x, w2y = bay_point(px, py, ux, uy, ox, oy,
+                                       pa + span * 0.34, 8.2)
+            local w3x, w3y = bay_point(px, py, ux, uy, ox, oy,
+                                       pa + span * 0.48, 10.0)
+            glow:seg(w1x, w1y, w2x, w2y, 0.75, hardware_hot)
+            glow:seg(w2x, w2y, w3x, w3y, 0.75, hardware_hot)
         else
-            -- Three short buttresses, each with a cap buried in the wall.
+            -- Three capped buttresses divide one armor bay. A few warm teeth
+            -- mark the center foot where maintenance crews cross the brace.
+            armor_panel(px, py, ux, uy, ox, oy, a, b, plate_dim, 2.4)
             for k = 1, 3 do
                 local at = a + span * k / 4
-                local sx, sy = bay_point(px, py, ux, uy, ox, oy, at, 2)
-                local ex2, ey2 = bay_point(px, py, ux, uy, ox, oy, at, 11)
-                local c1x, c1y = bay_point(px, py, ux, uy, ox, oy, at - 3, 11)
-                local c2x, c2y = bay_point(px, py, ux, uy, ox, oy, at + 3, 11)
-                glow:seg(sx, sy, ex2, ey2, 1.0, hardware_hot)
-                glow:seg(c1x, c1y, c2x, c2y, 0.8, hardware)
+                local sx, sy = bay_point(px, py, ux, uy, ox, oy, at, 3.2)
+                local ex2, ey2 = bay_point(px, py, ux, uy, ox, oy, at, 11.3)
+                bg:seg(sx, sy, ex2, ey2, 3.0, plate, true)
+                glow:seg(sx, sy, ex2, ey2, 0.68, hardware, true)
+                fastener(px, py, ux, uy, ox, oy, at, 10.7)
+            end
+            for k = -1, 1 do
+                local at = mid + k * 4
+                local sx, sy = bay_point(px, py, ux, uy, ox, oy, at - 1.5, 4)
+                local ex2, ey2 = bay_point(px, py, ux, uy, ox, oy, at + 1.5, 7)
+                glow:seg(sx, sy, ex2, ey2, 0.9, warning, true)
             end
         end
     end

@@ -65,9 +65,9 @@ M.BTN_SEL   = rgb(0x0d1826)
 M.WALL      = rgb(0x080d16)
 M.WALL_EDGE = rgb(0x22344f)
 M.WALL_LIT  = rgb(0x5b82b8)
--- Two materials inside the same neutral terrain family. Hardware is cold
--- steel rather than team cyan; warning paint is oxidized brass rather than
--- the enemy's live amber. Both stay dim until the wall edge gives them shape.
+-- Wall hardware and station machinery share this cold steel and oxidized
+-- brass family. The station names brighter service-light versions below;
+-- both stay dim enough to leave ships and live rounds in front.
 M.WALL_HARDWARE = rgb(0x6f8da8)
 M.WALL_WARNING  = rgb(0xb8783f)
 M.WALL_RECESS   = rgb(0x04070c)

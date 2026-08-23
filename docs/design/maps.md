@@ -431,15 +431,16 @@ language:
 
 The client gives those materials one visual grammar without flattening them
 into one tileset. A bulkhead keeps a continuous bright collision edge, but the
-structure behind it changes on a seeded macro rhythm: quiet armor, access
-hatches, braces, vents, warning patches, conduits, field repairs, and
-buttresses. Bay widths and the dark gaps between them vary, so a long wall does
-not become one fitting stamped every few tiles. A rock is warmer, faceted,
-cratered, and carries sparse mineral seams while it tumbles. A station fills
-the whole six-tile square the simulation collides with, then cuts docking
-throats, armor quarters, trusses, and a cold reactor into that mass. The detail
-is subordinate to the outside edge at combat zoom. A player reads collision
-first and fiction on the second look.
+structure behind it comes from the station kit and changes on a seeded macro
+rhythm: notched armor, recessed service hatches, vents, trusses, elbowed pipe
+runs, couplers, warning teeth, and riveted field repairs. Warning paint marks
+an access threshold instead of floating on an empty strip. Bay widths and the
+dark gaps between them vary, so a long wall does not become one fitting stamped
+every few tiles. A rock is warmer, faceted, cratered, and carries sparse mineral
+seams while it tumbles. A station fills the whole six-tile square the simulation
+collides with, then cuts docking throats, armor quarters, trusses, and a cold
+reactor into that mass. The detail is subordinate to the outside edge at combat
+zoom. A player reads collision first and fiction on the second look.
 
 This keeps theme and topology independent. Ring and spokes can be a relay or a
 dockyard without becoming the same room with a different seed. Large objects
