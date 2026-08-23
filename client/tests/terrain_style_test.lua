@@ -24,6 +24,7 @@ local T_GOAL, T_WORMHOLE, T_OVER, T_UNDER = 4, 5, 6, 7
 local T_TURF, T_SPAWN, T_SLOPE = 8, 9, 10
 
 local tiles = {}
+local map_w, map_h = 1024, 1024
 local function key(x, y) return y * 1024 + x end
 local function put(x, y, class, variant)
     tiles[key(x, y)] = {class, variant or 0}
@@ -35,9 +36,13 @@ _G.sim = {
     T_OVER = T_OVER, T_UNDER = T_UNDER, T_TURF = T_TURF,
     T_SPAWN = T_SPAWN, T_SLOPE = T_SLOPE,
     tile = function(x, y)
+        if x < 0 or y < 0 or x >= map_w or y >= map_h then
+            return T_SOLID, 1
+        end
         local t = tiles[key(x, y)]
         return t and t[1] or T_EMPTY, t and t[2] or 0
     end,
+    map_size = function() return map_w, map_h end,
     show_spawns = function() return false end,
     h = function() return 0 end,
 }
@@ -114,5 +119,22 @@ check("a station paints its whole collision footprint", full)
 check("a station has a reactor and service rings",
       count("station-glow:ring") >= 2 and count("station-glow:disc") >= 5,
       count("station-glow:ring") .. "/" .. count("station-glow:disc"))
+
+-- Outside a map's declared rectangle the core reports solid to make collision
+-- safe. That sentinel is not terrain. Sampling it made the radar paint the
+-- off-map half of a small room as one large wall.
+world = reset()
+map_w, map_h = 41, 31
+world.build_static(writer("edge-fill"), writer("edge-glow"),
+                   34, 24, 50, 40)
+local outside = false
+for i = 1, #world.radar_tiles, 2 do
+    if world.radar_tiles[i] >= map_w * 16
+       or world.radar_tiles[i + 1] >= map_h * 16 then
+        outside = true
+        break
+    end
+end
+check("the radar does not paint the off-map solid sentinel", not outside)
 
 os.exit(fails == 0 and 0 or 1)

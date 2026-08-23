@@ -56,6 +56,7 @@ local function make_sim(show)
         T_SOLID = T_SOLID, T_SAFE = T_SAFE, T_DOOR = T_DOOR,
         T_WORMHOLE = T_WORMHOLE, T_OVER = T_OVER, T_UNDER = T_UNDER,
         T_TURF = T_TURF, T_SPAWN = T_SPAWN, T_GOAL = T_GOAL,
+        map_size = function() return 1024, 1024 end,
         -- One spawn tile for team 0 and nothing else, so the window draws no
         -- walls, no safe ground and no doors to put rings on the board.
         tile = function(tx, ty)

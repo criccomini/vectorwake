@@ -1497,13 +1497,18 @@ local RADAR_REACH = RADAR_TILES + RADAR_SLACK
 function M.build_static(bg, glow, x0, y0, x1, y1)
     bg:reset()
     glow:reset()
-    local LAST = 1023
+    -- The tile array can hold 1024 square, but a room usually occupies only a
+    -- small declared rectangle inside it. Outside that rectangle `sim.tile`
+    -- answers solid so collision closes the world. Drawing that sentinel as
+    -- terrain turns every off-map part of the radar into one solid slab.
+    local map_w, map_h = sim.map_size()
+    local last_x, last_y = map_w - 1, map_h - 1
     local cx = (x0 + x1) / 2
     local cy = (y0 + y1) / 2
     if x0 < 0 then x0 = 0 end
     if y0 < 0 then y0 = 0 end
-    if x1 > LAST then x1 = LAST end
-    if y1 > LAST then y1 = LAST end
+    if x1 > last_x then x1 = last_x end
+    if y1 > last_y then y1 = last_y end
 
     -- The doors and wormholes, found once here rather than searched for on
     -- every frame that draws them. Over the radar's box rather than the
@@ -1511,8 +1516,8 @@ function M.build_static(bg, glow, x0, y0, x1, y1)
     -- sees further.
     local rx0 = math.max(0, math.floor(cx - RADAR_REACH))
     local ry0 = math.max(0, math.floor(cy - RADAR_REACH))
-    local rx1 = math.min(LAST, math.floor(cx + RADAR_REACH))
-    local ry1 = math.min(LAST, math.floor(cy + RADAR_REACH))
+    local rx1 = math.min(last_x, math.floor(cx + RADAR_REACH))
+    local ry1 = math.min(last_y, math.floor(cy + RADAR_REACH))
     index_moving(rx0, ry0, rx1, ry1)
 
     -- Every second tile, not every fourth. The arena's outer walls are two
@@ -1542,18 +1547,21 @@ function M.build_static(bg, glow, x0, y0, x1, y1)
             local best = 0
             for dy = 0, 1 do
                 for dx = 0, 1 do
-                    local cls = sim.tile(tx + dx, ty + dy)
-                    if cls == sim.T_DOOR then
-                        best = 3
-                    elseif cls == sim.T_SAFE and best < 2 then
-                        best = 2
-                    elseif (cls == sim.T_SOLID or cls == sim.T_SLOPE)
-                           and best < 1 then
-                        -- A slope is a dot like any other wall. At two tiles
-                        -- to a sample there is nowhere to say which half of
-                        -- one is solid, and a pilot steering by the radar
-                        -- wants the wall, not its shape.
-                        best = 1
+                    local sx, sy = tx + dx, ty + dy
+                    if sx <= last_x and sy <= last_y then
+                        local cls = sim.tile(sx, sy)
+                        if cls == sim.T_DOOR then
+                            best = 3
+                        elseif cls == sim.T_SAFE and best < 2 then
+                            best = 2
+                        elseif (cls == sim.T_SOLID or cls == sim.T_SLOPE)
+                               and best < 1 then
+                            -- A slope is a dot like any other wall. At two
+                            -- tiles to a sample there is nowhere to say which
+                            -- half of one is solid, and a pilot steering by
+                            -- the radar wants the wall, not its shape.
+                            best = 1
+                        end
                     end
                 end
             end

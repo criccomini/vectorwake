@@ -79,14 +79,14 @@ local worldsrc = read("client/arena/world.lua")
 check("world.lua's TILE is the core's tile",
       tonumber(worldsrc:match("local TILE = (%d+)")) == TILE_PX,
       "sim.h says " .. tostring(TILE_PX))
--- The map's width is folded into the renderer's tile keys and its wall walk,
--- as a literal in both places.
+-- The backing array's width is folded into tile keys, while drawing stops at
+-- the current map's declared bounds. A room can be much smaller than the
+-- array that holds it.
 check("world.lua keys tiles by the core's map width",
       worldsrc:match("ty %* " .. MAP_TILES .. " %+ tx") ~= nil,
       "expected ty * " .. MAP_TILES .. " + tx")
-check("world.lua's last tile is the core's last tile",
-      tonumber(worldsrc:match("local LAST = (%d+)")) == MAP_TILES - 1,
-      "sim.h says " .. tostring(MAP_TILES - 1))
+check("world.lua bounds terrain by the declared map size",
+      worldsrc:find("local map_w, map_h = sim.map_size()", 1, true) ~= nil)
 
 -- The hull count, which the menu clamps a saved hull against and the wire is
 -- refused for exceeding.
