@@ -238,7 +238,7 @@ do
           tostring(menu.view().rail_sel))
     check("and the stage previews the discord page",
           menu.showing() == "discord"
-          and (menu.view().rows[1] or {}).label == "open the invite",
+          and (menu.view().rows[1] or {}).label == "join discord",
           menu.showing() .. "/" .. tostring((menu.view().rows[1] or {}).label))
     menu.step({right = true})
     check("and the account is the next one along",
@@ -341,29 +341,44 @@ menu.click_rail(ship_at)
 check("the lit stop with nothing behind the panel stays put",
       menu.open and menu.stack[2] == "hangar", table.concat(menu.stack, "/"))
 
--- In a match the tab row is a different row: friends, settings and leave,
+-- In a match the tab row is a different row: settings, friends and leave,
 -- which is everything a pilot can act on from a cockpit. Nothing about an
 -- upgrade or a hull is on it, because a hull is locked for the match and a
 -- three minute match is short enough that browsing one costs a real fraction
 -- of it.
 --
--- Friends is on it because the roster is here: the people to add are the
--- people you are flying with, and the menu opens over the card at the end of
--- a match. See docs/design/friends.md.
+-- Settings comes first because it is the safe, common reason to open a menu
+-- while the fight continues behind it. Friends stays one stop away because the
+-- people to add are the people you are flying with.
 menu.home = false
 menu.stack = {"root"}
 menu.sel = {}
 local in_match = {}
 for _, r in ipairs(menu.view().rail) do in_match[#in_match + 1] = r.label end
 check("a match carries three tabs",
-      #in_match == 3 and in_match[1] == "friends"
-      and in_match[2] == "settings" and in_match[3] == "leave",
+      #in_match == 3 and in_match[1] == "settings"
+      and in_match[2] == "friends" and in_match[3] == "leave",
       table.concat(in_match, "/"))
+
+local match_leave = top_index("leave")
+menu.click_rail(match_leave)
+check("leave asks before dropping the game",
+      menu.ask ~= nil and menu.ask.keys[1].act == "leave",
+      tostring(menu.ask and menu.ask.head))
+menu.step({back = true})
+check("and escape keeps the game", menu.ask == nil and menu.open,
+      tostring(menu.ask) .. "/" .. tostring(menu.open))
 
 local match_settings = top_index("settings")
 menu.click_rail(match_settings)
 check("and settings is one of them",
       menu.stack[2] == "settings", table.concat(menu.stack, "/"))
+local setting_view = menu.view()
+check("with a selected setting explained in the spare column",
+      setting_view.settings and setting_view.aside
+          and setting_view.aside.label == "sound"
+          and string.find(setting_view.aside.note or "", "weapon audio", 1, true),
+      tostring(setting_view.aside and setting_view.aside.note))
 menu.click_rail(match_settings)
 check("the lit stop over a game is the way back to it", not menu.open)
 
@@ -667,6 +682,11 @@ menu.toggle()
 check("escape over a game opens on the tab row",
       menu.open and menu.at() == "root" and menu.view().focus == "rail",
       table.concat(menu.stack, "/"))
+local opened_match = menu.view()
+check("and starts on settings",
+      opened_match.rail[opened_match.rail_sel]
+          and opened_match.rail[opened_match.rail_sel].label == "settings",
+      tostring(opened_match.rail_sel))
 menu.click_rail(top_index("settings"))
 check("and the rail still goes where it says", menu.at() == "settings",
       table.concat(menu.stack, "/"))
@@ -992,7 +1012,7 @@ menu.sel = {}
 -- design is asking first.
 
 -- Reached the way a player reaches it, which is the front end: the tab row in
--- a match carries settings and leave and nothing else. The card still knows
+-- a match carries only controls that remain useful in the fight. The card knows
 -- the difference, because `home` is what it asks and a pilot can be connected
 -- with the panel up.
 menu.stack = {"root"}
@@ -1421,13 +1441,17 @@ do
           page[1] and tostring(page[1].link))
     check("and it is drawn as the page about the door",
           view.door == true, tostring(view.door))
-    check("which says why there is a room at all",
-          type(view.door_why) == "string"
-          and string.find(view.door_why, "chat", 1, true) ~= nil,
-          tostring(view.door_why))
-    check("and what happens in it, in sentences rather than rows",
-          type(view.door_for) == "table" and #view.door_for == 3,
-          tostring(view.door_for and #view.door_for))
+    check("which leads with the reason to use it",
+          view.door_head == "Rally for the next match.",
+          tostring(view.door_head))
+    check("and explains the room in one short block",
+          type(view.door_body) == "string"
+          and string.find(view.door_body, "Meet pilots", 1, true) ~= nil,
+          tostring(view.door_body))
+    check("with the tab behavior beside the action",
+          type(view.door_note) == "string"
+          and string.find(view.door_note, "new tab", 1, true) ~= nil,
+          tostring(view.door_note))
     -- The one address, cut from the one constant. Two copies of an address is
     -- one address that goes stale.
     check("and the address a player can retype, with no scheme on it",

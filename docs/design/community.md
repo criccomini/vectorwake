@@ -76,15 +76,14 @@ In the client, the page about the room names the address in words, under the
 button that opens it: `play.vectorwake.net/discord`, set in the mono because
 an address is a machine reading and this interface quotes those verbatim. It
 is cut from the same constant the button carries, so the two cannot disagree.
-Making it tappable is a real question rather than a given: browsers allow
-`window.open` only inside a user gesture, and Defold polls input once a frame,
-so by the time Lua acts the gesture may already be spent and the popup blocker
-eats the call. The login card solved this class of problem with real DOM
-elements laid over the canvas, per
+Making it tappable is a real question rather than a given. Browsers allow
+`window.open` only inside a user gesture, and Defold polls input once a frame.
+By the time Lua acts, the gesture may already be spent and the popup blocker
+eats the call. The page publishes a real DOM anchor over the drawn Join Discord
+button, the same approach the login card uses for its fields, per
 [decision 37](../architecture/decisions.md#37-the-phones-own-keyboard-through-an-element-the-canvas-cannot-be),
-and a link that must open on tap would ride the same pattern. An address a
-player can read and retype is the floor, and it is what shipped: the button
-tries, and the address is what works when the browser refuses.
+so the navigation happens inside the tap. The address remains on the page as a
+fallback a player can read and retype.
 
 ## The wire
 

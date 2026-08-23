@@ -1164,7 +1164,7 @@ function M.click_add()
     if M.showing() ~= "friends" then return nil, false end
     if M.touching then
         M.ask = {head = "Add a pilot", sel = 1, field = 1,
-                 note = "a call sign, spelled as they spell it",
+                 note = "enter their call sign exactly",
                  keys = {{label = "add", act = "do_add"},
                          {label = "cancel"}},
                  fields = {{label = "call sign", value = M.add_name or "",
@@ -1838,11 +1838,10 @@ end
 local NODES = {
     -- The tab row, and the whole of the front end's shape.
     --
-    -- Six of them between matches, where there is time to read: play, hangar,
-    -- upgrades, standings, pilot, settings. Two in a match: settings and leave.
-    -- Same row in the same place, wearing the same chrome; what differs is
-    -- which tabs are on it, not how any of it looks or works, so a player
-    -- learns one screen and meets it in both places.
+    -- Six of them on the home screen, where there is time to read: play, ship,
+    -- upgrades, friends, standings, settings. Three in a match: settings,
+    -- friends, leave. Friends stays out when the account service is absent.
+    -- The row keeps the same place and chrome in both contexts.
     --
     -- Nothing you cannot act on right now is on that row while you are
     -- flying. A three minute match is short enough that a menu deep enough to
@@ -1856,21 +1855,27 @@ local NODES = {
     root = {rows = function()
         if not M.home then
             local rows = {}
+            local between = M.between()
             -- Between matches the hull is not locked, and this is the one
             -- window a pilot has to change it without leaving the room. It is
             -- gone again the moment the next whistle goes, which is the rule
             -- rather than a hurry we invented: a kit is spent inside a hull
             -- and both are settled before a match, never during one.
-            if M.between() then
+            if between then
                 rows[#rows + 1] = {label = "ship", icon = "ship",
                     detail = function()
                         if M.spectating() then return "spectating" end
                         return HULLS[M.class + 1][1]
                     end, go = "hangar"}
             end
-            -- The people you are flying with, which is where a friend is
-            -- made. One press from the card at the end of a match, because the
-            -- menu opens over it.
+            -- During a match the first stop is the one a pilot can safely
+            -- change without leaving the fight. Between matches the ship stays
+            -- first because this is the brief window when it is unlocked.
+            if not between then
+                rows[#rows + 1] = {label = "settings", icon = "settings",
+                                   go = "settings"}
+            end
+            -- The people you are flying with, which is where a friend is made.
             if account.base ~= "" then
                 rows[#rows + 1] = {label = "friends", icon = "friends",
                                    go = "friends", detail = function()
@@ -1879,8 +1884,10 @@ local NODES = {
                     return "who is on"
                 end}
             end
-            rows[#rows + 1] = {label = "settings", icon = "settings",
-                               go = "settings"}
+            if between then
+                rows[#rows + 1] = {label = "settings", icon = "settings",
+                                   go = "settings"}
+            end
             rows[#rows + 1] = {label = "leave", icon = "zones",
                                detail = "back to the games", act = "leave"}
             return rows
@@ -2045,7 +2052,7 @@ local NODES = {
     -- words come from and why the address is on it.
     discord = {off_rail = true, rows = function()
         return {
-            {label = "open the invite", act = "discord", link = DISCORD,
+            {label = "join discord", act = "discord", link = DISCORD,
              pick = true},
         }
     end},
@@ -2068,13 +2075,17 @@ local NODES = {
             -- says is what the rows under it are about, which is the one
             -- thing a page of eight settings cannot say in its title.
             {label = "sound", sect = "audio",
+             help = "Effects, warnings, and weapon audio.",
              detail = function() return VOLUMES[M.volume][2] end,
              choice = function() return M.volume - 1, #VOLUMES - 1 end,
              act = "volume"},
-            {label = "music", detail = function() return MUSICS[M.music][2] end,
+            {label = "music", help = "Music in the menus and the arena.",
+             detail = function() return MUSICS[M.music][2] end,
              choice = function() return M.music - 1, #MUSICS - 1 end,
              act = "music"},
-            {label = "frames", sect = "video", detail = function()
+            {label = "frames", sect = "video",
+             help = "Limit rendering to reduce heat and battery use.",
+             detail = function()
                 if not M.can_cap then return "as the display asks" end
                 return CAPS[M.cap][2]
             end, choice = function()
@@ -2082,6 +2093,7 @@ local NODES = {
                 return M.cap, #CAPS
             end, act = "cap"},
             {label = "fullscreen", detail = "fill the screen",
+             help = "Hide the browser controls while you play.",
              act = "fullscreen"},
         }
         -- Only where there are thumbs. A keyboard has a key for each of
@@ -2093,6 +2105,7 @@ local NODES = {
         if M.touching then
             rows[#rows + 1] = {
                 label = "steering",
+                help = "Choose how the left thumb steers.",
                 detail = function()
                     if M.dpad then return "a pad to push" end
                     return "a stick to point"
@@ -2111,19 +2124,23 @@ local NODES = {
         local how = install.state()
         if how == "tap" then
             rows[#rows + 1] = {label = "add to home screen",
-                               detail = "one tap", act = "install"}
+                               detail = "one tap", act = "install",
+                               help = "Launch the game without the browser around it."}
         elseif how == "share" then
             rows[#rows + 1] = {label = "add to home screen",
-                               detail = "how to", act = "install"}
+                               detail = "how to", act = "install",
+                               help = "Launch the game without the browser around it."}
         end
         -- The two pages that used to be tabs of their own. Both are about the
         -- machine rather than about a match, which is what this page is for:
         -- the controls board is where the keys are set, and `about` is three
         -- lines that never deserved a destination.
         rows[#rows + 1] = {label = "controls", sect = "the machine",
-                           detail = "keys and pads", go = "controls"}
+                           detail = "keys and pads", go = "controls",
+                           help = "Review or change every input."}
         rows[#rows + 1] = {label = "about", detail = "this build",
-                           go = "about"}
+                           go = "about",
+                           help = "Build, connection, and device details."}
         return rows
     end},
 
@@ -2416,7 +2433,8 @@ local function view_row(r, i)
     local ci, cn
     if r.choice then ci, cn = r.choice() end
     return {
-        label = r.label, detail = d, note = r.note, waiting = r.waiting,
+        label = r.label, detail = d, note = r.note, help = r.help,
+        waiting = r.waiting,
         -- Whether this row's value is a string to be quoted rather than a
         -- word to be said, and whether its label is somebody's name. See the
         -- key on the pilot page and the sides on the team page.
@@ -2582,9 +2600,9 @@ function M.toggle()
         -- client itself opens on, with the cursor in the list rather than on
         -- the tabs: one press from flying.
         --
-        -- Over a game it opens on the tab row, because the row is two tabs
-        -- long there and the thing a pilot mid-fight most often wants is one
-        -- of them. Opening a page first would put a press between them.
+        -- Over a game it opens on the tab row, with Settings first. That is the
+        -- common safe action during a fight, and it keeps Leave off the opening
+        -- cursor.
         if M.home then
             M.show("play")
         else
@@ -3291,23 +3309,16 @@ function M.view()
     -- And the catalog is a ladder and a price a row rather than a list of
     -- names. Same reason: the page is two facts about each slot at once.
     if page == "upgrades" then out.shop = true end
-    -- The door, and what a page about it says. The words are here because
-    -- this file decides what pages say; the wrapping and the shapes are
-    -- ui.lua's. All of it is docs/design/community.md put on a screen: what
-    -- the room is for, and the one address that reaches it.
+    -- The Discord page has one job: explain why to go and provide the way in.
+    -- The renderer gives these few lines the page rather than turning them into
+    -- a list of separate claims.
     if page == "discord" then
         out.door = true
-        -- Why there is a room at all. Decision 28 took chat out and meant it,
-        -- and a player who does not know that reads an invite as an advert.
-        out.door_why = "This game carries no chat, and will not. "
-            .. "The room is where everything a fight cannot say gets said."
-        -- What actually happens in it, one sentence each and none of them a
-        -- reason to like community in general.
-        out.door_for = {
-            "A match wants eight, and this is where they arrange to meet.",
-            "What broke is read by the people who wrote it.",
-            "Hulls, maps and rules are argued about here before they exist.",
-        }
+        out.door_head = "Rally for the next match."
+        out.door_body = "Meet pilots before the whistle. The people building "
+            .. "Vectorwake read bug reports and talk through new ships, maps, "
+            .. "and rules there."
+        out.door_note = "opens a new tab; your game keeps running"
         -- The address, in words, because a link that a popup blocker eats is
         -- not a way in and this is. Cut from the one constant rather than
         -- written out again: two copies of an address is one address that
@@ -3453,6 +3464,22 @@ function M.view()
         local id = M.stack[2]
         for i, r in ipairs(top) do
             if r.go == id then out.rail_sel = i end
+        end
+    end
+    -- Settings uses its spare desktop column to explain the selected control.
+    -- On a phone the renderer keeps the list full width and leaves this aside
+    -- out, so the compact surface stays compact.
+    if M.showing() == "settings" then
+        local at = (#M.stack > 1) and out.sel or (M.sel.settings or 1)
+        local setting = out.rows[at] or out.rows[1]
+        out.settings = true
+        if setting then
+            out.aside = {
+                head = "what this changes",
+                label = setting.label,
+                sub = setting.detail,
+                note = setting.help,
+            }
         end
     end
     return out
@@ -3642,6 +3669,11 @@ local function activate(by)
         -- `M.ask_upgrade` and the `do_buy` answer.
         M.ask_upgrade(r.value, {label = r.sold or r.label,
                                 price = r.price, note = r.note})
+        return nil
+    elseif r.act == "leave" then
+        local place = M.zone ~= "" and M.zone or "this game"
+        M.confirm("leave " .. place .. "?",
+                  {{label = "leave", act = "leave"}, {label = "stay"}})
         return nil
     elseif r.act == "discord" then
         -- A new tab, and the game keeps running behind it: nothing here is

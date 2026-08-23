@@ -2,13 +2,9 @@
 --
 --     lua5.1 client/tests/discord_test.lua
 --
--- It was four rows. One of them went somewhere and three did not, and all
--- four were set in the face and the size every row that goes somewhere is set
--- in, so a hand walking down them with the arrows found one control and three
--- impersonations of one. Each also carried a line underneath finishing its own
--- sentence, which is the caption docs/design/interface.md says this interface
--- does not have. And the one thing docs/design/community.md says ships first,
--- an address a player can read and retype, was not on it anywhere.
+-- The page is a poster rather than a small document: one reason to go, one
+-- action, and one fallback address. These checks protect that hierarchy as well
+-- as the link and the narrow layout.
 --
 -- So the checks here are about shape rather than wording: that one thing on
 -- the page answers a press, that the address is on it and is quoted the way a
@@ -60,18 +56,17 @@ local ui = require("arena.ui")
 local ADDR = "play.vectorwake.net/discord"
 local function view()
     return {
-        rail = {}, title = "discord", depth = 1,
+        rail = {}, at = "discord", depth = 2, home = true, focus = "stage",
         discord = "https://" .. ADDR,
         door = true,
-        door_why = "This game carries no chat, and will not. "
-            .. "The room is where everything a fight cannot say gets said.",
-        door_for = {
-            "A match wants eight, and this is where they arrange to meet.",
-            "What broke is read by the people who wrote it.",
-            "Hulls, maps and rules are argued about here before they exist.",
-        },
+        door_head = "Rally for the next match.",
+        door_body = "Meet pilots before the whistle. The people building "
+            .. "Vectorwake read bug reports and talk through new ships, maps, "
+            .. "and rules there.",
+        door_note = "opens a new tab; your game keeps running",
         door_addr = ADDR,
-        rows = {{label = "open the invite", act = "discord", pick = true}},
+        rows = {{label = "join discord", act = "discord", pick = true,
+                 link = "https://" .. ADDR}},
         sel = 1,
     }
 end
@@ -100,6 +95,12 @@ local function said(st, s)
     end
 end
 
+local function containing(st, s)
+    for _, t in ipairs(texts(st)) do
+        if t.s and t.s:find(s, 1, true) then return t end
+    end
+end
+
 -- --- one thing answers ----------------------------------------------------
 
 local st = draw()
@@ -116,6 +117,9 @@ check("and it is a shape rather than a line across the page",
       mine[1] and mine[1].w < 400, mine[1] and tostring(mine[1].w) or "none")
 check("at least as tall as a button is", mine[1] and mine[1].h >= 26,
       mine[1] and tostring(mine[1].h) or "none")
+check("and the browser gets a real anchor for the tap",
+      ui.link_dom and ui.link_dom:find("https://" .. ADDR, 1, true),
+      tostring(ui.link_dom))
 
 -- --- the address ----------------------------------------------------------
 
@@ -129,31 +133,23 @@ check("and is quoted exactly, the way every machine reading is",
 check("with no scheme in front of it for somebody to type",
       addr and not addr.s:find("://", 1, true))
 
--- --- the house grammar ----------------------------------------------------
+-- --- the poster hierarchy -------------------------------------------------
 
--- A group heading in this interface is a hairline with a small dim label
--- under it. Three groups, three rules, each one above its own label.
-local rules = {}
+local hero = said(st, "Rally for the next match.")
+local body = containing(st, "Meet pilots")
+local action = said(st, "Join discord")
+check("the reason to go is the largest line", hero and body and hero.px > body.px * 2,
+      hero and body and (hero.px .. " over " .. body.px) or "missing copy")
+check("the action says where it goes", action ~= nil, "no Join discord")
+
+local rules = 0
 for _, s in ipairs(segs) do
-    if math.abs(s.y0 - s.y1) < 0.5 and s.x1 - s.x0 > 100 and s.y0 > 150 then
-        rules[#rules + 1] = s
+    if math.abs(s.y0 - s.y1) < 0.5 and math.abs(s.x1 - s.x0) > 100
+       and s.y0 > 150 then
+        rules = rules + 1
     end
 end
-check("the page is in three groups", #rules == 3, #rules .. " rules")
-local labels = {}
-for _, t in ipairs(texts(st)) do
-    if t.s == string.upper(t.s) and #t.s > 4 and (t.x or 0) > 150 then
-        labels[#labels + 1] = {y = H - t.y, s = t.s}
-    end
-end
-local paired = 0
-for _, r in ipairs(rules) do
-    for _, l in ipairs(labels) do
-        if l.y > r.y0 and l.y - r.y0 < 24 then paired = paired + 1 break end
-    end
-end
-check("and every rule has its label under it, not over it",
-      paired == #rules, paired .. " of " .. #rules)
+check("one rule separates the fallback address", rules == 1, rules .. " rules")
 
 -- --- and it fits a phone --------------------------------------------------
 

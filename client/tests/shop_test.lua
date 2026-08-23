@@ -134,13 +134,16 @@ check("and no rule reaches the pane it would otherwise cross",
       pane_x and worst < pane_x, ("rule ends at %.1f, pane at %.1f")
           :format(worst, pane_x or -1))
 
--- The wallet is the shelf's own number: what the prices under it are spent
--- from. It was right-aligned to the page, which put it over the pane.
+-- The currency is named beside the shelf's balance. The glyph alone asked a
+-- new player to recognize a unit the menu had not taught yet.
 local wallet
+local currency
 for _, t in ipairs(texts(st)) do
     if t.s == "310" then wallet = t.x end
+    if t.s == "RIVETS" then currency = t.x end
 end
-check("the wallet says what is in it", wallet ~= nil, "no wallet")
+check("the shelf names the currency and its balance",
+      wallet ~= nil and currency ~= nil, "missing rivets or balance")
 check("and says it over the shelf rather than over the pane",
       wallet and pane_x and wallet < pane_x,
       ("wallet at %.1f, pane at %.1f"):format(wallet or -1, pane_x or -1))

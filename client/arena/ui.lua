@@ -3978,10 +3978,10 @@ function pages.week(v, x, y, w, h, focused)
         {"streak", 58, function(r) return tostring(r.run or 0) end, nil, "run"},
         -- What the week's kills paid. Not "points", which is a word this
         -- game does not otherwise use and which reads as a score rather than
-        -- as money, and not "rivets" either: rivets are the wallet, this is
-        -- what went into it, and a pilot who spent theirs on a barrel has not
-        -- had a worse week for it.
-        {"banked", 62, function(r) return tostring(r.banked or 0) end},
+        -- as money. "Earned" says this is the week's income rather than the
+        -- amount left in the wallet.
+        {"earned", 62, function(r) return tostring(r.banked or 0) end,
+         nil, "banked"},
         -- What they are rated at, which says how good somebody is and moves
         -- slowly. It is the number the whole page is named after and it was
         -- not on it: the column called "rating" carried the week's movement,
@@ -3990,8 +3990,9 @@ function pages.week(v, x, y, w, h, focused)
             local n = r.rating or 0
             return n > 0 and tostring(n) or "-"
         end},
-        -- And what this week did to it.
-        {"swing", 54, function(r) return signed(r.swing or 0) end},
+        -- And what this week did to it, named as a change to the rating above.
+        {"rating change", 92, function(r) return signed(r.swing or 0) end,
+         nil, "swing"},
         {"time", 52, function(r) return r.played or "0s" end},
     }
     -- Which of them fit, taken from the front, and whether enough of them do
@@ -4247,7 +4248,7 @@ function pages.week(v, x, y, w, h, focused)
         if packed then
             local c = sorted_col
             local shade = col
-            if c[1] == "swing" then
+            if (c[5] or c[1]) == "swing" then
                 shade = (r.swing or 0) < 0 and pal.BOMB or pal.CHARGE_COL
             elseif not c[4] then
                 shade = pal.INK
@@ -4274,7 +4275,7 @@ function pages.week(v, x, y, w, h, focused)
         for _, c in ipairs(cols) do
             local shade = pal.DIM
             if c[4] then shade = col
-            elseif c[1] == "swing" then
+            elseif (c[5] or c[1]) == "swing" then
                 shade = (r.swing or 0) < 0 and pal.BOMB or pal.CHARGE_COL
             end
             txt(c[3](r), x + tw - c.off * F.scale, ry0, 12 * F.scale,
@@ -4763,7 +4764,9 @@ end
 -- in it and a question it has not answered.
 function pages.aside(a, x, y, w, h)
     if not a then return end
-    if a.deploy and h < 600 * F.scale then
+    -- The compact deployment summary is the landing on every screen. It keeps
+    -- the room size and arriving ship beside the Deploy button on any layout.
+    if a.deploy then
         compact_deploy(a, x, y, w, h)
         return
     end
@@ -5695,7 +5698,7 @@ function pages.friends(v, x, y, w, h, focused)
         txt(note, x, fy + bh / 2 + 12 * F.scale, 12 * F.scale,
             pal.a(a.bad and pal.ENEMY or pal.FRIEND, 0.95))
     elseif not packed then
-        txt("a call sign, spelled as they spell it",
+        txt("enter their call sign exactly",
             x + fw + aw + 24 * F.scale, fy, 12 * F.scale, pal.a(pal.DIM, 0.8))
     end
     local BAND = 22 * F.scale + bh + 24 * F.scale
@@ -6374,10 +6377,10 @@ function pages.shop(v, x, y, w, h, focused)
     -- section rules were measured against `w`, which is the whole page, so
     -- both ran out over the reading pane and the rules crossed it end to end.
     -- One column, one right edge.
-    lbl("wallet", x, y + 12 * F.scale)
-    pages.priced((v.pilot and v.pilot.rivets) or 0, x + lw - 8 * F.scale,
-                 y + 12 * F.scale, 15 * F.scale,
-                 pal.a(pal.CHARGE_COL, 0.95), "right")
+    lbl("rivets", x, y + 12 * F.scale)
+    txt(tostring((v.pilot and v.pilot.rivets) or 0),
+        x + lw - 8 * F.scale, y + 12 * F.scale, 15 * F.scale,
+        pal.a(pal.CHARGE_COL, 0.95), "right", nil, true)
     local top = y + BAND
     local at = top
 
@@ -7337,16 +7340,11 @@ end
 
 -- The door: one page about the room the game points at.
 --
--- Everything here is docs/design/community.md. The room exists because
--- decision 28 took chat out and meant it, so the page says that first: an
--- invite with no reason attached reads as an advert, and the reason is a fact
--- about this game that a player has no other way of learning.
+-- Everything here is docs/design/community.md. The page leads with the job the
+-- room does for a player, then gives that player one clear way in.
 --
--- One control, drawn as a control. What was here before was four rows in the
--- face and size every row that goes somewhere is set in, three of which went
--- nowhere. A button is a stroked box in this interface and always has been,
--- so the press that leaves is one, and nothing else on the page wears a shape
--- that answers.
+-- One control, drawn as a control. The action is a stroked box, and nothing
+-- else on the page wears a shape that answers.
 --
 -- And the address, set in the mono, because an address is a machine reading
 -- and this interface quotes those verbatim. It is here rather than only
@@ -7354,88 +7352,69 @@ end
 -- opens for you, and an address a player can read and retype is the floor
 -- that always works. It is cut from the same constant the button carries.
 function pages.door(v, x, y, w, h, focused)
-    local col = math.min(w, 520 * F.scale)
-    local at = y + 16 * F.scale
+    local col = math.min(w, 760 * F.scale)
+    local compact = col < 500 * F.scale
+    local at = y + 18 * F.scale
 
-    -- The heading: a hairline with a small dim label under it, which is what
-    -- a group of anything wears in this menu.
-    hrule(x, at, col)
-    at = at + 11 * F.scale
-    -- And the mark beside the label, at the size it is drawn at everywhere
-    -- else. Clyde is baked from forty samples around the official path,
-    -- chosen and checked at the thirteen points the rail gives it; at a
-    -- headline's size those samples would be corners. So the words carry the
-    -- heading and the mark confirms them, which is the way round this
-    -- interface works anyway.
-    draw_mark("discord", x + 7 * F.scale, at - 3 * F.scale, 7 * F.scale,
-              pal.a(pal.PANEL_INK, 0.9))
-    lbl("vectorwake on discord", x + 20 * F.scale, at)
+    -- Brand first, then the reason to act. The large line carries the page and
+    -- the supporting sentence stays narrow enough to read at a glance.
+    draw_mark("discord", x + 10 * F.scale, at, 10 * F.scale,
+              pal.a(pal.FRIEND, 0.95))
+    lbl("vectorwake discord", x + 30 * F.scale, at + 2 * F.scale,
+        pal.a(pal.PANEL_INK, 0.95))
+    at = at + 42 * F.scale
+
+    local hero = (compact and 32 or 48) * F.scale
+    for _, line in ipairs(wrapped(v.door_head or "", hero, col)) do
+        txt(line, x, at, hero, pal.a(pal.INK, 1), nil, MENU_FONT, true)
+        at = at + hero * 0.9
+    end
+    at = at + 22 * F.scale
+
+    local body_w = math.min(col, 620 * F.scale)
+    local body_px = (compact and 13 or 15) * F.scale
+    for _, line in ipairs(wrapped(v.door_body or "", body_px, body_w)) do
+        txt(line, x, at, body_px, pal.a(pal.PANEL_INK, 0.92), nil, nil, true)
+        at = at + body_px * 1.45
+    end
     at = at + 30 * F.scale
 
-    -- Why there is a room.
-    for _, line in ipairs(wrapped(v.door_why or "", 14 * F.scale, col)) do
-        txt(line, x, at, 14 * F.scale, pal.a(pal.PANEL_INK, 0.95), nil, nil,
-            true)
-        at = at + 21 * F.scale
-    end
-    at = at + 18 * F.scale
-
-    -- The press that leaves. Lit by the cursor the way every control is, and
-    -- the only thing on the page with a box round it.
+    -- One large action, with the browser behavior close enough to read before
+    -- the press. The link is also published as a real anchor for mobile popup
+    -- rules, which require the navigation to happen inside the tap itself.
     local hot = focused and (v.sel or 1) == 1
-    local bw = math.min(220 * F.scale, col)
-    local bh = 38 * F.scale
-    key_box(x, at, bw, bh, pal.a(pal.FRIEND, hot and 0.16 or 0.06),
-            pal.a(pal.FRIEND, hot and 0.95 or 0.6))
-    txt("open the invite", x + bw / 2, at + bh / 2, 15 * F.scale,
-        pal.a(pal.INK, hot and 1 or 0.85), "center", MENU_FONT)
-    if (v.rows or {})[1] then hit(x, at, bw, bh, "stage", 1) end
-    -- What the press does, in a sentence rather than in the small label's
-    -- capitals: a whole sentence shouted is a sentence nobody reads twice.
-    -- Beside the button where the column is wide enough to hold it and under
-    -- it where it is not, which on a phone it never is.
-    local said = "a new tab, and the game keeps running behind it"
-    local sx = x + bw + 14 * F.scale
-    if sx + text_w(said, 11.5 * F.scale) <= x + col then
-        txt(said, sx, at + bh / 2, 11.5 * F.scale, pal.a(pal.DIM, 0.9),
-            nil, nil, true)
-        at = at + bh + 30 * F.scale
-    else
-        at = at + bh + 16 * F.scale
-        for _, line in ipairs(wrapped(said, 11.5 * F.scale, col)) do
-            txt(line, x, at, 11.5 * F.scale, pal.a(pal.DIM, 0.9), nil, nil,
-                true)
-            at = at + 16 * F.scale
+    local bw = math.min(compact and col or 280 * F.scale, col)
+    local bh = 50 * F.scale
+    key_box(x, at, bw, bh, pal.a(pal.FRIEND, hot and 0.18 or 0.08),
+            pal.a(pal.FRIEND, hot and 1 or 0.72))
+    txt("join discord", x + bw / 2, at + bh / 2, 17 * F.scale,
+        pal.a(pal.INK, hot and 1 or 0.9), "center", MENU_FONT)
+    local row = (v.rows or {})[1]
+    if row then
+        hit(x, at, bw, bh, "stage", 1)
+        if row.link then
+            M.link_dom = string.format("%.1f,%.1f,%.1f,%.1f,%s",
+                x / F.density, at / F.density, bw / F.density,
+                bh / F.density, row.link)
         end
+    end
+    at = at + bh + 15 * F.scale
+    for _, line in ipairs(wrapped(v.door_note or "", 11.5 * F.scale, col)) do
+        txt(line, x, at, 11.5 * F.scale, pal.a(pal.DIM, 0.9), nil, nil, true)
         at = at + 16 * F.scale
     end
-
-    -- The address.
-    hrule(x, at, col)
-    at = at + 11 * F.scale
-    lbl("or type this", x, at)
     at = at + 28 * F.scale
-    -- Raw, and in the mono. An address is a machine reading and this
-    -- interface quotes those exactly as they are; the page's own sentence
-    -- case had capitalized the host.
+
+    -- A readable fallback survives a blocked tab and is cut from the same URL
+    -- the button opens.
+    hrule(x, at, col)
+    at = at + 13 * F.scale
+    lbl("invite address", x, at)
+    at = at + 27 * F.scale
     txt(v.door_addr or "", x, at, 15 * F.scale, pal.a(pal.INK, 0.95), nil,
         nil, true)
-    at = at + 34 * F.scale
+    at = at + 26 * F.scale
 
-    -- What happens in it. Lines, not rows: each one is a whole sentence and
-    -- none of them is a place to go.
-    hrule(x, at, col)
-    at = at + 11 * F.scale
-    lbl("what it is for", x, at)
-    at = at + 28 * F.scale
-    for _, line in ipairs(v.door_for or {}) do
-        for _, part in ipairs(wrapped(line, 13 * F.scale, col)) do
-            txt(part, x, at, 13 * F.scale, pal.a(pal.PANEL_INK, 0.9), nil,
-                nil, true)
-            at = at + 19 * F.scale
-        end
-        at = at + 7 * F.scale
-    end
     M.page_extent = (at - y) + 16 * F.scale
     M.page_room = h
 end
@@ -8260,8 +8239,12 @@ function M.menu(v)
     -- Heavier over a game than over a starfield, because a wall lit at the
     -- edge and a kill feed are a great deal more to read through than stars,
     -- and a menu you have to squint past the game to read is not a menu.
+    local reading = v.door or v.table or v.social or v.shop or v.item
+        or v.settings or v.board or v.at == "about" or v.at == "pilot"
     local base = home and 0.6 or 0.78
-    rect(0, 0, F.w, F.h, pal.rgb(0x03050a, narrow and (base + 0.08) or base))
+    if reading then base = home and 0.72 or 0.84 end
+    local scrim = narrow and (base + 0.06) or base
+    rect(0, 0, F.w, F.h, pal.rgb(0x03050a, math.min(scrim, 0.92)))
 
     -- Forty points of margin is a desktop's; on a phone on its side it is a
     -- tenth of the height gone before anything is drawn.
@@ -9011,12 +8994,10 @@ function M.menu(v)
         if narrow then
             pages.aside(deck, tx, top, avail + 24 * F.scale, room)
         elseif v.arena then
-            -- At the block's own left edge rather than a gutter in from it.
-            -- The landing draws no list and hangs off no rule, so the gutter
-            -- every row's label needs was pushing the whole page a rail's
-            -- width right of the wordmark and the tabs directly above it.
-            pages.landing(deck, v.arena, panel_x, top,
-                          deckw + 10 * F.scale, room)
+            -- Keep the live fight in the glass beside the same deployment
+            -- summary a phone gets.
+            pages.aside(deck, panel_x + GUTTER * F.scale, top,
+                        deckw - GUTTER * F.scale + 10 * F.scale, room)
         else
             pages.aside(deck, tx, top,
                         deckw - GUTTER * F.scale + 10 * F.scale, room)

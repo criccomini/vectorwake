@@ -1077,13 +1077,14 @@ do
     check("a rating is what a pilot is rated at",
           has(week, "rating") and has(week, "1240"),
           table.concat(texts(week), " "))
-    check("and the swing is what the week did to it",
-          has(week, "swing") and has(week, "+29") and has(week, "-12"),
+    check("and the rating change says what the week did to it",
+          has(week, "rating change") and has(week, "+29")
+              and has(week, "-12"),
           table.concat(texts(week), " "))
-    -- The week's earnings, and the word for them. Not "points", which is a
-    -- score, and not "rivets", which is the wallet they went into.
-    check("what the week paid is banked",
-          has(week, "banked") and has(week, "180"),
+    -- The week's earnings, and the word for them. "Earned" keeps this separate
+    -- from the balance left after purchases.
+    check("what the week paid is earned",
+          has(week, "earned") and has(week, "180"),
           table.concat(texts(week), " "))
     check("and there is no card beside any of it",
           not has(week, "your week") and not has(week, "kills per death"),
