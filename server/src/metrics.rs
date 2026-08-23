@@ -270,7 +270,12 @@ pub static WT_SESSIONS: Counter = Counter::new();
 /// simulation clock.
 pub static BOT_PILOTS: Gauge = Gauge::new();
 pub static BOT_CONNECTS: Counter = Counter::new();
+pub static BOT_DIAL_FAILURES: Counter = Counter::new();
 pub static BOT_AUTH_RETRIES: Counter = Counter::new();
+pub static BOT_PROTOCOL_ERRORS: Counter = Counter::new();
+pub static BOT_SNAPSHOT_STALLS: Counter = Counter::new();
+pub static BOT_MAP_BUILDS: Counter = Counter::new();
+pub static BOT_RETRY_BACKOFFS: Counter = Counter::new();
 pub static BOT_DRIVER_RESTARTS: Counter = Counter::new();
 /// The directory: what it has been told, and what it turned away.
 pub static REGISTRATIONS: Counter = Counter::new();
@@ -533,9 +538,39 @@ pub fn render() -> String {
     );
     counter(
         &mut out,
+        "vw_bot_dial_failures_total",
+        "Arena connection attempts the bot server could not open.",
+        BOT_DIAL_FAILURES.get(),
+    );
+    counter(
+        &mut out,
         "vw_bot_auth_retries_total",
         "House bot logins retried instead of flying without an account.",
         BOT_AUTH_RETRIES.get(),
+    );
+    counter(
+        &mut out,
+        "vw_bot_protocol_errors_total",
+        "Bot connections closed after an unreadable server message.",
+        BOT_PROTOCOL_ERRORS.get(),
+    );
+    counter(
+        &mut out,
+        "vw_bot_snapshot_stalls_total",
+        "Bot connections closed because valid snapshots stopped arriving.",
+        BOT_SNAPSHOT_STALLS.get(),
+    );
+    counter(
+        &mut out,
+        "vw_bot_map_builds_total",
+        "Maps unpacked and routing grids built by the bot server.",
+        BOT_MAP_BUILDS.get(),
+    );
+    counter(
+        &mut out,
+        "vw_bot_retry_backoffs_total",
+        "Bot refill attempts delayed after a connection or protocol failure.",
+        BOT_RETRY_BACKOFFS.get(),
     );
     counter(
         &mut out,

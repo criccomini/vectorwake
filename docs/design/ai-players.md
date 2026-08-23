@@ -12,15 +12,16 @@ generator for testing, and the calibration anchor for the rating system in
 ## Principles
 
 **Bots play by the same rules.** A bot emits the same input command as a human
-client, every tick, over the same protocol, and sees only what the server
-would have sent to a human in its position. It cannot see through walls, cannot
-see a cloaked ship it has no business seeing, cannot turn faster than its ship's
-rotation rate, and cannot fire faster than the settings allow. Difficulty is
-imperfection added, never permission granted.
+client over the same protocol. It cannot use a ship outside its sight radius,
+see through walls, see a cloaked ship it has no business seeing, turn faster
+than its ship's rotation rate, or fire faster than the settings allow.
+Difficulty is imperfection added, never permission granted.
 
-Since [decision 29](../architecture/decisions.md#29-a-bot-is-a-client) this is
-transport rather than aspiration: a bot is a WebSocket client that decodes the
-same snapshots and sends the same messages, so the wire enforces the rule.
+Since [decision 29](../architecture/decisions.md#29-a-bot-is-a-client), every
+bot is a WebSocket client that decodes simulation snapshots and sends ordinary
+input messages. House bots receive a complete snapshot so the fleet can share
+one predicted world. The brain's `own`, `scan`, and departure-crowd interfaces
+enforce sight before that state reaches a decision.
 
 This is a design commitment with a pleasant side effect: if a bot can play well
 under those rules, the input model is rich enough for humans. If it cannot, the
@@ -60,9 +61,10 @@ does not change while you are fighting it. Adaptation happens at the roster
 level: the director spawns harder or easier opponents. Players can feel a bot
 that suddenly starts missing, and it insults them.
 
-**Bots are content.** Zone authors define their own rosters and, if they want,
-their own behavior. A zone whose bots feel like that zone is a zone with an
-identity.
+**Bots are content.** The current fleet has one deployment-wide roster and one
+behavior model. Zones choose their fill level and simulation settings. A future
+zone-specific roster or behavior set needs an explicit design and code path; it
+is not a feature hidden in the zone file today.
 
 ## Styles
 
@@ -261,11 +263,10 @@ information a player does not have.
 
 ## The roster: bots as long-lived individuals
 
-Bots are not spawned from templates on demand. A zone carries a persistent
-roster of individuals, each with a name from our naming family, an archetype, a
-skill level, its own rating, a presence schedule, and a career. "Bot A" is
-somebody: it logs on around the same hours, flies the way it flew last week, and
-carries its record with it.
+The bot server holds one deterministic roster for the deployment. Each
+individual keeps a name, hull, skill, account, rating, wallet, and upgrades.
+"Bot A" is somebody because it flies the same build under the same account and
+carries its record across restarts.
 
 **One individual, one place.** An individual never appears in two arenas at
 once, and never twice in one arena. This is the rule that makes it an
@@ -281,24 +282,19 @@ offline tournament's work enters the fleet. See
 [accounts.md](accounts.md) and
 [meta-layer.md](../architecture/meta-layer.md).
 
-**Presence.** Each individual keeps loose hours, a few sessions a week, biased
-toward the zone's own peak times with some spread into the off hours. Arenas at
-different times of day have different regulars, and a player who keeps getting
-killed by the same Ambusher on Tuesday nights should learn its name and start
-watching for it. That recognition is most of the difference between an arena
-that feels populated and one that feels like a screensaver.
+**Presence.** Presence follows room demand today. The director walks the stable
+roster in order and claims the first unused individual whenever an arena needs a
+seat. It does not keep hours or a weekly schedule.
 
-**Careers.** Individuals enter the roster at low skill, improve slowly, plateau
-where their parameters settle, and eventually retire and are replaced by new
-names. Career movement happens between sessions, never inside one, which keeps
-the no-rubber-banding rule intact. Careers give every rating band inhabitants,
-so new players land among peers instead of at the empty bottom of a ladder, and
-they keep the roster from calcifying into a cast everyone has memorized.
+**Careers.** Rating, wallet, and purchased upgrades change through ordinary
+play. Hull and skill stay fixed. There is no automatic skill progression,
+plateau, retirement, or replacement policy today. Those systems need rules for
+timing and account history before they can be added without quietly changing
+who a familiar pilot is.
 
-**Texture is not disguise.** Names are visibly marked as AI everywhere, the
-schedule exists for rhythm and ladder health rather than mimicry, and bots do
-not perform humanity: no fake excuses, no fake typing, no pretending to have a
-life the label contradicts. Recognition never becomes deception.
+**Texture is not disguise.** Names are visibly marked as AI everywhere, and
+bots do not perform humanity: no fake excuses, no fake typing, no pretending to
+have a life the label contradicts. Recognition never becomes deception.
 
 ## They buy their own ships
 
@@ -322,12 +318,12 @@ wallet was permanently empty. They file now. The rows are marked as machines
 and the week's table reads `where not bot`, so what this adds is a wallet and a
 log, not a bot in the standings.
 
-**One rung a session.** Shopping happens when an individual begins a session
-and never during one, which is the same rule career movement follows and for
-the same reason: a pilot that got better in the middle of a fight is
-rubber-banding. One rung at a time, so a bot that saved for a month arrives in
-a ship a month ahead rather than a year ahead, and the roster goes on
-inhabiting every rating band instead of climbing out of the bottom of one.
+**At most one rung per completed-flight cycle.** Shopping happens before a
+flight and never during one. A new individual may buy before its first flight.
+After a purchase, a successful flight makes the next connection eligible to buy
+again. Failed dials, refused joins, and reconnect churn do not turn one flight
+into several purchases. One rung at a time keeps saved bounty from changing a
+ship all at once.
 
 **Taste, so a room is not eight of one ship.** Each individual has an order it
 wants slots in, hashed from its name and tilted by its hull: a gunner, a
@@ -336,10 +332,10 @@ decides how the thirty points are spent once the rungs are owned, so what a
 pilot saved for is what it flies. That is what makes "Ozone throws shrapnel"
 a fact worth learning rather than a thing to say about all of them.
 
-The rating side takes care of itself: a bought-up bot wins more, its rating
-rises with its build, and the fill rule matches bots to the humans present by
-rating. The case to watch is the other one, a long-lived individual meeting a
-first-week player, which is the fill rule's job rather than the shelf's.
+A bought-up bot may win more, and its account rating then moves with its record.
+The current fill rule does not select by rating, so a long-lived individual can
+still meet a first-week player. That is a population-director limitation rather
+than something the shelf can solve.
 
 ## The population director
 
@@ -356,16 +352,11 @@ tips it over target and a bot stands down, and a room with humans past the
 target holds no bots at all. The unfilled remainder is headroom, so a human
 join never waits on a bot leaving.
 
-**Match the room.** Bots are chosen with ratings near the humans present, so a
-first-time player is not fed to experts and a strong player is not handed
-practice dummies. For a lone newcomer, the target is bots slightly below their
-provisional rating, because early losses are how new players leave.
-
-**Draw from the roster.** The director picks from the individuals currently "on
-schedule," which is what makes the room's cast feel like the room's cast. When
-the online pool cannot cover the fill target or the rating band, it calls in
-off-schedule individuals anyway. Fill beats fiction; the schedule is texture,
-the target is the job.
+**Draw from the roster.** The director claims the first unused individual in
+the deterministic deployment roster. It does not receive the human rating
+distribution in the directory reply, so it cannot match a room by rating yet.
+Adding that policy first requires exposing enough aggregate standing data to
+choose without leaking individual account records. Fill is the current job.
 
 **Yield to humans.** When a human joins, a bot is marked for removal and leaves
 under the graceful rules above. Bots never outnumber humans on the opposing team
@@ -397,10 +388,10 @@ wants no bots sets it to zero.
 
 Bots carry ratings, which is what makes the arena useful for ranking humans. See
 [rating.md](rating.md). Three properties matter here: a bot's rating belongs to
-the individual and follows its career, a new individual's rating is seeded from
-its archetype's calibrated prior so it starts sane, and one reference
-personality is pinned to a fixed rating, with no career and no schedule, so the
-bot population cannot drift as a closed system.
+the individual account, a calibrated individual starts from its offline prior,
+and one reference personality is pinned to a fixed rating so the bot population
+cannot drift as a closed system. Generated fill pilots have stable accounts but
+no separate calibrated prior.
 
 ## Duels
 

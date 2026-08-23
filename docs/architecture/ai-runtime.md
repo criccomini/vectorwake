@@ -8,9 +8,10 @@ other change in this document: a bot produces inputs and nothing else.
 
 Bots run in the bot server, a separate process that connects to arenas over
 WebSocket exactly as the Defold client does. One bot server flies a whole
-deployment's roster: each bot is one connection, one world decoded from the
-snapshots the arena sends, and one brain emitting input messages. The arena
-server keeps no bot code at all.
+deployment's roster: each bot is one connection and one brain emitting input
+messages. Authenticated house bots on one arena share a predicted world;
+unaccounted bots keep a private world decoded from their filtered snapshots.
+The arena server keeps no bot code at all.
 
 This reverses the placement this document used to argue for. Bots ran inside
 the arena's own tick, reading the `World` directly and injecting inputs
@@ -33,12 +34,11 @@ setting changing without traveling, visible on no other check. Bots that are
 clients walk that path all day in every arena and fail loudly the moment it
 breaks.
 
-"A bot knows no more than a player" stops being discipline and becomes
-structure. In-process, the property was `impl Bot` taking no `&World`, which a
-refactor could quietly lose, and the scan feeding it read true server state:
-those bots would have seen through cloak on the day cloak existed. A bot
-behind the protocol receives the visibility-filtered snapshot a human at its
-position would receive, because there is nothing else on the socket.
+The protocol removes direct access to arena state. An unaccounted bot receives
+the same visibility-filtered snapshot as a person. An authenticated house bot
+receives the complete room for shared prediction, so its fairness boundary is
+the narrow brain interface: `impl Bot` takes no `&World`, while `own`, `scan`,
+and departure crowd all enforce the same sight limit before making decisions.
 
 There is one bot system instead of two. The previous design kept an in-process
 path for filler AI and promised a protocol path for third parties. Now the
@@ -93,11 +93,10 @@ review. It is now kept by the protocol.
 A bot decodes snapshots through the simulation core, the way the client and
 `tools/pilot` do: map and settings arrive at join, snapshots at 20 Hz, and the
 brain reads the decoded world through the same `own` and `scan` the calibration
-harness uses. Whatever filter the server applied before sending is the filter
-the bot sees through. An authenticated house bot receives the entire room,
-including prizes, so any house bot's snapshot is the complete room's truth. A
-declared bot without a house account gets the same interest-filtered view as a
-person.
+harness uses. An authenticated house bot receives the entire room, including
+prizes, so any house bot's snapshot is the complete room's truth. The brain
+still receives only bounded perception. A declared bot without a house account
+gets the same interest-filtered view as a person.
 
 That truth is held once per arena. The fifty bots an arena wants are all being
 sent the same room, so the bot server predicts it in one shared world rather
@@ -136,10 +135,10 @@ re-rolled on arrival, because that is where the map keeps its furniture and
 therefore where anybody else looking for a fight is also going. Measured on
 the ladder: 539 kills over 168 bouts without a rally, 2634 with one.
 
-Reaction time is modeled as a queue: a stimulus entering perception is not
-visible to the decision layer until its personality's reaction delay has
-elapsed. This is why a weak bot is slow to respond rather than artificially
-inaccurate, and it produces mistakes that look like the mistakes people make.
+Look and re-plan cadence are fixed. Two skill-dependent reaction-time models
+were measured and retired: one did not move outcomes, while delaying the hands
+destabilized the flight controller. Skill currently changes aim error and
+judgment.
 
 ## Deciding
 
@@ -228,16 +227,16 @@ waypoint of every route and at every green, then turning from a standstill at
 230 rotation and accelerating from nothing, over and over: the drill measured
 50 to 70 per cent of all bot-ticks under half a pixel of motion, nearly all of it
 in travel. So a route carries a pass speed per bend, set by the angle between its
-legs, and a destination carries one too -- a green's pickup radius is sixteen
+legs, and a destination carries one too: a green's pickup radius is sixteen
 pixels, so it is taken at a slow pass rather than a stop. Waypoints advance at
-the tick rate the moment they are passed; only deciding waits for a reaction.
+the tick rate the moment they are passed; only planning waits for its cadence.
 Crawling fell to about a quarter of ticks, and kills roughly doubled.
 
 Deciding and flying run on different clocks, and that split is load-bearing.
 Steering used to be decided with the plan and held until the next one, so a pilot
-on a 38 tick reaction held a turn for 38 ticks: at 230 rotation that is 79 degrees
-of swing with nothing looking. Reaction time belongs on what to do. A servo loop
-belongs on every tick.
+on a 38 tick plan held a turn for 38 ticks: at 230 rotation that is 79 degrees
+of swing with nothing looking. Planning and steering need separate clocks. A
+servo loop belongs on every tick.
 
 The give-up timer stays underneath all of it, watching distance measured along
 the route rather than the straight line, so going the long way round a wall

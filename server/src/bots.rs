@@ -68,9 +68,8 @@ const REFILL_COOLDOWN_MS: u64 = 30_000;
 /// holds its own until it goes. That is affordable only because a room with no
 /// seats left does not wait: `evict_bot` takes one that tick.
 const DEPART_MAX_MS: u64 = 40_000;
-/// Snapshots stop arriving and nothing else says why. Ten seconds is five
-/// hundred missed snapshots, so this only ever fires on a connection that is
-/// actually gone.
+/// No frame of any kind arrives for ten seconds. Snapshot progress has its own
+/// shorter deadline; this one catches a socket that has gone completely quiet.
 const QUIET_MS: u64 = 10_000;
 /// A bot normally sends only when its controls change. Repeat the current
 /// controls once a second so a healthy pilot never looks silent to the arena's
@@ -85,6 +84,10 @@ const DRIVER_STALL_MS: u64 = 5_000;
 /// second of it is a busy moment, and treating that as gone would empty a room
 /// and refill it for no reason anybody could see.
 const GONE_AFTER: u32 = 5;
+/// A flying client receives snapshots at least twenty times a second. Five
+/// seconds without one is a live socket whose simulation has stopped.
+const SNAPSHOT_STALL_MS: u64 = 5_000;
+const RETRY_MAX_MS: u64 = 60_000;
 
 /// Geometry, shared by every bot that was sent the same map.
 ///
@@ -100,22 +103,70 @@ const GONE_AFTER: u32 = 5;
 /// through it.
 type Ground = (Arc<sim::sim_map>, Arc<nav::Nav>);
 
+enum MapEntry {
+    Building(Arc<tokio::sync::OnceCell<Option<Ground>>>),
+    Ready(std::sync::Weak<sim::sim_map>, std::sync::Weak<nav::Nav>),
+}
+
 #[derive(Default)]
-struct Maps(Mutex<HashMap<u64, Ground>>);
+struct Maps(Mutex<HashMap<u64, MapEntry>>);
 
 impl Maps {
-    fn get(&self, packed: &[u8]) -> Option<Ground> {
+    /// Get one map and routing grid. The first caller builds them off the async
+    /// runtime; everybody arriving behind it waits on the same cell. Ready
+    /// entries are weak, so a map rotation releases geometry nobody is flying.
+    async fn get(&self, packed: &[u8]) -> Option<Ground> {
         let key = fingerprint(packed);
-        if let Some((m, n)) = self.0.lock().ok()?.get(&key) {
-            return Some((Arc::clone(m), Arc::clone(n)));
+        let build = {
+            let mut maps = self.0.lock().ok()?;
+            maps.retain(|_, entry| match entry {
+                MapEntry::Building(_) => true,
+                MapEntry::Ready(map, route) => map.strong_count() > 0 && route.strong_count() > 0,
+            });
+            match maps.get(&key) {
+                Some(MapEntry::Ready(map, route)) => {
+                    return Some((map.upgrade()?, route.upgrade()?));
+                }
+                Some(MapEntry::Building(cell)) => Arc::clone(cell),
+                None => {
+                    let cell = Arc::new(tokio::sync::OnceCell::new());
+                    maps.insert(key, MapEntry::Building(Arc::clone(&cell)));
+                    cell
+                }
+            }
+        };
+        let bytes = packed.to_vec();
+        let ground = build
+            .get_or_init(|| async move {
+                tokio::task::spawn_blocking(move || {
+                    crate::metrics::BOT_MAP_BUILDS.inc();
+                    let map = sim::unpack_map(&bytes).ok()?;
+                    let route = Arc::new(nav::Nav::build(&map));
+                    Some((map, route))
+                })
+                .await
+                .ok()
+                .flatten()
+            })
+            .await
+            .clone();
+        let mut maps = self.0.lock().ok()?;
+        if maps.get(&key).is_some_and(
+            |entry| matches!(entry, MapEntry::Building(cell) if Arc::ptr_eq(cell, &build)),
+        ) {
+            match &ground {
+                Some((map, route)) => {
+                    maps.insert(
+                        key,
+                        MapEntry::Ready(Arc::downgrade(map), Arc::downgrade(route)),
+                    );
+                }
+                None => {
+                    maps.remove(&key);
+                }
+            }
         }
-        let m = sim::unpack_map(packed).ok()?;
-        let n = Arc::new(nav::Nav::build(&m));
-        self.0
-            .lock()
-            .ok()?
-            .insert(key, (Arc::clone(&m), Arc::clone(&n)));
-        Some((m, n))
+        ground
     }
 }
 
@@ -310,16 +361,19 @@ impl Rig {
 
     /// Take a seat, or refuse it because a live pilot already has it, which is
     /// the second-room signal described on `crew`.
-    fn claim(&self, ship: u8, seat: Seat) -> bool {
+    fn claim(&self, ship: u8, seat: Seat) -> Result<(), Box<Seat>> {
+        if ship as usize >= sim::MAX_SHIPS {
+            return Err(Box::new(seat));
+        }
         let mut c = self.lock_crew();
         if let Some(held) = c.get(&ship) {
             if held.id != seat.id {
-                return false;
+                return Err(Box::new(seat));
             }
         }
         self.buttons[ship as usize].store(0, Ordering::Relaxed);
         c.insert(ship, seat);
-        true
+        Ok(())
     }
 
     /// Lift this pilot's seat out and hand it back, brain and all.
@@ -597,6 +651,54 @@ impl Rigs {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FlightEnd {
+    Departed,
+    Yielded,
+    RatedBusy,
+    Refused,
+    AuthFailed,
+    DialFailed,
+    Protocol,
+    SnapshotStalled,
+    DriverStopped,
+    Closed { welcomed: bool },
+    Panicked,
+}
+
+impl FlightEnd {
+    fn needs_backoff(self) -> bool {
+        matches!(
+            self,
+            FlightEnd::AuthFailed
+                | FlightEnd::DialFailed
+                | FlightEnd::Refused
+                | FlightEnd::Protocol
+                | FlightEnd::SnapshotStalled
+                | FlightEnd::DriverStopped
+                | FlightEnd::Closed { welcomed: false }
+                | FlightEnd::Panicked
+        )
+    }
+}
+
+fn protocol_error() -> FlightEnd {
+    crate::metrics::BOT_PROTOCOL_ERRORS.inc();
+    FlightEnd::Protocol
+}
+
+fn snapshot_stalled() -> FlightEnd {
+    crate::metrics::BOT_SNAPSHOT_STALLS.inc();
+    FlightEnd::SnapshotStalled
+}
+
+fn retry_delay_ms(failures: u32, addr: &str) -> u64 {
+    let shift = failures.saturating_sub(1).min(6);
+    let base = 1_000u64.saturating_mul(1u64 << shift).min(RETRY_MAX_MS);
+    base.saturating_add(fingerprint(addr.as_bytes()) % 1_000)
+        .min(RETRY_MAX_MS)
+}
+
 /// One bot the supervisor is holding open.
 struct Live {
     name: String,
@@ -605,14 +707,60 @@ struct Live {
     /// good moment rather than at once, per the graceful rules in
     /// docs/design/ai-players.md.
     yielding: Arc<AtomicBool>,
-    /// This identity already holds a rated lease on another host. Back it out
-    /// of this supervisor's front of the roster long enough for that lease and
-    /// its renewal window to clear.
-    busy: Arc<AtomicBool>,
-    task: tokio::task::JoinHandle<()>,
+    task: tokio::task::JoinHandle<FlightEnd>,
 }
 
 const RATED_BUSY_BACKOFF_MS: u64 = 180_000;
+
+struct Account {
+    secret: String,
+    /// A successful flight makes the next session eligible to buy one rung.
+    /// A failed join leaves this false, so reconnect churn cannot empty a
+    /// wallet one request at a time.
+    shop_ready: bool,
+}
+
+#[derive(Default)]
+struct Accounts(Mutex<HashMap<String, Account>>);
+
+impl Accounts {
+    fn secret(&self, who: &str) -> Option<String> {
+        self.0.lock().ok()?.get(who).map(|a| a.secret.clone())
+    }
+
+    fn remember(&self, who: &str, secret: String) {
+        if let Ok(mut accounts) = self.0.lock() {
+            accounts.entry(who.to_string()).or_insert(Account {
+                secret,
+                shop_ready: true,
+            });
+        }
+    }
+
+    fn may_shop(&self, who: &str) -> bool {
+        self.0
+            .lock()
+            .ok()
+            .and_then(|accounts| accounts.get(who).map(|a| a.shop_ready))
+            .unwrap_or(false)
+    }
+
+    fn bought(&self, who: &str) {
+        if let Ok(mut accounts) = self.0.lock() {
+            if let Some(account) = accounts.get_mut(who) {
+                account.shop_ready = false;
+            }
+        }
+    }
+
+    fn complete_session(&self, who: &str) {
+        if let Ok(mut accounts) = self.0.lock() {
+            if let Some(account) = accounts.get_mut(who) {
+                account.shop_ready = true;
+            }
+        }
+    }
+}
 
 /// What the supervisor knows about one arena.
 #[derive(Default)]
@@ -623,6 +771,10 @@ struct Instance {
     released_ms: u64,
     /// Consecutive cycles it has failed to answer. See `GONE_AFTER`.
     misses: u32,
+    /// Connection failures hold refill here rather than sending eight new
+    /// clients into the same outage every second.
+    retry_after_ms: u64,
+    failures: u32,
 }
 
 pub async fn run() {
@@ -635,8 +787,9 @@ pub async fn run() {
     // the same identity between supervisors on different hosts.
     let taken: Arc<Mutex<HashSet<String>>> = Arc::default();
     let blocked: Arc<Mutex<HashMap<String, u64>>> = Arc::default();
-    // One account secret per individual, held for the life of the process.
-    let secrets: Arc<Mutex<HashMap<String, String>>> = Arc::default();
+    // Account state stays with the supervisor, so a reconnect keeps its secret
+    // and cannot turn one failed flight into a stack of purchases.
+    let accounts: Arc<Accounts> = Arc::default();
     let mut fleet: HashMap<String, Instance> = HashMap::new();
 
     let dirs = crate::directory_urls().await;
@@ -665,22 +818,39 @@ pub async fn run() {
 
         // Anything that has gone: a refused join, a yield, an arena that
         // restarted. Its name goes back in the pool.
-        for inst in fleet.values_mut() {
-            inst.bots.retain(|b| {
-                let done = b.task.is_finished();
-                if done {
-                    if b.busy.load(Ordering::Relaxed) {
-                        if let Ok(mut blocked) = blocked.lock() {
-                            blocked
-                                .insert(b.name.clone(), now.saturating_add(RATED_BUSY_BACKOFF_MS));
-                        }
-                    }
-                    if let Ok(mut t) = taken.lock() {
-                        t.remove(&b.name);
+        for (addr, inst) in fleet.iter_mut() {
+            let mut at = 0;
+            while at < inst.bots.len() {
+                if !inst.bots[at].task.is_finished() {
+                    at += 1;
+                    continue;
+                }
+                let live = inst.bots.remove(at);
+                let outcome = live.task.await.unwrap_or(FlightEnd::Panicked);
+                if let Ok(mut t) = taken.lock() {
+                    t.remove(&live.name);
+                }
+                if outcome == FlightEnd::RatedBusy {
+                    if let Ok(mut blocked) = blocked.lock() {
+                        blocked
+                            .insert(live.name.clone(), now.saturating_add(RATED_BUSY_BACKOFF_MS));
                     }
                 }
-                !done
-            });
+                if outcome.needs_backoff() {
+                    inst.failures = inst.failures.saturating_add(1);
+                    let delay = retry_delay_ms(inst.failures, addr);
+                    inst.retry_after_ms = inst.retry_after_ms.max(now.saturating_add(delay));
+                    crate::metrics::BOT_RETRY_BACKOFFS.inc();
+                    println!(
+                        "{addr}: {} ended {outcome:?}; refill waits {:.1}s",
+                        live.name,
+                        delay as f32 / 1_000.0
+                    );
+                } else {
+                    inst.failures = 0;
+                    inst.retry_after_ms = 0;
+                }
+            }
         }
 
         // Asked all at once rather than one after another, which is not a
@@ -738,31 +908,33 @@ pub async fn run() {
                 if now.saturating_sub(inst.released_ms) < REFILL_COOLDOWN_MS {
                     continue;
                 }
+                if now < inst.retry_after_ms {
+                    continue;
+                }
                 let add = (n - have).min(ADD_PER_CYCLE);
+                let mut sent = 0;
                 for _ in 0..add {
                     let Some(who) = claim(&taken, &blocked, now) else {
                         break;
                     };
                     let yielding = Arc::new(AtomicBool::new(false));
-                    let busy = Arc::new(AtomicBool::new(false));
                     let task = tokio::spawn(fly(
                         addr.clone(),
                         who.clone(),
                         Arc::clone(&maps),
                         Arc::clone(&rigs),
                         Arc::clone(&yielding),
-                        Arc::clone(&busy),
-                        Arc::clone(&secrets),
+                        Arc::clone(&accounts),
                     ));
                     inst.bots.push(Live {
                         name: who.name,
                         born_ms: now,
                         yielding,
-                        busy,
                         task,
                     });
+                    sent += 1;
                 }
-                println!("{addr}: {have} bots, wants {n}; sent {add}");
+                println!("{addr}: {have} bots, wants {n}; sent {sent}");
             } else if have > n {
                 // Oldest first among those old enough to go, so a bot that has
                 // just arrived is not immediately turned around.
@@ -857,9 +1029,8 @@ async fn ask(addr: &str) -> Option<u32> {
 /// bot flying straight costs nothing on the wire. The world is stepped locally
 /// at the simulation's own rate between snapshots, which is not an optimisation
 /// but the only way the brain's timing survives the move out of the arena:
-/// reaction delay and look cadence are counted in 100 Hz ticks, and a brain fed
-/// a 20 Hz picture would be a brain with five times the reaction time and a
-/// heading five ticks stale to steer against.
+/// planning and look cadence are counted in 100 Hz ticks, and a brain fed a
+/// 20 Hz picture would plan and steer from a clock five times too slow.
 ///
 /// The world it steps is the arena's `Rig`, shared with every other pilot on
 /// the same address, because the rooms are one room and predicting it once is
@@ -912,10 +1083,8 @@ impl BotIdentity {
 /// however many times this process restarts. The secret is kept in memory for
 /// the life of the process, which is what stops a restart loop minting a
 /// credential row per attempt.
-async fn bot_identity(
-    who: &str,
-    secrets: &Mutex<HashMap<String, String>>,
-) -> Result<BotIdentity, String> {
+async fn bot_identity(who: &ai::RosterEntry, accounts: &Accounts) -> Result<BotIdentity, String> {
+    let name = who.name.as_str();
     let meta = std::env::var("VW_META").unwrap_or_default();
     let pool = std::env::var("VW_TOKEN").unwrap_or_default();
     if meta.is_empty() || pool.is_empty() {
@@ -925,23 +1094,21 @@ async fn bot_identity(
     }
     // Read and release before any await: this is a plain mutex, and a guard
     // held across a network call is a deadlock waiting for a slow reply.
-    let held = secrets.lock().ok().and_then(|m| m.get(who).cloned());
+    let held = accounts.secret(name);
     let secret = match held {
         Some(s) => s,
         None => {
-            let body = serde_json::json!({ "pool_token": pool, "name": who }).to_string();
+            let body = serde_json::json!({ "pool_token": pool, "name": name }).to_string();
             let reply = crate::meta::call(&meta, "/v1/bot", &body)
                 .await
-                .map_err(|e| format!("no account for {who}: {e}"))?;
+                .map_err(|e| format!("no account for {name}: {e}"))?;
             let s = reply
                 .get("secret")
                 .and_then(|v| v.as_str())
                 .filter(|s| !s.is_empty())
-                .ok_or_else(|| format!("no account for {who}: response had no secret"))?
+                .ok_or_else(|| format!("no account for {name}: response had no secret"))?
                 .to_string();
-            if let Ok(mut m) = secrets.lock() {
-                m.insert(who.to_string(), s.clone());
-            }
+            accounts.remember(name, s.clone());
             s
         }
     };
@@ -957,24 +1124,23 @@ async fn bot_identity(
             let body = serde_json::json!({ "secret": secret }).to_string();
             crate::meta::call(&meta, "/v1/session", &body)
                 .await
-                .map_err(|e| format!("{who} cannot begin a session: {e}"))
+                .map_err(|e| format!("{name} cannot begin a session: {e}"))
         }
     };
     let mut reply = session(secret.clone()).await?;
 
     // The shopping, which happens between sessions and never during one.
     //
-    // A career that improves is what docs/design/ai-players.md asks for, and
-    // this is the half of it a player can see: an individual banks the bounty
-    // it takes and comes back next session in a ship it paid for. Career
-    // movement between sessions and never inside one is the same rule the
-    // skill numbers follow, and for the same reason: a pilot that got better
-    // in the middle of a fight is rubber-banding.
+    // This is the part of a career a player can see: an individual banks the
+    // bounty it takes and comes back after a completed flight in a ship it paid
+    // for. The hull and skill stay fixed; rating and purchases carry the
+    // account's history.
     //
     // Through the endpoints a person's client uses, with nothing added for
     // being ours: the shelf prices it, the wallet is checked at the meta-layer
     // and the refusal is the same one a player gets.
-    if spend(&meta, &secret, who, &reply).await {
+    if accounts.may_shop(name) && spend(&meta, &secret, who, &reply).await {
+        accounts.bought(name);
         // A purchase moves the ceiling and the arena reads its copy off the
         // token, so the one in hand is already out of date. This is why the
         // client asks for a fresh one after buying too.
@@ -985,7 +1151,7 @@ async fn bot_identity(
         .get("token")
         .and_then(|v| v.as_str())
         .filter(|token| !token.is_empty())
-        .ok_or_else(|| format!("{who} cannot begin a session: response had no token"))?
+        .ok_or_else(|| format!("{name} cannot begin a session: response had no token"))?
         .to_string();
     let mut entitlements = crate::sim::World::base_entitlements();
     if let Some(owned) = reply.get("entitlements").and_then(|v| v.as_array()) {
@@ -1005,10 +1171,14 @@ async fn bot_identity(
 ///
 /// One rung at a time. A bot that emptied its wallet the moment it could would
 /// arrive one evening in a ship three weeks ahead of the pilots it is filling a
-/// room for, and the roster's job is to inhabit every rating band rather than
-/// to climb out of the bottom of one. Buying a rung a session is a career at
-/// the speed careers move here.
-async fn spend(meta: &str, secret: &str, who: &str, session: &serde_json::Value) -> bool {
+/// room for. One rung after a completed flight spreads that growth over time
+/// instead of turning a saved wallet into a finished ship at once.
+async fn spend(
+    meta: &str,
+    secret: &str,
+    who: &ai::RosterEntry,
+    session: &serde_json::Value,
+) -> bool {
     let rivets = session
         .get("rivets")
         .and_then(|v| v.as_i64())
@@ -1036,30 +1206,32 @@ async fn spend(meta: &str, secret: &str, who: &str, session: &serde_json::Value)
                 .collect()
         })
         .unwrap_or_default();
-    let class = crate::ai::CALIBRATED
-        .iter()
-        .find(|(name, ..)| *name == who)
-        .map(|(_, class, _)| *class)
-        .unwrap_or(0);
-    let Some(slot) = crate::shopper::next_buy(&crate::shopper::wants(who, class), &offered, rivets)
-    else {
+    let Some(slot) = next_purchase(who, &offered, rivets) else {
         return false;
     };
     let body = serde_json::json!({ "secret": secret, "slot": slot }).to_string();
     match crate::meta::call(meta, "/v1/buy", &body).await {
         Ok(bought) => {
             let left = bought.get("rivets").and_then(|v| v.as_i64()).unwrap_or(0);
-            println!("{who} bought slot {slot}; {left} rivets left");
+            println!("{} bought slot {slot}; {left} rivets left", who.name);
             true
         }
         // A refusal is the meta-layer's answer and is not an error here: a
         // wallet that moved between the shelf and the purchase is a race this
         // pilot loses by flying what it already owns.
         Err(why) => {
-            println!("{who} could not buy slot {slot}: {why}");
+            println!("{} could not buy slot {slot}: {why}", who.name);
             false
         }
     }
+}
+
+fn next_purchase(who: &ai::RosterEntry, offered: &[(usize, u32)], rivets: i64) -> Option<usize> {
+    crate::shopper::next_buy(
+        &crate::shopper::wants(&who.name, who.class),
+        offered,
+        rivets,
+    )
 }
 
 /// The join a bot sends, built where something can check it.
@@ -1094,24 +1266,8 @@ async fn fly(
     maps: Arc<Maps>,
     rigs: Arc<Rigs>,
     yielding: Arc<AtomicBool>,
-    busy: Arc<AtomicBool>,
-    secrets: Arc<Mutex<HashMap<String, String>>>,
-) {
-    // The meta-layer and the arena normally restart together during a deploy.
-    // A transient login failure must keep this pilot outside the room until
-    // the account service returns. Joining without the token would make the
-    // arena treat it as a third-party bot and send an interest-filtered
-    // snapshot. If that connection won the shared rig's pen, every bot outside
-    // its radar would disappear from the AI world and sit idle.
-    let identity = match bot_identity(&who.name, &secrets).await {
-        Ok(identity) => identity,
-        Err(e) => {
-            crate::metrics::BOT_AUTH_RETRIES.inc();
-            println!("bots: {e}; retrying");
-            return;
-        }
-    };
-    let share_world = identity.shares_world();
+    accounts: Arc<Accounts>,
+) -> FlightEnd {
     let cfg = tokio_tungstenite::tungstenite::protocol::WebSocketConfig {
         max_message_size: Some(2 * 1024 * 1024),
         max_frame_size: Some(2 * 1024 * 1024),
@@ -1121,12 +1277,47 @@ async fn fly(
         std::time::Duration::from_secs(10),
         tokio_tungstenite::connect_async_with_config(&addr, Some(cfg), false),
     );
-    let Ok(Ok((ws, _))) = dial.await else { return };
+    let Ok(Ok((mut ws, _))) = dial.await else {
+        crate::metrics::BOT_DIAL_FAILURES.inc();
+        return FlightEnd::DialFailed;
+    };
     // Counted after the dial succeeds, so this is arenas reached rather than
     // arenas attempted. A step in it with no deploy behind it is a roster
     // being rebuilt, which is the shape a restart has from in here.
     crate::metrics::BOT_CONNECTS.inc();
     let _flying = crate::metrics::PilotGuard::new();
+
+    // Dial before shopping. An address that cannot take a connection is not a
+    // session and must not move a pilot's career. Authentication still happens
+    // before join, so a failed meta-layer never turns a house bot into an
+    // unaccounted one with a filtered view.
+    let identity = match bot_identity(&who, &accounts).await {
+        Ok(identity) => identity,
+        Err(e) => {
+            crate::metrics::BOT_AUTH_RETRIES.inc();
+            println!("bots: {e}; retrying");
+            let _ = tokio::time::timeout(std::time::Duration::from_secs(2), ws.close(None)).await;
+            return FlightEnd::AuthFailed;
+        }
+    };
+    fly_socket(addr, who, maps, rigs, yielding, accounts, identity, ws).await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn fly_socket<S>(
+    addr: String,
+    who: ai::RosterEntry,
+    maps: Arc<Maps>,
+    rigs: Arc<Rigs>,
+    yielding: Arc<AtomicBool>,
+    accounts: Arc<Accounts>,
+    identity: BotIdentity,
+    ws: tokio_tungstenite::WebSocketStream<S>,
+) -> FlightEnd
+where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send,
+{
+    let share_world = identity.shares_world();
     let (mut sink, mut source) = ws.split();
 
     // A bot picks its zone the way a player who typed an address does: it takes
@@ -1140,7 +1331,7 @@ async fn fly(
     // filtered view cannot feed the shared rig, so it flies a private world.
     let join = join_msg(who.class, &who.name, identity.session());
     if sink.send(Message::Binary(join)).await.is_err() {
-        return;
+        return FlightEnd::Closed { welcomed: false };
     }
 
     // How this pilot sees the room: the rig it shares with every other
@@ -1159,6 +1350,7 @@ async fn fly(
     let mut cfg_bytes: Vec<u8> = Vec::new();
     let mut route: Option<Arc<nav::Nav>> = None;
     let mut ship: u8 = 0;
+    let mut lifecycle: u32 = 1;
     // The mind flies in the rig's driver; what this task keeps is the
     // socket. Frames arrive here to be sent because the socket is this
     // task's and nobody else's, which is what keeps one client per bot on
@@ -1169,6 +1361,9 @@ async fn fly(
     let mut quiet = tokio::time::interval(std::time::Duration::from_secs(1));
     quiet.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut heard = std::time::Instant::now();
+    let mut snapshot_at = std::time::Instant::now();
+    let mut welcomed_at: Option<std::time::Instant> = None;
+    let mut outcome = FlightEnd::Closed { welcomed: false };
     // Set at a seat collision; flown after this loop ends.
     let mut go_private: Option<(sim::World, ai::Bot)> = None;
 
@@ -1176,19 +1371,47 @@ async fn fly(
         tokio::select! {
             biased;
             msg = source.next() => {
-                let Some(Ok(Message::Binary(data))) = msg else {
-                    // A close, or a frame we cannot read. Either way this
-                    // connection is over and the supervisor will notice.
-                    break;
+                let data = match msg {
+                    Some(Ok(Message::Binary(data))) => data,
+                    Some(Ok(Message::Ping(data))) => {
+                        heard = std::time::Instant::now();
+                        if sink.send(Message::Pong(data)).await.is_err() {
+                            break;
+                        }
+                        continue;
+                    }
+                    Some(Ok(Message::Pong(_))) => {
+                        heard = std::time::Instant::now();
+                        continue;
+                    }
+                    Some(Ok(Message::Close(_))) | None | Some(Err(_)) => break,
+                    Some(Ok(_)) => continue,
                 };
                 heard = std::time::Instant::now();
                 if data.is_empty() {
+                    outcome = protocol_error();
+                    break;
+                }
+                if data[0] == crate::S2C_MAP && data.len() == 1
+                    || data[0] == crate::S2C_SETTINGS && data.len() < 5
+                    || data[0] == crate::S2C_WELCOME && data.len() < 16
+                    || data[0] == crate::S2C_SNAPSHOT && data.len() <= crate::SNAPSHOT_HEADER
+                    || data[0] == crate::S2C_DENIED && data.len() < 2
+                    || data[0] == crate::S2C_ROSTER && data.len() < 2
+                {
+                    outcome = protocol_error();
+                    break;
+                }
+                if data[0] == crate::S2C_MAPNAME {
                     continue;
                 }
                 match data.first().copied() {
                     Some(crate::S2C_MAP) => {
                         let key = fingerprint(&data[1..]);
-                        let Some((m, grid)) = maps.get(&data[1..]) else { break };
+                        let Some((m, grid)) = maps.get(&data[1..]).await else {
+                            outcome = protocol_error();
+                            break;
+                        };
                         route = Some(Arc::clone(&grid));
                         // A fresh map mid-flight keys a new rig, and the seat
                         // moves house rather than ending: it is lifted out of
@@ -1215,12 +1438,20 @@ async fn fly(
                                 seat.route = Arc::clone(&grid);
                                 seat.sent = None;
                                 seat.sent_at = 0;
-                                if !rig.claim(ship, seat) {
+                                if let Err(seat) = rig.claim(ship, seat) {
+                                    let seat = *seat;
+                                    let seed = fingerprint(who.name.as_bytes()) as u32;
+                                    let mut world = sim::World::on_shared_map(seed, Arc::clone(&m));
+                                    if !cfg_bytes.is_empty() && !world.apply_settings(&cfg_bytes) {
+                                        outcome = protocol_error();
+                                        break;
+                                    }
                                     println!(
                                         "{addr}: seat {ship} is taken after a map change; \
-                                         {} waits for a welcome",
+                                         {} flies a private world",
                                         who.name
                                     );
+                                    go_private = Some((world, seat.brain));
                                 }
                             }
                             sight = Sight::Shared(rig);
@@ -1228,20 +1459,42 @@ async fn fly(
                             sight = Sight::Dark;
                         }
                         map = Some(m);
+                        if go_private.is_some() {
+                            break;
+                        }
                     }
                     Some(crate::S2C_SETTINGS) => {
-                        if data.len() < 5 { break; }
+                        if map.is_none() {
+                            outcome = protocol_error();
+                            break;
+                        }
                         cfg_bytes = data[5..].to_vec();
                         // Every pilot applies on arrival. The bytes are the
                         // zone's one answer, so on the shared rig this is the
                         // same settings written again, which is idempotent.
                         if let Sight::Shared(rig) = &sight {
-                            rig.lock_world().apply_settings(&cfg_bytes);
+                            if !rig.lock_world().apply_settings(&cfg_bytes) {
+                                outcome = protocol_error();
+                                break;
+                            }
                         }
                     }
-                    Some(crate::S2C_WELCOME) if data.len() >= 16 => {
+                    Some(crate::S2C_WELCOME) => {
+                        if map.is_none()
+                            || route.is_none()
+                            || share_world && !matches!(&sight, Sight::Shared(_))
+                        {
+                            outcome = protocol_error();
+                            break;
+                        }
                         ship = data[1];
-                        let lifecycle = u32::from_le_bytes(data[2..6].try_into().unwrap());
+                        if ship as usize >= sim::MAX_SHIPS {
+                            outcome = protocol_error();
+                            break;
+                        }
+                        lifecycle = u32::from_le_bytes(data[2..6].try_into().unwrap());
+                        welcomed_at.get_or_insert_with(std::time::Instant::now);
+                        outcome = FlightEnd::Closed { welcomed: true };
                         // What this pilot is flying, sent the way a player's
                         // client sends it: the arena deals a starter kit to a
                         // seat wearing nothing, so without this every bot in
@@ -1274,7 +1527,9 @@ async fn fly(
                         let mut m = Vec::with_capacity(1 + kit.len());
                         m.push(crate::C2S_KIT);
                         m.extend_from_slice(&kit);
-                        let _ = ctl_tx.try_send(Ctl::Frame(m));
+                        if sink.send(Message::Binary(m)).await.is_err() {
+                            break;
+                        }
                         let mut b = ai::Bot::new(ship, who.skill);
                         // Luck of its own, so two pilots of one skill in one
                         // room do not fly the same match.
@@ -1285,8 +1540,9 @@ async fn fly(
                                 fingerprint(who.name.as_bytes()) as u32,
                                 m,
                             );
-                            if !cfg_bytes.is_empty() {
-                                w.apply_settings(&cfg_bytes);
+                            if !cfg_bytes.is_empty() && !w.apply_settings(&cfg_bytes) {
+                                outcome = protocol_error();
+                                break;
                             }
                             go_private = Some((w, b));
                             break;
@@ -1306,25 +1562,30 @@ async fn fly(
                                 sent_at: 0,
                                 tx: ctl_tx.clone(),
                             };
-                            if !rig.claim(ship, seat) {
+                            if let Err(seat) = rig.claim(ship, seat) {
+                                let seat = *seat;
                                 // Somebody live already answers to this ship
                                 // index, so this welcome came from a second
                                 // room. Fly it privately, at the old cost.
                                 let Some(m) = map.clone() else { break };
                                 let seed = fingerprint(who.name.as_bytes()) as u32;
                                 let mut w = sim::World::on_shared_map(seed, m);
-                                if !cfg_bytes.is_empty() {
-                                    w.apply_settings(&cfg_bytes);
+                                if !cfg_bytes.is_empty() && !w.apply_settings(&cfg_bytes) {
+                                    outcome = protocol_error();
+                                    break;
                                 }
                                 println!("{addr}: seat {ship} is taken; {} flies a private world", who.name);
-                                let mut b = ai::Bot::new(ship, who.skill);
-                                b.reseed(seed);
-                                go_private = Some((w, b));
+                                go_private = Some((w, seat.brain));
                                 break;
                             }
                         }
                     }
-                    Some(crate::S2C_SNAPSHOT) if data.len() > crate::SNAPSHOT_HEADER => {
+                    Some(crate::S2C_SNAPSHOT) => {
+                        if welcomed_at.is_none() {
+                            outcome = protocol_error();
+                            break;
+                        }
+                        snapshot_at = std::time::Instant::now();
                         if let Sight::Shared(rig) = &sight {
                             // One connection feeds the room; everybody
                             // else's copy of the same truth is dropped here,
@@ -1332,9 +1593,13 @@ async fn fly(
                             // to cost this process.
                             let _ = rig.pen.compare_exchange(
                                 0, me, Ordering::Relaxed, Ordering::Relaxed);
-                            if rig.pen.load(Ordering::Relaxed) == me {
-                                rig.lock_world()
-                                    .apply_snapshot(&data[crate::SNAPSHOT_HEADER..]);
+                            if rig.pen.load(Ordering::Relaxed) == me
+                                && !rig
+                                    .lock_world()
+                                    .apply_snapshot(&data[crate::SNAPSHOT_HEADER..])
+                            {
+                                outcome = protocol_error();
+                                break;
                             }
                         }
                     }
@@ -1345,10 +1610,15 @@ async fn fly(
                             }
                         }
                     }
-                    Some(crate::S2C_YIELD) => break,
+                    Some(crate::S2C_YIELD) => {
+                        outcome = FlightEnd::Yielded;
+                        break;
+                    }
                     Some(crate::S2C_DENIED) => {
                         if data.get(1) == Some(&crate::DENY_RATED_SESSION) {
-                            busy.store(true, Ordering::Relaxed);
+                            outcome = FlightEnd::RatedBusy;
+                        } else {
+                            outcome = FlightEnd::Refused;
                         }
                         println!("{addr} refused {}: {}", who.name,
                                  String::from_utf8_lossy(&data[2.min(data.len())..]));
@@ -1364,11 +1634,24 @@ async fn fly(
                             break;
                         }
                     }
-                    Some(Ctl::Leave) | None => break,
+                    Some(Ctl::Leave) => {
+                        outcome = FlightEnd::Departed;
+                        break;
+                    }
+                    None => {
+                        outcome = FlightEnd::DriverStopped;
+                        break;
+                    }
                 }
             }
             _ = quiet.tick() => {
                 if heard.elapsed().as_millis() as u64 > QUIET_MS {
+                    break;
+                }
+                if welcomed_at.is_some()
+                    && snapshot_at.elapsed().as_millis() as u64 > SNAPSHOT_STALL_MS
+                {
+                    outcome = snapshot_stalled();
                     break;
                 }
             }
@@ -1382,7 +1665,6 @@ async fn fly(
         let mut buttons: u16;
         let mut sent: Option<u16> = None;
         let mut sent_at = 0u32;
-        let mut lifecycle = 1u32;
         // Its own copy, since a private world has no rig to share one with.
         let mut standings = Standings::default();
         let mut asked: Option<std::time::Instant> = None;
@@ -1392,30 +1674,101 @@ async fn fly(
             tokio::select! {
                 biased;
                 msg = source.next() => {
-                    let Some(Ok(Message::Binary(data))) = msg else { break };
+                    let data = match msg {
+                        Some(Ok(Message::Binary(data))) => data,
+                        Some(Ok(Message::Ping(data))) => {
+                            heard = std::time::Instant::now();
+                            if sink.send(Message::Pong(data)).await.is_err() {
+                                break;
+                            }
+                            continue;
+                        }
+                        Some(Ok(Message::Pong(_))) => {
+                            heard = std::time::Instant::now();
+                            continue;
+                        }
+                        Some(Ok(Message::Close(_))) | None | Some(Err(_)) => break,
+                        Some(Ok(_)) => continue,
+                    };
                     heard = std::time::Instant::now();
                     if data.is_empty() {
+                        outcome = protocol_error();
+                        break;
+                    }
+                    if data[0] == crate::S2C_MAP && data.len() == 1
+                        || data[0] == crate::S2C_SETTINGS && data.len() < 5
+                        || data[0] == crate::S2C_WELCOME && data.len() < 16
+                        || data[0] == crate::S2C_SNAPSHOT && data.len() <= crate::SNAPSHOT_HEADER
+                        || data[0] == crate::S2C_DENIED && data.len() < 2
+                        || data[0] == crate::S2C_ROSTER && data.len() < 2
+                    {
+                        outcome = protocol_error();
+                        break;
+                    }
+                    if data[0] == crate::S2C_MAPNAME {
                         continue;
                     }
                     match data.first().copied() {
+                        Some(crate::S2C_MAP) => {
+                            let Some((m, grid)) = maps.get(&data[1..]).await else {
+                                outcome = protocol_error();
+                                break;
+                            };
+                            let seed = fingerprint(who.name.as_bytes()) as u32;
+                            let mut next = sim::World::on_shared_map(seed, m);
+                            if !cfg_bytes.is_empty() && !next.apply_settings(&cfg_bytes) {
+                                outcome = protocol_error();
+                                break;
+                            }
+                            b.remap();
+                            route = Some(grid);
+                            w = next;
+                        }
                         Some(crate::S2C_SETTINGS) => {
-                            if data.len() >= 5 {
-                                w.apply_settings(&data[5..]);
+                            cfg_bytes = data[5..].to_vec();
+                            if !w.apply_settings(&cfg_bytes) {
+                                outcome = protocol_error();
+                                break;
                             }
                         }
-                        Some(crate::S2C_WELCOME) if data.len() >= 16 => {
+                        Some(crate::S2C_WELCOME) => {
+                            ship = data[1];
+                            if ship as usize >= sim::MAX_SHIPS {
+                                outcome = protocol_error();
+                                break;
+                            }
+                            b.ship = ship;
                             lifecycle = u32::from_le_bytes(data[2..6].try_into().unwrap());
                         }
-                        Some(crate::S2C_SNAPSHOT) if data.len() > crate::SNAPSHOT_HEADER => {
-                            w.apply_snapshot(&data[crate::SNAPSHOT_HEADER..]);
+                        Some(crate::S2C_SNAPSHOT) => {
+                            if !w.apply_snapshot(&data[crate::SNAPSHOT_HEADER..]) {
+                                outcome = protocol_error();
+                                break;
+                            }
+                            snapshot_at = std::time::Instant::now();
                         }
                         Some(crate::S2C_ROSTER) => standings.read(&data),
-                        Some(crate::S2C_YIELD) => break,
+                        Some(crate::S2C_YIELD) => {
+                            outcome = FlightEnd::Yielded;
+                            break;
+                        }
+                        Some(crate::S2C_DENIED) => {
+                            outcome = if data[1] == crate::DENY_RATED_SESSION {
+                                FlightEnd::RatedBusy
+                            } else {
+                                FlightEnd::Refused
+                            };
+                            break;
+                        }
                         _ => {}
                     }
                 }
                 _ = ticker.tick() => {
                     if heard.elapsed().as_millis() as u64 > QUIET_MS {
+                        break;
+                    }
+                    if snapshot_at.elapsed().as_millis() as u64 > SNAPSHOT_STALL_MS {
+                        outcome = snapshot_stalled();
                         break;
                     }
                     if ship as usize >= sim::MAX_SHIPS {
@@ -1447,6 +1800,7 @@ async fn fly(
                         if let Some(how) = how {
                             println!("{addr}: {} left ({how}, {:.1}s)",
                                      who.name, since.elapsed().as_secs_f32());
+                            outcome = FlightEnd::Departed;
                             break;
                         }
                     }
@@ -1484,11 +1838,51 @@ async fn fly(
     // ends, so a close that hangs is a seat the room has already given up and
     // the population has not noticed.
     let _ = tokio::time::timeout(std::time::Duration::from_secs(2), sink.close()).await;
+    let completed = welcomed_at.is_some()
+        && (matches!(outcome, FlightEnd::Departed | FlightEnd::Yielded)
+            || welcomed_at.is_some_and(|at| at.elapsed().as_millis() as u64 >= MIN_LIFE_MS));
+    if completed {
+        accounts.complete_session(&who.name);
+    }
+    outcome
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn map_message(world: &sim::World) -> Vec<u8> {
+        let mut message = vec![crate::S2C_MAP];
+        message.extend_from_slice(&world.packed_map());
+        message
+    }
+
+    fn settings_message(world: &sim::World) -> Vec<u8> {
+        let mut message = vec![crate::S2C_SETTINGS];
+        message.extend_from_slice(&1u32.to_le_bytes());
+        message.extend_from_slice(&world.packed_settings());
+        message
+    }
+
+    fn welcome_message(ship: u8, lifecycle: u32, tick: u32) -> Vec<u8> {
+        let mut message = vec![crate::S2C_WELCOME, ship];
+        message.extend_from_slice(&lifecycle.to_le_bytes());
+        message.extend_from_slice(&tick.to_le_bytes());
+        message.extend_from_slice(&0u16.to_le_bytes());
+        message.extend_from_slice(&1u32.to_le_bytes());
+        message
+    }
+
+    fn snapshot_message(world: &sim::World) -> Vec<u8> {
+        let mut packed = vec![0u8; sim::PACK_MAX];
+        let len = world.pack(&mut packed);
+        assert!(len > 0, "the test world packs");
+        packed.truncate(len as usize);
+        let mut message = vec![0u8; crate::SNAPSHOT_HEADER];
+        message[0] = crate::S2C_SNAPSHOT;
+        message.extend_from_slice(&packed);
+        message
+    }
 
     /// The bot's join, read the way the arena reads it.
     ///
@@ -1515,8 +1909,8 @@ mod tests {
     /// seat except a welcome, so every bot in the room ended up at the
     /// controls of nothing: parked until the supervisor noticed it doing
     /// nothing and replaced it, about a minute into a three minute match.
-    #[test]
-    fn a_map_change_moves_the_pilot_rather_than_emptying_the_seat() {
+    #[tokio::test]
+    async fn a_map_change_moves_the_pilot_rather_than_emptying_the_seat() {
         let drydock = std::fs::read("../catalog/zones/melee/drydock.vwmap")
             .expect("a shipped map lives in this repository");
         let slipway = std::fs::read("../catalog/zones/melee/slipway.vwmap")
@@ -1528,8 +1922,8 @@ mod tests {
         );
 
         let maps = Maps::default();
-        let (first, road) = maps.get(&drydock).expect("the map unpacks");
-        let (second, other_road) = maps.get(&slipway).expect("the map unpacks");
+        let (first, road) = maps.get(&drydock).await.expect("the map unpacks");
+        let (second, other_road) = maps.get(&slipway).await.expect("the map unpacks");
         let old = Rig::new(sim::World::on_shared_map(1, first));
         let new = Rig::new(sim::World::on_shared_map(2, second));
 
@@ -1538,22 +1932,24 @@ mod tests {
         let me = 77u64;
         let mut brain = ai::Bot::new(ship, 0.5);
         brain.reseed(19);
-        assert!(old.claim(
-            ship,
-            Seat {
-                id: me,
-                lifecycle: 1,
-                name: "Halcyon".into(),
-                addr: "ws://nowhere".into(),
-                brain,
-                route: Arc::clone(&road),
-                yielding: Arc::new(AtomicBool::new(false)),
-                asked: None,
-                sent: Some(0b101),
-                sent_at: 40,
-                tx,
-            }
-        ));
+        assert!(old
+            .claim(
+                ship,
+                Seat {
+                    id: me,
+                    lifecycle: 1,
+                    name: "Halcyon".into(),
+                    addr: "ws://nowhere".into(),
+                    brain,
+                    route: Arc::clone(&road),
+                    yielding: Arc::new(AtomicBool::new(false)),
+                    asked: None,
+                    sent: Some(0b101),
+                    sent_at: 40,
+                    tx,
+                }
+            )
+            .is_ok());
 
         // What the map message does, in the order it does it.
         let carried = old.take(ship, me).expect("the pilot comes out with it");
@@ -1566,7 +1962,10 @@ mod tests {
         seat.route = Arc::clone(&other_road);
         seat.sent = None;
         seat.sent_at = 0;
-        assert!(new.claim(ship, seat), "and sits down in the new one");
+        assert!(
+            new.claim(ship, seat).is_ok(),
+            "and sits down in the new one"
+        );
 
         let crew = new.lock_crew();
         let landed = crew.get(&ship).expect("somebody is at the controls");
@@ -1641,6 +2040,231 @@ mod tests {
     }
 
     #[test]
+    fn a_generated_pilot_shops_for_its_own_hull() {
+        let who = (ai::CALIBRATED.len()..200)
+            .map(ai::individual)
+            .find(|who| {
+                crate::shopper::wants(&who.name, who.class)[0]
+                    != crate::shopper::wants(&who.name, 0)[0]
+            })
+            .expect("the generated roster contains more than one hull taste");
+        let wanted = crate::shopper::wants(&who.name, who.class)[0];
+        let wrong = crate::shopper::wants(&who.name, 0)[0];
+        let shelf = [(wrong, 1), (wanted, 1)];
+        assert_eq!(
+            next_purchase(&who, &shelf, 10),
+            Some(wanted),
+            "shopping follows the roster entry rather than defaulting to Apex"
+        );
+    }
+
+    #[test]
+    fn a_purchase_requires_a_completed_session_before_the_next_one() {
+        let accounts = Accounts::default();
+        accounts.remember("Ozone", "secret".into());
+        assert!(accounts.may_shop("Ozone"));
+        accounts.bought("Ozone");
+        assert!(!accounts.may_shop("Ozone"));
+        accounts.complete_session("Ozone");
+        assert!(accounts.may_shop("Ozone"));
+    }
+
+    #[test]
+    fn retry_backoff_is_stable_exponential_and_capped() {
+        let delays: Vec<u64> = (1..=8)
+            .map(|failure| retry_delay_ms(failure, "ws://arena"))
+            .collect();
+        assert_eq!(delays, {
+            let mut sorted = delays.clone();
+            sorted.sort_unstable();
+            sorted
+        });
+        assert_eq!(delays[7], RETRY_MAX_MS);
+        assert_eq!(
+            retry_delay_ms(3, "ws://arena"),
+            retry_delay_ms(3, "ws://arena"),
+            "one arena gets repeatable jitter"
+        );
+    }
+
+    #[tokio::test]
+    async fn concurrent_map_arrivals_share_one_build_and_release_it_afterward() {
+        let source = sim::World::with_map(7, sim::build_pit);
+        let packed = source.packed_map();
+        let maps = Maps::default();
+        let grounds = futures_util::future::join_all((0..8).map(|_| maps.get(&packed))).await;
+        let grounds: Vec<Ground> = grounds
+            .into_iter()
+            .map(|ground| ground.expect("the map unpacks"))
+            .collect();
+        for ground in &grounds[1..] {
+            assert!(Arc::ptr_eq(&grounds[0].0, &ground.0));
+            assert!(Arc::ptr_eq(&grounds[0].1, &ground.1));
+        }
+        let map = Arc::downgrade(&grounds[0].0);
+        let route = Arc::downgrade(&grounds[0].1);
+        drop(grounds);
+        assert!(
+            map.upgrade().is_none(),
+            "the cache does not own old geometry"
+        );
+        assert!(
+            route.upgrade().is_none(),
+            "the cache does not own old routing grids"
+        );
+    }
+
+    /// A real WebSocket proves the private flight loop consumes a rotated map,
+    /// applies its snapshot, and keeps sending controls from the new clock.
+    #[tokio::test]
+    async fn a_private_bot_keeps_flying_after_the_server_rotates_its_map() {
+        let mut first = sim::World::with_map(7, sim::build_pit);
+        let ship = first.spawn(0, 0, 100, 100, 0) as u8;
+        assert_eq!(ship, 0);
+        let mut second = sim::World::with_map(11, sim::build_arena);
+        assert_eq!(second.spawn(0, 0, 100, 100, 0) as u8, ship);
+        second.state.tick = 500;
+
+        let initial = [
+            map_message(&first),
+            settings_message(&first),
+            welcome_message(ship, 9, first.state.tick),
+            snapshot_message(&first),
+        ];
+        let rotated_map = second.packed_map();
+        let rotated_key = fingerprint(&rotated_map);
+        let rotated = [
+            [&[crate::S2C_MAP][..], &rotated_map].concat(),
+            settings_message(&second),
+            snapshot_message(&second),
+        ];
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("ws://{}", listener.local_addr().unwrap());
+        let (rotated_tx, rotated_rx) = tokio::sync::oneshot::channel();
+        let (finish_tx, finish_rx) = tokio::sync::oneshot::channel();
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
+            let join = ws.next().await.unwrap().unwrap().into_data();
+            assert_eq!(join.first(), Some(&crate::C2S_JOIN));
+            for message in initial {
+                ws.send(Message::Binary(message)).await.unwrap();
+            }
+
+            let (sent_kit, sent_input) =
+                tokio::time::timeout(std::time::Duration::from_secs(10), async {
+                    let mut sent_kit = false;
+                    while let Some(Ok(message)) = ws.next().await {
+                        match message.into_data().first().copied() {
+                            Some(crate::C2S_KIT) => sent_kit = true,
+                            Some(crate::C2S_INPUT) => return (sent_kit, true),
+                            _ => {}
+                        }
+                    }
+                    (sent_kit, false)
+                })
+                .await
+                .expect("the bot sends controls on the first map");
+            assert!(sent_kit, "the private flight sends its account kit");
+            assert!(sent_input, "the private flight sends controls");
+
+            for message in rotated {
+                ws.send(Message::Binary(message)).await.unwrap();
+            }
+            let moved = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+                while let Some(Ok(message)) = ws.next().await {
+                    let data = message.into_data();
+                    let Some(packet) = crate::input_packet(&data) else {
+                        continue;
+                    };
+                    if packet.records.iter().any(|(tick, _)| *tick >= 501) {
+                        return true;
+                    }
+                }
+                false
+            })
+            .await
+            .expect("the bot sends controls from the rotated world's clock");
+            assert!(moved, "the bot kept flying after the map changed");
+            rotated_tx.send(()).unwrap();
+            finish_rx.await.unwrap();
+            ws.send(Message::Binary(vec![crate::S2C_YIELD]))
+                .await
+                .unwrap();
+        });
+
+        let (ws, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
+        let maps = Arc::new(Maps::default());
+        let flight = tokio::spawn(fly_socket(
+            url,
+            ai::individual(8),
+            Arc::clone(&maps),
+            Arc::new(Rigs::default()),
+            Arc::new(AtomicBool::new(false)),
+            Arc::new(Accounts::default()),
+            BotIdentity::Unaccounted,
+            ws,
+        ));
+
+        tokio::time::timeout(std::time::Duration::from_secs(15), rotated_rx)
+            .await
+            .expect("the rotated world becomes active")
+            .unwrap();
+        {
+            let cache = maps.0.lock().unwrap();
+            let Some(MapEntry::Ready(map, route)) = cache.get(&rotated_key) else {
+                panic!("the rotated map reached the bot cache");
+            };
+            assert!(
+                map.upgrade().is_some(),
+                "the private world owns the new map"
+            );
+            assert!(
+                route.upgrade().is_some(),
+                "the private pilot owns the new routing grid"
+            );
+        }
+        finish_tx.send(()).unwrap();
+        assert_eq!(
+            tokio::time::timeout(std::time::Duration::from_secs(10), flight)
+                .await
+                .expect("the flight stops when yielded")
+                .unwrap(),
+            FlightEnd::Yielded
+        );
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn an_invalid_welcome_is_a_protocol_failure() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("ws://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
+            let _ = ws.next().await;
+            ws.send(Message::Binary(welcome_message(255, 1, 0)))
+                .await
+                .unwrap();
+        });
+        let (ws, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
+        let outcome = fly_socket(
+            url,
+            ai::individual(8),
+            Arc::new(Maps::default()),
+            Arc::new(Rigs::default()),
+            Arc::new(AtomicBool::new(false)),
+            Arc::new(Accounts::default()),
+            BotIdentity::Unaccounted,
+            ws,
+        )
+        .await;
+        assert_eq!(outcome, FlightEnd::Protocol);
+        server.await.unwrap();
+    }
+
+    #[test]
     fn a_filtered_bot_view_is_not_a_complete_shared_world() {
         let mut source = sim::World::with_map(7, sim::build_pit);
         let near = source.spawn(0, 0, 100, 100, 0) as u8;
@@ -1668,6 +2292,19 @@ mod tests {
         assert!(
             !BotIdentity::Unaccounted.shares_world(),
             "that filtered snapshot cannot become every bot's truth"
+        );
+    }
+
+    #[test]
+    fn departure_crowds_obey_the_same_sight_limit_as_combat() {
+        let mut world = sim::World::with_map(7, sim::build_pit);
+        let me = world.spawn(0, 0, 100, 100, 0) as u8;
+        world.spawn(0, 1, 105, 100, 0);
+        world.spawn(0, 1, 300, 300, 0);
+        assert_eq!(
+            ai::crowd(&world, me).len(),
+            1,
+            "a distant ship cannot steer a pilot that cannot see it"
         );
     }
 

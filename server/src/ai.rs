@@ -2,15 +2,15 @@
 //!
 //! A bot produces an `InputCommand` and nothing else, from a view no better
 //! than a human's, exactly as docs/design/ai-players.md requires. Skill is
-//! imperfection added: reaction delay, aim error, look cadence, and whether the
-//! pilot can use the harder parts of its loadout well.
+//! imperfection added in two measured places: aim error and whether the pilot
+//! spends its harder tools well.
 //!
 //! Three clocks, and keeping them apart is most of what makes a pilot look like
 //! one. Perception refreshes on a look, ten to twenty times a second, and
 //! everything between looks works from a stale picture carried forward. What to
-//! do is decided at the pilot's reaction cadence. The hands run every tick,
-//! because a servo loop on a reaction clock is a pilot who cannot fly rather
-//! than a slow one.
+//! do is reconsidered at a fixed planning cadence. The hands run every tick,
+//! because a servo loop on a planning clock is a pilot who cannot fly rather
+//! than a deliberate one.
 //!
 //! `impl Bot` takes no `&World`, which is what makes "a bot knows no more than a
 //! player" checkable by grep. It does take a `&Nav`: that is the map the pilot
@@ -104,8 +104,8 @@ pub(crate) const FILL_NAMES: [&str; 39] = [
     "Moraine",
 ];
 
-/// The zone's standing roster. Long-lived individuals rather than template
-/// spawns: each keeps its name, its hull, and its skill.
+/// The deployment's standing roster. Long-lived individuals rather than
+/// template spawns: each keeps its name, its hull, and its skill.
 pub fn roster() -> Vec<RosterEntry> {
     CALIBRATED
         .iter()
@@ -502,18 +502,25 @@ pub fn own(w: &World, ship: u8) -> Own {
     }
 }
 
-/// Everybody else in the room, whatever side they are on and whether or not
-/// this pilot can see them. Not a look around: this is the question "where is
-/// there nobody" being asked by a pilot on its way out, and the answer has to
-/// account for the people it cannot see as well as the ones it can.
+/// Everybody else this pilot can see, whatever side they are on.
+///
+/// Departure uses this to find an empty corner. It still obeys the same sight
+/// limit as combat decisions, so a shared world cannot leak distant ships into
+/// one pilot's choice.
 pub fn crowd(w: &World, ship: u8) -> Vec<(f32, f32)> {
     let mut out = Vec::with_capacity(w.state.ship_count as usize);
+    let me = &w.state.ships[ship as usize];
+    let (mx, my) = (me.x as f32 / 256.0, me.y as f32 / 256.0);
     for i in 0..w.state.ship_count as usize {
         let o = &w.state.ships[i];
         if i == ship as usize || o.active == 0 {
             continue;
         }
-        out.push((o.x as f32 / 256.0, o.y as f32 / 256.0));
+        let (x, y) = (o.x as f32 / 256.0, o.y as f32 / 256.0);
+        let (dx, dy) = (x - mx, y - my);
+        if dx * dx + dy * dy <= SIGHT * SIGHT {
+            out.push((x, y));
+        }
     }
     out
 }
@@ -894,14 +901,14 @@ const PROGRESS_PX: f32 = 32.0;
 /// that drifts a little continues the attempt rather than restarting it.
 const SAME_GOAL_PX: f32 = 48.0;
 
-/// What the last decision settled on. Decisions are made at the pilot's
-/// reaction cadence; this is what the hands do with one in between.
+/// What the last decision settled on. Decisions are made at the fixed planning
+/// cadence; this is what the hands do with one in between.
 ///
 /// Splitting the two is the point. Steering used to be decided with the plan
-/// and then held: a pilot on a 38 tick reaction held a turn for 38 ticks, which
+/// and then held: a pilot on a 38 tick plan held a turn for 38 ticks, which
 /// at 230 rotation is 79 degrees of swing before anything looked again. That is
-/// not a slow pilot, it is a pilot who cannot fly. Reaction time belongs on
-/// *what to do*, and a servo loop belongs on every tick.
+/// not a deliberate pilot, it is a pilot who cannot fly. Plans change on their
+/// cadence, and a servo loop belongs on every tick.
 #[derive(Clone, Copy)]
 enum Mode {
     /// Nothing worth pressing a key for.
@@ -1034,9 +1041,8 @@ pub struct Bot {
     /// This look's misreading, as a multiplier on the lead. One is a pilot who
     /// solves the intercept exactly.
     lead_gain: f32,
-    /// Per-knob skill overrides for `Knob::Permission`, `Tolerance` and
-    /// `Range`, which read the dial live. `None` everywhere in every real
-    /// pilot; the ablation harness is the only thing that sets one.
+    /// The live skill override for `Knob::Permission`. `None` in every real
+    /// pilot; the ablation harness is the only thing that sets it.
     dial_at: [Option<f32>; 1],
     /// This pilot's current misjudgement, held rather than re-rolled. Rolled
     /// fresh on every look: a wrong estimate that changed a hundred times a
@@ -1128,11 +1134,8 @@ pub struct Bot {
 /// How far a destination may drift before the route to it is stale. One cell.
 const REROUTE_PX: f32 = 128.0;
 
-/// One parameter of the skill dial.
-///
-/// Named because the dial moves six things at once, which is why a tournament
-/// between two skills cannot say which of the six it measured. `Bot::tune`
-/// holds five still so a harness can ask.
+/// One parameter influenced by skill. A harness can hold the live permission
+/// dial still while it measures aim error on its own.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 // Both knobs are named whether or not a harness is holding one still today:
 // the list is what says how many there are.
@@ -1302,7 +1305,7 @@ fn lead_gain(err: f32, clean: f32, u1: f32, u2: f32, u3: f32) -> f32 {
 
 impl Bot {
     /// Set one parameter as if this pilot were of another skill, leaving the
-    /// other five where they are. For attribution, in the ablation harness.
+    /// other one where it is. For attribution, in the ablation harness.
     pub fn tune(&mut self, knob: Knob, as_if: f32) {
         match knob {
             Knob::AimErr => {
@@ -1521,9 +1524,9 @@ impl Bot {
     /// One tick of input. `fresh` is a look around, which the arena provides
     /// when `looks_due` says so and not otherwise.
     ///
-    /// Where the pilot is going is re-planned at their reaction cadence; when
-    /// they pull the trigger is judged every tick. Gating both on reaction
-    /// time -- the obvious way to write this -- makes reaction time secretly
+    /// Where the pilot is going is re-planned at the planning cadence; when
+    /// they pull the trigger is judged every tick. Gating both on that cadence,
+    /// the obvious way to write this, makes planning speed secretly become the
     /// control rate of fire, and since firing costs the same pool as living,
     /// the quickest pilot then shoots itself down to nothing. That is what
     /// made a skill-0.95 bot lose 20-1 to a skill-0.15 one.
@@ -2230,7 +2233,7 @@ impl Bot {
         }
     }
 
-    /// What to do, at the pilot's reaction cadence. Nothing here presses a key:
+    /// What to do, at the planning cadence. Nothing here presses a key:
     /// it settles a mode and `drive` flies it.
     /// The one transition that cannot be made inside `decide`, because it
     /// depends on what `decide` just settled on.
@@ -2314,8 +2317,8 @@ impl Bot {
 
     /// Energy at which this pilot stops trading and protects the life it has
     /// built. Local numbers, incoming fire, carried upgrades, bounty and a flag
-    /// make the current life more expensive to gamble. Skill still matters:
-    /// a quick pilot notices the crossing several reaction cycles sooner.
+    /// make the current life more expensive to gamble. Skill still matters: a
+    /// disciplined pilot breaks before the crossing costs its escape window.
     fn retreat_at(&self, o: &Own) -> f32 {
         // Discipline, which the design describes as noticing a bad trade late
         // and wasting the escape window, against breaking contact promptly.
@@ -2675,8 +2678,8 @@ impl Bot {
             Mode::Travel(dx, dy, arrive, vend) | Mode::Recover(dx, dy, arrive, vend) => {
                 self.aim = (0.0, 0.0);
                 // Waypoints are passed the moment they are passed, at the tick
-                // rate rather than the reaction cadence that planned them. A
-                // pilot who needed a whole reaction to notice each corner
+                // rate rather than the planning cadence that chose them. A
+                // pilot who needed a whole plan to notice each corner
                 // behind them flew every route as a chain of stops, and the
                 // stops are where the roster's time was going.
                 while self.at < self.path.len() {
