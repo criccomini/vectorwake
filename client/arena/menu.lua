@@ -2004,22 +2004,22 @@ local NODES = {
     -- players in a match is most of the people who see it. A page costs one
     -- press and answers the question the button was silently assuming.
     --
-    -- The press that leaves is the first row, so a hand that came here on the
-    -- arrows can press enter twice and be there. The lines under it are what
-    -- actually happens in the room rather than an argument for community: a
-    -- reason to open something is a thing you would get out of it.
+    -- It was four rows and it should never have been a list. Three of the
+    -- four answered nothing: they were set in the same face at the same size
+    -- as every row in the game that goes somewhere, and a hand walking down
+    -- them with the arrows found one control and three impersonations of one.
+    -- Each also carried a note underneath finishing its own sentence, which
+    -- is the caption the design language does not have.
+    --
+    -- So it is a page rather than a list, with one thing to press on it. The
+    -- row below is that one thing, kept as a row so the cursor and the key
+    -- still work the way they do everywhere; `pages.door` draws it as the
+    -- button it always was. See docs/design/community.md, which is where the
+    -- words come from and why the address is on it.
     discord = {off_rail = true, rows = function()
         return {
-            {label = "open the invite", sect = "vectorwake on discord",
-             detail = "a new tab", act = "discord", link = DISCORD,
-             pick = true,
-             note = "the game keeps running behind it"},
-            {label = "say when you are flying", sect = "what it is for",
-             note = "a match wants eight and the room is how they meet"},
-            {label = "report what broke",
-             note = "the people who wrote this read it"},
-            {label = "argue about the next ship",
-             note = "hulls, maps and rules, before they are built"},
+            {label = "open the invite", act = "discord", link = DISCORD,
+             pick = true},
         }
     end},
 
@@ -3255,6 +3255,29 @@ function M.view()
     -- And the catalog is a ladder and a price a row rather than a list of
     -- names. Same reason: the page is two facts about each slot at once.
     if page == "upgrades" then out.shop = true end
+    -- The door, and what a page about it says. The words are here because
+    -- this file decides what pages say; the wrapping and the shapes are
+    -- ui.lua's. All of it is docs/design/community.md put on a screen: what
+    -- the room is for, and the one address that reaches it.
+    if page == "discord" then
+        out.door = true
+        -- Why there is a room at all. Decision 28 took chat out and meant it,
+        -- and a player who does not know that reads an invite as an advert.
+        out.door_why = "This game carries no chat, and will not. "
+            .. "The room is where everything a fight cannot say gets said."
+        -- What actually happens in it, one sentence each and none of them a
+        -- reason to like community in general.
+        out.door_for = {
+            "A match wants eight, and this is where they arrange to meet.",
+            "What broke is read by the people who wrote it.",
+            "Hulls, maps and rules are argued about here before they exist.",
+        }
+        -- The address, in words, because a link that a popup blocker eats is
+        -- not a way in and this is. Cut from the one constant rather than
+        -- written out again: two copies of an address is one address that
+        -- goes stale. The scheme comes off because nobody types it.
+        out.door_addr = (DISCORD:gsub("^https?://", ""))
+    end
     -- One item as a page: the row travels as `item` and the generic list
     -- stands down, so the drawing is the reading pane at page size with the
     -- buy as its key. The row list stays a row long for the arrows: enter

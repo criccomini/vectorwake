@@ -63,7 +63,12 @@ vectorwake
               into your account and career: a page reached from the one
               place already naming it, rather than a seventh stop. Beside it,
               Discord, which opens a page about the room rather than the
-              room. Both are drawn as buttons, which on a phone there is no
+              room: why there is one, one button that opens it, the address
+              in words under that for when a popup blocker eats the button,
+              and what actually happens in there. One thing on it answers a
+              press, and it is drawn as a button rather than as a row, which
+              is what the four rows it replaced could not say. Both corner
+              stops are drawn as buttons, which on a phone there is no
               corner for: there the play page carries the Discord one and the
               top of the screen is the wordmark alone
 

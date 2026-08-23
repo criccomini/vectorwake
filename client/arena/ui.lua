@@ -7100,6 +7100,111 @@ function sweep_dial(cx, cy, r)
     F.layer:disc(cx, ry(cy), math.max(1.2 * F.scale, r * 0.05), 10, pal.a(pal.DIM, 0.9))
 end
 
+-- The door: one page about the room the game points at.
+--
+-- Everything here is docs/design/community.md. The room exists because
+-- decision 28 took chat out and meant it, so the page says that first: an
+-- invite with no reason attached reads as an advert, and the reason is a fact
+-- about this game that a player has no other way of learning.
+--
+-- One control, drawn as a control. What was here before was four rows in the
+-- face and size every row that goes somewhere is set in, three of which went
+-- nowhere. A button is a stroked box in this interface and always has been,
+-- so the press that leaves is one, and nothing else on the page wears a shape
+-- that answers.
+--
+-- And the address, set in the mono, because an address is a machine reading
+-- and this interface quotes those verbatim. It is here rather than only
+-- behind the button because a browser hands a popup blocker every tab a game
+-- opens for you, and an address a player can read and retype is the floor
+-- that always works. It is cut from the same constant the button carries.
+function pages.door(v, x, y, w, h, focused)
+    local col = math.min(w, 520 * F.scale)
+    local at = y + 16 * F.scale
+
+    -- The heading: a hairline with a small dim label under it, which is what
+    -- a group of anything wears in this menu.
+    hrule(x, at, col)
+    at = at + 11 * F.scale
+    -- And the mark beside the label, at the size it is drawn at everywhere
+    -- else. Clyde is baked from forty samples around the official path,
+    -- chosen and checked at the thirteen points the rail gives it; at a
+    -- headline's size those samples would be corners. So the words carry the
+    -- heading and the mark confirms them, which is the way round this
+    -- interface works anyway.
+    draw_mark("discord", x + 7 * F.scale, at - 3 * F.scale, 7 * F.scale,
+              pal.a(pal.PANEL_INK, 0.9))
+    lbl("vectorwake on discord", x + 20 * F.scale, at)
+    at = at + 30 * F.scale
+
+    -- Why there is a room.
+    for _, line in ipairs(wrapped(v.door_why or "", 14 * F.scale, col)) do
+        txt(line, x, at, 14 * F.scale, pal.a(pal.PANEL_INK, 0.95), nil, nil,
+            true)
+        at = at + 21 * F.scale
+    end
+    at = at + 18 * F.scale
+
+    -- The press that leaves. Lit by the cursor the way every control is, and
+    -- the only thing on the page with a box round it.
+    local hot = focused and (v.sel or 1) == 1
+    local bw = math.min(220 * F.scale, col)
+    local bh = 38 * F.scale
+    key_box(x, at, bw, bh, pal.a(pal.FRIEND, hot and 0.16 or 0.06),
+            pal.a(pal.FRIEND, hot and 0.95 or 0.6))
+    txt("open the invite", x + bw / 2, at + bh / 2, 15 * F.scale,
+        pal.a(pal.INK, hot and 1 or 0.85), "center", MENU_FONT)
+    if (v.rows or {})[1] then hit(x, at, bw, bh, "stage", 1) end
+    -- What the press does, in a sentence rather than in the small label's
+    -- capitals: a whole sentence shouted is a sentence nobody reads twice.
+    -- Beside the button where the column is wide enough to hold it and under
+    -- it where it is not, which on a phone it never is.
+    local said = "a new tab, and the game keeps running behind it"
+    local sx = x + bw + 14 * F.scale
+    if sx + text_w(said, 11.5 * F.scale) <= x + col then
+        txt(said, sx, at + bh / 2, 11.5 * F.scale, pal.a(pal.DIM, 0.9),
+            nil, nil, true)
+        at = at + bh + 30 * F.scale
+    else
+        at = at + bh + 16 * F.scale
+        for _, line in ipairs(wrapped(said, 11.5 * F.scale, col)) do
+            txt(line, x, at, 11.5 * F.scale, pal.a(pal.DIM, 0.9), nil, nil,
+                true)
+            at = at + 16 * F.scale
+        end
+        at = at + 16 * F.scale
+    end
+
+    -- The address.
+    hrule(x, at, col)
+    at = at + 11 * F.scale
+    lbl("or type this", x, at)
+    at = at + 28 * F.scale
+    -- Raw, and in the mono. An address is a machine reading and this
+    -- interface quotes those exactly as they are; the page's own sentence
+    -- case had capitalized the host.
+    txt(v.door_addr or "", x, at, 15 * F.scale, pal.a(pal.INK, 0.95), nil,
+        nil, true)
+    at = at + 34 * F.scale
+
+    -- What happens in it. Lines, not rows: each one is a whole sentence and
+    -- none of them is a place to go.
+    hrule(x, at, col)
+    at = at + 11 * F.scale
+    lbl("what it is for", x, at)
+    at = at + 28 * F.scale
+    for _, line in ipairs(v.door_for or {}) do
+        for _, part in ipairs(wrapped(line, 13 * F.scale, col)) do
+            txt(part, x, at, 13 * F.scale, pal.a(pal.PANEL_INK, 0.9), nil,
+                nil, true)
+            at = at + 19 * F.scale
+        end
+        at = at + 7 * F.scale
+    end
+    M.page_extent = (at - y) + 16 * F.scale
+    M.page_room = h
+end
+
 -- One row of the stage: a mark for the one you are on, the name, and
 -- whatever the row has to say about itself on the right.
 --
@@ -8650,6 +8755,10 @@ function M.menu(v)
     elseif v.shop then
         -- The catalog, as a ladder and a price a row.
         pages.shop(v, panel_x + GUTTER * F.scale, top,
+                   panel_w - 14 * F.scale - GUTTER * F.scale, room, focused)
+    elseif v.door then
+        -- The room the game points at, as a page with one thing to press.
+        pages.door(v, panel_x + GUTTER * F.scale, top,
                    panel_w - 14 * F.scale - GUTTER * F.scale, room, focused)
     elseif v.item then
         -- One thing off that catalog, as a page: where a phone's tap on a
