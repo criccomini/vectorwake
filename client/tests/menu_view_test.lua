@@ -208,6 +208,76 @@ check("under an action the arena does not already spend on something else",
       not clashed, "the menu published a hit as \"pilot\"")
 check("the stage shows what the rail points at", has(st, "zone1"))
 
+-- --- the short landing keeps its deploy key clear -------------------------
+--
+-- The full landing column was taller than an iPhone SE or a short Android
+-- screen. DEPLOY stayed pinned to the bottom and covered the room, hull, and
+-- call sign above it. These sizes include the two shortest supported phones,
+-- the common 360 and 375 point shapes, and a phone held sideways.
+do
+    local function landing_view()
+        return {
+            depth = 1, sel = 1, rail = RAIL, rail_sel = 1, focus = "rail",
+            home = true, closable = false, rows = rows,
+            aside = {
+                deploy = true, label = "Melee",
+                note = "everybody against everybody until the whistle",
+                zones = 1, at = 1, sub = "the busiest room with a seat",
+                room = {players = 1, bots = 7, seats = 8},
+                clock = 72, playing = true, score = {2, 4}, row = 1,
+                arrive = {hull = 0, name = "Apex", call = "Vantage 7"},
+            },
+        }
+    end
+
+    local function baseline(frame_state, word)
+        for i = 1, frame_state.n do
+            if is(frame_state.text[i], word) then
+                return H - frame_state.text[i].y
+            end
+        end
+        return nil
+    end
+
+    for _, shape in ipairs({{320, 480}, {320, 568}, {360, 640},
+                             {375, 667}, {390, 664}, {390, 844},
+                             {844, 390}}) do
+        local landing = draw(landing_view(), shape[1], shape[2], true)
+        local deploy = hit_named("stage")
+        local apex = baseline(landing, "Apex")
+        local call = baseline(landing, "Vantage 7")
+        local inside = deploy and deploy.x >= 0 and deploy.y >= 0
+                       and deploy.x + deploy.w <= W
+                       and deploy.y + deploy.h <= H
+        check(string.format("%dx%d keeps DEPLOY on the screen",
+                            shape[1], shape[2]), inside,
+              deploy and string.format("%.0f,%.0f,%.0f,%.0f in %dx%d",
+                                       deploy.x, deploy.y, deploy.w, deploy.h,
+                                       W, H)
+                  or "no deploy box")
+        check(string.format("%dx%d keeps the arrival clear of DEPLOY",
+                            shape[1], shape[2]),
+              deploy and apex and call
+                  and math.max(apex, call) < deploy.y - 2,
+              string.format("arrival %.0f, deploy %.0f",
+                            math.max(apex or -1, call or -1),
+                            deploy and deploy.y or -1))
+        local crosses_rail = false
+        if deploy then
+            for _, box in ipairs(ui.hits) do
+                if box.action == "rail"
+                   and deploy.x < box.x + box.w and box.x < deploy.x + deploy.w
+                   and deploy.y < box.y + box.h and box.y < deploy.y + deploy.h then
+                    crosses_rail = true
+                end
+            end
+        end
+        check(string.format("%dx%d keeps DEPLOY above the tab rail",
+                            shape[1], shape[2]), not crosses_rail,
+              crosses_rail and "the hit boxes overlap" or nil)
+    end
+end
+
 -- --- the rail does not move when you go a level in ------------------------
 --
 -- The stop you just tapped has to still be under your thumb, because the next

@@ -339,11 +339,15 @@
 		}
 		// iPads have reported themselves as Macintosh since iPadOS 13, and the
 		// touch count is what tells the two apart.
-		function apple() {
-			var ua = navigator.userAgent || "";
+		// apple-test:start
+		function apple(userAgent, maxTouchPoints) {
+			var ua = userAgent == null ? (navigator.userAgent || "") : userAgent;
+			var touches = maxTouchPoints == null
+				? (navigator.maxTouchPoints || 0) : maxTouchPoints;
 			if (/iPhone|iPad|iPod/.test(ua)) return true;
-			return /Macintosh/.test(ua) && (navigator.maxTouchPoints || 0) > 1;
+			return /Macintosh/.test(ua) && touches > 1;
 		}
+		// apple-test:end
 
 		// "tap" where the browser will do it on request, "share" where the
 		// only way in is the share sheet, and nothing where it is already on
@@ -563,7 +567,7 @@
 		// The large viewport says where the world may paint behind Safari's
 		// translucent chrome. The reconciler below keeps those two jobs apart.
 		(function() {
-			var is_iOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+			var is_iOS = apple() && !window.MSStream;
 			// viewport-test:start
 			function vwPageHeight(extended, standalone, width, visible,
 					layoutH, innerH, outerH, largeH, screenW, screenH) {

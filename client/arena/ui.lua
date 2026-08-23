@@ -4627,12 +4627,146 @@ function pages.landing(a, b, x, y, w, h)
     end
 end
 
+-- The landing in the short window a phone or a low desktop gives it. The
+-- full column spends height on sentences and a drawn seat strip. Below six
+-- hundred points those marks run into the key pinned at its foot, so this
+-- version keeps the same readings in three compact bands: the clock, the
+-- room, and the hull that will enter it.
+local function compact_deploy(a, x, y, w, h)
+    local rmargin = w - 24 * F.scale
+    vrule(x - 18 * F.scale, y + 6 * F.scale, h - 12 * F.scale,
+          pal.a(pal.RADAR_TILE, 0.45), 18 * F.scale)
+
+    -- The zone remains the picker. Its smaller title leaves enough height for
+    -- every reading below without making the arrows any smaller to press.
+    local namex = x
+    local turning = (a.zones or 0) > 1
+    local ncy = y + 30 * F.scale
+    if turning then
+        F.layer:tri(x, ry(ncy), x + 8 * F.scale,
+                    ry(ncy - 9 * F.scale), x + 8 * F.scale,
+                    ry(ncy + 9 * F.scale), pal.a(pal.PANEL_INK, 0.9))
+        hit(x - 14 * F.scale, ncy - 22 * F.scale, 36 * F.scale,
+            44 * F.scale, "zone", -1)
+        namex = x + 22 * F.scale
+    end
+    txt(a.label or "", namex, y + 34 * F.scale, 30 * F.scale,
+        pal.a(pal.INK, 1), nil, MENU_FONT)
+    if turning then
+        local said = string.upper(string.sub(a.label or "", 1, 1))
+                     .. string.sub(a.label or "", 2)
+        local rx2 = namex + text_w(said, 30 * F.scale, MENU_FONT)
+                    + 16 * F.scale
+        F.layer:tri(rx2 + 8 * F.scale, ry(ncy), rx2,
+                    ry(ncy - 9 * F.scale), rx2,
+                    ry(ncy + 9 * F.scale), pal.a(pal.PANEL_INK, 0.9))
+        hit(rx2 - 10 * F.scale, ncy - 22 * F.scale, 36 * F.scale,
+            44 * F.scale, "zone", 1)
+        lbl((a.at or 1) .. " of " .. a.zones, x + rmargin,
+            y + 34 * F.scale, pal.a(pal.DIM, 0.7), "right")
+    end
+
+    local at = y + 58 * F.scale
+    -- Keep the description when it fits whole. A clipped sentence is worse
+    -- than the short landing saying the room's facts directly.
+    if h >= 400 * F.scale and a.note and a.note ~= "" then
+        local said = string.upper(string.sub(a.note, 1, 1))
+                     .. string.sub(a.note, 2)
+        local lines = wrapped(said, 12 * F.scale, rmargin)
+        if #lines <= 2 then
+            for _, line in ipairs(lines) do
+                txt(line, x, at, 12 * F.scale, pal.a(pal.PANEL_INK, 0.9),
+                    nil, nil, true)
+                at = at + 16 * F.scale
+            end
+            at = at + 6 * F.scale
+        end
+    end
+
+    local kh = 52 * F.scale
+    local ky = y + h - kh - 10 * F.scale
+    local room_bottom = ky - 8 * F.scale
+    local available = math.max(0, room_bottom - at)
+    local band = math.min(76 * F.scale, available / 3)
+    local gap = math.max(0, (available - band * 3) / 2)
+
+    -- The clock and score share one line, as they do on the full landing.
+    local cy = at
+    if a.clock then
+        lbl(a.playing and "on the clock" or "next match in", x,
+            cy + 8 * F.scale)
+        if a.score then
+            lbl("the score", x + rmargin, cy + 8 * F.scale, nil,
+                "right")
+        end
+        local value_y = cy + math.min(band - 7 * F.scale, 31 * F.scale)
+        txt(string.format("%d:%02d", math.floor(a.clock / 60), a.clock % 60),
+            x - 1 * F.scale, value_y, 28 * F.scale, pal.a(pal.INK, 0.95))
+        if a.score then
+            txt(a.score[1] .. " : " .. a.score[2], x + rmargin, value_y,
+                21 * F.scale, pal.a(pal.INK, 0.9), "right")
+        end
+    end
+
+    -- Occupancy becomes two marked counts. The full seat strip is still used
+    -- wherever the column has enough height to draw it.
+    local room_y = at + band + gap
+    if a.room then
+        lbl("the room", x, room_y + 8 * F.scale)
+        if (a.room.seats or 0) > 0 then
+            lbl((a.room.seats or 0) .. " seats", x + rmargin,
+                room_y + 8 * F.scale, pal.a(pal.DIM, 0.8), "right")
+        end
+        local count_y = room_y + math.min(band - 7 * F.scale, 30 * F.scale)
+        pilot_mark(x + 6 * F.scale, count_y, pal.a(pal.INK, 0.95),
+                   11 * F.scale)
+        txt(tostring(a.room.players or 0), x + 17 * F.scale, count_y,
+            11 * F.scale, pal.a(pal.INK, 0.95), nil, nil, true)
+        bot_mark(x + 54 * F.scale, count_y - 5 * F.scale,
+                 pal.a(pal.DIM, 0.8), 11 * F.scale)
+        txt(tostring(a.room.bots or 0), x + 70 * F.scale, count_y,
+            11 * F.scale, pal.a(pal.DIM, 0.9), nil, nil, true)
+    end
+
+    -- Ship and call sign stay together in the last band. Both are what the
+    -- deploy press commits to, so neither may sit under that press.
+    local arrive_y = room_y + band + gap
+    lbl("you arrive as", x, arrive_y + 8 * F.scale)
+    if a.arrive then
+        local hull_y = arrive_y + math.min(band - 7 * F.scale, 31 * F.scale)
+        if a.arrive.spectate then
+            pilot_mark(x + 12 * F.scale, hull_y, pal.a(pal.FRIEND, 0.95),
+                       18 * F.scale)
+        else
+            thumb(x + 12 * F.scale, hull_y, a.arrive.hull or 0,
+                  pal.a(pal.FRIEND, 0.95), 1.3, F.now * 0.5)
+        end
+        txt(a.arrive.name or "", x + 34 * F.scale, hull_y,
+            15 * F.scale, pal.a(pal.INK, 0.95), nil, MENU_FONT)
+        txt(a.arrive.call or "", x + rmargin, hull_y, 11 * F.scale,
+            pal.a(pal.PANEL_INK, 0.95), "right", nil, true)
+    end
+
+    if a.room and a.row then
+        key_box(x, ky, rmargin, kh, pal.a(pal.FRIEND, 0.10),
+                pal.a(pal.FRIEND, 0.9))
+        txt("DEPLOY", x + rmargin / 2, ky + kh / 2, 19 * F.scale,
+            pal.a(pal.INK, 1), "center")
+        hit(x - 6 * F.scale, ky - 6 * F.scale, rmargin + 12 * F.scale,
+            kh + 12 * F.scale, "stage", a.row)
+    end
+end
+
 -- The column beside a list: what the row under the cursor would do if you
 -- pressed it. The play page is the one that has it, and it is there because a
 -- list of two modes across a nine hundred point panel is a page with a hole
 -- in it and a question it has not answered.
 function pages.aside(a, x, y, w, h)
     if not a then return end
+    if a.deploy and h < 600 * F.scale then
+        compact_deploy(a, x, y, w, h)
+        return
+    end
     vrule(x - 18 * F.scale, y + 6 * F.scale, h - 12 * F.scale,
           pal.a(pal.RADAR_TILE, 0.45), 18 * F.scale)
     lbl(a.head or "", x, y + 16 * F.scale)
