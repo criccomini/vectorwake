@@ -7,7 +7,14 @@ OPT ?= -O2
 CFLAGS ?=
 LDFLAGS ?=
 FUZZ_CC ?= clang
-BASE := -std=c99 -Wall -Wextra -Werror -Iinclude
+# The frame limit is half the usual 8 MB stack, so a build that passes here
+# still has room to run. It is in BASE because the failure it catches is
+# otherwise unreadable: the tests are one long function, every block in it
+# declares a sim_state, and clang at -O0 gives each one its own slot instead
+# of reusing the space the way gcc does. Enough blocks and main's frame passes
+# 8 MB, and the whole binary segfaults before printing a line. Named function,
+# byte count and a compile error beat that.
+BASE := -std=c99 -Wall -Wextra -Werror -Iinclude -Wframe-larger-than=4194304
 ALL_CFLAGS = $(BASE) $(OPT) $(CFLAGS)
 B := build
 

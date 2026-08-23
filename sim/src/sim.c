@@ -883,6 +883,34 @@ static void spawn_weapon(sim_state *s, uint8_t spec, uint8_t owner,
  * it moves. `p` is NULL when a projectile already in flight is being resolved:
  * how it was fired is settled, and only what it *is* still matters.
  */
+/* Whose position this instance is entitled to draw a conclusion from.
+ *
+ * The server knows everybody's. A prediction client knows its own pilot's and
+ * guesses at every other hull, coasting it from the last snapshot; the
+ * correction it eases rather than gives up and snaps runs to 48 px, so being
+ * tens of pixels wrong about a remote hull is the ordinary case.
+ *
+ * Contact survives that. The round has to reach the hull, so the error that
+ * would fake a hit is the same error that makes the client miss, and a miss
+ * the zone disagrees with costs a spark. Decision 40 stops at the death for
+ * that reason: the hit still reports, and predicting it is what keeps
+ * shooting feel immediate.
+ *
+ * A proximity fuse does not survive it, because arming is the decision.
+ * Sweeping a hull sideways off a bomb's line, contact reaches 10 px and a
+ * fuse reaches 49, 103 and 157 by rung, and once a fuse has somebody it goes
+ * off at closest approach whatever that turns out to be. So a whole explosion
+ * hangs on whether a hull was inside a circle the same size as the client's
+ * own uncertainty about where that hull is. It armed on people who were never
+ * inside it and blew the bomb up; the snapshot handed the bomb back; the next
+ * prediction blew it up again; and one bomb crossing a fight drew a string of
+ * explosions it never had while the bomb flew on. A fuse finding somebody is
+ * the zone's to report, and net.lua already draws the detonations that arrive
+ * that way. */
+static int may_settle(const sim_settings *cfg, int ship) {
+    return !cfg->deathless || ship == (int)cfg->mortal_ship;
+}
+
 static void compose(const sim_settings *cfg, uint16_t mods, uint8_t level,
                     sim_weapon_spec *sp, sim_fire_pattern *p) {
     uint8_t n;
@@ -2442,6 +2470,7 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
                     continue;
                 }
                 if (spec->trigger == 0 || w->fuse_target != 255) continue;
+                if (!may_settle(cfg, i)) continue;
                 int64_t reach = prox_reach(spec->trigger) + hull[i].halfw;
                 int64_t ax = ddx < 0 ? -ddx : ddx;
                 int64_t ay = ddy < 0 ? -ddy : ddy;
@@ -2471,7 +2500,8 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
          *
          * The walls above still win, because a bomb that reaches one has
          * arrived at something whatever its fuse thinks. */
-        if (!ended && w->fuse_target != 255) {
+        if (!ended && w->fuse_target != 255
+            && may_settle(cfg, w->fuse_target)) {
             const sim_ship *ft = &next->ships[w->fuse_target];
             if (!ft->active || !ft->alive || ft->team == w->team) {
                 ended = 1;

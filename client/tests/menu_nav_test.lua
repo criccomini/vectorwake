@@ -165,6 +165,54 @@ check("the tab row is play, ship, upgrades, friends, standings, settings",
 check("the rail carries the destinations", ship_at and settings_at,
       "ship " .. tostring(ship_at) .. ", settings " .. tostring(settings_at))
 
+-- The week's filter is the same field the friends page takes a call sign in,
+-- and it answers the same arrows: down off the tabs lands in it, down again is
+-- the table, up comes back, up again is the tabs.
+do
+    local kept_stack, kept_sel = menu.stack, menu.sel
+    menu.open, menu.home = true, true
+    menu.stack = {"root"}
+    menu.sel = {root = top_index("standings")}
+    menu.filter_on = false
+    menu.step({down = true})
+    check("down off the tabs opens standings with the cursor in its filter",
+          menu.at() == "standings" and menu.filter_on == true,
+          menu.at() .. "/" .. tostring(menu.filter_on))
+    check("and the page says so", menu.view().week.filter_on == true,
+          tostring(menu.view().week.filter_on))
+    menu.step({down = true})
+    check("and down again goes to the table", menu.filter_on == false,
+          tostring(menu.filter_on))
+    menu.sel.standings = 1
+    menu.step({up = true})
+    check("up off the first row comes back to it", menu.filter_on == true,
+          tostring(menu.filter_on))
+    menu.step({up = true})
+    check("and up out of it goes back to the tabs",
+          menu.at() == "root" and menu.filter_on == false,
+          menu.at() .. "/" .. tostring(menu.filter_on))
+    menu.stack, menu.sel = kept_stack, kept_sel
+end
+
+-- Right is enter on a list of places and nothing on a list of games. An arrow
+-- is how a list is read, and reading the third game on it should not put you
+-- in the second.
+do
+    local kept_stack, kept_sel = menu.stack, menu.sel
+    menu.open, menu.home = true, true
+    menu.stack = {"root", "play"}
+    menu.sel = {play = 1}
+    local joined, moved = menu.step({right = true})
+    check("right on a game does not join it",
+          joined == nil and moved == false and menu.at() == "play",
+          tostring(joined) .. "/" .. tostring(moved) .. "/" .. menu.at())
+    -- And the row under the cursor really was a game, which is what makes the
+    -- check above about right rather than about an empty list.
+    check("and enter on the same row still does",
+          menu.step({go = true}) == "join", "nothing joined")
+    menu.stack, menu.sel = kept_stack, kept_sel
+end
+
 -- --- and the two buttons at the end of that row are on the row -------------
 --
 -- They sit beside the tabs, they do what a tab does, and until now a hand on
@@ -209,11 +257,26 @@ do
     menu.step({go = true})
     check("enter on the account opens its page", menu.at() == "pilot",
           table.concat(menu.stack, "/"))
-    check("and nothing in the corner is lit from inside a page",
-          menu.view().corner_sel == nil, tostring(menu.view().corner_sel))
+    -- And the button stays lit while you are on its page, which is what a tab
+    -- does. It went dark instead, so the one row on screen that says where
+    -- you are said nothing about the two stops at the end of it.
+    check("and the button stays lit while its page is up",
+          menu.view().corner_sel == "pilot", tostring(menu.view().corner_sel))
+    -- Not from a page a tab leads to, though: there the lit tab is the
+    -- answer and a lit button beside it would be a cursor in two places.
+    menu.stack = {"root"}
+    menu.sel = {root = ship_at}
+    menu.corner_sel = nil
+    menu.step({down = true})
+    check("but nothing in the corner is lit from a page off the tabs",
+          menu.at() == "hangar" and menu.view().corner_sel == nil,
+          menu.at() .. "/" .. tostring(menu.view().corner_sel))
+    menu.stack = {"root"}
+    menu.sel = {}
 
     -- Down is the same press, the way it is on a tab: what is under one of
-    -- these is a page or the place the talking happens.
+    -- these is a page, and the Discord button has one now rather than a
+    -- browser tab it opens without warning.
     local asked = nil
     _G.sys.open_url = function(url) asked = url return true end
     menu.stack = {"root"}
@@ -221,8 +284,11 @@ do
     menu.corner_sel = nil
     menu.step({right = true})
     menu.step({down = true})
-    check("down on discord opens the invite",
-          asked == "https://play.vectorwake.net/discord", tostring(asked))
+    check("down on discord opens its page", menu.at() == "discord",
+          table.concat(menu.stack, "/"))
+    check("and nothing has left for the browser", asked == nil,
+          tostring(asked))
+    menu.stack = {"root"}
 
     -- A tap on a tab takes the cursor off them, so the row never looks like
     -- the arrows are in two places.
@@ -941,38 +1007,45 @@ check("and says where the pointer is instead", menu.view().hover == 3,
       tostring(menu.view().hover))
 menu.hover_stage(nil)
 
--- --- and the rail takes a pointer the same way ----------------------------
+-- --- but the rail only ever lights, at every depth -------------------------
 --
--- The same rule read the other way round: a hover is always drawn, and it
--- moves the cursor only where the cursor lives. The cursor lives in the rail
--- at the root and in the stage everywhere below it, so resting on a stop at
--- the root walks the rail exactly as the arrows do, and resting on one from
--- inside a page lights it without disturbing the list being read.
+-- Not the same rule read the other way round, which is what it used to be:
+-- the hover moved the cursor wherever the cursor lived, and the cursor lives
+-- in the rail at the root and in the stage below it. So the tab row changed
+-- the page under the mouse on the home screen and did nothing from inside a
+-- page, and which of the two you got depended on how you had arrived. One
+-- gesture, two behaviors, no way to tell them apart from the screen.
+--
+-- On the rail, lit is what a press would open. Never what is open, and never
+-- a thing that happens on its own.
 
 menu.stack = {"root"}
 menu.sel = {}
 menu.hover_stage(nil)
 menu.hover_rail(nil)
-check("a hover at the root walks the rail",
-      menu.hover_rail(ship_at) and menu.sel.root == ship_at,
+menu.sel.root = 1
+check("a hover at the root lights a stop", menu.hover_rail(ship_at) == true)
+check("and leaves the cursor where it was", menu.sel.root == 1,
       "cursor " .. tostring(menu.sel.root))
-check("and the stage follows it, the way the arrows make it",
-      menu.view().rail_sel == ship_at, tostring(menu.view().rail_sel))
+check("so the stage goes on previewing the tab the arrows are on",
+      menu.view().rail_sel == 1, tostring(menu.view().rail_sel))
+check("while the view still says where the pointer is",
+      menu.view().rail_hover == ship_at, tostring(menu.view().rail_hover))
 check("resting on the same stop says nothing more",
       menu.hover_rail(ship_at) == false)
-
--- One level in, the stage owns the cursor, so a hover on the rail is a
--- second mark rather than a move.
+-- And the press is what goes there, which is the half of the gesture that
+-- still works.
 menu.click_rail(ship_at)
+check("pressing it opens that page", menu.at() == "hangar",
+      table.concat(menu.stack, "/"))
+
+-- One level in, the same rule, which is the point of it.
 menu.sel.hangar = 4
 menu.hover_rail(settings_at)
 check("a hover from inside a page leaves the cursor alone",
       menu.sel.hangar == 4, "cursor " .. tostring(menu.sel.hangar))
 check("and leaves the lit stop saying where you are",
       menu.view().rail_sel == ship_at, tostring(menu.view().rail_sel))
-check("while the view says where the pointer is",
-      menu.view().rail_hover == settings_at,
-      tostring(menu.view().rail_hover))
 check("and leaving the rail puts it out",
       menu.hover_rail(nil) == false and menu.view().rail_hover == nil,
       tostring(menu.view().rail_hover))
@@ -1273,8 +1346,34 @@ do
     -- line, on every page and both layouts, and this is the press it takes.
     check("the play page has no discord row left", discord_row() == nil,
           "still a row")
-    menu.click_discord()
-    check("the corner button asks the browser to open the invite",
+
+    -- And that press opens a page rather than a browser tab. What the button
+    -- used to do was leave the game for somewhere the player had not been
+    -- told about, which is a fine control once you know what is behind it and
+    -- a poor one the first time.
+    menu.home = true
+    menu.stack = {"root"}
+    menu.sel = {}
+    menu.open_discord()
+    check("the corner button opens a page about the server",
+          menu.at() == "discord", table.concat(menu.stack, "/"))
+    check("and nothing has left for the browser yet", asked == nil,
+          asked and asked.url or "")
+
+    -- The first row is the way out, so a hand on the arrows presses enter
+    -- twice and is there.
+    local page = menu.view().rows
+    check("its first row is the invite, and is pressable",
+          page[1] and page[1].pick == true,
+          page[1] and page[1].label or "no rows")
+    check("carrying the address, so the browser can lay an anchor over it",
+          page[1] and page[1].link == "https://play.vectorwake.net/discord",
+          page[1] and tostring(page[1].link))
+    check("and the rest of the page says what the room is for",
+          #page >= 3, #page .. " rows")
+
+    menu.step({go = true})
+    check("pressing it asks the browser to open the invite",
           asked and asked.url == "https://play.vectorwake.net/discord",
           asked and asked.url or "nothing asked")
     check("in a new tab", asked and asked.target == "_blank",
@@ -1283,8 +1382,13 @@ do
     -- be one line of Caddy rather than a client release.
     check("and it is the redirect rather than a discord.gg link",
           asked and not asked.url:find("discord.gg", 1, true))
-    check("the menu stays where it was", menu.at() == "play",
+    check("and the menu stays on the page", menu.at() == "discord",
           table.concat(menu.stack, "/"))
+    check("which left is still the way out of",
+          select(1, menu.step({left = true})) == nil and menu.at() == "root",
+          table.concat(menu.stack, "/"))
+
+    menu.stack = {"root", "play"}
 
     -- Nothing is put on screen when the browser says no, and there is no
     -- browser here to say yes: a card with the address and an OK on it is
@@ -1815,6 +1919,64 @@ do
     }
     account.entitlements = {}
     account.kits = {}
+
+    -- --- which key throws which charge -------------------------------------
+    --
+    -- A kit carries two kinds, and which of them the first key spends is the
+    -- only thing left to decide once both are aboard. The kit is counts by
+    -- kind and the core numbers the kinds, so without a preference the
+    -- lower-numbered one always came first.
+    do
+        -- Two kinds aboard, which is what a slot each means. The ceiling this
+        -- block sets up carries one, so the second is opened for this check
+        -- and shut again after it.
+        CEIL[21] = 3
+        menu.charge_flip = false
+        menu.kit, menu.kit_class = nil, nil
+        menu.stack = {"root", "hangar"}
+        menu.sel = {}
+        menu.open_kit(0)
+        menu.kit_set(19, 1)
+        menu.kit_set(20, 1)
+        local function charges()
+            local out = {}
+            for _, r in ipairs(menu.view().rows) do
+                if r.charge_slot then out[r.charge_slot] = r.label end
+            end
+            return out
+        end
+        local first = charges()
+        check("both charges say which slot they are in",
+              first[1] ~= nil and first[2] ~= nil and first[1] ~= first[2],
+              tostring(first[1]) .. "/" .. tostring(first[2]))
+        menu.swap_charges()
+        local swapped = charges()
+        check("and swapping them trades the two",
+              swapped[1] == first[2] and swapped[2] == first[1],
+              tostring(swapped[1]) .. "/" .. tostring(swapped[2]))
+        check("which is a preference rather than a change to the ship",
+              menu.charge_flip == true, tostring(menu.charge_flip))
+        menu.swap_charges()
+        check("and swapping again puts them back",
+              charges()[1] == first[1], tostring(charges()[1]))
+        -- And enter on a charge row is that press. On a ladder enter only
+        -- ever repeated what right does, so the row spends it on the other
+        -- question it answers.
+        local at = nil
+        for i, r in ipairs(menu.view().rows) do
+            if r.charge_slot == 1 then at = i end
+        end
+        check("a charge row is on the page", at ~= nil, "none")
+        menu.sel.hangar = at
+        menu.step({go = true})
+        check("and enter on it swaps the two",
+              charges()[1] == first[2], tostring(charges()[1]))
+        menu.swap_charges()
+        CEIL[21] = 0
+        menu.charge_flip = false
+        menu.kit, menu.kit_class = nil, nil
+    end
+
 
     menu.home = true
     menu.class = 0
@@ -2357,6 +2519,152 @@ do
 
     account.week = nil
     account.week_since = ""
+end
+
+-- --- a tab with nothing under it yet does not take the cursor --------------
+--
+-- The catalog and the games list arrive over the wire. Until they do, those
+-- pages are one line saying so, and stepping into one put the cursor on a
+-- list of none: down did nothing visible, the tab row no longer had the
+-- arrows, and the way back was a key nobody had a reason to press. The stage
+-- previews the page from the tab above it either way, so the same words are
+-- on screen; what changes is whether the press moves anything.
+--
+-- The friends page is the exception the rule has to carry: with nobody on it
+-- the whole page is the box you type a call sign into, which is exactly the
+-- page a new player opens.
+
+do
+    menu.home = true
+    menu.stack = {"root"}
+    menu.sel = {}
+    menu.corner_sel = nil
+    menu.filter_on = false
+    menu.add_on = false
+
+    local kept_rows = account.rows
+    local kept_here, kept_friends = account.here, account.friends
+
+    -- Upgrades, with the catalog still on its way.
+    local kept_catalog = account.catalog
+    account.catalog = nil
+    local up_at = top_index("upgrades")
+    menu.sel.root = up_at
+    local _, moved = menu.step({down = true})
+    check("down on a tab still asking for its page stays on the tab",
+          menu.at() == "root", table.concat(menu.stack, "/"))
+    check("and says nothing moved, so the menu makes no noise",
+          moved == false, tostring(moved))
+    check("the cursor is still on that tab", menu.sel.root == up_at,
+          tostring(menu.sel.root))
+    check("and the stage is still previewing what it is waiting for",
+          menu.view().empty ~= nil,
+          menu.view().empty and menu.view().empty.head or "nothing")
+
+    -- A pointer gets the same answer, or the two hands disagree about what
+    -- the same tab does.
+    menu.click_rail(up_at)
+    check("and a tap on it does not go in either", menu.at() == "root",
+          table.concat(menu.stack, "/"))
+
+    -- And the moment it lands, the same press works, which is the half of
+    -- this that says the guard is about the page and not about the tab.
+    account.catalog = {{slot = 0, level = 1, price = 40, label = "speed"}}
+    menu.stack = {"root"}
+    menu.sel.root = up_at
+    menu.step({down = true})
+    check("once the catalog is there the same press goes in",
+          menu.at() == "upgrades", table.concat(menu.stack, "/"))
+    account.catalog = kept_catalog
+
+    -- Friends with nobody on it is still somewhere to be.
+    menu.stack = {"root"}
+    menu.sel = {}
+    account.here, account.friends = {}, {}
+    local fr_at = top_index("friends")
+    menu.sel.root = fr_at
+    menu.step({down = true})
+    check("an empty friends page opens, because the field is the page",
+          menu.at() == "friends", table.concat(menu.stack, "/"))
+    check("with the cursor in the box", menu.add_on == true,
+          tostring(menu.add_on))
+
+    menu.add_on = false
+    account.rows = kept_rows
+    account.here, account.friends = kept_here, kept_friends
+    menu.stack = {"root"}
+    menu.sel = {}
+end
+
+-- --- and across the week's table is time -----------------------------------
+--
+-- Down the page is the ladder; there is nothing to the side of a pilot's row.
+-- So left and right are the pair of arrows already drawn over the table, and
+-- the week is walked from wherever the cursor is standing rather than only by
+-- pointing at them.
+
+do
+    menu.home = true
+    menu.stack = {"root", "standings"}
+    menu.sel = {}
+    menu.filter = ""
+    menu.filter_on = false
+    menu.week_back = 0
+    account.week = {
+        {name = "Ozone", kills = 9, deaths = 2, seconds = 600},
+        {name = "Quarry", kills = 4, deaths = 5, seconds = 300},
+    }
+    account.week_since = "Aug 17"
+
+    local asked = nil
+    local kept_refresh = account.refresh_week
+    account.refresh_week = function(back) asked = back end
+
+    local _, moved = menu.step({left = true})
+    check("left on a row goes back a week", menu.week_back == 1,
+          tostring(menu.week_back))
+    check("and says so, so the menu ticks", moved == true, tostring(moved))
+    check("and the table is asked for that week", asked == 1, tostring(asked))
+    check("and the cursor has not left the table", menu.at() == "standings",
+          table.concat(menu.stack, "/"))
+
+    menu.step({right = true})
+    check("right comes forward again", menu.week_back == 0,
+          tostring(menu.week_back))
+
+    asked = nil
+    local _, again = menu.step({right = true})
+    check("and there is no forward from the week that is running",
+          menu.week_back == 0 and again == false,
+          menu.week_back .. " " .. tostring(again))
+    check("so nothing is asked for", asked == nil, tostring(asked))
+
+    -- The way back up is up, which is what took over from left: out of the
+    -- first row into the box, and out of the box to the tabs.
+    menu.sel.standings = 1
+    menu.step({up = true})
+    check("up out of the first row lights the filter box",
+          menu.filter_on == true, tostring(menu.filter_on))
+    menu.step({up = true})
+    check("and up out of the box is the way back to the tabs",
+          menu.at() == "root", table.concat(menu.stack, "/"))
+
+    -- In the box, left is still the way out of the box rather than a week.
+    menu.stack = {"root", "standings"}
+    menu.filter_on = true
+    menu.week_back = 0
+    menu.step({left = true})
+    check("left in the box leaves the box rather than the week",
+          menu.filter_on == false and menu.week_back == 0,
+          tostring(menu.filter_on) .. " " .. tostring(menu.week_back))
+
+    account.refresh_week = kept_refresh
+    account.week = nil
+    account.week_since = ""
+    menu.week_back = 0
+    menu.filter_on = false
+    menu.stack = {"root"}
+    menu.sel = {}
 end
 
 print(fails == 0 and "all good" or (fails .. " failed"))

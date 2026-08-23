@@ -223,15 +223,67 @@ static void m_lattice(int x, int y, int w, int h, uint8_t wall) {
         for (int i = 0; i < nx; i++) put(sx + i * step, sy + j * step, wall);
 }
 
-/* A stepped 45-degree run: the only diagonal a tile grid has, and the reason
- * a shot fired along one skips rather than slides.
+/* A 45-degree run, drawn as a wall a ship slides along rather than a staircase
+ * it rattles down.
  *
- * One tile per step and never two. A second tile below each step drew a
- * diagonal twice as thick as every other wall on the map, which is not a
- * heavier line so much as a different material, and at radar scale it was
- * the one shape that read as a smear rather than as a line.
+ * Two tiles across, and no solid tile in it. The two are side by side and each
+ * fills the corner nearest the other, so their solid halves meet along the
+ * whole of the edge they share and their open halves fall outside. What that
+ * leaves is one stripe with a face down each side, and the two faces are
+ * parallel: both are the run's own line, a tile apart. It is a stripe rather
+ * than a vee or a zigzag, which is worth saying because "one leaning each way"
+ * describes the corners and reads like the faces.
  *
- * Three forms, each of them symmetric and each centered on its box: one arm,
+ * Two tiles rather than one because a single run is a one-way wall, and rather
+ * than three because the pair needs no spine down the middle.
+ *
+ * The shared edge is the whole trick. Every other diagonal a square grid can
+ * draw meets corner to corner and pinches to a point there; this one does not,
+ * across the run or along it.
+ *
+ * A pinch is not a hole to a hull, which is three tiles across and cannot fit
+ * through a point. It is a hole to a bullet. The stepped diagonal this
+ * replaced let a round through on one heading in thirty-two, and the heading
+ * was the shot fired square at the wall: travelling along the other diagonal a
+ * round passes exactly through the corners where the tiles touch. It had been
+ * there as long as the shape had. The pair leaks on none of the thirty-two,
+ * and neither hulls nor rounds get through it at any speed measured, which is
+ * up to three tiles a tick.
+ *
+ * Which variant goes on which side is decided by the shared edge and nothing
+ * else: each tile has to be solid all the way along the side it hands to its
+ * neighbour, so the left of a pair fills the corner on its right and the right
+ * one fills the corner on its left.
+ *
+ * Where two arms cross, whichever gets there first lays its slope and the
+ * second finds the tile taken and writes wall instead, so a crossing is a
+ * solid knot rather than two half tiles arguing over one square. */
+static void m_slope_step(int x, int y, int lean, uint8_t wall) {
+    /* A face belongs to a wall. A door drawn as a diagonal would want its
+     * faces to open with it, and a slope does not do that, so a run of
+     * anything but solid stays the stepped line it always was. */
+    if (SIM_TILE_CLASS(wall) != SIM_TILE_SOLID) {
+        put(x, y, wall);
+        return;
+    }
+    static const uint8_t PAIR[2][2] = {
+        /* '\' leaning down */ { SIM_SLOPE_NE, SIM_SLOPE_SW },
+        /* '/' leaning up   */ { SIM_SLOPE_SE, SIM_SLOPE_NW },
+    };
+    for (int i = 0; i < 2; i++) {
+        int fx = x + i, fy = y;
+        if (fx < EDGE || fy < EDGE || fx >= MW - EDGE || fy >= MH - EDGE) continue;
+        uint8_t there = T[(size_t)fy * TILES + fx];
+        put(fx, fy, there == SIM_TILE_EMPTY
+                        ? SIM_TILE(SIM_TILE_SLOPE, PAIR[lean][i])
+                        : SIM_TILE_SOLID);
+    }
+}
+
+#define LEAN_DOWN 0 /* '\', x and y rising together */
+#define LEAN_UP 1   /* '/', one rising as the other falls */
+
+/* Three forms, each of them symmetric and each centered on its box: one arm,
  * two arms crossed, or two meeting at a point. An odd span, so the two arms
  * of a cross meet on exactly one tile instead of passing each other. */
 static void m_chevron(int x, int y, int w, int h, uint8_t wall) {
@@ -246,16 +298,26 @@ static void m_chevron(int x, int y, int w, int h, uint8_t wall) {
         for (int i = 0; i < m; i++) {
             int lo = m - 1 - i, hi = m - 1 + i;
             int at = off + (far ? m - 1 - i : i);
-            if (down) { put(ox + at, oy + lo, wall); put(ox + at, oy + hi, wall); }
-            else { put(ox + lo, oy + at, wall); put(ox + hi, oy + at, wall); }
+            /* The two arms of a V lean opposite ways, and which way each leans
+             * turns over with `far`: the point is at the near end of the box
+             * or the far one. */
+            int a = far ? LEAN_UP : LEAN_DOWN;
+            int b = far ? LEAN_DOWN : LEAN_UP;
+            if (down) {
+                m_slope_step(ox + at, oy + lo, b, wall);
+                m_slope_step(ox + at, oy + hi, a, wall);
+            } else {
+                m_slope_step(ox + lo, oy + at, b, wall);
+                m_slope_step(ox + hi, oy + at, a, wall);
+            }
         }
         return;
     }
     int cross = chance(45); /* an X, or the single arm on its own */
     int back = chance(50);  /* which way a single arm leans */
     for (int i = 0; i < n; i++) {
-        if (cross || !back) put(ox + i, oy + i, wall);
-        if (cross || back) put(ox + n - 1 - i, oy + i, wall);
+        if (cross || !back) m_slope_step(ox + i, oy + i, LEAN_DOWN, wall);
+        if (cross || back) m_slope_step(ox + n - 1 - i, oy + i, LEAN_UP, wall);
     }
 }
 
@@ -1075,9 +1137,22 @@ static int arena_lo, arena_hi, arena_cx, arena_cy;
 
 /* Draw at a point and at its half-turn twin, so a layout is symmetric by
  * construction rather than by being drawn twice and checked. */
+/* What a tile becomes half a turn about the middle.
+ *
+ * A slope names the corner it fills, and turning the map turns that corner to
+ * the opposite one, which on this numbering is a flip of the second bit. Every
+ * other class turns unchanged: a wall is a wall either way up, and the teams a
+ * start or a goal belong to are placed by the generator rather than drawn into
+ * a shape. Without this a mirrored diagonal comes out inside out, its open half
+ * where its wall should be. */
+static uint8_t half_turn(uint8_t t) {
+    if (SIM_TILE_CLASS(t) != SIM_TILE_SLOPE) return t;
+    return SIM_TILE(SIM_TILE_SLOPE, SIM_TILE_VARIANT(t) ^ 2);
+}
+
 static void sym_put(int x, int y, uint8_t t) {
     put(x, y, t);
-    put(arena_cx * 2 - x, arena_cy * 2 - y, t);
+    put(arena_cx * 2 - x, arena_cy * 2 - y, half_turn(t));
 }
 
 static void sym_rect(int x, int y, int w, int h, uint8_t t) {
@@ -1127,28 +1202,48 @@ static int in_pocket(int x, int y, int pad) {
     return dx * dx + dy * dy < pad * pad;
 }
 
-/* Four spawn tiles per side, inside the pocket, spread so a wiped team does
- * not come back stacked on one tile. */
+/* Four spawn tiles per side, inside the pocket and no two within five tiles
+ * of each other, so a wiped team does not come back stacked on one tile.
+ *
+ * The pocket is what retries, not the seat. Seats picked one after another
+ * can fence the last one out: three of them in a box nineteen tiles across
+ * leave a fourth position that satisfies both rules only sometimes, and no
+ * number of further draws inside that round will find one. Seed 28 sat there
+ * and came back with seven of the eight seats it wanted. Clearing four and
+ * dealing again is the cheap way out, and a pocket that has room at all takes
+ * it in the first round or two.
+ *
+ * A round that succeeds draws the same numbers the single pass before it
+ * drew, in the same order, so this change on its own moves no spawn on any
+ * arena that already placed eight. */
 static int match_spawns(int32_t main, int px, int py, int team) {
-    int placed = 0;
-    for (int i = 0; i < 4; i++) {
-        int ok = 0;
-        for (int tries = 0; tries < 4000 && !ok; tries++) {
-            int x = px + rr(-9, 9), y = py + rr(-6, 6);
-            if (!open_around(x, y, 4, main)) continue;
-            /* Not on top of one already placed: four ships want four tiles. */
-            int near = 0;
-            for (int j = -5; j <= 5 && !near; j++)
-                for (int k = -5; k <= 5; k++)
-                    if (SIM_TILE_CLASS(get(x + k, y + j)) == SIM_TILE_SPAWN)
-                        near = 1;
-            if (near) continue;
-            put(x, y, SIM_TILE(SIM_TILE_SPAWN, (uint8_t)team));
-            ok = 1;
-            placed++;
+    int sx[4], sy[4];
+    for (int round = 0; round < 64; round++) {
+        int placed = 0;
+        for (int i = 0; i < 4; i++) {
+            int ok = 0;
+            for (int tries = 0; tries < 4000 && !ok; tries++) {
+                int x = px + rr(-9, 9), y = py + rr(-6, 6);
+                if (!open_around(x, y, 4, main)) continue;
+                /* Not on top of one already placed: four ships want four
+                 * tiles. */
+                int near = 0;
+                for (int j = -5; j <= 5 && !near; j++)
+                    for (int k = -5; k <= 5; k++)
+                        if (SIM_TILE_CLASS(get(x + k, y + j)) == SIM_TILE_SPAWN)
+                            near = 1;
+                if (near) continue;
+                put(x, y, SIM_TILE(SIM_TILE_SPAWN, (uint8_t)team));
+                sx[placed] = x;
+                sy[placed] = y;
+                placed++;
+                ok = 1;
+            }
         }
+        if (placed == 4) return 4;
+        for (int i = 0; i < placed; i++) put(sx[i], sy[i], SIM_TILE(SIM_TILE_EMPTY, 0));
     }
-    return placed;
+    return 0;
 }
 
 /* The two shipped layouts. Both are point symmetric and both leave three
@@ -1156,6 +1251,70 @@ static int match_spawns(int32_t main, int px, int py, int team) {
  * between them, which is what makes one a lane fight and the other a
  * scramble around a middle nobody owns. */
 typedef enum { LAYOUT_DRYDOCK = 0, LAYOUT_SLIPWAY = 1 } match_layout;
+
+/* A sloped step and its half turn, for a diagonal a layout draws itself.
+ *
+ * `m_slope_step` writes the pair at (x, y) and (x + 1, y); this reads both
+ * back and lays them down half a turn away, so the mirrored copy is whatever
+ * the first one actually became rather than a second guess at it. */
+static void sym_slope_step(int x, int y, int lean) {
+    m_slope_step(x, y, lean, SIM_TILE_SOLID);
+    for (int i = 0; i < 2; i++) {
+        int sx = x + i, sy = y;
+        if (sx < EDGE || sy < EDGE || sx >= MW - EDGE || sy >= MH - EDGE) continue;
+        put(arena_cx * 2 - sx, arena_cy * 2 - sy,
+            half_turn(T[(size_t)sy * TILES + sx]));
+    }
+}
+
+/* One shape from the open arena's vocabulary, and its half turn.
+ *
+ * The match maps were built from two shapes, a filled rectangle and a hollow
+ * room, and every piece of cover on them was a box. The open arena has nine,
+ * and there is no reason the small maps should not read like the big one: the
+ * argument for a limited vocabulary was never made, it just never got written.
+ *
+ * Drawn once and then copied rather than drawn twice. The motifs take their
+ * own random choices as they go, so calling one twice draws two different
+ * shapes; and a shape mirrored tile by tile as it is laid would have its
+ * second half land on ground its first half had already changed. So the box is
+ * filled, then read back and written down half a turn away.
+ *
+ * The read box is a little wider than the shape asked for, because a sloped
+ * diagonal puts its second tile one to the right of the step and a run that
+ * ends on the box edge would leave that tile behind, unmirrored, as a slope
+ * facing nothing. */
+static void sym_motif(int x, int y, int w, int h) {
+    int mm = pick_motif(w, h);
+    if (mm < 0) return;
+    MOTIFS[mm].fn(x, y, w, h, SIM_TILE_SOLID);
+    const int pad = 2;
+    for (int j = -pad; j < h + pad; j++)
+        for (int i = -pad; i < w + pad; i++) {
+            int sx = x + i, sy = y + j;
+            if (sx < EDGE || sy < EDGE || sx >= MW - EDGE || sy >= MH - EDGE) continue;
+            int dx = arena_cx * 2 - sx, dy = arena_cy * 2 - sy;
+            /* A shape that reaches its own mirror would be copying over itself
+             * half way through. Nothing is placed near the middle, so this
+             * only ever declines the case that would corrupt. */
+            if (dx >= x - pad && dx < x + w + pad && dy >= y - pad && dy < y + h + pad) return;
+            put(dx, dy, half_turn(T[(size_t)sy * TILES + sx]));
+        }
+}
+
+/* How many placements each match layout tries, and how much of what lands
+ * stays a plain block.
+ *
+ * It was sixty tries of mostly filled rectangles. The shapes below are mostly
+ * hollow, so the same count of them left a map under the four per cent of wall
+ * a match arena wants and the generator refused twenty-six seeds in forty.
+ * Both numbers were measured up until every one of eighty generated, and the
+ * block share is the lowest that goes with the try count: the blocks are what
+ * carries the wall fraction, so the fewer of them the more room there is for
+ * everything else, and some plain ground is wanted anyway to read the figures
+ * against. */
+#define MATCH_TRIES 480
+#define BLOCK_SHARE 35
 
 static void draw_drydock(void) {
     /* Pockets north and south, three lanes between them: a wide middle with
@@ -1183,11 +1342,23 @@ static void draw_drydock(void) {
     /* Cover in the half between a pocket and the middle, mirrored into the
      * other half. Placement refuses anything that would crowd what is
      * already down, so the count lands where the spacing allows. */
-    for (int i = 0; i < 60; i++) {
+    for (int i = 0; i < MATCH_TRIES; i++) {
         int x = lo + 10 + rr(0, ARENA - 26), y = lo + 18 + rr(0, ARENA / 2 - 30);
-        if (in_pocket(x, y, 20) || !clear_box(x, y, 9, 8, 5)) continue;
-        if (chance(45)) sym_room(x, y, rr(9, 13), rr(7, 10));
-        else sym_rect(x, y, rr(4, 8), rr(3, 6), SIM_TILE_SOLID);
+        int bw = rr(8, 14), bh = rr(7, 12);
+        if (in_pocket(x, y, 20) || !clear_box(x, y, bw, bh, 5)) continue;
+        /* A quarter of it stays a plain block. A field of nothing but figures
+         * has no plain ground in it to read them against.
+         *
+         * The two sides are drawn one to a line, not passed straight into the
+         * call. C does not say which argument is evaluated first, and the two
+         * compilers here disagree: the same seed gave gcc and clang different
+         * arenas, and the selftest failed under one of them on a map the other
+         * had just passed. A generator reading a stream has to spell out the
+         * order it reads it in. */
+        if (chance(BLOCK_SHARE)) {
+            int pw = rr(4, 8), ph = rr(3, 6);
+            sym_rect(x, y, pw, ph, SIM_TILE_SOLID);
+        } else sym_motif(x, y, bw, bh);
     }
     /* And a pair of stubs off each pocket, so a spawn is not an open field. */
     for (int k = 0; k < 4; k++)
@@ -1204,6 +1375,15 @@ static void draw_slipway(void) {
         int x = arena_cx + i * 9, y = arena_cy + i * 9;
         if (in_pocket(x, y, 20)) continue;
         sym_rect(x - 2, y - 2, 5, 5, SIM_TILE_SOLID);
+        /* And a smaller one between, so the lattice reads as a run of cover
+         * rather than as beads on a string. It is also what carries this
+         * layout's wall fraction: without it the skeleton sits close enough to
+         * the four per cent floor that a seed's luck with the scattered cover
+         * decides whether the map is accepted at all. */
+        if (i < 7) {
+            int mx = x + 4, my = y + 4;
+            if (!in_pocket(mx, my, 18)) sym_rect(mx - 1, my - 1, 3, 3, SIM_TILE_SOLID);
+        }
     }
     /* One long bar off the diagonal, with a way through in the middle of it,
      * which is what makes the long way round passable at all. The other is
@@ -1213,14 +1393,24 @@ static void draw_slipway(void) {
         if (t > -4 && t < 4) continue;      /* the way through */
         int x = arena_cx + t - 34, y = arena_cy - t - 34;
         if (in_pocket(x, y, 16)) continue;
-        sym_put(x, y, SIM_TILE_SOLID);
-        sym_put(x, y + 1, SIM_TILE_SOLID);
+        /* x rises as y falls, so this run leans '/'. Two pairs stacked, which
+         * is the weight the two rows of solid had and is the shape a shot
+         * slides along rather than skips down. One pair alone is a wall, and
+         * this bar is the long diagonal of the map: taking half its thickness
+         * out with it dropped the arena under the wall it wants and the
+         * generator started refusing seeds. */
+        sym_slope_step(x, y, LEAN_UP);
+        sym_slope_step(x, y + 1, LEAN_UP);
     }
-    for (int i = 0; i < 52; i++) {
+    for (int i = 0; i < MATCH_TRIES; i++) {
         int x = lo + 10 + rr(0, ARENA - 24), y = lo + 10 + rr(0, ARENA - 24);
-        if (in_pocket(x, y, 20) || !clear_box(x, y, 8, 8, 5)) continue;
-        if (chance(40)) sym_room(x, y, rr(8, 12), rr(7, 10));
-        else sym_rect(x, y, rr(4, 7), rr(4, 7), SIM_TILE_SOLID);
+        int bw = rr(8, 13), bh = rr(8, 13);
+        if (in_pocket(x, y, 20) || !clear_box(x, y, bw, bh, 5)) continue;
+        /* One to a line, for the reason given in the drydock above. */
+        if (chance(BLOCK_SHARE)) {
+            int pw = rr(4, 7), ph = rr(4, 7);
+            sym_rect(x, y, pw, ph, SIM_TILE_SOLID);
+        } else sym_motif(x, y, bw, bh);
     }
 }
 
@@ -1302,11 +1492,20 @@ static int generate_match(sim_map *m, uint32_t s, match_layout layout, int quiet
      * fight behind. That is why this one number is still counted here: the
      * core's report is about the whole map, which is the right frame for
      * everything except this. */
-    size_t solid = 0;
+    /* Counted in halves, because a slope is half a tile of wall and this
+     * number is how much of the room is wall. Counting only whole solids made
+     * a diagonal drawn as slopes disappear from the measure: converting one
+     * read as the map losing wall it had not lost, and the answer to that
+     * looked like scattering more cover to make the number back up. Half a
+     * tile is what a slope is, so half a tile is what it counts. */
+    size_t halves = 0;
     for (int y = arena_lo; y <= arena_hi; y++)
-        for (int x = arena_lo; x <= arena_hi; x++)
-            if (SIM_TILE_CLASS(T[(size_t)y * TILES + x]) == SIM_TILE_SOLID) solid++;
-    double solid_pct = 100.0 * (double)solid / (double)(ARENA * ARENA);
+        for (int x = arena_lo; x <= arena_hi; x++) {
+            uint8_t c = SIM_TILE_CLASS(T[(size_t)y * TILES + x]);
+            if (c == SIM_TILE_SOLID) halves += 2;
+            else if (c == SIM_TILE_SLOPE) halves += 1;
+        }
+    double solid_pct = 100.0 * (double)halves / (double)(2 * ARENA * ARENA);
     int dead = report.stranded;
     nav_regions = report.regions;
 
@@ -1433,16 +1632,19 @@ static int generate(sim_map *m, uint32_t s, int quiet) {
     sim_map_check(m, scratch, &report);
 
     /* Report, and refuse to write a map that cannot be played. */
-    size_t solid = 0, safe = 0, door = 0;
+    /* Halves here too, and for the same reason: see the match generator. */
+    size_t halves = 0, safe = 0, door = 0;
     for (size_t i = 0; i < (size_t)TILES * TILES; i++) {
         uint8_t c = SIM_TILE_CLASS(T[i]);
-        if (c == SIM_TILE_SOLID) solid++;
+        if (c == SIM_TILE_SOLID) halves += 2;
+        else if (c == SIM_TILE_SLOPE) halves += 1;
         else if (c == SIM_TILE_SAFE) safe++;
         else if (c == SIM_TILE_DOOR) door++;
     }
     size_t inner = (size_t)(TILES - 8) * (TILES - 8);
-    double solid_pct = 100.0 * (double)(solid - (size_t)(TILES * TILES - inner))
-                     / (double)inner;
+    /* The border is whole solid tiles, so it comes off in halves. */
+    double solid_pct = 100.0 * (double)(halves - 2 * (size_t)(TILES * TILES - inner))
+                     / (double)(2 * inner);
 
     /* A feature is stranded when no hull can stand within reach of it. Read
      * off the shut-door labelling above, so a berth that can only be flown

@@ -22,6 +22,7 @@
 
 #include <math.h>
 
+#include "flight.h"
 #include "smoothing.h"
 
 // The vertex writer, which lives in vwbuf.cpp and is registered from here.
@@ -903,28 +904,15 @@ int WeaponCount(lua_State* L) {
 // and the reason this is here: every fragment in the game is one spec, and
 // which bullet it turns out to be is a number carried on the round.
 
-// Whether a weapon slot holds the same projectile it held last tick.
-//
-// It often does not. The core retires a weapon by moving the last one into its
-// place, so an index is a slot rather than an identity and a round that expires
-// hands its number to something else entirely. Interpolating on that draws a
-// bolt streaking across the map. There is no id on the wire to ask for, so this
-// asks whether the two are plausibly one thing: same weapon, same owner, and
-// near enough that a tick of flight explains the gap.
-bool weapon_continuous(const sim_weapon* p, const sim_weapon* c) {
-    if (!p->life || !c->life) return false;
-    if (p->spec != c->spec || p->owner != c->owner) return false;
-    double dx = (c->x - p->x) / 256.0, dy = (c->y - p->y) / 256.0;
-    return dx * dx + dy * dy < 16.0 * 16.0;
-}
-
 int WeaponAt(lua_State* L) {
     int i = (int)luaL_checkinteger(L, 1);
     const sim_weapon* w = &g_cur->weapons[i];
-    const sim_weapon* p = &g_nxt->weapons[i];
-    bool same = has_prev() && weapon_continuous(p, w);
-    lua_pushnumber(L, same ? blend(p->x, w->x) : w->x / 256.0);
-    lua_pushnumber(L, same ? blend(p->y, w->y) : w->y / 256.0);
+    // Walked back along its own flight rather than interpolated against
+    // whatever last held this slot. See flight.h for why a slot is not a name.
+    const vw_flight::Point at =
+        vw_flight::seen(w->x, w->y, w->vx, w->vy, (double)g_alpha);
+    lua_pushnumber(L, at.x);
+    lua_pushnumber(L, at.y);
     lua_pushnumber(L, w->spec);
     lua_pushnumber(L, w->vx / 65536.0);
     lua_pushnumber(L, w->vy / 65536.0);

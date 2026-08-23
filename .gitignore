@@ -29,6 +29,7 @@ sandbox-ca.crt
 client/tools/sfxdump
 client/tools/sfxladder
 client/tools/smoothcheck
+client/tools/flightcheck
 # Whatever any Python next to it leaves behind. This named client/tools alone
 # until deploy/discord grew a script and left one of these too.
 __pycache__/

@@ -142,7 +142,19 @@ The radar samples the map's own grid, anchored to it rather than to the terrain
 window, so the blips do not re-roll every time the window moves.
 
 Text is the one thing Defold's GUI draws, in a single component with no widgets
-in it.
+in it. The interface publishes strings into a table and the gui script pushes
+them into a pool of text nodes, comparing each property against what that node
+was last told so an unchanged line costs nothing.
+
+The pool has the same failure the mesh layers have, and had it: a frame that
+asks for more than the pool holds gets the surplus dropped, silently. On the
+week's table that meant ten pilots and then a row with a highlight on it and no
+name in it, with eleven more below it that never arrived, because the washes and
+the rules are mesh and only the type stopped. It read as a blank row you could
+select. The pool is a thousand now, which covers the widest page at the tallest
+window with room over; `client/tests/glyph_budget_test.lua` draws those pages
+and fails if any of them asks for more, and the script says so on the console if
+it ever clips anyway. A budget nothing checks is a budget that gets spent.
 
 ## Presentation state versus simulation state
 

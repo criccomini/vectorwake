@@ -202,6 +202,7 @@ local function lbl(s, x, y, col, align, px)
         col or pal.a(pal.DIM, 1), align, nil, true)
 end
 
+
 -- A rectangle the pointer can land on, published in the same coordinates it
 -- was drawn in. Defined up here with the other primitives because everything
 -- that draws something clickable needs it, and it used to sit far enough down
@@ -637,6 +638,63 @@ local function population(x, y, players, bots, col)
     pilot_mark(right - text_w(tostring(players), 13 * F.scale) - 12 * F.scale, y, pc)
 end
 
+
+-- A line somebody types into: the box, what is in it, the caret and the mark
+-- that empties it.
+--
+-- Two pages hold one of these, and they were two drawings: the call sign on
+-- the friends page and the filter over the week's table, six points apart in
+-- height, with different insets and only one of them wiping on a press. A
+-- field is a field wherever it is, so this is the field, and a page supplies
+-- the words and the actions.
+--
+-- Returns nothing. The caller publishes its own hit boxes through `act` and
+-- `wipe`, which are the two presses a field takes: put the caret here, and
+-- empty it.
+-- On `pages` rather than as two locals of its own: this chunk sits at the two
+-- hundred local ceiling a Lua function has, and the house answer is to gather
+-- onto a table, since a table is one name however much it holds. See
+-- client/tests/upvalues_test.lua.
+pages.FIELD_TALL = 30
+function pages.field(x, y, w, value, hint, on, act, wipe)
+    local h = pages.FIELD_TALL * F.scale
+    local cy = y + h / 2
+    rect(x, y, w, h, pal.rgb(0x070b12, 0.55))
+    if on then rect(x, y, w, h, pal.a(pal.FRIEND, 0.1)) end
+    bracket(x, y, w, h, pal.a(on and pal.FRIEND or pal.RADAR_TILE,
+                              on and 0.9 or 0.55), 10 * F.scale)
+    local ix = x + 11 * F.scale
+    local px = 15 * F.scale
+    if value == "" then
+        lbl(hint, ix, cy, pal.a(pal.DIM, on and 0.7 or 0.5))
+    else
+        txt(value, ix, cy, px, pal.a(pal.CHARGE_COL, 0.95), nil, MENU_FONT,
+            true)
+    end
+    -- Where the next letter goes, and only while the box is taking them.
+    if on then
+        rect(ix + text_w(value, px, MENU_FONT, true) + 2 * F.scale,
+             cy - 8 * F.scale, 1.6 * F.scale, 16 * F.scale,
+             pal.a(pal.FRIEND, 0.9))
+    end
+    -- The way out, on the end of the box: holding backspace is the other way
+    -- and it is not one anybody finds either.
+    --
+    -- Published before the box it sits inside. Hit boxes are tested in the
+    -- order they went out and the first one wins, so the other way round the
+    -- box swallows every press on its own mark.
+    if value ~= "" and wipe then
+        local mx = x + w - 12 * F.scale
+        local k = 4 * F.scale
+        for _, d in ipairs({{-1, 1}, {1, 1}}) do
+            F.layer:seg(mx - k * d[1], ry(cy - k * d[2]),
+                        mx + k * d[1], ry(cy + k * d[2]),
+                        1.3 * F.scale, pal.a(pal.DIM, 0.9), true)
+        end
+        hit(mx - 12 * F.scale, y, 24 * F.scale, h, wipe)
+    end
+    if act then hit(x, y, w, h, act) end
+end
 
 local KEY_H, KEY_PAD, KEY_GAP = 26, 9, 6
 local function key_size() return (FONT - 1) * F.scale end
@@ -1240,7 +1298,12 @@ local function nameplates(o)
                                        pal.a(col, 0.45), 10 * F.scale)
                         end
                     end
-                    if bty > 0 then
+                    -- Only where it is worth something. A zone opens every
+                    -- pilot at a bounty of one, so "1" under every name on
+                    -- screen was a column of ones saying nothing: what this
+                    -- number is for is the pilot who is worth more than the
+                    -- one beside them.
+                    if bty > 1 then
                         -- In the side's color rather than the bounty gold,
                         -- so the name and the number under it read as one
                         -- label belonging to one squad. Gold said "this is a
@@ -1307,6 +1370,24 @@ M.scroll = 0
 -- when the window does or a page is opened.
 M.page_scroll = 0
 M.page_extent = 0
+
+-- Keep the row the arrows are on inside the window.
+--
+-- A wheel and a finger move the page, and the arrows move the cursor: a cursor
+-- that walks off the bottom takes the page with it, or the list goes on being
+-- walked with nothing on screen to say where. `at` is the row's offset into
+-- the page's own content, before the scroll is taken off it.
+--
+-- Only while the page has the arrows. A pointer moving a hover across rows is
+-- not a reason to move the page under the hand holding it.
+local function follow_cursor(at, rowh, room, focused)
+    if not focused or at == nil or room <= 0 then return end
+    if at < M.page_scroll then M.page_scroll = at end
+    if at + rowh > M.page_scroll + room then
+        M.page_scroll = at + rowh - room
+    end
+end
+
 -- And the window that extent was measured against, published beside it for
 -- the same reason and read back the same frame later.
 --
@@ -3971,52 +4052,28 @@ function pages.week(v, x, y, w, h, focused)
         -- with. A box is what a search field looks like everywhere, so this
         -- is one, and pressing it does the thing pressing one does. See
         -- `menu.click_filter`.
+        -- The same field the friends page takes a call sign in, because it is
+        -- the same object: a line somebody types into. It was six points
+        -- shorter, inset differently and lit differently, which is three
+        -- accidents rather than a decision.
+        --
+        -- No list of names under this one. The friends field completes
+        -- because a call sign has to be exact before anything can be done
+        -- with it; here the table itself is the answer, narrowing as the
+        -- letters land, and a list of names over a list of names is the same
+        -- answer drawn twice.
         local f = wk.filter or ""
         local on = wk.filter_on
         -- Its own line where the week's name is already using this one. Side
         -- by side on a 390 point screen the two touch, and the box ends up
         -- half the width a call sign needs.
-        local fy = packed and (ty + 32 * F.scale) or ty
-        local bw = packed and (tw - 2 * F.scale) or 168 * F.scale
-        local bh = 24 * F.scale
+        local fy = packed and (ty + 34 * F.scale) or ty
+        local bw = packed and (tw - 2 * F.scale) or 220 * F.scale
         local bx = x + tw - bw
-        local by = fy - bh / 2
-        rect(bx, by, bw, bh, pal.rgb(0x070b12, 0.55))
-        if on then rect(bx, by, bw, bh, pal.a(pal.FRIEND, 0.1)) end
-        bracket(bx, by, bw, bh, pal.a(on and pal.FRIEND or pal.RADAR_TILE,
-                                      on and 0.9 or 0.55), 9 * F.scale)
-        local ix = bx + 10 * F.scale
-        if f == "" then
-            lbl("filter by pilot", ix, fy, pal.a(pal.DIM, on and 0.7 or 0.5))
-        else
-            txt(f, ix, fy, px, pal.a(pal.CHARGE_COL, 0.95), nil, MENU_FONT,
-                true)
-        end
-        -- A caret, where the next letter goes, and only while the box is
-        -- taking them.
-        if on then
-            rect(ix + text_w(f, px, MENU_FONT, true) + 2 * F.scale,
-                 fy - 8 * F.scale,
-                 1.6 * F.scale, 16 * F.scale, pal.a(pal.FRIEND, 0.9))
-        end
-        -- The way out of a filter, on the end of the box: holding backspace
-        -- is the other way and it is not one anybody finds either.
-        --
-        -- Published before the box it sits inside. Hit boxes are tested in
-        -- the order they went out and the first one wins, so the other way
-        -- round the box swallows every press on its own mark.
-        if f ~= "" then
-            local cx = bx + bw - 12 * F.scale
-            local k = 4 * F.scale
-            for _, d in ipairs({{-1, 1}, {1, 1}}) do
-                F.layer:seg(cx - k * d[1], ry(fy - k * d[2]),
-                            cx + k * d[1], ry(fy + k * d[2]),
-                            1.3 * F.scale, pal.a(pal.DIM, 0.9), true)
-            end
-            hit(cx - 12 * F.scale, by, 24 * F.scale, bh, "filter_wipe")
-        end
-        hit(bx, by, bw, bh, "filter_box")
-        ty = (packed and (fy + 4 * F.scale) or ty) + 26 * F.scale
+        local by = fy - pages.FIELD_TALL * F.scale / 2
+        pages.field(bx, by, bw, f, "filter by pilot", on,
+                    "filter_box", "filter_wipe")
+        ty = (packed and (fy + 6 * F.scale) or ty) + 29 * F.scale
     end
 
     -- Every heading is a control: pressing one orders the table by it, and
@@ -4136,7 +4193,9 @@ function pages.week(v, x, y, w, h, focused)
         elseif ry0 + rowh / 2 > y + h then
             break
         else
-        local hot = (r.index == v.sel)
+        -- Nothing in the table is the cursor while the field above it has
+        -- the arrows, for the reason nothing in the friends list is.
+        local hot = (r.index == v.sel) and not (v.week or {}).filter_on
         if hot then
             wash(x - 8 * F.scale, ry0 - rowh / 2 + 2 * F.scale,
                  tw + 8 * F.scale, rowh - 4 * F.scale,
@@ -4801,13 +4860,10 @@ function pages.chip(x, y, w, h, r, hot, focused)
                       pal.a(held and pal.FRIEND or pal.RADAR_TILE,
                             held and 0.55 or 0.6))
     end
-    lbl(r.short or r.label, x + w / 2, y + h * 0.42,
-        pal.a(held and pal.FRIEND or pal.INK, held and 1 or 0.8),
-        "center", LBL_PX * F.scale)
-    -- The line under the name: how many of it you hold, out of how many the
-    -- account may, since a rung is a ladder in a chip's clothing and two of
-    -- them is level two. A chip nobody owns says nothing, because zero of
-    -- zero is a sum rather than a fact.
+    -- How many of it you hold, out of how many the account may, since a rung
+    -- is a ladder in a chip's clothing and two of them is level two. A chip
+    -- nobody owns says nothing, because zero of zero is a sum rather than a
+    -- fact.
     --
     -- A price used to sit here too, on the argument that a chip is a control
     -- and the press on one you do not own should buy it. That put a wallet
@@ -4815,9 +4871,30 @@ function pages.chip(x, y, w, h, r, hot, focused)
     -- buying is the upgrades tab again.
     local count = (r.owned or 0) > 1 and ((r.choice or 0) .. "/" .. r.owned)
         or nil
+    -- The word sits in the middle of the chip, and moves up only to make room
+    -- for a count. Every chip used to hold its word at four tenths whether or
+    -- not anything came after it, so a group where two chips had counts and
+    -- two did not was four words at two heights and a run of empty space
+    -- along the bottom.
+    local ly = count and (y + h * 0.38) or (y + h / 2)
+    lbl(r.short or r.label, x + w / 2, ly,
+        pal.a(held and pal.FRIEND or pal.INK, held and 1 or 0.8),
+        "center", LBL_PX * F.scale)
     if count then
-        txt(count, x + w / 2, y + h * 0.74, 10 * F.scale,
-            pal.a(pal.DIM, 0.85), "center")
+        -- On a pill, because it is a reading rather than a second label: two
+        -- lines of type in one box is a box that says two things, and the
+        -- shape is what separates them.
+        local px = 9 * F.scale
+        local cw = text_w(count, px) + 14 * F.scale
+        local ch = 14 * F.scale
+        local cx, cy = x + w / 2, y + h * 0.72
+        local r0 = ch / 2
+        local fill = pal.a(held and pal.FRIEND or pal.DIM, held and 0.22 or 0.12)
+        rect(cx - cw / 2 + r0, cy - r0, cw - 2 * r0, ch, fill)
+        F.layer:disc(cx - cw / 2 + r0, ry(cy), r0, 12, fill)
+        F.layer:disc(cx + cw / 2 - r0, ry(cy), r0, 12, fill)
+        txt(count, cx, cy, px, pal.a(held and pal.FRIEND or pal.DIM, 0.9),
+            "center")
     end
 end
 
@@ -5046,7 +5123,13 @@ function pages.kit(v, x, y, w, h, focused)
             if seen(cy - 8 * F.scale, cy + 4 * F.scale) then
                 lbl(label, kx, cy)
             end
-            cy = cy + 14 * F.scale
+            -- Enough for the field behind the first row to clear the word
+            -- above it. At fourteen the two touched: a row is twenty-six
+            -- tall and its field is drawn from its middle out, so half of
+            -- that came straight back up into the label's descenders and the
+            -- head read as part of the row rather than as the name of the
+            -- group under it.
+            cy = cy + 24 * F.scale
         end
     end
 
@@ -5122,11 +5205,39 @@ function pages.kit(v, x, y, w, h, focused)
             txt(readout(r.choice or 0), px + 10 * F.scale, cy, 11 * F.scale,
                 pal.a(pal.INK, hot and 0.95 or 0.7))
         end
-        -- Which key spends it, for the two charges a kit carries. The keys
-        -- are positions and what sits in each is this choice, so this is the
-        -- page that has to say which is which.
-        if r.on_key then
-            lbl(r.on_key, kx + kw, cy, pal.a(pal.CHARGE_COL, 0.85), "right")
+        -- Which of the two slots this charge sits in, and the key that
+        -- throws it, in a box beside the pips.
+        --
+        -- The key used to be one letter alone at the far right edge of the
+        -- page, a hundred and fifty points from the row it belonged to with
+        -- nothing in between: a Q floating beside a column of pips answers a
+        -- question nobody asked in those terms. The slot is the fact, the key
+        -- is how it is spent, and the two belong in one mark next to the
+        -- thing they are about.
+        --
+        -- Pressing it swaps the two, which is the only thing there is to
+        -- decide once a kit carries two: the same charges, the other way
+        -- round on the keyboard.
+        if r.charge_slot then
+            local word = "charge " .. r.charge_slot
+                .. (r.on_key and (" (" .. r.on_key .. ")") or "")
+            -- In a column of its own rather than after however many pips
+            -- this charge happens to hold: two boxes at two indents read as
+            -- two different controls. Six pips of room, which is the most a
+            -- charge ladder holds in any zone that ships, and never closer
+            -- than a gap to the pips where a zone hands out more.
+            local bx = math.max(px + 12 * F.scale,
+                                kx + NAMEW + 6 * step + 16 * F.scale)
+            local bh = 18 * F.scale
+            local bw = text_w(word, 9 * F.scale) + 18 * F.scale
+            key_box(bx, cy - bh / 2, bw, bh,
+                    pal.a(pal.CHARGE_COL, hot and 0.16 or 0.07),
+                    pal.a(pal.CHARGE_COL, hot and 0.9 or 0.5))
+            lbl(word, bx + bw / 2, cy + 3 * F.scale,
+                pal.a(pal.CHARGE_COL, hot and 1 or 0.8), "center")
+            if live and r.pick then
+                hit(bx, cy - bh / 2, bw, bh, "charge_swap")
+            end
         end
         -- And what the next rung costs, on the end of the ladder rather than
         -- in a control of its own.
@@ -5300,7 +5411,7 @@ function pages.friends(v, x, y, w, h, focused)
     -- they stop fitting, and the row goes to two lines with the buttons
     -- sharing the second.
     local packed = w < 470 * F.scale
-    local bh = 30 * F.scale
+    local bh = pages.FIELD_TALL * F.scale
     local kh = 26 * F.scale
 
     -- One button. Returns its left edge, so a row can lay them out from the
@@ -5328,36 +5439,8 @@ function pages.friends(v, x, y, w, h, focused)
     local fw = math.min(300 * F.scale, w - aw - 12 * F.scale)
     local fx = x
     local by = fy - bh / 2
-    rect(fx, by, fw, bh, pal.rgb(0x070b12, 0.55))
-    if a.on then rect(fx, by, fw, bh, pal.a(pal.FRIEND, 0.1)) end
-    bracket(fx, by, fw, bh, pal.a(a.on and pal.FRIEND or pal.RADAR_TILE,
-                                 a.on and 0.9 or 0.55), 10 * F.scale)
-    local ix = fx + 11 * F.scale
     local typed = a.name or ""
-    if typed == "" then
-        lbl("a call sign", ix, fy, pal.a(pal.DIM, a.on and 0.7 or 0.5))
-    else
-        txt(typed, ix, fy, 15 * F.scale, pal.a(pal.CHARGE_COL, 0.95), nil,
-            MENU_FONT, true)
-    end
-    if a.on then
-        rect(ix + text_w(typed, 15 * F.scale, MENU_FONT, true) + 2 * F.scale,
-             fy - 8 * F.scale,
-             1.6 * F.scale, 16 * F.scale, pal.a(pal.FRIEND, 0.9))
-    end
-    -- Published before the box, because the first hit box wins and the other
-    -- way round the box swallows every press on its own mark.
-    if typed ~= "" then
-        local cx = fx + fw - 12 * F.scale
-        local k = 4 * F.scale
-        for _, d in ipairs({{-1, 1}, {1, 1}}) do
-            F.layer:seg(cx - k * d[1], ry(fy - k * d[2]),
-                        cx + k * d[1], ry(fy + k * d[2]),
-                        1.3 * F.scale, pal.a(pal.DIM, 0.9), true)
-        end
-        hit(cx - 12 * F.scale, by, 24 * F.scale, bh, "add_wipe")
-    end
-    hit(fx, by, fw, bh, "add_box")
+    pages.field(fx, by, fw, typed, "a call sign", a.on, "add_box", "add_wipe")
     button(fx + fw + 10 * F.scale + aw, fy, "add", true, v.add_hot == true,
            "add_go")
     -- What the last press came to, under the field, and the hint where there
@@ -5417,6 +5500,24 @@ function pages.friends(v, x, y, w, h, focused)
     -- Laid out unscrolled and drawn shifted, so the height this page came to
     -- is a number and not that number minus wherever the finger left it.
     local at = top
+    -- The head above a section is as tall as the sentence it carries, so the
+    -- walk that finds the cursor has to wrap the same words the drawing does.
+    local function head_h(r)
+        if not r.sect then return 0 end
+        local said = r.sect_line
+            and wrapped(cased(r.sect_line), 11.5 * F.scale, w - 10 * F.scale)
+            or nil
+        return SECT + (said and (#said * 15 * F.scale + 4 * F.scale) or 0)
+    end
+    do
+        local walk, cur = 0, nil
+        for i, r in ipairs(v.rows or {}) do
+            walk = walk + head_h(r)
+            if i == v.sel and not a.on then cur = walk end
+            walk = walk + rowh
+        end
+        follow_cursor(cur, rowh, y + h - top, focused)
+    end
     local dy = M.page_scroll
     local seen = function(t) return t >= top and t + rowh <= y + h end
 
@@ -5429,8 +5530,7 @@ function pages.friends(v, x, y, w, h, focused)
             local said = r.sect_line
                 and wrapped(cased(r.sect_line), 11.5 * F.scale,
                             w - 10 * F.scale) or nil
-            local sh = SECT + (said and (#said * 15 * F.scale + 4 * F.scale)
-                               or 0)
+            local sh = head_h(r)
             local hy = at - dy
             if hy >= top and hy + sh <= y + h then
                 hrule(x, hy + SECT * 0.42, w)
@@ -6011,28 +6111,6 @@ function pages.shop(v, x, y, w, h, focused)
                  pal.a(pal.CHARGE_COL, 0.95), "right")
     local top = y + BAND
     local at = top
-    -- The arrows drag the page rather than walking off the edge of it,
-    -- which the plain list already does and this page did not: the shelf
-    -- runs three windows deep on a desktop, and the ninth press of Down
-    -- carried the cursor off the glass with the wheel as the only way to
-    -- find it again. Measured with the same walk the drawing makes, before
-    -- the scroll is read.
-    if focused and v.sel then
-        local off, cur = 0, nil
-        for i, r in ipairs(v.rows or {}) do
-            if r.sect then off = off + SECT end
-            if i == v.sel then cur = off end
-            off = off + rowh
-        end
-        if cur then
-            local room0 = h - BAND
-            if cur < M.page_scroll then M.page_scroll = cur end
-            if cur + rowh > M.page_scroll + room0 then
-                M.page_scroll = cur + rowh - room0
-            end
-        end
-    end
-    local dy = M.page_scroll
 
     -- How wide the widest ladder is, so every price lands in one column. A
     -- price that moved left and right down the page is a column nobody can
@@ -6058,6 +6136,22 @@ function pages.shop(v, x, y, w, h, focused)
     local ladx = x + MARKW + NAMEW
     local pricex = math.min(ladx + DEALT + most * pitch + 26 * F.scale,
                             x + lw - 8 * F.scale)
+
+    -- Where the cursor is, from one walk of the same arithmetic the drawing
+    -- below does. Before the drawing rather than during it, because a page
+    -- that followed its cursor afterwards would draw a frame at the old
+    -- offset every time the arrows reached the bottom.
+    do
+        local walk, cur = 0, nil
+        for i, r in ipairs(v.rows or {}) do
+            if r.sect then walk = walk + SECT end
+            if i == v.sel then cur = walk end
+            walk = walk + rowh
+        end
+        -- Against the window under the wallet band, which does not move.
+        follow_cursor(cur, rowh, h - BAND, focused)
+    end
+    local dy = M.page_scroll
 
     for i, r in ipairs(v.rows or {}) do
         if r.sect then
@@ -7512,7 +7606,10 @@ local MK_GAP_TRI = {10, 1, 2, 4, 5, 6, 4, 6, 7, 3, 4, 7,
 -- depth disappears face-on and reaches that full width edge-on, so the mark
 -- keeps its exact approved silhouette at rest and gains a visible edge only
 -- while it turns.
-local MK_DEPTH = 10
+-- One table for the logo helpers, because the chunk sits at the
+-- compiler's two-hundred-local ceiling and these travel together.
+local logo = {}
+logo.DEPTH = 10
 -- The far face of the turning mark, and its edge. These were 0.30 and 0.48,
 -- which read as black and as barely-there: a mark that spends half its turn
 -- looking switched off. A face pointing away is still lit by the same room,
@@ -7530,7 +7627,7 @@ local MK_CYAN_SIDE = {pal.LOGO_CYAN[1] * 0.78,
                       pal.LOGO_CYAN[2] * 0.78,
                       pal.LOGO_CYAN[3] * 0.78, 1}
 
-local function logo_poly(points, tris, ox, oy, k, squash, col)
+function logo.poly(points, tris, ox, oy, k, squash, col)
     for i = 1, #tris, 3 do
         local a, b, c = tris[i], tris[i + 1], tris[i + 2]
         F.layer:tri(ox + (points[a * 2 - 1] - MK_W / 2) * k * squash,
@@ -7546,7 +7643,7 @@ end
 -- pair of triangles, which turns the offset duplicate into a solid thickness
 -- instead of a drop shadow. The front face is drawn last and hides the half of
 -- each strip that should be behind it.
-local function logo_sides(points, bx, fx, oy, k, squash, col)
+function logo.sides(points, bx, fx, oy, k, squash, col)
     local n = #points / 2
     for i = 1, n do
         local j = i % n + 1
@@ -7559,12 +7656,12 @@ local function logo_sides(points, bx, fx, oy, k, squash, col)
     end
 end
 
-local function logo_face(ox, oy, k, squash, orange, cyan, alpha)
-    logo_poly(MK_ORANGE, MK_ORANGE_TRI, ox, oy, k, squash,
+function logo.face(ox, oy, k, squash, orange, cyan, alpha)
+    logo.poly(MK_ORANGE, MK_ORANGE_TRI, ox, oy, k, squash,
               pal.a(orange, alpha))
-    logo_poly(MK_CYAN, MK_CYAN_TRI, ox, oy, k, squash,
+    logo.poly(MK_CYAN, MK_CYAN_TRI, ox, oy, k, squash,
               pal.a(cyan, alpha))
-    logo_poly(MK_GAP, MK_GAP_TRI, ox, oy, k, squash,
+    logo.poly(MK_GAP, MK_GAP_TRI, ox, oy, k, squash,
               pal.a(pal.LOGO_GAP, alpha))
 end
 
@@ -7583,30 +7680,30 @@ function M.logo(cx, cy, h, alpha, still)
     -- callers front-on.
     local turn = not still and F.now * 1.7 or nil
     local squash = turn and math.cos(turn) or 1
-    local depth = turn and math.sin(turn) * MK_DEPTH * k / 2 or 0
+    local depth = turn and math.sin(turn) * logo.DEPTH * k / 2 or 0
     local bx, fx = cx - depth, cx + depth
     local oy = cy - MK_H * k / 2
     local front_facing = squash >= 0
     if math.abs(depth) > 0.001 then
         if front_facing then
-            logo_face(bx, oy, k, squash,
+            logo.face(bx, oy, k, squash,
                       MK_ORANGE_BACK, MK_CYAN_BACK, alpha)
         else
-            logo_face(fx, oy, k, squash,
+            logo.face(fx, oy, k, squash,
                       pal.LOGO_ORANGE, pal.LOGO_CYAN, alpha)
         end
-        logo_sides(MK_ORANGE, bx, fx, oy, k, squash,
+        logo.sides(MK_ORANGE, bx, fx, oy, k, squash,
                    pal.a(MK_ORANGE_SIDE, alpha))
-        logo_sides(MK_CYAN, bx, fx, oy, k, squash,
+        logo.sides(MK_CYAN, bx, fx, oy, k, squash,
                    pal.a(MK_CYAN_SIDE, alpha))
-        logo_sides(MK_GAP, bx, fx, oy, k, squash,
+        logo.sides(MK_GAP, bx, fx, oy, k, squash,
                    pal.a(pal.LOGO_GAP, alpha))
     end
     if front_facing then
-        logo_face(fx, oy, k, squash,
+        logo.face(fx, oy, k, squash,
                   pal.LOGO_ORANGE, pal.LOGO_CYAN, alpha)
     else
-        logo_face(bx, oy, k, squash,
+        logo.face(bx, oy, k, squash,
                   MK_ORANGE_BACK, MK_CYAN_BACK, alpha)
     end
 end
@@ -7638,11 +7735,11 @@ end
 -- the word about an eighth of an em below the middle of the box it is set in.
 -- A mark hung on the box center is a mark that looks high, which is what it
 -- looked.
-local LOGO_EM, LOGO_GAP, LOGO_DROP = 0.74, 0.30, 0.12
+logo.EM, logo.GAP, logo.DROP = 0.74, 0.30, 0.12
 
 -- How much room the lockup takes, so a row can start after it.
-local function wordmark_w(size)
-    return M.logo_width(size * LOGO_EM) + size * LOGO_GAP
+function logo.wordmark_w(size)
+    return M.logo_width(size * logo.EM) + size * logo.GAP
            + text_w("vectorwake", size)
 end
 
@@ -7650,10 +7747,10 @@ local function wordmark(x, y, size)
     -- The mark stands to the left of the name, on the middle of the word
     -- rather than the middle of its line box, so the two read as one lockup.
     -- It takes the room it needs and the name starts after it.
-    local h = size * LOGO_EM
+    local h = size * logo.EM
     local lw = M.logo_width(h)
-    M.logo(x + lw / 2, y + size * LOGO_DROP, h)
-    txt("vectorwake", x + lw + size * LOGO_GAP, y, size, pal.INK, nil,
+    M.logo(x + lw / 2, y + size * logo.DROP, h)
+    txt("vectorwake", x + lw + size * logo.GAP, y, size, pal.INK, nil,
         MENU_FONT, true)
 end
 
@@ -7677,27 +7774,28 @@ function pages.corner(v, right, cy, wordless)
     local bh = 30 * F.scale
     local by = cy - bh / 2
     local rt = right
-    local function button(label, on, act, mark, caps)
+    -- `quoted` is a label that keeps the case it was given, which is a call
+    -- sign and nothing else. Everything the interface says for itself is set
+    -- in a sentence's case, and "DISCORD" shouted in a row of quiet words was
+    -- one button claiming to be more important than the page it sits on.
+    local function button(label, on, act, mark, quoted)
         local px = 12 * F.scale
         local bare = mark and wordless
-        local lw = bare and 0
-            or text_w(caps and string.upper(label) or label, px)
+        local lw = bare and 0 or text_w(label, px, MENU_FONT, quoted)
         local bw = lw + (mark and (bare and 40 or 52) or 30) * F.scale
         local bx = rt - bw
         key_box(bx, by, bw, bh, pal.rgb(0x0a0f18, on and 0.95 or 0.7),
                 pal.a(on and pal.FRIEND or pal.RADAR_TILE, on and 0.95 or 0.7))
-        local ink = pal.a(on and pal.FRIEND or pal.INK, on and 1 or 0.85)
+        -- The weight a tab wears, mark and word alike: these are two more
+        -- stops on that row and were the two brightest things on it.
+        local ink = pal.a(on and pal.FRIEND or pal.INK, on and 1 or 0.55)
         if mark then
             draw_mark(mark, bx + (bare and bw / 2 or 21 * F.scale), cy,
                       8.5 * F.scale, ink)
         end
         if not bare then
             local tx = bx + (mark and 38 or 15) * F.scale
-            if caps then
-                lbl(label, tx, cy, ink, nil, px)
-            else
-                txt(label, tx, cy, px, ink, nil, MENU_FONT, true)
-            end
+            txt(label, tx, cy, px, ink, nil, MENU_FONT, quoted)
         end
         hit(bx, by, bw, bh, act)
         rt = bx - 10 * F.scale
@@ -7708,22 +7806,17 @@ function pages.corner(v, right, cy, wordless)
     -- it, because this lays them out from the right edge and the row the
     -- arrows walk reads from the left.
     if v.pilot and v.pilot.name and v.pilot.name ~= "" then
-        -- A name is quoted rather than said, so it keeps the case its owner
-        -- gave it while the button beside it shouts a brand.
+        -- A name is quoted rather than said: it keeps the case its owner gave
+        -- it, where every other word on this row is in the interface's.
         button(v.pilot.name, v.pilot_hot or v.corner_sel == "pilot",
-               "pilot_page")
+               "pilot_page", nil, true)
     end
     if v.discord then
-        local bx, bw = button("discord",
-                              v.discord_hot or v.corner_sel == "discord",
-                              "discord_link", "discord", true)
-        -- A real anchor over it, laid by the page. Nothing this client does
-        -- from its own loop is inside the tap that asked for it, and a tab
-        -- opened outside one is what a popup blocker stops. CSS pixels, which
-        -- is the page's unit.
-        M.link_dom = string.format("%.1f,%.1f,%.1f,%.1f,%s",
-                                   bx / F.density, by / F.density,
-                                   bw / F.density, bh / F.density, v.discord)
+        -- No anchor over this one. It opens the page about the server, which
+        -- is inside the game, and the row on that page that leaves for the
+        -- server is where the anchor goes: see `r.link` in the stage.
+        button("discord", v.discord_hot or v.corner_sel == "discord",
+               "discord_link", "discord")
     end
     return rt + 10 * F.scale
 end
@@ -7904,7 +7997,7 @@ function M.menu(v)
             -- squeezed to fit: below about twenty the mark beside it stops
             -- being a mark.
             while logo_px > 21 * F.scale
-                  and rx + wordmark_w(logo_px) > corner_left - 12 * F.scale do
+                  and rx + logo.wordmark_w(logo_px) > corner_left - 12 * F.scale do
                 logo_px = logo_px - 2 * F.scale
             end
         end
@@ -8041,7 +8134,7 @@ function M.menu(v)
     -- the drawing had to guess at is a field that overlaps its neighbour.
     local tab_gap = 21 * F.scale
     if words then
-        local at0 = rx + wordmark_w((tall and 26 or 22) * F.scale)
+        local at0 = rx + logo.wordmark_w((tall and 26 or 22) * F.scale)
                     + 40 * F.scale
         -- Where the row has to stop, which is where the corner buttons start.
         -- Given the whole width, as it was, the last two tabs are drawn under

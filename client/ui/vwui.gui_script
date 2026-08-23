@@ -16,12 +16,26 @@ local state = require("arena.state")
 local FONT = "ui"
 -- The size each face was built at, since scale here is relative to it.
 local SIZES = {ui = 26, menu = 26}
--- The pool is the budget in state.lua, where the side that writes the text
--- can be held to it. It was a number here, 128, and the ending screen with
--- the scoreboard open queued past it: everything after the cut simply did
--- not draw, which took the words off the podium's phrase chips while their
--- boxes, being mesh, stayed. A cap the writer cannot see is a cap somebody
--- finds by screenshot.
+-- How many words one frame may ask for.
+--
+-- Every glyph in the game comes out of this pool, and the biggest single ask
+-- is the week's table: thirteen columns a row, and as many rows as the panel
+-- is tall enough to hold. At 128 that table drew ten pilots and then a row
+-- with a highlight on it and no name in it, with eleven more below that which
+-- never arrived: the mesh layer kept drawing the washes and the rules, because
+-- those are triangles, and only the type stopped. It read as a blank row you
+-- could select rather than as a budget running out, which is what a silent
+-- clamp always reads as.
+--
+-- A thousand covers sixty rows of that table, which is where `standings_rows`
+-- stops, with the tab row and the headings on top. Nodes cost a pointer and a
+-- struct each and only the live ones are touched in a frame, so the ceiling is
+-- set where no page can reach it rather than where today's pages happen to
+-- land. The figure itself lives in state.lua, where the side that writes the
+-- text can be held to it: a cap the writer cannot see is a cap somebody finds
+-- by screenshot. `client/tests/glyph_budget_test.lua` draws the widest pages
+-- at the tallest windows and `podium_test` the worst match frame, both
+-- against that one number.
 local POOL = state.TEXT_POOL
 
 local PIVOTS = {
@@ -65,7 +79,18 @@ function update(self)
     self.version = state.version
 
     local text, count = state.text, state.n
-    if count > POOL then count = POOL end
+    if count > POOL then
+        -- Not reachable from any page the suite knows about. If it happens
+        -- anyway the frame is short some words, and saying so once is the
+        -- difference between a bug report about a missing name and a bug
+        -- report about a blank row.
+        if not self.clipped then
+            self.clipped = true
+            print(string.format("vwui: %d words asked for, %d drawn",
+                                count, POOL))
+        end
+        count = POOL
+    end
 
     for i = 1, count do
         local t = text[i]

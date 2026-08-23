@@ -98,11 +98,55 @@ tiles under it: the corner that would touch one is the same corner the face
 is holding up. That is what stops the staircase coming back as the square
 backing behind a smooth front.
 
-The generator does not draw them. Its diagonals are one tile thick, and a thin
-diagonal is the one shape a slope cannot express: half a tile of wall with a
-hole at every corner is not a barrier. A thick diagonal wall with sloped faces
-is a shape a person draws and then measures, and there is somewhere to draw it
-now. See "Where a map comes from" below.
+The generator draws its diagonals this way, as a pair of tiles side by side,
+each filling the corner nearest the other. Their solid halves meet along the
+whole of the edge they share and their open halves fall outside, which leaves
+**one stripe** with a face down each side. Two tiles across, not a solid tile
+in it, and the two faces are parallel: both are the run's own line, a tile
+apart. A stripe, not a vee and not a zigzag.
+
+Two and not one, because a single run is a **one-way wall**. Tiles of one
+variant meet corner to corner, so the face they make is continuous and the
+material behind it is not: coming at the side the solid halves face a hull is
+stopped, and coming at the other it goes straight through, because the open
+halves line up into a corridor. Sixteen hulls out of sixteen, at every speed
+measured. It looks like a wall on the drawing from both sides, which is why
+that is a test rather than a sentence.
+
+What makes the pair work is that the two runs **share a whole edge**. Each tile
+is solid the entire length of the side it hands its neighbour, across the run
+and along it both. Every other diagonal a square grid can draw meets corner to
+corner and pinches to a point there, and that pinch is the interesting part:
+
+**A pinch is no hole to a hull and it is a hole to a bullet.** A hull is three
+tiles across and cannot fit through a point. A round can. Fired square at a
+stepped diagonal, a round travels along the other diagonal, which takes it
+exactly through the corners where the tiles touch, and it passes through a wall
+that stops every ship in the game. One heading in thirty-two, and the heading
+is the shot anybody would take. That was true of the generator's diagonals for
+as long as they were stepped, and of a sloped run with a solid spine down the
+middle, which has the same stepped line inside it. The pair leaks on none of
+the thirty-two.
+
+The pair is also *thinner* than the staircase it replaces: seed 3 of the open
+arena goes from 3.06% solid to 2.91%. A thick diagonal reading as a smear at
+radar scale was the reason these stayed single stepped tiles for so long, and
+it turns out not to be a cost that had to be paid.
+
+The match maps draw from that vocabulary now too. They used to build their
+cover from two shapes, a filled rectangle and a hollow room, so every piece of
+it was a box; there was never an argument for the smaller maps having a smaller
+vocabulary, it just never got written. A shape is drawn once into its box and
+then read back and laid down half a turn away, rather than drawn twice, because
+the shapes make their own random choices as they go and drawing one twice draws
+two different shapes.
+
+Two things had to move with them. A slope names the corner it fills, so half a
+turn flips that corner to the opposite one, and a mirrored diagonal without
+that comes out inside out. And the wall fraction a match arena is held to
+counted whole solid tiles only, so a diagonal drawn as slopes vanished from the
+measure: converting one read as the map losing wall it had not lost. A slope is
+half a tile of wall and counts as half now, in both generators.
 
 ## The edge of the world is not a map's to draw
 

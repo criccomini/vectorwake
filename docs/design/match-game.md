@@ -202,7 +202,16 @@ for the top of it. What the merge cost, and what it bought, is [decision
 ## Two charges, and which two is the choice
 
 A kit carries two kinds of charge. Which two is a decision made on the ship
-page, and Q and W spend them in the order the core numbers the kinds.
+page, and which key spends which is decided there too.
+
+Each charge row carries a box beside its pips reading "charge 1 (Q)" or
+"charge 2 (W)", and pressing either one trades them. Before that the order was
+the core's numbering of the kinds, which meant a pilot carrying a repel and
+mines got the repel on Q whether they wanted it there or not, and the only
+sign of it was a lone letter at the far right edge of the page. What key
+throws what is a preference about a keyboard rather than a fact about a ship,
+so it is kept on the device beside the bindings and nothing about the kit
+changes when it moves.
 
 There are three kinds today and the shelf sells them: a repel and a burst come
 with the account, and mines are bought. Carrying all of them at once would mean
@@ -648,6 +657,13 @@ a name typed into the box above it, and asks for a week further back. A rank
 stays the place a pilot held in the week rather than in the filter: somebody
 who is fourteenth does not become first because the other thirteen were
 hidden.
+
+The table has two axes and uses both. Down the page is the ladder, and across
+it is time: left and right on any row are the pair of arrows drawn over the
+table, one week back and one week forward, and there is no forward from the
+week that is running. There is nothing else to the side of a pilot's row, and
+the way back up to the tabs is up, out of the first row into the filter box
+and out of the box to the row of tabs.
 
 Under about five hundred points of width a row stops being a line of columns.
 Two of them fitted on a phone and the second was drawn half off the panel's
