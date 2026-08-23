@@ -11,6 +11,7 @@ engineering, see [docs/architecture](../architecture/README.md).
 | [audio.md](audio.md) | What the game sounds like: the kit, weapon rungs, what stays silent, and why a sound that answers your hands is engineered differently from one that describes a state |
 | [maps.md](maps.md) | Tile classes, the arenas, and what a map carries so a zone does not have to |
 | [menu.md](menu.md) | Landing in the game, the six tabs, changing hull, and the loading hand-off |
+| [interface.md](interface.md) | The design language: color, type, shape, marks, layout, motion, and words, across the menu and the flight HUD |
 | [ai-players.md](ai-players.md) | AI opponents that fill empty arenas and yield to humans: styles, skill, the long-lived roster, and the population director |
 | [duel-mode.md](duel-mode.md) | One on one against a rating-matched human or bot: format, queue, rating, replays |
 | [bounty.md](bounty.md) | What you are worth and what you have been paid: bounty derived from what you carry, points paid as the victim's bounty |
