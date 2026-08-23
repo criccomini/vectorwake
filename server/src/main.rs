@@ -1875,6 +1875,7 @@ mod tests {
             admission: "any".into(),
             bot_fill: 0.0,
             maps_b64: vec![fleet::b64(&sim::World::new(1).packed_map())],
+            map_names: vec!["proving".into()],
             // A zone's name lives in the catalog that references it, never in the
             // zone's own file, so there is one place a name can be.
             zone_toml: "description = \"a zone for tests\"\n".into(),
@@ -3474,6 +3475,7 @@ mod tests {
             fleet::b64(&sim::World::new(1).packed_map()),
             fleet::b64(&sim::World::with_map(1, sim::build_pit).packed_map()),
         ];
+        def.map_names = vec!["proving".into(), "the pit".into()];
         def.zone_toml = format!(
             "description = \"a match zone\"\nteams = [\"Pylon\", \"Caisson\"]\n\
              [arena]\nmatch_seconds = {match_seconds}\n\
@@ -3526,6 +3528,32 @@ mod tests {
         assert_eq!(sh.up[sim::UP_SPEED], 4, "and so did the frame");
         assert_eq!((sh.kills, sh.run), (0, 0), "the tally is the match's own");
         assert_eq!((sh.x, sh.y), (sh.spawn_x, sh.spawn_y), "on a start");
+    }
+
+    /// The caption follows the ground: the name a client is handed beside the
+    /// map is the rotation's name for whichever map the room is standing on,
+    /// and a room whose maps arrived without names hands out nothing rather
+    /// than a guess.
+    #[test]
+    fn the_map_name_names_the_map_the_room_is_on() {
+        let a = match_room(1, 1);
+        assert_eq!(
+            a.map_name_msg(),
+            Some([&[protocol::S2C_MAPNAME][..], b"proving"].concat()),
+            "the first match is on the first name"
+        );
+        let mut a = a;
+        a.close_match();
+        assert_eq!(
+            a.map_name_msg(),
+            Some([&[protocol::S2C_MAPNAME][..], b"the pit"].concat()),
+            "the whistle moves the caption with the ground"
+        );
+
+        let mut def = wire_zone(1, 8, 8);
+        def.map_names = Vec::new();
+        let bare = ArenaServer::build_room(&def, None).expect("a room");
+        assert_eq!(bare.map_name_msg(), None, "no names, no caption");
     }
 
     /// The zone's tuning survives the ground changing under it. Swapping a map

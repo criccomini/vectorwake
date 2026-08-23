@@ -700,22 +700,33 @@ impl ArenaServer {
     /// running this zone, whose map the new one borrows instead of unpacking a
     /// second megabyte of identical tiles.
     pub(crate) fn build_room(z: &fleet::WireZone, on: Option<&Room>) -> Result<Room, String> {
-        let maps = match on {
-            Some(r) => r.maps.clone(),
-            None => z
-                .maps_b64
-                .iter()
-                .map(|m| {
-                    let bytes = fleet::unb64(m).ok_or("map is not base64")?;
-                    sim::unpack_map(&bytes)
-                })
-                .collect::<Result<Vec<_>, String>>()?,
+        let (maps, names) = match on {
+            Some(r) => (r.maps.clone(), r.map_names.clone()),
+            None => {
+                let maps = z
+                    .maps_b64
+                    .iter()
+                    .map(|m| {
+                        let bytes = fleet::unb64(m).ok_or("map is not base64")?;
+                        sim::unpack_map(&bytes)
+                    })
+                    .collect::<Result<Vec<_>, String>>()?;
+                (maps, z.map_names.clone())
+            }
         };
         let first = maps.first().ok_or("the zone names no maps")?;
         let world = sim::World::on_map(0x5eed, std::sync::Arc::clone(first));
         let def: catalog::ZoneDef =
             toml::from_str(&z.zone_toml).map_err(|e| format!("zone.toml: {e}"))?;
         let mut room = Room::with_world_bare(world);
+        // A names list that does not line up with the tiles would caption the
+        // wrong ground; an older directory sends none at all. Either way the
+        // room goes uncaptioned rather than mislabeled.
+        room.map_names = if names.len() == maps.len() {
+            names
+        } else {
+            Vec::new()
+        };
         room.maps = maps;
         for w in room.retune(&def.arena) {
             println!("zone {}: {w}", z.name);
@@ -802,6 +813,15 @@ impl ArenaServer {
                         }
                         println!("room {}: rotation is now {} map(s)", r.number, maps.len());
                         r.maps = maps.clone();
+                        // Only when they line up: the tiles above skip
+                        // anything unreadable, and a shifted list would
+                        // caption the wrong ground, which is worse than no
+                        // caption.
+                        r.map_names = if z.map_names.len() == maps.len() {
+                            z.map_names.clone()
+                        } else {
+                            Vec::new()
+                        };
                         // Whatever the room is standing on stays under it, so
                         // the index only has to be somewhere the next whistle
                         // can step from.

@@ -229,10 +229,25 @@ do
     check("right off the last tab reaches discord",
           menu.view().corner_sel == "discord",
           tostring(menu.view().corner_sel))
+    -- Standing on a corner stop is standing on it: the tab the cursor left
+    -- goes dark, and the stage previews the stop's page the way it previews
+    -- a tab's. It kept the old tab lit and the old page up, which read as a
+    -- cursor in two places and a button that did nothing.
+    check("and the tab it left goes dark",
+          (menu.view().rail_sel or 0) == 0,
+          tostring(menu.view().rail_sel))
+    check("and the stage previews the discord page",
+          menu.showing() == "discord"
+          and (menu.view().rows[1] or {}).label == "open the invite",
+          menu.showing() .. "/" .. tostring((menu.view().rows[1] or {}).label))
     menu.step({right = true})
     check("and the account is the next one along",
           menu.view().corner_sel == "pilot",
           tostring(menu.view().corner_sel))
+    check("previewing the pilot page and its call sign card",
+          menu.showing() == "pilot"
+          and ((menu.view().aside or {}).head == "call sign"),
+          menu.showing() .. "/" .. tostring((menu.view().aside or {}).head))
     menu.step({right = true})
     check("and right again is the first tab, the way the row wraps",
           menu.view().corner_sel == nil and menu.sel.root == 1,

@@ -57,6 +57,7 @@ local S2C_LAG = 16
 -- sentence in it that this build does not already hold. See
 -- docs/design/match-game.md.
 local S2C_SAID = 17
+local S2C_MAPNAME = 18
 local C2S_SAY = 11
 
 -- The fixed things, in the order the wire numbers them. Short, positive, and
@@ -115,6 +116,9 @@ M.watchers = {}
 M.banner = ""
 M.lag_notice = ""
 M.zone = ""
+-- What the zone calls the ground everybody is standing on, sent beside the
+-- map itself and empty against a zone that predates the message.
+M.map_name = ""
 -- Which of the zone's rooms this connection was seated in, as the server
 -- numbered it in the welcome. Nil on a zone holding one room, and nil until a
 -- welcome lands. It is the server's answer rather than the row that was
@@ -1336,6 +1340,8 @@ local function on_message(s)
             (string.byte(s, 6) or 0) + (string.byte(s, 7) or 0) * 256,
             string.byte(s, 8) or 0, string.byte(s, 9) or 0,
             string.byte(s, 10) or 0, string.byte(s, 2) or 0)
+    elseif kind == S2C_MAPNAME then
+        M.map_name = string.sub(s, 2)
     elseif kind == S2C_YIELD then
         -- A bot yields to make room, a watcher leaves with a draining arena,
         -- and a connection beyond the final lag threshold leaves when the
@@ -1547,6 +1553,7 @@ function M.connect(url, class, name, on_lost, zone, watch, wt, room)
     M.want = 255
     keepalive = 0
     M.zone = ""
+    M.map_name = ""
     M.banner = ""
     M.lag_notice = ""
     -- And its rollback state is worse than useless here, because tick numbers

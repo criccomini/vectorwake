@@ -445,6 +445,9 @@ pub(crate) async fn serve_client(
                             let mut m = vec![S2C_MAP];
                             m.extend_from_slice(&a.world.packed_map());
                             let _ = tx.try_send(Message::Binary(m));
+                            if let Some(n) = a.map_name_msg() {
+                                let _ = tx.try_send(Message::Binary(n));
+                            }
                             let mut c = vec![S2C_SETTINGS];
                             c.extend_from_slice(&a.settings_generation.to_le_bytes());
                             c.extend_from_slice(&a.world.packed_settings());
@@ -519,6 +522,9 @@ pub(crate) async fn serve_client(
                     let mut m = vec![S2C_MAP];
                     m.extend_from_slice(&a.world.packed_map());
                     let _ = tx.try_send(Message::Binary(m));
+                    if let Some(n) = a.map_name_msg() {
+                        let _ = tx.try_send(Message::Binary(n));
+                    }
                     let mut c = vec![S2C_SETTINGS];
                     c.extend_from_slice(&a.settings_generation.to_le_bytes());
                     c.extend_from_slice(&a.world.packed_settings());

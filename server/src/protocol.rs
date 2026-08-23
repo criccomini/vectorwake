@@ -257,3 +257,8 @@ pub(crate) const S2C_LAG: u8 = 16;
 /// wire cannot carry a word this arena did not ship, so there is nothing to
 /// moderate and nothing to report. See docs/design/match-game.md.
 pub(crate) const S2C_SAID: u8 = 17;
+/// `[S2C_MAPNAME, name]`: what the rotation calls the map that just arrived,
+/// as UTF-8, sent straight after every S2C_MAP. Its own message rather than a
+/// field on the map, which is packed bytes the sim core hashes: a name is
+/// presentation, and a client that predates it ignores the kind unread.
+pub(crate) const S2C_MAPNAME: u8 = 18;

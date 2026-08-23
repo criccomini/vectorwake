@@ -203,6 +203,11 @@ impl Directory {
                 .iter()
                 .filter_map(|n| {
                     let z = c.zones.get(n)?;
+                    // A published rotation wins over the file, and a zone
+                    // without one keeps the file. That is the whole of the
+                    // override: everything else in the stanza is still the
+                    // reviewed text on disk.
+                    let maps = self.published.zone(n).unwrap_or_else(|| c.map_bytes(n));
                     Some(fleet::WireZone {
                         name: n.clone(),
                         description: z.description.clone(),
@@ -213,17 +218,8 @@ impl Directory {
                         bot_fill: z.bot_fill(),
                         max_rooms: z.max_rooms() as u32,
                         admission: z.admission.clone(),
-                        // A published rotation wins over the file, and a zone
-                        // without one keeps the file. That is the whole of the
-                        // override: everything else in the stanza is still the
-                        // reviewed text on disk.
-                        maps_b64: self
-                            .published
-                            .zone(n)
-                            .unwrap_or_else(|| c.map_bytes(n))
-                            .iter()
-                            .map(|b| fleet::b64(b))
-                            .collect(),
+                        maps_b64: maps.iter().map(|(_, b)| fleet::b64(b)).collect(),
+                        map_names: maps.iter().map(|(n2, _)| n2.clone()).collect(),
                         zone_toml: z.raw.clone(),
                     })
                 })

@@ -279,10 +279,11 @@ impl Catalog {
         self.zones.get(name)
     }
 
-    /// Every map a zone plays, read from its own directory, in its own order.
-    /// Empty if the zone names none or a file will not read: a caller that
-    /// gets nothing runs the built-in arena and says so.
-    pub fn map_bytes(&self, name: &str) -> Vec<Vec<u8>> {
+    /// Every map a zone plays, read from its own directory, in its own order,
+    /// each under the name the rotation calls it by: the file's stem, which is
+    /// what clients are shown. Empty if the zone names none or a file will not
+    /// read: a caller that gets nothing runs the built-in arena and says so.
+    pub fn map_bytes(&self, name: &str) -> Vec<(String, Vec<u8>)> {
         let Some(z) = self.zones.get(name) else {
             return Vec::new();
         };
@@ -291,7 +292,14 @@ impl Catalog {
         };
         z.maps
             .iter()
-            .filter_map(|m| std::fs::read(dir.join(m)).ok())
+            .filter_map(|m| {
+                let bytes = std::fs::read(dir.join(m)).ok()?;
+                let stem = std::path::Path::new(m)
+                    .file_stem()
+                    .map(|s| s.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                Some((stem, bytes))
+            })
             .collect()
     }
 
@@ -657,7 +665,7 @@ pub fn run_check() {
             for name in &c.order {
                 let z = &c.zones[name];
                 let maps = c.map_bytes(name);
-                let map: usize = maps.iter().map(|b| b.len()).sum();
+                let map: usize = maps.iter().map(|(_, b)| b.len()).sum();
                 println!(
                     "  zone {name:<10} mode {:<8} {} ships / {} players, fill {}, \
                      bots {:.0}%, {} room(s), teams {}, {} map(s), {map} B",

@@ -79,6 +79,8 @@ M.item_slot = nil
 -- The clock and score of the match behind the landing, set by the arena
 -- while the backdrop is up and nil otherwise. See deploying().
 M.live_match = nil
+-- And what the zone calls the ground it is being played on, same lifetime.
+M.live_map = nil
 
 -- Which control is waiting for a key, and nothing while none is. It is the
 -- whole of the binding mode: the page draws the board dark around it and the
@@ -1717,6 +1719,13 @@ local function deploying(sel)
         -- directory's copy, aged by how long the reply has sat here, is
         -- the answer while the backdrop is still dialling, and zero from
         -- a fleet that predates the field draws no clock at all.
+        -- The ground's own name, off the room in the glass, for the caption
+        -- on the landing's map panel. Only the backdrop knows it: the
+        -- directory lists zones, and which map a room is standing on is a
+        -- fact that arrives with the map.
+        if M.live_map and M.live_map ~= "" then
+            out.ground = M.live_map
+        end
         if M.live_match and M.live_match.left then
             out.clock = M.live_match.left
             out.playing = M.live_match.playing == true
@@ -2345,11 +2354,35 @@ local function rows_of(nd)
     return r
 end
 
+-- The stops on the far right of the tab row, in the order the arrows meet
+-- them left to right. Two of them today: the way out to where the talking
+-- happens, and who you are signed in as. The account one is only there when
+-- there is a call sign to put on it, which is every session that has reached
+-- the meta layer.
+--
+-- The list is here rather than in the drawing because the arrows walk it, and
+-- a row a hand can walk has to be a list somewhere. ui.lua lays them out from
+-- the right edge in the reverse of this order; both read this. Above
+-- `M.showing` because a corner stop under the cursor is a page on screen the
+-- same way a tab under the cursor is.
+local function corner_stops()
+    local out = {"discord"}
+    if (M.name or "") ~= "" then out[#out + 1] = "pilot" end
+    return out
+end
+
 -- Which page's rows are on screen. One level in that is the page you are
 -- inside; at the root it is whichever tab the cursor is resting on, because
--- the stage there is a preview of what that tab holds.
+-- the stage there is a preview of what that tab holds. The corner stops are
+-- stops on that row, so the cursor resting on one previews its page too:
+-- while it only lit the button, walking the row read as five pages and then
+-- two dead highlights.
 function M.showing()
     if #M.stack > 1 then return M.at() end
+    local stops = corner_stops()
+    if M.corner_sel and stops[M.corner_sel] then
+        return stops[M.corner_sel]
+    end
     local top = rows_of(NODES.root)
     local r = top[M.sel.root or 1]
     return (r and r.go) or "root"
@@ -3055,24 +3088,9 @@ function M.tick(dt)
     end
 end
 
--- The buttons at the far end of the top line, in the order they are drawn,
--- left to right. Two of them today: the way out to where the talking happens,
--- and who you are signed in as. The account one is only there when there is a
--- call sign to put on it, which is every session that has reached the meta
--- layer.
---
--- The list is here rather than in the drawing because the arrows walk it, and
--- a row a hand can walk has to be a list somewhere. ui.lua lays them out from
--- the right edge in the reverse of this order; both read this.
-local function corner_stops()
-    local out = {"discord"}
-    if (M.name or "") ~= "" then out[#out + 1] = "pilot" end
-    return out
-end
-
--- Which of them wears the lit mark, which is the tab row's own rule read
--- across the whole row: what is lit is where you are, and the two buttons at
--- the far end are stops on that row like any other.
+-- Which of the corner stops wears the lit mark, which is the tab row's own
+-- rule read across the whole row: what is lit is where you are, and the two
+-- buttons at the far end are stops on that row like any other.
 --
 -- Inside one of their pages it is that page. The stop and the node share a
 -- name, which is what lets this ask the question without a second table
@@ -3272,8 +3290,15 @@ function M.view()
     -- What pressing play would do, beside the list of things to press it on.
     -- The mode list is short and the panel is wide, and the question a player
     -- is actually asking is "where would this put me".
-    local previewing = (#M.stack == 1) and rows_of(NODES.root)[sel]
-                       and rows_of(NODES.root)[sel].go or nil
+    -- What the stage previews at the root: the corner stop the cursor is on,
+    -- else the tab it is on. One name, because the two halves of the row are
+    -- one row.
+    local corner = (#M.stack == 1) and M.corner_sel
+                   and corner_stops()[M.corner_sel] or nil
+    local previewing = corner
+                       or ((#M.stack == 1) and rows_of(NODES.root)[sel]
+                           and rows_of(NODES.root)[sel].go)
+                       or nil
     if M.at() == "play" or previewing == "play" then
         out.aside = deploying(M.at() == "play" and sel or (M.sel.play or 1))
     elseif not M.home then
@@ -3330,7 +3355,9 @@ function M.view()
                        detail = d, index = i, link = r.link}
     end
     if #M.stack == 1 then
-        out.rail_sel = sel
+        -- No tab is lit while the cursor stands on a corner stop: the lit
+        -- mark is where you are, and it cannot be two places on one row.
+        out.rail_sel = corner and 0 or sel
         out.focus = "rail"
         -- The row a pointer is resting on. Only here: one level in the stage
         -- has the cursor, and a hover moves that cursor rather than lighting
@@ -3342,9 +3369,13 @@ function M.view()
         -- beside the rail rather than after a keystroke. Moving down a rail
         -- that shows you what each stop contains is one gesture; moving down
         -- a list of words and pressing enter to find out is two.
+        -- The corner stop under the cursor previews the same way a tab
+        -- does. Its node shares the stop's name, which is what `corner_lit`
+        -- leans on too.
         local pick = top[sel]
-        if pick and pick.go and NODES[pick.go] then
-            local nd2 = NODES[pick.go]
+        local go = corner or (pick and pick.go)
+        if go and NODES[go] then
+            local nd2 = NODES[go]
             out.board = nd2.board or false
             out.chips = nd2.chips or false
             out.empty = nd2.empty and nd2.empty() or nil
@@ -3358,7 +3389,7 @@ function M.view()
             -- the same rows: the hangar previews as a roster beside a kit and
             -- upgrades as its shelf, because what the tab under the cursor
             -- leads to is the thing worth showing.
-            if pick.go == "hangar" then
+            if go == "hangar" then
                 out.hulls = {}
                 for i, r in ipairs(hull_rows()) do
                     out.hulls[i] = view_row(r, i)

@@ -383,12 +383,17 @@ pub struct Published {
 }
 
 impl Published {
-    /// The maps this publication gives a zone, already decoded, or nothing
-    /// when it says nothing about that zone. Nothing means the catalog on disk
-    /// keeps the zone, which is what makes a rotation removable.
-    pub fn zone(&self, name: &str) -> Option<Vec<Vec<u8>>> {
+    /// The maps this publication gives a zone, already decoded and each under
+    /// the name the operator published it by, or nothing when it says nothing
+    /// about that zone. Nothing means the catalog on disk keeps the zone,
+    /// which is what makes a rotation removable.
+    pub fn zone(&self, name: &str) -> Option<Vec<(String, Vec<u8>)>> {
         let z = self.zones.iter().find(|z| z.zone == name)?;
-        let maps: Vec<Vec<u8>> = z.maps.iter().filter_map(|m| unb64(&m.bytes_b64)).collect();
+        let maps: Vec<(String, Vec<u8>)> = z
+            .maps
+            .iter()
+            .filter_map(|m| Some((m.name.clone(), unb64(&m.bytes_b64)?)))
+            .collect();
         if maps.len() == z.maps.len() && !maps.is_empty() {
             Some(maps)
         } else {
@@ -449,6 +454,13 @@ pub struct WireZone {
     /// in the order a room rotates through them. A full-size map packs to a
     /// couple of kilobytes, so this is cheap even at several.
     pub maps_b64: Vec<String>,
+    /// What each of those maps is called, in the same order: the published
+    /// rotation's names, or the file stems from the zone's own directory. The
+    /// arena hands the current one to every client beside the map itself.
+    /// Defaulted so a directory that predates the field still parses; the
+    /// arena pads the shortfall with empty names.
+    #[serde(default)]
+    pub map_names: Vec<String>,
     /// The zone's whole `zone.toml`, verbatim. The arena parses it with the same
     /// parser the catalog loader uses, so there is exactly one schema and one
     /// code path for a zone definition however it arrived. Re-serialising the

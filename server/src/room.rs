@@ -639,6 +639,10 @@ pub(crate) struct Room {
     /// Shared with the room's siblings rather than unpacked per room: a zone
     /// with four maps holds four sets of tiles for the whole process.
     pub(crate) maps: Vec<std::sync::Arc<sim::sim_map>>,
+    /// What each of those is called, same order and length. Presentation
+    /// only: the client captions its map panel with it, and a room built
+    /// without names (tests, the built-in arena) sends none.
+    pub(crate) map_names: Vec<String>,
     pub(crate) map_at: usize,
     /// Matches this room has opened, so the one being played is number one.
     /// Zero is a room that has not started yet, which is the difference
@@ -1180,6 +1184,7 @@ impl Room {
     /// to play in it than one that runs what it can and says so.
     pub(crate) fn new_on_maps(paths: &[String]) -> Self {
         let mut maps = Vec::new();
+        let mut names = Vec::new();
         for path in paths {
             match std::fs::read(path)
                 .map_err(|e| e.to_string())
@@ -1190,6 +1195,12 @@ impl Room {
                 Ok((m, n)) => {
                     println!("map {path}: {n} bytes");
                     maps.push(m);
+                    names.push(
+                        std::path::Path::new(path)
+                            .file_stem()
+                            .map(|s| s.to_string_lossy().into_owned())
+                            .unwrap_or_default(),
+                    );
                 }
                 Err(e) => println!("map {path}: {e}; skipped"),
             }
@@ -1202,6 +1213,7 @@ impl Room {
         };
         let mut room = Room::with_world(sim::World::on_map(0x5eed, first.clone()));
         room.maps = maps;
+        room.map_names = names;
         room
     }
 
@@ -1256,6 +1268,7 @@ impl Room {
             tuning: Default::default(),
             last_match: None,
             maps: Vec::new(),
+            map_names: Vec::new(),
             map_at: 0,
             match_no: 0,
             bot_fill: catalog::DEFAULT_BOT_FILL,
@@ -3184,16 +3197,36 @@ impl Room {
         }
     }
 
+    /// What the rotation calls the ground the room is standing on, ready to
+    /// send, or nothing from a room whose maps arrived without names.
+    pub(crate) fn map_name_msg(&self) -> Option<Vec<u8>> {
+        let name = self.map_names.get(self.map_at)?;
+        if name.is_empty() {
+            return None;
+        }
+        let mut m = vec![S2C_MAPNAME];
+        m.extend_from_slice(name.as_bytes());
+        Some(m)
+    }
+
     /// The ground everybody is playing on. Sent at a join and again whenever a
-    /// match opens on a different map, which is the only time it changes.
+    /// match opens on a different map, which is the only time it changes. The
+    /// name rides beside it, when the room has one.
     pub(crate) fn broadcast_map(&self) {
         let mut m = vec![S2C_MAP];
         m.extend_from_slice(&self.world.packed_map());
+        let name = self.map_name_msg();
         for p in self.players.values() {
             let _ = p.tx.try_send(Message::Binary(m.clone()));
+            if let Some(n) = &name {
+                let _ = p.tx.try_send(Message::Binary(n.clone()));
+            }
         }
         for w in self.watchers.values() {
             let _ = w.tx.try_send(Message::Binary(m.clone()));
+            if let Some(n) = &name {
+                let _ = w.tx.try_send(Message::Binary(n.clone()));
+            }
         }
     }
 

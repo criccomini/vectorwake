@@ -1410,6 +1410,9 @@ function update(self, dt)
     -- directory's copy: it is the room a deploy would put you in, and it
     -- moves every second without being asked.
     menu.live_match = (self.attract and net.connected) and net.match or nil
+    -- What the zone calls the ground in the glass, for the caption on the
+    -- landing's map panel. Empty against a zone that predates the message.
+    menu.live_map = (self.attract and net.connected) and net.map_name or nil
     -- Whether a live game is playing behind the home menu, so the landing
     -- can part its panels around the fight instead of washing it out.
     menu.scenery = (self.attract and net.connected and live) or false

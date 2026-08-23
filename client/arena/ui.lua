@@ -4336,11 +4336,12 @@ local function thumb(cx, cy, cls, col, scale, turn, detail)
     if h.canopy then trace(h.canopy, 1.0 * F.scale, pal.a(col, 0.55)) end
 end
 
--- The room's ground, as the full radar view draws it, with the ships this
--- watcher can see as blips in side colors. Not the flying map's no-ships
--- rule: that guards a pilot's own screen from becoming a wall hack, and a
--- landing is a spectator, shown only what the watch feed already shows.
-function pages.ground(side_of, x, y, side)
+-- The room's ground, as the full radar view draws it, and nothing moving on
+-- it. It carried the watcher's ships as blips for a while; the standings
+-- beside it already say who is in the fight and the glass shows where, so
+-- the blips only repeated both smaller. This panel answers the one question
+-- left: what the ground you are deploying onto looks like.
+function pages.ground(x, y, side)
     local ov = world.overview
     if not ov or ov.grid <= 0 then return end
     rect(x, y, side, side, pal.RADAR_BG)
@@ -4357,16 +4358,6 @@ function pages.ground(side_of, x, y, side)
             or MAP_HOLE
         rect(ox + r[i] * k, oy + r[i + 1] * k,
              r[i + 2] * k, r[i + 3] * k, col)
-    end
-    local cell = 4 * 16
-    for i = 0, sim.ship_count() - 1 do
-        if sim.ship_active(i) == 1 and sim.ship_alive(i) == 1 then
-            local col = (sim.ship_team(i) == side_of) and pal.FRIEND
-                or pal.ENEMY
-            rect(ox + (sim.ship_x(i) / cell) * k - 1.4 * F.scale,
-                 oy + (sim.ship_y(i) / cell) * k - 1.4 * F.scale,
-                 2.8 * F.scale, 2.8 * F.scale, pal.a(col, 0.95))
-        end
     end
     bracket(x, y, side, side, pal.a(pal.RADAR_TILE, 0.8), 22 * F.scale)
 end
@@ -4488,6 +4479,12 @@ function pages.landing(a, b, x, y, w, h)
     local mbot = mtop + mside
     lbl("k  d", x + cellw, mtop - 8 * F.scale, pal.a(pal.DIM, 0.7),
         "right")
+    -- The ground's name, captioning the map panel the way "k d" captions
+    -- its columns. Only when the zone said one; older zones say nothing.
+    if a.ground and a.ground ~= "" then
+        lbl(a.ground, x + rmargin, mtop - 8 * F.scale,
+            pal.a(pal.DIM, 0.7), "right")
+    end
     for _, team in ipairs(sides) do
         local col = (team == b.side) and pal.FRIEND or pal.ENEMY
         local sname = (b.names and b.names[team]) or "side"
@@ -4512,7 +4509,7 @@ function pages.landing(a, b, x, y, w, h)
         end
         ly = ly + 12 * F.scale
     end
-    pages.ground(b.side, x + rmargin - mside, mtop, mside)
+    pages.ground(x + rmargin - mside, mtop, mside)
     -- You, in one line, and the key. The call sign is already at the top
     -- of the screen, so this only says what you will be flying.
     local ay = math.max(ly, mbot + 8 * F.scale) + 16 * F.scale
@@ -5880,18 +5877,19 @@ function pages.range(r, bx, by, bw, bh)
                 blast(stop, cy, (t - 0.7) / 0.3, pal.rung(lvl))
             end
         elseif m == 3 then
-            -- Shrapnel: the ending is an attack of its own.
+            -- Shrapnel: the ending is an attack of its own. The splinters
+            -- are the gun rounds they really are, small.
             local sx2 = bx + bw * 0.55
             if t < 0.5 then
                 marks.round(x0 + t * 2 * (sx2 - x0), ry(cy), 7 * F.scale,
                             gun, lvl, modn)
             else
                 local d = (t - 0.5) * 110 * F.scale
-                local hot = pal.a(pal.hot(pal.rung(lvl), 0.45), 0.9 * (1.5 - t))
                 for i = 0, 5 do
                     local a = i * 1.0472 + 0.3
-                    dart(sx2 + math.cos(a) * d, cy + math.sin(a) * d * 0.8,
-                         3.5 * F.scale, hot)
+                    marks.round(sx2 + math.cos(a) * d,
+                                ry(cy + math.sin(a) * d * 0.8),
+                                4.5 * F.scale, true, 1)
                 end
                 blast(sx2, cy, (t - 0.5) * 3, pal.rung(lvl))
             end
@@ -5919,11 +5917,12 @@ function pages.range(r, bx, by, bw, bh)
                       12 * F.scale)
             end
         elseif m == 5 then
-            -- Push: whatever the blast reaches is thrown.
+            -- Push: whatever the blast reaches is thrown. The thrown thing
+            -- is a ship, so it is drawn as one.
             local sx2 = bx + bw * 0.5
             local ex = bx + bw - 50 * F.scale
                        + (t > 0.5 and (t - 0.5) * 70 * F.scale or 0)
-            dart(ex, cy, 6 * F.scale, pal.a(pal.ENEMY, 0.9))
+            thumb(ex, cy, 0, pal.a(pal.ENEMY, 0.9), 1.2)
             if t < 0.5 then
                 marks.round(x0 + t * 2 * (sx2 - x0), ry(cy), 7 * F.scale,
                             gun, lvl, modn)
@@ -5948,22 +5947,25 @@ function pages.range(r, bx, by, bw, bh)
                       56 * F.scale)
             end
         elseif string.find(name, "burst", 1, true) then
+            -- A burst is many rounds at once, so the rosette is drawn as
+            -- the rounds it throws, not as an abstraction of them.
             thumb(bx + bw / 2, cy, 0, pal.a(pal.FRIEND, 0.95), 1.3)
             if t > 0.3 then
                 local d = (t - 0.3) * 110 * F.scale
                 for i = 0, 7 do
                     local a = i * 0.7854
-                    dart(bx + bw / 2 + math.cos(a) * d,
-                         cy + math.sin(a) * d * 0.7, 3.5 * F.scale,
-                         pal.a(pal.BURST, 0.9 * (1.3 - t)))
+                    marks.round(bx + bw / 2 + math.cos(a) * d,
+                                ry(cy + math.sin(a) * d * 0.7),
+                                5 * F.scale, true, 1)
                 end
             end
         elseif string.find(name, "mine", 1, true) then
+            -- The thing that blunders into a mine is a ship.
             local mx = bx + bw * 0.4
             marks.mine(mx, ry(cy), 9 * F.scale, pal.a(pal.BOMB, 0.9))
             local ex = bx + bw - 30 * F.scale - t * (bw * 0.5 - 50 * F.scale)
             if t < 0.8 then
-                dart(ex, cy, 6 * F.scale, pal.a(pal.ENEMY, 0.9))
+                thumb(ex, cy, 0, pal.a(pal.ENEMY, 0.9), 1.2)
             else
                 blast(mx, cy, (t - 0.8) / 0.2, pal.BOMB, 40 * F.scale)
             end
@@ -8433,9 +8435,11 @@ function M.menu(v)
     -- fight playing behind. The zone rows still exist under it, unlisted,
     -- because they are what enter presses and what the arena joins. Only
     -- the home landing: mid-game the play page keeps its list, which also
-    -- carries leaving and your side.
-    local deck = (v.home and v.at == "play" and v.aside and v.aside.deploy)
-        and v.aside or nil
+    -- carries leaving and your side. Not `v.at == "play"`: the deploy aside
+    -- arrives whenever the play page is showing, previewed from the root or
+    -- entered, and a preview is the page. Requiring the entered state drew
+    -- the old two-column list for anybody resting on the tab.
+    local deck = (v.home and v.aside and v.aside.deploy) and v.aside or nil
     -- With a live game in the glass the landing is three columns: who is in
     -- it, the fight itself, and the deck that joins it. The standings take
     -- the left strip the zones list once held, and give way entirely on a

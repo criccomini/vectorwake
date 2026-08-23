@@ -404,7 +404,7 @@ pub fn run_check() {
         }
     };
     let maps = cat.map_bytes(&zone);
-    let Some(bytes) = maps.first() else {
+    let Some((_, bytes)) = maps.first() else {
         println!("drill: zone {zone:?} has no map");
         std::process::exit(1);
     };
