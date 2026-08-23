@@ -165,6 +165,76 @@ check("the tab row is play, ship, upgrades, friends, standings, settings",
 check("the rail carries the destinations", ship_at and settings_at,
       "ship " .. tostring(ship_at) .. ", settings " .. tostring(settings_at))
 
+-- --- and the two buttons at the end of that row are on the row -------------
+--
+-- They sit beside the tabs, they do what a tab does, and until now a hand on
+-- the arrows could not reach either: the way to an account was a mouse or
+-- nothing. The row is the tabs and then those, left to right, and it loops.
+do
+    local kept_name, kept_url = menu.name, _G.sys.open_url
+    menu.name = "Tester 1"
+    menu.open, menu.home = true, true
+    menu.stack = {"root"}
+    menu.sel = {root = settings_at}
+    menu.corner_sel = nil
+    menu.step({right = true})
+    check("right off the last tab reaches discord",
+          menu.view().corner_sel == "discord",
+          tostring(menu.view().corner_sel))
+    menu.step({right = true})
+    check("and the account is the next one along",
+          menu.view().corner_sel == "pilot",
+          tostring(menu.view().corner_sel))
+    menu.step({right = true})
+    check("and right again is the first tab, the way the row wraps",
+          menu.view().corner_sel == nil and menu.sel.root == 1,
+          tostring(menu.view().corner_sel) .. "/" .. tostring(menu.sel.root))
+    menu.step({left = true})
+    check("left off the first tab is the last of them",
+          menu.view().corner_sel == "pilot",
+          tostring(menu.view().corner_sel))
+    menu.step({left = true})
+    check("and walks back through them", menu.view().corner_sel == "discord",
+          tostring(menu.view().corner_sel))
+    menu.step({left = true})
+    check("and off their end onto the last tab",
+          menu.view().corner_sel == nil and menu.sel.root == settings_at,
+          tostring(menu.view().corner_sel) .. "/" .. tostring(menu.sel.root))
+
+    -- Enter on the account is the account page.
+    menu.sel = {root = settings_at}
+    menu.corner_sel = nil
+    menu.step({right = true})
+    menu.step({right = true})
+    menu.step({go = true})
+    check("enter on the account opens its page", menu.at() == "pilot",
+          table.concat(menu.stack, "/"))
+    check("and nothing in the corner is lit from inside a page",
+          menu.view().corner_sel == nil, tostring(menu.view().corner_sel))
+
+    -- Down is the same press, the way it is on a tab: what is under one of
+    -- these is a page or the place the talking happens.
+    local asked = nil
+    _G.sys.open_url = function(url) asked = url return true end
+    menu.stack = {"root"}
+    menu.sel = {root = settings_at}
+    menu.corner_sel = nil
+    menu.step({right = true})
+    menu.step({down = true})
+    check("down on discord opens the invite",
+          asked == "https://play.vectorwake.net/discord", tostring(asked))
+
+    -- A tap on a tab takes the cursor off them, so the row never looks like
+    -- the arrows are in two places.
+    menu.corner_sel = 1
+    menu.click_rail(ship_at)
+    check("and a tap on a tab clears them", menu.corner_sel == nil,
+          tostring(menu.corner_sel))
+    menu.stack = {"root"}
+    menu.sel = {}
+    menu.name, _G.sys.open_url = kept_name, kept_url
+end
+
 menu.click_rail(ship_at)
 check("a rail tap goes in", menu.stack[2] == "hangar",
       table.concat(menu.stack, "/"))

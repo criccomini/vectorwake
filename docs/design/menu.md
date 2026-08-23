@@ -103,7 +103,50 @@ and the way out to Discord, with the wordmark giving up size to make room and
 Discord wearing its mark alone where the word will not fit. The tab row is
 bounded by them and gives up its gaps before its type. Laid out from opposite
 ends and never told about each other, the two ran into the middle of a
-landscape phone and the last tab was drawn under a pill that took its taps.
+landscape phone and the last tab was drawn under a button that took its taps.
+
+They are on that row, which took saying. Right off the last tab lands on
+Discord and right again on the account, left walks back, and the row loops
+from either end. Enter presses one, and so does down, which is what down means
+on a tab: what is under one of these is a page or the place the talking
+happens. Before that a hand on the arrows could not reach either, so the way
+to an account was a mouse or nothing.
+
+## A button is a stroked box
+
+One shape for a thing to press: a rectangle outlined all the way round with a
+wash inside it. That is what MENU and PLAYERS wear in the corner of a game and
+what the help page draws a key as, so a hand that has learned one has learned
+all of them.
+
+Three controls used to say otherwise. Add on the friends page wore the
+chamfered bracket that holds a cluster together, and the account and Discord
+buttons at the end of the top line were rounded pills, on the argument that a
+pill is the shape the web puts a link in. Each was a fair reading of its own
+shape and the wrong answer about the object: they do what MENU does, on pages
+where MENU itself is one press away.
+
+The bracket keeps everything that is not a button, which is a field, a card or
+a panel. So the two shapes now say which of those a rectangle is, and that is
+more than either of them was saying before.
+
+## The interface measures its own type
+
+Two faces: the mono everything in flight is set in, and the menu's own. A
+caret goes after the last letter of a name, a field behind a tab is as wide as
+the tab's word, and a word is centered in the room it was given, so all three
+need a width before anything is drawn.
+
+The mono answers with one number, because every glyph in it advances the same.
+The menu's face does not, and measuring it with the mono's number ran about a
+fifth long on lower case: the caret sat two letters past the end of a call
+sign, and every tab word sat left of the middle of its own field with the
+padding visibly bigger on one side than the other.
+
+So the advances are read out of the file the face draws with and written down
+as a table beside it. `client/tools/font_advances.py` generates it and says
+why; nothing runs at build time, because the font is vendored and a generated
+file in the tree beats a step somebody has to remember.
 
 ## Scrolling
 

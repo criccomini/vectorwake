@@ -34,6 +34,33 @@ local function read(path)
     return s
 end
 
+-- --- the face the menu is set in --------------------------------------------
+--
+-- One of the two faces is not monospace, so how wide a word draws is a table
+-- generated from the file it draws with. A gap in that table is a word
+-- measured as the widest character it holds, which is a field wider than its
+-- word and a caret past the end of a name, and neither is loud enough to
+-- notice. See client/tools/font_advances.py.
+
+local face = dofile("client/arena/menu_face.lua")
+local gaps = {}
+for c = 32, 126 do
+    local a = face.adv[c]
+    if type(a) ~= "number" or a <= 0 or a > 1.5 then
+        gaps[#gaps + 1] = string.char(c)
+    end
+end
+check("the menu's face measures every printable character", #gaps == 0,
+      table.concat(gaps))
+check("and knows what its widest one is",
+      type(face.widest) == "number" and face.widest >= face.adv[109],
+      tostring(face.widest))
+-- Proportional, which is the whole reason the table exists: a face where
+-- every letter is the same width needs one number, and this one is not.
+check("and it is not the monospace it is measured against",
+      math.abs(face.adv[105] - face.adv[109]) > 0.05,
+      string.format("i %.3f, m %.3f", face.adv[105], face.adv[109]))
+
 -- --- the sizes the core defines ---------------------------------------------
 
 local simh = read("sim/include/sim/sim.h")

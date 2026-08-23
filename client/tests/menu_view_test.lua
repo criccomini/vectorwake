@@ -526,6 +526,56 @@ check("with the count still on the name's line",
       string.format("count at %s, name at %s", tostring(count_y),
                     tostring(name_y)))
 
+-- --- a tab's field is centered on its word --------------------------------
+--
+-- The row is measured in the face it is drawn in. With the mono's advance,
+-- which runs about a fifth wide of the menu's lower case, every word sat left
+-- of the middle of its own field and the padding read visibly bigger on the
+-- right of a tab than on its left.
+--
+-- Measured here off the same table the drawing reads, but summed separately:
+-- what this checks is that the field and the word agree, and a check that
+-- called the same function for both could agree with itself while both were
+-- wrong.
+local face = require("arena.menu_face")
+local function menu_w(str, px)
+    local w = 0
+    for i = 1, #str do
+        w = w + (face.adv[string.byte(str, i)] or face.widest)
+    end
+    return w * px
+end
+do
+    local tabs = draw({depth = 1, sel = 1, rail = RAIL, rail_sel = 4,
+                       focus = "rail", home = true, rows = {}}, 1280, 800)
+    local word
+    for i = 1, tabs.n do
+        local t = tabs.text[i]
+        if string.lower(t.s) == "team" and t.pivot == "left" then word = t end
+    end
+    -- The field behind it: team blue, and as tall as a tab's field rather
+    -- than as tall as a row.
+    local field
+    for _, r in ipairs(rects) do
+        local c = r.col
+        if c and c[1] == pal.FRIEND[1] and c[2] == pal.FRIEND[2]
+           and word and r.x < word.x and r.x + r.w > word.x
+           and r.h > 28 and r.h < 42 then
+            field = r
+        end
+    end
+    check("the tab you are on has a field behind it",
+          word ~= nil and field ~= nil,
+          tostring(word and word.s) .. "/" .. tostring(field and field.w))
+    if word and field then
+        local left = word.x - field.x
+        local right = (field.x + field.w) - (word.x + menu_w(word.s, word.px))
+        check("and the same room either side of the word",
+              math.abs(left - right) < 1.5,
+              string.format("%.1f left, %.1f right", left, right))
+    end
+end
+
 -- --- a long value does not run under the label it belongs to -------------
 --
 -- The help rows a phone gets are sentences, and right-aligned in a column
