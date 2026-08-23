@@ -586,6 +586,7 @@ local function hover_menu(x, y, vh)
             menu.pilot_hot = r.action == "pilot_page"
             menu.discord_hot = r.action == "discord_link"
             menu.add_hot = r.action == "add_go"
+            menu.buy_hot = r.action == "buy_go"
             if r.action == "found" then menu.found_hot = r.value end
             if r.action == "carousel" then menu.carousel_hot = r.value end
             if r.action == "friend_act" then
@@ -2879,6 +2880,11 @@ function on_input(self, action_id, action)
                 -- One button on one friends row: accept, ignore, join,
                 -- unfriend. `level` is which of that row's own buttons.
                 act, moved = menu.click_friend(r.value, r.level)
+            elseif r.action == "buy_go" then
+                -- The BUY beside the reading pane, or the one under the
+                -- item page. `value` is the row the pane is reading, and
+                -- nothing at all on the page about a single thing.
+                act, moved = menu.click_buy(r.value)
             elseif r.action == "discord_link" then
                 -- The corner button, which opens the page about the server
                 -- rather than the server. No anchor over it any more: the

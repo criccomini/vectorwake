@@ -76,6 +76,17 @@ M.compact = false
 -- The slot that item page is about. The slot number rather than a row index,
 -- so the catalog refreshing under it cannot swap the subject.
 M.item_slot = nil
+-- Whether the activation running right now came from a pointer landing on a
+-- row rather than from the key that acts on the cursor.
+--
+-- The shop is the one page where those two want different answers. Buying
+-- used to be the row itself: press one and a card asked whether to spend, so
+-- reading a thing and buying it were the same gesture and the only place that
+-- said so was a line of grey type in the pane. There is a button now, and a
+-- click on a row does what a click on a row does everywhere else on this
+-- page, which is move the cursor to it. The key still acts, because a key
+-- press is already aimed at the cursor and the button is what it is aimed at.
+local from_row = false
 -- The clock and score of the match behind the landing, set by the arena
 -- while the backdrop is up and nil otherwise. See deploying().
 M.live_match = nil
@@ -3176,6 +3187,7 @@ function M.view()
                  found_hot = M.found_hot,
                  friend_hot = M.friend_hot,
                  friend_hot_act = M.friend_hot_act,
+                 buy_hot = M.buy_hot,
                  -- Whether there is a game behind the panel, which is what
                  -- decides where the block sits: clear of the corner stack
                  -- over an arena, centered over the starfield. Not whether you
@@ -3529,9 +3541,16 @@ local function activate(by)
             M.note = nil
             return nil
         end
+        -- A pointer on the row moves the cursor and stops. What spends is the
+        -- button, which says so. See `from_row`.
+        if from_row then
+            M.note = nil
+            return nil
+        end
         -- A card first, naming what is being bought and what it costs. Rivets
-        -- are slow to earn and a row that spends them on the press it takes to
-        -- read it is a page nobody trusts to walk with the arrows.
+        -- are slow to earn, and the card is also where a wallet too light for
+        -- the price gets said in a sentence rather than as a button that does
+        -- nothing.
         --
         -- The card is where the wallet is checked too, and only to choose the
         -- sentence: the meta-layer prices it, checks the wallet and raises the
@@ -4158,6 +4177,7 @@ M.add_hot = false
 M.found_hot = nil
 M.friend_hot = nil
 M.friend_hot_act = nil
+M.buy_hot = false
 
 -- A pointer landed on the rail, which names a destination whatever level the
 -- stack is at. That is the whole difference between it and a row: the rail
@@ -4276,7 +4296,35 @@ function M.click_stage(index)
     local id = M.stack[#M.stack]
     if not row_at(index) then return nil, false end
     M.sel[id] = index
-    return activate(), true
+    from_row = true
+    local act = activate()
+    from_row = false
+    return act, true
+end
+
+-- The BUY button, beside the reading pane or under the item page.
+--
+-- `index` is the row the pane is reading, which is not always the row the
+-- arrows are standing on: the pane follows the pointer, so a button that
+-- bought the cursor's row would buy the wrong rung every time the mouse
+-- moved. With no index this is the item page, which is about one thing and
+-- keeps which one in `M.item_slot`.
+function M.click_buy(index)
+    if not M.open then return nil, false end
+    local r
+    if index then
+        if not row_at(index) then return nil, false end
+        M.sel[M.stack[#M.stack]] = index
+        r = row_at(index)
+    else
+        local rows = rows_of(node())
+        r = rows[1]
+    end
+    if not (r and r.act == "buy") then return nil, false end
+    M.ask_upgrade(r.value, {label = r.sold or r.label,
+                            price = r.price, note = r.note})
+    M.note = nil
+    return nil, true
 end
 
 -- A pointer landed on a row the interface published.
@@ -4284,7 +4332,10 @@ function M.click(index)
     if not M.open then return nil, false end
     if not row_at(index) then return nil, false end
     M.sel[M.stack[#M.stack]] = index
-    return activate(), true
+    from_row = true
+    local act = activate()
+    from_row = false
+    return act, true
 end
 
 -- A key on the drawn board was clicked. It goes to whichever control is

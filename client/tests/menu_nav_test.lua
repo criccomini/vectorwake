@@ -2227,6 +2227,35 @@ do
           bought == "buy" and menu.pending == 0,
           tostring(bought) .. "/" .. tostring(menu.pending))
 
+    -- And the two hands do different things here, which is the one page
+    -- where they should. A press of the key acts on the cursor, and the
+    -- thing it acts on is the button beside the pane. A pointer landing on a
+    -- row is reading: it moves the cursor there and spends nothing, because
+    -- what the pane fills up with is the answer to why you clicked.
+    menu.sel.upgrades = 2
+    menu.ask = nil
+    account.rivets = 500
+    local act = menu.click(1)
+    check("a pointer on a row moves the cursor to it",
+          menu.sel.upgrades == 1, tostring(menu.sel.upgrades))
+    check("and spends nothing",
+          menu.ask == nil and act == nil,
+          menu.ask and menu.ask.head or tostring(act))
+
+    -- The button does. It names its own row rather than reading the cursor,
+    -- since the pane it sits under follows the pointer.
+    menu.sel.upgrades = 2
+    menu.ask = nil
+    menu.click_buy(1)
+    check("the buy button asks about the row it was drawn for",
+          menu.ask ~= nil and string.find(menu.ask.head, "40", 1, true),
+          menu.ask and menu.ask.head or "no card")
+    check("and takes the cursor there, so the pane agrees with the card",
+          menu.sel.upgrades == 1, tostring(menu.sel.upgrades))
+    menu.ask = nil
+    check("a row with nothing to sell has no buy in it",
+          select(2, menu.click_buy(2)) == false, "bought a topped-out slot")
+
     -- A row with nothing left to sell is not a control.
     menu.sel.upgrades = 2
     menu.ask = nil
