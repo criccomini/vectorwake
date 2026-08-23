@@ -470,7 +470,7 @@ int sim_unpack(sim_state *out, const uint8_t *in, int len) {
  * charge row; gunners are gone, so their three fields go; and `bounty_base`
  * arrives, because bounty is a run rather than a sum over what is held and
  * the client derives the price from it. */
-#define CFG_VERSION 16
+#define CFG_VERSION 17
 
 static int settings_valid(const sim_settings *cfg) {
     if (cfg->class_count == 0 || cfg->class_count > SIM_MAX_CLASSES
@@ -584,6 +584,7 @@ int sim_settings_pack(const sim_settings *cfg, uint8_t *out, int cap) {
     w16(&w, cfg->points_per_flag);
     for (int m = 0; m < SIM_MOD_COUNT; m++) w32(&w, (uint32_t)cfg->mod_step[m]);
     w16(&w, cfg->mod_spread);
+    w16(&w, cfg->mod_pair_spread);
     w16(&w, cfg->mod_multi_energy);
     w16(&w, cfg->mod_multi_delay);
     for (int r = 0; r < SIM_MAX_RUNGS; r++) w8(&w, cfg->mod_splinter[r]);
@@ -697,6 +698,7 @@ int sim_settings_unpack(sim_settings *out, const uint8_t *in, int len) {
     cfg->points_per_flag = (uint16_t)r16(&r);
     for (int m = 0; m < SIM_MOD_COUNT; m++) cfg->mod_step[m] = (int32_t)r32(&r);
     cfg->mod_spread = (uint16_t)r16(&r);
+    cfg->mod_pair_spread = (uint16_t)r16(&r);
     cfg->mod_multi_energy = (uint16_t)r16(&r);
     cfg->mod_multi_delay = (uint16_t)r16(&r);
     for (int k = 0; k < SIM_MAX_RUNGS; k++)

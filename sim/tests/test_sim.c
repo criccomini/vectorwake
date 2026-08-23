@@ -1780,6 +1780,49 @@ int main(void) {
               "a real local death is not a prediction candidate");
     }
 
+    /* The double barrel, through the wire.
+     *
+     * How wide a pair sits is a settings field of its own, and it was the one
+     * field the message did not carry. A client's copy stayed zero, `compose`
+     * handed that zero to `spawn_pattern`, and zero spacing on a pattern of
+     * more than one round does not mean "no spread": it means scatter, which
+     * is what Shrapnel:Random is. So every pair a client predicted left the
+     * muzzle at a fresh random angle and was pulled back into line a round
+     * trip later, when the zone's snapshot arrived. Filmed off the fleet as
+     * bullets going off to the side and then correcting.
+     *
+     * What is checked is that the two ends throw the same pair, rather than
+     * that the pair is any particular width. The point is whose numbers the
+     * client is flying. */
+    {
+        static sim_settings wired;
+        memset(&wired, 0, sizeof wired);
+        sim_settings_baseline(&wired, m);
+        static uint8_t wbuf[SIM_SETTINGS_PACK_MAX];
+        int wn = sim_settings_pack(&cfg, wbuf, sizeof wbuf);
+        CHECK(wn > 0 && sim_settings_unpack(&wired, wbuf, wn) == 0,
+              "a client takes the zone's settings off the wire");
+        CHECK(wired.mod_pair_spread == cfg.mod_pair_spread,
+              "including how wide a pair sits");
+
+        static sim_state zs, cs;
+        sim_init(&zs, 3);
+        sim_init(&cs, 3);
+        sim_spawn(&zs, APEX, 0, 8192, 8192, 0, &cfg);
+        sim_spawn(&cs, APEX, 0, 8192, 8192, 0, &wired);
+        zs.ships[0].mods[SIM_TRIG_GUN] = sim_mod_set(0, SIM_MOD_MULTI, 1);
+        cs.ships[0].mods[SIM_TRIG_GUN] = sim_mod_set(0, SIM_MOD_MULTI, 1);
+        step_n(&zs, &cfg, SIM_BTN_FIRE, 0, 1);
+        step_n(&cs, &wired, SIM_BTN_FIRE, 0, 1);
+        CHECK(zs.weapon_count == 2 && cs.weapon_count == 2,
+              "one rung of spray throws a pair at either end");
+        CHECK(zs.weapons[0].vx == cs.weapons[0].vx
+                  && zs.weapons[0].vy == cs.weapons[0].vy
+                  && zs.weapons[1].vx == cs.weapons[1].vx
+                  && zs.weapons[1].vy == cs.weapons[1].vy,
+              "and the client throws it down the zone's two lines");
+    }
+
     /* Changing hull is a respawn, not a costume change, and it leaves the
      * rest of the arena exactly where it was.
      *
@@ -3519,6 +3562,19 @@ int main(void) {
         sim_settings_baseline(&got, m);
         CHECK(sim_settings_unpack(&got, buf, n) == 0, "settings unpack");
         CHECK(got.map == m, "and leave the map alone");
+
+        /* Every number of it, and not only the ones this scenario happens to
+         * touch. A field added to the struct and forgotten on the wire is
+         * silent, and one of them was: see the double barrel below. Comparing
+         * the whole thing is the only version of this check that cannot be
+         * written to pass. The three fields held back are the three the
+         * message deliberately does not carry. */
+        sim_settings bare = zone, back = got;
+        bare.map = back.map = NULL;
+        bare.deathless = back.deathless = 0;
+        bare.mortal_ship = back.mortal_ship = 0;
+        CHECK(memcmp(&bare, &back, sizeof bare) == 0,
+              "and every number the zone tuned arrives");
 
         static sim_state s1, s2;
         sim_init(&s1, 7);
