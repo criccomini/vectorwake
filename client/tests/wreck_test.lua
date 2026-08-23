@@ -5,23 +5,18 @@
 -- The death burst is the one event this game gives a full second to, and for
 -- most of that second it was running backwards. Not the pieces, which fly
 -- outward exactly as they are launched, but where they were drawn: the ripple
--- that bends the sky around a shockwave was bending the wreckage too, and it
--- had no idea the wreckage was standing in the middle of it.
+-- that bent the sky around a shockwave bent the wreckage too, and it had no
+-- idea the wreckage was standing in the middle of it. Three frames after a
+-- death the pieces sat a mean of four pixels from the hull and were drawn at
+-- fifty-seven; a third of a second later they had really travelled out to
+-- twenty-one and were drawn at thirty. Every piece flying outward, the whole
+-- wreck closing.
 --
--- Two faults, both in fx.bend. The shove fell off over a fixed 260 pixel band
--- either side of the ring, so a ring four pixels across still shoved a point
--- standing at its own center by the full crest amount. And the loop moved the
--- point as it went, so the second ring measured a piece the first had already
--- thrown and threw it again from where it landed. A death throws two rings
--- wide enough to ripple, at once, from one place.
---
--- Between them: three frames after a death the pieces sat a mean of four
--- pixels from the hull and were drawn at fifty-seven. A third of a second
--- later they had really travelled out to twenty-one and were drawn at thirty.
--- Every piece flying outward, the whole wreck closing.
---
--- So this file measures where the wreck is drawn, frame by frame, and asks
--- the only question a player is asking: is it getting wider.
+-- The ripple is gone now, so a piece is drawn where it is. This file is what
+-- keeps that true: it measures where the wreck is drawn, frame by frame, and
+-- asks the only question a player is asking, which is whether it is getting
+-- wider. Anything that moves a fragment away from its own position for the
+-- look of the thing has to answer here first.
 
 package.path = "client/?.lua;" .. package.path
 
@@ -103,40 +98,6 @@ check("and never walks back toward the middle while it is",
       worst < 1, ("gave up %.1f px by t=%.2f"):format(worst, at))
 check("it is wider at the end of that than at the start",
       last > first + 20, ("%.1f to %.1f"):format(first, last))
-
--- --- why it used to ---------------------------------------------------------
-
--- The bend is the mechanism, so it is checked on its own too: the two faults
--- above are both invisible in the mean once they are fixed, and a check that
--- can only fail as a moving average is a check nobody can read.
-
-fx.reset()
-fx.listener(0, 0)
-fx.destroy(0, 0, 0, 0, pal.ENEMY)
-fx.update(dt)
-
-local function shove(d)
-    local bx = fx.bend(d, 0, 1)
-    return bx - d
-end
-
--- The shape the shove has to have: nothing at the middle, growing out to the
--- ring, dying away past it. It used to be flat across all of that, so a speck
--- on the epicenter of a ring four pixels wide was thrown fifty-seven.
-check("a shock leaves what is standing in its middle where it is",
-      shove(1.5) < 3, ("thrown %.1f px"):format(shove(1.5)))
-check("and shoves harder the nearer the ring you stand",
-      shove(3) < shove(8) and shove(8) < shove(12),
-      ("%.1f, %.1f, %.1f at 3, 8 and 12 px")
-          :format(shove(3), shove(8), shove(12)))
-
--- And it still bends what it passes, or the ripple has been fixed by being
--- deleted. The rings a death throws reach ninety-six pixels; something out
--- where they are travelling has to move.
-check("what it is passing through still moves", shove(90) > 6,
-      ("90 px out moved %.1f"):format(shove(90)))
-check("and what it has not reached does not", shove(400) == 0,
-      ("400 px out moved %.1f"):format(shove(400)))
 
 if fails > 0 then
     print(("\n%d check(s) failed"):format(fails))

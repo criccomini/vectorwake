@@ -514,12 +514,6 @@ function M.stars(fill, glow, cam_x, cam_y, hw, hh)
                     -- A star behind rock is a star shining through it: the
                     -- wall interiors live in a layer under this one.
                     if not sim.solid(math.floor(px / TILE), math.floor(py / TILE)) then
-                        -- Bent by whatever is exploding, by this layer's own
-                        -- depth: the near sky rides the blast and the far one
-                        -- barely stirs. Tested for solid rock before the bend
-                        -- rather than after, so a star cannot be pushed out
-                        -- from behind a wall and back again as a wave passes.
-                        px, py = fx.bend(px, py, L.k)
                         s = lcg(s)
                         fill:rect(px, py, size, size,
                                   shade[s % STAR_SHADES + 1])
