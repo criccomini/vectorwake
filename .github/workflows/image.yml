@@ -32,6 +32,20 @@ env:
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: vectorwake
+          POSTGRES_PASSWORD: vectorwake
+          POSTGRES_DB: vectorwake_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U vectorwake -d vectorwake_test"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 20
     steps:
       - uses: actions/checkout@v4
       # Two hundred dependencies, and none of them change between runs.
@@ -63,6 +77,8 @@ jobs:
         run: make -C sim check
       - name: server tests
         run: cargo test --manifest-path server/Cargo.toml
+        env:
+          VW_TEST_DATABASE: postgresql://vectorwake:vectorwake@127.0.0.1:5432/vectorwake_test?sslmode=disable
 
       # The deployment file, parsed by the thing that actually parses it.
       #

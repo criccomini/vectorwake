@@ -28,9 +28,10 @@
 //! exactly. A hand-rolled check here would be a second opinion, and a second
 //! opinion is what a desync is.
 
-use deadpool_postgres::Client;
+use deadpool_postgres::{Client, Transaction};
+use tokio_postgres::IsolationLevel;
 
-use super::admin_for;
+use super::require_admin;
 
 type Reply = (u16, serde_json::Value);
 
@@ -39,6 +40,10 @@ type Reply = (u16, serde_json::Value);
 /// drawn: enough that no honest map meets it, small enough that a bad caller
 /// cannot fill the table with one request.
 const MAX_BYTES: usize = 128 * 1024;
+
+/// Serialize publication writes. Map bytes, rotations, and the serial are one
+/// catalog state even though they live in three tables.
+const MAP_WRITE_LOCK: i64 = 0x5645_4354_4f52;
 
 /// What a name may be. It reaches a filesystem-shaped world at the far end
 /// (`zone.toml` names maps as file names) so it stays boring on purpose.
@@ -61,45 +66,55 @@ fn unb64(s: &str) -> Option<Vec<u8>> {
 /// Read whole rather than per zone: it is a handful of zones and a few hundred
 /// kilobytes, it is asked for once per publish, and a partial answer is a
 /// catalog that names a map it did not carry.
-pub(crate) async fn published(db: &Client) -> Result<crate::fleet::Published, String> {
-    let rows = db
-        .query("select zone, maps from zone_maps order by zone", &[])
+pub(crate) async fn published(db: &mut Client) -> Result<crate::fleet::Published, String> {
+    let transaction = db
+        .build_transaction()
+        .isolation_level(IsolationLevel::RepeatableRead)
+        .read_only(true)
+        .start()
         .await
-        .map_err(|e| format!("{e}"))?;
-    let mut zones = Vec::new();
-    for r in &rows {
-        let zone: String = r.get(0);
-        let names: Vec<String> = r.get(1);
-        let mut maps = Vec::new();
-        for n in &names {
-            let Some(row) = db
-                .query_opt("select bytes from maps where name = $1", &[n])
-                .await
-                .map_err(|e| format!("{e}"))?
-            else {
-                // A rotation naming a map that is gone is not a reason to
-                // publish nothing: the zone keeps what it had, and the row
-                // says so at the next edit.
-                continue;
-            };
-            let bytes: Vec<u8> = row.get(0);
-            maps.push(crate::fleet::PublishedMap {
-                name: n.clone(),
-                bytes_b64: crate::fleet::b64(&bytes),
+        .map_err(|e| format!("cannot begin publication read: {e}"))?;
+    let rows = transaction
+        .query(
+            "select z.zone, n.name, m.bytes
+               from zone_maps z
+               cross join lateral unnest(z.maps) with ordinality n(name, position)
+               join maps m on m.name = n.name
+              order by z.zone, n.position",
+            &[],
+        )
+        .await
+        .map_err(|e| format!("cannot read published maps: {e}"))?;
+    let mut zones: Vec<crate::fleet::PublishedZone> = Vec::new();
+    for row in rows {
+        let zone: String = row.get(0);
+        let name: String = row.get(1);
+        let bytes: Vec<u8> = row.get(2);
+        let map = crate::fleet::PublishedMap {
+            name,
+            bytes_b64: crate::fleet::b64(&bytes),
+        };
+        if let Some(current) = zones.last_mut().filter(|current| current.zone == zone) {
+            current.maps.push(map);
+        } else {
+            zones.push(crate::fleet::PublishedZone {
+                zone,
+                maps: vec![map],
             });
         }
-        if !maps.is_empty() {
-            zones.push(crate::fleet::PublishedZone { zone, maps });
-        }
     }
-    let serial: i64 = db
+    let serial: i64 = transaction
         .query_one(
             "select coalesce(max(serial), 0) from catalog_publishes",
             &[],
         )
         .await
-        .map(|r| r.get(0))
-        .unwrap_or(0);
+        .map_err(|e| format!("cannot read publication serial: {e}"))?
+        .get(0);
+    transaction
+        .commit()
+        .await
+        .map_err(|e| format!("cannot finish publication read: {e}"))?;
     Ok(crate::fleet::Published {
         serial: serial.max(0) as u32,
         zones,
@@ -113,7 +128,7 @@ pub(crate) async fn published(db: &Client) -> Result<crate::fleet::Published, St
 /// A row per publish rather than a counter that is written over, so "when did
 /// this fleet last change ground, and who did it" is a question the table can
 /// answer.
-async fn bump(db: &Client, by: i64, what: &str) -> Result<u32, String> {
+async fn bump(db: &Transaction<'_>, by: i64, what: &str) -> Result<u32, String> {
     let row = db
         .query_one(
             "insert into catalog_publishes (actor, what) values ($1, $2) returning serial",
@@ -132,7 +147,7 @@ async fn bump(db: &Client, by: i64, what: &str) -> Result<u32, String> {
 /// only how it arrives early. A directory that is down or busy misses the push
 /// and picks the same state up when it next asks, so a failure here is worth
 /// reporting to the operator and not worth refusing the edit over.
-pub(crate) async fn push(db: &Client) -> Option<String> {
+pub(crate) async fn push(db: &mut Client) -> Option<String> {
     let pub_now = match published(db).await {
         Ok(p) => p,
         Err(e) => return Some(format!("cannot read what is published: {e}")),
@@ -163,7 +178,7 @@ fn report_json(r: &crate::sim::sim_map_report) -> serde_json::Value {
 /// Handle the meta routes owned by maps. `None` leaves the request alone.
 pub(super) async fn route(
     catalog: &crate::catalog::Catalog,
-    db: &Client,
+    db: &mut Client,
     path: &str,
     body: &serde_json::Value,
 ) -> Option<Reply> {
@@ -176,8 +191,9 @@ pub(super) async fn route(
             .unwrap_or("")
             .to_string()
     };
-    let Some(actor) = admin_for(db, &s("secret")).await else {
-        return Some((403, serde_json::json!({ "error": "not an admin" })));
+    let actor = match require_admin(db, &s("secret")).await {
+        Ok(actor) => actor,
+        Err(reply) => return Some(reply),
     };
 
     let reply = match path {
@@ -325,7 +341,17 @@ pub(super) async fn route(
                     }),
                 ));
             }
-            if let Err(e) = db
+            let transaction = match db.transaction().await {
+                Ok(transaction) => transaction,
+                Err(e) => return Some((500, serde_json::json!({ "error": format!("{e}") }))),
+            };
+            if let Err(e) = transaction
+                .query_one("select pg_advisory_xact_lock($1)", &[&MAP_WRITE_LOCK])
+                .await
+            {
+                return Some((500, serde_json::json!({ "error": format!("{e}") })));
+            }
+            if let Err(e) = transaction
                 .execute(
                     "insert into maps (name, bytes, hash, w, h, author)
                      values ($1, $2, $3, $4, $5, $6)
@@ -339,16 +365,20 @@ pub(super) async fn route(
             {
                 return Some((500, serde_json::json!({ "error": format!("{e}") })));
             }
+            // A saved name may already be in a rotation. Bump while the new
+            // bytes are still in the same transaction so the serial can never
+            // describe the old drawing.
+            let serial = match bump(&transaction, actor, &format!("map {name}")).await {
+                Ok(n) => n,
+                Err(e) => return Some((500, serde_json::json!({ "error": e }))),
+            };
+            if let Err(e) = transaction.commit().await {
+                return Some((500, serde_json::json!({ "error": format!("{e}") })));
+            }
             println!(
                 "meta: admin {actor} saved map {name} ({w}x{h}, {} bytes, {spawns} starts)",
                 bytes.len()
             );
-            // Saving a map a zone already plays is a publish: the drawing
-            // changed under a rotation that already names it.
-            let serial = match bump(db, actor, &format!("map {name}")).await {
-                Ok(n) => n,
-                Err(e) => return Some((500, serde_json::json!({ "error": e }))),
-            };
             let warn = push(db).await;
             (
                 200,
@@ -403,7 +433,17 @@ pub(super) async fn route(
         // Remove one, unless a zone is standing on it.
         "/v1/admin/map/delete" => {
             let name = s("name");
-            let used: Vec<String> = match db
+            let transaction = match db.transaction().await {
+                Ok(transaction) => transaction,
+                Err(e) => return Some((500, serde_json::json!({ "error": format!("{e}") }))),
+            };
+            if let Err(e) = transaction
+                .query_one("select pg_advisory_xact_lock($1)", &[&MAP_WRITE_LOCK])
+                .await
+            {
+                return Some((500, serde_json::json!({ "error": format!("{e}") })));
+            }
+            let used: Vec<String> = match transaction
                 .query("select zone from zone_maps where $1 = any(maps)", &[&name])
                 .await
             {
@@ -419,17 +459,21 @@ pub(super) async fn route(
                     }),
                 ));
             }
-            match db
+            let deleted = match transaction
                 .execute("delete from maps where name = $1", &[&name])
                 .await
             {
-                Ok(0) => (404, serde_json::json!({ "error": "no map by that name" })),
-                Ok(_) => {
-                    println!("meta: admin {actor} deleted map {name}");
-                    (200, serde_json::json!({ "name": name, "deleted": true }))
-                }
-                Err(e) => (500, serde_json::json!({ "error": format!("{e}") })),
+                Ok(deleted) => deleted,
+                Err(e) => return Some((500, serde_json::json!({ "error": format!("{e}") }))),
+            };
+            if deleted == 0 {
+                return Some((404, serde_json::json!({ "error": "no map by that name" })));
             }
+            if let Err(e) = transaction.commit().await {
+                return Some((500, serde_json::json!({ "error": format!("{e}") })));
+            }
+            println!("meta: admin {actor} deleted map {name}");
+            (200, serde_json::json!({ "name": name, "deleted": true }))
         }
 
         // What a zone plays, in the order it plays them. An empty list is a
@@ -456,8 +500,18 @@ pub(super) async fn route(
                     serde_json::json!({ "error": "sixteen maps is more rotation than a zone needs" }),
                 ));
             }
+            let transaction = match db.transaction().await {
+                Ok(transaction) => transaction,
+                Err(e) => return Some((500, serde_json::json!({ "error": format!("{e}") }))),
+            };
+            if let Err(e) = transaction
+                .query_one("select pg_advisory_xact_lock($1)", &[&MAP_WRITE_LOCK])
+                .await
+            {
+                return Some((500, serde_json::json!({ "error": format!("{e}") })));
+            }
             for n in &names {
-                match db
+                match transaction
                     .query_opt("select 1 from maps where name = $1", &[n])
                     .await
                 {
@@ -472,28 +526,33 @@ pub(super) async fn route(
                 }
             }
             let r = if names.is_empty() {
-                db.execute("delete from zone_maps where zone = $1", &[&zone])
+                transaction
+                    .execute("delete from zone_maps where zone = $1", &[&zone])
                     .await
             } else {
-                db.execute(
-                    "insert into zone_maps (zone, maps, by_account) values ($1, $2, $3)
-                     on conflict (zone) do update set
-                        maps = excluded.maps, by_account = excluded.by_account, edited = now()",
-                    &[&zone, &names, &actor],
-                )
-                .await
+                transaction
+                    .execute(
+                        "insert into zone_maps (zone, maps, by_account) values ($1, $2, $3)
+                         on conflict (zone) do update set
+                            maps = excluded.maps, by_account = excluded.by_account, edited = now()",
+                        &[&zone, &names, &actor],
+                    )
+                    .await
             };
             if let Err(e) = r {
+                return Some((500, serde_json::json!({ "error": format!("{e}") })));
+            }
+            let serial = match bump(&transaction, actor, &format!("zone {zone}")).await {
+                Ok(n) => n,
+                Err(e) => return Some((500, serde_json::json!({ "error": e }))),
+            };
+            if let Err(e) = transaction.commit().await {
                 return Some((500, serde_json::json!({ "error": format!("{e}") })));
             }
             println!(
                 "meta: admin {actor} set zone {zone} rotation to [{}]",
                 names.join(", ")
             );
-            let serial = match bump(db, actor, &format!("zone {zone}")).await {
-                Ok(n) => n,
-                Err(e) => return Some((500, serde_json::json!({ "error": e }))),
-            };
             let warn = push(db).await;
             (
                 200,

@@ -155,6 +155,17 @@ create unique index if not exists rated_events_once on rated_events (event_id);
 alter table rated_events add column if not exists killer bigint;
 create index if not exists rated_events_by_killer on rated_events (killer, at)
     where killer is not null;
+-- Week reads are time ranges across every kind of event. A BRIN index follows
+-- the append order without adding another large btree to the table whose size
+-- is already the database's limiting resource.
+create index if not exists rated_events_by_at
+    on rated_events using brin (at) with (pages_per_range = 32);
+-- One-shot migrations that have run, so a schema step that cannot be written
+-- as `if not exists` runs once and not on every boot.
+create table if not exists schema_marks (
+    name text primary key,
+    at   timestamptz not null default now()
+);
 -- The public career line. This survives the short retention on bot-only rated
 -- events, which is what makes an all-time bot total possible without keeping
 -- their round-the-clock combat log forever.
@@ -166,45 +177,53 @@ create table if not exists pilot_stats (
 );
 -- Seed the projection once for pilots whose fights predate it. Exact killers
 -- were not present in those rows, so the largest damage share gets the kill
--- and every other contributor gets an assist. ON CONFLICT keeps later starts
--- from replaying the backfill over live counters.
-with event_parties as (
-    select re.victim, re.credits,
-           coalesce(re.killer, top_credit.account) as killer
-    from rated_events re
-    left join lateral (
-        select (item.credit->>'account')::bigint as account
-        from jsonb_array_elements(re.credits) as item(credit)
-        order by (item.credit->>'weight')::double precision desc,
-                 (item.credit->>'account')::bigint
-        limit 1
-    ) top_credit on true
-), deaths as (
-    select victim as account, count(*)::bigint as n
-    from event_parties group by victim
-), kills as (
-    select killer as account, count(*)::bigint as n
-    from event_parties
-    where killer is not null and killer <> victim
-    group by killer
-), assists as (
-    select (item.credit->>'account')::bigint as account, count(*)::bigint as n
-    from event_parties ep
-    cross join lateral jsonb_array_elements(ep.credits) as item(credit)
-    where (item.credit->>'account')::bigint <> coalesce(ep.killer, -1)
-    group by (item.credit->>'account')::bigint
-), participants as (
-    select account from deaths
-    union select account from kills
-    union select account from assists
-)
-insert into pilot_stats (account, kills, deaths, assists)
-select a.id, coalesce(k.n, 0), coalesce(d.n, 0), coalesce(s.n, 0)
-from accounts a join participants p on p.account = a.id
-left join kills k on k.account = a.id
-left join deaths d on d.account = a.id
-left join assists s on s.account = a.id
-on conflict (account) do nothing;
+-- and every other contributor gets an assist. The mark prevents a later boot
+-- from expanding the entire event log only to conflict on every projection row.
+do $$
+begin
+    perform pg_advisory_xact_lock(707345921);
+    if exists (select 1 from schema_marks where name = 'pilot_stats_backfilled') then
+        return;
+    end if;
+    with event_parties as (
+        select re.victim, re.credits,
+               coalesce(re.killer, top_credit.account) as killer
+        from rated_events re
+        left join lateral (
+            select (item.credit->>'account')::bigint as account
+            from jsonb_array_elements(re.credits) as item(credit)
+            order by (item.credit->>'weight')::double precision desc,
+                     (item.credit->>'account')::bigint
+            limit 1
+        ) top_credit on true
+    ), deaths as (
+        select victim as account, count(*)::bigint as n
+        from event_parties group by victim
+    ), kills as (
+        select killer as account, count(*)::bigint as n
+        from event_parties
+        where killer is not null and killer <> victim
+        group by killer
+    ), assists as (
+        select (item.credit->>'account')::bigint as account, count(*)::bigint as n
+        from event_parties ep
+        cross join lateral jsonb_array_elements(ep.credits) as item(credit)
+        where (item.credit->>'account')::bigint <> coalesce(ep.killer, -1)
+        group by (item.credit->>'account')::bigint
+    ), participants as (
+        select account from deaths
+        union select account from kills
+        union select account from assists
+    )
+    insert into pilot_stats (account, kills, deaths, assists)
+    select a.id, coalesce(k.n, 0), coalesce(d.n, 0), coalesce(s.n, 0)
+    from accounts a join participants p on p.account = a.id
+    left join kills k on k.account = a.id
+    left join deaths d on d.account = a.id
+    left join assists s on s.account = a.id
+    on conflict (account) do nothing;
+    insert into schema_marks (name) values ('pilot_stats_backfilled');
+end $$;
 -- What happened to a pilot, as opposed to what it did to their rating. An
 -- arena is the only thing that sees a refusal at the door, a hull change or the
 -- difference between quitting and being kicked, and none of it survived the
@@ -278,12 +297,6 @@ create table if not exists kits (
     class   text not null,
     kit     bytea not null,
     primary key (account, class)
-);
--- One-shot migrations that have run, so a schema step that cannot be written
--- as `if not exists` runs once and not on every boot.
-create table if not exists schema_marks (
-    name text primary key,
-    at   timestamptz not null default now()
 );
 -- Gun spray and a second barrel were two add-ons that both meant more
 -- bullets, and they are one ladder now. Dropping the seventh add-on moved
@@ -1004,15 +1017,28 @@ async fn add_credential(db: &Client, account: i64, method: &str, hash: &str) -> 
     .map_err(|e| format!("cannot store credential: {e}"))
 }
 
-async fn account_for(db: &Client, method: &str, hash: &str) -> Option<i64> {
+type Reply = (u16, serde_json::Value);
+
+fn database_error(error: impl std::fmt::Display) -> Reply {
+    (500, serde_json::json!({ "error": format!("{error}") }))
+}
+
+async fn account_for(db: &Client, method: &str, hash: &str) -> Result<Option<i64>, String> {
     db.query_opt(
         "select account from credentials where method = $1 and hash = $2",
         &[&method, &hash],
     )
     .await
-    .ok()
-    .flatten()
-    .map(|r| r.get::<_, i64>(0))
+    .map(|row| row.map(|r| r.get::<_, i64>(0)))
+    .map_err(|e| format!("cannot read credential: {e}"))
+}
+
+async fn account_from_secret(db: &Client, secret: &str) -> Result<i64, Reply> {
+    match account_for(db, "secret", &sha256_hex(secret.as_bytes())).await {
+        Ok(Some(account)) => Ok(account),
+        Ok(None) => Err((403, serde_json::json!({ "error": "no such account" }))),
+        Err(error) => Err(database_error(error)),
+    }
 }
 
 /// Where the directory on this host answers. Loopback by default and
@@ -1027,7 +1053,7 @@ fn directory_url() -> String {
 /// check, run inside every admin route, is the authorization. Checked per
 /// action rather than per login, so revoking the flag or banning the account
 /// takes effect on the next click instead of the next session.
-async fn admin_for(db: &Client, secret: &str) -> Option<i64> {
+async fn admin_for(db: &Client, secret: &str) -> Result<Option<i64>, String> {
     db.query_opt(
         "select a.id from accounts a
          join credentials c on c.account = a.id and c.method = 'secret'
@@ -1035,9 +1061,16 @@ async fn admin_for(db: &Client, secret: &str) -> Option<i64> {
         &[&sha256_hex(secret.as_bytes())],
     )
     .await
-    .ok()
-    .flatten()
-    .map(|r| r.get::<_, i64>(0))
+    .map(|row| row.map(|r| r.get::<_, i64>(0)))
+    .map_err(|e| format!("cannot check administrator: {e}"))
+}
+
+async fn require_admin(db: &Client, secret: &str) -> Result<i64, Reply> {
+    match admin_for(db, secret).await {
+        Ok(Some(account)) => Ok(account),
+        Ok(None) => Err((403, serde_json::json!({ "error": "admin only" }))),
+        Err(error) => Err(database_error(error)),
+    }
 }
 
 /// Give an account a name somebody chose. The unique index on
@@ -1124,16 +1157,7 @@ async fn claims_for(db: &Client, account: i64) -> Result<Claims, String> {
     // bought. An account with an empty row owns the baseline, so a pilot who
     // has never bought anything still flies a whole ship.
     let mut entitlements = sim::World::base_entitlements().to_vec();
-    let bought = db
-        .query(
-            "select slot, n from entitlements where account = $1",
-            &[&account],
-        )
-        .await
-        .map_err(|e| format!("cannot read entitlements: {e}"))?;
-    for r in &bought {
-        let slot: i16 = r.get(0);
-        let n: i16 = r.get(1);
+    for (slot, n) in bought_entitlements(db, account).await? {
         if let Some(c) = entitlements.get_mut(slot.max(0) as usize) {
             *c = n.clamp(0, 255) as u8;
         }
@@ -1150,48 +1174,57 @@ async fn claims_for(db: &Client, account: i64) -> Result<Claims, String> {
     })
 }
 
+async fn bought_entitlements(db: &Client, account: i64) -> Result<Vec<(i16, i16)>, String> {
+    db.query(
+        "select slot, n from entitlements where account = $1",
+        &[&account],
+    )
+    .await
+    .map(|rows| rows.iter().map(|row| (row.get(0), row.get(1))).collect())
+    .map_err(|e| format!("cannot read entitlements: {e}"))
+}
+
 /// What an account owns in one slot, which is the baseline until it buys.
-async fn entitlement_of(db: &Client, account: i64, slot: i16, base: u8) -> u8 {
+async fn entitlement_of(db: &Client, account: i64, slot: i16, base: u8) -> Result<u8, String> {
     db.query_opt(
         "select n from entitlements where account = $1 and slot = $2",
         &[&account, &slot],
     )
     .await
-    .ok()
-    .flatten()
-    .map(|r| r.get::<_, i16>(0).clamp(0, 255) as u8)
-    .unwrap_or(base)
+    .map(|row| {
+        row.map(|r| r.get::<_, i16>(0).clamp(0, 255) as u8)
+            .unwrap_or(base)
+    })
+    .map_err(|e| format!("cannot read entitlement: {e}"))
 }
 
 /// What an account has banked. No row is a balance of zero, which is what an
 /// account that has never been paid has.
-async fn wallet_of(db: &Client, account: i64) -> i64 {
+async fn wallet_of(db: &Client, account: i64) -> Result<i64, String> {
     db.query_opt("select rivets from wallets where account = $1", &[&account])
         .await
-        .ok()
-        .flatten()
-        .map(|r| r.get(0))
-        .unwrap_or(0)
+        .map(|row| row.map(|r| r.get(0)).unwrap_or(0))
+        .map_err(|e| format!("cannot read wallet: {e}"))
 }
 
 /// What this account has chosen to fly, per hull, as the kit's own bytes.
 /// A hull with no row has never been taken to the hangar, and the arena deals
 /// it a starter kit.
-async fn kits_of(db: &Client, account: i64) -> serde_json::Value {
+async fn kits_of(db: &Client, account: i64) -> Result<serde_json::Value, String> {
     let rows = db
         .query(
             "select class, kit from kits where account = $1",
             &[&account],
         )
         .await
-        .unwrap_or_default();
+        .map_err(|e| format!("cannot read kits: {e}"))?;
     let mut out = serde_json::Map::new();
     for r in &rows {
         let class: String = r.get(0);
         let kit: Vec<u8> = r.get(1);
         out.insert(class, serde_json::json!(kit));
     }
-    serde_json::Value::Object(out)
+    Ok(serde_json::Value::Object(out))
 }
 
 /// Whether an account number is somebody this pilot could be friends with,
@@ -1512,7 +1545,7 @@ async fn route(
     if let Some(reply) = public_pilots::route(&meta.throttle, &db, path, body, ip).await {
         return reply;
     }
-    if let Some(reply) = maps::route(&meta.catalog, &db, path, body).await {
+    if let Some(reply) = maps::route(&meta.catalog, &mut db, path, body).await {
         return reply;
     }
 
@@ -1682,17 +1715,19 @@ async fn route(
         // where an account proves it is alive, which is the whole meaning of
         // last_seen and the only clock the guest sweeper reads.
         "/v1/session" => {
-            let Some(account) =
-                account_for(&db, "secret", &sha256_hex(s("secret").as_bytes())).await
-            else {
-                return (403, serde_json::json!({ "error": "no such account" }));
+            let account = match account_from_secret(&db, &s("secret")).await {
+                Ok(account) => account,
+                Err(reply) => return reply,
             };
-            let _ = db
+            if let Err(error) = db
                 .execute(
                     "update accounts set last_seen = now() where id = $1",
                     &[&account],
                 )
-                .await;
+                .await
+            {
+                return database_error(error);
+            }
             match claims_for(&db, account).await {
                 Ok(c) => {
                     let token = token::mint(&meta.signing, &c);
@@ -1702,11 +1737,21 @@ async fn route(
                     // The panel uses it to decide what to draw, and every
                     // admin route re-checks the database, so a client that
                     // forges this field fools only its own screen.
-                    let admin: bool = db
+                    let admin: bool = match db
                         .query_one("select admin from accounts where id = $1", &[&account])
                         .await
-                        .map(|r| r.get(0))
-                        .unwrap_or(false);
+                    {
+                        Ok(row) => row.get(0),
+                        Err(error) => return database_error(error),
+                    };
+                    let rivets = match wallet_of(&db, account).await {
+                        Ok(rivets) => rivets,
+                        Err(error) => return database_error(error),
+                    };
+                    let kits = match kits_of(&db, account).await {
+                        Ok(kits) => kits,
+                        Err(error) => return database_error(error),
+                    };
                     (
                         200,
                         serde_json::json!({
@@ -1725,9 +1770,9 @@ async fn route(
                             // reply rather than the token: the entitlements
                             // are in the token because an arena checks them,
                             // and these two are for drawing.
-                            "rivets": wallet_of(&db, account).await,
+                            "rivets": rivets,
                             "entitlements": c.entitlements,
-                            "kits": kits_of(&db, account).await,
+                            "kits": kits,
                         }),
                     )
                 }
@@ -1743,10 +1788,9 @@ async fn route(
         // written. Storing a kit that will not fit costs nothing and refusing
         // one that would fit some other zone costs a player their loadout.
         "/v1/kit" => {
-            let Some(account) =
-                account_for(&db, "secret", &sha256_hex(s("secret").as_bytes())).await
-            else {
-                return (403, serde_json::json!({ "error": "no such account" }));
+            let account = match account_from_secret(&db, &s("secret")).await {
+                Ok(account) => account,
+                Err(reply) => return reply,
             };
             let class = s("class");
             if class.is_empty() || class.len() > 32 {
@@ -1794,13 +1838,22 @@ async fn route(
         // slot with nothing left. Bots read the same reply and skip a row
         // without one, which is the same set they used to be handed.
         "/v1/upgrades" => {
-            let Some(account) =
-                account_for(&db, "secret", &sha256_hex(s("secret").as_bytes())).await
-            else {
-                return (403, serde_json::json!({ "error": "no such account" }));
+            let account = match account_from_secret(&db, &s("secret")).await {
+                Ok(account) => account,
+                Err(reply) => return reply,
             };
             let base = sim::World::base_entitlements();
             let ceiling = sim::World::baseline_kit_ceiling();
+            let mut owned = base.to_vec();
+            let bought = match bought_entitlements(&db, account).await {
+                Ok(bought) => bought,
+                Err(error) => return database_error(error),
+            };
+            for (slot, n) in bought {
+                if let Some(value) = owned.get_mut(slot.max(0) as usize) {
+                    *value = n.clamp(0, 255) as u8;
+                }
+            }
             let mut slots = Vec::new();
             for slot in 0..sim::SLOT_COUNT {
                 // A slot the game does not have. Not a thing you own none of:
@@ -1809,7 +1862,7 @@ async fn route(
                 if ceiling[slot] == 0 {
                     continue;
                 }
-                let owned = entitlement_of(&db, account, slot as i16, base[slot]).await;
+                let owned = owned[slot];
                 let step = upgrades::next_step(slot, owned);
                 let mut row = serde_json::json!({
                     "slot": slot,
@@ -1826,10 +1879,11 @@ async fn route(
                 }
                 slots.push(row);
             }
-            (
-                200,
-                serde_json::json!({ "slots": slots, "rivets": wallet_of(&db, account).await }),
-            )
+            let rivets = match wallet_of(&db, account).await {
+                Ok(rivets) => rivets,
+                Err(error) => return database_error(error),
+            };
+            (200, serde_json::json!({ "slots": slots, "rivets": rivets }))
         }
 
         // The friends page, whole, in one request: who you are friends with and
@@ -1844,10 +1898,9 @@ async fn route(
         //
         // See docs/design/friends.md.
         "/v1/friends" => {
-            let Some(account) =
-                account_for(&db, "secret", &sha256_hex(s("secret").as_bytes())).await
-            else {
-                return (403, serde_json::json!({ "error": "no such account" }));
+            let account = match account_from_secret(&db, &s("secret")).await {
+                Ok(account) => account,
+                Err(reply) => return reply,
             };
             match friends_page(&db, account).await {
                 Ok(page) => (200, page),
@@ -1866,10 +1919,9 @@ async fn route(
         // room, and it needs the call sign exactly, give or take its case.
         // See docs/design/friends.md.
         "/v1/friend" => {
-            let Some(account) =
-                account_for(&db, "secret", &sha256_hex(s("secret").as_bytes())).await
-            else {
-                return (403, serde_json::json!({ "error": "no such account" }));
+            let account = match account_from_secret(&db, &s("secret")).await {
+                Ok(account) => account,
+                Err(reply) => return reply,
             };
             let mut other = body
                 .get("account")
@@ -1906,13 +1958,62 @@ async fn route(
             if let Err((code, why)) = names_a_pilot(account, other) {
                 return (code, serde_json::json!({ "error": why }));
             }
+            // Adding is the rate-limited half. Dropping is not: a pilot
+            // clearing a list they no longer want is not something to stand
+            // in the way of, and it can only ever shrink.
+            if add && !meta.throttle.allow(&format!("friend:{account}"), 60, hour) {
+                return (
+                    429,
+                    serde_json::json!({ "error": "too many at once; wait a while" }),
+                );
+            }
+            let transaction = match db.transaction().await {
+                Ok(transaction) => transaction,
+                Err(error) => return database_error(error),
+            };
+            // Every relationship change locks both accounts in numeric order.
+            // That serializes the owner's count check and keeps two pilots who
+            // press add on each other at the same time from deadlocking.
+            let (first, second) = if account < other {
+                (account, other)
+            } else {
+                (other, account)
+            };
+            let mut other_banned = None;
+            for locked in [first, second] {
+                let row = match transaction
+                    .query_opt(
+                        "select banned from accounts where id = $1 for update",
+                        &[&locked],
+                    )
+                    .await
+                {
+                    Ok(row) => row,
+                    Err(error) => return database_error(error),
+                };
+                if locked == account && row.is_none() {
+                    return database_error("authenticated account disappeared");
+                }
+                if locked == other {
+                    other_banned = row.map(|row| row.get::<_, bool>(0));
+                }
+            }
+            if add {
+                match other_banned {
+                    Some(false) => {}
+                    Some(true) => {
+                        return (403, serde_json::json!({ "error": "no such pilot" }));
+                    }
+                    None => return (400, serde_json::json!({ "error": "no such pilot" })),
+                }
+            }
             // Which halves of the edge exist, read before this press changes
             // anything. Their side is the difference between "added" and
             // "friends", and after the insert both look identical. Both sides
             // together are the difference between unfriending somebody and
             // taking back an add nobody answered, which the ignores below
             // turn on.
-            let (mine, theirs): (bool, bool) = db
+            let (mine, theirs): (bool, bool) = match transaction
                 .query_one(
                     "select exists(select 1 from friends
                                     where account = $1 and friend = $2),
@@ -1921,44 +2022,27 @@ async fn route(
                     &[&account, &other],
                 )
                 .await
-                .map(|r| (r.get(0), r.get(1)))
-                .unwrap_or((false, false));
+            {
+                Ok(row) => (row.get(0), row.get(1)),
+                Err(error) => return database_error(error),
+            };
             if add {
-                // Adding is the rate-limited half. Dropping is not: a pilot
-                // clearing a list they no longer want is not something to
-                // stand in the way of, and it can only ever shrink.
-                if !meta.throttle.allow(&format!("friend:{account}"), 60, hour) {
-                    return (
-                        429,
-                        serde_json::json!({ "error": "too many at once; wait a while" }),
-                    );
-                }
-                // A pilot who does not exist, or one who is banned, is not
-                // somebody to be waiting on. Both answer the same way: this
-                // page never says whether an account it will not add exists.
-                match db
-                    .query_opt("select banned from accounts where id = $1", &[&other])
-                    .await
-                {
-                    Ok(Some(row)) if row.get::<_, bool>(0) => {
-                        return (403, serde_json::json!({ "error": "no such pilot" }));
+                if !mine {
+                    let held: i64 = match transaction
+                        .query_one(
+                            "select count(*) from friends where account = $1",
+                            &[&account],
+                        )
+                        .await
+                    {
+                        Ok(row) => row.get(0),
+                        Err(error) => return database_error(error),
+                    };
+                    if let Err((code, why)) = room_for_one_more(held) {
+                        return (code, serde_json::json!({ "error": why }));
                     }
-                    Ok(Some(_)) => {}
-                    Ok(None) => return (400, serde_json::json!({ "error": "no such pilot" })),
-                    Err(e) => return (500, serde_json::json!({ "error": format!("{e}") })),
                 }
-                let held: i64 = db
-                    .query_one(
-                        "select count(*) from friends where account = $1",
-                        &[&account],
-                    )
-                    .await
-                    .map(|r| r.get(0))
-                    .unwrap_or(0);
-                if let Err((code, why)) = room_for_one_more(held) {
-                    return (code, serde_json::json!({ "error": why }));
-                }
-                if let Err(e) = db
+                if let Err(error) = transaction
                     .execute(
                         "insert into friends (account, friend) values ($1, $2)
                          on conflict do nothing",
@@ -1966,22 +2050,22 @@ async fn route(
                     )
                     .await
                 {
-                    return (500, serde_json::json!({ "error": format!("{e}") }));
+                    return database_error(error);
                 }
                 // Adding somebody you had ignored is un-ignoring them, and
                 // there is no second press for it. Accept on the ignored list
                 // is this route.
-                if let Err(e) = db
+                if let Err(error) = transaction
                     .execute(
                         "delete from friend_ignores where account = $1 and ignored = $2",
                         &[&account, &other],
                     )
                     .await
                 {
-                    return (500, serde_json::json!({ "error": format!("{e}") }));
+                    return database_error(error);
                 }
             } else {
-                if let Err(e) = db
+                if let Err(error) = transaction
                     .execute(
                         "delete from friends
                          where (account = $1 and friend = $2)
@@ -1990,7 +2074,7 @@ async fn route(
                     )
                     .await
                 {
-                    return (500, serde_json::json!({ "error": format!("{e}") }));
+                    return database_error(error);
                 }
                 // Both ignores with it, in either direction, but only when
                 // there was a friendship to end. Unfriending somebody puts
@@ -2003,7 +2087,7 @@ async fn route(
                 // get ignored, remove, add again, and you are back in their
                 // inbox. So a one-sided drop leaves the ignores alone.
                 if mine && theirs {
-                    if let Err(e) = db
+                    if let Err(error) = transaction
                         .execute(
                             "delete from friend_ignores
                              where (account = $1 and ignored = $2)
@@ -2012,9 +2096,12 @@ async fn route(
                         )
                         .await
                     {
-                        return (500, serde_json::json!({ "error": format!("{e}") }));
+                        return database_error(error);
                     }
                 }
+            }
+            if let Err(error) = transaction.commit().await {
+                return database_error(error);
             }
             // The page back, so one press redraws without a second request
             // and without the client guessing what the edge did to the lists
@@ -2047,10 +2134,9 @@ async fn route(
         // Throttled per account, because a client that asks on every keystroke
         // is the honest use and a script walking the alphabet is not.
         "/v1/friend/find" => {
-            let Some(account) =
-                account_for(&db, "secret", &sha256_hex(s("secret").as_bytes())).await
-            else {
-                return (403, serde_json::json!({ "error": "no such account" }));
+            let account = match account_from_secret(&db, &s("secret")).await {
+                Ok(account) => account,
+                Err(reply) => return reply,
             };
             if !meta.throttle.allow(&format!("find:{account}"), 600, hour) {
                 return (429, serde_json::json!({ "error": "too many at once" }));
@@ -2093,10 +2179,9 @@ async fn route(
         // an ignore that outlives the row would be exactly the thing this
         // avoids: an add nobody can find and nobody can answer.
         "/v1/friend/ignore" => {
-            let Some(account) =
-                account_for(&db, "secret", &sha256_hex(s("secret").as_bytes())).await
-            else {
-                return (403, serde_json::json!({ "error": "no such account" }));
+            let account = match account_from_secret(&db, &s("secret")).await {
+                Ok(account) => account,
+                Err(reply) => return reply,
             };
             let other = body
                 .get("account")
@@ -2105,6 +2190,26 @@ async fn route(
             let on = body.get("on").and_then(|v| v.as_bool()).unwrap_or(true);
             if let Err((code, why)) = names_a_pilot(account, other) {
                 return (code, serde_json::json!({ "error": why }));
+            }
+            let transaction = match db.transaction().await {
+                Ok(transaction) => transaction,
+                Err(error) => return database_error(error),
+            };
+            let (first, second) = if account < other {
+                (account, other)
+            } else {
+                (other, account)
+            };
+            for locked in [first, second] {
+                if let Err(error) = transaction
+                    .query_opt(
+                        "select id from accounts where id = $1 for update",
+                        &[&locked],
+                    )
+                    .await
+                {
+                    return database_error(error);
+                }
             }
             let sql = if on {
                 // Only against an add that exists, which is what bounds this
@@ -2120,8 +2225,11 @@ async fn route(
             } else {
                 "delete from friend_ignores where account = $1 and ignored = $2"
             };
-            if let Err(e) = db.execute(sql, &[&account, &other]).await {
-                return (500, serde_json::json!({ "error": format!("{e}") }));
+            if let Err(error) = transaction.execute(sql, &[&account, &other]).await {
+                return database_error(error);
+            }
+            if let Err(error) = transaction.commit().await {
+                return database_error(error);
             }
             match friends_page(&db, account).await {
                 Ok(page) => (200, page),
@@ -2162,7 +2270,7 @@ async fn route(
                 .and_then(|v| v.as_i64())
                 .unwrap_or(0)
                 .clamp(0, 52) as f64;
-            let rows = db
+            let rows = match db
                 .query(
                     "with bound as (
                          select date_trunc('week', now() at time zone 'utc')
@@ -2274,7 +2382,10 @@ async fn route(
                     &[&back, &DEFAULT_CLASS],
                 )
                 .await
-                .unwrap_or_default();
+            {
+                Ok(rows) => rows,
+                Err(error) => return database_error(error),
+            };
             let week: Vec<serde_json::Value> = rows
                 .iter()
                 .map(|r| {
@@ -2319,15 +2430,17 @@ async fn route(
             // last month "this week". The date is a fact about the question,
             // not about the answer, and asking for it separately is what makes
             // it one.
-            let since: String = db
+            let since: String = match db
                 .query_one(
                     "select to_char(date_trunc('week', now() at time zone 'utc')
                                     - ($1 * interval '1 week'), 'Mon DD')",
                     &[&back],
                 )
                 .await
-                .map(|r| r.get(0))
-                .unwrap_or_default();
+            {
+                Ok(row) => row.get(0),
+                Err(error) => return database_error(error),
+            };
             (
                 200,
                 serde_json::json!({ "week": week, "since": since, "back": back as i64 }),
@@ -2338,10 +2451,9 @@ async fn route(
         // entitlement raise in the same transaction. Concurrent requests may
         // buy consecutive rungs, but cannot both charge for the same rung.
         "/v1/buy" => {
-            let Some(account) =
-                account_for(&db, "secret", &sha256_hex(s("secret").as_bytes())).await
-            else {
-                return (403, serde_json::json!({ "error": "no such account" }));
+            let account = match account_from_secret(&db, &s("secret")).await {
+                Ok(account) => account,
+                Err(reply) => return reply,
             };
             let Some(slot) = body.get("slot").and_then(|v| v.as_u64()) else {
                 return (400, serde_json::json!({ "error": "which slot" }));
@@ -2418,10 +2530,14 @@ async fn route(
                 serde_json::json!({ "slot": slot, "to": next, "price": price }),
             )
             .await;
+            let rivets = match wallet_of(&db, account).await {
+                Ok(rivets) => rivets,
+                Err(error) => return database_error(error),
+            };
             (
                 200,
                 serde_json::json!({
-                    "slot": slot, "n": next, "rivets": wallet_of(&db, account).await,
+                    "slot": slot, "n": next, "rivets": rivets,
                 }),
             )
         }
@@ -2432,10 +2548,9 @@ async fn route(
         // With a valid secret this also serves as changing the password,
         // which is why the old row is dropped rather than accumulated.
         "/v1/claim" => {
-            let Some(account) =
-                account_for(&db, "secret", &sha256_hex(s("secret").as_bytes())).await
-            else {
-                return (403, serde_json::json!({ "error": "no such account" }));
+            let account = match account_from_secret(&db, &s("secret")).await {
+                Ok(account) => account,
+                Err(reply) => return reply,
             };
             if !meta.throttle.allow(&format!("claim:{ip}"), 20, hour)
                 || !meta
@@ -2531,7 +2646,7 @@ async fn route(
                     serde_json::json!({ "error": "that name and password do not match" }),
                 )
             };
-            let Ok(Some(row)) = db
+            let row = match db
                 .query_opt(
                     "select n.account, c.hash from names n
                      join credentials c on c.account = n.account and c.method = 'password'
@@ -2539,8 +2654,10 @@ async fn route(
                     &[&name],
                 )
                 .await
-            else {
-                return miss();
+            {
+                Ok(Some(row)) => row,
+                Ok(None) => return miss(),
+                Err(error) => return database_error(error),
             };
             let account: i64 = row.get(0);
             let stored: String = row.get(1);
@@ -2551,9 +2668,12 @@ async fn route(
                     serde_json::json!({ "error": "password service is busy; try again" }),
                 );
             };
-            let ok = tokio::task::spawn_blocking(move || verify_password(&password, &stored))
+            let ok = match tokio::task::spawn_blocking(move || verify_password(&password, &stored))
                 .await
-                .unwrap_or(false);
+            {
+                Ok(ok) => ok,
+                Err(error) => return database_error(error),
+            };
             if !ok {
                 return miss();
             }
@@ -2563,12 +2683,15 @@ async fn route(
             {
                 return (500, serde_json::json!({ "error": e }));
             }
-            let _ = db
+            if let Err(error) = db
                 .execute(
                     "update accounts set last_seen = now() where id = $1",
                     &[&account],
                 )
-                .await;
+                .await
+            {
+                return database_error(error);
+            }
             // A new device holding this account. One of these is somebody
             // moving to a phone; a run of them is the shape worth being able
             // to see. The refusals are not logged: they are throttled per
@@ -2585,10 +2708,9 @@ async fn route(
         // the same for a guest and a claimed pilot: the account number never
         // moves, so the rating and the history ride through the rename.
         "/v1/rename" => {
-            let Some(account) =
-                account_for(&db, "secret", &sha256_hex(s("secret").as_bytes())).await
-            else {
-                return (403, serde_json::json!({ "error": "no such account" }));
+            let account = match account_from_secret(&db, &s("secret")).await {
+                Ok(account) => account,
+                Err(reply) => return reply,
             };
             if !meta.throttle.allow(&format!("rename:{ip}"), 30, hour) {
                 return (
@@ -2759,9 +2881,9 @@ async fn route(
         // The owner has to be claimed, because an owner who can evaporate by
         // clearing local storage is not accountable for anything.
         "/v1/bot/register" => {
-            let Some(owner) = account_for(&db, "secret", &sha256_hex(s("secret").as_bytes())).await
-            else {
-                return (403, serde_json::json!({ "error": "no such account" }));
+            let owner = match account_from_secret(&db, &s("secret")).await {
+                Ok(account) => account,
+                Err(reply) => return reply,
             };
             let claims = match claims_for(&db, owner).await {
                 Ok(c) => c,
@@ -2912,8 +3034,8 @@ async fn route(
         // rather than public, because standing and last_seen are between the
         // fleet and its operators.
         "/v1/admin/pilot" => {
-            if admin_for(&db, &s("secret")).await.is_none() {
-                return (403, serde_json::json!({ "error": "not an admin" }));
+            if let Err(reply) = require_admin(&db, &s("secret")).await {
+                return reply;
             }
             let by_id = body.get("account").and_then(|v| v.as_i64());
             let q = "select a.id, coalesce(n.call_sign, ''), a.kind,
@@ -2974,8 +3096,9 @@ async fn route(
         // database first, and one compromised session cannot lock the rest
         // of the operators out.
         "/v1/admin/ban" => {
-            let Some(actor) = admin_for(&db, &s("secret")).await else {
-                return (403, serde_json::json!({ "error": "not an admin" }));
+            let actor = match require_admin(&db, &s("secret")).await {
+                Ok(actor) => actor,
+                Err(reply) => return reply,
             };
             let account = body.get("account").and_then(|v| v.as_i64()).unwrap_or(0);
             let banned = body.get("banned").and_then(|v| v.as_bool()).unwrap_or(true);
@@ -2996,16 +3119,17 @@ async fn route(
                     }),
                 ),
                 Ok(_) => {
-                    let name: String = db
+                    let name: String = match db
                         .query_opt(
                             "select call_sign from names where account = $1",
                             &[&account],
                         )
                         .await
-                        .ok()
-                        .flatten()
-                        .map(|row| row.get(0))
-                        .unwrap_or_default();
+                    {
+                        Ok(Some(row)) => row.get(0),
+                        Ok(None) => String::new(),
+                        Err(error) => return database_error(error),
+                    };
                     // Actions get no audit trail from the catalog, so say it
                     // here, the way the directory notes its commands.
                     println!("meta: admin {actor} set banned={banned} on {account}: {reason:?}");
@@ -3024,13 +3148,14 @@ async fn route(
                     // every registered arena as well so a connection already
                     // through that door does not stay until it reconnects.
                     if banned && !name.is_empty() {
-                        let actor_name: String = db
+                        let actor_name: String = match db
                             .query_opt("select call_sign from names where account = $1", &[&actor])
                             .await
-                            .ok()
-                            .flatten()
-                            .map(|row| row.get(0))
-                            .unwrap_or_else(|| format!("account {actor}"));
+                        {
+                            Ok(Some(row)) => row.get(0),
+                            Ok(None) => format!("account {actor}"),
+                            Err(error) => return database_error(error),
+                        };
                         let cmd = crate::fleet::OperatorCommand {
                             instance: "*".into(),
                             verb: "kick".into(),
@@ -3068,16 +3193,18 @@ async fn route(
         // body. An audit row naming whoever the caller said they were would
         // be a record of nothing.
         "/v1/admin/command" => {
-            let Some(actor) = admin_for(&db, &s("secret")).await else {
-                return (403, serde_json::json!({ "error": "not an admin" }));
+            let actor = match require_admin(&db, &s("secret")).await {
+                Ok(actor) => actor,
+                Err(reply) => return reply,
             };
-            let who: String = db
+            let who: String = match db
                 .query_opt("select call_sign from names where account = $1", &[&actor])
                 .await
-                .ok()
-                .flatten()
-                .map(|r| r.get(0))
-                .unwrap_or_else(|| format!("account {actor}"));
+            {
+                Ok(Some(row)) => row.get(0),
+                Ok(None) => format!("account {actor}"),
+                Err(error) => return database_error(error),
+            };
             let cmd = crate::fleet::OperatorCommand {
                 instance: s("instance"),
                 verb: s("verb"),
@@ -3132,8 +3259,9 @@ async fn route(
         // Not throttled the way `/v1/rename` is. That limit stands between a
         // script and the name pool, and an operator is neither.
         "/v1/admin/rename" => {
-            let Some(actor) = admin_for(&db, &s("secret")).await else {
-                return (403, serde_json::json!({ "error": "not an admin" }));
+            let actor = match require_admin(&db, &s("secret")).await {
+                Ok(actor) => actor,
+                Err(reply) => return reply,
             };
             let account = body.get("account").and_then(|v| v.as_i64()).unwrap_or(0);
             let (kind, was): (i16, String) = match db
@@ -3222,8 +3350,8 @@ async fn route(
         // character to find and not a wildcard that quietly matches
         // everything.
         "/v1/admin/pilots" => {
-            if admin_for(&db, &s("secret")).await.is_none() {
-                return (403, serde_json::json!({ "error": "not an admin" }));
+            if let Err(reply) = require_admin(&db, &s("secret")).await {
+                return reply;
             }
             let q = s("q");
             let q = q.trim();
@@ -3302,7 +3430,7 @@ async fn route(
             // every row carry it, and this predicate touches only accounts and
             // names, so it costs an index scan over a table bounded by how
             // many people have ever played rather than by how much they have.
-            let total: i64 = db
+            let total: i64 = match db
                 .query_one(
                     "select count(*) from accounts a
                      left join names n on n.account = a.id
@@ -3312,8 +3440,10 @@ async fn route(
                     &[&q, &number],
                 )
                 .await
-                .map(|r| r.get(0))
-                .unwrap_or(0);
+            {
+                Ok(row) => row.get(0),
+                Err(error) => return database_error(error),
+            };
             match rows {
                 Ok(rs) => (
                     200,
@@ -3454,15 +3584,17 @@ async fn route(
                 );
             }
             if !admin && held {
-                let others: i64 = transaction
+                let others: i64 = match transaction
                     .query_one(
                         "select count(*) from accounts
                          where admin and not banned and id <> $1",
                         &[&account],
                     )
                     .await
-                    .map(|r| r.get(0))
-                    .unwrap_or(0);
+                {
+                    Ok(row) => row.get(0),
+                    Err(error) => return database_error(error),
+                };
                 if others == 0 {
                     return (
                         409,
@@ -3516,8 +3648,9 @@ async fn route(
         // one a balance is deciding what it flies, and that is a decision the
         // roster and the shelf make between them.
         "/v1/admin/rivets" => {
-            let Some(actor) = admin_for(&db, &s("secret")).await else {
-                return (403, serde_json::json!({ "error": "not an admin" }));
+            let actor = match require_admin(&db, &s("secret")).await {
+                Ok(actor) => actor,
+                Err(reply) => return reply,
             };
             let account = body.get("account").and_then(|v| v.as_i64()).unwrap_or(0);
             let want = match wallet_asked(body.get("rivets")) {
@@ -3579,8 +3712,8 @@ async fn route(
         // proximity fuse has a ceiling of zero, and a row offering to grant
         // one is a row that can only refuse.
         "/v1/admin/entitlements" => {
-            if admin_for(&db, &s("secret")).await.is_none() {
-                return (403, serde_json::json!({ "error": "not an admin" }));
+            if let Err(reply) = require_admin(&db, &s("secret")).await {
+                return reply;
             }
             let account = body.get("account").and_then(|v| v.as_i64()).unwrap_or(0);
             let base = sim::World::base_entitlements();
@@ -3636,8 +3769,9 @@ async fn route(
         // trade being unwound, and the wallet is editable beside it for an
         // operator who means to hand the rivets back as well.
         "/v1/admin/entitle" => {
-            let Some(actor) = admin_for(&db, &s("secret")).await else {
-                return (403, serde_json::json!({ "error": "not an admin" }));
+            let actor = match require_admin(&db, &s("secret")).await {
+                Ok(actor) => actor,
+                Err(reply) => return reply,
             };
             let account = body.get("account").and_then(|v| v.as_i64()).unwrap_or(0);
             let Some(slot) = body.get("slot").and_then(|v| v.as_u64()) else {
@@ -3690,7 +3824,10 @@ async fn route(
                     }),
                 );
             }
-            let was = entitlement_of(&db, account, slot as i16, base).await;
+            let was = match entitlement_of(&db, account, slot as i16, base).await {
+                Ok(was) => was,
+                Err(error) => return database_error(error),
+            };
             if let Err(e) = db
                 .execute(
                     "insert into entitlements (account, slot, n) values ($1, $2, $3)
@@ -3722,8 +3859,8 @@ async fn route(
         // panel could not show: you could mark somebody and never see the
         // list you had built.
         "/v1/admin/bans" => {
-            if admin_for(&db, &s("secret")).await.is_none() {
-                return (403, serde_json::json!({ "error": "not an admin" }));
+            if let Err(reply) = require_admin(&db, &s("secret")).await {
+                return reply;
             }
             let rows = db
                 .query(
@@ -3763,8 +3900,8 @@ async fn route(
         // asked for by name rather than searched, since the only way to have
         // one is to have seen it in an answer to this route.
         "/v1/admin/events" => {
-            if admin_for(&db, &s("secret")).await.is_none() {
-                return (403, serde_json::json!({ "error": "not an admin" }));
+            if let Err(reply) = require_admin(&db, &s("secret")).await {
+                return reply;
             }
             let account = body.get("account").and_then(|v| v.as_i64());
             let session = s("session");
@@ -3841,8 +3978,8 @@ async fn route(
         // the report, because this public route cannot authenticate a browser
         // that failed before authentication itself was ready.
         "/v1/admin/errors" => {
-            if admin_for(&db, &s("secret")).await.is_none() {
-                return (403, serde_json::json!({ "error": "not an admin" }));
+            if let Err(reply) = require_admin(&db, &s("secret")).await {
+                return reply;
             }
             let (limit, offset) = page_of(body);
             let probe = limit + 1;
@@ -3908,8 +4045,8 @@ async fn route(
         // context off the public surface. Filters are values in a fixed query,
         // never fragments of SQL supplied by the panel.
         "/v1/admin/debug" => {
-            if admin_for(&db, &s("secret")).await.is_none() {
-                return (403, serde_json::json!({ "error": "not an admin" }));
+            if let Err(reply) = require_admin(&db, &s("secret")).await {
+                return reply;
             }
             let (limit, offset) = page_of(body);
             let probe = limit + 1;
@@ -4027,8 +4164,8 @@ async fn route(
         // since `pilot_events_sweep` is on (bot, at) and `bot = any($1)` over
         // a two-value domain is one range scan per value rather than a walk.
         "/v1/admin/recent" => {
-            if admin_for(&db, &s("secret")).await.is_none() {
-                return (403, serde_json::json!({ "error": "not an admin" }));
+            if let Err(reply) = require_admin(&db, &s("secret")).await {
+                return reply;
             }
             // Ticking neither box is a question with no answer rather than a
             // question meaning "everything", so an empty list selects nothing
@@ -4174,8 +4311,8 @@ async fn route(
         // fleet fails its check: pilots keep flying, as guests, rating
         // nothing, with nothing anywhere saying so.
         "/v1/admin/fleet" => {
-            if admin_for(&db, &s("secret")).await.is_none() {
-                return (403, serde_json::json!({ "error": "not an admin" }));
+            if let Err(reply) = require_admin(&db, &s("secret")).await {
+                return reply;
             }
             let url = directory_url();
             let Some(body) =
@@ -4259,8 +4396,8 @@ async fn route(
 
         // Who holds the flag, so the panel can show the set it cannot change.
         "/v1/admin/admins" => {
-            if admin_for(&db, &s("secret")).await.is_none() {
-                return (403, serde_json::json!({ "error": "not an admin" }));
+            if let Err(reply) = require_admin(&db, &s("secret")).await {
+                return reply;
             }
             let rows = db
                 .query(
@@ -5009,14 +5146,16 @@ pub async fn run() {
             let mut tick = tokio::time::interval(std::time::Duration::from_secs(60));
             loop {
                 tick.tick().await;
-                let Ok(db) = pool.get().await else { continue };
+                let Ok(mut db) = pool.get().await else {
+                    continue;
+                };
                 // Nothing published is nothing to insist on: a fleet running
                 // the catalog on disk is the state this whole mechanism
                 // starts from.
-                match maps::published(&db).await {
+                match maps::published(&mut db).await {
                     Ok(p) if p.serial == 0 => {}
                     Ok(_) => {
-                        if let Some(why) = maps::push(&db).await {
+                        if let Some(why) = maps::push(&mut db).await {
                             println!("meta: cannot hand the directory its maps: {why}");
                         }
                     }
@@ -5536,6 +5675,244 @@ mod tests {
         .expect_err("a peer that never replies times out");
         peer.abort();
         assert!(error.contains("timed out"), "{error}");
+    }
+
+    /// The database contract, against a disposable database supplied by CI.
+    /// Local test runs skip it unless VW_TEST_DATABASE names the same database.
+    #[tokio::test]
+    async fn postgres_schema_routes_and_concurrency_hold() {
+        async fn stats(db: &Client, account: i64) -> (i64, i64, i64) {
+            let row = db
+                .query_one(
+                    "select kills, deaths, assists from pilot_stats where account = $1",
+                    &[&account],
+                )
+                .await
+                .expect("pilot stats");
+            (row.get(0), row.get(1), row.get(2))
+        }
+
+        let Ok(url) = std::env::var("VW_TEST_DATABASE") else {
+            return;
+        };
+        let mut config = deadpool_postgres::Config::new();
+        config.url = Some(url);
+        let pool = config
+            .create_pool(
+                Some(deadpool_postgres::Runtime::Tokio1),
+                tokio_postgres::NoTls,
+            )
+            .expect("test pool");
+        let mut db = pool.get().await.expect("test database");
+        let database: String = db
+            .query_one("select current_database()", &[])
+            .await
+            .expect("database name")
+            .get(0);
+        assert_eq!(
+            database, "vectorwake_test",
+            "VW_TEST_DATABASE must point at the disposable vectorwake_test database"
+        );
+        db.batch_execute("drop schema public cascade; create schema public")
+            .await
+            .expect("clean test schema");
+        db.batch_execute(SCHEMA).await.expect("first schema apply");
+        db.batch_execute(SCHEMA).await.expect("second schema apply");
+
+        let index_method: String = db
+            .query_one(
+                "select am.amname
+                   from pg_class c join pg_am am on am.oid = c.relam
+                  where c.relname = 'rated_events_by_at'",
+                &[],
+            )
+            .await
+            .expect("timestamp index")
+            .get(0);
+        assert_eq!(index_method, "brin");
+
+        // Remove the empty-database mark and give the one-shot backfill
+        // historical work. A second schema apply must leave the projection
+        // alone even after another old event appears.
+        db.execute(
+            "delete from schema_marks where name = 'pilot_stats_backfilled'",
+            &[],
+        )
+        .await
+        .expect("clear backfill mark");
+        let victim: i64 = db
+            .query_one("insert into accounts (kind) values (0) returning id", &[])
+            .await
+            .expect("victim")
+            .get(0);
+        let killer: i64 = db
+            .query_one("insert into accounts (kind) values (0) returning id", &[])
+            .await
+            .expect("killer")
+            .get(0);
+        let helper: i64 = db
+            .query_one("insert into accounts (kind) values (0) returning id", &[])
+            .await
+            .expect("helper")
+            .get(0);
+        let credits = serde_json::json!([
+            { "account": killer, "weight": 0.75, "before": 1200.0, "after": 1212.0 },
+            { "account": helper, "weight": 0.25, "before": 1200.0, "after": 1204.0 }
+        ]);
+        db.execute(
+            "insert into rated_events
+               (class, zone, instance, tick, victim, victim_kind,
+                victim_before, victim_after, credits, event_id)
+             values ($1, 'test', 'test-1', 1, $2, 0, 1200, 1184, $3, 1)",
+            &[&DEFAULT_CLASS, &victim, &credits],
+        )
+        .await
+        .expect("historical event");
+        db.batch_execute(SCHEMA)
+            .await
+            .expect("backfill schema apply");
+        assert_eq!(stats(&db, victim).await, (0, 1, 0));
+        assert_eq!(stats(&db, killer).await, (1, 0, 0));
+        assert_eq!(stats(&db, helper).await, (0, 0, 1));
+        db.execute(
+            "insert into rated_events
+               (class, zone, instance, tick, victim, victim_kind,
+                victim_before, victim_after, credits, event_id)
+             values ($1, 'test', 'test-2', 2, $2, 0, 1200, 1184, $3, 2)",
+            &[&DEFAULT_CLASS, &victim, &credits],
+        )
+        .await
+        .expect("later historical event");
+        db.batch_execute(SCHEMA).await.expect("marked schema apply");
+        assert_eq!(stats(&db, victim).await, (0, 1, 0));
+        assert_eq!(stats(&db, killer).await, (1, 0, 0));
+        assert_eq!(stats(&db, helper).await, (0, 0, 1));
+
+        let meta = Meta {
+            pool: pool.clone(),
+            signing: ed25519_dalek::SigningKey::from_bytes(&[7; 32]),
+            catalog: Default::default(),
+            throttle: Default::default(),
+            password_work: Arc::new(tokio::sync::Semaphore::new(PASSWORD_WORKERS)),
+        };
+        let secret = "database-contract-secret";
+        db.execute(
+            "insert into credentials (method, hash, account) values ('secret', $1, $2)",
+            &[&sha256_hex(secret.as_bytes()), &victim],
+        )
+        .await
+        .expect("test credential");
+
+        db.batch_execute("alter table credentials rename to credentials_unavailable")
+            .await
+            .expect("hide credentials");
+        let (code, _) = route(
+            &meta,
+            "/v1/session",
+            &serde_json::json!({ "secret": secret }),
+            "127.0.0.1",
+        )
+        .await;
+        assert_eq!(code, 500, "a credential read failure is not a refusal");
+        db.batch_execute("alter table credentials_unavailable rename to credentials")
+            .await
+            .expect("restore credentials");
+
+        db.batch_execute("alter table rated_events rename to rated_events_unavailable")
+            .await
+            .expect("hide rated events");
+        let (code, body) = route(&meta, "/v1/week", &serde_json::json!({}), "127.0.0.1").await;
+        assert_eq!(code, 500, "a broken week query is not an empty week");
+        assert!(body.get("error").is_some());
+        db.batch_execute("alter table rated_events_unavailable rename to rated_events")
+            .await
+            .expect("restore rated events");
+
+        db.execute(
+            "insert into maps (name, bytes, hash, w, h, author)
+             values ('contract', $1, 1, 4, 4, $2)",
+            &[&vec![1_u8, 2, 3], &victim],
+        )
+        .await
+        .expect("published map");
+        db.execute(
+            "insert into zone_maps (zone, maps, by_account)
+             values ('test', array['contract'], $1)",
+            &[&victim],
+        )
+        .await
+        .expect("published rotation");
+        db.execute(
+            "insert into catalog_publishes (actor, what) values ($1, 'test')",
+            &[&victim],
+        )
+        .await
+        .expect("publication serial");
+        let publication = maps::published(&mut db)
+            .await
+            .expect("publication snapshot");
+        assert_eq!(publication.serial, 1);
+        assert_eq!(publication.zones.len(), 1);
+        assert_eq!(publication.zones[0].maps[0].name, "contract");
+        db.batch_execute("alter table catalog_publishes rename to catalog_publishes_unavailable")
+            .await
+            .expect("hide publication serial");
+        assert!(
+            maps::published(&mut db).await.is_err(),
+            "a missing serial cannot become serial zero"
+        );
+        db.batch_execute("alter table catalog_publishes_unavailable rename to catalog_publishes")
+            .await
+            .expect("restore publication serial");
+
+        let accounts = db
+            .query(
+                "insert into accounts (kind)
+                 select 0 from generate_series(1, 102) returning id",
+                &[],
+            )
+            .await
+            .expect("friend accounts");
+        let accounts: Vec<i64> = accounts.iter().map(|row| row.get(0)).collect();
+        let owner = accounts[0];
+        let existing = accounts[1..100].to_vec();
+        let friend_secret = "friend-count-secret";
+        db.execute(
+            "insert into credentials (method, hash, account) values ('secret', $1, $2)",
+            &[&sha256_hex(friend_secret.as_bytes()), &owner],
+        )
+        .await
+        .expect("friend credential");
+        db.execute(
+            "insert into friends (account, friend)
+             select $1, friend from unnest($2::bigint[]) as friend",
+            &[&owner, &existing],
+        )
+        .await
+        .expect("existing friends");
+        let first = serde_json::json!({
+            "secret": friend_secret,
+            "account": accounts[100],
+            "add": true
+        });
+        let second = serde_json::json!({
+            "secret": friend_secret,
+            "account": accounts[101],
+            "add": true
+        });
+        let (first, second) = tokio::join!(
+            route(&meta, "/v1/friend", &first, "127.0.0.1"),
+            route(&meta, "/v1/friend", &second, "127.0.0.1")
+        );
+        let mut codes = vec![first.0, second.0];
+        codes.sort_unstable();
+        assert_eq!(codes, vec![200, 409]);
+        let held: i64 = db
+            .query_one("select count(*) from friends where account = $1", &[&owner])
+            .await
+            .expect("friend count")
+            .get(0);
+        assert_eq!(held, MAX_FRIENDS);
     }
 
     #[test]

@@ -91,7 +91,7 @@ pub(super) async fn route(
                     &[&query, &provisional, &limit, &offset, &KIND_HUMAN],
                 )
                 .await;
-            let total: i64 = db
+            let total: i64 = match db
                 .query_one(
                     "select count(*) from accounts a join names n on n.account = a.id
                      where not a.banned and a.kind = $2
@@ -102,8 +102,12 @@ pub(super) async fn route(
                     &[&query, &KIND_HUMAN],
                 )
                 .await
-                .map(|row| row.get(0))
-                .unwrap_or(0);
+            {
+                Ok(row) => row.get(0),
+                Err(error) => {
+                    return Some((500, serde_json::json!({ "error": format!("{error}") })));
+                }
+            };
             match rows {
                 Ok(rows) => (
                     200,

@@ -244,7 +244,7 @@ impl Directory {
     /// Refused when it is not newer, for the reason an arena refuses an older
     /// catalog: two pushes can cross, and the loser must not undo the winner.
     pub fn publish(&mut self, p: fleet::Published) -> Option<u32> {
-        if p.serial < self.published.serial {
+        if p.serial <= self.published.serial {
             return None;
         }
         self.published = p;
@@ -1222,6 +1222,11 @@ mod tests {
             d.publish(publication(4, "chaos", &[("stale", b"old")]))
                 .is_none(),
             "an older publication is refused"
+        );
+        assert!(
+            d.publish(publication(5, "chaos", &[("same-serial", b"different")]))
+                .is_none(),
+            "different content cannot replace a publication at the same serial"
         );
         let w = d.wire_catalog();
         assert_eq!(w.version, 12, "and the version does not go backwards");
