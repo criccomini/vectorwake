@@ -1294,13 +1294,19 @@ impl ArenaServer {
             rooms: self
                 .rooms
                 .iter()
-                .map(|r| fleet::RoomView {
-                    number: r.number,
-                    players: r.humans() as u32,
-                    bots: r.bot_count() as u32,
-                    // Humans, because the bot server stands one down when
-                    // somebody arrives, so a room packed with AI is not shut.
-                    full: r.humans() >= self.max_players(),
+                .map(|r| {
+                    let m = r.mode.match_state();
+                    fleet::RoomView {
+                        number: r.number,
+                        players: r.humans() as u32,
+                        bots: r.bot_count() as u32,
+                        // Humans, because the bot server stands one down when
+                        // somebody arrives, so a room packed with AI is not
+                        // shut.
+                        full: r.humans() >= self.max_players(),
+                        clock: m.as_ref().map(|m| m.seconds_left as u32).unwrap_or(0),
+                        playing: m.is_some_and(|m| m.playing),
+                    }
                 })
                 .collect(),
             max_rooms: self.max_rooms() as u32,

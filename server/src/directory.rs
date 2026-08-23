@@ -116,6 +116,11 @@ pub struct BrowseZone {
     pub description: String,
     pub players: u32,
     pub bots: u32,
+    /// Seats in one room of this zone, from the catalog's own `max_players`.
+    /// The directory already read it to say a room is full; publishing it
+    /// lets a client draw the room as seats rather than as two bare counts.
+    #[serde(default)]
+    pub seats: u32,
     pub instances: Vec<BrowseInstance>,
 }
 
@@ -315,6 +320,12 @@ impl Directory {
                     .get(n)
                     .map(|z| z.description.clone())
                     .unwrap_or_default(),
+                seats: self
+                    .catalog
+                    .zones
+                    .get(n)
+                    .map(|z| z.max_players() as u32)
+                    .unwrap_or(0),
                 ..Default::default()
             })
             .collect();

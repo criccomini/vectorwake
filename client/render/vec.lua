@@ -115,7 +115,15 @@ end
 
 -- A one-pixel-thick frame, drawn as four rects rather than an outline, so it
 -- lands on exact pixels the way a CSS border does.
+--
+-- Never thinner than a pixel. A rect has hard edges, so a stroke under one
+-- pixel covers a pixel center or misses it on the luck of where the frame
+-- happens to sit: the podium's phrase chips, stroked at 0.9 on a density-1
+-- screen, drew three edges and lost their tops, every chip alike because
+-- every chip shares one row. A segment gets away with the same width because
+-- its edges carry falloff; a rect does not, so the floor lives here.
 function Layer:frame(x, y, w, h, t, col)
+    if t < 1 then t = 1 end
     self:rect(x, y, w, t, col)
     self:rect(x, y + h - t, w, t, col)
     self:rect(x, y + t, t, h - 2 * t, col)

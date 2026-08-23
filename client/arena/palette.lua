@@ -303,9 +303,15 @@ end
 -- against rung 2, the price of borrowing a scale everybody already knows.
 --
 -- What it gives up is that a round no longer says whose it is. That is not a
--- side effect; it is what one ramp means. Ships, names and plates still carry
--- the team, and in a free-for-all -- which is what most of this game is --
--- every round was worth dodging anyway.
+-- side effect; it is what one ramp means. The sentence that used to close
+-- this argument said every round was worth dodging in a free-for-all, and
+-- the game stopped being one: it is 4v4 melee now, and the core never lands
+-- a teammate's bullet (contact and push both skip the firer's side), so a
+-- teammate's stream is noise this scheme asks a pilot to flinch at. Decision
+-- 55 weighs that and keeps the one ramp: a blast is team-blind, so the class
+-- that kills is worth dodging whoever threw it, and a three-pixel round
+-- never had room for a second reading. Ships, names and plates still carry
+-- the team.
 --
 -- Built once here rather than in the draw loop, which runs per projectile per
 -- frame and must not allocate.

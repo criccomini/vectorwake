@@ -142,6 +142,10 @@ local pages = {}
 -- long way below the week's table, which is the one page that draws it under
 -- its own heading rather than instead of itself.
 local empty_state
+-- The dial itself, forward declared for the same reason: the landing's
+-- aside wears it beside a zone nobody is serving, and the aside is written
+-- long before the dial is.
+local sweep_dial
 
 -- `font` names one of the faces the gui scene carries: nil for the mono
 -- everything in flight is set in, "menu" for the menu's own. It is passed
@@ -181,12 +185,21 @@ local function txt(s, x, y, px, col, pivot, font, raw)
 end
 
 -- The small label the mocks head every group with: mono, upper, dim, and
--- tiny. It is the one piece of type in this interface that is neither a name
+-- small. It is the one piece of type in this interface that is neither a name
 -- nor a number, and it is drawn raw because it is already in the case it
 -- wants and the menu is otherwise set in a sentence's.
+--
+-- Ten points is the floor for authored type, this register included, and the
+-- register was under it: nine-point dim mono at nine tenths of its own alpha
+-- came out near 3.9:1 against the field, short of the 4.5:1 small type wants,
+-- on the labels that name every group on every page. One point and the last
+-- tenth of alpha carry it over the line. The constant is what a caller that
+-- measures this register measures with, so a head cannot be measured at one
+-- size and drawn at another.
+local LBL_PX = 10
 local function lbl(s, x, y, col, align, px)
-    txt(string.upper(s or ""), x, y, px or 9 * F.scale,
-        col or pal.a(pal.DIM, 0.9), align, nil, true)
+    txt(string.upper(s or ""), x, y, px or LBL_PX * F.scale,
+        col or pal.a(pal.DIM, 1), align, nil, true)
 end
 
 
@@ -196,9 +209,64 @@ end
 -- the file that the first function to call it from above found nil.
 -- `level` is for the one control that has a position as well as an identity:
 -- a pip on a ladder, where the press means "this much" rather than "this row".
-local function hit(x, y, w, h, action, value, level)
+-- `pri` is for the handful of boxes that exist to stand behind other boxes: a
+-- panel that swallows the press between two rows, the screen-wide box that
+-- shuts the menu. See `M.pick`.
+local function hit(x, y, w, h, action, value, level, pri)
     M.hits[#M.hits + 1] = {x = x, y = y, w = w, h = h,
-                           action = action, value = value, level = level}
+                           action = action, value = value, level = level,
+                           pri = pri}
+end
+
+-- The touch target floor, in points: what every platform's own ruler says a
+-- fingertip is. Nothing here draws at that size, deliberately, and nothing
+-- has to: a control keeps the shape the design gives it and makes up the
+-- difference in `M.pick`, where a near miss on glass reaches the box it was
+-- aimed at.
+M.TARGET = 44
+
+-- Which published box a press at (px, py) belongs to, or nil. The one copy of
+-- the rule: `on_input`, the hover pass and the tests all ask this rather than
+-- each walking the list with an idea of their own.
+--
+-- Containment first. Of the boxes under the point, the highest `pri` wins and
+-- publish order breaks the tie, which is the first-box-wins rule every
+-- existing pair was laid out against: a pip still beats the row behind it and
+-- a close mark still beats the button it sits in, by order, while a backdrop
+-- says out loud that it stands behind everything rather than depending on
+-- being published last.
+--
+-- Then, for a finger only, the near miss. Each box is measured against the
+-- TARGET floor and grown to it on any axis it falls short, and a press inside
+-- the grown box belongs to the nearest of them: between two pips thirteen
+-- points apart the closer one wins, and a box already a fingertip wide gains
+-- nothing. Backdrops sit out, since nobody aims at a panel and forgiveness
+-- toward one would swallow the miss meant for the control in front of it.
+function M.pick(px, py, touching)
+    local best, bestpri
+    for _, r in ipairs(M.hits) do
+        if px >= r.x and px <= r.x + r.w
+           and py >= r.y and py <= r.y + r.h then
+            local pri = r.pri or 0
+            if not best or pri > bestpri then best, bestpri = r, pri end
+        end
+    end
+    if best or not touching then return best end
+    local floor = M.TARGET * F.scale
+    local near, dist
+    for _, r in ipairs(M.hits) do
+        if (r.pri or 0) >= 0 then
+            local gx = math.max(0, (floor - r.w) / 2)
+            local gy = math.max(0, (floor - r.h) / 2)
+            local dx = math.max(r.x - px, px - r.x - r.w, 0)
+            local dy = math.max(r.y - py, py - r.y - r.h, 0)
+            if dx <= gx and dy <= gy then
+                local d = dx * dx + dy * dy
+                if not near or d < dist then near, dist = r, d end
+            end
+        end
+    end
+    return near
 end
 
 -- Four chamfered corners and nothing between them. It is what holds a cluster
@@ -1482,8 +1550,9 @@ local function rooms_panel(rooms, here)
     end
     -- The whole panel takes the wheel, rather than a strip beside it, which is
     -- how the scoreboard behaves: a list is the thing you point at when you
-    -- mean to scroll it. Published after the rows so a row wins the press.
-    hit(x, y, w, h, "rooms_list")
+    -- mean to scroll it. A backdrop by declaration, so the rows in front of it
+    -- win the press whatever order anything was published in.
+    hit(x, y, w, h, "rooms_list", nil, nil, -1)
     return y + h
 end
 
@@ -1833,7 +1902,7 @@ local function scores(me, pilots, watchers, viewer_name)
     if watching > 0 then
         line = line .. string.format(", %d WATCHING", watching)
     end
-    txt(line, x + 12 * F.scale, fy, (FONT - 4) * F.scale, pal.a(pal.DIM, 0.8))
+    txt(line, x + 12 * F.scale, fy, (FONT - 3) * F.scale, pal.a(pal.DIM, 0.8))
 
     -- Only when there is something to scroll to. A bar on a list that fits is
     -- a control that does nothing.
@@ -1848,8 +1917,10 @@ local function scores(me, pilots, watchers, viewer_name)
     end
 
     -- The whole panel takes the wheel, rather than a strip beside it: a list
-    -- is the thing you point at when you mean to scroll it.
-    hit(x, top_y(), w, h, "scores")
+    -- is the thing you point at when you mean to scroll it. A backdrop, so
+    -- every row in front of it wins the press by rank rather than by the luck
+    -- of publish order.
+    hit(x, top_y(), w, h, "scores", nil, nil, -1)
 
     -- The bottom edge, not the height: what the loadout below needs to know
     -- is where this ends, and it does not start at the top of the screen.
@@ -2259,9 +2330,9 @@ local function status(me, charges, lift)
         run > 0 and pal.a(pal.BOUNTY, 0.95) or pal.a(pal.DIM, 0.6))
     local bw = val + text_w(tostring(bty), (FONT - 2) * z)
     if run > 0 then
-        txt("x" .. run, bw + 6 * z, y + rows_h / 2, (FONT - 4) * z,
+        txt("x" .. run, bw + 6 * z, y + rows_h / 2, (FONT - 3) * z,
             pal.a(pal.PAID, 0.8))
-        bw = bw + 6 * z + text_w("x" .. run, (FONT - 4) * z)
+        bw = bw + 6 * z + text_w("x" .. run, (FONT - 3) * z)
     end
     zone("bounty", x, y, bw - x, rows_h)
 
@@ -2302,7 +2373,7 @@ local function loadout(me, class_names, top)
     for i, up in ipairs(pal.UPGRADES) do
         local held = sim.ship_up(me, i - 1)
         local sx = x + 14 * F.scale + (i - 1) * gap
-        txt(up.short, sx, y + 32 * F.scale, (FONT - 4) * F.scale, pal.a(pal.DIM, 0.75))
+        txt(up.short, sx, y + 32 * F.scale, (FONT - 3) * F.scale, pal.a(pal.DIM, 0.75))
         pips(sx + 3 * F.scale, y + 42 * F.scale, steps, held, up.col,
              1.7 * F.scale, 4.6 * F.scale)
     end
@@ -2410,7 +2481,7 @@ local function inspect(o, top)
     hit(x + w - 26 * F.scale, y + 4 * F.scale, 26 * F.scale, 22 * F.scale, "uninspect")
 
     local ry_ = y + 30 * F.scale
-    local lab = (FONT - 4) * F.scale
+    local lab = (FONT - 3) * F.scale
     local val = (FONT - 2) * F.scale
     local function row(k, v, vcol, raw)
         txt(k, x + 12 * F.scale, ry_ + rowh / 2, lab, pal.a(pal.DIM, 0.8))
@@ -3127,6 +3198,14 @@ local function debug_hud(o, top)
                                  (L.dropped > 0 and (" +" .. L.dropped) or "")}
         end
     end
+    -- And the text budget, which is the third capacity a frame can quietly
+    -- run out of. `state.n` is what the last frame queued and the pool is
+    -- what the gui will draw; the `+` is glyphs that did not appear, which
+    -- is how the podium's chips lost their words with nothing saying so.
+    local over = state.n - state.TEXT_POOL
+    lines[#lines + 1] = {"text",
+                         string.format("%d / %d", state.n, state.TEXT_POOL)
+                         .. (over > 0 and (" +" .. over) or "")}
     -- Wrapped into as many columns as the room below the dial can hold. A
     -- phone in landscape is about four hundred points tall and the dial has
     -- most of that: one column of twelve rows at a size worth reading runs
@@ -3184,8 +3263,10 @@ local function debug_hud(o, top)
     --
     -- Filed here rather than beside the bars, because it is this rectangle,
     -- and it is this rectangle only once the wrapping above has decided how
-    -- many columns the window can hold.
-    if not F.menu_up then hit(x, y, w, h, "debug") end
+    -- many columns the window can hold. A backdrop: it holds no controls
+    -- today, and a slab of text that closes on a press is the same kind of
+    -- thing as the panels that do.
+    if not F.menu_up then hit(x, y, w, h, "debug", nil, nil, -1) end
 end
 
 -- Where you are, over the dial's other top corner from the link readout.
@@ -3568,7 +3649,7 @@ local function podium(o, m, names)
         local dcx = acx - numw - numgap
         local kcx = dcx - numw - numgap
         for _, head_at in ipairs({{"k", kcx}, {"d", dcx}, {"a", acx}}) do
-            txt(head_at[1], head_at[2], y + 34 * F.scale, 9.5 * F.scale,
+            txt(head_at[1], head_at[2], y + 34 * F.scale, 10 * F.scale,
                 pal.a(pal.DIM, 0.75), "right")
         end
         F.layer:seg(cx + 18 * F.scale, ry(y + 44 * F.scale),
@@ -3606,7 +3687,7 @@ local function podium(o, m, names)
                 -- shot" and a call sign ran through the kills and deaths at
                 -- the other end of it.
                 local nx = cx + 26 * F.scale + text_w(sd.phrase, 12.5 * F.scale)
-                if nx + text_w(r.name, 9 * F.scale)
+                if nx + text_w(r.name, LBL_PX * F.scale)
                    < cx + cw - 26 * F.scale - numrun then
                     lbl(r.name, nx, ry0, pal.a(pal.DIM, 0.75))
                 end
@@ -3617,7 +3698,7 @@ local function podium(o, m, names)
             -- The best gun in the room, whichever side it was on. One mark
             -- rather than a column, because it is one pilot.
             if r == mvp then
-                txt("mvp", kcx - numw - 10 * F.scale, ry0, 9.5 * F.scale,
+                txt("mvp", kcx - numw - 10 * F.scale, ry0, 10 * F.scale,
                     pal.a(pal.CHARGE_COL, 0.85), "right")
             end
             for _, fig in ipairs({{r.k, kcx}, {r.d, dcx}, {r.a, acx}}) do
@@ -3646,7 +3727,10 @@ local function podium(o, m, names)
             elseif hot then
                 rect(sx, sy, c.w, SAY_H, pal.a(pal.FRIEND, 0.1))
             end
-            F.layer:frame(sx, ry(sy, SAY_H), c.w, SAY_H, 0.9 * F.scale,
+            -- A whole pixel, for the reason the kit's chips are: 0.9 of one
+            -- rasterizes by luck, and these six share a row, so the same
+            -- edge went missing on all of them at once.
+            F.layer:frame(sx, ry(sy, SAY_H), c.w, SAY_H, 1.0 * F.scale,
                           pal.a(mine and pal.CHARGE_COL
                                 or (hot and pal.FRIEND or pal.RADAR_TILE),
                                 mine and 0.7 or (hot and 0.9 or 0.55)))
@@ -4020,7 +4104,7 @@ function pages.week(v, x, y, w, h, focused)
         sorts = sorts or key
         local on = sorted == sorts
         local col = pal.a(on and pal.FRIEND or pal.DIM, on and 1 or 0.9)
-        local ww = text_w(key, 9 * F.scale)
+        local ww = text_w(key, LBL_PX * F.scale)
         -- The word and its mark are one lockup, aligned together: right of a
         -- right-hand column the lockup is what ends at the column's edge, so
         -- the word steps left by what the mark takes rather than the mark
@@ -4061,7 +4145,7 @@ function pages.week(v, x, y, w, h, focused)
     -- menu.
     if packed then
         local word = sorted_col[1]
-        local ww2 = text_w(word, 9 * F.scale) + MARK_W + 6 * F.scale
+        local ww2 = text_w(word, LBL_PX * F.scale) + MARK_W + 6 * F.scale
         local hx = x + tw - 16 * F.scale
         -- Mark first, as in the wide table: one lockup laid out one way, so a
         -- phone and a desktop do not disagree about where a sort mark lives.
@@ -4221,20 +4305,238 @@ end
 -- assigned here, because the bounty card drew one; the card is gone and every
 -- caller left is below this, so the forward declaration went with it rather
 -- than leaving a global behind.
-local function thumb(cx, cy, cls, col, scale, turn)
+local function thumb(cx, cy, cls, col, scale, turn, detail)
     local h = world.HULLS[cls + 1]
     if not h then return end
     local k = vertical_turn(turn)
-    local function trace(src, width, c)
+    local function trace(src, width, c, open)
         local pts = {}
         for i = 1, #src, 2 do
             pts[i] = cx + src[i] * scale * k
             pts[i + 1] = ry(cy - (src[i + 1] - h.mid) * scale)
         end
-        F.layer:outline(pts, width, c, true)
+        F.layer:outline(pts, width, c, not open)
+    end
+    -- The interior, where the drawing is big enough to hold one. At thumb
+    -- sizes the plates read as noise inside the silhouette; at the landing's
+    -- hero size a bare outline reads as a decal, and the plates and panel
+    -- lines are what make it the machine you are about to be sitting in.
+    -- Panel ink, like the arena draws them, so the team color stays on the
+    -- silhouette.
+    if detail then
+        local ink = pal.a(pal.PANEL_INK, 0.5)
+        for _, loop in ipairs(h.plates or {}) do
+            trace(loop, 0.9 * F.scale, ink)
+        end
+        for _, line in ipairs(h.lines or {}) do
+            trace(line, 0.9 * F.scale, pal.a(pal.PANEL_INK, 0.38), true)
+        end
     end
     trace(h.poly, HULL_PEN * F.scale, col)
     if h.canopy then trace(h.canopy, 1.0 * F.scale, pal.a(col, 0.55)) end
+end
+
+-- The room's ground, as the full radar view draws it, with the ships this
+-- watcher can see as blips in side colors. Not the flying map's no-ships
+-- rule: that guards a pilot's own screen from becoming a wall hack, and a
+-- landing is a spectator, shown only what the watch feed already shows.
+function pages.ground(side_of, x, y, side)
+    local ov = world.overview
+    if not ov or ov.grid <= 0 then return end
+    rect(x, y, side, side, pal.RADAR_BG)
+    local k = side / ov.grid
+    local ox = x + (side - (ov.gw or ov.grid) * k) / 2
+    local oy = y + (side - (ov.gh or ov.grid) * k) / 2
+    local r = ov.rect
+    for i = 1, ov.n, 5 do
+        local cls = r[i + 4]
+        local col = (cls == sim.T_SOLID and MAP_WALL)
+            or (cls == sim.T_SLOPE and MAP_WALL)
+            or (cls == sim.T_SAFE and MAP_SAFE)
+            or (cls == sim.T_DOOR and MAP_DOOR)
+            or MAP_HOLE
+        rect(ox + r[i] * k, oy + r[i + 1] * k,
+             r[i + 2] * k, r[i + 3] * k, col)
+    end
+    local cell = 4 * 16
+    for i = 0, sim.ship_count() - 1 do
+        if sim.ship_active(i) == 1 and sim.ship_alive(i) == 1 then
+            local col = (sim.ship_team(i) == side_of) and pal.FRIEND
+                or pal.ENEMY
+            rect(ox + (sim.ship_x(i) / cell) * k - 1.4 * F.scale,
+                 oy + (sim.ship_y(i) / cell) * k - 1.4 * F.scale,
+                 2.8 * F.scale, 2.8 * F.scale, pal.a(col, 0.95))
+        end
+    end
+    bracket(x, y, side, side, pal.a(pal.RADAR_TILE, 0.8), 22 * F.scale)
+end
+
+-- The landing as one instrument: the game's name and clock over the match
+-- itself (standings beside the ground) over the one key that joins it, in a
+-- single panel with the fight in the glass beside it. It replaced a pair of
+-- washed columns that between them said several things twice: the seat
+-- strip repeated the roster, the deck's sentence repeated the key, and the
+-- call sign appeared three times on one screen. What color there is means
+-- what it means everywhere: a name is written in its side's color, and the
+-- clock turns cyan between matches because the boarding window is yours.
+function pages.landing(a, b, x, y, w, h)
+    refresh_players(b.pilots, b.watchers, b.side, nil)
+    vrule(x - 18 * F.scale, y + 6 * F.scale, h - 12 * F.scale,
+          pal.a(pal.RADAR_TILE, 0.45), 18 * F.scale)
+    local rmargin = w - 24 * F.scale
+    lbl(a.head or "deploying to", x, y + 16 * F.scale)
+    -- The zone carousel, as the deck drew it, a size down.
+    local namex = x
+    local turning = (a.zones or 0) > 1
+    local ncy = y + 46 * F.scale
+    if turning then
+        F.layer:tri(x, ry(ncy), x + 8 * F.scale,
+                    ry(ncy - 9 * F.scale), x + 8 * F.scale,
+                    ry(ncy + 9 * F.scale), pal.a(pal.PANEL_INK, 0.9))
+        hit(x - 14 * F.scale, ncy - 22 * F.scale, 36 * F.scale,
+            44 * F.scale, "zone", -1)
+        namex = x + 22 * F.scale
+    end
+    txt(a.label or "", namex, y + 48 * F.scale, 34 * F.scale,
+        pal.a(pal.INK, 1), nil, MENU_FONT)
+    if turning then
+        local said = string.upper(string.sub(a.label or "", 1, 1))
+                     .. string.sub(a.label or "", 2)
+        local rx2 = namex + text_w(said, 34 * F.scale, MENU_FONT)
+                    + 18 * F.scale
+        F.layer:tri(rx2 + 8 * F.scale, ry(ncy), rx2,
+                    ry(ncy - 9 * F.scale), rx2,
+                    ry(ncy + 9 * F.scale), pal.a(pal.PANEL_INK, 0.9))
+        hit(rx2 - 10 * F.scale, ncy - 22 * F.scale, 36 * F.scale,
+            44 * F.scale, "zone", 1)
+        lbl((a.at or 1) .. " of " .. a.zones, rx2 + 26 * F.scale,
+            y + 48 * F.scale, pal.a(pal.DIM, 0.7))
+    end
+    if a.note and a.note ~= "" then
+        local said = string.upper(string.sub(a.note, 1, 1))
+                     .. string.sub(a.note, 2)
+        txt(said, x, y + 78 * F.scale, 12.5 * F.scale,
+            pal.a(pal.PANEL_INK, 0.9), nil, nil, true)
+    end
+    -- The clock. Between matches it goes cyan, because that count is your
+    -- boarding window; mid-match it is an instrument like any other.
+    local cy2 = y + 130 * F.scale
+    local sides, seen = {}, {}
+    for _, r in ipairs(rows) do
+        if not r.watch and r.team ~= nil then
+            if not seen[r.team] then
+                seen[r.team] = {}
+                sides[#sides + 1] = r.team
+            end
+            local list = seen[r.team]
+            list[#list + 1] = r
+        end
+    end
+    table.sort(sides, function(p1, p2)
+        if (p1 == b.side) ~= (p2 == b.side) then return p1 == b.side end
+        return p1 < p2
+    end)
+    for _, list in pairs(seen) do
+        table.sort(list, function(p1, p2)
+            if p1.k ~= p2.k then return p1.k > p2.k end
+            return p1.d < p2.d
+        end)
+    end
+    if a.clock then
+        local ccol = a.playing and pal.INK or pal.FRIEND
+        lbl(a.playing and "on the clock" or "next match in", x,
+            cy2 - 32 * F.scale, pal.a(a.playing and pal.DIM or pal.FRIEND,
+                                      a.playing and 1 or 0.9))
+        txt(string.format("%d:%02d", math.floor(a.clock / 60),
+                          a.clock % 60), x - 2 * F.scale, cy2,
+            34 * F.scale, pal.a(ccol, 0.95))
+    end
+    -- The score as the podium draws it: two numbers either side of the
+    -- split, which is the shape of the match in one mark. A side that is
+    -- running away with it owns most of the bar before either figure has
+    -- been read. Only while a match is on; between them the podium in the
+    -- glass is already saying how it ended, in this same shape.
+    if a.playing and b.score and #sides >= 2 then
+        local sy2 = y + 160 * F.scale
+        local left, right = sides[1], sides[2]
+        local ls = b.score[left] or 0
+        local rs = b.score[right] or 0
+        local lcol = (left == b.side) and pal.FRIEND or pal.ENEMY
+        local rcol = (right == b.side) and pal.FRIEND or pal.ENEMY
+        local numw = 34 * F.scale
+        local bx2 = x + numw
+        local bw2 = rmargin - 2 * numw
+        local bh2 = 7 * F.scale
+        txt(tostring(ls), x, sy2, 20 * F.scale, pal.a(lcol, 0.95))
+        txt(tostring(rs), x + rmargin, sy2, 20 * F.scale,
+            pal.a(rcol, 0.95), "right")
+        -- Half and half where nobody has scored, because a bar with
+        -- nothing in it reads as a bar that failed to draw.
+        local part = (ls + rs) > 0 and (ls / (ls + rs)) or 0.5
+        rect(bx2, sy2 - bh2 / 2, bw2, bh2, pal.a(pal.DIM, 0.16))
+        rect(bx2, sy2 - bh2 / 2, bw2 * part, bh2, pal.a(lcol, 0.85))
+        rect(bx2 + bw2 * part, sy2 - bh2 / 2, bw2 * (1 - part), bh2,
+             pal.a(rcol, 0.85))
+    end
+    -- The match: standings beside the ground, one cell each. Names in
+    -- their side's color, the way the glass already paints their hulls;
+    -- humans wear the pilot mark, and the machines go without.
+    local mtop = y + 186 * F.scale
+    local mside = math.min(176 * F.scale, w * 0.42)
+    local cellw = rmargin - mside - 18 * F.scale
+    local ly = mtop + 8 * F.scale
+    local mbot = mtop + mside
+    lbl("k  d", x + cellw, mtop - 8 * F.scale, pal.a(pal.DIM, 0.7),
+        "right")
+    for _, team in ipairs(sides) do
+        local col = (team == b.side) and pal.FRIEND or pal.ENEMY
+        local sname = (b.names and b.names[team]) or "side"
+        txt(sname, x, ly, 13.5 * F.scale, pal.a(col, 0.95), nil, MENU_FONT)
+        ly = ly + 10 * F.scale
+        F.layer:seg(x, ry(ly), x + cellw, ry(ly), 1.0 * F.scale,
+                    pal.a(col, 0.45), true)
+        ly = ly + 14 * F.scale
+        for _, r in ipairs(seen[team]) do
+            if ly > y + h - 96 * F.scale then break end
+            -- Flush with the side's name and the rule under it; the human
+            -- mark hangs in the gutter, the way the cursor wedge does.
+            if not r.ai then
+                pilot_mark(x - 9 * F.scale, ly, pal.a(col, 0.9),
+                           10 * F.scale)
+            end
+            txt(r.name, x, ly, 12 * F.scale,
+                pal.a(col, r.ai and 0.62 or 1), nil, nil, true)
+            txt(r.k .. "  " .. r.d, x + cellw, ly, 11 * F.scale,
+                pal.a(pal.DIM, 0.95), "right")
+            ly = ly + 15 * F.scale
+        end
+        ly = ly + 12 * F.scale
+    end
+    pages.ground(b.side, x + rmargin - mside, mtop, mside)
+    -- You, in one line, and the key. The call sign is already at the top
+    -- of the screen, so this only says what you will be flying.
+    local ay = math.max(ly, mbot + 8 * F.scale) + 16 * F.scale
+    local ky = y + h - 52 * F.scale - 12 * F.scale
+    if ay > ky - 10 * F.scale then ay = ky - 10 * F.scale end
+    if a.arrive then
+        if a.arrive.spectate then
+            pilot_mark(x + 12 * F.scale, ay, pal.a(pal.FRIEND, 0.95),
+                       18 * F.scale)
+        else
+            thumb(x + 12 * F.scale, ay, a.arrive.hull or 0,
+                  pal.a(pal.FRIEND, 0.95), 1.3, F.now * 0.5)
+        end
+        txt("arriving as " .. (a.arrive.name or ""), x + 34 * F.scale,
+            ay, 12.5 * F.scale, pal.a(pal.PANEL_INK, 0.9), nil, nil, true)
+    end
+    if a.room and a.row then
+        key_box(x, ky, rmargin, 52 * F.scale, pal.a(pal.FRIEND, 0.14),
+                pal.a(pal.FRIEND, 1))
+        txt("DEPLOY", x + rmargin / 2, ky + 26 * F.scale, 19 * F.scale,
+            pal.a(pal.INK, 1), "center")
+        hit(x - 6 * F.scale, ky - 6 * F.scale, rmargin + 12 * F.scale,
+            64 * F.scale, "stage", a.row)
+    end
 end
 
 -- The column beside a list: what the row under the cursor would do if you
@@ -4296,6 +4598,182 @@ function pages.aside(a, x, y, w, h)
         end
         return
     end
+    -- The landing's own shape: a launch deck rather than a preview. The
+    -- generic column below says a name and a few labeled numbers, which is
+    -- right for the call sign and was all this page had. What a landing
+    -- knows is worth drawing large: the game's name as a headline, the
+    -- room's clock actually counting, the room as its seats, the ship you
+    -- would arrive in drawn as the machine it is, and one big key that
+    -- means what the whole page means. Every mark here is one the
+    -- interface already taught; what changed is that the page now leads
+    -- with the reason to press it.
+    if a.deploy then
+        local rmargin = w - 24 * F.scale
+        -- The name is the zone picker: the hull carousel's triangles either
+        -- side of it, and the same "2 of 4" the carousel answers with, so a
+        -- second game type costs no list anywhere. With one game running
+        -- the triangles stay away and the name sits flush.
+        local namex = x
+        local turning = (a.zones or 0) > 1
+        local ncy = y + 48 * F.scale
+        if turning then
+            F.layer:tri(x, ry(ncy), x + 9 * F.scale,
+                        ry(ncy - 10 * F.scale), x + 9 * F.scale,
+                        ry(ncy + 10 * F.scale), pal.a(pal.PANEL_INK, 0.9))
+            hit(x - 14 * F.scale, ncy - 22 * F.scale, 38 * F.scale,
+                44 * F.scale, "zone", -1)
+            namex = x + 24 * F.scale
+        end
+        txt(a.label or "", namex, y + 52 * F.scale, 42 * F.scale,
+            pal.a(pal.INK, 1), nil, MENU_FONT)
+        if turning then
+            local said = string.upper(string.sub(a.label or "", 1, 1))
+                         .. string.sub(a.label or "", 2)
+            local rx2 = namex + text_w(said, 42 * F.scale, MENU_FONT)
+                        + 20 * F.scale
+            F.layer:tri(rx2 + 9 * F.scale, ry(ncy), rx2,
+                        ry(ncy - 10 * F.scale), rx2,
+                        ry(ncy + 10 * F.scale), pal.a(pal.PANEL_INK, 0.9))
+            hit(rx2 - 10 * F.scale, ncy - 22 * F.scale, 38 * F.scale,
+                44 * F.scale, "zone", 1)
+            lbl((a.at or 1) .. " of " .. a.zones, x + rmargin,
+                y + 52 * F.scale, pal.a(pal.DIM, 0.7), "right")
+        end
+        local ly = y + 88 * F.scale
+        -- What the game is, straight under its name rather than parked at
+        -- the foot: choosing is reading this sentence.
+        if a.note and a.note ~= "" then
+            local said = string.upper(string.sub(a.note, 1, 1))
+                         .. string.sub(a.note, 2)
+            for _, line in ipairs(wrapped(said, 13 * F.scale, rmargin)) do
+                txt(line, x, ly, 13 * F.scale, pal.a(pal.PANEL_INK, 0.9),
+                    nil, nil, true)
+                ly = ly + 18 * F.scale
+            end
+        end
+        ly = ly + 14 * F.scale
+        -- The clock, which is the page's argument. A lobby that says "3
+        -- playing" describes furniture; one that says the next whistle is
+        -- forty seconds out says you are about to miss something. The
+        -- seconds come off the directory's reply and age locally, so the
+        -- figure moves while you look at it, in the mono face because a
+        -- clock is an instrument wherever it is mounted. Absent against an
+        -- older fleet, and the page simply says less.
+        if a.clock then
+            local m = math.floor(a.clock / 60)
+            local s = a.clock % 60
+            lbl(a.playing and "on the clock" or "next match in", x, ly)
+            -- The score of the fight on screen, on the clock's own line:
+            -- two instruments, one glance. It only exists while the
+            -- backdrop is live and a match is running, so a fleet that
+            -- sends no such thing simply has a wider clock.
+            if a.score then
+                lbl("the score", x + rmargin, ly, nil, "right")
+            end
+            ly = ly + 44 * F.scale
+            txt(string.format("%d:%02d", m, s), x - 2 * F.scale, ly,
+                44 * F.scale, pal.a(pal.INK, 0.95))
+            if a.score then
+                txt(a.score[1] .. " : " .. a.score[2], x + rmargin, ly,
+                    30 * F.scale, pal.a(pal.INK, 0.9), "right")
+            end
+            local sent = a.playing
+                and "deploy now and you are in it; the next match starts fresh"
+                or "deploy now and you fly from the whistle"
+            local sy2 = ly + 26 * F.scale
+            for _, line in ipairs(wrapped(sent, 12 * F.scale, rmargin)) do
+                txt(line, x, sy2, 12 * F.scale, pal.a(pal.DIM, 0.9),
+                    nil, nil, true)
+                sy2 = sy2 + 16 * F.scale
+            end
+            ly = sy2 + 16 * F.scale
+        end
+        -- The room as seats. Eight machines in eight sockets is one look
+        -- where "0 people, 8 AI" is three numbers held against each other,
+        -- and the marks are the pair the games list and the scoreboard
+        -- already use: a person is grown, a machine is built, an empty
+        -- socket is a ring the way an unspent pip is. `seats` is zero from
+        -- a directory that predates the field, and the strip then draws
+        -- only who is actually there.
+        if a.room then
+            lbl("the room", x, ly)
+            local seats = math.max(a.room.seats or 0,
+                                   (a.room.players or 0) + (a.room.bots or 0))
+            if (a.room.seats or 0) > 0 then
+                lbl(seats .. " seats", x + rmargin, ly,
+                    pal.a(pal.DIM, 0.8), "right")
+            end
+            ly = ly + 24 * F.scale
+            local pitch = 30 * F.scale
+            local per = math.max(1, math.floor(rmargin / pitch))
+            local k = 14 * F.scale
+            for i = 0, seats - 1 do
+                local cx = x + (i % per) * pitch + k / 2
+                local cy = ly + math.floor(i / per) * (28 * F.scale)
+                if i < (a.room.players or 0) then
+                    pilot_mark(cx, cy, pal.a(pal.INK, 0.95), k)
+                elseif i < (a.room.players or 0) + (a.room.bots or 0) then
+                    bot_mark(cx - k / 2, cy, pal.a(pal.DIM, 0.8), k)
+                else
+                    F.layer:ring(cx, ry(cy), k * 0.34, 1.0 * F.scale, 12,
+                                 pal.a(pal.DIM, 0.35))
+                end
+            end
+            ly = ly + (math.ceil(math.max(seats, 1) / per) - 1) * 28 * F.scale
+                 + 22 * F.scale
+            lbl(a.sub or "", x, ly, pal.a(pal.DIM, 0.85))
+            ly = ly + 26 * F.scale
+        else
+            -- Nobody serving it: the instrument that means "looking", at the
+            -- size of the strip it stands in for.
+            sweep_dial(x + 26 * F.scale, ly + 16 * F.scale, 16 * F.scale)
+            txt(a.sub or "", x + 54 * F.scale, ly + 16 * F.scale,
+                12 * F.scale, pal.a(pal.DIM, 0.9))
+            ly = ly + 54 * F.scale
+        end
+        -- And you, into it: the hull the join carries, drawn as the machine
+        -- rather than the decal, plates and panel lines in, turning slowly,
+        -- which is the page's one movement besides the clock. The call sign
+        -- rides under the name the way it will ride under the hull in the
+        -- arena.
+        hrule(x, ly, rmargin)
+        ly = ly + 18 * F.scale
+        lbl("you arrive as", x, ly)
+        local hy = ly + 52 * F.scale
+        if a.arrive then
+            if a.arrive.spectate then
+                pilot_mark(x + 40 * F.scale, hy, pal.a(pal.FRIEND, 0.95),
+                           44 * F.scale, 2.2 * F.scale)
+            else
+                thumb(x + 40 * F.scale, hy, a.arrive.hull or 0,
+                      pal.a(pal.FRIEND, 0.95), 2.8, F.now * 0.5, true)
+            end
+            local nx = x + 100 * F.scale
+            txt(a.arrive.name or "", nx, hy - 9 * F.scale, 21 * F.scale,
+                pal.a(pal.INK, 0.95), nil, MENU_FONT)
+            pilot_mark(nx + 5 * F.scale, hy + 14 * F.scale,
+                       pal.a(pal.DIM, 0.8), 10 * F.scale)
+            txt(a.arrive.call or "", nx + 14 * F.scale, hy + 14 * F.scale,
+                12 * F.scale, pal.a(pal.PANEL_INK, 0.95), nil, nil, true)
+        end
+        -- The key. The row in the list already joins, and so does this, by
+        -- publishing the same press: one action, two sizes of the same
+        -- control. It is the largest button in the game because it is the
+        -- one the whole menu exists to get you to, and it takes the foot of
+        -- the column, where the eye ends the page; the sentence that used
+        -- to sit there said "a room takes you the moment you press play",
+        -- which is what a key this size already says.
+        if a.room and a.row then
+            local kh = 52 * F.scale
+            local ky = y + h - kh - 10 * F.scale
+            key_box(x, ky, rmargin, kh, pal.a(pal.FRIEND, 0.10),
+                    pal.a(pal.FRIEND, 0.9))
+            txt("DEPLOY", x + rmargin / 2, ky + kh / 2, 19 * F.scale,
+                pal.a(pal.INK, 1), "center")
+            hit(x - 6 * F.scale, ky - 6 * F.scale, rmargin + 12 * F.scale,
+                kh + 12 * F.scale, "stage", a.row)
+        end
+    else
     txt(a.label or "", x, y + 44 * F.scale, 21 * F.scale,
         pal.a(pal.INK, 0.95), nil, MENU_FONT)
     lbl(a.sub or "", x, y + 64 * F.scale, pal.a(pal.DIM, 0.85))
@@ -4316,7 +4794,10 @@ function pages.aside(a, x, y, w, h)
             ly = ly + 16 * F.scale
         end
     end
-    if a.foot and a.foot ~= "" then
+    end
+    -- The landing's key stands where the foot line went and makes the same
+    -- promise bigger, so the two never draw together.
+    if a.foot and a.foot ~= "" and not (a.deploy and a.room and a.row) then
         local ny = y + h - 52 * F.scale
         hrule(x, ny, w - 24 * F.scale)
         ny = ny + 16 * F.scale
@@ -4371,7 +4852,11 @@ function pages.chip(x, y, w, h, r, hot, focused)
         F.layer:frame(x, ry(y, h), w, h, 1.2 * F.scale,
                       pal.a(pal.FRIEND, focused and 1 or 0.5))
     else
-        F.layer:frame(x, ry(y, h), w, h, 0.9 * F.scale,
+        -- A whole pixel. At 0.9 on a density-1 screen a hard-edged stroke
+        -- covers a pixel center or misses it on where the chip happens to
+        -- sit; the layer floors it now, and the authored width should not
+        -- pretend to a weight the screen cannot draw.
+        F.layer:frame(x, ry(y, h), w, h, 1.0 * F.scale,
                       pal.a(held and pal.FRIEND or pal.RADAR_TILE,
                             held and 0.55 or 0.6))
     end
@@ -4394,7 +4879,7 @@ function pages.chip(x, y, w, h, r, hot, focused)
     local ly = count and (y + h * 0.38) or (y + h / 2)
     lbl(r.short or r.label, x + w / 2, ly,
         pal.a(held and pal.FRIEND or pal.INK, held and 1 or 0.8),
-        "center", 9 * F.scale)
+        "center", LBL_PX * F.scale)
     if count then
         -- On a pill, because it is a reading rather than a second label: two
         -- lines of type in one box is a box that says two things, and the
@@ -4810,7 +5295,7 @@ function pages.kit(v, x, y, w, h, focused)
             -- Wide enough for the name and whatever count sits under it.
             local cw = math.max(62 * F.scale,
                                 text_w(r.short or r.label or "",
-                                       9 * F.scale) + 24 * F.scale)
+                                       LBL_PX * F.scale) + 24 * F.scale)
             if px + cw > kx + kw then px = kx cy = cy + ch + 6 * F.scale end
             -- Nothing drawn and nothing published where the scroll has
             -- carried this line off the page. The walk still happens, because
@@ -4848,7 +5333,7 @@ function pages.kit(v, x, y, w, h, focused)
         for _, r in ipairs(list) do
             local cw = math.max(62 * F.scale,
                                 text_w(r.short or r.label or "",
-                                       9 * F.scale) + 24 * F.scale)
+                                       LBL_PX * F.scale) + 24 * F.scale)
             if px > 0 and px + cw > width then lines = lines + 1 px = 0 end
             px = px + cw + 8 * F.scale
         end
@@ -5052,7 +5537,7 @@ function pages.friends(v, x, y, w, h, focused)
                 lbl(r.sect, x, hy + SECT * 0.82)
                 if r.sect_note then
                     lbl(r.sect_note,
-                        x + text_w(r.sect, 9 * F.scale) + 12 * F.scale,
+                        x + text_w(r.sect, LBL_PX * F.scale) + 12 * F.scale,
                         hy + SECT * 0.82, pal.a(pal.FRIEND, 0.85))
                 end
                 if said then
@@ -5163,14 +5648,468 @@ end
 -- permanently lit and no way to read where the buying starts.
 --
 -- See docs/design/match-game.md.
+-- What a shelf row is selling, drawn as the thing itself. The rows that are
+-- rounds draw the round: a level as the round at the rung the next point
+-- buys, in that rung's color, so the price is a color on the one ramp
+-- everybody knows before it is a number; an add-on as the round wearing the
+-- rung on offer, which is the same statement the corner stack makes about a
+-- round you already fire. A charge draws the mark it goes off as, in the
+-- color it goes off in, and a mine wears the bomb's pink the way it does
+-- everywhere. The stats draw nothing: a stat has no object to draw, and a
+-- symbol invented for a shelf would be the one mark in the game that is not
+-- a picture of its thing.
+function pages.shelf_mark(r, cx, cy)
+    local k = 8.5 * F.scale
+    if r.group == "levels" then
+        local sell = math.min((r.owned or 0) + 1,
+                              math.max(r.arena_max or 0, 1))
+        marks.round(cx, ry(cy), k, r.trigger == 0, sell)
+    elseif r.group == "weapons" then
+        local modn = {}
+        modn[(r.mod or 0) + 1] = math.min((r.owned or 0) + 1,
+                                          math.max(r.arena_max or 0, 1))
+        marks.round(cx, ry(cy), k, r.trigger == 0, r.lvl or 0, modn)
+    elseif r.group == "charges" then
+        local name = string.lower(r.label or "")
+        if string.find(name, "mine", 1, true) then
+            marks.mine(cx, ry(cy), k, pal.a(pal.BOMB, 0.9))
+        elseif string.find(name, "repel", 1, true) then
+            marks.charge(0, cx, ry(cy), k, pal.a(pal.CHARGE_COL, 0.9))
+        elseif string.find(name, "burst", 1, true) then
+            marks.charge(1, cx, ry(cy), k, pal.a(pal.BURST, 0.9))
+        else
+            marks.charge(2, cx, ry(cy), k, pal.a(pal.CHARGE_COL, 0.9))
+        end
+    end
+end
+
+-- The firing range: the row under the cursor, drawn doing the thing it does.
+-- A shelf can name a fuse and price a fuse, and neither tells a browsing
+-- pilot what a fuse is for; thirty points of animation does. Everything in
+-- here is the arena's own vocabulary at toy scale: rounds from marks.lua
+-- wearing the rung and add-on actually on offer, hulls from the roster,
+-- blasts as the rings they are. The loop is short and seamless because a
+-- browser is not watching it, they are reading past it, and it only has to
+-- be the right picture whenever the eye lands.
+function pages.range(r, bx, by, bw, bh)
+    local t = (F.now % 2.4) / 2.4
+    local cy = by + bh / 2
+    local sell = math.min((r.owned or 0) + 1, math.max(r.arena_max or 0, 1))
+    local gun = r.trigger == 0
+    -- A craft in motion, at a size where a hull would be a smudge: the
+    -- contact triangle, nose to the right.
+    local function dart(cx2, cy2, k, col)
+        F.layer:outline({cx2 + k, ry(cy2), cx2 - k * 0.7, ry(cy2 - k * 0.7),
+                         cx2 - k * 0.7, ry(cy2 + k * 0.7)},
+                        1.0 * F.scale, col, true)
+    end
+    local function blast(cx2, cy2, u, col, reach)
+        if u <= 0 or u >= 1 then return end
+        F.layer:ring(cx2, ry(cy2), 4 * F.scale + u * (reach or 26 * F.scale),
+                     1.2 * F.scale, 20, pal.a(col, 0.9 * (1 - u)))
+    end
+    -- A tank of energy: the one meter the whole game runs on, as a bar.
+    local function tank(x2, y2, w2, fill, col)
+        F.layer:frame(x2, ry(y2, 7 * F.scale), w2, 7 * F.scale,
+                      1.0 * F.scale, pal.a(pal.DIM, 0.5))
+        if fill > 0.01 then
+            rect(x2 + 1.5 * F.scale, y2 + 1.5 * F.scale,
+                 (w2 - 3 * F.scale) * math.min(fill, 1), 4 * F.scale,
+                 pal.a(col, 0.8))
+        end
+    end
+    if r.group == "flight" then
+        -- Every stat demo is the same sentence: the top line is the ship
+        -- you have, the bottom line is the ship one rung up, moving while
+        -- you watch. "Now" and "next" in the small voice, the next rung in
+        -- the stat's own color.
+        local lx = bx + 66 * F.scale
+        local lw2 = bw - 96 * F.scale
+        local y1, y2 = cy - 22 * F.scale, cy + 22 * F.scale
+        local col = pal.a(r.tint_col or pal.INK, 0.9)
+        if r.short ~= "ROT" then
+            lbl("now", bx + 12 * F.scale, y1, pal.a(pal.DIM, 0.7))
+            lbl("next", bx + 12 * F.scale, y2,
+                pal.a(r.tint_col or pal.INK, 0.9))
+        end
+        if r.short == "NRG" then
+            -- The same three hits land on both tanks; the deeper one is
+            -- still flying after them.
+            local hits = math.floor(t * 4) * 0.3
+            tank(lx, y1 - 3 * F.scale, lw2 * 0.7, 1 - hits, pal.a(pal.DIM, 0.8))
+            tank(lx, y2 - 3 * F.scale, lw2 * 0.85, 1 - hits * 0.82, col)
+        elseif r.short == "RCH" then
+            tank(lx, y1 - 3 * F.scale, lw2 * 0.8, t, pal.a(pal.DIM, 0.8))
+            tank(lx, y2 - 3 * F.scale, lw2 * 0.8, math.min(1, t * 1.5), col)
+        elseif r.short == "SPD" then
+            dart(lx + (t % 1) * lw2, y1, 6 * F.scale, pal.a(pal.DIM, 0.8))
+            dart(lx + (t * 1.3 % 1) * lw2, y2, 6 * F.scale, col)
+        elseif r.short == "THR" then
+            -- From a standing start, which is where thrust lives.
+            dart(lx + t * t * lw2, y1, 6 * F.scale, pal.a(pal.DIM, 0.8))
+            dart(lx + math.min(1, t * t * 1.45) * lw2, y2, 6 * F.scale, col)
+        elseif r.short == "ROT" then
+            local function turn_dial(cx2, rate, col2)
+                local a = t * 6.2832 * rate
+                F.layer:ring(cx2, ry(cy), 16 * F.scale, 1.0 * F.scale, 20,
+                             pal.a(pal.DIM, 0.4))
+                F.layer:seg(cx2, ry(cy),
+                            cx2 + math.sin(a) * 15 * F.scale,
+                            ry(cy - math.cos(a) * 15 * F.scale),
+                            1.4 * F.scale, col2)
+            end
+            local d1 = lx + 40 * F.scale
+            local d2 = lx + lw2 - 40 * F.scale
+            local wy = cy + 28 * F.scale
+            turn_dial(d1, 1, pal.a(pal.DIM, 0.8))
+            turn_dial(d2, 1.4, col)
+            lbl("now", d1, wy, pal.a(pal.DIM, 0.7), "center")
+            lbl("next", d2, wy,
+                pal.a(r.tint_col or pal.INK, 0.9), "center")
+        end
+    elseif r.group == "levels" then
+        -- The whole ladder, each rung as the round it fires, with the one
+        -- on sale ringed; over it the rung you would own next, flying. The
+        -- ramp does the teaching: hotter rungs wear the hotter color.
+        local top = math.max(r.arena_max or 1, 1)
+        local pitch = math.min(44 * F.scale, (bw - 40 * F.scale) / top)
+        local lx = bx + bw / 2 - (top - 1) * pitch / 2
+        local ly2 = by + bh - 30 * F.scale
+        for k = 1, top do
+            local cx2 = lx + (k - 1) * pitch
+            marks.round(cx2, ry(ly2), 8 * F.scale, gun, k)
+            if k == sell then
+                F.layer:ring(cx2 + (gun and 2 or 0), ry(ly2), 13 * F.scale,
+                             1.1 * F.scale, 20, pal.a(pal.CHARGE_COL, 0.85))
+            end
+        end
+        local fy = by + bh * 0.32
+        local fx = bx + 20 * F.scale + t * (bw - 60 * F.scale)
+        if t < 0.82 then
+            marks.round(fx, ry(fy), 8 * F.scale, gun, sell)
+        else
+            blast(bx + bw - 40 * F.scale, fy, (t - 0.82) / 0.18,
+                  pal.rung(sell), gun and 14 * F.scale or 30 * F.scale)
+        end
+    elseif r.group == "weapons" then
+        local m = r.mod or -1
+        local lvl = r.lvl or 0
+        local modn = {}
+        modn[m + 1] = sell
+        local x0 = bx + 20 * F.scale
+        if m == 0 then
+            -- Spray: the pull, thrown n wide.
+            local d = 14 * F.scale + t * (bw - 64 * F.scale)
+            for i = 1, sell + 1 do
+                local a = (i - (sell + 2) / 2) * 0.17
+                marks.round(x0 + d * math.cos(a),
+                            ry(cy + d * math.sin(a) * 0.9),
+                            6.5 * F.scale, gun, lvl)
+            end
+        elseif m == 1 then
+            -- Bounce: the wall keeps the round in play. The path it will
+            -- take is laid faintly under it, folds and all.
+            local x1, ph = x0, by + 16 * F.scale
+            local pb = by + bh - 16 * F.scale
+            local run = bw - 50 * F.scale
+            local folds = 1 + math.min(sell, 3)
+            local function at(u)
+                local v2 = u * folds
+                local fold = 2 * math.abs(v2 / 2 - math.floor(v2 / 2 + 0.5))
+                return x1 + u * run, ph + fold * (pb - ph)
+            end
+            local steps = 24
+            for i = 0, steps - 1 do
+                local ax, ay = at(i / steps)
+                local bx2, by2 = at((i + 1) / steps)
+                F.layer:seg(ax, ry(ay), bx2, ry(by2), 0.8 * F.scale,
+                            pal.a(pal.DIM, 0.22))
+            end
+            local px2, py2 = at(t)
+            marks.round(px2, ry(py2), 7 * F.scale, gun, lvl, modn)
+        elseif m == 2 then
+            -- Prox: the dodge that stopped working. The ring is the fuse.
+            local tx2 = bx + bw - 44 * F.scale
+            local reach = (18 + sell * 7) * F.scale
+            thumb(tx2, cy, 0, pal.a(pal.ENEMY, 0.9), 1.2)
+            F.layer:ring(tx2, ry(cy), reach, 1.0 * F.scale, 24,
+                         pal.a(pal.BOMB, 0.30 + 0.12 * math.sin(F.now * 3)))
+            local stop = tx2 - reach
+            if t < 0.7 then
+                marks.round(x0 + t / 0.7 * (stop - x0), ry(cy),
+                            7 * F.scale, gun, lvl, modn)
+            else
+                blast(stop, cy, (t - 0.7) / 0.3, pal.rung(lvl))
+            end
+        elseif m == 3 then
+            -- Shrapnel: the ending is an attack of its own.
+            local sx2 = bx + bw * 0.55
+            if t < 0.5 then
+                marks.round(x0 + t * 2 * (sx2 - x0), ry(cy), 7 * F.scale,
+                            gun, lvl, modn)
+            else
+                local d = (t - 0.5) * 110 * F.scale
+                local hot = pal.a(pal.hot(pal.rung(lvl), 0.45), 0.9 * (1.5 - t))
+                for i = 0, 5 do
+                    local a = i * 1.0472 + 0.3
+                    dart(sx2 + math.cos(a) * d, cy + math.sin(a) * d * 0.8,
+                         3.5 * F.scale, hot)
+                end
+                blast(sx2, cy, (t - 0.5) * 3, pal.rung(lvl))
+            end
+        elseif m == 4 then
+            -- Freeze: their tank stops refilling. The top bar is a ship
+            -- that was not hit; the bottom one took the round.
+            local tx2 = bx + bw - 44 * F.scale
+            thumb(tx2, cy - 6 * F.scale, 0,
+                  pal.a(pal.ENEMY, t > 0.45 and t < 0.85 and 0.5 or 0.9),
+                  1.2)
+            local fl
+            if t < 0.45 then fl = t
+            elseif t < 0.85 then fl = 0.45
+            else fl = 0.45 + (t - 0.85) * 2 end
+            lbl("their recharge", bx + 12 * F.scale, by + bh - 18 * F.scale,
+                pal.a(pal.DIM, 0.6))
+            tank(bx + bw * 0.42, by + bh - 21 * F.scale, bw * 0.44, fl,
+                 pal.a(pal.ENEMY, 0.8))
+            if t < 0.45 then
+                marks.round(x0 + t / 0.45 * (tx2 - 26 * F.scale - x0),
+                            ry(cy - 6 * F.scale), 7 * F.scale, gun, lvl, modn)
+            else
+                blast(tx2 - 16 * F.scale, cy - 6 * F.scale,
+                      (t - 0.45) / 0.2, pal.a(pal.hot(pal.rung(lvl), 0.45), 1),
+                      12 * F.scale)
+            end
+        elseif m == 5 then
+            -- Push: whatever the blast reaches is thrown.
+            local sx2 = bx + bw * 0.5
+            local ex = bx + bw - 50 * F.scale
+                       + (t > 0.5 and (t - 0.5) * 70 * F.scale or 0)
+            dart(ex, cy, 6 * F.scale, pal.a(pal.ENEMY, 0.9))
+            if t < 0.5 then
+                marks.round(x0 + t * 2 * (sx2 - x0), ry(cy), 7 * F.scale,
+                            gun, lvl, modn)
+            else
+                blast(sx2, cy, (t - 0.5) * 2, pal.rung(lvl), 44 * F.scale)
+            end
+        end
+    elseif r.group == "charges" then
+        local name = string.lower(r.label or "")
+        if string.find(name, "repel", 1, true) then
+            thumb(bx + bw / 2, cy, 0, pal.a(pal.FRIEND, 0.95), 1.3)
+            for i = 0, 5 do
+                local a = i * 1.0472 + 0.5
+                local d = t < 0.5 and (66 - t * 2 * 44) or (22 + (t - 0.5) * 2 * 80)
+                d = d * F.scale
+                marks.round(bx + bw / 2 + math.cos(a) * d,
+                            ry(cy + math.sin(a) * d * 0.7),
+                            5 * F.scale, true, 1)
+            end
+            if t > 0.5 then
+                blast(bx + bw / 2, cy, (t - 0.5) * 2, pal.CHARGE_COL,
+                      56 * F.scale)
+            end
+        elseif string.find(name, "burst", 1, true) then
+            thumb(bx + bw / 2, cy, 0, pal.a(pal.FRIEND, 0.95), 1.3)
+            if t > 0.3 then
+                local d = (t - 0.3) * 110 * F.scale
+                for i = 0, 7 do
+                    local a = i * 0.7854
+                    dart(bx + bw / 2 + math.cos(a) * d,
+                         cy + math.sin(a) * d * 0.7, 3.5 * F.scale,
+                         pal.a(pal.BURST, 0.9 * (1.3 - t)))
+                end
+            end
+        elseif string.find(name, "mine", 1, true) then
+            local mx = bx + bw * 0.4
+            marks.mine(mx, ry(cy), 9 * F.scale, pal.a(pal.BOMB, 0.9))
+            local ex = bx + bw - 30 * F.scale - t * (bw * 0.5 - 50 * F.scale)
+            if t < 0.8 then
+                dart(ex, cy, 6 * F.scale, pal.a(pal.ENEMY, 0.9))
+            else
+                blast(mx, cy, (t - 0.8) / 0.2, pal.BOMB, 40 * F.scale)
+            end
+        else
+            marks.charge(2, bx + bw / 2, ry(cy), 16 * F.scale,
+                         pal.a(pal.CHARGE_COL, 0.9))
+        end
+    end
+end
+
+-- The reading side of the shop: everything there is to know about the row
+-- under the cursor, at reading size. The list keeps the comparing (every
+-- ladder in one column, every price in another) and this pane keeps the
+-- learning, which is the half a row thirteen points tall could never hold.
+function pages.shop_pane(r, x, y, w, h, standalone)
+    -- Beside the list the pane hangs off a lit rule like every column; as a
+    -- page of its own it is the page, and a rule down its left edge would
+    -- mark nothing.
+    if not standalone then
+        vrule(x - 18 * F.scale, y + 6 * F.scale, h - 12 * F.scale,
+              pal.a(pal.RADAR_TILE, 0.45), 18 * F.scale)
+    end
+    -- Beside the list the content stands back from the panel edge; as a
+    -- page it runs to the width it was given, whose caller has already
+    -- made the margins match.
+    local rw = w - (standalone and 0 or 24) * F.scale
+    local kind
+    if r.group == "flight" then kind = "flight stat"
+    elseif r.group == "levels" then
+        kind = (r.trigger == 0 and "gun" or "bomb") .. " ladder"
+    elseif r.group == "weapons" then
+        kind = (r.trigger == 0 and "gun" or "bomb") .. " add-on"
+    else kind = "charge" end
+    lbl(kind, x, y + 16 * F.scale)
+    -- The row's own name, not the catalog's card phrase: the card says
+    -- "thrust depth" because it is building a sentence about a purchase,
+    -- and a headline is not one.
+    txt(r.label or r.sold or "", x, y + 44 * F.scale, 24 * F.scale,
+        pal.a(pal.INK, 1), nil, MENU_FONT)
+    -- The range, held in the brackets a picture sits in.
+    local bx, by = x, y + 64 * F.scale
+    local bh = 128 * F.scale
+    bracket(bx, by, rw, bh, pal.a(pal.RADAR_TILE, 0.8))
+    pages.range(r, bx, by, rw, bh)
+    local ly = by + bh + 26 * F.scale
+    -- What it does, in the client's own words; the catalog's note only
+    -- names the thing.
+    if r.teach then
+        for _, line in ipairs(wrapped(r.teach, 13 * F.scale, rw)) do
+            txt(line, x, ly, 13 * F.scale, pal.a(pal.PANEL_INK, 0.92),
+                nil, nil, true)
+            ly = ly + 18 * F.scale
+        end
+        ly = ly + 10 * F.scale
+    end
+    -- The ladder again, at a size with room for words: how much of it came
+    -- dealt, how much is bought, what is left to climb.
+    local owned = r.owned or 0
+    local base = r.base or 0
+    local top = r.arena_max or 0
+    if top > 0 then
+        local col = r.tint_col or pal.INK
+        local px2 = x
+        if base > 0 then
+            rect(px2, ly - 1.5 * F.scale, 24 * F.scale, 3 * F.scale,
+                 pal.a(pal.DIM, 0.45))
+            px2 = px2 + 34 * F.scale
+        end
+        for k = base + 1, top do
+            if k == owned + 1 and r.price and r.afford then
+                local d = 6.5 * F.scale
+                F.layer:outline({px2, ry(ly - d), px2 + d, ry(ly),
+                                 px2, ry(ly + d), px2 - d, ry(ly)},
+                                1.1 * F.scale, pal.a(pal.CHARGE_COL, 0.95),
+                                true)
+            else
+                pages.pip(px2, ly, 5.5 * F.scale,
+                          k <= owned and "on" or "off",
+                          k <= owned and pal.a(col, 0.95) or pal.DIM)
+            end
+            px2 = px2 + 17 * F.scale
+        end
+        local said = {}
+        if base > 0 then said[#said + 1] = base .. " dealt to everybody" end
+        if owned > base then said[#said + 1] = (owned - base) .. " bought" end
+        if top > owned then
+            said[#said + 1] = (top - owned) .. " to climb"
+        else
+            said[#said + 1] = "topped out"
+        end
+        lbl(table.concat(said, ", "), x, ly + 22 * F.scale,
+            pal.a(pal.DIM, 0.8))
+        ly = ly + 46 * F.scale
+    end
+    -- The deal. A price on the shelf says a number; here there is room to
+    -- say what pressing the row does about it.
+    if r.price then
+        local can = r.afford ~= false
+        local used = pages.priced(r.price, x, ly, 15 * F.scale,
+                                  pal.a(can and pal.CHARGE_COL or pal.DIM,
+                                        can and 0.95 or 0.55))
+        -- What acting costs, in words that name the control that acts: the
+        -- row when the pane sits beside the list, the key under this when
+        -- the pane is the page.
+        lbl(can and (standalone and "buys the next rung"
+                     or "buys the next rung: press the row")
+            or "more than the wallet holds",
+            x + used + 14 * F.scale, ly, pal.a(pal.DIM, 0.85))
+    elseif top > 0 then
+        lbl(owned > base and "yours, all the way up" or "dealt to everybody",
+            x, ly, pal.a(pal.DIM, 0.7))
+    end
+end
+
+-- One thing off the shelf as a whole page, which is how a phone reads the
+-- shop: the list to scan, a tap to step into the thing, a key to buy it,
+-- a chevron to step out. The reading is the same pane the desktop hangs
+-- beside the list; only the navigation around it is phone-shaped.
+function pages.shop_item(v, x, y, w, h)
+    local r = v.item
+    if not r then return end
+    -- The stage keeps a column for a scrollbar this page never draws, and
+    -- the pane keeps its distance from a list that is not beside it; both
+    -- hand their width back here, so the page's right margin matches its
+    -- left instead of running half again as wide.
+    w = w + 14 * F.scale
+    -- The way back, above everything, where every pocket catalog puts it.
+    -- The caret is a drawn triangle, the same one the carousel points with:
+    -- a "<" set in type is a picture of a mathematical symbol, and this
+    -- interface draws its pictures.
+    local by2 = y + 14 * F.scale
+    F.layer:tri(x, ry(by2), x + 7 * F.scale, ry(by2 - 5.5 * F.scale),
+                x + 7 * F.scale, ry(by2 + 5.5 * F.scale),
+                pal.a(pal.DIM, 0.9))
+    lbl("upgrades", x + 15 * F.scale, by2, pal.a(pal.DIM, 0.9))
+    hit(x - 10 * F.scale, y, 110 * F.scale, 30 * F.scale, "back")
+    pages.shop_pane(r, x, y + 34 * F.scale, w, h - 34 * F.scale, true)
+    -- The buy, as the page's one key, the size the deploy key taught. The
+    -- card still asks before anything is spent, and a row with nothing to
+    -- sell has no key: the pane's own line already says yours or dealt.
+    if r.price then
+        local rw = w
+        local kh = 46 * F.scale
+        local ky = y + h - kh - 10 * F.scale
+        local can = r.afford ~= false
+        key_box(x, ky, rw, kh,
+                pal.a(pal.CHARGE_COL, can and 0.10 or 0.04),
+                pal.a(can and pal.CHARGE_COL or pal.DIM, can and 0.9 or 0.5))
+        txt("BUY", x + rw / 2, ky + kh / 2, 17 * F.scale,
+            pal.a(can and pal.INK or pal.DIM, can and 1 or 0.8), "center")
+        hit(x - 6 * F.scale, ky - 6 * F.scale, rw + 12 * F.scale,
+            kh + 12 * F.scale, "stage", 1)
+    end
+end
+
 function pages.shop(v, x, y, w, h, focused)
+    -- The reading pane, where the page is wide enough to hold one beside
+    -- the list. Browsing is two activities taking turns: running the eye
+    -- down the shelf, and stopping on one thing to learn it. The list
+    -- serves the first and served the second badly, one 11-point note at a
+    -- time, so the second gets its own column: the row under the cursor,
+    -- drawn working and explained in full sentences.
+    local pane = 0
+    if w >= 760 * F.scale then pane = math.min(390 * F.scale, w * 0.46) end
+    -- With no pane, the list takes back the column the stage keeps for a
+    -- scrollbar: this page draws its own inside the list, and leaving both
+    -- made the right margin half again the left one on a phone.
+    local lw = pane > 0 and (w - pane - 30 * F.scale) or (w + 14 * F.scale)
     -- Whether a name, its ladder and its price fit across one row. Under
     -- about 430 points they do not, and the ladder moves under the name with
     -- the price beside it.
-    local packed = w < 430 * F.scale
+    local packed = lw < 430 * F.scale
     local rowh = (packed and 50 or 40) * F.scale
     local SECT = 24 * F.scale
-    local top = y
+    -- The wallet, pinned over the shelf, where the rows scroll under it the
+    -- way the kit slides under the ship band. The one page that sells
+    -- things never said what you hold: the number lived on the ship page
+    -- and the refusal card, so a pilot priced a row by pressing it.
+    local BAND = 34 * F.scale
+    lbl("wallet", x, y + 12 * F.scale)
+    pages.priced((v.pilot and v.pilot.rivets) or 0, x + w - 8 * F.scale,
+                 y + 12 * F.scale, 15 * F.scale,
+                 pal.a(pal.CHARGE_COL, 0.95), "right")
+    local top = y + BAND
     local at = top
 
     -- How wide the widest ladder is, so every price lands in one column. A
@@ -5189,10 +6128,14 @@ function pages.shop(v, x, y, w, h, focused)
     for _, r in ipairs(v.rows or {}) do
         most = math.max(most, (r.arena_max or 0) - (r.base or 0))
     end
-    local NAMEW = math.min(packed and w or w * 0.42, 210 * F.scale)
-    local ladx = x + NAMEW
+    -- A column for the mark, ahead of every name, so the rows that carry a
+    -- drawing and the stats that do not still hang their labels off one
+    -- edge.
+    local MARKW = 42 * F.scale
+    local NAMEW = math.min(packed and (lw - MARKW) or lw * 0.42, 210 * F.scale)
+    local ladx = x + MARKW + NAMEW
     local pricex = math.min(ladx + DEALT + most * pitch + 26 * F.scale,
-                            x + w - 8 * F.scale)
+                            x + lw - 8 * F.scale)
 
     -- Where the cursor is, from one walk of the same arithmetic the drawing
     -- below does. Before the drawing rather than during it, because a page
@@ -5205,7 +6148,8 @@ function pages.shop(v, x, y, w, h, focused)
             if i == v.sel then cur = walk end
             walk = walk + rowh
         end
-        follow_cursor(cur, rowh, h, focused)
+        -- Against the window under the wallet band, which does not move.
+        follow_cursor(cur, rowh, h - BAND, focused)
     end
     local dy = M.page_scroll
 
@@ -5225,17 +6169,18 @@ function pages.shop(v, x, y, w, h, focused)
         if ry0 >= top and ry0 + rowh <= y + h then
             local hot = (focused and i == v.sel) or i == v.hover
             if hot then
-                wash(x - ROW_PAD * F.scale, ry0, w + 2 * ROW_PAD * F.scale,
+                wash(x - ROW_PAD * F.scale, ry0, lw + 2 * ROW_PAD * F.scale,
                      rowh, pal.a(pal.FRIEND, 0.16))
             end
             local cy = ry0 + rowh / 2
             local ny = packed and (ry0 + rowh * 0.3) or cy
             local col = r.tint_col or pal.INK
-            txt(r.label or "", x, ny, (packed and 14 or 15) * F.scale,
+            pages.shelf_mark(r, x + 18 * F.scale, cy)
+            txt(r.label or "", x + MARKW, ny, (packed and 14 or 15) * F.scale,
                 pal.a(col, hot and 1 or 0.88), nil, MENU_FONT)
             -- The ladder. Where the whole of it was dealt there is nothing to
             -- sell and nothing to draw: the price column says so instead.
-            local lx = packed and x or ladx
+            local lx = packed and (x + MARKW) or ladx
             local ly = packed and (ry0 + rowh * 0.72) or cy
             local owned = r.owned or 0
             local base = r.base or 0
@@ -5250,12 +6195,25 @@ function pages.shop(v, x, y, w, h, focused)
             end
             for k = base + 1, ceil do
                 local cx = lx + DEALT + (k - base - 1) * pitch
-                pages.pip(cx, ly, 4.5 * F.scale,
-                          k <= owned and "on" or "off",
-                          k <= owned and pal.a(col, 0.95) or pal.DIM)
+                if k == owned + 1 and r.price and r.afford then
+                    -- The pip the price buys, in the price's own gold while
+                    -- the wallet covers it. Buying is watching a row fill
+                    -- up, and this is the diamond that would: the page said
+                    -- so in the price column and made the eye find the rung
+                    -- itself.
+                    local d = 5.4 * F.scale
+                    F.layer:outline({cx, ry(ly - d), cx + d, ry(ly),
+                                     cx, ry(ly + d), cx - d, ry(ly)},
+                                    1.1 * F.scale,
+                                    pal.a(pal.CHARGE_COL, 0.95), true)
+                else
+                    pages.pip(cx, ly, 4.5 * F.scale,
+                              k <= owned and "on" or "off",
+                              k <= owned and pal.a(col, 0.95) or pal.DIM)
+                end
             end
             -- And what the next one costs, or that there is no next one.
-            local px = packed and (x + w - 8 * F.scale) or pricex
+            local px = packed and (x + lw - 8 * F.scale) or pricex
             local py = packed and ly or cy
             if r.price then
                 local can = r.afford ~= false
@@ -5267,17 +6225,18 @@ function pages.shop(v, x, y, w, h, focused)
                 lbl(owned > base and "yours" or "dealt", px, py,
                     pal.a(pal.DIM, 0.55), packed and "right" or nil)
             end
-            -- The note, where the row has one and the room for it. It says
-            -- what the rung being sold actually does, which is the one thing
-            -- a name and a number cannot.
-            if r.note and not packed and rowh >= 40 * F.scale then
+            -- The note, where there is no pane to say it better: on a page
+            -- too narrow for the reading column, the row keeps its own
+            -- one-line answer to what the thing does.
+            if r.note and pane == 0 and not packed
+               and rowh >= 40 * F.scale then
                 local nx = pricex + 60 * F.scale
-                if nx < x + w - 80 * F.scale then
+                if nx < x + lw - 80 * F.scale then
                     txt(r.note, nx, cy, 11 * F.scale, pal.a(pal.DIM, 0.8))
                 end
             end
             if r.pick then
-                hit(x - GUTTER * F.scale, ry0, w + GUTTER * F.scale, rowh,
+                hit(x - GUTTER * F.scale, ry0, lw + GUTTER * F.scale, rowh,
                     "stage", i)
             end
         end
@@ -5287,14 +6246,27 @@ function pages.shop(v, x, y, w, h, focused)
         empty_state(x, top, w, h, v.empty)
     end
     M.page_extent = (at - top) + 16 * F.scale
-    M.page_room = h
-    if M.page_extent > h then
-        local bar = math.max(30 * F.scale, h * h / M.page_extent)
-        local pos = (M.page_scroll / math.max(1, M.page_extent - h))
-                    * (h - bar)
-        local bx = x + w - 3 * F.scale
-        rect(bx, top, 3 * F.scale, h, pal.a(pal.DIM, 0.12))
+    -- The window is what is under the band, since the band does not move.
+    local room = h - BAND
+    M.page_room = room
+    if M.page_extent > room then
+        local bar = math.max(30 * F.scale, room * room / M.page_extent)
+        local pos = (M.page_scroll / math.max(1, M.page_extent - room))
+                    * (room - bar)
+        local bx = x + lw - 3 * F.scale
+        rect(bx, top, 3 * F.scale, room, pal.a(pal.DIM, 0.12))
         rect(bx, top + pos, 3 * F.scale, bar, pal.a(pal.RADAR_TILE, 0.8))
+    end
+    -- The pane reads whatever the cursor is on, and the first row before
+    -- the cursor has been anywhere: a page that opens empty-handed is a
+    -- page that opens saying nothing.
+    if pane > 0 then
+        local rows2 = v.rows or {}
+        local cur = rows2[v.sel or 0] or rows2[v.hover or 0] or rows2[1]
+        if cur then
+            pages.shop_pane(cur, x + lw + 30 * F.scale, y + BAND,
+                            pane, h - BAND)
+        end
     end
 end
 
@@ -6055,7 +7027,7 @@ end
 -- Nothing else in this interface turns for the sake of turning, and this is
 -- telling the truth while it does: the directory is asked again every few
 -- seconds, and a zone with nobody running it is one an arena can come back to.
-local function sweep_dial(cx, cy, r)
+function sweep_dial(cx, cy, r)
     local ring = math.max(0.8 * F.scale, r * 0.022)
     -- Three range rings where there is room for three. A dial the height of a
     -- row has twenty points across it, and three rings in that are five points
@@ -6634,7 +7606,10 @@ local MK_GAP_TRI = {10, 1, 2, 4, 5, 6, 4, 6, 7, 3, 4, 7,
 -- depth disappears face-on and reaches that full width edge-on, so the mark
 -- keeps its exact approved silhouette at rest and gains a visible edge only
 -- while it turns.
-local MK_DEPTH = 10
+-- One table for the logo helpers, because the chunk sits at the
+-- compiler's two-hundred-local ceiling and these travel together.
+local logo = {}
+logo.DEPTH = 10
 -- The far face of the turning mark, and its edge. These were 0.30 and 0.48,
 -- which read as black and as barely-there: a mark that spends half its turn
 -- looking switched off. A face pointing away is still lit by the same room,
@@ -6652,7 +7627,7 @@ local MK_CYAN_SIDE = {pal.LOGO_CYAN[1] * 0.78,
                       pal.LOGO_CYAN[2] * 0.78,
                       pal.LOGO_CYAN[3] * 0.78, 1}
 
-local function logo_poly(points, tris, ox, oy, k, squash, col)
+function logo.poly(points, tris, ox, oy, k, squash, col)
     for i = 1, #tris, 3 do
         local a, b, c = tris[i], tris[i + 1], tris[i + 2]
         F.layer:tri(ox + (points[a * 2 - 1] - MK_W / 2) * k * squash,
@@ -6668,7 +7643,7 @@ end
 -- pair of triangles, which turns the offset duplicate into a solid thickness
 -- instead of a drop shadow. The front face is drawn last and hides the half of
 -- each strip that should be behind it.
-local function logo_sides(points, bx, fx, oy, k, squash, col)
+function logo.sides(points, bx, fx, oy, k, squash, col)
     local n = #points / 2
     for i = 1, n do
         local j = i % n + 1
@@ -6681,12 +7656,12 @@ local function logo_sides(points, bx, fx, oy, k, squash, col)
     end
 end
 
-local function logo_face(ox, oy, k, squash, orange, cyan, alpha)
-    logo_poly(MK_ORANGE, MK_ORANGE_TRI, ox, oy, k, squash,
+function logo.face(ox, oy, k, squash, orange, cyan, alpha)
+    logo.poly(MK_ORANGE, MK_ORANGE_TRI, ox, oy, k, squash,
               pal.a(orange, alpha))
-    logo_poly(MK_CYAN, MK_CYAN_TRI, ox, oy, k, squash,
+    logo.poly(MK_CYAN, MK_CYAN_TRI, ox, oy, k, squash,
               pal.a(cyan, alpha))
-    logo_poly(MK_GAP, MK_GAP_TRI, ox, oy, k, squash,
+    logo.poly(MK_GAP, MK_GAP_TRI, ox, oy, k, squash,
               pal.a(pal.LOGO_GAP, alpha))
 end
 
@@ -6705,30 +7680,30 @@ function M.logo(cx, cy, h, alpha, still)
     -- callers front-on.
     local turn = not still and F.now * 1.7 or nil
     local squash = turn and math.cos(turn) or 1
-    local depth = turn and math.sin(turn) * MK_DEPTH * k / 2 or 0
+    local depth = turn and math.sin(turn) * logo.DEPTH * k / 2 or 0
     local bx, fx = cx - depth, cx + depth
     local oy = cy - MK_H * k / 2
     local front_facing = squash >= 0
     if math.abs(depth) > 0.001 then
         if front_facing then
-            logo_face(bx, oy, k, squash,
+            logo.face(bx, oy, k, squash,
                       MK_ORANGE_BACK, MK_CYAN_BACK, alpha)
         else
-            logo_face(fx, oy, k, squash,
+            logo.face(fx, oy, k, squash,
                       pal.LOGO_ORANGE, pal.LOGO_CYAN, alpha)
         end
-        logo_sides(MK_ORANGE, bx, fx, oy, k, squash,
+        logo.sides(MK_ORANGE, bx, fx, oy, k, squash,
                    pal.a(MK_ORANGE_SIDE, alpha))
-        logo_sides(MK_CYAN, bx, fx, oy, k, squash,
+        logo.sides(MK_CYAN, bx, fx, oy, k, squash,
                    pal.a(MK_CYAN_SIDE, alpha))
-        logo_sides(MK_GAP, bx, fx, oy, k, squash,
+        logo.sides(MK_GAP, bx, fx, oy, k, squash,
                    pal.a(pal.LOGO_GAP, alpha))
     end
     if front_facing then
-        logo_face(fx, oy, k, squash,
+        logo.face(fx, oy, k, squash,
                   pal.LOGO_ORANGE, pal.LOGO_CYAN, alpha)
     else
-        logo_face(bx, oy, k, squash,
+        logo.face(bx, oy, k, squash,
                   MK_ORANGE_BACK, MK_CYAN_BACK, alpha)
     end
 end
@@ -6760,11 +7735,11 @@ end
 -- the word about an eighth of an em below the middle of the box it is set in.
 -- A mark hung on the box center is a mark that looks high, which is what it
 -- looked.
-local LOGO_EM, LOGO_GAP, LOGO_DROP = 0.74, 0.30, 0.12
+logo.EM, logo.GAP, logo.DROP = 0.74, 0.30, 0.12
 
 -- How much room the lockup takes, so a row can start after it.
-local function wordmark_w(size)
-    return M.logo_width(size * LOGO_EM) + size * LOGO_GAP
+function logo.wordmark_w(size)
+    return M.logo_width(size * logo.EM) + size * logo.GAP
            + text_w("vectorwake", size)
 end
 
@@ -6772,10 +7747,10 @@ local function wordmark(x, y, size)
     -- The mark stands to the left of the name, on the middle of the word
     -- rather than the middle of its line box, so the two read as one lockup.
     -- It takes the room it needs and the name starts after it.
-    local h = size * LOGO_EM
+    local h = size * logo.EM
     local lw = M.logo_width(h)
-    M.logo(x + lw / 2, y + size * LOGO_DROP, h)
-    txt("vectorwake", x + lw + size * LOGO_GAP, y, size, pal.INK, nil,
+    M.logo(x + lw / 2, y + size * logo.DROP, h)
+    txt("vectorwake", x + lw + size * logo.GAP, y, size, pal.INK, nil,
         MENU_FONT, true)
 end
 
@@ -7022,7 +7997,7 @@ function M.menu(v)
             -- squeezed to fit: below about twenty the mark beside it stops
             -- being a mark.
             while logo_px > 21 * F.scale
-                  and rx + wordmark_w(logo_px) > corner_left - 12 * F.scale do
+                  and rx + logo.wordmark_w(logo_px) > corner_left - 12 * F.scale do
                 logo_px = logo_px - 2 * F.scale
             end
         end
@@ -7159,7 +8134,7 @@ function M.menu(v)
     -- the drawing had to guess at is a field that overlaps its neighbour.
     local tab_gap = 21 * F.scale
     if words then
-        local at0 = rx + wordmark_w((tall and 26 or 22) * F.scale)
+        local at0 = rx + logo.wordmark_w((tall and 26 or 22) * F.scale)
                     + 40 * F.scale
         -- Where the row has to stop, which is where the corner buttons start.
         -- Given the whole width, as it was, the last two tabs are drawn under
@@ -7414,6 +8389,46 @@ function M.menu(v)
     -- narrower than the row of tabs over it reads as a page that failed to
     -- fill.
     local panel_x, panel_w = sx, avail
+    -- The landing draws no list at all: with a handful of game types the
+    -- deck is the page and the zone picker both, its name wearing the
+    -- carousel's triangles, and everything left of it is glass for the
+    -- fight playing behind. The zone rows still exist under it, unlisted,
+    -- because they are what enter presses and what the arena joins. Only
+    -- the home landing: mid-game the play page keeps its list, which also
+    -- carries leaving and your side.
+    local deck = (v.home and v.at == "play" and v.aside and v.aside.deploy)
+        and v.aside or nil
+    -- With a live game in the glass the landing is three columns: who is in
+    -- it, the fight itself, and the deck that joins it. The standings take
+    -- the left strip the zones list once held, and give way entirely on a
+    -- window too tight to hold all three.
+    local deckw = 0
+    if deck and not narrow then
+        -- One panel, on the left where reading starts, and the fight in
+        -- the glass to its right. A shade wider with a live game in it,
+        -- since the standings and the ground share its middle band.
+        deckw = math.min((v.arena and 440 or 460) * F.scale,
+                         panel_w * 0.55)
+    end
+    local asidew = 0
+    if listy and not deck then
+        lw = math.min(lw, 560 * F.scale)
+        if v.aside and not narrow and panel_w > 700 * F.scale then
+            if v.aside.deploy then
+                -- The in-game play page keeps the list beside the deck: the
+                -- list is narrowed to a rail, since a name and a count is
+                -- all a row ever needed.
+                lw = math.min(lw, 300 * F.scale)
+                asidew = math.min(560 * F.scale,
+                                  panel_w - lw - 60 * F.scale)
+            else
+                -- A shade wider than it was: the landing's column carries a
+                -- drawn room and a drawn hull now, and 300 points cramped
+                -- the seat strip against the sentence above it.
+                asidew = math.min(320 * F.scale, panel_w - lw - 60 * F.scale)
+            end
+        end
+    end
     if not narrow then
         local ph = sh - 6 * F.scale
         -- The ground, and nothing down the side of it.
@@ -7424,13 +8439,15 @@ function M.menu(v)
         -- the height of the screen a gutter left of the first letter of every
         -- row and marked nothing, which is furniture. Gone, along with the
         -- overhang the rows had so they could reach it.
-        rect(panel_x, sy, panel_w, ph, pal.rgb(0x05070c, 0.5))
-    end
-    local asidew = 0
-    if listy then
-        lw = math.min(lw, 560 * F.scale)
-        if v.aside and not narrow and panel_w > 700 * F.scale then
-            asidew = math.min(300 * F.scale, panel_w - lw - 60 * F.scale)
+        --
+        -- Under the landing's panel it is a strip rather than the whole
+        -- block: the glass beside it belongs to the fight or the stars
+        -- behind it.
+        if deck and deckw > 0 then
+            rect(panel_x, sy, deckw + 8 * F.scale, ph,
+                 pal.rgb(0x05070c, 0.5))
+        else
+            rect(panel_x, sy, panel_w, ph, pal.rgb(0x05070c, 0.5))
         end
     end
     -- No title over the stage. The rail is lit at the stop you are inside and
@@ -7591,6 +8608,26 @@ function M.menu(v)
         -- The catalog, as a ladder and a price a row.
         pages.shop(v, panel_x + GUTTER * F.scale, top,
                    panel_w - 14 * F.scale - GUTTER * F.scale, room, focused)
+    elseif v.item then
+        -- One thing off that catalog, as a page: where a phone's tap on a
+        -- row lands.
+        pages.shop_item(v, panel_x + GUTTER * F.scale, top,
+                        panel_w - 14 * F.scale - GUTTER * F.scale, room)
+    elseif deck then
+        -- The landing. Wide, it is one panel at the left with the fight
+        -- in the glass beside it: the merged instrument when a game is
+        -- on, the plain deck when nothing is. Narrow, the deck takes the
+        -- whole page, which hands a phone the same landing a desktop
+        -- gets.
+        if narrow then
+            pages.aside(deck, tx, top, avail + 24 * F.scale, room)
+        elseif v.arena then
+            pages.landing(deck, v.arena, tx, top,
+                          deckw - GUTTER * F.scale + 10 * F.scale, room)
+        else
+            pages.aside(deck, tx, top,
+                        deckw - GUTTER * F.scale + 10 * F.scale, room)
+        end
     elseif v.rows and #v.rows > 0 and v.rows[1].hull then
         ship_grid(tx, top, avail, room, v, focused)
     else
@@ -7765,13 +8802,13 @@ function M.menu(v)
     -- swallows its own, so the space between two rows is not a way out, and
     -- everything left over is one.
     --
-    -- Published here because the first box a press lands in wins and every
-    -- control on the panel has already had its turn. The instruments behind
-    -- are published before the menu is drawn at all, so a dimmed scoreboard
-    -- row still answers to a click rather than being a hole in the way out.
+    -- Two backdrops, ranked rather than ordered: the panel stands behind
+    -- every control on it and the way out stands behind the panel, so a
+    -- dimmed scoreboard row still answers to a click rather than being a
+    -- hole in the way out.
     if v.closable then
-        hit(px0, py0, px1 - px0, py1 - py0, "panel")
-        hit(0, 0, F.w, F.h, "close")
+        hit(px0, py0, px1 - px0, py1 - py0, "panel", nil, nil, -1)
+        hit(0, 0, F.w, F.h, "close", nil, nil, -2)
     end
 
     -- Last, over all of it, because it is the only thing being read.

@@ -67,6 +67,18 @@ M.screen = nil          -- the drawable and its insets, for the about page
 -- glass there is no board to draw and no key column to fill in, so the same
 -- list comes out as gestures instead.
 M.touching = false
+-- Whether the page is a phone's, set by the arena each frame off the same
+-- layout the interface draws with. The shop is the page that reads it: on a
+-- phone a row opens the item as a page of its own, the way every pocket
+-- catalog navigates, instead of leaning on a reading pane there is no room
+-- to draw.
+M.compact = false
+-- The slot that item page is about. The slot number rather than a row index,
+-- so the catalog refreshing under it cannot swap the subject.
+M.item_slot = nil
+-- The clock and score of the match behind the landing, set by the arena
+-- while the backdrop is up and nil otherwise. See deploying().
+M.live_match = nil
 
 -- Which control is waiting for a key, and nothing while none is. It is the
 -- whole of the binding mode: the page draws the board dark around it and the
@@ -463,6 +475,9 @@ local function kit_slots()
                 -- two is two rounds. Every other add-on in this group is a
                 -- switch with three rungs behind it and reads as a chip.
                 ladder = m == simn("MOD_MULTI", 0),
+                -- Which add-on this is, in sim_mod order, for a drawing that
+                -- puts the add-on on a round rather than a word on a row.
+                mod = m,
                 trigger = t, group = "weapons",
             }
         end
@@ -1001,7 +1016,7 @@ end
 -- rather than waiting to be clicked into first; what it also does is light
 -- the box, so the page shows where the letters are landing.
 function M.type_filter(ch)
-    if M.showing() ~= "standings" then return false end
+    if not M.open or M.showing() ~= "standings" then return false end
     if type(ch) ~= "string" or #ch ~= 1 then return false end
     local b = string.byte(ch)
     if b < 32 or b > 126 then return false end
@@ -1012,7 +1027,7 @@ function M.type_filter(ch)
 end
 
 function M.rub_filter()
-    if M.showing() ~= "standings" then return false end
+    if not M.open or M.showing() ~= "standings" then return false end
     if (M.filter or "") == "" then return false end
     M.filter = string.sub(M.filter, 1, #M.filter - 1)
     M.filter_on = true
@@ -1064,10 +1079,14 @@ end
 -- A call sign is a word and a number, so 24 characters is generous and the
 -- gate is the same printable ASCII every other typed line in this client is
 -- held to.
--- `M.at()` rather than `M.showing()`, which is the page under the rail's
--- cursor as well as the page you are standing in. At the top of the menu the
--- friends page is a preview with no field drawn on it, and a letter typed
--- there would land in a box nobody can see and take the next enter with it.
+-- Only while the menu is up. `M.showing()` answers for a shut menu too,
+-- because the model keeps its stack, and in a match the shut menu is parked
+-- at a root whose first tab is friends: every printable key pressed in the
+-- fight, the P and M and H that drive the HUD included, was landing in a box
+-- nobody could see and surfacing as a garbage call sign the next time the
+-- menu opened. The goldens run is what caught it. A previewed field with the
+-- menu open stays typable, since the preview draws it and the caret shows
+-- where the letters land.
 -- What the last press came to, dropped.
 --
 -- The sentence under the box is about a name that was sent, and the moment
@@ -1082,7 +1101,7 @@ local function forget_add_note()
 end
 
 function M.type_add(ch)
-    if M.showing() ~= "friends" then return false end
+    if not M.open or M.showing() ~= "friends" then return false end
     if type(ch) ~= "string" or #ch ~= 1 then return false end
     local b = string.byte(ch)
     if b < 32 or b > 126 then return false end
@@ -1096,7 +1115,7 @@ function M.type_add(ch)
 end
 
 function M.rub_add()
-    if M.showing() ~= "friends" then return false end
+    if not M.open or M.showing() ~= "friends" then return false end
     if (M.add_name or "") == "" then return false end
     M.add_name = string.sub(M.add_name, 1, #M.add_name - 1)
     M.add_on = true
@@ -1220,6 +1239,68 @@ end
 -- Grouped the way the ship page groups the same slots, and in the same order,
 -- because they are the same list read for two different reasons: what may I
 -- own, and what am I flying. See docs/design/match-game.md.
+-- What each thing on the shelf actually does, in a sentence a browsing pilot
+-- can act on. The meta-layer's catalog notes name the slot ("proximity
+-- detonation") and stop; what a fuse buys you in a fight is knowledge the
+-- client already holds, the same way controls.lua holds the sentence for each
+-- key. Everything here is read off the core: the mod comments in sim.h and
+-- the steps sim.c applies per rung.
+local TEACH = {
+    flight = {
+        [0] = "the depth of the tank. every round you fire and every hit"
+            .. " you take spends it, and an empty tank is the kill.",
+        [1] = "how fast the tank refills. depth survives one exchange;"
+            .. " recharge wins the long one.",
+        [2] = "the ceiling on how fast you fly. thrust gets you there,"
+            .. " this is where it stops.",
+        [3] = "how hard the engine pushes. chases and escapes are won on"
+            .. " acceleration before they are won on the ceiling.",
+        [4] = "how fast the nose comes around. the guns point where the"
+            .. " nose points.",
+    },
+    levels = {
+        [0] = "each rung is a hotter round: more damage a hit, wearing the"
+            .. " next color up. every gun add-on rides the rung you fire.",
+        [1] = "each rung is a bigger bomb: more damage across a wider"
+            .. " blast. the blast is team blind, so mind your own.",
+    },
+    weapons = {
+        [0] = "more rounds in one pull, opening from a pair into a fan."
+            .. " each rung is another round, paid for in energy and a"
+            .. " slower trigger.",
+        [1] = "walls stop eating your rounds and reflect them instead."
+            .. " each rung is another bounce before the round ends.",
+        [2] = "a fuse: the round goes off near a ship instead of on it,"
+            .. " so a near miss stops being a miss. each rung reaches"
+            .. " further.",
+        [3] = "the round's ending is itself an attack: it splits into"
+            .. " fragments of your own gun. higher rungs throw more.",
+        [4] = "a hit stalls the recharge of whoever it reaches, on top of"
+            .. " the damage. each rung lengthens the stall.",
+        [5] = "a shove welded on: whatever the blast reaches is thrown."
+            .. " each rung throws harder.",
+    },
+    charges = {
+        repel = "throws every ship and round near you away. the answer to"
+            .. " a corner you should not have flown into.",
+        burst = "a ring of rounds off your own hull, every direction at"
+            .. " once. the close-quarters answer.",
+        mine = "a bomb of your bomb rung that lies still and waits. only"
+            .. " so many of yours can be out at once.",
+    },
+}
+
+-- The sentence for one slot, off the tables above. Keyed by what the slot is
+-- rather than by its number, so a re-ordered catalog cannot misfile a lesson.
+local function teach_line(sl)
+    local t = TEACH[sl.group]
+    if not t then return nil end
+    if sl.group == "flight" then return t[sl.slot] end
+    if sl.group == "levels" then return t[sl.trigger or 0] end
+    if sl.group == "weapons" then return t[sl.mod or -1] end
+    return t[sl.label]
+end
+
 local function upgrade_rows()
     local have = {}
     for _, it in ipairs(account.catalog or {}) do
@@ -1255,8 +1336,20 @@ local function upgrade_rows()
                 -- column to be read against.
                 sold = it.label,
                 note = type(it.note) == "string" and it.note or nil,
+                -- The sentence the detail pane teaches with, which is the
+                -- client's own; the catalog note above names the slot and
+                -- this says what it buys in a fight.
+                teach = teach_line(sl),
                 group = sl.group, short = sl.short, tint_col = sl.tint,
-                trigger = sl.trigger,
+                trigger = sl.trigger, mod = sl.mod,
+                -- The trigger's own level, for the rows that draw a round:
+                -- an add-on is sold as the round wearing it, and the round's
+                -- color is the rung the account actually fires at.
+                lvl = sl.group == "weapons"
+                    and (tonumber((have[simn("SLOT_LEVEL0", 5)
+                                        + (sl.trigger or 0) + 1]
+                                   or {}).owned) or 0)
+                    or nil,
                 -- What is owned, how far the ladder runs, and how much of it
                 -- was dealt rather than bought. The last one is what lets the
                 -- page draw a rung everybody starts with differently from one
@@ -1583,17 +1676,65 @@ end
 local function deploying(sel)
     local r = directory.rows[sel]
     if not r then return nil end
-    local out = {head = "deploying to", label = r.name or "",
-                 note = r.detail or "", rows = {}}
+    local out = {deploy = true, head = "deploying to", label = r.name or "",
+                 note = r.detail or "",
+                 -- The deck is the zone picker now: with three to five game
+                 -- types there is nothing a standing list says that the deck
+                 -- does not say bigger, so the name wears the carousel's
+                 -- triangles and this is what they step through.
+                 zones = #directory.rows, at = sel}
     if r.live then
         out.sub = "the busiest room with a seat"
-        out.rows[#out.rows + 1] = {"people", tostring(r.players or 0)}
-        out.rows[#out.rows + 1] = {"bots holding seats", tostring(r.bots or 0)}
+        -- The room as seats rather than as two counts. "0 people, 8 AI" is
+        -- three numbers to read and hold against each other; eight machines
+        -- in eight sockets is one look, and the marks are the ones the
+        -- scoreboard and the games list already taught. `seats` is zero from
+        -- a directory that predates the field, and the drawing falls back to
+        -- the bare marks.
+        out.room = {players = r.players or 0, bots = r.bots or 0,
+                    seats = r.seats or 0}
+        -- The room's clock. The battle behind the panel is the first
+        -- choice: its clock is the room a deploy would put you in, it
+        -- moves on its own, and it brings the score with it. The
+        -- directory's copy, aged by how long the reply has sat here, is
+        -- the answer while the backdrop is still dialling, and zero from
+        -- a fleet that predates the field draws no clock at all.
+        if M.live_match and M.live_match.left then
+            out.clock = M.live_match.left
+            out.playing = M.live_match.playing == true
+            -- The score rides along only while it is being made: between
+            -- matches the podium in the backdrop is already saying how the
+            -- last one ended. Indexed from zero, because the wire counts
+            -- sides from zero and net.lua keeps its numbering.
+            local s = M.live_match.score
+            if out.playing and type(s) == "table"
+               and s[0] ~= nil and s[1] ~= nil then
+                out.score = {s[0], s[1]}
+            end
+        elseif (r.clock or 0) > 0 then
+            out.clock = math.max(0, math.floor(r.clock - directory.aged))
+            out.playing = r.playing == true
+        end
+        -- What the big key at the foot of the panel joins.
+        out.row = sel
+        -- The promise at the foot belongs to a room that can keep it: on a
+        -- zone nobody runs, the line about being taken the moment you press
+        -- play is a sentence about a press that does nothing.
+        out.foot = "a room takes you the moment you press play, and the "
+                   .. "bots stand down as people arrive"
     else
         out.sub = "nobody is running it"
     end
-    out.foot = "a room takes you the moment you press play, and the bots "
-               .. "stand down as people arrive"
+    -- What pressing play makes of you: the hull you will arrive in, drawn as
+    -- itself, with the call sign it will fly under. The landing is the one
+    -- page that knows both halves of the sentence "you, into this room", and
+    -- it was only saying the room's half.
+    out.arrive = {
+        spectate = M.spectating(),
+        hull = M.class,
+        name = M.spectating() and "Spectate" or HULLS[M.class + 1][1],
+        call = M.name,
+    }
     return out
 end
 
@@ -1775,6 +1916,22 @@ local NODES = {
     -- that knew them would be a second copy to keep in step, and the reply to
     -- a purchase says what the slot now holds and what is left in the wallet.
     upgrades = {rows = upgrade_rows, empty = upgrades_empty},
+    -- One thing off the shelf, as a page of its own. Only a phone ever
+    -- stands here: a row of the shop pushes it where there is no room for
+    -- the reading pane, and its single row is the buy, so enter on a page
+    -- about a thing does the thing. The row is looked up fresh by slot so
+    -- the catalog refreshing underneath cannot swap the subject, and a slot
+    -- the catalog stopped listing leaves an empty page rather than a stale
+    -- one.
+    shop_item = {rows = function()
+        for _, r in ipairs(upgrade_rows()) do
+            if r.value == M.item_slot then
+                r.sect = nil
+                return {r}
+            end
+        end
+        return {}
+    end},
 
     play = {rows = play_rows, empty = zone_empty},
 
@@ -2230,7 +2387,8 @@ local function view_row(r, i)
         base = r.base,
         zone = r.zone, joinable = r.joinable, acts = r.acts,
         group = r.group, short = r.short, tint_col = r.tint_col,
-        on_key = r.on_key, ladder = r.ladder, charge_slot = r.charge_slot,
+        on_key = r.on_key, ladder = r.ladder, mod = r.mod, lvl = r.lvl,
+        sold = r.sold, teach = r.teach, charge_slot = r.charge_slot,
         -- The week's own columns.
         rank = r.rank, kills = r.kills, deaths = r.deaths, run = r.run,
         assists = r.assists,
@@ -3027,6 +3185,21 @@ function M.view()
                  -- from under the thumb that had just tapped it, and the next
                  -- tap hit nothing.
                  home = M.home,
+                 -- Whether a live game is playing behind this home screen:
+                 -- the landing's backdrop. The drawing parts its panels
+                 -- around the fight when it is.
+                 scenery = M.scenery or false,
+                 -- Who is in that game, for the standings beside the glass:
+                 -- the roster feeds the scoreboard reads, the match score
+                 -- keyed by team byte, and the watched side the glass is
+                 -- already colored from.
+                 arena = M.scenery and {
+                     pilots = M.live_pilots, watchers = M.live_watchers,
+                     side = M.live_side, names = M.live_sides,
+                     score = M.live_match and M.live_match.score or nil,
+                     playing = M.live_match ~= nil
+                         and M.live_match.playing == true,
+                 } or nil,
                  -- The help page asks for the drawn keyboard; whether the
                  -- device gets one is ui.lua's call, since only it knows
                  -- whether there is a keyboard to draw a picture of.
@@ -3070,6 +3243,14 @@ function M.view()
     -- And the catalog is a ladder and a price a row rather than a list of
     -- names. Same reason: the page is two facts about each slot at once.
     if page == "upgrades" then out.shop = true end
+    -- One item as a page: the row travels as `item` and the generic list
+    -- stands down, so the drawing is the reading pane at page size with the
+    -- buy as its key. The row list stays a row long for the arrows: enter
+    -- on it is the buy.
+    if page == "shop_item" then
+        out.item = out.rows[1]
+        out.rows = {}
+    end
     -- What pressing play would do, beside the list of things to press it on.
     -- The mode list is short and the panel is wide, and the question a player
     -- is actually asking is "where would this put me".
@@ -3338,6 +3519,16 @@ local function activate(by)
         M.ask_friend(r.value, r.label, r.acts)
         return nil
     elseif r.act == "buy" then
+        -- On a phone the row opens the item first: there is no reading pane
+        -- beside the list there, so the pane is a page you step into, and
+        -- its own buy key is what raises the card. On anything wider the
+        -- pane is already on screen and the row goes straight to the card.
+        if M.compact and M.stack[#M.stack] == "upgrades" then
+            M.item_slot = r.value
+            M.stack[#M.stack + 1] = "shop_item"
+            M.note = nil
+            return nil
+        end
         -- A card first, naming what is being bought and what it costs. Rivets
         -- are slow to earn and a row that spends them on the press it takes to
         -- read it is a page nobody trusts to walk with the arrows.
@@ -3519,6 +3710,17 @@ function M.step(keys)
         end
         if keys.go then return answer(M.ask.sel) end
         return nil, false
+    end
+
+    -- The landing's zone carousel. Left and right step through the games
+    -- the way they turn the hull carousel, and they outrank "left walks
+    -- back" here for the same reason they do there: the page's one control
+    -- is a thing you turn. Only with somewhere to turn to; with one game
+    -- running, left still walks back. Up, down and enter fall through to
+    -- the rows the deck stands in front of.
+    if M.home and M.at() == "play" and (keys.left or keys.right) then
+        local _, moved = M.click_zone(keys.right and 1 or -1)
+        if moved then return nil, true end
     end
 
     local id = M.stack[#M.stack]
@@ -4137,6 +4339,26 @@ end
 function M.click_close()
     if not M.open then return nil, false end
     return nil, M.close()
+end
+
+-- The chevron a drilled-into page wears on a phone. One level up, which is
+-- what escape does from the same place; a chevron is that press for a thumb.
+function M.click_back()
+    if not M.open or #M.stack < 2 then return nil, false end
+    table.remove(M.stack)
+    return nil, true
+end
+
+-- One step of the landing's zone carousel, wrapping. The zone rows still
+-- exist behind the deck (they are what enter presses and what the arena
+-- joins); this only moves the same cursor the list used to draw.
+function M.click_zone(dir)
+    if not M.open then return nil, false end
+    local n = #directory.rows
+    if n < 2 then return nil, false end
+    local at = M.sel.play or 1
+    M.sel.play = (at - 1 + dir) % n + 1
+    return nil, true
 end
 
 return M

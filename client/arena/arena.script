@@ -353,7 +353,11 @@ local charge_tap = nil
 -- the definition rejoins with it: a local is resolved at compile time, and a
 -- function written above the `local` it uses reads a nil global instead. That
 -- exact mistake is the reason the lint job exists.
-local enter_game
+-- Joining a game, and the landing's backdrop machinery beside it: one table,
+-- because update() reaches sixty enclosing locals and LuaJIT stops counting
+-- there. `session.enter` is the join; `session.attract_tick` dials the
+-- selected game as scenery and `session.attract_drop` tears that down.
+local session = {}
 -- Whether this step carries an upward gun pull. Beside `charge_tap` because it
 -- is the same shape of thing: a gesture latched by the interface and spent by
 -- exactly one simulation step.
@@ -571,13 +575,14 @@ local function hover_menu(x, y, vh)
     if not menu.open or touch.used or not x then
         return hovering(nil, nil)
     end
-    local px, py = x, vh - y
-    for _, r in ipairs(ui.hits) do
-        if px >= r.x and px <= r.x + r.w
-           and py >= r.y and py <= r.y + r.h then
-            -- Boxes are tested in publication order and the first one wins,
-            -- which is the rule a press already goes by, so a chip drawn over
-            -- the panel does not light the row behind it.
+    -- The same pick a press goes through, so a chip drawn over the panel
+    -- does not light the row behind it and a row cannot light under a
+    -- pointer whose click would land somewhere else. No slop: a pointer is
+    -- exact, and a hover reaching past what it covers would light rows a
+    -- click may still miss.
+    do
+        local r = ui.pick(x, vh - y, false)
+        if r then
             menu.pilot_hot = r.action == "pilot_page"
             menu.discord_hot = r.action == "discord_link"
             menu.add_hot = r.action == "add_go"
@@ -699,7 +704,7 @@ end
 -- each caller does *differently* is worth reading; what they do the same is
 -- not worth writing twice.
 --
--- The rooms panel is deliberately not here. See enter_game.
+-- The rooms panel is deliberately not here. See session.enter.
 local function leave_world()
     -- `net.connect` drops the old socket itself, but the world it filled is
     -- this script's to clear.
@@ -741,6 +746,10 @@ function go_home(self, at)
     leave_world()
     self.online = false
     self.joining = nil
+    -- Whatever the landing was watching went with the world; the attract
+    -- loop re-dials on its own once the menu is standing at home again.
+    self.attract = false
+    self.attract_zone = nil
     watching = false
     -- The rooms of the zone being left, and a question about one of them. The
     -- panel is deliberately left standing across a move within a zone, which
@@ -1340,7 +1349,12 @@ function update(self, dt)
     -- directory holds, and the counts on it are the whole reason somebody has
     -- it open. A panel drawn from the last answer before the join would be a
     -- list of where everybody was a minute ago.
-    if menu.open and menu.at() == "zones" then
+    -- "play" is the landing itself; "root" is the home screen whose stage
+    -- previews it, ticking clock included. The gate used to name "zones",
+    -- a level that stopped existing in a rename, so the games list only
+    -- refreshed from the rooms panel: the landing sat on whatever the
+    -- first ask returned, however long you stood there.
+    if menu.open and (menu.at() == "play" or menu.at() == "root") then
         directory.tick(dt)
     elseif ui.rooms_open and not menu.open then
         directory.tick(dt)
@@ -1379,13 +1393,46 @@ function update(self, dt)
     if self.online and net.connected and not self.joining
         and net.identity_moved(menu.name, account.account) then
         local j = net.last_join()
-        if j then enter_game(self, j.url, j.zone, j.wt, j.room, j.watch) end
+        if j then session.enter(self, j.url, j.zone, j.wt, j.room, j.watch) end
     end
 
     -- What the confirm card on your own game offers depends on which of your
     -- two lives this is, so the menu is told every frame, like the class.
     -- From the connection rather than the local, which syncs further down.
     menu.watching = net.watching
+    -- Whether the page is a phone's, so the menu can choose phone-shaped
+    -- navigation: the shop opens an item as a page there rather than beside
+    -- the list. Layout is the interface's business; which press means what
+    -- is the menu's, and this is the one fact it needs to decide.
+    menu.compact = ui.compact
+    -- The clock and the score of the match actually on screen behind the
+    -- landing, while the backdrop is up. The landing prefers this to the
+    -- directory's copy: it is the room a deploy would put you in, and it
+    -- moves every second without being asked.
+    menu.live_match = (self.attract and net.connected) and net.match or nil
+    -- Whether a live game is playing behind the home menu, so the landing
+    -- can part its panels around the fight instead of washing it out.
+    menu.scenery = (self.attract and net.connected and live) or false
+    -- And who is in it, for the standings panel beside the glass: the same
+    -- roster and sides the scoreboard reads, plus the watched subject's
+    -- team, which is the perspective every ship in the glass is already
+    -- colored from.
+    if menu.scenery then
+        menu.live_pilots = net.pilots
+        menu.live_watchers = net.watchers
+        menu.live_side = eye_team()
+        menu.live_sides = side_names()
+    else
+        menu.live_pilots = nil
+        menu.live_watchers = nil
+        menu.live_side = nil
+        menu.live_sides = nil
+    end
+
+    -- The landing's backdrop: while the home menu stands with nothing
+    -- joined, the selected game plays behind the panel. An arcade cabinet
+    -- runs its attract loop for the same reason.
+    session.attract_tick(self, dt)
 
     if menu.open then
         menu.tick(dt)
@@ -1532,6 +1579,13 @@ function update(self, dt)
             self.joining = 0
         end
         if net.connected and net.stats.snaps > 0 then
+            -- A backdrop that has landed is just a backdrop: the menu stays
+            -- up and stays home, and none of the arrival business below is
+            -- anybody's yet. Deploy does it all when it is pressed.
+            if self.attract then
+                self.joining = nil
+                menu.note = nil
+            else
             menu.home = false
             menu.close()
             menu.note = nil
@@ -1554,11 +1608,18 @@ function update(self, dt)
                 menu.open_kit(menu.class)
                 net.set_kit(menu.kit)
             end
+            end
         else
             self.joining = self.joining + dt
             if self.joining > 10 then
-                menu.note = "no answer from the zone"
-                go_home(self, "play")
+                if self.attract then
+                    -- Quietly: the landing never asked in words, so it does
+                    -- not get an error in them. The next try waits its turn.
+                    session.attract_drop(self)
+                else
+                    menu.note = "no answer from the zone"
+                    go_home(self, "play")
+                end
             end
         end
     end
@@ -1970,7 +2031,12 @@ function update(self, dt)
     -- The interface stays up under the menu. Nothing is paused, so hiding the
     -- scoreboard and the radar behind a panel would be a lie about what is
     -- happening: you can be shot while reading this.
-    if live then
+    --
+    -- Except behind the landing, where the game is scenery rather than a
+    -- seat: the deck carries the clock and the score, and a corner stack of
+    -- instruments about a fight you are not in would fight the menu for the
+    -- pointer.
+    if live and not self.attract then
         local e = eye()
         -- The perspective seat: yours, or the watched subject's, and nil when
         -- the channel has nobody to stand behind. Written out rather than as
@@ -2099,7 +2165,7 @@ end
 -- itself rather than a second copy of the game.
 -- Into a game: everything a join tears down and dials, shared by the row a
 -- player presses and the rejoin the client makes when its identity moves.
-function enter_game(self, address, zone_name, wt, room, watch)
+function session.enter(self, address, zone_name, wt, room, watch)
     -- Whatever we were in, we are leaving.
     --
     -- The rooms panel is the one thing left standing. Moving room is the one
@@ -2123,6 +2189,69 @@ function enter_game(self, address, zone_name, wt, room, watch)
     self.joining = 0
     self.join_progress = net.join_progress
     return true
+end
+
+-- Take the landing's backdrop down. Quietly, because nobody asked for it in
+-- words: the deck loses its live clock and falls back to the directory's,
+-- and the next try waits out the timer in session.attract_tick.
+function session.attract_drop(self)
+    if not self.attract then return end
+    leave_world()
+    self.online = false
+    self.joining = nil
+    self.attract = false
+    self.attract_zone = nil
+end
+
+-- The landing's backdrop, kept in step with the cursor: while the home menu
+-- is up with nothing joined, dial the selected game as a watcher so the
+-- actual battle plays behind the panel. It is session.enter minus everything a
+-- player asked for: no note, no directory teardown (the landing is still
+-- reading the list), and a failure just waits rather than reporting. The
+-- deploy press in apply_menu turns the standing connection into the real
+-- join; everything else that ends a session runs through go_home, which
+-- clears the flag.
+function session.attract_tick(self, dt)
+    self.attract_wait = math.max((self.attract_wait or 0) - dt, 0)
+    -- A real session, or a real join in flight: not this loop's business.
+    if self.online and not self.attract then return end
+    local r = (menu.open and menu.home)
+        and directory.rows[menu.sel.play or 1] or nil
+    if not r or not r.live or (r.address or "") == "" then
+        session.attract_drop(self)
+        return
+    end
+    if self.attract then
+        -- The carousel turned to another game: what is behind the panel
+        -- should be what the key would join, so re-dial at once rather
+        -- than waiting out a failure timer nobody's failure started.
+        if self.attract_zone ~= r.zone then
+            session.attract_drop(self)
+            self.attract_wait = 0
+        else return end
+    end
+    if self.attract_wait > 0 then return end
+    -- Grown before the dial, so a zone that refuses instantly cannot be
+    -- dialled every frame.
+    self.attract_wait = 5
+    -- The callback outlives a deploy: after the conversion this same socket
+    -- is the real session, and its death then deserves the words and the
+    -- go_home a player's own join gets. Only scenery dies quietly.
+    local started = net.connect(r.address, menu.class, menu.name, function(why)
+        if self.attract then
+            session.attract_drop(self)
+        else
+            menu.note = why
+            go_home(self, "play")
+        end
+    end, r.zone, true, r.wt, nil)
+    if started then
+        self.online = true
+        self.joining = 0
+        self.join_progress = net.join_progress
+        self.attract = true
+        self.attract_zone = r.zone
+    end
 end
 
 -- May this pilot spend a hull, right now?
@@ -2169,7 +2298,11 @@ function apply_menu(self, act)
         -- would have dressed the Apex they are sitting in with somebody
         -- else's build. The account still keeps it, because it is their kit
         -- for that hull whether or not they are in one.
-        if self.online and class == menu.class then net.set_kit(menu.kit) end
+        -- Not to the backdrop: a watcher has no seat to dress, and the kit
+        -- travels with the deploy anyway.
+        if self.online and not self.attract and class == menu.class then
+            net.set_kit(menu.kit)
+        end
         return
     end
     -- One step in one slot, bought. The meta-layer prices it, checks the
@@ -2191,8 +2324,11 @@ function apply_menu(self, act)
         return
     end
     if act == "ship" then
-        -- With no game on, this is simply the hull you will arrive in.
-        if not self.online then
+        -- With no game on, this is simply the hull you will arrive in. The
+        -- landing's backdrop counts as no game: you are configuring, and
+        -- only deploy commits. Without the attract arm here, picking a hull
+        -- to admire it would fly you into the scenery.
+        if not self.online or self.attract then
             menu.class = menu.pending
             menu.spectate = false
             menu.save_identity()
@@ -2296,8 +2432,27 @@ function apply_menu(self, act)
         end
         menu.zone = r.zone
         menu.save_identity()
-        enter_game(self, r.address, r.zone, r.wt, menu.chosen_room,
-                   menu.spectate)
+        -- The battle behind the panel is the room this press means, and the
+        -- connection to it is already standing: step into it rather than
+        -- re-dialling it. `net.set_class` is the same ask the ship page
+        -- makes from the bench, and a room that filled while you watched
+        -- refuses it the same way, which leaves you exactly where you were.
+        if self.attract and net.connected and not menu.chosen_room
+           and self.attract_zone == r.zone then
+            self.attract = false
+            self.attract_zone = nil
+            menu.home = false
+            if not menu.spectate then
+                net.set_class(menu.class)
+                fly_kit(menu.class)
+            end
+            menu.close()
+            account.room_changed()
+            return
+        end
+        self.attract = false
+        session.enter(self, r.address, r.zone, r.wt, menu.chosen_room,
+                      menu.spectate)
         -- Spent. A room is named by the press that named it and by nothing
         -- afterwards: a reconnect the client makes on its own belongs wherever
         -- the ladder puts it, not wherever somebody clicked ten minutes ago.
@@ -2329,7 +2484,7 @@ function apply_menu(self, act)
         end
         menu.zone = at.zone
         menu.save_identity()
-        enter_game(self, at.address, at.zone, at.wt, nil, menu.spectate)
+        session.enter(self, at.address, at.zone, at.wt, nil, menu.spectate)
         return
     end
 
@@ -2342,7 +2497,9 @@ function apply_menu(self, act)
         -- page stays open so the wash moving is the answer.
         menu.spectate = true
         menu.save_identity()
-        if not self.online then return end
+        -- The backdrop is already watching; this only changed how you will
+        -- arrive when you deploy.
+        if not self.online or self.attract then return end
         if not watching then net.watch(255) end
         menu.close()
         return
@@ -2351,6 +2508,10 @@ function apply_menu(self, act)
     -- Leaving, and giving up on a join that has not landed. Both are the same
     -- act: there is no game, so put the menu back with nothing behind it.
     if act == "leave" or act == "cancel" then
+        -- The backdrop is not a place you are, so escape at home has nothing
+        -- to leave: tearing it down here would blink the battle out and the
+        -- attract loop would dial it right back.
+        if self.attract then return end
         if self.online then
             menu.note = nil
             go_home(self, "play")
@@ -2491,262 +2652,269 @@ function on_input(self, action_id, action)
     -- game.project asks for rather than the size the canvas actually is, so
     -- on any window that is not exactly 1280 by 800 every button was tested
     -- against the wrong place, and on a phone by a factor of three.
-    local function hit(x, y)
-        local px, py = x, (self.vh or 0) - y
-        for _, r in ipairs(ui.hits) do
-            if px >= r.x and px <= r.x + r.w
-               and py >= r.y and py <= r.y + r.h then
-                -- The controls that exist while the menu is shut.
-                if r.action == "help_prompt_close" then
-                    ui.help_prompt = false
-                    menu.dismiss_help_prompt()
-                    sfx.ui("ui_move")
-                    return true
-                end
-                if r.action == "help_prompt_open" then
-                    toggle_help()
-                    sfx.ui("ui_go")
-                    return true
-                end
-                if r.action == "open" then
-                    toggle_menu()
-                    sfx.ui("ui_go")
-                    return true
-                end
-                if r.action == "details" then
-                    toggle_details()
-                    sfx.ui("ui_move")
-                    return true
-                end
-                if r.action == "map" then
-                    toggle_map()
-                    sfx.ui("ui_move")
-                    return true
-                end
-                -- The rooms list, and the scoreboard it stands in front of.
-                -- One panel holds the left column, so opening either puts the
-                -- other away rather than drawing both into the same pixels.
-                if r.action == "rooms" then
-                    ui.rooms_open = not ui.rooms_open
-                    if ui.rooms_open then ui.details = false end
-                    ui.room_scroll = 0
-                    ui.room_ask = nil
-                    sfx.ui("ui_move")
-                    return true
-                end
-                -- The panel itself, which swallows a press that missed a row
-                -- so it cannot fall through to the guns behind it.
-                if r.action == "rooms_list" then return true end
-                -- A room to move to. The address travels with the row, since
-                -- a room on another arena server is another process and the
-                -- join is a reconnect; which one it is never reaches the
-                -- player.
-                -- A room pressed is a room asked about. Moving is a reconnect
-                -- and a reconnect is a fresh spawn, so it costs everything a
-                -- pilot is carrying; the second press is what pays it.
-                -- Pressing the same row again puts the question away, which is
-                -- how every other toggle in here behaves.
-                if r.action == "room" then
-                    ui.room_ask = (ui.room_ask ~= r.value) and r.value or nil
-                    sfx.ui(ui.room_ask and "ui_go" or "ui_move")
-                    return true
-                end
-                if r.action == "room_answer" then
-                    local want = ui.room_ask
-                    ui.room_ask = nil
-                    if r.value ~= 1 then
-                        sfx.ui("ui_move")
-                        return true
-                    end
-                    local rm = nil
-                    for _, r2 in ipairs(my_rooms() or {}) do
-                        if r2.n == want then rm = r2 end
-                    end
-                    if rm then
-                        -- `live` because the join path refuses a row without
-                        -- it and says nobody is running the game. That flag
-                        -- means "the directory named an address for this",
-                        -- which is exactly what a room in this list is: it
-                        -- came from the same reply, and a room nobody serves
-                        -- is not in it at all.
-                        menu.chosen = {name = menu.zone, zone = menu.zone,
-                                       address = rm.address, wt = rm.wt,
-                                       live = true}
-                        -- The room's own number, which is what the server
-                        -- answers a join by and what the panel drew. Its
-                        -- position in any list is not a handle: reclaiming an
-                        -- empty room moves every position after it.
-                        menu.chosen_room = rm.n
-                        apply_menu(self, "join")
-                        sfx.ui("ui_go")
-                    end
-                    return true
-                end
-                -- Who that is. Clicking the pilot already being read about
-                -- closes the box, which is how every other toggle in here
-                -- behaves and saves aiming at the X.
-                if r.action == "pilot" then
-                    ui.inspect = (ui.inspect ~= r.value) and r.value or nil
-                    sfx.ui(ui.inspect and "ui_go" or "ui_move")
-                    return true
-                end
-                if r.action == "uninspect" then
-                    ui.inspect = nil
-                    sfx.ui("ui_move")
-                    return true
-                end
-                -- Ask the pilot the box is about to fly with you. The box
-                -- stays open: the reply is the word under it changing, and
-                -- closing it would take that away before it could be read.
-                if r.action == "invite" then
-                    net.invite(r.value)
-                    sfx.ui("ui_go")
-                    return true
-                end
-                -- Borrow this pilot's eyes. The box shuts behind it, unlike
-                -- an invitation: the answer to this one is the whole screen
-                -- changing to their view, and a panel about them left
-                -- standing over it would be describing what you are now
-                -- looking through.
-                if r.action == "watch" then
-                    net.watch(r.value)
-                    ui.inspect = nil
-                    sfx.ui("ui_go")
-                    return true
-                end
-                if r.action == "debug" then
-                    ui.debug = not ui.debug
-                    sfx.ui("ui_move")
-                    return true
-                end
-                -- One of the fixed phrases, off the card between matches. The
-                -- room refuses it while a match is running, so a press that
-                -- lands late is a press that does nothing rather than one the
-                -- client has to guard.
-                if r.action == "say" then
-                    net.say(r.value)
-                    sfx.ui("ui_go")
-                    return true
-                end
-                -- A heading picks the column and takes the list back to the
-                -- top, because the row somebody was looking at is not the row
-                -- that will be there after a re-sort.
-                local sort = string.match(r.action or "", "^sort_(%a+)$")
-                if sort then
-                    if ui.sort ~= sort then
-                        ui.sort = sort
-                        ui.scroll = 0
-                        sfx.ui("ui_move")
-                    end
-                    return true
-                end
-                -- The list itself swallows the click so a tap meant for a
-                -- pilot's row does not fall through to whatever is behind it.
-                if r.action == "scores" then return true end
-                if not menu.open then return false end
-                -- A press anywhere but the filter box lets go of it, which is
-                -- what a caret does everywhere else. Before the branches
-                -- below, so a press that also does something loses the caret
-                -- as well as doing it.
-                if r.action ~= "filter_box" then menu.blur_filter() end
-                -- And the same for the friends page's add field. The button
-                -- beside it is the exception as well as the box: a press on
-                -- "add" that dropped the caret first would send and then look
-                -- like nothing had focus.
-                if r.action ~= "add_box" and r.action ~= "add_go"
-                   and r.action ~= "found" then
-                    menu.blur_add()
-                end
-                -- A press on one of the names under the box is a press on the
-                -- box as far as the caret goes, so the list does not vanish
-                -- under the finger reaching for it.
-                -- Written out rather than as an and/or chain: that form
-                -- keeps only the first return, so `moved` came back nil and
-                -- every click was silent. The sounds are half of what makes
-                -- this feel like a control panel.
-                local act, moved
-                if r.action == "stage" then
-                    act, moved = menu.click_stage(r.value)
-                elseif r.action == "key" then
-                    -- A key on the drawn board. The picture is the same list
-                    -- as the chips under it, so it answers a press the same
-                    -- way one of them does.
-                    act, moved = menu.click_key(r.value)
-                elseif r.action == "carousel" then
-                    -- The arrow beside the ship. One ship along, wrapping.
-                    act, moved = menu.click_carousel(r.value)
-                elseif r.action == "kit_at" then
-                    -- One pip of a ladder. The row takes the cursor and the
-                    -- slot goes to that step, which is what a press on the
-                    -- fourth dot of a five-dot row means.
-                    act, moved = menu.click_kit_at(r.value, r.level)
-                elseif r.action == "charge_swap" then
-                    -- The box beside a charge's pips. The two charges trade
-                    -- keys; nothing about the ship changes.
-                    act, moved = menu.swap_charges()
-                elseif r.action == "sort" then
-                    -- A column head on the week's table. The same one again
-                    -- turns the order over.
-                    act, moved = menu.click_sort(r.value)
-                elseif r.action == "sort_step" then
-                    -- The arrows either side of it, where the table is too
-                    -- narrow to draw the heads as a row.
-                    act, moved = menu.step_sort(r.value)
-                elseif r.action == "week" then
-                    act, moved = menu.step_week(r.value)
-                elseif r.action == "filter_box" then
-                    -- The box over the week's table. A caret where there is a
-                    -- keyboard, a card where there is not.
-                    act, moved = menu.click_filter()
-                elseif r.action == "filter_wipe" then
-                    act, moved = menu.wipe_filter()
-                elseif r.action == "add_box" then
-                    -- The box on the friends page. A caret where there is a
-                    -- keyboard, a card where there is not.
-                    act, moved = menu.click_add()
-                elseif r.action == "add_wipe" then
-                    act, moved = menu.wipe_add()
-                elseif r.action == "add_go" then
-                    act, moved = menu.send_add()
-                elseif r.action == "found" then
-                    -- One of the call signs the box turned up. Added by
-                    -- number, so two names sharing a prefix cannot be
-                    -- confused for each other.
-                    act, moved = menu.click_found(r.value)
-                elseif r.action == "friend_act" then
-                    -- One button on one friends row: accept, ignore, join,
-                    -- unfriend. `level` is which of that row's own buttons.
-                    act, moved = menu.click_friend(r.value, r.level)
-                elseif r.action == "discord_link" then
-                    -- The corner button, which opens the page about the
-                    -- server rather than the server. No anchor over it any
-                    -- more: the link is a row on that page, and a page opened
-                    -- from inside the game is not a tab a blocker can stop.
-                    act, moved = menu.open_discord()
-                elseif r.action == "pilot_page" then
-                    -- The call sign at the far end of the tab row. There is no
-                    -- pilot stop on that row any more: the name is the stop.
-                    act, moved = menu.click_pilot()
-                elseif r.action == "rail" then
-                    act, moved = menu.click_rail(r.value)
-                elseif r.action == "close" then
-                    act, moved = menu.click_close()
-                elseif r.action == "panel" then
-                    -- The panel's own ground. It exists to stop a press on
-                    -- the space between two rows falling through to the box
-                    -- behind it, which is the one that shuts the menu.
-                    return true
-                elseif r.action == "answer" then
-                    act, moved = menu.click_answer(r.value)
-                elseif r.action == "field" then
-                    moved = menu.focus_field(r.value)
-                else
-                    act, moved = menu.click(r.value)
-                end
-                if moved then sfx.ui(act and "ui_go" or "ui_move") end
-                if act then apply_menu(self, act) end
+    local function hit(x, y, finger)
+        -- Which box, from ui.pick: the one copy of the rule, containment by
+        -- rank with publish order breaking ties, and for a finger the near
+        -- miss within the touch floor. See M.pick in ui.lua.
+        local r = ui.pick(x, (self.vh or 0) - y, finger)
+        if r then
+            -- The controls that exist while the menu is shut.
+            if r.action == "help_prompt_close" then
+                ui.help_prompt = false
+                menu.dismiss_help_prompt()
+                sfx.ui("ui_move")
                 return true
             end
+            if r.action == "help_prompt_open" then
+                toggle_help()
+                sfx.ui("ui_go")
+                return true
+            end
+            if r.action == "open" then
+                toggle_menu()
+                sfx.ui("ui_go")
+                return true
+            end
+            if r.action == "details" then
+                toggle_details()
+                sfx.ui("ui_move")
+                return true
+            end
+            if r.action == "map" then
+                toggle_map()
+                sfx.ui("ui_move")
+                return true
+            end
+            -- The rooms list, and the scoreboard it stands in front of.
+            -- One panel holds the left column, so opening either puts the
+            -- other away rather than drawing both into the same pixels.
+            if r.action == "rooms" then
+                ui.rooms_open = not ui.rooms_open
+                if ui.rooms_open then ui.details = false end
+                ui.room_scroll = 0
+                ui.room_ask = nil
+                sfx.ui("ui_move")
+                return true
+            end
+            -- The panel itself, which swallows a press that missed a row
+            -- so it cannot fall through to the guns behind it.
+            if r.action == "rooms_list" then return true end
+            -- A room to move to. The address travels with the row, since
+            -- a room on another arena server is another process and the
+            -- join is a reconnect; which one it is never reaches the
+            -- player.
+            -- A room pressed is a room asked about. Moving is a reconnect
+            -- and a reconnect is a fresh spawn, so it costs everything a
+            -- pilot is carrying; the second press is what pays it.
+            -- Pressing the same row again puts the question away, which is
+            -- how every other toggle in here behaves.
+            if r.action == "room" then
+                ui.room_ask = (ui.room_ask ~= r.value) and r.value or nil
+                sfx.ui(ui.room_ask and "ui_go" or "ui_move")
+                return true
+            end
+            if r.action == "room_answer" then
+                local want = ui.room_ask
+                ui.room_ask = nil
+                if r.value ~= 1 then
+                    sfx.ui("ui_move")
+                    return true
+                end
+                local rm = nil
+                for _, r2 in ipairs(my_rooms() or {}) do
+                    if r2.n == want then rm = r2 end
+                end
+                if rm then
+                    -- `live` because the join path refuses a row without
+                    -- it and says nobody is running the game. That flag
+                    -- means "the directory named an address for this",
+                    -- which is exactly what a room in this list is: it
+                    -- came from the same reply, and a room nobody serves
+                    -- is not in it at all.
+                    menu.chosen = {name = menu.zone, zone = menu.zone,
+                                   address = rm.address, wt = rm.wt,
+                                   live = true}
+                    -- The room's own number, which is what the server
+                    -- answers a join by and what the panel drew. Its
+                    -- position in any list is not a handle: reclaiming an
+                    -- empty room moves every position after it.
+                    menu.chosen_room = rm.n
+                    apply_menu(self, "join")
+                    sfx.ui("ui_go")
+                end
+                return true
+            end
+            -- Who that is. Clicking the pilot already being read about
+            -- closes the box, which is how every other toggle in here
+            -- behaves and saves aiming at the X.
+            if r.action == "pilot" then
+                ui.inspect = (ui.inspect ~= r.value) and r.value or nil
+                sfx.ui(ui.inspect and "ui_go" or "ui_move")
+                return true
+            end
+            if r.action == "uninspect" then
+                ui.inspect = nil
+                sfx.ui("ui_move")
+                return true
+            end
+            -- Ask the pilot the box is about to fly with you. The box
+            -- stays open: the reply is the word under it changing, and
+            -- closing it would take that away before it could be read.
+            if r.action == "invite" then
+                net.invite(r.value)
+                sfx.ui("ui_go")
+                return true
+            end
+            -- Borrow this pilot's eyes. The box shuts behind it, unlike
+            -- an invitation: the answer to this one is the whole screen
+            -- changing to their view, and a panel about them left
+            -- standing over it would be describing what you are now
+            -- looking through.
+            if r.action == "watch" then
+                net.watch(r.value)
+                ui.inspect = nil
+                sfx.ui("ui_go")
+                return true
+            end
+            if r.action == "debug" then
+                ui.debug = not ui.debug
+                sfx.ui("ui_move")
+                return true
+            end
+            -- One of the fixed phrases, off the card between matches. The
+            -- room refuses it while a match is running, so a press that
+            -- lands late is a press that does nothing rather than one the
+            -- client has to guard.
+            if r.action == "say" then
+                net.say(r.value)
+                sfx.ui("ui_go")
+                return true
+            end
+            -- A heading picks the column and takes the list back to the
+            -- top, because the row somebody was looking at is not the row
+            -- that will be there after a re-sort.
+            local sort = string.match(r.action or "", "^sort_(%a+)$")
+            if sort then
+                if ui.sort ~= sort then
+                    ui.sort = sort
+                    ui.scroll = 0
+                    sfx.ui("ui_move")
+                end
+                return true
+            end
+            -- The list itself swallows the click so a tap meant for a
+            -- pilot's row does not fall through to whatever is behind it.
+            if r.action == "scores" then return true end
+            if not menu.open then return false end
+            -- A press anywhere but the filter box lets go of it, which is
+            -- what a caret does everywhere else. Before the branches
+            -- below, so a press that also does something loses the caret
+            -- as well as doing it.
+            if r.action ~= "filter_box" then menu.blur_filter() end
+            -- And the same for the friends page's add field. The button
+            -- beside it is the exception as well as the box: a press on
+            -- "add" that dropped the caret first would send and then look
+            -- like nothing had focus.
+            if r.action ~= "add_box" and r.action ~= "add_go"
+               and r.action ~= "found" then
+                menu.blur_add()
+            end
+            -- A press on one of the names under the box is a press on the
+            -- box as far as the caret goes, so the list does not vanish
+            -- under the finger reaching for it.
+            -- Written out rather than as an and/or chain: that form
+            -- keeps only the first return, so `moved` came back nil and
+            -- every click was silent. The sounds are half of what makes
+            -- this feel like a control panel.
+            local act, moved
+            if r.action == "stage" then
+                act, moved = menu.click_stage(r.value)
+            elseif r.action == "key" then
+                -- A key on the drawn board. The picture is the same list
+                -- as the chips under it, so it answers a press the same
+                -- way one of them does.
+                act, moved = menu.click_key(r.value)
+            elseif r.action == "carousel" then
+                -- The arrow beside the ship. One ship along, wrapping.
+                act, moved = menu.click_carousel(r.value)
+            elseif r.action == "kit_at" then
+                -- One pip of a ladder. The row takes the cursor and the
+                -- slot goes to that step, which is what a press on the
+                -- fourth dot of a five-dot row means.
+                act, moved = menu.click_kit_at(r.value, r.level)
+            elseif r.action == "charge_swap" then
+                -- The box beside a charge's pips. The two charges trade
+                -- keys; nothing about the ship changes.
+                act, moved = menu.swap_charges()
+            elseif r.action == "sort" then
+                -- A column head on the week's table. The same one again
+                -- turns the order over.
+                act, moved = menu.click_sort(r.value)
+            elseif r.action == "sort_step" then
+                -- The arrows either side of it, where the table is too
+                -- narrow to draw the heads as a row.
+                act, moved = menu.step_sort(r.value)
+            elseif r.action == "week" then
+                act, moved = menu.step_week(r.value)
+            elseif r.action == "filter_box" then
+                -- The box over the week's table. A caret where there is a
+                -- keyboard, a card where there is not.
+                act, moved = menu.click_filter()
+            elseif r.action == "filter_wipe" then
+                act, moved = menu.wipe_filter()
+            elseif r.action == "add_box" then
+                -- The box on the friends page. A caret where there is a
+                -- keyboard, a card where there is not.
+                act, moved = menu.click_add()
+            elseif r.action == "add_wipe" then
+                act, moved = menu.wipe_add()
+            elseif r.action == "add_go" then
+                act, moved = menu.send_add()
+            elseif r.action == "found" then
+                -- One of the call signs the box turned up. Added by
+                -- number, so two names sharing a prefix cannot be
+                -- confused for each other.
+                act, moved = menu.click_found(r.value)
+            elseif r.action == "friend_act" then
+                -- One button on one friends row: accept, ignore, join,
+                -- unfriend. `level` is which of that row's own buttons.
+                act, moved = menu.click_friend(r.value, r.level)
+            elseif r.action == "discord_link" then
+                -- The corner button, which opens the page about the server
+                -- rather than the server. No anchor over it any more: the
+                -- link is a row on that page, and a page opened from inside
+                -- the game is not a tab a blocker can stop.
+                act, moved = menu.open_discord()
+            elseif r.action == "pilot_page" then
+                -- The call sign at the far end of the tab row. There is no
+                -- pilot stop on that row any more: the name is the stop.
+                act, moved = menu.click_pilot()
+            elseif r.action == "rail" then
+                act, moved = menu.click_rail(r.value)
+            elseif r.action == "close" then
+                act, moved = menu.click_close()
+            elseif r.action == "back" then
+                -- The chevron a drilled-into page wears on a phone: one
+                -- level up, exactly what escape does from there.
+                act, moved = menu.click_back()
+            elseif r.action == "zone" then
+                -- The landing's zone carousel, turned by its triangles.
+                act, moved = menu.click_zone(r.value)
+            elseif r.action == "panel" then
+                -- The panel's own ground. It exists to stop a press on
+                -- the space between two rows falling through to the box
+                -- behind it, which is the one that shuts the menu.
+                return true
+            elseif r.action == "answer" then
+                act, moved = menu.click_answer(r.value)
+            elseif r.action == "field" then
+                moved = menu.focus_field(r.value)
+            else
+                act, moved = menu.click(r.value)
+            end
+            if moved then sfx.ui(act and "ui_go" or "ui_move") end
+            if act then apply_menu(self, act) end
+            return true
         end
         return false
     end
@@ -2825,7 +2993,7 @@ function on_input(self, action_id, action)
                     if math.abs(dy) > 8 then list_drag.moved = true end
                     ui.page_scroll = list_drag.at + dy
                     if t.released then
-                        if not list_drag.moved then hit(sx, sy) end
+                        if not list_drag.moved then hit(sx, sy, true) end
                         list_drag = nil
                     end
                 elseif list_drag and t.id == list_drag.id then
@@ -2858,7 +3026,7 @@ function on_input(self, action_id, action)
                         ui.scroll = to
                     end
                     if t.released then
-                        if not list_drag.moved then hit(sx, sy) end
+                        if not list_drag.moved then hit(sx, sy, true) end
                         list_drag = nil
                     end
                 end
@@ -2878,7 +3046,7 @@ function on_input(self, action_id, action)
         if action.touch then
             for _, t in ipairs(action.touch) do
                 if t.pressed and not (claimed and claimed[t.id])
-                   and hit(t.screen_x or t.x, t.screen_y or t.y) then
+                   and hit(t.screen_x or t.x, t.screen_y or t.y, true) then
                     claimed = claimed or {}
                     claimed[t.id] = true
                 end

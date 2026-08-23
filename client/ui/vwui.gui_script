@@ -31,9 +31,12 @@ local SIZES = {ui = 26, menu = 26}
 -- stops, with the tab row and the headings on top. Nodes cost a pointer and a
 -- struct each and only the live ones are touched in a frame, so the ceiling is
 -- set where no page can reach it rather than where today's pages happen to
--- land. `client/tests/glyph_budget_test.lua` draws the widest ones at the
--- tallest windows and fails if any of them asks for more.
-local POOL = 1024
+-- land. The figure itself lives in state.lua, where the side that writes the
+-- text can be held to it: a cap the writer cannot see is a cap somebody finds
+-- by screenshot. `client/tests/glyph_budget_test.lua` draws the widest pages
+-- at the tallest windows and `podium_test` the worst match frame, both
+-- against that one number.
+local POOL = state.TEXT_POOL
 
 local PIVOTS = {
     left = gui.PIVOT_W,

@@ -26,12 +26,18 @@ local function check(name, ok, detail)
     end
 end
 
--- Read off the gui script rather than written twice. The pool is that file's
--- number; this file only asks whether a frame fits inside it.
+-- Read off state.lua rather than written twice. The gui script draws its
+-- pool from `state.TEXT_POOL`, so the side that writes the text and the two
+-- tests that measure it are all held to the one number; this file only asks
+-- whether a frame fits inside it.
 local POOL
 do
-    local src = io.open("client/ui/vwui.gui_script"):read("*a")
-    POOL = tonumber(string.match(src, "local POOL = (%d+)"))
+    local src = io.open("client/arena/state.lua"):read("*a")
+    POOL = tonumber(string.match(src, "TEXT_POOL = (%d+)"))
+    local gui = io.open("client/ui/vwui.gui_script"):read("*a")
+    if not string.match(gui, "local POOL = state%.TEXT_POOL") then
+        POOL = nil
+    end
 end
 check("the gui script names a pool", POOL and POOL > 0, tostring(POOL))
 -- And the scene has to hold at least that many, or the engine drops the

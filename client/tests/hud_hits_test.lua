@@ -102,7 +102,9 @@ _G.sim = sim
 
 -- `state` is a plain table of text the gui script drains, and `touch` only
 -- has to answer that nothing is being touched.
-package.loaded["arena.state"] = {text = {}, n = 0, version = 0}
+-- The real module: it is plain data, and the debug readout reads its
+-- TEXT_POOL budget.
+package.loaded["arena.state"] = dofile("client/arena/state.lua")
 package.loaded["arena.touch"] = {
     layout = function() return {charge = {}} end,
     used = false,
@@ -179,14 +181,12 @@ local function frame(o)
     ui.finish()
 end
 
--- What a press at this point lands on, by the same rule `on_input` uses: the
--- first box in publication order that contains it.
-local function press(x, y)
-    for _, r in ipairs(ui.hits) do
-        if x >= r.x and x <= r.x + r.w and y >= r.y and y <= r.y + r.h then
-            return r.action, r.value
-        end
-    end
+-- What a press at this point lands on, through the rule itself. `ui.pick` is
+-- the copy `on_input` uses, so what this test proves about a press is what a
+-- press does, rather than what a second reading of the list would do.
+local function press(x, y, finger)
+    local r = ui.pick(x, y, finger)
+    if r then return r.action, r.value end
     return nil
 end
 

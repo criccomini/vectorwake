@@ -143,6 +143,15 @@ pub struct RoomView {
     /// No seat left for a person. The bots do not count against this: the bot
     /// server stands one down when somebody arrives.
     pub full: bool,
+    /// Where the room's match stands, so a games list can say "next match in
+    /// 0:12", which is the one line that turns a row into a reason to press
+    /// play now. Seconds left in whichever phase the room is in, and zero
+    /// with `playing` false for a mode with no matches: a clock of zero is
+    /// not a phase, so the pair cannot be misread as an intermission.
+    #[serde(default)]
+    pub clock: u32,
+    #[serde(default)]
+    pub playing: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]

@@ -1854,6 +1854,21 @@ do
     check("nothing types into a page you are only looking at",
           menu.type_add("x") == false, menu.add_name)
 
+    -- Nor into a shut menu. The model keeps its stack when the panel comes
+    -- down, and in a match the shut menu parks where friends is the first
+    -- tab, so the letters a pilot's hands make in a fight, P and M and H
+    -- driving the HUD among them, were landing in the invisible box and
+    -- surfacing as a garbage call sign the next time the menu opened.
+    menu.stack = {"root", "friends"}
+    menu.open = false
+    menu.add_name = ""
+    check("nothing types into a shut menu",
+          menu.type_add("p") == false and menu.add_name == "",
+          menu.add_name)
+    check("and nothing rubs one",
+          menu.rub_add() == false)
+    menu.open = true
+
     -- The games page asks for this too, because the row on it counts friends
     -- in a game and a count that only arrives once you have opened the page it
     -- is advertising cannot be the reason you open it.
