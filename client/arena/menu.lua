@@ -1826,6 +1826,35 @@ local NODES = {
         return rows
     end},
 
+    -- Where the game is talked about, reached from the button at the end of
+    -- the tab row.
+    --
+    -- The button used to be the link: press it, a tab opens, and whatever you
+    -- were doing is behind a browser window you did not ask for. That is a
+    -- fine control for somebody who already knows what is on the other side
+    -- of it and a poor one for everybody else, which on a game with eight
+    -- players in a match is most of the people who see it. A page costs one
+    -- press and answers the question the button was silently assuming.
+    --
+    -- The press that leaves is the first row, so a hand that came here on the
+    -- arrows can press enter twice and be there. The lines under it are what
+    -- actually happens in the room rather than an argument for community: a
+    -- reason to open something is a thing you would get out of it.
+    discord = {off_rail = true, rows = function()
+        return {
+            {label = "open the invite", sect = "vectorwake on discord",
+             detail = "a new tab", act = "discord", link = DISCORD,
+             pick = true,
+             note = "the game keeps running behind it"},
+            {label = "say when you are flying", sect = "what it is for",
+             note = "a match wants eight and the room is how they meet"},
+            {label = "report what broke",
+             note = "the people who wrote this read it"},
+            {label = "argue about the next ship",
+             note = "hulls, maps and rules, before they are built"},
+        }
+    end},
+
     -- Settings carry a `choice`, where a value sits along its range, as well
     -- as the word for it. The interface draws the range as steps and lights
     -- the one it is on, which says "two of three" in the shape of the thing
@@ -2865,11 +2894,30 @@ local function corner_stops()
     return out
 end
 
+-- Which of them wears the lit mark, which is the tab row's own rule read
+-- across the whole row: what is lit is where you are, and the two buttons at
+-- the far end are stops on that row like any other.
+--
+-- Inside one of their pages it is that page. The stop and the node share a
+-- name, which is what lets this ask the question without a second table
+-- mapping one onto the other. Otherwise it is wherever the arrows are, and
+-- nobody while they are on a tab or down inside a page a tab leads to.
+local function corner_lit()
+    local stops = corner_stops()
+    if #M.stack > 1 then
+        for _, which in ipairs(stops) do
+            if M.stack[2] == which then return which end
+        end
+        return nil
+    end
+    return M.corner_sel and stops[M.corner_sel] or nil
+end
+
 -- One of them, pressed. Enter and down both land here, the way they both act
 -- on a tab.
 local function press_corner(which)
     if which == "pilot" then return M.click_pilot() end
-    if which == "discord" then return M.click_discord() end
+    if which == "discord" then return M.open_discord() end
     return nil, false
 end
 
@@ -2904,12 +2952,13 @@ function M.view()
                  -- right edge and this file lists them from the left, and a
                  -- number would have to mean the same thing in both.
                  --
-                 -- Only while the cursor is on the row they are part of. A
-                 -- page reached by a pointer leaves whatever the arrows were
-                 -- last on behind, and a lit button beside a page nobody is
-                 -- looking at the top of would be a cursor in two places.
-                 corner_sel = (#M.stack == 1) and M.corner_sel
-                     and corner_stops()[M.corner_sel] or nil,
+                 -- While the cursor is on the row they are part of, or
+                 -- while the page behind one of them is the page on screen.
+                 -- Anywhere else it is nobody: a page reached by a pointer
+                 -- leaves whatever the arrows were last on behind, and a lit
+                 -- button over a page nobody is at the top of would be a
+                 -- cursor in two places. See `corner_lit`.
+                 corner_sel = corner_lit(),
                  -- The one outbound link in this game, as the address the
                  -- corner button carries. On every layout: a phone drew it as
                  -- a row on the play page and had no account button anywhere,
@@ -3152,6 +3201,31 @@ local function open_external(url)
     return nil
 end
 
+-- The two pages that open with the cursor in a field rather than on a row,
+-- and the flag each one keeps that in. Named here because two things ask the
+-- same question about them: `activate`, which turns the field on as it goes
+-- in, and `enterable`, which counts a field as somewhere to stand.
+local FIELD_PAGE = {friends = "add_on", standings = "filter_on"}
+
+-- Is there anywhere to be on that page yet?
+--
+-- The catalog and the games list come over the wire, and until they land those
+-- pages are one line saying so. Stepping into one takes the arrows off the tab
+-- row and puts the cursor nowhere: down did nothing visible, and the way back
+-- was a key nobody had a reason to press. The stage already previews the page
+-- from the tab above it, so refusing the step hides nothing -- the same words
+-- are on screen either way -- and the press starts working the moment the rows
+-- arrive.
+--
+-- A field counts. The friends page with nobody on it is the page a new player
+-- opens to add their first friend, and the whole of it is the box.
+local function enterable(id)
+    if FIELD_PAGE[id] then return true end
+    local nd = NODES[id]
+    if not nd then return false end
+    return #rows_of(nd) > 0
+end
+
 -- Activate the selected row. Returns an action for the arena, or nil.
 -- Press a row, or nudge it.
 --
@@ -3164,6 +3238,7 @@ local function activate(by)
     local r = rows[row_index(rows)]
     if not r then return nil end
     if r.go then
+        if not enterable(r.go) then return nil end
         M.stack[#M.stack + 1] = r.go
         M.note = nil
         -- A page whose first control is a field opens with the cursor in it.
@@ -3171,8 +3246,8 @@ local function activate(by)
         -- everything else on the page is one press further down, which is
         -- where it was anyway. The two fields answer the same keys, so they
         -- take them at the same moment.
-        if r.go == "friends" then M.add_on = true end
-        if r.go == "standings" then M.filter_on = true end
+        local field = FIELD_PAGE[r.go]
+        if field then M[field] = true end
         return nil
     end
     if not r.act then return nil end
@@ -3481,6 +3556,22 @@ function M.step(keys)
         elseif keys.up and (n == 0 or row_index(rows) <= 1) then
             M.filter_on = true
             return nil, true
+        elseif keys.left or keys.right then
+            -- The table's own two axes. Down the page is the ladder and
+            -- across it is time, which is what the pair of arrows over the
+            -- table already says and what the page has no other use for:
+            -- there is nothing to the side of a pilot's row.
+            --
+            -- Left goes back a week because the arrow pointing left points at
+            -- the earlier one, which is the direction that reading a date
+            -- runs. There is no forward from the week that is running, and
+            -- the step says so by refusing rather than by drawing an empty
+            -- table with a date on it.
+            --
+            -- This takes left off the way back. Up does it: out of the first
+            -- row into the filter box, and out of the box to the tabs. So
+            -- does escape. See docs/design/menu.md.
+            return M.step_week(keys.left and 1 or -1)
         end
     end
 
@@ -3632,7 +3723,13 @@ function M.step(keys)
             M.sel[id] = row_index(rows) % n + 1
             return nil, true
         end
-        if keys.go or keys.down then return activate(), true end
+        if keys.go or keys.down then
+            -- Silent where the page is still coming. A tick under a press
+            -- that changed nothing is the menu saying it did something.
+            local r = rows[row_index(rows)]
+            if r and r.go and not enterable(r.go) then return nil, false end
+            return activate(), true
+        end
         return nil, false
     end
 
@@ -3925,20 +4022,24 @@ function M.hover_stage(index)
     return index ~= nil
 end
 
--- The same thing for the rail, which is the same rule read the other way
--- round. A hover is always drawn; it moves the cursor only where the cursor
--- lives, and the cursor lives in the rail at the root and in the stage
--- everywhere below it. So resting on a stop at the root walks the rail and
--- brings its preview along, exactly as the arrows do, and resting on one
--- from inside a page lights it without taking the cursor off the list you
--- are reading.
+-- The rail is not that. A pointer resting on a stop lights it and does
+-- nothing else, at every depth.
+--
+-- It used to move the cursor at the root, on the same "the hover is the
+-- cursor where the cursor lives" reading the stage uses, and the cursor lives
+-- in the rail while the stage is only a preview. What that produced was a tab
+-- row that changed the page under the mouse sometimes and not others, and the
+-- rule for which was invisible: walk into a page with the arrows and the rail
+-- went quiet, come back out and it started switching again. Two behaviors
+-- from one gesture, told apart by how you got there.
+--
+-- So one rule instead, and two marks rather than one: the lit stop is where
+-- you are, as it always was, and the hover is a second mark saying what a
+-- press would open. Crossing the row on the way to somewhere else cannot take
+-- a page off the screen, and the mouse still reaches every tab in one click.
 function M.hover_rail(index)
     if index == M.rail_hover then return false end
     M.rail_hover = index
-    if index and M.open and #M.stack == 1 then
-        local top = rows_of(NODES.root)
-        if top[index] then M.sel.root = index end
-    end
     return index ~= nil
 end
 
@@ -4018,6 +4119,18 @@ end
 -- anchor sits over it and the tap never arrives here at all.
 function M.click_discord()
     pcall(sys.open_url, DISCORD, {target = "_blank"})
+    return nil, true
+end
+
+-- And what the button on the tab row does now: opens the page about the
+-- server rather than the server. The row on that page is the link, and it
+-- carries the address so the browser can lay a real anchor over it, which is
+-- the only way a tab opens from a tap on a phone.
+function M.open_discord()
+    if not M.open then return nil, false end
+    M.stack = {"root", "discord"}
+    M.corner_sel = nil
+    M.note = nil
     return nil, true
 end
 

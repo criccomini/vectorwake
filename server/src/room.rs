@@ -1,5 +1,4 @@
 use std::collections::{BTreeMap, HashMap};
-use std::sync::Arc;
 
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
@@ -1282,6 +1281,11 @@ impl Room {
         self.watchers.values().filter(|w| !w.seat.bot).count()
     }
 
+    /// Both arguments are read only by the assertions below, so a release
+    /// build has a function that takes two things and looks at neither. That
+    /// is the point of it rather than an oversight, and saying so here is
+    /// cheaper than underscoring names the debug build uses.
+    #[cfg_attr(not(debug_assertions), allow(unused_variables))]
     pub(crate) fn debug_assert_member(&self, id: u64, presence: &PresenceHandle) {
         #[cfg(debug_assertions)]
         {
@@ -1297,7 +1301,10 @@ impl Room {
                     debug_assert_eq!(room, self.number);
                     debug_assert_eq!(member, id);
                     let player = player.expect("flying member has a player row");
-                    debug_assert!(Arc::ptr_eq(&player.presence.state, &presence.state));
+                    debug_assert!(std::sync::Arc::ptr_eq(
+                        &player.presence.state,
+                        &presence.state
+                    ));
                     debug_assert!(watcher.is_none());
                     debug_assert_ne!(self.world.state.ships[player.ship as usize].active, 0);
                     debug_assert!(self.names.contains_key(&player.ship));
@@ -1313,7 +1320,10 @@ impl Room {
                     debug_assert_eq!(room, self.number);
                     debug_assert_eq!(member, id);
                     let watcher = watcher.expect("watching member has a watcher row");
-                    debug_assert!(Arc::ptr_eq(&watcher.presence.state, &presence.state));
+                    debug_assert!(std::sync::Arc::ptr_eq(
+                        &watcher.presence.state,
+                        &presence.state
+                    ));
                     debug_assert!(player.is_none());
                 }
             }
