@@ -2810,6 +2810,29 @@ function M.tick(dt)
     end
 end
 
+-- The buttons at the far end of the top line, in the order they are drawn,
+-- left to right. Two of them today: the way out to where the talking happens,
+-- and who you are signed in as. The account one is only there when there is a
+-- call sign to put on it, which is every session that has reached the meta
+-- layer.
+--
+-- The list is here rather than in the drawing because the arrows walk it, and
+-- a row a hand can walk has to be a list somewhere. ui.lua lays them out from
+-- the right edge in the reverse of this order; both read this.
+local function corner_stops()
+    local out = {"discord"}
+    if (M.name or "") ~= "" then out[#out + 1] = "pilot" end
+    return out
+end
+
+-- One of them, pressed. Enter and down both land here, the way they both act
+-- on a tab.
+local function press_corner(which)
+    if which == "pilot" then return M.click_pilot() end
+    if which == "discord" then return M.click_discord() end
+    return nil, false
+end
+
 -- What the drawing code needs, and nothing about how it is drawn. `detail` is
 -- resolved here so ui.lua never calls back into this file mid-frame.
 function M.view()
@@ -2836,6 +2859,17 @@ function M.view()
                  -- in the thing I am in".
                  pilot = {name = M.name, rivets = account.rivets or 0},
                  pilot_hot = M.pilot_hot,
+                 -- Which of the two the arrows are standing on, by name
+                 -- rather than by number: the drawing lays them out from the
+                 -- right edge and this file lists them from the left, and a
+                 -- number would have to mean the same thing in both.
+                 --
+                 -- Only while the cursor is on the row they are part of. A
+                 -- page reached by a pointer leaves whatever the arrows were
+                 -- last on behind, and a lit button beside a page nobody is
+                 -- looking at the top of would be a cursor in two places.
+                 corner_sel = (#M.stack == 1) and M.corner_sel
+                     and corner_stops()[M.corner_sel] or nil,
                  -- The one outbound link in this game, as the address the
                  -- corner button carries. On every layout: a phone drew it as
                  -- a row on the play page and had no account button anywhere,
@@ -3454,13 +3488,65 @@ function M.step(keys)
     -- keys follow the drawing rather than the tree, which is what makes the
     -- same five inputs work on a keyboard, a d-pad and a thumb without a
     -- second layout: an arrow means the direction it points.
+    -- The two buttons at the far end of that row are on it, which took
+    -- saying. They are drawn beside the tabs, they do what a tab does, and a
+    -- hand on the arrows could not reach either: the way to an account was a
+    -- mouse or nothing.
+    --
+    -- So the row is the tabs and then those, left to right, and it loops.
+    -- `M.corner_sel` is nil while the cursor is on a tab and an index into
+    -- `corner_stops` once it has walked past the last one.
     if #M.stack == 1 then
-        if keys.back then return escape() end
+        local corner = corner_stops()
+        if keys.back then
+            M.corner_sel = nil
+            return escape()
+        end
+        if M.corner_sel ~= nil then
+            if keys.left then
+                if M.corner_sel > 1 then
+                    M.corner_sel = M.corner_sel - 1
+                else
+                    -- Back onto the row, at the end of it: these sit to the
+                    -- right of the last tab, so that is what is to their
+                    -- left however the cursor got here.
+                    M.corner_sel = nil
+                    M.sel[id] = n
+                end
+                return nil, true
+            end
+            if keys.right then
+                if M.corner_sel < #corner then
+                    M.corner_sel = M.corner_sel + 1
+                else
+                    -- Round to the first tab, the way this row has always
+                    -- wrapped.
+                    M.corner_sel = nil
+                    M.sel[id] = 1
+                end
+                return nil, true
+            end
+            -- Down is enter here, as it is on a tab: what is under one of
+            -- these is a page or the place the talking happens, and the arrow
+            -- pointing at it is the one that goes there.
+            if keys.go or keys.down then
+                return press_corner(corner[M.corner_sel])
+            end
+            return nil, false
+        end
         if keys.left then
+            if row_index(rows) == 1 and #corner > 0 then
+                M.corner_sel = #corner
+                return nil, true
+            end
             M.sel[id] = (row_index(rows) - 2) % n + 1
             return nil, true
         end
         if keys.right then
+            if row_index(rows) == n and #corner > 0 then
+                M.corner_sel = 1
+                return nil, true
+            end
             M.sel[id] = row_index(rows) % n + 1
             return nil, true
         end
@@ -3675,6 +3761,9 @@ end
 -- Whether the pointer is on that button, so it can light the way a lit tab
 -- does. The arena sets it from the same hit list the press comes off.
 M.pilot_hot = false
+-- And which of the two the arrows are on, as an index into `corner_stops`.
+-- Nil is the usual answer: the cursor is on a tab, or somewhere in a page.
+M.corner_sel = nil
 -- And the same for the button beside it.
 M.discord_hot = false
 -- And for the friends page: the add button, and one button on one row.
@@ -3718,6 +3807,9 @@ function M.click_rail(index)
     if index == rail_inside() and M.close() then return nil, true end
     M.stack = {"root"}
     M.sel.root = index
+    -- A tap on a tab takes the cursor off the corner, so the two halves of
+    -- the row cannot both look like the place the arrows are.
+    M.corner_sel = nil
     M.note = nil
     return activate(), true
 end

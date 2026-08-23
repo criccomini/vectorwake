@@ -20,6 +20,9 @@
 local pal = require("arena.palette")
 local keyset = require("arena.keys")
 local marks = require("arena.marks")
+-- How wide each letter of the menu's face draws, generated from the file it
+-- draws with. See `text_w`.
+local menu_face = require("arena.menu_face")
 local state = require("arena.state")
 local ui_frame = require("arena.ui_frame")
 local ui_payouts = require("arena.ui_payouts")
@@ -521,14 +524,32 @@ local function bot_mark(x, y, col, k, line)
 end
 
 
--- How wide a string draws. The interface is set in one monospace face, so
--- this is exact rather than an estimate: DejaVu Sans Mono advances 1233 of
--- 2048 units per glyph at every size. Written down once because two places
--- had guessed at it separately, and a guess that runs 3% long puts a mark
--- inside the last letter of a name.
+-- How wide a string draws, in the face it will be drawn in.
+--
+-- Exact rather than an estimate, in both faces. The arena's is DejaVu Sans
+-- Mono, which advances 1233 of 2048 units per glyph at every size; the menu's
+-- is not monospace, so its advances are read out of the file itself and this
+-- sums them. See `client/tools/font_advances.py`.
+--
+-- Measuring the mono for a string the menu draws is the bug this exists to
+-- stop, and it had put a caret two letters past the end of a call sign and a
+-- lit field wider on one side of a tab than the other. The mono runs about a
+-- fifth wide of the menu's lower case, and the error is per letter, so it
+-- grows with the word.
+--
+-- `raw` says the caller is quoting rather than saying, and is the same flag
+-- `txt` takes: the menu sets a line in a sentence's case, so a word measured
+-- as it was written and drawn with its first letter raised is measured one
+-- letter short of what lands.
 local ADVANCE = 1233 / 2048
-local function text_w(s, px)
-    return #s * px * ADVANCE
+local function text_w(s, px, font, raw)
+    if font ~= MENU_FONT then return #s * px * ADVANCE end
+    if not raw then s = cased(s) end
+    local adv, w = menu_face.adv, 0
+    for i = 1, #s do
+        w = w + (adv[string.byte(s, i)] or menu_face.widest)
+    end
+    return w * px
 end
 
 local function population(x, y, players, bots, col)
@@ -3360,18 +3381,17 @@ local function podium(o, m, names)
             and ((names and names[best_at]) or "a side") or nil
         if who then
             local verb = "takes it"
-            -- The gap is written down rather than carried in the string. This
-            -- heading is set in the menu's face and `text_w` measures the
-            -- mono's advance, so a space between the two draws is a space of
-            -- roughly the wrong width; a fixed step is at least the same
-            -- width every time. Same arrangement as the role beside a hull's
-            -- name on the ship page.
+            -- The gap is written down rather than carried in the string,
+            -- because the two are a side's color and the interface's and a
+            -- space inside either draw would be the wrong one's. Same
+            -- arrangement as the role beside a hull's name on the ship page.
             local gap = hp * 0.42
-            local ww = text_w(who, hp) + gap + text_w(verb, hp)
+            local nw = text_w(who, hp, MENU_FONT)
+            local ww = nw + gap + text_w(verb, hp, MENU_FONT)
             local hx = F.w / 2 - ww / 2
             local hcol = (best_at == view_team) and pal.FRIEND or pal.ENEMY
             txt(who, hx, y + 6 * F.scale, hp, pal.a(hcol, 1), nil, MENU_FONT)
-            txt(verb, hx + text_w(who, hp) + gap, y + 6 * F.scale, hp,
+            txt(verb, hx + nw + gap, y + 6 * F.scale, hp,
                 pal.a(pal.INK, 0.9), nil, MENU_FONT)
         else
             txt(head, F.w / 2, y + 6 * F.scale, hp, pal.a(pal.INK, 0.95),
@@ -3855,7 +3875,7 @@ function pages.week(v, x, y, w, h, focused)
         end
         arrow(-1, x + 8 * F.scale, true)
         txt(name, x + 26 * F.scale, ty, px, pal.a(pal.INK, 0.9), nil, MENU_FONT)
-        local nw = text_w(name, px)
+        local nw = text_w(name, px, MENU_FONT)
         arrow(1, x + 40 * F.scale + nw, (wk.back or 0) > 0)
 
         -- Where a name is typed to narrow the table, drawn as the box it is.
@@ -3891,7 +3911,8 @@ function pages.week(v, x, y, w, h, focused)
         -- A caret, where the next letter goes, and only while the box is
         -- taking them.
         if on then
-            rect(ix + text_w(f, px) + 2 * F.scale, fy - 8 * F.scale,
+            rect(ix + text_w(f, px, MENU_FONT, true) + 2 * F.scale,
+                 fy - 8 * F.scale,
                  1.6 * F.scale, 16 * F.scale, pal.a(pal.FRIEND, 0.9))
         end
         -- The way out of a filter, on the end of the box: holding backspace
@@ -4835,7 +4856,8 @@ function pages.friends(v, x, y, w, h, focused)
             MENU_FONT, true)
     end
     if a.on then
-        rect(ix + text_w(typed, 15 * F.scale) + 2 * F.scale, fy - 8 * F.scale,
+        rect(ix + text_w(typed, 15 * F.scale, MENU_FONT, true) + 2 * F.scale,
+             fy - 8 * F.scale,
              1.6 * F.scale, 16 * F.scale, pal.a(pal.FRIEND, 0.9))
     end
     -- Published before the box, because the first hit box wins and the other
@@ -6689,14 +6711,20 @@ function pages.corner(v, right, cy, wordless)
         rt = bx - 10 * F.scale
         return bx, bw
     end
+    -- Lit by a pointer resting on one or by the arrows standing on it, which
+    -- are the same fact. `corner_sel` names the button rather than numbering
+    -- it, because this lays them out from the right edge and the row the
+    -- arrows walk reads from the left.
     if v.pilot and v.pilot.name and v.pilot.name ~= "" then
         -- A name is quoted rather than said, so it keeps the case its owner
         -- gave it while the button beside it shouts a brand.
-        button(v.pilot.name, v.pilot_hot, "pilot_page")
+        button(v.pilot.name, v.pilot_hot or v.corner_sel == "pilot",
+               "pilot_page")
     end
     if v.discord then
-        local bx, bw = button("discord", v.discord_hot, "discord_link",
-                              "discord", true)
+        local bx, bw = button("discord",
+                              v.discord_hot or v.corner_sel == "discord",
+                              "discord_link", "discord", true)
         -- A real anchor over it, laid by the page. Nothing this client does
         -- from its own loop is inside the tap that asked for it, and a tab
         -- opened outside one is what a popup blocker stops. CSS pixels, which
@@ -7032,7 +7060,7 @@ function M.menu(v)
         local function span(p, g)
             local w = 0
             for i, e in ipairs(rail) do
-                w = w + text_w(e.label or "", p) + (i > 1 and g or 0)
+                w = w + text_w(e.label or "", p, MENU_FONT) + (i > 1 and g or 0)
             end
             return w
         end
@@ -7047,8 +7075,12 @@ function M.menu(v)
             tab_px = tab_px - 0.5 * F.scale
         end
         local at = at0
+        -- In the face they are drawn in. Measured with the mono's advance,
+        -- which runs about a fifth wide of this one, every word sat left of
+        -- the middle of its own slot and the field behind the tab you were on
+        -- had more room on its right than its left.
         for i, e in ipairs(rail) do
-            ww[i] = text_w(e.label or "", tab_px)
+            ww[i] = text_w(e.label or "", tab_px, MENU_FONT)
             wx[i] = at
             at = at + ww[i] + tab_gap
         end
@@ -7066,13 +7098,17 @@ function M.menu(v)
     -- have to learn by tapping is worse than a row of small words.
     local label_px = 11 * F.scale
     if not vertical then
-        local longest = 0
+        -- The widest of them at one point, so the size that fits it in the
+        -- room one stop has is a division. Counting characters and calling
+        -- each one an advance was the same sum with the wrong face's number
+        -- in it, and it set the row a point smaller than it had to be.
+        local widest = 0
         for _, e in ipairs(rail) do
-            longest = math.max(longest, #(e.label or ""))
+            widest = math.max(widest, text_w(e.label or "", 1, MENU_FONT))
         end
-        if longest > 0 then
+        if widest > 0 then
             label_px = math.max(8 * F.scale, math.min(label_px,
-                                (pitch - 5 * F.scale) / (longest * ADVANCE)))
+                                (pitch - 5 * F.scale) / widest))
         end
     end
     for i, e in ipairs(rail) do
@@ -7349,8 +7385,8 @@ function M.menu(v)
         end
         txt(name, nx, head_y, size, pal.a(pal.INK, 0.95), nil, MENU_FONT)
         if v.head.role then
-            txt(v.head.role, nx + text_w(name, size) + 10 * F.scale, head_y,
-                10.5 * F.scale, pal.a(pal.DIM, 0.9))
+            txt(v.head.role, nx + text_w(name, size, MENU_FONT) + 10 * F.scale,
+                head_y, 10.5 * F.scale, pal.a(pal.DIM, 0.9))
         end
         top = top + hh
         room = room - hh
