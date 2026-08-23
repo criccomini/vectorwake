@@ -2273,7 +2273,12 @@ local function status(me, charges, lift)
     for t = 0, SIM_TRIGGERS - 1 do
         if sim.has_trigger(me, t) then trigs = trigs + 1 end
     end
-    local n = trigs + #slots + 1
+    -- The rows this will actually draw. The extra one was the bounty's, and
+    -- with that gone it reserved a row of nothing at the bottom: the block
+    -- hangs off the bottom of the window and grows upward, so an unused row
+    -- in the count lifts everything a row clear of where it belongs and
+    -- changes the scale the whole block is drawn at.
+    local n = trigs + #slots
 
     -- One number the whole block is measured in, so it grows as a drawing
     -- rather than as a pile of separately tuned constants. Everything below
@@ -2348,23 +2353,14 @@ local function status(me, charges, lift)
         y = y + rows_h
     end
 
-    -- What you are worth, which is the number that decides who comes for
-    -- you. It is the base plus your run, so this row says how long you have
-    -- been alive and killing rather than what you own: the run is drawn
-    -- beside it so a pilot reads "worth five, on a run of four" without
-    -- having to subtract.
-    gl_diamond(mid, y + rows_h / 2, 6 * z, pal.a(pal.BOUNTY, 0.8))
-    local bty = sim.ship_bounty(me)
-    local run = sim.ship_run and sim.ship_run(me) or 0
-    txt(tostring(bty), val, y + rows_h / 2, (FONT - 2) * z,
-        run > 0 and pal.a(pal.BOUNTY, 0.95) or pal.a(pal.DIM, 0.6))
-    local bw = val + text_w(tostring(bty), (FONT - 2) * z)
-    if run > 0 then
-        txt("x" .. run, bw + 6 * z, y + rows_h / 2, (FONT - 3) * z,
-            pal.a(pal.PAID, 0.8))
-        bw = bw + 6 * z + text_w("x" .. run, (FONT - 3) * z)
-    end
-    zone("bounty", x, y, bw - x, rows_h)
+    -- What you are worth is not in here. It was: a diamond, the number, and
+    -- the run beside it. The corner is what your triggers do and what you
+    -- carry, which are the things a press changes, and a bounty is neither.
+    -- It is also the one number in the corner that is about how other people
+    -- see you rather than about what you can do next, and it is already said
+    -- in the two places that ask that question: over every pilot's nameplate,
+    -- your own included when somebody is watching you, and in the scoreboard
+    -- column that sorts by it.
 
     return 0
 end
@@ -2848,12 +2844,6 @@ end
 -- What the row under the pointer is called, what it is carrying, and what
 -- spends it. Nil for a row with nothing to say.
 local function stack_card_lines(key, o, me)
-    if key == "bounty" then
-        -- Fixed words, because the number is the whole of what the row shows
-        -- and the question it raises is always the same one.
-        return "bounty", {}, nil,
-               "Your ship's bounty. Enemies get these points when you're destroyed."
-    end
     if key == "gun" or key == "bomb" then
         local t = (key == "gun") and sim.TRIG_GUN or sim.TRIG_BOMB
         local id = (key == "gun") and "guns" or "bombs"

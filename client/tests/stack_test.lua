@@ -599,7 +599,11 @@ local function block(w, h, dens, touching)
     ui.finish()
     -- Top and bottom of the whole block, from the rows it published.
     local top, bot
-    for _, key in ipairs({"gun", "bomb", "bounty"}) do
+    -- Every row it can publish, because which one is at the bottom depends
+    -- on what is in hand. It used to scan gun, bomb and bounty, and the
+    -- bounty was the floor; with that row gone the same three keys measured
+    -- the top two rows and called the block half its height.
+    for _, key in ipairs({"gun", "bomb", "charge:repel", "charge:burst"}) do
         for py = 0, h, 2 do
             if ui.row_at(4 + 14 * dens, py) == key then
                 top = math.min(top or py, py)
@@ -623,6 +627,12 @@ local function block(w, h, dens, touching)
 end
 
 mods = {[0] = {[0] = 1}, [1] = {[2] = 1, [3] = 2}}
+-- What the corner is, in rows, on the hull this file flies: the two triggers
+-- and the two charges. It was five while the bounty was down here; a bounty
+-- is what other people see when they look at you rather than something a
+-- press changes, and it is said over every nameplate and in the scoreboard's
+-- own column, so the corner does not repeat it.
+local STACK_ROWS = 4
 for _, shape in ipairs({{1280, 800, 1}, {1280, 800, 2}, {2560, 1440, 2},
                         {844, 390, 2}, {390, 844, 2}, {1600, 900, 1}}) do
     local w, h, dens = shape[1], shape[2], shape[3]
@@ -638,13 +648,13 @@ for _, shape in ipairs({{1280, 800, 1}, {1280, 800, 2}, {2560, 1440, 2},
     -- change's to fix. On a real phone the pad carries the charges and the
     -- stack is three rows, which is where that case actually lives.
     if b then
-        local base = math.abs(b.pts - 5 * 22) < 2
+        local base = math.abs(b.pts - STACK_ROWS * 22) < 2
         check("and takes a fair share of it: " .. at,
               b.tall <= h * 0.42 or base,
               string.format("%.0f of %d px, %.0f points, base %s",
                             b.tall, h, b.pts, tostring(base)))
         check("and never draws smaller than it always has: " .. at,
-              b.pts >= 5 * 22 - 2,
+              b.pts >= STACK_ROWS * 22 - 2,
               string.format("%.0f points", b.pts))
     end
 end
@@ -655,15 +665,20 @@ end
 -- none of them says "larger than".
 local roomy = block(2560, 1440, 2)
 check("a window with room draws the stack bigger than the base",
-      roomy and roomy.pts > 5 * 22 * 1.2,
+      roomy and roomy.pts > STACK_ROWS * 22 * 1.2,
       roomy and string.format("%.0f points against a base of %d",
-                              roomy.pts, 5 * 22) or "no rows")
+                              roomy.pts, STACK_ROWS * 22) or "no rows")
 
 -- And the lines grew with it. Every width in this corner used to be a
 -- multiple of the density scale, so growing the block would have grown the
 -- shapes and left the strokes where they were: the same drawing at twice the
 -- size wearing hairlines.
-local tight = block(1280, 400, 1)
+-- Short enough that the block still has to back off at four rows. It was 400
+-- tall, which was tight while the bounty made this five rows and is roomy
+-- without it: both ends of the comparison sat at the scale's ceiling and the
+-- check compared a number against itself. 320 backs off by the same factor
+-- 400 used to.
+local tight = block(1280, 320, 1)
 if roomy and tight then
     check("and draws them with heavier lines, not the same hairline",
           roomy.ink > tight.ink * 1.15,
@@ -708,7 +723,7 @@ local function mark_box(key, edge)
     return wsum / sum
 end
 
-local ROWS = {"gun", "bomb", "charge:repel", "charge:burst", "bounty"}
+local ROWS = {"gun", "bomb", "charge:repel", "charge:burst"}
 
 mods = {}
 frame()
@@ -940,11 +955,24 @@ check("a bomb's fan is drawn in the round's own color",
 -- the rows above it could have had.
 local function rows_drawn()
     local n = 0
-    for _, key in ipairs({"gun", "bomb", "charge:repel", "charge:burst",
-                          "bounty"}) do
+    for _, key in ipairs({"gun", "bomb", "charge:repel", "charge:burst"}) do
         if row_box(key) then n = n + 1 end
     end
     return n
+end
+
+-- The bottom of the whole block, which is the thing that stays put when a row
+-- is dropped. It used to be read off the bounty row, which was always last;
+-- now the last row is a charge when there is one in hand and the bomb when
+-- there is not, so the floor is the lowest edge anything published rather
+-- than any one row's.
+local function block_foot()
+    local foot = nil
+    for _, key in ipairs({"gun", "bomb", "charge:repel", "charge:burst"}) do
+        local b = row_box(key)
+        if b then foot = math.min(foot or b.y0, b.y0) end
+    end
+    return foot
 end
 
 mods = {}
@@ -952,32 +980,31 @@ in_hand = {repel = 2, burst = 1}
 frame()
 local full_rows = rows_drawn()
 local full_top = row_box("gun")
-local full_foot = row_box("bounty")
-check("both charges in hand draw both rows", full_rows == 5,
+local full_foot = block_foot()
+check("both charges in hand draw both rows", full_rows == 4,
       full_rows .. " rows")
 
 in_hand = {repel = 2}
 frame()
-check("a spent slot draws no row", rows_drawn() == 4 and not row_box("charge:burst"),
+check("a spent slot draws no row", rows_drawn() == 3 and not row_box("charge:burst"),
       rows_drawn() .. " rows with one charge in hand")
 
 in_hand = {}
 frame()
-check("and an empty hand draws neither", rows_drawn() == 3
+check("and an empty hand draws neither", rows_drawn() == 2
       and not row_box("charge:repel") and not row_box("charge:burst"),
       rows_drawn() .. " rows with an empty hand")
 
 -- And the block shrinks rather than leaving the gap. It hangs off the bottom
--- of the window, so what a dropped row costs comes off the top: the bounty
--- stays where it was and everything above it comes down.
+-- of the window, so what a dropped row costs comes off the top: the bottom
+-- edge stays where it was and everything above it comes down.
 local short_top = row_box("gun")
-local short_foot = row_box("bounty")
+local short_foot = block_foot()
 -- Within the probe's own step, which walks the corner two pixels at a time.
 check("the stack keeps its footing", full_foot and short_foot
-      and math.abs(short_foot.y0 - full_foot.y0) <= 4,
+      and math.abs(short_foot - full_foot) <= 4,
       string.format("bottom at %.0f against %.0f",
-                    short_foot and short_foot.y0 or -1,
-                    full_foot and full_foot.y0 or -1))
+                    short_foot or -1, full_foot or -1))
 check("and shrinks by what it dropped",
       full_top and short_top and short_top.y1 < full_top.y1,
       string.format("top at %.0f against %.0f",
