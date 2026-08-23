@@ -4401,14 +4401,19 @@ end
 -- clock turns cyan between matches because the boarding window is yours.
 function pages.landing(a, b, x, y, w, h)
     refresh_players(b.pilots, b.watchers, b.side, nil)
-    vrule(x - 18 * F.scale, y + 6 * F.scale, h - 12 * F.scale,
-          pal.a(pal.RADAR_TILE, 0.45), 18 * F.scale)
+    -- No rule down the left edge, and nothing indented off one. Every other
+    -- panel in the menu hangs from a lit vertical, which is the arena's own
+    -- shape and is right where a panel sits beside something. This one is the
+    -- leftmost thing on the page, so the rule was separating it from the
+    -- window, and the gutter it needed pushed the whole landing a rail's
+    -- width right of the wordmark and the tabs directly above it.
     local rmargin = w - 24 * F.scale
-    lbl(a.head or "deploying to", x, y + 16 * F.scale)
-    -- The zone carousel, as the deck drew it, a size down.
+    -- The zone carousel, as the deck drew it, a size down. The name is the
+    -- first thing now: "deploying to" over it was a caption naming the act
+    -- the big key at the foot already names.
     local namex = x
     local turning = (a.zones or 0) > 1
-    local ncy = y + 46 * F.scale
+    local ncy = y + 32 * F.scale
     if turning then
         F.layer:tri(x, ry(ncy), x + 8 * F.scale,
                     ry(ncy - 9 * F.scale), x + 8 * F.scale,
@@ -4417,7 +4422,7 @@ function pages.landing(a, b, x, y, w, h)
             44 * F.scale, "zone", -1)
         namex = x + 22 * F.scale
     end
-    txt(a.label or "", namex, y + 48 * F.scale, 34 * F.scale,
+    txt(a.label or "", namex, y + 34 * F.scale, 34 * F.scale,
         pal.a(pal.INK, 1), nil, MENU_FONT)
     if turning then
         local said = string.upper(string.sub(a.label or "", 1, 1))
@@ -4430,17 +4435,17 @@ function pages.landing(a, b, x, y, w, h)
         hit(rx2 - 10 * F.scale, ncy - 22 * F.scale, 36 * F.scale,
             44 * F.scale, "zone", 1)
         lbl((a.at or 1) .. " of " .. a.zones, rx2 + 26 * F.scale,
-            y + 48 * F.scale, pal.a(pal.DIM, 0.7))
+            y + 34 * F.scale, pal.a(pal.DIM, 0.7))
     end
     if a.note and a.note ~= "" then
         local said = string.upper(string.sub(a.note, 1, 1))
                      .. string.sub(a.note, 2)
-        txt(said, x, y + 78 * F.scale, 12.5 * F.scale,
+        txt(said, x, y + 64 * F.scale, 12.5 * F.scale,
             pal.a(pal.PANEL_INK, 0.9), nil, nil, true)
     end
     -- The clock. Between matches it goes cyan, because that count is your
     -- boarding window; mid-match it is an instrument like any other.
-    local cy2 = y + 130 * F.scale
+    local cy2 = y + 116 * F.scale
     local sides, seen = {}, {}
     for _, r in ipairs(rows) do
         if not r.watch and r.team ~= nil then
@@ -4464,9 +4469,16 @@ function pages.landing(a, b, x, y, w, h)
     end
     if a.clock then
         local ccol = a.playing and pal.INK or pal.FRIEND
-        lbl(a.playing and "on the clock" or "next match in", x,
-            cy2 - 32 * F.scale, pal.a(a.playing and pal.DIM or pal.FRIEND,
-                                      a.playing and 1 or 0.9))
+        -- A caption only where the count needs one. Mid-match a clock over a
+        -- score bar over a roster is the match clock and nothing else, and
+        -- "on the clock" was a line of type saying so. Between matches the
+        -- same figure is counting to a start rather than to a finish, which
+        -- is a different fact and the one thing the numerals cannot say; the
+        -- cyan says it is your window, and this says what it is a window on.
+        if not a.playing then
+            lbl("next match in", x, cy2 - 32 * F.scale,
+                pal.a(pal.FRIEND, 0.9))
+        end
         txt(string.format("%d:%02d", math.floor(a.clock / 60),
                           a.clock % 60), x - 2 * F.scale, cy2,
             34 * F.scale, pal.a(ccol, 0.95))
@@ -4477,7 +4489,7 @@ function pages.landing(a, b, x, y, w, h)
     -- been read. Only while a match is on; between them the podium in the
     -- glass is already saying how it ended, in this same shape.
     if a.playing and b.score and #sides >= 2 then
-        local sy2 = y + 160 * F.scale
+        local sy2 = y + 146 * F.scale
         local left, right = sides[1], sides[2]
         local ls = b.score[left] or 0
         local rs = b.score[right] or 0
@@ -4499,38 +4511,57 @@ function pages.landing(a, b, x, y, w, h)
              pal.a(rcol, 0.85))
     end
     -- The match: standings beside the ground, one cell each. Names in
-    -- their side's color, the way the glass already paints their hulls;
-    -- humans wear the pilot mark, and the machines go without.
-    local mtop = y + 186 * F.scale
-    local mside = math.min(176 * F.scale, w * 0.42)
+    -- their side's color, the way the glass already paints their hulls,
+    -- each behind the mark for what is flying it.
+    local mtop = y + 172 * F.scale
+    -- And held to the room under it, so a window too short for the whole
+    -- panel gives the map up rather than letting the key land on it. The
+    -- ninety-two is the key's own height and the air either side of it.
+    local mside = math.max(0, math.min(176 * F.scale, w * 0.42,
+                                       y + h - 92 * F.scale - mtop))
     local cellw = rmargin - mside - 18 * F.scale
     local ly = mtop + 8 * F.scale
     local mbot = mtop + mside
-    lbl("k  d", x + cellw, mtop - 8 * F.scale, pal.a(pal.DIM, 0.7),
-        "right")
-    -- The ground's name, captioning the map panel the way "k d" captions
-    -- its columns. Only when the zone said one; older zones say nothing.
+    -- The ground's name, captioning the map panel beside it. Only when the
+    -- zone said one; older zones say nothing.
     if a.ground and a.ground ~= "" then
         lbl(a.ground, x + rmargin, mtop - 8 * F.scale,
             pal.a(pal.DIM, 0.7), "right")
     end
+    -- A mark column, and the names behind it. The human mark used to hang in
+    -- the gutter left of the names, which worked while the panel was indented
+    -- off a rule and has nowhere to go now the panel starts at the page's own
+    -- left edge. Standing it in a column of its own is what the list wanted
+    -- anyway: it was the absence of a mark that said "machine", so a reader
+    -- had to know the convention before the column said anything, and the
+    -- rows a zone full of bots draws were all the blank one.
+    local rowx = x + 18 * F.scale
     for _, team in ipairs(sides) do
+        -- The same floor the rows keep. A heading is drawn before any row
+        -- under it, so without this a window too short for a side still put
+        -- its name and its rule down where the key was about to go.
+        if ly > y + h - 96 * F.scale then break end
         local col = (team == b.side) and pal.FRIEND or pal.ENEMY
         local sname = (b.names and b.names[team]) or "side"
         txt(sname, x, ly, 13.5 * F.scale, pal.a(col, 0.95), nil, MENU_FONT)
+        -- On the side's own line, over the two columns it heads, and once
+        -- per side. It was one "k d" floating above the first team's name,
+        -- which captions the first side and leaves the second one's numbers
+        -- unlabeled a screen further down.
+        lbl("k  d", x + cellw, ly, pal.a(pal.DIM, 0.7), "right")
         ly = ly + 10 * F.scale
         F.layer:seg(x, ry(ly), x + cellw, ry(ly), 1.0 * F.scale,
                     pal.a(col, 0.45), true)
         ly = ly + 14 * F.scale
         for _, r in ipairs(seen[team]) do
             if ly > y + h - 96 * F.scale then break end
-            -- Flush with the side's name and the rule under it; the human
-            -- mark hangs in the gutter, the way the cursor wedge does.
-            if not r.ai then
-                pilot_mark(x - 9 * F.scale, ly, pal.a(col, 0.9),
+            if r.ai then
+                bot_mark(x, ly, pal.a(col, 0.7), 10 * F.scale)
+            else
+                pilot_mark(x + 5 * F.scale, ly, pal.a(col, 0.9),
                            10 * F.scale)
             end
-            txt(r.name, x, ly, 12 * F.scale,
+            txt(r.name, rowx, ly, 12 * F.scale,
                 pal.a(col, r.ai and 0.62 or 1), nil, nil, true)
             txt(r.k .. "  " .. r.d, x + cellw, ly, 11 * F.scale,
                 pal.a(pal.DIM, 0.95), "right")
@@ -4538,28 +4569,59 @@ function pages.landing(a, b, x, y, w, h)
         end
         ly = ly + 12 * F.scale
     end
-    pages.ground(x + rmargin - mside, mtop, mside)
-    -- You, in one line, and the key. The call sign is already at the top
-    -- of the screen, so this only says what you will be flying.
-    local ay = math.max(ly, mbot + 8 * F.scale) + 16 * F.scale
-    local ky = y + h - 52 * F.scale - 12 * F.scale
-    if ay > ky - 10 * F.scale then ay = ky - 10 * F.scale end
-    if a.arrive then
-        if a.arrive.spectate then
-            pilot_mark(x + 12 * F.scale, ay, pal.a(pal.FRIEND, 0.95),
-                       18 * F.scale)
-        else
-            thumb(x + 12 * F.scale, ay, a.arrive.hull or 0,
-                  pal.a(pal.FRIEND, 0.95), 1.3, F.now * 0.5)
-        end
-        txt("arriving as " .. (a.arrive.name or ""), x + 34 * F.scale,
-            ay, 12.5 * F.scale, pal.a(pal.PANEL_INK, 0.9), nil, nil, true)
+    if mside > 40 * F.scale then
+        pages.ground(x + rmargin - mside, mtop, mside)
     end
+    -- And the key, under whatever the page turned out to be rather than at
+    -- the foot of the window. A four-a-side roster and a map panel leave
+    -- most of a desktop's height empty below them, and a button parked at
+    -- the bottom of that is a button belonging to the window instead of to
+    -- the page it is the end of.
+    local ky = math.max(ly, mbot + 8 * F.scale) + 18 * F.scale
+    local floor = y + h - 64 * F.scale
+    if ky > floor then ky = floor end
     if a.room and a.row then
         key_box(x, ky, rmargin, 52 * F.scale, pal.a(pal.FRIEND, 0.14),
                 pal.a(pal.FRIEND, 1))
-        txt("DEPLOY", x + rmargin / 2, ky + 26 * F.scale, 19 * F.scale,
-            pal.a(pal.INK, 1), "center")
+        -- What you will arrive as, inside the key that sends it. It was a
+        -- line of its own above this reading "arriving as Apex", which is
+        -- the hull's name said in words beside a drawing of the hull, one
+        -- line above the button both halves are about.
+        local said = "DEPLOY"
+        local tw = text_w(said, 19 * F.scale)
+        local kcy = ky + 26 * F.scale
+        -- How wide the hull can get as it turns, so the gap beside it reads
+        -- the same on a Chord as on an Apex: the two differ by a third of
+        -- their span, and a fixed offset would put one of them against the
+        -- word and leave the other adrift. `thumb` squashes x through the
+        -- turn, so the poly's own half-width is the widest it ever draws.
+        local hscale = 0.9 * F.scale
+        local hw = 0
+        if a.arrive then
+            local hull = not a.arrive.spectate
+                and world.HULLS[(a.arrive.hull or 0) + 1] or nil
+            if hull then
+                for i = 1, #(hull.poly or {}), 2 do
+                    local hx = math.abs(hull.poly[i])
+                    if hx > hw then hw = hx end
+                end
+                hw = hw * hscale
+            else
+                hw = 10 * F.scale
+            end
+        end
+        local mk = a.arrive and (hw * 2 + 14 * F.scale) or 0
+        local left = x + (rmargin - tw - mk) / 2
+        if a.arrive then
+            if a.arrive.spectate then
+                pilot_mark(left + hw, kcy, pal.a(pal.INK, 0.95),
+                           19 * F.scale)
+            else
+                thumb(left + hw, kcy, a.arrive.hull or 0,
+                      pal.a(pal.INK, 0.95), hscale, F.now * 0.5)
+            end
+        end
+        txt(said, left + mk, kcy, 19 * F.scale, pal.a(pal.INK, 1))
         hit(x - 6 * F.scale, ky - 6 * F.scale, rmargin + 12 * F.scale,
             64 * F.scale, "stage", a.row)
     end
@@ -8815,8 +8877,12 @@ function M.menu(v)
         if narrow then
             pages.aside(deck, tx, top, avail + 24 * F.scale, room)
         elseif v.arena then
-            pages.landing(deck, v.arena, tx, top,
-                          deckw - GUTTER * F.scale + 10 * F.scale, room)
+            -- At the block's own left edge rather than a gutter in from it.
+            -- The landing draws no list and hangs off no rule, so the gutter
+            -- every row's label needs was pushing the whole page a rail's
+            -- width right of the wordmark and the tabs directly above it.
+            pages.landing(deck, v.arena, panel_x, top,
+                          deckw + 10 * F.scale, room)
         else
             pages.aside(deck, tx, top,
                         deckw - GUTTER * F.scale + 10 * F.scale, room)

@@ -269,6 +269,41 @@ one press. A zone nobody is running is still a row, because a player is better
 off seeing that Chaos exists and is down than wondering whether they misread the
 list.
 
+### The landing
+
+On the home screen with a game running, the play tab is not a list at all. It
+is the landing: one panel down the left with the fight itself in the glass
+beside it, carrying the room's name, its clock, the score, both sides with
+their rosters, the ground they are standing on, and the key that joins.
+
+It hangs off no rule and starts at the page's own left edge, flush with the
+wordmark and the tabs directly above it. Every other panel in the menu hangs
+from a lit vertical, which is the arena's own shape and is right where a panel
+stands beside something; this one is the leftmost thing on the screen, so the
+rule was separating it from the window and the gutter it needed was pushing
+the page a rail's width inboard of the row it sits under.
+
+Nothing is captioned that the page already says. A room's name does not need
+"deploying to" over it and a running clock does not need "on the clock". A
+clock between matches keeps its label, because counting to a start is a
+different fact from counting to a finish and the numerals cannot say which.
+
+Every pilot wears the mark for whatever is flying them. It used to be the
+people who were marked and the machines who went bare, which asks a reader to
+know the convention before the column says anything, and in a room mostly full
+of bots the rows it drew were mostly the blank one. Both sides head their own
+two score columns, on their own line, rather than one heading floating above
+the first of them and the second side's numbers running unlabeled a screen
+further down.
+
+The key sits directly under whatever the panel turned out to be, not at the
+foot of the window. A four-a-side roster and a map panel leave most of a
+desktop's height empty below them, and a button parked at the bottom of that
+belongs to the window rather than to the page it is the end of. The hull you
+would arrive in turns inside the key, beside the word, which is where it was
+already pointing: it had been a line of its own above, reading "arriving as
+Apex" next to a drawing of an Apex.
+
 ## Nothing pauses
 
 You can be shot while reading the menu, and during testing that is exactly what
