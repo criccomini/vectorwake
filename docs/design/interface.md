@@ -249,7 +249,10 @@ convention that a glyph struck through reads as money. Two strikes rather
 than one because one bar through a shape is a "no entry" sign, and seen from
 the side because face-on the bars closed up at price sizes and became exactly
 that sign. A price is always the mark plus the figure, sized to the figure;
-"40 rivets" in words was a word doing a glyph's job.
+"40 rivets" in words was a word doing a glyph's job. The arena is not an
+exception. The bounty under a nameplate is what killing that hull pays, so it
+is set as a price like any other, and the mark is what tells it apart from the
+kills, deaths and points that are drawn as bare figures elsewhere.
 
 The wordmark is the drawn logo (an orange lambda and a cyan W sharing a
 chevron, black separator derived from one centerline) beside the name in the

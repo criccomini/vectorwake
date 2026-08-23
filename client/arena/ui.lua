@@ -1341,8 +1341,17 @@ local function nameplates(o)
                         -- says, and it said it identically for every pilot on
                         -- screen: the one thing a color here can carry is
                         -- whose they are.
-                        txt(tostring(bty), sx + 12 * F.scale, sy + 25 * F.scale, 11 * F.scale,
-                            pal.a(col, 0.85))
+                        --
+                        -- Set as a price, with the rivet every other price in
+                        -- the game wears. Position alone said "bounty", and
+                        -- position is also what says kills, deaths and points
+                        -- everywhere those are drawn: a bare figure under a
+                        -- name is a number with no unit on it. This one is
+                        -- what the zone pays for the hull it is over, so it
+                        -- says so in the currency it pays in.
+                        pages.priced(bty, sx + 12 * F.scale,
+                                     sy + 25 * F.scale, 11 * F.scale,
+                                     pal.a(col, 0.85))
                     end
                 end
             end
