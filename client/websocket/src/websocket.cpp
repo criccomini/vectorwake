@@ -5,6 +5,7 @@
 #define MODULE_NAME "websocket"
 
 #include "websocket.h"
+#include "queue_limit.h"
 #include "script_util.h"
 #include "status_format.h"
 #include <dmsdk/dlib/connection_pool.h>
@@ -26,10 +27,12 @@
 namespace dmWebsocket {
 
 int g_DebugWebSocket = 0;
+static const uint32_t DEFAULT_MAX_QUEUED_BYTES = 4 * 1024 * 1024;
 
 struct WebsocketContext
 {
     uint64_t                        m_BufferSize;
+    uint32_t                        m_MaxQueuedBytes;
     int                             m_Timeout;
     dmArray<WebsocketConnection*>   m_Connections;
     dmConnectionPool::HPool         m_Pool;
@@ -422,6 +425,11 @@ static WebsocketConnection* CreateConnection(const char* url)
     conn->m_ConnectionThread = 0;
     conn->m_State = STATE_DISCONNECTED;
 
+    return conn;
+}
+
+static void StartConnection(WebsocketConnection* conn)
+{
 #if defined(HAVE_WSLAY)
     CreateConnectionWslay(conn);
 #endif
@@ -429,8 +437,6 @@ static WebsocketConnection* CreateConnection(const char* url)
 #if defined(__EMSCRIPTEN__)
     CreateConnectionEmscripten(conn);
 #endif
-
-    return conn;
 }
 
 static void DestroyConnection(WebsocketConnection* conn)
@@ -516,6 +522,10 @@ static int LuaConnect(lua_State* L)
     if (g_Websocket.m_Connections.Full())
         g_Websocket.m_Connections.OffsetCapacity(2);
     g_Websocket.m_Connections.Push(conn);
+
+    // A platform worker may read every connection field as soon as it starts.
+    // Publish the initialized connection before giving that worker the pointer.
+    StartConnection(conn);
 
     lua_pushlightuserdata(L, conn);
     return 1;
@@ -736,6 +746,12 @@ static void LuaInit(lua_State* L)
 static dmExtension::Result AppInitialize(dmExtension::AppParams* params)
 {
     g_Websocket.m_BufferSize = dmConfigFile::GetInt(params->m_ConfigFile, "websocket.buffer_size", 64 * 1024);
+    int max_queued_bytes = dmConfigFile::GetInt(
+        params->m_ConfigFile, "websocket.max_queued_bytes",
+        DEFAULT_MAX_QUEUED_BYTES);
+    g_Websocket.m_MaxQueuedBytes = max_queued_bytes > 0
+        ? (uint32_t)max_queued_bytes
+        : DEFAULT_MAX_QUEUED_BYTES;
     g_Websocket.m_Timeout = dmConfigFile::GetInt(params->m_ConfigFile, "websocket.socket_timeout", 500 * 1000);
     g_Websocket.m_Connections.SetCapacity(4);
     g_Websocket.m_Pool = 0;
@@ -804,6 +820,20 @@ Result PushMessage(WebsocketConnection* conn, MessageType type, int length, cons
     // we should only push messages when in the connected or disconnecting state
     if ((STATE_CONNECTED == conn->m_State) || (STATE_DISCONNECTING == conn->m_State))
     {
+        uint64_t queued = conn->m_BufferSize >= 0 ? (uint64_t)conn->m_BufferSize : 0;
+        uint64_t incoming = length >= 0
+            ? (uint64_t)length
+            : g_Websocket.m_MaxQueuedBytes + 1;
+        if (!CanQueueMessage(queued, incoming, g_Websocket.m_MaxQueuedBytes))
+        {
+            conn->m_Messages.SetSize(0);
+            conn->m_BufferSize = 0;
+            SetStatus(conn, RESULT_ERROR, "WebSocket receive queue exceeded %u bytes",
+                      g_Websocket.m_MaxQueuedBytes);
+            SetState(conn, STATE_DISCONNECTED);
+            return dmWebsocket::RESULT_ERROR;
+        }
+
         if (conn->m_Messages.Full())
             conn->m_Messages.OffsetCapacity(4);
 
