@@ -240,11 +240,20 @@ local function saved_index(v, list, fallback)
     return v
 end
 
+-- The wake the ship leaves, as this client draws it: the flair section's
+-- one working choice today. Client-side and cosmetic, like the trail
+-- itself: nothing about it crosses the wire, so what other pilots see is
+-- their own client's standard ribbon whatever is picked here.
+M.wake = 0
+M.WAKES = {"standard", "long", "none"}
+
 function M.save_identity()
     pcall(sys.save, SAVE, {
         name = M.name, class = M.class, volume = M.volume, music = M.music,
         cap = M.cap, zone = M.zone, spectate = M.spectate,
         help_prompt_seen = M.help_prompt_seen, dpad = M.dpad,
+        -- The wake, with the rest of what this pilot looks like.
+        wake = M.wake,
         -- Which charge the first key throws, which is a preference about a
         -- keyboard and belongs beside the bindings.
         charge_flip = M.charge_flip,
@@ -268,6 +277,8 @@ function M.load_identity()
         -- let a class of 7 through to be read as HULLS[8].
         M.class = saved_index(type(d.class) == "number" and d.class + 1 or nil,
                               HULLS, M.class + 1) - 1
+        M.wake = (type(d.wake) == "number" and d.wake >= 0
+                  and d.wake < #M.WAKES) and math.floor(d.wake) or 0
         M.volume = saved_index(d.volume, VOLUMES, M.volume)
         M.music = saved_index(d.music, MUSICS, M.music)
         M.cap = saved_index(d.cap, CAPS, M.cap)
@@ -754,14 +765,7 @@ local function kit_rows(class)
     local core = _G.sim
     local arena_ceiling = (core and core.kit_ceilings
                            and core.kit_ceilings()) or ceiling
-    local budget = simn("KIT_BUDGET", 30)
-    -- At the head, not the foot. It is the number every row below is
-    -- spending, and a list long enough to scroll would push it off the
-    -- bottom of the one page where it matters most.
-    -- Drawn as one bar rather than as the ladder every other row uses: thirty
-    -- steps at the width a step is drawn runs the length of the row and lands
-    -- on top of the word "budget".
-    -- The ship, first, because it is what the rest of the page is spending
+    -- The ship, once first, because it is what the rest of the page is spending
     -- on. It is a row like any other so that the arrows reach it: left and
     -- right turn the carousel, enter asks for the hull under it, and up off
     -- it goes back to the tab row.
@@ -781,16 +785,10 @@ local function kit_rows(class)
     local hulls = hull_rows()
     local at = M.hull_index()
     local cell = hulls[at]
-    local rows = {{
-        label = cell and cell.label or "ship", verbatim = true, ship = true,
-        act = "hull", value = cell and cell.value or nil,
-        choice = function() return at, #hulls end,
-        mark = cell and cell.mark or nil,
-    }, {
-        label = "budget", verbatim = true, bar = true,
-        detail = M.kit_spent() .. " of " .. budget,
-        choice = function() return M.kit_spent(), budget end,
-    }}
+    -- No budget row. The figure rides the view instead (see M.view), so
+    -- the cursor never has to stand on a readout: the page opens on the
+    -- first thing a press can change.
+    local rows = {}
     for _, s in ipairs(kit_slots()) do
         local max = ceiling[s.slot + 1] or 0
         -- On the page if this account can actually fly it, not if the arena
@@ -837,6 +835,26 @@ local function kit_rows(class)
             }
         end
     end
+    -- Flair: what the ship looks like, apart from what it can do. The hull
+    -- is here now rather than standing as its own stop at the head of the
+    -- page: choosing a shape and choosing a wake are the same kind of
+    -- choice, and one section holds them. The band above still wears the
+    -- hull; this is where it is picked. Left and right turn it, the way
+    -- they always did; enter still asks to fly it, at a hull change's
+    -- usual price.
+    rows[#rows + 1] = {
+        label = "hull", verbatim = true, ship = true, group = "flair",
+        detail = cell and cell.label or "ship",
+        act = "hull", value = cell and cell.value or nil,
+        choice = function() return at, #hulls end,
+        mark = cell and cell.mark or nil,
+    }
+    rows[#rows + 1] = {
+        label = "wake", verbatim = true, group = "flair",
+        detail = M.WAKES[M.wake + 1],
+        act = "wake",
+        choice = function() return M.wake + 1, #M.WAKES end,
+    }
     return rows
 end
 
@@ -3283,6 +3301,10 @@ function M.view()
     -- head is a carousel through every hull, and `rows` is what thirty points
     -- buy on the one it is showing.
     if M.at() == "hangar" then
+        -- The budget, as two figures for the band: what the kit spends and
+        -- what a kit may. It was a row, and a cursor kept opening on it.
+        out.kit_spent = M.kit_spent()
+        out.kit_total = simn("KIT_BUDGET", 30)
         out.hulls = {}
         for i, r in ipairs(hull_rows()) do
             out.hulls[i] = view_row(r, i)
@@ -3493,6 +3515,14 @@ local function activate(by)
         if r.value == nil then return "spectate" end
         M.pending = r.value
         return "ship"
+    elseif r.act == "wake" then
+        -- One step round the wakes, whichever way the press points; enter
+        -- steps forward, so a hand on enter alone can still reach all of
+        -- them. Saved at once: a cosmetic that lasted one session would
+        -- read as a setting that failed to take.
+        M.wake = (M.wake + (by or 1)) % #M.WAKES
+        M.save_identity()
+        return nil
     elseif r.act == "ship" then
         -- A request, not a decision. The hull you are flying is whatever the
         -- simulation says it is, and in a zone that is the server's answer and
@@ -4042,6 +4072,14 @@ function M.step(keys)
     end
     if keys.go then return activate(), true end
     return nil, false
+end
+
+-- A triangle beside the wake row, pressed: one step round the wakes,
+-- wrapping, the same shape of control the hull's arrows are.
+function M.click_wake(dir)
+    M.wake = (M.wake + (dir or 1)) % #M.WAKES
+    M.save_identity()
+    return nil, true
 end
 
 -- An arrow beside the ship, pressed: the next ship along, wrapping. The

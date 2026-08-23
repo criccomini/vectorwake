@@ -451,17 +451,33 @@ local CELLS = #ship_page.hulls
 check("every hull rides the carousel, and sitting out with them",
       CELLS > 1 and ship_page.hull_sel == 1,
       CELLS .. " cells, showing " .. tostring(ship_page.hull_sel))
-check("and the page under it is the kit itself",
-      ship_page.rows[1].ship == true and ship_page.rows[2].bar == true,
-      tostring(ship_page.rows[1].ship) .. "/" .. tostring(ship_page.rows[2].bar))
+-- The hull is a flair row near the foot of the page now, with the wake
+-- beside it: choosing a shape and choosing a wake are the same kind of
+-- choice. No budget row anywhere: the figure rides the view, so the cursor
+-- never opens on a readout.
+local hull_row, wake_row = nil, nil
+for i, r in ipairs(ship_page.rows) do
+    if r.ship then hull_row = i end
+    if r.group == "flair" and not r.ship then wake_row = i end
+end
+check("the hull is a flair row, the wake beside it",
+      hull_row ~= nil and wake_row == hull_row + 1,
+      tostring(hull_row) .. "/" .. tostring(wake_row))
+check("and the kit budget rides the view, not a row",
+      ship_page.kit_spent ~= nil and ship_page.rows[1].bar == nil,
+      tostring(ship_page.kit_spent))
 check("live, because there is no level above it left to preview from",
       ship_page.kit_preview == nil, tostring(ship_page.kit_preview))
-check("with the cursor on the ship", ship_page.sel == 1,
-      "cursor " .. tostring(ship_page.sel))
+check("with the cursor on the first thing a press can change",
+      ship_page.sel == 1 and ship_page.rows[1].pick == true,
+      "cursor " .. tostring(ship_page.sel) .. " on "
+      .. tostring(ship_page.rows[1].group))
 
--- Left and right turn it. At home that is the choice itself: what a hull
--- means with no game on is the ship you will arrive in, and a pilot who spins
--- to one, likes it and walks away should be flying it.
+-- Left and right turn the carousel while the cursor stands on the hull row.
+-- At home that is the choice itself: what a hull means with no game on is
+-- the ship you will arrive in, and a pilot who spins to one, likes it and
+-- walks away should be flying it.
+menu.sel.hangar = hull_row
 menu.pending = nil
 local turned = menu.step({right = true})
 check("right turns the carousel",
@@ -506,13 +522,29 @@ check("and the press is what asks", picked == "ship" and menu.pending == 1,
 menu.home = true
 menu.hull_at = nil
 
--- Up off the ship goes back to the tab row, which is what up means everywhere
--- in this menu.
+-- Up off the first row goes back to the tab row, which is what up means
+-- everywhere in this menu.
 menu.stack = {"root", "hangar"}
 menu.sel = {}
 menu.step({up = true})
-check("up from the ship goes back to the tabs", menu.stack[2] == nil,
+check("up from the first row goes back to the tabs", menu.stack[2] == nil,
       table.concat(menu.stack, "/"))
+
+-- The wake steps in a ring, from the keys and from its own act, and what is
+-- picked survives the trip through the saved identity's shape.
+menu.stack = {"root", "hangar"}
+menu.sel = {hangar = wake_row}
+menu.wake = 0
+menu.step({right = true})
+check("right steps the wake", menu.wake == 1, tostring(menu.wake))
+menu.step({left = true})
+menu.step({left = true})
+check("and it wraps the other way", menu.wake == #menu.WAKES - 1,
+      tostring(menu.wake))
+menu.click_wake(1)
+check("the triangles step it too", menu.wake == 0, tostring(menu.wake))
+menu.stack = {"root"}
+menu.sel = {}
 
 -- The same cell, seen from the rail. The stage previews the page a rail stop
 -- leads to before you go in, and that preview flattens rows down its own
@@ -1985,47 +2017,39 @@ do
     menu.stack = {"root"}
     menu.sel = {}
     menu.click_rail(top_index("ship"))
-    menu.sel.hangar = 1
+    local v = menu.view()
+    local labels = {}
+    local hull_at2, wake_at2 = nil, nil
+    for i, r in ipairs(v.rows) do
+        labels[#labels + 1] = r.label
+        if r.ship then hull_at2 = i end
+        if r.group == "flair" and not r.ship then wake_at2 = i end
+    end
+    check("only the slots this arena will take are on the page",
+          #v.rows == 5, table.concat(labels, ", "))
+    -- The slots first, then the flair: the hull with the wake beside it at
+    -- the foot, since choosing a shape and choosing a wake are the same
+    -- kind of choice. No budget row anywhere: the figure rides the view,
+    -- so the cursor never opens on a readout.
+    check("with the hull and the wake in the flair at the foot",
+          hull_at2 == #v.rows - 1 and wake_at2 == #v.rows
+              and v.rows[hull_at2].detail == "Apex",
+          table.concat(labels, ", "))
+    check("and the budget riding the view rather than a row",
+          v.kit_spent ~= nil and v.kit_total == 6,
+          tostring(v.kit_spent) .. "/" .. tostring(v.kit_total))
+
+    menu.sel.hangar = hull_at2
     local pressed = menu.step({go = true})
-    check("pressing the ship asks for the hull under it",
+    check("pressing the hull row asks for the hull under it",
           pressed == "ship" and menu.pending == 0, tostring(pressed))
     check("and stays on the page, because its kit is the rest of it",
           menu.at() == "hangar", table.concat(menu.stack, "/"))
 
-    local v = menu.view()
-    local labels = {}
-    for _, r in ipairs(v.rows) do labels[#labels + 1] = r.label end
-    check("only the slots this arena will take are on the page",
-          #v.rows == 5, table.concat(labels, ", "))
-    -- The ship the points are being spent on, then the budget they come out
-    -- of, then the slots. Both of the first two are readouts as much as rows,
-    -- and both are at the head because everything below is about them.
-    check("with the ship at the head and the budget under it",
-          v.rows[1].ship == true and v.rows[1].label == "Apex"
-              and v.rows[2].label == "budget",
-          labels[1] .. ", " .. labels[2])
-    -- Drawn as a bar rather than as thirty pips, which is the difference
-    -- between a row and a row with a wall across it.
-    check("and the budget drawn as a bar",
-          v.rows[2].bar == true and v.rows[2].choices == 6,
-          tostring(v.rows[2].bar) .. "/" .. tostring(v.rows[2].choices))
-
-    -- The arrows walk past the budget bar. It is a readout: right does
-    -- nothing to it, and left, which is the way out of a page, shut the whole
-    -- thing. So a cursor that stopped there had two keys that did nothing and
-    -- one that was a trapdoor.
-    menu.sel.hangar = 1
-    menu.step({down = true})
-    check("down from the ship skips the budget readout", menu.sel.hangar == 3,
-          "cursor " .. tostring(menu.sel.hangar))
-    menu.step({up = true})
-    check("and up comes back to the ship", menu.sel.hangar == 1,
-          "cursor " .. tostring(menu.sel.hangar))
-
     -- Right spends a point, left takes it back, and neither goes anywhere.
-    -- Row one is the ship and row two the budget, so the first stat is row
-    -- three.
-    menu.sel.hangar = 3
+    -- The first stat is the first row now: nothing stands ahead of the
+    -- things a press can change.
+    menu.sel.hangar = 1
     menu.step({right = true})
     check("right spends a point",
           menu.kit[1] == 1 and menu.at() == "hangar",
@@ -2044,7 +2068,7 @@ do
           tostring(menu.kit[1]))
 
     -- The budget, which is what every row on the page is spending against.
-    menu.sel.hangar = 5
+    menu.sel.hangar = 3
     for _ = 1, 6 do menu.step({right = true}) end
     check("nor past the budget", menu.kit_spent() == 6,
           tostring(menu.kit_spent()))
@@ -2054,7 +2078,7 @@ do
     account.entitlements = {[1] = 2}
     menu.kit = nil
     menu.open_kit(0)
-    menu.sel.hangar = 3
+    menu.sel.hangar = 1
     for _ = 1, 6 do menu.step({right = true}) end
     check("and never past what the account owns", menu.kit[1] == 2,
           tostring(menu.kit[1]))
@@ -2159,7 +2183,7 @@ do
 
     -- And a press that cannot spend says which of the two refusals it is,
     -- rather than offering to sell the way out of one of them.
-    menu.sel.hangar = 3
+    menu.sel.hangar = 1
     menu.ask = nil
     for _ = 1, 4 do menu.step({right = true}) end
     check("the ladder stops at what the account owns", menu.kit[1] == 1,
@@ -2175,12 +2199,12 @@ do
     -- A rung nobody owns, pressed directly. Same answer: the pip has been
     -- advertising something this page does not sell.
     menu.ask = nil
-    menu.click_kit_at(3, 2)
+    menu.click_kit_at(1, 2)
     check("a rung nobody owns says where it is sold",
           menu.ask == nil and menu.note ~= nil
           and string.find(menu.note, "upgrades", 1, true) ~= nil,
           tostring(menu.note))
-    menu.click_kit_at(3, 1)
+    menu.click_kit_at(1, 1)
     check("and a rung you own is still just a rung",
           menu.ask == nil and menu.kit[1] == 1,
           tostring(menu.kit[1]))
@@ -2380,7 +2404,7 @@ do
 
     -- A stat is still a ladder, because that is what it is: left and right
     -- spend and unspend along it.
-    menu.sel.hangar = 3
+    menu.sel.hangar = 1
     menu.step({right = true})
     check("but a stat still takes a step from the arrows",
           (menu.kit[1] or 0) == 2, tostring(menu.kit[1]))

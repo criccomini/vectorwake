@@ -1895,6 +1895,10 @@ function update(self, dt)
                 local hdg = sim.ship_heading(i)
                 -- The ribbon, from this hull's own exhaust, on the heading
                 -- the hull is drawn at rather than the one the core holds.
+                -- Whose ribbon wears the pilot's wake choice. Told here
+                -- because only this file knows which ship is the player's.
+                world.wake_of = (not watching) and me or nil
+                world.wake_style = menu.wake or 0
                 world.trail(glow, i, sim.ship_x(i), sim.ship_y(i), hdg,
                             sim.ship_class(i), col, t)
                 -- How hurt, on the same number the pip below reads. Nothing
@@ -2834,6 +2838,9 @@ function on_input(self, action_id, action)
                 -- as the chips under it, so it answers a press the same
                 -- way one of them does.
                 act, moved = menu.click_key(r.value)
+            elseif r.action == "wake" then
+                -- The flair row's own triangles.
+                act, moved = menu.click_wake(r.value)
             elseif r.action == "carousel" then
                 -- The arrow beside the ship. One ship along, wrapping.
                 act, moved = menu.click_carousel(r.value)

@@ -2467,7 +2467,20 @@ for ci = 1, #M.HULLS do
     TAIL[ci] = depth
 end
 
+-- Whose ribbon wears the pilot's wake choice, and which choice. Set by the
+-- arena each frame: this file knows ships by index and nothing about which
+-- one is the player's. The choice is client-side cosmetic, like the ribbon
+-- itself: other clients draw this hull their own standard way.
+M.wake_of = nil
+M.wake_style = 0
+
 function M.trail(glow, i, x, y, heading, cls, col, t)
+    -- The wake, where this is the ship it belongs to: 1 stretches the
+    -- ribbon by committing samples at twice the interval (same ring, same
+    -- cost, twice the seconds of path), 2 leaves none at all. The samples
+    -- are still kept when drawing is off, so turning the wake back on does
+    -- not open on a stub.
+    local style = (i == M.wake_of) and M.wake_style or 0
     -- From the hull's center to its tail, along the drawn heading: zero is
     -- north, and the simulation's +y runs down.
     local d = TAIL[cls + 1] or 0
@@ -2491,12 +2504,14 @@ function M.trail(glow, i, x, y, heading, cls, col, t)
         if dx * dx + dy * dy > 90 * 90 then tr.n = 0 end
     end
     tr.t = t
-    if tr.n == 0 or t - tr.pushed >= TRAIL_STEP then
+    local cadence = (style == 1) and TRAIL_STEP * 2 or TRAIL_STEP
+    if tr.n == 0 or t - tr.pushed >= cadence then
         tr.at = tr.at % TRAIL_LEN + 1
         tr[tr.at * 2 - 1], tr[tr.at * 2] = x, y
         if tr.n < TRAIL_LEN then tr.n = tr.n + 1 end
         tr.pushed = t
     end
+    if style == 2 then return end
     -- From the hull back through the committed samples, fading and thinning
     -- as it goes. Alphas ride the team color through seg_fade's own vertex
     -- alpha, so no color tables are made here, at sixty a second, per hull.
