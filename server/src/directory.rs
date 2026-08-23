@@ -259,6 +259,21 @@ impl Directory {
             .retain(|_, r| now.saturating_sub(r.seen_ms) < fleet::DEAD_AFTER_MS);
     }
 
+    /// The registration still owned by this socket. A restart may replace the
+    /// row while the old connection remains alive, and that old connection no
+    /// longer gets to change anything filed under the instance id.
+    fn registration_mut(&mut self, instance: &str, tx: &mpsc::Sender<Message>) -> Option<&mut Reg> {
+        self.regs
+            .get_mut(instance)
+            .filter(|reg| reg.tx.same_channel(tx))
+    }
+
+    fn registration_is_current(&self, instance: &str, tx: &mpsc::Sender<Message>) -> bool {
+        self.regs
+            .get(instance)
+            .is_some_and(|reg| reg.tx.same_channel(tx))
+    }
+
     /// Everything this directory has observed, for the arena servers and for the
     /// admin surface. Unverified rows are included here and excluded from browse:
     /// an operator wants to see a misconfigured instance, a player does not.
@@ -653,6 +668,7 @@ async fn serve_registration(
                 let dir2 = dir.clone();
                 let inst = r.instance.clone();
                 let addr = r.address.clone();
+                let registered_tx = tx.clone();
                 tokio::spawn(async move {
                     // Said on every change, and on the first attempt whatever it
                     // says, because the first one is the one an operator watching
@@ -665,7 +681,7 @@ async fn serve_registration(
                         let ok = outcome.is_ok();
                         {
                             let mut d = dir2.lock().await;
-                            match d.regs.get_mut(&inst) {
+                            match d.registration_mut(&inst, &registered_tx) {
                                 Some(reg) if reg.address == addr => {
                                     if reg.verified != ok || !spoken {
                                         match &outcome {
@@ -695,7 +711,7 @@ async fn serve_registration(
                 };
                 let Some(id) = instance.clone() else { continue };
                 let mut d = dir.lock().await;
-                if let Some(r) = d.regs.get_mut(&id) {
+                if let Some(r) = d.registration_mut(&id, &tx) {
                     r.status = s;
                     r.seen_ms = now_ms();
                 }
@@ -706,7 +722,7 @@ async fn serve_registration(
                 };
                 let Some(id) = instance.clone() else { continue };
                 let mut d = dir.lock().await;
-                if let Some(r) = d.regs.get_mut(&id) {
+                if let Some(r) = d.registration_mut(&id, &tx) {
                     r.intent = i.zone;
                     r.intent_until_ms = now_ms() + i.expires_ms.min(60_000);
                     r.seen_ms = now_ms();
@@ -718,6 +734,9 @@ async fn serve_registration(
                 };
                 let id = instance.clone().unwrap_or_default();
                 let mut d = dir.lock().await;
+                if !d.registration_is_current(&id, &tx) {
+                    continue;
+                }
                 println!("ack from {id}: command {} {}", a.command_id, a.outcome);
                 d.note(AuditRow {
                     at_ms: now_ms(),
@@ -1008,21 +1027,37 @@ pub async fn run() {
         if tls.is_some() { "wss://" } else { "ws://" }
     );
 
+    let pending_handshakes = Arc::new(tokio::sync::Semaphore::new(crate::MAX_PENDING_HANDSHAKES));
     while let Ok((stream, peer)) = listener.accept().await {
+        let Ok(handshake_permit) = pending_handshakes.clone().try_acquire_owned() else {
+            continue;
+        };
         let dir = dir.clone();
         let tls = tls.clone();
         tokio::spawn(async move {
             let stream: Box<dyn crate::Conn> = match &tls {
-                Some(a) => match a.accept(stream).await {
-                    Ok(s) => Box::new(s),
-                    Err(_) => return,
+                Some(a) => match tokio::time::timeout(
+                    std::time::Duration::from_secs(crate::HANDSHAKE_DEADLINE_SECS),
+                    a.accept(stream),
+                )
+                .await
+                {
+                    Ok(Ok(s)) => Box::new(s),
+                    _ => return,
                 },
                 None => Box::new(stream),
             };
             // A bearer token over cleartext is a token given away. Loopback is
             // the exception, because that is development and it has no path.
             let cleartext_remote = tls.is_none() && !peer.ip().is_loopback();
-            accept_conn(stream, dir, peer.ip().is_loopback(), cleartext_remote).await;
+            accept_conn(
+                stream,
+                dir,
+                peer.ip().is_loopback(),
+                cleartext_remote,
+                Some(handshake_permit),
+            )
+            .await;
         });
     }
 }
@@ -1036,6 +1071,7 @@ async fn accept_conn(
     dir: Arc<Mutex<Directory>>,
     peer_loopback: bool,
     cleartext_remote: bool,
+    handshake_permit: Option<tokio::sync::OwnedSemaphorePermit>,
 ) {
     // Everything an arena sends up this socket is small: a REGISTER, a
     // STATUS, an INTENT, an ACK, none past a kilobyte. The library default
@@ -1059,19 +1095,23 @@ async fn accept_conn(
     // The closure's error type is tungstenite's own `ErrorResponse`, which is
     // a whole HTTP response and is what the handshake takes. Not ours to box.
     #[allow(clippy::result_large_err)]
-    let ws = tokio_tungstenite::accept_hdr_async_with_config(
-        stream,
-        move |req: &tokio_tungstenite::tungstenite::handshake::server::Request,
-              resp: tokio_tungstenite::tungstenite::handshake::server::Response| {
-            if req.headers().contains_key("x-forwarded-for") {
-                saw.store(true, std::sync::atomic::Ordering::Relaxed);
-            }
-            Ok(resp)
-        },
-        Some(cfg),
+    let ws = tokio::time::timeout(
+        std::time::Duration::from_secs(crate::HANDSHAKE_DEADLINE_SECS),
+        tokio_tungstenite::accept_hdr_async_with_config(
+            stream,
+            move |req: &tokio_tungstenite::tungstenite::handshake::server::Request,
+                  resp: tokio_tungstenite::tungstenite::handshake::server::Response| {
+                if req.headers().contains_key("x-forwarded-for") {
+                    saw.store(true, std::sync::atomic::Ordering::Relaxed);
+                }
+                Ok(resp)
+            },
+            Some(cfg),
+        ),
     )
     .await;
-    let Ok(ws) = ws else { return };
+    let Ok(Ok(ws)) = ws else { return };
+    drop(handshake_permit);
     let local = peer_loopback && !proxied.load(std::sync::atomic::Ordering::Relaxed);
     if cleartext_remote {
         let (mut sink, _) = ws.split();
@@ -1260,6 +1300,23 @@ mod tests {
     }
 
     #[test]
+    fn only_the_newest_registration_can_change_an_instance() {
+        let mut d = Directory::new(cat());
+        reg(&mut d, "a", "chaos", 1, true);
+        let old = d.regs.get("a").unwrap().tx.clone();
+        reg(&mut d, "a", "war", 2, true);
+        let current = d.regs.get("a").unwrap().tx.clone();
+
+        assert!(
+            d.registration_mut("a", &old).is_none(),
+            "the replaced socket has lost the row"
+        );
+        assert!(d.registration_mut("a", &current).is_some());
+        assert!(!d.registration_is_current("a", &old));
+        assert!(d.registration_is_current("a", &current));
+    }
+
+    #[test]
     fn browse_lists_zones_with_instances_and_totals() {
         let mut d = Directory::new(cat());
         reg(&mut d, "a", "chaos", 5, true);
@@ -1440,7 +1497,7 @@ mod tests {
             while let Ok((stream, peer)) = listener.accept().await {
                 let dir = dir.clone();
                 tokio::spawn(async move {
-                    accept_conn(Box::new(stream), dir, peer.ip().is_loopback(), false).await;
+                    accept_conn(Box::new(stream), dir, peer.ip().is_loopback(), false, None).await;
                 });
             }
         });

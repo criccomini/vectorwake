@@ -276,18 +276,37 @@ pub(super) async fn route(
                 .and_then(|value| value.as_array())
                 .unwrap_or(&empty);
             let mut stored = 0usize;
-            let mut failed: Vec<String> = Vec::new();
-            for event in events {
+            let mut rejected = Vec::new();
+            let mut failed = Vec::new();
+            for (index, event) in events.iter().enumerate() {
+                if let Err(error) = validate_pilot_event(event) {
+                    rejected.push(serde_json::json!({
+                        "index": index,
+                        "error": error,
+                    }));
+                    continue;
+                }
                 match ingest_pilot(db, &zone, &instance, event).await {
                     Ok(()) => stored += 1,
                     Err(error) => failed.push(error),
                 }
             }
             if failed.is_empty() {
-                (200, serde_json::json!({ "stored": stored }))
+                if !rejected.is_empty() {
+                    println!(
+                        "meta: {} of {} pilot events refused: {}",
+                        rejected.len(),
+                        events.len(),
+                        rejected[0]["error"].as_str().unwrap_or("invalid event")
+                    );
+                }
+                (
+                    200,
+                    serde_json::json!({ "stored": stored, "rejected": rejected }),
+                )
             } else {
                 println!(
-                    "meta: {} of {} pilot events refused: {}",
+                    "meta: {} of {} pilot events could not be stored: {}",
                     failed.len(),
                     events.len(),
                     failed[0]
@@ -296,6 +315,7 @@ pub(super) async fn route(
                     500,
                     serde_json::json!({
                         "stored": stored,
+                        "rejected": rejected,
                         "failed": failed.len(),
                         "error": failed[0]
                     }),
@@ -562,19 +582,75 @@ async fn ingest(
         .map_err(|error| format!("cannot commit: {error}"))
 }
 
-/// One line of the pilot log, into the table.
-///
-/// Simpler than its rating counterpart in the one way that matters: there is
-/// no projection to keep in step, so a row is one insert and needs no
-/// transaction around it. The dedup index does the same work here that it does
-/// there, and a second arrival is reported as success so the arena's spool
-/// lets go of it.
+/// Refuse a pilot event that cannot fit the shape the arena writes or the
+/// columns that store it. The route reports these by index so one bad record
+/// reaches the dead-letter file without holding every later record behind it.
+pub(super) fn validate_pilot_event(event: &serde_json::Value) -> Result<(), String> {
+    if !event.is_object() {
+        return Err("pilot event is not an object".into());
+    }
+    if event.get("id").and_then(|value| value.as_i64()).is_none() {
+        return Err("no event id".into());
+    }
+    if event
+        .get("kind")
+        .and_then(|value| value.as_str())
+        .filter(|kind| !kind.is_empty())
+        .is_none()
+    {
+        return Err("no kind".into());
+    }
+    let Some(at) = event.get("at").and_then(|value| value.as_u64()) else {
+        return Err("invalid event time".into());
+    };
+    // The wire uses Unix milliseconds. Keep it inside year 9999 so conversion
+    // to a Postgres timestamp cannot turn a malformed row into a permanent
+    // retry at the head of the spool.
+    if at > 253_402_300_799_000 {
+        return Err("invalid event time".into());
+    }
+    for field in ["session", "name"] {
+        if event.get(field).is_some_and(|value| !value.is_string()) {
+            return Err(format!("invalid {field}"));
+        }
+    }
+    if event.get("bot").is_some_and(|value| !value.is_boolean()) {
+        return Err("invalid bot flag".into());
+    }
+    if event.get("pilot").is_some_and(|value| {
+        !value.is_null() && value.as_u64().filter(|id| *id <= i64::MAX as u64).is_none()
+    }) {
+        return Err("invalid pilot".into());
+    }
+    if event.get("room").is_some_and(|value| {
+        !value.is_null()
+            && value
+                .as_u64()
+                .filter(|room| *room <= i32::MAX as u64)
+                .is_none()
+    }) {
+        return Err("invalid room".into());
+    }
+    if event.get("tick").is_some_and(|value| {
+        value
+            .as_u64()
+            .filter(|tick| *tick <= u32::MAX as u64)
+            .is_none()
+    }) {
+        return Err("invalid tick".into());
+    }
+    Ok(())
+}
+
+/// One line of the pilot log and any wallet movement it causes. Both commit
+/// together so a retry either finds all of the work or performs all of it.
 async fn ingest_pilot(
-    db: &Client,
+    db: &mut Client,
     zone: &str,
     instance: &str,
     event: &serde_json::Value,
 ) -> Result<(), String> {
+    validate_pilot_event(event)?;
     let Some(event_id) = event.get("id").and_then(|value| value.as_i64()) else {
         return Err("no event id".into());
     };
@@ -618,6 +694,10 @@ async fn ingest_pilot(
         .cloned()
         .unwrap_or(serde_json::json!({}));
 
+    let db = db
+        .transaction()
+        .await
+        .map_err(|error| format!("cannot open a transaction: {error}"))?;
     let rows = db
         .execute(
             "insert into pilot_events
@@ -634,6 +714,13 @@ async fn ingest_pilot(
         .await
         .map_err(|error| format!("cannot store pilot event: {error}"))?;
 
+    if rows == 0 {
+        return db
+            .commit()
+            .await
+            .map_err(|error| format!("cannot commit: {error}"));
+    }
+
     // Rivets are bounty taken, and a kill row is where a bounty is taken.
     //
     // Banked here rather than summed out of the log on demand, because the
@@ -641,7 +728,7 @@ async fn ingest_pilot(
     // wallet nobody could trust. `rows` is what makes it safe: delivery is
     // at-least-once and the unique index refuses the second copy, so a retry
     // inserts nothing and pays nothing.
-    if rows > 0 && kind == crate::pilot::KILL {
+    if kind == crate::pilot::KILL {
         if let Some(account) = pilot {
             let paid = detail
                 .get("bounty")
@@ -649,7 +736,14 @@ async fn ingest_pilot(
                 .unwrap_or(0)
                 .clamp(0, u16::MAX as i64);
             if paid > 0 {
-                pay(db, account, paid).await?;
+                db.execute(
+                    "insert into wallets (account, rivets)
+                     select id, $2 from accounts where id = $1
+                     on conflict (account) do update set rivets = wallets.rivets + $2",
+                    &[&account, &paid],
+                )
+                .await
+                .map_err(|error| format!("cannot bank rivets: {error}"))?;
             }
         }
     }
@@ -662,41 +756,19 @@ async fn ingest_pilot(
     // a fact about a match; a negative balance is a debt, and this game does
     // not have those. Same `rows > 0` guard: delivery is at-least-once and a
     // retry must not charge twice.
-    if rows > 0 && kind == crate::pilot::MISFIRE {
+    if kind == crate::pilot::MISFIRE {
         if let Some(account) = pilot {
-            charge(db, account, 1).await?;
+            db.execute(
+                "update wallets set rivets = greatest(0, rivets - 1) where account = $1",
+                &[&account],
+            )
+            .await
+            .map_err(|error| format!("cannot charge rivets: {error}"))?;
         }
     }
-    Ok(())
-}
-
-/// Rivets out of an account's wallet, never past empty.
-///
-/// An account with no row has never been paid, which is a balance of zero,
-/// and zero less one is zero: no row is made, because a wallet that appears
-/// the first time somebody kills themselves is a row that says nothing.
-async fn charge(db: &Client, account: i64, rivets: i64) -> Result<(), String> {
-    db.execute(
-        "update wallets set rivets = greatest(0, rivets - $2) where account = $1",
-        &[&account, &rivets],
-    )
-    .await
-    .map(|_| ())
-    .map_err(|error| format!("cannot charge rivets: {error}"))
-}
-
-/// Rivets into an account's wallet. An account with no row has never been
-/// paid, which is the same thing as a balance of zero, so the first payment
-/// makes the row.
-pub(super) async fn pay(db: &Client, account: i64, rivets: i64) -> Result<(), String> {
-    db.execute(
-        "insert into wallets (account, rivets) values ($1, $2)
-         on conflict (account) do update set rivets = wallets.rivets + $2",
-        &[&account, &rivets],
-    )
-    .await
-    .map(|_| ())
-    .map_err(|error| format!("cannot bank rivets: {error}"))
+    db.commit()
+        .await
+        .map_err(|error| format!("cannot commit: {error}"))
 }
 
 /// One pilot's rating moves by one delta, and their game count by one.

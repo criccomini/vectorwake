@@ -412,7 +412,7 @@ fn proc_self(out: &mut String) {
 }
 
 #[cfg(not(target_os = "linux"))]
-fn proc_self(_out: &mut String) {}
+fn proc_self(_out: &mut str) {}
 
 /// Everything this process has to say, as one page.
 pub fn render() -> String {

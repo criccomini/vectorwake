@@ -73,6 +73,17 @@ create table if not exists credentials (
     primary key (method, hash)
 );
 create index if not exists credentials_by_account on credentials (account);
+-- Password replacement is one operation, and login expects one row. A build
+-- from before that rule could have left several behind after concurrent
+-- claims, so keep the newest before asking Postgres to enforce it.
+delete from credentials older
+using credentials newer
+where older.method = 'password'
+  and newer.method = 'password'
+  and older.account = newer.account
+  and (older.created, older.hash) < (newer.created, newer.hash);
+create unique index if not exists credentials_one_password
+on credentials (account) where method = 'password';
 create table if not exists names (
     account   bigint primary key references accounts(id) on delete cascade,
     call_sign text not null
@@ -2323,9 +2334,9 @@ async fn route(
             )
         }
 
-        // A purchase. One slot, one step, one price, and the wallet is checked
-        // and debited in the same statement that raises the ceiling: two
-        // clients pressing buy at once must not both be told yes.
+        // A purchase. One slot, one step, one price, with the wallet debit and
+        // entitlement raise in the same transaction. Concurrent requests may
+        // buy consecutive rungs, but cannot both charge for the same rung.
         "/v1/buy" => {
             let Some(account) =
                 account_for(&db, "secret", &sha256_hex(s("secret").as_bytes())).await
@@ -2339,7 +2350,33 @@ async fn route(
                 return (400, serde_json::json!({ "error": "no such slot" }));
             }
             let base = sim::World::base_entitlements();
-            let owned = entitlement_of(&db, account, slot as i16, base[slot as usize]).await;
+            let transaction = match db.transaction().await {
+                Ok(transaction) => transaction,
+                Err(e) => return (500, serde_json::json!({ "error": format!("{e}") })),
+            };
+            // Every purchase for one account queues on the account row. The
+            // entitlement read and wallet debit below are one decision, even
+            // when two clients press buy together.
+            if let Err(e) = transaction
+                .query_one(
+                    "select id from accounts where id = $1 for update",
+                    &[&account],
+                )
+                .await
+            {
+                return (500, serde_json::json!({ "error": format!("{e}") }));
+            }
+            let owned = match transaction
+                .query_opt(
+                    "select n from entitlements where account = $1 and slot = $2",
+                    &[&account, &(slot as i16)],
+                )
+                .await
+            {
+                Ok(Some(row)) => row.get::<_, i16>(0).clamp(0, 255) as u8,
+                Ok(None) => base[slot as usize],
+                Err(e) => return (500, serde_json::json!({ "error": format!("{e}") })),
+            };
             let Some((next, price)) = upgrades::next_step(slot as usize, owned) else {
                 return (
                     400,
@@ -2347,31 +2384,31 @@ async fn route(
                 );
             };
 
-            // One statement, so a wallet cannot be spent twice: the update
-            // matches no row when the balance is short, and a caller that
-            // moved nothing is a caller that could not afford it.
-            let paid = db
+            let paid = match transaction
                 .execute(
                     "update wallets set rivets = rivets - $2
                      where account = $1 and rivets >= $2",
                     &[&account, &(price as i64)],
                 )
                 .await
-                .unwrap_or(0);
+            {
+                Ok(paid) => paid,
+                Err(e) => return (500, serde_json::json!({ "error": format!("{e}") })),
+            };
             if paid == 0 {
                 return (402, serde_json::json!({ "error": "not enough rivets" }));
             }
-            let raised = db
+            if let Err(e) = transaction
                 .execute(
                     "insert into entitlements (account, slot, n) values ($1, $2, $3)
                      on conflict (account, slot) do update set n = excluded.n",
                     &[&account, &(slot as i16), &(next as i16)],
                 )
-                .await;
-            if let Err(e) = raised {
-                // The wallet moved and the shelf did not, which is the one
-                // ordering that costs a player something. Put it back.
-                let _ = settlement::pay(&db, account, price as i64).await;
+                .await
+            {
+                return (500, serde_json::json!({ "error": format!("{e}") }));
+            }
+            if let Err(e) = transaction.commit().await {
                 return (500, serde_json::json!({ "error": format!("{e}") }));
             }
             note_account(
@@ -2425,7 +2462,23 @@ async fn route(
                 Ok(Err(e)) => return (500, serde_json::json!({ "error": e })),
                 Err(e) => return (500, serde_json::json!({ "error": format!("{e}") })),
             };
-            if let Err(e) = db
+            let transaction = match db.transaction().await {
+                Ok(transaction) => transaction,
+                Err(e) => return (500, serde_json::json!({ "error": format!("{e}") })),
+            };
+            // A password change owns the account row until the replacement is
+            // committed. The delete cannot become visible without the insert,
+            // and another change cannot slip a second password between them.
+            if let Err(e) = transaction
+                .query_one(
+                    "select id from accounts where id = $1 for update",
+                    &[&account],
+                )
+                .await
+            {
+                return (500, serde_json::json!({ "error": format!("{e}") }));
+            }
+            if let Err(e) = transaction
                 .execute(
                     "delete from credentials where account = $1 and method = 'password'",
                     &[&account],
@@ -2434,8 +2487,18 @@ async fn route(
             {
                 return (500, serde_json::json!({ "error": format!("{e}") }));
             }
-            if let Err(e) = add_credential(&db, account, "password", &hashed).await {
-                return (500, serde_json::json!({ "error": e }));
+            if let Err(e) = transaction
+                .execute(
+                    "insert into credentials (method, hash, account)
+                     values ('password', $1, $2)",
+                    &[&hashed, &account],
+                )
+                .await
+            {
+                return (500, serde_json::json!({ "error": format!("{e}") }));
+            }
+            if let Err(e) = transaction.commit().await {
+                return (500, serde_json::json!({ "error": format!("{e}") }));
             }
             // Also what a password change looks like, since the route serves
             // both. The log says a credential moved, not which.
@@ -4361,9 +4424,8 @@ fn tls_client() -> &'static tokio_rustls::TlsConnector {
     })
 }
 
-/// Write the request, read until the far end closes. Generic over the socket
-/// so the plaintext and TLS paths are the same code rather than two copies
-/// that drift.
+/// Write the request and read one bounded reply. Generic over the socket so the
+/// plaintext and TLS paths are the same code rather than two copies that drift.
 async fn round_trip<S>(mut s: S, req: &str) -> Result<String, String>
 where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
@@ -4373,7 +4435,8 @@ where
         .await
         .map_err(|e| format!("{e}"))?;
     let mut out = Vec::new();
-    if let Err(e) = s.read_to_end(&mut out).await {
+    let mut limited = s.take((META_REPLY_MAX + 1) as u64);
+    if let Err(e) = limited.read_to_end(&mut out).await {
         // A peer that closes a TLS connection without close_notify is a
         // truncation, and rustls reports it rather than hiding it. With a
         // whole reply already in hand that is the close it is, so the error
@@ -4382,8 +4445,14 @@ where
             return Err(format!("{e}"));
         }
     }
+    if out.len() > META_REPLY_MAX {
+        return Err(format!("meta reply exceeds {META_REPLY_MAX} bytes"));
+    }
     Ok(String::from_utf8_lossy(&out).to_string())
 }
+
+const META_CALL_DEADLINE_SECS: u64 = 10;
+const META_REPLY_MAX: usize = 1024 * 1024;
 
 /// A POST to the meta-layer, hand-rolled for the same reason `admin.rs`
 /// hand-rolls its responder: a handful of request shapes, and a client library
@@ -4395,14 +4464,31 @@ where
 /// arena's rated events, its pilot events and the bot server's account claims
 /// share one parser and one set of failure messages.
 pub async fn call(base: &str, path: &str, body: &str) -> Result<serde_json::Value, String> {
-    let e = endpoint(base);
-    let tcp = tokio::time::timeout(
-        std::time::Duration::from_secs(10),
-        tokio::net::TcpStream::connect(&e.addr),
+    call_with_deadline(
+        base,
+        path,
+        body,
+        std::time::Duration::from_secs(META_CALL_DEADLINE_SECS),
     )
     .await
-    .map_err(|_| format!("{} did not answer", e.addr))?
-    .map_err(|err| format!("cannot reach {}: {err}", e.addr))?;
+}
+
+async fn call_with_deadline(
+    base: &str,
+    path: &str,
+    body: &str,
+    deadline: std::time::Duration,
+) -> Result<serde_json::Value, String> {
+    tokio::time::timeout(deadline, call_inner(base, path, body))
+        .await
+        .map_err(|_| format!("meta request to {base}{path} timed out"))?
+}
+
+async fn call_inner(base: &str, path: &str, body: &str) -> Result<serde_json::Value, String> {
+    let e = endpoint(base);
+    let tcp = tokio::net::TcpStream::connect(&e.addr)
+        .await
+        .map_err(|err| format!("cannot reach {}: {err}", e.addr))?;
     let req = format!(
         "POST {}{path} HTTP/1.1\r\nHost: {}\r\nContent-Type: application/json\r\n\
          Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
@@ -5158,9 +5244,53 @@ mod tests {
         })
     }
 
+    fn pilot_event() -> serde_json::Value {
+        serde_json::json!({
+            "id": -9,
+            "at": 1_750_000_000_000u64,
+            "session": "flight",
+            "kind": pilot::JOIN,
+            "pilot": null,
+            "name": "Guest",
+            "bot": false,
+            "room": null,
+            "tick": 0,
+            "detail": {}
+        })
+    }
+
     #[test]
     fn a_well_formed_rating_event_is_accepted() {
         assert_eq!(settlement::validate_rated_event(&rated_event()), Ok(()));
+    }
+
+    #[test]
+    fn a_well_formed_pilot_event_is_accepted() {
+        assert_eq!(settlement::validate_pilot_event(&pilot_event()), Ok(()));
+    }
+
+    #[test]
+    fn a_pilot_event_that_cannot_be_stored_is_rejected() {
+        let mut event = pilot_event();
+        event["room"] = serde_json::json!(i32::MAX as u64 + 1);
+        assert_eq!(
+            settlement::validate_pilot_event(&event),
+            Err("invalid room".into())
+        );
+
+        event = pilot_event();
+        event["at"] = serde_json::json!(u64::MAX);
+        assert_eq!(
+            settlement::validate_pilot_event(&event),
+            Err("invalid event time".into())
+        );
+
+        event = pilot_event();
+        event.as_object_mut().unwrap().remove("id");
+        assert_eq!(
+            settlement::validate_pilot_event(&event),
+            Err("no event id".into())
+        );
     }
 
     #[test]
@@ -5363,6 +5493,49 @@ mod tests {
             "a cert name carries no port"
         );
         assert_eq!(e.authority, "play.localhost:8443");
+    }
+
+    #[tokio::test]
+    async fn an_outbound_meta_reply_is_bounded() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let (client, mut peer) = tokio::io::duplex(64 * 1024);
+        let writer = tokio::spawn(async move {
+            let mut request = [0u8; 4];
+            peer.read_exact(&mut request).await.unwrap();
+            assert_eq!(&request, b"ping");
+            peer.write_all(&vec![b'x'; META_REPLY_MAX + 1])
+                .await
+                .unwrap();
+        });
+
+        let error = round_trip(client, "ping")
+            .await
+            .expect_err("oversized reply");
+        writer.await.unwrap();
+        assert_eq!(error, format!("meta reply exceeds {META_REPLY_MAX} bytes"));
+    }
+
+    #[tokio::test]
+    async fn the_meta_deadline_covers_the_reply() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let peer = tokio::spawn(async move {
+            let (_stream, _) = listener.accept().await.unwrap();
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        });
+
+        let base = format!("http://{addr}");
+        let error = call_with_deadline(
+            &base,
+            "/v1/test",
+            "{}",
+            std::time::Duration::from_millis(100),
+        )
+        .await
+        .expect_err("a peer that never replies times out");
+        peer.abort();
+        assert!(error.contains("timed out"), "{error}");
     }
 
     #[test]

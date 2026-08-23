@@ -51,6 +51,11 @@ use tokio::sync::{mpsc, Mutex};
 use tokio_tungstenite::tungstenite::Message;
 
 const TICK_HZ: u64 = 100;
+/// Unauthenticated sockets get this long for each setup phase.
+const HANDSHAKE_DEADLINE_SECS: u64 = 10;
+/// Pending handshakes retain a task and a file descriptor before any account
+/// or frame limit can apply.
+const MAX_PENDING_HANDSHAKES: usize = 256;
 /// Humans a zone admits when its file says nothing. The room may hold more
 /// seats than this: `max_ships` sizes the room, and this bounds how many of its
 /// seats people get, which is what leaves room for the bot roster.
@@ -782,15 +787,9 @@ async fn main() {
                 if n.is_multiple_of(300) {
                     z.reload();
                 }
-                // Offset by one so the first pass is the first tick rather
-                // than thirty seconds in. The address and the token are
-                // environment variables and are readable immediately; the
-                // repeat is for the catalog, which arrives later and can
-                // change. Aiming late meant a spool that wrote nothing for
-                // the first half minute of every process, so each converge
-                // dropped the arrivals of everyone who reconnected promptly,
-                // which is everyone: a client whose arena restarts comes
-                // straight back.
+                // Offset by one so a standalone arena reads its environment on
+                // the first tick. Catalog and zone commits aim immediately;
+                // this slower repeat refreshes an override and is a backstop.
                 if n % 3000 == 1 {
                     z.aim_spool();
                 }
@@ -887,16 +886,25 @@ async fn main() {
         });
     }
 
+    let pending_handshakes = Arc::new(tokio::sync::Semaphore::new(MAX_PENDING_HANDSHAKES));
     while let Ok((stream, _)) = listener.accept().await {
+        let Ok(handshake_permit) = pending_handshakes.clone().try_acquire_owned() else {
+            continue;
+        };
         let zone = zone.clone();
         let tls = tls.clone();
         tokio::spawn(async move {
             // The TLS handshake happens before the WebSocket one, and a
             // client that fails it is simply a client that never arrives.
             let stream: Box<dyn Conn> = match &tls {
-                Some(a) => match a.accept(stream).await {
-                    Ok(s) => Box::new(s),
-                    Err(_) => return,
+                Some(a) => match tokio::time::timeout(
+                    std::time::Duration::from_secs(HANDSHAKE_DEADLINE_SECS),
+                    a.accept(stream),
+                )
+                .await
+                {
+                    Ok(Ok(s)) => Box::new(s),
+                    _ => return,
                 },
                 None => Box::new(stream),
             };
@@ -910,10 +918,16 @@ async fn main() {
                 max_frame_size: Some(C2S_MAX),
                 ..Default::default()
             };
-            let ws = match tokio_tungstenite::accept_async_with_config(stream, Some(cfg)).await {
-                Ok(w) => w,
-                Err(_) => return,
+            let ws = match tokio::time::timeout(
+                std::time::Duration::from_secs(HANDSHAKE_DEADLINE_SECS),
+                tokio_tungstenite::accept_async_with_config(stream, Some(cfg)),
+            )
+            .await
+            {
+                Ok(Ok(w)) => w,
+                _ => return,
             };
+            drop(handshake_permit);
             let (mut sink, mut source) = ws.split();
             let (tx, mut rx) = mpsc::channel::<Message>(OUT_QUEUE);
             let (in_tx, inbound) = mpsc::channel::<Vec<u8>>(INBOUND_QUEUE);

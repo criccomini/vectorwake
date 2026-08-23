@@ -575,9 +575,9 @@ impl ArenaServer {
     }
 
     /// Tell the spool where to send, which cannot be known until a catalog
-    /// has arrived: the meta-layer's address travels with it. Called on the
-    /// same slow clock the ladder save used to run on, so a zone change or a
-    /// catalog update is picked up without another trigger to remember.
+    /// has arrived: the meta-layer's address travels with it. Catalog and zone
+    /// commits call this immediately. The slow maintenance clock calls it too,
+    /// so an environment override is refreshed without another state change.
     pub(crate) fn aim_spool(&mut self) {
         // Unless this arena has been told not to file anything, in which case
         // the spool is simply never aimed. An unaimed spool writes nothing and
@@ -618,6 +618,12 @@ impl ArenaServer {
                 .unwrap_or_default(),
         };
         let token = std::env::var("VW_TOKEN").unwrap_or_default();
+        // An incomplete destination cannot deliver anything. A fresh spool is
+        // already unarmed, while one explicitly aimed by a caller must not be
+        // erased by a catalog that has not supplied the other half yet.
+        if url.is_empty() || token.is_empty() {
+            return;
+        }
         let (zone, class, instance) = (
             self.zone_name.clone(),
             self.rating_class(),
@@ -848,6 +854,10 @@ impl ArenaServer {
             }
         }
         self.catalog = Some(c);
+        // The catalog carries the meta-layer address. Waiting for the slow
+        // maintenance tick here would leave a newly registered arena unable to
+        // file anything during its first room.
+        self.aim_spool();
         // Deliberately not serving anything here. `default_zone` is what an
         // arena falls back to when it can reach no directory at all; taking it
         // the moment a catalog arrives would have every instance in a fleet grab
@@ -1099,6 +1109,9 @@ impl ArenaServer {
         // A change of zone replaces every room: they all served the old game.
         self.rooms = vec![room];
         self.zone_name = z.name.clone();
+        // Each spooled row captures its destination when it is written. Move
+        // that destination in the same commit that changes the running zone.
+        self.aim_spool();
         self.draining = false;
         println!(
             "serving zone {:?}: mode {}, {} ships, {} players, teams {}",
