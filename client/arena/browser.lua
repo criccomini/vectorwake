@@ -23,7 +23,16 @@ local function publish_link(self, html5, ui)
     local link = ui.link_dom
     if link == self.link_dom then return end
     self.link_dom = link
+    ui.share_result = nil
     pcall(html5.run, "window.vwLink && vwLink('" .. (link or "") .. "')")
+end
+
+local function read_share(html5, ui)
+    local ok, result = pcall(html5.run,
+        "window.vwShareRead ? window.vwShareRead() : ''")
+    if ok and type(result) == "string" and result ~= "" then
+        ui.share_result = result
+    end
 end
 
 local function publish_ask(self, html5, touch, ui, menu, sfx, apply_menu)
@@ -55,6 +64,7 @@ function M.finish(self, dt, h, html5, touch, ui, menu, sfx, apply_menu)
 
     if html5 then
         publish_link(self, html5, ui)
+        read_share(html5, ui)
         publish_ask(self, html5, touch, ui, menu, sfx, apply_menu)
     end
 

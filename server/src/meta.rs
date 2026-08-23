@@ -30,6 +30,7 @@ use crate::rating;
 use crate::sim;
 use crate::token::{self, Claims, ClassRating, Kind};
 
+mod growth;
 mod maps;
 mod public_pilots;
 mod settlement;
@@ -528,6 +529,16 @@ create table if not exists catalog_publishes (
     what   text not null,
     at     timestamptz not null default now()
 );
+create table if not exists match_artifacts (
+    id       bigint primary key,
+    at       timestamptz not null default now(),
+    zone     text not null,
+    instance text not null,
+    artifact jsonb not null
+);
+create index if not exists match_artifacts_by_time on match_artifacts (at desc);
+create index if not exists match_artifacts_by_zone_time
+    on match_artifacts (zone, at desc);
 ";
 
 /// How long a pilot's own rows live. Long enough to answer a report weeks after
@@ -1542,6 +1553,9 @@ async fn route(
     if let Some(reply) = settlement::route(&meta.catalog, &mut db, path, body).await {
         return reply;
     }
+    if let Some(reply) = growth::route(&meta.catalog, &db, path, body).await {
+        return reply;
+    }
     if let Some(reply) = public_pilots::route(&meta.throttle, &db, path, body, ip).await {
         return reply;
     }
@@ -2309,6 +2323,11 @@ async fn route(
                                 -- that is the pilot it belonged to.
                                 coalesce(max((detail->>'run')::int)
                                          filter (where kind = 'died'), 0) as run,
+                                -- The largest bounty they took. A bounty is a
+                                -- fresh hull's base plus the run it was on, so
+                                -- this is the longest streak this pilot broke.
+                                coalesce(max((detail->>'bounty')::int)
+                                         filter (where kind = 'kill'), 0) as breaker,
                                 -- Every bounty they collected, which is what a
                                 -- week's play came to.
                                 coalesce(sum((detail->>'bounty')::int)
@@ -2362,7 +2381,7 @@ async fn route(
                                    from swing group by account, class) c
                           order by account, n desc, class
                      )
-                     select t.name, t.kills, t.deaths, t.run,
+                     select t.name, t.kills, t.deaths, t.run, t.breaker,
                             coalesce(extract(epoch from p.span), 0)::bigint,
                             coalesce(m.delta, 0)::double precision,
                             t.points,
@@ -2394,22 +2413,23 @@ async fn route(
                         "kills": r.get::<_, i64>(1),
                         "deaths": r.get::<_, i64>(2),
                         // Kills they were part of and did not finish.
-                        "assists": r.get::<_, i64>(8),
+                        "assists": r.get::<_, i64>(9),
                         // A bounty taken is the length of the run it ended,
                         // so the biggest one somebody collected is the
                         // longest streak they broke. Their own best run is a
                         // different number and nothing files it yet.
                         "run": r.get::<_, i32>(3),
-                        "seconds": r.get::<_, i64>(4),
+                        "breaker": r.get::<_, i32>(4),
+                        "seconds": r.get::<_, i64>(5),
                         // How far the rating moved this week: every point
                         // taken off a victim and every point paid to a
                         // shooter, summed. Rating only ever moves through
                         // these rows, so the sum of the week's rows is the
                         // week's change.
-                        "swing": r.get::<_, f64>(5).round() as i64,
+                        "swing": r.get::<_, f64>(6).round() as i64,
                         // What the week's kills paid, which is the number a
                         // pilot's rivets came out of.
-                        "banked": r.get::<_, i64>(6),
+                        "banked": r.get::<_, i64>(7),
                         // And what they are rated at now. Two different
                         // facts and the table wants both: the rating says
                         // how good somebody is and moves slowly, the swing
@@ -2417,7 +2437,7 @@ async fn route(
                         // account to keep a rating under and comes back
                         // zero, which the page draws as nothing rather than
                         // as a very bad pilot.
-                        "rating": r.get::<_, f64>(7).round() as i64,
+                        "rating": r.get::<_, f64>(8).round() as i64,
                     })
                 })
                 .collect();

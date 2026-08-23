@@ -407,6 +407,13 @@ function M.refresh_week(back)
     end)
 end
 
+-- The deterministic film attached to one public result. It needs no account:
+-- sharing a match means the person opening it can see it before they have ever
+-- flown here themselves.
+function M.fetch_replay(id, cb)
+    post("/v1/replay", {id = id}, cb)
+end
+
 -- The friends page, whole: who you are friends with and where they are, who
 -- has added you and is waiting, and who is in the room with you.
 --

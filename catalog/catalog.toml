@@ -5,7 +5,7 @@
 # whole of the conflict resolution and a rollback needs a new higher number
 # rather than a reused one.
 
-version = 20
+version = 21
 name = "vectorwake"
 description = "the reference deployment"
 
@@ -65,5 +65,8 @@ max_instances = 8
 # and Holdfast are named in that document and not yet designed. Every one of
 # them is in the history, and putting one back is this stanza and the folder
 # beside it.
+[[zone]]
+name = "daily"
+
 [[zone]]
 name = "melee"

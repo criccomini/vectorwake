@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#05070c">
+  <meta name="description" content="A Vectorwake match result and replay.">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Vectorwake">
+  <meta property="og:title" content="Vectorwake match result">
+  <meta property="og:description" content="Open the score, lineups, and final eight seconds of the fight.">
+  <meta property="og:image" content="https://vectorwake.net/share-card.png">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/site.css">
+  <title>vectorwake / match</title>
+</head>
+<body class="artifact-page" data-growth-page="match">
+  <header class="artifact-header">
+    <a class="brand" href="/">vectorwake</a>
+    <a class="artifact-nav" href="/week">This week</a>
+    <a class="artifact-nav" href="/daily">Daily run</a>
+  </header>
+  <main class="artifact-shell" id="artifact-main">
+    <p class="artifact-kicker">match record</p>
+    <h1 data-title>Finding the signal.</h1>
+    <p class="artifact-status" data-status>The room log is on its way.</p>
+    <section class="match-score" data-score hidden></section>
+    <section class="artifact-grid" data-grid hidden></section>
+    <div class="artifact-actions" data-actions hidden>
+      <a class="button button-primary" data-replay>Watch the last eight seconds</a>
+      <button class="button button-line" type="button" data-share>Share match</button>
+    </div>
+  </main>
+  <script src="/growth.js" defer></script>
+</body>
+</html>

@@ -145,6 +145,8 @@ local function frame(o)
         watchers = o.watchers,
         teams = o.teams or {},
         match = o.match,
+        match_url = o.match_url,
+        keep_pilot = o.keep_pilot,
         side_names = o.side_names,
         sayings = o.sayings, said = o.said,
         feed = o.feed or {},
@@ -318,6 +320,23 @@ check("the score is set large", big ~= nil and #big == 2,
 check("and your own side is the left of the two",
       big ~= nil and big[1].s == "11" and big[1].x < big[2].x,
       big and (big[1].s .. " at " .. math.floor(big[1].x)))
+
+-- A filed result turns the podium into the earned sharing moment. The share
+-- press is a real browser overlay, while film and claim return through the
+-- ordinary action path.
+ui.hits = {}
+frame({match = {playing = false, left = 23, score = {[0] = 11, [1] = 14}},
+       side_names = NAMES, side = 0,
+       match_url = "https://vectorwake.net/matches/42", keep_pilot = true})
+check("a filed match offers its share link", said("share match") ~= nil
+      and ui.link_dom ~= nil
+      and string.find(ui.link_dom, "vwshare:https://vectorwake.net/matches/42", 1, true))
+local actions = {}
+for _, hit in ipairs(ui.hits) do actions[hit.action] = true end
+check("the podium offers its film", said("watch replay") ~= nil
+      and actions.open_replay == true)
+check("an unclaimed winner can keep their pilot", said("keep you") ~= nil
+      and actions.keep_pilot == true)
 
 -- --- what there is to say --------------------------------------------------
 --

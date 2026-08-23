@@ -193,6 +193,7 @@ function M:last_join()
         wt = self.join.wt or "",
         watch = self.join.watch,
         room = self.join.room,
+        instance = self.join.instance,
     }
 end
 

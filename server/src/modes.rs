@@ -122,6 +122,10 @@ pub trait Mode: Send {
     fn match_state(&self) -> Option<MatchState> {
         None
     }
+    /// A room went from bots only to holding a person. Match modes reset their
+    /// opening edge so that person's clock starts at the full length instead
+    /// of wherever the bot-only attract fight happened to be.
+    fn first_human(&mut self) {}
 }
 
 /// The default arena: everybody against everybody, forever.
@@ -231,9 +235,7 @@ impl Mode for Melee {
             self.left = self.match_ticks;
             self.playing = true;
             self.score = vec![0; self.teams as usize];
-        }
-
-        if self.playing {
+        } else if self.playing {
             self.score = self.tally(ctx);
         }
 
@@ -282,6 +284,13 @@ impl Mode for Melee {
             seconds_left: self.left.div_ceil(100).min(255) as u8,
             score: self.score.clone(),
         })
+    }
+
+    fn first_human(&mut self) {
+        self.opened = false;
+        self.left = self.match_ticks;
+        self.playing = true;
+        self.score = vec![0; self.teams as usize];
     }
 }
 
@@ -459,6 +468,25 @@ mod melee_tests {
         let s = m.match_state().expect("a match game has a clock");
         assert!(s.playing);
         assert_eq!(s.seconds_left, 3);
+    }
+
+    #[test]
+    fn the_first_human_gets_a_whole_match_after_the_bot_clock() {
+        let names = sides();
+        let mut w = world_with(&[(0, 0), (1, 0)]);
+        let mut m = Melee::new(2, 300, 100);
+        for _ in 0..175 {
+            let mut c = ctx(&mut w, &names);
+            m.tick(&mut c);
+        }
+        assert_eq!(m.match_state().unwrap().seconds_left, 2);
+
+        m.first_human();
+        let mut c = ctx(&mut w, &names);
+        m.tick(&mut c);
+        assert!(c.open_match);
+        assert_eq!(m.match_state().unwrap().seconds_left, 3);
+        assert_eq!(m.match_state().unwrap().score, vec![0, 0]);
     }
 
     /// Three minutes, a podium, and another three minutes, with the room asked

@@ -18,6 +18,7 @@ mod delivery;
 mod directory;
 mod drill;
 mod fleet;
+mod growth;
 mod mapforge;
 mod meta;
 mod metrics;
@@ -602,6 +603,7 @@ async fn main() {
     let spools = spool::Spools::open(&dir);
     tokio::spawn(spool::drain_loop(spools.rated.clone()));
     tokio::spawn(spool::drain_loop(spools.pilots.clone()));
+    tokio::spawn(spool::drain_loop(spools.matches.clone()));
     let ladder = load_ladder(&dir);
     let local = std::path::Path::new(&dir).join("ladder.json").exists();
     println!(

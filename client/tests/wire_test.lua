@@ -253,6 +253,13 @@ wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
             message = string.char(14, 0, 25, 2, 3, 0, 5, 0)})
 check("and the whistle replaces it rather than queueing behind it",
       net.match and not net.match.playing and net.match.left == 25)
+local artifact = 4294967296 + 123456
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
+            message = string.char(14, 0, 24, 2, 3, 0, 5, 0)
+                .. u32le(123456) .. u32le(1)})
+check("the whistle carries its public match film",
+      net.match and net.match.artifact == artifact,
+      tostring(net.match and net.match.artifact))
 
 local reliable_before, unreliable_before = #wt.sent, #wt.unsent
 check("focus loss can release held controls", net.release_controls())

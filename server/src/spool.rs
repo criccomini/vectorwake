@@ -138,6 +138,7 @@ struct DeadLetter<T> {
 pub struct Spools {
     pub rated: Arc<Mutex<Spool<Event>>>,
     pub pilots: Arc<Mutex<Spool<crate::pilot::Event>>>,
+    pub matches: Arc<Mutex<Spool<crate::growth::Artifact>>>,
 }
 
 impl Spools {
@@ -145,6 +146,7 @@ impl Spools {
         Spools {
             rated: Arc::new(Mutex::new(Spool::rated(dir))),
             pilots: Arc::new(Mutex::new(Spool::pilot(dir))),
+            matches: Arc::new(Mutex::new(Spool::matches(dir))),
         }
     }
 
@@ -155,6 +157,9 @@ impl Spools {
             s.aim(url, token, zone, class, instance);
         }
         if let Ok(mut s) = self.pilots.lock() {
+            s.aim(url, token, zone, class, instance);
+        }
+        if let Ok(mut s) = self.matches.lock() {
             s.aim(url, token, zone, class, instance);
         }
     }
@@ -210,6 +215,12 @@ impl Event {
 impl Spool<crate::pilot::Event> {
     pub fn pilot(dir: &str) -> Spool<crate::pilot::Event> {
         Spool::open(dir, "pilot.jsonl", "/v1/pilot-events", "pilot event")
+    }
+}
+
+impl Spool<crate::growth::Artifact> {
+    pub fn matches(dir: &str) -> Spool<crate::growth::Artifact> {
+        Spool::open(dir, "matches.jsonl", "/v1/matches", "match")
     }
 }
 
@@ -389,7 +400,11 @@ impl<T: Serialize + DeserializeOwned + Clone> Spool<T> {
         let events = self
             .pending
             .iter()
-            .take(BATCH)
+            .take(if self.route == "/v1/matches" {
+                1
+            } else {
+                BATCH
+            })
             .take_while(|record| {
                 record.zone == first.zone
                     && record.class == first.class

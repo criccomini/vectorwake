@@ -18,7 +18,6 @@
 
 local net = require("arena.net")
 local frame = require("arena.frame")
-local browser = require("arena.browser")
 local binds = require("arena.binds")
 local keys = require("arena.keys")
 local touch = require("arena.touch")
@@ -358,7 +357,105 @@ local charge_tap = nil
 -- because update() reaches sixty enclosing locals and LuaJIT stops counting
 -- there. `session.enter` is the join; `session.attract_tick` dials the
 -- selected game as scenery and `session.attract_drop` tears that down.
-local session = {}
+local session = {
+    browser = require("arena.browser"),
+    playback = require("arena.playback"),
+}
+
+local function uri_part(s)
+    return (s or ""):gsub("([^%w%-_%.~])", function(c)
+        return string.format("%%%02X", string.byte(c))
+    end)
+end
+
+local function uri_read(s)
+    return (s or ""):gsub("%%(%x%x)", function(h)
+        return string.char(tonumber(h, 16))
+    end)
+end
+
+function session.room_url(kind, zone, instance, room)
+    if not html5 or not instance or not room then return nil end
+    local route = string.format("#%s/%s/%s/%d", kind, uri_part(zone),
+                                uri_part(instance), room)
+    local ok, base = pcall(html5.run,
+        "window.location.origin + window.location.pathname")
+    return ok and type(base) == "string" and (base .. route) or nil
+end
+
+function session.enter_deep_route(self)
+    local route = self.deep_route
+    if type(route) ~= "string" or route == "" then return false end
+    local replay_id = string.match(route, "^replay/(%d+)$")
+    if replay_id then
+        if self.replay_loading or account.base == ""
+            or (self.replay_after and (self.clock or 0) < self.replay_after) then
+            return false
+        end
+        self.replay_loading = route
+        self.replay_tries = (self.replay_tries or 0) + 1
+        menu.note = "loading match replay"
+        account.fetch_replay(tonumber(replay_id), function(reply, why)
+            if self.replay_loading ~= route then return end
+            self.replay_loading = nil
+            if not reply then
+                if why == "no such match" and (self.replay_tries or 0) < 10 then
+                    self.replay_after = (self.clock or 0) + 1
+                    return
+                end
+                self.deep_route = nil
+                menu.note = why or "cannot load match replay"
+                return
+            end
+            self.deep_route = nil
+            self.replay_after = nil
+            self.replay_tries = nil
+            session.replay(self, reply)
+        end)
+        return false
+    end
+    local kind, zone, instance, room = string.match(route,
+        "^(join)/([^/]+)/([^/]+)/(%d+)$")
+    if not kind then
+        kind, zone, instance, room = string.match(route,
+            "^(watch)/([^/]+)/([^/]+)/(%d+)$")
+    end
+    if not kind then
+        kind, zone = string.match(route, "^(join)/([^/]+)$")
+        if not kind then kind, zone = string.match(route, "^(watch)/([^/]+)$") end
+        if not kind then
+            self.deep_route = nil
+            return false
+        end
+        zone = uri_read(zone)
+        local row = nil
+        for _, candidate in ipairs(directory.rows) do
+            if candidate.zone == zone and candidate.live then row = candidate end
+        end
+        if not row then return false end
+        self.deep_route = nil
+        self.attract = false
+        menu.home = false
+        menu.zone = zone
+        menu.spectate = kind == "watch"
+        menu.save_identity()
+        menu.close()
+        return session.enter(self, row.address, zone, row.wt, nil,
+                             kind == "watch", row.instance)
+    end
+    zone, instance, room = uri_read(zone), uri_read(instance), tonumber(room)
+    local at = directory.at_instance(instance)
+    if not at or at.zone ~= zone then return false end
+    self.deep_route = nil
+    self.attract = false
+    menu.home = false
+    menu.zone = zone
+    menu.spectate = kind == "watch"
+    menu.save_identity()
+    menu.close()
+    return session.enter(self, at.address, zone, at.wt, room,
+                         kind == "watch", instance)
+end
 -- Whether this step carries an upward gun pull. Beside `charge_tap` because it
 -- is the same shape of thing: a gesture latched by the interface and spent by
 -- exactly one simulation step.
@@ -746,12 +843,17 @@ end
 
 function go_home(self, at)
     leave_world()
+    self.replay = nil
+    self.replay_loading = nil
+    self.replay_after = nil
+    self.replay_tries = nil
     self.online = false
     self.joining = nil
     -- Whatever the landing was watching went with the world; the attract
     -- loop re-dials on its own once the menu is standing at home again.
     self.attract = false
     self.attract_zone = nil
+    self.attract_instance = nil
     watching = false
     -- The rooms of the zone being left, and a question about one of them. The
     -- panel is deliberately left standing across a move within a zone, which
@@ -1034,6 +1136,13 @@ function init(self)
     -- cannot fill a drawing. Everywhere else the client draws the lines and
     -- reads its own keys.
     ui.page_fields = html5 ~= nil
+    if html5 then
+        local ok, route = pcall(html5.run,
+            "window.vwRouteRead ? window.vwRouteRead() : ''")
+        if ok and type(route) == "string" and route ~= "" then
+            self.deep_route = route
+        end
+    end
     -- The account secret this device already holds, if any. Logging in waits
     -- until the games list says where the meta-layer is.
     account.load()
@@ -1229,7 +1338,21 @@ function update(self, dt)
         end
     end
 
-    if self.online then
+    if self.replay then
+        accum = accum + math.min(dt, 0.25)
+        local steps = 0
+        while accum >= TUNE.DT and steps < TUNE.MAX_CATCHUP do
+            if not session.playback.step(self.replay, sim) then
+                menu.note = "match replay ended early"
+                go_home(self, "play")
+                break
+            end
+            drain_events()
+            accum = accum - TUNE.DT
+            steps = steps + 1
+        end
+        if steps == TUNE.MAX_CATCHUP then accum = 0 end
+    elseif self.online then
         accum = accum + math.min(dt, 0.25) * net.clock_rate()
         local steps = 0
         while accum >= TUNE.DT and steps < TUNE.MAX_CATCHUP do
@@ -1363,6 +1486,9 @@ function update(self, dt)
     else
         directory.idle()
     end
+    if self.deep_route and session.enter_deep_route(self) then
+        live = frame.live(self, net, sim, menu)
+    end
     -- The one note that is a claim about the games list rather than about a
     -- press: "nobody is running X" is set when a join finds the row dead, and
     -- the list goes on refreshing underneath it. A note still standing in red
@@ -1395,7 +1521,10 @@ function update(self, dt)
     if self.online and net.connected and not self.joining
         and net.identity_moved(menu.name, account.account) then
         local j = net.last_join()
-        if j then session.enter(self, j.url, j.zone, j.wt, j.room, j.watch) end
+        if j then
+            session.enter(self, j.url, j.zone, j.wt, j.room, j.watch,
+                          j.instance)
+        end
     end
 
     -- What the confirm card on your own game offers depends on which of your
@@ -1538,7 +1667,8 @@ function update(self, dt)
     -- channel. The server enforces the sight rules, so this asks for whatever
     -- is next and takes the answer from the snapshot's subject byte -- an
     -- unlawful stop lands on the channel, which is also what the wrap is.
-    if net.watching and not menu.open and sim.ship_count() > 0 then
+    if net.watching and not self.replay and not menu.open
+        and sim.ship_count() > 0 then
         local dir = (tapped[hash("turn_right")] and 1)
             or (tapped[hash("turn_left")] and -1)
         if dir then
@@ -1562,7 +1692,10 @@ function update(self, dt)
     tapped = {}
     lifted = {}
 
-    if self.online and net.connected then
+    if self.replay then
+        me = 255
+        watching = true
+    elseif self.online and net.connected then
         me = net.me
         -- Whatever the thumbs were holding when the cockpit went away, let go
         -- of it. on_input stops feeding touch.lua for the length of a watch,
@@ -1673,7 +1806,8 @@ function update(self, dt)
     sim.render_alpha(accum / TUNE.DT)
     if live then sim.smooth_decay(dt) end
     if live and ui.debug then
-        net.stats.smooth_pos, net.stats.smooth_turn = sim.smooth_stats(me)
+        net.stats.smooth_pos, net.stats.smooth_turn =
+            sim.smooth_stats(watching and -1 or me)
     end
     local cx, cy
     if live then
@@ -2045,6 +2179,10 @@ function update(self, dt)
         local hud_me = me
         if watching then hud_me = e end
         if hud_me and sim.ship_private and not sim.ship_private(hud_me) then hud_me = nil end
+        local joined = not self.replay and net.last_join() or nil
+        local invite_url = joined and session.room_url("watch", menu.zone,
+                                                       joined.instance, net.room)
+        local artifact = net.match and net.match.artifact or nil
         ui.hud({
             me = hud_me,
             -- Watching, and what of: a particular hull, or the room's own
@@ -2088,6 +2226,10 @@ function update(self, dt)
             -- runs forever, which is how the HUD decides whether to draw a
             -- clock at all.
             match = net.match,
+            invite_url = invite_url,
+            match_url = artifact and
+                ("https://vectorwake.net/matches/" .. artifact) or nil,
+            keep_pilot = not account.claimed and account.base ~= "",
             side_names = side_names(),
             -- The closed list of phrases and who has just used one. Both come
             -- from the connection: the list is the wire's own, since a number
@@ -2151,7 +2293,7 @@ function update(self, dt)
     if live and not menu.open and not watching then
         touch.draw(layers.ui, ww, wh, density)
     end
-    browser.finish(self, dt, wh, html5, touch, ui, menu, sfx, apply_menu)
+    session.browser.finish(self, dt, wh, html5, touch, ui, menu, sfx, apply_menu)
 
 end
 
@@ -2162,7 +2304,7 @@ end
 -- itself rather than a second copy of the game.
 -- Into a game: everything a join tears down and dials, shared by the row a
 -- player presses and the rejoin the client makes when its identity moves.
-function session.enter(self, address, zone_name, wt, room, watch)
+function session.enter(self, address, zone_name, wt, room, watch, instance)
     -- Whatever we were in, we are leaving.
     --
     -- The rooms panel is the one thing left standing. Moving room is the one
@@ -2171,6 +2313,10 @@ function session.enter(self, address, zone_name, wt, room, watch)
     -- that asked the question, and you arrive with no idea which of them you
     -- landed in. Its question is dropped by leave_world, since that was about
     -- a press that has now happened.
+    self.replay = nil
+    self.replay_loading = nil
+    self.replay_after = nil
+    self.replay_tries = nil
     leave_world()
     directory.close()
     menu.note = "joining " .. zone_name
@@ -2180,11 +2326,35 @@ function session.enter(self, address, zone_name, wt, room, watch)
     local started = net.connect(address, menu.class, menu.name, function(why)
         menu.note = why
         go_home(self, "play")
-    end, zone_name, watch, wt, room)
+    end, zone_name, watch, wt, room, instance)
     if not started then return false end
     self.online = true
     self.joining = 0
     self.join_progress = net.join_progress
+    return true
+end
+
+-- Open a public match film without joining an arena. Playback fills the same
+-- simulation and public roster tables as a watcher connection, so the normal
+-- camera, score and effects draw it without a second game screen.
+function session.replay(self, reply)
+    leave_world()
+    local state, why = session.playback.load(reply, sim, net)
+    if not state then
+        menu.note = why or "cannot load match replay"
+        go_home(self, "play")
+        return false
+    end
+    self.replay = state
+    self.online = false
+    self.joining = nil
+    self.attract = false
+    watching = true
+    me = 255
+    menu.zone = net.zone
+    menu.home = false
+    menu.note = nil
+    menu.close()
     return true
 end
 
@@ -2241,13 +2411,14 @@ function session.attract_tick(self, dt)
             menu.note = why
             go_home(self, "play")
         end
-    end, r.zone, true, r.wt, nil)
+    end, r.zone, true, r.wt, nil, r.instance)
     if started then
         self.online = true
         self.joining = 0
         self.join_progress = net.join_progress
         self.attract = true
         self.attract_zone = r.zone
+        self.attract_instance = r.instance
     end
 end
 
@@ -2449,7 +2620,7 @@ function apply_menu(self, act)
         end
         self.attract = false
         session.enter(self, r.address, r.zone, r.wt, menu.chosen_room,
-                      menu.spectate)
+                      menu.spectate, r.instance)
         -- Spent. A room is named by the press that named it and by nothing
         -- afterwards: a reconnect the client makes on its own belongs wherever
         -- the ladder puts it, not wherever somebody clicked ten minutes ago.
@@ -2481,7 +2652,8 @@ function apply_menu(self, act)
         end
         menu.zone = at.zone
         menu.save_identity()
-        session.enter(self, at.address, at.zone, at.wt, nil, menu.spectate)
+        session.enter(self, at.address, at.zone, at.wt, nil, menu.spectate,
+                      at.instance)
         return
     end
 
@@ -2669,6 +2841,29 @@ function on_input(self, action_id, action)
             end
             if r.action == "open" then
                 toggle_menu()
+                sfx.ui("ui_go")
+                return true
+            end
+            if r.action == "take_seat" then
+                menu.pending = menu.class
+                apply_menu(self, "ship")
+                sfx.ui("ui_go")
+                return true
+            end
+            if r.action == "keep_pilot" then
+                menu.ask_password()
+                menu.open = true
+                sfx.ui("ui_go")
+                return true
+            end
+            if r.action == "open_replay" and net.match and net.match.artifact then
+                local route = "replay/" .. tostring(net.match.artifact)
+                if html5 then
+                    pcall(html5.run, "window.location.hash='" .. route
+                          .. "';window.location.reload()")
+                else
+                    pcall(sys.open_url, "https://play.vectorwake.net/#" .. route)
+                end
                 sfx.ui("ui_go")
                 return true
             end

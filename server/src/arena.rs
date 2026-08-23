@@ -433,6 +433,7 @@ impl ArenaServer {
         fresh.number = self.free_room_number();
         fresh.spool = self.spools.rated.clone();
         fresh.pilots = self.spools.pilots.clone();
+        fresh.matches = self.spools.matches.clone();
         prime_ratings(&mut fresh.rating, &self.ladder);
         self.rooms.push(fresh);
         let n = self.rooms.len();
@@ -1097,6 +1098,7 @@ impl ArenaServer {
         room.number = Self::lowest_free(&self.elsewhere_in_zone(&z.name));
         room.spool = self.spools.rated.clone();
         room.pilots = self.spools.pilots.clone();
+        room.matches = self.spools.matches.clone();
         prime_ratings(&mut room.rating, &self.ladder);
         // Tell the bots before the room they are in stops existing. Rule 1 means
         // no human is here to tell, but bots are: an instance with only bots in
@@ -1283,6 +1285,7 @@ impl ArenaServer {
         let mut room = Room::new_from(&self.cfg.current);
         room.spool = self.spools.rated.clone();
         room.pilots = self.spools.pilots.clone();
+        room.matches = self.spools.matches.clone();
         prime_ratings(&mut room.rating, &self.ladder);
         self.rooms = vec![room];
     }

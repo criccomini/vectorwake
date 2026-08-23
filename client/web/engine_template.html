@@ -348,6 +348,10 @@
 			return /Macintosh/.test(ua) && touches > 1;
 		}
 		// apple-test:end
+		// The viewport reconciler lives in a later script block. Keep the device
+		// test on the page rather than inside this install prompt's closure so
+		// both callers use the same answer.
+		window.vwApple = apple;
 
 		// "tap" where the browser will do it on request, "share" where the
 		// only way in is the share sheet, and nothing where it is already on
@@ -567,7 +571,7 @@
 		// The large viewport says where the world may paint behind Safari's
 		// translucent chrome. The reconciler below keeps those two jobs apart.
 		(function() {
-			var is_iOS = apple() && !window.MSStream;
+			var is_iOS = window.vwApple() && !window.MSStream;
 			// insets-test:start
 			function vwSafeInsets(ios, width, visible, pageH, viewportTop,
 					padTop, padBottom, screenW, screenH, standalone) {
@@ -832,6 +836,16 @@
 			// it lit and went out as the pointer crossed the boundary. So the
 			// element that is in the way reports what it is in the way of.
 			var link_at = '';
+			var share_result = '';
+			window.vwShareRead = function () {
+				var out = share_result;
+				share_result = '';
+				return out;
+			};
+			window.vwRouteRead = function () {
+				var route = (window.location.hash || '').replace(/^#\/?/, '');
+				return /^(join|watch|replay)\//.test(route) ? route : '';
+			};
 			window.vwLinkAt = function () { return link_at; };
 			window.vwLink = function (spec) {
 				spec = spec || '';
@@ -870,10 +884,36 @@
 						link_at = '';
 						window.vwPointerOut = true;
 					});
+					a.addEventListener('click', function (e) {
+						var url = a.getAttribute('data-share');
+						if (!url) return;
+						e.preventDefault();
+						var copied = function () { share_result = 'copied'; };
+						var copy = function () {
+							if (navigator.clipboard && navigator.clipboard.writeText) {
+								navigator.clipboard.writeText(url).then(copied,
+									function () { share_result = 'copy failed'; });
+							} else {
+								share_result = 'copy failed';
+							}
+						};
+						if (navigator.share) {
+							navigator.share({title: 'Vectorwake', url: url}).then(
+								function () { share_result = 'shared'; }, copy);
+						} else copy();
+					});
 					link_box.appendChild(a);
 				}
 				// Everything after the fourth comma, since a URL has its own.
-				a.href = f.slice(4).join(',');
+				var target = f.slice(4).join(',');
+				if (target.indexOf('vwshare:') === 0) {
+					var share = target.slice(8);
+					a.setAttribute('data-share', share);
+					a.href = share;
+				} else {
+					a.removeAttribute('data-share');
+					a.href = target;
+				}
 				a.style.left = f[0] + 'px';
 				a.style.top = f[1] + 'px';
 				a.style.width = f[2] + 'px';

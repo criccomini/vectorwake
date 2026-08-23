@@ -7,8 +7,8 @@ use crate::delivery::*;
 use crate::presence::*;
 use crate::protocol::*;
 use crate::{
-    ai, catalog, config, fleet, metrics, modes, pilot, rating, sim, spool, token, CHANNEL_HOLD,
-    DEFAULT_CHANNEL_DELAY, DEFAULT_MAX_WATCHERS,
+    ai, catalog, config, fleet, growth, metrics, modes, pilot, rating, sim, spool, token,
+    CHANNEL_HOLD, DEFAULT_CHANNEL_DELAY, DEFAULT_MAX_WATCHERS,
 };
 
 pub(crate) struct Player {
@@ -580,6 +580,8 @@ pub(crate) struct Room {
     /// of row in the first, because the two land in different tables and are
     /// kept for different lengths of time.
     pub(crate) pilots: std::sync::Arc<std::sync::Mutex<spool::Spool<pilot::Event>>>,
+    /// Completed matches, including the short replay the public result opens.
+    pub(crate) matches: std::sync::Arc<std::sync::Mutex<spool::Spool<growth::Artifact>>>,
     /// Rating id to account, for the pilots in this room that have one.
     ///
     /// It outlives the seat on purpose. A pilot who leaves can still appear as
@@ -650,6 +652,12 @@ pub(crate) struct Room {
     /// on the ground the room was built on and only the ones after it change
     /// it.
     pub(crate) match_no: u32,
+    /// The room tick at the opening whistle. A match payout requires thirty
+    /// seconds on the field, so an arrival in the closing seconds cannot farm
+    /// the participation grant.
+    pub(crate) match_opened_at: u32,
+    pub(crate) artifact_id: Option<i64>,
+    pub(crate) replay: growth::Recorder,
     /// The share of this room's seats the bot server is asked to keep filled.
     /// The room does not fill anything itself; it publishes the count it would
     /// like and the bot server supplies it, per decision 29.
@@ -1249,6 +1257,9 @@ impl Room {
             // which is the right answer for a room in a test.
             spool: std::sync::Arc::new(std::sync::Mutex::new(spool::Spool::rated("/nonexistent"))),
             pilots: std::sync::Arc::new(std::sync::Mutex::new(spool::Spool::pilot("/nonexistent"))),
+            matches: std::sync::Arc::new(std::sync::Mutex::new(spool::Spool::matches(
+                "/nonexistent",
+            ))),
             next_id: 1,
             rating: rating::Rating::new(),
             mode: Box::new(modes::FreeForAll),
@@ -1271,6 +1282,9 @@ impl Room {
             map_names: Vec::new(),
             map_at: 0,
             match_no: 0,
+            match_opened_at: 0,
+            artifact_id: None,
+            replay: growth::Recorder::default(),
             bot_fill: catalog::DEFAULT_BOT_FILL,
         }
     }
@@ -1684,6 +1698,15 @@ impl Room {
                 presence,
             },
         );
+        // Bot-filled match rooms may have been running for minutes before a
+        // person arrives. On the transition from none to one, put the mode's
+        // opening edge back so the next tick starts a full match for them. In
+        // the daily room this is what makes every run the same minute rather
+        // than the remainder of a bot match.
+        if !bot && self.humans() == 1 && self.mode.match_state().is_some_and(|state| state.playing)
+        {
+            self.mode.first_human();
+        }
         if member.is_some() {
             self.watchers.remove(&id);
         }
@@ -2966,6 +2989,9 @@ impl Room {
                 buttons,
             });
         }
+        if live {
+            self.replay.record(&self.world, &inputs);
+        }
         let flags_before = self.world.state.flags;
         self.world.step(&inputs);
         if no_flags.iter().any(|v| *v) {
@@ -3052,6 +3078,8 @@ impl Room {
     /// that: it benches everybody instead. A ship with no respawn scheduled
     /// stays down until something puts it back, and `open_match` is what does.
     pub(crate) fn close_match(&mut self) {
+        self.note_match_results();
+        self.file_match();
         if self.maps.len() > 1 {
             self.map_at = (self.map_at + 1) % self.maps.len();
             // Which ground, since a zone's rotation is something an operator
@@ -3111,6 +3139,9 @@ impl Room {
     /// ground was changed at the last whistle, so the wait happened on it.
     pub(crate) fn open_match(&mut self) {
         self.match_no += 1;
+        self.match_opened_at = self.world.state.tick;
+        self.artifact_id = None;
+        self.replay.reset();
         println!(
             "room {}: match {} opens, {} pilot(s)",
             self.number,
@@ -3129,6 +3160,94 @@ impl Room {
         self.rebalance();
         self.broadcast_roster();
         self.broadcast_match();
+    }
+
+    fn file_match(&mut self) {
+        let Some(state) = self.mode.match_state() else {
+            return;
+        };
+        if !self.names.values().any(|seat| !seat.bot) {
+            return;
+        }
+        let mut seats = self.names.iter().collect::<Vec<_>>();
+        seats.sort_by_key(|(ship, _)| **ship);
+        let pilots = seats
+            .into_iter()
+            .map(|(ship, seat)| {
+                let row = self.world.state.ships[*ship as usize];
+                growth::Pilot {
+                    ship: *ship,
+                    account: seat.account,
+                    name: seat.name.clone(),
+                    bot: seat.bot,
+                    team: row.team,
+                    class: row.cls,
+                    kills: row.kills,
+                    deaths: row.deaths,
+                    assists: row.assists,
+                    points: row.points,
+                }
+            })
+            .collect();
+        let id = growth::artifact_id();
+        let artifact = growth::Artifact {
+            id,
+            room: self.number,
+            match_no: self.match_no,
+            map: self.map_names.get(self.map_at).cloned().unwrap_or_default(),
+            teams: self.public_team_names(),
+            score: state.score,
+            pilots,
+            replay: self.replay.finish(&self.world),
+        };
+        self.artifact_id = Some(id);
+        if let Ok(mut matches) = self.matches.lock() {
+            matches.push(artifact);
+        }
+    }
+
+    /// File one settlement event per occupied seat at the whistle. Five
+    /// rivets are for completing the match, three for the winning side, and
+    /// up to five for assists. Thirty seconds of field time keeps this a
+    /// dependable participation reward without turning the closing seconds
+    /// into a login bonus.
+    fn note_match_results(&self) {
+        const MIN_PLAY_TICKS: u32 = 30 * 100;
+        let Some(state) = self.mode.match_state().filter(|state| !state.playing) else {
+            return;
+        };
+        let best = state.score.iter().copied().max();
+        let winner = best.and_then(|score| {
+            let mut teams = state
+                .score
+                .iter()
+                .enumerate()
+                .filter(|(_, value)| **value == score)
+                .map(|(team, _)| team as u8);
+            let first = teams.next()?;
+            teams.next().is_none().then_some(first)
+        });
+        let now = self.world.state.tick;
+        let match_age = now.wrapping_sub(self.match_opened_at);
+        for player in self.players.values() {
+            let Some(seat) = self.names.get(&player.ship) else {
+                continue;
+            };
+            let played = match_age.min(now.wrapping_sub(player.joined));
+            let completed = played >= MIN_PLAY_TICKS;
+            let ship = &self.world.state.ships[player.ship as usize];
+            self.note(
+                pilot::MATCH,
+                seat,
+                serde_json::json!({
+                    "match": self.match_no,
+                    "completed": completed,
+                    "won": completed && winner == Some(ship.team),
+                    "assists": if completed { ship.assists.min(5) } else { 0 },
+                    "played_ticks": played,
+                }),
+            );
+        }
     }
 
     /// Even the sides up, by humans, at a whistle.
@@ -3232,7 +3351,8 @@ impl Room {
 
     /// The clock and the score, for a room that has them.
     ///
-    /// `[S2C_MATCH, playing, seconds left, sides, score per side as u16]`. A
+    /// `[S2C_MATCH, playing, seconds left, sides, score per side as u16,
+    /// artifact id as u64 when complete]`. A
     /// second's resolution, because that is what the clock draws, and it is
     /// what keeps this to one small message a second rather than one a tick.
     pub(crate) fn match_msg(&self) -> Option<Vec<u8>> {
@@ -3245,6 +3365,9 @@ impl Room {
         ];
         for n in m.score.iter().take(255) {
             out.extend_from_slice(&n.to_le_bytes());
+        }
+        if let Some(id) = self.artifact_id {
+            out.extend_from_slice(&(id as u64).to_le_bytes());
         }
         Some(out)
     }

@@ -174,7 +174,8 @@ pub(crate) const JOIN_WATCH: u8 = 2;
 ///
 /// 15 links the rounds fired in one gun volley. A hull hit removes its
 /// siblings, matching SVS multifire without affecting wall collisions.
-pub(crate) const CLIENT_PROTOCOL: u8 = 17;
+/// 18 appends the public match artifact id to the intermission message.
+pub(crate) const CLIENT_PROTOCOL: u8 = 18;
 
 /// The biggest message a client may send. The largest legitimate one is a join:
 /// tag, class, protocol, a zone name and a call sign. 8 KB is two orders of
@@ -235,7 +236,8 @@ pub(crate) const S2C_TEAMS: u8 = 12;
 /// them is knowing it: two minutes on camera is something a pilot can play
 /// around, and only if they are told.
 pub(crate) const S2C_ONAIR: u8 = 13;
-/// `[S2C_MATCH, playing, seconds left, sides, score per side as u16]`.
+/// `[S2C_MATCH, playing, seconds left, sides, score per side as u16,
+/// artifact id as u64 when complete]`.
 ///
 /// The clock and the score of a match game, at a second's resolution, which is
 /// what a clock draws. `playing` is zero through the intermission, when the

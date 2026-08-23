@@ -39,6 +39,12 @@ eq(frame.live(state, net, sim, menu), false, "offline world")
 eq(menu.home, true, "offline menu state")
 eq(menu.open, true, "offline menu stays open")
 
+state.replay = {}
+menu.open = false
+eq(frame.live(state, net, sim, menu), true, "replay world")
+eq(menu.home, false, "replay keeps the flight screen")
+state.replay = nil
+
 local page = {}
 function page.run(script)
     if string.find(script, "vwLocked", 1, true) then return "1" end

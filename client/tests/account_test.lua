@@ -206,5 +206,12 @@ check("ignoring names the pilot and says which way",
       and requests[at + 1].body.on == true,
       tostring(requests[at + 1].url))
 
+at = #requests
+account.fetch_replay(42, function() end)
+check("a public match film needs no account credential",
+      requests[at + 1].url == "https://meta/v1/replay"
+      and requests[at + 1].body.id == 42
+      and requests[at + 1].body.secret == nil)
+
 if fails > 0 then os.exit(1) end
 print("all good")

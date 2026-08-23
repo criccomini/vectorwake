@@ -97,6 +97,7 @@ local function zone_rooms(z)
             if type(rm) == "table" and type(rm.number) == "number" then
                 out[#out + 1] = {
                     n = rm.number,
+                    instance = inst.id,
                     address = inst.address,
                     wt = inst.wt,
                     players = rm.players or 0,
@@ -132,8 +133,9 @@ local function index_instances(zones)
     for _, z in ipairs(zones) do
         for _, inst in ipairs(type(z.instances) == "table" and z.instances or {}) do
             if type(inst.id) == "string" and inst.id ~= "" then
-                out[inst.id] = {zone = z.name, address = inst.address or "",
-                                wt = inst.wt or ""}
+                out[inst.id] = {zone = z.name, instance = inst.id,
+                                address = inst.address or "",
+                                wt = inst.wt or "", rooms = inst.rooms or {}}
             end
         end
     end
@@ -187,6 +189,7 @@ local function on_message(s)
             -- The head of the zone's list, already ordered by the directory so
             -- it is the fullest instance that still has room.
             address = up and up.address or "",
+            instance = up and up.id or nil,
             -- The same instance's WebTransport door, when it has one. The
             -- join prefers it and keeps `address` as the fallback; a build
             -- with no extension never reads it.

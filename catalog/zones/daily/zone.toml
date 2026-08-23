@@ -1,0 +1,46 @@
+description = "one rival, one minute, every day"
+mode = "melee"
+maps = ["../melee/drydock.vwmap"]
+
+max_players = 1
+max_ships = 2
+bot_fill = 1.0
+fill_target = 1
+max_rooms = 10
+
+teams = ["Pilot", "Rival"]
+max_teams = 2
+max_humans_per_team = 1
+max_bots_per_team = 1
+channel_delay_ticks = 500
+
+[arena]
+match_seconds = 60
+intermission_seconds = 10
+bounce = 12
+friction = 12
+respawn_delay = 100
+spawn_radius = 0
+safe_limit = 0
+bounty_base = 1
+bounty_per_kill = 1
+points_per_flag = 0
+mod_spread = 5
+multi_energy = 25
+multi_delay = 50
+prox_step = 16
+prox_delay = 150
+bomb_safety = true
+bbomb_damage = 1000
+shrap_inactive = 3
+shrap_inactive_ticks = 25
+
+[arena.mod_step]
+multi = 1
+bounce = 1
+prox = 48
+
+[arena.kit]
+gun_mods = { multi = 5, bounce = 1, freeze = 1 }
+bomb_mods = { prox = 1, shrapnel = 3, bounce = 2, push = 2 }
+charges = [3, 3, 6]

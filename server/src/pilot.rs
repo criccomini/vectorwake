@@ -116,6 +116,13 @@ pub const LEAVE: &str = "leave";
 pub const DIED: &str = "died";
 /// This pilot destroyed somebody. `detail`: who, and what it paid.
 pub const KILL: &str = "kill";
+/// This pilot reached a match whistle. `detail`: whether they played long
+/// enough to complete it, whether their side won, their assists, and the match
+/// number. Settlement turns those fields into the participation payout.
+pub const MATCH: &str = "match";
+pub const MATCH_COMPLETE_RIVETS: i64 = 5;
+pub const MATCH_WIN_RIVETS: i64 = 3;
+pub const MATCH_ASSIST_RIVETS_MAX: i64 = 5;
 /// This pilot destroyed themselves or a teammate. `detail`: who, and whether
 /// it was their own hull.
 ///
@@ -134,7 +141,7 @@ pub const MISFIRE: &str = "misfire";
 /// flying exhausts the allowance and the departure at the end of it goes
 /// unrecorded, which is the row the whole log is for.
 pub fn budgeted(kind: &str) -> bool {
-    kind != DIED && kind != KILL && kind != MISFIRE
+    kind != DIED && kind != KILL && kind != MISFIRE && kind != MATCH
 }
 
 /// Written by the meta-layer rather than an arena, for the handful of things

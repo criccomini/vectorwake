@@ -2998,7 +2998,7 @@ end
 --
 -- `KEY_H` and `KEY_SIZE` are the two of them a caller has to lay out around,
 -- so they live out here with it rather than being repeated at each call.
-local function menu_button(on_air, watch, room, pilots, watchers)
+local function menu_button(on_air, watch, room, pilots, watchers, invite_url)
     -- Two keys, drawn the way the help page draws a key. They were two bare
     -- words over a shared rule, which asked a player to know that a word in
     -- that corner was a thing to press, and the board has taught the same hand
@@ -3027,6 +3027,13 @@ local function menu_button(on_air, watch, room, pilots, watchers)
     end
     local cx = x
     local keys = {{"MENU", "open", F.menu_up}}
+    if watch then
+        keys[#keys + 1] = {"TAKE SEAT", "take_seat", false}
+    end
+    if invite_url then
+        keys[#keys + 1] = {"INVITE", "invite", false,
+                          "vwshare:" .. invite_url}
+    end
     -- Which copy of this game you are in, and the way to a different one.
     --
     -- Only when the zone is holding more than one, which is the caller's
@@ -3047,6 +3054,11 @@ local function menu_button(on_air, watch, room, pilots, watchers)
         local ww = key_w(c[1])
         key_cap(cx, y, ww, c[1], c[3])
         hit(cx, y, ww, KEY_H * F.scale, c[2])
+        if c[4] then
+            M.link_dom = string.format("%.1f,%.1f,%.1f,%.1f,%s",
+                cx / F.density, y / F.density, ww / F.density,
+                (KEY_H * F.scale) / F.density, c[4])
+        end
         cx = cx + ww + KEY_GAP * F.scale
     end
     local players_w = players_cap(cx, y, M.details, humans, bots)
@@ -3538,8 +3550,9 @@ local function podium(o, m, names)
     -- thing anybody wants off this card in the first half second, and it used
     -- to be a twelve point number in a column head beside a word.
     local SCORE = (M.compact and 58 or 74) * F.scale
+    local ACTION = o.match_url and 38 * F.scale or 0
     local h = 34 * F.scale + SCORE + 20 * F.scale + tall * line + SAY
-        + 40 * F.scale
+        + 40 * F.scale + ACTION
     local y = math.max(72 * F.scale, (F.h - h) / 2)
     -- Where the card starts, kept because `y` walks down it from here and the
     -- foot is measured off the top rather than off wherever the walk stopped.
@@ -3742,7 +3755,7 @@ local function podium(o, m, names)
     -- every screen in the room for a few seconds, and there is nothing to
     -- type and nothing to aim at a person. See decision 28.
     for i, run in ipairs(say_rows) do
-        local sy = top + h - 40 * F.scale - SAY + 7 * F.scale
+        local sy = top + h - 40 * F.scale - ACTION - SAY + 7 * F.scale
             + (i - 1) * (SAY_H + SAY_GAP)
         local sx = F.w / 2 - say_wide[i] / 2
         for _, c in ipairs(run) do
@@ -3768,6 +3781,33 @@ local function podium(o, m, names)
                 "center", 10 * F.scale)
             hit(sx, sy, c.w, SAY_H, "say", c.n)
             sx = sx + c.w + SAY_GAP
+        end
+    end
+
+    if o.match_url then
+        local ay = top + h - 40 * F.scale - ACTION + 3 * F.scale
+        local gap = 7 * F.scale
+        local actions = {{"SHARE MATCH", "share", "vwshare:" .. o.match_url},
+                         {"WATCH REPLAY", "open_replay"}}
+        if o.keep_pilot then
+            actions[#actions + 1] = {"KEEP " .. o.viewer_name, "keep_pilot"}
+        end
+        local bw = (w - gap * (#actions - 1)) / #actions
+        for i, action in ipairs(actions) do
+            local bx = x + (i - 1) * (bw + gap)
+            local col = i == 1 and pal.FRIEND or pal.RADAR_TILE
+            key_box(bx, ay, bw, 30 * F.scale, pal.a(col, 0.08),
+                    pal.a(col, 0.75))
+            local label = (i == 1 and M.share_result == "copied")
+                and "LINK COPIED" or action[1]
+            lbl(label, bx + bw / 2, ay + 19 * F.scale,
+                pal.a(pal.INK, 0.9), "center", 9 * F.scale)
+            hit(bx, ay, bw, 30 * F.scale, action[2])
+            if action[3] then
+                M.link_dom = string.format("%.1f,%.1f,%.1f,%.1f,%s",
+                    bx / F.density, ay / F.density, bw / F.density,
+                    (30 * F.scale) / F.density, action[3])
+            end
         end
     end
 
@@ -3875,7 +3915,7 @@ function M.hud(o)
     -- making it again from a number.
     local several = o.rooms and #o.rooms > 1
     menu_button(o.on_air and not o.watch, o.watch, several and o.room or nil,
-                o.pilots, o.watchers)
+                o.pilots, o.watchers, ending and nil or o.invite_url)
     vignette(o.hurt or 0)
     -- After the stack, because it is hung off the rows the stack published,
     -- and after the tint so a hurt frame does not wash out the words.

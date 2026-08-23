@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#05070c">
+  <meta name="description" content="The stories and standings from this week in Vectorwake.">
+  <meta property="og:title" content="This week in Vectorwake">
+  <meta property="og:description" content="Top gun, biggest climb, longest streak, and the full weekly ladder.">
+  <meta property="og:image" content="https://vectorwake.net/share-card.png">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/site.css">
+  <title>vectorwake / this week</title>
+</head>
+<body class="artifact-page" data-growth-page="week">
+  <header class="artifact-header">
+    <a class="brand" href="/">vectorwake</a>
+    <a class="artifact-nav" href="/daily">Daily run</a>
+    <a class="artifact-nav" href="https://play.vectorwake.net">Play</a>
+  </header>
+  <main class="artifact-shell">
+    <p class="artifact-kicker">weekly transmission</p>
+    <h1>This week left a mark.</h1>
+    <p class="artifact-status" data-status>Reading the flight log.</p>
+    <section class="story-grid" data-stories hidden></section>
+    <section class="ladder" data-ladder hidden>
+      <div class="ladder-head"><span>Pilot</span><span>K</span><span>D</span><span>Rating</span><span>Move</span></div>
+      <div data-rows></div>
+    </section>
+    <div class="artifact-actions">
+      <button class="button button-line" type="button" data-share>Share this week</button>
+      <a class="button button-primary" href="https://play.vectorwake.net">Enter the arena</a>
+    </div>
+  </main>
+  <script src="/growth.js" defer></script>
+</body>
+</html>

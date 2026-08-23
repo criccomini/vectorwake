@@ -642,6 +642,34 @@ pub(super) fn validate_pilot_event(event: &serde_json::Value) -> Result<(), Stri
     Ok(())
 }
 
+fn rivets_earned(kind: &str, detail: &serde_json::Value) -> i64 {
+    if kind == crate::pilot::KILL {
+        return detail
+            .get("bounty")
+            .and_then(|value| value.as_i64())
+            .unwrap_or(0)
+            .clamp(0, u16::MAX as i64);
+    }
+    if kind != crate::pilot::MATCH
+        || !detail
+            .get("completed")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false)
+    {
+        return 0;
+    }
+    let win = detail
+        .get("won")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false) as i64;
+    let assists = detail
+        .get("assists")
+        .and_then(|value| value.as_i64())
+        .unwrap_or(0)
+        .clamp(0, crate::pilot::MATCH_ASSIST_RIVETS_MAX);
+    crate::pilot::MATCH_COMPLETE_RIVETS + win * crate::pilot::MATCH_WIN_RIVETS + assists
+}
+
 /// One line of the pilot log and any wallet movement it causes. Both commit
 /// together so a retry either finds all of the work or performs all of it.
 async fn ingest_pilot(
@@ -721,30 +749,26 @@ async fn ingest_pilot(
             .map_err(|error| format!("cannot commit: {error}"));
     }
 
-    // Rivets are bounty taken, and a kill row is where a bounty is taken.
+    // Rivets come from bounty taken and from reaching the whistle. The match
+    // grant gives a new pilot progress even before their first kill, while
+    // the win and assist pieces still reward helping the side.
     //
     // Banked here rather than summed out of the log on demand, because the
     // log is swept and a wallet that shrank when a row aged out would be a
     // wallet nobody could trust. `rows` is what makes it safe: delivery is
     // at-least-once and the unique index refuses the second copy, so a retry
     // inserts nothing and pays nothing.
-    if kind == crate::pilot::KILL {
-        if let Some(account) = pilot {
-            let paid = detail
-                .get("bounty")
-                .and_then(|value| value.as_i64())
-                .unwrap_or(0)
-                .clamp(0, u16::MAX as i64);
-            if paid > 0 {
-                db.execute(
-                    "insert into wallets (account, rivets)
-                     select id, $2 from accounts where id = $1
-                     on conflict (account) do update set rivets = wallets.rivets + $2",
-                    &[&account, &paid],
-                )
-                .await
-                .map_err(|error| format!("cannot bank rivets: {error}"))?;
-            }
+    if let Some(account) = pilot {
+        let paid = rivets_earned(kind, &detail);
+        if paid > 0 {
+            db.execute(
+                "insert into wallets (account, rivets)
+                 select id, $2 from accounts where id = $1
+                 on conflict (account) do update set rivets = wallets.rivets + $2",
+                &[&account, &paid],
+            )
+            .await
+            .map_err(|error| format!("cannot bank rivets: {error}"))?;
         }
     }
     // And a misfire costs one, which is the smallest amount a wallet can move
@@ -789,4 +813,34 @@ async fn apply(db: &Transaction<'_>, account: i64, class: &str, delta: f64) -> R
     .await
     .map(|_| ())
     .map_err(|error| format!("cannot apply rating: {error}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_match_pays_for_completion_win_and_no_more_than_five_assists() {
+        assert_eq!(
+            rivets_earned(
+                crate::pilot::MATCH,
+                &serde_json::json!({"completed": true, "won": true, "assists": 12})
+            ),
+            13
+        );
+        assert_eq!(
+            rivets_earned(
+                crate::pilot::MATCH,
+                &serde_json::json!({"completed": true, "won": false, "assists": 2})
+            ),
+            7
+        );
+        assert_eq!(
+            rivets_earned(
+                crate::pilot::MATCH,
+                &serde_json::json!({"completed": false, "won": true, "assists": 5})
+            ),
+            0
+        );
+    }
 }

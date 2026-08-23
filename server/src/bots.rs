@@ -859,14 +859,16 @@ pub async fn run() {
         // stops the population being tended anywhere. Measured before it was
         // fixed: two dead addresses in the list turned a one second cycle into
         // a ten second one.
-        let mut want: HashMap<String, u32> = HashMap::new();
+        let mut want: HashMap<String, (u32, String)> = HashMap::new();
         let asked = futures_util::future::join_all(dirs.iter().map(|u| browse(u))).await;
-        for (addr, n) in asked.into_iter().flatten() {
+        for (addr, n, zone) in asked.into_iter().flatten() {
             // The most any directory says, because a directory relays only what
             // it observed itself and one may have heard more recently than
             // another.
-            let e = want.entry(addr).or_insert(0);
-            *e = (*e).max(n);
+            let e = want.entry(addr).or_insert((0, zone.clone()));
+            if n >= e.0 {
+                *e = (n, zone);
+            }
         }
         let asked = futures_util::future::join_all(
             direct
@@ -874,9 +876,9 @@ pub async fn run() {
                 .map(|a| async move { (a.clone(), ask(a).await) }),
         )
         .await;
-        for (addr, n) in asked {
-            if let Some(n) = n {
-                want.insert(addr, n);
+        for (addr, status) in asked {
+            if let Some((n, zone)) = status {
+                want.insert(addr, (n, zone));
             }
         }
 
@@ -892,12 +894,12 @@ pub async fn run() {
             } else {
                 inst.misses += 1;
                 if inst.misses >= GONE_AFTER {
-                    want.insert(addr.clone(), 0);
+                    want.insert(addr.clone(), (0, String::new()));
                 }
             }
         }
 
-        for (addr, n) in want {
+        for (addr, (n, zone)) in want {
             let inst = fleet.entry(addr.clone()).or_default();
             // Bots on their way out still hold their seat, so they count. The
             // difference is what stops the supervisor asking a second one to
@@ -925,6 +927,7 @@ pub async fn run() {
                         Arc::clone(&rigs),
                         Arc::clone(&yielding),
                         Arc::clone(&accounts),
+                        zone.clone(),
                     ));
                     inst.bots.push(Live {
                         name: who.name,
@@ -996,7 +999,7 @@ fn claim(
 }
 
 /// Ask a directory what is running, and how many bots each instance wants.
-async fn browse(url: &str) -> Vec<(String, u32)> {
+async fn browse(url: &str) -> Vec<(String, u32, String)> {
     let Some(body) =
         directory::request(url, directory::STATUS_REQUEST, directory::STATUS_REPLY).await
     else {
@@ -1007,19 +1010,22 @@ async fn browse(url: &str) -> Vec<(String, u32)> {
     };
     b.zones
         .iter()
-        .flat_map(|z| z.instances.iter())
-        .map(|i| (i.address.clone(), i.bots_wanted))
+        .flat_map(|z| {
+            z.instances
+                .iter()
+                .map(|i| (i.address.clone(), i.bots_wanted, z.name.clone()))
+        })
         .collect()
 }
 
 /// The same question straight to one arena, for a laptop running without a
 /// directory. `C2S_STATUS` is answerable without joining, which is what makes
 /// this the same request a directory's verification makes.
-async fn ask(addr: &str) -> Option<u32> {
+async fn ask(addr: &str) -> Option<(u32, String)> {
     let body = directory::request(addr, directory::STATUS_REQUEST, directory::STATUS_REPLY).await?;
     serde_json::from_str::<crate::fleet::Status>(&body)
         .ok()
-        .map(|s| s.bots_wanted)
+        .map(|s| (s.bots_wanted, s.zone))
 }
 
 /// One bot, from dial to disconnect.
@@ -1267,6 +1273,7 @@ async fn fly(
     rigs: Arc<Rigs>,
     yielding: Arc<AtomicBool>,
     accounts: Arc<Accounts>,
+    zone: String,
 ) -> FlightEnd {
     let cfg = tokio_tungstenite::tungstenite::protocol::WebSocketConfig {
         max_message_size: Some(2 * 1024 * 1024),
@@ -1300,7 +1307,10 @@ async fn fly(
             return FlightEnd::AuthFailed;
         }
     };
-    fly_socket(addr, who, maps, rigs, yielding, accounts, identity, ws).await
+    fly_socket(
+        addr, who, maps, rigs, yielding, accounts, identity, zone, ws,
+    )
+    .await
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1312,11 +1322,30 @@ async fn fly_socket<S>(
     yielding: Arc<AtomicBool>,
     accounts: Arc<Accounts>,
     identity: BotIdentity,
+    zone: String,
     ws: tokio_tungstenite::WebSocketStream<S>,
 ) -> FlightEnd
 where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send,
 {
+    let daily = zone == "daily";
+    let day = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+        / 86_400;
+    let class = if daily {
+        (day as usize % ai::CLASS_NAMES.len()) as u8
+    } else {
+        who.class
+    };
+    let skill = if daily { 0.55 } else { who.skill };
+    let behavior_seed = if daily {
+        fingerprint(format!("vectorwake daily {day}").as_bytes()) as u32
+    } else {
+        fingerprint(who.name.as_bytes()) as u32
+    };
+    let wants_name = if daily { "Daily Rival" } else { &who.name };
     let share_world = identity.shares_world();
     let (mut sink, mut source) = ws.split();
 
@@ -1329,7 +1358,7 @@ where
     // bots are the fleet's own. Without a meta-layer it flies declared but
     // unaccounted, which reads as somebody else's bot, honestly enough. Its
     // filtered view cannot feed the shared rig, so it flies a private world.
-    let join = join_msg(who.class, &who.name, identity.session());
+    let join = join_msg(class, &who.name, identity.session());
     if sink.send(Message::Binary(join)).await.is_err() {
         return FlightEnd::Closed { welcomed: false };
     }
@@ -1440,7 +1469,7 @@ where
                                 seat.sent_at = 0;
                                 if let Err(seat) = rig.claim(ship, seat) {
                                     let seat = *seat;
-                                    let seed = fingerprint(who.name.as_bytes()) as u32;
+                                    let seed = behavior_seed;
                                     let mut world = sim::World::on_shared_map(seed, Arc::clone(&m));
                                     if !cfg_bytes.is_empty() && !world.apply_settings(&cfg_bytes) {
                                         outcome = protocol_error();
@@ -1515,13 +1544,18 @@ where
                             // way to be wrong.
                             Sight::Dark => *crate::sim::World::baseline_kit_ceiling(),
                         };
-                        let owned = identity.entitlements();
+                        let daily_owned = sim::World::base_entitlements();
+                        let owned = if daily {
+                            daily_owned
+                        } else {
+                            identity.entitlements()
+                        };
                         let mut ceiling = arena_ceiling;
                         for (slot, top) in ceiling.iter_mut().enumerate() {
                             *top = (*top).min(owned[slot]);
                         }
                         let kit = crate::shopper::build(
-                            &crate::shopper::wants(&who.name, who.class),
+                            &crate::shopper::wants(wants_name, class),
                             &ceiling,
                         );
                         let mut m = Vec::with_capacity(1 + kit.len());
@@ -1530,14 +1564,14 @@ where
                         if sink.send(Message::Binary(m)).await.is_err() {
                             break;
                         }
-                        let mut b = ai::Bot::new(ship, who.skill);
+                        let mut b = ai::Bot::new(ship, skill);
                         // Luck of its own, so two pilots of one skill in one
                         // room do not fly the same match.
-                        b.reseed(fingerprint(who.name.as_bytes()) as u32);
+                        b.reseed(behavior_seed);
                         if !share_world {
                             let Some(m) = map.clone() else { break };
                             let mut w = sim::World::on_shared_map(
-                                fingerprint(who.name.as_bytes()) as u32,
+                                behavior_seed,
                                 m,
                             );
                             if !cfg_bytes.is_empty() && !w.apply_settings(&cfg_bytes) {
@@ -1568,7 +1602,7 @@ where
                                 // index, so this welcome came from a second
                                 // room. Fly it privately, at the old cost.
                                 let Some(m) = map.clone() else { break };
-                                let seed = fingerprint(who.name.as_bytes()) as u32;
+                                let seed = behavior_seed;
                                 let mut w = sim::World::on_shared_map(seed, m);
                                 if !cfg_bytes.is_empty() && !w.apply_settings(&cfg_bytes) {
                                     outcome = protocol_error();
@@ -1714,7 +1748,7 @@ where
                                 outcome = protocol_error();
                                 break;
                             };
-                            let seed = fingerprint(who.name.as_bytes()) as u32;
+                            let seed = behavior_seed;
                             let mut next = sim::World::on_shared_map(seed, m);
                             if !cfg_bytes.is_empty() && !next.apply_settings(&cfg_bytes) {
                                 outcome = protocol_error();
@@ -2204,6 +2238,7 @@ mod tests {
             Arc::new(AtomicBool::new(false)),
             Arc::new(Accounts::default()),
             BotIdentity::Unaccounted,
+            "melee".into(),
             ws,
         ));
 
@@ -2257,6 +2292,7 @@ mod tests {
             Arc::new(AtomicBool::new(false)),
             Arc::new(Accounts::default()),
             BotIdentity::Unaccounted,
+            "melee".into(),
             ws,
         )
         .await;

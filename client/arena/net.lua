@@ -72,7 +72,7 @@ M.said = {}
 -- The client wire's own version, checked by the zone before it reads anything
 -- else in a join. A stale build is told its build is stale rather than left to
 -- misparse snapshots.
-local CLIENT_PROTOCOL = 17
+local CLIENT_PROTOCOL = 18
 -- Published, because the about page says what this build talks, and a second
 -- copy of the number is a second thing to forget to bump.
 M.PROTOCOL = CLIENT_PROTOCOL
@@ -756,10 +756,18 @@ local function on_match(s)
         if #s < at + 1 then break end
         score[k] = string.byte(s, at) + string.byte(s, at + 1) * 256
     end
+    local artifact_at = 5 + sides * 2
+    local artifact = nil
+    if #s >= artifact_at + 7 then
+        local lo = u32(string.byte(s, artifact_at, artifact_at + 3))
+        local hi = u32(string.byte(s, artifact_at + 4, artifact_at + 7))
+        artifact = lo + hi * 4294967296
+    end
     M.match = {
         playing = string.byte(s, 2) == 1,
         left = string.byte(s, 3),
         score = score,
+        artifact = artifact,
     }
 end
 
@@ -1496,7 +1504,7 @@ end
 -- `wt` is the zone's WebTransport address when the directory offered one,
 -- dialled first on builds that can speak it; `url` is the WebSocket that
 -- serves everybody else and catches the fallback.
-function M.connect(url, class, name, on_lost, zone, watch, wt, room)
+function M.connect(url, class, name, on_lost, zone, watch, wt, room, instance)
     -- Whatever we were in, we are leaving. This module holds one arena's
     -- worth of state and the core holds one arena, so a second connection is
     -- not a second game, it is two servers writing over each other.
@@ -1589,6 +1597,7 @@ function M.connect(url, class, name, on_lost, zone, watch, wt, room)
         watch = watch,
         wt = wt,
         room = room,
+        instance = instance,
     }) and not M.lost
 end
 

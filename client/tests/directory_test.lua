@@ -281,11 +281,11 @@ _G.NEXT_REPLY = {zones = {{
     instances = {
         -- Fullest first, which is the order a directory sends and deliberately
         -- not the order these come out in.
-        {address = "wss://x/a7", wt = "https://x/a7", rooms = {
+        {id = "a7", address = "wss://x/a7", wt = "https://x/a7", rooms = {
             {number = 4, players = 3, bots = 1, full = false},
             {number = 2, players = 2, bots = 0, full = true},
         }},
-        {address = "wss://x/a3", rooms = {
+        {id = "a3", address = "wss://x/a3", rooms = {
             {number = 1, players = 1, bots = 5, full = false},
         }},
     },
@@ -300,6 +300,9 @@ check("in the order the servers named them, not the order they arrived",
 check("each carrying the address of the server it is on",
       rm and rm[1].address == "wss://x/a3" and rm[3].address == "wss://x/a7",
       rm and (rm[1].address .. " " .. rm[3].address) or "none")
+check("each carrying the stable instance named by a room link",
+      rm and rm[1].instance == "a3" and rm[3].instance == "a7",
+      rm and (tostring(rm[1].instance) .. " " .. tostring(rm[3].instance)) or "none")
 check("and what the server said about it",
       rm and rm[2].full == true and rm[3].players == 3 and rm[3].bots == 1)
 

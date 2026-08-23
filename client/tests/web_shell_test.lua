@@ -30,6 +30,10 @@ local game = read("client/web/engine_template.html")
 local arena = read("client/arena/arena.script")
 local account = read("client/arena/account.lua")
 local admin = read("deploy/admin/admin.js")
+local match_page = read("deploy/site/match.html")
+local daily_page = read("deploy/site/daily.html")
+local week_page = read("deploy/site/week.html")
+local growth = read("deploy/site/growth.js")
 
 check("the landing page names its large share card",
       has(landing, 'property="og:image" content="https://vectorwake.net/share-card.png"')
@@ -47,6 +51,13 @@ check("the game page reports bounded browser failures",
       has(game, "'/meta/v1/client-error'")
       and has(game, "sent >= 8")
       and has(game, "keepalive: true"))
+check("the game page accepts room and replay routes",
+      has(game, "^(join|watch|replay)\\/")
+      and has(arena, "^replay/(%d+)$")
+      and has(arena, "session.replay(self, reply)"))
+check("match sharing uses the phone's native share sheet",
+      has(game, "navigator.share({title: 'Vectorwake', url: url})")
+      and has(game, "navigator.clipboard.writeText(url)"))
 check("the iPhone canvas continues behind Safari's lower toolbar",
       has(game, "function vwPageHeight(")
       and has(game, "var pageH = vwPageHeight(")
@@ -77,6 +88,16 @@ check("the admin page reads structured rollback reports",
       and has(admin, "report.clock_adjust"))
 check("the admin page prints zero bandwidth instead of a blank cell",
       has(admin, "Number.isFinite(i.bw_per_player)"))
+check("public match pages expose score, film, and sharing",
+      has(match_page, "data-score") and has(match_page, "data-replay")
+      and has(match_page, "data-share") and has(growth, 'request("/v1/match"')
+      and has(growth, "error.status !== 404"))
+check("the daily challenge has a stable one-press launch",
+      has(daily_page, "#join/daily") and has(daily_page, "data-ladder")
+      and has(growth, 'request("/v1/daily"'))
+check("the weekly recap is a shareable public artifact",
+      has(week_page, "data-stories") and has(week_page, "data-share")
+      and has(growth, 'request("/v1/week"'))
 
 local function png_size(path)
     local body = read(path, true)

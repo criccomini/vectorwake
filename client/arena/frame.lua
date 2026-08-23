@@ -12,7 +12,8 @@ local M = {}
 -- tree and stays up. Only pressing deploy turns the connection into the real
 -- thing, and it clears the flag itself.
 function M.live(self, net, sim, menu)
-    local live = self.online and net.connected and sim.ship_count() > 0
+    local live = (self.replay ~= nil or (self.online and net.connected))
+        and sim.ship_count() > 0
     menu.home = not live or self.attract == true
     if menu.home then menu.open = true end
     return live

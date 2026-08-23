@@ -103,6 +103,18 @@ http:// {
 	handle /v1/pilot {
 		reverse_proxy 127.0.0.1:9400
 	}
+	handle /v1/match {
+		reverse_proxy 127.0.0.1:9400
+	}
+	handle /v1/replay {
+		reverse_proxy 127.0.0.1:9400
+	}
+	handle /v1/daily {
+		reverse_proxy 127.0.0.1:9400
+	}
+	handle /v1/week {
+		reverse_proxy 127.0.0.1:9400
+	}
 
 	# Keep the community door stable without copying the raw invite out of the
 	# game origin, where decision 39 says it lives.
@@ -157,6 +169,24 @@ http:// {
 	}
 	handle /pilots/* {
 		rewrite * /pilot.html
+		header Cache-Control "no-cache"
+		root * /srv/site
+		file_server
+	}
+	handle /matches/* {
+		rewrite * /match.html
+		header Cache-Control "no-cache"
+		root * /srv/site
+		file_server
+	}
+	handle /week {
+		rewrite * /week.html
+		header Cache-Control "no-cache"
+		root * /srv/site
+		file_server
+	}
+	handle /daily {
+		rewrite * /daily.html
 		header Cache-Control "no-cache"
 		root * /srv/site
 		file_server
