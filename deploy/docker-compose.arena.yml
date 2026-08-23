@@ -5,18 +5,14 @@
 # One arena, and the count is not a capacity dial. A process runs one zone's
 # configuration and holds as many rooms of it as `max_rooms` allows, created on
 # demand and reclaimed when they empty, so seats per host is that number in
-# zone.toml and not the number of stanzas here. Alpha allows ten, which is
-# further than this fleet has ever been asked to go.
+# zone.toml and not the number of stanzas here.
 #
 # What the count does decide is how many zones a host can cover, because an
 # arena picks a zone nobody is serving and then stays with it. So the rule is
-# at least one per zone you want this host to serve, and the catalog is down to
-# Alpha alone.
-#
-# It was three, from when the catalog held Alpha, Chaos and War and one machine
-# had to cover all of them. Nothing re-derived it when the other two went, so
-# two processes were covering zones that no longer exist. Add one back per zone
-# the catalog grows, and reach for max_rooms when the answer is seats.
+# one process per declared zone. The current catalog declares Melee alone, so
+# this file starts one. A deployment check compares this file with the catalog
+# so adding a zone cannot publish an empty game again. Reach for max_rooms when
+# the answer is seats.
 #
 # A host of this shape holds nothing anyone would miss. Destroying one costs
 # the matches in progress on it and nothing else, which is what makes an arena
@@ -34,9 +30,8 @@ x-arena: &arena
   cap_drop:
     - ALL
 
-# What an arena on this host is told. Kept apart from the service so that a
-# second one, the day the catalog grows a zone, differs by port, path and
-# volume and by nothing else.
+# What an arena on this host is told. Kept apart from the service so a future
+# one differs by port, path and volume and by nothing else.
 x-arena-env: &arena-env
   # Loopback when the directory is on this host, and the front door's public
   # wss when it is not. The token travels over TLS either way, which is what
@@ -110,9 +105,10 @@ services:
   # This is the same arena this file already declares, so it is not a second
   # source of truth about what is running; and asking it directly is a better
   # question anyway, since `bots_wanted` is the arena's own answer whatever
-  # zone it happens to have taken, and counts the rooms it is holding. This is also why the bots ride in
-  # this file rather than the central one: an arena host flies its own crowd,
-  # and a central bot server would pay inter-host egress to do a worse job.
+  # zone it happens to have taken, and counts the rooms it is holding. This is
+  # also why the bots ride in this file rather than the central one: an arena
+  # host flies its own crowd, and a central bot server would pay inter-host
+  # egress to do a worse job.
   #
   # No volume. It keeps nothing between runs, because a bot's career lives in
   # its account now rather than here.

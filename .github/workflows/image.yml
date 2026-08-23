@@ -102,6 +102,9 @@ jobs:
             -f deploy/docker-compose.local.yml config -q
           echo "all, central, arena and the local overlay parse"
 
+      - name: every catalog zone has an arena door
+        run: python3 deploy/arena_capacity_test.py
+
       - name: releases wait for both immutable images
         run: ./deploy/update_test.sh
 

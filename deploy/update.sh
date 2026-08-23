@@ -70,6 +70,16 @@ if ! docker compose --env-file .env up -d >>"$LOG" 2>&1; then
 	exit 1
 fi
 
+# The Caddyfile is bind-mounted from the checkout. Compose sees the same mount
+# path after a route changes, so it correctly leaves Caddy running and Caddy
+# correctly keeps serving the old config. Reload it in place: a new arena path
+# becomes reachable without severing every socket already passing through it.
+if ! docker compose --env-file .env exec -T caddy caddy reload \
+	--config /etc/caddy/Caddyfile --adapter caddyfile >>"$LOG" 2>&1; then
+	logger -t vw-update "release $after failed during Caddy reload"
+	exit 1
+fi
+
 release_tmp=$RELEASE.tmp
 printf '%s\n' "$after" >"$release_tmp" && mv -f "$release_tmp" "$RELEASE"
 logger -t vw-update "converged to $after with paired sha-$short images"

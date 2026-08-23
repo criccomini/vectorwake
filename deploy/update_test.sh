@@ -25,6 +25,8 @@ printf '%s|%s|%s\n' "${VW_IMAGE:-}" "${VW_CLIENT_IMAGE:-}" "$*" >>"$CALLS"
 case "$*" in
 "pull ghcr.io/criccomini/vectorwake-client:sha-bbbbbbbbbbbb")
 	[ "${FAIL_CLIENT:-0}" = 1 ] && exit 1 ;;
+"compose --env-file .env exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile")
+	[ "${FAIL_RELOAD:-0}" = 1 ] && exit 1 ;;
 esac
 exit 0
 SH
@@ -52,7 +54,19 @@ FAIL_CLIENT=1; export FAIL_CLIENT
 
 : >"$CALLS"
 FAIL_CLIENT=0; export FAIL_CLIENT
+FAIL_RELOAD=1; export FAIL_RELOAD
+if "$UPDATE"; then
+	echo "test failed: a failed Caddy reload published the release" >&2
+	exit 1
+fi
+[ ! -e "$TMP/state/release" ]
+grep -q 'compose --env-file .env up -d' "$CALLS"
+grep -q 'compose --env-file .env exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile' "$CALLS"
+
+: >"$CALLS"
+FAIL_RELOAD=0; export FAIL_RELOAD
 "$UPDATE"
 [ "$(cat "$TMP/state/release")" = bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb ]
 grep -q 'ghcr.io/criccomini/vectorwake:sha-bbbbbbbbbbbb|ghcr.io/criccomini/vectorwake-client:sha-bbbbbbbbbbbb|compose --env-file .env up -d' "$CALLS"
-echo "paired release gate passed"
+grep -q 'compose --env-file .env exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile' "$CALLS"
+echo "paired release and Caddy reload gate passed"

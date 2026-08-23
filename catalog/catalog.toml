@@ -57,13 +57,8 @@ max_instances = 8
 # Declared rather than scanned, so retiring a zone is a reviewed line removed
 # and a half-written directory does not become live.
 #
-# One zone, which is where everybody who turns up meets everybody else who did.
-# Chaos, War and finally Alpha itself are out: the first two were translations
-# of the original's settings files and worked fine, and a fleet of three rooms
-# with a handful of people in it is three rooms with nobody in any of them.
-# Alpha went with the open arena -- see docs/design/match-game.md -- and Capture
-# and Holdfast are named in that document and not yet designed. Every one of
-# them is in the history, and putting one back is this stanza and the folder
-# beside it.
+# Melee is the shared three-minute game. It needs one arena process in the
+# reference deployment, and the CI capacity check keeps that operational
+# requirement tied to this list.
 [[zone]]
 name = "melee"

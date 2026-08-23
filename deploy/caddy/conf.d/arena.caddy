@@ -6,9 +6,8 @@
 # name costs one of five certificates a week.
 #
 # One of them, because an arena process holds every room its zone allows and
-# the count tracks zones rather than seats. A second zone in the catalog means
-# a second stanza here and in docker-compose.arena.yml, and a UDP port beside
-# 9443 in provision.sh and the firewall group.
+# the count tracks zones rather than seats. The deployment check keeps this
+# route paired with the arena service and the catalog's declared zones.
 #
 # This is the WebSocket door. The WebTransport one is not here and cannot be:
 # a QUIC session is the HTTP/3 connection itself, so the arena terminates it on
