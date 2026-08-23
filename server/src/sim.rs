@@ -5,6 +5,22 @@
 //! One source, two callers, identical results.
 
 #![allow(non_camel_case_types)]
+// The mirror is complete on purpose, and a complete mirror has items in it
+// that nothing here calls yet.
+//
+// Every constant, signature and unit conversion in `sim/include/sim/sim.h` is
+// written down once in this file, in the header's own order. That is the
+// point: a partial mirror is the failure this file exists to prevent, and it
+// has happened once already. Deleting SIM_EV_PRIZE from the core slid every
+// event after it down by one, and with only the handled half written down
+// there was nothing to notice that a charge had become an expiry.
+//
+// So dead code is allowed here and nowhere else in the server. What holds this
+// file to the header is not a caller: it is
+// `the_event_numbers_are_the_ones_the_core_emits`, which reads sim.h and
+// checks the whole enum, and the client's constant_drift_test, which does the
+// same from the other side.
+#![allow(dead_code)]
 
 use std::os::raw::c_int;
 
@@ -1053,6 +1069,10 @@ impl World {
     /// A snapshot carrying only what is within `radius` of a point, plus
     /// `viewer`'s own rounds wherever they are. Pass 255 for nobody's. See the
     /// note on `sim_pack_around` in sim/include/sim/pack.h.
+    ///
+    /// The argument list is the C function's, for the reason the rest of this
+    /// file mirrors it exactly.
+    #[allow(clippy::too_many_arguments)]
     pub fn pack_around(
         &self,
         out: &mut [u8],

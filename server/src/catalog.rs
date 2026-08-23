@@ -250,10 +250,15 @@ pub struct Catalog {
 }
 
 impl Catalog {
+    /// What the two lists in a catalog are for. Nothing in this process asks
+    /// yet: bans and staff are enforced at the meta layer, which reads the
+    /// same file, and an arena that has to answer for itself will ask here.
+    #[allow(dead_code)]
     pub fn is_banned(&self, name: &str) -> bool {
         self.bans.iter().any(|b| b.eq_ignore_ascii_case(name))
     }
 
+    #[allow(dead_code)]
     pub fn has_capability(&self, name: &str, cap: &str) -> bool {
         self.staff
             .iter()
@@ -632,6 +637,82 @@ fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     diff == 0
 }
 
+/// `vectorwake-server catalog <dir>`: load it and say what it holds, or say why
+/// it will not load. The operator-facing half of every rejection above.
+pub fn run_check() {
+    let dir = std::env::args().nth(2).unwrap_or_else(|| "catalog".into());
+    match load(&dir) {
+        Err(e) => {
+            println!("catalog {dir}: {e}");
+            std::process::exit(1);
+        }
+        Ok(c) => {
+            println!("catalog {dir}: {:?} version {}", c.name, c.version);
+            println!(
+                "  {} pools, {} staff, {} bans",
+                c.pools.len(),
+                c.staff.len(),
+                c.bans.len()
+            );
+            for name in &c.order {
+                let z = &c.zones[name];
+                let maps = c.map_bytes(name);
+                let map: usize = maps.iter().map(|b| b.len()).sum();
+                println!(
+                    "  zone {name:<10} mode {:<8} {} ships / {} players, fill {}, \
+                     bots {:.0}%, {} room(s), teams {}, {} map(s), {map} B",
+                    z.mode,
+                    z.max_ships.unwrap_or(64),
+                    z.max_players(),
+                    z.fill_target(),
+                    z.bot_fill() * 100.0,
+                    z.max_rooms(),
+                    if z.teams.is_empty() {
+                        "free-for-all".to_string()
+                    } else {
+                        z.teams.join("/")
+                    },
+                    maps.len()
+                );
+            }
+            println!("  default {:?}", c.fallback_zone().unwrap_or_default());
+        }
+    }
+}
+
+/// `vectorwake-server token`: mint one and print the row to paste. Generated
+/// rather than typed, because hashing at rest is only worth anything if the
+/// input has entropy, and an operator asked to invent a token invents a short
+/// one.
+pub fn run_token() {
+    // Exactly 32 bytes from the OS. read_exact rather than fs::read, because
+    // /dev/urandom has no EOF and reading it to the end allocates until the
+    // kernel kills you.
+    use std::io::Read;
+    let mut raw = [0u8; 32];
+    let ok = std::fs::File::open("/dev/urandom")
+        .and_then(|mut f| f.read_exact(&mut raw))
+        .is_ok();
+    if !ok {
+        println!("could not read 32 bytes of randomness");
+        std::process::exit(1);
+    }
+    let token: String = raw.iter().map(|b| format!("{b:02x}")).collect();
+    println!("pool token, shown once:");
+    println!();
+    println!("  {token}");
+    println!();
+    println!("Store it and everything follows: the catalog names its digest as");
+    println!("env:VW_POOL_DIGEST and fleet.sh derives that from the stored token,");
+    println!("so there is nothing to commit and no second value to keep.");
+    println!();
+    println!("  fleet.sh secrets put VW_POOL_TOKEN");
+    println!();
+    println!("An arena presents it as VW_TOKEN, which provisioning wires up. A");
+    println!("catalog that carries its digest inline instead would say:");
+    println!("  token = \"sha256:{}\"", sha256_hex(token.as_bytes()));
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -827,7 +908,10 @@ mod tests {
     fn every_rejection_says_why() {
         // Each case breaks one thing and asserts the message names it, because
         // the reason is the entire value of refusing.
-        let cases: Vec<(&str, Box<dyn Fn(&Path)>, &str)> = vec![
+        // A name for the directory, what to break in it, and the word the
+        // refusal has to contain.
+        type Case<'a> = (&'a str, Box<dyn Fn(&Path)>, &'a str);
+        let cases: Vec<Case> = vec![
             (
                 "noversion",
                 Box::new(|d: &Path| write(d, "catalog.toml", "[[zone]]\nname = \"war\"\n")),
@@ -1001,80 +1085,4 @@ mod tests {
         );
         assert!(!c.has_capability("nobody", "ban"));
     }
-}
-
-/// `vectorwake-server catalog <dir>`: load it and say what it holds, or say why
-/// it will not load. The operator-facing half of every rejection above.
-pub fn run_check() {
-    let dir = std::env::args().nth(2).unwrap_or_else(|| "catalog".into());
-    match load(&dir) {
-        Err(e) => {
-            println!("catalog {dir}: {e}");
-            std::process::exit(1);
-        }
-        Ok(c) => {
-            println!("catalog {dir}: {:?} version {}", c.name, c.version);
-            println!(
-                "  {} pools, {} staff, {} bans",
-                c.pools.len(),
-                c.staff.len(),
-                c.bans.len()
-            );
-            for name in &c.order {
-                let z = &c.zones[name];
-                let maps = c.map_bytes(name);
-                let map: usize = maps.iter().map(|b| b.len()).sum();
-                println!(
-                    "  zone {name:<10} mode {:<8} {} ships / {} players, fill {}, \
-                     bots {:.0}%, {} room(s), teams {}, {} map(s), {map} B",
-                    z.mode,
-                    z.max_ships.unwrap_or(64),
-                    z.max_players(),
-                    z.fill_target(),
-                    z.bot_fill() * 100.0,
-                    z.max_rooms(),
-                    if z.teams.is_empty() {
-                        "free-for-all".to_string()
-                    } else {
-                        z.teams.join("/")
-                    },
-                    maps.len()
-                );
-            }
-            println!("  default {:?}", c.fallback_zone().unwrap_or_default());
-        }
-    }
-}
-
-/// `vectorwake-server token`: mint one and print the row to paste. Generated
-/// rather than typed, because hashing at rest is only worth anything if the
-/// input has entropy, and an operator asked to invent a token invents a short
-/// one.
-pub fn run_token() {
-    // Exactly 32 bytes from the OS. read_exact rather than fs::read, because
-    // /dev/urandom has no EOF and reading it to the end allocates until the
-    // kernel kills you.
-    use std::io::Read;
-    let mut raw = [0u8; 32];
-    let ok = std::fs::File::open("/dev/urandom")
-        .and_then(|mut f| f.read_exact(&mut raw))
-        .is_ok();
-    if !ok {
-        println!("could not read 32 bytes of randomness");
-        std::process::exit(1);
-    }
-    let token: String = raw.iter().map(|b| format!("{b:02x}")).collect();
-    println!("pool token, shown once:");
-    println!();
-    println!("  {token}");
-    println!();
-    println!("Store it and everything follows: the catalog names its digest as");
-    println!("env:VW_POOL_DIGEST and fleet.sh derives that from the stored token,");
-    println!("so there is nothing to commit and no second value to keep.");
-    println!();
-    println!("  fleet.sh secrets put VW_POOL_TOKEN");
-    println!();
-    println!("An arena presents it as VW_TOKEN, which provisioning wires up. A");
-    println!("catalog that carries its digest inline instead would say:");
-    println!("  token = \"sha256:{}\"", sha256_hex(token.as_bytes()));
 }

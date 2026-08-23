@@ -46,6 +46,10 @@ struct Reg {
     address: String,
     wt: String,
     region: String,
+    /// Which zones this arena said it would serve. Kept because a
+    /// registration is a record of what an arena claimed, and selection reads
+    /// what it is actually running instead.
+    #[allow(dead_code)]
     willing: Vec<String>,
     status: fleet::Status,
     verified: bool,
@@ -449,6 +453,7 @@ pub async fn ask_with(url: &str, frame: Vec<u8>, expect: u8) -> Option<String> {
 /// Verify a claimed address the way a client is about to: connect, ask for
 /// status, require a well-formed answer. The party with a reason to care runs
 /// the check, and an operator can move hosts without a new credential.
+#[allow(dead_code)]
 pub async fn verify(address: &str) -> bool {
     check(address).await.is_ok()
 }
@@ -1044,6 +1049,9 @@ async fn accept_conn(
     // only place the HTTP headers exist.
     let proxied = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let saw = proxied.clone();
+    // The closure's error type is tungstenite's own `ErrorResponse`, which is
+    // a whole HTTP response and is what the handshake takes. Not ours to box.
+    #[allow(clippy::result_large_err)]
     let ws = tokio_tungstenite::accept_hdr_async_with_config(
         stream,
         move |req: &tokio_tungstenite::tungstenite::handshake::server::Request,

@@ -61,8 +61,8 @@ pub(crate) fn snapshot_rewind(seq: u32, distance: u32) -> u32 {
 
 pub(crate) fn snapshot_lanes(frame: u32) -> (bool, bool) {
     (
-        frame % SNAPSHOT_EVERY == 0,
-        frame % COMBAT_SNAPSHOT_EVERY == 0,
+        frame.is_multiple_of(SNAPSHOT_EVERY),
+        frame.is_multiple_of(COMBAT_SNAPSHOT_EVERY),
     )
 }
 
@@ -186,6 +186,8 @@ impl InputMissRate {
         }
     }
 
+    /// How much history `percent` is a percentage of.
+    #[allow(dead_code)]
     pub(crate) fn sampled_ticks(&self) -> u32 {
         self.samples.len().min(u32::MAX as usize) as u32
     }

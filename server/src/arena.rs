@@ -166,7 +166,7 @@ impl RatedLease {
                 Ok(()) => break,
                 Err(e) => {
                     attempts += 1;
-                    if attempts == 1 || attempts % 12 == 0 {
+                    if attempts == 1 || attempts.is_multiple_of(12) {
                         println!(
                             "rated settlement still owed for account {}: {e}",
                             self.account
@@ -726,7 +726,7 @@ impl ArenaServer {
         room.set_teams(&def);
         if z.mode == "warzone" {
             room.add_default_flags();
-            room.world.state.flag_count = def.arena.flags.min(room.world.state.flag_count as u8);
+            room.world.state.flag_count = def.arena.flags.min(room.world.state.flag_count);
         }
         room.mode = modes::build(&z.mode, &room.mode_setup(&def.arena));
         room.bot_fill = def.bot_fill();

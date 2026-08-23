@@ -469,6 +469,7 @@ impl Seat {
     /// A pilot with no account. This is what a deployment running without a
     /// meta-layer produces for everybody, and what a test wants when the thing
     /// under test is seats rather than identity.
+    #[allow(dead_code)]
     pub(crate) fn guest(name: impl Into<String>, bot: bool) -> Seat {
         let name = name.into();
         Seat {
@@ -953,7 +954,7 @@ impl Room {
     /// zone file is written by a person.
     pub(crate) fn mode_setup(&self, c: &config::ArenaConfig) -> modes::Setup {
         modes::Setup {
-            flags: self.world.state.flag_count as u8,
+            flags: self.world.state.flag_count,
             teams: self.public_teams,
             match_ticks: c.match_seconds.unwrap_or(180) as u32 * 100,
             intermission_ticks: c.intermission_seconds.unwrap_or(25) as u32 * 100,
@@ -991,13 +992,13 @@ impl Room {
             world.cfg.charge[k] = pat;
         } else if let Some(n) = name.strip_prefix("charge-") {
             if let Ok(k) = n.parse::<usize>() {
-                if k >= 1 && k <= sim::MAX_CHARGES {
+                if (1..=sim::MAX_CHARGES).contains(&k) {
                     world.cfg.charge[k - 1] = pat;
                 }
             }
         } else if let Some(n) = name.strip_prefix("shrapnel-") {
             if let Ok(k) = n.parse::<usize>() {
-                if k >= 1 && k < sim::MAX_RUNGS {
+                if (1..sim::MAX_RUNGS).contains(&k) {
                     world.cfg.mod_splinter[k] = pat;
                 }
             }
@@ -1024,6 +1025,7 @@ impl Room {
     /// the ones the upgrades and ship pages show: a stat by itself, a level and an
     /// add-on prefixed by the trigger they belong to, and a charge by what it
     /// is rather than by which of the four slots a zone parked it in.
+    #[allow(dead_code)]
     pub(crate) fn slot_named(name: &str) -> Option<u8> {
         const STATS: [&str; sim::UP_COUNT] = ["energy", "recharge", "speed", "thrust", "rotation"];
         if let Some(i) = STATS.iter().position(|n| n.eq_ignore_ascii_case(name)) {
@@ -1393,6 +1395,10 @@ impl Room {
 
     /// An arrival with nothing to say about which side they land on, which is
     /// every arrival that did not just get up out of a chair in this room.
+    // Called by the tests rather than by the server, which reaches for the
+    // fuller form beside it. Kept because it is the short way to say the
+    // ordinary thing, and a test is a caller.
+    #[allow(dead_code)]
     pub(crate) fn join(
         &mut self,
         seat: Seat,
@@ -1441,6 +1447,7 @@ impl Room {
     /// a hull has and nobody else does. It is honoured while the side exists and
     /// has room, and ignored otherwise rather than refused: a watcher whose side
     /// filled up while they sat out is still a player who wants to fly.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn join_on(
         &mut self,
         seat: Seat,
@@ -1953,6 +1960,7 @@ impl Room {
     /// every hostility test in this stack asks whether two sides differ. Chaos
     /// spent a day with no damage, no kills, and nine pilots with nothing to
     /// shoot at while War two doors down played fine.
+    #[allow(dead_code)]
     pub(crate) fn free_for_all(&self) -> bool {
         self.public_teams == 0
     }
@@ -2729,6 +2737,7 @@ impl Room {
     /// hull as an enemy's and offered no live sight of any of them, while the
     /// same person joining in a hull and then sitting out kept their side and
     /// everything that came with it.
+    #[allow(dead_code)]
     pub(crate) fn watch_join(
         &mut self,
         seat: Seat,
@@ -3542,10 +3551,9 @@ impl Room {
                 .players
                 .values()
                 .filter(|p| {
-                    !self
-                        .names
+                    self.names
                         .get(&p.ship)
-                        .is_some_and(|s| s.label == token::Label::HouseBot.to_byte())
+                        .is_none_or(|s| s.label != token::Label::HouseBot.to_byte())
                 })
                 .count() as i64;
             metrics::SEATS_OUT.set(network_seats);
@@ -3649,7 +3657,7 @@ impl Room {
             self.channel.subject = pick;
             self.channel.hold = CHANNEL_HOLD;
         }
-        self.channel.hold = self.channel.hold.saturating_sub(SNAPSHOT_EVERY as u32);
+        self.channel.hold = self.channel.hold.saturating_sub(SNAPSHOT_EVERY);
 
         // Packed once, same bytes for everybody on the channel. The human
         // radius always; an empty room points the camera at the map's middle.

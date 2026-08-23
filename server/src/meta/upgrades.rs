@@ -163,8 +163,8 @@ mod tests {
     #[test]
     fn every_slot_runs_out() {
         let base = sim::World::base_entitlements();
-        for slot in 0..sim::SLOT_COUNT {
-            let mut owned = base[slot];
+        for (slot, dealt) in base.iter().enumerate() {
+            let mut owned = *dealt;
             let mut steps = 0;
             while let Some((next, price)) = next_step(slot, owned) {
                 assert!(next > owned, "slot {slot} has to move");

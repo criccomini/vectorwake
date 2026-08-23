@@ -491,7 +491,7 @@ mod tests {
                     n += 1;
                     for a in z.rooms.iter_mut() {
                         a.tick();
-                        if n % 5 == 0 {
+                        if n.is_multiple_of(5) {
                             a.broadcast_snapshot(&mut buf);
                         }
                     }

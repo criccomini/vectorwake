@@ -128,6 +128,9 @@ impl Claims {
         }
     }
 
+    /// One class of the standing a token carries. The whole list travels;
+    /// this is how a caller asks for the one it is seating.
+    #[allow(dead_code)]
     pub fn rating_in(&self, class: &str) -> Option<&ClassRating> {
         self.ratings.iter().find(|r| r.class == class)
     }
@@ -291,7 +294,7 @@ pub fn to_hex(bytes: &[u8]) -> String {
 }
 
 pub fn from_hex(s: &str) -> Option<Vec<u8>> {
-    if s.len() % 2 != 0 {
+    if !s.len().is_multiple_of(2) {
         return None;
     }
     (0..s.len())

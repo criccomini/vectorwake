@@ -259,9 +259,9 @@ impl Nav {
             let far = |d: &[u32]| {
                 let mut best = seed;
                 let mut bd = 0u32;
-                for c in 0..W * W {
-                    if d[c] != u32::MAX && d[c] > bd {
-                        bd = d[c];
+                for (c, &at) in d.iter().enumerate().take(W * W) {
+                    if at != u32::MAX && at > bd {
+                        bd = at;
                         best = c;
                     }
                 }

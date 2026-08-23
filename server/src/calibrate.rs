@@ -243,6 +243,9 @@ pub struct Side {
 
 pub struct Bout {
     pub sides: [Side; 2],
+    /// How long it took. Read off a run by eye rather than by the summary,
+    /// which is why nothing here reads it.
+    #[allow(dead_code)]
     pub ticks: u32,
     /// Whether somebody reached the kill target. A pair that mostly times out
     /// is a pair whose numbers mean less than they look.
@@ -494,6 +497,8 @@ pub fn margin_of(wins: u32, losses: u32, draws: u32) -> f64 {
 }
 
 impl StageRow {
+    /// The denominator under `win_rate`, for a caller reporting both.
+    #[allow(dead_code)]
     pub fn bouts(&self) -> u32 {
         self.wins + self.losses + self.draws
     }
@@ -1685,6 +1690,11 @@ scored on the difference when the clock stopped",
 }
 
 /// The team report: a line per hull, read off the seats it filled.
+///
+/// Every column of the heading is an argument, because the heading is the
+/// whole point of the report: a reader has to be able to see which run this
+/// was without going to find the command that produced it.
+#[allow(clippy::too_many_arguments)]
 pub fn report_teams(
     rows: &[TeamRow],
     per_side: usize,
@@ -1775,6 +1785,7 @@ is the one to read the board by."
 /// sixty-three thousand bouts, which is most of a day on one core and a
 /// couple of hours split seven ways, so the run has to be splittable
 /// without editing the test between shards.
+#[allow(dead_code)]
 pub(crate) fn env_list(key: &str, fallback: &[u32]) -> Vec<u32> {
     match std::env::var(key) {
         Ok(s) if !s.trim().is_empty() => {
@@ -1812,7 +1823,11 @@ pub(crate) fn real_map() -> Vec<u8> {
         .unwrap_or_else(|| panic!("a shipped map lives here; looked in {WHERE:?}"))
 }
 
-pub(crate) fn real_map_fixture() -> (Vec<u8>, nav::Nav, ((i32, i32), (i32, i32))) {
+/// A shipped map, its routes, and a pair of open points to start two pilots
+/// from. What every drill on real ground begins with.
+pub(crate) type RealMap = (Vec<u8>, nav::Nav, ((i32, i32), (i32, i32)));
+
+pub(crate) fn real_map_fixture() -> RealMap {
     let bytes = real_map();
     let probe = sim::World::from_packed(0x5eed, &bytes).expect("a map");
     let at = open_pair(&probe.map);
@@ -1851,6 +1866,11 @@ fn open_pair(map: &sim::sim_map) -> ((i32, i32), (i32, i32)) {
 ///
 /// `calibrate::bout` cannot be reused: it builds the pit, and it builds a
 /// route per bout, which on a map this size is most of the cost.
+///
+/// The ground, the pair, the two pilots and the dial: everything a bout needs
+/// and nothing it can work out for itself, since working any of it out per
+/// bout is the cost this exists to avoid.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn duel(
     bytes: &[u8],
     route: &nav::Nav,
@@ -1887,7 +1907,7 @@ pub(crate) fn duel(
     // row measured here was being read against a coin that was not one.
     // Whatever the asymmetry is between these two tiles on this map, the
     // pilot who draws each start also draws each facing now.
-    let flip = salt % 2 == 0;
+    let flip = salt.is_multiple_of(2);
     let (first, second) = if flip { (a, b) } else { (b, a) };
     let (h1, h2) = if salt % 4 < 2 { (0, 32768) } else { (32768, 0) };
     let s1 = world.spawn(first.class, 0, at.0 .0, at.0 .1, h1) as u8;
@@ -1897,7 +1917,7 @@ pub(crate) fn duel(
     let mut bot2 = ai::Bot::new(s2, second.skill);
     // The ablation's handicap always rides on `a`, whichever side it drew.
     if let Some((knob, as_if)) = handicap {
-        if salt % 2 == 0 {
+        if salt.is_multiple_of(2) {
             bot1.tune(knob, as_if);
         } else {
             bot2.tune(knob, as_if);
@@ -1974,7 +1994,7 @@ pub(crate) fn duel(
     let k1 = world.state.ships[s1 as usize].kills;
     let k2 = world.state.ships[s2 as usize].kills;
     // Back into the caller's order, whichever side each started on.
-    if salt % 2 == 0 {
+    if salt.is_multiple_of(2) {
         (k1, k2)
     } else {
         (k2, k1)
@@ -2201,13 +2221,13 @@ mod tests {
                 None,
                 &Arena::Built(sim::build_pit),
             );
-            for k in 0..2 {
+            for (k, got) in offered.iter().enumerate() {
                 assert!(
-                    offered[k] >= BUDGET,
+                    *got >= BUDGET,
                     "salt {salt}: side {k} never got its opening"
                 );
                 assert_eq!(
-                    offered[k] % BUDGET,
+                    got % BUDGET,
                     0,
                     "salt {salt}: the kit is dealt a life at a time"
                 );
@@ -2334,7 +2354,7 @@ the room"
         let arena = Arena::Built(sim::build_pit);
         let multi = sim::slot_mod(sim::TRIG_GUN, sim::MOD_MULTI) as usize;
 
-        let mut plain = arena.build(0).expect("a room");
+        let plain = arena.build(0).expect("a room");
         assert!(
             plain.kit_ceilings()[multi] > 0,
             "the baseline has multifire to take away"
@@ -2486,11 +2506,13 @@ which is the pit talking",
     /// would show it: the tournament runs, prints and looks entirely normal.
     #[test]
     fn a_zone_s_tuning_reaches_the_pit() {
-        let mut c = config::ArenaConfig::default();
         // Two settings a zone plausibly moves, chosen because the baseline's
         // values are known here and neither is what this asks for.
-        c.mod_spread = Some(5); // degrees, against the baseline's fifteen
-        c.respawn_delay = Some(123);
+        let mut c = config::ArenaConfig {
+            mod_spread: Some(5), // degrees, against the baseline's fifteen
+            respawn_delay: Some(123),
+            ..Default::default()
+        };
 
         let mut world = sim::World::with_map(1, sim::build_pit);
         assert_ne!(
@@ -2697,7 +2719,10 @@ mod real_map_tests {
         let probe = sim::World::from_packed(0x5eed, &bytes).expect("a map");
         let at = open_pair(&probe.map);
         let route = nav::Nav::build(&probe.map);
-        let mut gaps: Vec<(u32, f64, f64, f64, f64, f64, usize, usize)> = Vec::new();
+        // One row a skill: the dial, the five figures the drill reports, and
+        // the two counts under them.
+        type Gap = (u32, f64, f64, f64, f64, f64, usize, usize);
+        let mut gaps: Vec<Gap> = Vec::new();
         for (hull, hull_name) in hulls {
             // Percent, because env_list deals integers: VW_SKILLS=5,30,90
             // fields a 0.05 pilot against the usual pair. The default is the
@@ -2988,7 +3013,7 @@ mod real_map_tests {
 
 #[cfg(test)]
 mod ablation {
-    use super::real_map_tests::*;
+
     use super::*;
 
     /// Which of the dial's six parameters is doing the work?
@@ -3077,7 +3102,7 @@ mod ablation {
 
 #[cfg(test)]
 mod stability {
-    use super::real_map_tests::*;
+
     use super::*;
 
     /// Is the built field's ladder a small effect, or an unsteady number?
@@ -3144,7 +3169,7 @@ mod stability {
 
 #[cfg(test)]
 mod draws {
-    use super::real_map_tests::*;
+
     use super::*;
 
     /// What a drawn bout in a built field actually looks like.
@@ -3192,7 +3217,7 @@ mod draws {
 
 #[cfg(test)]
 mod fixture {
-    use super::real_map_tests::*;
+
     use super::*;
 
     /// Where the twelve points the null row keeps reading actually come from.
@@ -3278,7 +3303,7 @@ mod fixture {
 
 #[cfg(test)]
 mod kit {
-    use super::real_map_tests::*;
+
     use super::*;
 
     /// Does a pilot in this harness actually carry what it was handed?

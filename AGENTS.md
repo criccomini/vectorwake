@@ -84,8 +84,18 @@ build locally and run a server next to it.
 - Choose the simplest implementation that fully meets the current requirements.
 - Prefer established, well-maintained libraries over custom implementations.
 - Run `cargo fmt --manifest-path server/Cargo.toml` after every Rust edit.
-  `cargo fmt --manifest-path server/Cargo.toml -- --check` must pass before any
-  push that touches Rust.
+  Both of these must pass before any push that touches Rust, because CI fails
+  on either:
+
+  ```sh
+  cargo fmt --manifest-path server/Cargo.toml -- --check
+  cargo clippy --manifest-path server/Cargo.toml --all-targets -- -D warnings
+  ```
+
+  A lint that is wrong about this codebase gets an `allow` at the site with the
+  reason beside it, never a blanket one. `server/src/sim.rs` is the exception
+  and says why in its own head: it mirrors the C header in full, so items
+  nothing calls yet are the point of the file.
 
 ## Writing
 
