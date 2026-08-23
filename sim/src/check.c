@@ -187,6 +187,34 @@ void sim_map_check(const sim_map *m, sim_map_scratch *s, sim_map_report *r) {
         }
 }
 
+/* Where the stranded ground is, for whoever has to look at it.
+ *
+ * The count on its own is not something an author can act on: thirty-eight
+ * tiles somewhere in a room of twenty thousand is a needle nobody is going to
+ * find by squinting. This fills `out` with the tile indices, so the editor can
+ * draw them and the question becomes "is that a crevice or a passage I meant
+ * to fly down", which is a question a person can answer in a glance.
+ *
+ * Self-contained rather than reading what `sim_map_check` left in the scratch,
+ * because a function whose answer depends on what was called before it is one
+ * somebody eventually calls in the wrong order. */
+int sim_map_stranded(const sim_map *m, sim_map_scratch *s, uint32_t *out, int cap) {
+    if (!m || !s || !out || cap <= 0 || m->w == 0 || m->h == 0) return 0;
+    mark(m, s, 0);
+    int32_t biggest = 0;
+    int32_t main = label(m, s, &biggest);
+    int n = 0;
+    for (int32_t y = 0; y < (int32_t)m->h && n < cap; y++) {
+        for (int32_t x = 0; x < (int32_t)m->w && n < cap; x++) {
+            uint8_t c = SIM_TILE_CLASS(sim_tile_at(m, x, y));
+            if (c == SIM_TILE_SOLID || c == SIM_TILE_SLOPE || c == SIM_TILE_DOOR) continue;
+            if (served_by(m, s, x, y, main)) continue;
+            out[n++] = (uint32_t)y * m->w + (uint32_t)x;
+        }
+    }
+    return n;
+}
+
 int sim_map_playable(const sim_map *m, const sim_map_report *r, char *why, int cap) {
     const char *fault = 0;
     (void)m;
@@ -205,10 +233,26 @@ int sim_map_playable(const sim_map *m, const sim_map_report *r, char *why, int c
         fault = line;
     } else if (r->regions == 0) {
         fault = "there is nowhere in it a hull fits";
-    } else if (r->stranded > 0) {
-        snprintf(line, sizeof line, "%d open tile(s) no hull can reach", r->stranded);
-        fault = line;
     }
+    /* Stranded ground is reported and not refused. It reads as "somewhere is
+     * sealed off" and mostly is not: a hull is three tiles across, so any two
+     * rocks with one tile between them leave a tile no hull's center can come
+     * within one of, and a drawn asteroid field is hundreds of them. The first
+     * map anybody scattered rocks across came back with thirty-eight of these
+     * and nothing wrong with it.
+     *
+     * The three things this was guarding are all somewhere else now. A ship
+     * cannot be shoved into a gap it does not fit in. A prize cannot land
+     * there, because prizes came out of the core. And a bot cannot route
+     * there, because nav counts a tile blocked unless a hull fits on it. What
+     * is left is worth knowing and is not a verdict: a two-tile passage that
+     * looks like a route and is not, against a crevice between two rocks, and
+     * the difference between those is a question about the drawing rather than
+     * about the count. The editor draws them so an author can look.
+     *
+     * A place a hull could fly and cannot reach is still refused, by the
+     * region count above: that is the same fact said about ground a ship can
+     * actually be on. */
     if (!fault) return 1;
     if (why && cap > 0) {
         int n = (int)strlen(fault);

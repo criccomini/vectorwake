@@ -243,6 +243,11 @@ void sim_map_check(const sim_map *m, sim_map_scratch *s, sim_map_report *r);
  * `why` takes a sentence naming the first thing wrong with it, which is a
  * message for whoever drew it rather than a code to look up. */
 int sim_map_playable(const sim_map *m, const sim_map_report *r, char *why, int cap);
+
+/* The tile indices behind `report.stranded`, up to `cap` of them, so an editor
+ * can draw the ground it is talking about rather than only counting it.
+ * Returns how many were written. */
+int sim_map_stranded(const sim_map *m, sim_map_scratch *s, uint32_t *out, int cap);
 /* `m` is unused today and named anyway: every future rule this could grow
  * (a size a mode needs, a spawn count a roster wants) is a question about the
  * map rather than about the count of what is in it. */
