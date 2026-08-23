@@ -67,11 +67,19 @@ local function reset()
 end
 
 -- A long face needs fittings that break its length into readable modules.
+-- Several kinds have to survive: one repeated clamp at a different pitch is
+-- still one repeated clamp.
 local world = reset()
-for x = 10, 30 do put(x, 12, T_SOLID, 0) end
-world.build_static(writer("fill"), writer("glow"), 6, 8, 34, 16)
+for x = 10, 140 do put(x, 12, T_SOLID, 0) end
+world.build_static(writer("fill"), writer("glow"), 6, 8, 144, 16)
 check("a long bulkhead has hardware nodes", count("glow:disc") > 0,
       count("glow:disc") .. " nodes")
+check("a long bulkhead has recessed equipment bays",
+      count("fill:quad") > 0 and count("glow:outline") > 0,
+      count("fill:quad") .. "/" .. count("glow:outline") .. " bays")
+check("a long bulkhead mixes structural treatments",
+      count("glow:seg") > 30 and count("glow:disc") > 4,
+      count("glow:seg") .. "/" .. count("glow:disc") .. " fittings")
 
 -- A big rock is still one collision object, but it is no longer one flat
 -- polygon. Facet triangles, ridges, pits, and a mineral seam give it volume.

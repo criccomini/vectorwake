@@ -430,8 +430,11 @@ language:
 - Relay ring uses stations, signal marks, and paired slope runs.
 
 The client gives those materials one visual grammar without flattening them
-into one tileset. A bulkhead is a continuous armored mass with recessed access
-plates, spaced clamps, and a bright collision edge. A rock is warmer, faceted,
+into one tileset. A bulkhead keeps a continuous bright collision edge, but the
+structure behind it changes on a seeded macro rhythm: quiet armor, access
+hatches, braces, vents, warning patches, conduits, field repairs, and
+buttresses. Bay widths and the dark gaps between them vary, so a long wall does
+not become one fitting stamped every few tiles. A rock is warmer, faceted,
 cratered, and carries sparse mineral seams while it tumbles. A station fills
 the whole six-tile square the simulation collides with, then cuts docking
 throats, armor quarters, trusses, and a cold reactor into that mass. The detail

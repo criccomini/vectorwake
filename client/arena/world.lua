@@ -655,6 +655,120 @@ local function wall_mass(bg, glow, set, cells, border)
     local hardware_hot = pal.a(pal.WALL_HARDWARE, 0.62)
     local warning = pal.a(pal.WALL_WARNING, 0.54)
     local recess = pal.a(pal.WALL_RECESS, 0.88)
+    local plate = pal.a(pal.WALL_PLATE, 0.76)
+    local seam = pal.a(lit, 0.18)
+
+    -- A run is divided into irregular bays, and each bay gets one of several
+    -- jobs. The collision edge stays continuous, because it is the line a
+    -- pilot has to read at speed. The machinery behind it does not repeat on
+    -- a tile pitch: quiet armor, hatches, braces, vents, warning paint,
+    -- conduits, field repairs, and buttresses trade places on a seeded macro
+    -- rhythm. The same map always builds the same wall without storing art in
+    -- its tile data.
+    local function bay_point(px, py, ux, uy, ox, oy, at, depth)
+        return px + ux * at - ox * depth, py + uy * at - oy * depth
+    end
+
+    local function draw_bay(px, py, ux, uy, ox, oy, a, b, motif)
+        local span = b - a
+        if span < 24 then return end
+        local mid = (a + b) * 0.5
+        if motif == 0 then
+            -- A quiet plate. Only the two end seams remain, leaving a long
+            -- dark rest between busier systems.
+            local ax, ay = bay_point(px, py, ux, uy, ox, oy, a, 2.5)
+            local bx, by = bay_point(px, py, ux, uy, ox, oy, a, 9.5)
+            local cx, cy = bay_point(px, py, ux, uy, ox, oy, b, 2.5)
+            local dx, dy = bay_point(px, py, ux, uy, ox, oy, b, 9.5)
+            glow:seg(ax, ay, bx, by, 0.7, seam)
+            glow:seg(cx, cy, dx, dy, 0.7, seam)
+        elseif motif == 1 or motif == 3 or motif == 6 then
+            -- Three different things share a recessed bay: a service hatch,
+            -- an intake grille, or a repair plate. What sits inside it keeps
+            -- the silhouette different without inventing three enclosures.
+            local x1, y1 = bay_point(px, py, ux, uy, ox, oy, a + 3, 3)
+            local x2, y2 = bay_point(px, py, ux, uy, ox, oy, b - 3, 3)
+            local x3, y3 = bay_point(px, py, ux, uy, ox, oy, b - 3, 11)
+            local x4, y4 = bay_point(px, py, ux, uy, ox, oy, a + 3, 11)
+            bg:quad(x1, y1, x2, y2, x3, y3, x4, y4,
+                    motif == 6 and plate or recess)
+            glow:outline({x1, y1, x2, y2, x3, y3, x4, y4},
+                         0.7, seam, true)
+            if motif == 1 then
+                local lx, ly = bay_point(px, py, ux, uy, ox, oy, a + 8, 7)
+                local rx, ry = bay_point(px, py, ux, uy, ox, oy, b - 8, 7)
+                glow:disc(lx, ly, 1.0, 6, hardware_hot)
+                glow:disc(rx, ry, 1.0, 6, hardware_hot)
+                glow:seg(lx, ly, rx, ry, 0.65, hardware)
+            elseif motif == 3 then
+                local n = math.max(3, math.min(6, math.floor(span / 12)))
+                for k = 1, n do
+                    local at = a + span * k / (n + 1)
+                    local sx, sy = bay_point(px, py, ux, uy, ox, oy, at, 4.5)
+                    local ex2, ey2 = bay_point(px, py, ux, uy, ox, oy, at, 9.5)
+                    glow:seg(sx, sy, ex2, ey2, 0.8, hardware)
+                end
+            else
+                local p1x, p1y = bay_point(px, py, ux, uy, ox, oy,
+                                           a + span * 0.18, 4)
+                local p2x, p2y = bay_point(px, py, ux, uy, ox, oy,
+                                           a + span * 0.42, 8)
+                local p3x, p3y = bay_point(px, py, ux, uy, ox, oy,
+                                           a + span * 0.63, 5.5)
+                local p4x, p4y = bay_point(px, py, ux, uy, ox, oy,
+                                           a + span * 0.82, 10)
+                glow:seg(p1x, p1y, p2x, p2y, 0.8, hardware)
+                glow:seg(p2x, p2y, p3x, p3y, 0.8, hardware)
+                glow:seg(p3x, p3y, p4x, p4y, 0.8, hardware)
+                glow:disc(p2x, p2y, 0.9, 6, hardware_hot)
+                glow:disc(p3x, p3y, 0.9, 6, hardware_hot)
+            end
+        elseif motif == 2 then
+            -- A deep V brace, wide enough to read as structure rather than a
+            -- diagonal scratch.
+            local ax, ay = bay_point(px, py, ux, uy, ox, oy, a + 4, 10.5)
+            local mx, my = bay_point(px, py, ux, uy, ox, oy, mid, 3)
+            local bx, by = bay_point(px, py, ux, uy, ox, oy, b - 4, 10.5)
+            glow:seg(ax, ay, mx, my, 1.15, hardware)
+            glow:seg(mx, my, bx, by, 1.15, hardware)
+            glow:disc(mx, my, 1.1, 6, hardware_hot)
+        elseif motif == 4 then
+            -- Warning paint appears in one compact patch. Spreading it down
+            -- the whole run would turn a navigation aid into wallpaper.
+            local first = mid - 12
+            for k = 0, 3 do
+                local sx, sy = bay_point(px, py, ux, uy, ox, oy,
+                                         first + k * 7, 3)
+                local ex2, ey2 = bay_point(px, py, ux, uy, ox, oy,
+                                           first + k * 7 + 5, 10)
+                glow:seg(sx, sy, ex2, ey2, 1.15, warning)
+            end
+        elseif motif == 5 then
+            -- Paired conduits with junction boxes. The parallel lines make a
+            -- long bay, unlike the hatch and brace motifs around it.
+            local a1x, a1y = bay_point(px, py, ux, uy, ox, oy, a + 5, 5)
+            local b1x, b1y = bay_point(px, py, ux, uy, ox, oy, b - 5, 5)
+            local a2x, a2y = bay_point(px, py, ux, uy, ox, oy, a + 5, 9)
+            local b2x, b2y = bay_point(px, py, ux, uy, ox, oy, b - 5, 9)
+            local mx, my = bay_point(px, py, ux, uy, ox, oy, mid, 7)
+            glow:seg(a1x, a1y, b1x, b1y, 0.75, hardware)
+            glow:seg(a2x, a2y, b2x, b2y, 0.75, hardware)
+            glow:disc(a1x, a1y, 0.9, 6, hardware_hot)
+            glow:disc(b2x, b2y, 0.9, 6, hardware_hot)
+            glow:disc(mx, my, 1.2, 6, hardware_hot)
+        else
+            -- Three short buttresses, each with a cap buried in the wall.
+            for k = 1, 3 do
+                local at = a + span * k / 4
+                local sx, sy = bay_point(px, py, ux, uy, ox, oy, at, 2)
+                local ex2, ey2 = bay_point(px, py, ux, uy, ox, oy, at, 11)
+                local c1x, c1y = bay_point(px, py, ux, uy, ox, oy, at - 3, 11)
+                local c2x, c2y = bay_point(px, py, ux, uy, ox, oy, at + 3, 11)
+                glow:seg(sx, sy, ex2, ey2, 1.0, hardware_hot)
+                glow:seg(c1x, c1y, c2x, c2y, 0.8, hardware)
+            end
+        end
+    end
 
     for i = 1, #cells, 2 do
         bg:rect(cells[i] * TILE, cells[i + 1] * TILE, TILE, TILE, pal.WALL)
@@ -665,13 +779,13 @@ local function wall_mass(bg, glow, set, cells, border)
     -- grid: a built surface has modules, while a line at every tile boundary
     -- turns it into graph paper.
     if not border then
-        local seam = pal.a(lit, 0.18)
         for i = 1, #cells, 2 do
             local tx, ty = cells[i], cells[i + 1]
             if set[key(tx, ty - 1)] and set[key(tx, ty + 1)]
                and set[key(tx - 1, ty)] and set[key(tx + 1, ty)] then
                 local x, y = tx * TILE, ty * TILE
-                local mark = (tx * 37 + ty * 61) % 19
+                local mark = lcg((tx * 7907 + ty * 15551 + 977)
+                                 % 2147483646 + 1) % 31
                 if mark == 0 then
                     bg:rect(x + 2, y + 3, 12, 10, recess)
                     glow:outline({x + 2, y + 3, x + 14, y + 3,
@@ -681,7 +795,7 @@ local function wall_mass(bg, glow, set, cells, border)
                         glow:seg(x + 5, y + 6 + k * 2,
                                  x + 11, y + 6 + k * 2, 0.6, hardware)
                     end
-                elseif tx % 5 == 0 and ty % 4 == 0 then
+                elseif mark == 1 or mark == 2 then
                     glow:seg(x + 3, y + 8, x + 13, y + 8, 0.7, seam)
                     glow:disc(x + 4, y + 8, 0.9, 6, hardware_hot)
                     glow:disc(x + 12, y + 8, 0.9, 6, hardware_hot)
@@ -710,49 +824,50 @@ local function wall_mass(bg, glow, set, cells, border)
             glow:skirt(px, py, qx, qy, ox * 6, oy * 6, 0.13, outer)
             glow:seg(px, py, qx, qy, 1.4, hotline)
             if border then
-                -- The map's own edge, said twice, with a tick every ten
-                -- pixels: a boundary that is never going to open.
+                -- The map's own edge, said twice. Its sparse fittings use an
+                -- irregular pitch, so a long boundary does not turn into a
+                -- ruler laid against the playfield.
                 glow:seg(px - ox * 3, py - oy * 3, qx - ox * 3, qy - oy * 3,
                          0.8, edge2)
                 local len = math.abs(qx - px) + math.abs(qy - py)
-                local n = math.max(1, math.floor(len / 32))
-                local ux, uy = (qx - px) / n, (qy - py) / n
-                for k = 1, n - 1 do
-                    local mx, my = px + ux * k, py + uy * k
-                    glow:seg(mx, my, mx - ox * 3, my - oy * 3, 0.7, tick)
+                local ux, uy = (qx - px) / len, (qy - py) / len
+                local seed = lcg((tx * 7907 + ty * 15551 + s * 26699)
+                                 % 2147483646 + 1)
+                local at = 18 + seed % 29
+                while at < len - 10 do
+                    seed = lcg(seed)
+                    local mx, my = px + ux * at, py + uy * at
+                    if seed % 4 == 0 then
+                        glow:seg(mx, my, mx - ox * 5, my - oy * 5,
+                                 0.8, tick)
+                    elseif seed % 4 == 1 then
+                        glow:seg(mx - ux * 7 - ox * 5, my - uy * 7 - oy * 5,
+                                 mx + ux * 7 - ox * 5, my + uy * 7 - oy * 5,
+                                 0.8, hardware)
+                    elseif seed % 4 == 2 then
+                        glow:disc(mx - ox * 4, my - oy * 4,
+                                  1.0, 6, hardware_hot)
+                    end
+                    at = at + 38 + seed % 59
                 end
             elseif long then
                 glow:seg(px - ox * 3.5, py - oy * 3.5,
                          qx - ox * 3.5, qy - oy * 3.5, 0.7, bevel)
 
-                -- Clamps turn a continuous face into armored infrastructure.
-                -- They sit inside the collision edge, on a loose pitch, so a
-                -- long lane has rhythm without a tile-sized picket fence.
                 local dx, dy = qx - px, qy - py
                 local len = math.sqrt(dx * dx + dy * dy)
                 local ux, uy = dx / len, dy / len
-                local at = 28 + ((tx * 13 + ty * 7) % 17)
-                local module = 0
-                while at < len - 12 do
-                    local bx, by = px + ux * at, py + uy * at
-                    local ix, iy = bx - ox * 4, by - oy * 4
-                    glow:seg(ix - ux * 5, iy - uy * 5,
-                             ix + ux * 5, iy + uy * 5,
-                             1.0, hardware)
-                    glow:seg(bx - ux * 3, by - uy * 3,
-                             ix - ux * 3, iy - uy * 3, 0.8, hardware_hot)
-                    glow:seg(bx + ux * 3, by + uy * 3,
-                             ix + ux * 3, iy + uy * 3, 0.8, hardware_hot)
-                    if module % 3 == 1 then
-                        glow:seg(ix - ux * 3, iy - uy * 3,
-                                 bx, by, 1.0, warning)
-                        glow:seg(ix + ux * 3, iy + uy * 3,
-                                 bx, by, 1.0, warning)
-                    else
-                        glow:disc(ix, iy, 1.0, 6, hardware_hot)
-                    end
-                    module = module + 1
-                    at = at + 56
+                local seed = lcg((tx * 7907 + ty * 15551 + ex * 1973
+                                  + ey * 9277 + s * 26699)
+                                 % 2147483646 + 1)
+                local at = 12 + seed % 17
+                while at < len - 16 do
+                    seed = lcg(seed)
+                    local stop = math.min(len - 12, at + 44 + seed % 53)
+                    seed = lcg(seed)
+                    draw_bay(px, py, ux, uy, ox, oy, at, stop, seed % 8)
+                    seed = lcg(seed)
+                    at = stop + 10 + seed % 23
                 end
             end
         end)

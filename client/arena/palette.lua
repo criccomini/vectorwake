@@ -71,6 +71,7 @@ M.WALL_LIT  = rgb(0x5b82b8)
 M.WALL_HARDWARE = rgb(0x6f8da8)
 M.WALL_WARNING  = rgb(0xb8783f)
 M.WALL_RECESS   = rgb(0x04070c)
+M.WALL_PLATE    = rgb(0x101a29)
 
 -- Rock is warmer and grayer than anything built, so an asteroid field never
 -- reads as architecture and a big one is never mistaken for an Anvil.
