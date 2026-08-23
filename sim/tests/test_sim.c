@@ -1370,6 +1370,84 @@ int main(void) {
         int32_t fx = s.ships[0].x >> 12, fy = s.ships[0].y >> 12;
         CHECK(fy <= fx, "and is left on the open side of it, never inside the wall");
 
+        /* A run of slopes one tile thick is a one-way wall, which is the
+         * reason the generator's diagonals are three tiles across and not one.
+         *
+         * Consecutive tiles of one variant meet at a point, so the face they
+         * make is continuous and the material behind it is not. Coming at the
+         * side the solid halves face, a hull is stopped. Coming at the other,
+         * it goes through, because there is nothing there to stop it: the open
+         * halves line up into a corridor. It looks like a wall on the drawing
+         * either way, which is what makes it worth a test rather than a
+         * comment. */
+        {
+            sim_map *thin = malloc(sizeof *thin);
+            sim_map_size(thin, 200, 200);
+            for (int i = 0; i <= 80; i++)
+                SIM_MAP_AT(thin, 40 + i, 40 + i) =
+                    SIM_TILE(SIM_TILE_SLOPE, SIM_SLOPE_NE);
+            sim_map_index(thin);
+            sim_settings tc = cfg;
+            tc.map = thin;
+
+            /* North-east of the line, pushed south-west at it. The solid
+             * halves face north-east, so this is the side that holds. */
+            sim_state t;
+            sim_init(&t, 21);
+            sim_spawn(&t, APEX, 0, 60 * 16, 90 * 16, 0, &tc);
+            t.ships[0].vx = 6 * 65536;
+            t.ships[0].vy = -6 * 65536;
+            step_n(&t, &tc, 0, 0, 300);
+            CHECK((t.ships[0].x >> 12) <= (t.ships[0].y >> 12) + 3,
+                  "a thin run of slopes holds from the side its solid half faces");
+
+            /* And the other way, which does not. */
+            sim_init(&t, 22);
+            sim_spawn(&t, APEX, 0, 90 * 16, 60 * 16, 0, &tc);
+            t.ships[0].vx = -6 * 65536;
+            t.ships[0].vy = 6 * 65536;
+            step_n(&t, &tc, 0, 0, 300);
+            CHECK((t.ships[0].y >> 12) > (t.ships[0].x >> 12) + 3,
+                  "and lets a hull straight through from the other side");
+            free(thin);
+        }
+
+        /* A spine with a face on each side, which is what that costs and what
+         * the generator draws. It holds both ways. */
+        {
+            sim_map *band = malloc(sizeof *band);
+            sim_map_size(band, 200, 200);
+            for (int i = 0; i <= 80; i++) {
+                int tx = 40 + i, ty = 40 + i;
+                SIM_MAP_AT(band, tx, ty) = SIM_TILE_SOLID;
+                SIM_MAP_AT(band, tx + 1, ty - 1) =
+                    SIM_TILE(SIM_TILE_SLOPE, SIM_SLOPE_SW);
+                SIM_MAP_AT(band, tx - 1, ty + 1) =
+                    SIM_TILE(SIM_TILE_SLOPE, SIM_SLOPE_NE);
+            }
+            sim_map_index(band);
+            sim_settings bc = cfg;
+            bc.map = band;
+
+            sim_state t;
+            sim_init(&t, 23);
+            sim_spawn(&t, APEX, 0, 90 * 16, 60 * 16, 0, &bc);
+            t.ships[0].vx = -6 * 65536;
+            t.ships[0].vy = 6 * 65536;
+            step_n(&t, &bc, 0, 0, 300);
+            CHECK((t.ships[0].y >> 12) <= (t.ships[0].x >> 12) + 3,
+                  "a sloped run with a body behind it holds from the north-east");
+
+            sim_init(&t, 24);
+            sim_spawn(&t, APEX, 0, 60 * 16, 90 * 16, 0, &bc);
+            t.ships[0].vx = 6 * 65536;
+            t.ships[0].vy = -6 * 65536;
+            step_n(&t, &bc, 0, 0, 300);
+            CHECK((t.ships[0].x >> 12) <= (t.ships[0].y >> 12) + 3,
+                  "and from the south-west, which a thin one does not");
+            free(band);
+        }
+
         /* Which is the point: on a staircase the same drop lands on a step and
          * stops. Here it keeps moving, and it moves along the wall. */
         CHECK(fx > 130, "and travels along the face rather than resting on a step");

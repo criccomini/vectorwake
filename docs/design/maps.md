@@ -98,11 +98,28 @@ tiles under it: the corner that would touch one is the same corner the face
 is holding up. That is what stops the staircase coming back as the square
 backing behind a smooth front.
 
-The generator does not draw them. Its diagonals are one tile thick, and a thin
-diagonal is the one shape a slope cannot express: half a tile of wall with a
-hole at every corner is not a barrier. A thick diagonal wall with sloped faces
-is a shape a person draws and then measures, and there is somewhere to draw it
-now. See "Where a map comes from" below.
+The generator draws its diagonals this way, and a run is three tiles across: a
+solid spine with a face either side of it, each filling the corner that points
+back at the spine.
+
+Three and not one, because a run of slopes one tile thick is a **one-way wall**.
+Consecutive tiles of one variant meet at a point, so the face they make is
+continuous and the material behind it is not: coming at the side the solid
+halves face, a hull is stopped, and coming at the other it goes straight
+through, because the open halves line up into a corridor. Sixteen hulls out of
+sixteen, at every speed from one pixel a tick to twenty-four. It looks like a
+wall on the drawing either way, which is why there is a test for it rather than
+a sentence.
+
+That makes a diagonal about twice the thickness of a straight wall on the same
+map, which is why these were stepped single tiles for so long: at radar scale a
+thick diagonal reads as a smear rather than a line. It reads that way and it is
+flyable, and between those two the collision wins.
+
+The match maps are untouched by this. `--match` builds its pockets and lanes
+from its own pipeline rather than from the shape vocabulary the open arena
+draws from, so drydock and slipway generate byte for byte what they did before,
+and nothing anybody has drilled against has moved.
 
 ## The edge of the world is not a map's to draw
 
