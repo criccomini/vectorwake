@@ -3,13 +3,11 @@
 --     lua5.1 client/tests/landing_test.lua
 --
 -- Every window draws the same one: the deck, which is the game's name on a
--- carousel, what that game is, the room a press would drop you in, the ship
--- you would arrive in, and one DEPLOY key under all of it. A monitor holds
--- it to a phone's column, because at the width of a stage the clock sits at
--- one edge of the screen and the score at the other. A tall window keeps
--- the key with the readings instead of sinking it to the bottom of the
--- glass. Desktop drew the zones list with those readings in a column beside
--- it before this.
+-- carousel, what that game is, the clock and the room, the score as a bar
+-- with a side coming in from each end, and one DEPLOY key across the foot.
+-- The name and the bar and the key all take the page's own measure, which
+-- is what these check: a landing laid out in a column somewhere in the
+-- middle of a monitor is the shape this replaced.
 
 package.path = "client/?.lua;" .. package.path
 
@@ -24,17 +22,20 @@ local function check(name, ok, detail)
 end
 
 local W, H = 1280, 800
-local boxes = {}
+local boxes, rects = {}, {}
 local layer = {}
 local function noop() end
 for _, name in ipairs({"arc", "disc", "flush", "outline", "quad", "reset",
                         "ring", "tri", "tri_fade", "fan", "seg", "seg_glow",
                         "glow_band", "halo", "ring_fade", "seg_fade",
-                        "seg_flat", "skirt", "rect"}) do
+                        "seg_flat", "skirt"}) do
     layer[name] = noop
 end
 layer.frame = function(_, x, y, w, h)
     boxes[#boxes + 1] = {x = x, y = y, w = w, h = h}
+end
+layer.rect = function(_, x, y, w, h, col)
+    rects[#rects + 1] = {x = x, y = y, w = w, h = h, col = col}
 end
 
 _G.sim = setmetatable({}, {__index = function()
@@ -107,7 +108,7 @@ end
 
 local function draw(w, h, finding_rival)
     W, H = w, h
-    boxes = {}
+    boxes, rects = {}, {}
     state.n = 0
     ui.begin(layer, W, H, 1, false)
     ui.menu(view(finding_rival))
@@ -139,14 +140,39 @@ local function find_text(texts, phrase)
     return nil
 end
 
--- What both layouts must say about the room, wherever they lay it out.
+-- Which of the drawn rectangles are the two halves of the score bar: a
+-- short one in each side's own color. Nothing else on this page is a band
+-- of team color a few points tall.
+local function bar_halves()
+    local cyan, amber
+    for _, r in ipairs(rects) do
+        local c = r.col or {}
+        if r.h < 12 and r.w > 20 then
+            if c[1] == pal.FRIEND[1] and c[2] == pal.FRIEND[2] then
+                cyan = r
+            elseif c[1] == pal.ENEMY[1] and c[2] == pal.ENEMY[2] then
+                amber = r
+            end
+        end
+    end
+    return cyan, amber
+end
+
+-- What both shapes must say about the room, wherever they lay it out.
 local function readings_checks(name, texts)
     check(name .. " names the game", has(texts, "Melee"))
     check(name .. " says what the game is",
           has(texts, "Four a side, three minutes"))
-    check(name .. " carries the live clock and score",
-          has(texts, "On the clock") and has(texts, "2:40")
-              and has(texts, "The score") and has(texts, " : "))
+    check(name .. " carries the live clock",
+          has(texts, "On the clock") and has(texts, "2:40"))
+    check(name .. " carries the room",
+          has(texts, "The room") and has(texts, "8 seats"))
+    check(name .. " says nothing about arriving",
+          not has(texts, "You arrive as"),
+          "the arrival row was taken out")
+    -- The score is a bar now, with a figure at each end of it in that
+    -- side's color rather than two numbers and a colon.
+    check(name .. " heads the score", has(texts, "The score"))
     local blue, orange = false, false
     for _, t in ipairs(texts) do
         if t.s == "1" then
@@ -160,16 +186,24 @@ local function readings_checks(name, texts)
         end
     end
     check(name .. " colors the two scores by side", blue and orange)
-    check(name .. " carries the room",
-          has(texts, "The room") and has(texts, "8 seats"))
+    check(name .. " says the score with no colon between the figures",
+          not has(texts, " : "))
+    local cyan, amber = bar_halves()
+    check(name .. " draws the score as a bar of two colors",
+          cyan ~= nil and amber ~= nil,
+          (cyan and "" or "no cyan half ")
+              .. (amber and "" or "no amber half"))
+    check(name .. " meets the two halves where the match stands",
+          cyan and amber and math.abs(cyan.x + cyan.w - amber.x) < 1,
+          cyan and amber
+              and string.format("cyan ends %.1f, amber starts %.1f",
+                                cyan.x + cyan.w, amber.x) or "no bar")
 end
 
--- --- desktop: the deck, in a column of a phone's measure ------------------
+-- --- desktop: the deck, across the page ----------------------------------
 
 local desktop, hits = draw(1280, 800)
 readings_checks("desktop", desktop)
-check("desktop says which ship arrives",
-      has(desktop, "You arrive as") and has(desktop, "Apex"))
 check("desktop ends in one Deploy key", has(desktop, "Deploy"))
 local key_hit
 for _, hit in ipairs(hits or {}) do
@@ -179,38 +213,44 @@ check("the key presses the zone the carousel is on", key_hit ~= nil,
       "no stage target on the key")
 check("desktop does not replace the summary with a roster",
       not has(desktop, "Halcyon"), "roster name was drawn")
-check("the deck keeps a phone's measure on a monitor",
-      key_hit and key_hit.w < W * 0.45,
+-- The key runs the page. It was a box a third of a monitor wide, standing
+-- in a column with a screen of nothing beside it.
+check("the key takes the width of the page",
+      key_hit and key_hit.w > W * 0.85,
       key_hit and string.format("key %.0f wide in %d", key_hit.w, W)
           or "no key")
+-- And the bar runs the same measure, so the two read as one block. Measured
+-- against the drawn key rather than its hit box, which is a few points
+-- proud of it on every side so a near miss still lands.
+local cyan, amber = bar_halves()
+local key_box
+for _, b in ipairs(boxes) do
+    if not key_box or b.w > key_box.w then key_box = b end
+end
+check("the score bar takes the key's own measure",
+      cyan and amber and key_box
+          and math.abs(cyan.w + amber.w - key_box.w) < 1,
+      cyan and amber and key_box
+          and string.format("bar %.1f, key %.1f", cyan.w + amber.w,
+                            key_box.w) or "no bar")
 -- One column: the readings hang under the name of the game rather than
 -- standing in a second column beside it.
 local melee = find_text(desktop, "Melee")
 local clock = find_text(desktop, "On the clock")
 check("the readings sit under the name, not beside it",
-      melee and clock and math.abs(melee.x - clock.x) < 40,
+      melee and clock and math.abs(melee.x - clock.x) < 60,
       string.format("melee %.0f, clock %.0f",
                     melee and melee.x or -1, clock and clock.x or -1))
+-- The name is the biggest thing on the page, which is the one question it
+-- asks. It used to be set at the size of a row in a list.
+check("the game's name is the biggest type on the page",
+      melee and clock and melee.px > 40,
+      melee and string.format("name at %.0f", melee.px) or "no name")
 
--- A window taller than a phone keeps the key with the readings. Given the
--- whole of one the three bands sink to the foot of the window, which leaves
--- the name of the game a screen away from the facts about it.
-local _, tall_hits = draw(1280, 1500)
-local tall_key
-for _, hit in ipairs(tall_hits or {}) do
-    if hit.action == "stage" then tall_key = hit end
-end
-check("a tall window does not sink the key to the bottom of the glass",
-      tall_key and tall_key.y + tall_key.h < H * 0.72,
-      tall_key and string.format("key foot at %.0f of %d",
-                                 tall_key.y + tall_key.h, H) or "no key")
-
--- --- phone: the same deck, given the whole page ----------------------------
+-- --- phone: the same deck, given a phone's page ---------------------------
 
 local phone, phits = draw(420, 780)
 readings_checks("phone", phone)
-check("phone says which ship arrives",
-      has(phone, "You arrive as") and has(phone, "Apex"))
 check("phone ends in one Deploy key", has(phone, "Deploy"))
 local stage, ship_page, pilot_page = 0, 0, 0
 for _, hit in ipairs(phits or {}) do
@@ -220,11 +260,12 @@ for _, hit in ipairs(phits or {}) do
 end
 check("phone publishes one Deploy target", stage == 1,
       stage .. " stage targets")
-check("phone makes the ship name a destination", ship_page == 1,
+-- The ship and the call sign left with the arrival row. Ship is a stop on
+-- the rail and the account is the button in the header, which is where both
+-- of them are on every other page.
+check("phone sends nobody to the ship page from here", ship_page == 0,
       ship_page .. " ship targets")
--- One target is the account button in the header. The second is the
--- account name beside Deploy.
-check("phone makes the account name a destination", pilot_page == 2,
+check("phone keeps the one account button", pilot_page == 1,
       pilot_page .. " account targets")
 
 for _, shape in ipairs({{1280, 800}, {420, 780}}) do
