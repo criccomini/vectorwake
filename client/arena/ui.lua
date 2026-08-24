@@ -5220,11 +5220,21 @@ function pages.kit(v, x, y, w, h, focused)
     local function pane_key(r, kx0, label)
         local kw0 = text_w(label, LBL_PX * F.scale) + 24 * F.scale
         local hot = cursor(r)
-        key_box(kx0, mid - key_h / 2, kw0, key_h,
-                hot and pal.a(pal.FRIEND, 0.2) or nil,
-                pal.a(pal.FRIEND, hot and (focused and 1 or 0.55) or 0.4))
-        lbl(label, kx0 + kw0 / 2, mid,
-            pal.a(pal.INK, hot and 1 or 0.75), "center")
+        -- Dim on a starter, whose name is not the pilot's to change. The
+        -- key is still there and still a target: the press is what carries
+        -- the sentence saying why nothing happened.
+        if r.dim then
+            key_box(kx0, mid - key_h / 2, kw0, key_h, nil,
+                    pal.a(pal.FRIEND, hot and 0.35 or 0.18))
+            lbl(label, kx0 + kw0 / 2, mid,
+                pal.a(pal.INK, hot and 0.6 or 0.4), "center")
+        else
+            key_box(kx0, mid - key_h / 2, kw0, key_h,
+                    hot and pal.a(pal.FRIEND, 0.2) or nil,
+                    pal.a(pal.FRIEND, hot and (focused and 1 or 0.55) or 0.4))
+            lbl(label, kx0 + kw0 / 2, mid,
+                pal.a(pal.INK, hot and 1 or 0.75), "center")
+        end
         if live then hit(kx0, mid - key_h / 2, kw0, key_h, "stage", r.index) end
         return kx0 + kw0 + 8 * F.scale
     end
@@ -5267,10 +5277,10 @@ function pages.kit(v, x, y, w, h, focused)
     -- as well, which is the mark a ladder is read in and one more thing in a
     -- column whose whole job is names.
     --
-    -- The key that adds one is at the foot of the column, the width of it.
-    -- Over the list it sat between the tabs and the first name with the
-    -- shape of a thing you press, which is where the eye lands first on a
-    -- page whose first act is reading a list.
+    -- The key that adds one is directly under the last name, the width of
+    -- the column. It stood at the foot of the page for a while, pinned a
+    -- screen's height below a three-row list, and read as furniture of the
+    -- page rather than of the list it adds to.
     --
     -- Pinned rather than scrolled with the kit: it is the page's other
     -- column, not the top of this one. Where the window is too narrow to hold
@@ -5329,13 +5339,10 @@ function pages.kit(v, x, y, w, h, focused)
             end
             at = at + shown * LIST_ROW
         end
-        -- The key, at the foot of the column and as wide as it. Against the
-        -- bottom of the page where the column is one, and under the last name
-        -- where the list is stacked over the kit and there is no bottom of
-        -- the page to speak of.
+        -- The key, under the last name and as wide as the column, in both
+        -- layouts.
         for _, r in ipairs(list) do
-            local ky = stacked and (at + 10 * F.scale)
-                or (y + h - key_h - 8 * F.scale)
+            local ky = at + 10 * F.scale
             local hot = cursor(r)
             key_box(lx, ky, lw, key_h,
                     hot and pal.a(pal.FRIEND, 0.2) or nil,
@@ -5386,11 +5393,6 @@ function pages.kit(v, x, y, w, h, focused)
         return top >= kit_top and bot <= y + h
     end
 
-    -- Air over each group head, so a short kit stands in the room it has
-    -- rather than piling up under the band with three hundred points of
-    -- nothing beneath it. Set per column from what that column came to.
-    local pad = 0
-    local HEAD = 36 * F.scale
     -- A label and nothing beside it. Each of these heads carried a sentence
     -- about its group: what six of a stat costs, what a dim step means, that
     -- spent charges do not come back. They were rules of the game printed on
@@ -5398,7 +5400,7 @@ function pages.kit(v, x, y, w, h, focused)
     -- introduced, and the page says most of it now by drawing it: a dim step
     -- has a price at the end of its row.
     local function rule(label)
-        cy = cy + 6 * F.scale + pad
+        cy = cy + 6 * F.scale
         if seen(cy - 2 * F.scale, cy + 2 * F.scale) then
             hrule(kx, cy, kw)
         end
@@ -5671,45 +5673,16 @@ function pages.kit(v, x, y, w, h, focused)
         end
     end
 
-    -- What a column comes to before any air is added, so the air can be
-    -- shared out between its heads rather than left at the bottom. The chips
-    -- are measured by the same wrap the drawing uses, since a narrow column
-    -- puts them on two lines and a wide one on one.
-    local function chip_lines(group, width)
-        if #group == 0 then return 0 end
-        local lines, px = 1, 0
-        for _, r in ipairs(group) do
-            local cw = math.max(62 * F.scale,
-                                text_w(r.short or r.label or "",
-                                       LBL_PX * F.scale) + 24 * F.scale)
-            if px > 0 and px + cw > width then lines = lines + 1 px = 0 end
-            px = px + cw + 8 * F.scale
-        end
-        return lines
-    end
-    local function share(heads, natural)
-        local room = h - head - 10 * F.scale
-        if heads < 1 then return 0 end
-        return math.max(0, math.min(52 * F.scale, (room - natural) / heads))
-    end
-
     local top = cy
-    local width = kwidth
-    -- The library is not counted: it stands above the kit rather than in it,
-    -- and `head` has already taken its room out of the page.
-    local heads = 1 + ((#levels > 0) and 1 or 0)
-        + ((#guns > 0) and 1 or 0) + ((#bombs > 0) and 1 or 0)
-        + ((#charges > 0) and 1 or 0) + ((#flair > 0) and 1 or 0)
-    local natural = heads * HEAD
-        + (#stats + #levels + #charges + #flair) * srow
-        + (chip_lines(guns, width) + chip_lines(bombs, width))
-          * (ch + 6 * F.scale) + 16 * F.scale
-
+    -- The groups stack from the top, each taking the room it needs and no
+    -- more. The spare room used to be shared out between the heads, up to
+    -- fifty points a rule, which read as one enormous gap after another on
+    -- any monitor tall enough to have spare room at all.
+    --
     -- How far down the page came, so the next frame knows what there is to
     -- scroll to. Measured from the top of the kit rather than from the top
     -- of the page, because the band above it does not move.
     kx, kw = panex, kwidth
-    pad = share(heads, natural)
     ladders()
     triggers()
     if #flair > 0 then

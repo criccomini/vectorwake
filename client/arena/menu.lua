@@ -933,20 +933,23 @@ local function kit_rows(class)
         }
     end
     -- The key that adds one, after them, because that is where it is drawn:
-    -- at the foot of the column, the width of it. Over the list it sat
-    -- between the tabs and the first name wearing the shape of a thing to
-    -- press, which is the wrong first thing to meet on a page whose first act
-    -- is reading a list.
-    rows[#rows + 1] = {label = "add", group = "list", act = "save_profile"}
-    -- And what can be done to the one the pane is about, in the pane. Only
-    -- for a build the pilot made: the three the game ships are not theirs to
-    -- rename or drop, and the meta-layer refuses both, so offering the keys
-    -- would be a control that exists to explain itself.
-    if M.own_profile() then
+    -- directly under the last name, the width of the column. It sat at the
+    -- foot of the page for a while, a screen's height from the list it adds
+    -- to.
+    rows[#rows + 1] = {label = "new", group = "list", act = "save_profile"}
+    -- And what can be done to the one the pane is about, in the pane. On a
+    -- starter the pair is drawn dim and a press explains: the three the game
+    -- ships are not yours to rename or drop, and the meta-layer refuses
+    -- both. They were left off starters entirely for that reason, and what
+    -- that taught anybody with only the starters was that the controls did
+    -- not exist.
+    local about = M.selected_profile()
+    if about then
+        local starter = about.builtin == true
         rows[#rows + 1] = {label = "rename", group = "pane",
-                           act = "rename_profile"}
+                           act = "rename_profile", dim = starter}
         rows[#rows + 1] = {label = "delete", group = "pane",
-                           act = "delete_profile"}
+                           act = "delete_profile", dim = starter}
     end
     for _, s in ipairs(kit_slots()) do
         local max = ceiling[s.slot + 1] or 0
@@ -3060,6 +3063,12 @@ end
 function M.show(...)
     M.stack = {"root"}
     for _, id in ipairs({...}) do M.stack[#M.stack + 1] = id end
+    -- The same landing the tab gives the ship page: the cursor on the build
+    -- the kit in hand is, so the row and the pane's head agree. The
+    -- intermission comes in through here rather than through the tab.
+    if M.at() == "hangar" and M.profile_at then
+        M.sel.hangar = M.profile_at
+    end
     M.open = true
     M.hover = nil
     M.rail_hover = nil
@@ -3557,6 +3566,12 @@ function M.view()
                 end
                 out.hull_sel = M.hull_index()
                 out.kit_preview = true
+                -- The head of the pane, same as inside the page. Left out,
+                -- the preview named every build "custom" until the cursor
+                -- came down off the tab.
+                out.profile = M.profile_band()
+                out.kit_spent = M.kit_spent()
+                out.kit_total = simn("KIT_BUDGET", 30)
             end
             -- Nothing in the preview is selected, because the cursor is on
             -- the rail. `sel` at this level counts rail stops, and left where
@@ -3651,6 +3666,14 @@ local function activate(by)
     if r.go then
         if not enterable(r.go) then return nil end
         M.stack[#M.stack + 1] = r.go
+        -- The ship page opens with the cursor on the build the kit in hand
+        -- is, where it is one, so the row the wash lands on and the name in
+        -- the pane's head agree from the first frame. Opening on row one put
+        -- the cursor on the first starter while the head named a different
+        -- build.
+        if r.go == "hangar" and M.profile_at then
+            M.sel.hangar = M.profile_at
+        end
         M.note = nil
         -- A page whose first control is a field opens with the cursor in it.
         -- A hand coming down off the tabs lands in the box and can type;
@@ -3739,7 +3762,15 @@ local function activate(by)
         return nil
     elseif r.act == "rename_profile" then
         local p = M.own_profile()
-        if not p then return nil end
+        if not p then
+            -- The dim key on a starter, pressed anyway. The refusal is the
+            -- meta-layer's; the sentence is so the dimness reads as a rule
+            -- rather than as a control that broke.
+            if M.selected_profile() then
+                M.note = "the starter builds keep their names"
+            end
+            return nil
+        end
         M.pending_profile = p.name
         M.ask = {
             head = "Rename " .. (p.name or "this build") .. ".",
@@ -3755,7 +3786,12 @@ local function activate(by)
         -- for good: the meta-layer keeps no copy and there is nothing on the
         -- page that would bring it back.
         local p = M.own_profile()
-        if not p then return nil end
+        if not p then
+            if M.selected_profile() then
+                M.note = "the starter builds are not yours to delete"
+            end
+            return nil
+        end
         M.pending_profile = p.name
         M.ask = {
             head = "Delete " .. (p.name or "this build") .. "?",
@@ -4329,16 +4365,28 @@ function M.step(keys)
         return activate(), true
     end
 
+    -- Landing on a build loads it, so the pane beside the list is always
+    -- about the row the cursor is on: the list is a selector, and a selector
+    -- whose arrows only move a highlight while enter does the choosing is
+    -- two controls wearing one drawing. Enter still commits the same load,
+    -- for a pointer and for the row the page opened on.
+    local function landed()
+        local r2 = rows[row_index(rows)]
+        if r2 and r2.act == "profile" and choose_profile(r2.value) then
+            return "kit", true
+        end
+        return nil, true
+    end
     if keys.up then
         -- Off the first row and back to the tabs. A list that wrapped from
         -- its head to its foot had no way back up to the row above the page.
         if row_index(rows) == 1 then return back() end
         M.sel[id] = next_stop(rows, row_index(rows), -1)
-        return nil, true
+        return landed()
     end
     if keys.down then
         M.sel[id] = next_stop(rows, row_index(rows), 1)
-        return nil, true
+        return landed()
     end
     if keys.go then return activate(), true end
     return nil, false
