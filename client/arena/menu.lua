@@ -179,11 +179,6 @@ M.can_cap = false       -- whether this engine can be asked to cap frames
 -- with the saved pilot rather than the current connection, so a reload cannot
 -- bring the offer back after it has been dismissed.
 M.help_prompt_seen = false
--- Which of the two flying controls a thumb gets: false is the stick that
--- points where the nose should go, true is the d-pad that pushes. The arena
--- reads it and arena/touch.lua acts on it; nothing here draws with it. See
--- the settings page below for why it is only offered on glass.
-M.dpad = false
 
 -- Whether the ship page's answer is currently "no hull". In a game that is
 -- what the connection says you are; on the home screen it is what you have
@@ -264,7 +259,7 @@ function M.save_identity()
     pcall(sys.save, SAVE, {
         name = M.name, class = M.class, volume = M.volume, music = M.music,
         cap = M.cap, zone = M.zone, spectate = M.spectate,
-        help_prompt_seen = M.help_prompt_seen, dpad = M.dpad,
+        help_prompt_seen = M.help_prompt_seen,
         -- The wake, with the rest of what this pilot looks like.
         wake = M.wake,
         -- Which charge the first key throws, which is a preference about a
@@ -302,10 +297,6 @@ function M.load_identity()
         -- is an answer to the same question the hull answers.
         M.spectate = d.spectate == true
         M.help_prompt_seen = d.help_prompt_seen == true
-        -- Compared against true rather than read, so a save carrying anything
-        -- else under this name lands on the stick rather than on a value the
-        -- touch layer would try to steer with.
-        M.dpad = d.dpad == true
         M.charge_flip = d.charge_flip == true
         -- Whatever survives being read against this build's key list. A
         -- missing table is a stock keyboard, which is what `load` does with
@@ -2135,23 +2126,6 @@ local NODES = {
              help = "Hide the browser controls while you play.",
              act = "fullscreen"},
         }
-        -- Only where there are thumbs. A keyboard has a key for each of
-        -- these and no question to answer.
-        --
-        -- One box, because it is one question, and a detail that names the
-        -- control rather than saying "on": the two are alternatives and
-        -- neither is the absence of the other.
-        if M.touching then
-            rows[#rows + 1] = {
-                label = "steering",
-                help = "Choose how the left thumb steers.",
-                detail = function()
-                    if M.dpad then return "a pad to push" end
-                    return "a stick to point"
-                end,
-                choice = function() return M.dpad and 1 or 0, 1 end,
-                act = "steering"}
-        end
         -- Only where there is somewhere to add it to and it is not there
         -- already. A row offering to install an app you are running inside is
         -- a row that makes the menu look like it is not paying attention.
@@ -2736,12 +2710,6 @@ local function settle(act, asked, by)
         -- number, and arena.script turns it into the instance they are in.
         M.pending = asked and asked.who or 0
         return "join_friend"
-    elseif act == "steering" then
-        -- Nothing to apply: the arena reads this every frame and the touch
-        -- layer redraws from it, so there is no engine state to keep in step
-        -- the way sound and frames have.
-        M.dpad = not M.dpad
-        M.save_identity()
     else
         return act
     end
