@@ -91,7 +91,9 @@ ufw_port = str(first_quic) if first_quic == last_quic else f"{first_quic}:{last_
 provision = (ROOT / "deploy/provision.sh").read_text()
 check(f"ufw allow {ufw_port}/udp" in provision, "new hosts open every QUIC port")
 
-fleet = (ROOT / "deploy/fleet.sh").read_text()
+fleet_paths = [ROOT / "deploy/fleet.sh"]
+fleet_paths.extend(sorted((ROOT / "deploy/lib").glob("fleet_*.sh")))
+fleet = "\n".join(path.read_text() for path in fleet_paths)
 rules = re.search(r'^FW_RULES="([^"]+)"$', fleet, re.M)
 check(
     rules is not None and f"udp:{ufw_port}" in rules.group(1).split(),
