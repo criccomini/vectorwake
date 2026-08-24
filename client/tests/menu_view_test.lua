@@ -291,7 +291,7 @@ do
         -- Whichever block landed under the clock. A column with no height
         -- for a roster drops it and the score follows the clock instead.
         local under = text_named(landing, "Players")
-                      or text_named(landing, "The score")
+                      or text_named(landing, "Score")
         local clock_y = clock and (H - clock.y) or nil
         local under_y = under and (H - under.y) or nil
         check(name .. " keeps the clock clear of the label under it",
@@ -306,7 +306,7 @@ do
                              {375, 667}, {390, 664}, {390, 844}}) do
         local landing = draw(landing_view(), shape[1], shape[2], true)
         local deploy = hit_named("stage")
-        local score = baseline(landing, "The score")
+        local score = baseline(landing, "Score")
         local inside = deploy and deploy.x >= 0 and deploy.y >= 0
                        and deploy.x + deploy.w <= W
                        and deploy.y + deploy.h <= H
@@ -338,7 +338,7 @@ do
         if shape[1] == 390 and shape[2] == 844 then
             local note = baseline(landing,
                 "Everybody against everybody until the whistle")
-            local clock = baseline(landing, "On the clock")
+            local clock = baseline(landing, "Time")
             check("portrait leaves the arena between the description and facts",
                   note and clock and clock - note > 200,
                   string.format("description %.0f, facts %.0f",
@@ -375,8 +375,8 @@ do
           not has(sideways, "zone1"), table.concat(texts(sideways), " "))
     -- Two readings, and no roster: 390 points of height has no room for a
     -- list of names under a clock, a score and a key.
-    check("and its readings", has(sideways, "on the clock")
-              and has(sideways, "the score"),
+    check("and its readings", has(sideways, "time")
+              and has(sideways, "score"),
           table.concat(texts(sideways), " "))
     check("and the key that presses them", said_deploy)
     bands_hold(sideways, "sideways")

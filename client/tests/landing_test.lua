@@ -179,7 +179,7 @@ local function readings_checks(name, texts)
     check(name .. " says what the game is",
           has(texts, "Four a side, three minutes"))
     check(name .. " carries the live clock",
-          has(texts, "On the clock") and has(texts, "2:40"))
+          has(texts, "Time") and has(texts, "2:40"))
     check(name .. " heads the roster", has(texts, "Players"))
     check(name .. " names everybody in the room",
           has(texts, "Halcyon") and has(texts, "Sable")
@@ -191,7 +191,7 @@ local function readings_checks(name, texts)
           "the arrival row was taken out")
     -- The score is a bar now, with a figure at each end of it in that
     -- side's color rather than two numbers and a colon.
-    check(name .. " heads the score", has(texts, "The score"))
+    check(name .. " heads the score", has(texts, "Score"))
     local blue, orange = false, false
     for _, t in ipairs(texts) do
         if t.s == "1" then
@@ -253,7 +253,7 @@ check("the score bar takes the key's own measure",
 -- One column: the readings hang under the name of the game rather than
 -- standing in a second column beside it.
 local melee = find_text(desktop, "Melee")
-local clock = find_text(desktop, "On the clock")
+local clock = find_text(desktop, "Time")
 check("the readings sit under the name, not beside it",
       melee and clock and math.abs(melee.x - clock.x) < 60,
       string.format("melee %.0f, clock %.0f",

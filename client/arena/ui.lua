@@ -4587,7 +4587,7 @@ local function compact_deploy(a, x, y, w, h)
     -- The clock, which between matches is the boarding window.
     if a.clock then
         local clock_label = a.finding_rival and "finding rival"
-            or (a.playing and "on the clock" or "next match in")
+            or (a.playing and "time" or "next match in")
         lbl(clock_label, x, cy + 8 * F.scale)
         -- The figures are sized off the band rather than set at a constant.
         -- A band is worth whatever the column has left once the key and the
@@ -4699,7 +4699,7 @@ local function compact_deploy(a, x, y, w, h)
     -- speed of a glance from across a room.
     if a.score then
         local score_y = cy
-        lbl("the score", x, score_y + 8 * F.scale)
+        lbl("score", x, score_y + 8 * F.scale)
         local bar_h = math.max(4 * F.scale,
                                math.min(7 * F.scale, band * 0.13))
         local px = math.max(9 * F.scale,
@@ -4759,10 +4759,10 @@ function pages.deploy_aside(a, x, y, w, h)
     if a.clock then
         local finding = a.finding_rival == true
         lbl(finding and "finding rival"
-            or (a.playing and "on the clock" or "next match in"), x, ly,
+            or (a.playing and "time" or "next match in"), x, ly,
             a.playing and nil or pal.a(pal.FRIEND, 0.9))
         if a.score then
-            lbl("the score", x + rmargin, ly, nil, "right")
+            lbl("score", x + rmargin, ly, nil, "right")
         end
         ly = ly + 34 * F.scale
         local clock = finding and "--:--"
