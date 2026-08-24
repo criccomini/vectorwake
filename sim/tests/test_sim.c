@@ -1534,6 +1534,59 @@ static void test_maps(const sim_settings *base) {
             free(band);
         }
 
+        /* The end of a finite pair run. The two faces stop there, and what a
+         * hull cutting the corner at the exposed end used to find was the
+         * inside of the wall: the axis clamps see no slope, and between two
+         * parallel faces the deepest alternates every tick, so the hull sat
+         * on the seam jittering forever. It is a wall and has to answer like
+         * one, whatever the speed and wherever across the tip the hull
+         * arrives. */
+        {
+            sim_map *stub = malloc(sizeof *stub);
+            sim_map_size(stub, 200, 200);
+            for (int i = 0; i <= 12; i++) {
+                SIM_MAP_AT(stub, 60 + i, 60 + i) =
+                    SIM_TILE(SIM_TILE_SLOPE, SIM_SLOPE_NE);
+                SIM_MAP_AT(stub, 61 + i, 60 + i) =
+                    SIM_TILE(SIM_TILE_SLOPE, SIM_SLOPE_SW);
+            }
+            sim_map_index(stub);
+            sim_settings ec = cfg;
+            ec.map = stub;
+
+            int stuck = 0;
+            for (int spd = 4; spd <= 20 && !stuck; spd += 2) {
+                for (int off = -10; off <= 10 && !stuck; off++) {
+                    static sim_state t;
+                    /* Square across the run, aimed to shave its upper end. */
+                    sim_init(&t, 26);
+                    sim_spawn(&t, APEX, 0, 61 * 16 - 43 + off,
+                              60 * 16 + 100, 0, &ec);
+                    t.ships[0].vx = spd * 65536;
+                    t.ships[0].vy = -spd * 65536;
+                    step_n(&t, &ec, 0, 0, 300);
+                    int32_t px = t.ships[0].x / 256, py = t.ships[0].y / 256;
+                    if (px > py && px < py + 16 && py >= 60 * 16 - 8
+                        && py <= 73 * 16 + 8)
+                        stuck = 1;
+                    /* And down the run's own axis into the mouth. */
+                    sim_init(&t, 27);
+                    sim_spawn(&t, APEX, 0, 55 * 16 + 8 + off, 55 * 16,
+                              24576, &ec);
+                    t.ships[0].vx = spd * 65536;
+                    t.ships[0].vy = spd * 65536;
+                    step_n(&t, &ec, 0, 0, 300);
+                    px = t.ships[0].x / 256;
+                    py = t.ships[0].y / 256;
+                    if (px > py && px < py + 16 && py >= 60 * 16 - 8
+                        && py <= 73 * 16 + 8)
+                        stuck = 1;
+                }
+            }
+            CHECK(!stuck, "no approach to a run's end leaves a hull inside it");
+            free(stub);
+        }
+
         /* And the reason it is that shape rather than a stepped line with the
          * steps filed off.
          *
