@@ -1824,16 +1824,6 @@ local function deploying(sel)
     else
         out.sub = "nobody is running it"
     end
-    -- What pressing play makes of you: the hull you will arrive in, drawn as
-    -- itself, with the call sign it will fly under. The landing is the one
-    -- page that knows both halves of the sentence "you, into this room", and
-    -- it was only saying the room's half.
-    out.arrive = {
-        spectate = M.spectating(),
-        hull = M.class,
-        name = M.spectating() and "Spectate" or HULLS[M.class + 1][1],
-        call = M.name,
-    }
     return out
 end
 
@@ -4350,16 +4340,6 @@ end
 function M.click_pilot()
     if not M.home then return nil, false end
     M.stack = {"root", "pilot"}
-    M.note = nil
-    return nil, true
-end
-
--- The ship named on the landing is another direct destination. Going through
--- the root selection would make the tap depend on whichever tab the arrows
--- last touched, even though the name already says where it leads.
-function M.click_ship()
-    if not M.home then return nil, false end
-    M.stack = {"root", "hangar"}
     M.note = nil
     return nil, true
 end

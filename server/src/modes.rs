@@ -371,10 +371,18 @@ pub trait Mode: Send {
     fn restore_ladder(&mut self, _checkpoint: u32, _best: u32) -> bool {
         false
     }
-    /// A room went from bots only to holding a person. Match modes reset their
-    /// opening edge so that person's clock starts at the full length instead
-    /// of wherever the bot-only attract fight happened to be.
-    fn first_human(&mut self) {}
+    /// A room went from bots only to holding a person. A mode whose contest is
+    /// that person's own starts it over for them and answers true, which is
+    /// the room's cue to drop the result its podium is holding: the match that
+    /// produced it is not the one anybody is about to play.
+    ///
+    /// Melee answers false, and that is the rule rather than an omission. A
+    /// player deploys from a menu that is playing the fight they are about to
+    /// be in, and starting another one at the door throws away the one they
+    /// chose. docs/design/match-game.md: "you join a room, not a match".
+    fn first_human(&mut self) -> bool {
+        false
+    }
 }
 
 /// The default arena: everybody against everybody, forever.
@@ -535,16 +543,6 @@ impl Mode for Melee {
             seconds_left: self.left.div_ceil(TICKS_PER_SECOND).min(255) as u8,
             score: self.score.clone(),
         })
-    }
-
-    fn first_human(&mut self) {
-        if !self.playing {
-            return;
-        }
-        self.opened = false;
-        self.left = self.match_ticks;
-        self.playing = true;
-        self.score = vec![0; self.teams as usize];
     }
 }
 
@@ -938,8 +936,9 @@ impl Mode for Ladder {
         })
     }
 
-    fn first_human(&mut self) {
+    fn first_human(&mut self) -> bool {
         self.open_run(LadderProgression::new(self.rules));
+        true
     }
 
     fn restore_ladder(&mut self, checkpoint: u32, best: u32) -> bool {
@@ -1129,23 +1128,32 @@ mod melee_tests {
         assert_eq!(s.seconds_left, 3);
     }
 
+    /// The first person into a room of bots joins the match on the clock.
+    ///
+    /// This used to open a fresh one for them, on the argument that a whole
+    /// match beats the tail of a bot match. What it did instead was throw away
+    /// the fight they had just chosen: the menu plays that room behind its
+    /// panel and counts its clock down beside the deploy key, so the press
+    /// means this match and no other. docs/design/match-game.md: "you join a
+    /// room, not a match".
     #[test]
-    fn the_first_human_gets_a_whole_match_after_the_bot_clock() {
+    fn a_person_arriving_mid_match_joins_the_one_being_played() {
         let names = sides();
-        let mut w = world_with(&[(0, 0), (1, 0)]);
+        let mut w = world_with(&[(0, 3), (1, 1)]);
         let mut m = Melee::new(2, 300, 100);
         for _ in 0..175 {
             let mut c = ctx(&mut w, &names);
             m.tick(&mut c);
         }
         assert_eq!(m.match_state().unwrap().seconds_left, 2);
+        assert_eq!(m.match_state().unwrap().score, vec![3, 1]);
 
-        m.first_human();
+        assert!(!m.first_human(), "melee has no fresh start to make");
         let mut c = ctx(&mut w, &names);
         m.tick(&mut c);
-        assert!(c.open_match);
-        assert_eq!(m.match_state().unwrap().seconds_left, 3);
-        assert_eq!(m.match_state().unwrap().score, vec![0, 0]);
+        assert!(!c.open_match, "nothing opens at the door");
+        assert_eq!(m.match_state().unwrap().seconds_left, 2, "the same clock");
+        assert_eq!(m.match_state().unwrap().score, vec![3, 1], "and score");
     }
 
     /// Three minutes, a podium, and another three minutes, with the room asked
@@ -1682,7 +1690,7 @@ mod ladder_tests {
         ladder.on_death(&mut ctx(&mut world, &seats), 9, 3);
         assert_eq!(ladder.ladder_state().unwrap().rung, 1);
 
-        ladder.first_human();
+        assert!(ladder.first_human(), "a run is the arriving pilot's own");
         ladder.tick(&mut ctx(&mut world, &seats));
         let state = ladder.ladder_state().unwrap();
         assert_eq!(state.rung, 0);
@@ -1756,7 +1764,7 @@ mod ladder_tests {
         let pair = [3, RIVAL];
         let mut world = World::new(7);
         let mut ladder = Ladder::new(LadderRules::default(), 500, 20);
-        ladder.first_human();
+        assert!(ladder.first_human());
 
         for _ in 0..300 {
             let mut waiting = ctx(&mut world, &rival_gone);

@@ -4023,6 +4023,50 @@ mod tests {
         assert_eq!((sh.x, sh.y), (sh.spawn_x, sh.spawn_y), "on a start");
     }
 
+    /// Deploying from the menu joins the fight the menu was showing.
+    ///
+    /// The landing dials the room a deploy would land in and plays it behind
+    /// the panel, with that room's own clock and score beside it, so the press
+    /// means that match and no other. Written on the room rather than on the
+    /// mode because the room is where the two halves meet, and flown the way a
+    /// person actually arrives: watching, and then taking a hull.
+    #[test]
+    fn deploying_from_the_stands_joins_the_match_on_the_clock() {
+        let mut a = match_room(180, 15);
+        let bots = seat_bots(&mut a, 4);
+        // The opening tick is the one that starts the match, and it restarts
+        // the world; a tally written before it would be wiped by it.
+        a.tick();
+        a.world.state.ships[bots[0] as usize].kills = 2;
+
+        // Half a minute of bot fight, which is what the menu is previewing.
+        for _ in 0..2999 {
+            a.tick();
+        }
+        let opened = a.match_no;
+        let before = a.mode.match_state().expect("a match room has a clock");
+        assert!(before.playing);
+        assert_eq!(before.seconds_left, 150, "two and a half minutes left");
+        assert!(before.score.iter().any(|n| *n > 0), "and a score standing");
+
+        // Watching it, then pressing deploy: one connection, no re-dial.
+        let (tx, rx) = mpsc::channel(OUT_QUEUE);
+        std::mem::forget(rx);
+        let watcher = a
+            .watch_join(Seat::guest("pilot", false), false, tx)
+            .expect("a place in the stands");
+        a.fly(watcher, 0, 8).expect("a seat on the field");
+        a.tick();
+
+        let after = a.mode.match_state().expect("still a match room");
+        assert_eq!(a.match_no, opened, "no second match opened at the door");
+        assert_eq!(
+            after.seconds_left, before.seconds_left,
+            "the clock the menu showed is the clock they arrived on"
+        );
+        assert_eq!(after.score, before.score, "and the score stands");
+    }
+
     /// The caption follows the ground: the name a client is handed beside the
     /// map is the rotation's name for whichever map the room is standing on,
     /// and a room whose maps arrived without names hands out nothing rather

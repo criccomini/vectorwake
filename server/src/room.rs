@@ -1920,19 +1920,19 @@ impl Room {
                 presence,
             },
         );
-        // Bot-filled match rooms may have been running for minutes before a
-        // person arrives. On the transition from none to one, put the mode's
-        // opening edge back so the next tick starts a full match for them.
-        // That gives them a whole match rather than the remainder of a bot
-        // match.
-        if !bot && self.humans() == 1 {
-            // A retained first room may still hold the previous match's share
-            // artifact. Join sync sends the match state before the new rival
-            // arrives, and a nonplaying match with an artifact is a podium to
-            // the client. Clear it on the new-run edge so a newcomer sees the
-            // waiting state rather than somebody else's result and replay.
+        // A room that was bots only until now. A mode whose contest is the
+        // arriving person's own starts it over for them and says so; Melee
+        // keeps playing what it was playing, which is the fight they pressed
+        // deploy on.
+        //
+        // A mode that did start over leaves a result behind. A retained first
+        // room may still hold the previous match's share artifact, join sync
+        // sends the match state before the new rival arrives, and a nonplaying
+        // match with an artifact is a podium to the client: clear it on the
+        // new-run edge so a newcomer sees the waiting state rather than
+        // somebody else's result and replay.
+        if !bot && self.humans() == 1 && self.mode.first_human() {
             self.artifact_id = None;
-            self.mode.first_human();
         }
         if member.is_some() {
             self.watchers.remove(&id);

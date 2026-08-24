@@ -422,13 +422,6 @@ check("the lit stop at the root still goes in",
 menu.stack = {"root"}
 menu.sel = {}
 
--- The ship name beside Deploy points at the same page as the Ship tab.
-menu.click_ship()
-check("the landing ship name opens the ship page", menu.at() == "hangar",
-      table.concat(menu.stack, "/"))
-menu.stack = {"root"}
-menu.sel = {}
-
 -- --- the call sign in the corner is the way to the pilot page -------------
 --
 -- There is no pilot stop on the tab row. The name at the far end of that row
