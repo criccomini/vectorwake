@@ -4720,8 +4720,19 @@ local function compact_deploy(a, x, y, w, h)
     local cy = room_bottom - nb * (band + gap) - list_h
                               - (listing and gap or 0)
 
+    -- A lit rule down the left of each block, which is what every panel in
+    -- the arena hangs off and what the roster in a game already wears. One
+    -- per block rather than one down the page: a rule the height of a
+    -- monitor marks nothing, and these mark where a reading begins.
+    local function rail(ry0, height)
+        if height > 0 then
+            vrule(x - 14 * F.scale, ry0, height, pal.a(pal.RADAR_TILE, 0.7))
+        end
+    end
+
     -- The clock, which between matches is the boarding window.
     if a.clock then
+        rail(cy, band)
         -- Two labels, not three. A ladder pilot waiting on a rival was told
         -- FINDING RIVAL over a clock reading --:--, which is the same news
         -- twice: the dashes already say nothing is counting. What both cases
@@ -4753,6 +4764,7 @@ local function compact_deploy(a, x, y, w, h)
     -- not who, and who is the question somebody deciding whether to press
     -- this is actually asking.
     if listing then
+        rail(cy, list_h)
         lbl("players", x, cy + 8 * F.scale)
         local mark_px = 11 * F.scale
         local num = 11.5 * F.scale
@@ -4838,14 +4850,16 @@ local function compact_deploy(a, x, y, w, h)
     -- between them are a subtraction; a bar is who is ahead, read at the
     -- speed of a glance from across a room.
     if a.score then
+        -- No label over it. Two figures in the two side colors with a bar
+        -- under them dividing at the same place is not a reading anybody has
+        -- to be told the name of.
         local score_y = cy
-        lbl("score", x, score_y + 8 * F.scale)
         local bar_h = math.max(4 * F.scale,
                                math.min(7 * F.scale, band * 0.13))
         local px = math.max(9 * F.scale,
                             math.min(28 * F.scale,
-                                     band - 18 * F.scale - bar_h))
-        local fy = math.min(score_y + 31 * F.scale,
+                                     band - 12 * F.scale - bar_h))
+        local fy = math.min(score_y + 24 * F.scale,
                             score_y + band - bar_h - 4 * F.scale - px * 0.5)
         local ls, rs = a.score[1] or 0, a.score[2] or 0
         txt(tostring(ls), x, fy, px, pal.a(pal.FRIEND, 0.95), nil, nil, true)
@@ -8186,28 +8200,38 @@ function M.menu(v)
         -- row empty on every page.
         rh = 56 * F.scale
         icon_dy = 21 * F.scale
-        local block = F.h - 2 * margin
-        local top = margin
+        -- The row sits on the top edge of the window rather than a margin
+        -- down from it, and its ground and its rule run the whole width. A
+        -- bar is a bar: inset on three sides it was a floating strip with
+        -- arena showing above it and a rule that stopped short of both ends.
+        -- Only its type keeps the block's margin, which is what lines the
+        -- wordmark up with the page under it.
+        local top = F.safe_t
         ry_ = top
         sx, sw = x0, total
         sy = top + rh + 10 * F.scale
-        sh = block - rh - 10 * F.scale
+        sh = F.h - margin - sy
         tab_h = rh
         logo_y = top + rh / 2
+        -- Its own ground, under the rule and over the fight: enough that a
+        -- row of words reads across a starfield or a kill feed, and not so
+        -- much that the game stops showing through it.
+        rect(0, 0, F.w, sy - 6 * F.scale, pal.rgb(0x03050a, 0.55))
         wordmark(x0, logo_y, (tall and 26 or 22) * F.scale)
         -- What you are reading, laid over what you are not. A wash rather
         -- than a panel: no border, no corners, just enough that the type sits
         -- on something and the arena stays visible round the edges of it.
         if not deck then
-            rect(x0 - 18 * F.scale, top - 12 * F.scale, total + 36 * F.scale,
-                 block + 24 * F.scale, pal.rgb(0x03050a, 0.5))
+            rect(x0 - 18 * F.scale, sy - 6 * F.scale, total + 36 * F.scale,
+                 sh + 18 * F.scale, pal.rgb(0x03050a, 0.5))
         end
-        px0, py0 = x0 - 18 * F.scale, top - 12 * F.scale
-        px1, py1 = px0 + total + 36 * F.scale, py0 + block + 24 * F.scale
+        px0, py0 = 0, 0
+        px1, py1 = F.w, sy + sh + 12 * F.scale
         -- The rule the whole thing hangs off, under the tabs rather than
         -- between a rail and a stage. The map border's own tick, which is
-        -- what every rule in this interface is made of.
-        hrule(x0, sy - 6 * F.scale, total)
+        -- what every rule in this interface is made of. Edge to edge, since
+        -- it is the underside of a bar rather than the top of a panel.
+        hrule(F.safe_l, sy - 6 * F.scale, F.w - F.safe_l - F.safe_r)
         -- The far end of the row. Who you are and what you have to spend, in
         -- the slot a match fills with the score: whatever you are inside, the
         -- right-hand end of this row says how you are doing in it.
@@ -8760,7 +8784,17 @@ function M.menu(v)
         -- name starts where the wordmark starts and the key ends where the
         -- account button ends. Every other page keeps the gutter, because
         -- every other page is a list whose rows are lit across it.
-        pages.aside(deck, sx, top, sw + 24 * F.scale, room)
+        -- Down to the bottom of the window rather than to the stage's own
+        -- foot. The stage keeps a margin under it for the line that says
+        -- what just went wrong, and on this page that margin plus the
+        -- block's own left ninety points of nothing under the one key the
+        -- screen is for. A phone keeps the stage's room: the tab rail is
+        -- down there and the key may not reach it.
+        local deck_room = room
+        if not narrow then
+            deck_room = math.max(room, F.h - F.safe_b - 22 * F.scale - top)
+        end
+        pages.aside(deck, sx, top, sw + 24 * F.scale, deck_room)
     elseif v.rows and #v.rows > 0 and v.rows[1].hull then
         ship_grid(tx, top, avail, room, v, focused)
     else

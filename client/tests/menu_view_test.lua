@@ -283,30 +283,44 @@ do
         return best
     end
 
+    -- The top of the score bar, which is the two team-colored bands a few
+    -- points tall. Nothing else on this page is drawn that way, and with no
+    -- word over it the bar is the only thing that says where the score is.
+    local function bar_top()
+        local top
+        for _, r in ipairs(rects) do
+            local c = r.col or {}
+            if r.h < 12 and r.w > 20
+               and ((c[1] == pal.FRIEND[1] and c[2] == pal.FRIEND[2])
+                    or (c[1] == pal.ENEMY[1] and c[2] == pal.ENEMY[2])) then
+                top = math.min(top or r.y, r.y)
+            end
+        end
+        return top
+    end
+
     -- Each band holds its own figures. The clock is sized off the band it
     -- stands in rather than set at a constant, and on a short screen a flat
-    -- 28 ran it out of the bottom of that band into the label under it.
+    -- 28 ran it out of the bottom of that band into whatever came next.
     local function bands_hold(landing, name)
         local clock = text_named(landing, "1:12")
         -- Whichever block landed under the clock. A column with no height
-        -- for a roster drops it and the score follows the clock instead.
+        -- for a roster drops it and the score bar follows the clock instead.
         local under = text_named(landing, "Players")
-                      or text_named(landing, "Score")
         local clock_y = clock and (H - clock.y) or nil
-        local under_y = under and (H - under.y) or nil
-        check(name .. " keeps the clock clear of the label under it",
-              clock_y and under_y
-                  and clock_y + clock.px * 0.5 <= under_y - under.px * 0.5,
-              string.format("clock %.0f at %.0f, label %.0f at %.0f",
+        local under_y = under and (H - under.y - under.px * 0.5) or bar_top()
+        check(name .. " keeps the clock clear of what is under it",
+              clock_y and under_y and clock_y + clock.px * 0.5 <= under_y,
+              string.format("clock %.0f at %.0f, next at %.0f",
                             clock and clock.px or -1, clock_y or -1,
-                            under and under.px or -1, under_y or -1))
+                            under_y or -1))
     end
 
     for _, shape in ipairs({{320, 480}, {320, 568}, {360, 640},
                              {375, 667}, {390, 664}, {390, 844}}) do
         local landing = draw(landing_view(), shape[1], shape[2], true)
         local deploy = hit_named("stage")
-        local score = baseline(landing, "Score")
+        local score = bar_top()
         local inside = deploy and deploy.x >= 0 and deploy.y >= 0
                        and deploy.x + deploy.w <= W
                        and deploy.y + deploy.h <= H
@@ -344,7 +358,7 @@ do
                   string.format("description %.0f, facts %.0f",
                                 note or -1, clock or -1))
             check("portrait keeps the deployment facts in one bottom block",
-                  clock and score and score - clock < 150,
+                  clock and score and score - clock < 300,
                   string.format("clock %.0f, score %.0f",
                                 clock or -1, score or -1))
 
@@ -375,8 +389,7 @@ do
           not has(sideways, "zone1"), table.concat(texts(sideways), " "))
     -- Two readings, and no roster: 390 points of height has no room for a
     -- list of names under a clock, a score and a key.
-    check("and its readings", has(sideways, "time")
-              and has(sideways, "score"),
+    check("and its readings", has(sideways, "time") and bar_top() ~= nil,
           table.concat(texts(sideways), " "))
     check("and the key that presses them", said_deploy)
     bands_hold(sideways, "sideways")

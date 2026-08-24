@@ -190,8 +190,10 @@ local function readings_checks(name, texts)
           not has(texts, "You arrive as"),
           "the arrival row was taken out")
     -- The score is a bar now, with a figure at each end of it in that
-    -- side's color rather than two numbers and a colon.
-    check(name .. " heads the score", has(texts, "Score"))
+    -- side's color rather than two numbers and a colon, and no word over it:
+    -- two figures in the side colors dividing a bar at the same place is not
+    -- a reading anybody has to be told the name of.
+    check(name .. " puts no label over the score", not has(texts, "Score"))
     local blue, orange = false, false
     for _, t in ipairs(texts) do
         if t.s == "1" then
