@@ -1436,6 +1436,54 @@ mod tests {
         );
     }
 
+    /// A catalog this build cannot read is refused at the door, not held.
+    ///
+    /// The day the spectating change removed `channel_delay_ticks` without
+    /// bumping the catalog version, arenas restarting into the deploy caught
+    /// the outgoing directory's offer first, held zone text their own parser
+    /// refused, and then defended it against the converged directory's
+    /// re-offer under the same number. Both instances sat announced with no
+    /// rooms and no bots until restarted. Refusing the unreadable offer means
+    /// holding nothing, and holding nothing means the readable one that
+    /// follows is simply taken, same version or not.
+    #[test]
+    fn an_unreadable_catalog_cannot_pin_its_version() {
+        let (cfg, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
+        let mut z = ArenaServer::new(cfg, test_spool(), HashMap::new());
+
+        let mut stale = wire_zone(1, 2, 8);
+        stale.zone_toml = "description = \"a zone for tests\"\nchannel_delay_ticks = 500\n".into();
+        z.take_catalog(
+            fleet::WireCatalog {
+                version: 23,
+                name: "test".into(),
+                default_zone: "testzone".into(),
+                zones: vec![stale],
+                ..Default::default()
+            },
+            "wss://outgoing",
+        );
+        assert!(z.catalog.is_none(), "the unreadable offer was held");
+
+        z.take_catalog(
+            fleet::WireCatalog {
+                version: 23,
+                name: "test".into(),
+                default_zone: "testzone".into(),
+                zones: vec![wire_zone(1, 2, 8)],
+                ..Default::default()
+            },
+            "wss://converged",
+        );
+        let def = z
+            .catalog
+            .as_ref()
+            .expect("the readable offer under the same number is taken")
+            .zones[0]
+            .clone();
+        z.serve_zone(&def).expect("and it serves");
+    }
+
     // ---- rooms on demand ---------------------------------------------------
     //
     // The fill ladder's first two rungs live entirely inside one process, so
@@ -7902,6 +7950,28 @@ mod tests {
             assert!(
                 warn.is_empty(),
                 "zone {name:?} applies with warnings: {warn:?}"
+            );
+        }
+    }
+
+    /// The whole commit path over the shipped catalog, exactly as the decide
+    /// loop runs it: wire form, packed map bytes, zone text and all. The
+    /// apply test above reads the files; this one proves an arena handed them
+    /// over the wire can actually open a room, which is the half that broke
+    /// the day the fleet shipped zone text its own arenas refused to parse.
+    #[test]
+    fn every_shipped_zone_serves() {
+        crate::catalog::set_placeholder_identity();
+        let cat = crate::catalog::load("../catalog").expect("the shipped catalog loads");
+        let wire = crate::directory::Directory::new(cat).wire_catalog();
+        assert!(!wire.zones.is_empty(), "the wire catalog names zones");
+        for z in &wire.zones {
+            let room = ArenaServer::build_room(z, None)
+                .unwrap_or_else(|e| panic!("zone {:?} refuses to serve: {e}", z.name));
+            assert!(
+                !room.maps.is_empty(),
+                "zone {:?} opened without maps",
+                z.name
             );
         }
     }
