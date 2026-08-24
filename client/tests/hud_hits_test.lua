@@ -933,12 +933,12 @@ do
     check("and both sides' scores are on it", says("10") and says("7"))
     check("named, so a score is a side rather than a number",
           says("Pylon") and says("Caisson"))
-    check("with nothing about an intermission", not says("NEXT MATCH IN"))
+    check("with nothing about an intermission", not says("NEXT MATCH"))
 
     frame({match = {playing = false, left = 25, score = {[0] = 10, [1] = 7}},
            side_names = SIDES})
     check("the podium says what the clock is counting down to",
-          says("0:25") and says("NEXT MATCH IN"))
+          says("0:25") and says("NEXT MATCH"))
 
     -- The clock survives the menu, which is a scrim rather than a curtain:
     -- "how are you doing in the thing you are in" is exactly what a player

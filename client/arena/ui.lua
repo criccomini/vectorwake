@@ -3443,9 +3443,6 @@ local function podium(o, m, names)
     -- when somebody opens the scoreboard, and this page is on screen whether
     -- anybody did or not.
     refresh_players(o.pilots, o.watchers, nil, o.viewer_name)
-    local pad = 18 * F.scale
-    local w = math.min(F.w - 2 * pad, 620 * F.scale)
-    local x = (F.w - w) / 2
     local line = (M.compact and 15 or 17) * F.scale
 
     -- Which side took it. A draw is a real result at three minutes and says
@@ -3455,15 +3452,8 @@ local function podium(o, m, names)
         if n > best then best, best_at, drawn = n, team, false
         elseif n == best then drawn = true end
     end
-    local head
-    if drawn or best_at == nil then
-        head = "drawn"
-    else
-        head = ((names and names[best_at]) or "a side") .. " takes it"
-    end
-
-    -- The sides, each with its own pilots under it, best first, and yours on
-    -- the left however the zone numbered the teams. That is the same rule the
+    -- The sides, each with its own pilots under it, and yours on the left
+    -- however the zone numbered the teams. That is the same rule the
     -- clock's own score follows: the reading is positional, so it never has to
     -- be worked out from a color.
     local sides, seen = {}, {}
@@ -3506,51 +3496,43 @@ local function podium(o, m, names)
     local tall = 0
     for _, list in pairs(seen) do tall = math.max(tall, #list) end
 
-    -- --- what there is to say
-    --
-    -- The closed list, packed into as many lines as the card is wide enough
-    -- for, before the card knows how tall it is. Six phrases are one row on a
-    -- monitor and two on a phone, and rather than write both numbers down the
-    -- row wraps against the width it was given and the card grows by what
-    -- came out.
-    local SAY_H = (M.compact and 22 or 25) * F.scale
-    local SAY_GAP = 7 * F.scale
-    local say_rows, say_wide = {}, {}
-    do
-        local room = w - 24 * F.scale
-        local run, wide = {}, 0
-        for i, phrase in ipairs(o.sayings or {}) do
-            local cw = text_w(phrase, 10 * F.scale) + 22 * F.scale
-            local step = (#run > 0 and SAY_GAP or 0) + cw
-            if #run > 0 and wide + step > room then
-                say_rows[#say_rows + 1] = run
-                say_wide[#say_wide + 1] = wide
-                run, wide, step = {}, 0, cw
-            end
-            run[#run + 1] = {phrase = phrase, n = i - 1, w = cw}
-            wide = wide + step
-        end
-        if #run > 0 then
-            say_rows[#say_rows + 1] = run
-            say_wide[#say_wide + 1] = wide
-        end
-    end
-    local SAY = 0
-    if #say_rows > 0 then
-        SAY = #say_rows * SAY_H + (#say_rows - 1) * SAY_GAP + 14 * F.scale
-    end
+    -- One six-column measure owns the rosters and every control. On a narrow
+    -- phone a phrase spans two columns and the list becomes two rows, without
+    -- changing any edge the rest of the card uses.
+    local gap = KEY_GAP * F.scale
+    local available = math.min(F.w - 36 * F.scale, 620 * F.scale)
+    local cell = math.floor((available / F.scale - 5 * KEY_GAP) / 6) * F.scale
+    local w = 6 * cell + 5 * gap
+    local x = (F.w - w) / 2
+    local half = 3 * cell + 2 * gap
 
-    -- The scoreline block between the heading and the rosters: two numbers set
-    -- large with the split of the match drawn between them. It is the one
-    -- thing anybody wants off this card in the first half second, and it used
-    -- to be a twelve point number in a column head beside a word.
-    local SCORE = (M.compact and 58 or 74) * F.scale
-    local ACTION = o.match_url and 38 * F.scale or 0
-    local h = 34 * F.scale + SCORE + 20 * F.scale + tall * line + SAY
-        + 40 * F.scale + ACTION
-    local y = math.max(72 * F.scale, (F.h - h) / 2)
-    -- Where the card starts, kept because `y` walks down it from here and the
-    -- foot is measured off the top rather than off wherever the walk stopped.
+    local say_span = w < 520 * F.scale and 2 or 1
+    local say_cols = 6 / say_span
+    local say_rows = {}
+    do
+        local run = {}
+        for i, phrase in ipairs(o.sayings or {}) do
+            run[#run + 1] = {phrase = phrase, n = i - 1}
+            if #run == say_cols then
+                say_rows[#say_rows + 1] = run
+                run = {}
+            end
+        end
+        if #run > 0 then say_rows[#say_rows + 1] = run end
+    end
+    local SAY_H = KEY_H * F.scale
+    local SAY_HEAD = #say_rows > 0 and 20 * F.scale or 0
+    local SAY = #say_rows > 0
+        and SAY_HEAD + #say_rows * SAY_H + (#say_rows - 1) * gap
+        or 0
+
+    local TITLE = (M.compact and 30 or 38) * F.scale
+    local SCORE = (M.compact and 64 or 78) * F.scale
+    local ROSTER_HEAD = 26 * F.scale
+    local FOOT = (M.compact and 28 or 30) * F.scale
+    local ACTION = o.match_url and (KEY_H + 10) * F.scale or 0
+    local h = TITLE + SCORE + ROSTER_HEAD + tall * line + SAY + ACTION + FOOT
+    local y = math.max(F.safe_t + 18 * F.scale, (F.h - h) / 2)
     local top = y
 
     -- How long the card has been up, so the bar can arrive rather than appear.
@@ -3558,81 +3540,70 @@ local function podium(o, m, names)
     -- is whole seconds and would step the animation four times.
     if M.podium_at == nil then M.podium_at = F.now end
     local age = math.max(0, (F.now or 0) - (M.podium_at or 0))
-    -- Eased out over a third of a second. One movement on this card, on the
-    -- one thing it is about.
+    -- Eased out over a third of a second. It is the only movement on the
+    -- ending, reserved for the two sides meeting at the result.
     local grow = math.min(1, age / 0.34)
     grow = 1 - (1 - grow) * (1 - grow)
 
-    -- A scrim over the whole screen and a heavier wash under the card. The
-    -- match is over and the arena behind it is not hidden, because the next
-    -- one starts in the room you are looking at, but a card you can read a
-    -- wall through is a card with a wall written across it: at three quarters
-    -- the lit edge of a rock came through the type.
-    rect(0, 0, F.w, F.h, pal.rgb(0x03050a, 0.55))
-    rect(x - pad, y - pad, w + 2 * pad, h + 2 * pad, pal.rgb(0x03050a, 0.9))
-    bracket(x - pad, y - pad, w + 2 * pad, h + 2 * pad,
-            pal.a(pal.RADAR_TILE, 0.55), 22 * F.scale)
-    -- The winner's name in the winner's color, and the verb after it in ink.
-    -- One flat line said the same thing and made the result a caption.
-    do
-        local hp = (M.compact and 17 or 21) * F.scale
-        local who = (not drawn and best_at ~= nil)
-            and ((names and names[best_at]) or "a side") or nil
-        if who then
-            local verb = "takes it"
-            -- The gap is written down rather than carried in the string,
-            -- because the two are a side's color and the interface's and a
-            -- space inside either draw would be the wrong one's. Same
-            -- arrangement as the role beside a hull's name on the ship page.
-            local gap = hp * 0.42
-            local nw = text_w(who, hp, MENU_FONT)
-            local ww = nw + gap + text_w(verb, hp, MENU_FONT)
-            local hx = F.w / 2 - ww / 2
-            local hcol = (best_at == view_team) and pal.FRIEND or pal.ENEMY
-            txt(who, hx, y + 6 * F.scale, hp, pal.a(hcol, 1), nil, MENU_FONT)
-            txt(verb, hx + nw + gap, y + 6 * F.scale, hp,
-                pal.a(pal.INK, 0.9), nil, MENU_FONT)
-        else
-            txt(head, F.w / 2, y + 6 * F.scale, hp, pal.a(pal.INK, 0.95),
-                "center", MENU_FONT)
-        end
-    end
+    -- The arena remains present under one scrim. A chamfered bracket owns the
+    -- result, and the darker ground stops at that bracket rather than forming
+    -- a second screen-wide surface.
+    rect(0, 0, F.w, F.h, pal.rgb(0x03050a, 0.78))
+    rect(x - PAD * F.scale, top - PAD * F.scale,
+         w + 2 * PAD * F.scale, h + 2 * PAD * F.scale,
+         pal.rgb(0x03050a, 0.92))
+    bracket(x - PAD * F.scale, top - PAD * F.scale,
+            w + 2 * PAD * F.scale, h + 2 * PAD * F.scale,
+            pal.a(pal.RADAR_TILE, 0.62), 22 * F.scale)
 
-    -- --- the scoreline
-    --
-    -- Two numbers set large either side of the split, which is the shape of
-    -- the match in one mark: a side that ran away with it has most of the bar
-    -- and you can see that before you have read either figure.
+    -- The result is said once. The side keeps its supplied case and color;
+    -- the verb is the interface speaking.
     do
-        local sy = y + 34 * F.scale + SCORE * 0.42
-        local big = (M.compact and 34 or 44) * F.scale
-        local bw = math.min(w * 0.42, 260 * F.scale)
-        local bh = 9 * F.scale
-        local bx = F.w / 2 - bw / 2
+        local mid = F.w / 2
+        local label_y = top + TITLE * 0.45
+        local label_px = (M.compact and 18 or 22) * F.scale
+        if drawn or best_at == nil then
+            txt("drawn", mid, label_y, label_px, pal.a(pal.INK, 0.95),
+                "center", MENU_FONT)
+        else
+            local nm = (names and names[best_at]) or "a side"
+            local col = best_at == view_team and pal.FRIEND or pal.ENEMY
+            local verb = "takes it"
+            local word_gap = label_px * 0.42
+            local nw = text_w(nm, label_px, MENU_FONT, true)
+            local total = nw + word_gap + text_w(verb, label_px, MENU_FONT)
+            local hx = mid - total / 2
+            txt(nm, hx, label_y, label_px, pal.a(col, 1), nil,
+                MENU_FONT, true)
+            txt(verb, hx + nw + word_gap, label_y, label_px,
+                pal.a(pal.INK, 0.9), nil, MENU_FONT)
+        end
+
         local left = sides[1]
         local right = sides[2]
         local ls = (left ~= nil and m.score and m.score[left]) or 0
         local rs = (right ~= nil and m.score and m.score[right]) or 0
         local lcol = (left == view_team) and pal.FRIEND or pal.ENEMY
         local rcol = (right == view_team) and pal.FRIEND or pal.ENEMY
-        -- Half and half where nobody scored, because a bar with nothing in it
-        -- is a bar that failed to draw rather than a nil-all match.
-        local part = (ls + rs) > 0 and (ls / (ls + rs)) or 0.5
-        rect(bx, sy - bh / 2, bw, bh, pal.a(pal.DIM, 0.16))
-        rect(bx, sy - bh / 2, bw * part * grow, bh, pal.a(lcol, 0.85))
-        rect(bx + bw - bw * (1 - part) * grow, sy - bh / 2,
-             bw * (1 - part) * grow, bh, pal.a(rcol, 0.85))
-        txt(tostring(ls), bx - 18 * F.scale, sy, big, pal.a(lcol, 1),
-            "right", MENU_FONT)
-        txt(tostring(rs), bx + bw + 18 * F.scale, sy, big, pal.a(rcol, 1),
-            nil, MENU_FONT)
-        -- No name under either figure. There was one, and it put the word
-        -- PYLON twenty points above a column head that says PYLON, which is
-        -- the same stutter the score had. What ties a number to a side is its
-        -- color and the column it is standing over, which is how every other
-        -- instrument in this game says the same thing.
+        -- The established score bar owns the middle two columns. Both figures
+        -- sit outside it, so no rule can pass behind either one.
+        local sy = top + TITLE + SCORE * 0.47
+        local big = (M.compact and 48 or 58) * F.scale
+        local bar_x = x + 2 * (cell + gap)
+        local bar_w = 2 * cell + gap
+        local bar_h = 8 * F.scale
+        local score_gap = 18 * F.scale
+        local part = (ls + rs) > 0 and ls / (ls + rs) or 0.5
+        rect(bar_x, sy - bar_h / 2, bar_w, bar_h, pal.a(pal.DIM, 0.16))
+        rect(bar_x, sy - bar_h / 2, bar_w * part * grow, bar_h,
+             pal.a(lcol, 0.88))
+        rect(bar_x + bar_w - bar_w * (1 - part) * grow,
+             sy - bar_h / 2, bar_w * (1 - part) * grow, bar_h,
+             pal.a(rcol, 0.88))
+        txt(tostring(ls), bar_x - score_gap, sy, big, pal.a(lcol, 1), "right")
+        txt(tostring(rs), bar_x + bar_w + score_gap, sy, big, pal.a(rcol, 1))
     end
-    y = y + SCORE
+    y = top + TITLE + SCORE
 
     -- The three figures on a row are three columns, not one string.
     --
@@ -3658,42 +3629,23 @@ local function podium(o, m, names)
     -- What the block takes, from the right edge of a side's column inwards.
     local numrun = 3 * numw + 2 * numgap
 
-    local cw = w / math.max(1, #sides)
+    local cw = half
     for i, team in ipairs(sides) do
-        local cx = x + (i - 1) * cw
-        -- A hairline between the columns, because one side's numbers and the
-        -- next side's names are otherwise twenty four points apart and read as
-        -- one line: "6 8 Halcyon".
-        if i > 1 then
-            F.layer:seg(cx, ry(y + 30 * F.scale), cx,
-                        ry(y + 54 * F.scale + tall * line),
-                        1.0 * F.scale, pal.a(pal.RADAR_TILE, 0.45), true)
-        end
+        local cx = x + (i - 1) * 3 * (cell + gap)
         local col = (team == view_team) and pal.FRIEND or pal.ENEMY
         local nm = (names and names[team]) or ""
-        txt(nm, cx + 18 * F.scale, y + 34 * F.scale, 12 * F.scale,
-            pal.a(col, 0.9))
-        -- The side's score used to sit at the other end of this line. It is
-        -- the figure set forty points high directly above, and a card that
-        -- prints the same number twice in two sizes is a card that has not
-        -- decided which one anybody is meant to read.
-        --
-        -- What the three numbers on every row below are, though, does belong
-        -- here: once per column, in the head, rather than three words a row.
-        -- One letter over each column, right-aligned on the same edge the
-        -- figures under it end at.
-        local acx = cx + cw - 18 * F.scale
+        txt(nm, cx + 8 * F.scale, y + 11 * F.scale, 12 * F.scale,
+            pal.a(col, 0.9), nil, MENU_FONT, true)
+        local acx = cx + cw - 8 * F.scale
         local dcx = acx - numw - numgap
         local kcx = dcx - numw - numgap
         for _, head_at in ipairs({{"k", kcx}, {"d", dcx}, {"a", acx}}) do
-            txt(head_at[1], head_at[2], y + 34 * F.scale, 10 * F.scale,
+            txt(head_at[1], head_at[2], y + 11 * F.scale, 10 * F.scale,
                 pal.a(pal.DIM, 0.75), "right")
         end
-        F.layer:seg(cx + 18 * F.scale, ry(y + 44 * F.scale),
-                    cx + cw - 18 * F.scale, ry(y + 44 * F.scale),
-                    1.0 * F.scale, pal.a(pal.RADAR_TILE, 0.6), true)
+        hrule(cx, y + 20 * F.scale, cw, 0.62)
         for k, r in ipairs(seen[team] or {}) do
-            local ry0 = y + 54 * F.scale + (k - 1) * line
+            local ry0 = y + ROSTER_HEAD + (k - 0.5) * line
             local a = r.self and 1 or 0.8
             -- What this pilot just said, if anything, which is the one thing
             -- that changes what a row is. It takes the place of the name
@@ -3706,14 +3658,14 @@ local function podium(o, m, names)
             -- a phrase on it takes a field of its own instead, on either side,
             -- because what it is saying is the thing to notice.
             if sd then
-                wash(cx + 10 * F.scale, ry0 - line / 2, cw - 20 * F.scale, line,
+                wash(cx, ry0 - line / 2, cw, line,
                      pal.a(pal.CHARGE_COL, 0.14))
             elseif r.self then
-                wash(cx + 10 * F.scale, ry0 - line / 2, cw - 20 * F.scale, line,
+                wash(cx, ry0 - line / 2, cw, line,
                      pal.a(pal.FRIEND, 0.12))
             end
             if sd then
-                txt(sd.phrase, cx + 18 * F.scale, ry0, 12.5 * F.scale,
+                txt(sd.phrase, cx + 8 * F.scale, ry0, 12.5 * F.scale,
                     pal.a(pal.CHARGE_COL, 0.95))
                 -- The name kept, small, after the words. Losing it outright
                 -- for four seconds leaves a card where the row somebody was
@@ -3723,13 +3675,13 @@ local function podium(o, m, names)
                 -- a column half of three hundred and ninety points, and "nice
                 -- shot" and a call sign ran through the kills and deaths at
                 -- the other end of it.
-                local nx = cx + 26 * F.scale + text_w(sd.phrase, 12.5 * F.scale)
+                local nx = cx + 16 * F.scale + text_w(sd.phrase, 12.5 * F.scale)
                 if nx + text_w(r.name, LBL_PX * F.scale)
-                   < cx + cw - 26 * F.scale - numrun then
+                   < cx + cw - 16 * F.scale - numrun then
                     lbl(r.name, nx, ry0, pal.a(pal.DIM, 0.75))
                 end
             else
-                txt(r.name, cx + 18 * F.scale, ry0, 12.5 * F.scale,
+                txt(r.name, cx + 8 * F.scale, ry0, 12.5 * F.scale,
                     pal.a(r.self and pal.FRIEND or pal.INK, a), nil, nil, true)
             end
             -- The best gun in the room, whichever side it was on. One mark
@@ -3745,14 +3697,20 @@ local function podium(o, m, names)
         end
     end
 
-    -- The chips, at the foot of the card. This list is the whole of what
-    -- anybody can say in this game: a press puts the words on your own row on
-    -- every screen in the room for a few seconds, and there is nothing to
-    -- type and nothing to aim at a person. See decision 28.
+    -- The chips share the same six columns as the rosters and the actions.
+    -- This list is the whole of what anybody can say in this game. A press
+    -- puts the words on your own row on every screen in the room for a few
+    -- seconds. There is nothing to type and nothing to aim at a person. See
+    -- decision 28.
+    local say_top = top + h - FOOT - ACTION - SAY
+    if #say_rows > 0 then
+        hrule(x, say_top, w, 0.55)
+        lbl("comms", x, say_top + 13 * F.scale, pal.a(pal.DIM, 0.9))
+    end
     for i, run in ipairs(say_rows) do
-        local sy = top + h - 40 * F.scale - ACTION - SAY + 7 * F.scale
-            + (i - 1) * (SAY_H + SAY_GAP)
-        local sx = F.w / 2 - say_wide[i] / 2
+        local sy = say_top + SAY_HEAD + (i - 1) * (SAY_H + gap)
+        local sx = x
+        local bw = say_span * cell + (say_span - 1) * gap
         for _, c in ipairs(run) do
             -- Lit while your own line is the one standing, so the press has
             -- an answer on the button as well as up in the roster.
@@ -3760,71 +3718,76 @@ local function podium(o, m, names)
             local mine = said and said.phrase == c.phrase
             local hot = M.hover_say == c.n
             if mine then
-                rect(sx, sy, c.w, SAY_H, pal.a(pal.CHARGE_COL, 0.18))
+                rect(sx, sy, bw, SAY_H, pal.a(pal.CHARGE_COL, 0.18))
             elseif hot then
-                rect(sx, sy, c.w, SAY_H, pal.a(pal.FRIEND, 0.1))
+                rect(sx, sy, bw, SAY_H, pal.a(pal.FRIEND, 0.1))
             end
-            -- A whole pixel, for the reason the kit's chips are: 0.9 of one
-            -- rasterizes by luck, and these six share a row, so the same
-            -- edge went missing on all of them at once.
-            F.layer:frame(sx, ry(sy, SAY_H), c.w, SAY_H, 1.0 * F.scale,
-                          pal.a(mine and pal.CHARGE_COL
-                                or (hot and pal.FRIEND or pal.RADAR_TILE),
-                                mine and 0.7 or (hot and 0.9 or 0.55)))
-            lbl(c.phrase, sx + c.w / 2, sy + SAY_H * 0.62,
+            local edge = mine and pal.CHARGE_COL
+                or (hot and pal.FRIEND or pal.RADAR_TILE)
+            key_box(sx, sy, bw, SAY_H, nil,
+                    pal.a(edge, mine and 0.7 or (hot and 0.9 or 0.55)))
+            lbl(c.phrase, sx + bw / 2, sy + SAY_H / 2,
                 pal.a(mine and pal.CHARGE_COL or pal.INK, mine and 1 or 0.85),
                 "center", 10 * F.scale)
-            hit(sx, sy, c.w, SAY_H, "say", c.n)
-            sx = sx + c.w + SAY_GAP
+            hit(sx, sy, bw, SAY_H, "say", c.n)
+            sx = sx + say_span * (cell + gap)
         end
     end
 
     if o.match_url then
-        local ay = top + h - 40 * F.scale - ACTION + 3 * F.scale
-        local gap = 7 * F.scale
+        local ah = KEY_H * F.scale
+        local ay = top + h - FOOT - ACTION + (ACTION - ah) / 2
         local actions = {{"SHARE MATCH", "share", "vwshare:" .. o.match_url},
                          {"WATCH REPLAY", "open_replay"}}
         if o.keep_pilot then
             actions[#actions + 1] = {"KEEP " .. o.viewer_name, "keep_pilot"}
         end
-        local bw = (w - gap * (#actions - 1)) / #actions
+        local span = 6 / #actions
+        local bw = span * cell + (span - 1) * gap
         for i, action in ipairs(actions) do
-            local bx = x + (i - 1) * (bw + gap)
+            local bx = x + (i - 1) * span * (cell + gap)
             local col = i == 1 and pal.FRIEND or pal.RADAR_TILE
-            key_box(bx, ay, bw, 30 * F.scale, pal.a(col, 0.08),
-                    pal.a(col, 0.75))
+            key_box(bx, ay, bw, ah, pal.a(col, i == 1 and 0.16 or 0.06),
+                    pal.a(col, i == 1 and 0.95 or 0.65))
             local label = (i == 1 and M.share_result == "copied")
                 and "LINK COPIED" or action[1]
-            lbl(label, bx + bw / 2, ay + 19 * F.scale,
-                pal.a(pal.INK, 0.9), "center", 9 * F.scale)
-            hit(bx, ay, bw, 30 * F.scale, action[2])
+            lbl(label, bx + bw / 2, ay + ah / 2,
+                pal.a(i == 1 and pal.FRIEND or pal.INK, 0.92),
+                "center", 10 * F.scale)
+            hit(bx, ay, bw, ah, action[2])
             if action[3] then
                 M.link_dom = string.format("%.1f,%.1f,%.1f,%.1f,%s",
                     bx / F.density, ay / F.density, bw / F.density,
-                    (30 * F.scale) / F.density, action[3])
+                    ah / F.density, action[3])
             end
         end
     end
 
-    -- What the match paid you, and when the next one starts. The payout is
-    -- your own bounty taken, which is the number the wallet moves by.
-    local foot = top + h - 6 * F.scale
+    -- What the match paid you, and when the next one starts. A payout is a
+    -- price, so it wears the rivet instead of spelling the unit out.
+    local foot = top + h - FOOT / 2
     local mine
     for _, r in ipairs(rows) do if r.self then mine = r end end
     if mine then
         local paid = mine.p or 0
-        txt("banked " .. paid .. (paid == 1 and " rivet" or " rivets"),
-            x + 12 * F.scale, foot, 12 * F.scale, pal.a(pal.INK, 0.9))
+        lbl("banked", x, foot, pal.a(pal.DIM, 0.95))
+        pages.priced(paid, x + 52 * F.scale, foot, 12 * F.scale,
+                     pal.a(pal.PAID, 0.95))
     end
     local left = m.left or 0
-    txt(string.format("next match in %d:%02d", math.floor(left / 60), left % 60),
-        x + w - 12 * F.scale, foot, 12 * F.scale, pal.a(pal.DIM, 0.95), "right")
+    local clock = string.format("%d:%02d", math.floor(left / 60), left % 60)
+    local clock_px = 13 * F.scale
+    local clock_x = x + w
+    txt(clock, clock_x, foot, clock_px, pal.a(pal.INK, 0.92), "right")
+    lbl("next match", clock_x - text_w(clock, clock_px) - 12 * F.scale,
+        foot, pal.a(pal.DIM, 0.95), "right")
 end
 
 function M.hud(o)
     F.case = "upper"
     if sim.ship_count() == 0 then return end
     local me = o.me
+    local ending = o.match ~= nil and not o.match.playing
     -- Before anything draws: every instrument that separates a friend from an
     -- enemy reads this, and while watching it is not the subject's side.
     view_team = o.side or team_of(o.me)
@@ -3841,7 +3804,7 @@ function M.hud(o)
     --
     -- A third rather than out: nothing is paused, you can be shot while you
     -- are answering, and a glance at your energy is still worth taking.
-    F.text_dim = (o.menu_open or M.room_ask) and 0.34 or 1
+    F.text_dim = (ending or o.menu_open or M.room_ask) and 0.34 or 1
 
     -- On a touchscreen the bottom of the screen belongs to the thumbs. The
     -- stick sits in the bottom left corner and the pads in the bottom right,
@@ -3864,7 +3827,6 @@ function M.hud(o)
     -- are reading, and those are what say so.
     -- The ending is text over a card and lands in the same trap, so it takes
     -- the plates down with it for the twenty five seconds it is up.
-    local ending = o.match ~= nil and not o.match.playing
     if not o.menu_open and not ending then nameplates(o) end
     -- One corner, one instrument. The map is the radar pulled back to the
     -- whole thousand tiles, so it stands where the radar stands rather than
@@ -3937,6 +3899,7 @@ function M.hud(o)
     -- The ending, while the room counts down to the next one. Same place, same
     -- reason: it is the thing being read.
     if o.match and not o.match.playing then
+        F.text_dim = 1
         podium(o, o.match, o.side_names)
         return
     end

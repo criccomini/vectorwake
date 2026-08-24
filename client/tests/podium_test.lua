@@ -46,6 +46,14 @@ layer.rect = function(self, x, y, w, h)
     rects[#rects + 1] = {x = x, y = y, w = w, h = h}
 end
 
+-- Lines are kept for the score check. A line behind a large figure is not a
+-- styling detail. It changes the figure into something crossed out.
+local segs = {}
+layer.seg = function(self, x1, y1, x2, y2, t)
+    self.n = self.n + 1
+    segs[#segs + 1] = {x1 = x1, y1 = y1, x2 = x2, y2 = y2, t = t or 0}
+end
+
 -- The room. Ship 0 is us; the rest are strangers, all on one other team so
 -- that the free-for-all test can hand out a team per seat instead.
 local room = {count = 4, teams = {[0] = 0, 1, 0, 1}, active = {}, alive = {},
@@ -121,6 +129,7 @@ local W, H = 1280, 800
 local function frame(o)
     o = o or {}
     rects = {}
+    segs = {}
     package.loaded["arena.state"].n = 0
     ui.begin(layer, o.w or W, o.h or H, 1, false)
     ui.hud({
@@ -216,6 +225,7 @@ local function counted(what)
 end
 
 local NAMES = {[0] = "Pylon", [1] = "Caisson"}
+local SAYS = {"gg", "nice shot", "close one", "good luck", "thanks", "sorry"}
 
 -- --- while a match is running ----------------------------------------------
 
@@ -244,10 +254,10 @@ check("the verb follows it on the same line",
 check("and the name is in the winner's color rather than the verb's",
       who_t ~= nil and who_t.col ~= verb_t.col)
 check("and the room says when the next one starts",
-      said("next match in 0:23") ~= nil)
--- Once, at the card's foot. The topbar's own caption stands down for it.
-check("and says it once", counted("next match in") == 0,
-      tostring(counted("next match in")))
+      said("next match") ~= nil and said("0:23") ~= nil)
+-- Once, at the ending's foot. The topbar's own caption stands down for it.
+check("and says it once", counted("next match") == 1,
+      tostring(counted("next match")))
 
 -- Everybody who flew it is on it, whichever side they were on.
 for _, who in ipairs({"you", "Kestrel", "Plinth", "Vesper"}) do
@@ -259,8 +269,16 @@ end
 check("one pilot is marked mvp", counted("mvp") == 1, tostring(counted("mvp")))
 
 -- What the match paid you is your own bounty taken, which is what the wallet
--- moves by. Seat zero collected seven.
-check("the payout is your own bounty taken", said("banked 7 rivets") ~= nil,
+-- moves by. The unit is the drawn rivet every other price wears, so the text
+-- is the label followed by the figure rather than a sentence.
+local banked = nil
+for i = 1, state.n - 1 do
+    if state.text[i].s == "BANKED" and state.text[i + 1].s == "7" then
+        banked = {state.text[i], state.text[i + 1]}
+    end
+end
+check("the payout is your own bounty taken",
+      banked ~= nil and banked[2].x > banked[1].x,
       table.concat(words(), " | "))
 
 -- Nobody is the best gun in a match where nothing was shot down.
@@ -295,11 +313,10 @@ check("level at the whistle is a draw rather than a winner",
 
 -- --- the scoreline ---------------------------------------------------------
 --
--- Two numbers set large either side of a bar, which is the shape of the match
--- in one mark. The check that matters is which figure is on which side: your
--- own side is on the left however the zone numbered the teams, the same rule
--- the clock's own score follows, and a card that reversed them would be
--- telling everybody in the losing half that they won.
+-- Two numbers set large either side of the score bar. The check that matters
+-- is which figure is on which side: your own side is on the left however the
+-- zone numbered the teams, the same rule the clock's own score follows. A card
+-- that reversed them would tell everybody in the losing half that they won.
 
 frame({match = {playing = false, left = 23, score = {[0] = 11, [1] = 14}},
        side_names = NAMES, side = 0})
@@ -313,9 +330,97 @@ for i = 1, state.n do
 end
 check("the score is set large", big ~= nil and #big == 2,
       tostring(big and #big))
+check("and the score stays in the instrument face",
+      big ~= nil and big[1].font == nil and big[2].font == nil)
 check("and your own side is the left of the two",
       big ~= nil and big[1].s == "11" and big[1].x < big[2].x,
       big and (big[1].s .. " at " .. math.floor(big[1].x)))
+
+-- Every viewport uses one bounded measure. The only screen-wide rectangle is
+-- the scrim, each roster half lands on three columns, and the score bar stays
+-- in the two center columns without touching either figure.
+local ADVANCE = 1233 / 2048
+local function near(a, b)
+    return math.abs(a - b) < 0.01
+end
+
+local function seg_hits_box(s, b)
+    local r = (s.t or 0) / 2
+    local sx0 = math.min(s.x1, s.x2) - r
+    local sx1 = math.max(s.x1, s.x2) + r
+    local sy0 = math.min(s.y1, s.y2) - r
+    local sy1 = math.max(s.y1, s.y2) + r
+    return sx1 >= b.x0 and sx0 <= b.x1 and sy1 >= b.y0 and sy0 <= b.y1
+end
+
+local function result_geometry(width, height)
+    frame({match = {playing = false, left = 23,
+                    score = {[0] = 11, [1] = 14}},
+           side_names = NAMES, side = 0, w = width, h = height})
+
+    local scores = {}
+    for i = 1, state.n do
+        local t = state.text[i]
+        if t.px >= 40 and (t.s == "11" or t.s == "14") then
+            scores[#scores + 1] = t
+        end
+    end
+    table.sort(scores, function(a, b) return a.x < b.x end)
+
+    local gap = 6
+    local available = math.min(width - 36, 620)
+    local cell = math.floor((available - 5 * gap) / 6)
+    local grid_w = 6 * cell + 5 * gap
+    local grid_x = (width - grid_w) / 2
+    local half = 3 * cell + 2 * gap
+    local bar_x = grid_x + 2 * (cell + gap)
+    local bar_w = 2 * cell + gap
+
+    local full, covers = 0, false
+    local bar = nil
+    for _, r in ipairs(rects) do
+        if near(r.x, 0) and near(r.w, width) then
+            full = full + 1
+            if near(r.y, 0) and near(r.h, height) then covers = true end
+        end
+        if near(r.x, bar_x) and near(r.w, bar_w) and near(r.h, 8) then
+            bar = r
+        end
+    end
+    check(width .. " result has one screen-wide field",
+          full == 1 and covers, tostring(full))
+
+    local roster_left, roster_right = false, false
+    for _, s in ipairs(segs) do
+        if near(s.y1, s.y2) and near(s.x2 - s.x1, half) then
+            if near(s.x1, grid_x) then roster_left = true end
+            if near(s.x1, grid_x + 3 * (cell + gap)) then roster_right = true end
+        end
+    end
+    check(width .. " roster halves use the shared measure",
+          roster_left and roster_right)
+
+    check(width .. " score bar stays between the figures",
+          #scores == 2 and bar ~= nil
+          and bar.x > scores[1].x
+          and bar.x + bar.w < scores[2].x)
+
+    local crossed = false
+    for _, t in ipairs(scores) do
+        local tw = #t.s * t.px * ADVANCE
+        local x0 = t.pivot == "right" and t.x - tw or t.x
+        local x1 = t.pivot == "right" and t.x or t.x + tw
+        local box = {x0 = x0, x1 = x1,
+                     y0 = t.y - t.px * 0.55, y1 = t.y + t.px * 0.55}
+        for _, s in ipairs(segs) do
+            if seg_hits_box(s, box) then crossed = true end
+        end
+    end
+    check(width .. " score figures have no line through them", not crossed)
+end
+
+result_geometry(710, 378)
+result_geometry(1280, 720)
 
 -- A filed result turns the podium into the earned sharing moment. The share
 -- press is a real browser overlay, while film and claim return through the
@@ -341,7 +446,6 @@ check("an unclaimed winner can keep their pilot", said("keep you") ~= nil
 -- can send another player, so what this test is really guarding is that the
 -- list on screen is the list the wire has and nothing else can get onto it.
 
-local SAYS = {"gg", "nice shot", "close one", "good luck", "thanks", "sorry"}
 ui.hits = {}
 frame({match = {playing = false, left = 23, score = {[0] = 11, [1] = 14}},
        side_names = NAMES, side = 0, sayings = SAYS})
@@ -362,6 +466,77 @@ check("and each one carries its number on the wire",
           for i = 0, #SAYS - 1 do if not seen_n[i] then return false end end
           return true
       end)())
+
+-- The same six columns own quick chat and the action row. That makes every
+-- outer edge, gap, and label center exact at both rendered sizes.
+local function whole(n)
+    return near(n, math.floor(n + 0.5))
+end
+
+local function control_geometry(width, height, keep)
+    frame({match = {playing = false, left = 23,
+                    score = {[0] = 11, [1] = 14}},
+           side_names = NAMES, side = 0, sayings = SAYS,
+           match_url = "https://vectorwake.net/matches/42",
+           keep_pilot = keep, w = width, h = height})
+
+    local chips, actions = {}, {}
+    for _, r in ipairs(ui.hits) do
+        if r.action == "say" then
+            chips[#chips + 1] = r
+        elseif r.action == "share" or r.action == "open_replay"
+               or r.action == "keep_pilot" then
+            actions[#actions + 1] = r
+        end
+    end
+    table.sort(chips, function(a, b) return a.x < b.x end)
+    table.sort(actions, function(a, b) return a.x < b.x end)
+
+    local exact = #chips == 6 and #actions == (keep and 3 or 2)
+    local integer = exact
+    for i, r in ipairs(chips) do
+        integer = integer and whole(r.x) and whole(r.y)
+            and whole(r.w) and whole(r.h)
+        if i > 1 then
+            exact = exact and near(r.x - chips[i - 1].x - chips[i - 1].w, 6)
+                and near(r.w, chips[1].w) and near(r.h, chips[1].h)
+        end
+    end
+    for i, r in ipairs(actions) do
+        integer = integer and whole(r.x) and whole(r.y)
+            and whole(r.w) and whole(r.h)
+        if i > 1 then
+            exact = exact and near(r.x - actions[i - 1].x - actions[i - 1].w, 6)
+                and near(r.w, actions[1].w) and near(r.h, actions[1].h)
+        end
+    end
+    exact = exact and near(actions[1].x, chips[1].x)
+        and near(actions[#actions].x + actions[#actions].w,
+                 chips[#chips].x + chips[#chips].w)
+
+    local centered = exact
+    local labels = {{"GG", chips[1]}, {"SHARE MATCH", actions[1]}}
+    for _, pair in ipairs(labels) do
+        local t = nil
+        for i = 1, state.n do
+            if state.text[i].s == pair[1] then t = state.text[i] break end
+        end
+        local r = pair[2]
+        centered = centered and t ~= nil
+            and near(t.x, r.x + r.w / 2)
+            and near(t.y, height - r.y - r.h / 2)
+    end
+
+    local name = width .. (keep and " three-action" or " two-action")
+    check(name .. " controls use one grid", exact)
+    check(name .. " controls land on whole pixels", integer)
+    check(name .. " labels are centered", centered)
+end
+
+control_geometry(710, 378, false)
+control_geometry(710, 378, true)
+control_geometry(1280, 720, false)
+control_geometry(1280, 720, true)
 
 -- Somebody said one. It lands on their row, in place of their name, with the
 -- name kept small after it: a phrase in a column of its own would be a chat
