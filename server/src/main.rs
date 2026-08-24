@@ -8,7 +8,6 @@
 
 mod ai;
 mod arena;
-mod battlecap;
 mod bots;
 mod calibrate;
 mod catalog;
@@ -816,12 +815,6 @@ async fn main() {
     // What the ladder cannot see: the roster on a real map, with walls in it.
     if std::env::args().nth(1).as_deref() == Some("drill") {
         drill::run_check();
-        return;
-    }
-    // A fight, written down tick by tick, for anything outside the server that
-    // wants to draw one. See .design/ships3d.
-    if std::env::args().nth(1).as_deref() == Some("battlecap") {
-        battlecap::run();
         return;
     }
     if std::env::args().nth(1).as_deref() == Some("mapforge") {
