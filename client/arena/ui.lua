@@ -1754,9 +1754,7 @@ local function scores(me, pilots, watchers, viewer_name)
     local shown = math.min(n, SHOWN)
     local w = COL_W * F.scale
     local head = 24 * F.scale
-    -- Header, rows, and a line of totals under them.
-    local foot = 16 * F.scale
-    local h = head + shown * LINE * F.scale + foot + 8 * F.scale
+    local h = head + shown * LINE * F.scale + 8 * F.scale
     local x = F.safe_l + PAD * F.scale
     -- Enough behind it to read over a starfield, and no border: a rule down
     -- the left is what holds the column, the way it holds a wall face.
@@ -1908,36 +1906,10 @@ local function scores(me, pilots, watchers, viewer_name)
         y = y + LINE * F.scale
     end
 
-    -- Who is in the room, by what the zone is willing to say about them.
-    --
-    -- Three numbers rather than one, because "sixty in the room" is a
-    -- different room depending on how many of them are people. The three are
-    -- the three labels a seat can wear: a claimed account, a guest, and a
-    -- declared bot. A guest is counted apart from a claimed pilot rather than
-    -- folded into the humans, because the label is a statement about what the
-    -- server knows and most guests are people in their first session.
-    --
-    -- Spelled out rather than punched into "0/2/50". Three bare numbers in a
-    -- corner are a code, and this line is read once by somebody deciding
-    -- whether a room is worth joining.
-    local claimed, guests, bots, watching = 0, 0, 0, 0
-    for i = 1, n do
-        local r = rows[i]
-        if r.watch then watching = watching + 1
-        elseif r.label == "bot" or r.label == "bot?" then bots = bots + 1
-        elseif r.label == "human" then claimed = claimed + 1
-        else guests = guests + 1 end
-    end
-    local fy = y + foot / 2
-    -- The head count is people in the game. Watchers are counted apart and
-    -- only when there are any, because a zero on the end of every room's
-    -- line would be a column about nothing most of the time.
-    local line = string.format("%d HERE: %d SIGNED, %d GUEST, %d AI",
-                               n - watching, claimed, guests, bots)
-    if watching > 0 then
-        line = line .. string.format(", %d WATCHING", watching)
-    end
-    txt(line, x + 12 * F.scale, fy, (FONT - 3) * F.scale, pal.a(pal.DIM, 0.8))
+    -- No line of totals under the rows. It counted the room by seat label,
+    -- "8 here: 1 signed, 0 guest, 7 ai", and went at Chris's request: the
+    -- marks in the rows already say who is a person, and the PLAYERS chip
+    -- that opens this panel carries the head count.
 
     -- Only when there is something to scroll to. A bar on a list that fits is
     -- a control that does nothing.
