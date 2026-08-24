@@ -375,7 +375,10 @@ deterministic deployment roster. A Ladder room instead requests one bot for its
 room and names the next difficulty rung. Each rung is one authored archetype
 with 1,024 persistent account replicas. This is a mode request rather than a
 human rating lookup, so it does not expose account records. A life locks one
-replica and never changes its competence while the player is fighting it.
+replica and never changes its competence while the player is fighting it. With
+nobody climbing, that room asks for a second bot with no rung on it: the
+stand-in that keeps a duel in the zone for the menu to show, drawn from the
+ordinary roster and never from the eight archetypes the rungs are made of.
 
 **Yield to humans.** When a human joins, a bot is marked for removal and leaves
 under the graceful rules above. Bots never outnumber humans on the opposing team
@@ -417,7 +420,9 @@ generated fill pilots have no separate calibrated prior.
 Ladder asks for one stable opponent at a measured difficulty slot. Its normal
 format is one life, with a win advancing one rung and a loss dropping two by
 default without crossing the last checkpoint. The opponent changes between
-lives and never changes competence inside one. See
+lives and never changes competence inside one. An idle Ladder room climbs with
+a stand-in in the player's seat, so the zone is never an empty arena on the
+menu of somebody deciding whether to play it. See
 [ladder-mode.md](ladder-mode.md).
 
 ## Duels

@@ -1,8 +1,8 @@
 # Ladder mode
 
-Ladder is a solo run through the house bot roster. One human faces one bot. A
-win asks the director for the next difficulty slot, while a loss moves the run
-back far enough to matter without discarding the whole evening.
+Ladder is a solo run through the house bot roster. One climber faces one house
+pilot. A win asks the director for the next difficulty slot, while a loss moves
+the run back far enough to matter without discarding the whole evening.
 
 Ladder is one life per opponent. `ladder_first_to` is one, so the first death
 settles the rung. Catalog validation refuses a longer series under this mode.
@@ -30,8 +30,9 @@ wrap a run from the top to the bottom.
 
 ## One opponent for one life
 
-A life starts only when the room contains exactly one human and one bot. The
-match clock waits at its full value while the first opponent is being seated.
+A life starts only when the room contains the rival its rung asked for and one
+climber, and nobody else. The match clock waits at its full value while the
+first opponent is being seated.
 If the rival leaves during play, that life is void. The room files no result,
 pays no completion reward, and changes no progress or rating. Both ships reset
 before the same rung reopens against a replacement. A damaged rival cannot
@@ -50,6 +51,38 @@ the deciding death, so an expired clock enters sudden death and the next death
 settles the rung. Calibration gives sudden death a recorded safety boundary so
 a broken or nonterminating leg cannot run forever. Any leg that reaches that
 boundary blocks certification; live play itself remains uncensored.
+
+## A duel is always on
+
+The play page joins the zone under the cursor as a watcher, so the match behind
+the menu is the match a deploy would put you in. A zone nobody is playing is
+therefore an empty arena on the screen of everybody deciding whether to press
+play, which is an argument against pressing it.
+
+So a Ladder room with nobody in it climbs anyway. The director seats a stand-in
+beside the rung's own rival, and the two fly the same one-life duel a person
+would: the same rungs, the same rival builds, the same clock, the same
+progression. The stand-in is an ordinary house pilot with an ordinary career,
+drawn from the same roster that fills a melee room, and never one of the eight
+authored archetypes, because those eight are the rungs it is climbing and one
+of them is the fixed point the fleet's ratings are measured against.
+
+It is holding the seat, not keeping it. A person walking in takes it back on
+the tick they arrive, exactly as a bot in any other room stands down for
+somebody who wants to fly, and the run starts over at that person's own floor.
+A run belongs to whoever is flying it: the rung, the streak and the log all go
+back to the beginning when the seat changes hands, in either direction, so
+nobody inherits a stranger's evening and the stand-in never climbs on the back
+of the player who just left.
+
+One room does this, the zone's first, which is the room that outlives all the
+others and the one a browsing client watches. A second room opens because
+people arrived and is given back when it empties, and a room with a stand-in
+flying in it never empties.
+
+Nothing about the stand-in is durable. Its results file no ladder progress,
+because that belongs to accounts people hold, and a bot beating a bot moves no
+rating.
 
 ## Persistence
 
