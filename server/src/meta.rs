@@ -156,11 +156,12 @@ create unique index if not exists rated_events_once on rated_events (event_id);
 alter table rated_events add column if not exists killer bigint;
 create index if not exists rated_events_by_killer on rated_events (killer, at)
     where killer is not null;
--- Week reads are time ranges across every kind of event. A BRIN index follows
--- the append order without adding another large btree to the table whose size
--- is already the database's limiting resource.
-create index if not exists rated_events_by_at
-    on rated_events using brin (at) with (pages_per_range = 32);
+-- The week's table has no bot rows, so bot-only fights cannot change anything
+-- it shows. Human fights are sparse beside the round-the-clock bot traffic;
+-- this partial btree lets the query read that small set directly instead of
+-- walking roughly two million irrelevant rows for a completed week.
+create index if not exists rated_events_week
+    on rated_events (at) where not bots_only;
 -- One-shot migrations that have run, so a schema step that cannot be written
 -- as `if not exists` runs once and not on every boot.
 create table if not exists schema_marks (
@@ -2444,10 +2445,12 @@ async fn route(
             let rows = match db
                 .query(
                     "with bound as (
-                         select date_trunc('week', now() at time zone 'utc')
-                                - ($1 * interval '1 week') as since,
-                                date_trunc('week', now() at time zone 'utc')
-                                - (($1 - 1) * interval '1 week') as until
+                         select (date_trunc('week', now() at time zone 'utc')
+                                 - ($1 * interval '1 week'))
+                                at time zone 'utc' as since,
+                                (date_trunc('week', now() at time zone 'utc')
+                                 - (($1 - 1) * interval '1 week'))
+                                at time zone 'utc' as until
                      ),
                      wk as (
                          select * from pilot_events, bound
@@ -2491,23 +2494,30 @@ async fn route(
                                          filter (where kind = 'kill'), 0) as points
                            from wk group by name
                      ),
-                     swing as (
-                         select re.victim as account, re.class,
-                                re.victim_after - re.victim_before as delta
+                     rating_participants as (
+                         select party.account, re.class, party.delta,
+                                party.assist
                            from rated_events re, bound
-                          where re.at >= bound.since and re.at < bound.until
-                          union all
-                         select (item.credit->>'account')::bigint, re.class,
-                                (item.credit->>'after')::double precision
-                              - (item.credit->>'before')::double precision
-                           from rated_events re, bound
-                          cross join lateral
-                                jsonb_array_elements(re.credits) as item(credit)
-                          where re.at >= bound.since and re.at < bound.until
+                          cross join lateral (
+                                select re.victim as account,
+                                       re.victim_after - re.victim_before
+                                           as delta,
+                                       false as assist
+                                union all
+                                select (item.credit->>'account')::bigint,
+                                       (item.credit->>'after')::double precision
+                                         - (item.credit->>'before')::double precision,
+                                       (item.credit->>'account')::bigint
+                                         <> coalesce(re.killer, -1)
+                                  from jsonb_array_elements(re.credits)
+                                       as item(credit)
+                          ) party
+                          where not re.bots_only
+                            and re.at >= bound.since and re.at < bound.until
                      ),
                      moved as (
                          select account, sum(delta) as delta
-                           from swing group by account
+                           from rating_participants group by account
                      ),
                      -- Kills a pilot was part of and did not finish, which
                      -- the arena counts on the ship and this counts out of
@@ -2517,15 +2527,8 @@ async fn route(
                      -- and there is no third place to keep it: pilot_events
                      -- has no row for helping.
                      assisted as (
-                         select (item.credit->>'account')::bigint as account,
-                                count(*)::bigint as n
-                           from rated_events re, bound
-                          cross join lateral
-                                jsonb_array_elements(re.credits) as item(credit)
-                          where re.at >= bound.since and re.at < bound.until
-                            and (item.credit->>'account')::bigint
-                                <> coalesce(re.killer, -1)
-                          group by 1
+                         select account, count(*) filter (where assist) as n
+                           from rating_participants group by account
                      ),
                      -- Which class each pilot actually flew this week, since
                      -- a rating is kept per class and a pilot who only flies
@@ -2535,7 +2538,8 @@ async fn route(
                      flew as (
                          select distinct on (account) account, class
                            from (select account, class, count(*) as n
-                                   from swing group by account, class) c
+                                   from rating_participants
+                                  group by account, class) c
                           order by account, n desc, class
                      )
                      select t.name, t.kills, t.deaths, t.run, t.breaker,
@@ -5936,17 +5940,19 @@ mod tests {
         db.batch_execute(SCHEMA).await.expect("first schema apply");
         db.batch_execute(SCHEMA).await.expect("second schema apply");
 
-        let index_method: String = db
+        let index = db
             .query_one(
-                "select am.amname
+                "select am.amname, pg_get_expr(i.indpred, i.indrelid)
                    from pg_class c join pg_am am on am.oid = c.relam
-                  where c.relname = 'rated_events_by_at'",
+                   join pg_index i on i.indexrelid = c.oid
+                  where c.relname = 'rated_events_week'",
                 &[],
             )
             .await
-            .expect("timestamp index")
-            .get(0);
-        assert_eq!(index_method, "brin");
+            .expect("week index");
+        assert_eq!(index.get::<_, String>(0), "btree");
+        let predicate: String = index.get(1);
+        assert!(predicate.contains("NOT bots_only"), "{predicate}");
 
         // Remove the empty-database mark and give the one-shot backfill
         // historical work. A second schema apply must leave the projection
@@ -6034,6 +6040,41 @@ mod tests {
         db.batch_execute("alter table credentials_unavailable rename to credentials")
             .await
             .expect("restore credentials");
+
+        db.execute(
+            "insert into pilot_events (pilot, name, bot, kind, detail)
+             values ($1, 'Killer', false, 'kill', '{\"bounty\": 7}')",
+            &[&killer],
+        )
+        .await
+        .expect("standings pilot event");
+        let bot_only_credits = serde_json::json!([
+            { "account": killer, "weight": 1.0, "before": 1200.0, "after": 1300.0 }
+        ]);
+        db.execute(
+            "insert into rated_events
+               (class, zone, instance, tick, victim, victim_kind,
+                victim_before, victim_after, credits, event_id, bots_only, killer)
+             values ($1, 'test', 'test-bots', 3, $2, 1, 1200, 1100,
+                     $3, 3, true, $4)",
+            &[&DEFAULT_CLASS, &victim, &bot_only_credits, &killer],
+        )
+        .await
+        .expect("bot-only event");
+        let (code, body) = route(
+            &meta,
+            "/v1/week",
+            &serde_json::json!({ "back": 0 }),
+            "127.0.0.1",
+        )
+        .await;
+        assert_eq!(code, 200);
+        let killer_week = body["week"]
+            .as_array()
+            .and_then(|week| week.iter().find(|row| row["name"] == "Killer"))
+            .expect("killer in standings");
+        assert_eq!(killer_week["swing"], 24);
+        assert_eq!(killer_week["banked"], 7);
 
         db.batch_execute("alter table rated_events rename to rated_events_unavailable")
             .await
