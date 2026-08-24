@@ -30,21 +30,46 @@ cd "$(dirname "$0")/.."
 OUT="${1:?usage: goldens.sh out_dir}"
 mkdir -p "$OUT"
 
-DISPLAY_NUM=":99"
-Xvfb "$DISPLAY_NUM" -screen 0 "${VW_SIZE:-1280x800x24}" >/dev/null 2>&1 &
+PLATFORM="${VW_PLATFORM:-x86_64-linux}"
+ENGINE_PATH="${VW_ENGINE:-./build/$PLATFORM/dmengine}"
+PROJECT_PATH="${VW_PROJECT:-build/default/game.projectc}"
+DISPLAY_NUM="${VW_DISPLAY:-:99}"
+TMP_DIR=$(mktemp -d)
+XVFB=""
+ENGINE=""
+
+cleanup() {
+    if [ -n "$ENGINE" ]; then kill "$ENGINE" 2>/dev/null || true; fi
+    if [ -n "$XVFB" ]; then kill "$XVFB" 2>/dev/null || true; fi
+    wait 2>/dev/null || true
+    rm -rf "$TMP_DIR"
+}
+trap cleanup EXIT HUP INT TERM
+
+for tool in Xvfb xdotool xwd xwdtopnm pnmtopng; do
+    command -v "$tool" >/dev/null 2>&1 || {
+        printf 'goldens.sh: need %s\n' "$tool" >&2
+        exit 1
+    }
+done
+if [ ! -f "$ENGINE_PATH" ] || [ ! -f "$PROJECT_PATH" ]; then
+    printf 'goldens.sh: build a %s debug client first\n' "$PLATFORM" >&2
+    exit 1
+fi
+
+Xvfb "$DISPLAY_NUM" -screen 0 "${VW_SIZE:-1280x800x24}" \
+    >"$TMP_DIR/xvfb.log" 2>&1 &
 XVFB=$!
-trap 'kill "$XVFB" 2>/dev/null || true' EXIT
 sleep 1
 
 # One engine per sequence, because the menu remembers the last game and the
 # arena remembers nothing: a fresh boot lands on the play page either way.
 run() {
     STEPS="$1"
-    chmod +x ./build/x86_64-linux/dmengine
-    DISPLAY="$DISPLAY_NUM" ./build/x86_64-linux/dmengine \
-        build/default/game.projectc \
+    chmod +x "$ENGINE_PATH"
+    DISPLAY="$DISPLAY_NUM" "$ENGINE_PATH" "$PROJECT_PATH" \
         --config=vectorwake.directory="${VW_DIRECTORY:-ws://127.0.0.1:9000}" \
-        >/tmp/vw-goldens-engine.log 2>&1 &
+        >"$TMP_DIR/engine.log" 2>&1 &
     ENGINE=$!
     sleep "${VW_BOOT:-7}"
     WID=$(DISPLAY="$DISPLAY_NUM" xdotool search --onlyvisible --name . \
@@ -57,10 +82,10 @@ run() {
         set -- $step
         case "$1" in
           shot)
-            DISPLAY="$DISPLAY_NUM" xwd -root -silent > /tmp/vw-golden.xwd
-            xwdtopnm < /tmp/vw-golden.xwd 2>/dev/null \
+            DISPLAY="$DISPLAY_NUM" xwd -root -silent > "$TMP_DIR/frame.xwd"
+            xwdtopnm < "$TMP_DIR/frame.xwd" 2>/dev/null \
                 | pnmtopng > "$OUT/$2.png" 2>/dev/null
-            echo "shot $OUT/$2.png" ;;
+            printf 'shot %s\n' "$OUT/$2.png" ;;
           key)
             DISPLAY="$DISPLAY_NUM" xdotool keydown --window "$WID" "$2" || true
             sleep 0.4
@@ -80,6 +105,7 @@ run() {
     IFS=$OLDIFS
     kill "$ENGINE" 2>/dev/null || true
     wait "$ENGINE" 2>/dev/null || true
+    ENGINE=""
 }
 
 # The six tabs and the boards under settings. Standings is photographed last
@@ -111,4 +137,4 @@ run "key Return; wait 6; shot hud-flying;\
  wait 20; shot hud-t7; wait 20; shot hud-t8; wait 20; shot hud-t9;\
  wait 20; shot hud-t10"
 
-echo "goldens in $OUT"
+printf 'goldens in %s\n' "$OUT"

@@ -20,7 +20,7 @@ evenly distributed.
 
 | Target | Defold status | Transport | Input | Identity |
 |---|---|---|---|---|
-| Web (WASM) | Supported, HTML5 build | WebSocket only | Keyboard and mouse | Guest, then an account key or a link code |
+| Web (WASM) | Supported, HTML5 build | WebTransport, then WebSocket | Keyboard and mouse | Guest, then an account key or a link code |
 | Windows, macOS, Linux | Supported | UDP | Keyboard and mouse | Steam, or a link code from the web |
 | Android, iOS | Supported | UDP | Touch, unsolved | Platform account |
 | Switch, PS4, PS5 | Supported, gated | UDP | Controller | Platform account, required |

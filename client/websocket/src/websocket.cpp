@@ -5,6 +5,7 @@
 #define MODULE_NAME "websocket"
 
 #include "websocket.h"
+#include "connection_publish.h"
 #include "queue_limit.h"
 #include "script_util.h"
 #include "status_format.h"
@@ -519,13 +520,10 @@ static int LuaConnect(lua_State* L)
 
     conn->m_Callback = dmScript::CreateCallback(L, 3);
 
-    if (g_Websocket.m_Connections.Full())
-        g_Websocket.m_Connections.OffsetCapacity(2);
-    g_Websocket.m_Connections.Push(conn);
-
     // A platform worker may read every connection field as soon as it starts.
     // Publish the initialized connection before giving that worker the pointer.
-    StartConnection(conn);
+    PublishConnectionAndStart(
+        g_Websocket.m_Connections, conn, StartConnection);
 
     lua_pushlightuserdata(L, conn);
     return 1;

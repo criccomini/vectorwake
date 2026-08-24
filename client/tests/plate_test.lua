@@ -60,12 +60,10 @@ local sim = setmetatable({
     ship_bounty = function(i) return i == 1 and BOUNTY or 0 end,
     ship_energy = function() return 100 end,
     ship_max_energy = function() return 100 end,
-    charge_max = function() return 3 end,
     has_trigger = function() return true end,
     tick = function() return 100 end,
     flag_at = function() return 0, 0, 255 end,
     map_coarse = function() return nil end,
-    prize_at = function() return 0, 0, 0 end,
     BTN_FIRE = 1,
 }, {__index = function() return function() return 0 end end})
 _G.sim = sim

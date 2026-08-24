@@ -9,6 +9,8 @@ use crate::protocol::*;
 use crate::room::{file_event, Seat};
 use crate::{fleet, metrics, pilot, token};
 
+mod commands;
+
 /// A connection that sends nothing is gone. Watchers heartbeat every thirty
 /// seconds, so this leaves one half-interval of scheduling slack.
 pub(crate) const SESSION_QUIET: std::time::Duration = std::time::Duration::from_secs(45);
@@ -738,46 +740,10 @@ pub(crate) async fn serve_client(
                 }
             }
             C2S_KIT => {
-                // What this pilot wants to fly. Applied at once at a join and
-                // between matches; held to the next whistle during one,
-                // because a hull is locked for a match and the kit with it.
-                //
-                // Nothing is sent back, for the same reason a hull change
-                // sends nothing: the next snapshot carries what was dealt, and
-                // a refusal leaves the old kit, which is the same answer
-                // either way.
-                if data.len() > crate::sim::SLOT_COUNT {
-                    let mut kit = [0u8; crate::sim::SLOT_COUNT];
-                    kit.copy_from_slice(&data[1..1 + crate::sim::SLOT_COUNT]);
-                    if let Presence::Flying { room, member } = presence.current() {
-                        let mut z = zone.lock().await;
-                        if let Some(index) = z.rooms.iter().position(|a| a.number == room) {
-                            let a = &mut z.rooms[index];
-                            if let Some(ship) = a.players.get(&member).map(|p| p.ship) {
-                                // Dealt now or held to the whistle, which is
-                                // the room's rule rather than this socket's.
-                                // See `Room::ask_kit`.
-                                a.ask_kit(ship, &kit);
-                            }
-                        }
-                    }
-                }
+                commands::kit(&zone, &presence, &data).await;
             }
             C2S_SAY => {
-                // One of the fixed things, to the room. The room decides
-                // whether it is a moment to say anything and how often; this
-                // only carries the byte across.
-                if data.len() >= 2 {
-                    if let Some((room, member)) = presence.current().flying() {
-                        let mut z = zone.lock().await;
-                        if let Some(index) = z.rooms.iter().position(|a| a.number == room) {
-                            let a = &mut z.rooms[index];
-                            if let Some(ship) = a.players.get(&member).map(|p| p.ship) {
-                                a.say(ship, data[1]);
-                            }
-                        }
-                    }
-                }
+                commands::say(&zone, &presence, &data).await;
             }
             C2S_WATCH => {
                 // Whose eyes to borrow. From a player: sit out. From a
@@ -813,92 +779,16 @@ pub(crate) async fn serve_client(
                 }
             }
             C2S_TEAM => {
-                // Cross to a side. Refused unless the side exists, has
-                // room for one more of this kind, and either belongs
-                // to the zone or has invited this pilot -- and then
-                // refused again by the core unless they are alive and
-                // whole, which is the gate a hull change gets and for
-                // the same reason. Nothing is sent back but the team
-                // list, whose "you are on" byte is the whole answer.
-                if data.len() >= 2 && presence.current().flying().is_some() {
-                    let want = data[1];
-                    let mut z = zone.lock().await;
-                    if let Some((room, member)) = presence.current().flying() {
-                        if let Some(index) = z.rooms.iter().position(|a| a.number == room) {
-                            let a = &mut z.rooms[index];
-                            if let Some(ship) = a.players.get(&member).map(|p| p.ship) {
-                                a.join_team(ship, want);
-                            }
-                        }
-                    }
-                }
+                commands::team(&zone, &presence, &data).await;
             }
             C2S_FOUND => {
-                // A side of your own, if the room may hold another.
-                if presence.current().flying().is_some() {
-                    let mut z = zone.lock().await;
-                    if let Some((room, member)) = presence.current().flying() {
-                        if let Some(index) = z.rooms.iter().position(|a| a.number == room) {
-                            let a = &mut z.rooms[index];
-                            if let Some(ship) = a.players.get(&member).map(|p| p.ship) {
-                                a.found_and_move(ship);
-                            }
-                        }
-                    }
-                }
+                commands::found(&zone, &presence).await;
             }
             C2S_INVITE => {
-                // Any member may invite, because that is how a group
-                // actually forms. There is no kick to go with it: a
-                // team that wants somebody gone walks away and founds
-                // another, which costs a respawn and no machinery.
-                if data.len() >= 2 && presence.current().flying().is_some() {
-                    let guest = data[1];
-                    let mut z = zone.lock().await;
-                    if let Some((room, member)) = presence.current().flying() {
-                        if let Some(index) = z.rooms.iter().position(|a| a.number == room) {
-                            let a = &mut z.rooms[index];
-                            if let Some(ship) = a.players.get(&member).map(|p| p.ship) {
-                                a.invite(ship, guest);
-                            }
-                        }
-                    }
-                }
+                commands::invite(&zone, &presence, &data).await;
             }
             C2S_INPUT => {
-                // Selective records repair the exact zeroes in the receipt
-                // window. The snapshot receipt window beside them measures
-                // the other direction on the arena's own clock.
-                if let Some(packet) = input_packet(&data) {
-                    if presence.current().flying().is_some() {
-                        let mut z = zone.lock().await;
-                        let Some((room, member)) = presence.current().flying() else {
-                            continue;
-                        };
-                        let Some(index) = z.rooms.iter().position(|a| a.number == room) else {
-                            continue;
-                        };
-                        let a = &mut z.rooms[index];
-                        let now = a.world.state.tick.wrapping_add(1);
-                        let sample_ticks = a.lag_policy.sample_ticks;
-                        let Some(p) = a.players.get_mut(&member) else {
-                            continue;
-                        };
-                        if packet.lifecycle != p.lifecycle {
-                            continue;
-                        }
-                        p.last_input_at = now;
-                        p.lag.acknowledge_snapshots(
-                            packet.snapshot_ack,
-                            packet.snapshot_mask,
-                            now,
-                            sample_ticks,
-                        );
-                        for (tick, buttons) in packet.records {
-                            p.schedule(tick, buttons, now);
-                        }
-                    }
-                }
+                commands::input(&zone, &presence, &data).await;
             }
             _ => {}
         }

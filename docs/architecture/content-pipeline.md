@@ -1,203 +1,132 @@
 # Content and configuration
 
-The research concluded that Subspace survived because a zone author could build
-a different game without touching the engine. That claim only holds if the
-configuration surface is wide, the map format is editable with real tools, and
-neither requires our permission. This document is how we keep that true.
+The engine should not need a release for every tuning or map change. Current
+content has two shipped forms: TOML for a zone's rules and `.vwmap` for its
+ground. Both live under the deployment catalog, are validated before use, and
+reach arena processes through the directory.
 
-## Settings
+## The catalog is the source
 
-An arena's settings are a struct the simulation reads. Everything a ship does
-comes from it: thrust, top speed, rotation rate, energy, recharge, weapon
-levels, fire costs and delays, special counts, prize weights, bounce factor,
-flag rules, ball rules, spawn points, and radar behavior.
+`catalog/catalog.toml` declares the zones a deployment serves. Each declared
+zone has a directory under `catalog/zones/` containing its `zone.toml` and the
+maps named by that file. The catalog is versioned as one artifact. See
+[catalog.md](catalog.md) for the schema and [admin.md](admin.md) for the bounded
+operator surface over it.
 
-We take Subspace's vocabulary wholesale. The names are good, the semantics are
-proven, and thirty years of zone configuration is written in them. A section per
-concern, a section per ship, and roughly the same key names:
+The reference deployment currently has one zone, `melee`, with a six-map
+rotation. Its source is:
 
-```ini
-[Warbird]
-MaximumSpeed = 4400
-MaximumThrust = 26
-MaximumRotation = 380
-MaximumEnergy = 1500
-MaximumRecharge = 550
-BulletFireEnergy = 250
-BulletFireDelay = 25
-InitialGuns = 2
-
-[Bomb]
-BombDamageLevel = 750
-BombExplodePixels = 80
-ProximityDistance = 3
-
-[Kill]
-EnterDelay = 500
-PointsPerKilledFlag = 100
+```
+catalog/
+  catalog.toml
+  zones/melee/
+    zone.toml
+    drydock.recipe.toml
+    drydock.metrics.json
+    drydock.svg
+    drydock.vwmap
+    ... five more map sets
 ```
 
-The differences from the original are deliberate. Values are the units in
-[simulation-core.md](simulation-core.md), which are Subspace's units where they
-were sane and finer where they were not. The file is parsed by the server and
-compiled to the binary struct, so the parser is not in the sim core and not in
-the client. And the schema is data rather than a C struct with reserved padding,
-so adding a setting does not break every client.
+An arena process can also run standalone from a directory containing
+`zone.toml`. That path is useful for local work and reloads valid settings while
+the process runs. The fleet path is the catalog: directories distribute one
+validated zone definition to interchangeable arena processes.
 
-An importer reads an existing `arena.conf` plus its `svs/` includes and produces
-our format. Importing a real settings file and flying the result is how we
-found out whether we had understood the physics, and it is how Alpha's tuning
-started: as a translation, one value at a time.
+## Zone settings
 
-What comes out of it is a starting point rather than a shipped zone, and the
-difference is what happens next. Alpha's tech tree was priced by win rate over
-thousands of simulated matches, its proximity fuse rebuilt after measuring it,
-its thrust and gun ladder changed because somebody flew them, and a hull
-dropped. Ship names and the map were never the importer's to give.
-[design/identity.md](../design/identity.md) draws the line: the numbers are the
-system and we inherit those deliberately, the files are somebody's work and we
-do not ship them.
+`zone.toml` is the game. It names the mode and map rotation, room and team caps,
+match timing, bot fill, lag policy, hull settings, kit ceilings, and weapon
+tables. Host concerns such as listen addresses, certificates, and instance caps
+belong to the process or catalog instead.
 
-Settings reload without restarting the arena. Zone operators tune constantly.
+The Rust server parses TOML, starts from the compiled simulation baseline, and
+applies the fields that are present. This makes a reload mean the file as it
+stands, not every edit made since the process started. The resulting settings
+struct is packed by the C core and sent to clients, so prediction uses the same
+numbers as authority.
 
-## Maps
+Hull flight and weapon tuning remain content. Collision footprints are a fixed
+core contract shared by collision code and the fitted client art.
 
-A tile is 16 pixels and a map is up to 1024 of them on a side, carrying its own
-width and height. The tile size matches Subspace so that existing maps convert
-directly; the size does not have to, and a map drawn for this game says how big
-it is.
+Weapons are content too. A zone can change a projectile, add-on step, cost, or
+delay in `[[arena.weapons]]` without adding a rule to the client. The simulation
+core still validates the final table and executes it.
 
-Our map format carries the tile grid, the tileset reference, spawn regions, and
-named regions with attributes. Regions are Subspace's best late addition: an
-arbitrary set of tiles with rules attached, such as no antiwarp, no weapons, no
-flag drops, or an automatic warp on entry. They give a map author mechanical
-control without a module.
+There is no `arena.conf` importer in the current tree. The reference tuning was
+translated and then changed through play and calibration. Historical
+Subspace settings remain research material, not a second live configuration
+format.
 
-A converter reads `.lvl` and writes ours. It exists so we can test our collision
-code against maps whose behavior is known. Like the settings importer, its
-output is not content we ship: a converted map from an existing zone is that
-zone's map, and being handed the file does not change that. Shipped maps are
-drawn by `sim/tools/mapgen`, which builds from the measurements in
-[research/map-measurements.md](../research/map-measurements.md) rather than
-from anybody's geometry. Going the other way is not planned.
+## Map files
+
+A `.vwmap` carries a width, height, hash, and run-length encoded tile classes.
+Tile classes describe behavior and semantic variants, not pictures. The client
+turns those classes into vector geometry, while the simulation uses the same
+bytes for collision, starts, goals, doors, wormholes, and safe ground.
+
+Packing and unpacking live in the C core for the server, client extension, and
+map tools. The admin editor has a small JavaScript codec for local files; every
+save still passes through the server and the core's verifier. A map is sent
+during join before the first snapshot, then sent again when a room rotates to a
+different map.
+
+The core's `sim_map_check` reports maps at hull scale: connected regions,
+usable and stranded starts, open ground, and tiles a hull cannot reach.
+`sim_map_playable` refuses a map with no named start, any stranded start, or
+multiple hull-sized regions. Mapforge adds the match recipe's four starts per
+side, route, and geometry requirements. The admin API applies the core verdict
+and the editor displays its report.
+
+## Authoring shipped maps
+
+The six current match maps come from `vectorwake-server mapforge`. Each accepted
+map keeps four files together:
+
+- `.recipe.toml` is the design brief and pins the expected output hash.
+- `.vwmap` is the packed room the game serves.
+- `.metrics.json` records routes, cover, travel time, balance, and checks.
+- `.svg` is the review image with the accepted route overlay.
+
+Generate or verify one from the repository root:
 
 ```sh
-make -C sim build/lvl2vw
-sim/build/lvl2vw somemap.lvl catalog/zones/somezone/somezone.vwmap [starts]
+cargo run --manifest-path server/Cargo.toml -- \
+  mapforge generate catalog/zones/melee/drydock.recipe.toml /tmp/drydock.vwmap
+
+cargo run --manifest-path server/Cargo.toml -- \
+  mapforge verify catalog/zones/melee/drydock.recipe.toml \
+  catalog/zones/melee/drydock.vwmap
 ```
 
-It is `sim/tools/lvl2vw.c`, and it reads the plain tile records only.
-[research/lvl-format.md](../research/lvl-format.md) has the format it walks and
-the type numbers it translates. The eLVL metadata section is reported and
-skipped: none of the maps we have carry any, and regions are not something the
-core does yet.
+The admin panel also contains a tile editor. It can draw a new map, import a
+local `.vwmap`, load mapforge metrics for review, run the core's playability
+check, save catalog maps, and edit a zone's rotation. Its canvas tools are the
+editor for hand-built work; Tiled is not part of this pipeline.
 
-Two things the input cannot supply. A `.lvl` has no starts, because the
-original kept spawn regions in `arena.conf`, so the converter derives them from
-open ground and splits them north and south into two home ends. And the tileset
-is dropped, because a tile here is its behavior: the 160 wall pictures become
-one class, and what a wall looks like is the client's business.
+## Conversion and provenance tools
 
-Editing happens in Tiled, which Defold already integrates with, plus a small
-plugin for region attributes. Building our own map editor is a trap; the
-original community's editors existed because no general tool did the job in
-1998, and now several do.
+Two older tools remain on purpose.
 
-The client bakes a downsampled radar texture at load rather than shipping one,
-since the tile grid is already there.
+`sim/tools/lvl2vw.c` reads the original `.lvl` tile records and writes a
+`.vwmap`. It exists for collision research and compatibility checks. Converted
+maps are somebody else's authored content and are not shipped here.
 
-## Overlays
-
-Continuum added LVZ files for visual objects and animations layered over the
-map: banners, goal graphics, decorations, and toggleable elements a server can
-switch at runtime. It is how zones got visual identity.
-
-We need the capability and not the format. An overlay here is a list of sprites
-with positions, layers, animation references, and an id the server can toggle,
-authored alongside the map and delivered with it. Defold draws them as ordinary
-sprites in a dedicated layer.
-
-## What is built, and what it looks like
-
-The plan above is the destination. What exists is `zone/zone.toml`: one file,
-re-read while running, carrying the arena's scalars, its kit ceilings and the
-weapon tables by name under `[[arena.weapons]]`, documented in
-[design/weapons.md](../design/weapons.md). Hull footprints are a fixed core
-contract, not zone content. Applying the file rebuilds from the baseline first,
-so the arena means the file as it stands rather than every version of it since
-boot.
-
-Weapons being *in* that file is the load-bearing part of zones-are-content.
-A weapon is two table rows, so a zone that wants bouncing bombs or a repel
-edits a file rather than waiting for a release, and the tables travel to every
-client in the room on save.
+`sim/tools/mapgen.c` owns the large reference arenas and the frozen
+`--match` recipe path that reproduces the two maps preceding the current
+rotation. Mapforge is the source for the six curated maps, but deleting the
+older generator would delete that reproducible provenance.
 
 ## Delivery
 
-A client joining an arena needs its settings, its map, its overlays, and its
-tileset. Downloading all of that on join is what Subspace did and it was slow
-even on small maps.
+Settings and maps travel over the game connection in dedicated messages before
+snapshots begin. A room also broadcasts the new map when its rotation advances.
+The core supplies separate packing bounds for settings, maps, ordinary network
+snapshots, and a whole simulation state. Player and watcher snapshots stay
+inside their 64 KiB transport contract. Full-state diagnostics and trusted
+house bots on loopback use the slightly larger whole-state bound.
 
-Settings and maps are built and travel over the game socket, packed by the
-core (`sim_settings_pack`, `sim_map_pack`) -- about 1.2 KB and a few hundred
-bytes respectively, which is small enough that content-addressing them would
-be machinery for nothing. Overlays and tilesets are the part that will need
-the scheme below.
-
-A map's size is really a property of how detailed it is, and the built-in rooms
-are not detailed. The run-length encoding gives up when structure is everywhere:
-the five converted Subspace maps pack to between 63 and 84 KB, which is still
-one transfer at join and not worth a cache, but it is two orders of magnitude
-off the figure above.
-
-Content is content-addressed and cached. The server sends hashes, the client
-requests only what it lacks, and everything is served over HTTP rather than
-through the game socket, which keeps a large transfer from competing with
-gameplay traffic. Defold's HTTP support handles this on every platform including
-the web build.
-
-## Zone modules
-
-A zone whose rules exceed configuration writes a module. See
-[server.md](server.md) for the sandbox and the adviser pattern. The relevant
-point for content authors is that the module ships in the catalog next to the maps
-and the settings, and is versioned with them.
-
-## What the content looks like on disk
-
-Every zone a deployment serves lives in one catalog, authored in one place,
-versioned as a unit, and handed to arena servers over the registration socket
-rather than read off the serving machine's own disk. The layout and every field
-in it are [catalog.md](catalog.md); this document is about how a zone author
-works, not about the schema, and repeating the schema here would only give it two
-places to drift.
-
-Two things about it belong to authoring rather than to structure.
-
-`zone.toml` keeps its name and loses its second job. It always described a game,
-so what left it is the part that described a host: the listen address, the TLS
-paths, the player cap. An author edits games; an operator sizes machines.
-
-And an arena server holds almost nothing of its own. Its config names the
-directories it registers with, where to read each token, its region, and which
-zones it is willing to serve. Everything a game consists of arrives over the
-socket as the same packed bytes a client gets at join, which means an author never
-deploys to a serving host at all: they publish a catalog version and the fleet
-picks it up.
-
-The debt to ASSS's layout is still obvious and still intentional. What moved is
-the ownership. ASSS put the game on the disk of the machine serving it, and a
-fleet that scales by replica count cannot.
-
-## Open questions
-
-Whether TOML is right, or whether staying closer to INI would lower the barrier
-for the people most likely to author zones.
-
-How far the `.lvl` and `arena.conf` importers should go. Reading a real zone's
-configuration is a strong correctness test, and it stops being one somewhere
-short of full fidelity.
-
-Whether tilesets should stay 16-pixel or whether the renderer should support
-higher-resolution art on the same 16-pixel collision grid. The second is more
-work and is probably what the game deserves visually.
+The current format has no tileset, overlay bundle, region metadata, HTTP asset
+cache, or zone-module payload. Those were proposals in the original plan. Add
+them when shipped content needs them, not as empty architecture around files
+that do not exist.

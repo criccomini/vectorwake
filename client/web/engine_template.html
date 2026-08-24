@@ -462,6 +462,7 @@
 			// Browser diagnostics stop at eight distinct reports per page. The
 			// server groups repeats across pages and builds, while this guard keeps
 			// one broken frame from spending the network on the same fact.
+			// diagnostics-test:start
 			(function () {
 				var sent = 0;
 				var seen = Object.create(null);
@@ -541,6 +542,7 @@
 					report('console', parts.join(' '), stack);
 				};
 			})();
+			// diagnostics-test:end
 		</script>
 		<script id='engine-loader' type='text/javascript' src="dmloader.js"></script>
 	<script id='engine-setup' type='text/javascript'>
@@ -817,13 +819,10 @@
 			// "x,y,w,h,url" in CSS pixels, or "" for none. Unchanged specs are
 			// left alone so the client may call this every frame.
 			//
-			// This is the second attempt. The first asked the browser to open a
-			// tab from Lua, a frame after the tap, first through sys.open_url and
-			// then by clicking an anchor built on the spot. Desktop allowed both.
-			// No phone did: a tab opened outside a real click handler is what a
-			// popup blocker is for, and a frame later is outside. Nothing the game
-			// can do from its own loop is inside that gesture, so the gesture has
-			// to land on something that is already a link.
+			// The gesture has to land on an anchor that already exists. Opening a
+			// tab from the game loop happens after the gesture and mobile popup
+			// blockers reject it.
+			// link-bridge-test:start
 			var link_spec = null;
 			var link_box = document.getElementById('vw-link');
 			// Where the pointer is over that anchor, in the same CSS pixels the
@@ -921,6 +920,7 @@
 				link_box.className = 'vw-up';
 				return '1';
 			};
+			// link-bridge-test:end
 
 			var ask_form = document.getElementById('vw-ask');
 			var ask_spec = null;

@@ -130,7 +130,7 @@ impl Claims {
 
     /// One class of the standing a token carries. The whole list travels;
     /// this is how a caller asks for the one it is seating.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn rating_in(&self, class: &str) -> Option<&ClassRating> {
         self.ratings.iter().find(|r| r.class == class)
     }

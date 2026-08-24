@@ -86,7 +86,7 @@ curl --resolve play.localhost:443:127.0.0.1 \
 
 The health response proves that Caddy is answering. It says nothing about the game processes.
 
-There is one known limit to the local setup. Caddy signs `play.localhost` with its internal CA, and the directory does not trust that CA when it verifies the arena's advertised `wss` address. The arena can be running while the browse reply remains empty. For local play, point a native client directly at `ws://127.0.0.1:9001`, as described in the [root README](../README.md).
+There is one known limit to the local setup. Caddy signs `play.localhost` with its internal CA, and the directory does not trust that CA when it verifies the arena's advertised `wss` address. The arena can be running while the browse reply remains empty. For local play, point a native client directly at `ws://127.0.0.1:9001`. The [root README](../README.md) shows the same `vectorwake.server` override against a standalone server on port 9010.
 
 The published client and the reference catalog both name production addresses. Running them behind `play.localhost` does not rewrite those values, so this setup is best for checking process wiring rather than for a hermetic local player flow.
 

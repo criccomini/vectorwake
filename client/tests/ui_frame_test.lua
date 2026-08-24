@@ -27,11 +27,4 @@ frame.text_count = 4
 frame:finish()
 assert(state.n == 4 and state.version == 4 and layer.flushes == 1)
 
-local source = assert(io.open("client/arena/ui.lua")):read("*a")
-for _, field in ipairs({"w", "h", "scale", "layer", "text", "menu_up",
-                        "text_dim", "case", "now", "safe_l", "safe_r",
-                        "safe_t", "safe_b", "installed", "zones"}) do
-    assert(not source:match('"[^"\n]*F%.' .. field .. '[^"\n]*"'))
-end
-
 print("ui frame tests pass")

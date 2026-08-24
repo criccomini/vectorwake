@@ -1139,7 +1139,6 @@ const REROUTE_PX: f32 = 128.0;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 // Both knobs are named whether or not a harness is holding one still today:
 // the list is what says how many there are.
-#[allow(dead_code)]
 pub enum Knob {
     AimErr,
     Permission,

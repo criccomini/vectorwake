@@ -86,13 +86,9 @@ local sim = {
     ship_charge = function() return 0 end,
     ship_mod = function() return 0 end,
     ship_multi_off = function() return 0 end,
-    charge_max = function() return 3 end,
     has_trigger = function() return true end,
-    trigger_rate = function() return 1 end,
     tick = function() return 4242 end,
     weapon_count = function() return 3 end,
-    prize_count = function() return 0 end,
-    prize_at = function() return 0, 0, 0 end,
     flag_count = function() return 0 end,
     flag_at = function() return 0, 0, 255 end,
     map_coarse = function() return nil end,
@@ -661,12 +657,15 @@ ui.details = false
 -- trims its own buffer to the same number.
 local many = {}
 for i = 1, 12 do many[i] = {text = "line " .. i, t = 0} end
-local before = package.loaded["arena.state"].n
 frame({feed = many})
-local lines = package.loaded["arena.state"].n
-check("the feed is capped at FEED_MAX", ui.FEED_MAX == 5,
-      "FEED_MAX is " .. tostring(ui.FEED_MAX))
-check("a long feed still draws something", lines > 0 and before ~= nil)
+local feed_rows = 0
+for i = 1, package.loaded["arena.state"].n do
+    if package.loaded["arena.state"].text[i].s:match("^line %d+$") then
+        feed_rows = feed_rows + 1
+    end
+end
+check("the feed draws exactly five rows", feed_rows == 5,
+      tostring(feed_rows) .. " rows")
 
 -- A line is words with names in it, and neither is touched. A call sign is
 -- upper, lower and numeric exactly as its owner has it, which a feed that

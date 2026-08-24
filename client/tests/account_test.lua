@@ -18,6 +18,7 @@ end
 local requests = {}
 local replies = {}
 local saved = {secret = "old-secret", account = 1}
+local page_scripts = {}
 -- What the last body handed to the encoder was, so a request can be checked
 -- for what it carried and not only for where it went. The encoder answers
 -- with a constant, which is all the transport needs and none of what a test
@@ -42,6 +43,12 @@ _G.http = {
         sent = nil
     end,
 }
+_G.html5 = {
+    run = function(script)
+        page_scripts[#page_scripts + 1] = script
+        return ""
+    end,
+}
 
 local function answer(request, key, value, status)
     replies[key] = value
@@ -50,6 +57,9 @@ end
 
 local account = require("arena.account")
 account.load()
+check("the saved account is published to browser diagnostics",
+      page_scripts[#page_scripts] == "window.vwAccount=1",
+      tostring(page_scripts[#page_scripts]))
 account.aim("https://meta")
 check("page load starts the saved account's session", #requests == 1,
       tostring(#requests))
@@ -81,6 +91,9 @@ check("the new session completes the login", logged and logged.ok,
       tostring(logged and logged.why))
 check("the new identity is active", account.account == 2
       and account.name == "new-name" and account.token == "new-token")
+check("the new account reaches the browser reporter",
+      page_scripts[#page_scripts] == "window.vwAccount=2",
+      tostring(page_scripts[#page_scripts]))
 
 -- The page-load response arrives last. It belongs to the secret the login
 -- replaced and may not put that identity back into the client.

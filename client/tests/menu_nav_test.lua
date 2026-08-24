@@ -1251,6 +1251,20 @@ do
 
     -- The cursor on `map`, and a key nothing is using.
     local rows = menu.view().rows
+    local catalog = binds.rows()
+    local drift = {}
+    for i, control in ipairs(catalog) do
+        local row = rows[i]
+        if not row or row.label ~= control.name or row.detail ~= control.show
+           or row.control ~= control.id or row.cat ~= control.cat
+           or row.keys ~= control.keys or row.fixed ~= control.fixed then
+            drift[#drift + 1] = control.id
+        end
+    end
+    check("the controls page is built from the live binding catalog",
+          #drift == 0 and #rows == #catalog + 1 and rows[#rows].reset == true,
+          table.concat(drift, ", "))
+
     local map_at = nil
     for i, r in ipairs(rows) do
         if r.control == "map" then map_at = i end

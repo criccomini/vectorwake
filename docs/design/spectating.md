@@ -192,12 +192,12 @@ at the foot of the screen.
 
 ## Where the door is
 
-Spectating is a hull you can be in, so it is the ninth cell of the ship page.
+Spectating is a hull you can be in, so it is the eighth cell of the ship page.
 Picking a hull is already how a pilot says what they want to be, and "nothing,
 I am watching" is an answer to that question rather than a separate act. The
 cell draws the pilot helmet instead of a ship, since it is about the person
 and not about anything they are flying, and it wears the same "you are here"
-wash the hull you are flying wears. Going back is any of the other eight
+wash the hull you are flying wears. Going back is any of the other seven
 cells, which is the same page and the same press; a room that filled while you
 sat out refuses, and the refusal is staying exactly where you are.
 
@@ -206,18 +206,16 @@ are, which is nothing, but what you will arrive as. Arriving to watch is a
 thing the wire has always been able to say and the client simply never said,
 so picking the cell there sets the join's watch flag rather than waiting for a
 game to exist. It is remembered like the hull is, because it is an answer to
-the same question, and picking any of the other eight is what takes it back.
+the same question, and picking any of the other seven is what takes it back.
 
 The cell was briefly hidden at home, on the grounds that it did nothing there.
 That was the wrong repair: it did nothing because the join never carried the
 choice, and hiding it made the page mean two different things on two screens.
 
 Touch gets it on the same terms, because the page is one grid at every size.
-Two columns on a phone held upright, where the ninth cell starts a row of its
-own and the whole page still fits. Four across a phone held sideways, where it
-lands on a third row against a screen with room for about two and a half:
-tight rather than broken, and worth a look whenever the ship page is next
-opened up.
+Two columns on a phone held upright make four rows and the whole page still
+fits. Four across a phone held sideways make two rows, with room left for the
+kit below.
 
 It briefly lived as a third answer on the games-list card that asks whether
 you meant to leave. That card is about the game you are in, and what you are

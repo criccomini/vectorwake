@@ -538,17 +538,6 @@ static void LuaInit(lua_State* L) {
     lua_pop(L, 1);
 }
 
-static dmExtension::Result Initialize(dmExtension::Params* params) {
-    LuaInit(params->m_L);
-    return dmExtension::RESULT_OK;
-}
-
-static dmExtension::Result Finalize(dmExtension::Params*) {
-    VWWT_Close();
-    DropCallback();
-    return dmExtension::RESULT_OK;
-}
-
 // Where a message is assembled on its way to Lua.
 //
 // One buffer that grows to the biggest message a session has seen and is
@@ -557,6 +546,20 @@ static dmExtension::Result Finalize(dmExtension::Params*) {
 // block whose life is one call. WT_S2C_MAX bounds how far it can grow.
 static char* g_msg = 0;
 static int g_msg_cap = 0;
+
+static dmExtension::Result Initialize(dmExtension::Params* params) {
+    LuaInit(params->m_L);
+    return dmExtension::RESULT_OK;
+}
+
+static dmExtension::Result Finalize(dmExtension::Params*) {
+    VWWT_Close();
+    DropCallback();
+    free(g_msg);
+    g_msg = 0;
+    g_msg_cap = 0;
+    return dmExtension::RESULT_OK;
+}
 
 static dmExtension::Result OnUpdate(dmExtension::Params*) {
     if (!g_State.m_Callback)

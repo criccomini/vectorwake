@@ -483,7 +483,7 @@ mod tests {
         {
             let zone = zone.clone();
             tokio::spawn(async move {
-                let mut buf = vec![0u8; crate::sim::PACK_MAX];
+                let mut buf = vec![0u8; crate::sim::STATE_PACK_MAX];
                 let mut n = 0u32;
                 loop {
                     tokio::time::sleep(Duration::from_millis(10)).await;
@@ -636,7 +636,7 @@ mod tests {
     /// One reliable message off the framed stream.
     async fn read_one(s: &mut RecvStream) -> Option<Vec<u8>> {
         // The zone's own frames, so the cap is the zone's largest word rather
-        // than a client's: a map is a megabyte and a half.
+        // than a client's. A maximum map is a little over three megabytes.
         read_frame(s, crate::sim::MAP_PACK_MAX + 1).await
     }
 

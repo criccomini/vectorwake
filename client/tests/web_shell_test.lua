@@ -1,4 +1,6 @@
--- The two public pages and the browser diagnostic bridge.
+-- Static artifacts shared by the public site and the game page. Browser
+-- behavior is exercised from web_shell_behavior_test.js, viewport_test.js,
+-- and link_bridge_test.js against the shipping JavaScript.
 --
 --     lua5.1 client/tests/web_shell_test.lua
 
@@ -21,79 +23,57 @@ local function read(path, binary)
     return body
 end
 
-local function has(body, text)
-    return body:find(text, 1, true) ~= nil
+local function attrs(text)
+    local out = {}
+    for key, value in text:gmatch('([%w:_-]+)%s*=%s*"([^"]*)"') do
+        out[key] = value
+    end
+    for key, value in text:gmatch("([%w:_-]+)%s*=%s*'([^']*)'") do
+        out[key] = value
+    end
+    return out
+end
+
+local function meta(body, key, value)
+    for text in body:gmatch("<meta%s+([^>]-)>") do
+        local at = attrs(text)
+        if at[key] == value then return at end
+    end
+    return nil
+end
+
+local function attribute_contains(body, wanted)
+    for text in body:gmatch("<[^>]+>") do
+        for _, value in pairs(attrs(text)) do
+            if value:find(wanted, 1, true) then return true end
+        end
+    end
+    return false
 end
 
 local landing = read("deploy/site/index.html")
 local game = read("client/web/engine_template.html")
-local arena = read("client/arena/arena.script")
-local account = read("client/arena/account.lua")
-local admin = read("deploy/admin/admin.js")
-local match_page = read("deploy/site/match.html")
-local week_page = read("deploy/site/week.html")
-local growth = read("deploy/site/growth.js")
+
+local landing_image = meta(landing, "property", "og:image")
+local landing_card = meta(landing, "name", "twitter:card")
+local game_image = meta(game, "property", "og:image")
+local game_card = meta(game, "name", "twitter:card")
 
 check("the landing page names its large share card",
-      has(landing, 'property="og:image" content="https://vectorwake.net/share-card.png"')
-      and has(landing, 'name="twitter:card" content="summary_large_image"'))
+      landing_image and landing_image.content ==
+          "https://vectorwake.net/share-card.png"
+      and landing_card and landing_card.content == "summary_large_image")
 -- One card, named by both pages. The game page used to carry its own, which
 -- meant two images to keep current and one of them was always the stale one:
 -- a link to play.vectorwake.net and a link to vectorwake.net are the same game
 -- and should not preview as two different products.
 check("the game page names the same large share card",
-      has(game, 'property="og:image" content="https://vectorwake.net/share-card.png"')
-      and has(game, 'name="twitter:card" content="summary_large_image"'))
+      game_image and landing_image
+      and game_image.content == landing_image.content
+      and game_card and game_card.content == "summary_large_image")
 check("and no page still asks for the retired one",
-      not has(game, "play-share-card") and not has(landing, "play-share-card"))
-check("the game page reports bounded browser failures",
-      has(game, "'/meta/v1/client-error'")
-      and has(game, "sent >= 8")
-      and has(game, "keepalive: true"))
-check("the game page accepts room and replay routes",
-      has(game, "^(join|watch|replay)\\/")
-      and has(arena, "^replay/(%d+)$")
-      and has(arena, "session.replay(self, reply)"))
-check("match sharing uses the phone's native share sheet",
-      has(game, "navigator.share({title: 'Vectorwake', url: url})")
-      and has(game, "navigator.clipboard.writeText(url)"))
-check("the iPhone canvas continues behind Safari's lower toolbar",
-      has(game, "function vwPageHeight(")
-      and has(game, "var pageH = vwPageHeight(")
-      and has(game, "height: 100lvh")
-      and has(game, "var landscape = width > visible")
-      and has(game, "? Math.min(screenW, screenH)")
-      and has(game, "h > screenAxisH + 2")
-      and has(game, "html.vw-ios-surface body")
-      and has(game, "document.documentElement.classList.toggle('vw-ios-surface', extended_page)")
-      and has(game, "if (root.style.height !== page) root.style.height = page")
-      and has(game, "if (body.style.height !== page) body.style.height = page")
-      and has(game, "function vwSafeInsets(")
-      and has(game, "var bottom = Math.max(padBottom, covered)")
-      and has(game, "var safe = vwSafeInsets(")
-      and has(arena, "touch.safe_b = (self.safe_b or 0) * density"))
-check("the reported account crosses the Lua page boundary",
-      has(account, "window.vwAccount=")
-      and has(game, "account: Number(window.vwAccount) || 0"))
-check("the admin page reads browser error groups",
-      has(admin, 'post("/v1/admin/errors"')
-      and has(admin, "pilotLink(error.account"))
-check("the admin page reads structured rollback reports",
-      has(admin, 'post("/v1/admin/debug"')
-      and has(admin, "report.correction_px.toFixed(1)")
-      and has(admin, "report.snapshot_gap_ms.toFixed(1)")
-      and has(admin, "report.local_debt_px.toFixed(2)")
-      and has(admin, "report.repel_after_speed.toFixed(2)")
-      and has(admin, "report.clock_adjust"))
-check("the admin page prints zero bandwidth instead of a blank cell",
-      has(admin, "Number.isFinite(i.bw_per_player)"))
-check("public match pages expose score, film, and sharing",
-      has(match_page, "data-score") and has(match_page, "data-replay")
-      and has(match_page, "data-share") and has(growth, 'request("/v1/match"')
-      and has(growth, "error.status !== 404"))
-check("the weekly recap is a shareable public artifact",
-      has(week_page, "data-stories") and has(week_page, "data-share")
-      and has(growth, 'request("/v1/week"'))
+      not attribute_contains(game, "play-share-card")
+      and not attribute_contains(landing, "play-share-card"))
 
 local function png_size(path)
     local body = read(path, true)

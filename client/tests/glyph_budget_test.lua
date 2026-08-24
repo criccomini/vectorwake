@@ -50,28 +50,9 @@ do
 end
 
 local W, H = 1280, 800
-local layer = {}
-local function noop() end
-for _, name in ipairs({"arc", "disc", "flush", "outline", "quad", "reset",
-                       "ring", "tri", "tri_fade", "fan", "seg_glow",
-                       "glow_band", "halo", "ring_fade", "seg_fade",
-                       "seg_flat", "skirt", "frame", "rect", "seg"}) do
-    layer[name] = noop
-end
-
-_G.sim = setmetatable({}, {__index = function() return function() return 0 end end})
-package.loaded["arena.state"] = {text = {}, n = 0, version = 0}
-package.loaded["arena.touch"] = {layout = function() return {charge = {}} end,
-                                 used = false}
-package.loaded["arena.world"] = {build_overview = noop, forget_overview = noop,
-                                 overview = function() return {grid = 0} end,
-                                 radar_tiles = {}, radar_safe = {},
-                                 radar_doors = {},
-                                 HULLS = setmetatable({}, {__index = function()
-                                     return {poly = {0, 0, 1, 1, 2, 0}, mid = 0}
-                                 end})}
-
-local ui = require("arena.ui")
+local harness = require("tests.ui_harness")
+local layer = harness.layer()
+local ui = harness.install()
 
 local RAIL = {}
 for i, n in ipairs({"zones", "ship", "upgrades", "friends", "standings",

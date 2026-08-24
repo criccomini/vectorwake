@@ -470,7 +470,7 @@ local queue = {}
 _G.sim = {
     EV_FIRE = EV.FIRE, EV_EXPIRE = EV.EXPIRE, EV_HIT = EV.HIT,
     EV_DEATH = 90, EV_SPAWN = 91, EV_BOUNCE = 92, EV_CHARGE = 93,
-    EV_PRIZE = 94, EV_FLAG_TAKE = 95,
+    EV_FLAG_TAKE = 95,
     TRIG_GUN = 0, TRIG_BOMB = 1,
     tick = function() return 500 end,
     event_count = function() return #queue end,

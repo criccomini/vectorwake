@@ -27,14 +27,14 @@ typedef struct {
 } rd;
 
 static void w8(wr *w, uint32_t v) {
-    if (w->p + 1 > w->end) { w->overflow = 1; return; }
+    if (w->p == w->end) { w->overflow = 1; return; }
     *w->p++ = (uint8_t)v;
 }
 static void w16(wr *w, uint32_t v) { w8(w, v); w8(w, v >> 8); }
 static void w32(wr *w, uint32_t v) { w16(w, v); w16(w, v >> 16); }
 
 static uint32_t r8(rd *r) {
-    if (r->p + 1 > r->end) { r->underflow = 1; return 0; }
+    if (r->p == r->end) { r->underflow = 1; return 0; }
     return *r->p++;
 }
 static uint32_t r16(rd *r) { uint32_t a = r8(r); return a | (r8(r) << 8); }

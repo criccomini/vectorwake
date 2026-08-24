@@ -17,9 +17,9 @@
 -- appears in the Defold build, twenty minutes into CI, after the engine has
 -- already been fetched.
 --
--- `luac -p` parses and compiles without running, which is the same front end
--- and the same limit, so the whole check is a syntax pass over the shipped
--- files. It costs a second and it fails on the machine that made the change.
+-- `loadfile` parses and compiles without running, using the same front end and
+-- the same limit as this test's interpreter. The whole check is therefore a
+-- syntax pass over the shipped files, without a second command-name dependency.
 --
 -- The fix, when this does fail, is not to shave a local off whatever was added.
 -- It is to gather a coherent group onto one table, the way `TUNE` and `static`
@@ -49,15 +49,11 @@ local function sources()
     return out
 end
 
--- `luac -p` on one file: nil when it compiled, the compiler's complaint when
--- it did not. Read off stderr, which is where luac writes.
+-- Compile one file without executing it: nil on success, or the compiler's
+-- complaint on failure.
 local function compile(path)
-    local pipe = io.popen("luac5.1 -p " .. path .. " 2>&1", "r")
-    if not pipe then return nil end
-    local said = pipe:read("*a")
-    pipe:close()
-    if said == nil or said == "" then return nil end
-    return (said:gsub("%s+$", ""))
+    local _, trouble = loadfile(path)
+    return trouble
 end
 
 local files = sources()

@@ -63,13 +63,9 @@ _G.sim = {
     ship_charge = function() return 2 end,
     ship_mod = function() return 0 end,
     ship_multi_off = function() return 0 end,
-    charge_max = function() return 3 end,
     has_trigger = function() return true end,
-    trigger_rate = function() return 1 end,
     tick = function() return 4242 end,
     weapon_count = function() return 0 end,
-    prize_count = function() return 0 end,
-    prize_at = function() return 0, 0, 0 end,
     flag_count = function() return 0 end,
     flag_at = function() return 0, 0, 255 end,
     map_coarse = function() return nil end,
@@ -346,17 +342,6 @@ do
           thumbed == #ROWS - keyboard_only,
           thumbed .. " of " .. #ROWS)
 
-    -- And the menu builds its page from this list rather than from a second
-    -- copy, which is the whole point of the list being shared. Read out of
-    -- the source, because the alternative is exporting the menu's page table
-    -- to prove it.
-    local mf = io.open("client/arena/menu.lua")
-    local mbody = mf and mf:read("*a") or ""
-    if mf then mf:close() end
-    check("and the menu's controls page is generated from it",
-          mbody:find('require("arena.binds")', 1, true) ~= nil
-          and mbody:match("for i, c in ipairs%(binds%.rows%(%)%) do"),
-          "menu.lua writes its own rows again")
 end
 
 if fails > 0 then

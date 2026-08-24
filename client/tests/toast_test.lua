@@ -49,7 +49,6 @@ _G.sim = setmetatable({
     ship_alive = function() return 1 end,
     ship_bounty = function() return 12 end,
     ship_charge = function() return 2 end,
-    charge_max = function() return 3 end,
     has_trigger = function() return true end,
     ship_level = function() return 0 end,
     ship_mod = function() return 0 end,
@@ -57,7 +56,6 @@ _G.sim = setmetatable({
     flag_count = function() return 0 end,
     flag_at = function() return 0, 0, 255 end,
     map_coarse = function() return nil end,
-    prize_count = function() return 0 end,
     weapon_count = function() return 0 end,
     tick = function() return 1000 end,
     TRIG_GUN = 0, TRIG_BOMB = 1, TRIG_COUNT = 2, MOD_COUNT = 6,
@@ -167,61 +165,46 @@ local function shown(words)
     return nil
 end
 
-local MINE = {text = "+ BOMB", col = pal.CHARGE_COL, t = 0, mine = true}
 local THEIRS = {text = {{"someone"}, " killed ", {"other"}}, t = 0}
 local MY_KILL = {text = {{"you"}, " killed ", {"other"}},
-                 col = pal.PRIZE, t = 0, mine = true}
+                 col = pal.PAID, t = 0, mine = true}
+local MY_DEATH = {text = {{"other"}, " killed ", {"you"}},
+                  col = pal.HURT, t = 0, mine = true}
 
 -- --- only what is about you ------------------------------------------------
 
 frame(844, 390, {THEIRS})
 check("a stranger's kill is not shown on a phone", shown("someone killed other") == nil)
 
-frame(844, 390, {MINE})
-check("a green you flew through is", shown("+ BOMB") ~= nil)
+frame(844, 390, {MY_DEATH})
+check("a death of yours is shown on a phone", shown("other killed you") ~= nil)
 
 frame(844, 390, {MY_KILL})
 check("and so is a kill you made", shown("you killed other") ~= nil)
-
--- A refusal, which is the one line here that reports something *not*
--- happening. It is a bare string rather than a table of named parts, because
--- nobody is named in it -- the same shape a green's line takes -- and it has
--- to survive the same filter: told on a phone, where the mine tab's pips
--- would otherwise be the only sign, and told to the pilot who pressed the key
--- rather than to the room.
-local FULL = {text = "no room for another mine", col = pal.BOMB, t = 0,
-              mine = true}
-frame(844, 390, {FULL})
-check("being told your minefield is full reaches a phone",
-      shown("no room for another mine") ~= nil)
-
-frame(844, 390, {{text = "no room for another mine", col = pal.BOMB, t = 0}})
-check("and the same words about somebody else would not",
-      shown("no room for another mine") == nil)
 
 -- --- one at a time ---------------------------------------------------------
 
 -- Newest first, the way the arena inserts them. Two of yours means the newer
 -- one and only the newer one.
-frame(844, 390, {MINE, MY_KILL})
-check("the newest of yours is shown", shown("+ BOMB") ~= nil)
+frame(844, 390, {MY_DEATH, MY_KILL})
+check("the newest of yours is shown", shown("other killed you") ~= nil)
 check("and the older one is not", shown("you killed other") == nil)
 
 -- A stranger's line arriving on top of yours does not hide yours: it is
 -- skipped, not counted as the one line.
-frame(844, 390, {THEIRS, MINE})
-check("a stranger's line does not take the slot", shown("+ BOMB") ~= nil)
+frame(844, 390, {THEIRS, MY_DEATH})
+check("a stranger's line does not take the slot", shown("other killed you") ~= nil)
 
 -- --- it expires -------------------------------------------------------------
 
-frame(844, 390, {{text = "+ BOMB", col = pal.CHARGE_COL, t = 9, mine = true}})
-check("a line older than the toast's life is gone", shown("+ BOMB") == nil)
+frame(844, 390, {{text = MY_DEATH.text, col = pal.HURT, t = 9, mine = true}})
+check("a line older than the toast's life is gone", shown("other killed you") == nil)
 
 -- --- where it lands ---------------------------------------------------------
 
 -- Landscape: across the top, clear of the thumbs entirely.
-frame(844, 390, {MINE})
-local land = shown("+ BOMB")
+frame(844, 390, {MY_DEATH})
+local land = shown("other killed you")
 check("landscape puts it in the upper band", land and land.y < 390 * 0.33,
       land and string.format("y %.0f of 390", land.y) or "not drawn")
 check("and centered", land and math.abs(land.x - 844 / 2) < 1,
@@ -229,8 +212,8 @@ check("and centered", land and math.abs(land.x - 844 / 2) < 1,
 
 -- Portrait: two thirds down, and above the controls. Checked with a full
 -- rack, since the charge rail is as tall as the hull's charges.
-frame(390, 844, {MINE}, {charges = {0, 1, 2, 3}})
-local port = shown("+ BOMB")
+frame(390, 844, {MY_DEATH}, {charges = {0, 2}})
+local port = shown("other killed you")
 local reach = pad_reach(390, 844, 1)
 check("portrait puts it two thirds down",
       port and port.y > 844 * 0.55 and port.y <= 844 * 0.67,
@@ -244,8 +227,8 @@ check("and clear of the controls under it",
 
 -- The clamp has to bite when a rail climbs into that two-thirds line, or the
 -- fraction is just a guess that happens to work on one loadout.
-frame(390, 500, {MINE}, {charges = {0, 1, 2, 3}})
-local tight = shown("+ BOMB")
+frame(390, 500, {MY_DEATH}, {charges = {0, 2}})
+local tight = shown("other killed you")
 local treach = pad_reach(390, 500, 1)
 check("a short window pulls it up off the controls",
       tight and tight.y + 12 < 500 - treach,
@@ -262,7 +245,7 @@ ui.begin(layer, 1280, 800, 1, false)
 ui.hud({
     me = 0, class_names = {"Apex"}, menu_open = false,
     pilots = {[0] = {name = "you", label = "human"}},
-    teams = {}, feed = {MINE}, hurt = 0, charges = {},
+    teams = {}, feed = {MY_DEATH}, hurt = 0, charges = {},
     cam_x = 400, cam_y = 400, half_w = 640, half_h = 400,
     banner = "", lag = 4,
     stats = {lag = 4, lead = 2, err = 1, err_max = 2, rewind = 1, snaps = 10,
@@ -270,7 +253,7 @@ ui.hud({
     zone = "chaos", fps = 60, frame_ms = 16, rx_rate = 0, tx_rate = 0,
 })
 ui.finish()
-local desk = shown("+ BOMB")
+local desk = shown("other killed you")
 check("a desktop draws the line in its corner, not the middle",
       desk ~= nil and desk.x > 1280 * 0.6,
       desk and string.format("x %.0f", desk.x) or "not drawn")

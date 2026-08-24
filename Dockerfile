@@ -1,6 +1,6 @@
-# The arena server, the directory and the admin surface are one binary; which
-# one it is depends on its first argument. So there is one image, and a
-# deployment is that image run three times with different commands.
+# The arena, directory, bot supervisor, and meta-layer are one binary. Its
+# first argument selects the role, so one image supplies every Rust service in
+# the deployment. The meta-layer also serves the admin API.
 #
 # Two stages, because the build needs a Rust toolchain and a C compiler and the
 # result needs neither. The binary statically links the simulation core, so the

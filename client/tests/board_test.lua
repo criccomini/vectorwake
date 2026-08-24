@@ -138,7 +138,7 @@ check("a touchscreen gets rows, not a picture of keys", #frames == 0,
 
 -- --- the chips --------------------------------------------------------------
 --
--- The picture cannot say which of four charge keys is which, which is the
+-- The picture cannot say which of two charge keys is which, which is the
 -- whole reason the chips are under it. So every control has to be named down
 -- there, and its key has to be readable beside the name rather than under it.
 
@@ -185,7 +185,7 @@ end
 
 -- Every control named, at every shape. A page that quietly drops the last two
 -- chips off the bottom is the failure this is here for: the list is the only
--- place the four charge keys are told apart.
+-- place the two charge keys are told apart.
 for _, shape in ipairs({{1280, 800}, {1920, 1080}, {900, 600}, {1400, 400}}) do
     local b = draw_at(shape[1], shape[2])
     local missing = {}

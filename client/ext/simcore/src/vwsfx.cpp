@@ -187,3 +187,9 @@ void VwSfxInit(lua_State* L) {
     lua_pop(L, 1);
     assert(top == lua_gettop(L));
 }
+
+void VwSfxFinal() {
+    if (!g_job) return;
+    sfx_music_cancel(g_job);
+    g_job = 0;
+}

@@ -8,6 +8,7 @@
 // innerHTML. Ban reasons are operator-typed free text, and the CSP upstream
 // is the second lock on that door, not the first.
 
+(() => {
 "use strict";
 
 const KEY = "vw-admin-secret";
@@ -166,6 +167,16 @@ const RAILED = VIEWS.filter((view) => view !== "pilot");
 // knows which account to ask for again.
 let onPilot = null;
 
+// maps.js loads after this file and installs its redraw through the explicit
+// panel interface. Keeping the delegate here lets the admin refresh loop call
+// it without putting either script's local names back in global scope.
+let mapsDraw = () => Promise.reject(new Error("the map editor did not load"));
+function installMaps(draw) {
+  if (typeof draw !== "function") throw new TypeError("a map redraw must be a function");
+  mapsDraw = draw;
+}
+function drawMaps() { return mapsDraw(); }
+
 function route() {
   // `#pilot/123` is the only route with an argument, and the account is the
   // whole of it. Anything unrecognised falls to the fleet rather than to a
@@ -201,8 +212,8 @@ addEventListener("hashchange", () => {
   if (view === "debug") paint("debug", drawDebug);
   if (view === "pilots") paint("pilots", () => drawPilots(el("lookup-q").value.trim()));
   if (view === "access") { paint("bans", drawBans); paint("admins", drawAdmins); }
-  // Defined in maps.js, which loads after this file: by the time a hash can
-  // change, both are here.
+  // maps.js installs this delegate after this file loads. By the time a hash
+  // can change, the editor has registered its redraw.
   if (view === "maps") paint("maps", drawMaps);
   if (view === "pilot") paint("pilot", () => lookup(`#${onPilot}`));
 });
@@ -242,6 +253,7 @@ let noteOwner = null;
 // quietly on screen.
 const NOTES = {
   fleet: "fleet-note",
+  maps: "maps-note",
   pilot: "lookup-note",
   recent: "recent-note",
   pilots: "pilots-note",
@@ -1669,4 +1681,9 @@ async function drawAdmins() {
   }));
 }
 
+window.vectorwakeAdmin = Object.freeze({
+  post, el, tell, fill, ask, installMaps, drawMaps,
+  get secret() { return secret; },
+});
 boot();
+})();

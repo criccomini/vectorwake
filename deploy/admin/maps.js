@@ -1,43 +1,28 @@
 // The map editor, and what each zone plays.
 //
-// Loaded after admin.js and using its helpers: `post`, `el`, `tell`, `fill`
-// and `ask` are script-scope bindings from that file, which is what a classic
-// script gives a later one.
-//
-// ## One scope, two files
-//
-// That sharing runs both ways, and the second way is a trap. Two classic
-// scripts share one global scope, so every name declared at the top level here
-// is declared in the same place admin.js declares its own. A collision between
-// two `function`s is silent and the later file wins, which is a function
-// quietly replaced. A collision between a `function` here and a `let` there is
-// a SyntaxError, and it takes this whole file with it: nothing runs, the
-// editor never wires up, and what the page says is that some later call cannot
-// see a variable.
-//
-// Both happened. `repaint` is `repaint` rather than `draw` because admin.js
-// draws the fleet table with a `draw` of its own, and `inField` is not
-// `typing` because admin.js debounces its pilot search with a `let typing`.
-// deploy/admin/tests/scope_test.js runs the two files into one scope the way a
-// browser does and fails on any name they both claim, so the next one of these
-// is caught before it ships rather than by reading the panel.
+// Loaded after admin.js and handed the panel helpers and current device secret
+// it uses. Each file keeps its own scope, so adding a local function here
+// cannot replace one in the rest of the panel.
 //
 // ## The core is the judge, not this file
 //
-// A map has to be a great deal more than well formed. It has to be a room a
-// three-tile hull can fly all of, with somewhere for both sides to start and
-// no ground a ship can be shoved into and never leave. Those are questions
-// with one right answer, and the answer lives in `sim/src/check.c`, which the
-// generator takes its own verdict from.
+// A map has to be a great deal more than well formed. It needs a start, no
+// start may strand its hull, and every hull-sized region must connect. Those
+// are questions with one right answer, and the answer lives in
+// `sim/src/check.c`. Mapforge adds the match recipe's stronger side and route
+// requirements.
 //
 // So this file does not check maps. It packs the tiles, posts them, and shows
-// what the core said. What it packs has to be byte-exact -- the header, the
-// runs and the FNV-1a over both -- because the server unpacks it with the same
+// what the core said. What it packs has to be byte-exact: the header, the
+// runs and the FNV-1a over both. The server unpacks it with the same
 // function an arena does, and anything else is refused rather than guessed at.
 // That refusal is the design: a browser cannot be trusted to agree with the
 // simulation, so it is never asked to.
 
+((shared) => {
 "use strict";
+
+const { post, el, tell, fill, ask } = shared || {};
 
 // Tile classes, from sim/include/sim/sim.h. A tile is class in the low nibble
 // and a variant in the high one.
@@ -540,8 +525,8 @@ function tile(g, x, y, b) {
 }
 
 // `over` is what a drag would write if it ended now, as tile index to byte.
-// Named for what it does rather than the obvious `draw`, which belongs to
-// admin.js: see the note at the top of this file about the shared scope.
+// This repaints the current document, which distinguishes it from drawing the
+// map table around the editor.
 function repaint(over) {
   // Nothing to draw on when this module is loaded by its own tests, which
   // exercise the tools and the history rather than the canvas.
@@ -893,7 +878,7 @@ function verdict() {
     if (!doc) return;
     try {
       const r = await post("/v1/admin/map/check", {
-        secret,
+        secret: shared.secret,
         bytes: b64(pack(doc)),
       });
       const rep = r.report || {};
@@ -1003,7 +988,7 @@ function showMapMetrics(metrics) {
 }
 
 async function drawMaps() {
-  const r = await post("/v1/admin/maps", { secret });
+  const r = await post("/v1/admin/maps", { secret: shared.secret });
   known = { maps: r.maps || [], rotations: r.rotations || [], zones: r.zones || [] };
   const rows = known.maps.map((m) => {
     const acts = document.createElement("div");
@@ -1037,7 +1022,7 @@ async function drawMaps() {
 
 async function openNamed(name) {
   try {
-    const r = await post("/v1/admin/map", { secret, name });
+    const r = await post("/v1/admin/map", { secret: shared.secret, name });
     openDoc(unpack(unb64(r.bytes)), name);
     tell("maps-note", `${name} is open`, "ok");
   } catch (e) {
@@ -1054,10 +1039,10 @@ async function remove(name) {
   // A plain confirm answers with the empty string, and a cancel with null.
   if (yes === null) return;
   try {
-    await post("/v1/admin/map/delete", { secret, name });
+    await post("/v1/admin/map/delete", { secret: shared.secret, name });
     if (doc && doc.name === name) closeEditor();
     tell("maps-note", `${name} is gone`, "ok");
-    drawMaps();
+    await drawMaps();
   } catch (e) {
     tell("maps-note", e.message);
   }
@@ -1087,7 +1072,7 @@ async function save() {
   tell("map-verdict", "saving", "plain");
   try {
     const r = await post("/v1/admin/map/save", {
-      secret,
+      secret: shared.secret,
       name,
       bytes: b64(pack(doc)),
     });
@@ -1098,7 +1083,7 @@ async function save() {
       ? `saved, but the fleet has not heard: ${r.warning}`
       : `saved and published as catalog change ${r.serial}`;
     tell("map-verdict", note, r.warning ? undefined : "ok");
-    drawMaps();
+    await drawMaps();
   } catch (e) {
     tell("map-verdict", e.message);
   }
@@ -1188,7 +1173,9 @@ function drawRotations() {
     go.textContent = "publish";
     go.onclick = async () => {
       try {
-        const r = await post("/v1/admin/zone-maps", { secret, zone, maps: chosen });
+        const r = await post("/v1/admin/zone-maps", {
+          secret: shared.secret, zone, maps: chosen,
+        });
         tell(
           "rot-note",
           r.warning
@@ -1196,7 +1183,7 @@ function drawRotations() {
             : `${zone} plays ${chosen.length || "its zone file"} from the next match`,
           r.warning ? undefined : "ok",
         );
-        drawMaps();
+        await drawMaps();
       } catch (e) {
         tell("rot-note", e.message);
       }
@@ -1287,8 +1274,7 @@ function readout() {
   n.textContent = `${x}, ${y}   ${nameAt(x, y)}`;
 }
 
-// Whether a key belongs to whatever has focus rather than to the editor. Not
-// `typing`, which admin.js holds a debounce timer in; see the note at the top.
+// Whether a key belongs to whatever has focus rather than to the editor.
 function inField(on) {
   return !!on && (on.tagName === "INPUT" || on.tagName === "TEXTAREA"
                   || on.tagName === "SELECT" || on.isContentEditable);
@@ -1604,6 +1590,10 @@ function wire() {
   };
 }
 
+// Register the redraw before wiring the page. The admin refresh loop owns when
+// tables update; this file owns how the map table is drawn.
+if (shared) shared.installMaps(drawMaps);
+
 // The page wires itself up when there is a page. Under node there is not, and
 // what a test wants from this file is the codec: whether these bytes are the
 // bytes `sim_map_pack` writes is a question worth answering without a browser,
@@ -1630,3 +1620,4 @@ if (typeof module !== "undefined") {
     depth: () => [past.length, future.length],
   };
 }
+})(typeof window !== "undefined" ? window.vectorwakeAdmin : null);

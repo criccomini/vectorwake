@@ -20,7 +20,6 @@ typedef struct {
     sim_state cur;
     sim_state next;
     sim_events ev;
-    int have_map, have_cfg;
 } vw;
 
 vw *vw_new(void) {
@@ -35,12 +34,12 @@ void vw_free(vw *c) { free(c); }
 
 int vw_load_map(vw *c, const unsigned char *b, int n) {
     int r = sim_map_unpack(&c->map, b, n);
-    if (r == 0) { c->cfg.map = &c->map; c->have_map = 1; }
+    if (r == 0) c->cfg.map = &c->map;
     return r;
 }
 int vw_load_settings(vw *c, const unsigned char *b, int n) {
     int r = sim_settings_unpack(&c->cfg, b, n);
-    if (r == 0) { c->cfg.map = &c->map; c->have_cfg = 1; }
+    if (r == 0) c->cfg.map = &c->map;
     return r;
 }
 int vw_apply(vw *c, const unsigned char *b, int n) {
@@ -67,13 +66,9 @@ int vw_active(vw *c, int i)        { return c->cur.ships[i].active; }
 int vw_alive(vw *c, int i)         { return c->cur.ships[i].alive; }
 int vw_x(vw *c, int i)             { return c->cur.ships[i].x; }
 int vw_y(vw *c, int i)             { return c->cur.ships[i].y; }
-int vw_vx(vw *c, int i)            { return c->cur.ships[i].vx; }
-int vw_vy(vw *c, int i)            { return c->cur.ships[i].vy; }
 int vw_energy(vw *c, int i)        { return c->cur.ships[i].energy; }
 int vw_kills(vw *c, int i)         { return c->cur.ships[i].kills; }
 int vw_deaths(vw *c, int i)        { return c->cur.ships[i].deaths; }
-int vw_team(vw *c, int i)          { return c->cur.ships[i].team; }
-int vw_cls(vw *c, int i)           { return c->cur.ships[i].cls; }
 int vw_max_ships(vw *c)            { return c->cfg.max_ships; }
 int vw_spec_count(vw *c)           { return c->cfg.spec_count; }
 int vw_flag_count(vw *c) {
@@ -86,10 +81,5 @@ unsigned int vw_map_fingerprint(vw *c) {
     unsigned int n = 0;
     for (int i = 0; i < SIM_MAP_TILES * SIM_MAP_TILES; i++)
         if (c->map.tile[i]) n++;
-    return n;
-}
-int vw_prize_count(vw *c) {
-    int n = 0;
-    for (int i = 0; i < SIM_MAX_PRIZES; i++) if (c->cur.prizes[i].active) n++;
     return n;
 }

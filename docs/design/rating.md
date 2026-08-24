@@ -51,14 +51,10 @@ bonus on top of it creates a kill-stealing incentive that fights the in-game
 bounty award, which already pays the finisher in points. Rating and score do
 different jobs; let them.
 
-**No support credit for carrying.** A hull with turrets attached earns from its
-own guns and nothing else. This document used to promise the carrier a share of
-what its riders earned, on the reasoning that a rating system which ignores
-support play tells support players they are bad at the game. That reasoning does
-not survive contact with the hull: a carrier is not a platform somebody else
-shoots from, it is a ship with its own trigger, flying into the same fight, and
-it is credited for every point of damage it deals like anybody else. A share of
-its riders' work on top of that would pay it twice for being in one place.
+**No support credit outside damage.** A pilot earns rating from their own
+weapons and nothing else. The game has no carrier, rider, or gunner role, and a
+rating event needs no special case for one. Every contributor is credited for
+the damage they dealt, in the same proportion as everybody else.
 
 ## The update
 

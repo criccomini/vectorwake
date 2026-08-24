@@ -10,6 +10,7 @@ local page = {}
 function page.run(script)
     calls[#calls + 1] = script
     if string.find(script, "vwPointerOut", 1, true) then return "0" end
+    if string.find(script, "vwLinkAt", 1, true) then return "12.5,9" end
     if string.find(script, "vwAskGo", 1, true) then return "a" end
     return ""
 end
@@ -43,8 +44,14 @@ assert(sounds[1] == "ui_go")
 assert(applied and applied[1] == state and applied[2] == "join")
 assert(state.handed_over == true)
 
+local over_link = {link_dom = "shown", density = 2, vh = 100, cursor_idle = 9}
+browser.link_pointer(over_link, page)
+assert(over_link.cursor_x == 25 and over_link.cursor_y == 82)
+assert(over_link.cursor_idle == 0)
+
 local joined = table.concat(calls, "\n")
 assert(string.find(joined, "vwLink", 1, true))
+assert(string.find(joined, "vwLinkAt", 1, true))
 assert(string.find(joined, "vwAsk", 1, true))
 assert(string.find(joined, "vwReady", 1, true))
 

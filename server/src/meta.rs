@@ -34,6 +34,7 @@ mod growth;
 mod maps;
 mod public_pilots;
 mod settlement;
+mod telemetry;
 mod upgrades;
 
 /// The default mode class. A zone declares which class it rates into, and a
@@ -1595,25 +1596,10 @@ async fn route(
     body: &serde_json::Value,
     ip: &str,
 ) -> (u16, serde_json::Value) {
+    if let Some(reply) = telemetry::route(meta, path, body, ip).await {
+        return reply;
+    }
     let hour = std::time::Duration::from_secs(3600);
-    if path == "/v1/client-error"
-        && (!meta.throttle.allow(&format!("client-error:{ip}"), 30, hour)
-            || !meta.throttle.allow("client-error:all", 2000, hour))
-    {
-        return (
-            429,
-            serde_json::json!({ "error": "too many error reports; wait a while" }),
-        );
-    }
-    if path == "/v1/client-debug"
-        && (!meta.throttle.allow(&format!("client-debug:{ip}"), 30, hour)
-            || !meta.throttle.allow("client-debug:all", 2000, hour))
-    {
-        return (
-            429,
-            serde_json::json!({ "error": "too many debug reports; wait a while" }),
-        );
-    }
     let mut db = match meta.db().await {
         Ok(d) => d,
         Err(e) => return (503, serde_json::json!({ "error": e })),
@@ -1640,127 +1626,6 @@ async fn route(
     }
 
     match path {
-        // A browser sends this without credentials because some failures occur
-        // before the account is loaded. The account ID is reported context,
-        // not authentication. Repeated faults fold into one row per account,
-        // build and stack so the table stays useful during a failure storm.
-        "/v1/client-error" => {
-            let report = match client_error_of(body) {
-                Ok(report) => report,
-                Err(error) => return (400, serde_json::json!({ "error": error })),
-            };
-            let fingerprint = sha256_hex(
-                format!(
-                    "{}\n{}\n{}\n{}\n{}",
-                    report.kind,
-                    report.message,
-                    report.stack,
-                    report.build,
-                    report.account.unwrap_or(0)
-                )
-                .as_bytes(),
-            );
-            let stored = db
-                .execute(
-                    "insert into client_errors
-                       (fingerprint, kind, message, stack, build, origin, page, user_agent, account)
-                     values ($1, $2, $3, $4, $5, $6, $7, $8,
-                             (select id from accounts where id = $9))
-                     on conflict (fingerprint) do update
-                     set last_at = now(), occurrences = client_errors.occurrences + 1,
-                         origin = excluded.origin, page = excluded.page,
-                         user_agent = excluded.user_agent",
-                    &[
-                        &fingerprint,
-                        &report.kind,
-                        &report.message,
-                        &report.stack,
-                        &report.build,
-                        &report.origin,
-                        &report.page,
-                        &report.user_agent,
-                        &report.account,
-                    ],
-                )
-                .await;
-            match stored {
-                Ok(_) => (200, serde_json::json!({ "ok": true })),
-                Err(e) => (500, serde_json::json!({ "error": format!("{e}") })),
-            }
-        }
-
-        // A sampled correction on a living local hull. These stay as
-        // individual rows because the sequence around a rollback is the
-        // evidence; error grouping would fold it into an occurrence count and
-        // throw that away.
-        // Every field is bounded above before this public write reaches SQL,
-        // and the reported account is context rather than authentication.
-        "/v1/client-debug" => {
-            let report = match client_debug_of(body) {
-                Ok(report) => report,
-                Err(error) => return (400, serde_json::json!({ "error": error })),
-            };
-            let stored = db
-                .execute(
-                    "insert into client_debug
-                       (kind, build, account, zone, room, wire, client_tick,
-                        snapshot_tick, snapshot_seq, correction_px,
-                        predicted_x, predicted_y, reconciled_x,
-                        reconciled_y, predicted_vx, predicted_vy,
-                        reconciled_vx, reconciled_vy, local_debt_px,
-                        local_debt_deg, clock_adjust, repel_before_ticks,
-                        repel_before_speed, repel_after_ticks,
-                        repel_after_speed, frame_ms, snapshot_gap_ms,
-                        input_ack, input_mask, input_margin, input_lead,
-                        input_holes, user_agent)
-                     values ($1, $2, (select id from accounts where id = $3),
-                             $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
-                             $14, $15, $16, $17, $18, $19, $20, $21, $22,
-                             $23, $24, $25, $26, $27, $28, $29, $30, $31,
-                             $32, $33)",
-                    &[
-                        &report.kind,
-                        &report.build,
-                        &report.account,
-                        &report.zone,
-                        &report.room,
-                        &report.wire,
-                        &report.client_tick,
-                        &report.snapshot_tick,
-                        &report.snapshot_seq,
-                        &report.correction_px,
-                        &report.predicted_x,
-                        &report.predicted_y,
-                        &report.reconciled_x,
-                        &report.reconciled_y,
-                        &report.predicted_vx,
-                        &report.predicted_vy,
-                        &report.reconciled_vx,
-                        &report.reconciled_vy,
-                        &report.local_debt_px,
-                        &report.local_debt_deg,
-                        &report.clock_adjust,
-                        &report.repel_before_ticks,
-                        &report.repel_before_speed,
-                        &report.repel_after_ticks,
-                        &report.repel_after_speed,
-                        &report.frame_ms,
-                        &report.snapshot_gap_ms,
-                        &report.input_ack,
-                        &report.input_mask,
-                        &report.input_margin,
-                        &report.input_lead,
-                        &report.input_holes,
-                        &report.user_agent,
-                    ],
-                )
-                .await;
-            match stored {
-                Ok(_) => (200, serde_json::json!({ "stored": true })),
-                Err(e) => (500, serde_json::json!({ "error": format!("{e}") })),
-            }
-        }
-
         // Nobody signs up. The first time a client runs it asks for an
         // account and stores what it gets back, and that is the whole flow.
         // The call sign is the server's to give: a name a client could

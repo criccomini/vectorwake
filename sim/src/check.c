@@ -166,7 +166,7 @@ void sim_map_check(const sim_map *m, sim_map_scratch *s, sim_map_report *r) {
         const sim_feature *ft = &m->features[f];
         if (ft->kind != SIM_TILE_SPAWN) continue;
         r->spawns++;
-        if (ft->variant < 2) r->spawns_team[ft->variant]++;
+        if (ft->variant < SIM_SIDES) r->spawns_team[ft->variant]++;
         if (!served_by(m, s, ft->tx, ft->ty, main)) r->spawns_stranded++;
     }
 
@@ -216,10 +216,9 @@ int sim_map_stranded(const sim_map *m, sim_map_scratch *s, uint32_t *out, int ca
     return n;
 }
 
-int sim_map_playable(const sim_map *m, const sim_map_report *r, char *why, int cap) {
+int sim_map_playable(const sim_map_report *r, char *why, int cap) {
     const char *fault = 0;
-    (void)m;
-    static char line[160];
+    char line[160];
     if (r->spawns == 0) {
         fault = "it names no start, so a zone would put every ship on its own tiles";
     } else if (r->spawns_stranded > 0) {

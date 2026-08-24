@@ -6,7 +6,7 @@ engineering, see [docs/architecture](../architecture/README.md).
 | Document | Contents |
 |---|---|
 | [identity.md](identity.md) | What we inherit from Subspace and what we invent, art direction, audio direction, and the rules that keep this inspired-by rather than a clone |
-| [ships.md](ships.md) | The eight classes, their roles, standard settings, and the design rules behind them |
+| [ships.md](ships.md) | The seven classes, their roles, standard settings, and the design rules behind them |
 | [weapons.md](weapons.md) | One model for everything that leaves a ship: fire patterns, projectile specs, and the recipes for every weapon in the original |
 | [audio.md](audio.md) | What the game sounds like: the kit, weapon rungs, what stays silent, and why a sound that answers your hands is engineered differently from one that describes a state |
 | [maps.md](maps.md) | Tile classes, the arenas, and what a map carries so a zone does not have to |

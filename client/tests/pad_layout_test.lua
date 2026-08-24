@@ -170,8 +170,8 @@ local function reset(w, h, s)
     touch.used = true
     touch.me = 0
     touch.has_bomb = true
-    -- Off by default, which is the ordinary hull: a fan is picked up. The
-    -- block at the bottom turns it on for the case that is actually tight.
+    -- Off by default, which is the ordinary hull. A kit may omit multifire.
+    -- The block at the bottom turns it on for the case that is actually tight.
     touch.has_fan = false
     touch.charges = {0, 1}
     touch.counts = {[0] = 2, [1] = 1}
@@ -753,10 +753,11 @@ do
     end
 end
 
--- --- four charges ------------------------------------------------------------
+-- --- four charge kinds -------------------------------------------------------
 --
--- The mine is one of them now, so a hull that carries all four fills the rail
--- and every cell keeps its own fixed slot.
+-- A kit chooses two kinds, but the core can represent four. Exercising all
+-- four keeps the layout safe at that storage boundary, and every cell retains
+-- its fixed slot as the rack empties.
 do
     local w, h, s = reset(unpack(PORT))
     touch.ceiling = ROOMY

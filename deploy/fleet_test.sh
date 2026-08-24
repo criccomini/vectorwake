@@ -25,6 +25,14 @@ contains() {
 . "$ROOT/lib/fleet_provider.sh"
 . "$ROOT/lib/fleet_dns.sh"
 . "$ROOT/lib/fleet_database.sh"
+HERE=$ROOT
+. "$ROOT/lib/fleet_secrets.sh"
+. "$ROOT/lib/fleet_instance.sh"
+
+[ "$(serves central play)" = "$FRONT" ] \
+	|| die "a central host no longer serves the front door"
+[ "$(serves arena edge)" = "edge.$DOMAIN" ] \
+	|| die "an arena host no longer serves its own name"
 
 # A mutation in dry-run mode must never reach the provider adapter.
 vultr() {
@@ -73,5 +81,39 @@ db_row() {
 out=$(printf 'y\n' | db_create dfw 2>&1)
 contains "$out" \
 	"would: vultr-cli database create --database-engine pg --database-engine-version 16 --region dfw --plan vultr-dbaas-startup-cc-1-55-2 --label vectorwake"
+
+# The split secrets module still validates a render before any host exists.
+TEST_KEY=$(mktemp)
+trap 'rm -f "$TEST_KEY"' EXIT HUP INT TERM
+printf '%s\n' "private deploy key" >"$TEST_KEY"
+VW_POOL_TOKEN=pool-token
+VW_DEPLOY_KEY=$TEST_KEY
+secrets_fill() { :; }
+check_secrets arena
+
+# Object storage mutations obey the same dry-run gate as provider mutations.
+s3() {
+	die "dry run called object storage: $*"
+}
+out=$(s3_do put-object --bucket bucket --key key --body file 2>&1)
+contains "$out" "would: aws s3api put-object --bucket bucket --key key --body file"
+
+# Host removal remains a provider read followed by gated mutations. The
+# certificate volume is reported and left alone.
+vultr() {
+	case "$*" in
+	"instance list -o json")
+		printf '%s\n' '{"instances":[{"id":"instance-7","label":"edge.vectorwake.net"}]}' ;;
+	"dns record list vectorwake.net -o json")
+		printf '%s\n' '{"records":[{"id":"record-7","name":"edge","type":"A"}]}' ;;
+	"block-storage list -o json")
+		printf '%s\n' '{"blocks":[{"id":"volume-7","label":"edge.vectorwake.net-certs","size_gb":10}]}' ;;
+	*) die "unexpected provider read: $*" ;;
+	esac
+}
+out=$(printf 'y\n' | cmd_rm edge 2>&1)
+contains "$out" "would: vultr-cli dns record delete vectorwake.net record-7"
+contains "$out" "would: vultr-cli instance delete instance-7"
+contains "$out" "volume-7"
 
 echo "fleet dry-run tests pass"

@@ -180,7 +180,7 @@ impl Rating {
     }
 
     /// The tier to show, or None while the pilot is still placing.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn tier_of(&self, who: &str) -> Option<&'static str> {
         if self.games_of(who) < PROVISIONAL_GAMES {
             return None;

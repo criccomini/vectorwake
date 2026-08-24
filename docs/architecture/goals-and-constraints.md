@@ -3,7 +3,7 @@
 ## What we are building
 
 A top-down space MMO with Subspace Continuum's feel: frictionless inertial
-flight, energy serving as health and ammunition at once, eight ship classes
+flight, energy serving as health and ammunition at once, seven ship classes
 whose statistics live in configuration, teams called freqs, and arenas that can
 host genuinely different games without an engine fork.
 
@@ -13,7 +13,7 @@ draws the line and [design/ships.md](../design/ships.md) names the roster.
 
 The target experience is a 40-player arena where the game stays readable and
 fair on a connection that occasionally drops packets, and where a zone author
-who has never compiled anything can build a game we did not anticipate.
+who has never compiled anything can tune the game and build a map of their own.
 
 ## Non-negotiable
 
@@ -32,9 +32,9 @@ death and name its killer. We read the code that does it (see
 not shipping that. Kills, damage, flag captures, and scores are server
 decisions.
 
-**Zones are content, not code.** A new game mode should be a configuration file,
-a map, and at most a sandboxed module. If we find ourselves adding a C flag for
-a zone's rule, the extension surface is wrong.
+**Zones are content, not code.** Tuning, rotations, and maps belong in the
+catalog. Fundamentally different match logic belongs in a reviewed built-in
+Rust mode, not a C flag or deployment-provided module.
 
 **The web is a first-class target.** A game with no installed base needs to be
 one link away. Anything that cannot run in a browser tab cannot be on the
@@ -57,10 +57,11 @@ struct with reserved padding bits. We are choosing our own protocol and treating
 Continuum compatibility as a possible gateway experiment rather than a
 requirement. This is the decision most likely to be revisited.
 
-**Native module extensibility.** ASSS lets a zone load a `.so` with full access
+**Runtime module extensibility.** ASSS lets a zone load a `.so` with full access
 to the process, and the manual is candid that such a module can crash or
-deadlock the server. We want the extensibility and not the crashes, so zone
-modules run sandboxed and pay for it in speed.
+deadlock the server. We do not expose a native or sandboxed zone-module system.
+Modes ship as reviewed Rust code, while the catalog holds the safe tuning
+surface operators need.
 
 **Exact numeric compatibility with Subspace settings.** We will read the old
 settings vocabulary because it is a good vocabulary, but we are not bound to
@@ -68,10 +69,11 @@ tenths-of-a-percent integer encodings on the wire.
 
 ## Constraints we did not choose
 
-**Browsers cannot open UDP sockets.** A web client speaks WebSocket over TCP, so
-the server has to serve two transports and the simulation has to tolerate the
-head-of-line blocking that TCP brings. This shapes [networking.md](networking.md)
-more than any other single fact.
+**Browsers cannot open plain UDP sockets.** A web client tries WebTransport over
+QUIC when an arena offers it, then falls back to WebSocket over TCP. The server
+therefore serves two browser transports, and the simulation still has to
+tolerate TCP head-of-line blocking. This shapes
+[networking.md](networking.md) more than any other single fact.
 
 **Defold runs Lua 5.1, with LuaJIT on most platforms but not all.** HTML5 builds
 use plain Lua 5.1.4, and iOS forbids JIT. Any code whose speed matters cannot
@@ -94,15 +96,16 @@ We will know the shape is right when:
    trace.
 2. A 40-player arena costs a single server core and stays under 30 KB/s
    downstream per player.
-3. Adding a game mode touches configuration and one sandboxed module, with no
-   change to the sim core.
+3. Adding a game mode touches a built-in Rust mode and configuration, with no
+   change to the sim core unless the mode needs a new deterministic mechanic.
 4. A player on 250 ms with 5% loss is annoying to play against but not unfair,
    and the rules that make that true are configuration.
 
 ## Explicit non-goals
 
 Not a persistent-world MMO with an economy and character progression. Sessions
-are arenas, and the persistence surface is scores, bans, and identity.
+are arenas, and persistence is limited to accounts, owned kits, ratings, match
+records, and operator controls such as bans.
 
 Not 3D, not physics-engine-driven, and not a general engine. The simulation is
 small on purpose.

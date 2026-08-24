@@ -575,8 +575,8 @@ local function matching_profile(kit)
 end
 
 -- Which cell of the roster the carousel is showing. An index rather than a
--- hull, because the last cell is not one: sitting out is the ninth answer to
--- "what are you flying" and rides the carousel with the other eight.
+-- hull, because the last cell is not one: sitting out is the eighth answer to
+-- "what are you flying" and rides the carousel with the other seven.
 --
 -- Nil until somebody turns it, and then it is what the page reads. Derived
 -- before that from what the pilot is actually in, so the page opens on their
@@ -1063,11 +1063,6 @@ end
 -- least and the two the first line of every row already carries.
 local SORT_ORDER = {"kills", "deaths", "kd", "banked", "run", "rating",
                     "swing", "time", "pilot", "rank"}
-
--- What a packed row writes on its second line, in this order, minus whichever
--- one is the column it is sorted by. The names are the headings the wide
--- table uses, so nothing is learned twice.
-M.SORT_ORDER = SORT_ORDER
 
 -- One column along, wrapping. Always down from the top of that column's
 -- order: stepping onto a new column and landing on it backwards is a table
@@ -1690,10 +1685,10 @@ function hull_rows()
             mark = function() return not M.spectating() and M.class == i - 1 end,
         }
     end
-    -- Sitting out is the ninth thing you can be flying, so it is the ninth
+    -- Sitting out is the eighth thing you can be flying, so it is the eighth
     -- cell rather than a row somewhere else. Picking a hull is already how a
     -- pilot says what they want to be; "nothing, I am watching" is an answer
-    -- to that question and belongs beside the other eight.
+    -- to that question and belongs beside the other seven.
     --
     -- On the home screen too, where this page is what you will arrive as
     -- rather than what you are. Arriving to watch is a thing the wire has
@@ -1996,21 +1991,9 @@ local NODES = {
         }
     end},
 
-    -- A grid, not a list: the hulls are drawings laid out in rows and columns,
-    -- so left and right are a column apart and up and down are a row apart.
-    -- Nothing else in the tree is, which is why it is a flag on the node
-    -- rather than a rule about pages.
-    -- A function rather than a table: the page is eight cells on the home
-    -- screen and nine with a game behind it, so it has to be asked each time
-    -- rather than built once at load.
-    -- One ship, and what thirty points buy on it. One row a slot, the count
-    -- as steps, and left and right spend and unspend the way they set every
-    -- other value in this menu.
-    --
-    -- No grid. The roster was one, eight hulls laid out as cells with the kit
-    -- of whichever one the cursor stood on drawn beside them, and picking a
-    -- cell opened a second page for the kit. The roster is a carousel at the
-    -- head of this page now, so both levels are this one.
+    -- One ship and what thirty points buy on it. The roster is a carousel at
+    -- the head of this page, with one row per kit slot below it. Choosing a
+    -- hull and building it stay on one level.
     hangar = {rows = kit_rows},
 
     -- What rivets buy: which slots a pilot may put on a ship. Never how many
@@ -3854,7 +3837,7 @@ local function activate(by)
                 -- Two answers, not three. Sitting out used to live here as a
                 -- third, and it was in the wrong room: this card is about the
                 -- game you are in, and watching is about what you are flying,
-                -- which is the ship page's question. It is the ninth cell
+                -- which is the ship page's question. It is the eighth cell
                 -- there now.
                 M.confirm((M.watching and "you are watching "
                            or "you are already flying ") .. pick.name,

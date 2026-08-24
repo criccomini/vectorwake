@@ -19,6 +19,21 @@ local function draw_cursor(self, dt, h, html5, touch, ui)
     end
 end
 
+-- An anchor sits above the canvas, so the engine stops receiving pointer
+-- positions while the pointer is over it. Read the anchor's own position and
+-- put it back in the coordinate space the rest of the client uses.
+function M.link_pointer(self, html5)
+    if not html5 or not self.link_dom then return end
+    local ok, at = pcall(html5.run, "window.vwLinkAt ? vwLinkAt() : ''")
+    if not ok or type(at) ~= "string" then return end
+    local ax, ay = string.match(at, "^(%-?[%d%.]+),(%-?[%d%.]+)$")
+    if not ax then return end
+    local density = self.density or 1
+    self.cursor_x = tonumber(ax) * density
+    self.cursor_y = (self.vh or 0) - tonumber(ay) * density
+    self.cursor_idle = 0
+end
+
 local function publish_link(self, html5, ui)
     local link = ui.link_dom
     if link == self.link_dom then return end

@@ -27,31 +27,13 @@ end
 
 local W, H = 1280, 800
 local segs, hits
-local layer = {}
-local function noop() end
-for _, n in ipairs({"arc", "disc", "flush", "outline", "quad", "reset", "ring",
-                    "tri", "tri_fade", "fan", "seg_glow", "glow_band", "halo",
-                    "ring_fade", "seg_fade", "seg_flat", "frame", "skirt",
-                    "rect"}) do
-    layer[n] = noop
-end
+local harness = require("tests.ui_harness")
+local layer = harness.layer()
 layer.seg = function(_, x0, y0, x1, y1)
     segs[#segs + 1] = {x0 = x0, y0 = H - y0, x1 = x1, y1 = H - y1}
 end
 
-_G.sim = setmetatable({}, {__index = function() return function() return 0 end end})
-package.loaded["arena.state"] = {text = {}, n = 0, version = 0}
-package.loaded["arena.touch"] = {layout = function() return {charge = {}} end,
-                                 used = false}
-package.loaded["arena.world"] = {
-    build_overview = noop, forget_overview = noop,
-    overview = function() return {grid = 0} end,
-    radar_tiles = {}, radar_safe = {}, radar_doors = {},
-    HULLS = setmetatable({}, {__index = function()
-        return {poly = {0, 0, 1, 1, 2, 0}, mid = 0}
-    end})}
-
-local ui = require("arena.ui")
+local ui = harness.install()
 
 local ADDR = "play.vectorwake.net/discord"
 local function view()

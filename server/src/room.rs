@@ -468,7 +468,7 @@ impl Seat {
     /// A pilot with no account. This is what a deployment running without a
     /// meta-layer produces for everybody, and what a test wants when the thing
     /// under test is seats rather than identity.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn guest(name: impl Into<String>, bot: bool) -> Seat {
         let name = name.into();
         Seat {
@@ -1019,34 +1019,6 @@ impl Room {
         }
     }
 
-    /// A kit slot's name, as a person writes it, to its number in the core.
-    ///
-    /// The kit space is flat -- five stats, two trigger levels, twelve
-    /// add-ons, four charges -- and every slot in it costs one. The names are
-    /// the ones the upgrades and ship pages show: a stat by itself, a level and an
-    /// add-on prefixed by the trigger they belong to, and a charge by what it
-    /// is rather than by which of the four slots a zone parked it in.
-    #[allow(dead_code)]
-    pub(crate) fn slot_named(name: &str) -> Option<u8> {
-        const STATS: [&str; sim::UP_COUNT] = ["energy", "recharge", "speed", "thrust", "rotation"];
-        if let Some(i) = STATS.iter().position(|n| n.eq_ignore_ascii_case(name)) {
-            return Some(sim::slot_stat(i));
-        }
-        if let Some(k) = Room::charge_named(&name.to_ascii_lowercase()) {
-            return Some(sim::slot_charge(k));
-        }
-        let (trig, rest) = name.split_once('-')?;
-        let t = match trig.to_ascii_lowercase().as_str() {
-            "gun" => 0,
-            "bomb" => 1,
-            _ => return None,
-        };
-        if rest.eq_ignore_ascii_case("level") {
-            return Some(sim::slot_level(t));
-        }
-        Some(sim::slot_mod(t, Room::mod_index(rest)?))
-    }
-
     /// Add-ons are named in a zone file and numbered in the core. The order
     /// is `sim_mod`'s and the names are the ones the design doc uses.
     pub(crate) fn mod_index(name: &str) -> Option<usize> {
@@ -1425,7 +1397,7 @@ impl Room {
     // Called by the tests rather than by the server, which reaches for the
     // fuller form beside it. Kept because it is the short way to say the
     // ordinary thing, and a test is a caller.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn join(
         &mut self,
         seat: Seat,
@@ -2006,7 +1978,7 @@ impl Room {
     /// every hostility test in this stack asks whether two sides differ. Chaos
     /// spent a day with no damage, no kills, and nine pilots with nothing to
     /// shoot at while War two doors down played fine.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn free_for_all(&self) -> bool {
         self.public_teams == 0
     }
@@ -2783,7 +2755,7 @@ impl Room {
     /// hull as an enemy's and offered no live sight of any of them, while the
     /// same person joining in a hull and then sitting out kept their side and
     /// everything that came with it.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn watch_join(
         &mut self,
         seat: Seat,
@@ -3016,11 +2988,9 @@ impl Room {
         self.score_events();
         player_count_changed |= self.sweep_safe();
 
-        let seats: Vec<(u8, bool)> = self.names.iter().map(|(s, seat)| (*s, seat.bot)).collect();
         let names = self.public_team_names();
         let mut ctx = modes::ModeCtx {
             world: &mut self.world,
-            seats: &seats,
             team_names: &names,
             banner: std::mem::take(&mut self.banner),
             finished: false,
@@ -3480,11 +3450,9 @@ impl Room {
         };
         let deaths = ingest_damage(&self.world, &mut self.rating, &name_of);
         for (victim, killer, _) in deaths.iter().copied() {
-            let seats: Vec<(u8, bool)> = self.names.iter().map(|(s, k)| (*s, k.bot)).collect();
             let names = self.public_team_names();
             let mut ctx = modes::ModeCtx {
                 world: &mut self.world,
-                seats: &seats,
                 team_names: &names,
                 banner: std::mem::take(&mut self.banner),
                 finished: false,
@@ -3629,6 +3597,16 @@ impl Room {
         }
     }
 
+    fn snapshot_buffer(buf: &mut [u8], private: bool) -> &mut [u8] {
+        let cap = if private {
+            sim::STATE_PACK_MAX
+        } else {
+            sim::PACK_MAX
+        };
+        let len = buf.len().min(cap);
+        &mut buf[..len]
+    }
+
     pub(crate) fn broadcast_player_snapshots(&mut self, buf: &mut [u8], combat_lane: bool) {
         let world = &self.world;
         let names = &self.names;
@@ -3675,7 +3653,8 @@ impl Room {
             // them they are. That is the minefield: everything else a pilot
             // fires is spent within seconds and inside the radius anyway.
             let options = if house { sim::PACK_PRIVATE_ALL } else { 0 };
-            let n = world.pack_around(buf, sh.x, sh.y, radius, p.ship, p.ship, options);
+            let packed = Self::snapshot_buffer(buf, house);
+            let n = world.pack_around(packed, sh.x, sh.y, radius, p.ship, p.ship, options);
             if n <= 0 {
                 continue;
             }
@@ -3692,7 +3671,7 @@ impl Room {
             msg.extend_from_slice(&p.input_mask.to_le_bytes());
             msg.extend_from_slice(&seq.to_le_bytes());
             p.lag.append_telemetry(&mut msg);
-            msg.extend_from_slice(&buf[..n as usize]);
+            msg.extend_from_slice(&packed[..n as usize]);
             // Counted here rather than at the socket: this is the byte the
             // room decided to send, and egress is what a host bills for.
             metrics::SNAPSHOT_BYTES.add(msg.len() as u64);
@@ -3728,6 +3707,7 @@ impl Room {
 
     pub(crate) fn broadcast_snapshot(&mut self, buf: &mut [u8]) {
         self.broadcast_player_snapshots(buf, false);
+        let buf = Self::snapshot_buffer(buf, false);
 
         // Watchers riding one pilot's eyes, live. Packed at the followed hull
         // with the server's fixed human radius. The subject supplies the

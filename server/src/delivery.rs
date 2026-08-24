@@ -187,7 +187,7 @@ impl InputMissRate {
     }
 
     /// How much history `percent` is a percentage of.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn sampled_ticks(&self) -> u32 {
         self.samples.len().min(u32::MAX as usize) as u32
     }

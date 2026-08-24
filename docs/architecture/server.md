@@ -1,259 +1,163 @@
 # The arena server
 
-> The zone and arena model in this document has been superseded. One process now
-> holds one arena, a zone is one game backed by interchangeable arena servers, and
-> an arena server picks which zone it serves rather than being placed by a
-> scheduler. See
-> [zones-and-arenas.md](zones-and-arenas.md), [discovery.md](discovery.md) and
-> decisions 23 through 27. Authority and validation, lag response, modules and
-> identity stand unchanged. Persistence does not: an arena server now holds
-> nothing durable, and the section below says where each kind of state went.
+The Rust binary supplies every server role. With no subcommand it runs an arena
+process. The `directory`, `bots`, and `meta` subcommands run the other live
+services, while `catalog`, `token`, `metakey`, `calibrate`, `drill`, and
+`mapforge` are operator or offline tools.
 
 ## Responsibility
 
-The server owns the truth. It accepts connections, authenticates players, feeds
-inputs to the simulation, decides every kill, and emits a durable record of what
-happened. Clients render its decisions and predict ahead of them.
+The arena owns the truth. Clients send inputs and requests. Position, damage,
+death, inventory, objectives, scores, and match results come back as server
+decisions. The client runs the same C simulation core for prediction, but a
+prediction never becomes authority.
 
-It is a separate program from the client rather than a headless Defold build.
-The reasons are in [decisions.md](decisions.md), and the short version is that a
-zone server wants long uptime, sandboxed extensions, a database, and predictable
-memory under a few hundred connections, none of which is what Defold is for. A
-headless Defold build remains a legitimate shortcut for the first playable
-prototype, and it is on the roadmap as one.
+The server links the core through the FFI mirror in `sim.rs`. Rust owns
+untrusted input, sessions, room membership, modes, persistence handoff, and
+networking. C owns deterministic movement and combat. The boundary is packed
+bytes and narrow calls rather than a second implementation of game rules.
 
-## Language
+## Source shape
 
-Rust, linking the C simulation core through a thin FFI wrapper.
+The server is one crate with modules split by runtime concern:
 
-The server is where the untrusted input arrives: packet parsing, session
-handling, file transfer, and module hosting are all attack surface, and
-they are the parts of the system where memory safety earns its keep. The
-simulation, by contrast, sees only validated integers and allocates nothing,
-which is why it stays in C where Defold's build server can compile it.
+| Area | Modules |
+|---|---|
+| Arena loop and rooms | `main.rs`, `room.rs`, `session.rs`, `modes.rs`, `protocol.rs` |
+| Simulation and tuning | `sim.rs`, `config.rs`, `arena.rs`, `delivery.rs` |
+| Fleet and catalog | `directory.rs`, `select.rs`, `fleet.rs`, `catalog.rs` |
+| Bots | `bots.rs`, `ai.rs`, `pilot.rs`, `nav.rs`, `shopper.rs`, `profiles.rs` |
+| Accounts and records | `meta.rs`, `token.rs`, `rating.rs`, `spool.rs`, `presence.rs` |
+| Operations and tools | `metrics.rs`, `wt.rs`, `calibrate.rs`, `drill.rs`, `mapforge.rs` |
 
-The cost is honest: three languages in one project, C for the core, Rust for the
-server, Lua for the client shell. We accept it because each boundary is narrow
-and each choice is forced by a different constraint.
+The crate does not contain the proposed `transport/`, `modules/`, or
+`arena/` directory trees from the original design. The flat modules above are
+the code that ships.
 
-## Structure
+## Processes, zones, and rooms
 
-```
-server/
-  src/
-    main.rs
-    transport/        udp.rs, websocket.rs, throttle.rs
-    session/          handshake, auth, capabilities
-    arena/            arena.rs, settings.rs, map.rs
-    directory/        registration client, the unioned view, zone selection
-    sim/              FFI bindings to sim/
-    lag/              measurement and actions
-    ai/               controllers, perception, navigation, population director
-    rating/           damage ledgers, rated events, Elo
-    modules/          wasm host, adviser dispatch
-    spool/            rated events, batched to the meta-layer; no local database
-  tests/
-```
+An arena process serves one zone at a time. Inside it, `ArenaServer` owns one or
+more rooms. The first room exists while the process serves the zone. More rooms
+open only when the existing rooms have reached the zone's fill target, up to
+`max_rooms`, and empty extra rooms are reclaimed.
+
+Each room owns a simulation state, map rotation position, mode, teams, pilots,
+watchers, and delayed room channel. Rooms share the zone definition, packed
+maps, event spools, network listeners, and process fate. This is why
+`max_rooms` is both a capacity limit and a blast-radius decision.
+
+An arena process registered with directories chooses which under-served zone to
+serve. It changes only after every room is empty. The directory observes and
+reports; it does not assign a process or move a player. The full selection rule
+is in [zones-and-arenas.md](zones-and-arenas.md).
 
 ## The tick
 
-One process, one arena, one tick loop. The arena holds a `sim_state`, its
-settings, its map, its player list, and its module instances, and nothing else in
-the process competes for them. The worker pool, the lazy load by name, the
-template resolution and the unload grace period that used to be described here
-are all gone with [decision 23](decisions.md); capacity is many processes and the
-container platform schedules them.
+One loop steps every room at 100 Hz:
 
-A tick is: drain the input queue, call `sim_step`, hand the resulting events to
-modules, to the rating layer, and to the snapshot builder, then enqueue any
-persistence writes. At 100 Hz that is a 10 ms budget, and a 40-player arena
-should use a small fraction of it. Bot inputs arrive in the same queue as
-everyone else's, from the bot server, per [ai-runtime.md](ai-runtime.md) and
-[decision 29](decisions.md#29-a-bot-is-a-client); what bots cost this process
-is snapshot streams, not AI time. Measured tick cost is in memory
-#75: 64 ships ran at 205 microseconds before the weapon-spec cache took a third
-off that.
+1. Apply due input records and release controls that have gone stale.
+2. Call `sim_step` for the room.
+3. Hand events to the room mode, rating ledger, effects feed, and persistence
+   spools.
+4. Send ordinary snapshots at 20 Hz and the nearby-combat lane at 50 Hz.
+5. On slower clocks, repeat roster, team, settings, and fleet status so a
+   dropped update repairs itself.
 
-Which zone this process serves, and when it drains to serve a different one, is
-[zones-and-arenas.md](zones-and-arenas.md). Duels keep their own lifecycle: a
-duel arena runs matches back to back out of a warm pool rather than being created
-per match, per the amendment to [decision 16](decisions.md). See
-[design/duel-mode.md](../design/duel-mode.md).
+Socket sessions, directory registration, WebTransport, and spool delivery are
+asynchronous tasks. The tick loop does not wait for a network round trip or for
+PostgreSQL.
 
-## Authority and validation
+## Authority and input
 
-Inputs are the only thing a client may assert. An input command carries a button
-bitfield and the tick it applies to, and nothing else: there is no aim field,
-per [decision 17](decisions.md), and no sequence number, because the tick
-already orders and deduplicates.
+An input packet contains a lifecycle generation, selective receipt windows, and
+up to four records of simulation tick plus button bits. Records for future
+ticks wait in a bounded per-pilot map. A repeated tick replaces the earlier
+record. A late record applies where it arrives, and a lead beyond the accepted
+window is clamped.
 
-The server honours that tick. An input for a tick it has not reached waits in a
-bounded per-player queue, a repeat for a tick already queued replaces it, and a
-lead beyond a second is clamped rather than refused, since a drifted clock is a
-client to correct and not one to disconnect. An input for a tick already
-simulated applies immediately, which is what the server did with every input
-before scheduling existed and is still right for a client running no lead.
+Ship, kit, team, watch, invite, and fixed-phrase messages are requests. The room
+validates them and the next authoritative message says what happened. A client
+cannot submit a position, hit, death, score, or arbitrary chat line.
 
-Positions, deaths, damage, prize pickups, flag claims, and goals are outputs of
-`sim_step` and cannot be asserted by a client. This deletes the entire class of
-cheats that Subspace's `C2S_DIE` packet enabled, and it means the security
-module we do not have to write is the checksum treadmill Continuum is stuck on.
+Inbound frames are capped at 8 KiB and queued input is bounded. There is no
+separate messages-per-second throttle. Load tests pushed hundreds of thousands
+of local input messages per second without disturbing the tick cadence, so the
+code does not carry a rate limiter for a bottleneck that has not appeared.
 
-There is no rate limit on inbound messages, and this document used to say there
-was one. What actually bounds a client is narrower: a frame is capped at 8 KB, a
-scheduled input is clamped to a second of lead and its queue to 128 entries, and
-a ship change is refused by the core unless the pilot is alive and at a full bar,
-so sending one every frame achieves nothing. Nothing caps how *often* a client
-may speak.
+## Transport and packing
 
-The reason to want a limit is that every inbound message briefly takes the lock
-on the zone, and the 100 Hz loop needs that same lock to run the game, so a
-client that floods could in principle starve the tick and slow the match for
-everybody else in the process.
+WebSocket is the universal reliable transport. Browsers try WebTransport first
+when an arena advertises it, use datagrams for current input and combat
+snapshots, and keep reliable streams for control and ordinary snapshots. Both
+doors carry the same protocol messages.
 
-Measured rather than assumed, against a local arena. One connection sending
-83,750 inputs a second, about eight hundred times what a real client sends, left
-honest players at 20.1 snapshots a second against a 19.8 baseline with their
-input timing unchanged. Four connections together sending roughly 297,000 a
-second, about three thousand times normal, left them at 19.7. The per-message
-work is small enough that a third of a million of them a second does not disturb
-a loop that runs a hundred times a second.
+The C core packs settings, maps, and snapshots so client and server cannot
+quietly disagree about their layouts. Player and watcher snapshots retain a 64
+KiB maximum. Full unfiltered state serialization has a separate, slightly
+larger bound for diagnostics and trusted house bots connected over loopback.
 
-So this is deliberately not built. The margin is somewhere past three thousand
-times ordinary load, and a throttle now would be a guard on a door nobody can
-push open. Two caveats bound that claim: the test ran on loopback, where the
-flooders were probably limited by their own CPU rather than by the server, and
-four processes on one box is not a botnet.
-
-**Build it when** a room's tick time or snapshot cadence degrades under something
-other than player count. That is the symptom, it is already visible in the
-`STATUS` metrics an arena pushes, and the fix is a token bucket per connection in
-the read loop rather than anything structural.
+When configured, the UDP listener terminates QUIC for WebTransport; the
+production fleet uses port 9443. There is no plain UDP game transport for
+native clients; they use WebSocket today.
 
 ## Lag response
 
-The server measures average round trip, jitter, ordinary snapshot loss,
-nearby-combat snapshot loss, and missed input deadlines per player. These are
-diagnostics. A browser may discard an obsolete snapshot before the game reads
-it, and a modified client may forge a snapshot receipt, so none of these
-measurements decides whether a pilot may shoot or take an objective.
+The server measures round trip, jitter, snapshot loss on both lanes, and missed
+input deadlines. These are diagnostics. A client can omit or forge receipt
+information, so those reports do not decide whether it may shoot or take an
+objective.
 
-The measurements use selective acknowledgement windows in both directions.
-Round trip compares a server snapshot tick with the server tick where its
-acknowledgement arrives, so no client clock enters the diagnostic. Gameplay
-uses a simpler fact that the server observes directly: when the last valid
-input packet arrived. After 250 ms of silence it releases weapon buttons. After
-one second it releases every held control and prevents objective pickup. A new
-packet clears the objective restriction immediately. Five seconds of silence
-moves the pilot to the stands, or disconnects them if the stands are full.
-A connection that sends nothing for forty-five seconds is closed. WebTransport's
-sixty-second idle timeout stays above that game-level decision.
+Gameplay uses arrival facts the server observes directly. With the shipped lag
+policy defaults:
 
-## Zone modules
+- After 250 ms without input, held weapon buttons are released.
+- After one second, every held control is released and objective pickup stops.
+- After five seconds, the pilot is moved to the stands or disconnected if no
+  stand is available.
+- After forty-five seconds without any message, the connection closes.
 
-Game modes and zone-specific rules run as sandboxed modules. Each module
-receives events from the arena and may register as an adviser, which is ASSS's
-best idea: before the server finalizes a kill it asks the advisers, and each may
-edit the killer, the victim, or the bounty, or drop the event entirely. That
-gives a zone author a veto over core behavior without patching core.
+A new valid input clears the objective restriction immediately.
 
-Modules run in a WebAssembly sandbox with a fuel limit per tick, no filesystem,
-and no network. A module that loops forever loses its turn instead of hanging
-the arena. This is the deliberate reversal of ASSS's model, where a `.so` has
-full process access and can segfault the server.
+## Modes
 
-The module API is small on purpose: subscribe to events, read arena and player
-state, adjust settings at runtime, set scores, spawn and move flags and balls, and
-answer adviser questions. Writing a warzone flag game or a
-powerball mode should take a few hundred lines.
+Modes are Rust implementations selected by `zone.toml`: `arena`, `warzone`,
+and `melee`. A mode receives a narrow room context, reacts to simulation events,
+and owns scoring or match flow. It does not replace movement or combat rules in
+the core. The catalog recognizes `duel`, but it currently runs the free-for-all
+arena mode while the dedicated duel design remains deferred.
 
-Lua as a second module language is likely, since more zone authors write Lua
-than compile WASM, and a Lua interpreter inside a WASM module gets us there
-without a second sandbox.
+Sandboxed WebAssembly and Lua zone modules were proposals and are not in the
+runtime. A zone author can currently change the broad settings and weapon
+surface, choose a built-in mode, and supply maps. A future extension language
+should be designed around a real mode that configuration cannot express.
 
-## Persistence
+## Persistence and identity
 
-An arena server holds nothing durable. That is a change from what this document
-said, and the reason is that the rest of the architecture now depends on it: a
-process that owns a database is a process you cannot lose, and
-[zones-and-arenas.md](zones-and-arenas.md) is built on arena servers being
-disposable. SQLite per arena would have quietly made every instance precious.
+An arena process has no authoritative database. Ephemeral state dies with a
+room. The catalog owns settings, maps, bans, staff, and fleet credentials. The
+meta-layer's PostgreSQL database owns accounts, call signs, credentials,
+ratings, match artifacts, and the rated event log.
 
-So the split is:
+Arena processes append outbound records to local spool files and background
+tasks hand them to the meta-layer. The spool is durable across a process
+restart, but it is a delivery queue, not a second source of truth.
 
-| Lives where | What |
-|---|---|
-| Nowhere; dies with the room | Positions, energy, upgrades, the round in progress, flags held |
-| The meta-layer's Postgres | Identity, ratings, the rated event log, career records |
-| The catalog, in git | Bans, staff and capabilities, every zone's settings |
-| An arena's local disk | Its instance id, and a spool of rated events awaiting handoff |
-
-The rated event log is the case that decides the shape. Rating is computed from
-events rather than stored as a number, per
-[design/rating.md](../design/rating.md), so a match produces a durable record
-that must outlive both the room and the process. An arena server therefore
-*emits* rated events rather than owning them: it batches them and hands them off,
-and a tick never waits on the network any more than it used to wait on a disk.
-
-The handoff target is settled: the meta-layer, per
-[meta-layer.md](meta-layer.md) and
-[decision 30](decisions.md#30-the-meta-layer-is-ours-and-identity-leaves-nakamas-list).
-The directory was the other candidate and lost for exactly the reason it was
-tempting: it is the piece we most want to be able to lose, and the event log is
-the piece we can least afford to.
-
-`persist.rs` writing `ratings.json` beside the process was the interim, and it
-is gone. It was correct for one process serving one zone and wrong the moment
-two instances of the same zone both held opinions about a pilot's rating.
-
-ASSS's score intervals, forever and per-reset and per-game, are still the model
-worth copying when this lands, because they are what tournament and league play
-needs. They belong in the meta-layer's schema rather than in an arena.
-
-## Identity
-
-Identity is an account at the meta-layer, minted silently on first contact and
-carried as a signed session token the arena validates offline, so which
-authority issued it stays out of the arena code.
-[design/accounts.md](../design/accounts.md) is the model and
-[meta-layer.md](meta-layer.md) the machinery. A deployment can still run with
-no meta-layer at all, which is ASSS's `auth_file` case reduced to its honest
-core: everyone flies as an unknown guest, nothing is rated, and nothing durable
-is written.
+A client gets a signed session token from the meta-layer and presents it while
+joining. The arena verifies the signature offline with the public key delivered
+in the catalog. An authenticated pilot taking a flying seat also claims the
+account's one rated lease online. If the meta-layer is unavailable, a new rated
+session is refused, guests can still fly, and existing leases have three
+minutes of renewal slack. Durable records wait in their spools, and a room tick
+never touches the database.
 
 ## Operations
 
-An arena server is one binary and a short config naming its directories. The
-configuration it serves arrives from a directory and reloads without a restart,
-because zone operators tune numbers constantly and taking an arena down to change
-a bounce factor is how you lose players. What used to be a zone directory on the
-serving host is now the catalog, per
-[content-pipeline.md](content-pipeline.md).
+The process exports role and zone metrics, tick duration, snapshot sizes and
+bytes, queue drops, lag actions, room and pilot counts, and spool state. Outbound
+queues are bounded. A slow client loses superseded snapshots instead of making
+the arena wait or growing memory without limit.
 
-Metrics we care about from the start: tick duration per arena, bandwidth per
-player, snapshot size, input queue depth, and the count of lag actions taken.
-Those five numbers tell us whether the architecture is holding.
-
-Queue depth is the one that is load-bearing rather than merely interesting. Each
-connection has a bounded outbound queue and the arena drops rather than blocks
-when it is full, which is safe because a snapshot is a whole state pack: the next
-one supersedes any that was dropped. Unbounded was the original, and it made a
-client that stopped reading into a memory leak with a socket on the end of it --
-two hundred stalled clients in one room took a process from 8 MB to 450 MB in
-twenty-five seconds, measured, and the bound holds it to a tenth of that. Reported
-depth is the worst-off connection in the process, because that is the one whose
-player is losing frames. Queue drops and gameplay lag actions are separate
-metrics: `vw_send_dropped_total` reports transport backpressure, while
-`vw_lag_actions_total` reports objective and spectator restrictions.
-
-## Open questions
-
-Whether WASM module startup cost is acceptable when an arena loads, and how
-modules get distributed to operators. The catalog is now the obvious channel for
-the second half of that, which makes module bytes something a directory hands out
-alongside a map.
-
-Two questions that used to live here are answered. Whether an arena should be
-able to move to another process for isolation: yes, and it is the only thing in a
-process now, per [decision 23](decisions.md). Whether the arena worker pool needs
-work stealing: there is no pool.
+A standalone process reads local settings repeatedly and keeps the last valid
+configuration when a reload is broken. A fleet process receives catalog
+commits through its directory connections. TLS identities belong to listeners
+and require a restart; game tuning does not.

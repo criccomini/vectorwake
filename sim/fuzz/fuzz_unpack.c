@@ -16,7 +16,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     static sim_state *seed_state;
     static sim_state *state;
     static sim_state *next;
-    static uint8_t snapshot[SIM_PACK_MAX];
+    static uint8_t snapshot[SIM_STATE_PACK_MAX];
     static uint8_t settings[SIM_SETTINGS_PACK_MAX];
     static uint8_t packed_map[SIM_MAP_PACK_MAX];
     static uint8_t scratch[SIM_MAP_PACK_MAX];

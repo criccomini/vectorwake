@@ -30,9 +30,7 @@
 #define LVL_TURF 170
 #define LVL_SAFE 171
 #define LVL_GOAL 172
-#define LVL_OVER_FIRST 173
 #define LVL_OVER_LAST 175
-#define LVL_UNDER_FIRST 176
 #define LVL_UNDER_LAST 190
 #define LVL_ASTEROID_SMALL 216
 #define LVL_ASTEROID_BIG 217
@@ -61,7 +59,6 @@ static uint32_t rd32(const uint8_t *p) {
 /* The solid variants are sim.h's now, because the editor writes them too and
  * two files guessing at the same numbering is how a rock becomes a station.
  * Short names because this file is thick with them. */
-#define V_WALL SIM_SOLID_WALL
 #define V_BORDER SIM_SOLID_BORDER
 #define V_ROCK_A SIM_SOLID_ROCK_A
 #define V_ROCK_B SIM_SOLID_ROCK_B

@@ -527,9 +527,9 @@ Both surfaces do this: the corner drops the row and the block shrinks by it,
 since the block hangs off the bottom of the window and what a row costs comes
 off the top. A control that does nothing when pressed is bad enough with a
 keyboard, and on glass there is no travel and no cursor, so the only way to
-learn a cell is dead is to tap it in a fight and get nothing back. Q, W, A and
-S stay bound to the hull's slots rather than to the rows drawn: binding them to
-the drawing would move Q onto your burst the moment your last repel went.
+learn a cell is dead is to tap it in a fight and get nothing back. Q and W stay
+bound to the hull's slots rather than to the rows drawn: binding them to the
+drawing would move Q onto your burst the moment your last repel went.
 
 `lua5.1 client/tests/pad_layout_test.lua` draws the real controls through a
 recording layer and measures where a tap lands against where the ink went,
@@ -632,7 +632,7 @@ Where the words go is filed rather than worked out twice. Each element records
 where it landed as it draws itself, into `anchor` in `ui.lua`, and the label
 reads that; the corner stack also reports how far right it actually reached, so
 a hull carrying three add-ons pushes the sentence right rather than having it
-printed through its own loadout. `lua5.1 client/tests/help_test.lua` runs the
+printed through its own loadout. `lua5.1 client/tests/help_table_test.lua` runs the
 real `M.hud` against a stubbed engine and measures where the text came out: on
 the row it names, clear of what is already on that row, and inside the screen,
 which for the bottom row of the stack takes a clamp.

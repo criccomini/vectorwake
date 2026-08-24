@@ -46,11 +46,6 @@ struct Reg {
     address: String,
     wt: String,
     region: String,
-    /// Which zones this arena said it would serve. Kept because a
-    /// registration is a record of what an arena claimed, and selection reads
-    /// what it is actually running instead.
-    #[allow(dead_code)]
-    willing: Vec<String>,
     status: fleet::Status,
     verified: bool,
     seen_ms: u64,
@@ -472,15 +467,8 @@ pub async fn ask_with(url: &str, frame: Vec<u8>, expect: u8) -> Option<String> {
     }
 }
 
-/// Verify a claimed address the way a client is about to: connect, ask for
-/// status, require a well-formed answer. The party with a reason to care runs
-/// the check, and an operator can move hosts without a new credential.
-#[allow(dead_code)]
-pub async fn verify(address: &str) -> bool {
-    check(address).await.is_ok()
-}
-
-/// The same check, keeping the reason it failed.
+/// Verify a claimed address the way a client is about to, keeping the reason
+/// it failed.
 ///
 /// A failure here is invisible in the worst way: every game is running, the
 /// arena is registered, and the browse reply offers nothing, because an
@@ -636,7 +624,6 @@ async fn serve_registration(
                             address: r.address.clone(),
                             wt: r.wt.clone(),
                             region,
-                            willing: r.willing.clone(),
                             status: fleet::Status::default(),
                             verified: false,
                             seen_ms: now_ms(),
@@ -938,33 +925,12 @@ async fn serve_registration(
 /// is how the fleet's shared picture propagates: through the workers, because
 /// directories never talk to each other.
 async fn push_views(dir: Arc<Mutex<Directory>>) {
-    let mut last = String::new();
     loop {
         {
             let mut d = dir.lock().await;
             d.reap();
             let view = d.view();
             let json = serde_json::to_string(&view).unwrap_or_default();
-            // Ages change every tick, so compare the part that matters rather
-            // than the whole document.
-            let fingerprint: String = view
-                .instances
-                .iter()
-                .map(|i| {
-                    format!(
-                        "{}:{}:{}:{}:{}:{}|",
-                        i.instance,
-                        i.zone,
-                        i.players,
-                        i.rooms.len(),
-                        i.capped,
-                        i.intent
-                    )
-                })
-                .collect();
-            if fingerprint != last {
-                last = fingerprint;
-            }
             let msg = {
                 let mut m = vec![fleet::D2A_VIEW];
                 m.extend_from_slice(json.as_bytes());
@@ -1284,7 +1250,6 @@ mod tests {
                 address: format!("ws://{id}:9010"),
                 wt: String::new(),
                 region: "local".into(),
-                willing: vec![],
                 status: fleet::Status {
                     zone: zone.into(),
                     players,

@@ -75,8 +75,8 @@ local function check(desc, ok, why)
     print(string.format("%-46s %s", desc, ok and "ok" or ("FAIL: " .. why)))
 end
 
--- Every map the catalog ships, which is the melee zone's two.
-for _, name in ipairs({"melee/drydock", "melee/slipway"}) do
+-- Two current maps with different envelopes and terrain mixes.
+for _, name in ipairs({"melee/drydock", "melee/relay"}) do
     local tiles, mw, mh = tiles_of("catalog/zones/" .. name .. ".vwmap")
     local grid, gw, gh = coarse(tiles, mw, mh, CELL)
     local bytes = {}

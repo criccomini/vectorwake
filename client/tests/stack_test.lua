@@ -13,8 +13,7 @@
 --
 --   the mark stays inside its own row, however many add-ons it wears;
 --   it never reaches the column the ladders and the bounty count in;
---   and every add-on draws something, so a green that landed is a green the
---   corner shows.
+--   and every add-on in the kit draws something the corner shows.
 --
 -- So this runs the real `M.hud` against a stubbed engine, records the geometry
 -- rather than counting calls, and measures.
@@ -188,13 +187,9 @@ local sim = {
     -- says how many fragments. Nothing here doubles 4, 8, 16 by arithmetic,
     -- because the drawing must not either.
     shrap_count = function(n) return ({2, 4, 8})[math.min(n, 3)] or 0 end,
-    charge_max = function() return 3 end,
     has_trigger = function() return true end,
-    trigger_rate = function() return 1 end,
     tick = function() return 1000 end,
     weapon_count = function() return 0 end,
-    prize_count = function() return 0 end,
-    prize_at = function() return 0, 0, 0 end,
     flag_count = function() return 0 end,
     flag_at = function() return 0, 0, 255 end,
     map_coarse = function() return nil end,
@@ -362,8 +357,8 @@ end
 
 -- --- every add-on draws ----------------------------------------------------
 
--- A green that landed on a trigger has to change that trigger's mark, or the
--- corner is telling a player they picked up nothing. Measured against the bare
+-- An add-on in the kit has to change that trigger's mark, or the corner is
+-- hiding part of the selected loadout. Measured against the bare
 -- mark: what an add-on drew is what is there that was not there before.
 local bare = {}
 if bomb then bare = cell(bomb) end
@@ -565,7 +560,7 @@ check("and the row covers everything its mark drew",
 -- --- the row still says what it carries, in marks --------------------------
 --
 -- There were words for this once: point at the row and a sentence named the
--- add-ons the hull had picked up. The words are gone with the rest of the
+-- add-ons configured on the hull. The words are gone with the rest of the
 -- help, so the decorations on the mark are the whole account of what is
 -- aboard, and what this file can still check is that they are drawn and that
 -- the row grows to hold them. The section above does both.
@@ -689,7 +684,8 @@ end
 -- --- the rows line up ------------------------------------------------------
 
 -- Every mark stands its subject on one axis: the head of each round, the hub
--- of the repel's rings and the burst's spokes, the middle of the green. That
+-- of the repel's rings and the burst's spokes, the middle of the fallback
+-- charge diamond. That
 -- is not the same as centring the drawings, because a bolt is a long streak
 -- with a small head and a bomb a short one with a big head, so centring the
 -- boxes would put the round in a different place on each row. What the eye
@@ -703,11 +699,11 @@ end
 -- Neither weapon mark is symmetric about its own round: a gun's lines leave
 -- from a muzzle well behind the dot and a bomb trails, so standing the round
 -- on the axis hangs the mark off to the left of every other row. The charge
--- glyphs and the green are drawn about their own middles, so for them the two
--- are the same thing and this is one rule rather than two.
+-- glyphs and the fallback diamond are drawn about their own middles, so for
+-- them the two are the same thing and this is one rule rather than two.
 --
 -- Measured bare, because that is what the bias is computed against: add-ons
--- hang off the right, and a bomb that picked up shrapnel should not slide left
+-- hang off the right, and a bomb configured with shrapnel should not slide left
 -- out of the column it shares with four other rows.
 local function mark_box(key, edge)
     local b = row_box(key)
@@ -857,7 +853,7 @@ check("the barrels themselves stay on the mark when declined",
 -- --- the fan is the round, not a thing hung on it -------------------------
 
 -- Every other add-on is a decoration, so it is drawn in the round's hue run
--- hot: what a green added reads as part of the round rather than as a separate
+-- hot: what the kit added reads as part of the round rather than as a separate
 -- object beside it. Multifire decorates nothing. Its extra barrels fire the
 -- same round out of the same muzzle on the same spec, which is why world.lua
 -- gives all three bullets one color in flight. Drawn hot with the rest, the
@@ -1092,8 +1088,8 @@ check("fragments take the gun's rung, not the bomb's", ticks == 2,
 check("and none of them the rung the bomb is drawn in",
       frag_ticks(bomb_hot) == 0, "a tick in the bomb's own color")
 -- And it follows the guns while they climb, which is the whole of the fact:
--- a bomber who finds gun prizes is throwing harder fragments and the mark on
--- their bomb says so without the bomb itself moving.
+-- a bomber with a higher gun rung throws harder fragments and the mark on their
+-- bomb says so without the bomb itself moving.
 gun_level = 0
 check("and they climb with the guns", frag_ticks(pal.hot(pal.rung(0), 0.45)) == 2,
       "the ticks did not follow the gun down to rung 0")

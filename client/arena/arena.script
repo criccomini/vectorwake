@@ -45,11 +45,12 @@ local vec = require("render.vec")
 -- Each number is still declared where it is explained, beside the code that
 -- reads it. This is only the namespace they share.
 local TUNE = {}
+TUNE.CONTROL = require("arena.control_actions").new(hash, sim)
 
 -- The two navigation controls are read together each frame. Kept on the shared
 -- constant table rather than built inside update so moving through a list
 -- allocates nothing and costs no extra upvalue.
-TUNE.PLAYER_MOVES = {{hash("player_prev"), -1}, {hash("player_next"), 1}}
+TUNE.PLAYER_MOVES = TUNE.CONTROL.players
 
 TUNE.TICK_HZ = 100
 TUNE.DT = 1 / TUNE.TICK_HZ
@@ -246,33 +247,8 @@ end
 -- Defold hands on_input a hashed action_id, never the string it was written
 -- as in the input binding. Comparing it to a string literal silently yields
 -- false for every key ever pressed, which is exactly what it did.
-local ACTION_BITS = nil
 local function bit_for(action)
-    if not ACTION_BITS then
-        ACTION_BITS = {
-            [hash("turn_left")] = sim.BTN_LEFT,
-            [hash("turn_right")] = sim.BTN_RIGHT,
-            [hash("thrust")] = sim.BTN_THRUST,
-            [hash("reverse")] = sim.BTN_REVERSE,
-            [hash("guns")] = sim.BTN_FIRE,
-            [hash("bombs")] = sim.BTN_BOMB,
-            -- Held rather than tapped here on purpose: the core toggles on the
-            -- rising edge, so the client's job is only to report the key, and
-            -- doing the edge here as well would make two places that have to
-            -- agree about one press.
-            [hash("multi")] = sim.BTN_MULTI,
-            -- The mouse buttons are their own actions rather than aliases of
-            -- guns and bombs. A browser synthesises a click from every touch,
-            -- so while they shared a name, one tap anywhere on a phone was a
-            -- trigger pull, and a menu row read a trigger pull as a choice.
-            [hash("pointer")] = sim.BTN_FIRE,
-            [hash("pointer_alt")] = sim.BTN_BOMB,
-            -- Continuum's own gun key, honoured only under the keyboard lock:
-            -- see the gate in my_buttons.
-            [hash("guns_ctrl")] = sim.BTN_FIRE,
-        }
-    end
-    return ACTION_BITS[action] or 0
+    return TUNE.CONTROL.bits[action] or TUNE.CONTROL.pointer_bits[action] or 0
 end
 
 -- Whether the page holds the keyboard lock, polled from the fullscreen state
@@ -359,8 +335,16 @@ local charge_tap = nil
 -- selected game as scenery and `session.attract_drop` tears that down.
 local session = {
     browser = require("arena.browser"),
+    deep_route = require("arena.deep_route"),
     playback = require("arena.playback"),
 }
+
+session.replay_route = session.deep_route.new({
+    ready = function() return account.base ~= "" end,
+    note = function(text) menu.note = text end,
+    fetch = function(id, callback) account.fetch_replay(id, callback) end,
+    start = function(state, reply) session.replay(state, reply) end,
+})
 
 local function uri_part(s)
     return (s or ""):gsub("([^%w%-_%.~])", function(c)
@@ -386,34 +370,8 @@ end
 function session.enter_deep_route(self)
     local route = self.deep_route
     if type(route) ~= "string" or route == "" then return false end
-    local replay_id = string.match(route, "^replay/(%d+)$")
-    if replay_id then
-        if self.replay_loading or account.base == ""
-            or (self.replay_after and (self.clock or 0) < self.replay_after) then
-            return false
-        end
-        self.replay_loading = route
-        self.replay_tries = (self.replay_tries or 0) + 1
-        menu.note = "loading match replay"
-        account.fetch_replay(tonumber(replay_id), function(reply, why)
-            if self.replay_loading ~= route then return end
-            self.replay_loading = nil
-            if not reply then
-                if why == "no such match" and (self.replay_tries or 0) < 10 then
-                    self.replay_after = (self.clock or 0) + 1
-                    return
-                end
-                self.deep_route = nil
-                menu.note = why or "cannot load match replay"
-                return
-            end
-            self.deep_route = nil
-            self.replay_after = nil
-            self.replay_tries = nil
-            session.replay(self, reply)
-        end)
-        return false
-    end
+    local replay = session.replay_route(self, route)
+    if replay ~= nil then return replay end
     local kind, zone, instance, room = string.match(route,
         "^(join)/([^/]+)/([^/]+)/(%d+)$")
     if not kind then
@@ -626,6 +584,66 @@ end
 local function toggle_map()
     ui.map = not ui.map
 end
+
+-- Panel input is data-driven so the binding catalog and the frame loop share
+-- one executable contract. The handlers keep the old ordering and gates: a
+-- panel press is consumed even without a live arena, while Escape remains for
+-- the open menu to handle itself.
+TUNE.PANEL_HANDLERS = {
+    menu = function()
+        if menu.open then return false end
+        -- Escape dismisses the innermost open panel before opening the menu.
+        if ui.room_ask then
+            ui.room_ask = nil
+        elseif ui.inspect then
+            ui.inspect = nil
+        elseif ui.help then
+            ui.help = false
+        elseif ui.details then
+            toggle_details()
+        elseif ui.rooms_open then
+            ui.rooms_open = false
+        else
+            toggle_menu()
+            sfx.ui("ui_go")
+            return true
+        end
+        sfx.ui("ui_move")
+        return true
+    end,
+    details = function(_, live)
+        if live then
+            toggle_details()
+            sfx.ui("ui_move")
+        end
+    end,
+    players = function(taps, live)
+        for _, move in ipairs(TUNE.PLAYER_MOVES) do
+            local action = move.action
+            if taps[action] then
+                taps[action] = nil
+                if live then
+                    show_details()
+                    ui.player_step(move.direction, net.pilots, net.watchers,
+                                   eye_team(), menu.name)
+                    sfx.ui("ui_move")
+                end
+            end
+        end
+    end,
+    map = function(_, live)
+        if live then
+            toggle_map()
+            sfx.ui("ui_move")
+        end
+    end,
+    help = function(_, live)
+        if live and not menu.typing() then
+            toggle_help()
+            sfx.ui("ui_move")
+        end
+    end,
+}
 
 -- What the pointer is resting on in the menu, which lights the same way the
 -- arrow keys light a row: one cursor, moved by either hand.
@@ -1280,7 +1298,7 @@ function update(self, dt)
     -- which is what makes it safe to read first.
     if menu.arming then
         local moved = false
-        if tapped[hash("menu")] then
+        if tapped[TUNE.CONTROL.panel.menu] then
             moved = menu.cancel_bind()
             self.chord = nil
         else
@@ -1314,11 +1332,11 @@ function update(self, dt)
     -- Fixed 100 Hz stepping under our own accumulator rather than Defold's
     -- fixed_update: prediction and rollback want this clock, not the physics
     -- timestep, and Defold's physics is off entirely.
-    -- Q, W, A and S spend a hull's charge slots in order, the way a charge pad
-    -- already does on a touchscreen: a block of four under the left hand, read
-    -- across and then down, against a stack read top to bottom. By the slots
-    -- the hull carries rather than by absolute slot number, so a hull that
-    -- carries only some still puts Q on the first of them.
+    -- Q and W spend a hull's charge slots in order, the way a charge pad
+    -- already does on a touchscreen: two keys under the left hand, read across
+    -- against a stack read top to bottom. By the slots the hull carries rather
+    -- than by absolute slot number, so a hull that carries only some still puts
+    -- Q on the first of them.
     --
     -- The hull's slots, not the rows drawn: the corner shows only what is in
     -- hand now, so binding to the drawing would move Q onto your burst the
@@ -1329,9 +1347,9 @@ function update(self, dt)
     -- Latched like the pad's tap, and for the same reason: the press has to
     -- survive until a simulation step spends it.
     if not menu.open then
-        for i = 1, sim.KIT_CHARGE_SLOTS do
-            if tapped[hash("charge_" .. i)] then
-                tapped[hash("charge_" .. i)] = nil
+        for i, route in ipairs(TUNE.CONTROL.charge) do
+            if tapped[route.action] then
+                tapped[route.action] = nil
                 local slot = my_slots()[i]
                 if slot then key_charge = slot end
             end
@@ -1377,92 +1395,8 @@ function update(self, dt)
         accum = 0
     end
 
-    -- Escape opens the menu; inside it, escape goes back a level, and at the
-    -- root that is the same as closing. One key, no modes.
-    --
-    -- Except that it shuts what is already open first, innermost outwards: the
-    -- box about a pilot, then the info panel that box was opened from. Escape
-    -- is the key a player reaches for to dismiss whatever they are looking at,
-    -- and answering it with a menu is answering a question nobody asked while
-    -- leaving the thing they meant standing behind it.
-    if tapped[hash("menu")] and not menu.open then
-        local shut = nil
-        -- The card first, innermost of the lot. It is the only thing here that
-        -- is a question, and escape means "no" to a question before it means
-        -- anything else.
-        if ui.room_ask then
-            ui.room_ask = nil
-            shut = true
-        elseif ui.inspect then
-            ui.inspect = nil
-            shut = true
-        elseif ui.help then
-            ui.help = false
-            shut = true
-        elseif ui.details then
-            toggle_details()
-            shut = true
-        elseif ui.rooms_open then
-            ui.rooms_open = false
-            shut = true
-        end
-        if shut then
-            tapped[hash("menu")] = nil
-            sfx.ui("ui_move")
-        end
-    end
-    if tapped[hash("menu")] and not menu.open then
-        toggle_menu()
-        tapped[hash("menu")] = nil
-        sfx.ui("ui_go")
-    end
-    -- The scoreboard and your loadout, together, on one key and one chip.
-    -- Not gated on the menu being shut: asking for this while the menu is up
-    -- is a way of saying you wanted the other one. It is gated on there being
-    -- a game, because with no arena behind the menu there is nothing to show
-    -- and the toggle would be a key that does nothing.
-    if tapped[hash("details")] then
-        tapped[hash("details")] = nil
-        if live then
-            toggle_details()
-            sfx.ui("ui_move")
-        end
-    end
-    -- Page Up and Page Down move the pilot selection. They also open Players
-    -- when it is shut, so the keyboard path is one action from the list rather
-    -- than P followed by another key. The renderer owns the sorted order and
-    -- keeps the selected row in view.
-    for _, move in ipairs(TUNE.PLAYER_MOVES) do
-        local action = move[1]
-        if tapped[action] then
-            tapped[action] = nil
-            if live then
-                show_details()
-                ui.player_step(move[2], net.pilots, net.watchers, eye_team(),
-                               menu.name)
-                sfx.ui("ui_move")
-            end
-        end
-    end
-    -- The whole map, on the same terms: gated on there being an arena, since
-    -- the menu with nothing behind it has no map to show.
-    if tapped[hash("map")] then
-        tapped[hash("map")] = nil
-        if live then
-            toggle_map()
-            sfx.ui("ui_move")
-        end
-    end
-    -- H or ?, and the same key closes it. Not while a card is taking typing,
-    -- which the panel toggles get away with and this cannot: an h in a call
-    -- sign would otherwise open the controls over the name being typed.
-    if tapped[hash("help")] then
-        tapped[hash("help")] = nil
-        if live and not menu.typing() then
-            toggle_help()
-            sfx.ui("ui_move")
-        end
-    end
+    TUNE.CONTROL.dispatch_panel(
+        tapped, TUNE.CONTROL.panel, TUNE.PANEL_HANDLERS, live)
     -- The games list is polled only while it is the thing being read: how busy
     -- each game is moves under a player looking at it, and matters not at all
     -- while they are three levels away setting the volume or in a fight. Told
@@ -1570,29 +1504,7 @@ function update(self, dt)
 
     if menu.open then
         menu.tick(dt)
-        -- Where the pointer is over the anchor the page lays across a rail
-        -- stop, since while it is there the canvas is not what the browser is
-        -- pointing at and the engine reports nothing: no movement, no
-        -- position, and a cursor stuck wherever it last saw one. The stop lit
-        -- and went out as the pointer crossed the edge of the element that
-        -- exists to make it pressable.
-        --
-        -- Only while there is an anchor up, which is only ever a menu screen,
-        -- and by the same crossing the card's own keys use.
-        if html5 and self.link_dom then
-            local ok, at = pcall(html5.run,
-                                 "window.vwLinkAt ? vwLinkAt() : ''")
-            local ax, ay = nil, nil
-            if ok and type(at) == "string" then
-                ax, ay = string.match(at, "^(%-?[%d%.]+),(%-?[%d%.]+)$")
-            end
-            if ax then
-                local d = self.density or 1
-                self.cursor_x = tonumber(ax) * d
-                self.cursor_y = (self.vh or 0) - tonumber(ay) * d
-                self.cursor_idle = 0
-            end
-        end
+        session.browser.link_pointer(self, html5)
         if hover_menu(self.cursor_x, self.cursor_y, self.vh or 0) then
             sfx.ui("ui_move")
         end
@@ -1633,8 +1545,8 @@ function update(self, dt)
             -- a pointer has a position and "wherever you touched" is a choice
             -- the keyboard does not have to make.
             go = tapped[hash("select")]
-                or (not asking and tapped[hash("guns")]),
-            back = tapped[hash("menu")],
+                or (not asking and tapped[TUNE.CONTROL.flight.guns.action]),
+            back = tapped[TUNE.CONTROL.panel.menu],
             rub = tapped[hash("backspace")],
         })
         if moved then sfx.ui(act and "ui_go" or "ui_move") end
@@ -1669,11 +1581,11 @@ function update(self, dt)
     -- unlawful stop lands on the channel, which is also what the wrap is.
     if net.watching and not self.replay and not menu.open
         and sim.ship_count() > 0 then
-        local dir = (tapped[hash("turn_right")] and 1)
-            or (tapped[hash("turn_left")] and -1)
+        local dir = (tapped[TUNE.CONTROL.flight.turn_right.action] and 1)
+            or (tapped[TUNE.CONTROL.flight.turn_left.action] and -1)
         if dir then
-            tapped[hash("turn_left")] = nil
-            tapped[hash("turn_right")] = nil
+            tapped[TUNE.CONTROL.flight.turn_left.action] = nil
+            tapped[TUNE.CONTROL.flight.turn_right.action] = nil
             local stops = {}
             for i = 0, sim.ship_count() - 1 do
                 if sim.ship_active(i) == 1 then stops[#stops + 1] = i end
@@ -2073,8 +1985,8 @@ function update(self, dt)
         -- Scenery that belongs above the ships, now that they are drawn.
         world.draw_over(glow, cull)
 
-        -- Two of the eight hulls have no bomb rack, so the pad that fires one
-        -- has nothing to fire. Told every frame rather than on the hull
+        -- A zone can remove a hull's bomb rack, so the pad that fires one may
+        -- have nothing to fire. Told every frame rather than on the hull
         -- change, because a zone can hand you a different ship than the one
         -- you asked for.
         -- What the marks read this frame. Set before anything draws one,
@@ -2673,9 +2585,9 @@ function apply_menu(self, act)
         return
     end
 
-    -- The ninth cell of the ship page: sit out. The hull despawns and the same
+    -- The eighth cell of the ship page: sit out. The hull despawns and the same
     -- socket watches, landing on the room channel. Coming back is any of the
-    -- other eight cells, which is the same page and the same press.
+    -- other seven cells, which is the same page and the same press.
     if act == "spectate" then
         -- Off the home screen this is what you will arrive as, exactly as
         -- picking a hull there is: remembered, carried into the join, and the
@@ -3285,8 +3197,8 @@ function on_input(self, action_id, action)
                     if t.pressed and not (claimed and claimed[t.id]) then
                         local x = t.screen_x or t.x
                         local half = (self.vw or 0) / 2
-                        tapped[x < half and hash("turn_left")
-                               or hash("turn_right")] = true
+                        tapped[x < half and TUNE.CONTROL.flight.turn_left.action
+                               or TUNE.CONTROL.flight.turn_right.action] = true
                     end
                 end
             end

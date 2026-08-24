@@ -30,8 +30,6 @@ for (const name of [
   "melee/shoal",
   "melee/breakwater",
   "melee/switchyard",
-  // The frozen legacy file remains useful as a second codec fixture.
-  "melee/slipway",
 ]) {
   const file = path.join("catalog", "zones", `${name}.vwmap`);
   const raw = new Uint8Array(fs.readFileSync(file));

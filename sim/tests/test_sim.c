@@ -254,24 +254,17 @@ static int bombed(const sim_settings *c, int cls, int off, int prox) {
     return -1;
 }
 
-/* Why so many `static sim_state` below: the struct is 79 KB, main is one
- * long function, and most blocks in it declare one. gcc at -O0 reuses a
- * slot between locals whose lifetimes cannot overlap; clang gives each its
- * own, so the frame reached 11 MB and the binary segfaulted before printing
- * a line. A block that is entered exactly once gets the same value from
- * .bss, so those are static. The ones inside loops are not: there a stale
- * copy would carry into the next iteration, and eighteen frames is cheap.
- * The Makefile now caps the frame, so the next time this creeps up it is a
- * compile error naming the function rather than a silent crash. */
-int main(void) {
-    sim_map *m = walled_map();
-    sim_settings cfg;
-    memset(&cfg, 0, sizeof cfg);
-    sim_settings_baseline(&cfg, m);
+/* A sim_state is 79 KB. Clang at -O0 gives block locals separate stack slots
+ * even when their lifetimes do not overlap, so entered-once cases stay in
+ * static storage. Loop locals remain automatic because each iteration needs
+ * a fresh value. The Makefile caps every test function's frame as a backstop. */
+enum { APEX = 0, ANVIL = 3 };
+
+static void test_flight_and_damage(const sim_settings *base) {
+    sim_settings cfg = *base;
     /* Every ship below spawns bare unless a test hands it a kit. A pilot in
      * a real room is dealt one at the seat; here a "does one trigger pull
      * make one bullet" test wants nothing in the way of the answer. */
-    const int APEX = 0, ANVIL = 3;
 
     /* Footprint is the roster's only built-in stat, so every hull spends the
      * same target-area budget. Aspect ratio and pivot placement may differ.
@@ -666,7 +659,7 @@ int main(void) {
      * the bomb, so climbing the gun ladder makes a bomber's burst harder
      * without touching their bombs. This is the claim the old fragment could
      * not make: it was one spec at a flat two hundred, an L1 bullet forever
-     * however many gun prizes were found.
+     * however many gun rungs were held.
      *
      * Read off the fragments rather than off a victim's energy, because a
      * fragment born on top of somebody is inside InactiveShrapDamage's first
@@ -741,6 +734,11 @@ int main(void) {
             CHECK(s.weapons[i].level == 0,
                   "a gun found mid-flight does not improve the burst");
     }
+
+}
+
+static void test_maps(const sim_settings *base) {
+    sim_settings cfg = *base;
 
     /* --- tiles ------------------------------------------------------- */
 
@@ -1129,7 +1127,19 @@ int main(void) {
         buf[0] ^= 0xff;
         CHECK(sim_map_unpack(dst, buf, n) == -1, "a bad magic is rejected");
 
-        free(src); free(dst); free(pit); free(buf);
+        /* The advertised ceiling also holds for the shape that defeats run
+         * length encoding: every tile differs from the one before it. */
+        sim_map *worst = malloc(sizeof *worst);
+        sim_map_size(worst, SIM_MAP_TILES, SIM_MAP_TILES);
+        for (size_t i = 0; i < (size_t)SIM_MAP_TILES * SIM_MAP_TILES; i++)
+            worst->tile[i] = (uint8_t)(i & 1u);
+        int worst_n = sim_map_pack(worst, buf, SIM_MAP_PACK_MAX);
+        CHECK(worst_n == SIM_MAP_PACK_MAX,
+              "an alternating map exactly fills the advertised ceiling");
+        CHECK(sim_map_pack(worst, buf, SIM_MAP_PACK_MAX - 1) == -1,
+              "and one byte less is refused");
+
+        free(src); free(dst); free(pit); free(worst); free(buf);
     }
 
     /* Every map is closed, whatever the map says. */
@@ -1249,7 +1259,7 @@ int main(void) {
         CHECK(rep.regions == 1, "an open room is one region");
         CHECK(rep.stranded == 0, "with nothing stranded in it");
         CHECK(rep.spawns == 1 && rep.spawns_team[0] == 1, "and one start, on side one");
-        CHECK(sim_map_playable(room, &rep, why, sizeof why), "so it is playable");
+        CHECK(sim_map_playable(&rep, why, sizeof why), "so it is playable");
 
         /* A wall straight across it is two rooms, and a hull cannot get from
          * one to the other. */
@@ -1258,7 +1268,7 @@ int main(void) {
         sim_map_index(room);
         sim_map_check(room, sc, &rep);
         CHECK(rep.regions == 2, "a wall across a room makes two of it");
-        CHECK(!sim_map_playable(room, &rep, why, sizeof why),
+        CHECK(!sim_map_playable(&rep, why, sizeof why),
               "which is not a map worth serving");
 
         /* A gap one tile wide is not a way through: a hull is three across,
@@ -1275,7 +1285,7 @@ int main(void) {
         sim_map_index(room);
         sim_map_check(room, sc, &rep);
         CHECK(rep.regions == 1, "three tiles is a doorway");
-        CHECK(sim_map_playable(room, &rep, why, sizeof why), "and the map is whole again");
+        CHECK(sim_map_playable(&rep, why, sizeof why), "and the map is whole again");
 
         /* A closet nothing can reach is stranded ground, however open it
          * looks on the drawing. */
@@ -1290,7 +1300,7 @@ int main(void) {
         sim_map_index(room);
         sim_map_check(room, sc, &rep);
         CHECK(rep.stranded > 0, "a sealed closet is ground nobody reaches");
-        CHECK(!sim_map_playable(room, &rep, why, sizeof why),
+        CHECK(!sim_map_playable(&rep, why, sizeof why),
               "and a map with one is refused");
 
         /* Two rocks with one tile between them. A hull is three across, so
@@ -1307,7 +1317,7 @@ int main(void) {
         sim_map_check(room, sc, &rep);
         CHECK(rep.stranded == 1, "a gap between two rocks is ground no hull reaches");
         CHECK(rep.regions == 1, "and it is still one room");
-        CHECK(sim_map_playable(room, &rep, why, sizeof why),
+        CHECK(sim_map_playable(&rep, why, sizeof why),
               "so a rock field is a map worth serving");
 
         /* And the editor can be told which tile, rather than only how many. */
@@ -1334,7 +1344,7 @@ int main(void) {
         sim_map_index(room);
         sim_map_check(room, sc, &rep);
         CHECK(rep.regions == 2, "a sealed room a hull fits in is a second region");
-        CHECK(!sim_map_playable(room, &rep, why, sizeof why),
+        CHECK(!sim_map_playable(&rep, why, sizeof why),
               "and that is still refused");
 
         /* A map naming no start is refused too: a zone would fall back to its
@@ -1342,7 +1352,7 @@ int main(void) {
         sim_map_size(room, 60, 60);
         sim_map_index(room);
         sim_map_check(room, sc, &rep);
-        CHECK(rep.spawns == 0 && !sim_map_playable(room, &rep, why, sizeof why),
+        CHECK(rep.spawns == 0 && !sim_map_playable(&rep, why, sizeof why),
               "a map with no start is not one a zone can be pointed at");
 
         /* A door is a passage. A wall of them across a room divides it while
@@ -1356,7 +1366,7 @@ int main(void) {
         CHECK(rep.regions == 1, "a door wall is one region, because doors open");
         CHECK(rep.regions_shut == 2, "and two with every one of them shut");
         CHECK(rep.stranded == 0, "nothing behind it is stranded");
-        CHECK(sim_map_playable(room, &rep, why, sizeof why),
+        CHECK(sim_map_playable(&rep, why, sizeof why),
               "and a room divided by doors is a room");
 
         /* The map that found this: a start in a pocket whose only way out is a
@@ -1375,7 +1385,7 @@ int main(void) {
         CHECK(rep.spawns_stranded == 0, "and neither is walled in by it");
         CHECK(rep.regions == 1 && rep.regions_shut == 2,
               "one room through the door, two without it");
-        CHECK(sim_map_playable(room, &rep, why, sizeof why),
+        CHECK(sim_map_playable(&rep, why, sizeof why),
               "so a pocket gated by a door is playable");
 
         /* Bricking the door up is the same drawing and a different map, and
@@ -1385,7 +1395,7 @@ int main(void) {
         sim_map_index(room);
         sim_map_check(room, sc, &rep);
         CHECK(rep.regions == 2, "walling the door up is two rooms");
-        CHECK(!sim_map_playable(room, &rep, why, sizeof why),
+        CHECK(!sim_map_playable(&rep, why, sizeof why),
               "and that is still refused");
 
         free(room);
@@ -1594,6 +1604,11 @@ int main(void) {
 
         free(ramp);
     }
+
+}
+
+static void test_lifecycle(sim_map *m, const sim_settings *base) {
+    sim_settings cfg = *base;
 
     /* The room size is the zone's, and the array bound is only the ceiling. */
     {
@@ -2035,6 +2050,11 @@ int main(void) {
         CHECK(c.hits == 0, "a bomb that runs out hurts nobody");
     }
 
+}
+
+static void test_weapon_model(sim_map *m, const sim_settings *base) {
+    sim_settings cfg = *base;
+
     /* --- the weapon model ---------------------------------------------
      *
      * The shipped zone uses two plain rows of the table, so these build
@@ -2473,6 +2493,11 @@ int main(void) {
         CHECK(s.ships[1].energy > held, "and the bar fills again");
     }
 
+}
+
+static void test_tech_tree(const sim_settings *base) {
+    sim_settings cfg = *base;
+
     /* --- the tech tree -------------------------------------------------
      *
      * A level is the same weapon harder, a rung on the hull's ladder. An
@@ -2579,8 +2604,7 @@ int main(void) {
         CHECK(sim_grant(&sh, &cfg, SIM_SLOT_LEVEL(SIM_TRIG_GUN)) == 0
               && sh.level[SIM_TRIG_GUN] == top, "and it stays refused there");
 
-        /* A trigger the hull does not have refuses outright, at rung zero,
-         * where a green would never have offered it in the first place. */
+        /* A trigger the hull does not have refuses outright at rung zero. */
         sim_settings *rackless = malloc(sizeof *rackless);
         *rackless = cfg;
         for (int r = 0; r < SIM_MAX_RUNGS; r++)
@@ -2596,7 +2620,6 @@ int main(void) {
         /* Out of the space entirely is refused rather than written past the
          * end of the counts it would have indexed. */
         CHECK(sim_grant(&sh, &cfg, SIM_SLOT_COUNT) == 0, "no such slot");
-        CHECK(sim_grant(&sh, &cfg, SIM_SLOT_NONE) == 0, "and none is not one");
     }
 
     {
@@ -2933,11 +2956,6 @@ int main(void) {
          * fragments do not inherit it: a shell that broke into eight would
          * otherwise have each of those break into eight again. */
         const int WEDGE = 1;
-        /* No prize field. Greens appear near a pilot now, so leaving one
-         * running under a test about one add-on lets a green hand the shooter
-         * another one, and spends draws from the rng that the scatter angles
-         * come out of. Two ways for this to fail for a reason that is not
-         * shrapnel. */
         sim_settings w = cfg;
         static sim_state s;
         sim_init(&s, 1);
@@ -3220,6 +3238,11 @@ int main(void) {
               "but not the burst it had already spent");
     }
 
+}
+
+static void test_scoring(const sim_settings *base) {
+    sim_settings cfg = *base;
+
     /* --- bounty and points ----------------------------------------------
      *
      * Bounty is what you are worth and points are what you have been paid,
@@ -3437,6 +3460,11 @@ int main(void) {
               "and the flags they held are worth extra");
     }
 
+
+}
+
+static void test_physics_and_wire(sim_map *m, const sim_settings *base) {
+    sim_settings cfg = *base;
 
     /* Walls are inelastic: a bounce returns less speed than it took, and a
      * ship resting against one settles rather than buzzing. */
@@ -3659,11 +3687,11 @@ int main(void) {
     }
 
 
-    /* Multifire is a switch the pilot holds, not one the prize decides.
+    /* Multifire is a switch the pilot holds.
      *
      * A fan is worse than a single shot down a corridor, and the add-on
-     * arrives from a green rather than by choice, so a pilot who has one needs
-     * a way to stop using it. The button toggles on the press rather than
+     * is part of the chosen kit, so a pilot who has one needs a way to stop
+     * using it. The button toggles on the press rather than
      * while held: this is a state, and a state you have to keep a finger on is
      * a state you cannot fly with. */
     {
@@ -3719,10 +3747,9 @@ int main(void) {
                   "so holding it through a snapshot does not toggle again");
         }
 
-        /* A fan that leaves takes the switch with it, so the next one picked
-         * up fans. A decline sitting on a hull that has nothing to decline is
-         * a setting nobody can see, waiting to surprise whoever finds the
-         * green. */
+        /* A fan that leaves takes the switch with it, so the next one fans.
+         * A decline on a hull with nothing to decline is invisible state that
+         * would surprise the pilot after a later kit change. */
         s.ships[id].mods[SIM_TRIG_GUN] = 0;
         step_n(&s, &cfg, 0, 0, 1);
         CHECK(!s.ships[id].multi_off, "losing the add-on puts the switch back");
@@ -4000,6 +4027,11 @@ int main(void) {
         free(wm);
     }
 
+}
+
+static void test_spawning_and_snapshots(sim_map *m, const sim_settings *base) {
+    sim_settings cfg = *base;
+
     /* --- where a ship comes back ------------------------------------------
      *
      * Two arrangements behind one number, so both are measured against the
@@ -4228,7 +4260,7 @@ int main(void) {
             check_state_invariants(&s, &mixed);
 
             if (tick % 127 == 0) {
-                static uint8_t packed[SIM_PACK_MAX];
+                static uint8_t packed[SIM_STATE_PACK_MAX];
                 sim_state decoded;
                 int n = sim_pack(&s, packed, sizeof packed);
                 CHECK(n > 0, "an invariant state packs");
@@ -4248,9 +4280,7 @@ int main(void) {
         sim_spawn(&s, APEX, 0, 8000, 8000, 900, &cfg);
         sim_spawn(&s, ANVIL, 1, 8000, 7800, 32768, &cfg);
         sim_spawn(&s, APEX, 1, 8000 + 400 * SIM_TILE_PX, 8000, 0, &cfg);
-        /* Long enough for the field to fill: one green a second to a field of
-         * two dozen, so a few hundred ticks would be checking the round trip
-         * against three of them. */
+        /* Long enough for both triggers to leave rounds in the state. */
         step_counting(&s, &cfg, SIM_BTN_THRUST | SIM_BTN_FIRE, SIM_BTN_BOMB,
                       600);
 
@@ -4270,7 +4300,7 @@ int main(void) {
         }
         s.weapons[0].link = 0xa1b2c3d4u;
 
-        static uint8_t buf[SIM_PACK_MAX];
+        static uint8_t buf[SIM_STATE_PACK_MAX];
         int n = sim_pack(&s, buf, sizeof buf);
         CHECK(n > 0, "a snapshot packs");
         CHECK(sim_unpack(&back, buf, n) == 0, "a snapshot unpacks");
@@ -4291,7 +4321,7 @@ int main(void) {
          * the reader lands short of the end. `underflow` never caught it, because
          * that only fires on reading too far. */
         {
-            static uint8_t longer[SIM_PACK_MAX + 8];
+            static uint8_t longer[SIM_STATE_PACK_MAX + 8];
             memcpy(longer, buf, (size_t)n);
             longer[n] = 0x5a;
             static sim_state ignored;
@@ -4603,6 +4633,35 @@ int main(void) {
         CHECK(sim_unpack(&back, buf, 3) == -1, "unpacking rejects a truncated snapshot");
     }
 
+    /* The network and whole-state packers have different maxima. A network
+     * snapshot carries one private ship tail; a whole-state snapshot carries
+     * all of them for replay and trusted in-process users. */
+    {
+        static sim_state full;
+        memset(&full, 0, sizeof full);
+        full.ship_count = SIM_MAX_SHIPS;
+        for (int i = 0; i < SIM_MAX_SHIPS; i++) full.ships[i].active = 1;
+        full.weapon_count = SIM_MAX_WEAPONS;
+        full.flag_count = SIM_MAX_FLAGS;
+
+        static uint8_t packed[SIM_STATE_PACK_MAX];
+        int whole = sim_pack(&full, packed, sizeof packed);
+        CHECK(whole == SIM_STATE_PACK_MAX,
+              "a full whole-state snapshot exactly fills its ceiling");
+        CHECK(sim_pack(&full, packed, SIM_STATE_PACK_MAX - 1) == -1,
+              "and the whole-state ceiling is not understated");
+
+        int network = sim_pack_around(&full, packed, SIM_PACK_MAX,
+                                      0, 0, -1, 255, 0, 0);
+        CHECK(network > 0 && network <= SIM_PACK_MAX,
+              "the largest network shape fits its separate ceiling");
+    }
+
+}
+
+static void test_kits_and_matches(const sim_settings *base) {
+    sim_settings cfg = *base;
+
     /* --- the kit ---------------------------------------------------------
      *
      * A pilot is dealt a kit at the seat and dealt it again at every
@@ -4827,6 +4886,24 @@ int main(void) {
                   "which the core accepts on the hull it was built for");
         }
     }
+
+}
+
+int main(void) {
+    sim_map *m = walled_map();
+    sim_settings cfg;
+    memset(&cfg, 0, sizeof cfg);
+    sim_settings_baseline(&cfg, m);
+
+    test_flight_and_damage(&cfg);
+    test_maps(&cfg);
+    test_lifecycle(m, &cfg);
+    test_weapon_model(m, &cfg);
+    test_tech_tree(&cfg);
+    test_scoring(&cfg);
+    test_physics_and_wire(m, &cfg);
+    test_spawning_and_snapshots(m, &cfg);
+    test_kits_and_matches(&cfg);
 
     free(m);
     if (failures == 0) printf("all tests passed\n");

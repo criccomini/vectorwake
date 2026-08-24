@@ -2571,8 +2571,8 @@ end
 -- a straight line, so an angular thing that is not a wall is unlike anything
 -- on screen.
 --
--- It does not spin and it does not drift. The green already owns spinning,
--- and the one fact worth telling about a mine is that it is not going
+-- It does not spin and it does not drift. The one fact worth telling about a
+-- mine is that it is not going
 -- anywhere. So what makes it look live has to happen in place: the core
 -- breathes on one clock and a charge laps the rim on another. The two periods
 -- do not divide into each other, so a mine never settles into an obvious
@@ -3170,8 +3170,8 @@ function M.weapons(fill, glow, t, cull)
             -- the thing is going to hit, which is the one job the ramp has.
             local col = bomb_col(level)
             -- Life remaining, as the fraction the hub's outline draws. The
-            -- last two seconds blink, which is the grammar a green already
-            -- uses for the same fact, so nobody has to be taught it twice.
+            -- last two seconds blink, turning the final moments into a visible
+            -- warning without making the mine appear to move.
             local whole = spec_life(spec)
             local frac = whole > 0 and life / whole or 1
             local mf = af

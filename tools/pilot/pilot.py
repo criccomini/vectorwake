@@ -7,7 +7,7 @@ simulation core itself -- so what is being verified is that ships move, energy
 drains and recharges, weapons appear, kills land, and the numbers the server
 sends are numbers the core accepts.
 
-  pilot.py wss://play.vectorwake.net/dir war 4 30    # browse, then join
+  pilot.py wss://play.vectorwake.net/dir melee 4 30  # browse, then join
   pilot.py --direct ws://127.0.0.1:9001 "" 2 20      # dial one arena, no browse
   pilot.py --direct --adapt ws://127.0.0.1:9001 "" 3 15   # steer the input clock
 
@@ -23,14 +23,15 @@ import websockets
 
 SO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "libvwprobe.so")
 
-C2S_JOIN, C2S_INPUT, C2S_SHIP = 1, 2, 5
+C2S_JOIN, C2S_INPUT = 1, 2
 # The client wire's version, checked by the zone before it reads anything else
 # in a join. Bumped whenever any client message changes shape.
-PROTOCOL = 15
+PROTOCOL = 18
 (S2C_WELCOME, S2C_SNAPSHOT, S2C_ROSTER, S2C_KILL, S2C_BANNER,
  S2C_ZONE, S2C_DENIED, S2C_MAP, S2C_SETTINGS) = 1, 2, 3, 4, 5, 6, 7, 9, 10
 
-BTN_LEFT, BTN_RIGHT, BTN_THRUST, BTN_REVERSE, BTN_FIRE, BTN_BOMB = 1, 2, 4, 8, 16, 32
+BTN_LEFT, BTN_RIGHT, BTN_THRUST, BTN_FIRE = 1, 2, 4, 16
+HULL_CLASSES = 7
 
 # Where the clock wants to sit, in ticks of input lag. Negative is an input that
 # reaches the server before the tick it belongs to, which is the point; two ticks
@@ -57,6 +58,8 @@ def snapshot_after(newer, older):
 def lib():
     l = ctypes.CDLL(SO)
     l.vw_new.restype = ctypes.c_void_p
+    l.vw_free.argtypes = [ctypes.c_void_p]
+    l.vw_free.restype = None
     for n in ("vw_load_map", "vw_load_settings", "vw_apply"):
         getattr(l, n).argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int]
     l.vw_step.argtypes = [ctypes.c_void_p, ctypes.c_ubyte, ctypes.c_ushort]
@@ -66,9 +69,8 @@ def lib():
     for n in ("vw_ship_count", "vw_weapon_count", "vw_max_ships",
               "vw_spec_count", "vw_flag_count"):
         getattr(l, n).argtypes = [ctypes.c_void_p]
-    for n in ("vw_active", "vw_alive", "vw_x", "vw_y", "vw_vx", "vw_vy",
-              "vw_energy", "vw_kills", "vw_deaths", "vw_team", "vw_cls",
-              "vw_wx", "vw_wy"):
+    for n in ("vw_active", "vw_alive", "vw_x", "vw_y", "vw_energy",
+              "vw_kills", "vw_deaths", "vw_wx", "vw_wy"):
         getattr(l, n).argtypes = [ctypes.c_void_p, ctypes.c_int]
     return l
 
@@ -79,14 +81,14 @@ class Pilot:
         self.rng = random.Random(seed)
         self.L = lib()
         self.c = ctypes.c_void_p(self.L.vw_new())
+        if not self.c:
+            raise MemoryError("the simulation probe could not be allocated")
         self.me = None
         self.zone_name = None
         self.denied = None
-        # Which room to ask for, and which the welcome says we got. A pilot
-        # asks for none: the point of the harness is the game the fleet would
-        # actually put a player in.
+        # Ask for no particular room. The harness should enter whichever game
+        # the fleet would choose for a player.
         self.room = 0
-        self.landed = None
         # Tiles to the furthest ship and the furthest round any snapshot
         # carried. This is the cull measured from the far end: the server says
         # it sends nothing outside an interest radius, and these two numbers
@@ -123,6 +125,11 @@ class Pilot:
         self.lifecycle = 0
         self.snapshot_ack = 0
         self.snapshot_mask = 0
+
+    def close(self):
+        if self.c:
+            self.L.vw_free(self.c)
+            self.c = None
 
     def predict_error(self, buttons, next_tick):
         """Fly the gap between two snapshots and remember where it lands.
@@ -296,7 +303,7 @@ class Pilot:
             # exactly what this harness wants to be.
             # Room zero: whichever the fill ladder picks, which is what a
             # pilot that never read a room list asks for.
-            await ws.send(bytes([C2S_JOIN, self.rng.randrange(8), PROTOCOL, 0,
+            await ws.send(bytes([C2S_JOIN, self.rng.randrange(HULL_CLASSES), PROTOCOL, 0,
                                  len(z), len(n), self.room or 0]) + z + n)
 
             async def drive():
@@ -361,10 +368,6 @@ class Pilot:
                     elif tag == S2C_WELCOME:
                         self.me = body[0]
                         self.lifecycle = struct.unpack("<I", body[1:5])[0]
-                        # Which room the server actually seated us in, which is
-                        # not always the one asked for: it can fill in between.
-                        if len(body) >= 11:
-                            self.landed = body[9] | (body[10] << 8)
                     elif tag == S2C_SNAPSHOT:
                         self.n["snaps"] += 1
                         sequence = struct.unpack("<I", body[18:22])[0]
@@ -474,12 +477,19 @@ async def main():
         arena = await resolve(url, zone)
         print(f"=== directory {url} says {zone!r} is at {arena}")
         url = arena
-    pilots = [Pilot(url, zone, f"probe{i:02d}", seconds, 1000 + i, lead, adapt)
-              for i in range(count)]
-    done = await asyncio.gather(*(p.fly() for p in pilots), return_exceptions=True)
-    print(f"=== {count} pilots, {seconds:.0f}s, {url} zone={zone} "
-          f"lead={lead}{' adaptive' if adapt else ''}")
-    for d in done:
-        print(d.report() if isinstance(d, Pilot) else f"  harness error: {d!r}")
+    pilots = []
+    try:
+        for i in range(count):
+            pilots.append(
+                Pilot(url, zone, f"probe{i:02d}", seconds, 1000 + i, lead, adapt)
+            )
+        done = await asyncio.gather(*(p.fly() for p in pilots), return_exceptions=True)
+        print(f"=== {count} pilots, {seconds:.0f}s, {url} zone={zone} "
+              f"lead={lead}{' adaptive' if adapt else ''}")
+        for d in done:
+            print(d.report() if isinstance(d, Pilot) else f"  harness error: {d!r}")
+    finally:
+        for pilot in pilots:
+            pilot.close()
 
 asyncio.run(main())

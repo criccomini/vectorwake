@@ -41,22 +41,23 @@ end
 -- arena draws a bolt in flight, and at the size a corner allows that came out
 -- as a gray smudge with a speck on it. What survives being drawn small is a
 -- line and a dot.
-M.BOLT_LEN, M.BOLT_DOT, M.BOLT_FAN = 1.4, 0.17, 0.47
+M.BOLT_LEN = 1.4
+local BOLT_DOT, BOLT_FAN = 0.17, 0.47
 
 -- One barrel, from the muzzle out to its dot. Returns where the dot landed,
 -- because both callers ring it when the rounds bounce.
-function M.bolt_line(ox, oy, ang, k, col)
+local function bolt_line(ox, oy, ang, k, col)
     local d = k * M.BOLT_LEN
     local dx, dy = ox + math.cos(ang) * d, oy + math.sin(ang) * d
     u:seg(ox, oy, dx, dy, M.pen(k, 0.075), col)
-    u:disc(dx, dy, k * M.BOLT_DOT, 10, col)
+    u:disc(dx, dy, k * BOLT_DOT, 10, col)
     return dx, dy
 end
 
 -- What a bouncing round wears: a ring round the dot, sized off the dot rather
 -- than off whatever room the caller has left, so the two draws match.
-function M.bolt_bounce(dx, dy, k, col)
-    local r = k * (M.BOLT_DOT + 0.16)
+local function bolt_bounce(dx, dy, k, col)
+    local r = k * (BOLT_DOT + 0.16)
     u:ring(dx, dy, r, M.pen(k, 0.065), 12, col)
     return r
 end
@@ -66,7 +67,7 @@ end
 -- the mark: nothing on a bomb reaches further than MARK_REACH in any
 -- direction, which is what lets a caller size one against a round pad by
 -- knowing a single number.
-M.BOMB_R = 0.46
+local BOMB_R = 0.46
 
 -- A fuse: the reach it goes off at, drawn as the area rather than as its edge.
 --
@@ -86,7 +87,7 @@ M.BOMB_R = 0.46
 -- And under everything, which is the other half of why it works. A field the
 -- fragments and the bounce ring stand on is ground; the same disc over them
 -- would be a wash.
-function M.bomb_prox(hx, hy, r, col)
+local function bomb_prox(hx, hy, r, col)
     u:disc(hx, hy, r, 28, pal.a(col, (col[4] or 1) * 0.24))
 end
 
@@ -107,8 +108,8 @@ end
 -- long way inside a ring, and a small dot a long way inside a ring is the
 -- picture a proximity fuse used to draw, so a bare bomb looked loaded and a
 -- loaded one looked doubly so.
-function M.bomb_head(hx, hy, k, col)
-    u:ring(hx, hy, k * M.BOMB_R, M.pen(k, 0.122), 14, col)
+local function bomb_head(hx, hy, k, col)
+    u:ring(hx, hy, k * BOMB_R, M.pen(k, 0.122), 14, col)
     u:disc(hx, hy, k * 0.34, 12, col)
 end
 
@@ -159,38 +160,19 @@ function M.mine(cx, cy, k, col)
     end
 end
 
--- --- a whole weapon, wearing what the greens did to it ---------------------
+-- --- a whole weapon, wearing its loadout -----------------------------------
 
 -- One barrel on a mark under construction, rather than on bare coordinates:
 -- the mark remembers where the dots landed, because the bounce rings them, and
 -- how far right anything got, because the caller sizes a row off that.
 --
--- The fan as a control, rather than as a round on its way somewhere.
---
--- The same shape `dec_multi` puts on a bolt, cut to fit a cell: one barrel
--- down the middle and two off it. The middle one is the round you fire either
--- way, so it stays lit; the outer two are what the add-on adds, and they go
--- quiet when it is declined rather than disappearing. A fan that vanished when
--- it was switched off would read as a fan you no longer had, which is the same
--- reason a declined add-on stays drawn on a weapon mark.
---
--- Centered on the cell rather than hung off a muzzle, because there is no round
--- here for it to hang from.
-function M.fan(cx, cy, k, col, off)
-    local ox = cx - k * M.BOLT_LEN * 0.5
-    local quiet = pal.a(col, 0.28)
-    M.bolt_line(ox, cy, -M.BOLT_FAN, k, off and quiet or col)
-    M.bolt_line(ox, cy, M.BOLT_FAN, k, off and quiet or col)
-    M.bolt_line(ox, cy, 0, k, col)
-end
-
 -- `held` is a barrel you have but are not firing: drawn, so the fan does not
 -- appear to vanish when it is declined, but not counted as a round. What is
 -- not firing does not bounce, and a ring on it says it does.
 local function barrel(m, ang, col, held)
-    local dx, dy = M.bolt_line(m.origin, m.y, ang, m.k, col)
+    local dx, dy = bolt_line(m.origin, m.y, ang, m.k, col)
     if not held then m.dots[#m.dots + 1] = {dx, dy} end
-    m.far = math.max(m.far, dx - m.x + m.k * M.BOLT_DOT)
+    m.far = math.max(m.far, dx - m.x + m.k * BOLT_DOT)
 end
 
 -- The two builders work out a mark's numbers and draw nothing, because one
@@ -199,7 +181,7 @@ end
 local function mk_bolt(hx, cy, k)
     return {x = hx, y = cy, k = k, bolt = true,
             tail = hx - k * M.BOLT_LEN, origin = hx - k * M.BOLT_LEN,
-            dots = {}, out = k * M.BOLT_DOT, far = k * M.BOLT_DOT,
+            dots = {}, out = k * BOLT_DOT, far = k * BOLT_DOT,
             -- Nothing on this mark rings the head except the add-ons that
             -- ring any mark. The fan hangs off the muzzle and the bounce
             -- ring sits on a dot, so neither takes a share of the room.
@@ -211,12 +193,12 @@ local function mk_bomb(hx, cy, k)
     -- behind the head on this mark and so is set at the edge the mark may
     -- reach rather than at a length of its own.
     return {x = hx, y = cy, k = k, tail = hx - k * M.MARK_REACH,
-            out = k * M.BOMB_R, far = k * M.BOMB_R}
+            out = k * BOMB_R, far = k * BOMB_R}
 end
 
 -- The round itself, once whatever it stands on has been drawn.
 local function draw_round(m, col)
-    if m.bolt then barrel(m, 0, col) else M.bomb_head(m.x, m.y, m.k, col) end
+    if m.bolt then barrel(m, 0, col) else bomb_head(m.x, m.y, m.k, col) end
 end
 
 -- Every add-on takes the mark, a color and how many rungs deep it is, and
@@ -259,15 +241,15 @@ local function dec_multi(m, col, n)
             local dy = -m.k * 0.16
             local dx = ox + m.k * (M.BOLT_LEN - 0.10)
             u:seg(ox, m.y + dy, dx, m.y + dy, M.pen(m.k, 0.068), col)
-            u:disc(dx, m.y + dy, m.k * M.BOLT_DOT * 0.8, 10, col)
+            u:disc(dx, m.y + dy, m.k * BOLT_DOT * 0.8, 10, col)
             if not m.off then m.dots[#m.dots + 1] = {dx, m.y + dy} end
-            m.far = math.max(m.far, dx - m.x + m.k * M.BOLT_DOT)
+            m.far = math.max(m.far, dx - m.x + m.k * BOLT_DOT)
             return
         end
         -- Declined, the extra barrels stay on the mark and stop being rounds:
         -- see barrel.
-        barrel(m, -M.BOLT_FAN, col, m.off)
-        barrel(m, M.BOLT_FAN, col, m.off)
+        barrel(m, -BOLT_FAN, col, m.off)
+        barrel(m, BOLT_FAN, col, m.off)
         return
     end
     -- On a bomb, heads abreast at one rung and rounds leaving together above
@@ -280,7 +262,7 @@ local function dec_multi(m, col, n)
     -- zone may fill it, so the bomb answers the same sentence in its own
     -- alphabet.
     if n == 1 then
-        u:ring(m.x, m.y - m.k * M.BOMB_R * 0.9, m.k * M.BOMB_R * 0.62,
+        u:ring(m.x, m.y - m.k * BOMB_R * 0.9, m.k * BOMB_R * 0.62,
                M.pen(m.k, 0.1), 12, col)
         return
     end
@@ -305,7 +287,7 @@ end
 local function dec_bounce(m, col, n)
     if m.bolt then
         for _, d in ipairs(m.dots) do
-            local r = M.bolt_bounce(d[1], d[2], m.k, col)
+            local r = bolt_bounce(d[1], d[2], m.k, col)
             m.far = math.max(m.far, d[1] - m.x + r)
         end
         return
@@ -373,7 +355,7 @@ local function dec_freeze(m, col, n)
         end
         return
     end
-    local r0, r1 = m.k * M.BOMB_R * 0.58, m.k * M.BOMB_R * 1.0
+    local r0, r1 = m.k * BOMB_R * 0.58, m.k * BOMB_R
     for i = 0, rungs * 2 - 1 do
         local a = (i + 0.5) * math.pi / rungs
         local dx, dy = math.cos(a), math.sin(a)
@@ -406,7 +388,7 @@ end
 -- splits the width two ways rather than three.
 local function ground_prox(m, col, n)
     local r = m.k * (M.MARK_REACH + 0.05 * (math.min(n, 3) - 1))
-    M.bomb_prox(m.x, m.y, r, col)
+    bomb_prox(m.x, m.y, r, col)
     m.far = math.max(m.far, r)
 end
 
@@ -454,7 +436,8 @@ M.FIELD_MAX = M.MARK_REACH + 0.10
 --
 -- The bomb wants nothing. It is a ring about a point, so the two answers are
 -- the same answer and both are zero.
-M.BOLT_BIAS, M.BOMB_BIAS = 0.46, 0
+M.BOLT_BIAS = 0.46
+local BOMB_BIAS = 0
 
 -- Reading a hull's loadout without minding whether there is a hull yet. A pad
 -- draws before the first snapshot lands, and a plain gun and a plain bomb are
@@ -512,20 +495,20 @@ function M.mod(me, t, i)
     return ship_mod(me, t, i)
 end
 
--- A trigger's mark: the round it fires, wearing what the greens did to it.
+-- A trigger's mark: the round it fires, wearing the trigger's loadout.
 --
 -- In the round's own color, which is the color it will be when it leaves the
 -- gun: one ramp for every round in the game, so the rung a weapon has climbed
 -- is legible here exactly as it is legible coming at you across the arena, and
 -- a player who has learned one has learned the other.
 --
--- The add-ons are the same color run hot, so what a green added reads as part
+-- The add-ons are the same color run hot, so what the kit added reads as part
 -- of the round rather than as a separate object parked next to it. Two of the
 -- six are not that.
 --
 -- Shrapnel is drawn off the *gun's* rung rather than off the rung of the mark
 -- it is worn on. A fragment is a bullet, and the core reads which one off the
--- guns at the throw, so a bomber who finds gun prizes watches the fragments on
+-- guns at the throw, so a bomber with a higher gun rung sees the fragments on
 -- their bomb mark climb the ramp while the bomb under them stays put. It is
 -- also the color those fragments come out in across the arena, which is the
 -- point of there being one ramp.
@@ -545,7 +528,7 @@ end
 -- add-ons draws a good deal wider than one holding none.
 local function dressed(cx, cy, k, gun, lvl, modn, gun_lvl, off)
     local base = pal.a(pal.rung(lvl), 0.9)
-    local at = cx + k * (gun and M.BOLT_BIAS or M.BOMB_BIAS)
+    local at = cx + k * (gun and M.BOLT_BIAS or BOMB_BIAS)
     local m = gun and mk_bolt(at, cy, k) or mk_bomb(at, cy, k)
     -- Which add-ons want a ring of room is a fact about the mark, not about
     -- the add-on: the fan and the bounce ring cost a gun nothing, and cost a

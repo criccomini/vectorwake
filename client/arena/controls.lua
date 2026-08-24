@@ -21,7 +21,7 @@
 --
 -- `cat` is which color the board draws the key in and which swatch the chip
 -- carries. It groups rather than identifies, which is the reason the chips
--- exist at all: four charge keys share one color and the picture alone cannot
+-- exist at all: two charge keys share one color and the picture alone cannot
 -- say which of them is which.
 --
 -- `pad` is how the control is worked by a thumb, or nil where a touchscreen
@@ -79,7 +79,7 @@ return {
      pad = "tap the dial"},
     {id = "details", name = "players", cat = "players", keys = {"p"},
      what = "Lists everyone here and what they are worth.",
-     pad = "tap the scoreboard; a teammate's card offers ATTACH"},
+     pad = "tap the scoreboard to browse pilots"},
     {id = "player_prev", name = "previous player", cat = "players",
      keys = {"pageup"},
      what = "Shows Players and selects the previous pilot."},

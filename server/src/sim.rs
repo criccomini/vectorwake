@@ -76,7 +76,7 @@ pub const EV_WARP: u8 = 11;
 pub const EV_RICOCHET: u8 = 12;
 
 pub const MAX_FEATURES: usize = 256;
-pub const MAP_PACK_MAX: usize = MAP_TILES * MAP_TILES * 3 / 2 + 32;
+pub const MAP_PACK_MAX: usize = MAP_TILES * MAP_TILES * 3 + 14;
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -201,12 +201,7 @@ pub fn check_map_at(map: &sim_map) -> (sim_map_report, Option<String>, Vec<u32>)
     let mut at = vec![0u32; MARKS];
     let (ok, found) = unsafe {
         sim_map_check(map as *const sim_map, &mut *scratch, &mut report);
-        let ok = sim_map_playable(
-            map as *const sim_map,
-            &report,
-            why.as_mut_ptr(),
-            why.len() as i32,
-        );
+        let ok = sim_map_playable(&report, why.as_mut_ptr(), why.len() as i32);
         let found = if report.stranded > 0 {
             sim_map_stranded(
                 map as *const sim_map,
@@ -620,12 +615,7 @@ extern "C" {
         scratch: *mut sim_map_scratch,
         out: *mut sim_map_report,
     );
-    pub fn sim_map_playable(
-        map: *const sim_map,
-        report: *const sim_map_report,
-        why: *mut u8,
-        cap: i32,
-    ) -> i32;
+    pub fn sim_map_playable(report: *const sim_map_report, why: *mut u8, cap: i32) -> i32;
     pub fn sim_map_stranded(
         map: *const sim_map,
         scratch: *mut sim_map_scratch,
@@ -666,13 +656,11 @@ extern "C" {
     pub fn sim_add_flag(s: *mut sim_state, x_px: i32, y_px: i32) -> c_int;
     pub fn sim_flags_held(s: *const sim_state, team: u8) -> c_int;
     pub fn sim_units_speed(v: i32) -> i32;
-    pub fn sim_units_thrust(v: i32) -> i32;
-    pub fn sim_units_rotation(v: i32) -> i32;
     pub fn sim_units_energy(v: i32) -> i32;
-    pub fn sim_units_recharge(v: i32) -> i32;
 }
 
 pub const PACK_MAX: usize = 64 * 1024;
+pub const STATE_PACK_MAX: usize = 65_688;
 pub const PACK_PRIVATE_ALL: u8 = 0x01;
 pub const SETTINGS_PACK_MAX: usize = 8192;
 pub const UP_COUNT: usize = 5;
@@ -1441,6 +1429,46 @@ mod layout {
             unsafe { sim_eff_max_ships(&*w.cfg) },
             MAX_SHIPS as u8,
             "unset means the ceiling"
+        );
+    }
+
+    #[test]
+    fn a_full_private_snapshot_uses_the_state_bound() {
+        let mut world = World::new(0x5eed);
+        world.state.ship_count = MAX_SHIPS as u8;
+        for (index, ship) in world.state.ships.iter_mut().enumerate() {
+            ship.active = 1;
+            ship.alive = 1;
+            ship.team = (index % 2) as u8;
+            ship.energy = 1;
+            ship.x = index as i32 * 256;
+        }
+        world.state.weapon_count = MAX_WEAPONS as u16;
+        for (index, weapon) in world.state.weapons.iter_mut().enumerate() {
+            weapon.owner = (index % MAX_SHIPS) as u8;
+            weapon.team = (index % 2) as u8;
+            weapon.life = 1;
+        }
+        world.state.flag_count = MAX_FLAGS as u8;
+        for flag in &mut world.state.flags {
+            flag.active = 1;
+        }
+
+        let mut packed = vec![0u8; STATE_PACK_MAX];
+        let len = world.pack_around(&mut packed, 0, 0, -1, 0, 0, PACK_PRIVATE_ALL);
+        assert!(
+            len > PACK_MAX as i32,
+            "the maximum private state exceeds 64 KiB"
+        );
+        assert!(
+            len <= STATE_PACK_MAX as i32,
+            "the state bound is large enough"
+        );
+
+        let mut network = vec![0u8; PACK_MAX];
+        assert!(
+            world.pack_around(&mut network, 0, 0, -1, 0, 0, PACK_PRIVATE_ALL) <= 0,
+            "the network scratch buffer must refuse this whole-state shape"
         );
     }
 }

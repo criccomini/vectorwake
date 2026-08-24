@@ -18,21 +18,45 @@
 set -e
 cd "$(dirname "$0")/.."
 
-OUT="${1:-/tmp/vectorwake.png}"
-WAIT="${2:-6}"
-shift 2 2>/dev/null || true
+if [ "$#" -gt 0 ]; then OUT="$1"; shift; else OUT=/tmp/vectorwake.png; fi
+if [ "$#" -gt 0 ]; then WAIT="$1"; shift; else WAIT=6; fi
 
-DISPLAY_NUM=":99"
+PLATFORM="${VW_PLATFORM:-x86_64-linux}"
+ENGINE_PATH="${VW_ENGINE:-./build/$PLATFORM/dmengine}"
+PROJECT_PATH="${VW_PROJECT:-build/default/game.projectc}"
+DISPLAY_NUM="${VW_DISPLAY:-:99}"
 SIZE="${VW_SIZE:-1280x800x24}"
+TMP_DIR=$(mktemp -d)
+XVFB=""
+ENGINE=""
 
-Xvfb "$DISPLAY_NUM" -screen 0 "$SIZE" >/dev/null 2>&1 &
+cleanup() {
+    if [ -n "$ENGINE" ]; then kill "$ENGINE" 2>/dev/null || true; fi
+    if [ -n "$XVFB" ]; then kill "$XVFB" 2>/dev/null || true; fi
+    wait 2>/dev/null || true
+    rm -rf "$TMP_DIR"
+}
+trap cleanup EXIT HUP INT TERM
+
+for tool in Xvfb xdotool xwd xwdtopnm pnmtopng; do
+    command -v "$tool" >/dev/null 2>&1 || {
+        printf 'shot.sh: need %s\n' "$tool" >&2
+        exit 1
+    }
+done
+if [ ! -f "$ENGINE_PATH" ] || [ ! -f "$PROJECT_PATH" ]; then
+    printf 'shot.sh: build a %s debug client first\n' "$PLATFORM" >&2
+    exit 1
+fi
+
+Xvfb "$DISPLAY_NUM" -screen 0 "$SIZE" >"$TMP_DIR/xvfb.log" 2>&1 &
 XVFB=$!
 sleep 1
 
 # bob writes the engine without the execute bit after every rebuild.
-chmod +x ./build/x86_64-linux/dmengine
-DISPLAY="$DISPLAY_NUM" ./build/x86_64-linux/dmengine build/default/game.projectc \
-    >/tmp/vw-engine.log 2>&1 &
+chmod +x "$ENGINE_PATH"
+DISPLAY="$DISPLAY_NUM" "$ENGINE_PATH" "$PROJECT_PATH" \
+    >"$TMP_DIR/engine.log" 2>&1 &
 ENGINE=$!
 
 sleep "$WAIT"
@@ -59,12 +83,12 @@ for key in "$@"; do
 done
 
 sleep "${VW_SETTLE:-0}"
-DISPLAY="$DISPLAY_NUM" xwd -root -silent > /tmp/vw.xwd
-xwdtopnm < /tmp/vw.xwd 2>/dev/null | pnmtopng > "$OUT" 2>/dev/null
+DISPLAY="$DISPLAY_NUM" xwd -root -silent > "$TMP_DIR/frame.xwd"
+xwdtopnm < "$TMP_DIR/frame.xwd" 2>/dev/null | pnmtopng > "$OUT" 2>/dev/null
 
 kill "$ENGINE" 2>/dev/null || true
-kill "$XVFB" 2>/dev/null || true
-wait 2>/dev/null || true
+wait "$ENGINE" 2>/dev/null || true
+ENGINE=""
 
-echo "wrote $OUT"
-tail -20 /tmp/vw-engine.log
+printf 'wrote %s\n' "$OUT"
+tail -20 "$TMP_DIR/engine.log"

@@ -225,7 +225,7 @@ typedef struct {
     int32_t reachable;       /* tiles a hull's center fits in the largest one */
     int32_t stranded;        /* open tiles no hull can reach, doors open */
     int32_t spawns;          /* starts the map names */
-    int32_t spawns_team[2];  /* and how they are split */
+    int32_t spawns_team[SIM_SIDES]; /* and how they are split */
     int32_t spawns_stranded; /* starts a ship could not leave */
     int32_t solid;           /* wall, slopes counted whole */
     int32_t open;            /* everything a ship flies through */
@@ -242,15 +242,12 @@ void sim_map_check(const sim_map *m, sim_map_scratch *s, sim_map_report *r);
 /* Whether that report is a map worth serving, and why not when it is not.
  * `why` takes a sentence naming the first thing wrong with it, which is a
  * message for whoever drew it rather than a code to look up. */
-int sim_map_playable(const sim_map *m, const sim_map_report *r, char *why, int cap);
+int sim_map_playable(const sim_map_report *r, char *why, int cap);
 
 /* The tile indices behind `report.stranded`, up to `cap` of them, so an editor
  * can draw the ground it is talking about rather than only counting it.
  * Returns how many were written. */
 int sim_map_stranded(const sim_map *m, sim_map_scratch *s, uint32_t *out, int cap);
-/* `m` is unused today and named anyway: every future rule this could grow
- * (a size a mode needs, a spawn count a roster wants) is a question about the
- * map rather than about the count of what is in it. */
 
 /* The reference arenas, in the core so the client and the server cannot hold
  * different ideas of the same room. They used to be the same magic numbers
@@ -387,8 +384,6 @@ typedef enum {
  * where the five comes from. */
 #define SIM_MOD_MAX 3
 #define SIM_MOD_MULTI_MAX 5
-#define SIM_MOD_MAX_OF(m) \
-    ((m) == SIM_MOD_MULTI ? SIM_MOD_MULTI_MAX : SIM_MOD_MAX)
 #define SIM_MAX_RUNGS 4  /* levels a weapon ladder can hold */
 
 /* ---- charges ----
@@ -536,9 +531,8 @@ typedef struct {
     int32_t recoil;       /* Q16 px/tick backwards on the ship that fired */
 } sim_fire_pattern;
 
-/* Prizes, the original's "greens": fly over one and the ship improves until
- * it dies. Every upgrade is a count, and the effective stat is the initial
- * value plus that many increments, capped by the class maximum. */
+/* Flight-stat slots. Every upgrade is a count, and the effective stat is the
+ * initial value plus that many increments, capped by the class maximum. */
 typedef enum {
     SIM_UP_ENERGY = 0,
     SIM_UP_RECHARGE,
@@ -557,8 +551,8 @@ typedef enum {
  *
  *   0 .. 4     a stat            sim_upgrade
  *   5 .. 6     a level           per trigger
- *   7 .. 20    an add-on         per trigger, per sim_mod
- *  21 .. 24    a charge          per kind
+ *   7 .. 18    an add-on         per trigger, per sim_mod
+ *  19 .. 22    a charge          per kind
  *
  * This used to be the space a green indexed, one byte per prize, rolled by
  * the server against a table of weights. Greens are gone and the space is
@@ -581,11 +575,9 @@ typedef enum {
 #define SIM_SLOT_COUNT       (SIM_UP_COUNT + SIM_TRIG_COUNT \
                               + SIM_TRIG_COUNT * SIM_MOD_COUNT \
                               + SIM_MAX_CHARGES)
-#define SIM_SLOT_NONE 255
-
 /* Wire capacity for a stat and what a kit may spend in total. The effective
  * depth of each stat comes from its flight row and may be lower than this
- * representation bound. docs/design/match-game.md. */
+ * representation bound. See docs/design/match-game.md. */
 #define SIM_UP_STEPS 8
 #define SIM_KIT_BUDGET 30
 
@@ -1189,10 +1181,7 @@ uint64_t sim_hash(const sim_state *s);
 int sim_door_open(const sim_settings *cfg, uint32_t tick, uint8_t variant);
 
 int32_t sim_units_speed(int32_t v);    /* px/s/10 -> Q16 px/tick */
-int32_t sim_units_thrust(int32_t t);   /* -> Q16 px/tick^2 */
-int32_t sim_units_rotation(int32_t r); /* r/400 turns/s -> units/tick */
 int32_t sim_units_energy(int32_t e);   /* energy units -> Q10 */
-int32_t sim_units_recharge(int32_t r); /* r/10 energy per second -> Q10/tick */
 
 /* A hull's flight stats in settings-file units, laid out the way the original
  * writes them: what a fresh pilot has, what one green adds, and the ceiling.
@@ -1216,12 +1205,10 @@ typedef struct {
  * left empty: what a hull fires is a ladder of patterns a zone tunes. */
 void sim_class_from_units(sim_ship_class *c, const sim_class_units *u);
 
-/* Effective stats after upgrades. The client HUD and the AI both ask. */
+/* Effective stats used outside the core by the client HUD and AI. */
 int32_t sim_eff_speed(const sim_ship_class *c, const sim_ship *s);
 int32_t sim_eff_thrust(const sim_ship_class *c, const sim_ship *s);
-int32_t sim_eff_rot(const sim_ship_class *c, const sim_ship *s);
 int32_t sim_eff_max_energy(const sim_ship_class *c, const sim_ship *s);
-int32_t sim_eff_recharge(const sim_ship_class *c, const sim_ship *s);
 
 /* Place a flag. Returns its index, or -1 if the arena is full. */
 int sim_add_flag(sim_state *s, int32_t x_px, int32_t y_px);

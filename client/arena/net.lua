@@ -2,7 +2,7 @@
 --
 -- The same contract the web prototype proved out: this client sends buttons,
 -- predicts its own ship forward from the last snapshot, and accepts every
--- correction the server sends. It decides no hit, no death, no pickup.
+-- correction the server sends. No predicted hit or death is authoritative.
 --
 -- Snapshots are decoded by the simulation core's own unpacker, so the client
 -- and the server cannot disagree about what a snapshot means.

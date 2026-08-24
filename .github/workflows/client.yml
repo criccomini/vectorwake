@@ -20,6 +20,7 @@ on:
       - "client/**"
       - "sim/**"
       - "deploy/Dockerfile.client"
+      - "deploy/site/**"
       # The panel's map codec is checked in this job, so a change to it has to
       # run the job. Nothing else here builds the panel: it is static files
       # Caddy serves, and this is the one thing about it a machine can check.
@@ -80,8 +81,20 @@ jobs:
       - name: client tests
         run: for t in client/tests/*_test.lua; do echo "== $t"; lua5.1 "$t" || exit 1; done
 
-      - name: browser viewport tests
-        run: node client/tests/viewport_test.js
+      - name: browser page tests
+        run: for t in client/tests/*_test.js; do echo "== $t"; node "$t" || exit 1; done
+
+      - name: admin script syntax
+        run: |
+          node --check deploy/admin/admin.js
+          node --check deploy/admin/maps.js
+          node --check deploy/site/site.js
+
+      - name: admin script interface
+        run: node deploy/admin/tests/interface_test.js
+
+      - name: admin rendering
+        run: node deploy/admin/tests/render_test.js
 
       # The admin panel writes `.vwmap` files in a browser and the meta-layer
       # reads them with the core, which refuses anything whose bytes do not
@@ -91,19 +104,13 @@ jobs:
       - name: admin map codec
         run: node deploy/admin/tests/pack_test.js
 
-      # The panel's two scripts are classic tags on one page and share a scope,
-      # so a name declared at the top of both is a collision. One of them
-      # silently replaces a function; the other is a SyntaxError that takes a
-      # whole file out at parse and reports itself as an unrelated variable
-      # going missing somewhere else. Both have shipped. This compiles the two
-      # as one file, which is what sharing a scope amounts to.
-      - name: admin panel scope
-        run: node deploy/admin/tests/scope_test.js
+      - name: admin map metrics
+        run: node deploy/admin/tests/metrics_test.js
 
-      # A failed native handshake formats the response into the same connection
-      # buffer that held it. This pins the overlap and the length Lua may read,
-      # without waiting for the remote extension builder to compile the client.
-      - name: websocket status formatting
+      # Compile the native helpers and pin connection publication, handshake
+      # formatting, framed partial sends, and immediate backpressure without
+      # waiting for the remote extension builder to compile the client.
+      - name: native websocket behavior
         run: make -C client/websocket check
 
       # The client tests that cannot be Lua: whether a pilot can hear which

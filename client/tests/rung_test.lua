@@ -15,7 +15,7 @@
 --
 -- Every one of those is a number, so every one of them is checked here. The
 -- present ramp borrows a scale everybody knows and pays for it by coming
--- nearer the prize green and the charge gold than a ramp of its own hues
+-- nearer the payout green and the charge gold than a ramp of its own hues
 -- would; the floors below are set under what it actually measures, so they
 -- catch a regression without pinning the palette to today's exact values.
 

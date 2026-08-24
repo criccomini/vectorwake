@@ -275,7 +275,7 @@ impl Session {
 
     /// How many rows this connection has asked to file, capped or not. For
     /// tests, and for a caller that wants to say so in a log line.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn filed(&self) -> u32 {
         self.filed.load(Ordering::Relaxed)
     }

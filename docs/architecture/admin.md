@@ -376,12 +376,11 @@ back serving the maps on disk and nothing else would ever tell it otherwise.
 
 **The browser packs the file and does not judge it.** Whether a map is worth
 serving is a question with one right answer, and it is the core's:
-`sim_map_check` asks whether a three-tile hull can fly all of it, whether each
-side has somewhere to start, and whether any ground is a trap a ship could be
-shoved into and never leave. The generator takes its own verdict from the same
-function, so a map somebody drew is held to what a generated one is. The page
-asks while somebody is still drawing, so "a start is walled in" arrives when
-they wall it in.
+`sim_map_check` asks whether the map names a start, whether any start strands a
+three-tile hull, and whether its hull-sized regions connect. Mapforge adds the
+match recipe's four starts per side, routes, and geometry. The page asks while
+somebody is still drawing, so "a start is walled in" arrives when they wall it
+in.
 
 What the browser does have to get exactly right is the file. The far end
 unpacks it with the same function an arena does and refuses anything whose

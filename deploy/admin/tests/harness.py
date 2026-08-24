@@ -25,14 +25,14 @@ page = """<!doctype html>
 <link rel="stylesheet" href="admin.css">
 <body class="panel">
 <main>
-<!-- The two nodes wire() reaches for that live in the list section rather
-     than the editor. The button is how a drive opens a blank map. -->
+<!-- The nodes wire() reaches for that live in the list section rather than
+     the editor. The button is how a drive opens a blank map. -->
 <button id="map-new">new map</button>
+<input id="map-import" type="file" hidden>
 <p id="maps-note"></p>
 %s
 </main>
 <script>
-const secret = "drive";
 function el(id) { return document.getElementById(id); }
 function tell(id, msg, kind) {
   const n = el(id);
@@ -40,9 +40,18 @@ function tell(id, msg, kind) {
 }
 function fill() {}
 function ask() { return Promise.resolve("drive-map"); }
-// Nothing here talks to a server. The live verdict is the one call maps.js
-// makes on its own, and a drive of the drawing tools does not need its answer.
-function post() { return Promise.resolve({ ok: true, report: {} }); }
+// Nothing here talks to a server. Most drawing tests use the default answer;
+// verdict tests replace the delegate without changing the interface maps.js
+// captured when it loaded.
+let postDelegate = () => Promise.resolve({ ok: true, report: {} });
+let mapsDraw = () => Promise.resolve();
+function post(url, body) { return postDelegate(url, body); }
+function setPost(fn) { postDelegate = fn; }
+function installMaps(fn) { mapsDraw = fn; }
+function drawMaps() { return mapsDraw(); }
+window.vectorwakeAdmin = Object.freeze({
+  post, el, tell, fill, ask, setPost, installMaps, drawMaps, secret: "drive"
+});
 </script>
 <script src="maps.js"></script>
 </body>

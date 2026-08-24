@@ -94,25 +94,20 @@ int32_t sim_units_speed(int32_t v) {
     return (int32_t)(((int64_t)v << 16) / 1000);
 }
 
-int32_t sim_units_thrust(int32_t t) {
+static int32_t sim_units_thrust(int32_t t) {
     return (int32_t)(((int64_t)t << 16) / 1000);
 }
 
-int32_t sim_units_rotation(int32_t r) {
+static int32_t sim_units_rotation(int32_t r) {
     return (int32_t)(((int64_t)r << 16) / 40000);
 }
 
 int32_t sim_units_energy(int32_t e) { return e * 1024; }
 
 /* r is energy*10 per second; per tick that is r/1000 energy. */
-int32_t sim_units_recharge(int32_t r) {
+static int32_t sim_units_recharge(int32_t r) {
     return (int32_t)(((int64_t)r * 1024) / 1000);
 }
-
-/* How many prizes of one kind a pilot may hold. The ceiling is what stops a
- * stat climbing, not this: `eff` clamps at the maximum, so collecting more
- * than the ladder needs does nothing, which is what the original does too. */
-#define SIM_UP_STEPS 8
 
 void sim_class_from_units(sim_ship_class *c, const sim_class_units *u) {
     memset(c, 0, sizeof *c);
@@ -168,7 +163,7 @@ int32_t sim_eff_speed(const sim_ship_class *c, const sim_ship *s) {
 int32_t sim_eff_thrust(const sim_ship_class *c, const sim_ship *s) {
     return eff(c->init_thrust, c->up_thrust, c->thrust, s->up[SIM_UP_THRUST]);
 }
-int32_t sim_eff_rot(const sim_ship_class *c, const sim_ship *s) {
+static int32_t sim_eff_rot(const sim_ship_class *c, const sim_ship *s) {
     return eff(c->init_rot, c->up_rot, c->rot, s->up[SIM_UP_ROTATION]);
 }
 uint8_t sim_eff_max_ships(const sim_settings *cfg) {
@@ -182,7 +177,7 @@ uint8_t sim_eff_max_ships(const sim_settings *cfg) {
 int32_t sim_eff_max_energy(const sim_ship_class *c, const sim_ship *s) {
     return eff(c->init_energy, c->up_energy, c->max_energy, s->up[SIM_UP_ENERGY]);
 }
-int32_t sim_eff_recharge(const sim_ship_class *c, const sim_ship *s) {
+static int32_t sim_eff_recharge(const sim_ship_class *c, const sim_ship *s) {
     return eff(c->init_recharge, c->up_recharge, c->recharge, s->up[SIM_UP_RECHARGE]);
 }
 
@@ -193,21 +188,7 @@ void sim_init(sim_state *s, uint32_t seed) {
     s->rng = seed ? seed : 1u;
 }
 
-/* Hand a fresh ship its opening greens.
- *
- * The same roll a green on the floor gets, run `spawn_prizes` times off the
- * state's own generator -- so it is deterministic, it respects the hull's
- * roster and every ceiling in it, and a zone that reweights the tree gets the
- * spawn it asked for without a second table.
- *
- * Rust is left in rather than suppressed. It cannot bite on the first roll --
- * an empty pilot has nothing to corrode -- and after that it is one green in a
- * hundred, so it costs a spawn a fraction of an item on average and needs no
- * special case to say so.
- *
- * The caller sets energy afterwards, not before: the energy ceiling is a
- * function of `up[SIM_UP_ENERGY]`, and filling the bar before the prizes lands
- * would leave a ship at less than the full one it just earned. */
+/* Sum the counts in a kit. Every slot costs one point. */
 int sim_kit_cost(const uint8_t *kit) {
     int n = 0;
     for (int i = 0; i < SIM_SLOT_COUNT; i++) n += kit[i];
@@ -388,7 +369,8 @@ uint8_t sim_tile_at(const sim_map *m, int32_t tx, int32_t ty) {
  * several channels opens and shuts in sequence instead of all at once. */
 int sim_door_open(const sim_settings *cfg, uint32_t tick, uint8_t variant) {
     if (cfg->door_period == 0) return 0;
-    uint32_t phase = (tick + (uint32_t)variant * cfg->door_period / 8)
+    uint32_t phase = (tick + (uint32_t)variant * cfg->door_period
+                              / SIM_DOOR_CHANNELS)
                      % cfg->door_period;
     return phase < cfg->door_open;
 }
@@ -476,15 +458,12 @@ static int box_slope(const sim_map *m, int32_t x, int32_t y, int32_t rx,
     return found;
 }
 
-/* Whether a tile is ground: somewhere a thing may be left lying and still be
- * there, and reachable, later.
+/* Whether a tile can hold a dropped flag where a pilot can recover it later.
  *
  * The door is the whole reason this is not `solid`. `solid` answers about a
  * tick, which is the right question for something moving through and the
- * wrong one for something staying put: a green sown through an open door is
- * inside a wall for the third of every cycle the door is shut, unreachable
- * while it is, and drawn embedded in it. Measured on alpha, about one green
- * every ten minutes spent two seconds at a time in a shut door.
+ * wrong one for something staying put. A flag dropped through an open door
+ * would be unreachable and embedded in a wall whenever the door shuts.
  *
  * A hull's own center is never inside a wall, so the door is the whole of what
  * this catches today. It is written against the tile rather than against the
@@ -492,9 +471,8 @@ static int box_slope(const sim_map *m, int32_t x, int32_t y, int32_t rx,
  *
  * A slope is half solid, and which half depends on where in the tile the thing
  * is standing. That is worth asking of something moving through and not of
- * something staying put: a green resting in the open half of a slope tile is
- * drawn against the wall as far as any pilot can tell, so the whole tile is
- * off the list. */
+ * something staying put. A flag resting in the open half of a slope tile is
+ * drawn against the wall, so the whole tile is off the list. */
 static int ground(const sim_map *m, int32_t tx, int32_t ty) {
     switch (SIM_TILE_CLASS(sim_tile_at(m, tx, ty))) {
         case SIM_TILE_SOLID:
@@ -771,7 +749,7 @@ void sim_spawn_point(sim_state *s, const sim_settings *cfg, uint8_t team,
 /* Whether a point falls within `pad` of the hull's oriented rectangle. The
  * padding is round: sixteen pixels past a side and sixteen pixels past a
  * corner are the same pickup radius. Expanding both axes independently made
- * the corner reach sqrt(2) times larger, which let a hull take a green before
+ * the corner reach sqrt(2) times larger, which let a hull take a flag before
  * its diagonal had visibly reached it.
  *
  * The delta is rotated into the hull's own frame; along runs tail to nose,
@@ -928,7 +906,7 @@ static void compose(const sim_settings *cfg, uint16_t mods, uint8_t level,
     }
     if ((n = sim_mod_get(mods, SIM_MOD_PROX)) != 0) {
         /* ProximityDistance is the L1 radius and each bomb level adds one
-         * tile to it, so a fuse is what the prize gives plus what the ladder
+         * tile to it, so a fuse is what the add-on gives plus what the ladder
          * has climbed. The level has to be passed in because the rung picks
          * the spec before an add-on is ever applied to it, so by here the
          * pattern no longer knows which rung it came from. */
@@ -1619,13 +1597,7 @@ static void update_flags(sim_state *s, const sim_settings *cfg, sim_events *ev) 
     }
 }
 
-/* ---- prizes ---- */
-
-/* Spawn one prize at a random open tile inside the configured bounds. Every
- * draw comes from the state's own PRNG, so prize placement is part of the
- * deterministic stream and a client can predict it exactly. */
-
-/* Move one count by a step, within its ceiling and never below zero. */
+/* ---- kit grants ---- */
 /* How far a proximity sensor reaches, from the bomb's center, in Q8 px.
  *
  * The original does not use ProximityDistance as the radius. It scales it by
@@ -1649,7 +1621,7 @@ static void lock_trigger(sim_ship *sh, int trig, uint16_t ticks) {
     if (ticks > sh->fire_cooldown[trig]) sh->fire_cooldown[trig] = ticks;
 }
 
-/* One slot, one step, up or down, clamped where that slot ends.
+/* Add one step to a slot, clamped where that slot ends.
  *
  * The ceiling is the arena's, read straight off `cfg->kit_ceiling` at the
  * slot this call is about. It used to be the hull's row, and the difference
@@ -1657,43 +1629,33 @@ static void lock_trigger(sim_ship *sh, int trig, uint16_t ticks) {
  * charge all end at the same kind of number now, and the class is consulted
  * for exactly one thing, which is whether the ladder a level indexes has a
  * rung there to stand on. */
-static void move_count(sim_ship *sh, const sim_settings *cfg, uint8_t type,
-                       int by) {
+static void grant_count(sim_ship *sh, const sim_settings *cfg, uint8_t type) {
     const sim_ship_class *c = &cfg->classes[sh->cls];
     uint8_t cap = cfg->kit_ceiling[type];
     if (type < SIM_UP_COUNT) {
-        if (by < 0) { if (sh->up[type]) sh->up[type]--; }
-        else if (sh->up[type] < cap) sh->up[type]++;
+        if (sh->up[type] < cap) sh->up[type]++;
         return;
     }
     type = (uint8_t)(type - SIM_UP_COUNT);
     if (type < SIM_TRIG_COUNT) {
-        if (by < 0) {
-            if (sh->level[type]) sh->level[type]--;
-        } else {
-            int next = sh->level[type] + 1;
-            if (next <= cap && next < SIM_MAX_RUNGS
-                && c->trigger[type][next] != SIM_NO_PATTERN)
-                sh->level[type] = (uint8_t)next;
-        }
+        int next = sh->level[type] + 1;
+        if (next <= cap && next < SIM_MAX_RUNGS
+            && c->trigger[type][next] != SIM_NO_PATTERN)
+            sh->level[type] = (uint8_t)next;
         return;
     }
     type = (uint8_t)(type - SIM_TRIG_COUNT);
     if (type < SIM_TRIG_COUNT * SIM_MOD_COUNT) {
         int t = type / SIM_MOD_COUNT, m = type % SIM_MOD_COUNT;
         uint8_t have = sim_mod_get(sh->mods[t], m);
-        if (by < 0) {
-            if (have) sh->mods[t] = sim_mod_set(sh->mods[t], m, (uint8_t)(have - 1));
-        } else if (have < cap) {
+        if (have < cap) {
             sh->mods[t] = sim_mod_set(sh->mods[t], m, (uint8_t)(have + 1));
         }
         return;
     }
     {
         int k = type - SIM_TRIG_COUNT * SIM_MOD_COUNT;
-        if (by < 0) {
-            if (sh->charge[k]) sh->charge[k]--;
-        } else if (sh->charge[k] < cap) {
+        if (sh->charge[k] < cap) {
             sh->charge[k]++;
         }
     }
@@ -1715,7 +1677,7 @@ static uint8_t held(const sim_ship *sh, uint8_t type) {
 int sim_grant(sim_ship *sh, const sim_settings *cfg, uint8_t type) {
     if (type >= SIM_SLOT_COUNT) return 0;
     uint8_t was = held(sh, type);
-    move_count(sh, cfg, type, 1);
+    grant_count(sh, cfg, type);
     return held(sh, type) != was;
 }
 
@@ -1844,10 +1806,9 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
          * The switch exists only while there is a fan to throw it on. A hull
          * carrying none has nothing to decline, so the press does nothing at
          * all: the flag does not move, and a client that says the key landed
-         * by watching the flag stays quiet with it. And a fan that leaves, to
-         * a death or to a green that takes rather than gives, takes the
-         * switch with it, rather than leaving a decline lying in wait for
-         * whatever the pilot picks up next. Enforced here, once a tick,
+         * by watching the flag stays quiet with it. A fan removed by a death
+         * or kit change takes the switch with it rather than leaving a decline
+         * in wait for the next fan. Enforced here, once a tick,
          * rather than at each of the three places a rung can leave a ship;
          * a dead hull skips this loop, so the clear lands on the first tick
          * of the next life, before there is anything to pick up. */

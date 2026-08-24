@@ -3,13 +3,11 @@
 --
 --     lua5.1 client/tests/binds_test.lua
 --
--- Three of these are the kind of thing that cannot be seen by reading. A key
--- in the catalog with no trigger in game.input_binding is a key the page will
--- offer and the engine will never report, and the pilot who picks it has
--- disarmed a control with no way to see why. A control in the list with no
--- hand for it in arena.script is a row that claims a key does something it
--- does not. And a swap that gets its arithmetic wrong leaves a control on no
--- key at all, which is the one state this design exists to make impossible.
+-- A key in the catalog with no trigger in game.input_binding is a key the page
+-- will offer and the engine will never report. A control missing from the
+-- arena's route object is a row that claims a key does something it does not.
+-- A bad swap can leave a control on no key at all, which is the one state this
+-- design exists to make impossible.
 
 package.path = "client/?.lua;" .. package.path
 
@@ -109,23 +107,73 @@ do
     check("and no two controls start on the same chord", #twice == 0,
           table.concat(twice, ", "))
 
-    -- A control the arena never looks for is a row that says a key does
-    -- something it does not. The charge keys are the one set built rather than
-    -- written, since the arena walks the four slots in a loop.
-    local src = read("client/arena/arena.script") or ""
-    local BUILT = {charge_1 = 'hash("charge_" .. i)',
-                   charge_2 = 'hash("charge_" .. i)',
-                   charge_3 = 'hash("charge_" .. i)',
-                   charge_4 = 'hash("charge_" .. i)'}
-    local handless = {}
-    for _, c in ipairs(controls) do
-        local want = BUILT[c.id] or ('hash("' .. c.id .. '")')
-        if not src:find(want, 1, true) then
-            handless[#handless + 1] = c.id
+    -- This is the route object arena.script consumes. An identity hash makes
+    -- its action values readable here without substituting a second routing
+    -- implementation for the one the game uses.
+    local fake_sim = {
+        BTN_LEFT = 1, BTN_RIGHT = 2, BTN_THRUST = 4, BTN_REVERSE = 8,
+        BTN_FIRE = 16, BTN_BOMB = 32, BTN_MULTI = 64,
+        KIT_CHARGE_SLOTS = 2,
+    }
+    local route = require("arena.control_actions").new(function(id) return id end,
+                                                        fake_sim)
+    local handled, mismatched, duplicate = {}, {}, {}
+    local function consume(id, action)
+        if action ~= id then
+            mismatched[#mismatched + 1] = id .. " -> " .. tostring(action)
         end
+        if handled[action] then
+            duplicate[#duplicate + 1] = tostring(action)
+        end
+        handled[action] = true
     end
-    check("and the arena has a hand for every control", #handless == 0,
+    for id, flight in pairs(route.flight) do consume(id, flight.action) end
+    for _, charge in ipairs(route.charge) do consume(charge.id, charge.action) end
+    for id, action in pairs(route.panel) do consume(id, action) end
+    for _, move in ipairs(route.players) do consume(move.id, move.action) end
+    check("every route sends the control it names", #mismatched == 0,
+          table.concat(mismatched, ", "))
+    check("and no two controls send the same action", #duplicate == 0,
+          table.concat(duplicate, ", "))
+    local handless, offered = {}, {}
+    for _, c in ipairs(controls) do
+        offered[c.id] = true
+        if not handled[c.id] then handless[#handless + 1] = c.id end
+    end
+    check("and the arena routes every control it offers", #handless == 0,
           table.concat(handless, ", "))
+    local stale = {}
+    for id in pairs(handled) do
+        if not offered[id] then stale[#stale + 1] = id end
+    end
+    table.sort(stale)
+    check("and no route names a control the catalog has dropped", #stale == 0,
+          table.concat(stale, ", "))
+
+    -- The same dispatcher the frame loop calls consumes every panel route.
+    -- Its fixed order includes the player movement gap, so this also pins the
+    -- behavior when two panel keys land in one frame.
+    local tapped, delivered = {}, {}
+    for _, action in pairs(route.panel) do tapped[action] = true end
+    local handlers = {}
+    for _, id in ipairs({"menu", "details", "map", "help"}) do
+        local name = id
+        handlers[name] = function() delivered[#delivered + 1] = name end
+    end
+    handlers.players = function() delivered[#delivered + 1] = "players" end
+    route.dispatch_panel(tapped, route.panel, handlers, true)
+    check("the panel dispatcher consumes every route",
+          next(tapped) == nil,
+          next(tapped) and tostring(next(tapped)) or nil)
+    check("and preserves panel action order",
+          table.concat(delivered, ",") == "menu,details,players,map,help",
+          table.concat(delivered, ","))
+
+    tapped[route.panel.menu] = true
+    handlers.menu = function() return false end
+    route.dispatch_panel(tapped, route.panel, handlers, true)
+    check("a deferred panel action remains pending",
+          tapped[route.panel.menu] == true)
 end
 
 -- --- swapping ---------------------------------------------------------------

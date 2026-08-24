@@ -9,7 +9,7 @@ recharges, weapons appear, kills land, and that a locally predicted tick agrees
 with the server's next snapshot.
 
     make
-    python3 pilot.py wss://play.vectorwake.net/dir war 4 30   # directory zone pilots seconds
+    python3 pilot.py wss://play.vectorwake.net/dir melee 4 30 # directory zone pilots seconds
     python3 pilot.py --direct ws://127.0.0.1:9001 "" 2 20     # one arena, no browse
     python3 pilot.py --direct --adapt ws://127.0.0.1:9001 "" 3 15   # steer the clock
 

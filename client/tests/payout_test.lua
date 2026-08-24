@@ -55,13 +55,9 @@ local sim = {
     ship_charge = function() return 0 end,
     ship_mod = function() return 0 end,
     ship_multi_off = function() return 0 end,
-    charge_max = function() return 3 end,
     has_trigger = function() return true end,
-    trigger_rate = function() return 1 end,
     tick = function() return 4242 end,
     weapon_count = function() return 0 end,
-    prize_count = function() return 0 end,
-    prize_at = function() return 0, 0, 0 end,
     flag_count = function() return 0 end,
     flag_at = function() return 0, 0, 255 end,
     map_coarse = function() return nil end,
@@ -146,7 +142,7 @@ ui.payout(CAM_X, CAM_Y, 41)
 frame(0.02)
 local first = floated()
 check("a kill of yours floats its payout", first ~= nil)
-check("in the green the feed uses for your own kill",
+check("in the payout green used for your own kill",
       first and first.col[1] == pal.PAID[1] and first.col[2] == pal.PAID[2]
           and first.col[3] == pal.PAID[3],
       first and table.concat(first.col, ",") or "nothing drawn")

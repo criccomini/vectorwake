@@ -545,7 +545,7 @@ end
 local stage = on_stage(ship_frame)
 local helmets = crowns(stage)
 check("the ship page draws the helmet in its spectate cell", #helmets == 1,
-      #helmets .. " helmets on a page of eight hulls and one pilot")
+      #helmets .. " helmets on a page of seven hulls and one pilot")
 if helmets[1] then
     -- The hulls are closed outlines too. They are told apart by being wider
     -- than they are tall and by being drawn out of a handful of points, where

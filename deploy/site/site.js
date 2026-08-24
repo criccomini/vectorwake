@@ -184,13 +184,49 @@ function setupGameplayFilm() {
   observer.observe(film);
 }
 
+function loadCachedCount({ cacheKey, url, read, paint }) {
+  const cacheAge = 6 * 60 * 60 * 1000;
+  let cached;
+  try {
+    cached = JSON.parse(localStorage.getItem(cacheKey));
+  } catch (_) {
+    cached = null;
+  }
+
+  if (Number.isInteger(cached?.count)) {
+    paint(cached.count);
+    if (Date.now() - cached.savedAt < cacheAge) return;
+  }
+
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 4000);
+  fetch(url, { signal: controller.signal })
+    .then((response) => {
+      if (!response.ok) throw new Error(`count endpoint returned ${response.status}`);
+      return response.json();
+    })
+    .then((body) => {
+      const count = read(body);
+      if (!Number.isInteger(count)) return;
+      paint(count);
+      try {
+        localStorage.setItem(cacheKey, JSON.stringify({
+          count,
+          savedAt: Date.now(),
+        }));
+      } catch (_) {
+        return;
+      }
+    })
+    .catch(() => {})
+    .finally(() => window.clearTimeout(timeout));
+}
+
 function setupGitHubStars() {
   const counts = document.querySelectorAll("[data-github-count]");
   const links = document.querySelectorAll("[data-github-link]");
   if (!counts.length) return;
 
-  const cacheKey = "vectorwake-github-stars";
-  const cacheAge = 6 * 60 * 60 * 1000;
   const formatter = new Intl.NumberFormat("en-US", {
     notation: "compact",
     maximumFractionDigits: 1,
@@ -207,48 +243,18 @@ function setupGitHubStars() {
     });
   };
 
-  let cached;
-  try {
-    cached = JSON.parse(localStorage.getItem(cacheKey));
-  } catch (_) {
-    cached = null;
-  }
-
-  if (Number.isInteger(cached?.count)) {
-    paint(cached.count);
-    if (Date.now() - cached.savedAt < cacheAge) return;
-  }
-
-  const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), 4000);
-  fetch("https://api.github.com/repos/criccomini/vectorwake", { signal: controller.signal })
-    .then((response) => {
-      if (!response.ok) throw new Error(`GitHub returned ${response.status}`);
-      return response.json();
-    })
-    .then((repository) => {
-      if (!Number.isInteger(repository.stargazers_count)) return;
-      paint(repository.stargazers_count);
-      try {
-        localStorage.setItem(cacheKey, JSON.stringify({
-          count: repository.stargazers_count,
-          savedAt: Date.now(),
-        }));
-      } catch (_) {
-        return;
-      }
-    })
-    .catch(() => {})
-    .finally(() => window.clearTimeout(timeout));
+  loadCachedCount({
+    cacheKey: "vectorwake-github-stars",
+    url: "https://api.github.com/repos/criccomini/vectorwake",
+    read: (repository) => repository.stargazers_count,
+    paint,
+  });
 }
 
 function setupDiscordCount() {
   const counts = document.querySelectorAll("[data-discord-count]");
   const links = document.querySelectorAll("[data-discord-link]");
   if (!counts.length) return;
-
-  const cacheKey = "vectorwake-discord-members";
-  const cacheAge = 6 * 60 * 60 * 1000;
 
   const paint = (count) => {
     counts.forEach((element) => {
@@ -261,40 +267,12 @@ function setupDiscordCount() {
     });
   };
 
-  let cached;
-  try {
-    cached = JSON.parse(localStorage.getItem(cacheKey));
-  } catch (_) {
-    cached = null;
-  }
-
-  if (Number.isInteger(cached?.count)) {
-    paint(cached.count);
-    if (Date.now() - cached.savedAt < cacheAge) return;
-  }
-
-  const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), 4000);
-  fetch("https://discord.com/api/v10/invites/jyb4YBcY5Z?with_counts=true", { signal: controller.signal })
-    .then((response) => {
-      if (!response.ok) throw new Error(`Discord returned ${response.status}`);
-      return response.json();
-    })
-    .then((invite) => {
-      const count = invite.approximate_member_count ?? invite.profile?.member_count;
-      if (!Number.isInteger(count)) return;
-      paint(count);
-      try {
-        localStorage.setItem(cacheKey, JSON.stringify({
-          count,
-          savedAt: Date.now(),
-        }));
-      } catch (_) {
-        return;
-      }
-    })
-    .catch(() => {})
-    .finally(() => window.clearTimeout(timeout));
+  loadCachedCount({
+    cacheKey: "vectorwake-discord-members",
+    url: "https://discord.com/api/v10/invites/jyb4YBcY5Z?with_counts=true",
+    read: (invite) => invite.approximate_member_count ?? invite.profile?.member_count,
+    paint,
+  });
 }
 
 document.addEventListener("DOMContentLoaded", () => {

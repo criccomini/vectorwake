@@ -1880,7 +1880,7 @@ mod tests {
     }
 
     fn snapshot_message(world: &sim::World) -> Vec<u8> {
-        let mut packed = vec![0u8; sim::PACK_MAX];
+        let mut packed = vec![0u8; sim::STATE_PACK_MAX];
         let len = world.pack(&mut packed);
         assert!(len > 0, "the test world packs");
         packed.truncate(len as usize);
@@ -1919,17 +1919,17 @@ mod tests {
     async fn a_map_change_moves_the_pilot_rather_than_emptying_the_seat() {
         let drydock = std::fs::read("../catalog/zones/melee/drydock.vwmap")
             .expect("a shipped map lives in this repository");
-        let slipway = std::fs::read("../catalog/zones/melee/slipway.vwmap")
+        let relay = std::fs::read("../catalog/zones/melee/relay.vwmap")
             .expect("a shipped map lives in this repository");
         assert_ne!(
             fingerprint(&drydock),
-            fingerprint(&slipway),
+            fingerprint(&relay),
             "two maps, or this test is about nothing"
         );
 
         let maps = Maps::default();
         let (first, road) = maps.get(&drydock).await.expect("the map unpacks");
-        let (second, other_road) = maps.get(&slipway).await.expect("the map unpacks");
+        let (second, other_road) = maps.get(&relay).await.expect("the map unpacks");
         let old = Rig::new(sim::World::on_shared_map(1, first));
         let new = Rig::new(sim::World::on_shared_map(2, second));
 

@@ -323,10 +323,10 @@ end
 -- table this loop cannot afford. Six segments: at these alphas nobody has
 -- ever seen the polygon, and the count is the whole cost, eighteen vertices
 -- a call.
-M.BLOOM_SEGS = 6
+local BLOOM_SEGS = 6
 function Layer:bloom(x, y, r, a, col)
-    local u = unit(M.BLOOM_SEGS)
-    for i = 0, M.BLOOM_SEGS - 1 do
+    local u = unit(BLOOM_SEGS)
+    for i = 0, BLOOM_SEGS - 1 do
         self:tri_fade(x, y, a,
                       x + u[i * 2 + 1] * r, y + u[i * 2 + 2] * r, 0,
                       x + u[i * 2 + 3] * r, y + u[i * 2 + 4] * r, 0, col)
@@ -459,5 +459,4 @@ function Layer:fan(pts, col)
     end
 end
 
-M.Layer = Layer
 return M

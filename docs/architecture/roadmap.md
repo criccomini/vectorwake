@@ -6,17 +6,17 @@
 |---|---|
 | M0 sim core and determinism | Done. Green in CI on x86-64, arm64, and WebAssembly |
 | M1 a ship on screen | Done. Web client at 60 fps; flight and energy confirmed by playtest |
-| M1.5 prizes and inelastic walls | Done, added after that playtest |
+| M1.5 prizes and inelastic walls | Built, then simplified: prizes were removed; inelastic walls remain |
 | M2 server authoritative | Done. Peak prediction error 0.9 px at 150 ms, 11 KB/s per client |
 | M3.5 AI opponents | Done server-side: input-only bots, labeled, taking and yielding seats |
 | M4 rating and modes | Done: damage ledgers, attribution, and the warzone flag game |
-| M4.5 duels | Built, then removed: deferred until a mode is catalog content |
+| M4.5 duels | Deferred. The catalog name currently uses free-for-all rules; the dedicated design remains unbuilt |
 | M5 zone operator surface | Done: zone.toml, live reload, bans, capabilities |
 | M5.5 Defold client | Done: real core as a native extension, builds for host and browser, predicts against a live zone |
 | M6 meta-layer | Done in code: calibrated bot ladder, visible tiers, touch controls, zone directory and the games list in the menu |
 | M6 platforms | Accounts live on the fleet. Steam and consoles still wait on credentials |
-| M7 the fleet | Designed, not built. The directory, catalog and zone selection below |
-| M8 the match game | Melee: three minute 4v4 matches, owned kits, rivets, two maps and six tabs. Capture and Holdfast named, not written |
+| M7 the fleet | Live on vectorwake.net: catalog, directory, arena selection, bots, meta-layer, admin, and deployment automation |
+| M8 the match game | Live: three-minute 4v4 Melee, owned kits, rivets, seven hulls, six maps, and six tabs. Capture and Holdfast remain designs |
 
 What M6 asked for that is code has landed. The bot ladder is calibrated by
 an offline tournament and seeds every zone; ratings show as tiers once a
@@ -30,7 +30,7 @@ accounts, credentials, names, ratings and the rated event log, per
 A client mints a guest on first contact and never signs up; arenas verify a
 signed session token against a key the catalog carries; house bots hold
 accounts and one of them anchors the ladder. Live on vectorwake.net since
-2026-08-03, verified by flying a token-carrying client into Chaos and watching
+2026-08-03, verified by flying a token-carrying client into Melee and watching
 the rating come back through the meta-layer, with the anchor pinned at 1200 and
 the calibrated ladder reaching the fleet through account seeding. `persist.rs` and `ratings.json`
 are gone with it. `rating.rs` stayed, because damage-weighted attribution

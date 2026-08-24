@@ -1,5 +1,11 @@
 # Zones, directories, and arena servers
 
+> **Historical design.** This document records the one-arena-per-process
+> deployment model that preceded on-demand rooms. The directory, catalog, and
+> edge-selection reasoning remain useful provenance, but descriptions of arena
+> process ownership below are not current. See [server.md](server.md) for the
+> implemented one-zone, multiple-room process model.
+
 ## The thesis
 
 The directory observes and reports. The edges decide.

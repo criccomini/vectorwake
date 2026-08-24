@@ -345,7 +345,7 @@ impl<T: Serialize + DeserializeOwned + Clone> Spool<T> {
 
     /// The most recent event still owed. For a caller that wants to see what
     /// it just filed rather than what the far end eventually made of it.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn last(&self) -> Option<&T> {
         self.pending.last().map(|record| &record.event)
     }
@@ -353,7 +353,7 @@ impl<T: Serialize + DeserializeOwned + Clone> Spool<T> {
     /// One of the events still owed, oldest first. For reading back an order
     /// that matters: the pilot log is a sequence, and a test that could only
     /// see the last row could not tell a stay from a shuffle of one.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn nth(&self, i: usize) -> Option<&T> {
         self.pending.get(i).map(|record| &record.event)
     }

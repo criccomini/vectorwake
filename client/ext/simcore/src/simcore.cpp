@@ -31,6 +31,7 @@ void VwBufFinal();
 
 // The sound kit, same arrangement, in vwsfx.cpp over sfx.c.
 void VwSfxInit(lua_State* L);
+void VwSfxFinal();
 
 namespace {
 
@@ -96,40 +97,6 @@ int MapSize(lua_State* L) {
     lua_pushnumber(L, g_map.w);
     lua_pushnumber(L, g_map.h);
     return 2;
-}
-
-// Where the map says a ship of this team starts, or nil when it names none.
-int MapSpawn(lua_State* L) {
-    uint16_t tx = 0, ty = 0;
-    int ok = sim_map_spawn(&g_map, (uint8_t)luaL_checkinteger(L, 1),
-                           (uint32_t)luaL_checkinteger(L, 2), &tx, &ty);
-    if (!ok) return 0;
-    lua_pushnumber(L, tx);
-    lua_pushnumber(L, ty);
-    return 2;
-}
-
-int Spawn(lua_State* L) {
-    int cls = (int)luaL_checkinteger(L, 1);
-    int team = (int)luaL_checkinteger(L, 2);
-    int tx = (int)luaL_checkinteger(L, 3);
-    int ty = (int)luaL_checkinteger(L, 4);
-    int heading = (int)luaL_checkinteger(L, 5);
-    int id = sim_spawn(g_cur, (uint8_t)cls, (uint8_t)team, tx * SIM_TILE_PX,
-                       ty * SIM_TILE_PX, (uint16_t)heading, &g_cfg);
-    lua_pushnumber(L, id);
-    return 1;
-}
-
-// Change a pilot's hull in place. The menu is open over a running arena, so
-// picking a ship must not rebuild the world -- it respawns one pilot in a
-// different hull and leaves everyone else flying.
-int SetClass(lua_State* L) {
-    int i = (int)luaL_checkinteger(L, 1);
-    int cls = (int)luaL_checkinteger(L, 2);
-    lua_pushboolean(L, sim_set_ship_class(g_cur, &g_cfg, (uint8_t)i,
-                                          (uint8_t)cls) == 0);
-    return 1;
 }
 
 // One tick. Buttons arrive as a table indexed by ship id, which keeps the
@@ -470,13 +437,6 @@ int StarterKit(lua_State* L) {
     return 1;
 }
 
-// Hulls this zone flies, and what each is called. The hangar draws a row per
-// hull and cannot ask the roster for one it has no name for.
-int ClassCount(lua_State* L) {
-    lua_pushnumber(L, g_cfg.class_count);
-    return 1;
-}
-
 int ShipMod(lua_State* L) {
     int i = CheckShip(L);
     int t = (int)luaL_checkinteger(L, 2);
@@ -520,18 +480,6 @@ int ShipCooldown(lua_State* L) {
         if (sh->fire_cooldown[t] > hi) hi = sh->fire_cooldown[t];
     lua_pushnumber(L, hi);
     return 1;
-}
-
-// Ticks left before a dead pilot flies again, and the delay it started from.
-//
-// Both, because a fraction is what a drawing wants and neither number is one
-// on its own. The delay is the zone's setting rather than a constant here:
-// rooms run it anywhere from two seconds to three.
-int ShipRespawn(lua_State* L) {
-    int i = CheckShip(L);
-    lua_pushnumber(L, g_cur->ships[i].respawn_at);
-    lua_pushnumber(L, g_cfg.respawn_delay);
-    return 2;
 }
 
 // How long this room lets a ship sit in a safe zone before it takes the seat
@@ -582,46 +530,6 @@ int HasTrigger(lua_State* L) {
     return 1;
 }
 
-// What a trigger is worth per tick of the cooldown it imposes, and what one
-// shot of it costs. Returns rate, energy; rate is zero when the hull has no
-// such weapon.
-//
-// One cooldown covers both triggers, so a bomb does not add to a ship's
-// gunfire, it stands in for it, and whether that trade is worth taking
-// differs enormously by hull: an Anvil bomb is 900 damage on a 60 tick
-// lockout against 150 on 35, while an Apex bomb is 400 on 150 against 200 on
-// 25. A pilot deciding whether to bomb needs the comparison, and it belongs
-// here rather than in each of the two bots that want it, which would be two
-// copies of a rule about weapons neither of them owns.
-//
-// The rung is the one the core would pick, walking down from the pilot's
-// level: a level is kept through a hull change, so a third rung has to mean
-// rung zero on a ship that only has one.
-int TriggerRate(lua_State* L) {
-    int i = (int)luaL_checkinteger(L, 1);
-    int t = (int)luaL_checkinteger(L, 2);
-    lua_pushnumber(L, 0);
-    lua_pushnumber(L, 0);
-    if (t < 0 || t >= SIM_TRIG_COUNT || i < 0 || i >= g_cur->ship_count)
-        return 2;
-    const sim_ship* sh = &g_cur->ships[i];
-    const sim_ship_class* c = &g_cfg.classes[sh->cls];
-    int start = sh->level[t];
-    if (start >= SIM_MAX_RUNGS) start = SIM_MAX_RUNGS - 1;
-    for (int r = start; r >= 0; r--) {
-        uint8_t pat = c->trigger[t][r];
-        if (pat == SIM_NO_PATTERN) continue;
-        const sim_fire_pattern* p = &g_cfg.patterns[pat];
-        double dmg = (double)g_cfg.specs[p->spec].damage * p->count;
-        double delay = p->delay > 0 ? p->delay : 1;
-        lua_pop(L, 2);
-        lua_pushnumber(L, dmg / delay);
-        lua_pushnumber(L, p->energy);
-        return 2;
-    }
-    return 2;
-}
-
 // What this seat's kit holds at one slot of the flat space.
 //
 // The kit rides the snapshot, so this answers for anybody the client can see
@@ -633,34 +541,6 @@ int ShipKit(lua_State* L) {
     int slot = (int)luaL_checkinteger(L, 2);
     if (slot < 0 || slot >= SIM_SLOT_COUNT) { lua_pushnumber(L, 0); return 1; }
     lua_pushnumber(L, g_cur->ships[i].kit[slot]);
-    return 1;
-}
-
-// How many of a charge kind a kit may hold here. The arena's number, not the
-// hull's: what a seat is flying has nothing to say about it.
-int ChargeMax(lua_State* L) {
-    int k = (int)luaL_checkinteger(L, 2);
-    if (k < 0 || k >= SIM_MAX_CHARGES) { lua_pushnumber(L, 0); return 1; }
-    lua_pushnumber(L, g_cfg.kit_ceiling[SIM_SLOT_CHARGE(k)]);
-    return 1;
-}
-
-// How many of this pilot's mines are lying about. A mine is a charge now, so
-// what they have left is `ship_charge` like any other; this is the other half
-// of the picture, and it is a walk of the weapon table for the same reason the
-// core walks it: a count kept anywhere else is a second copy of a fact the
-// world already holds, and the two part company the moment one goes off
-// unseen.
-int MinesOut(lua_State* L) {
-    int i = CheckShip(L);
-    int n = 0;
-    for (uint16_t w = 0; w < g_cur->weapon_count; w++) {
-        const sim_weapon* p = &g_cur->weapons[w];
-        if (p->owner != (uint8_t)i) continue;
-        const sim_weapon_spec* sp = &g_cfg.specs[p->spec];
-        if (sp->still && sp->blast > 0) n++;
-    }
-    lua_pushnumber(L, n);
     return 1;
 }
 
@@ -676,27 +556,10 @@ int ShipBounty(lua_State* L) {
     return 1;
 }
 
-// Kills since this hull last spawned, which is the whole of the bounty beyond
-// the base. Drawn beside the number so a pilot can read "on a run of four"
-// rather than having to subtract.
-SHIP_GETTER(ShipRun, s->run)
-
 int ShipPoints(lua_State* L) {
     int i = CheckShip(L);
     lua_pushnumber(L, (double)g_cur->ships[i].points);
     return 1;
-}
-
-// The hull's footprint, in px: reach past the nose, behind the tail, and to
-// either side. The client art is fitted around these fixed rectangles, and a
-// debug overlay or test can read the numbers the simulation collides with.
-int ShipExtents(lua_State* L) {
-    int i = CheckShip(L);
-    const sim_ship_class* c = &g_cfg.classes[g_cur->ships[i].cls];
-    lua_pushnumber(L, c->fore / 256.0);
-    lua_pushnumber(L, c->aft / 256.0);
-    lua_pushnumber(L, c->halfw / 256.0);
-    return 3;
 }
 
 // How big a spec's blast is, which is what an explosion has to be drawn at
@@ -842,29 +705,6 @@ int SpecLevel(lua_State* L) {
         }
     }
     lua_pushinteger(L, lvl);
-    return 1;
-}
-
-// The blast a ship's own bomb makes, for the effects that have to be sized
-// before anything has been fired.
-int ShipBombRadius(lua_State* L) {
-    int i = CheckShip(L);
-    const sim_ship* sh = &g_cur->ships[i];
-    /* The rung this pilot is actually on: a leveled bomb is a wider one. */
-    const sim_ship_class* c = &g_cfg.classes[sh->cls];
-    uint8_t lvl = sh->level[SIM_TRIG_BOMB];
-    uint8_t pat = SIM_NO_PATTERN;
-    for (int r = lvl < SIM_MAX_RUNGS ? lvl : SIM_MAX_RUNGS - 1; r >= 0; r--) {
-        if (c->trigger[SIM_TRIG_BOMB][r] != SIM_NO_PATTERN) {
-            pat = c->trigger[SIM_TRIG_BOMB][r];
-            break;
-        }
-    }
-    if (pat >= g_cfg.pattern_count) {
-        lua_pushnumber(L, 0);
-        return 1;
-    }
-    lua_pushnumber(L, g_cfg.specs[g_cfg.patterns[pat].spec].blast / 256.0);
     return 1;
 }
 
@@ -1067,13 +907,6 @@ int FlagAt(lua_State* L) {
     return 4;
 }
 
-int AddFlag(lua_State* L) {
-    int tx = (int)luaL_checkinteger(L, 1);
-    int ty = (int)luaL_checkinteger(L, 2);
-    lua_pushnumber(L, sim_add_flag(g_cur, tx * SIM_TILE_PX, ty * SIM_TILE_PX));
-    return 1;
-}
-
 // A map arrives from the zone before anything else does, because prediction
 // runs collision locally and cannot do that against a room it has not got.
 int ApplyMap(lua_State* L) {
@@ -1110,11 +943,6 @@ int SetMortal(lua_State* L) {
     g_mortal_ship = (uint8_t)i;
     ReapplyMortal();
     return 0;
-}
-
-int Hash(lua_State* L) {
-    lua_pushnumber(L, (double)(uint32_t)(sim_hash(g_cur) & 0xffffffffu));
-    return 1;
 }
 
 // The frame's place between the last two ticks, nought to one. Set once per
@@ -1287,10 +1115,7 @@ int SmoothDebt(lua_State* L) {
 
 const luaL_reg kFunctions[] = {
     {"init", Init},
-    {"spawn", Spawn},
-    {"map_spawn", MapSpawn},
     {"map_size", MapSize},
-    {"set_class", SetClass},
     {"step", Step},
     {"replay", Replay},
     {"apply_snapshot", ApplySnapshot},
@@ -1315,25 +1140,17 @@ const luaL_reg kFunctions[] = {
     {"hull_extent", HullExtent},
     {"base_entitlements", BaseEntitlements},
     {"starter_kit", StarterKit},
-    {"class_count", ClassCount},
     {"ship_level", ShipLevel},
     {"ship_charge", ShipCharge},
     {"ship_bounty", ShipBounty},
-    {"ship_run", ShipRun},
     {"ship_points", ShipPoints},
-    {"charge_max", ChargeMax},
     {"ship_kit", ShipKit},
-    {"mines_out", MinesOut},
     {"has_trigger", HasTrigger},
-    {"trigger_rate", TriggerRate},
     {"ship_mod", ShipMod},
     {"ship_multi_off", ShipMultiOff},
     {"ship_cooldown", ShipCooldown},
-    {"ship_respawn", ShipRespawn},
     {"safe_limit", SafeLimit},
     {"show_spawns", ShowSpawns},
-    {"ship_extents", ShipExtents},
-    {"ship_bomb_radius", ShipBombRadius},
     {"spec_blast", SpecBlast},
     {"spec_blast_up", SpecBlastUp},
     {"spec_still", SpecStill},
@@ -1356,8 +1173,6 @@ const luaL_reg kFunctions[] = {
     {"predicted_death_at", PredictedDeathAt},
     {"flag_count", FlagCount},
     {"flag_at", FlagAt},
-    {"add_flag", AddFlag},
-    {"hash", Hash},
     {"ship_x_raw", ShipXRaw},
     {"ship_y_raw", ShipYRaw},
     {"ship_heading_raw", ShipHeadingRaw},
@@ -1456,6 +1271,7 @@ dmExtension::Result AppFinalize(dmExtension::AppParams* params) {
 }
 
 dmExtension::Result Finalize(dmExtension::Params* params) {
+    VwSfxFinal();
     VwBufFinal();
     return dmExtension::RESULT_OK;
 }

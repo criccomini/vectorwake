@@ -62,22 +62,44 @@ const server = http.createServer((req, res) => {
   page.on("requestfailed", (r) => errors.push(`failed ${r.url()}`));
   page.on("response", (r) => { if (r.status() === 404) errors.push(`404 ${r.url()}`); });
 
-  // The real page first, before the harness. The harness stubs admin.js,
-  // which is exactly the file maps.js shares a scope with, so a collision
-  // between the two is invisible to every check below. One shipped: a
-  // `function typing` here against a `let typing` there took maps.js out at
-  // parse and the editor never wired up at all.
+  // The real page first, before the harness. This proves the explicit helper
+  // interface exists and that the editor consumed it far enough to wire its
+  // controls.
   await page.goto(`http://127.0.0.1:${port}/index.html`);
   await page.waitForTimeout(300);
   check("the panel loads with both scripts", errors.length === 0, errors.join(" | "));
-  const whose = await page.evaluate(() => {
-    if (typeof doc === "undefined") return "maps.js did not run";
-    if (typeof draw !== "function") return "admin.js did not run";
-    // admin.js draws the fleet table off f.instances. If this is somebody
-    // else's draw, a redeclaration took it.
-    return String(draw).includes("f.instances") ? "ok" : "draw was redeclared";
+  const wired = await page.evaluate(() => {
+    const shared = window.vectorwakeAdmin;
+    const helpers = shared && ["post", "el", "tell", "fill", "ask",
+      "installMaps", "drawMaps"]
+      .every((name) => typeof shared[name] === "function");
+    return {
+      helpers: helpers && typeof shared.secret === "string",
+      editor: typeof document.getElementById("map-new").onclick === "function",
+    };
   });
-  check("and neither took a name off the other", whose === "ok", whose);
+  check("the panel publishes its shared helpers", wired.helpers, wired);
+  check("the map editor consumes them and wires up", wired.editor, wired);
+  const refreshed = await page.evaluate(async () => {
+    const original = window.fetch;
+    const calls = [];
+    window.fetch = async (url) => {
+      calls.push(url);
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ maps: [], rotations: [], zones: [] }),
+      };
+    };
+    try {
+      await window.vectorwakeAdmin.drawMaps();
+      return calls;
+    } finally {
+      window.fetch = original;
+    }
+  });
+  check("the admin refresh reaches the isolated map drawer",
+        refreshed.length === 1 && refreshed[0] === "/v1/admin/maps", refreshed);
   errors.length = 0;
 
   await page.goto(`http://127.0.0.1:${port}/drive.html`);
@@ -123,11 +145,28 @@ const server = http.createServer((req, res) => {
     return `${d[0]},${d[1]},${d[2]}`;
   }, [tx, ty, Z]);
 
+  // The marquee is the one near-white line in the selected tile rectangle.
+  // Count its actual pixels, including the dashed gaps, instead of inspecting
+  // editor state that a browser user cannot see.
+  const marqueeInk = async (x, y, w, h) => page.evaluate(([tx, ty, tw, th, z]) => {
+    const g = document.getElementById("map-canvas").getContext("2d");
+    const d = g.getImageData(tx * z, ty * z, tw * z, th * z).data;
+    let n = 0;
+    for (let i = 0; i < d.length; i += 4) {
+      if (d[i] >= 220 && d[i + 1] >= 225 && d[i + 2] >= 235) n++;
+    }
+    return n;
+  }, [x, y, w, h, Z]);
+
   const EMPTY = "5,7,12";
   const WALL = "132,148,171";
   const ROCK = "138,135,148";
-  // A wall previewed: 0.55 of it over the empty ground behind.
-  const GHOST = "74,84,99";
+  // A wall previewed: 0.55 of it over the empty ground behind. Canvas color
+  // conversion may round a channel either way, so allow one unit around the
+  // computed blend.
+  const GHOST = [75, 85, 99];
+  const isGhost = (pixel) => pixel.split(",").map(Number)
+    .every((channel, i) => Math.abs(channel - GHOST[i]) <= 1);
 
   async function drag(a, b, opts = {}) {
     await page.mouse.move(a.x, a.y);
@@ -179,7 +218,7 @@ const server = http.createServer((req, res) => {
   await drag((await at(10, 10)), (await at(30, 10)), {
     mid: async () => { mid = await pick(20, 10); },
   });
-  check("a line previews under the pointer", mid === GHOST, mid);
+  check("a line previews under the pointer", isGhost(mid), mid);
   check("and lands where the preview was", (await pick(20, 10)) === WALL);
   check("and the preview did not overshoot", (await pick(31, 10)) === EMPTY);
 
@@ -245,12 +284,7 @@ const server = http.createServer((req, res) => {
 
   await pickTool("select");
   await drag((await at(5, 60)), (await at(9, 64)));
-  const selected = await page.evaluate(() => {
-    // The marquee is drawn dashed over the map; ask the module instead of
-    // trying to read a dashed line out of pixels.
-    return document.getElementById("map-canvas").width > 0;
-  });
-  check("the marquee draws", selected);
+  check("the marquee draws", (await marqueeInk(5, 60, 5, 5)) > 0);
 
   // Carry it twenty tiles right.
   await drag((await at(7, 62)), (await at(27, 62)));
@@ -283,21 +317,21 @@ const server = http.createServer((req, res) => {
   // Delete and escape.
   await page.keyboard.press("Delete");
   check("delete clears the selection", (await pick(62, 62)) === EMPTY);
+  const beforeEscape = await marqueeInk(60, 60, 5, 5);
   await page.keyboard.press("Escape");
-  const gone = await page.evaluate(() => {
-    const c = document.getElementById("map-canvas");
-    return c.width > 0;
-  });
-  check("escape drops the marquee", gone);
+  const afterEscape = await marqueeInk(60, 60, 5, 5);
+  check("escape drops the marquee", beforeEscape > 0 && afterEscape === 0,
+        `${beforeEscape} -> ${afterEscape} bright pixels`);
 
   // A marquee is not a paint: switching tools must not leave one lying around
   // that the pencil's keys cannot clear.
   await pickTool("select");
   await drag((await at(40, 70)), (await at(50, 76)));
+  const beforeSwitch = await marqueeInk(40, 70, 11, 7);
   await pickTool("pencil");
-  await page.keyboard.press("Control+c");
-  check("switching tools drops the marquee",
-        await page.evaluate(() => true));
+  const afterSwitch = await marqueeInk(40, 70, 11, 7);
+  check("switching tools drops the marquee", beforeSwitch > 0 && afterSwitch === 0,
+        `${beforeSwitch} -> ${afterSwitch} bright pixels`);
 
   // --- pan -------------------------------------------------------------------
 
@@ -395,10 +429,10 @@ const server = http.createServer((req, res) => {
   await page.evaluate(() => {
     window.__answers = [];
     // Stand in for the meta layer, which stands in for sim_map_check.
-    window.post = (url, body) => {
+    window.vectorwakeAdmin.setPost((url, body) => {
       const r = window.__answers.shift();
       return Promise.resolve(r || { ok: true, report: {} });
-    };
+    });
   });
 
   const verdictFor = async (report, ok) => {

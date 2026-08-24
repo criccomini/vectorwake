@@ -8,8 +8,12 @@ extern "C" {
 #endif
 
 
-/* Largest snapshot a full arena can produce. */
+/* Largest owner-filtered network snapshot. */
 #define SIM_PACK_MAX (64 * 1024)
+
+/* Largest whole-state snapshot. Every visible ship carries its private tail,
+ * so this is slightly larger than the network limit. */
+#define SIM_STATE_PACK_MAX 65688
 
 /* A network snapshot carries one owner-only ship tail. The whole-state
  * replay path and trusted house bots ask for every tail instead.
@@ -20,25 +24,23 @@ extern "C" {
  * a kit is chosen rather than rolled, so both ends can predict all of it. */
 #define SIM_PACK_PRIVATE_ALL 0x01u
 
-/* Write s into out. Returns bytes written, or -1 if cap was too small. */
+/* Write s into out. SIM_STATE_PACK_MAX bytes always suffice. Returns bytes
+ * written, or -1 if cap was too small. */
 int sim_pack(const sim_state *s, uint8_t *out, int cap);
 
 /* The same snapshot, carrying only what is within `radius` of a point.
  *
- * Prizes are most of a snapshot -- two hundred of them outweigh the ships and
- * every projectile in the air together -- and a client can only ever see the
- * handful inside its radar, sixty tiles out. Sending it the rest is bytes for
- * something it has no way to look at. Ships and rounds are filtered for the
- * same reason and for one more: a snapshot that named every hull on the map
- * made a maphack a rendering choice rather than an exploit.
+ * A client can act only on the ships and rounds inside its radar. Sending the
+ * rest is bytes for something it has no way to see, and a snapshot that named
+ * every hull on the map would make a maphack a rendering choice rather than an
+ * exploit.
  *
  * Flags still travel whole, since a scoreboard names them all.
  *
  * Safe because an unpack replaces the state outright, so nothing goes stale,
  * and because a radius is chosen far enough out that no ship can cross into
  * the gap between one snapshot and the next. Prediction is unaffected: a
- * client steps the same core off the public prediction generator. Prize
- * outcomes use a separate server-only generator and arrive authoritatively.
+ * client steps the same core between authoritative replacements.
  *
  * `viewer` is the camera seat, or 255 for nobody. Its own rounds
  * travel however far away they are, and that exception is the whole of what a
@@ -56,9 +58,11 @@ int sim_pack(const sim_state *s, uint8_t *out, int cap);
  * other upgrades, inventory, cooldowns and owner-only state travel. It is
  * separate from `viewer` because a spectator may borrow a pilot's camera
  * without becoming that pilot.
- * `SIM_PACK_PRIVATE_ALL` is reserved for trusted in-process users.
+ * `SIM_PACK_PRIVATE_ALL` is reserved for trusted whole-room consumers.
  *
- * A negative radius means everything, which is what `sim_pack` passes. */
+ * A negative radius means everything, which is what `sim_pack` passes.
+ * SIM_PACK_MAX bytes suffice for the network shape with no private-all
+ * option; SIM_STATE_PACK_MAX bytes suffice for every option. */
 int sim_pack_around(const sim_state *s, uint8_t *out, int cap,
                     int32_t cx, int32_t cy, int32_t radius, uint8_t viewer,
                     uint8_t owner, uint8_t options);
@@ -95,9 +99,9 @@ int sim_settings_unpack(sim_settings *cfg, const uint8_t *in, int len);
  * spend a match wondering why it keeps hitting nothing. */
 
 /* Worst case: a map that alternates every tile. Runs are (count, value) with
- * a two-byte count, so the ceiling is three bytes per two tiles plus the
- * header, and a real map is a few hundred bytes. */
-#define SIM_MAP_PACK_MAX (SIM_MAP_TILES * SIM_MAP_TILES * 3 / 2 + 32)
+ * a two-byte count, so the ceiling is three bytes per tile plus the 14-byte
+ * header. Real maps are far smaller. */
+#define SIM_MAP_PACK_MAX (SIM_MAP_TILES * SIM_MAP_TILES * 3 + 14)
 
 /* FNV-1a over the tile array. The wire and both ends agree on this or the
  * map is not the same map. */

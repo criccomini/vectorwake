@@ -27,8 +27,6 @@ struct VwLayer {
     uint32_t n;        // vertices written this frame
     uint32_t high;     // vertices written last frame
     uint32_t dropped;  // shapes refused this frame, for want of room
-    uint32_t peak;     // the busiest frame so far
-    uint32_t lost;     // shapes refused since the layer was made
 };
 
 const int VW_MAX_LAYERS = 8;
@@ -109,9 +107,9 @@ int Attach(lua_State* L) {
     }
     // Start the layer empty, because nothing else ever will.
     //
-    // The whole buffer is uploaded and drawn every frame, and Finish only
-    // erases back to the busiest frame so far, so every vertex past the
-    // all-time peak is drawn exactly as buffer.create left it. That was fine
+    // The whole buffer is uploaded and drawn every frame, and Finish erases
+    // only what the previous frame wrote, so every vertex past that boundary
+    // is drawn exactly as buffer.create left it. That was fine
     // for as long as it left zeroes, and buffer.create does not: it mallocs,
     // and malloc hands back whatever was in that memory before.
     //
@@ -152,8 +150,8 @@ int Rebind(lua_State* L) {
     }
     // For the reason Attach zeroes: everything past the busiest frame is drawn
     // exactly as it arrived, and a fresh malloc arrives full of whatever used
-    // to be there. The counters go with it, because a peak measured against
-    // the old capacity says nothing about this one.
+    // to be there. The counters go with it because the new buffer starts
+    // empty.
     void* bytes = 0;
     uint32_t size = 0;
     if (dmBuffer::GetBytes(v->buf, &bytes, &size) != dmBuffer::RESULT_OK) {
@@ -162,7 +160,6 @@ int Rebind(lua_State* L) {
     memset(bytes, 0, size);
     v->n = 0;
     v->high = 0;
-    v->peak = 0;
     v->dropped = 0;
     return 0;
 }
@@ -170,7 +167,6 @@ int Rebind(lua_State* L) {
 int Reset(lua_State* L) {
     VwLayer* v = Layer(L, 1);
     Resolve(v);
-    v->lost += v->dropped;
     v->n = 0;
     v->dropped = 0;
     return 0;
@@ -280,9 +276,9 @@ int Rect(lua_State* L) {
 // Degenerate whatever a busier frame left behind. Three corners on the same
 // point cover no pixels, which is cheaper than resizing the buffer to fit.
 //
-// Only back to the busiest frame so far. Everything past that has never been
-// written and still holds the zeroes Attach wrote, which is why Attach writes
-// them.
+// Only back to the previous frame's dirty boundary. Everything past that has
+// never been written and still holds the zeroes Attach wrote, which is why
+// Attach writes them.
 int Finish(lua_State* L) {
     VwLayer* v = Layer(L, 1);
     for (uint32_t i = v->n; i < v->high; i++) {
@@ -292,29 +288,16 @@ int Finish(lua_State* L) {
         p[2] = 0.0f;
     }
     v->high = v->n;
-    if (v->n > v->peak) v->peak = v->n;
     lua_pushnumber(L, v->n);
     lua_pushnumber(L, v->dropped);
     return 2;
-}
-
-// The busiest frame a layer has had, and everything it has ever refused to
-// draw. A capacity chosen too tight is otherwise invisible: geometry simply
-// stops appearing, in exactly the frames nobody is looking at a debugger.
-int Stats(lua_State* L) {
-    VwLayer* v = Layer(L, 1);
-    lua_pushnumber(L, v->peak);
-    lua_pushnumber(L, v->lost + v->dropped);
-    lua_pushnumber(L, v->cap);
-    return 3;
 }
 
 const luaL_reg kFunctions[] = {{"attach", Attach}, {"rebind", Rebind},
                                {"reset", Reset},
                                {"tri", Tri},       {"tri_fade", TriFade},
                                {"quad", Quad},     {"rect", Rect},
-                               {"finish", Finish},
-                               {"stats", Stats}, {0, 0}};
+                               {"finish", Finish}, {0, 0}};
 
 }  // namespace
 

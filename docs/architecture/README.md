@@ -8,12 +8,12 @@ decisions come from. For what the game is rather than how it is built, see
 
 These started as proposals and are mostly no longer that. The simulation core,
 the client, the authoritative server, bots, rating, the zone settings surface,
-the fleet in [zones-and-arenas.md](zones-and-arenas.md),
-[catalog.md](catalog.md) and [discovery.md](discovery.md), and the accounts in
-[meta-layer.md](meta-layer.md) are built and running on vectorwake.net.
-[admin.md](admin.md) is designed and thin on the ground, and
-[roadmap.md](roadmap.md) says what is left. Each document says
-which of the two it is, and where a decision is still open it says so.
+the fleet in [catalog.md](catalog.md), [discovery.md](discovery.md), and
+[deployment.md](deployment.md), the accounts in
+[meta-layer.md](meta-layer.md), and the operator panel in [admin.md](admin.md)
+are built and running on vectorwake.net. [roadmap.md](roadmap.md) says what is
+left. Each document marks historical plans where keeping them still explains a
+decision.
 
 | Document | Contents |
 |---|---|
@@ -22,8 +22,8 @@ which of the two it is, and where a decision is still open it says so.
 | [platforms.md](platforms.md) | Browser, Steam, mobile, consoles: what each one costs us and in what order |
 | [simulation-core.md](simulation-core.md) | The deterministic C core: fixed point, tick model, state layout, API |
 | [client-defold.md](client-defold.md) | What Defold does for us, what it does not, project layout, map rendering, prediction |
-| [server.md](server.md) | Authority, extension modules, lag response, persistence, operations |
-| [zones-and-arenas.md](zones-and-arenas.md) | One arena to a process, what a zone is, how an arena server picks which one it serves |
+| [server.md](server.md) | Authority, room and mode boundaries, lag response, persistence, operations |
+| [zones-and-arenas.md](zones-and-arenas.md) | Historical deployment model that preceded on-demand rooms |
 | [catalog.md](catalog.md) | The one artifact with an author: every zone, credential and ban, and what validation rejects |
 | [discovery.md](discovery.md) | Registration, credentials, verification, the wire format, how a client finds a game |
 | [admin.md](admin.md) | The operator web UI: what it observes, what it edits, what it may command |
@@ -43,12 +43,11 @@ Frictionless inertial flight, energy as both health and ammunition, teams called
 freqs, and arenas whose rules come from configuration rather than from our
 source code.
 
-The zone and arena model moved after these documents were first written. A zone is
-now one game backed by interchangeable arena servers, a directory serves many
-zones at once, and one process holds one arena.
-[zones-and-arenas.md](zones-and-arenas.md) is the current account; where
-[server.md](server.md) and [system-overview.md](system-overview.md) still describe
-one process hosting many named arenas, they say so and point here.
+A zone is one game backed by interchangeable arena processes, and a directory
+serves many zones at once. One process serves one zone and grows rooms inside
+that process up to the zone's `max_rooms` limit. [server.md](server.md) has the
+current room model, while [zones-and-arenas.md](zones-and-arenas.md) records the
+deployment model it replaced.
 
 The architecture rests on one idea: the simulation is a small, deterministic,
 fixed-point C library that both the client and the server run, tick for tick.
@@ -63,16 +62,16 @@ flowchart LR
         SC1 --> R
     end
 
-    subgraph Server["Arena server"]
-        NET["Transport: UDP + WebSocket"]
-        AR["One arena, one sim instance"]
-        SC2["sim core (static lib)"]
-        MOD["Zone modules (sandboxed)"]
+    subgraph Server["Arena process"]
+        NET["WebSocket + WebTransport"]
+        AR["One zone, one or more rooms"]
+        SC2["One sim core state per room"]
+        MODE["Built-in Rust mode per room"]
         NET --> AR --> SC2
-        AR <--> MOD
+        AR --> MODE
     end
 
-    Client -- "inputs (60 Hz)" --> Server
+    Client -- "inputs" --> Server
     Server -- "snapshots + events" --> Client
     Bots["Bots (protocol clients)"] <--> Server
 ```
@@ -94,12 +93,11 @@ whose visual budget is geometry on a tile grid, that is most of what a client
 needs. See [platforms.md](platforms.md).
 
 What it does not give us: a server. Defold can build a headless variant and
-people do run game servers with it, but a zone server wants long uptime,
-sandboxed extension modules, a database, and predictable memory behavior under
-hundreds of connections. Those are not Defold's strengths, and reaching for them
-would put our simulation inside a Lua VM whose component update order the manual
-explicitly declines to specify.
+people do run game servers with it, but an arena process wants long uptime,
+concurrent transports, predictable memory behavior under many connections, and
+clean handoff to the directory and meta-layer. Those are not Defold's
+strengths, and reaching for them would put our simulation inside a Lua VM whose
+component update order the manual explicitly declines to specify.
 
-So Defold is the client. The simulation is C. The server is its own program.
-[decisions.md](decisions.md) records the argument in full, including the case
-for the headless-Defold shortcut we may still take for the first prototype.
+So Defold is the client. The simulation is C. The server is its own Rust
+program. [decisions.md](decisions.md) records the argument in full.

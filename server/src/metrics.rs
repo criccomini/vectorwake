@@ -223,10 +223,7 @@ impl Rate {
     }
 }
 
-/// Snapshot bytes and lag actions as rates. See `Rate`.
-#[allow(dead_code)]
-pub static BYTES_RATE: Rate = Rate::new();
-/// The same, over the seats a snapshot is actually filtered for.
+/// Snapshot bytes sent to players and lag actions as rates. See `Rate`.
 pub static OUT_RATE: Rate = Rate::new();
 pub static LAG_RATE: Rate = Rate::new();
 

@@ -24,7 +24,6 @@ M.INK       = rgb(0xdfe9f5)
 M.DIM       = rgb(0x6c7a90)
 M.FRIEND    = rgb(0x4fd6ff)
 M.ENEMY     = rgb(0xffa552)
-M.MARK_MUTED = rgb(0x3f4b60)
 -- The logo is a brand mark rather than a team indicator. Its more saturated
 -- orange and cyan are held here so the mesh drawing matches the web assets
 -- without changing the colors pilots use to identify sides in the arena.
@@ -44,9 +43,7 @@ M.WHITE     = rgb(0xffffff)
 -- the ramp with everything else fired off a ladder. See world.weapons.
 M.BURST     = rgb(0xc27bff)
 
-M.PANEL     = rgb(0x05080e, 0.72)
 M.BORDER    = rgb(0x1d2838)
-M.BAR_BG    = rgb(0x121a26)
 M.BAR_EDGE  = rgb(0x22304a)
 M.RADAR_BG  = rgb(0x060a10)
 -- Terrain has to read as terrain at two pixels a tile. The old value was
@@ -56,7 +53,6 @@ M.RADAR_TILE= rgb(0x3f5878)
 M.RADAR_SAFE= rgb(0x1d5f63)
 M.RADAR_DOOR= rgb(0x7a4a2a)
 M.BTN_BG    = rgb(0x0a0f18)
-M.BTN_SEL   = rgb(0x0d1826)
 
 -- A wall's body is darker than it looks, because the light near an open face
 -- brings it back up. One flat slate all the way through has no thickness in
@@ -65,14 +61,6 @@ M.BTN_SEL   = rgb(0x0d1826)
 M.WALL      = rgb(0x080d16)
 M.WALL_EDGE = rgb(0x22344f)
 M.WALL_LIT  = rgb(0x5b82b8)
--- Wall hardware and station machinery share this cold steel and oxidized
--- brass family. The station names brighter service-light versions below;
--- both stay dim enough to leave ships and live rounds in front.
-M.WALL_HARDWARE = rgb(0x6f8da8)
-M.WALL_WARNING  = rgb(0xb8783f)
-M.WALL_RECESS   = rgb(0x04070c)
-M.WALL_PLATE    = rgb(0x101a29)
-
 -- Rock is warmer and grayer than anything built, so an asteroid field never
 -- reads as architecture and a big one is never mistaken for an Anvil.
 M.ROCK      = rgb(0x14131a)
@@ -132,14 +120,13 @@ M.UPGRADES = {
     {name = "rotation", short = "ROT", col = rgb(0xc79bff)},
 }
 
--- The six add-ons, in sim_mod order. One color for all of them and one for
--- a level: a green's color says what *kind* of thing it is, and its shape
--- says nothing, so the eye sorts the map into "stat", "level", "add-on"
--- rather than into nineteen things it has to learn.
+-- The six add-ons, in sim_mod order. They share one category in the menus and
+-- are drawn onto the trigger they change, rather than presented as six separate
+-- weapons.
 --
--- Three lengths, for three places with three amounts of room. `short` is the
--- mark's own letters, `name` is what the feed says as a green lands, and
--- `long` is for somewhere that is explaining rather than reporting: the
+-- Three lengths, for three places with three amounts of room. `short` is what
+-- a shelf chip says, `name` labels a row, and `long` is for somewhere that is
+-- explaining rather than reporting: the
 -- hangar and the hover card in the corner, which exist because "prox"
 -- teaches nobody what the round does. Only the ones whose short name is
 -- jargon carry a `long`, and a caller that wants one falls back to `name`.
@@ -171,9 +158,8 @@ M.MODS = {
 -- the feed uses for a line about a kill of yours.
 M.PAID      = rgb(0x8dffb0)
 -- Charges: things you carry a count of and spend.
--- The four charge slots, and what the baseline puts in the first three. A
--- zone may fill the fourth, which is why it is named for the slot rather
--- than for a weapon nobody has decided on.
+-- Display names for the charge-kind space the core can represent. A kit may
+-- carry two kinds; the fourth kind remains reserved and has no decided name.
 M.CHARGES = {
     {name = "repel", short = "RPL"},
     {name = "burst", short = "BST"},
@@ -184,30 +170,7 @@ M.CHARGE_COL = rgb(0xffd166)
 -- What a pilot is worth. Its own color, because it is neither a team nor a
 -- kind of upgrade: it is a price.
 M.BOUNTY    = rgb(0xffe08a)
-M.LEVEL_COL = rgb(0xff7ba8)
 M.MOD_COL   = rgb(0x9df0ff)
-
--- What one slot of the kit space is: its color, and what to call it.
---
--- The space is flat and every slot in it costs one, so this is the whole of
--- the vocabulary: five stats, a rung per trigger, an add-on per trigger per
--- kind, then the charges.
-function M.slot(kind)
-    local u = M.UPGRADES[kind + 1]
-    if u then return u.col, u.name end
-    local t = kind - #M.UPGRADES
-    if t < 2 then
-        return M.LEVEL_COL, (t == 0 and "gun level" or "bomb level")
-    end
-    t = t - 2
-    if t < 2 * #M.MODS then
-        local m = M.MODS[t % #M.MODS + 1]
-        local trig = (t < #M.MODS) and "gun " or "bomb "
-        return M.MOD_COL, trig .. (m and m.name or "?")
-    end
-    local c = M.CHARGES[t - 2 * #M.MODS + 1]
-    return M.CHARGE_COL, (c and c.name or "charge")
-end
 
 -- A copy at a different alpha. Draw code asks for these constantly and must
 -- never mutate the shared table to get one.
@@ -319,8 +282,8 @@ end
 --
 -- Green, yellow, orange, red: the one scale nobody has to be taught. Thirty
 -- nine apart rung to rung, and thirty one clear of the nearest thing already
--- on screen -- which is the prize green against rung 1 and the charge gold
--- against rung 2, the price of borrowing a scale everybody already knows.
+-- on screen. Payout green lies nearest rung 1 and charge gold nearest rung 2,
+-- the price of borrowing a scale everybody already knows.
 --
 -- What it gives up is that a round no longer says whose it is. That is not a
 -- side effect; it is what one ramp means. The sentence that used to close

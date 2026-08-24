@@ -671,19 +671,12 @@ async fn run_one(
         let zone = zone.clone();
         let tx = tx.clone();
         tokio::spawn(async move {
-            let mut last = String::new();
             loop {
-                let (msg, key) = {
+                let msg = {
                     let z = zone.lock().await;
                     let s = z.status();
-                    (
-                        fleet::frame(fleet::A2D_STATUS, &s),
-                        format!("{}|{}|{}|{}", s.zone, s.players, s.rooms.len(), s.capped),
-                    )
+                    fleet::frame(fleet::A2D_STATUS, &s)
                 };
-                if key != last {
-                    last = key;
-                }
                 if tx.send(msg).is_err() {
                     return;
                 }

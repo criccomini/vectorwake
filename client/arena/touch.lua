@@ -104,11 +104,10 @@ M.counts = {}
 -- And how many of each the hull can hold, which is what the pips count out.
 M.maxes = {}
 
--- Whether the hull flying has a bomb rack. Two of the eight do not, and a pad
--- for a weapon that cannot exist is a pad that does nothing when pressed --
--- worse than useless, because it also swallows the touch. Set by the caller,
--- and true until told otherwise so a missing update never removes a control
--- somebody actually has.
+-- Whether the hull flying has a bomb rack. A zone may remove one, and a pad for
+-- a weapon that cannot exist does nothing when pressed. It is worse than useless
+-- because it also swallows the touch. Set by the caller, and true until told
+-- otherwise so a missing update never removes a control somebody actually has.
 M.has_bomb = true
 
 -- Whether the hull flying is carrying a fan on either trigger, and whether it

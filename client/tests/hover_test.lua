@@ -5,7 +5,7 @@
 -- The stack is marks and counts, which says nothing to a pilot who has not
 -- learned the marks. Resting a pointer on a row is how they ask, so what the
 -- card says has to be true of the row under it: the name it answers to, the
--- kit the greens put on it, and the key that spends it *now* rather than the
+-- kit configured on it, and the key that spends it *now* rather than the
 -- key it shipped on.
 --
 -- Every assertion here reads text the interface actually drew, found through
@@ -45,7 +45,6 @@ _G.sim = setmetatable({
     ship_alive = function() return 1 end,
     ship_bounty = function() return 37 end,
     ship_charge = function() return 2 end,
-    charge_max = function() return 3 end,
     has_trigger = function() return true end,
     ship_level = function(_, t) return kit.level[t] or 0 end,
     ship_mod = function(_, t, i)
@@ -55,7 +54,6 @@ _G.sim = setmetatable({
     flag_count = function() return 0 end,
     flag_at = function() return 0, 0, 255 end,
     map_coarse = function() return nil end,
-    prize_count = function() return 0 end,
     weapon_count = function() return 0 end,
     tick = function() return 1000 end,
     TRIG_GUN = 0, TRIG_BOMB = 1, TRIG_COUNT = 2, MOD_COUNT = 6,
@@ -187,7 +185,7 @@ do
     binds.reset()
 end
 
--- --- the kit the greens put on a trigger -----------------------------------
+-- --- the kit configured on a trigger ---------------------------------------
 
 do
     kit.level = {[0] = 2, [1] = 0}

@@ -113,7 +113,14 @@ and we write our own object pooling and view management.
 
 ## 6. Zone modules are sandboxed
 
-**Status:** accepted
+**Status:** superseded
+
+No module runtime or module ABI was built. Current modes are compiled Rust
+implementations selected by `zone.toml`, and `ModeCtx` is a direct internal Rust
+surface rather than a boundary that WebAssembly could consume. Adding sandboxed
+modules now would require a new ABI and a new authoring system, not merely a new
+host for the existing trait. The proposal below is kept as the original
+decision.
 
 ASSS loads native modules with full process access, and its manual states
 plainly that such a module can crash or deadlock the server. That model produced

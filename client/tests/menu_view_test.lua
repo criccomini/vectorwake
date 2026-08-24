@@ -23,14 +23,8 @@ end
 
 local W, H = 1280, 800
 local frames, rects, segs, outlines = {}, {}, {}, {}
-local layer = {}
-local function noop() end
-for _, name in ipairs({"arc", "disc", "flush", "outline", "quad", "reset", "ring",
-                       "tri", "tri_fade", "fan", "seg_glow",
-                       "glow_band", "halo", "ring_fade", "seg_fade",
-                       "seg_flat"}) do
-    layer[name] = noop
-end
+local harness = require("tests.ui_harness")
+local layer = harness.layer()
 -- A selection is a skirt now rather than a rectangle: bright where it meets
 -- the panel's rule and gone across the row. It is counted with the rectangles
 -- because what these checks ask is "how many rows are lit", which is a
@@ -53,19 +47,7 @@ layer.outline = function(_, pts)
     outlines[#outlines + 1] = pts
 end
 
-_G.sim = setmetatable({}, {__index = function() return function() return 0 end end})
-package.loaded["arena.state"] = {text = {}, n = 0, version = 0}
-package.loaded["arena.touch"] = {layout = function() return {charge = {}} end,
-                                 used = false}
-package.loaded["arena.world"] = {build_overview = noop, forget_overview = noop,
-                                 overview = function() return {grid = 0} end,
-                                 radar_tiles = {}, radar_safe = {},
-                                 radar_doors = {},
-                                 HULLS = setmetatable({}, {__index = function()
-                                     return {poly = {0, 0, 1, 1, 2, 0}, mid = 0}
-                                 end})}
-
-local ui = require("arena.ui")
+local ui = harness.install()
 local pal = require("arena.palette")
 
 local RAIL = {}
@@ -210,6 +192,27 @@ check("and publishes a box under it", named ~= nil, tostring(named))
 check("under an action the arena does not already spend on something else",
       not clashed, "the menu published a hit as \"pilot\"")
 check("the stage shows what the rail points at", has(st, "zone1"))
+
+-- The mark renderer is a separate drawing family. Run every supported mark
+-- through the real rail so its frame, palette, shared hull drawings, and hit
+-- publication are covered together rather than with a source-text guard.
+do
+    local all = {}
+    local names = {"zones", "ship", "pilot", "team", "settings", "controls",
+                   "discord", "about", "friends", "standings", "upgrades",
+                   "leave"}
+    for i, name in ipairs(names) do
+        all[i] = {label = name, icon = name, index = i}
+    end
+    draw({depth = 1, sel = 0, rail = all, rail_sel = 1, focus = "rail",
+          home = true, closable = false, rows = rows}, 1280, 1400)
+    local hits = 0
+    for _, box in ipairs(ui.hits) do
+        if box.action == "rail" then hits = hits + 1 end
+    end
+    check("every supported destination mark renders in the rail",
+          hits == #all, hits .. " of " .. #all)
+end
 
 -- --- the short landing keeps its deploy key clear -------------------------
 --
@@ -490,21 +493,14 @@ end
 
 -- --- settings draw as steps rather than words -----------------------------
 
--- The wide menu sets its type and its boxes a fraction larger than the arena
--- does, so a step is not ten units tall on this page. Read out of the drawing
--- rather than written down again here: a literal 10 meant that changing the
--- menu's scale broke this test instead of being measured by it.
-local MENU_ZOOM = 1
-do
-    local f = io.open("client/arena/ui.lua", "r")
-    if f then
-        local src = f:read("*a")
-        f:close()
-        MENU_ZOOM = tonumber(string.match(src, "MENU_ZOOM%s*=%s*([%d%.]+)"))
-                    or 1
-    end
+-- A range step is the small 13 by 10 box in the rendered row. Match its
+-- proportions rather than reading the renderer's scale constant out of its
+-- source, so changing the menu zoom changes the measurement and the drawing
+-- together.
+local function is_step(box)
+    return box.h > 0 and box.h < 24
+           and math.abs(box.w / box.h - 1.3) < 0.01
 end
-local STEP_H = 10 * MENU_ZOOM
 
 local function setting(choice, choices)
     draw({depth = 2, sel = 1,
@@ -514,10 +510,10 @@ local function setting(choice, choices)
                    choices = choices, index = 1, pick = true}}})
     local steps, lit = 0, 0
     for _, f in ipairs(frames) do
-        if math.abs(f.h - STEP_H) < 0.01 then steps = steps + 1 end
+        if is_step(f) then steps = steps + 1 end
     end
     for _, r in ipairs(rects) do
-        if math.abs(r.h - STEP_H) < 0.01 then lit = lit + 1 end
+        if is_step(r) then lit = lit + 1 end
     end
     return steps, lit
 end
@@ -1073,28 +1069,6 @@ do
     check("a rail with no link publishes none", ui.link_dom == nil,
           tostring(ui.link_dom))
 
-    -- And the two halves of the crossing still know each other's name.
-    --
-    -- The anchor is a real element over the canvas, so while the pointer is
-    -- on it the canvas is not what the browser is pointing at: no movement
-    -- reaches the engine, the drawn cursor freezes, and the flag that hides
-    -- it when a pointer leaves the canvas has already been set. The stop lit
-    -- and went out as the pointer crossed the edge of the element that exists
-    -- to make it pressable. The page reports the position instead, and this
-    -- is the only place a rename can be caught: nothing in Lua can call it.
-    local tf = io.open("client/web/engine_template.html")
-    local tpl = tf and tf:read("*a") or ""
-    if tf then tf:close() end
-    local af = io.open("client/arena/arena.script")
-    local arena = af and af:read("*a") or ""
-    if af then af:close() end
-    check("the page reports where the pointer is over the link",
-          tpl:find("window.vwLinkAt", 1, true) ~= nil
-          and tpl:find("window.vwPointerOut = false", 1, true) ~= nil,
-          "engine_template.html no longer answers for the anchor")
-    check("and the arena asks it",
-          arena:find("vwLinkAt", 1, true) ~= nil,
-          "arena.script no longer polls it")
 end
 
 -- --- the week's table -----------------------------------------------------

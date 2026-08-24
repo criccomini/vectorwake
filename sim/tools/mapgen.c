@@ -957,8 +957,8 @@ static int carve(int x, int y) {
  * between them. It is not a rare case, it is dozens per map.
  *
  * Stranded ground is worse than wasted. A ship warped or shoved into it
- * cannot leave, a prize that lands there is gone, and a bot that routes
- * toward it grinds on the wall in front of it. So each piece is joined to
+ * cannot leave, a dropped flag is lost there, and a bot that routes toward
+ * it grinds on the wall in front of it. So each piece is joined to
  * the main region along the shortest line between them: a breadth-first
  * search outward, then a lane carved back along the way it came.
  *

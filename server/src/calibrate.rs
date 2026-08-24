@@ -243,9 +243,7 @@ pub struct Side {
 
 pub struct Bout {
     pub sides: [Side; 2],
-    /// How long it took. Read off a run by eye rather than by the summary,
-    /// which is why nothing here reads it.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub ticks: u32,
     /// Whether somebody reached the kill target. A pair that mostly times out
     /// is a pair whose numbers mean less than they look.
@@ -316,6 +314,17 @@ pub fn stage_bout(
     salt: u32,
     tuning: Option<&config::ArenaConfig>,
 ) -> Bout {
+    stage_bout_for(kits, class, skill, salt, tuning, MATCH_TICKS)
+}
+
+fn stage_bout_for(
+    kits: [&Stage; 2],
+    class: u8,
+    skill: f32,
+    salt: u32,
+    tuning: Option<&config::ArenaConfig>,
+    tick_limit: u32,
+) -> Bout {
     let mut world = sim::World::with_map(0x5ea1 ^ salt, sim::build_pit);
     let route = nav::Nav::build(&world.map);
     if let Some(c) = tuning {
@@ -357,10 +366,11 @@ pub fn stage_bout(
 
     let trig_of = spec_triggers(&world.cfg, class);
     let mut alive_was = [true; 2];
+    #[cfg(test)]
     let mut ticks = 0;
     let mut decided = false;
 
-    for _ in 0..MATCH_TICKS {
+    for _ in 0..tick_limit {
         let inputs = [
             sim::sim_input {
                 ship: ships[0],
@@ -380,7 +390,10 @@ pub fn stage_bout(
             },
         ];
         world.step(&inputs);
-        ticks += 1;
+        #[cfg(test)]
+        {
+            ticks += 1;
+        }
 
         {
             let ev = &*world.events;
@@ -437,6 +450,7 @@ pub fn stage_bout(
     }
     Bout {
         sides: if flip { [out[1], out[0]] } else { out },
+        #[cfg(test)]
         ticks,
         decided,
     }
@@ -498,7 +512,7 @@ pub fn margin_of(wins: u32, losses: u32, draws: u32) -> f64 {
 
 impl StageRow {
     /// The denominator under `win_rate`, for a caller reporting both.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn bouts(&self) -> u32 {
         self.wins + self.losses + self.draws
     }
@@ -519,6 +533,87 @@ impl StageRow {
     }
 }
 
+fn stage_rows() -> Vec<StageRow> {
+    let n = STAGES.len();
+    STAGES
+        .iter()
+        .map(|stage| StageRow {
+            name: stage.name,
+            worn: 0,
+            asked: stage.asked(),
+            wins: 0,
+            losses: 0,
+            draws: 0,
+            kills: 0,
+            shots: [0; sim::TRIG_COUNT],
+            hits: 0,
+            damage: 0,
+            self_hits: 0,
+            self_damage: 0,
+            regrants: 0,
+            vs: vec![None; n],
+            mirror: 0.0,
+            stalemates: 0,
+        })
+        .collect()
+}
+
+#[derive(Default)]
+struct PairTally {
+    first_wins: u32,
+    second_wins: u32,
+    draws: u32,
+    stalemates: u32,
+    bouts: u32,
+}
+
+impl PairTally {
+    fn record(&mut self, rows: &mut [StageRow], first: usize, second: usize, bout: Bout) {
+        rows[first].worn = bout.sides[0].worn;
+        rows[second].worn = bout.sides[1].worn;
+
+        for (row, side) in [(first, bout.sides[0]), (second, bout.sides[1])] {
+            rows[row].kills += side.kills;
+            rows[row].hits += side.hits;
+            rows[row].damage += side.damage;
+            rows[row].self_hits += side.self_hits;
+            rows[row].self_damage += side.self_damage;
+            rows[row].regrants += side.regrants;
+            for trigger in 0..sim::TRIG_COUNT {
+                rows[row].shots[trigger] += side.shots[trigger];
+            }
+        }
+        if !bout.decided {
+            self.stalemates += 1;
+        }
+        match bout.sides[0].kills.cmp(&bout.sides[1].kills) {
+            std::cmp::Ordering::Greater => self.first_wins += 1,
+            std::cmp::Ordering::Less => self.second_wins += 1,
+            std::cmp::Ordering::Equal => self.draws += 1,
+        }
+        self.bouts += 1;
+    }
+
+    fn finish(self, rows: &mut [StageRow], first: usize, second: usize) {
+        let bouts = self.bouts.max(1) as f64;
+        let rate = (self.first_wins as f64 + 0.5 * self.draws as f64) / bouts;
+        if first == second {
+            rows[first].mirror = rate;
+            rows[first].stalemates = self.stalemates;
+            return;
+        }
+
+        rows[first].wins += self.first_wins;
+        rows[first].losses += self.second_wins;
+        rows[first].draws += self.draws;
+        rows[second].wins += self.second_wins;
+        rows[second].losses += self.first_wins;
+        rows[second].draws += self.draws;
+        rows[first].vs[second] = Some(rate);
+        rows[second].vs[first] = Some(1.0 - rate);
+    }
+}
+
 /// Every stage against every other, `bouts` times each, plus a mirror control.
 ///
 /// The diagonal is deliberately not folded into the win column. A stage meeting
@@ -534,80 +629,21 @@ pub fn run_stages(
     verbose: bool,
 ) -> Vec<StageRow> {
     let n = STAGES.len();
-    let mut rows: Vec<StageRow> = STAGES
-        .iter()
-        .map(|s| StageRow {
-            name: s.name,
-            worn: 0,
-            asked: s.asked(),
-            wins: 0,
-            losses: 0,
-            draws: 0,
-            kills: 0,
-            shots: [0; sim::TRIG_COUNT],
-            hits: 0,
-            damage: 0,
-            self_hits: 0,
-            self_damage: 0,
-            regrants: 0,
-            vs: vec![None; n],
-            mirror: 0.0,
-            stalemates: 0,
-        })
-        .collect();
+    let mut rows = stage_rows();
 
     let mut salt = 0u32;
-    for i in 0..n {
-        for j in i..n {
-            let (mut wi, mut wj, mut drew) = (0u32, 0u32, 0u32);
-            let mut stale = 0u32;
+    for (i, first) in STAGES.iter().enumerate() {
+        for (j, second) in STAGES.iter().enumerate().skip(i) {
+            let mut tally = PairTally::default();
             for _ in 0..bouts {
-                let b = stage_bout([&STAGES[i], &STAGES[j]], class, skill, salt, tuning);
+                let b = stage_bout([first, second], class, skill, salt, tuning);
                 salt = salt.wrapping_add(1);
-
-                // Worn is a property of the kit and the hull rather than of a
-                // bout, so the last one to say it is as good as the first.
-                rows[i].worn = b.sides[0].worn;
-                rows[j].worn = b.sides[1].worn;
-
-                for (k, side) in [(i, b.sides[0]), (j, b.sides[1])] {
-                    rows[k].kills += side.kills;
-                    rows[k].hits += side.hits;
-                    rows[k].damage += side.damage;
-                    rows[k].self_hits += side.self_hits;
-                    rows[k].self_damage += side.self_damage;
-                    rows[k].regrants += side.regrants;
-                    for t in 0..sim::TRIG_COUNT {
-                        rows[k].shots[t] += side.shots[t];
-                    }
-                }
-                if !b.decided {
-                    stale += 1;
-                }
-                match b.sides[0].kills.cmp(&b.sides[1].kills) {
-                    std::cmp::Ordering::Greater => wi += 1,
-                    std::cmp::Ordering::Less => wj += 1,
-                    std::cmp::Ordering::Equal => drew += 1,
-                }
+                tally.record(&mut rows, i, j, b);
             }
-
-            if i == j {
-                rows[i].mirror = (wi as f64 + 0.5 * drew as f64) / bouts.max(1) as f64;
-                rows[i].stalemates = stale;
-                continue;
-            }
-            rows[i].wins += wi;
-            rows[i].losses += wj;
-            rows[i].draws += drew;
-            rows[j].wins += wj;
-            rows[j].losses += wi;
-            rows[j].draws += drew;
-            let rate = (wi as f64 + 0.5 * drew as f64) / bouts.max(1) as f64;
-            rows[i].vs[j] = Some(rate);
-            rows[j].vs[i] = Some(1.0 - rate);
+            tally.finish(&mut rows, i, j);
         }
         if verbose {
-            println!("{} done ({}/{})", STAGES[i].name, i + 1, n);
+            println!("{} done ({}/{})", first.name, i + 1, n);
         }
     }
     rows
@@ -981,6 +1017,7 @@ pub fn hull_bout(
     let dead = (
         Bout {
             sides: [Side::default(); 2],
+            #[cfg(test)]
             ticks: 0,
             decided: false,
         },
@@ -1033,6 +1070,7 @@ pub fn hull_bout(
         spec_triggers(&world.cfg, seats[1]),
     ];
     let mut alive_was = [true; 2];
+    #[cfg(test)]
     let mut ticks = 0;
     let mut decided = false;
 
@@ -1056,7 +1094,10 @@ pub fn hull_bout(
             },
         ];
         world.step(&inputs);
-        ticks += 1;
+        #[cfg(test)]
+        {
+            ticks += 1;
+        }
 
         {
             let ev = &*world.events;
@@ -1113,6 +1154,7 @@ pub fn hull_bout(
     (
         Bout {
             sides: if flip { [out[1], out[0]] } else { out },
+            #[cfg(test)]
             ticks,
             decided,
         },
@@ -2055,7 +2097,6 @@ is the one to read the board by."
 /// sixty-three thousand bouts, which is most of a day on one core and a
 /// couple of hours split seven ways, so the run has to be splittable
 /// without editing the test between shards.
-#[allow(dead_code)]
 pub(crate) fn env_list(key: &str, fallback: &[u32]) -> Vec<u32> {
     match std::env::var(key) {
         Ok(s) if !s.trim().is_empty() => {
@@ -2271,6 +2312,60 @@ pub(crate) fn duel(
     }
 }
 
+/// Run a long-form calibration measurement by name.
+pub fn run_diagnostic(name: &str) -> Result<(), String> {
+    match name {
+        "calibration-ladder" => diagnostic_calibration_ladder(),
+        "skill-ladder" => skill_tests::skill_alone_should_make_a_ladder(),
+        "real-map" => real_map_tests::skill_on_a_real_map(),
+        "time-bout" => real_map_tests::time_one_real_map_bout(),
+        "ablation" => ablation::which_knob_carries_the_dial(),
+        "stability" => stability::is_the_built_ladder_a_measurement(),
+        "draws" => draws::what_a_draw_is_made_of(),
+        "fixture" => fixture::what_the_coin_is_weighted_by(),
+        "kit" => kit::the_kit_is_matched_and_real(),
+        _ => {
+            return Err(format!(
+                "unknown diagnostic {name:?}; choose calibration-ladder, skill-ladder, \
+                 real-map, time-bout, ablation, stability, draws, fixture, or kit"
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn diagnostic_calibration_ladder() {
+    let roster = vec![
+        ai::RosterEntry {
+            name: "low".into(),
+            class: 0,
+            skill: 0.15,
+        },
+        ai::RosterEntry {
+            name: "mid".into(),
+            class: 0,
+            skill: 0.50,
+        },
+        ai::RosterEntry {
+            name: "high".into(),
+            class: 0,
+            skill: 0.95,
+        },
+    ];
+    let result = run_roster(&roster, 300, false);
+    let (low, middle, high) = (
+        result.rating_of("low"),
+        result.rating_of("mid"),
+        result.rating_of("high"),
+    );
+    println!("  0.15 {low:.0}, 0.50 {middle:.0}, 0.95 {high:.0}");
+    assert!(
+        high - low >= 30.0,
+        "0.95 should outrank 0.15 by 30 or more, and reads {high:.0} against \
+         {low:.0} (0.50 on {middle:.0})"
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2344,80 +2439,6 @@ mod tests {
             assert_eq!(seat.budget, sim::KIT_BUDGET);
             assert_eq!(seat.converted, sim::KIT_BUDGET);
         }
-    }
-
-    /// Skill has to be worth something in the game it actually controls.
-    ///
-    /// This test passed for months on four rounds, where the whole roster
-    /// lands inside a point of the anchor and the assertion is a coin flip:
-    /// it read low 1201.1, mid 1197.8, high 1201.2, and `hi > lo` came down
-    /// to a fraction the format string rounded away. Run it long enough for
-    /// the ratings to settle and it says the opposite, on the code as it was
-    /// and on the code as it is:
-    ///
-    /// ```text
-    ///                       low(.15)  mid(.50)  high(.95)
-    ///   60 rounds            1208.0    1189.5     1202.3
-    /// ```
-    ///
-    /// The old implementation made strong pilots fire less and fight closer,
-    /// which canceled their better reactions and aim.
-    ///
-    /// What carries it now is aim, and in this room the charges as well. Both
-    /// facts arrived the same way. Ablating six knobs on two hulls left only
-    /// aim outside a coin, so the other four were retired; and this test then
-    /// failed at 1198 against 1202, because the pit was an empty room, a pilot
-    /// with no kit holds no charges, and the one surviving knob besides aim
-    /// had nothing to decide. The kit is matched at thirty now, which is what
-    /// the room a person plays in hands out.
-    /// Sixty rounds a pair could not decide this, and two different
-    /// assertions were fitted to two different runs of it before that was
-    /// admitted. The gap swung 1164/1226/1224 to 1192/1186/1227 on code that
-    /// differed by one reverted mechanism, which is the thirty points of noise
-    /// an Elo gap carries at that size sitting on top of a real gap of about
-    /// fifty. Three hundred rounds cuts the noise to thirteen and the question
-    /// becomes answerable.
-    ///
-    /// Ignored, like every other measurement here that takes minutes, and run
-    /// on purpose:
-    ///
-    ///     cargo test --release --manifest-path server/Cargo.toml \
-    ///       skill_decides_a_match_between_equal_hulls -- --ignored --nocapture
-    #[test]
-    #[ignore]
-    fn skill_decides_a_match_between_equal_hulls() {
-        let roster = vec![
-            ai::RosterEntry {
-                name: "low".into(),
-                class: 0,
-                skill: 0.15,
-            },
-            ai::RosterEntry {
-                name: "mid".into(),
-                class: 0,
-                skill: 0.50,
-            },
-            ai::RosterEntry {
-                name: "high".into(),
-                class: 0,
-                skill: 0.95,
-            },
-        ];
-        let r = run_roster(&roster, 300, false);
-        let (lo, mid, hi) = (r.rating_of("low"), r.rating_of("mid"), r.rating_of("high"));
-        println!("  0.15 {lo:.0}, 0.50 {mid:.0}, 0.95 {hi:.0}");
-        // The gap the roster's own span should buy, against thirteen points
-        // of noise at this size. `skill_on_a_real_map` is the same question
-        // asked with win rates instead of Elo and over every hull; this one
-        // guards the generator that writes `zone/ladder.json`, which is a
-        // different thing worth its own guard: it ran in the pit for a long
-        // time, where a thirty-two tile room leaves no lead to misread and
-        // these three rated 1219, 1179 and 1203 with the worst pilot on top.
-        assert!(
-            hi - lo >= 30.0,
-            "0.95 should outrank 0.15 by 30 or more, and reads {hi:.0} against \
-             {lo:.0} (0.50 on {mid:.0})"
-        );
     }
 
     /// What the ladder does do, and a real regression guard: it runs, it
@@ -2886,49 +2907,68 @@ which is the pit talking",
         );
     }
 
-    /// The matrix has to agree with itself: if one stage took three of eight,
-    /// the other took five, and a bout counted once on one side and not the
-    /// other would show up here before it showed up as a balance conclusion.
+    /// Aggregation records each bout once on each side and makes the matrix
+    /// complementary without running a tournament to prove its own arithmetic.
     #[test]
     fn the_matrix_is_the_same_read_either_way() {
-        let rows = run_stages(0, 0.5, 2, None, false);
-        for (i, r) in rows.iter().enumerate() {
-            for (j, cell) in r.vs.iter().enumerate() {
-                match cell {
-                    None => assert_eq!(i, j, "only the diagonal goes unplayed"),
-                    Some(v) => {
-                        let back = rows[j].vs[i].expect("played one way, not the other");
-                        assert!(
-                            (v + back - 1.0).abs() < 1e-9,
-                            "{} vs {} reads {v:.3} and {back:.3}",
-                            r.name,
-                            rows[j].name
-                        );
-                    }
-                }
-            }
-            assert_eq!(
-                r.bouts(),
-                (rows.len() as u32 - 1) * 2,
-                "{} played the wrong number of bouts",
-                r.name
-            );
-        }
+        let bout = |first, second, decided| Bout {
+            sides: [
+                Side {
+                    kills: first,
+                    worn: 2,
+                    ..Default::default()
+                },
+                Side {
+                    kills: second,
+                    worn: 3,
+                    ..Default::default()
+                },
+            ],
+            ticks: 17,
+            decided,
+        };
+        let mut rows = stage_rows();
+        let mut pair = PairTally::default();
+        pair.record(&mut rows, 0, 1, bout(3, 1, true));
+        pair.record(&mut rows, 0, 1, bout(2, 2, false));
+        pair.finish(&mut rows, 0, 1);
+
+        assert_eq!((rows[0].wins, rows[0].losses, rows[0].draws), (1, 0, 1));
+        assert_eq!((rows[1].wins, rows[1].losses, rows[1].draws), (0, 1, 1));
+        assert_eq!((rows[0].kills, rows[1].kills), (5, 3));
+        assert_eq!((rows[0].worn, rows[1].worn), (2, 3));
+        assert_eq!(rows[0].bouts(), 2);
+        assert_eq!(rows[1].bouts(), 2);
+        assert_eq!(rows[0].vs[1], Some(0.75));
+        assert_eq!(rows[1].vs[0], Some(0.25));
+
+        let mut mirror = PairTally::default();
+        mirror.record(&mut rows, 2, 2, bout(4, 1, true));
+        mirror.record(&mut rows, 2, 2, bout(1, 4, false));
+        mirror.finish(&mut rows, 2, 2);
+        assert_eq!(rows[2].mirror, 0.5);
+        assert_eq!(rows[2].stalemates, 1);
+        assert_eq!(rows[2].vs[2], None);
+    }
+
+    #[test]
+    fn one_stage_bout_runs_the_simulation() {
+        let bout = stage_bout_for([&STAGES[0], &STAGES[12]], 0, 0.5, 7, None, 1);
+        assert_eq!(bout.ticks, 1);
+        assert_eq!((bout.sides[0].worn, bout.sides[1].worn), (0, 0));
     }
 }
 
-#[cfg(test)]
 mod skill_tests {
     use super::*;
 
     /// Does the skill dial separate pilots at all?
     ///
-    ///     cargo test --manifest-path server/Cargo.toml \
-    ///       skill_alone_should_make_a_ladder -- --ignored --nocapture
+    ///     cargo run --release --manifest-path server/Cargo.toml -- \
+    ///       calibrate diagnostics skill-ladder
     ///
-    /// Ignored because it fights a few hundred five-kill matches and takes
-    /// minutes, not because the answer does not matter. It matters a great
-    /// deal: `docs/design/ai-players.md` promises "a single skill dial from 0
+    /// This fights a few hundred five-kill matches and takes minutes. The
+    /// answer matters: `docs/design/ai-players.md` promises "a single skill dial from 0
     /// to 1" driving reaction, aim, discipline, awareness, greed and map use,
     /// and the whole population director rests on a 0.35 pilot being an easier
     /// evening than a 0.85 one.
@@ -2937,9 +2977,7 @@ mod skill_tests {
     /// pilots fly different hulls, so `zone/ladder.json` measures hull and
     /// skill together and cannot say which moved. This holds the hull still
     /// and varies only the dial, which is the one arrangement that can.
-    #[test]
-    #[ignore]
-    fn skill_alone_should_make_a_ladder() {
+    pub(super) fn skill_alone_should_make_a_ladder() {
         // One hull for everybody. Class 1 is the anchor's own, so this is a
         // shape the roster already flies.
         const HULL: u8 = 1;
@@ -2988,14 +3026,13 @@ mod skill_tests {
     }
 }
 
-#[cfg(test)]
 mod real_map_tests {
     use super::*;
 
     /// The same question the pit asks, asked on the map people play.
     ///
-    ///     cargo test --release --manifest-path server/Cargo.toml \\
-    ///       skill_on_a_real_map -- --ignored --nocapture
+    ///     cargo run --release --manifest-path server/Cargo.toml -- \
+    ///       calibrate diagnostics real-map
     ///
     /// Three things the pit run could not do, and the reasons it could not
     /// are exactly the objections to believing it:
@@ -3013,9 +3050,7 @@ mod real_map_tests {
     /// control, holding the loadout still the way the hull is held. The second is the game as it ships, because greed and build
     /// planning are two of the six traits the dial is supposed to drive and
     /// a pilot with no kit cannot show either.
-    #[test]
-    #[ignore]
-    fn skill_on_a_real_map() {
+    pub(super) fn skill_on_a_real_map() {
         // Every hull, because the first two disagreed about nearly everything
         // and there is no reason the other five agree with either. Class 1 is
         // the Wedge, a Bombardier, and the hull this was measured on all
@@ -3317,9 +3352,10 @@ mod real_map_tests {
     }
 
     /// What one bout costs on the real map, so a run can be sized.
-    #[test]
-    #[ignore]
-    fn time_one_real_map_bout() {
+    ///
+    ///     cargo run --release --manifest-path server/Cargo.toml -- \
+    ///       calibrate diagnostics time-bout
+    pub(super) fn time_one_real_map_bout() {
         let bytes = real_map();
         let probe = sim::World::from_packed(0x5eed, &bytes).expect("a map");
         let at = open_pair(&probe.map);
@@ -3352,23 +3388,20 @@ mod real_map_tests {
     }
 }
 
-#[cfg(test)]
 mod ablation {
 
     use super::*;
 
     /// Which of the dial's six parameters is doing the work?
     ///
-    ///     cargo test --release --manifest-path server/Cargo.toml \
-    ///       which_knob_carries_the_dial -- --ignored --nocapture
+    ///     cargo run --release --manifest-path server/Cargo.toml -- \
+    ///       calibrate diagnostics ablation
     ///
     /// Two pilots at 0.90 in every respect but one, where one of them is held
     /// at 0.30. A knob that matters shows up as a win rate away from half; a
     /// knob that does nothing shows up as a coin. The tournament could not ask
     /// this, because moving the dial moves all six at once.
-    #[test]
-    #[ignore]
-    fn which_knob_carries_the_dial() {
+    pub(super) fn which_knob_carries_the_dial() {
         const PER_KNOB: u32 = 200;
         // Both hulls, for the reason the ladder tournament grew a second one:
         // every row this printed came from the Wedge, and the Wedge is the
@@ -3441,15 +3474,14 @@ mod ablation {
     }
 }
 
-#[cfg(test)]
 mod stability {
 
     use super::*;
 
     /// Is the built field's ladder a small effect, or an unsteady number?
     ///
-    ///     cargo test --release --manifest-path server/Cargo.toml \
-    ///       is_the_built_ladder_a_measurement -- --ignored --nocapture
+    ///     cargo run --release --manifest-path server/Cargo.toml -- \
+    ///       calibrate diagnostics stability
     ///
     /// It has read -52, +4, +19, +28, +32, +39, +58 and +60 across
     /// configurations, several of which could not touch it, while the bare
@@ -3461,9 +3493,7 @@ mod stability {
     /// So: the same pilots, the same map, five separate tournaments on
     /// disjoint salts. If the gap is a measurement its five values sit near
     /// each other whatever their mean; if it is weather, they do not.
-    #[test]
-    #[ignore]
-    fn is_the_built_ladder_a_measurement() {
+    pub(super) fn is_the_built_ladder_a_measurement() {
         const PER_PAIR: u32 = 120;
         const RUNS: u32 = 5;
         let (bytes, route, at) = real_map_fixture();
@@ -3508,15 +3538,14 @@ mod stability {
     }
 }
 
-#[cfg(test)]
 mod draws {
 
     use super::*;
 
     /// What a drawn bout in a built field actually looks like.
     ///
-    ///     cargo test --release --manifest-path server/Cargo.toml \
-    ///       what_a_draw_is_made_of -- --ignored --nocapture
+    ///     cargo run --release --manifest-path server/Cargo.toml -- \
+    ///       calibrate diagnostics draws
     ///
     /// Half the bouts with a kit on end level, and a level bout carries no
     /// information, so the built economy is measured on half the sample the
@@ -3524,9 +3553,7 @@ mod draws {
     /// the draws are: nought-all means two pilots that never found each other,
     /// which is the fixture's problem, and three-all means they found each
     /// other and ran out of clock, which is the match length's.
-    #[test]
-    #[ignore]
-    fn what_a_draw_is_made_of() {
+    pub(super) fn what_a_draw_is_made_of() {
         let (bytes, route, at) = real_map_fixture();
         let a = ai::RosterEntry {
             name: "a".into(),
@@ -3556,15 +3583,14 @@ mod draws {
     }
 }
 
-#[cfg(test)]
 mod fixture {
 
     use super::*;
 
     /// Where the twelve points the null row keeps reading actually come from.
     ///
-    ///     cargo test --release --manifest-path server/Cargo.toml \
-    ///       what_the_coin_is_weighted_by -- --ignored --nocapture
+    ///     cargo run --release --manifest-path server/Cargo.toml -- \
+    ///       calibrate diagnostics fixture
     ///
     /// Two pilots identical in class, skill, tuning and everything else, and
     /// one of them takes 62% of the decided bouts in a bare field. It has been
@@ -3579,9 +3605,7 @@ mod fixture {
     /// really is positional shows up as two halves at 62 and 38 that a caller
     /// is folding wrongly; a bias in every slice is not positional at all and
     /// the four alternations are beside the point.
-    #[test]
-    #[ignore]
-    fn what_the_coin_is_weighted_by() {
+    pub(super) fn what_the_coin_is_weighted_by() {
         const BOUTS: u32 = 400;
         let (bytes, route, at) = real_map_fixture();
         let a = ai::RosterEntry {
@@ -3642,24 +3666,21 @@ mod fixture {
     }
 }
 
-#[cfg(test)]
 mod kit {
 
     use super::*;
 
     /// Does a pilot in this harness actually carry what it was handed?
     ///
-    ///     cargo test --release --manifest-path server/Cargo.toml \
-    ///       the_kit_is_matched_and_real -- --ignored --nocapture
+    ///     cargo run --release --manifest-path server/Cargo.toml -- \
+    ///       calibrate diagnostics kit
     ///
     /// A budget that silently grants nothing would make every economy in the
     /// sweep the bare one and the tables would still look plausible, so this
     /// counts what is on the hull rather than what was asked for. The
     /// interesting numbers are that the count rises with the offer, that both
     /// sides get the same, and that the ceiling is reached at sixty.
-    #[test]
-    #[ignore]
-    fn the_kit_is_matched_and_real() {
+    pub(super) fn the_kit_is_matched_and_real() {
         let (bytes, route, at) = real_map_fixture();
         let _ = route;
         for budget in [0u32, 30, 60] {

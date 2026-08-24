@@ -83,7 +83,7 @@ impl Recorder {
             segment.ticks as usize >= SEGMENT_TICKS || signature != self.signature
         });
         if checkpoint {
-            let mut snapshot = vec![0; sim::PACK_MAX];
+            let mut snapshot = vec![0; sim::STATE_PACK_MAX];
             let n = world.pack(&mut snapshot);
             if n <= 0 {
                 return;

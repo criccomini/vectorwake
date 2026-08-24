@@ -5,19 +5,14 @@
 //! a tick produced and may act on them, which is the adviser shape from
 //! docs/architecture/server.md.
 //!
-//! These are compiled in rather than sandboxed WebAssembly. The trait is the
-//! same surface a WASM host would expose, so moving them out later is a host
-//! implementation rather than a redesign; see decision 6.
+//! These are compiled in rather than sandboxed WebAssembly. `ModeCtx` passes
+//! direct Rust state, strings, and slices, so it is an internal surface and not
+//! a module ABI; see decision 6.
 
 use crate::sim::{self, World};
 
 pub struct ModeCtx<'a> {
     pub world: &'a mut World,
-    /// Ships in this arena, and whether each is a bot. Handed to every mode
-    /// whether or not the three shipped ones ask: a mode that seats sides,
-    /// and any mode that treats a bot differently from a person, reads it.
-    #[allow(dead_code)]
-    pub seats: &'a [(u8, bool)],
     /// The zone's own sides, by name, in the order it scores them. A mode
     /// writes banners about the game, and a side is a name to everybody
     /// reading one: "Vantage holds all four flags" is news, "team 1 holds all
@@ -113,7 +108,7 @@ pub trait Mode: Send {
     /// What the zone file calls this mode. Read by the tests that build one
     /// from a name, which is the only caller that has to check it came back
     /// with what it asked for.
-    #[allow(dead_code)]
+    #[cfg(test)]
     fn name(&self) -> &'static str;
     /// The clock and the score, for a mode that has them. The room sends this
     /// to its clients and holds their controls while it says nobody is
@@ -136,6 +131,7 @@ impl Mode for FreeForAll {
         ctx.banner = String::new();
     }
     fn on_death(&mut self, _ctx: &mut ModeCtx, _victim: u8, _killer: u8) {}
+    #[cfg(test)]
     fn name(&self) -> &'static str {
         "arena"
     }
@@ -272,6 +268,7 @@ impl Mode for Melee {
 
     fn on_death(&mut self, _ctx: &mut ModeCtx, _victim: u8, _killer: u8) {}
 
+    #[cfg(test)]
     fn name(&self) -> &'static str {
         "melee"
     }
@@ -418,6 +415,7 @@ impl Mode for Warzone {
 
     fn on_death(&mut self, _ctx: &mut ModeCtx, _victim: u8, _killer: u8) {}
 
+    #[cfg(test)]
     fn name(&self) -> &'static str {
         "warzone"
     }
@@ -440,7 +438,6 @@ mod melee_tests {
     fn ctx<'a>(world: &'a mut World, names: &'a [String]) -> ModeCtx<'a> {
         ModeCtx {
             world,
-            seats: &[],
             team_names: names,
             banner: String::new(),
             finished: false,
@@ -607,7 +604,6 @@ mod warzone_tests {
     fn ctx(world: &mut World) -> ModeCtx<'_> {
         ModeCtx {
             world,
-            seats: &[],
             team_names: &[],
             banner: String::new(),
             finished: false,

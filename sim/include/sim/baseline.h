@@ -1,4 +1,4 @@
-/* Baseline tuning for the eight classes. See src/baseline.c. */
+/* Baseline tuning for the seven classes. See src/baseline.c. */
 #ifndef SIM_BASELINE_H
 #define SIM_BASELINE_H
 

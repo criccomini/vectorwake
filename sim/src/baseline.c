@@ -68,10 +68,6 @@ static const uint8_t flight_steps[SIM_UP_COUNT] = {7, 5, 5, 1, 1};
 #define MINE_ENERGY_UP  150   /* LandmineFireEnergyUpgrade, per level */
 #define MINE_DELAY      125   /* LandmineFireDelay */
 
-/* The charge slots the baseline uses. A zone can fill the other two. */
-#define CH_REPEL 0
-#define CH_BURST 1
-
 /* Two bits per add-on, so a row reads as a list rather than a number. */
 /* One add-on's ceiling, packed the way `sim_mod_get` reads it: two bits for
  * everything that is a rung of something, three at the top of the word for
@@ -252,36 +248,16 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
      * settings file that has no such rule, and a room that empties its own
      * stands is a deployment decision: a zone that wants one sets it. */
     cfg->safe_limit = 0;
-    /* Two hundred greens at five a second was the number for placing them
-     * uniformly over a map a thousand tiles across, where two hundred is one
-     * green per five thousand tiles and a pilot sweeping the field meets one
-     * every few minutes. Greens appear near a pilot now, so the same numbers
-     * carpet the ground they are standing on: an offline arena reached
-     * multifire, bounce, proximity and three of five energy steps inside a
-     * minute, which is the whole tech tree handed over for flying in a circle.
-     *
-     * One a second to a field of two dozen is what the shipped zones already
-     * ask for. Shared among a roster it is a green each every ten seconds or
-     * so: worth turning for, not worth ignoring. */
+    /* A hull takes a flag once it reaches eighteen pixels past its own edge. */
     cfg->flag_radius = 18 * 256;
+    /* A dropped flag stays put for two seconds before another hull can take it. */
     cfg->flag_drop_cooldown = 200;
     /* Sixty-four is four times what the original aimed a public room at:
      * General:DesiredPlaying defaults to 15 playing pilots and its whole job is
      * deciding when to open another arena. So this is the room size we think
      * plays, not the most the array can take, and a zone that wants more can
      * say so up to SIM_MAX_SHIPS. */
-    cfg->max_ships = 64; /* 2 s before a dropped flag can be retaken */
-    /* The green field is the whole map, because the players are spread over
-     * the whole map. Two hundred of them is one per five thousand tiles, or
-     * roughly one every seventy tiles in each direction -- close enough that
-     * flying anywhere passes some.
-     *
-     * That costs the wire: a snapshot carries every live green at eleven
-     * bytes, so two hundred is 2.2 KB a snapshot and about 44 KB/s at the
-     * 20 Hz rate. Worth knowing before raising it further. The way out, when
-     * it matters, is sending a client only the greens near it -- which is
-     * interest management, a feature rather than a number, and the same
-     * answer for every other thing a 1024-tile map has too many of. */
+    cfg->max_ships = 64;
     cfg->map = map;
     /* Doors breathe on a six second cycle, open for four of it: long enough
      * to commit to a crossing, short enough that the choice matters. */
@@ -290,29 +266,6 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
     cfg->wormhole_pull = sim_units_speed(90);
     cfg->wormhole_range = 220 * 256;
 
-    /* What a green turns out to be, on the original's odds.
-     *
-     * These are its [PrizeWeight] table, entry for entry, from the settings
-     * shipped with the reference server: a stat is 40, a weapon level is 25,
-     * multifire and shrapnel are 30, bouncing and proximity are 25, and a
-     * charge is 70. They are relative -- doubling every number changes
-     * nothing -- and read against the pool of the hull that took the green,
-     * so what is written here is the shape of the tree rather than its
-     * arithmetic.
-     *
-     * Two of our add-ons have no entry to copy, because the original has no
-     * such prize: freeze and push exist as weapon effects there, never as
-     * something a green hands you. They get 25, the band its comparable
-     * add-ons sit in, and that is a number we chose rather than inherited.
-     *
-     * Everything in its table we do not have -- cloak, stealth, xradar,
-     * antiwarp, warp, decoy, thor, brick, rocket, portal, shields,
-     * allweapons, multiprize -- is simply absent from our space rather than
-     * present at zero.
-     *
-     * Rust is the number to tune first. One green in a hundred takes
-     * something back, and it can only take what you are holding, so it costs
-     * a loaded pilot and never touches one who has just spawned. */
     /* A fresh pilot is worth one and each kill adds one, so the number over
      * a ship is the length of its current run and nothing else. Killing
      * somebody who just spawned pays almost nothing, which is the free
@@ -323,9 +276,8 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
     cfg->points_per_flag = 100;
 
     /* What one rung of each add-on is worth, in the units of the field it
-     * moves. These are the numbers that decide whether an add-on is a nice
-     * surprise or the thing everyone chases, so they live here in the open
-     * rather than inside the transform that applies them. */
+     * moves. These values live here rather than inside the transform that
+     * applies them. */
     cfg->mod_step[SIM_MOD_MULTI] = 1;              /* one more round abreast */
     cfg->mod_step[SIM_MOD_BOUNCE] = 1;             /* one more wall survived */
     /* ProximityDistance=3, in tiles. Binary in the original: a bomb is a
