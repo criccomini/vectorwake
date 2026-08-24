@@ -421,6 +421,34 @@ static int slope_anti(uint8_t variant) {
     return (variant & 3) == SIM_SLOPE_NW || (variant & 3) == SIM_SLOPE_SE;
 }
 
+/* Whether the box also reaches into a slope whose way out is exactly opposite
+ * `sx, sy`: the other face of a two-tile diagonal wall. A box that answers yes
+ * is between the wall's two parallel faces, where no push along either normal
+ * frees it -- each tick's deepest face alternates and the hull sits on the
+ * seam, jittering. The caller treats that as being inside a wall. */
+static int slope_opposed(const sim_map *m, int32_t x, int32_t y, int32_t rx,
+                         int32_t ry, int32_t sx, int32_t sy) {
+    int32_t x0 = x - rx, x1 = x + rx, y0 = y - ry, y1 = y + ry;
+    int32_t tx0 = x0 >> 12, tx1 = x1 >> 12;
+    int32_t ty0 = y0 >> 12, ty1 = y1 >> 12;
+    for (int32_t ty = ty0; ty <= ty1; ty++)
+        for (int32_t tx = tx0; tx <= tx1; tx++) {
+            uint8_t t = sim_tile_at(m, tx, ty);
+            if (SIM_TILE_CLASS(t) != SIM_TILE_SLOPE) continue;
+            int32_t ox = tx * (SIM_TILE_PX * 256), oy = ty * (SIM_TILE_PX * 256);
+            int32_t a = x0 > ox ? x0 - ox : 0;
+            int32_t b = x1 - ox, c = y0 > oy ? y0 - oy : 0, d = y1 - oy;
+            const int32_t S = SIM_TILE_PX * 256;
+            if (b > S) b = S;
+            if (d > S) d = S;
+            int32_t deep, px, py;
+            if (!slope_hit(SIM_TILE_VARIANT(t), a, b, c, d, &deep, &px, &py))
+                continue;
+            if (px == -sx && py == -sy) return 1;
+        }
+    return 0;
+}
+
 /* The deepest slope a box reaches into, if any.
  *
  * Deepest rather than first because a box crossing a run of them covers two or
@@ -2175,34 +2203,84 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
                 int anti;
                 if (box_slope(m, sh->x + ox, sh->y + oy, hx, hy, &depth, &sx,
                               &sy, &anti)) {
-                    int32_t p = depth / 2 + 1;
-                    int32_t px = sh->x + sx * p, py = sh->y + sy * p;
-                    /* A slope in a slot no wider than a hull can push it into
-                     * the wall behind. Better to leave the ship on the face
-                     * than to bury it in something the clamps cannot undo. */
-                    if (!box_walls(m, cfg, next->tick, px + ox, py + oy, hx, hy)) {
-                        sh->x = px;
-                        sh->y = py;
+                    /* Both faces of a two-tile diagonal at once: the hull is
+                     * inside the wall, reachable by cutting the corner at the
+                     * run's exposed end, where the drawing shows a cap and the
+                     * axis clamps see nothing. Pushing out of the deepest face
+                     * pushes into the other, the deepest alternates, and the
+                     * hull jitters on the seam forever. It is a wall, so it
+                     * answers like one: back where it was last tick, which was
+                     * outside, with the velocity that carried it in reversed
+                     * and damped. A hull whose last tick was already between
+                     * the faces gets the push below instead, no worse than it
+                     * was; nothing arrives there once entry bounces. */
+                    int32_t bx = prev->ships[i].x, by = prev->ships[i].y;
+                    int back = 0;
+                    if (slope_opposed(m, sh->x + ox, sh->y + oy, hx, hy,
+                                      sx, sy)) {
+                        /* Only back to somewhere sound: not in a wall, and
+                         * not itself between the faces, which is where a
+                         * hull that was trapped before this rule existed
+                         * still is. Resting on one face is fine; the push
+                         * below has always handled that. */
+                        int32_t bd, bsx, bsy;
+                        int banti;
+                        back = !box_walls(m, cfg, next->tick, bx + ox,
+                                          by + oy, hx, hy)
+                               && !(box_slope(m, bx + ox, by + oy, hx, hy,
+                                              &bd, &bsx, &bsy, &banti)
+                                    && slope_opposed(m, bx + ox, by + oy,
+                                                     hx, hy, bsx, bsy));
                     }
-
-                    int64_t into = (int64_t)sx * sh->vx + (int64_t)sy * sh->vy;
-                    if (into < 0) {
-                        int32_t impact = (int32_t)((into < 0 ? -into : into) / 2);
-                        /* Along the face and into it. Which is which is the
-                         * only thing the two diagonals disagree about. */
-                        int32_t s = (sh->vx + sh->vy) / 2;
-                        int32_t t = (sh->vx - sh->vy) / 2;
-                        int32_t n = anti ? s : t;
-                        int32_t g = anti ? t : s;
-                        n = (int32_t)(-(int64_t)n * cfg->bounce / 16);
-                        g = (int32_t)((int64_t)g * cfg->friction / 16);
-                        if (n < SIM_REST_EPS && n > -SIM_REST_EPS) n = 0;
-                        s = anti ? n : g;
-                        t = anti ? g : n;
-                        sh->vx = s + t;
-                        sh->vy = s - t;
+                    if (back) {
+                        sh->x = bx;
+                        sh->y = by;
+                        int32_t ivx = sh->vx < 0 ? -sh->vx : sh->vx;
+                        int32_t ivy = sh->vy < 0 ? -sh->vy : sh->vy;
+                        int32_t impact = ivx > ivy ? ivx : ivy;
+                        sh->vx = (int32_t)(-(int64_t)sh->vx * cfg->bounce / 16);
+                        sh->vy = (int32_t)(-(int64_t)sh->vy * cfg->bounce / 16);
+                        if (sh->vx < SIM_REST_EPS && sh->vx > -SIM_REST_EPS)
+                            sh->vx = 0;
+                        if (sh->vy < SIM_REST_EPS && sh->vy > -SIM_REST_EPS)
+                            sh->vy = 0;
                         if (impact >= SIM_IMPACT_MIN)
                             emit(ev, SIM_EV_BOUNCE, (uint8_t)i, 0, impact);
+                    } else {
+                        int32_t p = depth / 2 + 1;
+                        int32_t px = sh->x + sx * p, py = sh->y + sy * p;
+                        /* A slope in a slot no wider than a hull can push it
+                         * into the wall behind. Better to leave the ship on
+                         * the face than to bury it in something the clamps
+                         * cannot undo. */
+                        if (!box_walls(m, cfg, next->tick, px + ox, py + oy,
+                                       hx, hy)) {
+                            sh->x = px;
+                            sh->y = py;
+                        }
+
+                        int64_t into =
+                            (int64_t)sx * sh->vx + (int64_t)sy * sh->vy;
+                        if (into < 0) {
+                            int32_t impact =
+                                (int32_t)((into < 0 ? -into : into) / 2);
+                            /* Along the face and into it. Which is which is
+                             * the only thing the two diagonals disagree
+                             * about. */
+                            int32_t s = (sh->vx + sh->vy) / 2;
+                            int32_t t = (sh->vx - sh->vy) / 2;
+                            int32_t n = anti ? s : t;
+                            int32_t g = anti ? t : s;
+                            n = (int32_t)(-(int64_t)n * cfg->bounce / 16);
+                            g = (int32_t)((int64_t)g * cfg->friction / 16);
+                            if (n < SIM_REST_EPS && n > -SIM_REST_EPS) n = 0;
+                            s = anti ? n : g;
+                            t = anti ? g : n;
+                            sh->vx = s + t;
+                            sh->vy = s - t;
+                            if (impact >= SIM_IMPACT_MIN)
+                                emit(ev, SIM_EV_BOUNCE, (uint8_t)i, 0, impact);
+                        }
                     }
                 }
             }
