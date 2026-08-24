@@ -2393,7 +2393,7 @@ pub fn prepare_profile_calibration(
     if paired_seeds == 0 {
         return Err("profile calibration requires at least one paired seed".into());
     }
-    if paired_seeds % maps.len() as u32 != 0 {
+    if !paired_seeds.is_multiple_of(maps.len() as u32) {
         return Err(format!(
             "{paired_seeds} paired seeds do not divide evenly across {} maps",
             maps.len()
@@ -2586,7 +2586,7 @@ pub fn run_profiles(
     if paired_seeds == 0 {
         return Err("profile calibration requires at least one paired seed".into());
     }
-    if paired_seeds % maps.len() as u32 != 0 {
+    if !paired_seeds.is_multiple_of(maps.len() as u32) {
         return Err(format!(
             "{paired_seeds} paired seeds do not divide evenly across {} maps",
             maps.len()
