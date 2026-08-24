@@ -190,7 +190,13 @@ pub(crate) const JOIN_WATCH: u8 = 2;
 /// same packet. Older clients would misread its flags and must not enter.
 /// 20 adds the bot build field to a join so a certified Ladder can refuse a
 /// controller from another deployment revision.
-pub(crate) const CLIENT_PROTOCOL: u8 = 20;
+///
+/// 21 puts a byte on the end of every kill saying whether the pilot it was
+/// sent to was credited with an assist. A client built for 20 would read the
+/// message it wants and ignore a byte; one built for 21 against a zone
+/// serving 20 would find every kill a byte short and print no feed at all,
+/// which is the direction this number exists to refuse.
+pub(crate) const CLIENT_PROTOCOL: u8 = 21;
 
 /// The biggest message a client may send. The largest legitimate one is a join:
 /// tag, class, protocol, a zone name and a call sign. 8 KB is two orders of
@@ -207,6 +213,19 @@ pub(crate) const SNAPSHOT_HEADER: usize = 32;
 pub(crate) const SNAPSHOT_FLYING: u8 = 0;
 pub(crate) const SNAPSHOT_WATCHING: u8 = 1;
 pub(crate) const S2C_ROSTER: u8 = 3;
+/// `[S2C_KILL, victim, killer, victim rating, killer rating, contributors,
+/// paid, tick, you helped]`, the ratings and the payout little-endian.
+///
+/// Broadcast, with one exception: the last byte is built per recipient and is
+/// 1 only on the copy sent to a pilot the core credited with an assist for
+/// this death. Everybody else, watchers and the room channel included, is
+/// sent a zero, so an assist is a thing you are told about your own fight and
+/// nobody reads off somebody else's.
+///
+/// A byte on the death rather than a message of its own, because it is not a
+/// second event: it qualifies a line the feed is already about to print, and
+/// a separate message would have to be paired back up with that line by tick
+/// and victim at the far end.
 pub(crate) const S2C_KILL: u8 = 4;
 pub(crate) const S2C_BANNER: u8 = 5;
 pub(crate) const S2C_ZONE: u8 = 6;
@@ -255,16 +274,22 @@ pub(crate) const S2C_ONAIR: u8 = 13;
 /// optional artifact id as u64, optional Ladder body]`.
 ///
 /// Flag bit 0 says the match is playing, bit 1 says an artifact follows the
-/// scores, and bit 2 says the 27-byte Ladder body follows that. The Ladder body
-/// is `[status, rung, streak, checkpoint, best, active opponent, desired
-/// opponent, first-to]`. Status bit 0 says the requested rival is seated, bit
-/// 1 says the finite roster was cleared, and bit 2 says the room is waiting for
-/// a rival rather than counting down. The six progression fields are u32 and
-/// first-to is u16.
+/// scores, and bit 2 says the Ladder body follows that. The Ladder body is
+/// `[status, rung, streak, checkpoint, best, active opponent, desired
+/// opponent, first-to, legs, logged, log[logged]]`. Status bit 0 says the
+/// requested rival is seated, bit 1 says the finite roster was cleared, and bit
+/// 2 says the room is waiting for a rival rather than counting down. The six
+/// progression fields are u32 and first-to is u16.
 ///
-/// One packet owns the clock, result artifact, and Ladder transition. Queue
-/// pressure can delay the newest answer, but it cannot combine halves from two
-/// different states.
+/// `legs` is a u32 count of every life this run has finished and `logged` is a
+/// byte saying how many of them the window still holds, oldest first. Each of
+/// those is eleven bytes: `[rung as u32, result, kills as u16, deaths as u16,
+/// seconds as u16]`, where result is 0 lost, 1 cleared, 2 drawn. So the body is
+/// 32 bytes plus eleven a leg, and a full window of 12 makes it 164.
+///
+/// One packet owns the clock, result artifact, Ladder transition, and the run
+/// log. Queue pressure can delay the newest answer, but it cannot combine
+/// halves from two different states.
 ///
 /// Sent at a join, at every whistle, and whenever either number moves, so a
 /// three minute match costs about two hundred of these.

@@ -3062,12 +3062,13 @@ mod tests {
         assert_eq!(m[0], S2C_KILL);
         assert_eq!(m[1], ship, "the victim's seat");
         assert_eq!(m[2], room.players[&hunter].ship, "credited to the hunter");
-        assert_eq!(m.len(), 14);
+        assert_eq!(m.len(), 15);
         assert_eq!(
             u32::from_le_bytes(m[10..14].try_into().unwrap()),
             room.world.state.tick,
             "the feed names the authoritative tick"
         );
+        assert_eq!(m[14], 0, "and hands nobody an assist for a quit");
     }
 
     #[test]
@@ -3817,6 +3818,50 @@ mod tests {
         assert_eq!(sh.up[sim::UP_SPEED], 4, "and so did the frame");
         assert_eq!((sh.kills, sh.run), (0, 0), "the tally is the match's own");
         assert_eq!((sh.x, sh.y), (sh.spawn_x, sh.spawn_y), "on a start");
+    }
+
+    /// Deploying from the menu joins the fight the menu was showing.
+    ///
+    /// The landing dials the room a deploy would land in and plays it behind
+    /// the panel, with that room's own clock and score beside it, so the press
+    /// means that match and no other. Written on the room rather than on the
+    /// mode because the room is where the two halves meet, and flown the way a
+    /// person actually arrives: watching, and then taking a hull.
+    #[test]
+    fn deploying_from_the_stands_joins_the_match_on_the_clock() {
+        let mut a = match_room(180, 15);
+        let bots = seat_bots(&mut a, 4);
+        // The opening tick is the one that starts the match, and it restarts
+        // the world; a tally written before it would be wiped by it.
+        a.tick();
+        a.world.state.ships[bots[0] as usize].kills = 2;
+
+        // Half a minute of bot fight, which is what the menu is previewing.
+        for _ in 0..2999 {
+            a.tick();
+        }
+        let opened = a.match_no;
+        let before = a.mode.match_state().expect("a match room has a clock");
+        assert!(before.playing);
+        assert_eq!(before.seconds_left, 150, "two and a half minutes left");
+        assert!(before.score.iter().any(|n| *n > 0), "and a score standing");
+
+        // Watching it, then pressing deploy: one connection, no re-dial.
+        let (tx, rx) = mpsc::channel(OUT_QUEUE);
+        std::mem::forget(rx);
+        let watcher = a
+            .watch_join(Seat::guest("pilot", false), false, tx)
+            .expect("a place in the stands");
+        a.fly(watcher, 0, 8).expect("a seat on the field");
+        a.tick();
+
+        let after = a.mode.match_state().expect("still a match room");
+        assert_eq!(a.match_no, opened, "no second match opened at the door");
+        assert_eq!(
+            after.seconds_left, before.seconds_left,
+            "the clock the menu showed is the clock they arrived on"
+        );
+        assert_eq!(after.score, before.score, "and the score stands");
     }
 
     /// The caption follows the ground: the name a client is handed beside the
@@ -4718,6 +4763,62 @@ mod tests {
             "the action names the snapshot that may present it"
         );
         assert_eq!(charge.len(), 15, "no remaining inventory count travels");
+    }
+
+    /// An assist is news for one pilot. Everybody in the room reads the death,
+    /// and only the seat the core credited reads that they were part of it:
+    /// who else was shooting is a fact about somebody's own fight, and a feed
+    /// that carried it would tell the room who is working with whom.
+    #[test]
+    fn an_assist_is_told_to_the_pilot_who_earned_it_and_to_nobody_else() {
+        let mut a = room_with_teams("teams = [\"Keel\"]\n");
+        let (finisher, _, mut finisher_rx) = seat_rx(&mut a, "finisher");
+        let (helper, _, mut helper_rx) = seat_rx(&mut a, "helper");
+        let (victim, _, mut victim_rx) = seat_rx(&mut a, "victim");
+        drain(&mut finisher_rx);
+        drain(&mut helper_rx);
+        drain(&mut victim_rx);
+
+        // The core's report of one death and of the one pilot it handed an
+        // assist to, written rather than flown. What is under test here is
+        // who the room tells; that the notice and the scoreboard column come
+        // from one rule is the core's own test, in sim/tests/test_sim.c.
+        a.world.events.count = 2;
+        a.world.events.e[0] = sim::sim_event {
+            etype: sim::EV_DEATH,
+            a: victim,
+            b: finisher,
+            v: 12,
+        };
+        a.world.events.e[1] = sim::sim_event {
+            etype: sim::EV_ASSIST,
+            a: helper,
+            b: victim,
+            v: finisher as i32,
+        };
+        a.score_events();
+
+        let helped = |rx: &mut mpsc::Receiver<Message>| -> u8 {
+            let msgs = drain(rx);
+            let m = msgs
+                .iter()
+                .find(|m| m.first() == Some(&S2C_KILL))
+                .expect("the death itself reaches every seat");
+            assert_eq!(m.len(), 15, "the kill carries the private byte");
+            assert_eq!((m[1], m[2]), (victim, finisher), "and reads the same");
+            m[14]
+        };
+        assert_eq!(helped(&mut helper_rx), 1, "the pilot who helped is told");
+        assert_eq!(helped(&mut finisher_rx), 0, "a kill is not also an assist");
+        assert_eq!(
+            helped(&mut victim_rx),
+            0,
+            "the pilot who died reads a death"
+        );
+        assert_eq!(
+            a.channel.pending_kills[0][14], 0,
+            "and the copy the stands watch claims nothing"
+        );
     }
 
     #[test]

@@ -58,10 +58,46 @@ server carries them in the signed session claims and projects completed match
 events into the meta-layer. Replaying an event is safe because progress only
 moves forward in that projection.
 
+Per account, not per claimed account. The meta-layer mints a guest an account of
+its own on first contact, and a run hangs off whatever account id is flying, so
+the zone admits anybody and nobody has to pick a password before their first
+climb. What a guest gives up is the week: an unclaimed account that goes seven
+days without a session is swept and its progress goes with it. Claiming the
+pilot stops that clock and keeps every rung already climbed.
+
 An unfinished stretch above the checkpoint is intentionally temporary. A new
 session resumes at the saved checkpoint with a streak of zero, while best rung
 remains available for the player's record. This gives checkpoints a real job
 and prevents reconnecting from becoming a way to preserve every attempt.
+
+## The run behind the rung
+
+The rung a player is standing on is one number about an evening of ten-second
+fights. The room keeps the rest: every finished life of the current run, with
+the opponent slot it was against, whether it was cleared, lost or drawn, the
+score either way, and how long it lasted. That log rides in the same packet as
+the clock and the rung, so a client can never hold a run from one state beside
+progress from another.
+
+It is a fixed window of the most recent legs rather than a list that grows, and
+the packet also carries how many lives the run has really had, so a long evening
+reads as its recent stretch plus an honest count rather than as a short one. A
+void life is not a leg: a rival who leaves mid-fight files no result and changes
+no progress, and a log that recorded it would make the run read as longer and
+worse than it was.
+
+The log belongs to one run. Clearing the roster ends a run and the next life
+starts the log over, and so does resuming at a checkpoint in a new session,
+which is the rule the streak already follows.
+
+The client draws the log under the roster, behind the same toggle, newest leg
+first: the window is fixed, so the end worth keeping on screen is the one just
+flown. Beside the clock it draws something else, on each side's own name line:
+what that side is rated. That number is about the fight in front of the player
+rather than the ones behind them, and the roster already carries it for every
+seat, so nothing new travels for it. It shares the name's line rather than
+taking one of its own because the band under the clock belongs to the readout,
+which is centered and reaches out past the clock once a run has a floor.
 
 Ladder progress is not Elo. Rung records progress through a run. Rating
 estimates strength across rated results. The bot roster may use calibrated Elo

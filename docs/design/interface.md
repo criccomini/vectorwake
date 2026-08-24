@@ -88,7 +88,7 @@ Past those, a hue means one thing, one thing per hue, across every screen:
 | pink | `#ff5ea8` | the bomb |
 | violet | `#c27bff`, `#a06bff` | a place, not a player: the burst's rounds, a wormhole |
 | green | `#35e0a0` | a door (the open state is a darker step of the same band) |
-| pale green | `#8dffb0` | what you were paid |
+| pale green | `#8dffb0` | what you were paid, and `#5aa874` a step down from it for a kill you only helped with |
 | gold | `#ffd166` | a charge you carry and spend, and a price you can afford |
 | deep gold | `#ffe08a` | bounty: what a pilot is worth |
 | red | `#ff505a` | you are being hurt, or about to lose something |
@@ -280,15 +280,17 @@ The constants that repeat, from ui.lua:
 
 The HUD has a fixed geography, and it is the prototype's. Top left: the
 button row (MENU, ROOM, PLAYERS, the on-air or watching chip), then the
-scoreboard or the rooms panel (one at a time, same slot), the loadout under
-it, the pilot box under that. Top right: the LINK bars, then the radar or the
-map (one corner, one instrument), with POS on the dial's other shoulder and
-the feed hanging under it. Bottom left: the corner stack, what your triggers
-do and what you carry, growing upward. Top center: the match score and
-clock, the flag pennants, the round banner. Dead center is reserved for the
-two big statements, DESTROYED and SAFE ZONE, and for the cards and tables a
-player asks for. On a touchscreen the bottom of the screen belongs to the
-thumbs and everything else lifts out of their way.
+scoreboard or the rooms panel (one at a time, same slot), the run log under
+the scoreboard where a mode keeps one, the loadout under that, the pilot box
+under that. Top right: the LINK bars, then the radar or the map (one corner,
+one instrument), with POS on the dial's other shoulder and the feed hanging
+under it. Bottom left: the corner stack, what your triggers do and what you
+carry, growing upward. Top center: the match score and clock, each side's
+rating beside its name where a side is one pilot, the flag pennants, the round
+banner. Dead center is reserved for the two big statements, DESTROYED and SAFE
+ZONE, and for the cards and tables a player asks for. On a touchscreen the
+bottom of the screen belongs to the thumbs and everything else lifts out of
+their way.
 
 Panels in the left column size themselves to their content, count their rows,
 and measure their columns against the widest thing actually in them, headed

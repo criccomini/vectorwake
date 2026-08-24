@@ -138,6 +138,60 @@ world.build_static(writer("border-fill"), writer("border-glow"),
 check_plain_wall("a perimeter wall", "border-fill", "border-glow",
                  262, 12, 8)
 
+-- Mapgen lays a diagonal a step at a time, a leaning pair of slopes per row,
+-- and each half of a pair hands its whole square side to the half beside it
+-- and to the pair on the next row. That chain leaves exactly two square sides
+-- open, one at the top of the run and one at the bottom, and those are the
+-- only ends the mass has. Undrawn, a diagonal standing in open space is an
+-- outline with both of them missing.
+local NW, NE, SE, SW = 0, 1, 2, 3
+local function arm(ox, oy, n, lean)
+    for i = 0, n - 1 do
+        local x, y = ox + i, oy + i
+        local a, b = NE, SW
+        if lean == "up" then x, a, b = ox + n - 1 - i, SE, NW end
+        -- Where two arms cross, the tile is already taken and goes solid, the
+        -- way m_slope_step in sim/tools/mapgen.c writes it.
+        for j, v in ipairs({a, b}) do
+            local fx = x + j - 1
+            if tiles[key(fx, y)] then put(fx, y, T_SOLID, 0)
+            else put(fx, y, T_SLOPE, v) end
+        end
+    end
+end
+
+local function seg_drawn(name, x1, y1, x2, y2)
+    for _, g in ipairs(calls[name] or {}) do
+        if g[1] == x1 and g[2] == y1 and g[3] == x2 and g[4] == y2 then
+            return true
+        end
+    end
+    return false
+end
+
+world = reset()
+arm(10, 10, 5, "up")
+world.build_static(writer("diag-fill"), writer("diag-glow"), 6, 6, 20, 20)
+-- The two faces, then a cap across the top of the run and one across its
+-- bottom, each a tile wide on the row the run stops on.
+check("a lone diagonal is drawn as a closed outline",
+      count("diag-glow:seg") == 4, count("diag-glow:seg") .. " lit lines")
+check("a lone diagonal is capped at its top",
+      seg_drawn("diag-glow:seg", 240, 160, 256, 160))
+check("a lone diagonal is capped at its bottom",
+      seg_drawn("diag-glow:seg", 160, 240, 176, 240))
+
+-- An end that runs into a wall is not an end. The wall has that leg, so a cap
+-- there would be a line drawn through the middle of one solid mass.
+world = reset()
+arm(10, 10, 5, "down")
+for x = 8, 12 do put(x, 9, T_SOLID, 0) end
+world.build_static(writer("met-fill"), writer("met-glow"), 6, 6, 20, 20)
+check("a diagonal meeting a wall is not capped there",
+      not seg_drawn("met-glow:seg", 160, 160, 176, 160))
+check("its free end is still capped",
+      seg_drawn("met-glow:seg", 240, 240, 256, 240))
+
 -- A big rock is still one collision object, but it is no longer one flat
 -- polygon. Facet triangles, ridges, pits, and a mineral seam give it volume.
 world = reset()
