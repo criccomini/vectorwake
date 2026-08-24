@@ -940,7 +940,26 @@ impl ArenaServer {
     /// Take a catalog a directory offered. Highest version wins; a tie with
     /// different content is an author error rather than a race, so it is a log
     /// line naming both directories rather than a vote.
+    ///
+    /// Refused outright, whatever its version, when this build cannot read it.
+    /// Mid-deploy the fleet runs two builds at once, and an arena that catches
+    /// the outgoing directory's offer first would otherwise hold zone text its
+    /// own parser refuses. Holding it is what hurts: the version rules would
+    /// then defend the unreadable copy against the converged directory's
+    /// re-offer under the same number, and the instance sits at "cannot serve"
+    /// until somebody restarts it. Holding nothing instead means the next
+    /// offer arrives against `have` of zero and is simply taken.
     pub(crate) fn take_catalog(&mut self, c: fleet::WireCatalog, from: &str) {
+        if let Err(why) = catalog_readable(&c) {
+            println!(
+                "catalog: refusing v{} from {from}: {why}. The offer and this \
+                 build disagree about the format, which is a deploy caught \
+                 half landed; keeping what we hold rather than pinning text \
+                 we cannot serve",
+                c.version
+            );
+            return;
+        }
         let have = self.catalog.as_ref().map(|c| c.version).unwrap_or(0);
         if c.version < have {
             println!(
@@ -1393,6 +1412,24 @@ pub(crate) const PILOT_CALIBRATION_ATTEMPTS: &str =
 fn certified_pilot_fixture_allows(zone: &fleet::WireZone) -> bool {
     certified_pilot_attestation()
         .is_none_or(|release| calibrate::runtime_pilot_fixture_matches(&release.fixture, zone))
+}
+
+/// Whether this build can read every zone the catalog carries: the zone text
+/// parses and each map unpacks. This is the door check `take_catalog` runs
+/// before any version bookkeeping, because the version rules are only safe
+/// among catalogs the process could actually serve. What they must never
+/// defend is bytes from the far side of a deploy.
+fn catalog_readable(c: &fleet::WireCatalog) -> Result<(), String> {
+    for z in &c.zones {
+        toml::from_str::<catalog::ZoneDef>(&z.zone_toml)
+            .map_err(|e| format!("zone {:?}: zone.toml: {e}", z.name))?;
+        for m in &z.maps_b64 {
+            let bytes =
+                fleet::unb64(m).ok_or_else(|| format!("zone {:?}: map is not base64", z.name))?;
+            sim::unpack_map(&bytes).map_err(|e| format!("zone {:?}: map: {e}", z.name))?;
+        }
+    }
+    Ok(())
 }
 
 pub(crate) fn certified_pilot_attestation(
