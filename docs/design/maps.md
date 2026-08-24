@@ -430,21 +430,25 @@ language:
 - Relay ring uses stations, signal marks, and paired slope runs.
 
 The client gives those materials one visual grammar without flattening them
-into one tileset. A bulkhead keeps a continuous bright collision edge, but the
-structure behind it borrows a sparse set of compact machines from the station:
-square access hatches, vents, right-angle pipes, X braces, warning teeth, and
-open T supports. Their lines are horizontal, vertical, or 45 degrees. Broad
-stretches of bare armor separate the machines, so a long wall does not become a
-strip of repeated fittings. The schedule is anchored to world coordinates. A
-wall keeps the same fittings as the camera's terrain window moves across it. A
-rock is warmer, faceted, cratered, and carries sparse mineral seams while it
+into one tileset. A bulkhead keeps a continuous bright collision edge, with
+sparse machinery borrowed from the station behind it. One-tile partitions are
+open rails: brackets, braces, warning cuts, and exposed conduits, without a row
+of enclosed access capsules. A wall at least two tiles deep can carry larger
+hatches, vents, pipe elbows, stepped plates, and structural ribs. Those deeper
+machines change silhouette from one occupied slot to the next instead of
+repeating one fitting with different lines inside it. Every line is horizontal,
+vertical, or 45 degrees, and broad stretches of bare armor keep the collision
+edge dominant. The schedule is anchored to world coordinates, so a wall keeps
+the same fittings as the camera's terrain window moves across it.
+
+A rock is warmer, faceted, cratered, and carries sparse mineral seams while it
 tumbles. A station fills the whole six-tile square the simulation collides
 with, then cuts docking throats, armor quarters, trusses, and a cold reactor
 into that mass. The detail is subordinate to the outside edge at combat zoom.
 A player reads collision first and fiction on the second look.
 
-The thick perimeter mass uses the same service bays at a slower rhythm. Its
-long dark rests distinguish the arena boundary from an interior partition, but
+The thick perimeter mass uses the deeper grammar at a slower rhythm. Its long
+dark rests distinguish the arena boundary from an interior partition, but
 machinery still reaches into the slab from each exposed face.
 
 This keeps theme and topology independent. Ring and spokes can be a relay or a
