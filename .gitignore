@@ -35,3 +35,7 @@ zone/instance-id
 # (.github/workflows/client.yml), not committed: it was 5 MB of git history per
 # release and a step somebody had to remember, and forgetting it cost an outage.
 client/dist/
+
+# The 3D ship mock renders its own tool and its own battle recordings.
+.design/ships3d/mock3d
+.design/ships3d/*.vwcap
