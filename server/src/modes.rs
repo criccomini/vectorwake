@@ -210,8 +210,9 @@ pub struct LadderLeg {
     /// The opponent slot fought, zero-based like every other rung here.
     pub rung: u32,
     pub result: LegResult,
-    /// Deaths either way. `first_to` is one under this mode, so these are
-    /// almost always one and zero; the mode does not assume it.
+    /// The scoreline, the climber's side first. A point is the other side
+    /// dying, and `first_to` is one under this mode, so these are almost
+    /// always one and zero. The mode does not assume it.
     pub kills: u16,
     pub deaths: u16,
     /// How long the life lasted, in whole seconds, rounded the way the clock
