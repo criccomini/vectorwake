@@ -88,7 +88,7 @@ Past those, a hue means one thing, one thing per hue, across every screen:
 | pink | `#ff5ea8` | the bomb |
 | violet | `#c27bff`, `#a06bff` | a place, not a player: the burst's rounds, a wormhole |
 | green | `#35e0a0` | a door (the open state is a darker step of the same band) |
-| pale green | `#8dffb0` | what you were paid |
+| pale green | `#8dffb0` | what you were paid, and `#5aa874` a step down from it for a kill you only helped with |
 | gold | `#ffd166` | a charge you carry and spend, and a price you can afford |
 | deep gold | `#ffe08a` | bounty: what a pilot is worth |
 | red | `#ff505a` | you are being hurt, or about to lose something |

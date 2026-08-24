@@ -346,25 +346,10 @@ session.replay_route = session.deep_route.new({
     start = function(state, reply) session.replay(state, reply) end,
 })
 
-local function uri_part(s)
-    return (s or ""):gsub("([^%w%-_%.~])", function(c)
-        return string.format("%%%02X", string.byte(c))
-    end)
-end
-
 local function uri_read(s)
     return (s or ""):gsub("%%(%x%x)", function(h)
         return string.char(tonumber(h, 16))
     end)
-end
-
-function session.room_url(kind, zone, instance, room)
-    if not html5 or not instance or not room then return nil end
-    local route = string.format("#%s/%s/%s/%d", kind, uri_part(zone),
-                                uri_part(instance), room)
-    local ok, base = pcall(html5.run,
-        "window.location.origin + window.location.pathname")
-    return ok and type(base) == "string" and (base .. route) or nil
 end
 
 function session.enter_deep_route(self)
@@ -954,6 +939,13 @@ local function drain_kills()
         -- Never while watching. From that seat `me` is the sentinel 255,
         -- which is also the killer on a wall death, so every rock somebody
         -- flew into would have been lit as a kill of your own.
+        --
+        -- Three now rather than two: the third is a kill you helped with,
+        -- which the zone tells you and tells nobody else. It is the same
+        -- fight seen one step back, so it goes in the same family of green
+        -- one shade down rather than in a color of its own. It can never
+        -- collide with the other two, since the core hands an assist to
+        -- neither the pilot who finished it nor the one who died.
         local col, mine = nil, false
         if not watching and k.killer == me and k.victim ~= me then
             col, mine = pal.PAID, true
@@ -968,10 +960,20 @@ local function drain_kills()
             end
         elseif not watching and k.victim == me then
             col, mine = pal.HURT, true
+        elseif not watching and k.assist then
+            col, mine = pal.ASSIST, true
         end
-        notify((k.victim == k.killer) and {vn, " killed by self"}
+        local line = (k.victim == k.killer) and {vn, " killed by self"}
             or (k.killer == 255) and {vn, " flew into the wall"}
-            or {pilot_named(k.killer, true), " killed ", vn, paid}, col, mine)
+            or {pilot_named(k.killer, true), " killed ", vn, paid}
+        -- Said in words as well as in color, because your name is nowhere on
+        -- this line: a kill of yours and a death of yours both name you, and
+        -- a lit line about two other people with nothing on it to say why is
+        -- a color a player has to be taught. Appended rather than written
+        -- into each of the three shapes above, because it is equally true of
+        -- all of them: you can soften somebody who then flies into a wall.
+        if k.assist then line[#line + 1] = ", you assisted" end
+        notify(line, col, mine)
     end
     if #net.kills > 0 then net.kills = {} end
 end
@@ -2091,9 +2093,6 @@ function update(self, dt)
         local hud_me = me
         if watching then hud_me = e end
         if hud_me and sim.ship_private and not sim.ship_private(hud_me) then hud_me = nil end
-        local joined = not self.replay and net.last_join() or nil
-        local invite_url = joined and session.room_url("watch", menu.zone,
-                                                       joined.instance, net.room)
         local artifact = net.match and net.match.artifact or nil
         ui.hud({
             me = hud_me,
@@ -2138,7 +2137,6 @@ function update(self, dt)
             -- runs forever, which is how the HUD decides whether to draw a
             -- clock at all.
             match = net.match,
-            invite_url = invite_url,
             match_url = artifact and
                 ("https://vectorwake.net/matches/" .. artifact) or nil,
             keep_pilot = not account.claimed and account.base ~= "",

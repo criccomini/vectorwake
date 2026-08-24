@@ -395,20 +395,34 @@ check("snapshot sequences and world ticks cross rollover together",
 
 -- Reliable events can pass the datagram carrying the state that depicts them.
 -- They wait for that authoritative tick, then become visible together.
-local remote_kill = string.char(4, 1, 0, 176, 4, 176, 4, 1, 5, 0) .. u32le(5010)
-local my_kill = string.char(4, 1, 3, 176, 4, 176, 4, 1, 5, 0) .. u32le(5010)
-local my_death = string.char(4, 3, 0, 176, 4, 176, 4, 1, 5, 0) .. u32le(5010)
+-- The last byte is the private one: 1 says this pilot helped with that kill,
+-- and the zone sets it on one copy of the message and zeroes every other.
+local remote_kill = string.char(4, 1, 0, 176, 4, 176, 4, 1, 5, 0)
+    .. u32le(5010) .. string.char(0)
+local my_kill = string.char(4, 1, 3, 176, 4, 176, 4, 1, 5, 0)
+    .. u32le(5010) .. string.char(0)
+local my_death = string.char(4, 3, 0, 176, 4, 176, 4, 1, 5, 0)
+    .. u32le(5010) .. string.char(0)
+local my_assist = string.char(4, 2, 0, 176, 4, 176, 4, 2, 5, 0)
+    .. u32le(5010) .. string.char(1)
 local charge = string.char(15, 1, 0)
     .. string.char(0, 1, 0, 0, 0, 2, 0, 0) .. u32le(5010)
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = remote_kill})
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = my_kill})
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = my_death})
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = my_assist})
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = charge})
 check("combat news waits for its snapshot",
       #net.kills == 0 and #net.charge_events == 0)
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = snapshot(3, 5010)})
 check("combat news lands with its authoritative tick",
-      #net.kills == 3 and #net.charge_events == 1)
+      #net.kills == 4 and #net.charge_events == 1)
+-- Whether you helped with one is carried on the kill it belongs to rather
+-- than as news of its own, so the feed has one line to write and not two.
+check("a kill you helped with says so, and the others do not",
+      net.kills[4].assist == true and net.kills[1].assist == false
+      and net.kills[2].assist == false and net.kills[3].assist == false,
+      tostring(net.kills[4].assist))
 -- Every kill in the room, in the order the wire carried them, whoever was in
 -- it. The queue used to hold only the two you were part of, which left the
 -- feed unable to say who was doing the killing while it happened; a melee room
@@ -423,9 +437,10 @@ check("every kill in the room is news, not only yours",
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = remote_kill})
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = my_kill})
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = my_death})
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = my_assist})
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = charge})
 check("combat news is idempotent",
-      #net.kills == 3 and #net.charge_events == 1)
+      #net.kills == 4 and #net.charge_events == 1)
 
 -- A pack the core refuses has not happened. It is not counted, and the client
 -- reports that this build cannot read the zone rather than calling a broken
