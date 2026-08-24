@@ -285,12 +285,16 @@ check("phone sends nobody to the ship page from here", ship_page == 0,
 check("phone keeps the one account button", pilot_page == 1,
       pilot_page .. " account targets")
 
+-- A ladder pilot waiting on a rival reads the same label as a room between
+-- matches, over a clock that is not counting. FINDING RIVAL over --:-- was
+-- the same news twice, since the dashes already say nothing is counting.
 for _, shape in ipairs({{1280, 800}, {420, 780}}) do
     local texts = draw(shape[1], shape[2], true)
     local name = shape[1] > 500 and "desktop" or "phone"
-    check(name .. " Ladder landing says it is finding a rival",
-          has(texts, "Finding rival") and has(texts, "--:--")
-              and not has(texts, "Next match in"))
+    check(name .. " Ladder landing waits under the one label",
+          has(texts, "Next match") and has(texts, "--:--")
+              and not has(texts, "Finding rival")
+              and not has(texts, "Time"))
 end
 
 if fails > 0 then

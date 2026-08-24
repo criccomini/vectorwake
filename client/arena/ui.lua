@@ -4586,8 +4586,12 @@ local function compact_deploy(a, x, y, w, h)
 
     -- The clock, which between matches is the boarding window.
     if a.clock then
-        local clock_label = a.finding_rival and "finding rival"
-            or (a.playing and "time" or "next match in")
+        -- Two labels, not three. A ladder pilot waiting on a rival was told
+        -- FINDING RIVAL over a clock reading --:--, which is the same news
+        -- twice: the dashes already say nothing is counting. What both cases
+        -- have in common is the one worth a label, that this is the wait
+        -- before the next match.
+        local clock_label = a.playing and "time" or "next match"
         lbl(clock_label, x, cy + 8 * F.scale)
         -- The figures are sized off the band rather than set at a constant.
         -- A band is worth whatever the column has left once the key and the
@@ -4758,8 +4762,7 @@ function pages.deploy_aside(a, x, y, w, h)
     -- the window's own cyan.
     if a.clock then
         local finding = a.finding_rival == true
-        lbl(finding and "finding rival"
-            or (a.playing and "time" or "next match in"), x, ly,
+        lbl(a.playing and "time" or "next match", x, ly,
             a.playing and nil or pal.a(pal.FRIEND, 0.9))
         if a.score then
             lbl("score", x + rmargin, ly, nil, "right")
