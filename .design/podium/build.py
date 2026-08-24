@@ -315,38 +315,35 @@ def mobile():
     return board(390, 844, STARS_MOBILE, body)
 
 
-# --- phone, on its side: the same sections, spending width -------------------
-# The band and the rosters stay abreast; then SAY's grid stands beside
-# NEXT MATCH, since sideways the height is the scarce edge and the reading
-# order holds.
+# --- phone, on its side: the same sections, on one measure -------------------
+# The score keeps its two columns, since a roster is a column wherever it is
+# drawn, but SAY and NEXT MATCH span the measure like they do on every other
+# board. Everything is a size or two down: sideways the height is the scarce
+# edge, and this is the board that has to earn its room back.
 def landscape():
     score = (
-        score_band(36, 420, 8, 22)
-        + '<div class="row" style="gap:32px;margin-top:12px;'
+        score_band(32, 420, 8, 22)
+        + '<div class="row" style="gap:32px;margin-top:10px;'
         'align-items:flex-start">'
-        + roster(SIDES[0], 26, 13, 12, 24, 13, "flex:1")
-        + roster(SIDES[1], 26, 13, 12, 24, 13, "flex:1")
+        + roster(SIDES[0], 24, 13, 12, 24, 13, "flex:1")
+        + roster(SIDES[1], 24, 13, 12, 24, 13, "flex:1")
         + '</div>')
 
     say = section(
         "Say",
-        '<div style="display:grid;grid-template-columns:'
-        'repeat(3, minmax(0, 1fr));gap:8px">'
-        + "".join(chip(p, 44, 9) for p in PHRASES) + '</div>',
-        style="flex:1.6", label_px=9, gap=8)
-
-    aside = ('<div class="col" style="flex:1">'
-             + next_section(9, 8, 16,
-                            key("Share match", 44, 9.5, primary=True, mark=share_mark), 10)
-             + '</div>')
+        '<div class="row" style="gap:8px">'
+        + "".join(chip(p, 40, 9, "flex:1") for p in PHRASES) + '</div>',
+        style="margin-top:10px", label_px=9, gap=6)
 
     body = ('<div class="col" style="position:absolute;inset:0;'
             'padding:10px 18px;justify-content:center">'
             + headline(18, 8)
-            + '<div style="height:6px"></div>'
-            + score
-            + '<div class="row" style="gap:24px;margin-top:10px;'
-            'align-items:flex-start">' + say + aside + '</div>'
+            + '<div style="height:4px"></div>'
+            + score + say
+            + next_section(9, 6, 16,
+                           key("Share match", 40, 9.5, primary=True,
+                               mark=share_mark),
+                           8, "margin-top:10px")
             + '</div>')
     return board(844, 390, STARS_LANDSCAPE, body)
 

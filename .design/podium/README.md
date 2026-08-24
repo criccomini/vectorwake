@@ -24,8 +24,9 @@ They are drawings of a proposal, not a plan of record.
   mark every phone puts on the control that sends a thing somewhere else.
 - Wide windows set the rosters abreast; upright phones stack them at full
   width rather than halving the measure between them. A phone held sideways
-  stands SAY's grid beside NEXT MATCH, spending width where height is
-  scarce and keeping that reading order.
+  keeps the rosters in two columns, since a roster is a column wherever it
+  is drawn, and spans the measure with SAY and NEXT MATCH like every other
+  board, a size or two down to earn the room back.
 
 ## What is here
 
