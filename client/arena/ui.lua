@@ -4724,9 +4724,15 @@ local function compact_deploy(a, x, y, w, h)
     -- the arena hangs off and what the roster in a game already wears. One
     -- per block rather than one down the page: a rule the height of a
     -- monitor marks nothing, and these mark where a reading begins.
+    --
+    -- On the page's own left edge, in line with the name of the game and
+    -- every row under it. Hung a gutter further left they were the one thing
+    -- on the screen outside that edge, and two marks a hair apart read as a
+    -- ragged margin rather than as a column. The light falls to the right of
+    -- the line, which is the side the reading is on.
     local function rail(ry0, height)
         if height > 0 then
-            vrule(x - 14 * F.scale, ry0, height, pal.a(pal.RADAR_TILE, 0.7))
+            vrule(x, ry0, height, pal.a(pal.RADAR_TILE, 0.7))
         end
     end
 
