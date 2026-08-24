@@ -550,6 +550,28 @@ static void mesh_reach(const hull3d *h, float *fwd, float *aft, float *side) {
     }
 }
 
+/* Is the hull its own mirror about the plane it flies in? A ship in a top-down
+ * game with no floor has no up, and more practically: a hull holding 54 degrees
+ * of bank shows a viewer above it most of one face, so a face that is not the
+ * other face is a hull that changes identity halfway through a turn. */
+static int mesh_symmetric(const mesh *m, float *worst) {
+    int i, j, missing = 0;
+    *worst = 0.0f;
+    for (i = 0; i < m->vn; i++) {
+        v3 want = vec(m->pos[i].x, m->pos[i].y, -m->pos[i].z);
+        float best = 1e9f;
+        for (j = 0; j < m->vn; j++) {
+            v3 d = sub(m->pos[j], want);
+            float dd = dot(d, d);
+            if (dd < best) best = dd;
+        }
+        best = sqrtf(best);
+        if (best > *worst) *worst = best;
+        if (best > 1e-4f) missing++;
+    }
+    return missing;
+}
+
 static int cmd_fit(void) {
     float ext[7][3];
     int rows = read_extents(ext);
@@ -558,8 +580,8 @@ static int cmd_fit(void) {
         fprintf(stderr, "cannot read hull_extent from sim/src/baseline.c\n");
         return 1;
     }
-    printf("%-8s %-22s %-22s %-22s %9s %7s\n", "hull", "nose  box / drawn",
-           "tail  box / drawn", "flank box / drawn", "area px^2", "diag");
+    printf("%-8s %-22s %-22s %-22s %9s %7s %7s\n", "hull", "nose  box / drawn",
+           "tail  box / drawn", "flank box / drawn", "area px^2", "diag", "mirror");
     for (i = 0; i < 7; i++) {
         hull3d h;
         float fore = ext[i][0], aft = ext[i][1], halfw = ext[i][2];
@@ -575,13 +597,20 @@ static int cmd_fit(void) {
         if (ds - halfw < -1e-3f || ds - halfw > FIT_OVERLAP) fail = 1;
         if (fabsf(area - FIT_AREA) > 1e-3f) fail = 1;
         if (diag > FIT_CEILING) fail = 1;
-        printf("%-8s %8.4g / %-11.2f %8.4g / %-11.2f %8.4g / %-11.2f %9.3f %7.2f  %s\n",
-               hull3d_name(i), fore, df, aft, da, halfw, ds, area, diag,
-               fail ? "FAIL" : "ok");
+        {
+            float worst;
+            int off = mesh_symmetric(&h.body, &worst);
+            if (off) fail = 1;
+            printf("%-8s %8.4g / %-11.2f %8.4g / %-11.2f %8.4g / %-11.2f %9.3f %7.2f %7s  %s\n",
+                   hull3d_name(i), fore, df, aft, da, halfw, ds, area, diag,
+                   off ? "no" : "yes", fail ? "FAIL" : "ok");
+        }
         bad += fail;
         hull3d_free(&h);
     }
-    printf(bad ? "%d hull(s) outside the box\n" : "every hull spends the same 625 px^2 and stays on its box\n", bad);
+    printf(bad ? "%d hull(s) failed\n"
+                : "every hull spends the same 625 px^2, stays on its box, and mirrors about its own plane\n",
+           bad);
     return bad ? 1 : 0;
 }
 

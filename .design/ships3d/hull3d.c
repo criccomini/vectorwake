@@ -14,9 +14,13 @@
  * rather than a top surface that fades into its own silhouette. */
 #define EDGE 0.62f
 
-/* The belly is shallower than the crown. These are seen from above and a deep
- * underside is thickness nobody looks at. */
-#define BELLY 0.44f
+/* There is no underside. A hull is mirrored about its own plane, and the
+ * reason is the bank: a ship holding 54 degrees of roll shows a viewer from
+ * above most of one face, and if that face is a flat dark belly then the
+ * hull stops being the hull halfway through every turn. It is also just true
+ * of this game, which has no floor and no up. Whatever the crown does above
+ * the waterline it does below it. */
+#define BELLY 1.0f
 
 /* How far in the one inset ring sits, as a fraction of how far that vertex
  * could travel before leaving the hull, and how deep the crown height under
@@ -239,8 +243,13 @@ typedef struct {
 static float nose_light(v3 n) {
     /* The formula in world.lua, generalized: a face pointing at the bow is
      * lit, one pointing at the stern is not, and a face pointing straight up
-     * sits where a flat drawing's edges sat. */
-    float y = n.y * 0.82f + n.z * 0.18f;
+     * sits where a flat drawing's edges sat.
+     *
+     * The crown's slope enters as its magnitude rather than its sign, which is
+     * what keeps a mirrored hull mirrored: signed, the deck and the face under
+     * it take different fills and the symmetry is geometry only. */
+    float z = n.z < 0.0f ? -n.z : n.z;
+    float y = n.y * 0.82f + z * 0.18f;
     return 0.40f + 0.60f * (0.5f + 0.5f * y);
 }
 
@@ -394,6 +403,32 @@ static void dome(mesh *m, v3 c, float r, int mat, hull3d *h, int *lcap, v3 col) 
     }
 }
 
+/* Copy every triangle added since `tri0` to the other face. Winding is
+ * reversed with the copy, or the mirrored half draws its normals inward and
+ * takes the fill of a surface pointing the wrong way. */
+static void mirror_faces(mesh *m, int tri0) {
+    int n = m->tn, i;
+    for (i = tri0; i < n; i++) {
+        v3 a = m->pos[m->idx[i * 3 + 0]];
+        v3 b = m->pos[m->idx[i * 3 + 1]];
+        v3 c = m->pos[m->idx[i * 3 + 2]];
+        a.z = -a.z;
+        b.z = -b.z;
+        c.z = -c.z;
+        mesh_face(m, a, c, b, m->tri_mat[i]);
+    }
+}
+
+static void mirror_lines(hull3d *h, int *cap, int line0) {
+    int n = h->line_n, i;
+    for (i = line0; i < n; i++) {
+        v3 a = h->lines[i].a, b = h->lines[i].b;
+        a.z = -a.z;
+        b.z = -b.z;
+        add_line(h, cap, a, b, h->lines[i].col, h->lines[i].width);
+    }
+}
+
 /* --- the hull ------------------------------------------------------------- */
 
 void hull3d_build(hull3d *h, int cls, v3 team) {
@@ -412,7 +447,7 @@ void hull3d_build(hull3d *h, int cls, v3 team) {
     float area = 0.0f, cy = 0.0f;
     float lo_x = 1e9f, hi_x = -1e9f, lo_y = 1e9f, hi_y = -1e9f;
     float cap;
-    int i, q, lcap = 0;
+    int i, q, lcap = 0, face0_tri, face0_line;
     v3 wash = to_linear(team);
 
     memset(h, 0, sizeof *h);
@@ -502,7 +537,7 @@ void hull3d_build(hull3d *h, int cls, v3 team) {
         int k = (i + 1) % n;
         lit_quad(&h->body, &pal, rim_lo[i], rim_lo[k], rim_hi[k], rim_hi[i]);
         lit_quad(&h->body, &pal, rim_hi[i], rim_hi[k], top[k], top[i]);
-        mesh_quad(&h->body, rim_lo[k], rim_lo[i], bot[i], bot[k], pal.belly);
+        lit_quad(&h->body, &pal, rim_lo[k], rim_lo[i], bot[i], bot[k]);
     }
     {
         int *tri = malloc((size_t)n * 3 * sizeof *tri);
@@ -510,10 +545,15 @@ void hull3d_build(hull3d *h, int cls, v3 team) {
         for (i = 0; i < tn; i++) {
             int a = tri[i * 3], b = tri[i * 3 + 1], c = tri[i * 3 + 2];
             lit_tri(&h->body, &pal, top[a], top[b], top[c]);
-            mesh_face(&h->body, bot[a], bot[c], bot[b], pal.belly);
+            lit_tri(&h->body, &pal, bot[a], bot[c], bot[b]);
         }
         free(tri);
     }
+
+    /* Everything from here to the mirror below is built on one face and then
+     * copied to the other. */
+    face0_tri = h->body.tn;
+    face0_line = h->line_n;
 
     /* Plates: interior loops in the drawing, raised into decks here. One
      * height for the whole deck, taken from the highest ground it covers, so
@@ -548,21 +588,20 @@ void hull3d_build(hull3d *h, int cls, v3 team) {
         free(ring);
     }
 
-    /* Hardpoints: where a round actually leaves the ship, per ships.md. */
-    for (i = 0; i < art->tube_n; i++) {
-        float x0 = art->tubes[i * 5 + 0], y0 = art->tubes[i * 5 + 1];
-        float x1 = art->tubes[i * 5 + 2], y1 = art->tubes[i * 5 + 3];
-        float r = art->tubes[i * 5 + 4] * 0.55f;
-        float zc = crown(&f, (x0 + x1) * 0.5f, (y0 + y1) * 0.5f, cap) * 0.30f;
-        v3 a = vec(x0, y0, zc), b = vec(x1, y1, zc);
-        v3 fwd = y1 >= y0 ? b : a;
-        v3 aft = y1 >= y0 ? a : b;
-        v3 dir = norm(sub(fwd, aft));
-        prism(&h->body, add(aft, mul(dir, -0.3f)), fwd, r, 6,
-              pal.steel, h, &lcap, mul(wash, 0.9f), 0.06f);
-        disc(&h->body, add(fwd, mul(dir, 0.06f)), dir, r * 0.82f, 6, pal.burn,
-             h, &lcap, mul(wash, 1.1f));
-        if (h->muzzle_n < 4) h->muzzles[h->muzzle_n++] = add(fwd, mul(dir, 0.4f));
+    /* Panel lines, in a neutral instrument gray. The team read belongs on the
+     * silhouette; a hull whose every line is one color looks cut from a single
+     * sheet of neon rather than built out of parts. */
+    for (i = 0; i < art->line_n; i++) {
+        int off = 0, m;
+        for (q = 0; q < i; q++) off += art->line_len[q];
+        m = art->line_len[i] / 2;
+        for (q = 0; q + 1 < m; q++) {
+            float ax = art->line_pts[off + q * 2], ay = art->line_pts[off + q * 2 + 1];
+            float bx = art->line_pts[off + q * 2 + 2], by = art->line_pts[off + q * 2 + 3];
+            add_line(h, &lcap, vec(ax, ay, crown(&f, ax, ay, cap) + 0.05f),
+                     vec(bx, by, crown(&f, bx, by, cap) + 0.05f),
+                     lin(0x9fb6d4, 0.22f), 0.045f);
+        }
     }
 
     /* Lamps and dispenser heads. */
@@ -596,6 +635,37 @@ void hull3d_build(hull3d *h, int cls, v3 team) {
         free(base);
     }
 
+    /* Hardpoints: where a round actually leaves the ship, per ships.md. On the
+     * deck rather than on the waterline, and so mirrored onto both decks. Sunk
+     * into the equator they vanish inside the hulls whose tubes run down the
+     * spine, which is most of them: the Wedge's bomb tube is the brightest
+     * thing on that ship and it disappeared entirely. */
+    for (i = 0; i < art->tube_n; i++) {
+        float x0 = art->tubes[i * 5 + 0], y0 = art->tubes[i * 5 + 1];
+        float x1 = art->tubes[i * 5 + 2], y1 = art->tubes[i * 5 + 3];
+        float r = art->tubes[i * 5 + 4] * 0.5f;
+        float xf = y1 >= y0 ? x1 : x0, yf = y1 >= y0 ? y1 : y0;
+        float xa = y1 >= y0 ? x0 : x1, ya = y1 >= y0 ? y0 : y1;
+        float zc = crown(&f, xa, ya, cap) - r * 0.5f;
+        v3 aft = vec(xa, ya, zc), fwd = vec(xf, yf, zc);
+        v3 dir = norm(sub(fwd, aft));
+        /* Drawn hot, which is the client's rule for these: where a hull's
+         * damage comes out of is worth knowing at a glance, and it is the same
+         * element at every size. The barrel takes the brightest fill on the
+         * ship and carries a lit core down its length. */
+        prism(&h->body, add(aft, mul(dir, -0.3f)), fwd, r, 6,
+              fill_of(&pal, vec(0, 1, 0)), h, &lcap, mul(wash, 1.5f), 0.07f);
+        disc(&h->body, add(fwd, mul(dir, 0.06f)), dir, r * 0.82f, 6, pal.burn,
+             h, &lcap, mul(wash, 1.4f));
+        add_line(h, &lcap, add(aft, vec(0, 0, r * 0.92f)),
+                 add(fwd, vec(0, 0, r * 0.92f)),
+                 add(mul(wash, 0.9f), lin(0xffffff, 0.35f)), 0.09f);
+        if (h->muzzle_n < 4) h->muzzles[h->muzzle_n++] = add(fwd, mul(dir, 0.4f));
+    }
+
+    mirror_faces(&h->body, face0_tri);
+    mirror_lines(h, &lcap, face0_line);
+
     /* Engines. The mouths are where world.lua puts them, so a plume drawn off
      * this model leaves the ship where the flat game's does. */
     for (i = 0; i < art->jets_n; i++) {
@@ -621,29 +691,15 @@ void hull3d_build(hull3d *h, int cls, v3 team) {
         float ny = len > 1e-6f ? -dx / len : 0.0f;
         float light = 0.40f + 0.60f * (0.5f + 0.5f * ny);
         add_line(h, &lcap, rim_hi[i], rim_hi[k], mul(wash, light * 2.3f), 0.15f);
-        add_line(h, &lcap, rim_lo[i], rim_lo[k], mul(wash, light * 0.55f), 0.07f);
+        add_line(h, &lcap, rim_lo[i], rim_lo[k], mul(wash, light * 2.3f), 0.15f);
         add_line(h, &lcap, rim_lo[i], rim_hi[i], mul(wash, light * 0.60f), 0.06f);
         if (reach[i] > 0.9f) {
             add_line(h, &lcap, rim_hi[i], top[i], mul(wash, light * 0.45f), 0.05f);
             add_line(h, &lcap, top[i], top[k], mul(wash, light * 0.85f), 0.08f);
+            add_line(h, &lcap, rim_lo[i], bot[i], mul(wash, light * 0.45f), 0.05f);
+            add_line(h, &lcap, bot[i], bot[k], mul(wash, light * 0.85f), 0.08f);
         }
     }
-    /* Panel lines, in a neutral instrument gray. The team read belongs on the
-     * silhouette; a hull whose every line is one color looks cut from a single
-     * sheet of neon rather than built out of parts. */
-    for (i = 0; i < art->line_n; i++) {
-        int off = 0, m;
-        for (q = 0; q < i; q++) off += art->line_len[q];
-        m = art->line_len[i] / 2;
-        for (q = 0; q + 1 < m; q++) {
-            float ax = art->line_pts[off + q * 2], ay = art->line_pts[off + q * 2 + 1];
-            float bx = art->line_pts[off + q * 2 + 2], by = art->line_pts[off + q * 2 + 3];
-            add_line(h, &lcap, vec(ax, ay, crown(&f, ax, ay, cap) + 0.05f),
-                     vec(bx, by, crown(&f, bx, by, cap) + 0.05f),
-                     lin(0x9fb6d4, 0.22f), 0.045f);
-        }
-    }
-
     free(rim_lo);
     free(rim_hi);
     free(top);

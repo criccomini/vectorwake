@@ -51,21 +51,42 @@ takes the same measurement on the meshes:
 
 ```
 $ make check
-hull     nose  box / drawn      tail  box / drawn      flank box / drawn      area px^2    diag
-Apex           20 / 20.69          11.25 / 12.25             10 / 11.00         625.000   22.36  ok
-Wedge          11 / 12.00              9 / 10.00          15.62 / 16.62         625.000   19.11  ok
-Chord           9 / 10.00              7 / 8.00           19.53 / 20.53         625.000   21.51  ok
-Anvil          13 / 13.01             12 / 13.16           12.5 / 13.50         625.000   18.03  ok
-Cipher         21 / 22.00          18.06 / 19.22              8 / 9.00          625.000   22.47  ok
-Facet          13 / 14.00             12 / 13.16           12.5 / 13.50         625.000   18.03  ok
-Lattice        13 / 14.00             12 / 12.74           12.5 / 13.26         625.000   18.03  ok
-every hull spends the same 625 px^2 and stays on its box
+hull     nose  box / drawn      tail  box / drawn      flank box / drawn      area px^2    diag  mirror
+Apex           20 / 20.69          11.25 / 12.25             10 / 11.00         625.000   22.36     yes  ok
+Wedge          11 / 12.00              9 / 10.00          15.62 / 16.62         625.000   19.11     yes  ok
+Chord           9 / 10.00              7 / 8.00           19.53 / 20.53         625.000   21.51     yes  ok
+Anvil          13 / 13.01             12 / 13.16           12.5 / 13.50         625.000   18.03     yes  ok
+Cipher         21 / 22.00          18.06 / 19.22              8 / 9.00          625.000   22.47     yes  ok
+Facet          13 / 14.00             12 / 13.16           12.5 / 13.50         625.000   18.03     yes  ok
+Lattice        13 / 14.00             12 / 12.74           12.5 / 13.26         625.000   18.03     yes  ok
+every hull spends the same 625 px^2, stays on its box, and mirrors about its own plane
 ```
 
 It measures every vertex of every part, hardpoints and lamps and engine bells
 included, not just the outline: the furthest thing on a ship is not always on
 its silhouette. Nothing in `hull3d.c` moves a vertex in x or y, and this is
 what says so out loud rather than asking to be believed.
+
+## No hull has a top
+
+Every hull is its own mirror about the plane it flies in. Whatever the crown
+does above the waterline it does below it, with the same fills, the same lamps,
+the same canopy and the same hardpoints on each deck.
+
+The bank is why it matters rather than a preference about shapes. A ship
+holding 54 degrees of roll shows a viewer above it most of one face; if that
+face is a flat dark belly then the hull stops being the hull halfway through
+every turn, and the class stops being legible from its silhouette, which
+identity.md puts above all of this. It also happens to be true of the game,
+which has no floor and no up.
+
+The one thing it moved is the hardpoints. A barrel sunk to the waterline is a
+barrel inside the hull on every class whose tube runs down its spine, and the
+Wedge's bomb tube is the brightest thing on that ship: it disappeared entirely.
+They sit on the deck now, and so get mirrored onto both.
+
+The last column of `make check` is that promise. Every vertex has to have a
+partner at the same x and y and the opposite z, or the hull fails.
 
 ## The battles are real ones
 
