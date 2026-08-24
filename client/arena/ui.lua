@@ -4730,6 +4730,12 @@ local function compact_deploy(a, x, y, w, h)
     -- on the screen outside that edge, and two marks a hair apart read as a
     -- ragged margin rather than as a column. The light falls to the right of
     -- the line, which is the side the reading is on.
+    -- And what a ruled block's own type is inset by, so the line has a
+    -- margin of its own rather than running under the first letter of every
+    -- row. The score's figures and the key keep the page's edge: those are
+    -- full-width things, and a bar that starts where its own figure starts
+    -- is the alignment worth having there.
+    local inx = x + 12 * F.scale
     local function rail(ry0, height)
         if height > 0 then
             vrule(x, ry0, height, pal.a(pal.RADAR_TILE, 0.7))
@@ -4745,7 +4751,7 @@ local function compact_deploy(a, x, y, w, h)
         -- have in common is the one worth a label, that this is the wait
         -- before the next match.
         local clock_label = a.playing and "time" or "next match"
-        lbl(clock_label, x, cy + 8 * F.scale)
+        lbl(clock_label, inx, cy + 8 * F.scale)
         -- The figures are sized off the band rather than set at a constant.
         -- A band is worth whatever the column has left once the key and the
         -- description are out of it, and a phone held sideways leaves two
@@ -4759,7 +4765,7 @@ local function compact_deploy(a, x, y, w, h)
         local clock = a.finding_rival and "--:--"
             or string.format("%d:%02d", math.floor(a.clock / 60),
                              a.clock % 60)
-        txt(clock, x - 1 * F.scale, value_y, clock_px,
+        txt(clock, inx - 1 * F.scale, value_y, clock_px,
             pal.a(pal.INK, 0.95))
         cy = cy + band + gap
     end
@@ -4771,7 +4777,7 @@ local function compact_deploy(a, x, y, w, h)
     -- this is actually asking.
     if listing then
         rail(cy, list_h)
-        lbl("players", x, cy + 8 * F.scale)
+        lbl("players", inx, cy + 8 * F.scale)
         local mark_px = 11 * F.scale
         local num = 11.5 * F.scale
         if shown > 0 then
@@ -4810,12 +4816,12 @@ local function compact_deploy(a, x, y, w, h)
                     col = r.mine and pal.FRIEND or pal.ENEMY
                 end
                 if r.ai then
-                    bot_mark(x, ly, pal.a(pal.DIM, 0.75), mark_px)
+                    bot_mark(inx, ly, pal.a(pal.DIM, 0.75), mark_px)
                 else
-                    pilot_mark(x + mark_px / 2, ly, pal.a(pal.DIM, 0.75),
+                    pilot_mark(inx + mark_px / 2, ly, pal.a(pal.DIM, 0.75),
                                mark_px)
                 end
-                txt(r.name, x + mark_px + 9 * F.scale, ly, 12.5 * F.scale,
+                txt(r.name, inx + mark_px + 9 * F.scale, ly, 12.5 * F.scale,
                     pal.a(col, r.self and 1 or 0.85), nil, nil, true)
                 if r.watch then
                     txt("watching", ax2, ly, 10 * F.scale,
@@ -4839,12 +4845,13 @@ local function compact_deploy(a, x, y, w, h)
                     cy + 8 * F.scale, pal.a(pal.DIM, 0.8), "right")
             end
             local count_y = cy + head_h + line * 0.5
-            pilot_mark(x + 6 * F.scale, count_y, pal.a(pal.INK, 0.95),
+            pilot_mark(inx + 6 * F.scale, count_y, pal.a(pal.INK, 0.95),
                        mark_px)
-            txt(tostring(a.room.players or 0), x + 17 * F.scale, count_y,
+            txt(tostring(a.room.players or 0), inx + 17 * F.scale, count_y,
                 mark_px, pal.a(pal.INK, 0.95), nil, nil, true)
-            bot_mark(x + 54 * F.scale, count_y, pal.a(pal.DIM, 0.8), mark_px)
-            txt(tostring(a.room.bots or 0), x + 70 * F.scale, count_y,
+            bot_mark(inx + 54 * F.scale, count_y, pal.a(pal.DIM, 0.8),
+                     mark_px)
+            txt(tostring(a.room.bots or 0), inx + 70 * F.scale, count_y,
                 mark_px, pal.a(pal.DIM, 0.9), nil, nil, true)
         end
         cy = cy + list_h + gap
