@@ -1,5 +1,10 @@
 # One life against one measured house pilot. A win advances one rung. A loss
 # drops two rungs without crossing the last five-rung checkpoint.
+#
+# With nobody here the room climbs anyway, against the same rivals, so the play
+# page has a fight to show whoever is deciding what to press. That is why both
+# sides below take a bot as well as a person: the stand-in flies the climber's
+# seat and gives it back the moment somebody wants it.
 
 description = "one life at a time, climb the house pilot ladder"
 mode = "ladder"
@@ -20,8 +25,12 @@ max_teams = 2
 max_humans_per_team = 1
 max_bots_per_team = 1
 
-# Progress belongs to an account. Guests can still play melee.
-admission = "claimed"
+# A guest is an account: the meta-layer mints one per device, and a run's
+# checkpoint and best rung hang off whatever account id is flying. Nobody has to
+# claim a pilot before their first climb. A guest account is swept after a week
+# away and its progress goes with it; claiming the pilot is what makes a
+# checkpoint permanent, and it keeps whatever was already climbed.
+admission = "any"
 max_watchers = 8
 channel_delay_ticks = 0
 

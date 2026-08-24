@@ -1124,13 +1124,19 @@ static void apply_damage(sim_state *s, const sim_settings *cfg, uint8_t victim,
          * this column answers "how many of these did you help take apart",
          * which is a count. The killer is not in it, having a column of their
          * own, and neither is a slot older than the window or a pilot who has
-         * since left the room. */
+         * since left the room.
+         *
+         * Reported as well as counted. The column rides the snapshot and is
+         * right for anybody who reads it later; the event is for a caller
+         * that wants to say so at the moment it happens, and it is emitted
+         * here so that both come from one rule. */
         for (int k = 0; k < SIM_ASSIST_SLOTS; k++) {
             uint8_t who = v->hurt_by[k];
             if (who == 255 || who == attacker || who >= s->ship_count) continue;
             if (s->tick - v->hurt_at[k] > SIM_ASSIST_WINDOW) continue;
             if (!s->ships[who].active) continue;
             s->ships[who].assists++;
+            emit(ev, SIM_EV_ASSIST, who, victim, attacker);
         }
         clear_hurt(v);
         /* What a death takes is the run, which is the whole of what a pilot

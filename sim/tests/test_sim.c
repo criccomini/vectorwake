@@ -3544,18 +3544,32 @@ static void test_scoring(const sim_settings *base) {
         CHECK(s.ships[1].alive, "the first pilot softens them and stops");
         CHECK(s.ships[1].hurt_by[0] == 0, "and is on the victim's ledger");
         s.ships[1].energy = 1;
+        /* The assist events of the tick the victim died on, which is the only
+         * tick that has any: a caller that wants to tell a pilot they helped
+         * has to be able to read it off the death rather than by watching a
+         * column for movement. */
+        int said = 0, said_right = 0, said_of_killer = 0;
         for (int t = 0; t < 400 && s.ships[1].alive; t++) {
             sim_state tmp;
             sim_events ev;
             sim_input in[1] = {{2, SIM_BTN_FIRE}};
             sim_step(&tmp, &s, in, 1, &cfg, &ev);
             s = tmp;
+            for (uint16_t e = 0; e < ev.count; e++) {
+                if (ev.e[e].type != SIM_EV_ASSIST) continue;
+                said++;
+                if (ev.e[e].a == 0 && ev.e[e].b == 1) said_right++;
+                if (ev.e[e].v == 2) said_of_killer++;
+            }
         }
         CHECK(!s.ships[1].alive, "the second one finishes it");
         CHECK(s.ships[2].kills == 1, "whose kill it is");
         CHECK(s.ships[2].assists == 0, "and it is not also their assist");
         CHECK(s.ships[0].kills == 0, "the other took nothing");
         CHECK(s.ships[0].assists == 1, "and is credited with the help");
+        CHECK(said == 1, "the death says so once, for the one who helped");
+        CHECK(said_right == 1, "naming the pilot credited and the victim");
+        CHECK(said_of_killer == 1, "and who finished it");
     }
 
     {

@@ -17,6 +17,11 @@ end
 local tick = 1000
 local active = {[0] = 1, [1] = 1, [2] = 1}
 local alive = {[0] = 1, [1] = 1, [2] = 1}
+-- Every hull the zone puts down in here was killed, so the tally follows the
+-- state: a snapshot where somebody stops flying is a snapshot where their
+-- death count moved. What a room does at a whistle instead, and what the
+-- client makes of it, is whistle_test.
+local deaths = {[0] = 0, [1] = 0, [2] = 0}
 local next_active = active
 local next_alive = alive
 local emit_victim = nil
@@ -40,6 +45,11 @@ _G.sim = {
     step = function() tick = tick + 1; predicted_deaths = {} end,
     apply_snapshot = function(body)
         tick = u32(string.byte(body, 1, 4))
+        for i, was in pairs(alive) do
+            if was == 1 and (next_alive[i] or 0) ~= 1 then
+                deaths[i] = (deaths[i] or 0) + 1
+            end
+        end
         active, alive = next_active, next_alive
         predicted_deaths = {}
         return 0
@@ -51,6 +61,7 @@ _G.sim = {
     set_mortal = function() end,
     ship_count = function() return 3 end,
     ship_alive = function(i) return alive[i] or 0 end,
+    ship_deaths = function(i) return deaths[i] or 0 end,
     ship_active = function(i) return active[i] or 0 end,
     ship_vel = function() return 0, 0 end,
     ship_x_raw = function() return 0 end,

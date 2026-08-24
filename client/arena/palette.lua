@@ -157,6 +157,13 @@ M.MODS = {
 -- What a kill paid, drifting off the wreck that paid it, and the same green
 -- the feed uses for a line about a kill of yours.
 M.PAID      = rgb(0x8dffb0)
+-- The feed's line about a kill you helped with: the same green, a step
+-- darker. An assist is the lesser half of what PAID means, and a second
+-- full-strength color in that corner would make two kinds of line equally
+-- loud. Its own value rather than PAID at a lower alpha, because alpha in
+-- the feed is spent on how old a line is, and a color that arrived faded
+-- would read as a kill of yours from nine seconds ago.
+M.ASSIST    = rgb(0x5aa874)
 -- Charges: things you carry a count of and spend.
 -- Display names for the charge-kind space the core can represent. A kit may
 -- carry two kinds; the fourth kind remains reserved and has no decided name.

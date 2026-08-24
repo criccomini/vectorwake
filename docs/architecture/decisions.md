@@ -360,11 +360,14 @@ time the pilot steers, and it costs the arena the frame's circumcircle rather
 than the frame, since a turned frame reaches into corners its width and height
 do not describe.
 
-What survived is the control it was built with. The turning view had no
-direction left on the glass to point at, so it needed a d-pad, and the d-pad
-turned out to be worth having on its own: it is now the second of two steering
-settings, beside the stick, on a north-up screen like everybody else's. See
-`arena/touch.lua`.
+The control it was built with outlived it, though not by long. The turning view
+had no direction left on the glass to point at, so it needed a d-pad, and the
+d-pad was kept afterward as a second steering setting beside the stick, on a
+north-up screen like everybody else's. Both that and the reverse that came with
+it are gone now. One push of a thumb meant one thing on the pad and another on
+the stick, and on the stick it changed again while the guns were up, so a phone
+flies with the stick alone and a pilot who wants to be going the other way turns
+the ship around. See `arena/touch.lua`.
 
 
 **Status:** accepted
@@ -2529,3 +2532,43 @@ edge.
 **Reconsider if:** the simulation adopts polygon collision. Normalize the
 polygon areas then and retire the rectangle budget rather than layering one
 shape contract over another.
+
+---
+
+## 58. The Ladder zone always has a duel in it
+
+**Status:** accepted
+
+Decision 56 made the play page a watcher on the zone under the cursor, so the
+match behind the menu is the match a deploy would put you in. That works
+because melee is filled to eight seats by the bot server and is therefore
+always playing. Ladder is not: its room asked for a rival only once a person
+was in it, so the zone a visitor previews second is an empty arena, and the
+readings beside it are dashes and a sentence about looking for a rival.
+
+A Ladder room with nobody in it now climbs anyway. The director seats a
+stand-in beside the rung's own rival and the two fly the ordinary one-life
+duel: same rungs, same measured rival builds, same clock, same progression.
+The stand-in comes from the generated roster rather than the eight authored
+archetypes, since those are the rungs it is climbing and one of them anchors
+every rating in the fleet. A person arriving takes the seat back on the tick
+they arrive, and the run starts over at their own floor, because a run belongs
+to whoever is flying it.
+
+Only the zone's first room does this. Rooms open because people arrive and are
+given back when they empty, and a room with a stand-in flying in it never
+empties, so any other rule would leave a bot duel in every room a busy evening
+ever opened.
+
+**Cost:** two bot connections and one predicted room, permanently, per Ladder
+zone, plus a rival swap every time the stand-in clears a rung. That is the load
+of one person playing continuously, which is the load the zone was built for.
+The rung a visitor sees is also wherever the stand-in's run happens to be
+rather than rung one, so the preview is not a picture of what a new player's
+first fight looks like.
+
+**Reconsider if:** the fleet grows enough zones that a permanent duel in each
+of them is real load, in which case the stand-in should start when somebody is
+watching and stop when the last watcher leaves. The room already knows its
+watchers; it was left out here because a duel that starts when you look at it
+starts too late to be the thing you looked at.

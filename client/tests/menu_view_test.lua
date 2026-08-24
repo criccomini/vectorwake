@@ -217,10 +217,11 @@ end
 -- --- the short landing keeps its deploy key clear -------------------------
 --
 -- The full landing column was taller than an iPhone SE or a short Android
--- screen. DEPLOY stayed pinned to the bottom and covered the room, hull, and
--- call sign above it. These sizes include the two shortest supported phones
--- and the common 360 and 375 point shapes. A phone held sideways is wide
--- enough for the two-column play page and is checked separately below.
+-- screen. DEPLOY stayed pinned to the bottom and covered the readings above
+-- it. These sizes include the two shortest supported phones and the common
+-- 360 and 375 point shapes. A phone held sideways clears the 620-point bar
+-- and takes the wide layout, which is the same deck across a wider page,
+-- and it is checked separately below.
 do
     local function landing_view()
         return {
@@ -232,7 +233,6 @@ do
                 zones = 1, at = 1, sub = "the busiest room with a seat",
                 room = {players = 1, bots = 7, seats = 8},
                 clock = 72, playing = true, score = {2, 4}, row = 1,
-                arrive = {hull = 0, name = "Apex", call = "Vantage 7"},
             },
         }
     end
@@ -283,12 +283,44 @@ do
         return best
     end
 
+    -- The top of the score bar, which is the two team-colored bands a few
+    -- points tall. Nothing else on this page is drawn that way, and with no
+    -- word over it the bar is the only thing that says where the score is.
+    local function bar_top()
+        local top
+        for _, r in ipairs(rects) do
+            local c = r.col or {}
+            if r.h < 12 and r.w > 20
+               and ((c[1] == pal.FRIEND[1] and c[2] == pal.FRIEND[2])
+                    or (c[1] == pal.ENEMY[1] and c[2] == pal.ENEMY[2])) then
+                top = math.min(top or r.y, r.y)
+            end
+        end
+        return top
+    end
+
+    -- Each band holds its own figures. The clock is sized off the band it
+    -- stands in rather than set at a constant, and on a short screen a flat
+    -- 28 ran it out of the bottom of that band into whatever came next.
+    local function bands_hold(landing, name)
+        local clock = text_named(landing, "1:12")
+        -- Whichever block landed under the clock. A column with no height
+        -- for a roster drops it and the score bar follows the clock instead.
+        local under = text_named(landing, "Players")
+        local clock_y = clock and (H - clock.y) or nil
+        local under_y = under and (H - under.y - under.px * 0.5) or bar_top()
+        check(name .. " keeps the clock clear of what is under it",
+              clock_y and under_y and clock_y + clock.px * 0.5 <= under_y,
+              string.format("clock %.0f at %.0f, next at %.0f",
+                            clock and clock.px or -1, clock_y or -1,
+                            under_y or -1))
+    end
+
     for _, shape in ipairs({{320, 480}, {320, 568}, {360, 640},
                              {375, 667}, {390, 664}, {390, 844}}) do
         local landing = draw(landing_view(), shape[1], shape[2], true)
         local deploy = hit_named("stage")
-        local apex = baseline(landing, "Apex")
-        local call = baseline(landing, "Vantage 7")
+        local score = bar_top()
         local inside = deploy and deploy.x >= 0 and deploy.y >= 0
                        and deploy.x + deploy.w <= W
                        and deploy.y + deploy.h <= H
@@ -298,12 +330,10 @@ do
                                        deploy.x, deploy.y, deploy.w, deploy.h,
                                        W, H)
                   or "no deploy box")
-        check(string.format("%dx%d keeps the arrival clear of DEPLOY",
+        check(string.format("%dx%d keeps the last reading clear of DEPLOY",
                             shape[1], shape[2]),
-              deploy and apex and call
-                  and math.max(apex, call) < deploy.y - 2,
-              string.format("arrival %.0f, deploy %.0f",
-                            math.max(apex or -1, call or -1),
+              deploy and score and score < deploy.y - 2,
+              string.format("score %.0f, deploy %.0f", score or -1,
                             deploy and deploy.y or -1))
         local crosses_rail = false
         if deploy then
@@ -318,19 +348,19 @@ do
         check(string.format("%dx%d keeps DEPLOY above the tab rail",
                             shape[1], shape[2]), not crosses_rail,
               crosses_rail and "the hit boxes overlap" or nil)
+        bands_hold(landing, string.format("%dx%d", shape[1], shape[2]))
         if shape[1] == 390 and shape[2] == 844 then
             local note = baseline(landing,
                 "Everybody against everybody until the whistle")
-            local clock = baseline(landing, "On the clock")
-            local arrival = baseline(landing, "You arrive as")
+            local clock = baseline(landing, "Time")
             check("portrait leaves the arena between the description and facts",
                   note and clock and clock - note > 200,
                   string.format("description %.0f, facts %.0f",
                                 note or -1, clock or -1))
             check("portrait keeps the deployment facts in one bottom block",
-                  clock and arrival and arrival - clock < 150,
-                  string.format("clock %.0f, arrival %.0f",
-                                clock or -1, arrival or -1))
+                  clock and score and score - clock < 300,
+                  string.format("clock %.0f, score %.0f",
+                                clock or -1, score or -1))
 
             local human = text_named(landing, "1")
             local robot = text_named(landing, "7")
@@ -341,30 +371,31 @@ do
                   human_y and robot_y and math.abs(human_y - robot_y) < 0.1,
                   string.format("human %.1f, robot %.1f",
                                 human_y or -1, robot_y or -1))
-            check("the arrival names publish both page destinations",
-                  hit_named("ship_page") and hit_named("pilot_page"),
+            check("the deck sends nobody to a page of its own",
+                  not hit_named("ship_page") and not hit_named("pilot_page"),
                   table.concat(actions(), ", "))
         end
     end
 
-    -- A phone held sideways clears the 620-point bar and takes the desktop
-    -- shape: the zones list beside the room's readings, and the row under
-    -- the cursor is the deploy control. There is no DEPLOY key, because
-    -- the rows a key would repeat are on screen and pressable.
+    -- Held sideways the window is wide, and the deck takes that width. The
+    -- zones list is not on either shape: the deck's own carousel is the zone
+    -- picker, and the key under the readings is the press.
     local sideways = draw(landing_view(), 844, 390, true)
     local said_deploy = false
     for i = 1, sideways.n do
         if is(sideways.text[i], "Deploy") then said_deploy = true end
     end
-    check("sideways draws the zones list, not the deck",
-          has(sideways, "zone1"), table.concat(texts(sideways), " "))
-    check("and its readings", has(sideways, "on the clock")
-              and has(sideways, "the room"),
+    check("sideways draws the deck, not the zones list",
+          not has(sideways, "zone1"), table.concat(texts(sideways), " "))
+    -- Two readings, and no roster: 390 points of height has no room for a
+    -- list of names under a clock, a score and a key.
+    check("and its readings", has(sideways, "time") and bar_top() ~= nil,
           table.concat(texts(sideways), " "))
-    check("and no deploy key", not said_deploy)
+    check("and the key that presses them", said_deploy)
+    bands_hold(sideways, "sideways")
     local row_press = hit_named("stage")
-    check("the zone row takes the press", row_press ~= nil
-              and row_press.value == 1, "no stage target on the row")
+    check("the deploy key takes the press", row_press ~= nil
+              and row_press.value == 1, "no stage target on the key")
 end
 
 -- --- the rail does not move when you go a level in ------------------------
@@ -1296,15 +1327,21 @@ end
 -- of a page spent on a choice made once and on reference material, so it is a
 -- drawing with arrows either side of it now.
 --
--- What is pinned is what a player uses: the ship is named, it says which of
--- the seven it is, and the numbers that belonged to a spec sheet are gone.
+-- What is pinned is what a player uses: the head names the build, the ship is
+-- named where it is chosen, and the numbers that belonged to a spec sheet are
+-- gone.
+--
+-- The ship stood in that head once, with an arrow either side. It was the
+-- second hull selector on one page, and the head of a page about thirty
+-- points is where the build's own name belongs.
 do
     local hangar = draw({
         depth = 2, sel = 2, rail = RAIL, rail_sel = 1, focus = "stage",
         home = true, closable = false, page = "kit",
         head = {label = "Cipher", hull = 4},
-        -- Two, so the carousel has somewhere to go: the arrows and the
-        -- count only draw where there is more than one ship.
+        profile = {name = "Screen", state = "edited"},
+        -- Two, so the carousel has somewhere to go: the count beside the
+        -- hull row only draws where there is more than one ship.
         hulls = {{label = "Cipher", role = "knife", index = 1, hull = 4,
                   detail = "the longest and narrowest hull",
                   extent = {fore = 21, aft = 18.0625, beam = 16}},
@@ -1314,8 +1351,14 @@ do
             {label = "budget", bar = true, choice = 4, choices = 30, index = 1},
             {label = "energy", group = "flight", short = "en", choice = 2,
              choices = 6, owned = 6, arena_max = 8, index = 2},
+            {label = "hull", group = "flair", ship = true, verbatim = true,
+             detail = "Cipher", choice = 1, choices = 2, index = 3},
         },
     })
+    check("the head of the page names the build", has(hangar, "screen"),
+          table.concat(texts(hangar), " "))
+    check("and says it has been tuned away from it", has(hangar, "edited"),
+          table.concat(texts(hangar), " "))
     check("the page names the ship", has(hangar, "cipher"),
           table.concat(texts(hangar), " "))
     check("and says which of them it is", has(hangar, "1 of 2"),
@@ -1331,6 +1374,64 @@ do
           table.concat(texts(hangar), " "))
     check("and nothing about a hull's limits", not has(hangar, "hull limits"),
           table.concat(texts(hangar), " "))
+end
+
+-- --- the builds down the left, the one you are on in the pane -------------
+--
+-- Two columns: the list of builds this pilot can fly, and the thirty points
+-- of whichever one the pane is about. The keys that rename and drop a build
+-- are in the pane, because they are about that one build; the key that adds
+-- one is over the list, because what it does is put a row in it.
+do
+    local LEFT = {
+        {label = "Gunner", group = "profiles", verbatim = true,
+         choice = 0, choices = 1, index = 1},
+        {label = "Screen", group = "profiles", verbatim = true,
+         choice = 1, choices = 1, index = 2},
+        {label = "add", group = "list", act = "save_profile", index = 3},
+    }
+    local starter = draw({
+        depth = 2, sel = 1, rail = RAIL, rail_sel = 1, focus = "stage",
+        home = true, closable = false, page = "kit",
+        profile = {name = "Gunner"}, kit_spent = 30, kit_total = 30,
+        hulls = {{label = "Cipher", index = 1, hull = 4}}, hull_sel = 1,
+        rows = {LEFT[1], LEFT[2], LEFT[3],
+                {label = "energy", group = "flight", short = "en", choice = 2,
+                 choices = 6, owned = 6, index = 4}},
+    })
+    check("the list carries every build and the key that adds one",
+          has(starter, "add") and has(starter, "gunner")
+          and has(starter, "screen"),
+          table.concat(texts(starter), " "))
+    check("the pane names the one it is about, beside its kit",
+          has(starter, "energy") and has(starter, "kit"),
+          table.concat(texts(starter), " "))
+    check("and a starter offers nothing to rename or drop",
+          not has(starter, "rename") and not has(starter, "delete"),
+          table.concat(texts(starter), " "))
+    check("every row of the list takes a press",
+          hit_named("stage") ~= nil, "no rows")
+
+    local own = draw({
+        depth = 2, sel = 3, rail = RAIL, rail_sel = 1, focus = "stage",
+        home = true, closable = false, page = "kit",
+        profile = {name = "Screen", state = "edited"},
+        kit_spent = 29, kit_total = 30,
+        hulls = {{label = "Cipher", index = 1, hull = 4}}, hull_sel = 1,
+        rows = {LEFT[1], LEFT[2], LEFT[3],
+                {label = "rename", group = "pane", act = "rename_profile",
+                 index = 4},
+                {label = "delete", group = "pane", act = "delete_profile",
+                 index = 5},
+                {label = "energy", group = "flight", short = "en", choice = 2,
+                 choices = 6, owned = 6, index = 6}},
+    })
+    check("one of your own offers both, in the pane",
+          has(own, "rename") and has(own, "delete"),
+          table.concat(texts(own), " "))
+    check("and the pane says the build has been tuned away from its name",
+          has(own, "screen") and has(own, "edited"),
+          table.concat(texts(own), " "))
 end
 
 -- --- a page that overflows can be scrolled to the end of itself ------------

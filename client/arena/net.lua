@@ -74,7 +74,7 @@ M.said = {}
 -- The client wire's own version, checked by the zone before it reads anything
 -- else in a join. A stale build is told its build is stale rather than left to
 -- misparse snapshots.
-local CLIENT_PROTOCOL = 21
+local CLIENT_PROTOCOL = 22
 -- Published, because the about page says what this build talks, and a second
 -- copy of the number is a second thing to forget to bump.
 M.PROTOCOL = CLIENT_PROTOCOL
@@ -691,7 +691,8 @@ local function publish_kill(e)
     -- here, because a watcher's sentinel ship is 255 and so is the killer on
     -- a wall death: asking "is this me" from a seat that has no hull makes
     -- every collision in the room look personal.
-    M.kills[#M.kills + 1] = {victim = victim, killer = killer, paid = e.paid}
+    M.kills[#M.kills + 1] = {victim = victim, killer = killer, paid = e.paid,
+                             assist = e.assist}
     M.ratings[victim] = vr
     M.ratings[killer] = kr
     -- A rated death is a game played, which is what decides whether the number
@@ -755,13 +756,19 @@ local function publish_timed_events()
 end
 
 local function on_kill(s)
-    if #s < 14 then return end
+    if #s < 15 then return end
     local e = {
         victim = string.byte(s, 2), killer = string.byte(s, 3),
         vr = i16(string.byte(s, 4), string.byte(s, 5)),
         kr = i16(string.byte(s, 6), string.byte(s, 7)),
         paid = u16(string.byte(s, 9), string.byte(s, 10)),
         tick = u32(string.byte(s, 11, 14)),
+        -- Whether this death handed *this* pilot an assist. The one byte on
+        -- the message that is not the same for everybody in the room: the
+        -- zone sets it on one copy and zeroes the rest, so there is nothing
+        -- to work out here and nothing to check it against. See S2C_KILL in
+        -- server/src/protocol.rs.
+        assist = string.byte(s, 15) ~= 0,
     }
     local key = e.tick .. ":" .. e.victim .. ":" .. e.killer
     if seen_kills[key] then return end
@@ -769,6 +776,13 @@ local function on_kill(s)
     if serial_at_or_before(e.tick, snap_tick) then publish_kill(e)
     else pending_kills[#pending_kills + 1] = e end
 end
+
+-- What a finished Ladder life was, in the mode's own words rather than in the
+-- byte it arrives as. Three values, because a single-life rung can also be
+-- drawn: both pilots died on the same tick and the rung is replayed. Named
+-- here for the same reason a rating becomes a tier here, which is that the
+-- wire is where a number stops being a number.
+local LEG_RESULT = {[0] = "lost", [1] = "cleared", [2] = "drawn"}
 
 -- The clock and the score. Replaces whatever was held rather than queueing,
 -- because there is one answer and the newest is it: a message lost to a full
@@ -794,7 +808,7 @@ local function on_match(s)
     end
     local ladder = nil
     if math.floor(flags / 4) % 2 == 1 then
-        if #s < at + 26 then return end
+        if #s < at + 31 then return end
         local status = string.byte(s, at)
         ladder = {
             opponent_ready = status % 2 == 1,
@@ -807,7 +821,26 @@ local function on_match(s)
             active_opponent = u32(string.byte(s, at + 17, at + 20)),
             desired_opponent = u32(string.byte(s, at + 21, at + 24)),
             first_to = u16(string.byte(s, at + 25, at + 26)),
+            -- Every life this run has finished, which is larger than the log
+            -- once a long evening outruns the window the room carries.
+            legs = u32(string.byte(s, at + 27, at + 30)),
+            log = {},
         }
+        local logged = string.byte(s, at + 31)
+        -- A body that promises more legs than it carries is a truncated
+        -- message rather than a short run, and half a log is worse than none:
+        -- the panel would draw an evening that stopped where the packet did.
+        if #s < at + 31 + logged * 11 then return end
+        for k = 1, logged do
+            local o = at + 32 + (k - 1) * 11
+            ladder.log[k] = {
+                rung = u32(string.byte(s, o, o + 3)),
+                result = LEG_RESULT[string.byte(s, o + 4)] or "drawn",
+                kills = u16(string.byte(s, o + 5, o + 6)),
+                deaths = u16(string.byte(s, o + 7, o + 8)),
+                seconds = u16(string.byte(s, o + 9, o + 10)),
+            }
+        end
     end
     M.match = {
         playing = flags % 2 == 1,
@@ -871,9 +904,12 @@ end
 -- What the client believes, held across a snapshot that is about to replace
 -- it: who was flying, how fast they were going, and every round in the air.
 local function capture_world()
-    local alive, vx, vy, x, y, heading = {}, {}, {}, {}, {}, {}
+    local alive, deaths, vx, vy, x, y, heading = {}, {}, {}, {}, {}, {}, {}
     for i = 0, sim.ship_count() - 1 do
         alive[i] = sim.ship_alive(i)
+        -- What tells a kill from the room putting a hull down. See
+        -- `harvest_world`.
+        deaths[i] = sim.ship_deaths(i)
         vx[i], vy[i] = sim.ship_vel(i)
         if alive[i] == 1 and sim.ship_active(i) == 1 then
             x[i], y[i] = sim.ship_x_raw(i), sim.ship_y_raw(i)
@@ -892,7 +928,7 @@ local function capture_world()
             {x = wx, y = wy, spec = spec, life = life, owner = owner,
              level = level}
     end
-    return {alive = alive, vx = vx, vy = vy, x = x, y = y,
+    return {alive = alive, deaths = deaths, vx = vx, vy = vy, x = x, y = y,
             heading = heading, flying = flying}
 end
 
@@ -928,14 +964,34 @@ end
 -- seen on. Every round that was in the air and is not any more, with life
 -- left to fly, ended on something: twenty ticks of margin excludes a round
 -- the local simulation was about to expire by itself.
+--
+-- Their own death count is what says a hull was killed rather than put down.
+-- The whistle benches everybody at the end of a match, writing the fields
+-- rather than taking the death path, so the tally does not move: eight hulls
+-- went dark at once and the arena answered with eight explosions, which is a
+-- fight ending in a way no fight ends. A killed hull is the only one whose
+-- deaths went up, and it is the only one with a wreck to draw.
+--
+-- The same whistle empties the air, and a bomb the room swept up did not go
+-- off either. So a snapshot that benched anybody is the room clearing its
+-- arena, and nothing that vanished in it ended on something. A round that
+-- really did land on the closing tick is silenced with the rest, which is the
+-- side of that trade worth being on: the alternative is a podium going up
+-- over a mine field flashing one last time.
 local function harvest_world(before)
+    local benched = false
     for i = 0, sim.ship_count() - 1 do
         if before.alive[i] == 1 and sim.ship_active(i) == 1
             and sim.ship_alive(i) ~= 1 then
-            M.snap_deaths[#M.snap_deaths + 1] =
-                {ship = i, vx = before.vx[i] or 0, vy = before.vy[i] or 0}
+            if sim.ship_deaths(i) > before.deaths[i] then
+                M.snap_deaths[#M.snap_deaths + 1] =
+                    {ship = i, vx = before.vx[i] or 0, vy = before.vy[i] or 0}
+            else
+                benched = true
+            end
         end
     end
+    if benched then return end
     local flying = before.flying
     local tick = sim.tick()
     for i = 0, sim.weapon_count() - 1 do

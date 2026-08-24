@@ -766,8 +766,59 @@ local SLOPE = {
            out = { R2, -R2}, step = { 1,  1}},   -- SW
 }
 
+-- The two square sides of the triangle, the ones the face was cut across. A
+-- slope is wall the whole way along these two. Along the other two it is one
+-- corner touching the line and nothing else.
+local LEG = {
+    [0] = {"n", "w"},   -- NW
+    [1] = {"n", "e"},   -- NE
+    [2] = {"s", "e"},   -- SE
+    [3] = {"s", "w"},   -- SW
+}
+local TOWARD = {n = {0, -1}, s = {0, 1}, w = {-1, 0}, e = {1, 0}}
+local FACING = {n = "s", s = "n", w = "e", e = "w"}
+
+-- Whether a tile hands its whole `side` edge to the tile beyond it. Square
+-- wall does on all four; a slope only on its legs.
+local function fills(wall, slopes, tx, ty, side)
+    local k = key(tx, ty)
+    if not wall[k] then return false end
+    local var = slopes[k]
+    if not var then return true end
+    return LEG[var][1] == side or LEG[var][2] == side
+end
+
+-- A leg with nothing behind it: the cut end of a diagonal, or the side it
+-- would have handed to a wall that is not there.
+local function open_leg(wall, slopes, tx, ty, side)
+    local var = slopes[key(tx, ty)]
+    if not var or (LEG[var][1] ~= side and LEG[var][2] ~= side) then
+        return false
+    end
+    local d = TOWARD[side]
+    return not fills(wall, slopes, tx + d[1], ty + d[2], FACING[side])
+end
+
+-- Maximal straight runs of open leg, the way `runs` merges the square faces
+-- and for the same reason: two ends side by side are one end.
+local function cap_runs(wall, slopes, cells, side, emit)
+    local px, py = -1, 0
+    if side == "w" or side == "e" then px, py = 0, -1 end
+    for i = 1, #cells, 3 do
+        local tx, ty = cells[i], cells[i + 1]
+        if open_leg(wall, slopes, tx, ty, side)
+           and not open_leg(wall, slopes, tx + px, ty + py, side) then
+            local ex, ey = tx, ty
+            while open_leg(wall, slopes, ex - px, ey - py, side) do
+                ex, ey = ex - px, ey - py
+            end
+            emit(tx, ty, ex, ey)
+        end
+    end
+end
+
 -- The diagonal half of a wall, drawn as the face it is.
-local function slope_mass(bg, glow, set, cells)
+local function slope_mass(bg, glow, wall, set, cells)
     local lit = pal.WALL_EDGE
     local hotline = pal.a(pal.hot(lit, 0.28, 1), 0.9)
     local inner = pal.a(pal.WALL_LIT, 1)
@@ -799,6 +850,23 @@ local function slope_mass(bg, glow, set, cells)
             glow:skirt(px, py, qx, qy, ox * 6, oy * 6, 0.13, outer)
             glow:seg(px, py, qx, qy, 1.4, hotline)
         end
+    end
+
+    -- The ends. A diagonal that runs into a wall hands its leg to that wall
+    -- and there is nothing to draw there; one that stops in open space is cut
+    -- square, and unlit that end reads as a face somebody forgot.
+    --
+    -- A cap is a tile or two long, so it gets what a one-tile square face
+    -- gets: the light thrown out of it and the line. No gradient back into
+    -- the body, because the body behind a leg is half a tile of triangle and
+    -- eleven pixels of it would cross the face.
+    for s = 1, #SIDES do
+        local side = SIDES[s]
+        cap_runs(wall, set, cells, side, function(tx, ty, ex, ey)
+            local px, py, qx, qy, ox, oy = face_line(side, tx, ty, ex, ey)
+            glow:skirt(px, py, qx, qy, ox * 6, oy * 6, 0.13, outer)
+            glow:seg(px, py, qx, qy, 1.4, hotline)
+        end)
     end
 end
 
@@ -1279,7 +1347,7 @@ local function build_terrain(bg, glow, x0, y0, x1, y1)
     -- faces are exposed and neither draws an edge into the other.
     wall_mass(bg, glow, wall_set, wall_cells, false)
     wall_mass(bg, glow, wall_set, bord_cells, true)
-    slope_mass(bg, glow, slope_set, slope_cells)
+    slope_mass(bg, glow, wall_set, slope_set, slope_cells)
     safe_zone(bg, glow, safe_set, safe_cells)
 
     for i = 1, #unders, 3 do
