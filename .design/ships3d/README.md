@@ -1,7 +1,15 @@
 # Ships in three dimensions
 
-A mock, not a plan. It asks one question: what would the seven hulls look like
-with a third dimension under them, and would the game still look like itself.
+Where this was designed. It asked one question, what would the seven hulls look
+like with a third dimension under them and would the game still look like
+itself, and the answer went into the client: see
+[decision 58](../../docs/architecture/decisions.md) and
+`client/arena/hull3d.lua`, which builds the same shape off the same outline.
+
+What stays here is the offline renderer and `battlecap`, because the pictures
+below are made from recorded fights and the client cannot make those. The two
+lofts are separate code and are allowed to drift: this one is for looking at a
+hull, the client's is for flying one.
 
 The answer this settles on is that the third dimension goes into the geometry
 and nothing else. These are solids, occluding each other and the walls, seen
