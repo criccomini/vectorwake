@@ -2819,6 +2819,11 @@ impl Room {
                     // and the sim saw no death.
                     m.extend_from_slice(&0u16.to_le_bytes());
                     m.extend_from_slice(&tick.to_le_bytes());
+                    // Nobody is told they helped, for the same reason. The
+                    // sim never ran a death here, so no assist column moved,
+                    // and a notice about one the scoreboard does not show is
+                    // the disagreement this byte exists to avoid.
+                    m.push(0);
                     for pl in self.players.values() {
                         let _ = pl.tx.try_send(Message::Binary(m.clone()));
                     }
@@ -3766,7 +3771,17 @@ impl Room {
     pub(crate) fn score_events(&mut self) {
         let tick = self.world.state.tick;
         let events = self.world.events.e[..self.world.events.count as usize].to_vec();
+        // Who this tick's deaths handed an assist to, as (the pilot credited,
+        // the victim). Read off the core's own report rather than worked out
+        // from the rating layer's credits, so a pilot is told about exactly
+        // the assist their scoreboard column is about to count: the two
+        // definitions differ at the edges and only one of them is in the row
+        // the pilot can see (decision 53).
+        let mut assists: Vec<(u8, u8)> = Vec::new();
         for e in events {
+            if e.etype == sim::EV_ASSIST {
+                assists.push((e.a, e.b));
+            }
             if e.etype == sim::EV_CHARGE {
                 let Some(sh) = self.world.state.ships.get(e.a as usize) else {
                     continue;
@@ -3863,12 +3878,29 @@ impl Room {
             // not inherit i32 from the event struct.
             m.extend_from_slice(&(paid.clamp(0, u16::MAX as i32) as u16).to_le_bytes());
             m.extend_from_slice(&tick.to_le_bytes());
+            // Everyone the core credited for this particular death.
+            let assisted: Vec<u8> = assists
+                .iter()
+                .filter(|(_, dead)| *dead == victim)
+                .map(|(who, _)| *who)
+                .collect();
+            // The last byte is the one thing on this message that is not the
+            // same for everybody: "you helped with this one". Told to the
+            // pilot who did and to nobody else, because who else was shooting
+            // is a fact about somebody's own fight, and a room that read it
+            // off the feed would be reading a list of who is working together
+            // and how hurt the loser already was.
             for p in self.players.values() {
-                let _ = p.tx.try_send(Message::Binary(m.clone()));
+                let mut theirs = m.clone();
+                theirs.push(u8::from(assisted.contains(&p.ship)));
+                let _ = p.tx.try_send(Message::Binary(theirs));
             }
-            // Live to anyone riding a pilot's shoulder; the channel's copy
-            // waits in the ring with the frame it belongs to, or the feed
-            // would announce a death the delayed picture has not shown yet.
+            // And the copy that claims nothing, which is the one every other
+            // seat gets. Live to anyone riding a pilot's shoulder; the
+            // channel's copy waits in the ring with the frame it belongs to,
+            // or the feed would announce a death the delayed picture has not
+            // shown yet.
+            m.push(0);
             for w in self.watchers.values() {
                 if matches!(w.mode, WatchMode::Follow(_)) {
                     let _ = w.tx.try_send(Message::Binary(m.clone()));

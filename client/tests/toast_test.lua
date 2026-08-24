@@ -170,6 +170,11 @@ local MY_KILL = {text = {{"you"}, " killed ", {"other"}},
                  col = pal.PAID, t = 0, mine = true}
 local MY_DEATH = {text = {{"other"}, " killed ", {"you"}},
                   col = pal.HURT, t = 0, mine = true}
+-- A kill you helped with names neither pilot as you, which is why it says so
+-- in words: the color alone would be a lit line about two strangers.
+local MY_ASSIST = {text = {{"someone"}, " killed ", {"other"}, "",
+                           ", you assisted"},
+                   col = pal.ASSIST, t = 0, mine = true}
 
 -- --- only what is about you ------------------------------------------------
 
@@ -181,6 +186,10 @@ check("a death of yours is shown on a phone", shown("other killed you") ~= nil)
 
 frame(844, 390, {MY_KILL})
 check("and so is a kill you made", shown("you killed other") ~= nil)
+
+frame(844, 390, {MY_ASSIST})
+check("and so is one you helped with",
+      shown("someone killed other, you assisted") ~= nil)
 
 -- --- one at a time ---------------------------------------------------------
 

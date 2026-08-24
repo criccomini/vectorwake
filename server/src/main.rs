@@ -3062,12 +3062,13 @@ mod tests {
         assert_eq!(m[0], S2C_KILL);
         assert_eq!(m[1], ship, "the victim's seat");
         assert_eq!(m[2], room.players[&hunter].ship, "credited to the hunter");
-        assert_eq!(m.len(), 14);
+        assert_eq!(m.len(), 15);
         assert_eq!(
             u32::from_le_bytes(m[10..14].try_into().unwrap()),
             room.world.state.tick,
             "the feed names the authoritative tick"
         );
+        assert_eq!(m[14], 0, "and hands nobody an assist for a quit");
     }
 
     #[test]
@@ -4718,6 +4719,62 @@ mod tests {
             "the action names the snapshot that may present it"
         );
         assert_eq!(charge.len(), 15, "no remaining inventory count travels");
+    }
+
+    /// An assist is news for one pilot. Everybody in the room reads the death,
+    /// and only the seat the core credited reads that they were part of it:
+    /// who else was shooting is a fact about somebody's own fight, and a feed
+    /// that carried it would tell the room who is working with whom.
+    #[test]
+    fn an_assist_is_told_to_the_pilot_who_earned_it_and_to_nobody_else() {
+        let mut a = room_with_teams("teams = [\"Keel\"]\n");
+        let (finisher, _, mut finisher_rx) = seat_rx(&mut a, "finisher");
+        let (helper, _, mut helper_rx) = seat_rx(&mut a, "helper");
+        let (victim, _, mut victim_rx) = seat_rx(&mut a, "victim");
+        drain(&mut finisher_rx);
+        drain(&mut helper_rx);
+        drain(&mut victim_rx);
+
+        // The core's report of one death and of the one pilot it handed an
+        // assist to, written rather than flown. What is under test here is
+        // who the room tells; that the notice and the scoreboard column come
+        // from one rule is the core's own test, in sim/tests/test_sim.c.
+        a.world.events.count = 2;
+        a.world.events.e[0] = sim::sim_event {
+            etype: sim::EV_DEATH,
+            a: victim,
+            b: finisher,
+            v: 12,
+        };
+        a.world.events.e[1] = sim::sim_event {
+            etype: sim::EV_ASSIST,
+            a: helper,
+            b: victim,
+            v: finisher as i32,
+        };
+        a.score_events();
+
+        let helped = |rx: &mut mpsc::Receiver<Message>| -> u8 {
+            let msgs = drain(rx);
+            let m = msgs
+                .iter()
+                .find(|m| m.first() == Some(&S2C_KILL))
+                .expect("the death itself reaches every seat");
+            assert_eq!(m.len(), 15, "the kill carries the private byte");
+            assert_eq!((m[1], m[2]), (victim, finisher), "and reads the same");
+            m[14]
+        };
+        assert_eq!(helped(&mut helper_rx), 1, "the pilot who helped is told");
+        assert_eq!(helped(&mut finisher_rx), 0, "a kill is not also an assist");
+        assert_eq!(
+            helped(&mut victim_rx),
+            0,
+            "the pilot who died reads a death"
+        );
+        assert_eq!(
+            a.channel.pending_kills[0][14], 0,
+            "and the copy the stands watch claims nothing"
+        );
     }
 
     #[test]

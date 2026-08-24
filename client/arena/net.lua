@@ -73,7 +73,7 @@ M.said = {}
 -- The client wire's own version, checked by the zone before it reads anything
 -- else in a join. A stale build is told its build is stale rather than left to
 -- misparse snapshots.
-local CLIENT_PROTOCOL = 20
+local CLIENT_PROTOCOL = 21
 -- Published, because the about page says what this build talks, and a second
 -- copy of the number is a second thing to forget to bump.
 M.PROTOCOL = CLIENT_PROTOCOL
@@ -682,7 +682,8 @@ local function publish_kill(e)
     -- here, because a watcher's sentinel ship is 255 and so is the killer on
     -- a wall death: asking "is this me" from a seat that has no hull makes
     -- every collision in the room look personal.
-    M.kills[#M.kills + 1] = {victim = victim, killer = killer, paid = e.paid}
+    M.kills[#M.kills + 1] = {victim = victim, killer = killer, paid = e.paid,
+                             assist = e.assist}
     M.ratings[victim] = vr
     M.ratings[killer] = kr
     -- A rated death is a game played, which is what decides whether the number
@@ -731,13 +732,19 @@ local function publish_timed_events()
 end
 
 local function on_kill(s)
-    if #s < 14 then return end
+    if #s < 15 then return end
     local e = {
         victim = string.byte(s, 2), killer = string.byte(s, 3),
         vr = i16(string.byte(s, 4), string.byte(s, 5)),
         kr = i16(string.byte(s, 6), string.byte(s, 7)),
         paid = u16(string.byte(s, 9), string.byte(s, 10)),
         tick = u32(string.byte(s, 11, 14)),
+        -- Whether this death handed *this* pilot an assist. The one byte on
+        -- the message that is not the same for everybody in the room: the
+        -- zone sets it on one copy and zeroes the rest, so there is nothing
+        -- to work out here and nothing to check it against. See S2C_KILL in
+        -- server/src/protocol.rs.
+        assist = string.byte(s, 15) ~= 0,
     }
     local key = e.tick .. ":" .. e.victim .. ":" .. e.killer
     if seen_kills[key] then return end
