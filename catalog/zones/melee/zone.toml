@@ -150,12 +150,11 @@ damage = 515
 # The ships.
 #
 # There is no ships section. Every hull here flies alike, climbs alike and
-# holds alike, and what tells them apart is the shape each presents to a
-# bullet: a Cipher is six pixels from the side and twenty-two down the nose,
-# and weapons test the oriented rectangle rather than a box around it, so
-# turning your profile to somebody is showing them a third of what facing them
-# shows. Those extents are measured off the drawings in sim/src/baseline.c and
-# a zone has no business moving them.
+# holds alike. What tells them apart is how each spends the same target budget:
+# every oriented collision rectangle occupies exactly 625 square pixels. A
+# Cipher is 16 pixels across its flank and just over 39 down its length, while
+# Chord makes the opposite trade. The client art is fitted around those fixed
+# extents, and a zone has no business moving them.
 #
 # This used to be seven blocks: a rotation for the interceptor, a speed for
 # the bomber, a recharge for the skirmisher, and a row of add-on ceilings

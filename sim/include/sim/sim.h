@@ -601,13 +601,12 @@ typedef struct {
     int32_t max_energy, init_energy, up_energy;    /* Q10 */
     int32_t recharge, init_recharge, up_recharge;  /* Q10 per tick */
     /* The hull's footprint, in Q8 px from the point it turns about: how far
-     * it reaches past the nose, behind the tail, and to either side. One
-     * square radius stood here, and it could not be right for this roster: a
-     * square that covers an Apex's nose floats its flanks eleven pixels off
-     * every wall, and one that hugs the flanks buries the nose. The walls
-     * collide against the world-axis box of these extents at the current
-     * heading, and weapons and pickups test the oriented rectangle itself,
-     * so what you hit is what is drawn, whichever way it points. */
+     * it reaches past the nose, behind the tail, and to either side. Every
+     * oriented rectangle spends the same target-area budget, while its aspect
+     * ratio preserves the hull's directional profile. Walls collide against
+     * the world-axis box of these extents at the current heading. Weapons and
+     * pickups test the oriented rectangle itself, and the client fits each
+     * drawing around it. */
     int32_t fore, aft, halfw;                      /* Q8 px */
 
     /* What the two triggers fire: a ladder of patterns per trigger, climbed
@@ -1210,7 +1209,7 @@ typedef struct {
     int32_t init_energy, up_energy, max_energy;
     int32_t init_recharge, up_recharge, max_recharge;
     /* No footprint here: the settings files these units mirror never carried
-     * one, and the extents are measured off our own hulls in baseline.c. */
+     * one, and the fixed target budget belongs to the core baseline. */
 } sim_class_units;
 
 /* Fill a class from settings-file units. Weapons, add-ons and charges are

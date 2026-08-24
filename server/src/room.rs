@@ -886,16 +886,6 @@ impl Room {
                     world.cfg.classes[idx].trigger[t] = ladder;
                 }
             }
-            let cls = &mut world.cfg.classes[idx];
-            if let Some(v) = s.fore {
-                cls.fore = v * 256;
-            }
-            if let Some(v) = s.aft {
-                cls.aft = v * 256;
-            }
-            if let Some(v) = s.width {
-                cls.halfw = v * 256 / 2;
-            }
         }
 
         // And what a kit may hold, once, for the whole arena.

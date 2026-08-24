@@ -7221,34 +7221,22 @@ mod tests {
         assert_ne!(rungs[1], sim::NO_PATTERN, "the hull kept its own ladder");
     }
 
-    /// A hull is a footprint. Flight used to be here as well, three numbers
-    /// per stat under the original's own names, and it went with the tech tree
-    /// that sat beside it: thirty points has to buy the same ship whatever you
-    /// are flying. See docs/design/ships.md.
+    /// A zone may replace a hull's weapon ladder, but not its footprint. The
+    /// latter has one fixed target-area budget and a client drawing fitted to
+    /// it, so changing it on the server would break both contracts.
     #[test]
-    fn a_zone_sets_a_hulls_footprint() {
-        let (w, warn) = tuned(
-            r#"
+    fn a_zone_cannot_replace_a_hulls_footprint() {
+        let source = r#"
             [[arena.ships]]
             name = "Apex"
             fore = 20
             aft = 12
             width = 18
-        "#,
+        "#;
+        assert!(
+            toml::from_str::<config::ZoneConfig>(source).is_err(),
+            "footprint belongs to the shared roster rather than one zone"
         );
-        assert!(warn.is_empty(), "{warn:?}");
-        let apex = w.cfg.classes[ai::class_index("Apex").unwrap()];
-        assert_eq!(apex.fore, 20 * 256);
-        assert_eq!(apex.aft, 12 * 256);
-        assert_eq!(apex.halfw, 9 * 256, "width is the whole beam, halved");
-
-        // And flies exactly as everything else does, which is the property
-        // that makes a hull a shape rather than a stat block.
-        let anvil = w.cfg.classes[ai::class_index("Anvil").unwrap()];
-        assert_eq!(apex.max_speed, anvil.max_speed);
-        assert_eq!(apex.max_energy, anvil.max_energy);
-        assert_eq!(apex.rot, anvil.rot);
-        assert_ne!(apex.fore, anvil.fore, "and differs in the one thing it may");
     }
 
     /// Absent and zero are different things. Every setting the core owns is

@@ -273,6 +273,21 @@ int main(void) {
      * make one bullet" test wants nothing in the way of the answer. */
     const int APEX = 0, ANVIL = 3;
 
+    /* Footprint is the roster's only built-in stat, so every hull spends the
+     * same target-area budget. Aspect ratio and pivot placement may differ.
+     * Check the settings the simulation actually received rather than the
+     * source table that built them. */
+    for (int c = 0; c < cfg.class_count; c++) {
+        const sim_ship_class *h = &cfg.classes[c];
+        int64_t area = (int64_t)(h->fore + h->aft) * (2 * h->halfw);
+        CHECK(area == (int64_t)625 * 256 * 256,
+              "every hull has 625 square pixels of target area");
+        int64_t reach = h->fore > h->aft ? h->fore : h->aft;
+        CHECK(reach * reach + (int64_t)h->halfw * h->halfw
+                  <= (int64_t)23 * 23 * 256 * 256,
+              "every hull stays inside the map corner-reach ceiling");
+    }
+
     /* Thrust at heading 0 moves up (-y) and nowhere else. */
     {
         static sim_state s;
@@ -2539,7 +2554,7 @@ int main(void) {
               "and longer down the nose");
         CHECK(cfg.classes[LATTICE].fore != cfg.classes[APEX].fore
                   || cfg.classes[LATTICE].halfw != cfg.classes[APEX].halfw,
-              "and no two hulls present the same shape");
+              "and the square hulls present differently from the dart");
 
         /* One named slot at a time, with the arena's ceilings enforced.
          * `sim_deal_kit` is this in a loop. */
@@ -3753,7 +3768,7 @@ int main(void) {
     /* A round faster than a hull is thick still hits it.
      *
      * The hit test used to sample once per tick, at the end of the tick's
-     * travel. A Cipher's flank is 12 px thick and a round can cross more than
+     * travel. A Cipher's flank is 16 px thick and a round can cross more than
      * that in one tick, so a crossing could land entirely between two samples
      * and pass through, deterministically, on both ends of the wire at once.
      * The sweep walks the travel in 4 px samples instead. The velocity here
@@ -3771,15 +3786,15 @@ int main(void) {
         w->owner = 1;          /* nobody's round arrives at its owner */
         w->team = 1;
         w->life = 10;
-        /* 16 px a tick, eastward, from 8 px short of the near flank: the
+        /* 20 px a tick, eastward, from 2 px short of the near flank: the
          * endpoint lands 2 px past the far one, so the old single sample
          * would have seen empty space on both sides of the crossing. */
-        w->x = 8184 * 256;
+        w->x = 8182 * 256;
         w->y = 8192 * 256;
-        w->vx = 16 * 65536;
+        w->vx = 20 * 65536;
 
         ev_counts c = step_counting(&s, &cfg, 0, 0, 1);
-        CHECK(c.hits == 1, "a 16 px/tick round cannot cross a 12 px flank");
+        CHECK(c.hits == 1, "a 20 px/tick round cannot cross a 16 px flank");
         CHECK(s.weapon_count == 0, "and it ended on the hull it hit");
     }
 
@@ -3863,10 +3878,10 @@ int main(void) {
         free(wm);
     }
 
-    /* A hull's box follows its heading. The extents are measured off what
-     * the client draws, which is why client/tests/hull_fit_test.lua reads
-     * the table they come from; here we check the properties the core
-     * depends on. Every hull has all three, none reaches past 23 px in any
+    /* A hull's box follows its heading. The core fixes the target budget and
+     * client/tests/hull_fit_test.lua checks that each drawing fits it; here we
+     * check the properties the core depends on. Every hull has all three,
+     * none reaches past 23 px in any
      * direction at any heading -- the ceiling the shipped maps were
      * flood-filled and spawn-checked against, now applied to the diagonal
      * corner rather than a square's side -- and a ship flown at a wall

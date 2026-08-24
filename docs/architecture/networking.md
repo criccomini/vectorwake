@@ -581,7 +581,7 @@ the two mechanisms above smooth how it is presented.
 
 One more pass-through had nothing to do with the network at all. The weapon
 hit test sampled once per tick, at the end of the tick's travel, and a round
-plus its shooter's velocity covers up to 6.25 px a tick against a flank 12 px
+plus its shooter's velocity covers up to 6.25 px a tick against a flank 16 px
 thick: a grazing crossing could fall entirely between two samples, on the
 server, with everyone on loopback. The sim walks each tick's travel in 4 px
 samples now, walls included, so nothing shipped or retuned tunnels. That fix

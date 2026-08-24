@@ -16,8 +16,8 @@
  * and nothing else.
  *
  * The footprint is the exception and it is not here: those files carry no
- * ship size at all, so there is nothing to inherit and the extents are
- * measured off our own hulls in `hull_extent` below.
+ * ship size at all. `hull_extent` below gives every hull a fixed target budget,
+ * and the client fits each drawing around that collision rectangle.
  *
  * The step counts fall out rather than being chosen: five greens take speed
  * from 2010 to its 3250 ceiling, seven take energy from 1000 to 1700, and one
@@ -83,21 +83,25 @@ static const uint8_t flight_steps[SIM_UP_COUNT] = {7, 5, 5, 1, 1};
 #define M2(a) MN(a, 2)
 #define M3(a) MN(a, 3)
 
-/* Each hull's footprint, in pixels from the point it turns about: past the
+/* Each hull's footprint, in Q8 pixels from the point it turns about: past the
    nose, behind the tail, to either side. client/tests/hull_fit_test.lua reads
    this table out of this file by name and measures the client's drawing
    against it, so the two cannot drift; renaming it breaks that test rather
    than silencing it.
 
-   Measured, not chosen: each number is the reach of that hull's own drawing,
-   less about a pixel. A single square radius stood here, and no square fits
-   this roster -- one that covers an Apex's nose floats its flanks eleven
-   pixels off every wall, and one that hugs the flanks buries the nose. The
-   collision box is built from these at the ship's current heading, so a hull
-   touches a wall where it is drawn touching it whichever way it points, and
-   a bullet into a Cipher's flank has to reach the knife rather than a square
-   drawn around it. That last part is the balance consequence worth saying
-   out loud: thin hulls are now genuinely thin targets, from the side.
+   Every row has exactly 625 square pixels of target area:
+
+       (fore + aft) * (2 * halfw) = 625 px^2
+
+   Shape spends that fixed budget. Cipher puts it into length, Chord into
+   beam, and the square hulls expose nearly the same cross-section at every
+   heading. Before this contract, Cipher occupied 408 square pixels while
+   Lattice occupied 840. Since footprint is the only built-in hull stat, that
+   difference was a free advantage rather than a trade.
+
+   The collision box is built from these at the ship's current heading, so a
+   hull touches a wall where it is drawn touching it whichever way it points.
+   The client drawing sits about a pixel outside each face of its box.
 
    The pixel of inset is not slack. It is what lets a long hull spin: at the
    worst diagonal the box reaches sqrt(fore^2 + halfw^2) from the ship, and
@@ -107,15 +111,15 @@ static const uint8_t flight_steps[SIM_UP_COUNT] = {7, 5, 5, 1, 1};
    of hull crossing a wall at the moment of contact is invisible; the old
    defect was seven and a half.
 
-                                fore  aft  halfw */
-static const uint8_t hull_extent[SIM_MAX_CLASSES][3] = {
-    /* Apex:    a dart, nearly all of it nose */ {20, 11, 10},
-    /* Wedge:   widest at the bomb bay        */ {13, 12, 15},
-    /* Chord:   a bow, wider than it is long  */ {13,  5, 17},
-    /* Anvil                                  */ {15, 11, 13},
-    /* Cipher:  the knife, longest and thinnest */ {22, 12,  6},
-    /* Facet:   squat, the smallest target    */ {14, 12, 11},
-    /* Lattice: near square, near flush       */ {16, 14, 14},
+                                      fore  aft  halfw */
+static const uint16_t hull_extent[SIM_MAX_CLASSES][3] = {
+    /* Apex:    31.25 long by 20 wide        */ {5120, 2880, 2560},
+    /* Wedge:   20 long by 31.25 wide        */ {2816, 2304, 4000},
+    /* Chord:   16 long by 39.0625 wide      */ {2304, 1792, 5000},
+    /* Anvil:   25 long by 25 wide           */ {3328, 3072, 3200},
+    /* Cipher:  39.0625 long by 16 wide      */ {5376, 4624, 2048},
+    /* Facet:   25 long by 25 wide           */ {3328, 3072, 3200},
+    /* Lattice: 25 long by 25 wide           */ {3328, 3072, 3200},
 };
 
 /* What an arena lets a kit hold, and how far each weapon climbs.
@@ -564,9 +568,9 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
     for (int i = 0; i < SIM_MAX_CLASSES; i++) {
         sim_ship_class *c = &cfg->classes[i];
         sim_class_from_units(c, &flight);
-        c->fore = (int32_t)hull_extent[i][0] * 256;
-        c->aft = (int32_t)hull_extent[i][1] * 256;
-        c->halfw = (int32_t)hull_extent[i][2] * 256;
+        c->fore = (int32_t)hull_extent[i][0];
+        c->aft = (int32_t)hull_extent[i][1];
+        c->halfw = (int32_t)hull_extent[i][2];
 
         /* A ladder per trigger. A gun rung adds BulletDamageUpgrade, flat,
          * which is what the original's help says it is: "amount of extra

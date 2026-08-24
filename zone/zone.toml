@@ -126,8 +126,8 @@ input_sample_ticks = 50
 combat_idle_ticks = 500
 spectate_silence_ticks = 500
 
-# Per-hull tuning. Name the hull and set only what you want to change, which
-# is a footprint and a ladder and nothing else.
+# Per-hull weapon tuning. A hull has a fixed silhouette and a ladder a zone may
+# replace.
 #
 # A hull used to carry flight as well: a ceiling, a floor and a step for each
 # of five stats, so a zone could make one ship faster than another. That is
@@ -136,15 +136,13 @@ spectate_silence_ticks = 500
 # add-on ceiling that lives on a hull is an upgrade the shop can never sell.
 # See docs/design/ships.md.
 #
-# What is left is the shape. The defaults are measured off the drawn ships and
-# the collision box follows the heading, so a Cipher is genuinely a thin target
-# from the side; a zone that overrides `fore`, `aft` or `width` should keep
-# sqrt(fore^2 + (width/2)^2) inside 23 px, the diagonal every shipped map was
-# checked against.
+# What is left is the shape. Every collision rectangle occupies exactly 625
+# square pixels, and the client art is fitted around it. A zone cannot override
+# that shared target budget. It may replace a hull's weapon ladder.
 #
 # [[arena.ships]]
 # name = "Apex"
-# fore = 20
+# gun = ["apex-gun", "apex-gun-2"]
 
 # What a kit may hold here, over the flat slot space, for every hull alike.
 # Anything left out keeps the baseline's, which is the union of what the seven

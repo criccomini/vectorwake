@@ -541,8 +541,8 @@ static int place_cluster(int big) {
      * on the map is the same size to look at, whatever its parts.
      *
      * Touching or four tiles clear, and nothing between. Two tiles between
-     * two walls is a lane no hull fits down: the widest of them is 34 pixels
-     * across the beam and a two-tile lane is 32, so it reads as a way
+     * two walls is a lane no hull fits down: the widest of them is just over
+     * 39 pixels across the beam and a two-tile lane is 32, so it reads as a way
      * through from every distance except the one you find out at. */
     int gap = big ? (chance(45) ? 0 : rr(4, 6)) : rr(7, 16);
     int cw = cols * w + (cols - 1) * gap;
@@ -849,8 +849,8 @@ static int place_dock(int n) {
 
 /* A ship is not a point, and every check here used to treat it as one.
  *
- * The widest hull in the roster measures 34 pixels across the beam and the
- * longest reaches 23 pixels from its center at the worst diagonal, against a
+ * The widest hull in the roster measures just over 39 pixels across the beam
+ * and the longest reaches 23 pixels from its center at the worst diagonal, against a
  * tile of 16. Two tiles is 32 pixels and holds neither of them; three is 48
  * and holds both at any heading, which is the same three tiles the hull
  * extents in baseline.c are set to leave room to turn around in.

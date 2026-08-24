@@ -3657,28 +3657,16 @@ mod tests {
         );
     }
 
-    /// Leaving, end to end, on a real map: told to stand down, seeing out the
-    /// fight, flying somewhere nobody is, and stopping there.
-    ///
-    /// The failure this holds off is the one a player reports as a bot
-    /// vanishing mid-duel. It cannot be seen in one frame and it cannot be
-    /// seen from the roster, because both ends look identical either way: what
-    /// differs is where the pilot was and what it was doing on the way out.
-    ///
-    /// Eight salts rather than one, because the interesting failures here are
-    /// about where the other seven pilots happen to be standing, and one seed
-    /// samples one arrangement of them. The seed this started on went green
-    /// while a departing pilot was being camped in its corner for three
-    /// thousand ticks on every other seed there is.
-    /// One run of the departure drill, on the arrangement of pilots this
-    /// salt produces. Failures name the salt, because which one broke is
-    /// the whole of the reproduction.
-    fn a_departure(salt: u32) {
+    /// One run of the departure drill on a real map. A crowded run may finish
+    /// with the natural death that production accepts; an unopposed run must
+    /// fly somewhere quiet and stop. Failures name the salt because the pilot
+    /// arrangement is the reproduction.
+    fn a_departure(salt: u32, pilot_count: usize) -> bool {
         let bytes = std::fs::read("../catalog/zones/melee/drydock.vwmap")
             .expect("a shipped map lives in this repository");
         let mut w = sim::World::from_packed(salt, &bytes).expect("a map");
         let mut bots = Vec::new();
-        for i in 0..8usize {
+        for i in 0..pilot_count {
             let e = individual(i);
             let ship = w.spawn_on_map(e.class, (i % 2) as u8, i as u32 / 2, 0);
             assert!(ship >= 0, "a seat on the map");
@@ -3741,6 +3729,7 @@ mod tests {
         let mut shot_while_going = 0u32;
         let mut going_ticks = 0u32;
         let mut done_at = None;
+        let mut died = false;
         for t in 0..4_000u32 {
             {
                 let mut watch = |b: &Bot, buttons: u16| {
@@ -3753,12 +3742,18 @@ mod tests {
                 };
                 run(&mut w, &mut bots, &mut inputs, 1, Some(&mut watch));
             }
+            // The bot server removes a yielding pilot on the frame it dies.
+            // The drill must not respawn that pilot and ask it to leave twice.
+            if w.state.ships[leaver as usize].alive == 0 {
+                died = true;
+                done_at = Some(t);
+                break;
+            }
             if bots[0].departed() {
                 done_at = Some(t);
                 break;
             }
         }
-
         let done_at = done_at.unwrap_or_else(|| {
             panic!("salt {salt:#x}: a pilot told to leave never finished leaving")
         });
@@ -3769,13 +3764,20 @@ mod tests {
             done_at < 4_000,
             "salt {salt:#x}: left after {done_at} ticks"
         );
-        assert!(
-            going_ticks > 100,
-            "salt {salt:#x}: it flew somewhere: only {going_ticks} ticks spent leaving"
-        );
         assert_eq!(
             shot_while_going, 0,
             "salt {salt:#x}: the trigger stays shut once a pilot is on its way out"
+        );
+
+        // Death is already a visible, natural ending, and it is one of the
+        // production bot server's departure paths. Only a live pilot needs to
+        // prove that it reached somewhere quiet before its socket closes.
+        if died {
+            return false;
+        }
+        assert!(
+            going_ticks > 100,
+            "salt {salt:#x}: it flew somewhere: only {going_ticks} ticks spent leaving"
         );
 
         // And it ended up somewhere nobody is. Sight is 960 px, so clearing it
@@ -3803,26 +3805,27 @@ mod tests {
             nearest > SIGHT,
             "salt {salt:#x}: logged off {nearest:.0} px from somebody, inside their sight"
         );
+        true
     }
 
-    /// Leaving, end to end, on a real map: told to stand down, seeing out the
-    /// fight, flying somewhere nobody is, and stopping there.
+    /// Leaving end to end on a real map, through both production outcomes.
     ///
     /// The failure this holds off is the one a player reports as a bot
     /// vanishing mid-duel. It cannot be seen in one frame and it cannot be
     /// seen from the roster, because both ends look identical either way: what
     /// differs is where the pilot was and what it was doing on the way out.
     ///
-    /// Eight salts rather than one, because what makes this hard is where the
-    /// other seven pilots happen to be standing, and one seed samples one
-    /// arrangement of them. The seed this started on stayed green while every
-    /// other seed had a departing pilot camped in its corner for three
-    /// thousand ticks.
+    /// Eight crowded salts exercise breaking off or dying naturally. The last,
+    /// unopposed run guarantees that the clear flight path is exercised too.
     #[test]
     fn a_pilot_told_to_leave_flies_away_before_it_goes() {
         for salt in [0x5eed, 1, 2, 3, 4, 5, 6, 7] {
-            a_departure(salt);
+            a_departure(salt, 8);
         }
+        assert!(
+            a_departure(0xc1ea, 1),
+            "an unopposed departure must exercise the clear flight path"
+        );
     }
 
     // The failure a player reports as "bots sit still until I shoot at

@@ -120,11 +120,12 @@ sprites in a dedicated layer.
 ## What is built, and what it looks like
 
 The plan above is the destination. What exists is `zone/zone.toml`: one file,
-re-read while running, carrying the arena's scalars, its kit ceilings, each
-hull's footprint, and the weapon tables by name under `[[arena.weapons]]`,
-documented in [design/weapons.md](../design/weapons.md). Applying it rebuilds from the
-baseline first, so the arena means the file as it stands rather than every
-version of it since boot.
+re-read while running, carrying the arena's scalars, its kit ceilings and the
+weapon tables by name under `[[arena.weapons]]`, documented in
+[design/weapons.md](../design/weapons.md). Hull footprints are a fixed core
+contract, not zone content. Applying the file rebuilds from the baseline first,
+so the arena means the file as it stands rather than every version of it since
+boot.
 
 Weapons being *in* that file is the load-bearing part of zones-are-content.
 A weapon is two table rows, so a zone that wants bouncing bombs or a repel

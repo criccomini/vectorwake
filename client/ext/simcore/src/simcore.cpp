@@ -397,7 +397,7 @@ int ShipLevel(lua_State* L) {
     return 1;
 }
 
-// A hull's footprint, in whole px: how far it reaches past the nose, behind
+// A hull's footprint, in px: how far it reaches past the nose, behind
 // the tail, and to either side.
 //
 // The whole of what tells one hull from another, now that they fly alike and
@@ -407,9 +407,9 @@ int HullExtent(lua_State* L) {
     int cls = (int)luaL_checkinteger(L, 1);
     if (cls < 0 || cls >= g_cfg.class_count) { lua_pushnil(L); return 1; }
     const sim_ship_class* c = &g_cfg.classes[cls];
-    lua_pushnumber(L, c->fore / 256);
-    lua_pushnumber(L, c->aft / 256);
-    lua_pushnumber(L, c->halfw / 256);
+    lua_pushnumber(L, c->fore / 256.0);
+    lua_pushnumber(L, c->aft / 256.0);
+    lua_pushnumber(L, c->halfw / 256.0);
     return 3;
 }
 
@@ -688,9 +688,8 @@ int ShipPoints(lua_State* L) {
 }
 
 // The hull's footprint, in px: reach past the nose, behind the tail, and to
-// either side. Nothing in the client draws from these -- the drawing is what
-// they were measured off -- but a debug overlay or a test wants the numbers
-// the zone is actually colliding with.
+// either side. The client art is fitted around these fixed rectangles, and a
+// debug overlay or test can read the numbers the simulation collides with.
 int ShipExtents(lua_State* L) {
     int i = CheckShip(L);
     const sim_ship_class* c = &g_cfg.classes[g_cur->ships[i].cls];

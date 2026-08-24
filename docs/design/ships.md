@@ -27,17 +27,18 @@ at radar scale, which is where most ship names actually get used.
 ## The roster
 
 Reach past the nose, behind the tail, and to either side of the pivot, in
-pixels, measured off each hull's own drawing. These are the differences.
+pixels. The drawing is fitted around these collision extents. These are the
+differences.
 
 | Class | Reads as | Nose | Tail | Beam |
 |---|---|---|---|---|
-| **Apex** | A swept dart, wings back far enough to clear its own engines | 20 | 11 | 20 |
-| **Wedge** | A wide delta with a lit bomb bay down the spine | 13 | 12 | 30 |
-| **Chord** | A shallow bow with a sensor housing at the middle | 13 | 5 | 34 |
-| **Anvil** | A blunt slab with two tubes on a flat bow face | 15 | 11 | 26 |
-| **Cipher** | A knife, and the only hull that draws dim | 22 | 12 | 12 |
-| **Facet** | A squat pentagon with two barrels out past the nose | 14 | 12 | 22 |
-| **Lattice** | A trussed cross with dispensers at the arm tips | 16 | 14 | 28 |
+| **Apex** | A swept dart, wings back far enough to clear its own engines | 20 | 11.25 | 20 |
+| **Wedge** | A wide delta with a lit bomb bay down the spine | 11 | 9 | 31.25 |
+| **Chord** | A shallow bow with a sensor housing at the middle | 9 | 7 | 39.0625 |
+| **Anvil** | A blunt slab with two tubes on a flat bow face | 13 | 12 | 25 |
+| **Cipher** | A knife, and the only hull that draws dim | 21 | 18.0625 | 16 |
+| **Facet** | A squat pentagon with two barrels out past the nose | 13 | 12 | 25 |
+| **Lattice** | A trussed cross with dispensers at the arm tips | 13 | 12 | 25 |
 
 ## Standard settings
 
@@ -81,14 +82,16 @@ floats the flanks eleven pixels off every wall; sized to the flanks it buries
 the nose. The original never had this problem because its ships were drawn
 compact enough to fill a square, and ours are deliberately not.
 
-So a hull's footprint is three numbers, measured off its own drawing: reach
-past the nose, behind the tail, and to either side.
+So a hull's footprint is three numbers: reach past the nose, behind the tail,
+and to either side. Together they must occupy exactly 625 square pixels. Shape
+spends that fixed target budget instead of granting one hull less target than
+another.
 
 | px | Apex | Wedge | Chord | Anvil | Cipher | Facet | Lattice |
 |---|---|---|---|---|---|---|---|
-| nose | 20 | 13 | 13 | 15 | 22 | 14 | 16 |
-| tail | 11 | 12 | 5 | 11 | 12 | 12 | 14 |
-| side | 10 | 15 | 17 | 13 | 6 | 11 | 14 |
+| nose | 20 | 11 | 9 | 13 | 21 | 13 | 13 |
+| tail | 11.25 | 9 | 7 | 12 | 18.0625 | 12 | 12 |
+| side | 10 | 15.625 | 19.53125 | 12.5 | 8 | 12.5 | 12.5 |
 
 The collision box follows the heading. Against a wall the simulation uses the
 world-axis bounds of the hull as oriented that tick, so a ship touches where
@@ -100,12 +103,11 @@ width, the turn is refused, because you cannot spin a 40-pixel dart in a
 40-pixel gap. Weapons and pickups test the oriented rectangle itself rather
 than a box around it.
 
-That last part is the balance change worth saying out loud. A shot into a
-Cipher's flank now has to reach the knife, so thin hulls are genuinely thin
-targets from the side, and facing starts to matter: presenting your profile
-is presenting six pixels instead of twenty-two. It is the first thing that
-has ever actually told the hulls apart, since they fly identically today
-whatever the settings table above says.
+That last part is the balance consequence worth saying out loud. Every hull
+occupies 625 square pixels, but it presents those pixels differently. Cipher
+is 16 pixels across nose-on and just over 39 broadside. Chord is the inverse.
+The square hulls present about 25 pixels from either direction. Facing still
+matters without changing how much target any hull receives.
 
 The ceiling is a diagonal: no hull's nose-corner reach, the square root of
 nose squared plus side squared, may pass 23 pixels. That is the number all
@@ -124,44 +126,35 @@ drift apart again, and the sim's own tests hold the diagonal ceiling.
 
 Every hull flies alike, climbs alike and holds alike. What differs is the
 rectangle it puts between a bullet and the pilot, and because weapons test the
-oriented rectangle rather than a box drawn around it, that rectangle is a real
-number in a real fight. Turning side-on in a Cipher shows six pixels where
-facing shows twenty-two; turning side-on in a Chord shows seventeen.
+oriented rectangle, that rectangle is a real number in a real fight. All seven
+rectangles have the same area. Their aspect ratios decide which heading makes
+each one easier to hit.
 
 So the roles below are read off the shapes rather than off a settings table.
 They are how the hull plays, not what it is issued.
 
-**Apex** is a dart: a long nose, narrow flanks, very little behind the pivot.
-It is the hardest hull to thread through a gap diagonally, because the corner
-reach of a long thin box is what a corridor has to accommodate, and it is the
-easiest to point somewhere precisely.
+**Apex** is a dart with a 31.25 by 20 footprint. Nose-on it is smaller than it
+is broadside, but the difference is moderate enough that a turn does not
+transform it completely.
 
-**Wedge** is broad across the beam and short down the nose. Coming at you it is
-one of the largest targets on the roster; from the side it is one of the
-shorter ones. A Wedge that keeps its nose to the fight is choosing to be seen.
+**Wedge** mirrors the Apex at 20 by 31.25. Coming nose-first presents the broad
+face. Turning across the fight presents the short edge.
 
-**Chord** is wider than it is long, and nearly all of that width is in front of
-the pivot. It has the largest side profile in the game and the shortest tail,
-which makes it quick to turn in place and difficult to hide behind anything.
+**Chord** is the widest hull at just over 39 pixels, but only 16 pixels long.
+It makes the strongest trade in the roster between a broad nose-on target and
+a thin broadside target.
 
-**Anvil** is the even one. No face is much thinner than another, so nothing
-about how you are pointing changes how big a target you are. That sounds like a
-disadvantage and mostly is; what it buys is a hull with no bad angle to be
-caught at.
+**Anvil** is the even one. Its 25 by 25 footprint has no especially good angle
+and no especially bad one.
 
-**Cipher** is the knife: the longest and by a wide margin the thinnest. Six
-pixels of beam is a third of a Chord's. Played side-on it is the hardest thing
-in the game to hit and the easiest to lose track of your own facing in, since
-the difference between presenting six pixels and twenty-two is one turn.
+**Cipher** is the knife and the Chord's inverse: just over 39 pixels long and
+16 wide. It is the smallest nose-on target and the largest broadside target.
 
-**Facet** is the smallest target on the roster from any angle. It gives new
-players something honest: nothing about it is conditional, and it is simply
-harder to hit than the ship next to it, whichever way either of them is
-pointing.
+**Facet** uses the same square footprint as Anvil. The pentagonal silhouette
+makes it read differently without giving it less target area.
 
-**Lattice** is near square and near flush, which means it can turn anywhere it
-fits. Every other hull has an orientation it cannot rotate out of in a
-three-tile corridor; this one does not.
+**Lattice** is also square. Its open truss changes the silhouette, while its
+collision footprint remains the same 625 square pixels as every other hull.
 
 ## The tech tree
 

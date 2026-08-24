@@ -13,11 +13,12 @@
  *
  * ## A ship is three tiles across
  *
- * The widest hull in the roster measures 34 pixels at the beam and the longest
- * reaches 23 pixels from its center at the worst diagonal, against a 16-pixel
- * tile. Two tiles is 32 pixels and holds neither; three is 48 and holds both at
- * any heading. So a hull stands on a tile only when the eight around it are
- * open too, and the connectivity of a map is the connectivity of that set.
+ * The widest hull in the roster measures just over 39 pixels at the beam and
+ * the longest reaches under 23 pixels from its center at the worst diagonal,
+ * against a 16-pixel tile. Two tiles is 32 pixels and holds neither; three is
+ * 48 and holds both at any heading. A hull therefore stands on a tile only
+ * when the eight around it are open too, and the connectivity of a map is the
+ * connectivity of that set.
  *
  * Read one tile at a time instead, a map passes with structures whose only way
  * in is a single-tile notch: open on the drawing, sealed from the cockpit, and

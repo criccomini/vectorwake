@@ -224,13 +224,13 @@ local CAPS = {{0, "display"}, {60, "60 a second"}, {30, "30 a second"}}
 -- the oriented rectangle rather than a box drawn round it, that shape is a
 -- real number in a real fight. So the sentence describes the shape.
 local HULLS = {
-    {"Apex", "dart", "a long nose and narrow flanks, awkward through a gap"},
-    {"Wedge", "delta", "broad across the beam, hard to miss from the front"},
-    {"Chord", "bow", "the widest hull and the shortest, all of it beam"},
-    {"Anvil", "slab", "blunt and even, no face much thinner than another"},
-    {"Cipher", "knife", "six pixels from the side, twenty-two down the nose"},
-    {"Facet", "wedge", "the smallest target on the roster from any angle"},
-    {"Lattice", "cross", "near square, so it turns anywhere it fits"},
+    {"Apex", "dart", "long and narrow, with a larger broadside target"},
+    {"Wedge", "delta", "a wide delta that turns edge-on to shrink"},
+    {"Chord", "bow", "the widest and shortest hull, almost entirely beam"},
+    {"Anvil", "slab", "blunt and square, with no especially small angle"},
+    {"Cipher", "knife", "the longest and narrowest hull in the roster"},
+    {"Facet", "wedge", "a compact pentagon on a square footprint"},
+    {"Lattice", "cross", "a square truss that turns anywhere it fits"},
 }
 
 local SAVE = sys.get_save_file("vectorwake", "pilot")

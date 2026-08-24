@@ -22,7 +22,32 @@ const css = (c, a) => `rgba(${Math.round(c[0]*255)},${Math.round(c[1]*255)},${Ma
 const hot = (c, k) => [c[0]+(1-c[0])*k, c[1]+(1-c[1])*k, c[2]+(1-c[2])*k];
 
 // --- hull bake, mirroring the loop at the top of world.lua -----------------
+function refit(h) {
+  const [sx, sy, oy] = h.fit;
+  const lineScale = Math.sqrt(sx * sy);
+  const pts = (p) => {
+    for (let i = 0; i < p.length; i += 2) {
+      p[i] *= sx;
+      p[i + 1] = p[i + 1] * sy + oy;
+    }
+  };
+  pts(h.poly);
+  if (h.canopy) pts(h.canopy);
+  if (h.jets) pts(h.jets);
+  if (h.plates) for (const p of h.plates) pts(p);
+  if (h.lines) for (const p of h.lines) pts(p);
+  if (h.pods) for (const p of h.pods) {
+    p[0] *= sx; p[1] = p[1] * sy + oy; p[2] *= lineScale;
+  }
+  if (h.tubes) for (const p of h.tubes) {
+    p[0] *= sx; p[1] = p[1] * sy + oy;
+    p[2] *= sx; p[3] = p[3] * sy + oy; p[4] *= lineScale;
+  }
+  delete h.fit;
+}
+
 function bake(h) {
+  if (h.fit) refit(h);
   const p = h.poly, n = p.length / 2;
   let area = 0, lo = p[1], hi = p[1];
   for (let i = 0; i < n; i++) {
@@ -182,7 +207,7 @@ function reach(h, ang) {
 //
 // The orbit is a circle sized per hull, and it is allowed to cut through the
 // hull rather than clear it. Clearing it means clearing the longest thing on
-// it, which on a Cipher is a 23 pixel blade, and a ring drawn outside that has
+// it, which on a Cipher is the full blade, and a ring drawn outside that has
 // drones hanging a tile and a half off the flanks. Overlapping brings it in to
 // where the ship actually is.
 //

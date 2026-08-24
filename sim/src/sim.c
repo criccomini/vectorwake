@@ -2343,7 +2343,7 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
          * old rule, and it is exactly what a projectile passing *through* a
          * hull looks like: a bullet plus its shooter's velocity covers up to
          * 6.25 px a tick, an incoming hull adds its own, and a Cipher's flank
-         * is 12 px thick, so a grazing crossing could fall entirely between
+         * is 16 px thick, so a grazing crossing could fall entirely between
          * two samples and never register -- on the server, with no lag
          * involved at all. Walls had the same hole at higher speeds than any
          * shipped zone uses, but a zone file can retune speed upward and

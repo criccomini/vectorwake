@@ -72,9 +72,8 @@ check("and the ribbon reaches well behind the hull",
       string.format("tail %.0f behind", (100 + 90 * 4) - tail))
 
 -- The ribbon leaves from the exhaust, not from the middle of the hull. Each
--- class's tail depth comes off its own jets, so an eastbound Apex trails
--- from eleven pixels behind its center and a Cipher from thirteen: the head
--- of the ribbon has to sit exactly there, and differently per hull.
+-- class's tail depth comes off its own jets, so the head of the ribbon has to
+-- sit exactly there and differently per hull.
 local function head_of(cls)
     local head = -math.huge
     local hg = glow_stub()
@@ -88,9 +87,11 @@ local function head_of(cls)
     world.trail(hg, 40 + cls, 5008, 5000, 16384, cls, COL, 1 / 60)
     return head
 end
-check("an Apex ribbon leaves from its jets", head_of(0) == 5008 - 11,
+check("an Apex ribbon leaves from its jets",
+      math.abs(head_of(0) - (5008 - 11.746212)) < 1e-5,
       tostring(head_of(0)))
-check("a Cipher's leaves from its own, deeper", head_of(4) == 5008 - 13,
+check("a Cipher's leaves from its own, deeper",
+      math.abs(head_of(4) - (5008 - 19.0625)) < 1e-5,
       tostring(head_of(4)))
 
 -- A teleport is a jump with no gap in time; the ribbon must not cross it.

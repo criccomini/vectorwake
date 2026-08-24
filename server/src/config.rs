@@ -191,36 +191,17 @@ impl Default for LagConfig {
     }
 }
 
-/// One hull. Each stat is a ceiling, a floor a fresh ship starts at, and what
-/// one step in the kit adds, which are the original's MaximumSpeed,
-/// InitialSpeed and UpgradeSpeed under those names.
+/// One hull's zone-selectable weapon ladders.
 ///
-/// Setting only the ceiling moves the floor and the step with it, in
-/// proportion, so raising a hull's top speed does not quietly make it start
-/// slower relative to where it can get. Setting a floor or a step outright
-/// wins over that.
+/// Footprint is deliberately absent. Every hull spends the same 625 square
+/// pixels of target area, and the client drawing is fitted to that baseline
+/// rectangle. A zone-only override would break both contracts. Flight and kit
+/// depth are shared for the same reason: thirty points buys the same ship
+/// whichever silhouette carries it. See docs/design/ships.md.
 #[derive(Deserialize, Clone, Debug, Default)]
 #[serde(default, deny_unknown_fields)]
 pub struct ShipConfig {
     pub name: String,
-    /// The hull's footprint, px from the point it turns about: reach past
-    /// the nose, behind the tail, and to either side. The collision box
-    /// follows the ship's heading, so these are the shape a wall stops and
-    /// a weapon has to reach. Defaults are measured off the drawn hulls in
-    /// sim/src/baseline.c; a zone overriding one should keep the diagonal
-    /// (sqrt of fore^2 + width^2) inside 23 px or its maps owe the roster
-    /// gaps the shipped ones were never checked for.
-    ///
-    /// This is nearly the whole of a hull. Flight used to be here too, per
-    /// class, and it is gone with the tech tree that sat beside it: a roster
-    /// where one hull turns harder is a roster where thirty points buy
-    /// different ships depending on what you are flying, and every pilot
-    /// dealing the same thirty is the promise the match game rests on. What a
-    /// hull is now is the shape it presents to a bullet, which is the one
-    /// advantage nobody could buy. See docs/design/ships.md.
-    pub fore: Option<i32>,
-    pub aft: Option<i32>,
-    pub width: Option<i32>,
     /// What the two triggers fire: the ladder, by weapon name, first rung
     /// first. One name is a hull that never levels and `bomb = []` takes the
     /// rack out. A hull keeps its own ladder unless the file says otherwise.
@@ -424,7 +405,7 @@ bounce = 12
 
 [[arena.ships]]
 name = "Apex"
-fore = 18
+bomb = []
 
 [arena.kit]
 gun_mods = { multi = 2, barrel = 2 }
@@ -436,7 +417,7 @@ gun_mods = { multi = 2, barrel = 2 }
         assert_eq!(c.name, "test zone");
         assert_eq!(c.arena.flags, 3);
         assert_eq!(c.arena.bounce, Some(12));
-        assert_eq!(c.arena.ships[0].fore, Some(18));
+        assert_eq!(c.arena.ships[0].bomb, Some(Vec::new()));
         assert_eq!(c.arena.kit.gun_mods.get("barrel"), Some(&2));
     }
 

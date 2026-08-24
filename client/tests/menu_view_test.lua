@@ -1313,8 +1313,8 @@ do
         -- Two, so the carousel has somewhere to go: the arrows and the
         -- count only draw where there is more than one ship.
         hulls = {{label = "Cipher", role = "knife", index = 1, hull = 4,
-                  detail = "six pixels from the side",
-                  extent = {fore = 22, aft = 12, beam = 12}},
+                  detail = "the longest and narrowest hull",
+                  extent = {fore = 21, aft = 18.0625, beam = 16}},
                  {label = "Apex", role = "dart", index = 2, hull = 0}},
         hull_sel = 1,
         rows = {
@@ -1334,7 +1334,7 @@ do
     check("with no footprint numbers on it", not said_px,
           table.concat(texts(hangar), " "))
     check("nor the role and the sentence under it",
-          not has(hangar, "knife") and not has(hangar, "six pixels"),
+          not has(hangar, "knife") and not has(hangar, "longest"),
           table.concat(texts(hangar), " "))
     check("and nothing about a hull's limits", not has(hangar, "hull limits"),
           table.concat(texts(hangar), " "))

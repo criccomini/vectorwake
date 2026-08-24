@@ -2155,7 +2155,8 @@ not by trusting a client receipt bitmap again.
 
 ## 50. A hull is a shape, and everything else is on the shelf
 
-**Status:** accepted
+**Status:** accepted; the unrestricted footprint areas are superseded by
+decision 57
 
 Seven hulls carried a row apiece: how far each weapon climbed, which add-ons
 they could hold and how deep, how many of each charge they carried. Four things
@@ -2196,6 +2197,9 @@ Cipher turned side-on is a six-pixel target where facing it is twenty-two, and
 a Lattice is near square and can turn anywhere it fits. It is also the one
 advantage no shop could sell even if it wanted to, which is why hulls stay free
 and cosmetics live on the wake, the nameplate badge and the podium card.
+
+Decision 57 keeps the directional difference and gives every footprint one
+fixed area. The dimensions above record the state before that budget existed.
 
 **Cost:** the roster is thinner. Seven silhouettes with identical engines is
 less differentiation than seven stat blocks, and the roles in `ships.md` are now
@@ -2469,3 +2473,51 @@ menu, which is either atmosphere or noise depending on who is asked.
 (gate the attract on desktop or on focus), or watchers inflating the room
 count starts steering players at fleet scale (count seated humans in the
 directory instead).
+
+---
+
+## 57. Every hull spends 625 square pixels
+
+**Status:** accepted, superseding the unrestricted footprint areas in decision
+50
+
+Footprint is the only built-in stat one hull has over another. Flight, energy,
+weapons and kit depth are shared. The old footprints did not give that stat a
+budget: Cipher occupied 408 square pixels and Lattice 840, with the other five
+scattered between them. A Cipher pilot received less than half the target for
+choosing a silhouette.
+
+Every oriented collision rectangle now occupies exactly 625 square pixels:
+
+| Hull | Length | Beam | Area |
+|---|---:|---:|---:|
+| Apex | 31.25 | 20 | 625 |
+| Wedge | 20 | 31.25 | 625 |
+| Chord | 16 | 39.0625 | 625 |
+| Anvil | 25 | 25 | 625 |
+| Cipher | 39.0625 | 16 | 625 |
+| Facet | 25 | 25 | 625 |
+| Lattice | 25 | 25 | 625 |
+
+The old roster averaged 639.7 square pixels, so 625 is a small overall change.
+It is also exact in the core's Q8 units for a 25-pixel square and for the two
+reciprocal aspect pairs. No rounding or floating point enters collision.
+
+Equal area does not make every heading equal. Cipher presents 16 pixels
+nose-on and just over 39 broadside; Chord makes the opposite trade. Apex and
+Wedge are milder versions of the same choice. The three square footprints have
+no especially good angle, but their silhouettes remain distinct. Shape still
+matters. It now spends a fixed target budget.
+
+Every nose corner remains inside the 23-pixel reach used to validate maps. The
+client refits every part of each drawing around the new rectangle, and tests
+check the rendered faces, the runtime area and the map ceiling.
+
+**Cost:** a sparse silhouette such as Lattice does not fill every corner of its
+rectangle. That was already true of oriented boxes around concave art. Equal
+area fixes target quantity, not pixel-perfect collision against every visible
+edge.
+
+**Reconsider if:** the simulation adopts polygon collision. Normalize the
+polygon areas then and retire the rectangle budget rather than layering one
+shape contract over another.

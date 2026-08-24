@@ -29,6 +29,7 @@ local EXTENTS_SRC = "sim/src/baseline.c"
 -- own diagonal. Both are explained above; the second is the map contract.
 local MAX_OVERLAP = 1.7
 local CEILING = 23
+local TARGET_AREA = 625
 
 local fails = 0
 local function check(name, ok, detail)
@@ -40,8 +41,9 @@ local function check(name, ok, detail)
     end
 end
 
--- The `hull_extent` table in baseline.c: one row of {fore, aft, halfw} per
--- hull. The count is not asserted against a literal here, because the roster
+-- The `hull_extent` table in baseline.c: one Q8 row of {fore, aft, halfw} per
+-- hull, converted to pixels as it is read. The count is not asserted against a
+-- literal here, because the roster
 -- is the core's to decide and this test is about whether the drawings match
 -- the boxes; that the two lists are the same length is checked below, where
 -- a mismatch names both numbers.
@@ -54,7 +56,7 @@ local function extents_from_c()
     local out = {}
     for row in body:gmatch("{(.-)}") do
         local t = {}
-        for n in row:gmatch("%d+") do t[#t + 1] = tonumber(n) end
+        for n in row:gmatch("%d+") do t[#t + 1] = tonumber(n) / 256 end
         assert(#t == 3, "a row of hull_extent is not three numbers")
         out[#out + 1] = t
     end
@@ -116,10 +118,10 @@ for i, h in ipairs(world.HULLS) do
     for _, face in ipairs({{"nose", df, fore}, {"tail", da, aft},
                            {"flank", ds, halfw}}) do
         local what, drawn, box = face[1], face[2], face[3]
-        check(string.format("%s %s: box %d inside drawing %.1f",
+        check(string.format("%s %s: box %.4g inside drawing %.1f",
                             name, what, box, drawn),
               drawn - box >= -1e-6 and drawn - box <= MAX_OVERLAP,
-              string.format("drawn %.1f against a box of %d is %+.1f px",
+              string.format("drawn %.1f against a box of %.4g is %+.1f px",
                             drawn, box, drawn - box))
     end
     local diag = math.max(math.sqrt(fore ^ 2 + halfw ^ 2),
@@ -128,6 +130,10 @@ for i, h in ipairs(world.HULLS) do
                         name, diag),
           diag <= CEILING,
           "a box this long and wide reaches past 23 px when flown diagonally")
+    local area = (fore + aft) * halfw * 2
+    check(string.format("%s spends the common target area (%.3f)", name, area),
+          math.abs(area - TARGET_AREA) < 1e-6,
+          string.format("%.3f px^2 rather than %d", area, TARGET_AREA))
 end
 
 print(fails == 0 and "all ok" or (fails .. " failed"))

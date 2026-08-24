@@ -55,7 +55,8 @@ M.HULLS = {
      canopy = {0,15.5, 1.5,10.5, 0,7.6, -1.5,10.5},
      tubes = {{4.2, 3, 4.2, -1, 1.4}, {-4.2, 3, -4.2, -1, 1.4}},
      pods = {{0, 20, 1.5}},
-     jets = {-1.8,-11, 1.8,-11}},
+     jets = {-1.8,-11, 1.8,-11},
+     fit = {1, 1.007575758, -0.662878788}},
     -- Wedge: a platform rather than a fighter. The bomb bay runs most of its
     -- length and the tube feeding it is the brightest thing on the hull.
     {poly = {0,14, 2.6,13, 4.6,7.5, 7.2,1.5, 15.5,-5.5, 16,-9, 9,-7.5, 8,-11,
@@ -67,7 +68,8 @@ M.HULLS = {
               {-3.4,-2.5, 3.4,-2.5}},
      canopy = {0,12.4, 1.8,10.2, 1.6,7.6, -1.6,7.6, -1.8,10.2},
      tubes = {{0, 3.6, 0, -8.6, 3.2}},
-     jets = {-5.6,-12, 5.6,-12}},
+     jets = {-5.6,-12, 5.6,-12},
+     fit = {1.0390625, 0.830188679, 0.377358491}},
     -- Chord: a bow with a sensor housing at the middle of it, because what
     -- this hull does for a team is see.
     {poly = {0,13.5, 5.5,12, 11.5,7.5, 16.5,0.5, 18,-4, 14.5,-6, 11,-2.5,
@@ -81,7 +83,8 @@ M.HULLS = {
      canopy = {0,10.2, 1.3,8.4, 0,6.4, -1.3,8.4},
      tubes = {{15, -2, 15, 2.6, 1.4}, {-15, -2, -15, 2.6, 1.4}},
      pods = {{0, 8.3, 2.4}},
-     jets = {-8.5,-2.2, 8.5,-2.2}},
+     jets = {-8.5,-2.2, 8.5,-2.2},
+     fit = {1.140625, 0.923076923, -2.461538462}},
     -- Anvil: nothing on it is allowed to look sharp. Two bomb tubes on a flat
     -- bow face, an armour belt across it, four engines and no wings at all.
     {poly = {0,15, 6.5,14.2, 11,10, 13.5,3, 13.5,-4, 11,-9.5, 6.5,-12, 0,-12,
@@ -92,7 +95,8 @@ M.HULLS = {
               {5.6,-3.2, 9,-3.2}, {-5.6,-3.2, -9,-3.2}, {-8,-9.6, 8,-9.6}},
      canopy = {3.4,14, 2.6,11.4, -2.6,11.4, -3.4,14},
      tubes = {{5.2, 9.6, 5.2, 15.2, 2.2}, {-5.2, 9.6, -5.2, 15.2, 2.2}},
-     jets = {-9,-10.6, -3.5,-12, 3.5,-12, 9,-10.6}},
+     jets = {-9,-10.6, -3.5,-12, 3.5,-12, 9,-10.6},
+     fit = {1, 0.954063604, -1.551236749}},
     -- Cipher: a knife. Draws dimmer than the rest of the roster on purpose,
     -- since the class is meant to be hard to pick out of a fight.
     {poly = {0,23, 1.7,7, 3.4,-2, 3,-9, 6.5,-12.5, 2.2,-11.5, 1.6,-13, 0,-13,
@@ -101,7 +105,8 @@ M.HULLS = {
      lines = {{0,22.4, 3.2,-2}, {0,22.4, -3.2,-2}, {3.2,-9.4, 5.9,-12.2},
               {-3.2,-9.4, -5.9,-12.2}},
      canopy = {0,17.5, 0.9,14, 0,11.5, -0.9,14},
-     jets = {0,-13}, dim = 0.72},
+     jets = {0,-13}, dim = 0.72,
+     fit = {1.384615385, 1.140625, -4.234375}},
     -- Facet: two barrels hanging off the shoulders, out past the nose, so the
     -- one thing worth knowing about it reads from any angle.
     {poly = {0,15, 4.2,10.5, 8.5,6, 11.5,-2, 9.5,-10, 4.5,-13, 0,-13, -4.5,-13,
@@ -113,7 +118,8 @@ M.HULLS = {
               {6.2,-4, 6.2,-10}, {-6.2,-4, -6.2,-10}},
      canopy = {0,9.6, 2.4,6.4, 0,4.4, -2.4,6.4},
      tubes = {{6.6, 7.2, 6.6, 13.6, 2.2}, {-6.6, 7.2, -6.6, 13.6, 2.2}},
-     jets = {-2.6,-13, 2.6,-13}},
+     jets = {-2.6,-13, 2.6,-13},
+     fit = {1.173913043, 0.964285714, -0.464285714}},
     -- Lattice: trussed arms rather than solid ones, which is the whole
     -- difference between a cross and a structure somebody planted.
     {poly = {0,17, 2.8,12.5, 2.8,5.5, 11.5,4.5, 15,1.5, 11.5,-1.5, 2.8,-2.5,
@@ -125,7 +131,8 @@ M.HULLS = {
               {-2.8,-4.6, 2.8,-7}, {2.8,-7.6, -2.8,-10}},
      canopy = {0,14.6, 1.5,12.6, 0,10.8, -1.5,12.6},
      pods = {{13.6, 1.5, 1.7}, {-13.6, 1.5, 1.7}, {0, -13.2, 1.5}},
-     jets = {-1.8,-14, 1.8,-14}},
+     jets = {-1.8,-14, 1.8,-14},
+     fit = {0.8842, 0.85096, -0.46632}},
 }
 
 -- How far from the camera a hull keeps its plates, panel lines and lamps.
@@ -213,28 +220,42 @@ local function triangulate(p)
     return out
 end
 
--- A hull with a `scale` is redrawn at that size before anything is derived
--- from it, so nothing downstream has to know. One hull has one, and the reason
--- is in the roster above.
---
--- Applied here rather than at draw time because a ship is drawn in eight
--- pieces and a scale threaded through eight call sites is a scale somebody
--- forgets on the ninth. `client/tests/hull_fit_test.lua` measures the result.
-local function rescale(h, k)
-    local function pts(t) for i = 1, #t do t[i] = t[i] * k end end
+-- Refit a hull to its collision-space budget before deriving any render data.
+-- The three numbers are horizontal scale, vertical scale and vertical offset.
+-- Every part moves together, including hardpoints and engine lamps, so the
+-- drawing cannot leave an old piece outside its new footprint.
+-- `client/tests/hull_fit_test.lua` measures the finished result.
+local function refit(h, f)
+    local sx, sy, oy = f[1], f[2], f[3]
+    local line_scale = math.sqrt(sx * sy)
+    local function pts(t)
+        for i = 1, #t, 2 do
+            t[i] = t[i] * sx
+            t[i + 1] = t[i + 1] * sy + oy
+        end
+    end
     pts(h.poly)
     if h.canopy then pts(h.canopy) end
     if h.jets then pts(h.jets) end
     if h.plates then for _, q in ipairs(h.plates) do pts(q) end end
     if h.lines then for _, q in ipairs(h.lines) do pts(q) end end
-    -- A pod is {x, y, radius} and a tube {x1, y1, x2, y2, width}: every number
-    -- in both is a length, so both scale whole.
-    if h.pods then for _, q in ipairs(h.pods) do pts(q) end end
-    if h.tubes then for _, q in ipairs(h.tubes) do pts(q) end end
+    if h.pods then
+        for _, q in ipairs(h.pods) do
+            q[1], q[2], q[3] = q[1] * sx, q[2] * sy + oy,
+                               q[3] * line_scale
+        end
+    end
+    if h.tubes then
+        for _, q in ipairs(h.tubes) do
+            q[1], q[2] = q[1] * sx, q[2] * sy + oy
+            q[3], q[4] = q[3] * sx, q[4] * sy + oy
+            q[5] = q[5] * line_scale
+        end
+    end
 end
 
 for _, h in ipairs(M.HULLS) do
-    if h.scale then rescale(h, h.scale) h.scale = nil end
+    if h.fit then refit(h, h.fit) h.fit = nil end
     local p = h.poly
     local n = #p / 2
     local w = (turn(p) > 0) and 1 or -1
