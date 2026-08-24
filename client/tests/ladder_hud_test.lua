@@ -209,6 +209,41 @@ check("a match with no run draws no ratings beside its clock",
       exactly("1183") == nil and exactly("1346") == nil,
       table.concat(words(), " | "))
 
+-- The readout under the clock is centered and grows with the run. At its
+-- widest it reaches out past the clock, so nothing else may share that band:
+-- a rating on a line of its own under each name collided with both ends of
+-- "RUNG 8  STREAK 2  FLOOR 6", which only happens once a run has a floor.
+frame({match = a_fight({rung = 7, streak = 2, checkpoint = 5}),
+       ratings = {[0] = 1183, [1] = 1347}})
+local readout, left_rating, right_rating
+for i = 1, state.n do
+    local t = state.text[i]
+    if t.s == "RUNG 8  STREAK 2  FLOOR 6" then readout = t end
+    if t.s == "1183" then left_rating = t end
+    if t.s == "1347" then right_rating = t end
+end
+check("the widest readout and both ratings all draw",
+      readout and left_rating and right_rating,
+      table.concat(words(), " | "))
+-- The box a drawn string covers. Width off the same mono advance ui.lua
+-- measures with; height off the size, since every pivot centers vertically.
+local function box(t)
+    local w = #t.s * t.px * (1233 / 2048)
+    local x0 = t.x
+    if t.pivot == "right" then x0 = t.x - w
+    elseif t.pivot == "center" then x0 = t.x - w / 2 end
+    return x0, t.y - t.px / 2, x0 + w, t.y + t.px / 2
+end
+local function clear(a, b)
+    local ax0, ay0, ax1, ay1 = box(a)
+    local bx0, by0, bx1, by1 = box(b)
+    return ax1 <= bx0 or bx1 <= ax0 or ay1 <= by0 or by1 <= ay0
+end
+check("the readout does not touch your rating",
+      clear(readout, left_rating), left_rating.s .. " vs " .. readout.s)
+check("nor the rival's", clear(readout, right_rating),
+      right_rating.s .. " vs " .. readout.s)
+
 -- --- the readout under the clock -------------------------------------------
 
 frame({match = a_fight({streak = 0, checkpoint = 0}),

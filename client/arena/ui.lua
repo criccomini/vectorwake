@@ -3576,32 +3576,48 @@ local function match_clock(o, m, names, alone)
         local num = tostring(side.n)
         local nw = text_w(num, big)
         local nm = (names and names[side.team]) or ""
-        local at, align
+        -- Outboard of the score, and which way that is depends on the side.
+        -- `at` walks away from the clock as each piece is laid down.
+        local at
         if i == 1 then
             at = F.w / 2 - text_w(clock, big) / 2 - gap
             txt(num, at, y, big, col, "right")
-            at, align = at - nw - 10 * F.scale, "right"
+            at = at - nw - 10 * F.scale
         else
             at = F.w / 2 + text_w(clock, big) / 2 + gap
             txt(num, at, y, big, col)
-            at, align = at + nw + 10 * F.scale, nil
+            at = at + nw + 10 * F.scale
         end
-        if nm ~= "" then
-            txt(nm, at, y + 2 * F.scale, small, pal.a(col, 0.85 * dim), align)
-        end
-        -- And what that side is rated, under its name.
+        -- And what that side is rated, inboard of its name on the same line.
         --
         -- Only where one pilot is one side, which is Ladder and nothing else:
-        -- a number under "VANTAGE" in a four a side match would be one of the
-        -- four pilots' ratings wearing the team's name. Under the name rather
-        -- than on a line of its own, because the name is already the label for
-        -- "who that is" and a rating is the rest of that sentence.
-        if m.ladder then
-            local score, placing = rating_line(o, side.team)
-            if score then
-                txt(score, at, y + 2 * F.scale + small * 1.15, small - 2 * F.scale,
-                    pal.a(placing and pal.DIM or col, 0.8 * dim), align)
+        -- a number beside "VANTAGE" in a four a side match would be one of the
+        -- four pilots' ratings wearing the team's name.
+        --
+        -- On the name's own line rather than under it. A line of its own would
+        -- have to sit in the band the Ladder readout already uses, and the
+        -- readout is centered and grows with the run: at "RUNG 8 STREAK 2
+        -- FLOOR 6" it reaches out past the clock and lands on both ratings,
+        -- which is a collision that only appears once a run has a floor under
+        -- it. Reading outward from the clock, each side is now score, name,
+        -- rating, and the band under the clock stays the readout's alone.
+        local rated, placing
+        if m.ladder then rated, placing = rating_line(o, side.team) end
+        local rpx = small - 1 * F.scale
+        local rcol = pal.a(placing and pal.DIM or col, 0.8 * dim)
+        local ny = y + 2 * F.scale
+        if i == 1 then
+            if rated then
+                txt(rated, at, ny, rpx, rcol, "right")
+                at = at - text_w(rated, rpx) - 7 * F.scale
             end
+            if nm ~= "" then txt(nm, at, ny, small, pal.a(col, 0.85 * dim), "right") end
+        else
+            if nm ~= "" then
+                txt(nm, at, ny, small, pal.a(col, 0.85 * dim))
+                at = at + text_w(nm, small) + 7 * F.scale
+            end
+            if rated then txt(rated, at, ny, rpx, rcol) end
         end
     end
 end

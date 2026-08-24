@@ -286,7 +286,7 @@ under that. Top right: the LINK bars, then the radar or the map (one corner,
 one instrument), with POS on the dial's other shoulder and the feed hanging
 under it. Bottom left: the corner stack, what your triggers do and what you
 carry, growing upward. Top center: the match score and clock, each side's
-rating under its name where a side is one pilot, the flag pennants, the round
+rating beside its name where a side is one pilot, the flag pennants, the round
 banner. Dead center is reserved for the two big statements, DESTROYED and SAFE
 ZONE, and for the cards and tables a player asks for. On a touchscreen the
 bottom of the screen belongs to the thumbs and everything else lifts out of

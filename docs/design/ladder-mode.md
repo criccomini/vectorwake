@@ -92,10 +92,12 @@ which is the rule the streak already follows.
 
 The client draws the log under the roster, behind the same toggle, newest leg
 first: the window is fixed, so the end worth keeping on screen is the one just
-flown. Beside the clock it draws something else, under each side's own name:
+flown. Beside the clock it draws something else, on each side's own name line:
 what that side is rated. That number is about the fight in front of the player
 rather than the ones behind them, and the roster already carries it for every
-seat, so nothing new travels for it.
+seat, so nothing new travels for it. It shares the name's line rather than
+taking one of its own because the band under the clock belongs to the readout,
+which is centered and reaches out past the clock once a run has a floor.
 
 Ladder progress is not Elo. Rung records progress through a run. Rating
 estimates strength across rated results. The bot roster may use calibrated Elo
