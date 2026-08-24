@@ -131,7 +131,7 @@ local function frame(o)
     rects = {}
     segs = {}
     package.loaded["arena.state"].n = 0
-    ui.begin(layer, o.w or W, o.h or H, 1, false)
+    ui.begin(layer, o.w or W, o.h or H, 1, false, o.now)
     ui.hud({
         me = o.me or 0,
         watch = o.watch,
@@ -235,9 +235,105 @@ check("nothing is settled while the clock is running",
       said("takes it") == nil and said("next match in") == nil,
       tostring(said("takes it") or said("next match in")))
 
+frame({match = {playing = true, left = 96, score = {[0] = 0, [1] = 0},
+                ladder = {rung = 7, streak = 3, checkpoint = 5,
+                          opponent_ready = true, waiting = false}},
+       side_names = NAMES, side = 0})
+check("a live Ladder fight shows its run",
+      said("RUNG 8  STREAK 3  FLOOR 6") ~= nil,
+      table.concat(words(), " | "))
+
+frame({match = {playing = false, left = 180, score = {[0] = 0, [1] = 0},
+                ladder = {rung = 0, streak = 0, checkpoint = 0,
+                          active_opponent = 0, desired_opponent = 0,
+                          opponent_ready = false, waiting = true}},
+       side_names = NAMES, side = 0})
+check("waiting for the first rival is not a loss podium",
+      said("RUNG 1  STREAK 0  FLOOR 1  FINDING RIVAL") ~= nil
+      and said("--:--") ~= nil
+      and said("Pylon") == nil and said("Caisson") == nil
+      and said("back to rung 1") == nil,
+      table.concat(words(), " | "))
+
+frame({match = {playing = false, left = 0, artifact = 1,
+                score = {[0] = 1, [1] = 0},
+                ladder = {rung = 1, streak = 1, checkpoint = 0,
+                          active_opponent = 0, desired_opponent = 1,
+                          opponent_ready = true, waiting = true}},
+       side_names = NAMES, side = 0})
+check("an overdue old rival becomes a waiting state",
+      said("RUNG 2  STREAK 1  FLOOR 1  FINDING RIVAL") ~= nil
+      and said("--:--") ~= nil and said("rung 1 cleared") == nil,
+      table.concat(words(), " | "))
+
+frame({match = {playing = false, left = 8, artifact = 1,
+                score = {[0] = 1, [1] = 0},
+                ladder = {rung = 7, active_opponent = 6,
+                          opponent_ready = false, waiting = false}},
+       side_names = NAMES, side = 0})
+check("a Ladder result remains up while the next rival leaves",
+      said("rung 7 cleared") ~= nil and said("FINDING RIVAL") == nil,
+      table.concat(words(), " | "))
+
+ui.podium_at = nil
+ui.podium_artifact = nil
+frame({now = 5, match = {playing = false, left = 8, artifact = 1,
+                         score = {[0] = 1, [1] = 0}},
+       side_names = NAMES, side = 0})
+local first_podium_at = ui.podium_at
+frame({now = 9, match = {playing = false, left = 8, artifact = 2,
+                         score = {[0] = 0, [1] = 1}},
+       side_names = NAMES, side = 0})
+check("a new result starts a fresh podium after rendering was paused",
+      first_podium_at == 5 and ui.podium_at == 9,
+      tostring(first_podium_at) .. " | " .. tostring(ui.podium_at))
+frame({now = 10, match = {playing = true, left = 180,
+                          score = {[0] = 0, [1] = 0}},
+       side_names = NAMES, side = 0})
+check("play releases the prior podium entrance", ui.podium_at == nil,
+      tostring(ui.podium_at))
+
+frame({match = {playing = false, left = 8, artifact = 1,
+                score = {[0] = 1, [1] = 0},
+                ladder = {rung = 7, active_opponent = 6}},
+       side_names = NAMES, side = 1, watch = {subject = 1}})
+check("a watcher sees the climber's result rather than their viewing side",
+      said("rung 7 cleared") ~= nil, table.concat(words(), " | "))
+
+frame({match = {playing = false, left = 8, artifact = 1,
+                score = {[0] = 0, [1] = 1},
+                ladder = {rung = 5, active_opponent = 7}},
+       side_names = NAMES, side = 0})
+check("a Ladder loss names the new rung",
+      said("back to rung 6") ~= nil, table.concat(words(), " | "))
+
+frame({match = {playing = false, left = 8, artifact = 1,
+                score = {[0] = 1, [1] = 1},
+                ladder = {rung = 7, active_opponent = 7}},
+       side_names = NAMES, side = 0})
+check("a mutual kill replays the rung as a draw",
+      said("rung 8 drawn") ~= nil, table.concat(words(), " | "))
+
+frame({match = {playing = false, left = 8, artifact = 1,
+                score = {[0] = 1, [1] = 0},
+                ladder = {rung = 5, checkpoint = 5,
+                          active_opponent = 7, desired_opponent = 5,
+                          cleared = true}},
+       side_names = NAMES, side = 0})
+check("the top rung gets a distinct clear",
+      said("Ladder cleared") ~= nil, table.concat(words(), " | "))
+
+frame({match = {playing = false, left = 23,
+                score = {[0] = 11, [1] = 14}},
+       side_names = NAMES, side = 0})
+check("a non-Ladder intermission does not require an artifact",
+      said("takes it") ~= nil and said("next match") ~= nil
+          and said("0:23") ~= nil,
+      table.concat(words(), " | "))
+
 -- --- at the whistle --------------------------------------------------------
 
-frame({match = {playing = false, left = 23, score = {[0] = 11, [1] = 14}},
+frame({match = {playing = false, left = 23, artifact = 1, score = {[0] = 11, [1] = 14}},
        side_names = NAMES, side = 0})
 
 -- The result is two draws rather than one line: the winner's name in the
@@ -283,7 +379,7 @@ check("the payout is your own bounty taken",
 
 -- Nobody is the best gun in a match where nothing was shot down.
 room.kills = {[0] = 0, 0, 0, 0}
-frame({match = {playing = false, left = 23, score = {[0] = 0, [1] = 0}},
+frame({match = {playing = false, left = 23, artifact = 1, score = {[0] = 0, [1] = 0}},
        side_names = NAMES, side = 0})
 check("a scoreless match has no mvp", counted("mvp") == 0,
       tostring(counted("mvp")))
@@ -296,7 +392,7 @@ room.kills = {[0] = 2, 5, 1, 3}
 frame({match = {playing = true, left = 90, score = {[0] = 3, [1] = 3}},
        side_names = NAMES, side = 0})
 local plates_playing = counted("Kestrel")
-frame({match = {playing = false, left = 23, score = {[0] = 11, [1] = 14}},
+frame({match = {playing = false, left = 23, artifact = 1, score = {[0] = 11, [1] = 14}},
        side_names = NAMES, side = 0})
 check("a plate is drawn while the match runs", plates_playing > 0,
       tostring(plates_playing))
@@ -305,7 +401,7 @@ check("and only the card's copy survives the whistle",
 
 -- --- a draw ----------------------------------------------------------------
 
-frame({match = {playing = false, left = 9, score = {[0] = 9, [1] = 9}},
+frame({match = {playing = false, left = 9, artifact = 1, score = {[0] = 9, [1] = 9}},
        side_names = NAMES, side = 0})
 check("level at the whistle is a draw rather than a winner",
       said("drawn") ~= nil and said("takes it") == nil,
@@ -318,7 +414,7 @@ check("level at the whistle is a draw rather than a winner",
 -- zone numbered the teams, the same rule the clock's own score follows. A card
 -- that reversed them would tell everybody in the losing half that they won.
 
-frame({match = {playing = false, left = 23, score = {[0] = 11, [1] = 14}},
+frame({match = {playing = false, left = 23, artifact = 1, score = {[0] = 11, [1] = 14}},
        side_names = NAMES, side = 0})
 local big = nil
 for i = 1, state.n do
@@ -426,7 +522,7 @@ result_geometry(1280, 720)
 -- press is a real browser overlay, while film and claim return through the
 -- ordinary action path.
 ui.hits = {}
-frame({match = {playing = false, left = 23, score = {[0] = 11, [1] = 14}},
+frame({match = {playing = false, left = 23, artifact = 1, score = {[0] = 11, [1] = 14}},
        side_names = NAMES, side = 0,
        match_url = "https://vectorwake.net/matches/42", keep_pilot = true})
 check("a filed match offers its share link", said("share match") ~= nil
@@ -447,7 +543,7 @@ check("an unclaimed winner can keep their pilot", said("keep you") ~= nil
 -- list on screen is the list the wire has and nothing else can get onto it.
 
 ui.hits = {}
-frame({match = {playing = false, left = 23, score = {[0] = 11, [1] = 14}},
+frame({match = {playing = false, left = 23, artifact = 1, score = {[0] = 11, [1] = 14}},
        side_names = NAMES, side = 0, sayings = SAYS})
 for _, phrase in ipairs(SAYS) do
     check("you can say " .. phrase, said(phrase) ~= nil)
@@ -480,42 +576,54 @@ local function control_geometry(width, height, keep)
            match_url = "https://vectorwake.net/matches/42",
            keep_pilot = keep, w = width, h = height})
 
-    local chips, actions = {}, {}
+    local control_chips, control_actions = {}, {}
     for _, r in ipairs(ui.hits) do
         if r.action == "say" then
-            chips[#chips + 1] = r
+            control_chips[#control_chips + 1] = r
         elseif r.action == "share" or r.action == "open_replay"
                or r.action == "keep_pilot" then
-            actions[#actions + 1] = r
+            control_actions[#control_actions + 1] = r
         end
     end
-    table.sort(chips, function(a, b) return a.x < b.x end)
-    table.sort(actions, function(a, b) return a.x < b.x end)
+    table.sort(control_chips, function(a, b) return a.x < b.x end)
+    table.sort(control_actions, function(a, b) return a.x < b.x end)
 
-    local exact = #chips == 6 and #actions == (keep and 3 or 2)
+    local exact = #control_chips == 6
+        and #control_actions == (keep and 3 or 2)
     local integer = exact
-    for i, r in ipairs(chips) do
+    for i, r in ipairs(control_chips) do
         integer = integer and whole(r.x) and whole(r.y)
             and whole(r.w) and whole(r.h)
         if i > 1 then
-            exact = exact and near(r.x - chips[i - 1].x - chips[i - 1].w, 6)
-                and near(r.w, chips[1].w) and near(r.h, chips[1].h)
+            exact = exact
+                and near(r.x - control_chips[i - 1].x
+                         - control_chips[i - 1].w, 6)
+                and near(r.w, control_chips[1].w)
+                and near(r.h, control_chips[1].h)
         end
     end
-    for i, r in ipairs(actions) do
+    for i, r in ipairs(control_actions) do
         integer = integer and whole(r.x) and whole(r.y)
             and whole(r.w) and whole(r.h)
         if i > 1 then
-            exact = exact and near(r.x - actions[i - 1].x - actions[i - 1].w, 6)
-                and near(r.w, actions[1].w) and near(r.h, actions[1].h)
+            exact = exact
+                and near(r.x - control_actions[i - 1].x
+                         - control_actions[i - 1].w, 6)
+                and near(r.w, control_actions[1].w)
+                and near(r.h, control_actions[1].h)
         end
     end
-    exact = exact and near(actions[1].x, chips[1].x)
-        and near(actions[#actions].x + actions[#actions].w,
-                 chips[#chips].x + chips[#chips].w)
+    exact = exact and near(control_actions[1].x, control_chips[1].x)
+        and near(control_actions[#control_actions].x
+                 + control_actions[#control_actions].w,
+                 control_chips[#control_chips].x
+                 + control_chips[#control_chips].w)
 
     local centered = exact
-    local labels = {{"GG", chips[1]}, {"SHARE MATCH", actions[1]}}
+    local labels = {
+        {"GG", control_chips[1]},
+        {"SHARE MATCH", control_actions[1]},
+    }
     for _, pair in ipairs(labels) do
         local t = nil
         for i = 1, state.n do
@@ -542,7 +650,7 @@ control_geometry(1280, 720, true)
 -- name kept small after it: a phrase in a column of its own would be a chat
 -- window, and a row that lost its name for four seconds is a card you cannot
 -- find yourself on.
-frame({match = {playing = false, left = 23, score = {[0] = 11, [1] = 14}},
+frame({match = {playing = false, left = 23, artifact = 1, score = {[0] = 11, [1] = 14}},
        side_names = NAMES, side = 0, sayings = SAYS,
        said = {[1] = {phrase = "nice shot", n = 1, t = 0.2}}})
 local line, name_after = nil, nil
@@ -565,7 +673,7 @@ check("with the name kept, small, after the words",
 -- phrase and a call sign together ran through the kills and deaths at the
 -- other end of it. The name is what goes.
 ui.compact = nil
-frame({match = {playing = false, left = 23, score = {[0] = 11, [1] = 14}},
+frame({match = {playing = false, left = 23, artifact = 1, score = {[0] = 11, [1] = 14}},
        side_names = NAMES, side = 0, sayings = SAYS, w = 390, h = 844,
        said = {[1] = {phrase = "nice shot", n = 1, t = 0.2}}})
 local narrow, beside = nil, nil
@@ -585,7 +693,7 @@ check("a narrow column keeps the phrase and drops the name",
 -- A phrase this build does not have is an arena talking about a list it does
 -- not share. Nothing is drawn for it rather than a number or a blank chip.
 ui.hits = {}
-frame({match = {playing = false, left = 23, score = {[0] = 11, [1] = 14}},
+frame({match = {playing = false, left = 23, artifact = 1, score = {[0] = 11, [1] = 14}},
        side_names = NAMES, side = 0})
 local none = 0
 for _, r in ipairs(ui.hits) do
@@ -605,7 +713,7 @@ local kept_k, kept_d, kept_a = room.kills, room.deaths, room.assists
 room.kills = {[0] = 4, 14, 1, 0}
 room.deaths = {[0] = 3, 6, 6, 3}
 room.assists = {[0] = 2, 2, 6, 11}
-frame({match = {playing = false, left = 12, score = {[0] = 5, [1] = 8}},
+frame({match = {playing = false, left = 12, artifact = 1, score = {[0] = 5, [1] = 8}},
        side_names = NAMES, side = 0})
 -- Every right-aligned figure on the card, gathered by the line it sits on.
 -- Both sides draw a row at the same height, so a line carries six of them:
@@ -650,7 +758,7 @@ room.kills, room.deaths, room.assists = kept_k, kept_d, kept_a
 -- The intermission is when the hangar opens, so the one thing a player is
 -- likely to do here is open it. The card sits exactly where the menu does.
 
-frame({match = {playing = false, left = 23, score = {[0] = 11, [1] = 14}},
+frame({match = {playing = false, left = 23, artifact = 1, score = {[0] = 11, [1] = 14}},
        side_names = NAMES, side = 0, menu_open = true})
 check("the menu covers it", said("takes it") == nil,
       tostring(said("takes it")))
@@ -702,7 +810,7 @@ layer.frame = function(self, _, _, _, _, t)
 end
 ui.details = true
 ui.inspect = 1
-frame({match = {playing = false, left = 23, score = {[0] = 11, [1] = 14}},
+frame({match = {playing = false, left = 23, artifact = 1, score = {[0] = 11, [1] = 14}},
        side_names = NAMES, side = 0, sayings = SAYS, pilots = eight,
        said = {[1] = {phrase = "nice shot", n = 1, t = 0.2}},
        feed = {{text = "sable killed cirrus (+3)", t = 1},

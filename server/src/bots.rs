@@ -20,10 +20,10 @@
 //! What it costs is on the arena rather than here: a snapshot stream per bot
 //! where the in-process roster needed none. See docs/architecture/ai-runtime.md.
 //!
-//! Two economies inside the process, both invisible on the wire. The fifty
-//! pilots an arena wants are all being sent the same room, so they predict it
-//! in one shared `Rig` rather than fifty private copies. And that rig has one
-//! clock: a single driver task advances the world and runs every seated brain,
+//! Two economies inside the process, both invisible on the wire. Pilots in one
+//! arena room predict it in one shared `Rig` rather than private copies, while
+//! pilots in other rooms have separate rigs. Each rig has one clock: a single
+//! driver task advances the world and runs every seated brain,
 //! where each pilot used to carry a 100 Hz ticker of its own, which at fifty
 //! pilots was most of this process's CPU spent waking up and contending for
 //! the lock rather than flying. Each connection still joins, receives and
@@ -32,12 +32,12 @@
 
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use futures_util::{SinkExt, StreamExt};
 use tokio_tungstenite::tungstenite::Message;
 
-use crate::{ai, directory, nav, sim};
+use crate::{ai, directory, nav, pilots, sim};
 
 /// How often the fleet is re-read and the population reconciled. A second is
 /// far quicker than a population changes and costs one small JSON document per
@@ -185,6 +185,9 @@ fn fingerprint(bytes: &[u8]) -> u64 {
 /// Tells pilots apart for seat and pen ownership. Starts at one so that zero
 /// can mean nobody.
 static PILOT_ID: AtomicU64 = AtomicU64::new(1);
+/// Per-flight entropy. A pilot's stable configuration seed lives in its spec;
+/// this counter exists so reconnecting does not replay the same fight forever.
+static MATCH_ID: AtomicU64 = AtomicU64::new(1);
 
 /// One predicted room, shared by every pilot this process has flying in it.
 ///
@@ -211,8 +214,41 @@ static PILOT_ID: AtomicU64 = AtomicU64::new(1);
 /// bot exactly as decision 29 requires; Leave is a departure that finished,
 /// however it finished.
 enum Ctl {
-    Frame(Vec<u8>),
+    Frame { match_number: u32, message: Vec<u8> },
     Leave,
+}
+
+/// Derive an independent controller stream for each match on one connection.
+/// Number zero preserves the flight's original seed. Later matches mix in the
+/// monotonic match number, so a rematch is fresh without depending on wall
+/// time or on which driver happened to process the transition first.
+fn controller_seed(flight_seed: u32, match_number: u32) -> u32 {
+    if match_number == 0 {
+        return flight_seed;
+    }
+    flight_seed ^ match_number.wrapping_mul(0x9e37_79b9).rotate_left(13)
+}
+
+fn fresh_brain(
+    ship: u8,
+    config: pilots::BrainConfig,
+    flight_seed: u32,
+    match_number: u32,
+) -> ai::Bot {
+    let mut brain = ai::Bot::new(ship, config);
+    brain.reseed(controller_seed(flight_seed, match_number));
+    brain
+}
+
+/// Apply one authoritative match state and say whether a new match began.
+/// Duplicate packets do not advance the number or reset a brain.
+fn match_transition(playing: &mut bool, match_number: &mut u32, next: bool) -> bool {
+    let began = !*playing && next;
+    if began {
+        *match_number = match_number.wrapping_add(1);
+    }
+    *playing = next;
+    began
 }
 
 /// One pilot's standing in the shared rig: its brain and everything the
@@ -224,12 +260,39 @@ struct Seat {
     name: String,
     addr: String,
     brain: ai::Bot,
+    brain_config: pilots::BrainConfig,
+    flight_seed: u32,
+    match_number: u32,
+    playing: bool,
     route: Arc<nav::Nav>,
     yielding: Arc<AtomicBool>,
     asked: Option<std::time::Instant>,
     sent: Option<u16>,
     sent_at: u32,
     tx: tokio::sync::mpsc::Sender<Ctl>,
+}
+
+impl Seat {
+    /// Follow the connection's authoritative match state. A false-to-true
+    /// transition replaces the whole controller, including its timers, route,
+    /// recovery state, departure state, and random stream.
+    fn set_match(&mut self, playing: bool, match_number: u32) -> bool {
+        let reset = playing && self.match_number != match_number;
+        if reset {
+            self.brain = fresh_brain(
+                self.brain.ship,
+                self.brain_config,
+                self.flight_seed,
+                match_number,
+            );
+            self.match_number = match_number;
+            self.asked = None;
+            self.sent = None;
+            self.sent_at = 0;
+        }
+        self.playing = playing;
+        reset
+    }
 }
 
 /// What the roster last said about every seat in the room.
@@ -303,13 +366,9 @@ struct Rig {
     /// The last buttons each seat produced, read when the driver steps.
     /// Meaningful only while `crew` holds a pilot in that seat.
     buttons: [AtomicU16; sim::MAX_SHIPS],
-    /// Everybody flying this rig, by seat. A claim that finds the seat held
-    /// by a live pilot has found a second room: ship indices are unique
-    /// within a room and nothing on the wire says which room a welcome came
-    /// from, so the claimer flies a private world rather than somebody
-    /// else's picture. No shipped zone opens a second room today; when one
-    /// does, the honest fix is a room id in the protocol, and this fallback
-    /// is what keeps the population correct rather than fast until then.
+    /// Everybody flying this arena room, by seat. The rig key includes the
+    /// room sent in `S2C_WELCOME`, so a collision here is an unexpected
+    /// duplicate seat rather than another room reusing the same ship index.
     crew: Mutex<HashMap<u8, Seat>>,
     /// The connection feeding snapshots into the shared world, zero while
     /// the role is open. Taken by compare-and-swap when a snapshot arrives,
@@ -359,8 +418,7 @@ impl Rig {
         })
     }
 
-    /// Take a seat, or refuse it because a live pilot already has it, which is
-    /// the second-room signal described on `crew`.
+    /// Take a seat, or refuse it because a live pilot already has it.
     fn claim(&self, ship: u8, seat: Seat) -> Result<(), Box<Seat>> {
         if ship as usize >= sim::MAX_SHIPS {
             return Err(Box::new(seat));
@@ -407,6 +465,21 @@ impl Rig {
         let _ = self
             .pen
             .compare_exchange(id, 0, Ordering::Relaxed, Ordering::Relaxed);
+    }
+
+    /// Pause or start one seated controller from its own socket's match
+    /// packet. Taking the crew lock makes the transition atomic with respect
+    /// to the shared driver: once this returns, the old brain cannot think
+    /// again.
+    fn set_match(&self, ship: u8, id: u64, playing: bool, match_number: u32) {
+        let mut crew = self.lock_crew();
+        let Some(seat) = crew.get_mut(&ship).filter(|seat| seat.id == id) else {
+            return;
+        };
+        let reset = seat.set_match(playing, match_number);
+        if !playing || reset {
+            self.buttons[ship as usize].store(0, Ordering::Relaxed);
+        }
     }
 
     /// One tick of shared prediction: every seated pilot's last buttons, one
@@ -503,6 +576,9 @@ async fn drive(rig: std::sync::Weak<Rig>, generation: u64) {
             // share a room, so they share a roster.
             let standings = rig.standings.lock();
             for (&ship, seat) in crew.iter_mut() {
+                if !seat.playing {
+                    continue;
+                }
                 let mut own = ai::own(&w, ship);
                 let mut fresh = seat.brain.looks_due().then(|| ai::scan(&w, ship));
                 if let Ok(st) = standings.as_ref() {
@@ -566,7 +642,14 @@ async fn drive(rig: std::sync::Weak<Rig>, generation: u64) {
                 // reads: an input naming a tick waits for it.
                 let m =
                     crate::input_message(seat.lifecycle, 0, 0, &[(tick.wrapping_add(1), buttons)]);
-                if seat.tx.try_send(Ctl::Frame(m)).is_ok() {
+                if seat
+                    .tx
+                    .try_send(Ctl::Frame {
+                        match_number: seat.match_number,
+                        message: m,
+                    })
+                    .is_ok()
+                {
                     seat.sent = Some(buttons);
                     seat.sent_at = tick;
                 }
@@ -583,7 +666,7 @@ async fn drive(rig: std::sync::Weak<Rig>, generation: u64) {
 /// Keep one driver behind a rig for as long as the rig exists. A completed or
 /// panicked task is replaced immediately. A task that stops making progress is
 /// replaced after five seconds, with its generation revoked first so it cannot
-/// resume as a second room clock later.
+/// resume as a second clock for the room later.
 async fn supervise_driver(rig: std::sync::Weak<Rig>) {
     let mut generation = 1u64;
     loop {
@@ -629,15 +712,16 @@ async fn supervise_driver(rig: std::sync::Weak<Rig>) {
     }
 }
 
-/// The rigs, one per arena address and map. Weak, so a rig lives exactly as
-/// long as some pilot holds it and a map change simply keys a new one.
+/// The rigs, one per arena room and map. Weak, so a rig lives exactly as long
+/// as some pilot holds it and a map change simply keys a new one.
 #[derive(Default)]
-struct Rigs(Mutex<HashMap<(String, u64), std::sync::Weak<Rig>>>);
+struct Rigs(Mutex<HashMap<(String, u16, u64), std::sync::Weak<Rig>>>);
 
 impl Rigs {
-    fn get(&self, addr: &str, key: u64, map: &Arc<sim::sim_map>) -> Option<Arc<Rig>> {
+    fn get(&self, addr: &str, room: u16, key: u64, map: &Arc<sim::sim_map>) -> Option<Arc<Rig>> {
         let mut g = self.0.lock().ok()?;
-        if let Some(rig) = g.get(&(addr.to_string(), key)).and_then(|w| w.upgrade()) {
+        let rig_key = (addr.to_string(), room, key);
+        if let Some(rig) = g.get(&rig_key).and_then(|w| w.upgrade()) {
             return Some(rig);
         }
         g.retain(|_, w| w.strong_count() > 0);
@@ -646,7 +730,7 @@ impl Rigs {
             Arc::clone(map),
         )));
         tokio::spawn(supervise_driver(Arc::downgrade(&rig)));
-        g.insert((addr.to_string(), key), Arc::downgrade(&rig));
+        g.insert(rig_key, Arc::downgrade(&rig));
         Some(rig)
     }
 }
@@ -701,7 +785,10 @@ fn retry_delay_ms(failures: u32, addr: &str) -> u64 {
 
 /// One bot the supervisor is holding open.
 struct Live {
+    id: pilots::PilotId,
     name: String,
+    room: u32,
+    target_slot: Option<u32>,
     born_ms: u64,
     /// Set when this bot has been asked to stand down. It leaves at the next
     /// good moment rather than at once, per the graceful rules in
@@ -777,15 +864,185 @@ struct Instance {
     failures: u32,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+struct Assignment {
+    room: u32,
+    target_slot: Option<u32>,
+}
+
+impl Live {
+    fn assignment(&self) -> Assignment {
+        Assignment {
+            room: self.room,
+            target_slot: self.target_slot,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+struct ArenaWant {
+    scalar: u32,
+    requests: Option<Vec<crate::fleet::BotRequest>>,
+    build: String,
+    pilot_attestation: String,
+}
+
+impl ArenaWant {
+    #[cfg(test)]
+    fn new(scalar: u32, requests: Option<Vec<crate::fleet::BotRequest>>) -> Self {
+        Self::from_release(
+            scalar,
+            requests,
+            crate::metrics::commit().to_string(),
+            String::new(),
+        )
+    }
+
+    fn from_release(
+        scalar: u32,
+        requests: Option<Vec<crate::fleet::BotRequest>>,
+        build: String,
+        pilot_attestation: String,
+    ) -> Self {
+        Self {
+            scalar,
+            requests,
+            build,
+            pilot_attestation,
+        }
+    }
+
+    fn assignments(&self) -> Vec<Assignment> {
+        let Some(requests) = &self.requests else {
+            return (0..self.scalar)
+                .map(|_| Assignment {
+                    room: 0,
+                    target_slot: None,
+                })
+                .collect();
+        };
+        let mut requests = requests.clone();
+        requests.sort_by_key(|request| (request.room, request.target_slot));
+        let certified_release = same_certified_release(
+            &self.build,
+            crate::metrics::commit(),
+            &self.pilot_attestation,
+            crate::arena::certified_pilot_attestation_id(),
+        );
+        requests
+            .into_iter()
+            .filter(|request| {
+                (1..=crate::MAX_ROOM_NUMBER).contains(&request.room)
+                    && (request.target_slot.is_none() || certified_release)
+            })
+            .flat_map(|request| {
+                (0..request.count).map(move |_| Assignment {
+                    room: request.room,
+                    target_slot: request.target_slot,
+                })
+            })
+            .collect()
+    }
+}
+
+fn same_certified_release(
+    arena_build: &str,
+    bot_build: &str,
+    arena_attestation: &str,
+    bot_attestation: &str,
+) -> bool {
+    arena_attestation.is_empty()
+        || (!arena_build.is_empty()
+            && arena_build != "unknown"
+            && bot_build != "unknown"
+            && arena_build == bot_build
+            && !bot_attestation.is_empty()
+            && arena_attestation == bot_attestation)
+}
+
+#[derive(Debug, Default, PartialEq, Eq)]
+struct Reconciliation {
+    immediate: Vec<usize>,
+    surplus: Vec<usize>,
+    missing: Vec<Assignment>,
+}
+
+/// Match the live population to the final room-scoped population an arena
+/// requested. A yielding ordinary bot no longer fills a request. Ladder waits
+/// until the old room task is gone because its one rival seat is still held.
+fn reconcile_assignments(current: &[(Assignment, bool)], desired: &[Assignment]) -> Reconciliation {
+    let mut remaining = desired.to_vec();
+    let mut kept = vec![false; current.len()];
+    for (index, (assignment, yielding)) in current.iter().enumerate() {
+        if *yielding {
+            continue;
+        }
+        if let Some(at) = remaining.iter().position(|wanted| wanted == assignment) {
+            remaining.remove(at);
+            kept[index] = true;
+        }
+    }
+
+    let mut plan = Reconciliation {
+        missing: remaining,
+        ..Reconciliation::default()
+    };
+    for (index, (assignment, yielding)) in current.iter().enumerate() {
+        if *yielding || kept[index] {
+            continue;
+        }
+        let ladder_changed = desired.iter().any(|wanted| {
+            wanted.room == assignment.room
+                && wanted.target_slot.is_some()
+                && wanted.target_slot != assignment.target_slot
+        });
+        if ladder_changed {
+            plan.immediate.push(index);
+        } else {
+            plan.surplus.push(index);
+        }
+    }
+    plan.missing.retain(|wanted| {
+        wanted.target_slot.is_none()
+            || !current
+                .iter()
+                .any(|(present, _)| present.room == wanted.room)
+    });
+    plan
+}
+
+fn merge_want(want: &mut HashMap<String, ArenaWant>, addr: String, incoming: ArenaWant) {
+    match want.get_mut(&addr) {
+        Some(current)
+            if incoming.requests.is_some()
+                && (current.requests.is_none()
+                    || incoming.assignments().len() >= current.assignments().len()) =>
+        {
+            *current = incoming;
+        }
+        Some(current)
+            if incoming.requests.is_none()
+                && current.requests.is_none()
+                && incoming.scalar > current.scalar =>
+        {
+            *current = incoming;
+        }
+        None => {
+            want.insert(addr, incoming);
+        }
+        _ => {}
+    }
+}
+
 pub async fn run() {
     // The one process in the fleet nothing could ask about, which is why it
     // was the one nobody could account for when the host pegged.
     crate::metrics::spawn("bots", "");
     let maps: Arc<Maps> = Arc::default();
     let rigs: Arc<Rigs> = Arc::default();
-    // Names in use by this supervisor. The meta-layer's rated lease arbitrates
-    // the same identity between supervisors on different hosts.
-    let taken: Arc<Mutex<HashSet<String>>> = Arc::default();
+    // Stable pilot identities in use by this supervisor. The meta-layer's
+    // rated lease arbitrates the same career between different hosts.
+    let taken: Arc<Mutex<HashSet<pilots::PilotId>>> = Arc::default();
     let blocked: Arc<Mutex<HashMap<String, u64>>> = Arc::default();
     // Account state stays with the supervisor, so a reconnect keeps its secret
     // and cannot turn one failed flight into a stack of purchases.
@@ -817,7 +1074,7 @@ pub async fn run() {
         let now = crate::fleet::now_ms();
 
         // Anything that has gone: a refused join, a yield, an arena that
-        // restarted. Its name goes back in the pool.
+        // restarted. Its identity goes back in the pool.
         for (addr, inst) in fleet.iter_mut() {
             let mut at = 0;
             while at < inst.bots.len() {
@@ -828,7 +1085,7 @@ pub async fn run() {
                 let live = inst.bots.remove(at);
                 let outcome = live.task.await.unwrap_or(FlightEnd::Panicked);
                 if let Ok(mut t) = taken.lock() {
-                    t.remove(&live.name);
+                    t.remove(&live.id);
                 }
                 if outcome == FlightEnd::RatedBusy {
                     if let Ok(mut blocked) = blocked.lock() {
@@ -859,14 +1116,10 @@ pub async fn run() {
         // stops the population being tended anywhere. Measured before it was
         // fixed: two dead addresses in the list turned a one second cycle into
         // a ten second one.
-        let mut want: HashMap<String, u32> = HashMap::new();
+        let mut want: HashMap<String, ArenaWant> = HashMap::new();
         let asked = futures_util::future::join_all(dirs.iter().map(|u| browse(u))).await;
-        for (addr, n, _) in asked.into_iter().flatten() {
-            // The most any directory says, because a directory relays only what
-            // it observed itself and one may have heard more recently than
-            // another.
-            let e = want.entry(addr).or_insert(0);
-            *e = (*e).max(n);
+        for (addr, wanted, _) in asked.into_iter().flatten() {
+            merge_want(&mut want, addr, wanted);
         }
         let asked = futures_util::future::join_all(
             direct
@@ -875,8 +1128,8 @@ pub async fn run() {
         )
         .await;
         for (addr, status) in asked {
-            if let Some((n, _)) = status {
-                want.insert(addr, n);
+            if let Some((wanted, _)) = status {
+                want.insert(addr, wanted);
             }
         }
 
@@ -892,111 +1145,202 @@ pub async fn run() {
             } else {
                 inst.misses += 1;
                 if inst.misses >= GONE_AFTER {
-                    want.insert(addr.clone(), 0);
+                    want.insert(addr.clone(), ArenaWant::default());
                 }
             }
         }
 
-        for (addr, n) in want {
+        for (addr, wanted) in want {
             let inst = fleet.entry(addr.clone()).or_default();
-            // Bots on their way out still hold their seat, so they count. The
-            // difference is what stops the supervisor asking a second one to
-            // leave every cycle while the first is looking for its moment.
             let have = inst.bots.len();
-            let n = n as usize;
-            if have < n {
-                if now.saturating_sub(inst.released_ms) < REFILL_COOLDOWN_MS {
+            let desired = wanted.assignments();
+            let current: Vec<(Assignment, bool)> = inst
+                .bots
+                .iter()
+                .map(|bot| (bot.assignment(), bot.yielding.load(Ordering::Relaxed)))
+                .collect();
+            let plan = reconcile_assignments(&current, &desired);
+
+            // A Ladder rung changed while the room is in intermission. The old
+            // opponent is no longer part of the requested final population and
+            // must not wait out a minimum lifetime before making room.
+            for index in plan.immediate {
+                let bot = &inst.bots[index];
+                bot.yielding.store(true, Ordering::Relaxed);
+                println!(
+                    "{addr}: room {} wants Ladder slot {:?}; {} stands down",
+                    bot.room,
+                    desired
+                        .iter()
+                        .find(|wanted| wanted.room == bot.room)
+                        .and_then(|wanted| wanted.target_slot),
+                    bot.name
+                );
+            }
+
+            // Ordinary fill still leaves one pilot at a time and observes the
+            // minimum lifetime. Room-scoped requests choose which room loses
+            // the seat instead of treating the instance as one bucket.
+            for index in plan.surplus {
+                let bot = &inst.bots[index];
+                if now.saturating_sub(bot.born_ms) < MIN_LIFE_MS {
                     continue;
                 }
-                if now < inst.retry_after_ms {
+                bot.yielding.store(true, Ordering::Relaxed);
+                inst.released_ms = now;
+                println!(
+                    "{addr}: {have} bots, wants {}; {} stands down from room {}",
+                    desired.len(),
+                    bot.name,
+                    bot.room
+                );
+                break;
+            }
+
+            if now < inst.retry_after_ms {
+                continue;
+            }
+            let ordinary_refill_ready = now.saturating_sub(inst.released_ms) >= REFILL_COOLDOWN_MS;
+            let mut sent = 0;
+            for assignment in plan.missing {
+                if sent >= ADD_PER_CYCLE {
+                    break;
+                }
+                if assignment.target_slot.is_none() && !ordinary_refill_ready {
                     continue;
                 }
-                let add = (n - have).min(ADD_PER_CYCLE);
-                let mut sent = 0;
-                for _ in 0..add {
-                    let Some(who) = claim(&taken, &blocked, now) else {
-                        break;
-                    };
-                    let yielding = Arc::new(AtomicBool::new(false));
-                    let task = tokio::spawn(fly(
-                        addr.clone(),
-                        who.clone(),
-                        Arc::clone(&maps),
-                        Arc::clone(&rigs),
-                        Arc::clone(&yielding),
-                        Arc::clone(&accounts),
-                    ));
-                    inst.bots.push(Live {
-                        name: who.name,
-                        born_ms: now,
-                        yielding,
-                        task,
-                    });
-                    sent += 1;
-                }
-                println!("{addr}: {have} bots, wants {n}; sent {sent}");
-            } else if have > n {
-                // Oldest first among those old enough to go, so a bot that has
-                // just arrived is not immediately turned around.
-                //
-                // One at a time, whatever the surplus. A room shrinks by one
-                // seat per person who joins it, so a group arriving together
-                // used to put that many bots into leaving in the same second.
-                // While leaving was instant nobody could tell; now that it is
-                // a flight across the map with the trigger shut, five at once
-                // is an evacuation, and a cycle is about a second, so the
-                // surplus still drains at a person's pace. The already-going
-                // ones are counted first so this does not stack a second
-                // departure on a bot that is mid-way through one.
-                let asked = inst
-                    .bots
-                    .iter()
-                    .filter(|b| b.yielding.load(Ordering::Relaxed))
-                    .count();
-                let over = have - n;
-                if asked < over {
-                    for b in inst.bots.iter() {
-                        if now.saturating_sub(b.born_ms) < MIN_LIFE_MS
-                            || b.yielding.load(Ordering::Relaxed)
-                        {
-                            continue;
-                        }
-                        b.yielding.store(true, Ordering::Relaxed);
-                        inst.released_ms = now;
-                        println!("{addr}: {have} bots, wants {n}; {} stands down", b.name);
-                        break;
-                    }
-                }
+                let Some(who) = claim(&taken, &blocked, now, assignment.target_slot) else {
+                    break;
+                };
+                let yielding = Arc::new(AtomicBool::new(false));
+                let task = tokio::spawn(fly(
+                    addr.clone(),
+                    who.clone(),
+                    assignment.room,
+                    assignment.target_slot,
+                    Arc::clone(&maps),
+                    Arc::clone(&rigs),
+                    Arc::clone(&yielding),
+                    Arc::clone(&accounts),
+                ));
+                inst.bots.push(Live {
+                    id: who.id,
+                    name: who.callsign,
+                    room: assignment.room,
+                    target_slot: assignment.target_slot,
+                    born_ms: now,
+                    yielding,
+                    task,
+                });
+                sent += 1;
+            }
+            if sent > 0 {
+                println!("{addr}: {have} bots, wants {}; sent {sent}", desired.len());
             }
         }
     }
 }
 
-/// Take the next unused individual. The calibrated pilots go first, and after them
-/// the roster is generated, so a room asking for fifty-one gets fifty-one
-/// distinct pilots rather than repeating the calibrated group.
+/// Ordinary rooms draw from the authored roster and then a large generated
+/// population. Ladder uses persistent replicas of only the authored pilots.
+const PILOT_POOL: usize = pilots::HOUSE_PILOT_POOL;
+type LadderOrder = [usize; pilots::PROVISIONAL_LADDER_RUNG_COUNT];
+
+/// Order the authored archetypes by a complete, verified tournament seed.
+/// Missing certification or content verification falls back as one unit.
+fn ladder_order_from_seed(seed: &str, verified_current_content: bool) -> LadderOrder {
+    let roster = pilots::roster();
+    let provisional: LadderOrder = pilots::provisional_ladder_order(&roster)
+        .try_into()
+        .expect("the authored roster has the declared Ladder rung count");
+
+    if !verified_current_content {
+        return provisional;
+    }
+    let Ok(ratings) = serde_json::from_str::<HashMap<String, f64>>(seed) else {
+        return provisional;
+    };
+    if !roster.iter().all(|pilot| {
+        ratings
+            .get(&pilot.callsign)
+            .is_some_and(|rating| rating.is_finite())
+    }) {
+        return provisional;
+    }
+
+    let mut measured = provisional;
+    measured.sort_by(|&left, &right| {
+        ratings[&roster[left].callsign]
+            .total_cmp(&ratings[&roster[right].callsign])
+            .then_with(|| {
+                roster[left]
+                    .ordering_prior()
+                    .total_cmp(&roster[right].ordering_prior())
+            })
+            .then_with(|| roster[left].id.0.cmp(&roster[right].id.0))
+    });
+    measured
+}
+
+fn ladder_order() -> &'static LadderOrder {
+    static ORDER: OnceLock<LadderOrder> = OnceLock::new();
+    ORDER.get_or_init(|| {
+        let Some(entries) =
+            crate::arena::certified_pilot_attestation().map(|release| &release.certified_ladder)
+        else {
+            return ladder_order_from_seed(crate::arena::LADDER, false);
+        };
+        let roster = pilots::roster();
+        let measured: Vec<usize> = entries
+            .iter()
+            .filter_map(|entry| {
+                roster.iter().position(|pilot| {
+                    pilot.id.0 == entry.pilot_id && pilot.callsign == entry.callsign
+                })
+            })
+            .collect();
+        measured
+            .try_into()
+            .unwrap_or_else(|_| ladder_order_from_seed(crate::arena::LADDER, false))
+    })
+}
+
+pub(crate) fn ladder_archetype_for_slot(slot: u32) -> Option<usize> {
+    ladder_order().get(slot as usize).copied()
+}
+
 fn claim(
-    taken: &Arc<Mutex<HashSet<String>>>,
+    taken: &Arc<Mutex<HashSet<pilots::PilotId>>>,
     blocked: &Arc<Mutex<HashMap<String, u64>>>,
     now: u64,
-) -> Option<ai::RosterEntry> {
+    target_slot: Option<u32>,
+) -> Option<pilots::PilotSpec> {
     let mut t = taken.lock().ok()?;
     let mut blocked = blocked.lock().ok()?;
     blocked.retain(|_, until| *until > now);
-    for n in 0..4096 {
-        let e = ai::individual(n);
-        if blocked.contains_key(&e.name) {
-            continue;
+    let mut take = |e: pilots::PilotSpec| {
+        debug_assert_eq!(e.version, pilots::PILOT_SPEC_VERSION);
+        if blocked.contains_key(&e.callsign) {
+            return None;
         }
-        if t.insert(e.name.clone()) {
-            return Some(e);
+        if t.insert(e.id) {
+            Some(e)
+        } else {
+            None
         }
-    }
-    None
+    };
+
+    let Some(target_slot) = target_slot else {
+        return (0..PILOT_POOL).map(pilots::individual).find_map(&mut take);
+    };
+    let archetype = ladder_archetype_for_slot(target_slot)?;
+    (0..pilots::LADDER_REPLICAS_PER_RUNG)
+        .filter_map(|replica| pilots::ladder_replica(archetype, replica))
+        .find_map(&mut take)
 }
 
 /// Ask a directory what is running, and how many bots each instance wants.
-async fn browse(url: &str) -> Vec<(String, u32, String)> {
+async fn browse(url: &str) -> Vec<(String, ArenaWant, String)> {
     let Some(body) =
         directory::request(url, directory::STATUS_REQUEST, directory::STATUS_REPLY).await
     else {
@@ -1008,9 +1352,18 @@ async fn browse(url: &str) -> Vec<(String, u32, String)> {
     b.zones
         .iter()
         .flat_map(|z| {
-            z.instances
-                .iter()
-                .map(|i| (i.address.clone(), i.bots_wanted, z.name.clone()))
+            z.instances.iter().map(|i| {
+                (
+                    i.address.clone(),
+                    ArenaWant::from_release(
+                        i.bots_wanted,
+                        i.bot_requests.clone(),
+                        i.build.clone(),
+                        i.pilot_attestation.clone(),
+                    ),
+                    z.name.clone(),
+                )
+            })
         })
         .collect()
 }
@@ -1018,11 +1371,21 @@ async fn browse(url: &str) -> Vec<(String, u32, String)> {
 /// The same question straight to one arena, for a laptop running without a
 /// directory. `C2S_STATUS` is answerable without joining, which is what makes
 /// this the same request a directory's verification makes.
-async fn ask(addr: &str) -> Option<(u32, String)> {
+async fn ask(addr: &str) -> Option<(ArenaWant, String)> {
     let body = directory::request(addr, directory::STATUS_REQUEST, directory::STATUS_REPLY).await?;
     serde_json::from_str::<crate::fleet::Status>(&body)
         .ok()
-        .map(|s| (s.bots_wanted, s.zone))
+        .map(|s| {
+            (
+                ArenaWant::from_release(
+                    s.bots_wanted,
+                    s.bot_requests,
+                    s.build,
+                    s.pilot_attestation,
+                ),
+                s.zone,
+            )
+        })
 }
 
 /// One bot, from dial to disconnect.
@@ -1036,13 +1399,17 @@ async fn ask(addr: &str) -> Option<(u32, String)> {
 /// 20 Hz picture would plan and steer from a clock five times too slow.
 ///
 /// The world it steps is the arena's `Rig`, shared with every other pilot on
-/// the same address, because the rooms are one room and predicting it once is
-/// the difference between this process fitting on the host and not. Each
-/// connection still looks ordinary from the arena's side; the sharing is
-/// entirely inside this process.
+/// the same arena address, room, and map. Predicting each room once is the
+/// difference between this process fitting on the host and not. Each connection
+/// still looks ordinary from the arena's side; the sharing is entirely inside
+/// this process.
 /// How one roster individual may see the room. A house token earns the complete
 /// snapshot that makes the shared rig sound. A deployment without accounts is
 /// still allowed to fly bots, but each one must use its own filtered world.
+fn uses_career_power(target_slot: Option<u32>) -> bool {
+    target_slot.is_none()
+}
+
 #[derive(Debug, PartialEq, Eq)]
 enum BotIdentity {
     /// A token, and what the account behind it owns. The entitlements come
@@ -1068,9 +1435,12 @@ impl BotIdentity {
         matches!(self, BotIdentity::House { .. })
     }
 
-    /// What this pilot owns, which for a bot with no meta-layer behind it is
-    /// what everybody is dealt.
-    fn entitlements(&self) -> [u8; crate::sim::SLOT_COUNT] {
+    /// What this flight may wear. Ladder keeps the authenticated identity but
+    /// uses the common base account, so a career purchase cannot change a rung.
+    fn kit_entitlements(&self, target_slot: Option<u32>) -> [u8; crate::sim::SLOT_COUNT] {
+        if !uses_career_power(target_slot) {
+            return crate::sim::World::base_entitlements();
+        }
         match self {
             BotIdentity::House { entitlements, .. } => *entitlements,
             BotIdentity::Unaccounted => crate::sim::World::base_entitlements(),
@@ -1086,8 +1456,12 @@ impl BotIdentity {
 /// however many times this process restarts. The secret is kept in memory for
 /// the life of the process, which is what stops a restart loop minting a
 /// credential row per attempt.
-async fn bot_identity(who: &ai::RosterEntry, accounts: &Accounts) -> Result<BotIdentity, String> {
-    let name = who.name.as_str();
+async fn bot_identity(
+    who: &pilots::PilotSpec,
+    accounts: &Accounts,
+    target_slot: Option<u32>,
+) -> Result<BotIdentity, String> {
+    let name = who.callsign.as_str();
     let meta = std::env::var("VW_META").unwrap_or_default();
     let pool = std::env::var("VW_TOKEN").unwrap_or_default();
     if meta.is_empty() || pool.is_empty() {
@@ -1142,7 +1516,12 @@ async fn bot_identity(who: &ai::RosterEntry, accounts: &Accounts) -> Result<BotI
     // Through the endpoints a person's client uses, with nothing added for
     // being ours: the shelf prices it, the wallet is checked at the meta-layer
     // and the refusal is the same one a player gets.
-    if accounts.may_shop(name) && spend(&meta, &secret, who, &reply).await {
+    // A Ladder appearance is a controlled fixture. It keeps this identity and
+    // session but does not change or draw power from the career wallet.
+    if uses_career_power(target_slot)
+        && accounts.may_shop(name)
+        && spend(&meta, &secret, who, &reply).await
+    {
         accounts.bought(name);
         // A purchase moves the ceiling and the arena reads its copy off the
         // token, so the one in hand is already out of date. This is why the
@@ -1179,7 +1558,7 @@ async fn bot_identity(who: &ai::RosterEntry, accounts: &Accounts) -> Result<BotI
 async fn spend(
     meta: &str,
     secret: &str,
-    who: &ai::RosterEntry,
+    who: &pilots::PilotSpec,
     session: &serde_json::Value,
 ) -> bool {
     let rivets = session
@@ -1216,25 +1595,35 @@ async fn spend(
     match crate::meta::call(meta, "/v1/buy", &body).await {
         Ok(bought) => {
             let left = bought.get("rivets").and_then(|v| v.as_i64()).unwrap_or(0);
-            println!("{} bought slot {slot}; {left} rivets left", who.name);
+            println!("{} bought slot {slot}; {left} rivets left", who.callsign);
             true
         }
         // A refusal is the meta-layer's answer and is not an error here: a
         // wallet that moved between the shelf and the purchase is a race this
         // pilot loses by flying what it already owns.
         Err(why) => {
-            println!("{} could not buy slot {slot}: {why}", who.name);
+            println!("{} could not buy slot {slot}: {why}", who.callsign);
             false
         }
     }
 }
 
-fn next_purchase(who: &ai::RosterEntry, offered: &[(usize, u32)], rivets: i64) -> Option<usize> {
-    crate::shopper::next_buy(
-        &crate::shopper::wants(&who.name, who.class),
-        offered,
-        rivets,
-    )
+fn next_purchase(who: &pilots::PilotSpec, offered: &[(usize, u32)], rivets: i64) -> Option<usize> {
+    crate::shopper::next_buy(&crate::shopper::wants(who.build), offered, rivets)
+}
+
+fn pilot_kit(
+    who: &pilots::PilotSpec,
+    arena_ceiling: &[u8; crate::sim::SLOT_COUNT],
+    identity: &BotIdentity,
+    target_slot: Option<u32>,
+) -> [u8; crate::sim::SLOT_COUNT] {
+    let owned = identity.kit_entitlements(target_slot);
+    let mut ceiling = *arena_ceiling;
+    for (slot, top) in ceiling.iter_mut().enumerate() {
+        *top = (*top).min(owned[slot]);
+    }
+    crate::shopper::build(&crate::shopper::wants(who.build), &ceiling)
 }
 
 /// The join a bot sends, built where something can check it.
@@ -1243,29 +1632,56 @@ fn next_purchase(who: &ai::RosterEntry, offered: &[(usize, u32)], rivets: i64) -
 /// did not, and every bot in the fleet arrived nameless. Out here it is one
 /// expression a test can call, which is the whole reason it moved.
 ///
-/// Zero for the room, meaning "whichever the fill ladder picks". A bot has been
-/// shown no list and has no preference: it goes where the room that wants
-/// filling is.
-fn join_msg(class: u8, name: &str, session: &str) -> Vec<u8> {
+/// A structured fleet request names the room that asked for this pilot. Zero
+/// keeps the older scalar-fill behavior and lets the arena choose a room.
+fn join_msg(class: u8, name: &str, session: &str, room: u32) -> Option<Vec<u8>> {
+    join_msg_with_release(
+        class,
+        name,
+        session,
+        room,
+        &crate::arena::house_bot_release_claim(),
+    )
+}
+
+fn join_msg_with_release(
+    class: u8,
+    name: &str,
+    session: &str,
+    room: u32,
+    release: &str,
+) -> Option<Vec<u8>> {
     let n = name.as_bytes();
+    let release = release.as_bytes();
     let mut join = vec![
         crate::C2S_JOIN,
         class.min((sim::MAX_CLASSES - 1) as u8),
         crate::CLIENT_PROTOCOL,
         crate::JOIN_BOT,
         0,
-        n.len().min(255) as u8,
-        0,
+        u8::try_from(n.len()).ok()?,
+        u8::try_from(room).ok()?,
+        u8::try_from(release.len()).ok()?,
     ];
     debug_assert_eq!(join.len(), crate::C2S_JOIN_HEADER);
     join.extend_from_slice(n);
+    join.extend_from_slice(release);
     join.extend_from_slice(session.as_bytes());
-    join
+    Some(join)
 }
 
+fn welcome_room(message: &[u8]) -> Option<u16> {
+    Some(u16::from_le_bytes(message.get(10..12)?.try_into().ok()?))
+}
+
+// Room and Ladder target stay explicit here because they carry independent
+// wire and account policies through the connection setup.
+#[allow(clippy::too_many_arguments)]
 async fn fly(
     addr: String,
-    who: ai::RosterEntry,
+    who: pilots::PilotSpec,
+    room: u32,
+    target_slot: Option<u32>,
     maps: Arc<Maps>,
     rigs: Arc<Rigs>,
     yielding: Arc<AtomicBool>,
@@ -1294,7 +1710,7 @@ async fn fly(
     // session and must not move a pilot's career. Authentication still happens
     // before join, so a failed meta-layer never turns a house bot into an
     // unaccounted one with a filtered view.
-    let identity = match bot_identity(&who, &accounts).await {
+    let identity = match bot_identity(&who, &accounts, target_slot).await {
         Ok(identity) => identity,
         Err(e) => {
             crate::metrics::BOT_AUTH_RETRIES.inc();
@@ -1303,13 +1719,27 @@ async fn fly(
             return FlightEnd::AuthFailed;
         }
     };
-    fly_socket(addr, who, maps, rigs, yielding, accounts, identity, ws).await
+    fly_socket(
+        addr,
+        who,
+        room,
+        target_slot,
+        maps,
+        rigs,
+        yielding,
+        accounts,
+        identity,
+        ws,
+    )
+    .await
 }
 
 #[allow(clippy::too_many_arguments)]
 async fn fly_socket<S>(
     addr: String,
-    who: ai::RosterEntry,
+    who: pilots::PilotSpec,
+    room: u32,
+    target_slot: Option<u32>,
     maps: Arc<Maps>,
     rigs: Arc<Rigs>,
     yielding: Arc<AtomicBool>,
@@ -1320,9 +1750,9 @@ async fn fly_socket<S>(
 where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send,
 {
-    let class = who.class;
-    let skill = who.skill;
-    let behavior_seed = fingerprint(who.name.as_bytes()) as u32;
+    let class = who.hull;
+    let flight = MATCH_ID.fetch_add(1, Ordering::Relaxed);
+    let match_seed = flight as u32 ^ (flight >> 32) as u32 ^ fingerprint(addr.as_bytes()) as u32;
     let share_world = identity.shares_world();
     let (mut sink, mut source) = ws.split();
 
@@ -1335,24 +1765,27 @@ where
     // bots are the fleet's own. Without a meta-layer it flies declared but
     // unaccounted, which reads as somebody else's bot, honestly enough. Its
     // filtered view cannot feed the shared rig, so it flies a private world.
-    let join = join_msg(class, &who.name, identity.session());
+    let Some(join) = join_msg(class, &who.callsign, identity.session(), room) else {
+        return protocol_error();
+    };
     if sink.send(Message::Binary(join)).await.is_err() {
         return FlightEnd::Closed { welcomed: false };
     }
 
-    // How this pilot sees the room: the rig it shares with every other
-    // pilot on this arena, or nothing yet. A seat collision at welcome is
-    // the second-room signal, and that pilot leaves this loop to fly a
-    // private world at the old per-connection cost.
+    // How this pilot sees the room: the rig it shares with every other pilot
+    // welcomed into the same arena room, or nothing yet. The actual room comes
+    // from welcome, after the map, so initial rig binding waits for it.
     enum Sight {
         Dark,
         Shared(Arc<Rig>),
     }
     let me = PILOT_ID.fetch_add(1, Ordering::Relaxed);
     let mut sight = Sight::Dark;
-    // Held back for the private fallback, which is built at welcome, after
-    // the map and the settings have already gone by.
+    // Held back for welcome and the private fallback, after the map and the
+    // settings have already gone by.
     let mut map: Option<Arc<sim::sim_map>> = None;
+    let mut map_key: Option<u64> = None;
+    let mut actual_room: Option<u16> = None;
     let mut cfg_bytes: Vec<u8> = Vec::new();
     let mut route: Option<Arc<nav::Nav>> = None;
     let mut ship: u8 = 0;
@@ -1370,10 +1803,16 @@ where
     let mut snapshot_at = std::time::Instant::now();
     let mut welcomed_at: Option<std::time::Instant> = None;
     let mut outcome = FlightEnd::Closed { welcomed: false };
+    let mut match_playing = true;
+    let mut match_number = 0u32;
     // Set at a seat collision; flown after this loop ends.
     let mut go_private: Option<(sim::World, ai::Bot)> = None;
 
     loop {
+        if !match_playing && yielding.load(Ordering::Relaxed) {
+            outcome = FlightEnd::Departed;
+            break;
+        }
         tokio::select! {
             biased;
             msg = source.next() => {
@@ -1404,6 +1843,7 @@ where
                     || data[0] == crate::S2C_SNAPSHOT && data.len() <= crate::SNAPSHOT_HEADER
                     || data[0] == crate::S2C_DENIED && data.len() < 2
                     || data[0] == crate::S2C_ROSTER && data.len() < 2
+                    || data[0] == crate::S2C_MATCH && data.len() < 4
                 {
                     outcome = protocol_error();
                     break;
@@ -1436,34 +1876,42 @@ where
                             _ => None,
                         };
                         if share_world {
-                            let Some(rig) = rigs.get(&addr, key, &m) else { break };
-                            if let Some(mut seat) = carried {
-                                // The route it was flying was a list of points
-                                // on the old ground.
-                                seat.brain.remap();
-                                seat.route = Arc::clone(&grid);
-                                seat.sent = None;
-                                seat.sent_at = 0;
-                                if let Err(seat) = rig.claim(ship, seat) {
-                                    let seat = *seat;
-                                    let seed = behavior_seed;
-                                    let mut world = sim::World::on_shared_map(seed, Arc::clone(&m));
-                                    if !cfg_bytes.is_empty() && !world.apply_settings(&cfg_bytes) {
-                                        outcome = protocol_error();
-                                        break;
+                            if let Some(room) = actual_room {
+                                let Some(rig) = rigs.get(&addr, room, key, &m) else { break };
+                                if let Some(mut seat) = carried {
+                                    // The route it was flying was a list of points
+                                    // on the old ground.
+                                    seat.brain.remap();
+                                    seat.route = Arc::clone(&grid);
+                                    seat.sent = None;
+                                    seat.sent_at = 0;
+                                    if let Err(seat) = rig.claim(ship, seat) {
+                                        let seat = *seat;
+                                        let seed = match_seed;
+                                        let mut world =
+                                            sim::World::on_shared_map(seed, Arc::clone(&m));
+                                        if !cfg_bytes.is_empty()
+                                            && !world.apply_settings(&cfg_bytes)
+                                        {
+                                            outcome = protocol_error();
+                                            break;
+                                        }
+                                        println!(
+                                            "{addr}: seat {ship} is taken after a map change; \
+                                             {} flies a private world",
+                                            who.callsign
+                                        );
+                                        go_private = Some((world, seat.brain));
                                     }
-                                    println!(
-                                        "{addr}: seat {ship} is taken after a map change; \
-                                         {} flies a private world",
-                                        who.name
-                                    );
-                                    go_private = Some((world, seat.brain));
                                 }
+                                sight = Sight::Shared(rig);
+                            } else {
+                                sight = Sight::Dark;
                             }
-                            sight = Sight::Shared(rig);
                         } else {
                             sight = Sight::Dark;
                         }
+                        map_key = Some(key);
                         map = Some(m);
                         if go_private.is_some() {
                             break;
@@ -1486,12 +1934,33 @@ where
                         }
                     }
                     Some(crate::S2C_WELCOME) => {
-                        if map.is_none()
-                            || route.is_none()
-                            || share_world && !matches!(&sight, Sight::Shared(_))
-                        {
+                        if map.is_none() || map_key.is_none() || route.is_none() {
                             outcome = protocol_error();
                             break;
+                        }
+                        let Some(welcomed_room) = welcome_room(&data) else {
+                            outcome = protocol_error();
+                            break;
+                        };
+                        // A fresh welcome is a fresh life and may also move a
+                        // connection. Remove its old seat before binding the
+                        // authoritative room carried by this welcome.
+                        if welcomed_at.is_some() {
+                            if let Sight::Shared(rig) = &sight {
+                                rig.release(ship, me);
+                            }
+                            sight = Sight::Dark;
+                        }
+                        actual_room = Some(welcomed_room);
+                        if share_world {
+                            let Some(m) = map.as_ref() else { break };
+                            let Some(key) = map_key else { break };
+                            let Some(rig) = rigs.get(&addr, welcomed_room, key, m) else { break };
+                            if !cfg_bytes.is_empty() && !rig.lock_world().apply_settings(&cfg_bytes) {
+                                outcome = protocol_error();
+                                break;
+                            }
+                            sight = Sight::Shared(rig);
                         }
                         ship = data[1];
                         if ship as usize >= sim::MAX_SHIPS {
@@ -1512,6 +1981,8 @@ where
                         // account owns. A kit outside either is refused whole
                         // and leaves the pilot in the starter kit, which is
                         // the same answer a player gets.
+                        // Ladder substitutes the common base entitlement for
+                        // the career ceiling so a rung stays the same opponent.
                         let arena_ceiling = match &sight {
                             Sight::Shared(rig) => rig.lock_world().kit_ceilings(),
                             // No shared world to read it off yet. The game's
@@ -1521,29 +1992,19 @@ where
                             // way to be wrong.
                             Sight::Dark => *crate::sim::World::baseline_kit_ceiling(),
                         };
-                        let owned = identity.entitlements();
-                        let mut ceiling = arena_ceiling;
-                        for (slot, top) in ceiling.iter_mut().enumerate() {
-                            *top = (*top).min(owned[slot]);
-                        }
-                        let kit = crate::shopper::build(
-                            &crate::shopper::wants(&who.name, class),
-                            &ceiling,
-                        );
+                        let kit = pilot_kit(&who, &arena_ceiling, &identity, target_slot);
                         let mut m = Vec::with_capacity(1 + kit.len());
                         m.push(crate::C2S_KIT);
                         m.extend_from_slice(&kit);
                         if sink.send(Message::Binary(m)).await.is_err() {
                             break;
                         }
-                        let mut b = ai::Bot::new(ship, skill);
-                        // Luck of its own, so two pilots of one skill in one
-                        // room do not fly the same match.
-                        b.reseed(behavior_seed);
+                        let brain_config = who.brain();
+                        let b = fresh_brain(ship, brain_config, match_seed, match_number);
                         if !share_world {
                             let Some(m) = map.clone() else { break };
                             let mut w = sim::World::on_shared_map(
-                                behavior_seed,
+                                match_seed,
                                 m,
                             );
                             if !cfg_bytes.is_empty() && !w.apply_settings(&cfg_bytes) {
@@ -1558,9 +2019,13 @@ where
                             let seat = Seat {
                                 id: me,
                                 lifecycle,
-                                name: who.name.clone(),
+                                name: who.callsign.clone(),
                                 addr: addr.clone(),
                                 brain: b,
+                                brain_config,
+                                flight_seed: match_seed,
+                                match_number,
+                                playing: match_playing,
                                 route: r,
                                 yielding: Arc::clone(&yielding),
                                 asked: None,
@@ -1571,16 +2036,16 @@ where
                             if let Err(seat) = rig.claim(ship, seat) {
                                 let seat = *seat;
                                 // Somebody live already answers to this ship
-                                // index, so this welcome came from a second
-                                // room. Fly it privately, at the old cost.
+                                // in this room. Keep the new connection correct
+                                // with a private world rather than merging seats.
                                 let Some(m) = map.clone() else { break };
-                                let seed = behavior_seed;
+                                let seed = match_seed;
                                 let mut w = sim::World::on_shared_map(seed, m);
                                 if !cfg_bytes.is_empty() && !w.apply_settings(&cfg_bytes) {
                                     outcome = protocol_error();
                                     break;
                                 }
-                                println!("{addr}: seat {ship} is taken; {} flies a private world", who.name);
+                                println!("{addr}: seat {ship} is taken; {} flies a private world", who.callsign);
                                 go_private = Some((w, seat.brain));
                                 break;
                             }
@@ -1616,6 +2081,17 @@ where
                             }
                         }
                     }
+                    Some(crate::S2C_MATCH) => {
+                        let next = data[1] & crate::MATCH_PLAYING != 0;
+                        match_transition(&mut match_playing, &mut match_number, next);
+                        if let Sight::Shared(rig) = &sight {
+                            rig.set_match(ship, me, match_playing, match_number);
+                        }
+                        if !match_playing && yielding.load(Ordering::Relaxed) {
+                            outcome = FlightEnd::Departed;
+                            break;
+                        }
+                    }
                     Some(crate::S2C_YIELD) => {
                         outcome = FlightEnd::Yielded;
                         break;
@@ -1626,7 +2102,7 @@ where
                         } else {
                             outcome = FlightEnd::Refused;
                         }
-                        println!("{addr} refused {}: {}", who.name,
+                        println!("{addr} refused {}: {}", who.callsign,
                                  String::from_utf8_lossy(&data[2.min(data.len())..]));
                         break;
                     }
@@ -1635,8 +2111,14 @@ where
             }
             ctl = ctl_rx.recv() => {
                 match ctl {
-                    Some(Ctl::Frame(m)) => {
-                        if sink.send(Message::Binary(m)).await.is_err() {
+                    Some(Ctl::Frame { match_number: frame_match, message }) => {
+                        // A frame queued before the whistle belongs to the old
+                        // controller. Do not let it leak into intermission or
+                        // the next match while the socket catches up.
+                        if match_playing
+                            && frame_match == match_number
+                            && sink.send(Message::Binary(message)).await.is_err()
+                        {
                             break;
                         }
                     }
@@ -1664,9 +2146,9 @@ where
         }
     }
 
-    // The second-room pilot, flown the way every pilot used to be: its own
-    // world, its own clock, its own hands. Correct rather than fast, and
-    // rare enough that fast does not matter.
+    // An unexpected duplicate-seat pilot, flown the way every pilot used to
+    // be: its own world, its own clock, its own hands. Correct rather than
+    // merged with somebody else's seat.
     if let Some((mut w, mut b)) = go_private {
         let mut buttons: u16;
         let mut sent: Option<u16> = None;
@@ -1677,6 +2159,10 @@ where
         let mut ticker = tokio::time::interval(std::time::Duration::from_micros(10_000));
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
+            if !match_playing && yielding.load(Ordering::Relaxed) {
+                outcome = FlightEnd::Departed;
+                break;
+            }
             tokio::select! {
                 biased;
                 msg = source.next() => {
@@ -1707,6 +2193,7 @@ where
                         || data[0] == crate::S2C_SNAPSHOT && data.len() <= crate::SNAPSHOT_HEADER
                         || data[0] == crate::S2C_DENIED && data.len() < 2
                         || data[0] == crate::S2C_ROSTER && data.len() < 2
+                        || data[0] == crate::S2C_MATCH && data.len() < 4
                     {
                         outcome = protocol_error();
                         break;
@@ -1720,7 +2207,7 @@ where
                                 outcome = protocol_error();
                                 break;
                             };
-                            let seed = behavior_seed;
+                            let seed = match_seed;
                             let mut next = sim::World::on_shared_map(seed, m);
                             if !cfg_bytes.is_empty() && !next.apply_settings(&cfg_bytes) {
                                 outcome = protocol_error();
@@ -1754,6 +2241,19 @@ where
                             snapshot_at = std::time::Instant::now();
                         }
                         Some(crate::S2C_ROSTER) => standings.read(&data),
+                        Some(crate::S2C_MATCH) => {
+                            let next = data[1] & crate::MATCH_PLAYING != 0;
+                            if match_transition(&mut match_playing, &mut match_number, next) {
+                                b = fresh_brain(ship, who.brain(), match_seed, match_number);
+                                sent = None;
+                                sent_at = 0;
+                                asked = None;
+                            }
+                            if !match_playing && yielding.load(Ordering::Relaxed) {
+                                outcome = FlightEnd::Departed;
+                                break;
+                            }
+                        }
                         Some(crate::S2C_YIELD) => {
                             outcome = FlightEnd::Yielded;
                             break;
@@ -1780,6 +2280,9 @@ where
                     if ship as usize >= sim::MAX_SHIPS {
                         break;
                     }
+                    if !match_playing {
+                        continue;
+                    }
                     let mut own = ai::own(&w, ship);
                     let mut fresh = b.looks_due().then(|| ai::scan(&w, ship));
                     standings.apply(ship, &mut own, fresh.as_mut());
@@ -1805,7 +2308,7 @@ where
                         };
                         if let Some(how) = how {
                             println!("{addr}: {} left ({how}, {:.1}s)",
-                                     who.name, since.elapsed().as_secs_f32());
+                                     who.callsign, since.elapsed().as_secs_f32());
                             outcome = FlightEnd::Departed;
                             break;
                         }
@@ -1848,7 +2351,7 @@ where
         && (matches!(outcome, FlightEnd::Departed | FlightEnd::Yielded)
             || welcomed_at.is_some_and(|at| at.elapsed().as_millis() as u64 >= MIN_LIFE_MS));
     if completed {
-        accounts.complete_session(&who.name);
+        accounts.complete_session(&who.callsign);
     }
     outcome
 }
@@ -1870,11 +2373,11 @@ mod tests {
         message
     }
 
-    fn welcome_message(ship: u8, lifecycle: u32, tick: u32) -> Vec<u8> {
+    fn welcome_message(ship: u8, lifecycle: u32, tick: u32, room: u16) -> Vec<u8> {
         let mut message = vec![crate::S2C_WELCOME, ship];
         message.extend_from_slice(&lifecycle.to_le_bytes());
         message.extend_from_slice(&tick.to_le_bytes());
-        message.extend_from_slice(&0u16.to_le_bytes());
+        message.extend_from_slice(&room.to_le_bytes());
         message.extend_from_slice(&1u32.to_le_bytes());
         message
     }
@@ -1888,6 +2391,120 @@ mod tests {
         message[0] = crate::S2C_SNAPSHOT;
         message.extend_from_slice(&packed);
         message
+    }
+
+    fn test_seat(
+        ship: u8,
+        route: Arc<nav::Nav>,
+        tx: tokio::sync::mpsc::Sender<Ctl>,
+        playing: bool,
+    ) -> Seat {
+        let brain_config = pilots::individual(0).brain();
+        Seat {
+            id: 71,
+            lifecycle: 1,
+            name: "Halcyon".into(),
+            addr: "ws://nowhere".into(),
+            brain: fresh_brain(ship, brain_config, 19, 0),
+            brain_config,
+            flight_seed: 19,
+            match_number: 0,
+            playing,
+            route,
+            yielding: Arc::new(AtomicBool::new(false)),
+            asked: None,
+            sent: None,
+            sent_at: 0,
+            tx,
+        }
+    }
+
+    #[test]
+    fn a_match_transition_is_numbered_once() {
+        let mut playing = true;
+        let mut number = 0;
+        assert!(!match_transition(&mut playing, &mut number, true));
+        assert_eq!(number, 0, "a repeated playing packet is not a rematch");
+        assert!(!match_transition(&mut playing, &mut number, false));
+        assert!(match_transition(&mut playing, &mut number, true));
+        assert_eq!(number, 1);
+        assert!(!match_transition(&mut playing, &mut number, true));
+        assert_eq!(number, 1);
+        assert_ne!(controller_seed(19, 0), controller_seed(19, 1));
+        assert_eq!(controller_seed(19, 1), controller_seed(19, 1));
+    }
+
+    #[test]
+    fn a_rematch_replaces_the_entire_seated_brain() {
+        let world = sim::World::with_map(7, sim::build_pit);
+        let route = Arc::new(nav::Nav::build(&world.map));
+        let (tx, _rx) = tokio::sync::mpsc::channel(4);
+        let mut seat = test_seat(0, route, tx, true);
+
+        seat.brain.stand_down();
+        assert_eq!(seat.brain.doing(), 4, "the old brain carries exit state");
+        assert!(!seat.set_match(false, 0));
+        assert_eq!(
+            seat.brain.doing(),
+            4,
+            "pausing does not spend or rewrite controller state"
+        );
+        assert!(seat.set_match(true, 1));
+        assert_ne!(
+            seat.brain.doing(),
+            4,
+            "the new match has a fresh departure, route, and recovery state"
+        );
+
+        seat.brain.stand_down();
+        assert!(!seat.set_match(true, 1));
+        assert_eq!(
+            seat.brain.doing(),
+            4,
+            "a duplicate playing packet cannot reset a live match"
+        );
+        assert!(!seat.set_match(false, 1));
+        assert!(seat.set_match(true, 2));
+        assert_ne!(seat.brain.doing(), 4, "the next rematch is fresh too");
+    }
+
+    #[tokio::test]
+    async fn the_shared_driver_does_not_fly_during_intermission() {
+        let mut world = sim::World::with_map(7, sim::build_pit);
+        let ship = world.spawn(0, 0, 100, 100, 0) as u8;
+        let route = Arc::new(nav::Nav::build(&world.map));
+        let rig = Arc::new(Rig::new(world));
+        let (tx, mut rx) = tokio::sync::mpsc::channel(16);
+        assert!(
+            rig.claim(ship, test_seat(ship, route, tx, false)).is_ok(),
+            "the test pilot takes its seat"
+        );
+        let driver = tokio::spawn(drive(Arc::downgrade(&rig), 1));
+
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(80), rx.recv())
+                .await
+                .is_err(),
+            "a paused controller produces no input frame"
+        );
+        rig.set_match(ship, 71, true, 1);
+        let frame = tokio::time::timeout(std::time::Duration::from_secs(1), rx.recv())
+            .await
+            .expect("a started controller thinks promptly")
+            .expect("the driver's channel stays open");
+        assert!(matches!(
+            frame,
+            Ctl::Frame {
+                match_number: 1,
+                ..
+            }
+        ));
+
+        rig.driver_generation.store(2, Ordering::SeqCst);
+        tokio::time::timeout(std::time::Duration::from_secs(1), driver)
+            .await
+            .expect("the old driver observes its revoked generation")
+            .expect("the shared driver exits cleanly");
     }
 
     /// The bot's join, read the way the arena reads it.
@@ -1904,8 +2521,185 @@ mod tests {
     fn name_as_the_arena_reads_it(msg: &[u8]) -> String {
         let zlen = msg[4] as usize;
         let nlen = msg[5] as usize;
-        let h = 7;
+        let h = 8;
         String::from_utf8_lossy(msg.get(h + zlen..h + zlen + nlen).unwrap_or_default()).to_string()
+    }
+
+    fn release_as_the_arena_reads_it(msg: &[u8]) -> String {
+        let zlen = msg[4] as usize;
+        let nlen = msg[5] as usize;
+        let rlen = msg[7] as usize;
+        let start = 8 + zlen + nlen;
+        String::from_utf8_lossy(msg.get(start..start + rlen).unwrap_or_default()).to_string()
+    }
+
+    #[test]
+    fn welcome_names_the_authoritative_room_in_its_header() {
+        let message = welcome_message(3, 9, 77, 0x3412);
+        assert_eq!(welcome_room(&message), Some(0x3412));
+        assert_eq!(welcome_room(&message[..11]), None);
+    }
+
+    #[test]
+    fn scalar_population_requests_keep_the_old_fill_behavior() {
+        assert_eq!(
+            ArenaWant::new(3, None).assignments(),
+            vec![
+                Assignment {
+                    room: 0,
+                    target_slot: None,
+                };
+                3
+            ]
+        );
+    }
+
+    #[test]
+    fn a_certified_ladder_requires_the_same_known_signed_release() {
+        assert!(same_certified_release(
+            "abc123", "abc123", "signed-a", "signed-a"
+        ));
+        assert!(!same_certified_release(
+            "old", "new", "signed-a", "signed-a"
+        ));
+        assert!(!same_certified_release("", "new", "signed-a", "signed-a"));
+        assert!(!same_certified_release("abc123", "abc123", "signed-a", ""));
+        assert!(!same_certified_release(
+            "abc123", "abc123", "signed-a", "signed-b"
+        ));
+        assert!(!same_certified_release(
+            "unknown", "unknown", "signed-a", "signed-a"
+        ));
+        assert!(same_certified_release("old", "new", "", "signed-b"));
+    }
+
+    #[test]
+    fn structured_population_requests_are_room_scoped_final_counts() {
+        let wanted = ArenaWant::new(
+            99,
+            Some(vec![
+                crate::fleet::BotRequest {
+                    room: 7,
+                    count: 1,
+                    target_slot: Some(12),
+                },
+                crate::fleet::BotRequest {
+                    room: 3,
+                    count: 2,
+                    target_slot: None,
+                },
+            ]),
+        );
+        assert_eq!(
+            wanted.assignments(),
+            vec![
+                Assignment {
+                    room: 3,
+                    target_slot: None,
+                },
+                Assignment {
+                    room: 3,
+                    target_slot: None,
+                },
+                Assignment {
+                    room: 7,
+                    target_slot: Some(12),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn a_structured_request_cannot_alias_an_unrepresentable_room_to_zero() {
+        let wanted = ArenaWant::new(
+            1,
+            Some(vec![crate::fleet::BotRequest {
+                room: crate::MAX_ROOM_NUMBER + 1,
+                count: 1,
+                target_slot: None,
+            }]),
+        );
+        assert!(wanted.assignments().is_empty());
+    }
+
+    #[test]
+    fn a_changed_ladder_target_yields_before_replacement_connects() {
+        let old = Assignment {
+            room: 7,
+            target_slot: Some(11),
+        };
+        let next = Assignment {
+            room: 7,
+            target_slot: Some(12),
+        };
+        assert_eq!(
+            reconcile_assignments(&[(old, false)], &[next]),
+            Reconciliation {
+                immediate: vec![0],
+                surplus: Vec::new(),
+                missing: Vec::new(),
+            }
+        );
+        assert_eq!(
+            reconcile_assignments(&[], &[next]).missing,
+            vec![next],
+            "the replacement becomes eligible after the old task is reaped"
+        );
+    }
+
+    #[test]
+    fn reconciliation_moves_only_the_room_whose_final_count_changed() {
+        let room_one = Assignment {
+            room: 1,
+            target_slot: None,
+        };
+        let room_two = Assignment {
+            room: 2,
+            target_slot: None,
+        };
+        assert_eq!(
+            reconcile_assignments(
+                &[(room_one, false), (room_one, false), (room_two, false)],
+                &[room_one, room_two, room_two],
+            ),
+            Reconciliation {
+                immediate: Vec::new(),
+                surplus: vec![1],
+                missing: vec![room_two],
+            }
+        );
+    }
+
+    #[test]
+    fn a_yielding_ladder_bot_blocks_a_retry_storm_until_it_exits() {
+        let assignment = Assignment {
+            room: 4,
+            target_slot: Some(2),
+        };
+        assert_eq!(
+            reconcile_assignments(&[(assignment, true)], &[assignment]),
+            Reconciliation {
+                immediate: Vec::new(),
+                surplus: Vec::new(),
+                missing: Vec::new(),
+            }
+        );
+        assert_eq!(
+            reconcile_assignments(&[], &[assignment]).missing,
+            vec![assignment]
+        );
+    }
+
+    #[test]
+    fn a_yielding_ordinary_bot_no_longer_fills_a_population_request() {
+        let assignment = Assignment {
+            room: 4,
+            target_slot: None,
+        };
+        assert_eq!(
+            reconcile_assignments(&[(assignment, true)], &[assignment]).missing,
+            vec![assignment]
+        );
     }
 
     /// A map change carries the pilot across rather than emptying its seat.
@@ -1936,7 +2730,8 @@ mod tests {
         let (tx, _rx) = tokio::sync::mpsc::channel(4);
         let ship = 3u8;
         let me = 77u64;
-        let mut brain = ai::Bot::new(ship, 0.5);
+        let brain_config = pilots::individual(0).brain();
+        let mut brain = ai::Bot::new(ship, brain_config);
         brain.reseed(19);
         assert!(old
             .claim(
@@ -1947,6 +2742,10 @@ mod tests {
                     name: "Halcyon".into(),
                     addr: "ws://nowhere".into(),
                     brain,
+                    brain_config,
+                    flight_seed: 19,
+                    match_number: 0,
+                    playing: true,
                     route: Arc::clone(&road),
                     yielding: Arc::new(AtomicBool::new(false)),
                     asked: None,
@@ -1993,7 +2792,7 @@ mod tests {
 
     #[test]
     fn a_bot_arrives_under_its_own_name() {
-        let msg = join_msg(3, "vX-9", "");
+        let msg = join_msg(3, "vX-9", "", 0).expect("representable join");
         assert_eq!(
             name_as_the_arena_reads_it(&msg),
             "vX-9",
@@ -2005,17 +2804,43 @@ mod tests {
     fn and_under_it_with_a_token_on_the_end_too() {
         // The case that hides the bug rather than showing it: with something
         // after the name, a late read returns a wrong name instead of no name.
-        let msg = join_msg(0, "Halcyon", "a.session.token");
+        let msg = join_msg(0, "Halcyon", "a.session.token", 0).expect("representable join");
         assert_eq!(name_as_the_arena_reads_it(&msg), "Halcyon");
     }
 
     #[test]
     fn the_header_is_the_length_the_arena_expects() {
-        let msg = join_msg(0, "", "");
+        let msg = join_msg(0, "", "", 0).expect("representable join");
         assert_eq!(
             msg.len(),
-            crate::C2S_JOIN_HEADER,
-            "an empty name and no token is the header alone"
+            crate::C2S_JOIN_HEADER + crate::arena::house_bot_release_claim().len(),
+            "an empty name still carries the bot release after the header"
+        );
+        assert_eq!(
+            msg[7] as usize,
+            crate::arena::house_bot_release_claim().len()
+        );
+    }
+
+    #[test]
+    fn a_certified_join_carries_the_exact_release_claim() {
+        let msg = join_msg_with_release(0, "Halcyon", "session", 7, "v1:abc:signed")
+            .expect("representable join");
+        assert_eq!(release_as_the_arena_reads_it(&msg), "v1:abc:signed");
+    }
+
+    #[test]
+    fn a_room_scoped_bot_asks_for_the_room_that_requested_it() {
+        let msg = join_msg(0, "Halcyon", "", 17).expect("representable join");
+        assert_eq!(
+            msg[6], 17,
+            "the existing join room byte carries the request"
+        );
+        assert_eq!(name_as_the_arena_reads_it(&msg), "Halcyon");
+        assert_eq!(
+            join_msg(0, "Halcyon", "", crate::MAX_ROOM_NUMBER + 1),
+            None,
+            "an unrepresentable room is refused rather than aliased to ordinary fill"
         );
     }
 
@@ -2030,7 +2855,7 @@ mod tests {
         assert!(house.shares_world());
         assert_eq!(house.session(), "session-token");
         assert_eq!(
-            house.entitlements(),
+            house.kit_entitlements(None),
             owned,
             "a house bot flies what its account has bought"
         );
@@ -2039,28 +2864,52 @@ mod tests {
         assert!(!unaccounted.shares_world());
         assert_eq!(unaccounted.session(), "");
         assert_eq!(
-            unaccounted.entitlements(),
+            unaccounted.kit_entitlements(None),
             crate::sim::World::base_entitlements(),
             "and one with no account behind it flies what everybody is dealt"
         );
     }
 
     #[test]
-    fn a_generated_pilot_shops_for_its_own_hull() {
-        let who = (ai::CALIBRATED.len()..200)
-            .map(ai::individual)
-            .find(|who| {
-                crate::shopper::wants(&who.name, who.class)[0]
-                    != crate::shopper::wants(&who.name, 0)[0]
-            })
-            .expect("the generated roster contains more than one hull taste");
-        let wanted = crate::shopper::wants(&who.name, who.class)[0];
-        let wrong = crate::shopper::wants(&who.name, 0)[0];
+    fn ladder_keeps_identity_but_leaves_career_power_out() {
+        let who = pilots::individual(0);
+        let ceiling = [u8::MAX; crate::sim::SLOT_COUNT];
+        let house = BotIdentity::House {
+            token: "session-token".into(),
+            entitlements: ceiling,
+        };
+        assert!(uses_career_power(None));
+        assert!(!uses_career_power(Some(3)), "Ladder does not shop");
+        assert_eq!(house.session(), "session-token", "identity stays attached");
+        assert!(
+            house.shares_world(),
+            "the authenticated view stays attached"
+        );
+
+        let ordinary = pilot_kit(&who, &ceiling, &house, None);
+        let ladder = pilot_kit(&who, &ceiling, &house, Some(3));
+        let base = pilot_kit(&who, &ceiling, &BotIdentity::Unaccounted, None);
+        assert_eq!(ladder, base, "Ladder wears the common base account");
+        assert_ne!(
+            ordinary, ladder,
+            "career purchases remain ordinary-room power"
+        );
+    }
+
+    #[test]
+    fn a_generated_pilot_shops_for_its_resolved_build_plan() {
+        let who = pilots::individual(ai::CALIBRATED.len());
+        let wanted = crate::shopper::wants(who.build)[0];
+        let other = match who.build {
+            pilots::BuildPlan::Gunner => pilots::BuildPlan::Bomber,
+            pilots::BuildPlan::Bomber | pilots::BuildPlan::Runner => pilots::BuildPlan::Gunner,
+        };
+        let wrong = crate::shopper::wants(other)[0];
         let shelf = [(wrong, 1), (wanted, 1)];
         assert_eq!(
             next_purchase(&who, &shelf, 10),
             Some(wanted),
-            "shopping follows the roster entry rather than defaulting to Apex"
+            "shopping follows the resolved pilot spec"
         );
     }
 
@@ -2120,6 +2969,33 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn shared_rigs_are_keyed_by_arena_room_and_map() {
+        let first = sim::World::with_map(7, sim::build_pit);
+        let first_packed = first.packed_map();
+        let second = sim::World::with_map(11, sim::build_arena);
+        let second_packed = second.packed_map();
+        let maps = Maps::default();
+        let (first_map, _) = maps.get(&first_packed).await.expect("the map unpacks");
+        let (second_map, _) = maps.get(&second_packed).await.expect("the map unpacks");
+        let first_key = fingerprint(&first_packed);
+        let second_key = fingerprint(&second_packed);
+        let rigs = Rigs::default();
+
+        let original = rigs.get("wss://arena", 7, first_key, &first_map).unwrap();
+        let same = rigs.get("wss://arena", 7, first_key, &first_map).unwrap();
+        let other_room = rigs.get("wss://arena", 8, first_key, &first_map).unwrap();
+        let other_map = rigs.get("wss://arena", 7, second_key, &second_map).unwrap();
+        let other_arena = rigs
+            .get("wss://other-arena", 7, first_key, &first_map)
+            .unwrap();
+
+        assert!(Arc::ptr_eq(&original, &same));
+        assert!(!Arc::ptr_eq(&original, &other_room));
+        assert!(!Arc::ptr_eq(&original, &other_map));
+        assert!(!Arc::ptr_eq(&original, &other_arena));
+    }
+
     /// A real WebSocket proves the private flight loop consumes a rotated map,
     /// applies its snapshot, and keeps sending controls from the new clock.
     #[tokio::test]
@@ -2134,7 +3010,7 @@ mod tests {
         let initial = [
             map_message(&first),
             settings_message(&first),
-            welcome_message(ship, 9, first.state.tick),
+            welcome_message(ship, 9, first.state.tick, 0),
             snapshot_message(&first),
         ];
         let rotated_map = second.packed_map();
@@ -2204,7 +3080,9 @@ mod tests {
         let maps = Arc::new(Maps::default());
         let flight = tokio::spawn(fly_socket(
             url,
-            ai::individual(8),
+            pilots::individual(8),
+            0,
+            None,
             Arc::clone(&maps),
             Arc::new(Rigs::default()),
             Arc::new(AtomicBool::new(false)),
@@ -2243,6 +3121,126 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_private_bot_is_quiet_between_fresh_single_life_matches() {
+        let mut world = sim::World::with_map(7, sim::build_pit);
+        let ship = world.spawn(0, 0, 100, 100, 0) as u8;
+        let initial = [
+            map_message(&world),
+            settings_message(&world),
+            welcome_message(ship, 9, world.state.tick, 0),
+            snapshot_message(&world),
+            vec![crate::S2C_MATCH, 0, 0, 0],
+        ];
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("ws://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
+            let join = ws.next().await.unwrap().unwrap().into_data();
+            assert_eq!(join.first(), Some(&crate::C2S_JOIN));
+            for message in initial {
+                ws.send(Message::Binary(message)).await.unwrap();
+            }
+
+            let kit = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+                while let Some(Ok(message)) = ws.next().await {
+                    if message.into_data().first() == Some(&crate::C2S_KIT) {
+                        return true;
+                    }
+                }
+                false
+            })
+            .await
+            .expect("the bot sends its kit");
+            assert!(kit);
+            assert!(
+                tokio::time::timeout(std::time::Duration::from_millis(650), ws.next())
+                    .await
+                    .is_err(),
+                "the private controller sends no input during intermission"
+            );
+
+            ws.send(Message::Binary(vec![
+                crate::S2C_MATCH,
+                crate::MATCH_PLAYING,
+                0,
+                0,
+            ]))
+            .await
+            .unwrap();
+            let first_match = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+                while let Some(Ok(message)) = ws.next().await {
+                    if message.into_data().first() == Some(&crate::C2S_INPUT) {
+                        return true;
+                    }
+                }
+                false
+            })
+            .await
+            .expect("the private controller starts with the match");
+            assert!(first_match);
+
+            ws.send(Message::Binary(vec![crate::S2C_MATCH, 0, 0, 0]))
+                .await
+                .unwrap();
+            // Empty any control already in the transport when the whistle was
+            // sent. A full heartbeat interval of silence after that proves the
+            // intermission does not run the controller.
+            while let Ok(Some(_)) =
+                tokio::time::timeout(std::time::Duration::from_millis(100), ws.next()).await
+            {
+            }
+            assert!(
+                tokio::time::timeout(std::time::Duration::from_millis(650), ws.next())
+                    .await
+                    .is_err(),
+                "the private controller stays quiet after a played match"
+            );
+
+            ws.send(Message::Binary(vec![
+                crate::S2C_MATCH,
+                crate::MATCH_PLAYING,
+                0,
+                0,
+            ]))
+            .await
+            .unwrap();
+            let rematch = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+                while let Some(Ok(message)) = ws.next().await {
+                    if message.into_data().first() == Some(&crate::C2S_INPUT) {
+                        return true;
+                    }
+                }
+                false
+            })
+            .await
+            .expect("a fresh private controller starts the rematch");
+            assert!(rematch);
+            ws.send(Message::Binary(vec![crate::S2C_YIELD]))
+                .await
+                .unwrap();
+        });
+
+        let (ws, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
+        let outcome = fly_socket(
+            url,
+            pilots::individual(8),
+            0,
+            Some(0),
+            Arc::new(Maps::default()),
+            Arc::new(Rigs::default()),
+            Arc::new(AtomicBool::new(false)),
+            Arc::new(Accounts::default()),
+            BotIdentity::Unaccounted,
+            ws,
+        )
+        .await;
+        assert_eq!(outcome, FlightEnd::Yielded);
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
     async fn an_invalid_welcome_is_a_protocol_failure() {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("ws://{}", listener.local_addr().unwrap());
@@ -2250,14 +3248,16 @@ mod tests {
             let (stream, _) = listener.accept().await.unwrap();
             let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
             let _ = ws.next().await;
-            ws.send(Message::Binary(welcome_message(255, 1, 0)))
+            ws.send(Message::Binary(welcome_message(255, 1, 0, 0)))
                 .await
                 .unwrap();
         });
         let (ws, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
         let outcome = fly_socket(
             url,
-            ai::individual(8),
+            pilots::individual(8),
+            0,
+            None,
             Arc::new(Maps::default()),
             Arc::new(Rigs::default()),
             Arc::new(AtomicBool::new(false)),
@@ -2267,6 +3267,40 @@ mod tests {
         )
         .await;
         assert_eq!(outcome, FlightEnd::Protocol);
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_yielding_bot_leaves_as_soon_as_intermission_arrives() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("ws://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
+            let _ = ws.next().await;
+            ws.send(Message::Binary(vec![crate::S2C_MATCH, 0, 0, 0]))
+                .await
+                .unwrap();
+        });
+        let (ws, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
+        let outcome = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            fly_socket(
+                url,
+                pilots::individual(8),
+                6,
+                Some(0),
+                Arc::new(Maps::default()),
+                Arc::new(Rigs::default()),
+                Arc::new(AtomicBool::new(true)),
+                Arc::new(Accounts::default()),
+                BotIdentity::Unaccounted,
+                ws,
+            ),
+        )
+        .await
+        .expect("intermission departure does not wait for graceful flight");
+        assert_eq!(outcome, FlightEnd::Departed);
         server.await.unwrap();
     }
 
@@ -2347,10 +3381,94 @@ mod tests {
     fn a_fleet_busy_identity_does_not_block_the_roster() {
         let taken = Arc::new(Mutex::new(HashSet::new()));
         let blocked = Arc::new(Mutex::new(HashMap::new()));
-        let first = ai::individual(0);
-        blocked.lock().unwrap().insert(first.name.clone(), 20_000);
-        let got = claim(&taken, &blocked, 10_000).unwrap();
-        assert_ne!(got.name, first.name);
-        assert_eq!(got.name, ai::individual(1).name);
+        let first = pilots::individual(0);
+        blocked
+            .lock()
+            .unwrap()
+            .insert(first.callsign.clone(), 20_000);
+        let got = claim(&taken, &blocked, 10_000, None).unwrap();
+        assert_ne!(got.callsign, first.callsign);
+        assert_eq!(got.callsign, pilots::individual(1).callsign);
+    }
+
+    #[test]
+    fn an_incomplete_ladder_seed_uses_the_whole_provisional_order() {
+        let provisional = ladder_order_from_seed("{}", false);
+        let partial = serde_json::to_string(&HashMap::from([(
+            pilots::roster()[0].callsign.clone(),
+            -100_000.0,
+        )]))
+        .unwrap();
+        assert_eq!(ladder_order_from_seed(&partial, true), provisional);
+        for pair in provisional.windows(2) {
+            let lower = pilots::individual(pair[0]);
+            let higher = pilots::individual(pair[1]);
+            assert!(
+                lower.ordering_prior() <= higher.ordering_prior(),
+                "the fallback must not use authored roster order"
+            );
+        }
+    }
+
+    #[test]
+    fn only_a_verified_complete_seed_orders_authored_archetypes_by_rating() {
+        let roster = pilots::roster();
+        let provisional = ladder_order_from_seed("{}", false);
+        let expected: LadderOrder = std::array::from_fn(|rank| {
+            provisional[pilots::PROVISIONAL_LADDER_RUNG_COUNT - rank - 1]
+        });
+        let ratings: HashMap<String, f64> = expected
+            .iter()
+            .enumerate()
+            .map(|(rank, &archetype)| (roster[archetype].callsign.clone(), rank as f64))
+            .collect();
+        let seed = serde_json::to_string(&ratings).unwrap();
+        assert_eq!(
+            ladder_order_from_seed(&seed, false),
+            provisional,
+            "a complete rating map is still not proof of certification"
+        );
+        assert_eq!(ladder_order_from_seed(&seed, true), expected);
+    }
+
+    #[test]
+    fn a_ladder_target_resolves_into_its_ordered_archetype() {
+        let taken = Arc::new(Mutex::new(HashSet::new()));
+        let blocked = Arc::new(Mutex::new(HashMap::new()));
+        let target = 7usize;
+        let expected = pilots::ladder_replica(ladder_order()[target], 0).unwrap();
+        let got = claim(&taken, &blocked, 10_000, Some(target as u32)).unwrap();
+        assert_eq!(got.id, expected.id);
+    }
+
+    #[test]
+    fn concurrent_ladder_rooms_get_distinct_persistent_replicas() {
+        let target = 7usize;
+        let archetype = ladder_order()[target];
+        let taken = Arc::new(Mutex::new(HashSet::new()));
+        let blocked = Arc::new(Mutex::new(HashMap::new()));
+        let first = claim(&taken, &blocked, 10_000, Some(target as u32)).unwrap();
+        let second = claim(&taken, &blocked, 10_000, Some(target as u32)).unwrap();
+        assert_ne!(first.id, second.id);
+        assert_eq!(first.id, pilots::ladder_replica(archetype, 0).unwrap().id);
+        assert_eq!(second.id, pilots::ladder_replica(archetype, 1).unwrap().id);
+        assert_eq!(first.hull, second.hull);
+        assert_eq!(first.competence, second.competence);
+        assert_eq!(first.behavior, second.behavior);
+        assert_eq!(first.build, second.build);
+        assert_eq!(first.configuration_seed, second.configuration_seed);
+    }
+
+    #[test]
+    fn an_exhausted_ladder_rung_does_not_change_archetypes() {
+        let target = 7u32;
+        let archetype = ladder_order()[target as usize];
+        let occupied: HashSet<pilots::PilotId> = (0..pilots::LADDER_REPLICAS_PER_RUNG)
+            .map(|replica| pilots::ladder_replica(archetype, replica).unwrap().id)
+            .collect();
+        assert_eq!(occupied.len(), pilots::LADDER_REPLICAS_PER_RUNG);
+        let taken = Arc::new(Mutex::new(occupied));
+        let blocked = Arc::new(Mutex::new(HashMap::new()));
+        assert!(claim(&taken, &blocked, 10_000, Some(target)).is_none());
     }
 }

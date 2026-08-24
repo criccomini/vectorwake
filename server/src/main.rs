@@ -15,6 +15,7 @@ mod config;
 mod delivery;
 mod directory;
 mod drill;
+mod experiment;
 mod fleet;
 mod growth;
 mod mapforge;
@@ -23,6 +24,7 @@ mod metrics;
 mod modes;
 mod nav;
 mod pilot;
+mod pilots;
 mod presence;
 mod profiles;
 mod protocol;
@@ -98,33 +100,212 @@ const DEFAULT_CHANNEL_DELAY: u32 = 500;
 /// fight's arc, short enough that a room's whole cast comes round.
 const CHANNEL_HOLD: u32 = 9000;
 
-/// Run the offline tournament and write the ladder the zone seeds bots from.
+/// Run the prespecified mirrored pilot experiment.
 ///
-///     vectorwake-server calibrate [rounds] [dir]
-fn run_calibration() {
-    let rounds: u32 = std::env::args()
-        .nth(2)
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(6);
-    let dir = std::env::args().nth(3).unwrap_or_else(|| ".".into());
-    let path = format!("{dir}/ladder.json");
-
-    println!("calibrating: {rounds} rounds of round-robin matches");
-    let r = calibrate::run(rounds, true);
-
-    println!("\n{:<12} {:>7}  {:>6}  tier", "pilot", "rating", "games");
-    let mut ladder = std::collections::HashMap::new();
-    for (name, score, games, tier) in calibrate::table(&r) {
-        let pin = if name == ai::ANCHOR { " (anchor)" } else { "" };
-        println!("{name:<12} {score:>7.0}  {games:>6}  {tier}{pin}");
-        ladder.insert(name, score);
+///     vectorwake-server calibrate pilots [paired_scenarios] [dir] [attempt_id]
+///
+/// Every run writes its full report. Only a report that passes the power,
+/// holdout, equivalence, ordering, and content-fingerprint gates may replace
+/// `ladder.json`.
+fn run_pilot_tournament() {
+    let mut request = calibrate::PilotCalibrationRequest::default();
+    request.paired_scenarios_per_pool = std::env::args()
+        .nth(3)
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(request.paired_scenarios_per_pool);
+    let dir = std::env::args().nth(4).unwrap_or_else(|| ".".into());
+    request.attempt_id = std::env::args()
+        .nth(5)
+        .unwrap_or_else(|| request.attempt_id.clone());
+    let roster = pilots::roster();
+    let plan = match calibrate::plan_pilot_calibration(&roster, &request) {
+        Ok(plan) => plan,
+        Err(error) => {
+            println!("pilots: {error}");
+            std::process::exit(1);
+        }
+    };
+    println!(
+        "pilot calibration attempt {:?}: {} paired scenarios per matchup per pool; {} required for superiority, {} for side equivalence, {} for certification",
+        request.attempt_id,
+        request.paired_scenarios_per_pool,
+        plan.power.required_pairs,
+        plan.side_power.required_pairs,
+        plan.power.required_pairs.max(plan.side_power.required_pairs)
+    );
+    let design_fingerprint = match calibrate::pilot_design_fingerprint(&plan) {
+        Ok(fingerprint) => fingerprint,
+        Err(error) => {
+            println!("pilots: {error}");
+            std::process::exit(1);
+        }
+    };
+    println!("pilot calibration design: {design_fingerprint}");
+    if request.attempt_id != "exploratory" {
+        match calibrate::pilot_attempt_registered(&plan, arena::PILOT_CALIBRATION_ATTEMPTS) {
+            Ok(true) => {}
+            Ok(false) => {
+                println!(
+                    "pilots: attempt {:?} is not the sole preregistered attempt for {design_fingerprint}",
+                    request.attempt_id
+                );
+                std::process::exit(1);
+            }
+            Err(error) => {
+                println!("pilots: {error}");
+                std::process::exit(1);
+            }
+        }
     }
-
-    let doc = serde_json::to_string_pretty(&ladder).expect("serialize ladder");
-    match std::fs::write(&path, doc) {
-        Ok(()) => println!("\nwrote {path}"),
-        Err(e) => println!("\ncould not write {path}: {e}"),
+    let release_signing_key = if request.attempt_id == "exploratory" {
+        None
+    } else {
+        let Some(key) = std::env::var("VW_META_KEY")
+            .ok()
+            .and_then(|key| token::signing_key_from_hex(&key))
+        else {
+            println!(
+                "pilots: VW_META_KEY is required before a confirmatory run starts; no scenarios were collected"
+            );
+            std::process::exit(1);
+        };
+        let Some(expected) = std::env::var("VW_META_VERIFY")
+            .ok()
+            .and_then(|key| token::verifying_key_from_hex(&key))
+        else {
+            println!(
+                "pilots: VW_META_VERIFY is required before a confirmatory run starts; no scenarios were collected"
+            );
+            std::process::exit(1);
+        };
+        if key.verifying_key() != expected {
+            println!(
+                "pilots: VW_META_KEY does not match VW_META_VERIFY; no scenarios were collected"
+            );
+            std::process::exit(1);
+        }
+        Some(key)
+    };
+    let output_dir = std::path::Path::new(&dir);
+    let writable_probe = output_dir.join(format!(
+        ".pilot-calibration-write-test-{}",
+        std::process::id()
+    ));
+    let output_ready = output_dir.is_dir()
+        && std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&writable_probe)
+            .is_ok();
+    if !output_ready {
+        println!("pilots: output directory {dir:?} is missing or not writable");
+        std::process::exit(1);
     }
+    if let Err(error) = std::fs::remove_file(&writable_probe) {
+        println!("pilots: could not finish output check in {dir:?}: {error}");
+        std::process::exit(1);
+    }
+    for name in [
+        "pilot-calibration-data.json",
+        "pilot-calibration-report.json",
+        "pilot-calibration.json",
+        "ladder.json",
+    ] {
+        let path = output_dir.join(name);
+        if path.exists() && std::fs::OpenOptions::new().write(true).open(&path).is_err() {
+            println!("pilots: existing output {} is not writable", path.display());
+            std::process::exit(1);
+        }
+    }
+    let dataset = match calibrate::collect_pilot_calibration(&roster, &plan, true) {
+        Ok(dataset) => dataset,
+        Err(error) => {
+            println!("pilots: {error}");
+            std::process::exit(1);
+        }
+    };
+    let dataset_path = format!("{dir}/pilot-calibration-data.json");
+    let dataset_file = match std::fs::File::create(&dataset_path) {
+        Ok(file) => file,
+        Err(error) => {
+            println!("pilots: could not create {dataset_path}: {error}");
+            std::process::exit(1);
+        }
+    };
+    let mut dataset_writer = std::io::BufWriter::new(dataset_file);
+    if let Err(error) = serde_json::to_writer(&mut dataset_writer, &dataset) {
+        println!("pilots: could not write {dataset_path}: {error}");
+        std::process::exit(1);
+    }
+    if let Err(error) = std::io::Write::flush(&mut dataset_writer) {
+        println!("pilots: could not finish {dataset_path}: {error}");
+        std::process::exit(1);
+    }
+    println!("wrote {dataset_path}");
+
+    let report = match calibrate::analyze_pilot_calibration(&roster, &plan, &dataset) {
+        Ok(report) => report,
+        Err(error) => {
+            println!("pilots: {error}; raw observations remain in {dataset_path}");
+            std::process::exit(1);
+        }
+    };
+    let report_path = format!("{dir}/pilot-calibration-report.json");
+    let report_json = serde_json::to_string_pretty(&report).expect("serialize pilot report");
+    if let Err(error) = std::fs::write(&report_path, report_json) {
+        println!("pilots: could not write {report_path}: {error}");
+        std::process::exit(1);
+    }
+    println!("wrote {report_path} with status {:?}", report.status);
+
+    if report.certified_ladder.is_none() {
+        println!("ladder.json was not changed: {}", report.reasons.join("; "));
+        if request.attempt_id != "exploratory" {
+            std::process::exit(1);
+        }
+        return;
+    }
+    let signing_key = release_signing_key
+        .as_ref()
+        .expect("only a confirmatory report can be certified");
+    let attestation = match calibrate::attest_pilot_calibration(
+        &report,
+        &dataset,
+        &roster,
+        arena::PILOT_CALIBRATION_ATTEMPTS,
+        signing_key,
+    ) {
+        Ok(attestation) => attestation,
+        Err(error) => {
+            println!("ladder.json was not changed: report verification failed: {error}");
+            std::process::exit(1);
+        }
+    };
+    let Some(attestation) = attestation else {
+        println!("ladder.json was not changed: release evidence did not verify");
+        std::process::exit(1);
+    };
+    let attestation_path = format!("{dir}/pilot-calibration.json");
+    let attestation_json =
+        serde_json::to_string_pretty(&attestation).expect("serialize pilot attestation");
+    if let Err(error) = std::fs::write(&attestation_path, attestation_json) {
+        println!("pilots: could not write {attestation_path}: {error}");
+        std::process::exit(1);
+    }
+    println!("wrote certified {attestation_path}");
+
+    let certified = &attestation.certified_ladder;
+    let ladder: std::collections::BTreeMap<String, f64> = certified
+        .iter()
+        .map(|pilot| (pilot.callsign.clone(), pilot.elo))
+        .collect();
+    let ladder_path = format!("{dir}/ladder.json");
+    let ladder_json = serde_json::to_string_pretty(&ladder).expect("serialize certified ladder");
+    if let Err(error) = std::fs::write(&ladder_path, ladder_json) {
+        println!("pilots: could not write {ladder_path}: {error}");
+        std::process::exit(1);
+    }
+    println!("wrote certified {ladder_path}");
 }
 
 /// Run one named long-form measurement without registering it as a test.
@@ -615,6 +796,8 @@ async fn main() {
         // the kit varying instead.
         if std::env::args().nth(2).as_deref() == Some("diagnostics") {
             run_calibration_diagnostic();
+        } else if std::env::args().nth(2).as_deref() == Some("pilots") {
+            run_pilot_tournament();
         } else if std::env::args().nth(2).as_deref() == Some("profiles") {
             run_profile_tournament();
         } else if std::env::args().nth(2).as_deref() == Some("stages") {
@@ -624,7 +807,8 @@ async fn main() {
         } else if std::env::args().nth(2).as_deref() == Some("teams") {
             run_team_tournament();
         } else {
-            run_calibration();
+            println!("calibrate needs one of: diagnostics, pilots, profiles, stages, hulls, teams");
+            std::process::exit(2);
         }
         return;
     }
@@ -674,16 +858,12 @@ async fn main() {
     tokio::spawn(spool::drain_loop(spools.pilots.clone()));
     tokio::spawn(spool::drain_loop(spools.matches.clone()));
     let ladder = load_ladder(&dir);
-    let local = std::path::Path::new(&dir).join("ladder.json").exists();
-    println!(
-        "seeded {} bot ratings from {}",
-        ladder.len(),
-        if local {
-            "ladder.json"
-        } else {
-            "the compiled ladder"
-        }
-    );
+    let seed_source = if arena::certified_pilot_attestation().is_some() {
+        "the verified compiled pilot report"
+    } else {
+        "the provisional anchor"
+    };
+    println!("seeded {} bot ratings from {seed_source}", ladder.len());
     println!(
         "zone \"{}\": {}",
         watcher.current.name, watcher.current.description
@@ -1200,18 +1380,14 @@ mod tests {
         assert!(disconnected.connection_closed);
     }
 
-    /// The compiled ladder has to name the roster this binary actually flies,
-    /// or it seeds nothing and every bot starts level. That is not a crash and
-    /// not a log line; it is a room that plays slightly wrong, which is why it
-    /// ran on the live fleet unnoticed while the path was pointing into a
-    /// directory the image never created.
+    /// An uncertified build defines only its fixed reference. Point estimates
+    /// from a small exploratory run must not turn into live priors merely
+    /// because they were checked in.
     #[test]
-    fn the_compiled_ladder_covers_the_roster() {
+    fn the_uncertified_compiled_seed_contains_only_the_anchor() {
         let ladder: HashMap<String, f64> =
             serde_json::from_str(LADDER).expect("the compiled ladder parses");
-        for (name, _, _) in ai::CALIBRATED {
-            assert!(ladder.contains_key(name), "{name} has no calibrated rating");
-        }
+        assert_eq!(ladder.len(), 1);
         assert_eq!(
             ladder.get(ai::ANCHOR).copied(),
             Some(ai::ANCHOR_RATING),
@@ -1219,26 +1395,17 @@ mod tests {
         );
     }
 
-    /// And it has to reach a room, including one opened long after startup.
-    /// `open_room` and `serve_zone` each went back to the disk for it and named
-    /// a path relative to the working directory, so on the fleet they found
-    /// nothing and primed nothing. The ladder is held on the zone now, and the
-    /// second room is the one that proves it.
+    /// A loose ratings file cannot bypass the compiled report gate. The seed
+    /// still has to reach rooms opened after startup, so the second room proves
+    /// both parts of the contract.
     #[test]
-    fn a_room_opened_later_carries_the_ladder() {
-        // A ladder with a value the compiled one cannot produce, so this test
-        // can tell "read the ladder this process was given" apart from "read
-        // some ladder". With the path hardcoded, the second room fell back to
-        // the compiled numbers and the assertion below caught it.
+    fn an_unverified_local_ladder_cannot_seed_a_later_room() {
         let dir = std::env::temp_dir().join("vw-ladder-test");
         std::fs::create_dir_all(&dir).expect("temp dir");
         std::fs::write(dir.join("ladder.json"), r#"{"Kestrel": 1777.5}"#).expect("write");
         let ladder = load_ladder(dir.to_str().unwrap());
-        assert_eq!(
-            ladder.get("Kestrel").copied(),
-            Some(1777.5),
-            "the file wins"
-        );
+        assert_eq!(ladder.get("Kestrel"), None, "a point seed is not proof");
+        assert_eq!(ladder.get(ai::ANCHOR), Some(&ai::ANCHOR_RATING));
 
         let (cfg, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
         let mut z = ArenaServer::new(cfg, test_spool(), ladder);
@@ -1255,13 +1422,14 @@ mod tests {
         let seeded = z.rooms[room]
             .rating
             .score
-            .get("Kestrel")
+            .get(ai::ANCHOR)
             .copied()
             .unwrap_or_default();
         let _ = std::fs::remove_dir_all(&dir);
         assert_eq!(
-            seeded, 1777.5,
-            "the second room did not get the ladder this process was given"
+            seeded,
+            ai::ANCHOR_RATING,
+            "the later room did not receive the process's verified seed"
         );
     }
 
@@ -1309,6 +1477,28 @@ mod tests {
         z
     }
 
+    fn ladder_serving_with_accounts() -> ArenaServer {
+        let mut z = serving_with_accounts();
+        let mut def = wire_zone(4, 1, 1);
+        def.name = "ladder".into();
+        def.mode = "ladder".into();
+        def.max_ships = 2;
+        def.bot_fill = 1.0;
+        def.admission = "claimed".into();
+        def.zone_toml = "description = \"test Ladder\"\n\
+                         teams = [\"Pilot\", \"Rival\"]\n\
+                         max_teams = 2\n\
+                         max_humans_per_team = 1\n\
+                         max_bots_per_team = 1\n"
+            .into();
+        if let Some(catalog) = z.catalog.as_mut() {
+            catalog.default_zone = def.name.clone();
+            catalog.zones = vec![def.clone()];
+        }
+        z.serve_zone(&def).expect("a Ladder room");
+        z
+    }
+
     fn a_token(
         kind: token::Kind,
         claimed: bool,
@@ -1335,8 +1525,46 @@ mod tests {
                 expires: token::now_secs() + 600,
                 ratings,
                 entitlements: Vec::new(),
+                ladders: Vec::new(),
             },
         )
+    }
+
+    fn signed_ladder_replica(z: &ArenaServer, account: u64, slot: u32, replica: usize) -> Seat {
+        let archetype = bots::ladder_archetype_for_slot(slot).expect("a Ladder rung");
+        let pilot = pilots::ladder_replica(archetype, replica).expect("a Ladder replica");
+        z.identify(
+            &a_token_for(
+                account,
+                token::Kind::HouseBot,
+                true,
+                &pilot.callsign,
+                Vec::new(),
+            ),
+            "",
+            true,
+            &pilot::Session::new("ws"),
+        )
+        .expect("the signed replica verifies")
+    }
+
+    fn join_ready_ladder_rival(
+        z: &mut ArenaServer,
+        account: u64,
+        slot: u32,
+        replica: usize,
+    ) -> (u64, u8) {
+        let archetype = bots::ladder_archetype_for_slot(slot).expect("a Ladder rung");
+        let pilot = pilots::ladder_replica(archetype, replica).expect("a Ladder replica");
+        let seat = signed_ladder_replica(z, account, slot, replica);
+        let (tx, rx) = mpsc::channel(OUT_QUEUE);
+        std::mem::forget(rx);
+        let id = z.rooms[0]
+            .join(seat, pilot.hull, 1, tx)
+            .expect("the requested rival seat");
+        let ship = z.rooms[0].players[&id].ship;
+        equip_ladder_rival(&mut z.rooms[0], ship);
+        (id, ship)
     }
 
     #[test]
@@ -1439,6 +1667,7 @@ mod tests {
                 expires: token::now_secs() + 600,
                 ratings: vec![],
                 entitlements: Vec::new(),
+                ladders: Vec::new(),
             },
         );
         assert!(
@@ -1457,6 +1686,7 @@ mod tests {
                 expires: token::now_secs() - 1,
                 ratings: vec![],
                 entitlements: Vec::new(),
+                ladders: Vec::new(),
             },
         );
         let why = z
@@ -1548,6 +1778,29 @@ mod tests {
         assert_eq!(z.rooms[0].rating.games_of(&fresh.rid), 0);
     }
 
+    #[test]
+    fn ladder_progress_is_scoped_to_the_zone_that_earned_it() {
+        let mut z = serving(1, 1, 1);
+        z.zone_name = "ladder".into();
+        let mut seat = Seat::guest("Climber", false);
+        seat.carried_ladders = vec![
+            token::LadderProgress {
+                zone: "other-ladder".into(),
+                checkpoint: 20,
+                best: 25,
+            },
+            token::LadderProgress {
+                zone: "ladder".into(),
+                checkpoint: 5,
+                best: 9,
+            },
+        ];
+        assert_eq!(z.token_ladder(&seat), Some((5, 9)));
+
+        z.zone_name = "unranked".into();
+        assert_eq!(z.token_ladder(&seat), None);
+    }
+
     /// A spool aimed nowhere, which is what a room that is not handing off
     /// anywhere holds. Writes nothing, because it is not armed.
     fn test_spool() -> spool::Spools {
@@ -1611,6 +1864,15 @@ mod tests {
             out.push(a.players[&id].ship);
         }
         out
+    }
+
+    /// Give a socketless Ladder rival the exact build its real client sends.
+    fn equip_ladder_rival(a: &mut Room, ship: u8) -> [u8; sim::SLOT_COUNT] {
+        let kit = a
+            .expected_ladder_rival_kit(ship)
+            .expect("the calibrated rival has a fixture build");
+        assert!(a.set_kit(ship, &kit), "the fixture build is legal");
+        kit
     }
 
     // ---- bots as clients ---------------------------------------------------
@@ -1916,6 +2178,653 @@ mod tests {
         seat_bots(&mut z.rooms[0], target - 40);
         assert_eq!(z.room_for_bot(), None);
         assert_eq!(z.rooms.len(), 2, "and no third room was built to hold bots");
+    }
+
+    #[test]
+    fn a_ladder_room_requests_one_named_opponent_only_after_a_human_arrives() {
+        let mut z = ladder_serving_with_accounts();
+
+        assert_eq!(z.bots_wanted(), 0, "an empty run has no bot-only fight");
+        assert_eq!(z.status().bot_requests, Some(Vec::new()));
+
+        let (tx, _rx) = mpsc::channel(OUT_QUEUE);
+        z.rooms[0]
+            .join(Seat::guest("Climber", false), 0, 1, tx)
+            .expect("the human seat");
+        let room = z.rooms[0].number;
+        assert_eq!(
+            z.status().bot_requests,
+            Some(vec![fleet::BotRequest {
+                room,
+                count: 1,
+                target_slot: Some(0),
+            }])
+        );
+        let correct_archetype = bots::ladder_archetype_for_slot(0).expect("the first rung");
+        let correct_hull = pilots::individual(correct_archetype).hull;
+        let correct = signed_ladder_replica(&z, 5_001, 0, 0);
+        assert_eq!(
+            z.room_for_bot_request(0, &correct),
+            None,
+            "an unnamed request cannot bypass Ladder's rung binding"
+        );
+        assert_eq!(z.room_for_bot_request(room, &correct), Some(0));
+        assert_eq!(z.room_for_bot_request(room + 1, &correct), None);
+
+        let (tx, rx) = mpsc::channel(OUT_QUEUE);
+        std::mem::forget(rx);
+        z.rooms[0]
+            .join(correct.clone(), correct_hull, 1, tx)
+            .expect("the requested signed replica");
+        assert_eq!(
+            z.rooms[0].team_census(0, None),
+            (1, 0),
+            "the climber owns the first scored side"
+        );
+        assert_eq!(
+            z.rooms[0].team_census(1, None),
+            (0, 1),
+            "the rival is hostile on the second scored side"
+        );
+        let human = z.rooms[0]
+            .names
+            .iter()
+            .find_map(|(ship, seat)| (!seat.bot).then_some(*ship))
+            .expect("the climber");
+        assert!(
+            !z.rooms[0].join_team(human, 1),
+            "Ladder roles cannot merge onto one side"
+        );
+        assert_eq!(
+            z.room_for_bot_request(room, &correct),
+            None,
+            "the requested final population is already present"
+        );
+    }
+
+    #[test]
+    fn a_new_ladder_climber_never_receives_the_previous_runs_artifact() {
+        let mut z = ladder_serving_with_accounts();
+        z.rooms[0].artifact_id = Some(42);
+        let (tx, _rx) = mpsc::channel(OUT_QUEUE);
+        z.rooms[0]
+            .join(Seat::guest("New climber", false), 0, 1, tx)
+            .expect("the new run");
+        assert_eq!(
+            z.rooms[0].artifact_id, None,
+            "join sync must describe a waiting run, not the previous podium"
+        );
+    }
+
+    #[test]
+    fn ladder_progress_and_match_transition_share_one_wire_message() {
+        let mut z = ladder_serving_with_accounts();
+        let (tx, mut rx) = mpsc::channel(OUT_QUEUE);
+        z.rooms[0]
+            .join(Seat::guest("Climber", false), 0, 1, tx)
+            .expect("the human seat");
+        join_ready_ladder_rival(&mut z, 5_009, 0, 0);
+        let _ = drain(&mut rx);
+
+        z.rooms[0].broadcast_match();
+        let matches: Vec<Vec<u8>> = drain(&mut rx)
+            .into_iter()
+            .filter(|message| message.first() == Some(&S2C_MATCH))
+            .collect();
+        assert_eq!(matches.len(), 1, "one transition uses one queue entry");
+        assert_ne!(
+            matches[0][1] & MATCH_HAS_LADDER,
+            0,
+            "the match packet carries its Ladder snapshot"
+        );
+    }
+
+    #[test]
+    fn a_ladder_room_rejects_the_wrong_archetype_initially_and_as_a_replacement() {
+        let mut z = ladder_serving_with_accounts();
+        let (tx, _rx) = mpsc::channel(OUT_QUEUE);
+        z.rooms[0]
+            .join(Seat::guest("Climber", false), 0, 1, tx)
+            .expect("the human seat");
+        let room = z.rooms[0].number;
+
+        let correct_archetype = bots::ladder_archetype_for_slot(0).expect("the first rung");
+        let wrong_archetype = bots::ladder_archetype_for_slot(1).expect("the second rung");
+        let correct_spec = pilots::individual(correct_archetype);
+        let wrong_spec = pilots::individual(wrong_archetype);
+        let correct = signed_ladder_replica(&z, 5_010, 0, 0);
+        let wrong = signed_ladder_replica(&z, 5_011, 1, 0);
+        assert_eq!(
+            z.room_for_bot_request(room, &wrong),
+            None,
+            "another measured band cannot fill the first rung"
+        );
+        let (tx, rx) = mpsc::channel(OUT_QUEUE);
+        std::mem::forget(rx);
+        let watcher = z.rooms[0]
+            .watch_join(wrong.clone(), false, tx)
+            .expect("the wrong rival can be constructed in the stands");
+        assert!(
+            z.rooms[0].fly(watcher, wrong_spec.hull, 1).is_none(),
+            "a watcher cannot turn C2S_SHIP into a wrong-rung rival seat"
+        );
+        assert!(z.rooms[0].watchers.contains_key(&watcher));
+        let mut unsigned = Seat::guest(correct.name.clone(), true);
+        unsigned.label = token::Label::ThirdPartyBot.to_byte();
+        assert_eq!(
+            z.room_for_bot_request(room, &unsigned),
+            None,
+            "the right callsign without its signed house identity is not enough"
+        );
+        let wrong_hull = (correct_spec.hull + 1) % z.rooms[0].world.cfg.class_count;
+        let (tx, rx) = mpsc::channel(OUT_QUEUE);
+        std::mem::forget(rx);
+        assert!(
+            z.rooms[0]
+                .join(correct.clone(), wrong_hull, 1, tx)
+                .is_none(),
+            "the signed callsign cannot occupy the rival seat in another hull"
+        );
+        assert_eq!(z.rooms[0].bot_count(), 0);
+        assert_eq!(
+            z.room_for_bot_request(room, &correct),
+            Some(0),
+            "the refused hull leaves the request open for a correct replacement"
+        );
+        let (tx, rx) = mpsc::channel(OUT_QUEUE);
+        std::mem::forget(rx);
+        let old_id = z.rooms[0]
+            .join(correct, correct_spec.hull, 1, tx)
+            .expect("the correct first-rung replica");
+        let old_ship = z.rooms[0].players[&old_id].ship;
+        assert!(!z.rooms[0].set_ship_class(old_ship, wrong_hull));
+        assert_eq!(
+            z.rooms[0].world.state.ships[old_ship as usize].cls, correct_spec.hull,
+            "an in-seat hull request cannot make the rival ineligible"
+        );
+
+        assert!(z.rooms[0].restore_ladder(5, 7));
+        assert!(z.rooms[0].leave(old_id, pilot::why::EVICTED));
+        let stale = signed_ladder_replica(&z, 5_012, 0, 1);
+        let replacement = signed_ladder_replica(&z, 5_013, 5, 0);
+        assert_eq!(
+            z.room_for_bot_request(room, &stale),
+            None,
+            "the old rung cannot reclaim the vacant replacement seat"
+        );
+        assert_eq!(
+            z.room_for_bot_request(room, &replacement),
+            Some(0),
+            "a replica from the newly requested rung may replace it"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_ladder_house_bot_cannot_join_as_a_watcher() {
+        let arena = ladder_serving_with_accounts();
+        let archetype = bots::ladder_archetype_for_slot(0).expect("the first rung");
+        let rival = pilots::ladder_replica(archetype, 0).expect("a Ladder replica");
+        let credential = a_token_for(
+            5_014,
+            token::Kind::HouseBot,
+            true,
+            &rival.callsign,
+            Vec::new(),
+        );
+        let zone = Arc::new(Mutex::new(arena));
+        let (in_tx, inbound) = mpsc::channel(INBOUND_QUEUE);
+        let (out_tx, mut outbound) = mpsc::channel(OUT_QUEUE);
+        let task = tokio::spawn(serve_client(zone.clone(), inbound, out_tx, "test"));
+
+        let name = rival.callsign.as_bytes();
+        let zone_name = b"ladder";
+        let mut join = vec![
+            C2S_JOIN,
+            rival.hull,
+            CLIENT_PROTOCOL,
+            JOIN_BOT | JOIN_WATCH,
+            zone_name.len() as u8,
+            name.len() as u8,
+            0,
+            0,
+        ];
+        join.extend_from_slice(zone_name);
+        join.extend_from_slice(name);
+        join.extend_from_slice(credential.as_bytes());
+        in_tx
+            .send(join)
+            .await
+            .expect("the join reaches the handler");
+
+        let denied = loop {
+            let message = tokio::time::timeout(std::time::Duration::from_secs(1), outbound.recv())
+                .await
+                .expect("the join is answered")
+                .expect("the refused connection sends its denial");
+            let Message::Binary(message) = message else {
+                continue;
+            };
+            if message.first() == Some(&S2C_DENIED) {
+                break message;
+            }
+        };
+        assert_eq!(denied.get(1), Some(&DENY_BANNED));
+        task.await.expect("the refused connection exits");
+        let arena = zone.lock().await;
+        assert!(arena.rooms[0].watchers.is_empty());
+        assert!(arena.rooms[0].players.is_empty());
+    }
+
+    #[test]
+    fn a_ladder_life_waits_until_the_rivals_requested_kit_is_dealt() {
+        let mut z = ladder_serving_with_accounts();
+        let (tx, _rx) = mpsc::channel(OUT_QUEUE);
+        z.rooms[0]
+            .join(Seat::guest("Climber", false), 0, 1, tx)
+            .expect("the human seat");
+        let archetype = bots::ladder_archetype_for_slot(0).expect("the first rung");
+        let rival_spec = pilots::ladder_replica(archetype, 0).expect("a Ladder replica");
+        let rival = signed_ladder_replica(&z, 5_015, 0, 0);
+        let (tx, rx) = mpsc::channel(OUT_QUEUE);
+        std::mem::forget(rx);
+        let rival_id = z.rooms[0]
+            .join(rival, rival_spec.hull, 1, tx)
+            .expect("the requested rival seat");
+        let rival_ship = z.rooms[0].players[&rival_id].ship;
+        let starter = z.rooms[0].world.state.ships[rival_ship as usize].kit;
+
+        z.rooms[0].tick();
+        let waiting = z.rooms[0].ladder_state().expect("Ladder state").state;
+        assert!(!waiting.playing, "JOIN and WELCOME are not kit readiness");
+        assert_eq!(z.rooms[0].match_no, 0, "no life opened on the starter kit");
+        assert!(!z.rooms[0].names[&rival_ship].kitted);
+
+        let requested = z.rooms[0]
+            .expected_ladder_rival_kit(rival_ship)
+            .expect("the rival has a calibrated build");
+        assert_ne!(
+            starter, requested,
+            "the generic starter is not the fixture build"
+        );
+        assert!(
+            !z.rooms[0].set_kit(rival_ship, &starter),
+            "a legal generic kit is still the wrong calibrated build"
+        );
+        z.rooms[0].tick();
+        assert!(
+            !z.rooms[0]
+                .ladder_state()
+                .expect("Ladder state")
+                .state
+                .playing,
+            "a refused kit cannot make the rival ready"
+        );
+        assert!(!z.rooms[0].names[&rival_ship].kitted);
+        assert_eq!(
+            z.rooms[0].world.state.ships[rival_ship as usize].kit, starter,
+            "a refused build changes nothing"
+        );
+
+        assert_eq!(
+            equip_ladder_rival(&mut z.rooms[0], rival_ship),
+            requested,
+            "the helper deals the server's requested build"
+        );
+        assert_eq!(
+            z.rooms[0].world.state.ships[rival_ship as usize].kit, requested,
+            "the requested build is dealt before readiness changes"
+        );
+        z.rooms[0].tick();
+
+        let opened = z.rooms[0].ladder_state().expect("Ladder state").state;
+        assert!(opened.playing);
+        assert_eq!(z.rooms[0].match_no, 1);
+        assert_eq!(
+            z.rooms[0].world.state.ships[rival_ship as usize].kit, requested,
+            "the opening reset preserves the accepted rival build"
+        );
+    }
+
+    #[test]
+    fn a_refused_ladder_rival_kit_releases_the_requested_seat() {
+        let mut z = ladder_serving_with_accounts();
+        let (human_tx, _human_rx) = mpsc::channel(OUT_QUEUE);
+        let human_id = z.rooms[0]
+            .join(Seat::guest("Climber", false), 0, 1, human_tx)
+            .expect("the human seat");
+        let human_ship = z.rooms[0].players[&human_id].ship;
+        let room = z.rooms[0].number;
+
+        let archetype = bots::ladder_archetype_for_slot(0).expect("the first rung");
+        let rival_spec = pilots::ladder_replica(archetype, 0).expect("a Ladder replica");
+        let rival = signed_ladder_replica(&z, 5_016, 0, 0);
+        let (rival_tx, mut rival_rx) = mpsc::channel(OUT_QUEUE);
+        let rival_id = z.rooms[0]
+            .join(rival, rival_spec.hull, 1, rival_tx)
+            .expect("the requested rival seat");
+        let rival_ship = z.rooms[0].players[&rival_id].ship;
+        let starter = z.rooms[0].world.state.ships[rival_ship as usize].kit;
+        let expected = z.rooms[0]
+            .expected_ladder_rival_kit(rival_ship)
+            .expect("the calibrated rival build");
+        assert_ne!(starter, expected, "the starter is a refused rival build");
+
+        let illegal_human_kit = [u8::MAX; sim::SLOT_COUNT];
+        assert!(
+            !z.rooms[0].ask_kit(human_ship, &illegal_human_kit),
+            "a human kit refusal does not remove the seat"
+        );
+        assert!(z.rooms[0].players.contains_key(&human_id));
+
+        assert!(
+            z.rooms[0].ask_kit(rival_ship, &starter),
+            "a refused Ladder rival build releases its seat"
+        );
+        assert!(!z.rooms[0].players.contains_key(&rival_id));
+        assert!(z.rooms[0].names.values().all(|seat| !seat.bot));
+        assert_eq!(z.rooms[0].humans(), 1);
+        assert!(
+            drain(&mut rival_rx)
+                .iter()
+                .any(|message| message.first() == Some(&S2C_YIELD)),
+            "the rejected rival is told why its session ended"
+        );
+        assert_eq!(
+            z.status().bot_requests,
+            Some(vec![fleet::BotRequest {
+                room,
+                count: 1,
+                target_slot: Some(0),
+            }]),
+            "the house director can immediately fill the open request"
+        );
+    }
+
+    #[test]
+    fn every_ladder_anchor_replica_holds_the_rating_scale_fixed() {
+        let mut z = ladder_serving_with_accounts();
+        let (tx, _rx) = mpsc::channel(OUT_QUEUE);
+        let human_id = z.rooms[0]
+            .join(Seat::guest("Climber", false), 0, 1, tx)
+            .expect("the human seat");
+        let human_ship = z.rooms[0].players[&human_id].ship;
+        let anchor_archetype =
+            pilots::ladder_archetype_for_callsign("Ozone 0001").expect("the anchor replica family");
+        let anchor_slot = (0..pilots::PROVISIONAL_LADDER_RUNG_COUNT as u32)
+            .find(|slot| bots::ladder_archetype_for_slot(*slot) == Some(anchor_archetype))
+            .expect("the provisional order contains the anchor");
+        assert!(z.rooms[0].restore_ladder(anchor_slot, anchor_slot));
+        let anchor = signed_ladder_replica(&z, 5_020, anchor_slot, 0);
+        let (tx, _rx) = mpsc::channel(OUT_QUEUE);
+        let anchor_id = z.rooms[0]
+            .join(anchor, pilots::individual(anchor_archetype).hull, 1, tx)
+            .expect("the anchor rival");
+        let anchor_ship = z.rooms[0].players[&anchor_id].ship;
+        let anchor_rid = z.rooms[0].names[&anchor_ship].rid.clone();
+        let human_rid = z.rooms[0].names[&human_ship].rid.clone();
+
+        z.rooms[0]
+            .rating
+            .damage(1, &anchor_rid, &human_rid, 1_000, false);
+        z.rooms[0]
+            .rating
+            .death(1, &anchor_rid)
+            .expect("a rated exchange");
+        assert_eq!(
+            z.rooms[0].rating.rating_of(&anchor_rid),
+            ai::ANCHOR_RATING,
+            "a replica of the reference personality cannot drift"
+        );
+    }
+
+    #[test]
+    fn a_new_ladder_run_evicts_the_previous_climbers_opponent() {
+        let (cfg, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
+        let mut z = ArenaServer::new(cfg, test_spool(), HashMap::new());
+        let mut def = wire_zone(4, 1, 1);
+        def.name = "ladder".into();
+        def.mode = "ladder".into();
+        def.max_ships = 2;
+        def.bot_fill = 1.0;
+        z.catalog = Some(fleet::WireCatalog {
+            version: 1,
+            name: "test".into(),
+            default_zone: "ladder".into(),
+            zones: vec![def.clone()],
+            ..Default::default()
+        });
+        z.serve_zone(&def).expect("a Ladder room");
+
+        let archetype = bots::ladder_archetype_for_slot(0).expect("the first rung");
+        let rival = pilots::ladder_replica(archetype, 0).expect("a Ladder replica");
+        let mut seat = Seat::guest(rival.callsign, true);
+        seat.label = token::Label::HouseBot.to_byte();
+        let (tx, _rx) = mpsc::channel(OUT_QUEUE);
+        z.rooms[0]
+            .join(seat, rival.hull, 1, tx)
+            .expect("a stale rival seat");
+        assert_eq!(
+            z.rooms[0].names.values().filter(|seat| seat.bot).count(),
+            1,
+            "the stale rival is present"
+        );
+        let (tx, _rx) = mpsc::channel(OUT_QUEUE);
+        z.rooms[0]
+            .join(Seat::guest("Next climber", false), 0, 1, tx)
+            .expect("the next run");
+        assert!(
+            z.rooms[0].names.values().all(|seat| !seat.bot),
+            "a seat with an unknown slot cannot survive the run boundary"
+        );
+
+        assert!(z.rooms[0].restore_ladder(5, 7));
+        assert_eq!(
+            z.status().bot_requests,
+            Some(vec![fleet::BotRequest {
+                room: z.rooms[0].number,
+                count: 1,
+                target_slot: Some(5),
+            }]),
+            "the replacement request uses the restored checkpoint"
+        );
+    }
+
+    #[test]
+    fn a_ladder_rival_disconnect_replays_without_filing_or_paying_the_life() {
+        let (cfg, _) = config::ConfigWatcher::load("/nonexistent/zone.toml");
+        let mut z = ArenaServer::new(cfg, test_spool(), HashMap::new());
+        let mut def = wire_zone(4, 1, 1);
+        def.name = "ladder".into();
+        def.mode = "ladder".into();
+        def.max_ships = 2;
+        def.bot_fill = 1.0;
+        def.zone_toml =
+            "description = \"test Ladder\"\n[arena]\nintermission_seconds = 1\nspawn_radius = 0\n"
+                .into();
+        let drydock = std::fs::read("../catalog/zones/melee/drydock.vwmap")
+            .expect("Drydock ships with Ladder");
+        def.maps_b64 = vec![fleet::b64(&drydock)];
+        def.map_names = vec!["drydock".into()];
+        z.catalog = Some(fleet::WireCatalog {
+            version: 1,
+            name: "test".into(),
+            default_zone: "ladder".into(),
+            zones: vec![def.clone()],
+            meta_key: token::to_hex(meta_key().verifying_key().as_bytes()),
+            ..Default::default()
+        });
+        z.serve_zone(&def).expect("a Ladder room");
+
+        let (tx, _rx) = mpsc::channel(OUT_QUEUE);
+        let human_id = z.rooms[0]
+            .join(Seat::guest("Climber", false), 0, 1, tx)
+            .expect("the human seat");
+        let human_ship = z.rooms[0].players[&human_id].ship;
+        let (bot_id, bot_ship) = join_ready_ladder_rival(&mut z, 5_021, 0, 0);
+        z.rooms[0].tick();
+        let before = z.rooms[0].ladder_state().expect("Ladder state").state;
+        assert!(before.playing);
+        let (_, starts_per_team) = z.rooms[0].world.map.spawns();
+        let scenario_seed = u64::from(z.rooms[0].number)
+            .wrapping_mul(0x9e37_79b9_7f4a_7c15)
+            .wrapping_add(u64::from(z.rooms[0].match_no));
+        let starts = pilots::ladder_start_pair(
+            pilots::LADDER_START_NAMESPACE,
+            scenario_seed,
+            starts_per_team,
+        )
+        .expect("Drydock has starts for both sides");
+        for (ship, team) in [(human_ship, 0u8), (bot_ship, 1u8)] {
+            let tile = z.rooms[0]
+                .world
+                .map_spawn(team, starts[team as usize])
+                .expect("the selected start");
+            let row = z.rooms[0].world.state.ships[ship as usize];
+            assert_eq!(
+                (row.x, row.y),
+                (
+                    (tile.0 * sim::TILE_PX + sim::TILE_PX / 2) * 256,
+                    (tile.1 * sim::TILE_PX + sim::TILE_PX / 2) * 256,
+                )
+            );
+            assert_eq!(row.heading, if team == 0 { 0 } else { 32768 });
+        }
+
+        let human_rid = z.rooms[0].names[&human_ship].rid.clone();
+        let bot_rid = z.rooms[0].names[&bot_ship].rid.clone();
+        let damage_tick = z.rooms[0].world.state.tick;
+        z.rooms[0]
+            .rating
+            .damage(damage_tick, &bot_rid, &human_rid, 1_000, false);
+        z.rooms[0]
+            .rating
+            .damage(damage_tick, &human_rid, &bot_rid, 1_000, false);
+        let human_rating_before = z.rooms[0].rating.rating_of(&human_rid);
+        let bot_rating_before = z.rooms[0].rating.rating_of(&bot_rid);
+        let rated_before = z.spools.rated.lock().unwrap().len();
+
+        {
+            let row = &mut z.rooms[0].world.state.ships[human_ship as usize];
+            row.x = 123;
+            row.y = 456;
+            row.energy = 1;
+        }
+        z.rooms[0].world.state.ships[bot_ship as usize].energy = 1;
+        assert!(z.rooms[0].leave(bot_id, pilot::why::LEFT));
+        assert_eq!(z.rooms[0].rating.rating_of(&human_rid), human_rating_before);
+        assert_eq!(z.rooms[0].rating.rating_of(&bot_rid), bot_rating_before);
+        assert_eq!(z.spools.rated.lock().unwrap().len(), rated_before);
+        assert!(
+            z.rooms[0]
+                .rating
+                .death(damage_tick.wrapping_add(1), &human_rid)
+                .is_none(),
+            "the departed rival has no credit left in the replay"
+        );
+        // Win the scheduling race the regression is about: a fresh rival
+        // arrives before the room's next 100 Hz tick.
+        let _ = join_ready_ladder_rival(&mut z, 5_022, 0, 1);
+        let artifacts_before = z.spools.matches.lock().unwrap().len();
+        let events_before = z.spools.pilots.lock().unwrap().len();
+        z.rooms[0].tick();
+
+        let interrupted = z.rooms[0].ladder_state().expect("Ladder state").state;
+        assert!(!interrupted.playing);
+        assert_eq!(interrupted.rung, before.rung);
+        assert_eq!(interrupted.streak, before.streak);
+        assert_eq!(interrupted.checkpoint, before.checkpoint);
+        assert_eq!(interrupted.best, before.best);
+        assert_eq!(z.rooms[0].artifact_id, None);
+        assert_eq!(z.spools.matches.lock().unwrap().len(), artifacts_before);
+        assert_eq!(z.spools.pilots.lock().unwrap().len(), events_before);
+        assert_eq!(
+            z.rooms[0].world.state.ships[human_ship as usize].alive, 0,
+            "the invalid life is benched before its replay"
+        );
+
+        for _ in 0..=100 {
+            z.rooms[0].tick();
+            if z.rooms[0]
+                .ladder_state()
+                .is_some_and(|state| state.state.playing)
+            {
+                break;
+            }
+        }
+        let replay = z.rooms[0].ladder_state().expect("Ladder state").state;
+        assert!(replay.playing);
+        assert_eq!(replay.rung, before.rung);
+        let row = &z.rooms[0].world.state.ships[human_ship as usize];
+        assert_eq!(row.alive, 1);
+        assert_eq!(
+            row.energy,
+            z.rooms[0].world.eff_max_energy(human_ship as usize)
+        );
+        assert_ne!((row.x, row.y), (123, 456));
+    }
+
+    #[test]
+    fn a_ladder_human_departure_cannot_leave_a_second_quit_for_the_bot() {
+        let mut z = ladder_serving_with_accounts();
+        let (tx, _rx) = mpsc::channel(OUT_QUEUE);
+        let human_id = z.rooms[0]
+            .join(Seat::guest("Climber", false), 0, 1, tx)
+            .expect("the human seat");
+        let human_ship = z.rooms[0].players[&human_id].ship;
+        let (bot_id, bot_ship) = join_ready_ladder_rival(&mut z, 5_023, 0, 0);
+        z.rooms[0].tick();
+        let before = z.rooms[0].ladder_state().expect("Ladder state").state;
+        assert!(before.playing);
+
+        let human_rid = z.rooms[0].names[&human_ship].rid.clone();
+        let bot_rid = z.rooms[0].names[&bot_ship].rid.clone();
+        let tick = z.rooms[0].world.state.tick;
+        z.rooms[0]
+            .rating
+            .damage(tick, &human_rid, &bot_rid, 1_000, false);
+        z.rooms[0]
+            .rating
+            .damage(tick, &bot_rid, &human_rid, 1_000, false);
+        z.rooms[0].world.state.ships[human_ship as usize].energy = 1;
+        z.rooms[0].world.state.ships[bot_ship as usize].energy = 1;
+        let artifacts_before = z.spools.matches.lock().unwrap().len();
+        let rating_events_before = z.rooms[0].rating.log.len();
+
+        assert!(z.rooms[0].leave(human_id, pilot::why::LEFT));
+        let interrupted = z.rooms[0].ladder_state().expect("Ladder state").state;
+        assert!(
+            !interrupted.playing,
+            "the departure aborts under the room lock"
+        );
+        assert_eq!(interrupted.rung, before.rung);
+        assert_eq!(interrupted.streak, before.streak);
+        assert_eq!(interrupted.checkpoint, before.checkpoint);
+        assert_eq!(interrupted.best, before.best);
+        assert_eq!(
+            z.rooms[0].rating.log.len(),
+            rating_events_before + 1,
+            "the human's low-energy quit settles once"
+        );
+        let human_after = z.rooms[0].rating.rating_of(&human_rid);
+        let bot_after = z.rooms[0].rating.rating_of(&bot_rid);
+
+        assert!(z.rooms[0].leave(bot_id, pilot::why::EVICTED));
+        assert_eq!(
+            z.rooms[0].rating.log.len(),
+            rating_events_before + 1,
+            "evicting the damaged bot cannot settle the invalid life again"
+        );
+        assert_eq!(z.rooms[0].rating.rating_of(&human_rid), human_after);
+        assert_eq!(z.rooms[0].rating.rating_of(&bot_rid), bot_after);
+        assert!(z.rooms[0].rating.death(tick + 1, &human_rid).is_none());
+        assert!(z.rooms[0].rating.death(tick + 1, &bot_rid).is_none());
+        assert_eq!(z.rooms[0].artifact_id, None);
+        assert_eq!(z.spools.matches.lock().unwrap().len(), artifacts_before);
+        let after = z.rooms[0].ladder_state().expect("Ladder state").state;
+        assert_eq!(after.rung, before.rung);
+        assert_eq!(after.streak, before.streak);
+        assert_eq!(after.checkpoint, before.checkpoint);
+        assert_eq!(after.best, before.best);
     }
 
     #[test]
@@ -4313,6 +5222,7 @@ mod tests {
             zone_name.len() as u8,
             name.len() as u8,
             0,
+            0,
         ];
         join.extend_from_slice(zone_name);
         join.extend_from_slice(name);
@@ -4418,6 +5328,7 @@ mod tests {
             0,
             zone_name.len() as u8,
             name.len() as u8,
+            0,
             0,
         ];
         join.extend_from_slice(zone_name);
@@ -4748,6 +5659,7 @@ mod tests {
         );
         if let Some(c) = z.catalog.as_mut() {
             c.zones[0].admission = "claimed".into();
+            c.zones[0].mode = "ladder".into();
         }
         let def = z.catalog.as_ref().unwrap().zones[0].clone();
         z.serve_zone(&def).expect("a room");
@@ -4772,28 +5684,50 @@ mod tests {
             )
             .expect("verifies");
         assert_eq!(claimed.label, token::Label::Human.to_byte());
+
+        let third_party = Seat::guest("Outside bot", true);
+        assert_eq!(third_party.label, token::Label::ThirdPartyBot.to_byte());
+        assert!(
+            !z.accepts_bot_seat(&third_party),
+            "a declared bot cannot replace the measured rival"
+        );
+        let mut house = third_party;
+        house.label = token::Label::HouseBot.to_byte();
+        assert!(
+            z.accepts_bot_seat(&house),
+            "the authenticated house director may fill the rival seat"
+        );
     }
 
     #[test]
-    fn the_calibrated_ladder_seeds_an_account_and_pins_the_anchor() {
-        // Where the offline tournament's work now enters the fleet. A room
-        // primes by name and stopped reaching bots the moment their rating
-        // moved to an account, so this is the path that has to keep working.
+    fn only_a_certified_ladder_can_seed_accounts_beyond_the_anchor() {
         assert_eq!(
             calibrated_rating(ai::ANCHOR),
             Some(ai::ANCHOR_RATING),
             "the anchor is a definition, not a measurement"
         );
         for (name, _, _) in ai::CALIBRATED {
-            assert!(
-                calibrated_rating(name).is_some(),
-                "{name} was calibrated and has to arrive with its number"
-            );
+            if name != ai::ANCHOR {
+                assert_eq!(
+                    calibrated_rating(name),
+                    None,
+                    "{name} has no certified prior in the checked-in seed"
+                );
+            }
         }
         // The roster is longer than the calibrated group, and the rest earn
         // their number in play.
         let generated = ai::individual(ai::CALIBRATED.len());
         assert!(calibrated_rating(&generated.name).is_none());
+
+        let synthetic = HashMap::from([("Kestrel".to_string(), 1042.5)]);
+        assert_eq!(
+            crate::arena::calibrated_rating_from("Kestrel 0042", &synthetic),
+            Some(1042.5),
+            "a Ladder replica inherits its measured archetype prior"
+        );
+        assert_eq!(crate::meta::house_rating_class("Kestrel 0042"), "ladder");
+        assert_eq!(crate::meta::house_rating_class("Kestrel"), "arena");
     }
 
     #[test]

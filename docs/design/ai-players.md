@@ -61,10 +61,12 @@ does not change while you are fighting it. Adaptation happens at the roster
 level: the director spawns harder or easier opponents. Players can feel a bot
 that suddenly starts missing, and it insults them.
 
-**Bots are content.** The current fleet has one deployment-wide roster and one
-behavior model. Zones choose their fill level and simulation settings. A future
-zone-specific roster or behavior set needs an explicit design and code path; it
-is not a feature hidden in the zone file today.
+**Bots are content.** The fleet has one deployment-wide roster and one shared
+controller. Each roster individual resolves from a versioned pilot
+specification with its own identity, behavior profile, competence, and build
+plan. Zones choose fill and simulation settings. Ladder also asks for a
+particular difficulty slot. [bot-ecosystem.md](bot-ecosystem.md) defines the
+split.
 
 ## Styles
 
@@ -76,6 +78,7 @@ the roster in [ships.md](ships.md) without being locked to it:
 | Duelist | Apex | Seeks one-on-one fights, chases hard, breaks off at low energy |
 | Bombardier | Wedge, Anvil | Holds corridors and chokepoints, avoids open space, lobs into traffic |
 | Skirmisher | Chord | Pokes from range, sustains fire, retreats early and often |
+| Heavy | Anvil | Accepts midrange fights, spends bombs readily, retreats a little later |
 | Ambusher | Cipher | Cloaks near routes, waits, commits once, leaves |
 | Brawler | Facet | Closes to knife range, fights in tunnels, dies in the open |
 | Denier | Lattice | Mines chokepoints, defends the flag room, rarely chases |
@@ -86,24 +89,35 @@ eight copies of one opponent.
 
 ## Skill
 
-Skill is two parameters, and the number is a result rather than a choice: a
-table of six was tried, ablated one knob at a time on two hulls in two
-economies, and four of the six could not be told from a coin. A weak bot and a
-strong bot run the same code and differ in how well they execute:
+Competence has two parameters. A table of six was tried, ablated one knob at a
+time on two hulls in two economies, and four of the six could not be told from a
+coin. A weak bot and a strong bot run the same code and differ in how well they
+execute:
 
 | Parameter | Weak | Strong |
 |---|---|---|
 | Aim | Misreads the target's motion most looks, badly | Reads the lead nearly right, nearly always |
 | Judgment | Spends the bar on shots that are not there, bombs on cooldown, panics charges early | Keeps a reserve, throws the bomb the geometry asks for, spends a charge on the round that would have hit |
 
-A single skill dial from 0 to 1 drives both, so a 0.7 Duelist and a 0.7
-Ambusher are about equally hard and feel nothing alike. Aim error is a misread
-of motion, so it grows with how fast the target crosses and how far the round
-must fly, and a quarter of even a bad pilot's looks come out clean: nobody is
-uniformly wrong, they are mostly wrong. Everything else the table used to
-promise, reaction time, look rate, aim tolerance, engagement range, is a
-constant now, pinned at what a mid-roster pilot always got, so retiring the
-knobs moved nobody's average.
+Aim and judgment are independent fields from 0 to 1. An authored pilot may set
+them to the same value, but the data model does not require it. Aim error is a
+misread of motion, so it grows with how fast the target crosses and how far the
+round must fly. A quarter of even a bad pilot's looks come out clean: nobody is
+uniformly wrong, they are mostly wrong. Reaction time and look rate stay fixed.
+Engagement range now belongs to behavior, where it changes style rather than
+claiming to measure execution.
+
+The scalar tournaments below are the historical measurements that selected
+these two axes. New population calibration compares full pilot specifications
+and reports profile and competence claims separately. See
+[bot-calibration.md](../architecture/bot-calibration.md).
+
+Those older runs were exploratory. They did not freeze one hypothesis family,
+power the sample from a declared minimum effect, correct every comparison, or
+hold back an untouched release pool. Their percentages and descriptive z
+scores remain below because they explain why the controller changed, not
+because they certify the current roster. None of them may seed ratings, order a
+Ladder rung, or support a current balance claim.
 
 Reaction time deserves its own line, because it was built twice and failed
 twice, differently. As re-plan cadence it measured as a coin: in a fight the
@@ -113,7 +127,7 @@ correction answers an error the ship no longer has, so every pilot oscillated
 and none could shoot. If it comes back a third time it has to lag what the
 pilot knows rather than what its hands do. The code records both attempts.
 
-### Measuring it at all
+### What the exploratory instruments got wrong
 
 Three of the instruments that produced the numbers below were wrong, and each
 was wrong in the direction that flatters a change.
@@ -170,17 +184,17 @@ numbers should run it, because the first three attempts here were all wrong in
 ways only it caught, including one where greed was tuned backwards and the
 reckless side won 64% of its bouts.
 
-Two findings from it are worth keeping, because they are facts about this game
-rather than about the code that was fixed.
+Two hypotheses from it were worth carrying into the confirmatory harness. They
+remain hypotheses until a prespecified, powered report passes.
 
-**Aim decides a bare field.** A pilot that misreads a target's motion loses 37
+**Aim may decide a bare field.** A pilot that misreads a target's motion loses 37
 points of win rate on a bare Wedge and 28 on a bare Apex, against knobs that
 otherwise land inside their own intervals of a coin. With greens on the map it
 falls to two points on the Wedge and fourteen on the Apex: once multifire and
 shrapnel are on a hull nobody is aiming, they are spraying, and precision stops
 separating anybody.
 
-**Energy discipline decides a built Apex, and nothing decides a built Wedge.**
+**Energy discipline may decide a built Apex.**
 Holding the permission knob at 0.30 costs a built Apex 24 points, which is more
 than aim costs it. That knob is the share of the bar a pilot will not spend
 attacking, plus the cadence and the margins that go with it, and a built hull
@@ -194,13 +208,13 @@ So a change to reaction, look rate, tolerance or engagement range changes how
 the bots read rather than how hard they are. Difficulty lives in aim and in
 energy discipline.
 
-### What it comes to
+### Archived exploratory table
 
 Seven hulls, two economies, five pilots from 0.05 to 0.90, three hundred bouts
 a pair, with both sides handed the same kit at every spawn and nothing on the
-floor to scavenge. The column is what the strongest pilot takes off the weakest
-in decided bouts, and z is that edge pooled over every pair in the block against
-a coin.
+floor to scavenge. The column is what the strongest pilot took off the weakest
+in decided bouts. The z value is descriptive and has no family correction, so
+it is not a release verdict.
 
 | Hull | 30 greens | 60 greens |
 |---|---|---|
@@ -218,18 +232,18 @@ enough to span it, and more samples put it on 66.1%: the low number was noise.
 Worth writing down, because the other option on the table was calling 57.9%
 close enough.
 
-Three things are worth reading off it. Doubling the kit does not flatten the
+Three hypotheses came out of it. Doubling the kit may not flatten the
 dial: five of seven hulls separate at least as well at sixty greens as at thirty,
 which contradicts the older finding that thirty greens turn a two-to-one gap
 flat. That finding came from a room where both pilots also raced for greens on
 the floor, so it was measuring who scavenged better as much as who flew better.
 
-The spread across hulls is real. Cipher and Apex separate pilots twice as
+The observed spread across hulls was large. Cipher and Apex separated pilots twice as
 sharply as Chord does, so how much your skill matters depends on what you fly.
 Nobody designed that and it is not obviously wrong, but it is worth knowing
 before anybody tunes a hull.
 
-And separation is not even along the dial. Chord at sixty greens, the block
+Separation also appeared uneven along the dial. Chord at sixty greens, the block
 with the most bouts behind it, has 0.05 losing to everybody and then almost
 nothing between 0.45, 0.70 and 0.90: those three pairs read 47.6%, 49.0% and
 53.9%, the last of them favoring the weaker pilot. A room stocked from the top
@@ -264,9 +278,9 @@ information a player does not have.
 ## The roster: bots as long-lived individuals
 
 The bot server holds one deterministic roster for the deployment. Each
-individual keeps a name, hull, skill, account, rating, wallet, and upgrades.
-"Bot A" is somebody because it flies the same build under the same account and
-carries its record across restarts.
+individual keeps a stable pilot ID, versioned specification, account, rating,
+wallet, and upgrades. "Bot A" is somebody because it flies under the same
+identity and carries its record across restarts.
 
 **One individual, one place.** An individual never appears in two arenas at
 once, and never twice in one arena. This is the rule that makes it an
@@ -276,21 +290,25 @@ individual: its rating is the record of one career, not an average over clones.
 each individual holds a real account at the meta-layer, claimed by name with
 the bot server's pool credential and the same one every time, so a restart
 resumes a career rather than starting one. Its rating lives where a human's
-does and moves by the same math. A new individual is seeded from the calibrated
-prior of its template on the day its account is created, which is where the
-offline tournament's work enters the fleet. See
+does and moves by the same math. The pinned anchor is the only offline seed in
+the checked-in build today. Other priors become eligible only when a powered
+report and its current-content fingerprints ship together. See
 [accounts.md](accounts.md) and
 [meta-layer.md](../architecture/meta-layer.md).
 
-**Presence.** Presence follows room demand today. The director walks the stable
-roster in order and claims the first unused individual whenever an arena needs a
-seat. It does not keep hours or a weekly schedule.
+**Presence.** Presence follows room demand today. Ordinary fill walks the stable
+roster and claims an unused individual when an arena needs a seat. Ladder names
+a difficulty slot for one room. The director does not keep hours or a weekly
+schedule.
 
 **Careers.** Rating, wallet, and purchased upgrades change through ordinary
-play. Hull and skill stay fixed. There is no automatic skill progression,
-plateau, retirement, or replacement policy today. Those systems need rules for
-timing and account history before they can be added without quietly changing
-who a familiar pilot is.
+play. Ladder keeps the identity but flies the base-account kit used in
+calibration and does not shop, so a rung cannot drift with traffic. Hull,
+competence, behavior, and build remain fixed for a pilot specification version.
+There is no automatic competence progression, plateau, retirement, or
+replacement policy today. Those systems need rules for timing and account
+history before they can be added without quietly changing who a familiar pilot
+is.
 
 **Texture is not disguise.** Names are visibly marked as AI everywhere, and
 bots do not perform humanity: no fake excuses, no fake typing, no pretending to
@@ -325,17 +343,17 @@ again. Failed dials, refused joins, and reconnect churn do not turn one flight
 into several purchases. One rung at a time keeps saved bounty from changing a
 ship all at once.
 
-**Taste, so a room is not eight of one ship.** Each individual has an order it
-wants slots in, hashed from its name and tilted by its hull: a gunner, a
-bomber, a runner. The order does two jobs. It decides what to buy next, and it
-decides how the thirty points are spent once the rungs are owned, so what a
-pilot saved for is what it flies. That is what makes "Ozone throws shrapnel"
-a fact worth learning rather than a thing to say about all of them.
+**Taste, so a room is not eight of one ship.** Each pilot specification names a
+gunner, bomber, or runner build plan. The plan decides what to buy next and how
+the thirty points are spent once the rungs are owned, so what a pilot saved for
+is what it flies. The choice no longer comes from hashing the call sign. That is
+what makes "Ozone throws shrapnel" a fact worth learning rather than a thing to
+say about all of them.
 
 A bought-up bot may win more, and its account rating then moves with its record.
-The current fill rule does not select by rating, so a long-lived individual can
-still meet a first-week player. That is a population-director limitation rather
-than something the shelf can solve.
+Ordinary fill does not select by rating, so a long-lived individual can still
+meet a first-week player. Ladder's explicit difficulty request does not change
+that policy in regular rooms.
 
 ## The population director
 
@@ -352,11 +370,12 @@ tips it over target and a bot stands down, and a room with humans past the
 target holds no bots at all. The unfilled remainder is headroom, so a human
 join never waits on a bot leaving.
 
-**Draw from the roster.** The director claims the first unused individual in
-the deterministic deployment roster. It does not receive the human rating
-distribution in the directory reply, so it cannot match a room by rating yet.
-Adding that policy first requires exposing enough aggregate standing data to
-choose without leaking individual account records. Fill is the current job.
+**Draw from the roster.** Ordinary fill claims unused individuals from the
+deterministic deployment roster. A Ladder room instead requests one bot for its
+room and names the next difficulty rung. Each rung is one authored archetype
+with 1,024 persistent account replicas. This is a mode request rather than a
+human rating lookup, so it does not expose account records. A life locks one
+replica and never changes its competence while the player is fighting it.
 
 **Yield to humans.** When a human joins, a bot is marked for removal and leaves
 under the graceful rules above. Bots never outnumber humans on the opposing team
@@ -387,18 +406,25 @@ wants no bots sets it to zero.
 ## Rating
 
 Bots carry ratings, which is what makes the arena useful for ranking humans. See
-[rating.md](rating.md). Three properties matter here: a bot's rating belongs to
-the individual account, a calibrated individual starts from its offline prior,
-and one reference personality is pinned to a fixed rating so the bot population
-cannot drift as a closed system. Generated fill pilots have stable accounts but
-no separate calibrated prior.
+[rating.md](rating.md). A bot's rating belongs to the individual account, and
+one reference personality is pinned to a fixed rating so the population cannot
+drift as a closed system. The repository currently seeds only that anchor. A
+future offline prior must arrive through a powered, fingerprint-matched report;
+generated fill pilots have no separate calibrated prior.
+
+## Ladder
+
+Ladder asks for one stable opponent at a measured difficulty slot. Its normal
+format is one life, with a win advancing one rung and a loss dropping two by
+default without crossing the last checkpoint. The opponent changes between
+lives and never changes competence inside one. See
+[ladder-mode.md](ladder-mode.md).
 
 ## Duels
 
-Bots are also the opponent of last resort in the duel queue, and the opponent of
-first resort for a player who wants practice. A rated duel against a bot moves
-your rating exactly as a duel against a person does. [duel-mode.md](duel-mode.md)
-covers the format and the queue.
+Duel matchmaking is deferred. No duel queue or duel-specific bot policy ships
+today. [duel-mode.md](duel-mode.md) records the design boundary without making
+it part of the current roster contract.
 
 ## What we are not doing
 
@@ -407,13 +433,10 @@ parameters is cheap, debuggable, tunable by a designer, and good enough to be
 fun. Imitation learning from recorded human play is an interesting later
 experiment and a bad way to start.
 
-No bots that pretend to be human. No fake chat, no fake typing, no unlabeled
-entries in the player list.
+No bots that pretend to be human. No chat, social messages, fake typing, friend
+requests, or unlabeled entries in the player list.
 
 ## Open questions
-
-Whether bots should chat at all. A little canned banter makes an arena feel
-alive; too much is uncanny and annoying.
 
 Whether bots should be allowed in rated arenas at all times, or only below a
 population threshold. A zone at full capacity has no need of them, and their

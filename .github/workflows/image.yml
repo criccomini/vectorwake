@@ -93,7 +93,7 @@ jobs:
       # nothing else looks at the arena shape until a machine boots into it.
       - name: the compose files parse
         run: |
-          printf 'VW_HOST=play.example.invalid\nVW_POOL_TOKEN=x\n' > /tmp/ci.env
+          printf 'VW_HOST=play.example.invalid\nVW_POOL_TOKEN=x\nVW_META_VERIFY=x\n' > /tmp/ci.env
           C="docker compose --env-file /tmp/ci.env -f deploy/docker-compose.caddy.yml"
           $C -f deploy/docker-compose.central.yml -f deploy/docker-compose.arena.yml config -q
           $C -f deploy/docker-compose.central.yml config -q

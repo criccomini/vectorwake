@@ -7,8 +7,8 @@ use crate::delivery::*;
 use crate::presence::*;
 use crate::protocol::*;
 use crate::{
-    ai, catalog, config, fleet, growth, metrics, modes, pilot, rating, sim, spool, token,
-    CHANNEL_HOLD, DEFAULT_CHANNEL_DELAY, DEFAULT_MAX_WATCHERS,
+    ai, catalog, config, fleet, growth, metrics, modes, pilot, pilots, rating, shopper, sim, spool,
+    token, CHANNEL_HOLD, DEFAULT_CHANNEL_DELAY, DEFAULT_MAX_WATCHERS,
 };
 
 pub(crate) struct Player {
@@ -426,6 +426,9 @@ pub(crate) struct Seat {
     /// it was minted. This is how a career crosses zones without an arena
     /// asking anybody anything.
     pub(crate) carried: Option<Vec<token::ClassRating>>,
+    /// Saved progress for each Ladder zone, carried beside ratings so a room
+    /// can restore a run without asking the meta-layer at the door.
+    pub(crate) carried_ladders: Vec<token::LadderProgress>,
     /// What this account may slot, over the core's flat kit space, out of the
     /// token that admitted them. A kit is checked against this and against the
     /// hull's own row, and the smaller of the two wins.
@@ -482,6 +485,7 @@ impl Seat {
             },
             account: None,
             carried: None,
+            carried_ladders: Vec::new(),
             entitlements: sim::World::base_entitlements(),
             pending_kit: None,
             kitted: false,
@@ -545,6 +549,58 @@ pub(crate) fn file_event(
 ///
 /// An arena server holds one of these per room it has open, up to the zone's
 /// `max_rooms`. See `ArenaServer` below.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct LadderRoomState {
+    pub room: u32,
+    pub state: modes::LadderState,
+}
+
+fn match_message(
+    state: modes::MatchState,
+    artifact: Option<u64>,
+    ladder: Option<modes::LadderState>,
+) -> Vec<u8> {
+    let mut flags = u8::from(state.playing) * MATCH_PLAYING;
+    if artifact.is_some() {
+        flags |= MATCH_HAS_ARTIFACT;
+    }
+    if ladder.is_some() {
+        flags |= MATCH_HAS_LADDER;
+    }
+    let mut out = vec![
+        S2C_MATCH,
+        flags,
+        state.seconds_left,
+        state.score.len().min(255) as u8,
+    ];
+    for score in state.score.iter().take(255) {
+        out.extend_from_slice(&score.to_le_bytes());
+    }
+    if let Some(id) = artifact {
+        out.extend_from_slice(&id.to_le_bytes());
+    }
+    let Some(ladder) = ladder else { return out };
+    debug_assert_eq!(state.playing, ladder.playing);
+    debug_assert_eq!(state.score.as_slice(), ladder.score);
+    out.push(
+        u8::from(ladder.opponent_ready)
+            | (u8::from(ladder.cleared) << 1)
+            | (u8::from(ladder.waiting) << 2),
+    );
+    for value in [
+        ladder.rung,
+        ladder.streak,
+        ladder.checkpoint,
+        ladder.best,
+        ladder.active_opponent_slot,
+        ladder.desired_opponent_slot,
+    ] {
+        out.extend_from_slice(&value.to_le_bytes());
+    }
+    out.extend_from_slice(&ladder.first_to.to_le_bytes());
+    out
+}
+
 pub(crate) struct Room {
     /// This room's number, which is what a player calls it and the only handle
     /// a join may name it by. Chosen when the room opens, from the numbers no
@@ -959,7 +1015,103 @@ impl Room {
             teams: self.public_teams,
             match_ticks: c.match_seconds.unwrap_or(180) as u32 * 100,
             intermission_ticks: c.intermission_seconds.unwrap_or(25) as u32 * 100,
+            ladder: modes::LadderRules {
+                first_to: c.ladder_first_to.unwrap_or(modes::DEFAULT_LADDER_FIRST_TO),
+                loss_drop: c
+                    .ladder_loss_drop
+                    .unwrap_or(modes::DEFAULT_LADDER_LOSS_DROP),
+                checkpoint_interval: c
+                    .ladder_checkpoint_interval
+                    .unwrap_or(modes::DEFAULT_LADDER_CHECKPOINT_INTERVAL),
+            },
         }
+    }
+
+    /// The room-addressed Ladder request surface. Arena and bot assignment
+    /// code can read this without knowing the concrete mode implementation.
+    pub(crate) fn ladder_state(&self) -> Option<LadderRoomState> {
+        Some(LadderRoomState {
+            room: self.number,
+            state: self.mode.ladder_state()?,
+        })
+    }
+
+    /// Whether this authenticated bot is the rival the current Ladder rung
+    /// requested. Ordinary rooms accept any declared bot; Ladder binds the seat
+    /// to one authored archetype as well as to the house account kind.
+    pub(crate) fn accepts_ladder_rival(&self, seat: &Seat) -> bool {
+        let Some(ladder) = self.ladder_state() else {
+            return true;
+        };
+        if !seat.bot || seat.label != token::Label::HouseBot.to_byte() {
+            return false;
+        }
+        let Some(actual) = pilots::ladder_archetype_for_callsign(&seat.name) else {
+            return false;
+        };
+        crate::bots::ladder_archetype_for_slot(ladder.state.desired_opponent_slot) == Some(actual)
+    }
+
+    /// Whether that rival also requested the hull its authored pilot uses.
+    /// Checked before a ship is allocated so a bad house client cannot occupy
+    /// the one rival seat while remaining permanently ineligible to start.
+    pub(crate) fn accepts_ladder_rival_hull(&self, seat: &Seat, class: u8) -> bool {
+        if self.ladder_state().is_none() {
+            return true;
+        }
+        if !self.accepts_ladder_rival(seat) {
+            return false;
+        }
+        pilots::ladder_archetype_for_callsign(&seat.name)
+            .is_some_and(|archetype| pilots::individual(archetype).hull == class)
+    }
+
+    /// The exact build the calibration fixture gives this Ladder archetype.
+    /// Ladder ignores a bot account's career purchases and uses the common base
+    /// entitlement ceiling, then intersects it with the live zone just as the
+    /// fixture and house client do.
+    pub(crate) fn expected_ladder_rival_kit(&self, ship: u8) -> Option<[u8; sim::SLOT_COUNT]> {
+        let seat = self.names.get(&ship)?;
+        let class = self.world.state.ships.get(ship as usize)?.cls;
+        if !self.accepts_ladder_rival_hull(seat, class) {
+            return None;
+        }
+        let archetype = pilots::ladder_archetype_for_callsign(&seat.name)?;
+        let pilot = pilots::individual(archetype);
+        let mut ceiling = self.kit_ceiling(ship);
+        for (top, base) in ceiling.iter_mut().zip(sim::World::base_entitlements()) {
+            *top = (*top).min(base);
+        }
+        Some(shopper::build(&shopper::wants(pilot.build), &ceiling))
+    }
+
+    /// Seats visible to the mode on this tick. A Ladder rival does not count as
+    /// ready until its client has supplied the requested calibrated build and
+    /// the room has dealt it. Rechecking the identity, hull, ceiling and current
+    /// kit here also keeps a rival authorized for an old rung from opening the
+    /// next one while its replacement is on the way.
+    fn ready_mode_seats(&self) -> Vec<(u8, bool)> {
+        let ladder = self.mode.ladder_state().is_some();
+        self.names
+            .iter()
+            .filter(|(ship, seat)| {
+                !ladder
+                    || !seat.bot
+                    || (seat.kitted
+                        && self
+                            .expected_ladder_rival_kit(**ship)
+                            .is_some_and(|expected| {
+                                self.world.state.ships[**ship as usize].kit == expected
+                            }))
+            })
+            .map(|(ship, seat)| (*ship, seat.bot))
+            .collect()
+    }
+
+    /// Restore a claimed pilot's durable Ladder floor before their first
+    /// series opens. False means this room is not running Ladder.
+    pub(crate) fn restore_ladder(&mut self, checkpoint: u32, best: u32) -> bool {
+        self.mode.restore_ladder(checkpoint, best)
     }
 
     /// The weapons that belong to a settings slot rather than to a hull, under
@@ -1459,6 +1611,9 @@ impl Room {
     ) -> Option<u64> {
         let name = seat.name.clone();
         let bot = seat.bot;
+        if bot && !self.accepts_ladder_rival_hull(&seat, class) {
+            return None;
+        }
         let valid_entry = match (member, presence.current()) {
             (None, Presence::Unjoined) => true,
             (
@@ -1482,6 +1637,15 @@ impl Room {
         // mostly full of AI and still admit every human its operator allowed.
         if !bot && self.humans() >= max_players {
             return None;
+        }
+        // A Ladder bot left behind by the previous climber is not evidence
+        // that the requested opponent is ready. The room cannot identify its
+        // roster slot from a seat, and the supervisor deliberately lets an
+        // ordinary surplus bot live briefly. Remove it synchronously before a
+        // new run restores its checkpoint, then let the room-specific request
+        // seat the right rival.
+        if !bot && self.humans() == 0 && self.mode.ladder_state().is_some() {
+            while self.evict_bot().is_some() {}
         }
         // A joining pilot takes the next start in the map's rotation, so
         // arrivals spread across them instead of landing on each other.
@@ -1514,9 +1678,17 @@ impl Room {
         // emptiest of the zone's own that has room, or a side of their own
         // where the zone names none. Moving is then one selection away in the
         // team list, and only a full side can refuse it.
-        let team = match prefer {
-            Some(t) if self.teams.contains_key(&t) && self.team_has_room(t, bot, Some(ship)) => t,
-            _ => self.seat_team(ship, seat.bot),
+        let team = if self.mode.ladder_state().is_some() {
+            self.seat_team(ship, seat.bot)
+        } else {
+            match prefer {
+                Some(t)
+                    if self.teams.contains_key(&t) && self.team_has_room(t, bot, Some(ship)) =>
+                {
+                    t
+                }
+                _ => self.seat_team(ship, seat.bot),
+            }
         };
         // Where a fresh pilot starts, worked out before anything about them is
         // set: a seat is furniture, and its last occupant does not come with
@@ -1619,7 +1791,10 @@ impl Room {
         // The pinned reference personality, by account rather than by name once
         // it has one. It is the fixed point every other rating in the fleet is
         // measured against, so it is set wherever it sits.
-        if seat.name == ai::ANCHOR && seat.bot {
+        let anchor_replica = pilots::ladder_archetype_for_callsign(&seat.name)
+            .and_then(|archetype| ai::CALIBRATED.get(archetype))
+            .is_some_and(|(callsign, _, _)| *callsign == ai::ANCHOR);
+        if seat.bot && (seat.name == ai::ANCHOR || anchor_replica) {
             self.rating.set_anchor(&seat.rid, ai::ANCHOR_RATING);
         }
         let rid = seat.rid.clone();
@@ -1662,11 +1837,16 @@ impl Room {
         );
         // Bot-filled match rooms may have been running for minutes before a
         // person arrives. On the transition from none to one, put the mode's
-        // opening edge back so the next tick starts a full match for them. In
+        // opening edge back so the next tick starts a full match for them.
         // That gives them a whole match rather than the remainder of a bot
         // match.
-        if !bot && self.humans() == 1 && self.mode.match_state().is_some_and(|state| state.playing)
-        {
+        if !bot && self.humans() == 1 {
+            // A retained first room may still hold the previous match's share
+            // artifact. Join sync sends the match state before the new rival
+            // arrives, and a nonplaying match with an artifact is a podium to
+            // the client. Clear it on the new-run edge so a newcomer sees the
+            // waiting state rather than somebody else's result and replay.
+            self.artifact_id = None;
             self.mode.first_human();
         }
         if member.is_some() {
@@ -1736,6 +1916,19 @@ impl Room {
         ceiling
     }
 
+    /// Apply an in-seat hull change without letting a Ladder rival leave its
+    /// authored hull. Human and ordinary-room changes keep the core's rules.
+    pub(crate) fn set_ship_class(&mut self, ship: u8, class: u8) -> bool {
+        if self
+            .names
+            .get(&ship)
+            .is_some_and(|seat| seat.bot && !self.accepts_ladder_rival_hull(seat, class))
+        {
+            return false;
+        }
+        self.world.set_ship_class(ship, class)
+    }
+
     /// Put a kit on a seat, or say it does not fit.
     ///
     /// False changes nothing, which is the whole contract: a refused kit
@@ -1745,6 +1938,15 @@ impl Room {
     /// the entitlement half is only checked here, because an account is not
     /// something the core knows about.
     pub(crate) fn set_kit(&mut self, ship: u8, kit: &[u8; sim::SLOT_COUNT]) -> bool {
+        let ladder_bot = self.mode.ladder_state().is_some()
+            && self.names.get(&ship).is_some_and(|seat| seat.bot);
+        if ladder_bot
+            && self
+                .expected_ladder_rival_kit(ship)
+                .is_none_or(|expected| expected != *kit)
+        {
+            return false;
+        }
         let ceiling = self.kit_ceiling(ship);
         if kit.iter().zip(ceiling.iter()).any(|(want, max)| want > max) {
             return false;
@@ -1811,16 +2013,43 @@ impl Room {
     ///
     /// Once per seat, because `set_kit` marks it: everything after the first
     /// is a re-spec and waits, which is the rule this was always meant to be.
-    pub(crate) fn ask_kit(&mut self, ship: u8, kit: &[u8; sim::SLOT_COUNT]) {
+    ///
+    /// True means a Ladder rival supplied a refused build and was removed. A
+    /// human refusal retains the old all-or-nothing behavior and returns false.
+    pub(crate) fn ask_kit(&mut self, ship: u8, kit: &[u8; sim::SLOT_COUNT]) -> bool {
+        let ladder_bot = self.mode.ladder_state().is_some()
+            && self.names.get(&ship).is_some_and(|seat| seat.bot);
+        let requested = !ladder_bot
+            || self
+                .expected_ladder_rival_kit(ship)
+                .is_some_and(|expected| expected == *kit);
         let playing = self.mode.match_state().is_some_and(|m| m.playing);
         let settled = self.names.get(&ship).is_some_and(|s| s.kitted);
-        if playing && settled {
+        let accepted = if !requested {
+            false
+        } else if playing && settled {
             if let Some(s) = self.names.get_mut(&ship) {
                 s.pending_kit = Some(*kit);
             }
+            true
         } else {
-            self.set_kit(ship, kit);
+            self.set_kit(ship, kit)
+        };
+        if accepted || !ladder_bot {
+            return false;
         }
+
+        let member = self
+            .players
+            .iter()
+            .find_map(|(id, player)| (player.ship == ship).then_some(*id));
+        if let Some(member) = member {
+            if let Some(player) = self.players.get(&member) {
+                let _ = player.tx.try_send(Message::Binary(vec![S2C_YIELD]));
+            }
+            return self.leave(member, pilot::why::EVICTED);
+        }
+        false
     }
 
     /// Deal this seat what it is flying, which is its own kit if it has one
@@ -2038,6 +2267,9 @@ impl Room {
     /// Whether this ship may enter this side: it has to exist, have room, and
     /// either be the zone's own or have invited them.
     pub(crate) fn may_join(&self, ship: u8, team: u8, bot: bool) -> bool {
+        if self.mode.ladder_state().is_some() && self.public_teams >= 2 && team != u8::from(bot) {
+            return false;
+        }
         let Some(t) = self.teams.get(&team) else {
             return false;
         };
@@ -2063,6 +2295,17 @@ impl Room {
     /// away and only a full side can refuse it. A free-for-all has no such
     /// list, so an arrival founds their own side of one.
     pub(crate) fn seat_team(&mut self, joining: u8, bot: bool) -> u8 {
+        // Ladder's score is [human, bot], in the same order as its two named
+        // public sides. General team balancing counts humans and bots apart,
+        // which would put the first of each on side zero and turn the duel
+        // friendly. Pin the roles here so combat, the scoreboard, and match
+        // settlement all describe the same two opponents.
+        if self.mode.ladder_state().is_some() && self.public_teams >= 2 {
+            let team = u8::from(bot);
+            if self.team_has_room(team, bot, Some(joining)) {
+                return team;
+            }
+        }
         let mut best: Option<(u8, u16)> = None;
         for t in 0..self.public_teams {
             if !self.team_has_room(t, bot, Some(joining)) {
@@ -2517,7 +2760,16 @@ impl Room {
             // A restart is the process leaving, not the pilot: settling it
             // as a quit would charge everyone who happened to be mid-fight
             // when a deploy landed with a death they did not choose.
-            let losing = why != pilot::why::RESTART && {
+            // A live Ladder rival is another interruption rather than a
+            // result. The mode aborts that life below while the room still
+            // holds its mutex, so rating a damaged bot's socket loss here would
+            // pay a win the run rejects.
+            let invalidates_ladder = p.bot
+                && self
+                    .mode
+                    .ladder_state()
+                    .is_some_and(|ladder| ladder.playing);
+            let losing = why != pilot::why::RESTART && !invalidates_ladder && {
                 let sh = &self.world.state.ships[p.ship as usize];
                 let ceiling = self.world.eff_max_energy(p.ship as usize).max(1);
                 sh.alive != 0 && (sh.energy as f64) < QUIT_ENERGY * ceiling as f64
@@ -2593,6 +2845,37 @@ impl Room {
                         "quit_loss": rated.is_some(),
                     }),
                 );
+            }
+            let seats: Vec<(u8, bool)> = self
+                .names
+                .iter()
+                .map(|(ship, seat)| (*ship, seat.bot))
+                .collect();
+            let team_names = self.public_team_names();
+            let mut ctx = modes::ModeCtx {
+                world: &mut self.world,
+                seats: &seats,
+                team_names: &team_names,
+                banner: std::mem::take(&mut self.banner),
+                finished: false,
+                open_match: false,
+                close_match: false,
+                abort_match: false,
+            };
+            self.mode.on_departure(&mut ctx, p.ship, p.bot);
+            self.banner = std::mem::take(&mut ctx.banner);
+            let abort_match = ctx.abort_match;
+            drop(ctx);
+            if abort_match {
+                // Every pending damage ledger belongs to the invalid life.
+                // Clearing only the departed pilot would leave their credit
+                // inside the survivor's ledger and pay it on a later replay.
+                let participants: Vec<rating::Id> =
+                    self.names.values().map(|seat| seat.rid.clone()).collect();
+                for participant in participants {
+                    self.rating.forget(&participant);
+                }
+                self.abort_match();
             }
             let sh = &mut self.world.state.ships[p.ship as usize];
             sh.active = 0;
@@ -2828,6 +3111,9 @@ impl Room {
     /// having watched a minute of it.
     pub(crate) fn fly(&mut self, id: u64, class: u8, max_players: usize) -> Option<u64> {
         let seat = self.watchers.get(&id)?.seat.clone();
+        if seat.bot && !self.accepts_ladder_rival_hull(&seat, class) {
+            return None;
+        }
         let tx = self.watchers.get(&id)?.tx.clone();
         let back = self.watchers.get(&id)?.team;
         let presence = self.watchers.get(&id)?.presence.clone();
@@ -2919,6 +3205,11 @@ impl Room {
 
     pub(crate) fn tick(&mut self) -> bool {
         let mut player_count_changed = false;
+        // A Ladder result changes which named bot this room wants without
+        // changing its population. Treat that as a status edge too, or the
+        // director learns about the next rung only on a later heartbeat.
+        let ladder_before = self.mode.ladder_state();
+        let ladder_opponent_before = ladder_before.map(|state| state.desired_opponent_slot);
         let mut inputs: Vec<sim::sim_input> = Vec::with_capacity(32);
         // The tick this room is about to run, which is the tick a scheduled
         // input has to name to be applied here. `world.tick()` is the last one
@@ -2988,18 +3279,26 @@ impl Room {
         self.score_events();
         player_count_changed |= self.sweep_safe();
 
+        let seats = self.ready_mode_seats();
         let names = self.public_team_names();
         let mut ctx = modes::ModeCtx {
             world: &mut self.world,
+            seats: &seats,
             team_names: &names,
             banner: std::mem::take(&mut self.banner),
             finished: false,
             open_match: false,
             close_match: false,
+            abort_match: false,
         };
         self.mode.tick(&mut ctx);
         self.banner = std::mem::take(&mut ctx.banner);
-        let (finished, closed, opened) = (ctx.finished, ctx.close_match, ctx.open_match);
+        let (finished, closed, aborted, opened) = (
+            ctx.finished,
+            ctx.close_match,
+            ctx.abort_match,
+            ctx.open_match,
+        );
         // The context holds the world, so it has to go before the room can act
         // on what the mode asked for.
         drop(ctx);
@@ -3008,6 +3307,9 @@ impl Room {
         }
         if closed {
             self.close_match();
+        }
+        if aborted {
+            self.abort_match();
         }
         if opened {
             self.open_match();
@@ -3030,6 +3332,11 @@ impl Room {
                 metrics::LAG_ACTIONS.inc();
             }
         }
+        let ladder_opponent_after = self
+            .mode
+            .ladder_state()
+            .map(|state| state.desired_opponent_slot);
+        player_count_changed |= ladder_opponent_before != ladder_opponent_after;
         player_count_changed
     }
 
@@ -3048,9 +3355,21 @@ impl Room {
     /// that: it benches everybody instead. A ship with no respawn scheduled
     /// stays down until something puts it back, and `open_match` is what does.
     pub(crate) fn close_match(&mut self) {
-        self.note_match_results();
-        self.file_match();
-        if self.maps.len() > 1 {
+        self.end_match(true);
+    }
+
+    /// Reset a life that stopped being a fair contest. No artifact, rating
+    /// result, completion reward, or map rotation comes from an interruption.
+    fn abort_match(&mut self) {
+        self.end_match(false);
+    }
+
+    fn end_match(&mut self, record_result: bool) {
+        if record_result {
+            self.note_match_results();
+            self.file_match();
+        }
+        if record_result && self.maps.len() > 1 {
             self.map_at = (self.map_at + 1) % self.maps.len();
             // Which ground, since a zone's rotation is something an operator
             // can change from the panel now and "did that land" is otherwise
@@ -3119,6 +3438,7 @@ impl Room {
             self.players.len()
         );
         self.world.restart();
+        self.place_ladder_starts();
         // A whistle is where a hull and its kit are unlocked, so anything
         // asked for during the last match lands here. After `restart`, which
         // deals what each seat is already wearing: this deals the new one over
@@ -3130,6 +3450,45 @@ impl Room {
         self.rebalance();
         self.broadcast_roster();
         self.broadcast_match();
+    }
+
+    /// Put both Ladder pilots on the same start and facing distribution used
+    /// by the calibration fixture. Other modes keep the core's ordinary team
+    /// lineup policy.
+    fn place_ladder_starts(&mut self) {
+        if self.mode.ladder_state().is_none() {
+            return;
+        }
+        let (_, starts_per_team) = self.world.map.spawns();
+        let scenario_seed = u64::from(self.number)
+            .wrapping_mul(0x9e37_79b9_7f4a_7c15)
+            .wrapping_add(u64::from(self.match_no));
+        let Some(indices) = pilots::ladder_start_pair(
+            pilots::LADDER_START_NAMESPACE,
+            scenario_seed,
+            starts_per_team,
+        ) else {
+            return;
+        };
+        let seats: Vec<(u8, u8, u8)> = self
+            .names
+            .keys()
+            .filter_map(|ship| {
+                let row = self.world.state.ships[*ship as usize];
+                (row.active != 0 && row.team < 2).then_some((*ship, row.team, row.cls))
+            })
+            .collect();
+        for (ship, team, class) in seats {
+            let (x, y) = self.world.spawn_point(team, class, indices[team as usize]);
+            let row = &mut self.world.state.ships[ship as usize];
+            row.x = x;
+            row.y = y;
+            row.spawn_x = x;
+            row.spawn_y = y;
+            row.vx = 0;
+            row.vy = 0;
+            row.heading = if team == 0 { 0 } else { 32768 };
+        }
     }
 
     fn file_match(&mut self) {
@@ -3186,8 +3545,8 @@ impl Room {
         let Some(state) = self.mode.match_state().filter(|state| !state.playing) else {
             return;
         };
-        let best = state.score.iter().copied().max();
-        let winner = best.and_then(|score| {
+        let top_score = state.score.iter().copied().max();
+        let winner = top_score.and_then(|score| {
             let mut teams = state
                 .score
                 .iter()
@@ -3206,17 +3565,24 @@ impl Room {
             let played = match_age.min(now.wrapping_sub(player.joined));
             let completed = played >= MIN_PLAY_TICKS;
             let ship = &self.world.state.ships[player.ship as usize];
-            self.note(
-                pilot::MATCH,
-                seat,
-                serde_json::json!({
-                    "match": self.match_no,
-                    "completed": completed,
-                    "won": completed && winner == Some(ship.team),
-                    "assists": if completed { ship.assists.min(5) } else { 0 },
-                    "played_ticks": played,
-                }),
-            );
+            let mut detail = serde_json::json!({
+                "match": self.match_no,
+                "completed": completed,
+                "won": completed && winner == Some(ship.team),
+                "assists": if completed { ship.assists.min(5) } else { 0 },
+                "played_ticks": played,
+            });
+            if !seat.bot {
+                if let Some(ladder) = self.mode.ladder_state() {
+                    detail["ladder"] = serde_json::json!({
+                        "checkpoint": ladder.checkpoint,
+                        "best": ladder.best,
+                        "rung": ladder.rung,
+                        "streak": ladder.streak,
+                    });
+                }
+            }
+            self.note(pilot::MATCH, seat, detail);
         }
     }
 
@@ -3321,25 +3687,17 @@ impl Room {
 
     /// The clock and the score, for a room that has them.
     ///
-    /// `[S2C_MATCH, playing, seconds left, sides, score per side as u16,
-    /// artifact id as u64 when complete]`. A
-    /// second's resolution, because that is what the clock draws, and it is
-    /// what keeps this to one small message a second rather than one a tick.
+    /// The flags, optional result artifact, and optional Ladder state share one
+    /// packet. A client therefore observes one transition even when its output
+    /// queue has room for only one message. See `protocol::S2C_MATCH` for the
+    /// byte layout.
     pub(crate) fn match_msg(&self) -> Option<Vec<u8>> {
         let m = self.mode.match_state()?;
-        let mut out = vec![
-            S2C_MATCH,
-            m.playing as u8,
-            m.seconds_left,
-            m.score.len().min(255) as u8,
-        ];
-        for n in m.score.iter().take(255) {
-            out.extend_from_slice(&n.to_le_bytes());
-        }
-        if let Some(id) = self.artifact_id {
-            out.extend_from_slice(&(id as u64).to_le_bytes());
-        }
-        Some(out)
+        Some(match_message(
+            m,
+            self.artifact_id.map(|id| id as u64),
+            self.mode.ladder_state(),
+        ))
     }
 
     pub(crate) fn broadcast_match(&self) {
@@ -3449,21 +3807,33 @@ impl Room {
                 .unwrap_or_else(|| format!("ship{ship}"))
         };
         let deaths = ingest_damage(&self.world, &mut self.rating, &name_of);
-        for (victim, killer, _) in deaths.iter().copied() {
+        let mut mode_finished = false;
+        let mut close_match = false;
+        let mut abort_match = false;
+        let mut open_match = false;
+        if !deaths.is_empty() {
+            let seats = self.ready_mode_seats();
             let names = self.public_team_names();
             let mut ctx = modes::ModeCtx {
                 world: &mut self.world,
+                seats: &seats,
                 team_names: &names,
                 banner: std::mem::take(&mut self.banner),
                 finished: false,
                 open_match: false,
                 close_match: false,
+                abort_match: false,
             };
-            self.mode.on_death(&mut ctx, victim, killer);
+            let mode_deaths: Vec<(u8, u8)> = deaths
+                .iter()
+                .map(|(victim, killer, _)| (*victim, *killer))
+                .collect();
+            self.mode.on_deaths(&mut ctx, &mode_deaths);
             self.banner = std::mem::take(&mut ctx.banner);
-            if ctx.finished {
-                self.finished = true;
-            }
+            mode_finished |= ctx.finished;
+            close_match |= ctx.close_match;
+            abort_match |= ctx.abort_match;
+            open_match |= ctx.open_match;
         }
         for (victim, killer, paid) in deaths {
             // Rating is filed under the pilot's id, which is their account
@@ -3513,6 +3883,18 @@ impl Room {
                     self.name_of(victim)
                 );
             }
+        }
+        if mode_finished {
+            self.finished = true;
+        }
+        if close_match {
+            self.close_match();
+        }
+        if abort_match {
+            self.abort_match();
+        }
+        if open_match {
+            self.open_match();
         }
     }
 
@@ -4135,5 +4517,66 @@ impl Room {
         for w in self.watchers.values() {
             let _ = w.tx.try_send(Message::Binary(m.clone()));
         }
+    }
+}
+
+#[cfg(test)]
+mod ladder_wire_tests {
+    use super::*;
+
+    fn u32_at(message: &[u8], at: usize) -> u32 {
+        u32::from_le_bytes(message[at..at + 4].try_into().unwrap())
+    }
+
+    #[test]
+    fn ladder_match_has_the_documented_atomic_layout() {
+        let message = match_message(
+            modes::MatchState {
+                playing: false,
+                seconds_left: 0x50,
+                score: vec![1, 0],
+            },
+            Some(0x7172_7374_7576_7778),
+            Some(modes::LadderState {
+                playing: false,
+                waiting: true,
+                opponent_ready: true,
+                cleared: true,
+                rung: 0x0102_0304,
+                streak: 0x1112_1314,
+                checkpoint: 0x2122_2324,
+                best: 0x3132_3334,
+                score: [1, 0],
+                first_to: 0x5152,
+                active_opponent_slot: 0x4142_4344,
+                desired_opponent_slot: 0x6162_6364,
+            }),
+        );
+
+        assert_eq!(message.len(), 43);
+        assert_eq!(message[0], S2C_MATCH);
+        assert_eq!(message[1], 6, "artifact and Ladder are present");
+        assert_eq!(message[2], 0x50);
+        assert_eq!(message[3], 2);
+        assert_eq!(u16::from_le_bytes(message[4..6].try_into().unwrap()), 1);
+        assert_eq!(u16::from_le_bytes(message[6..8].try_into().unwrap()), 0);
+        assert_eq!(
+            u64::from_le_bytes(message[8..16].try_into().unwrap()),
+            0x7172_7374_7576_7778
+        );
+        assert_eq!(
+            message[16], 7,
+            "ready, cleared, and waiting are status bits"
+        );
+        assert_eq!(u32_at(&message, 17), 0x0102_0304);
+        assert_eq!(u32_at(&message, 21), 0x1112_1314);
+        assert_eq!(u32_at(&message, 25), 0x2122_2324);
+        assert_eq!(u32_at(&message, 29), 0x3132_3334);
+        assert_eq!(u32_at(&message, 33), 0x4142_4344);
+        assert_eq!(u32_at(&message, 37), 0x6162_6364);
+        assert_eq!(
+            u16::from_le_bytes(message[41..43].try_into().unwrap()),
+            0x5152
+        );
     }
 }

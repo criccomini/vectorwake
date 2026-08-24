@@ -5,9 +5,9 @@
 # above was rewritten around: adding an arena here costs nothing, and adding a
 # name costs one of five certificates a week.
 #
-# One of them, because an arena process holds every room its zone allows and
-# the count tracks zones rather than seats. The deployment check keeps this
-# route paired with the arena service and the catalog's declared zones.
+# One per zone process. An arena holds every room its zone allows, so the count
+# tracks zones rather than seats. The deployment check keeps these routes
+# paired with the arena services and the catalog's declared zones.
 #
 # This is the WebSocket door. The WebTransport one is not here and cannot be:
 # a QUIC session is the HTTP/3 connection itself, so the arena terminates it on
@@ -18,6 +18,10 @@ handle /metrics/a1* {
 	rewrite * /metrics
 	reverse_proxy 127.0.0.1:9101
 }
+handle /metrics/a2* {
+	rewrite * /metrics
+	reverse_proxy 127.0.0.1:9102
+}
 handle /metrics/bots* {
 	rewrite * /metrics
 	reverse_proxy 127.0.0.1:9105
@@ -25,4 +29,7 @@ handle /metrics/bots* {
 
 handle_path /a1* {
 	reverse_proxy 127.0.0.1:9001
+}
+handle_path /a2* {
+	reverse_proxy 127.0.0.1:9002
 }

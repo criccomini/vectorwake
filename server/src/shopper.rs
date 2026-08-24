@@ -6,13 +6,12 @@
 //! the meta-layer sets those and refuses what an account cannot afford, exactly
 //! as it does for a person. See docs/design/ai-players.md.
 //!
-//! What is here is taste. An individual has a hull and a skill and now an
-//! order it wants slots in, which is the difference between eight bots flying
-//! the same thirty points and a room where Ozone throws shrapnel and Kestrel
-//! runs. The order does two jobs: it decides what to buy next, and it decides
-//! how the thirty points are spent once the rungs are owned.
+//! What is here is taste. Every persistent pilot spec names an explicit build
+//! plan, which is the difference between eight bots flying the same thirty
+//! points and a room with distinct specializations. The plan decides what to
+//! buy next and how the thirty points are spent once the rungs are owned.
 
-use crate::sim;
+use crate::{pilots::BuildPlan, sim};
 
 /// A pilot's taste, as an order over slots with repeats for weight.
 ///
@@ -25,27 +24,16 @@ use crate::sim;
 /// Every list opens with a rung on its own trigger. Rung zero is what a
 /// trigger already fires, so this is the first point that makes a pilot fire
 /// something better rather than more of the same.
-pub fn wants(name: &str, class: u8) -> Vec<usize> {
+pub fn wants(plan: BuildPlan) -> Vec<usize> {
     let gun = sim::slot_level(sim::TRIG_GUN) as usize;
     let bomb = sim::slot_level(sim::TRIG_BOMB) as usize;
     let m = |t: usize, k: usize| sim::slot_mod(t, k) as usize;
     let s = |u: usize| sim::slot_stat(u) as usize;
     let c = |k: usize| sim::slot_charge(k) as usize;
 
-    // Which of the three this individual is. From the name rather than the
-    // hull, so two pilots in the same chassis are not the same pilot, and
-    // stable across restarts because the name is.
-    let mut h: u32 = 0x811c9dc5;
-    for b in name.as_bytes() {
-        h ^= *b as u32;
-        h = h.wrapping_mul(0x01000193);
-    }
-    // The hull tilts it. A wide slow hull that has to get close is a bomber
-    // more often than it is a runner; the hash decides the rest.
-    let tilt = (h >> 7) % 3 + (class as u32 % 3);
-    match tilt % 3 {
+    match plan {
         // The gunner: bullets, and the energy to keep firing them.
-        0 => vec![
+        BuildPlan::Gunner => vec![
             gun,
             s(sim::UP_ENERGY),
             s(sim::UP_RECHARGE),
@@ -60,7 +48,7 @@ pub fn wants(name: &str, class: u8) -> Vec<usize> {
             c(sim::CHARGE_BURST),
         ],
         // The bomber: one heavy answer, aimed at where somebody will be.
-        1 => vec![
+        BuildPlan::Bomber => vec![
             bomb,
             m(sim::TRIG_BOMB, sim::MOD_PROX),
             s(sim::UP_ENERGY),
@@ -76,7 +64,7 @@ pub fn wants(name: &str, class: u8) -> Vec<usize> {
         ],
         // The runner: arrive, leave, and be somewhere else when the answer
         // comes back.
-        _ => vec![
+        BuildPlan::Runner => vec![
             s(sim::UP_SPEED),
             s(sim::UP_THRUST),
             gun,
@@ -182,21 +170,15 @@ mod tests {
         *sim::World::baseline_kit_ceiling()
     }
 
-    /// Two individuals are not the same pilot, and one individual is the same
-    /// pilot every time the process starts.
-    ///
-    /// Over the shipped roster rather than a list made up here, because the
-    /// eight of them are what fills a room: a roster that hashed to one taste
-    /// would put eight identical ships in it, which is the thing this exists
-    /// to stop.
+    /// Plans are stable and the shipped roster carries more than one of them.
     #[test]
     fn taste_is_personal_and_stable() {
-        let a = wants("Ozone", 0);
-        assert_eq!(a, wants("Ozone", 0), "a name is a career, not a coin toss");
+        let a = wants(BuildPlan::Runner);
+        assert_eq!(a, wants(BuildPlan::Runner), "a plan is stable");
         let mut seen: Vec<Vec<usize>> = Vec::new();
-        for (name, class, _) in crate::ai::CALIBRATED {
-            let list = wants(name, class);
-            assert!(!list.is_empty(), "{name} wants nothing");
+        for pilot in crate::pilots::roster() {
+            let list = wants(pilot.build);
+            assert!(!list.is_empty(), "{} wants nothing", pilot.callsign);
             if !seen.contains(&list) {
                 seen.push(list);
             }
@@ -241,15 +223,15 @@ mod tests {
     #[test]
     fn a_build_spends_thirty_points_where_it_wanted_them() {
         let ceiling = full_ceiling();
-        for name in ["Ozone", "Kestrel", "Halcyon", "Sable"] {
-            let list = wants(name, 0);
+        for plan in [BuildPlan::Gunner, BuildPlan::Bomber, BuildPlan::Runner] {
+            let list = wants(plan);
             let kit = build(&list, &ceiling);
             let spent: u32 = kit.iter().map(|n| *n as u32).sum();
-            assert_eq!(spent, sim::KIT_BUDGET, "{name} left points unspent");
+            assert_eq!(spent, sim::KIT_BUDGET, "{plan:?} left points unspent");
             for slot in 0..sim::SLOT_COUNT {
-                assert!(kit[slot] <= ceiling[slot], "{name} overran slot {slot}");
+                assert!(kit[slot] <= ceiling[slot], "{plan:?} overran slot {slot}");
             }
-            assert!(kit[list[0]] > 0, "{name} did not buy what it wanted most");
+            assert!(kit[list[0]] > 0, "{plan:?} did not buy what it wanted most");
         }
     }
 
@@ -259,7 +241,7 @@ mod tests {
     #[test]
     fn a_build_inside_a_bare_account_still_flies() {
         let base = sim::World::base_entitlements();
-        let kit = build(&wants("Ozone", 0), &base);
+        let kit = build(&wants(BuildPlan::Runner), &base);
         let spent: u32 = kit.iter().map(|n| *n as u32).sum();
         assert!(spent > 0, "a bare account flies a bare hull");
         assert!(spent <= sim::KIT_BUDGET, "and never past the budget");

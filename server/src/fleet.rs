@@ -152,11 +152,41 @@ pub struct RoomView {
     pub clock: u32,
     #[serde(default)]
     pub playing: bool,
+    /// A match room is holding for a required participant rather than running
+    /// an intermission clock. Directory-only clients need this bit because a
+    /// waiting Ladder keeps its full match duration in `clock`.
+    #[serde(default)]
+    pub waiting: bool,
+}
+
+/// One room's requested bot population.
+///
+/// Ordinary rooms leave `target_slot` empty and ask only for a count. A Ladder
+/// room names the pilot rung it wants, so the bot server can choose an unused
+/// individual at that measured difficulty. The request is about the final
+/// population, not the current shortfall. That lets the bot server reconcile
+/// arrivals and departures without racing the arena's own count.
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
+pub struct BotRequest {
+    pub room: u32,
+    pub count: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_slot: Option<u32>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct Status {
     pub zone: String,
+    /// The arena build answering this request. House pilots compare it with
+    /// their own build before entering a statistically certified fixture.
+    #[serde(default)]
+    pub build: String,
+    /// Signature of the pilot calibration attestation this arena verified.
+    /// Empty means its Ladder is provisional. This is public release metadata,
+    /// not a credential; a house bot must report the same signed artifact at
+    /// join before a certified rival seat can open.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub pilot_attestation: String,
     /// Humans. Declared bots are counted beside them and never inside, because
     /// every rule that reads this one, the fill target, the player cap and the
     /// drain, is a rule about people.
@@ -171,6 +201,11 @@ pub struct Status {
     /// configuration of. Zero while draining, which is what lets a drain finish.
     #[serde(default)]
     pub bots_wanted: u32,
+    /// Room-scoped requests for a bot server that understands them. `None`
+    /// means this status came from an older arena and `bots_wanted` is the only
+    /// instruction. `Some([])` is an explicit request for no bots.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bot_requests: Option<Vec<BotRequest>>,
     /// Every room this process currently holds for its zone, and the cap from
     /// the catalog. Both, because the fill ladder needs to know about headroom
     /// and not only about occupancy.
@@ -254,6 +289,8 @@ pub struct Observed {
     pub bots: u32,
     #[serde(default)]
     pub bots_wanted: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bot_requests: Option<Vec<BotRequest>>,
     #[serde(default)]
     pub rooms: Vec<RoomView>,
     pub max_rooms: u32,
@@ -273,6 +310,9 @@ pub struct Observed {
     /// The build this instance registered with, passed through.
     #[serde(default)]
     pub build: String,
+    /// The verified pilot attestation signature reported by this instance.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub pilot_attestation: String,
     /// And the machine it says it is on. See `Register::host_id`.
     #[serde(default)]
     pub host_id: String,
@@ -622,6 +662,29 @@ mod tests {
                 "tag {t:#x} is inside the client protocol's range"
             );
         }
+    }
+
+    #[test]
+    fn room_waiting_defaults_off_and_round_trips_when_set() {
+        let old = r#"{"number":7,"players":1,"bots":0,"full":false,"clock":180,"playing":false}"#;
+        let parsed: RoomView = serde_json::from_str(old).expect("old room view parses");
+        assert!(!parsed.waiting);
+
+        let waiting = RoomView {
+            waiting: true,
+            ..parsed
+        };
+        let json = serde_json::to_string(&waiting).expect("room view serializes");
+        let round_trip: RoomView = serde_json::from_str(&json).expect("room view parses");
+        assert!(round_trip.waiting);
+    }
+
+    #[test]
+    fn an_absent_pilot_attestation_keeps_status_provisional() {
+        let json = serde_json::to_string(&Status::default()).expect("status serializes");
+        assert!(!json.contains("pilot_attestation"));
+        let parsed: Status = serde_json::from_str(&json).expect("old status parses");
+        assert!(parsed.pilot_attestation.is_empty());
     }
 
     #[test]

@@ -48,8 +48,9 @@ local S2C_MAP, S2C_SETTINGS, S2C_YIELD, S2C_TEAMS = 9, 10, 11, 12
 -- channel's camera picks you without asking, so being told is the one
 -- courtesy it owes: two minutes on air is something a pilot can play around.
 local S2C_ONAIR = 13
--- The clock and the score of a match game: playing, seconds left, and a
--- kill count per side. A second's resolution, which is what the clock draws.
+-- One match state: flags, seconds left, a kill count per side, and its optional
+-- result film and Ladder progress. A second's resolution is what the clock
+-- draws, and one packet keeps every part of a transition together.
 local S2C_MATCH, S2C_CHARGE = 14, 15
 local S2C_LAG = 16
 -- Somebody said one of the fixed things. The wire carries which, never the
@@ -72,7 +73,7 @@ M.said = {}
 -- The client wire's own version, checked by the zone before it reads anything
 -- else in a join. A stale build is told its build is stale rather than left to
 -- misparse snapshots.
-local CLIENT_PROTOCOL = 18
+local CLIENT_PROTOCOL = 20
 -- Published, because the about page says what this build talks, and a second
 -- copy of the number is a second thing to forget to bump.
 M.PROTOCOL = CLIENT_PROTOCOL
@@ -140,9 +141,9 @@ M.kills = {}
 -- charge that was used, never how many remain in the private inventory.
 M.charge_events = {}
 -- What the room is doing, in a zone that plays matches: `playing`, `left` in
--- whole seconds, and `score`, a kill count per side in the order the roster
--- names them. Nil in a room that runs forever, which is how the interface
--- decides whether to draw a clock at all.
+-- whole seconds, `score`, and any result film or Ladder progress. Nil in a room
+-- that runs forever, which is how the interface decides whether to draw a
+-- clock at all.
 M.match = nil
 
 -- People arriving and leaving, drained into feed lines the same way. Worked
@@ -750,24 +751,46 @@ end
 -- socket queue costs a second of clock and the next one repairs it.
 local function on_match(s)
     local score = {}
+    local flags = string.byte(s, 2) or 0
     local sides = string.byte(s, 4) or 0
+    local at = 5 + sides * 2
+    if #s < at - 1 then return end
     for k = 0, sides - 1 do
-        local at = 5 + k * 2
-        if #s < at + 1 then break end
-        score[k] = string.byte(s, at) + string.byte(s, at + 1) * 256
+        local score_at = 5 + k * 2
+        score[k] = string.byte(s, score_at)
+            + string.byte(s, score_at + 1) * 256
     end
-    local artifact_at = 5 + sides * 2
     local artifact = nil
-    if #s >= artifact_at + 7 then
-        local lo = u32(string.byte(s, artifact_at, artifact_at + 3))
-        local hi = u32(string.byte(s, artifact_at + 4, artifact_at + 7))
+    if math.floor(flags / 2) % 2 == 1 then
+        if #s < at + 7 then return end
+        local lo = u32(string.byte(s, at, at + 3))
+        local hi = u32(string.byte(s, at + 4, at + 7))
         artifact = lo + hi * 4294967296
+        at = at + 8
+    end
+    local ladder = nil
+    if math.floor(flags / 4) % 2 == 1 then
+        if #s < at + 26 then return end
+        local status = string.byte(s, at)
+        ladder = {
+            opponent_ready = status % 2 == 1,
+            cleared = math.floor(status / 2) % 2 == 1,
+            waiting = math.floor(status / 4) % 2 == 1,
+            rung = u32(string.byte(s, at + 1, at + 4)),
+            streak = u32(string.byte(s, at + 5, at + 8)),
+            checkpoint = u32(string.byte(s, at + 9, at + 12)),
+            best = u32(string.byte(s, at + 13, at + 16)),
+            active_opponent = u32(string.byte(s, at + 17, at + 20)),
+            desired_opponent = u32(string.byte(s, at + 21, at + 24)),
+            first_to = u16(string.byte(s, at + 25, at + 26)),
+        }
     end
     M.match = {
-        playing = string.byte(s, 2) == 1,
+        playing = flags % 2 == 1,
         left = string.byte(s, 3),
         score = score,
         artifact = artifact,
+        ladder = ladder,
     }
 end
 
@@ -1400,7 +1423,7 @@ local function join_msg()
     -- rather than a demand: the room can fill before this lands, and the
     -- welcome says where we actually ended up.
     return string.char(C2S_JOIN, join.class, CLIENT_PROTOCOL, flags,
-                       #want, #name, byte_or_zero(join.room))
+                       #want, #name, byte_or_zero(join.room), 0)
         .. want .. name .. session
 end
 

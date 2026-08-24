@@ -176,30 +176,7 @@ impl Spool<Event> {
     /// race the regular drain, which is safe because every event keeps the id
     /// minted when it first entered the spool.
     fn account_batches(&self, account: u64) -> Vec<Batch<Event>> {
-        let mut batches: Vec<Batch<Event>> = Vec::new();
-        for record in self
-            .pending
-            .iter()
-            .filter(|record| record.event.involves(account))
-        {
-            let append = batches.last_mut().filter(|batch| {
-                batch.zone == record.zone
-                    && batch.class == record.class
-                    && batch.instance == record.instance
-                    && batch.events.len() < BATCH
-            });
-            if let Some(batch) = append {
-                batch.events.push(record.event.clone());
-            } else {
-                batches.push(Batch {
-                    zone: record.zone.clone(),
-                    class: record.class.clone(),
-                    instance: record.instance.clone(),
-                    events: vec![record.event.clone()],
-                });
-            }
-        }
-        batches
+        self.batches_matching(|event| event.involves(account))
     }
 }
 
@@ -215,6 +192,17 @@ impl Event {
 impl Spool<crate::pilot::Event> {
     pub fn pilot(dir: &str) -> Spool<crate::pilot::Event> {
         Spool::open(dir, "pilot.jsonl", "/v1/pilot-events", "pilot event")
+    }
+
+    /// Ladder progress is projected from match rows. These are the rows that
+    /// must be acknowledged before the account's exclusive rated lease can be
+    /// released and reclaimed with a fresh progress snapshot.
+    fn ladder_batches(&self, account: u64) -> Vec<Batch<crate::pilot::Event>> {
+        self.batches_matching(|event| {
+            event.pilot == Some(account)
+                && event.kind == crate::pilot::MATCH
+                && event.detail.get("ladder").is_some()
+        })
     }
 }
 
@@ -356,6 +344,29 @@ impl<T: Serialize + DeserializeOwned + Clone> Spool<T> {
     #[cfg(test)]
     pub fn nth(&self, i: usize) -> Option<&T> {
         self.pending.get(i).map(|record| &record.event)
+    }
+
+    fn batches_matching(&self, keep: impl Fn(&T) -> bool) -> Vec<Batch<T>> {
+        let mut batches: Vec<Batch<T>> = Vec::new();
+        for record in self.pending.iter().filter(|record| keep(&record.event)) {
+            let append = batches.last_mut().filter(|batch| {
+                batch.zone == record.zone
+                    && batch.class == record.class
+                    && batch.instance == record.instance
+                    && batch.events.len() < BATCH
+            });
+            if let Some(batch) = append {
+                batch.events.push(record.event.clone());
+            } else {
+                batches.push(Batch {
+                    zone: record.zone.clone(),
+                    class: record.class.clone(),
+                    instance: record.instance.clone(),
+                    events: vec![record.event.clone()],
+                });
+            }
+        }
+        batches
     }
 
     /// Called from a tick. Appends and returns; it never blocks on anything
@@ -518,6 +529,38 @@ pub async fn settle_account(
         .lock()
         .map_err(|_| "rated event spool lock failed".to_string())?
         .account_batches(account);
+    settle_batches(batches, base, pool_token, "/v1/events", "event").await
+}
+
+/// Acknowledge every Ladder-bearing match row for this account before its
+/// lease is released. The ordinary drain still removes the queue entries.
+pub async fn settle_ladder_account(
+    spool: &Arc<Mutex<Spool<crate::pilot::Event>>>,
+    base: &str,
+    pool_token: &str,
+    account: u64,
+) -> Result<(), String> {
+    let batches = spool
+        .lock()
+        .map_err(|_| "pilot event spool lock failed".to_string())?
+        .ladder_batches(account);
+    settle_batches(
+        batches,
+        base,
+        pool_token,
+        "/v1/pilot-events",
+        "Ladder event",
+    )
+    .await
+}
+
+async fn settle_batches<T: Serialize>(
+    batches: Vec<Batch<T>>,
+    base: &str,
+    pool_token: &str,
+    route: &str,
+    noun: &str,
+) -> Result<(), String> {
     for batch in batches {
         let n = batch.events.len();
         let payload = serde_json::json!({
@@ -527,12 +570,12 @@ pub async fn settle_account(
             "instance": batch.instance,
             "events": batch.events,
         });
-        let reply = crate::meta::call(base, "/v1/events", &payload.to_string()).await?;
+        let reply = crate::meta::call(base, route, &payload.to_string()).await?;
         let rejected = batch_rejections(&reply, n)?;
         if let Some(refusal) = rejected.first() {
             return Err(format!(
-                "meta refused pending event {}: {}",
-                refusal.index, refusal.error
+                "meta refused pending {noun} {}: {}",
+                refusal.index, refusal.error,
             ));
         }
     }
@@ -644,6 +687,33 @@ mod tests {
                 after: 1216.0,
             }],
             bots_only: false,
+        }
+    }
+
+    fn ladder_event(account: u64, checkpoint: u32, best: u32) -> crate::pilot::Event {
+        crate::pilot::Event {
+            id: rand::random(),
+            at: 1_700_000_000_000,
+            session: "ladder-session".into(),
+            kind: crate::pilot::MATCH.into(),
+            pilot: Some(account),
+            name: "Climber".into(),
+            bot: false,
+            room: Some(7),
+            tick: 900,
+            detail: serde_json::json!({
+                "match": 4,
+                "completed": true,
+                "won": true,
+                "assists": 0,
+                "played_ticks": 4_000,
+                "ladder": {
+                    "checkpoint": checkpoint,
+                    "best": best,
+                    "rung": checkpoint,
+                    "streak": 0,
+                },
+            }),
         }
     }
 
@@ -981,6 +1051,40 @@ mod tests {
         assert!(error.contains("invalid victim"));
         assert_eq!(spool.lock().unwrap().len(), 1);
         server.join().unwrap();
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[tokio::test]
+    async fn the_release_barrier_acknowledges_ladder_progress_before_reconnect() {
+        let d = tmp("ladder-account-ack");
+        let (base, server) = reply_once(r#"{"stored":1,"rejected":[]}"#);
+        let mut s = Spool::pilot(d.to_str().unwrap());
+        s.aim(&base, "tok", "ladder", "ladder", "i1");
+        let mut unrelated = ladder_event(22, 5, 7);
+        unrelated.name = "Somebody else".into();
+        s.push(unrelated);
+        s.push(crate::pilot::Event {
+            kind: crate::pilot::JOIN.into(),
+            detail: serde_json::json!({ "class": 0 }),
+            ..ladder_event(11, 0, 0)
+        });
+        s.push(ladder_event(11, 10, 13));
+        let spool = Arc::new(Mutex::new(s));
+
+        settle_ladder_account(&spool, &base, "tok", 11)
+            .await
+            .expect("meta acknowledged the checkpoint before lease release");
+
+        let request = server.join().unwrap();
+        assert!(request.starts_with("POST /v1/pilot-events HTTP/1.1"));
+        assert!(request.contains("\"checkpoint\":10"));
+        assert!(!request.contains("Somebody else"));
+        assert!(!request.contains("\"kind\":\"join\""));
+        assert_eq!(
+            spool.lock().unwrap().len(),
+            3,
+            "the ordinary drain still owns queue removal"
+        );
         let _ = std::fs::remove_dir_all(&d);
     }
 

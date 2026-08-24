@@ -5,7 +5,7 @@
 # whole of the conflict resolution and a rollback needs a new higher number
 # rather than a reused one.
 
-version = 22
+version = 23
 name = "vectorwake"
 description = "the reference deployment"
 
@@ -62,3 +62,8 @@ max_instances = 8
 # requirement tied to this list.
 [[zone]]
 name = "melee"
+
+# One human per room, against one house pilot chosen for the current rung.
+# Ladder sits after melee so the shared room stays the default place to play.
+[[zone]]
+name = "ladder"

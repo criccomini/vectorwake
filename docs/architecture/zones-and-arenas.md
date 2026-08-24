@@ -470,7 +470,7 @@ Several need the client to say something, which is why `C2S_JOIN` carries
 more than a hull and a name:
 
 ```
-C2S_JOIN class protocol flags zone_len name_len room zone name session_token
+C2S_JOIN class protocol flags zone_len name_len room build_len zone name build session_token
 ```
 
 The protocol is checked first, before anything else in the message is trusted: a

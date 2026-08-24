@@ -28,7 +28,7 @@ use crate::catalog::sha256_hex;
 use crate::pilot;
 use crate::rating;
 use crate::sim;
-use crate::token::{self, Claims, ClassRating, Kind};
+use crate::token::{self, Claims, ClassRating, Kind, LadderProgress};
 
 mod growth;
 mod maps;
@@ -40,6 +40,15 @@ mod upgrades;
 /// The default mode class. A zone declares which class it rates into, and a
 /// pilot carries one rating per class, per docs/design/rating.md.
 pub const DEFAULT_CLASS: &str = "arena";
+pub const LADDER_CLASS: &str = "ladder";
+
+pub(crate) fn house_rating_class(name: &str) -> &'static str {
+    if crate::pilots::ladder_archetype_for_callsign(name).is_some() {
+        LADDER_CLASS
+    } else {
+        DEFAULT_CLASS
+    }
+}
 
 /// Account kinds as they sit in the database. The wire and the token use the
 /// same numbering, so a kind never needs translating between layers.
@@ -122,6 +131,14 @@ create table if not exists ratings (
     rating   double precision not null,
     games    integer not null,
     primary key (account, class)
+);
+create table if not exists ladder_progress (
+    account     bigint not null references accounts(id) on delete cascade,
+    zone        text not null,
+    checkpoint  integer not null default 0,
+    best        integer not null default 0,
+    updated     timestamptz not null default now(),
+    primary key (account, zone)
 );
 create table if not exists rated_events (
     id             bigserial primary key,
@@ -1188,6 +1205,22 @@ async fn claims_for(db: &Client, account: i64) -> Result<Claims, String> {
         })
         .collect();
 
+    let rows = db
+        .query(
+            "select zone, checkpoint, best from ladder_progress where account = $1",
+            &[&account],
+        )
+        .await
+        .map_err(|e| format!("cannot read Ladder progress: {e}"))?;
+    let ladders = rows
+        .iter()
+        .map(|row| LadderProgress {
+            zone: row.get(0),
+            checkpoint: row.get::<_, i32>(1).clamp(0, u16::MAX as i32) as u16,
+            best: row.get::<_, i32>(2).clamp(0, u16::MAX as i32) as u16,
+        })
+        .collect();
+
     // What this account may slot, which is the baseline plus whatever it has
     // bought. An account with an empty row owns the baseline, so a pilot who
     // has never bought anything still flies a whole ship.
@@ -1206,6 +1239,7 @@ async fn claims_for(db: &Client, account: i64) -> Result<Claims, String> {
         expires: token::now_secs() + token::LIFETIME_SECS,
         ratings,
         entitlements,
+        ladders,
     })
 }
 
@@ -2813,7 +2847,7 @@ async fn route(
             if name.is_empty() {
                 return (400, serde_json::json!({ "error": "a bot needs a name" }));
             }
-            if !(0..4096).any(|n| crate::ai::individual(n).name == name) {
+            if !crate::pilots::is_house_callsign(&name) {
                 return (400, serde_json::json!({ "error": "no such house bot" }));
             }
             let secret = house_secret(&pool_token, &name);
@@ -2884,22 +2918,6 @@ async fn route(
                             serde_json::json!({ "error": format!("cannot name bot: {e}") }),
                         );
                     }
-                    if let Some(seed) = crate::calibrated_rating(&name) {
-                        if let Err(e) = transaction
-                            .execute(
-                                "insert into ratings (account, class, rating, games)
-                                 values ($1, $2, $3, 0)
-                                 on conflict (account, class) do nothing",
-                                &[&account, &DEFAULT_CLASS, &seed],
-                            )
-                            .await
-                        {
-                            return (
-                                500,
-                                serde_json::json!({ "error": format!("cannot seed bot: {e}") }),
-                            );
-                        }
-                    }
                     account
                 }
                 Err(e) => {
@@ -2909,6 +2927,25 @@ async fn route(
                     )
                 }
             };
+            if let Some(seed) = crate::calibrated_rating(&name) {
+                let class = house_rating_class(&name);
+                if let Err(e) = transaction
+                    .execute(
+                        "insert into ratings (account, class, rating, games)
+                         values ($1, $2, $3, 0)
+                         on conflict (account, class) do update
+                         set rating = excluded.rating
+                         where ratings.games = 0",
+                        &[&account, &class, &seed],
+                    )
+                    .await
+                {
+                    return (
+                        500,
+                        serde_json::json!({ "error": format!("cannot seed bot: {e}") }),
+                    );
+                }
+            }
             if let Err(e) = transaction
                 .execute(
                     "delete from credentials where account = $1 and method = 'secret' and hash <> $2",
@@ -4739,7 +4776,7 @@ pub async fn claim_rated_session(
     session: &str,
     instance: &str,
     zone: &str,
-) -> Result<(bool, Vec<ClassRating>), String> {
+) -> Result<(bool, Vec<ClassRating>, Vec<LadderProgress>), String> {
     let body = serde_json::json!({
         "pool_token": pool_token,
         "account": account,
@@ -4771,7 +4808,22 @@ pub async fn claim_rated_session(
                 .collect()
         })
         .unwrap_or_default();
-    Ok((claimed, ratings))
+    let ladders = reply
+        .get("ladders")
+        .and_then(|value| value.as_array())
+        .map(|rows| {
+            rows.iter()
+                .filter_map(|row| {
+                    Some(LadderProgress {
+                        zone: row.get("zone")?.as_str()?.to_string(),
+                        checkpoint: row.get("checkpoint")?.as_u64()?.min(u16::MAX as u64) as u16,
+                        best: row.get("best")?.as_u64()?.min(u16::MAX as u64) as u16,
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    Ok((claimed, ratings, ladders))
 }
 
 /// Release a rated seat. The route is idempotent, so cleanup can call it
@@ -5489,6 +5541,27 @@ mod tests {
     #[test]
     fn a_well_formed_pilot_event_is_accepted() {
         assert_eq!(settlement::validate_pilot_event(&pilot_event()), Ok(()));
+    }
+
+    #[test]
+    fn ladder_progress_is_bounded_and_ordered() {
+        let mut event = pilot_event();
+        event["detail"] = serde_json::json!({
+            "ladder": { "checkpoint": 10, "best": 14 }
+        });
+        assert_eq!(settlement::validate_pilot_event(&event), Ok(()));
+
+        event["detail"]["ladder"]["best"] = serde_json::json!(9);
+        assert_eq!(
+            settlement::validate_pilot_event(&event),
+            Err("Ladder best is below its checkpoint".into())
+        );
+
+        event["detail"]["ladder"]["checkpoint"] = serde_json::json!(u16::MAX as u64 + 1);
+        assert_eq!(
+            settlement::validate_pilot_event(&event),
+            Err("invalid Ladder checkpoint".into())
+        );
     }
 
     #[test]

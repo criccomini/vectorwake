@@ -61,7 +61,7 @@ local ui = require("arena.ui")
 local state = package.loaded["arena.state"]
 local pal = require("arena.palette")
 
-local function view()
+local function view(finding_rival)
     return {
         home = true,
         closable = false,
@@ -86,8 +86,9 @@ local function view()
             at = 1,
             room = {players = 4, bots = 4, seats = 8},
             clock = 160,
-            playing = true,
-            score = {1, 1},
+            playing = not finding_rival,
+            finding_rival = finding_rival,
+            score = finding_rival and nil or {1, 1},
             row = 1,
             arrive = {hull = 0, name = "Apex", call = "you"},
         },
@@ -103,12 +104,12 @@ local function view()
     }
 end
 
-local function draw(w, h)
+local function draw(w, h, finding_rival)
     W, H = w, h
     boxes = {}
     state.n = 0
     ui.begin(layer, W, H, 1, false)
-    ui.menu(view())
+    ui.menu(view(finding_rival))
     ui.finish()
     local out = {}
     for i = 1, state.n do
@@ -213,6 +214,14 @@ check("phone makes the ship name a destination", ship_page == 1,
 -- account name beside Deploy.
 check("phone makes the account name a destination", pilot_page == 2,
       pilot_page .. " account targets")
+
+for _, shape in ipairs({{1280, 800}, {420, 780}}) do
+    local texts = draw(shape[1], shape[2], true)
+    local name = shape[1] > 500 and "desktop" or "phone"
+    check(name .. " Ladder landing says it is finding a rival",
+          has(texts, "Finding rival") and has(texts, "--:--")
+              and not has(texts, "Next match in"))
+end
 
 if fails > 0 then
     print(("\n%d check(s) failed"):format(fails))

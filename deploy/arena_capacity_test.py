@@ -52,6 +52,18 @@ for number in expected:
     )
     check(re.search(rf"^  {name}:$", volumes, re.M) is not None, f"{name} has a volume")
 
+local = (ROOT / "deploy/docker-compose.local.yml").read_text()
+local_services = local.split("\nservices:\n", 1)[1].split("\nvolumes:\n", 1)[0]
+for number in expected:
+    name = f"a{number}"
+    service_match = re.search(
+        rf"^  {name}:\n(.*?)(?=^  [a-zA-Z0-9_-]+:\n|\Z)",
+        local_services,
+        re.M | re.S,
+    )
+    service = service_match.group(1) if service_match else ""
+    check("<<: *build" in service, f"the local overlay builds {name} from this checkout")
+
 targets = re.search(r"^\s+VW_ARENAS:\s*(\S+)\s*$", services, re.M)
 wanted_targets = ",".join(f"ws://127.0.0.1:{9000 + n}" for n in expected)
 check(targets is not None and targets.group(1) == wanted_targets, "bots dial every arena")
@@ -70,6 +82,14 @@ socket_routes = sorted({int(n) for n in re.findall(r"handle_path /a(\d+)\*", cad
 metrics_routes = sorted({int(n) for n in re.findall(r"handle /metrics/a(\d+)\*", caddy)})
 check(socket_routes == expected, "Caddy exposes every arena socket")
 check(metrics_routes == expected, "Caddy exposes every arena metric")
+
+caddy_compose = (ROOT / "deploy/docker-compose.caddy.yml").read_text()
+route_label = re.search(r"^\s+vw\.routes:\s*(.+?)\s*$", caddy_compose, re.M)
+label_routes = route_label.group(1).split() if route_label else []
+check(
+    all(f"a{number}" in label_routes for number in expected),
+    "the Caddy service label tracks every arena route",
+)
 for number in expected:
     socket = re.search(
         rf"handle_path /a{number}\* \{{(.*?)^\}}", caddy, re.M | re.S

@@ -17,7 +17,12 @@
 //! was sent at join, read into a grid, and every client holds the same thing.
 
 use crate::nav::Nav;
+use crate::pilots::{BehaviorProfile, BrainConfig, Strategy};
 use crate::sim::{self, World};
+
+#[cfg(test)]
+pub(crate) use crate::pilots::FILL_NAMES;
+pub use crate::pilots::{CALIBRATED, CLASS_NAMES};
 
 /// A standing pilot. No side: which one they fly for is the zone's business,
 /// decided by its own balancer when they join. It used to be written here, six
@@ -35,84 +40,15 @@ pub struct RosterEntry {
     pub skill: f32,
 }
 
-/// The calibrated roster. These eight have careers: `zone/ladder.json` holds a
-/// rating for each, earned in the offline tournament, and every other pilot in a
-/// zone floats against the one pinned among them.
-/// Skills span 0.05 to 0.90 rather than the 0.30 floor they used to share,
-/// because the roster's job is to cover the game's actual range and the game
-/// now has a bottom: below 0.30 the aim floor makes a pilot genuinely bad,
-/// which is what a new player needs some of the room to be. Kestrel takes the
-/// low end, which is a demotion from the top of the shipped ladder, and that
-/// ladder had it backwards anyway: it was calibrated in a room that could not
-/// measure aim. Ozone keeps 0.54, since the anchor's fixed 1200 is the scale
-/// everybody else is read against and moving its skill would quietly move
-/// what the number means.
-pub const CALIBRATED: [(&str, u8, f32); 8] = [
-    ("Kestrel", 0, 0.05),
-    ("Halcyon", 3, 0.35),
-    ("Vantage", 6, 0.65),
-    ("Ridgeline", 2, 0.82),
-    ("Sable", 5, 0.90),
-    ("Ozone", 1, 0.54),
-    ("Tessellate", 4, 0.74),
-    ("Cirrus", 2, 0.20),
-];
-
-/// Names for the pilots beyond the calibrated roster. Same register, no overlap
-/// with them and none with the call signs the client hands players in
-/// `client/arena/callsign.lua`, so a scoreboard never leaves you wondering
-/// which of the three a name came from.
-pub(crate) const FILL_NAMES: [&str; 39] = [
-    "Aperture",
-    "Bellwether",
-    "Carrack",
-    "Downdraft",
-    "Escarpment",
-    "Foxglove",
-    "Gantry",
-    "Hollow",
-    "Isobar",
-    "Jackstay",
-    "Keelson",
-    "Longshore",
-    "Mackerel",
-    "Nightjar",
-    "Oxbow",
-    "Palisade",
-    "Quicksilver",
-    "Ravine",
-    "Saltmarsh",
-    "Tideline",
-    "Undertow",
-    "Vellum",
-    "Windrow",
-    "Xenolith",
-    "Yardarm",
-    "Zenith",
-    "Alluvium",
-    "Bracken",
-    "Coppice",
-    "Dunelight",
-    "Estuary",
-    "Fernbrake",
-    "Glasswort",
-    "Headland",
-    "Inlet",
-    "Junco",
-    "Kittiwake",
-    "Limestone",
-    "Moraine",
-];
-
 /// The deployment's standing roster. Long-lived individuals rather than
 /// template spawns: each keeps its name, its hull, and its skill.
 pub fn roster() -> Vec<RosterEntry> {
-    CALIBRATED
-        .iter()
-        .map(|&(name, class, skill)| RosterEntry {
-            name: name.into(),
-            class,
-            skill,
+    crate::pilots::roster()
+        .into_iter()
+        .map(|spec| RosterEntry {
+            name: spec.callsign,
+            class: spec.hull,
+            skill: (spec.competence.aim + spec.competence.judgment) / 2.0,
         })
         .collect()
 }
@@ -130,35 +66,11 @@ pub fn roster() -> Vec<RosterEntry> {
 /// the roster, so a generated crowd is as mixed as an authored one. A name that
 /// runs out of list takes a numeral, which is what the client does for a player.
 pub fn individual(n: usize) -> RosterEntry {
-    if let Some(&(name, class, skill)) = CALIBRATED.get(n) {
-        return RosterEntry {
-            name: name.into(),
-            class,
-            skill,
-        };
-    }
-    let i = n - CALIBRATED.len();
-    let word = FILL_NAMES[i % FILL_NAMES.len()];
-    let lap = i / FILL_NAMES.len();
-    let name = if lap == 0 {
-        word.to_string()
-    } else {
-        format!("{word} {}", lap + 1)
-    };
-    // A hash of the index rather than a counter, so neighbours in the list are
-    // not neighbours in skill and a room filled in order is not a ladder.
-    let h = (i as u32).wrapping_mul(2654435761) ^ 0x9e3779b9;
+    let spec = crate::pilots::individual(n);
     RosterEntry {
-        name,
-        // Over the roster's own length rather than a literal: the hull
-        // count is a property of the core, and a bot handed an index past
-        // the end of it is an out-of-bounds read the moment anything asks
-        // what it is flying.
-        class: (h >> 11) as u8 % CLASS_NAMES.len() as u8,
-        // 0.05 to 0.90, matching the calibrated span. The band below 0.30
-        // is the point: about three fill pilots in ten are genuinely bad now,
-        // which is the room a new player can find a fight they win in.
-        skill: 0.05 + (h % 86) as f32 / 100.0,
+        name: spec.callsign,
+        class: spec.hull,
+        skill: (spec.competence.aim + spec.competence.judgment) / 2.0,
     }
 }
 
@@ -173,10 +85,6 @@ pub const ANCHOR_RATING: f64 = 1200.0;
 /// "Apex" rather than remembering that Apex is 0.
 /// The roster, in the core's class order. Zone files name hulls, and so do
 /// the weapons the baseline builds for them.
-pub const CLASS_NAMES: [&str; 7] = [
-    "Apex", "Wedge", "Chord", "Anvil", "Cipher", "Facet", "Lattice",
-];
-
 pub fn class_index(name: &str) -> Option<usize> {
     CLASS_NAMES
         .iter()
@@ -227,7 +135,6 @@ pub struct Mine {
 /// anywhere. Exact, and current every tick.
 pub struct Own {
     pub alive: bool,
-    pub class: u8,
     pub x: f32,
     pub y: f32,
     /// Px a tick. This was missing, and its absence is most of why a bot flew
@@ -474,7 +381,6 @@ pub fn own(w: &World, ship: u8) -> Own {
     let mine = mine_of(w, ship, max_e);
     Own {
         alive: me.active != 0 && me.alive != 0,
-        class: me.cls,
         x: me.x as f32 / 256.0,
         y: me.y as f32 / 256.0,
         vx: me.vx as f32 / 65536.0,
@@ -940,31 +846,6 @@ enum Weapon {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Doctrine {
-    Duelist,
-    Bombardier,
-    Skirmisher,
-    Heavy,
-    Ambusher,
-    Brawler,
-    Denier,
-}
-
-impl Doctrine {
-    fn for_class(class: u8) -> Self {
-        match class {
-            0 => Self::Duelist,
-            1 => Self::Bombardier,
-            2 => Self::Skirmisher,
-            3 => Self::Heavy,
-            4 => Self::Ambusher,
-            5 => Self::Brawler,
-            _ => Self::Denier,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Posture {
     Normal,
     Disengaging,
@@ -1027,7 +908,9 @@ const REFUGE_ARRIVE_PX: f32 = 320.0;
 
 pub struct Bot {
     pub ship: u8,
-    skill: f32,
+    judgment: f32,
+    profile: BehaviorProfile,
+    configuration_seed: u32,
     react: u32,
     look_every: u32,
     /// How badly this pilot reads a target's motion, as a share of the lead
@@ -1145,8 +1028,8 @@ pub enum Knob {
 }
 
 impl Knob {
-    /// The one that reads `skill` where it stands rather than caching a number
-    /// when the pilot is built.
+    /// The one that reads judgment competence where it stands rather than
+    /// caching a number when the pilot is built.
     fn slot(self) -> Option<usize> {
         match self {
             Knob::Permission => Some(0),
@@ -1319,22 +1202,26 @@ impl Bot {
         }
     }
 
-    /// What `skill` reads as for one of the live parameters. The pilot's own
-    /// skill unless a harness has held it somewhere else.
+    /// What judgment reads as for a live parameter. The pilot's own competence
+    /// is used unless a harness has held it somewhere else.
     fn dial(&self, knob: Knob) -> f32 {
         knob.slot()
             .and_then(|i| self.dial_at[i])
-            .unwrap_or(self.skill)
+            .unwrap_or(self.judgment)
     }
 
-    pub fn new(ship: u8, skill: f32) -> Self {
+    pub fn new<C: Into<BrainConfig>>(ship: u8, config: C) -> Self {
+        let config = config.into();
+        let aim = config.competence.aim;
         Bot {
             ship,
-            skill,
+            judgment: config.competence.judgment,
+            profile: config.behavior,
+            configuration_seed: config.configuration_seed,
             react: REPLAN_TICKS,
             look_every: LOOK_TICKS,
-            lead_err: (1.0 - skill) * 0.85,
-            aim_skill: skill,
+            lead_err: (1.0 - aim) * 0.85,
+            aim_skill: aim,
             bearing: 0.0,
             lead_gain: 1.0,
             dial_at: [None; 1],
@@ -1348,7 +1235,7 @@ impl Bot {
             retreat_started: 0,
             retreat_completed: 0,
             retreat_ticks: 0,
-            seed: 0x9e3779b9 ^ ((ship as u32) << 16),
+            seed: 0x9e3779b9 ^ config.configuration_seed ^ ((ship as u32) << 16),
             seen: Scan::default(),
             seen_at: 0,
             aim: (0.0, 0.0),
@@ -1450,9 +1337,11 @@ impl Bot {
         self.pin_seen = 0;
     }
 
-    pub fn reseed(&mut self, seed: u32) {
-        self.seed = 0x9e3779b9 ^ seed.wrapping_mul(2654435761).max(1);
-        self.timer = seed % 64;
+    /// Set this flight's random stream without changing the persistent profile.
+    pub fn reseed(&mut self, match_seed: u32) {
+        let mixed = self.configuration_seed ^ match_seed;
+        self.seed = 0x9e3779b9 ^ mixed.wrapping_mul(2654435761).max(1);
+        self.timer = mixed % 64;
     }
 
     /// Whether this pilot is due a look this tick. The caller asks, and only
@@ -1841,46 +1730,43 @@ impl Bot {
         }
     }
 
-    /// A hull's working distance is part of its job, not a universal number.
-    /// Fast bombers want time for a bomb to travel, Facet wants its fan close,
-    /// and Lattice wants enough room to hold a lane.
+    /// A profile's working distance is part of its strategy, not a property of
+    /// the hull. Weapon geometry still sets a hard floor for a safe bomb.
     fn engagement_range(&self, o: &Own, weapon: Weapon) -> f32 {
-        let doctrine = Doctrine::for_class(o.class);
+        let strategy = self.profile.strategy;
         if matches!(
             weapon,
             Weapon::Bomb | Weapon::BombApproach | Weapon::BombSetup
         ) {
             let blast = o.bomb.map_or(0.0, |b| b.blast);
             let clearance = blast + o.radius + 160.0;
-            let floor = match doctrine {
-                Doctrine::Bombardier => 360.0,
-                Doctrine::Heavy => 400.0,
-                Doctrine::Denier => 360.0,
+            let floor = match strategy {
+                Strategy::Bombardier => 360.0,
+                Strategy::Heavy => 400.0,
+                Strategy::Denier => 360.0,
                 _ => 320.0,
             };
             return (clearance + 40.0).max(floor).min(560.0);
         }
-        let base = match doctrine {
-            Doctrine::Duelist => 175.0,
-            Doctrine::Bombardier => 205.0,
-            Doctrine::Skirmisher => 240.0,
-            Doctrine::Heavy => 185.0,
-            Doctrine::Ambusher => 155.0,
-            Doctrine::Brawler => 105.0,
-            Doctrine::Denier => 260.0,
-        };
-        // Poor pilots overcommit a little. The range remains recognizably the
-        // hull's, while skill still has a visible positional mistake to make.
-        base * ENGAGE_SCALE
+        // The scale is the measured middle shared by the old roster. Profile
+        // data supplies the difference between a brawler and a skirmisher.
+        self.profile.engagement_range * ENGAGE_SCALE
     }
 
-    fn bomb_cadence(&self, doctrine: Doctrine) -> u32 {
-        match doctrine {
-            Doctrine::Bombardier => 600,
-            Doctrine::Heavy => 600,
-            Doctrine::Denier => 1_200,
+    fn bomb_cadence(&self, strategy: Strategy) -> u32 {
+        match strategy {
+            Strategy::Bombardier => 600,
+            Strategy::Heavy => 600,
+            Strategy::Denier => 1_200,
             _ => 1_800,
         }
+    }
+
+    fn bomb_interval(&self) -> u32 {
+        let preference = (1.35 - self.profile.bomb_preference * 0.70).clamp(0.50, 1.50);
+        (self.bomb_cadence(self.profile.strategy) as f32
+            * preference
+            * (0.45 + self.dial(Knob::Permission) * 0.55)) as u32
     }
 
     /// How far from this pilot a bomb fired now is expected to meet its
@@ -1915,7 +1801,7 @@ impl Bot {
         if !foe.clear {
             return Weapon::Gun;
         }
-        let doctrine = Doctrine::for_class(o.class);
+        let strategy = self.profile.strategy;
         // Seven gates stand between a bomb and a trigger press, and counted on
         // Alpha with twenty-four bots for three minutes they compose to almost
         // nothing. Of 1738 calls here: 816 died on `purposeful`, 330 on the
@@ -1923,7 +1809,7 @@ impl Bot {
         // self-blast margin and 60 on the cooldown, leaving 33 that reached
         // `Weapon::Bomb`. One point nine per cent. Over the same run the
         // roster pressed the gun 19064 times and the bomb 21, and the Wedge,
-        // whose doctrine is named for the weapon, pressed it 0.8 times a
+        // whose strategy is named for the weapon, pressed it 0.8 times a
         // minute.
         //
         // No single gate here is unreasonable and nobody tuned their product.
@@ -1933,8 +1819,7 @@ impl Bot {
         //
         // A poor pilot throws them closer together than the hull can afford,
         // which in a fight is the same mistake as firing without aiming.
-        let cadence = (self.bomb_cadence(doctrine) as f32
-            * (0.45 + self.dial(Knob::Permission) * 0.55)) as u32;
+        let cadence = self.bomb_interval();
         if self
             .last_bomb_at
             .is_some_and(|last| self.timer.saturating_sub(last) < cadence)
@@ -1945,13 +1830,13 @@ impl Bot {
         let crowded = self.seen.hostiles_near >= 2;
         let finisher = foe.energy < 0.38;
         let outnumbered = self.seen.hostiles_near > self.seen.allies_near.saturating_add(1);
-        let purposeful = match doctrine {
+        let purposeful = match strategy {
             // Wedge gets to initiate with its defining weapon when it has a
             // healthy bar. Cadence, range and reserve keep that from becoming
             // bomb spam.
-            Doctrine::Bombardier => crowded || finisher || o.energy > 0.45,
-            Doctrine::Heavy => crowded || finisher || outnumbered || o.energy > 0.48,
-            Doctrine::Denier => crowded || finisher,
+            Strategy::Bombardier => crowded || finisher || o.energy > 0.45,
+            Strategy::Heavy => crowded || finisher || outnumbered || o.energy > 0.48,
+            Strategy::Denier => crowded || finisher,
             // Deliberately no energy license here, though it is the obvious
             // symmetry with the two above and it does raise the bomb rate.
             // It also flattens the ladder, because `reserve` and the cadence
@@ -1970,7 +1855,7 @@ impl Bot {
         // pressure while opening the lane, then holds both triggers only after
         // the geometry is safe so the shared cooldown can clear. Other hulls
         // keep using the gun when their situational bomb is unavailable.
-        let approach = if doctrine == Doctrine::Bombardier {
+        let approach = if strategy == Strategy::Bombardier {
             Weapon::BombApproach
         } else {
             Weapon::Gun
@@ -1992,10 +1877,10 @@ impl Bot {
         // suicide, so the wider window is not pilots blowing themselves up.
         // What binds now is cadence and the self-blast clearance, which are
         // the two things that should bind a bomb.
-        let far = (near + 180.0).max(match doctrine {
-            Doctrine::Bombardier => 900.0,
-            Doctrine::Heavy => 850.0,
-            Doctrine::Denier => 800.0,
+        let far = (near + 180.0).max(match strategy {
+            Strategy::Bombardier => 900.0,
+            Strategy::Heavy => 850.0,
+            Strategy::Denier => 800.0,
             _ => 800.0,
         });
         if dist <= near || dist >= far {
@@ -2014,7 +1899,7 @@ impl Bot {
             return approach;
         }
         if !o.bomb_ready {
-            return if doctrine == Doctrine::Bombardier {
+            return if strategy == Strategy::Bombardier {
                 Weapon::BombSetup
             } else {
                 Weapon::Gun
@@ -2029,6 +1914,17 @@ impl Bot {
             .filter(|&k| self.seen.clear[k] > 144.0 && self.seen.clear[k + WHISKERS / 2] > 144.0)
             .count();
         short >= 4 && through >= 1
+    }
+
+    fn mine_interval(&self) -> u32 {
+        let base = match self.profile.strategy {
+            Strategy::Denier => 700,
+            Strategy::Heavy => 1_400,
+            Strategy::Bombardier => 1_800,
+            _ => (2_600.0 * (0.45 + self.dial(Knob::Permission) * 0.55)) as u32,
+        };
+        let preference = (1.35 - self.profile.mine_preference * 0.70).clamp(0.50, 1.50);
+        (base as f32 * preference) as u32
     }
 
     /// Mines defend ground. They are laid in lanes with room to pass through,
@@ -2063,31 +1959,17 @@ impl Bot {
             return false;
         }
 
-        let doctrine = Doctrine::for_class(o.class);
-        let cadence = match doctrine {
-            Doctrine::Denier => 700,
-            Doctrine::Heavy => 1_400,
-            Doctrine::Bombardier => 1_800,
-            // The three above mine because their doctrine says to, at a rate
-            // that was tuned, and this leaves those numbers alone. Everyone
-            // else mines opportunistically, and there the rate is the
-            // judgement: a poor pilot lays them closer together than the bar
-            // can afford, which is the same mistake the bomb cadence prices
-            // and is priced the same way. One-sided on purpose. The top of
-            // the dial sits exactly on 2600, so nothing tuned moves for a
-            // strong pilot, which is where greed, discipline and awareness
-            // all went wrong.
-            _ => (2_600.0 * (0.45 + self.dial(Knob::Permission) * 0.55)) as u32,
-        };
+        let strategy = self.profile.strategy;
+        let cadence = self.mine_interval();
         if self
             .last_mine_at
             .is_some_and(|last| self.timer.saturating_sub(last) < cadence)
         {
             return false;
         }
-        match doctrine {
-            Doctrine::Denier => true,
-            Doctrine::Heavy | Doctrine::Bombardier => self.seen.company,
+        match strategy {
+            Strategy::Denier => true,
+            Strategy::Heavy | Strategy::Bombardier => self.seen.company,
             // A hostile close enough to walk into it and not yet close
             // enough to be shooting, which the guards above have already
             // established. This was a permission line at 0.55: the last step
@@ -2316,42 +2198,12 @@ impl Bot {
 
     /// Energy at which this pilot stops trading and protects the life it has
     /// built. Local numbers, incoming fire, carried upgrades, bounty and a flag
-    /// make the current life more expensive to gamble. Skill still matters: a
-    /// disciplined pilot breaks before the crossing costs its escape window.
+    /// make the current life more expensive to gamble. The profile supplies
+    /// risk appetite while competence remains about execution quality.
     fn retreat_at(&self, o: &Own) -> f32 {
-        // Discipline, which the design describes as noticing a bad trade late
-        // and wasting the escape window, against breaking contact promptly.
-        // Nothing here read the dial: every pilot in the game left a fight on
-        // the same sliver of bar.
-        //
-        // It is the trait most likely to decide a fight between two built
-        // ships, which is the economy the ablation found nothing working in.
-        // Aim carries a bare field and stops mattering once multifire and
-        // shrapnel are on the hull, because then nobody is aiming, they are
-        // spraying.
-        //
-        // Deliberately flat, and it took three shapes and six tournaments to
-        // decide that.
-        //
-        // The design lists discipline among the traits the dial drives, and it
-        // is the obvious candidate for a built field, where the aim error is
-        // worth almost nothing because nobody aims a multifire. Measured
-        // against this flat number, which makes +141 of ladder in a bare field
-        // and +60 in a built one:
-        //
-        //     leaving earlier with skill      +88   +39
-        //     leaving later with skill       +102    -7
-        //     good pilot right, poor wrong    +80   +58
-        //
-        // All three are worse, the last included, and that is the shape that
-        // works for aim. The reason is not the shape. 0.30 is tuned, and the
-        // aim error already separates these pilots cleanly, so a second source
-        // of variance on both sides of every fight adds noise to a measurement
-        // that was working and takes the ladder down with it.
-        //
-        // Worth carrying to the next trait somebody wants on the dial: a
-        // parameter has to make the strong pilot better, not merely make the
-        // two of them differ.
+        // Retreat was tested as a skill parameter and made the ladder noisier
+        // rather than stronger. It belongs here as a stable risk preference:
+        // a runner protects a life earlier, while a brawler accepts the trade.
         let value = (o.value as f32 / 60.0).min(1.0);
         let numbers = self
             .seen
@@ -2362,11 +2214,12 @@ impl Bot {
             .threat
             .map_or(0.0, |t| if t.eta < 55.0 { 0.07 } else { 0.0 });
         (0.30
+            + self.profile.retreat_bias
             + value * 0.10
             + numbers.min(3.0) * 0.035
             + threat
             + if o.carrying_flag { 0.14 } else { 0.0 })
-        .min(0.72)
+        .clamp(0.18, 0.80)
     }
 
     fn recovered_at(&self, o: &Own) -> f32 {
@@ -2385,6 +2238,10 @@ impl Bot {
         let under_pressure = self.seen.threat.is_some() || !self.seen.contacts.is_empty();
         (under_pressure && o.energy <= self.retreat_at(o))
             || (o.carrying_flag && under_pressure && o.energy < 0.78)
+    }
+
+    fn objective_score(&self, distance: f32) -> f32 {
+        1.25 + self.profile.objective * 0.50 - distance / SIGHT * 0.45
     }
 
     /// Pick a target, rather than inheriting whichever hostile happened to be
@@ -2437,7 +2294,7 @@ impl Bot {
                     + (1.0 - f.energy.clamp(0.0, 1.0)) * 1.1
                     + if f.carrying_flag { 1.4 } else { 0.0 }
                     + (f.value as f32 / 60.0).min(1.0) * 0.25
-                    - d / SIGHT * 0.8
+                    - d / SIGHT * (0.8 / self.profile.pursuit.clamp(0.40, 1.40))
                     - piling
                     - outclassed
             };
@@ -2597,12 +2454,13 @@ impl Bot {
             let safe = o.energy > self.retreat_at(o) + 0.10
                 && self.seen.hostiles_near <= self.seen.allies_near.saturating_add(1);
             if safe {
-                offer(1.75 - d / SIGHT * 0.45, Choice::Flag(fx, fy));
+                offer(self.objective_score(d), Choice::Flag(fx, fy));
             }
         }
         if let Some(foe) = selected.filter(|_| self.worth_trying(Goal::Foe)) {
             let d = (foe.x - o.x).hypot(foe.y - o.y);
-            let score = 0.90
+            let score = 0.50
+                + self.profile.aggression * 0.40
                 + o.energy * 0.55
                 + (1.0 - foe.energy) * 0.75
                 + if foe.carrying_flag { 0.8 } else { 0.0 }
@@ -3040,6 +2898,17 @@ fn nearest_flag(w: &World, mx: f32, my: f32, team: u8, within: f32) -> Option<(f
 mod tests {
     use super::*;
 
+    fn configured(ship: u8, skill: f32, strategy: Strategy) -> Bot {
+        Bot::new(
+            ship,
+            BrainConfig {
+                competence: crate::pilots::Competence::uniform(skill),
+                behavior: BehaviorProfile::for_strategy(strategy),
+                configuration_seed: 0,
+            },
+        )
+    }
+
     /// The reshaped lead error leaves the measured roster where it was, and
     /// the floor below it is strictly worse.
     ///
@@ -3111,21 +2980,18 @@ mod tests {
     use crate::sim;
 
     #[test]
-    fn hulls_fight_at_ranges_that_fit_their_jobs() {
+    fn profiles_fight_at_ranges_that_fit_their_jobs() {
         let mut w = sim::World::with_map(0x5eed, |_| {});
-        let mut ranges = [0.0; 7];
-        for class in 0..7u8 {
-            let ship = w.spawn(class, 0, 500 + class as i32, 500, 0);
-            let o = own(&w, ship as u8);
-            ranges[class as usize] = Bot::new(ship as u8, 0.7).engagement_range(&o, Weapon::Gun);
-        }
-        assert!(ranges[5] < ranges[4], "Facet closes inside Cipher");
-        assert!(ranges[4] < ranges[0], "Cipher ambushes inside Apex");
-        assert!(ranges[0] < ranges[2], "Chord keeps a skirmisher's lane");
-        assert!(ranges[2] < ranges[6], "Lattice holds the longest gun lane");
+        let ship = w.spawn(1, 0, 500, 500, 0) as u8;
+        let wedge = own(&w, ship);
+        let range =
+            |strategy| configured(ship, 0.7, strategy).engagement_range(&wedge, Weapon::Gun);
+        assert!(range(Strategy::Brawler) < range(Strategy::Ambusher));
+        assert!(range(Strategy::Ambusher) < range(Strategy::Duelist));
+        assert!(range(Strategy::Duelist) < range(Strategy::Skirmisher));
+        assert!(range(Strategy::Skirmisher) < range(Strategy::Denier));
 
-        let wedge = own(&w, 1);
-        let bot = Bot::new(1, 0.7);
+        let bot = configured(ship, 0.7, Strategy::Bombardier);
         let bomb_range = bot.engagement_range(&wedge, Weapon::Bomb);
         assert!(
             bomb_range > bot.engagement_range(&wedge, Weapon::Gun),
@@ -3136,6 +3002,39 @@ mod tests {
             bomb_range > bomb.blast + wedge.radius + 160.0,
             "the bomb plan stays outside its own blast while it closes"
         );
+    }
+
+    #[test]
+    fn competence_axes_remain_independent() {
+        let bot = Bot::new(
+            0,
+            BrainConfig {
+                competence: crate::pilots::Competence {
+                    aim: 0.20,
+                    judgment: 0.85,
+                },
+                behavior: BehaviorProfile::for_strategy(Strategy::Duelist),
+                configuration_seed: 17,
+            },
+        );
+        assert_eq!(bot.aim_skill, 0.20);
+        assert_eq!(bot.dial(Knob::Permission), 0.85);
+    }
+
+    #[test]
+    fn profiles_change_choices_without_changing_the_ship() {
+        let mut w = sim::World::with_map(0x5eed, |_| {});
+        let ship = w.spawn(0, 0, 500, 500, 0) as u8;
+        let o = own(&w, ship);
+        let duel = configured(ship, 0.7, Strategy::Duelist);
+        let deny = configured(ship, 0.7, Strategy::Denier);
+        let run = configured(ship, 0.7, Strategy::Runner);
+
+        assert!(run.retreat_at(&o) > duel.retreat_at(&o));
+        assert!(run.objective_score(400.0) > duel.objective_score(400.0));
+        assert!(duel.profile.pursuit > deny.profile.pursuit);
+        assert!(deny.mine_interval() < duel.mine_interval());
+        assert!(configured(ship, 0.7, Strategy::Bombardier).bomb_interval() < duel.bomb_interval());
     }
 
     #[test]
@@ -3159,7 +3058,7 @@ mod tests {
             ship: 0,
             standing: None,
         };
-        let mut bot = Bot::new(ship, 0.8);
+        let mut bot = configured(ship, 0.8, Strategy::Bombardier);
         bot.seen.foe = Some(foe);
         bot.weapon = Weapon::Bomb;
         bot.mode = Mode::Fight(320.0);
@@ -3179,7 +3078,7 @@ mod tests {
         let full = w.eff_max_energy(ship as usize);
         w.state.ships[ship as usize].energy = full;
         let o = own(&w, ship);
-        let mut bot = Bot::new(ship, 0.8);
+        let mut bot = configured(ship, 0.8, Strategy::Bombardier);
         bot.seen = scan(&w, ship);
         let foe = bot.seen.foe.expect("a target");
         let distance = (foe.x - o.x).hypot(foe.y - o.y);
@@ -3194,7 +3093,7 @@ mod tests {
         w.spawn(0, 1, 535, 500, 0);
         w.state.ships[ship as usize].energy = w.eff_max_energy(ship as usize);
         let o = own(&w, ship);
-        let mut bot = Bot::new(ship, 0.8);
+        let mut bot = configured(ship, 0.8, Strategy::Bombardier);
         bot.seen = scan(&w, ship);
         let foe = bot.seen.foe.expect("a target");
         let mut closing = foe;
@@ -3237,7 +3136,7 @@ mod tests {
         w.state.ships[ship as usize].level[sim::TRIG_BOMB] = 2;
         w.state.ships[ship as usize].energy = w.eff_max_energy(ship as usize);
         let o = own(&w, ship);
-        let mut bot = Bot::new(ship, 0.8);
+        let mut bot = configured(ship, 0.8, Strategy::Heavy);
         bot.seen = scan(&w, ship);
         let mut foe = bot.seen.foe.expect("a target");
         let distance = (foe.x - o.x).hypot(foe.y - o.y);
@@ -3272,7 +3171,7 @@ mod tests {
             w.cfg.specs[spec].blast = 400 * 256;
         }
         let o = own(&w, ship);
-        let mut bot = Bot::new(ship, 0.8);
+        let mut bot = configured(ship, 0.8, Strategy::Heavy);
         bot.seen.company = true;
         bot.seen.clear.fill(48.0);
         bot.seen.clear[0] = WHISKER_PX;
@@ -3297,7 +3196,7 @@ mod tests {
         // decision to make about laying one.
         w.state.ships[ship as usize].charge[sim::CHARGE_MINE] = 3;
         let mut o = own(&w, ship);
-        let mut bot = Bot::new(ship, 0.8);
+        let mut bot = configured(ship, 0.8, Strategy::Denier);
         bot.seen.clear.fill(48.0);
         bot.seen.clear[0] = WHISKER_PX;
         bot.seen.clear[8] = WHISKER_PX;
@@ -3353,8 +3252,8 @@ mod tests {
         let mut w = sim::World::from_packed(0x5eed, &bytes).expect("a map");
         let mut bots = Vec::new();
         for i in 0..10usize {
-            let e = individual(i);
-            let ship = w.spawn_on_map(e.class, (i % 2) as u8, i as u32 / 2, 0);
+            let e = crate::pilots::individual(i);
+            let ship = w.spawn_on_map(e.hull, (i % 2) as u8, i as u32 / 2, 0);
             assert!(ship >= 0, "a seat on the map");
             // The kit a room would deal this seat. `sim_spawn` leaves one
             // empty and a room fills it before the pilot flies, so a drill
@@ -3368,7 +3267,7 @@ mod tests {
             }
             let kit = sim::World::starter_kit(&ceiling);
             assert!(w.set_kit(ship as usize, &kit), "a starter kit is legal");
-            let mut b = Bot::new(ship as u8, e.skill);
+            let mut b = Bot::new(ship as u8, &e);
             b.reseed(i as u32 * 977 + 13);
             bots.push(b);
         }
@@ -3666,8 +3565,8 @@ mod tests {
         let mut w = sim::World::from_packed(salt, &bytes).expect("a map");
         let mut bots = Vec::new();
         for i in 0..pilot_count {
-            let e = individual(i);
-            let ship = w.spawn_on_map(e.class, (i % 2) as u8, i as u32 / 2, 0);
+            let e = crate::pilots::individual(i);
+            let ship = w.spawn_on_map(e.hull, (i % 2) as u8, i as u32 / 2, 0);
             assert!(ship >= 0, "a seat on the map");
             // The kit a room would deal this seat. `sim_spawn` leaves one
             // empty and a room fills it before the pilot flies, so a drill
@@ -3681,7 +3580,7 @@ mod tests {
             }
             let kit = sim::World::starter_kit(&ceiling);
             assert!(w.set_kit(ship as usize, &kit), "a starter kit is legal");
-            let mut b = Bot::new(ship as u8, e.skill);
+            let mut b = Bot::new(ship as u8, &e);
             b.reseed(i as u32 * 977 + 13);
             bots.push(b);
         }
@@ -3929,7 +3828,7 @@ apart after six seconds"
         let me = w.spawn(0, 0, 500, 500, 0) as u8;
         let foe = w.spawn(0, 1, 525, 500, 32768) as u8;
         let max = w.eff_max_energy(me as usize);
-        w.state.ships[me as usize].energy = max * 3 / 10;
+        w.state.ships[me as usize].energy = max / 4;
         let route = crate::nav::Nav::build(&w.map);
         let mut bot = Bot::new(me, 0.8);
         bot.seen = scan(&w, me);

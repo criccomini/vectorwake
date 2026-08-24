@@ -108,6 +108,8 @@ handle.cb(nil, handle, {event = websocket.EVENT_CONNECTED})
 check("the join speaks the wire's own protocol",
       string.byte(sent[1], 3) == net.PROTOCOL,
       "spoke " .. tostring(string.byte(sent[1], 3)))
+check("the human join leaves the bot-build field empty",
+      sent[1] == string.char(1, 0, net.PROTOCOL, 0, 0, 5, 0, 0) .. "pilot")
 
 deliver(welcome(3, 1))
 check("a ship in the welcome is flying", net.me == 3 and not net.watching)

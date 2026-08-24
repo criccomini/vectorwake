@@ -19,10 +19,11 @@ bind pinned ports where a scaled host wants ephemeral ones.
 ## The shape we are leaving and the shape we are going to
 
 Today: one Vultr instance running both roles off three compose files. Caddy is
-the only thing on the public interface; the directory, the meta-layer, one arena
-and the bot server sit on loopback behind it; a payload container delivers the
-client page. That arena holds every room Alpha allows, so one process is the
-whole of the games. Deploys are a git push picked up by a systemd timer.
+the only thing on the public interface; the directory, the meta-layer, two
+arenas and the bot server sit on loopback behind it; a payload container
+delivers the client page. Each arena holds every room its zone allows, so two
+processes cover Melee and Ladder. Deploys are a git push picked up by a systemd
+timer.
 
 Target, from hosting.md:
 
@@ -277,8 +278,8 @@ The reason is that "more arenas" was never how a host grows. An arena process
 holds as many rooms of its zone as `max_rooms` allows, opened on demand, so
 seats per host is a number in `zone.toml` and a process count is a count of
 zones covered. That is rung 2 of the fill ladder doing the work rungs 3 and 4
-would otherwise need a second process for. A host runs one arena today because
-the catalog holds one zone, not because three stanzas were the limit.
+would otherwise need a second process for. A host runs one arena per catalog
+zone today, not because a fixed number of stanzas is the limit.
 
 So this becomes worth building when a host wants more zones than stanzas, or
 when one process holding every room of a busy zone is the wrong failure domain,

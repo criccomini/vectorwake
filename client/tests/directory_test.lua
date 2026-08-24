@@ -265,6 +265,56 @@ dir.rows = {{zone = "chaos", name = "chaos", detail = "a brawl", count = "",
 check("a list with games in it says nothing", menu.view().empty == nil,
       tostring(menu.view().empty))
 
+menu.live_match = {
+    playing = false,
+    left = 180,
+    score = {[0] = 0, [1] = 0},
+    ladder = {
+        opponent_ready = false,
+        waiting = true,
+        active_opponent = 0,
+        desired_opponent = 0,
+    },
+}
+local ladder_landing = menu.view().aside
+check("an unopened Ladder landing does not promise a running countdown",
+      ladder_landing and ladder_landing.finding_rival
+          and ladder_landing.clock == 180,
+      tostring(ladder_landing and ladder_landing.finding_rival))
+
+menu.live_match = {
+    playing = false,
+    left = 8,
+    artifact = 1,
+    score = {[0] = 1, [1] = 0},
+    ladder = {
+        opponent_ready = false,
+        waiting = false,
+        active_opponent = 6,
+        desired_opponent = 7,
+    },
+}
+local ladder_result = menu.view().aside
+check("a Ladder result keeps its countdown while the old rival leaves",
+      ladder_result and not ladder_result.finding_rival
+          and ladder_result.clock == 8,
+      tostring(ladder_result and ladder_result.finding_rival))
+menu.live_match = nil
+
+_G.NEXT_REPLY = {zones = {{
+    name = "ladder", description = "one life", players = 1, bots = 0,
+    instances = {{address = "wss://x/ladder", rooms = {
+        {number = 1, players = 1, bots = 0, full = false,
+         clock = 0, playing = false, waiting = true},
+    }}},
+}}}
+message(last(), "ignored")
+local directory_wait = menu.view().aside
+check("an overdue directory-only Ladder says it is finding a rival",
+      dir.rows[1] and dir.rows[1].waiting == true
+          and directory_wait and directory_wait.finding_rival == true,
+      tostring(directory_wait and directory_wait.finding_rival))
+
 
 -- --- the rooms of a zone, across the servers holding them ------------------
 --

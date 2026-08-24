@@ -6,7 +6,8 @@ Not a connectivity check. Each pilot joins, takes the map and settings the zone
 sends, flies with held inputs, and decodes every snapshot through the simulation
 core itself. So what it verifies is that ships move, energy drains and
 recharges, weapons appear, kills land, and that a locally predicted tick agrees
-with the server's next snapshot.
+with the server's next snapshot. In a timed mode it also follows the room's
+whistle, sending neutral input while the match is waiting or between lives.
 
     make
     python3 pilot.py wss://play.vectorwake.net/dir melee 4 30 # directory zone pilots seconds
@@ -16,7 +17,7 @@ with the server's next snapshot.
 It browses first, like a client does. Which instance serves which zone is
 decided by the instances themselves and differs between deploys, so an address
 baked into a test joins whichever zone happens to be there and earns a wrong-zone
-refusal -- the server being right and the test being wrong. That is how this
+refusal. The server is right and the test is wrong. That is how this
 harness first learned that refusal works in production.
 
 Needs `pip install websockets`.

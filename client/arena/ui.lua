@@ -3348,6 +3348,17 @@ local function flag_strip(me)
     end
 end
 
+local function ladder_waiting(m)
+    return m ~= nil and not m.playing and m.ladder ~= nil
+        and m.ladder.waiting == true
+end
+
+local function match_ended(m)
+    if m == nil or m.playing then return false end
+    if m.ladder == nil then return true end
+    return m.artifact ~= nil and not ladder_waiting(m)
+end
+
 -- The clock and the score, dead center at the top, which are the two facts a
 -- three minute match is about.
 --
@@ -3362,7 +3373,8 @@ end
 local function match_clock(m, names, alone)
     if not m then return end
     local left = m.left or 0
-    local clock = string.format("%d:%02d", math.floor(left / 60), left % 60)
+    local clock = ladder_waiting(m) and "--:--"
+        or string.format("%d:%02d", math.floor(left / 60), left % 60)
     local y = F.safe_t + 26 * F.scale
     local big = (M.compact and 22 or 30) * F.scale
     local small = (M.compact and 10 or 13) * F.scale
@@ -3370,6 +3382,19 @@ local function match_clock(m, names, alone)
     -- The middle first, because everything else is placed off it.
     local dim = m.playing and 1 or 0.55
     txt(clock, F.w / 2, y, big, pal.a(pal.INK, 0.95 * dim), "center")
+    if m.ladder and not match_ended(m) then
+        local ladder = m.ladder
+        local progress = string.format(
+            "RUNG %d  STREAK %d  FLOOR %d",
+            (ladder.rung or 0) + 1,
+            ladder.streak or 0,
+            (ladder.checkpoint or 0) + 1)
+        if ladder_waiting(m) then
+            progress = progress .. "  FINDING RIVAL"
+        end
+        txt(progress, F.w / 2, y + 20 * F.scale, small - 1 * F.scale,
+            pal.a(pal.DIM, 0.88), "center")
+    end
     -- Nothing under it while a match is being played: the clock is counting
     -- down and a word saying "match" beneath it is the interface reading its
     -- own label back. The intermission does need saying, because a clock
@@ -3377,10 +3402,15 @@ local function match_clock(m, names, alone)
     -- Only when the ending is not up. The card says the same thing at its
     -- foot, with room for it, and two of them at once is the interface
     -- answering a question nobody asked twice.
-    if not m.playing and alone then
+    if match_ended(m) and alone then
         txt("NEXT MATCH IN", F.w / 2, y + 17 * F.scale, small - 2 * F.scale,
             pal.a(pal.DIM, 0.8), "center")
     end
+
+    -- A rival search is not a scored life. Keeping the previous life at the
+    -- sides of the waiting clock makes a stale 1-0 look like the fight that
+    -- is about to begin.
+    if ladder_waiting(m) then return end
 
     -- A side's score sits outboard of the clock, its name outboard of that.
     -- Yours on the left however the zone numbered the teams, so the reading
@@ -3452,6 +3482,22 @@ local function podium(o, m, names)
         if n > best then best, best_at, drawn = n, team, false
         elseif n == best then drawn = true end
     end
+    local ladder_head
+    if m.ladder then
+        if m.ladder.cleared then
+            ladder_head = "Ladder cleared"
+        elseif drawn then
+            ladder_head = string.format("rung %d drawn",
+                                        (m.ladder.active_opponent or 0) + 1)
+        elseif best_at == 0 then
+            ladder_head = string.format("rung %d cleared",
+                                        (m.ladder.active_opponent or 0) + 1)
+        else
+            ladder_head = string.format("back to rung %d",
+                                        (m.ladder.rung or 0) + 1)
+        end
+    end
+
     -- The sides, each with its own pilots under it, and yours on the left
     -- however the zone numbered the teams. That is the same rule the
     -- clock's own score follows: the reading is positional, so it never has to
@@ -3562,7 +3608,10 @@ local function podium(o, m, names)
         local mid = F.w / 2
         local label_y = top + TITLE * 0.45
         local label_px = (M.compact and 18 or 22) * F.scale
-        if drawn or best_at == nil then
+        if ladder_head then
+            txt(ladder_head, mid, label_y, label_px, pal.a(pal.INK, 0.95),
+                "center", MENU_FONT)
+        elseif drawn or best_at == nil then
             txt("drawn", mid, label_y, label_px, pal.a(pal.INK, 0.95),
                 "center", MENU_FONT)
         else
@@ -3785,9 +3834,23 @@ end
 
 function M.hud(o)
     F.case = "upper"
+    local ending = match_ended(o.match)
+    -- Each whistle gets its own entrance. Once play or a rival search resumes,
+    -- release the old timestamp so the next result does not inherit a fully
+    -- grown podium from the first match of the session.
+    if not ending then
+        M.podium_at = nil
+        M.podium_artifact = nil
+    elseif o.match.artifact ~= nil
+       and M.podium_artifact ~= o.match.artifact then
+        -- Network updates continue when rendering pauses. Keying the entrance
+        -- to the filed result lets a second whistle animate even when no live
+        -- frame was drawn between the two results.
+        M.podium_at = nil
+        M.podium_artifact = o.match.artifact
+    end
     if sim.ship_count() == 0 then return end
     local me = o.me
-    local ending = o.match ~= nil and not o.match.playing
     -- Before anything draws: every instrument that separates a friend from an
     -- enemy reads this, and while watching it is not the subject's side.
     view_team = o.side or team_of(o.me)
@@ -3898,7 +3961,7 @@ function M.hud(o)
     if o.menu_open then return end
     -- The ending, while the room counts down to the next one. Same place, same
     -- reason: it is the thing being read.
-    if o.match and not o.match.playing then
+    if ending then
         F.text_dim = 1
         podium(o, o.match, o.side_names)
         return
@@ -4435,15 +4498,19 @@ local function compact_deploy(a, x, y, w, h)
 
     -- The clock and score share one line, as they do on the full landing.
     if a.clock then
-        lbl(a.playing and "on the clock" or "next match in", x,
-            cy + 8 * F.scale)
+        local clock_label = a.finding_rival and "finding rival"
+            or (a.playing and "on the clock" or "next match in")
+        lbl(clock_label, x, cy + 8 * F.scale)
         if a.score then
             lbl("the score", x + rmargin, cy + 8 * F.scale, nil,
                 "right")
         end
         local value_y = cy + math.min(band - 7 * F.scale, 31 * F.scale)
-        txt(string.format("%d:%02d", math.floor(a.clock / 60), a.clock % 60),
-            x - 1 * F.scale, value_y, 28 * F.scale, pal.a(pal.INK, 0.95))
+        local clock = a.finding_rival and "--:--"
+            or string.format("%d:%02d", math.floor(a.clock / 60),
+                             a.clock % 60)
+        txt(clock, x - 1 * F.scale, value_y, 28 * F.scale,
+            pal.a(pal.INK, 0.95))
         if a.score then
             local score_px = 21 * F.scale
             local left = tostring(a.score[1])
@@ -4547,14 +4614,18 @@ function pages.deploy_aside(a, x, y, w, h)
     -- landing. Between matches the count is your boarding window, said in
     -- the window's own cyan.
     if a.clock then
-        lbl(a.playing and "on the clock" or "next match in", x, ly,
+        local finding = a.finding_rival == true
+        lbl(finding and "finding rival"
+            or (a.playing and "on the clock" or "next match in"), x, ly,
             a.playing and nil or pal.a(pal.FRIEND, 0.9))
         if a.score then
             lbl("the score", x + rmargin, ly, nil, "right")
         end
         ly = ly + 34 * F.scale
-        txt(string.format("%d:%02d", math.floor(a.clock / 60),
-                          a.clock % 60), x - 2 * F.scale, ly,
+        local clock = finding and "--:--"
+            or string.format("%d:%02d", math.floor(a.clock / 60),
+                             a.clock % 60)
+        txt(clock, x - 2 * F.scale, ly,
             30 * F.scale, pal.a(a.playing and pal.INK or pal.FRIEND, 0.95))
         if a.score then
             -- Each figure in its side's color, yours on the left, which is

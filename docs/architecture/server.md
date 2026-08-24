@@ -26,7 +26,7 @@ The server is one crate with modules split by runtime concern:
 | Arena loop and rooms | `main.rs`, `room.rs`, `session.rs`, `modes.rs`, `protocol.rs` |
 | Simulation and tuning | `sim.rs`, `config.rs`, `arena.rs`, `delivery.rs` |
 | Fleet and catalog | `directory.rs`, `select.rs`, `fleet.rs`, `catalog.rs` |
-| Bots | `bots.rs`, `ai.rs`, `pilot.rs`, `nav.rs`, `shopper.rs`, `profiles.rs` |
+| Bots | `bots.rs`, `ai.rs`, `pilot.rs`, `pilots.rs`, `nav.rs`, `shopper.rs`, `profiles.rs` |
 | Accounts and records | `meta.rs`, `token.rs`, `rating.rs`, `spool.rs`, `presence.rs` |
 | Operations and tools | `metrics.rs`, `wt.rs`, `calibrate.rs`, `drill.rs`, `mapforge.rs` |
 
