@@ -856,9 +856,12 @@ end
 -- What the client believes, held across a snapshot that is about to replace
 -- it: who was flying, how fast they were going, and every round in the air.
 local function capture_world()
-    local alive, vx, vy, x, y, heading = {}, {}, {}, {}, {}, {}
+    local alive, deaths, vx, vy, x, y, heading = {}, {}, {}, {}, {}, {}, {}
     for i = 0, sim.ship_count() - 1 do
         alive[i] = sim.ship_alive(i)
+        -- What tells a kill from the room putting a hull down. See
+        -- `harvest_world`.
+        deaths[i] = sim.ship_deaths(i)
         vx[i], vy[i] = sim.ship_vel(i)
         if alive[i] == 1 and sim.ship_active(i) == 1 then
             x[i], y[i] = sim.ship_x_raw(i), sim.ship_y_raw(i)
@@ -877,7 +880,7 @@ local function capture_world()
             {x = wx, y = wy, spec = spec, life = life, owner = owner,
              level = level}
     end
-    return {alive = alive, vx = vx, vy = vy, x = x, y = y,
+    return {alive = alive, deaths = deaths, vx = vx, vy = vy, x = x, y = y,
             heading = heading, flying = flying}
 end
 
@@ -913,14 +916,34 @@ end
 -- seen on. Every round that was in the air and is not any more, with life
 -- left to fly, ended on something: twenty ticks of margin excludes a round
 -- the local simulation was about to expire by itself.
+--
+-- Their own death count is what says a hull was killed rather than put down.
+-- The whistle benches everybody at the end of a match, writing the fields
+-- rather than taking the death path, so the tally does not move: eight hulls
+-- went dark at once and the arena answered with eight explosions, which is a
+-- fight ending in a way no fight ends. A killed hull is the only one whose
+-- deaths went up, and it is the only one with a wreck to draw.
+--
+-- The same whistle empties the air, and a bomb the room swept up did not go
+-- off either. So a snapshot that benched anybody is the room clearing its
+-- arena, and nothing that vanished in it ended on something. A round that
+-- really did land on the closing tick is silenced with the rest, which is the
+-- side of that trade worth being on: the alternative is a podium going up
+-- over a mine field flashing one last time.
 local function harvest_world(before)
+    local benched = false
     for i = 0, sim.ship_count() - 1 do
         if before.alive[i] == 1 and sim.ship_active(i) == 1
             and sim.ship_alive(i) ~= 1 then
-            M.snap_deaths[#M.snap_deaths + 1] =
-                {ship = i, vx = before.vx[i] or 0, vy = before.vy[i] or 0}
+            if sim.ship_deaths(i) > before.deaths[i] then
+                M.snap_deaths[#M.snap_deaths + 1] =
+                    {ship = i, vx = before.vx[i] or 0, vy = before.vy[i] or 0}
+            else
+                benched = true
+            end
         end
     end
+    if benched then return end
     local flying = before.flying
     local tick = sim.tick()
     for i = 0, sim.weapon_count() - 1 do

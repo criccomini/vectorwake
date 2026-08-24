@@ -69,6 +69,7 @@ _G.sim = {
     set_mortal = function() end,
     ship_count = function() return 2 end,
     ship_alive = function(i) return i == 3 and own_alive or 1 end,
+    ship_deaths = function() return 0 end,
     ship_active = function() return 1 end,
     ship_vel = function() return own_vx, own_vy end,
     ship_repel = function() return own_repel_ticks, own_repel_speed end,
