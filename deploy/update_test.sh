@@ -6,7 +6,8 @@ UPDATE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)/update.sh
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT HUP INT TERM
 mkdir -p "$TMP/bin" "$TMP/root/deploy" "$TMP/state"
-printf 'VW_ROLE=arena\nVW_HOST_ID=test\n' >"$TMP/root/deploy/.env"
+printf 'VW_ROLE=arena\nVW_HOST_ID=test\nVW_META=https://meta.example/meta\n' \
+	>"$TMP/root/deploy/.env"
 
 cat >"$TMP/bin/git" <<'SH'
 #!/bin/sh
@@ -33,7 +34,12 @@ SH
 
 cat >"$TMP/bin/curl" <<'SH'
 #!/bin/sh
-exit 1
+case "$*" in
+"-fsS --max-time 5 https://meta.example/meta/v1/health")
+	[ "${FAIL_VERIFY:-0}" = 1 ] && exit 1
+	printf '%s\n' '{"service":"meta","verifying_key":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}' ;;
+*) exit 1 ;;
+esac
 SH
 
 cat >"$TMP/bin/logger" <<'SH'
@@ -54,12 +60,22 @@ FAIL_CLIENT=1; export FAIL_CLIENT
 
 : >"$CALLS"
 FAIL_CLIENT=0; export FAIL_CLIENT
+FAIL_VERIFY=1; export FAIL_VERIFY
+"$UPDATE"
+[ ! -e "$TMP/state/release" ]
+! grep -q '|compose ' "$CALLS"
+! grep -q '^VW_META_VERIFY=' "$TMP/root/deploy/.env"
+
+: >"$CALLS"
+FAIL_VERIFY=0; export FAIL_VERIFY
 FAIL_RELOAD=1; export FAIL_RELOAD
 if "$UPDATE"; then
 	echo "test failed: a failed Caddy reload published the release" >&2
 	exit 1
 fi
 [ ! -e "$TMP/state/release" ]
+grep -q '^VW_META_VERIFY=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa$' \
+	"$TMP/root/deploy/.env"
 grep -q 'compose --env-file .env up -d' "$CALLS"
 grep -q 'compose --env-file .env exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile' "$CALLS"
 

@@ -65,6 +65,37 @@ if ! grep -q '^VW_SITE_HOST=' .env 2>/dev/null; then
 	esac
 fi
 
+# Arena hosts provisioned before the pilot-attestation gate do not have its
+# public key. New hosts receive the pinned value from the secrets bucket. This
+# one-time bridge asks the deployment's existing HTTPS meta endpoint for the
+# same public half, writes it with the rest of the host credentials, and never
+# asks again once a value is present.
+meta_verify=$(sed -n 's/^VW_META_VERIFY=//p' .env 2>/dev/null | tail -n 1)
+if [ -z "$meta_verify" ] && [ "$(sed -n 's/^VW_ROLE=//p' .env)" = arena ]; then
+	meta=$(sed -n 's/^VW_META=//p' .env | tail -n 1)
+	health=
+	if [ -n "$meta" ]; then
+		health=$(curl -fsS --max-time 5 "${meta%/}/v1/health" 2>>"$LOG") || health=
+	fi
+	meta_verify=$(printf '%s' "$health" \
+		| grep -oE '"verifying_key":"[0-9a-fA-F]{64}"' \
+		| head -n 1 | cut -d'"' -f4)
+	if ! printf '%s' "$meta_verify" | grep -qiE '^[0-9a-f]{64}$'; then
+		printf '%s  waiting for the public verifier from %s\n' \
+			"$(date -u +%H:%M:%SZ)" "${meta:-the meta endpoint}" >>"$LOG"
+		exit 0
+	fi
+	env_tmp=.env.vw-update.$$
+	if grep -q '^VW_META_VERIFY=' .env; then
+		(umask 077; sed "s/^VW_META_VERIFY=.*/VW_META_VERIFY=$meta_verify/" \
+			.env >"$env_tmp") || { rm -f "$env_tmp"; exit 1; }
+	else
+		(umask 077; { cat .env; printf 'VW_META_VERIFY=%s\n' "$meta_verify"; } \
+			>"$env_tmp") || { rm -f "$env_tmp"; exit 1; }
+	fi
+	mv -f "$env_tmp" .env || { rm -f "$env_tmp"; exit 1; }
+fi
+
 if ! docker compose --env-file .env up -d >>"$LOG" 2>&1; then
 	logger -t vw-update "release $after failed during compose converge"
 	exit 1

@@ -182,6 +182,12 @@ Pushes to `main` build both server and client images in [GitHub Actions](../.git
 
 Provisioning installs `vw-update.timer`. Once a minute it fetches `main` and pulls both immutable images for that commit. It changes neither the checkout nor the containers until both pulls succeed. It then runs `docker compose up -d`, which recreates only services whose configuration or image changed. In particular, a client release copies a page into Caddy's volume without restarting Caddy or dropping live WebSockets.
 
+Every arena receives `VW_META_VERIFY` from the fleet's secret store. A host
+provisioned before that value became required fetches the public half once from
+its configured HTTPS meta endpoint, writes it to `.env`, and uses the pinned
+value from then on. The signing key and database credential never reach an
+arena-only host.
+
 The checkout on a host is deployment state, not a place to edit. The updater resets it to `origin/main`.
 
 On a host:

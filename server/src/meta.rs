@@ -4966,8 +4966,10 @@ async fn serve_request(stream: &mut tokio::net::TcpStream, meta: Arc<Meta>) -> s
 
     let (code, out) = if method == "GET" && path == "/v1/health" {
         // Deliberately answerable without the database, so a health check
-        // reports the process and the database reports itself.
-        (200, serde_json::json!({ "service": "meta" }))
+        // reports the process and the database reports itself. The public key
+        // also lets a host from before the attestation gate pin the same
+        // identity once without publishing any signing material.
+        (200, meta_health(&meta.signing))
     } else if method != "POST" {
         (405, serde_json::json!({ "error": "post json" }))
     } else {
@@ -4977,6 +4979,13 @@ async fn serve_request(stream: &mut tokio::net::TcpStream, meta: Arc<Meta>) -> s
     };
 
     reply(stream, code, &out).await
+}
+
+fn meta_health(signing: &ed25519_dalek::SigningKey) -> serde_json::Value {
+    serde_json::json!({
+        "service": "meta",
+        "verifying_key": token::to_hex(signing.verifying_key().as_bytes()),
+    })
 }
 
 fn content_length(head: &str) -> Result<usize, &'static str> {
@@ -5747,6 +5756,18 @@ mod tests {
             room_for_one_more(MAX_FRIENDS + 40),
             Err((409, "that is as many as a list holds"))
         );
+    }
+
+    #[test]
+    fn health_publishes_only_the_verifying_half() {
+        let signing = ed25519_dalek::SigningKey::from_bytes(&[7; 32]);
+        let health = meta_health(&signing);
+        assert_eq!(health["service"], "meta");
+        assert_eq!(
+            health["verifying_key"],
+            token::to_hex(signing.verifying_key().as_bytes())
+        );
+        assert_eq!(health.as_object().map(|fields| fields.len()), Some(2));
     }
 
     #[test]

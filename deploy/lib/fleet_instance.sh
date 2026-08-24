@@ -74,7 +74,7 @@ render() {
 	fi
 	verify=${VW_META_VERIFY:-}
 	case $role in
-	arena) digest= verify= ;;
+	arena) digest= ;;
 	*)
 		if [ "${accounts:-0}" = 1 ] && [ -z "$verify" ]; then
 			die "VW_META_VERIFY is not set and the secrets bucket has no copy.
