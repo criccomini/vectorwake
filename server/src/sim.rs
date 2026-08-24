@@ -703,9 +703,8 @@ pub const ASSIST_SLOTS: usize = 4;
 pub const KIT_CHARGE_SLOTS: usize = 2;
 /// The flat kit space: a stat, a rung, an add-on or a charge, all one shape.
 pub const SLOT_COUNT: usize = UP_COUNT + TRIG_COUNT + TRIG_COUNT * MOD_COUNT + MAX_CHARGES;
-/// Wire capacity for a stat and what a kit may spend in total. Effective stat
-/// ceilings come from the flight rows and are lower where physics clamps
-/// sooner; eight remains the representation bound.
+/// Every stat has eight effective build steps, and a kit may spend thirty
+/// points in total.
 pub const UP_STEPS: u8 = 8;
 pub const KIT_BUDGET: u32 = 30;
 /// Charge kinds. A mine is one: a count you carry and spend.

@@ -575,9 +575,8 @@ typedef enum {
 #define SIM_SLOT_COUNT       (SIM_UP_COUNT + SIM_TRIG_COUNT \
                               + SIM_TRIG_COUNT * SIM_MOD_COUNT \
                               + SIM_MAX_CHARGES)
-/* Wire capacity for a stat and what a kit may spend in total. The effective
- * depth of each stat comes from its flight row and may be lower than this
- * representation bound. See docs/design/match-game.md. */
+/* Every stat has eight effective build steps, and a kit may spend thirty
+ * points in total. See docs/design/match-game.md. */
 #define SIM_UP_STEPS 8
 #define SIM_KIT_BUDGET 30
 
@@ -927,22 +926,15 @@ int sim_on_streak(const sim_settings *cfg, const sim_ship *sh);
  * rivets buy is which upgrades you may slot, never how many" has somewhere to
  * be true.
  *
- * Six of each stat, which is exactly the budget over five of them and is why
- * the budget is thirty: a pilot who buys nothing can still take every stat to
- * its base ceiling and own nothing else, which is a legibly poor ship and a
- * useful landmark. The last two steps are the shop's.
+ * Every effective stat step is universal. Stats are build choices, not
+ * purchases, and the thirty-point kit keeps a pilot from taking all forty at
+ * once.
  *
- * One rung of each ladder and one of each add-on, so a new account flies a
- * whole ship rather than a chassis. Repel and burst without limit, which is
- * what "the two everybody starts with" means; the other two charge kinds are
- * bought.
- *
- * Barrels are the exception and the only add-on a new account holds none of.
- * Every other add-on changes what a round does; this one changes how many
- * leave, and a rung of it handed out free is the one upgrade that would make
- * the starting kit strictly better than it should be. It is also the trait
- * this whole space was flattened to make sellable, so selling it is rather
- * the point. See docs/design/match-game.md. */
+ * The equipment row covers Gunner, Bomber and Control, plus the established
+ * second gun and spray rungs used by saved remixes. A fresh pilot can rearrange
+ * those points without shopping first. Deeper weapon, add-on and charge-rack
+ * rungs are progression. Repel and Burst begin at two; Mine and Brick begin
+ * at zero. See docs/design/match-game.md. */
 void sim_base_entitlements(uint8_t *out);
 
 /* A whole budget spent on a hull, without asking anybody what they wanted.
@@ -1225,14 +1217,11 @@ int sim_door_open(const sim_settings *cfg, uint32_t tick, uint8_t variant);
 int32_t sim_units_speed(int32_t v);    /* px/s/10 -> Q16 px/tick */
 int32_t sim_units_energy(int32_t e);   /* energy units -> Q10 */
 
-/* A hull's flight stats in settings-file units, laid out the way the original
- * writes them: what a fresh pilot has, what one green adds, and the ceiling.
- * Its `InitialSpeed`, `UpgradeSpeed` and `MaximumSpeed` and so on down.
- *
- * All three, rather than a ceiling and a rule for the rest, because there is
- * no rule: the original starts a pilot at 62% of top speed and 88% of top
- * thrust, and one green closes a quarter of the speed gap against a seventh
- * of the energy gap. */
+/* A hull's flight stats in settings-file units: what zero kit points provide,
+ * what one point adds, and the ceiling. All three are explicit because each
+ * row has its own useful range even though every row has eight steps. Speed
+ * uses tenths of a pixel per second and thrust uses tenths of its documented
+ * unit, so neither useful increment is forced to a whole display unit. */
 typedef struct {
     int32_t init_speed, up_speed, max_speed;
     int32_t init_thrust, up_thrust, max_thrust;

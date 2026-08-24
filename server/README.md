@@ -47,7 +47,7 @@ boundaries in more detail.
 
 ## Client protocol
 
-Client messages are binary and currently use protocol version 22. WebSocket and
+Client messages are binary and currently use protocol version 24. WebSocket and
 WebTransport carry the same message definitions; `wt.rs` assigns the reliable
 and datagram lanes.
 
@@ -189,6 +189,8 @@ An unknown name prints the full diagnostics list.
 ```sh
 VW_POOL_DIGEST=sha256:... VW_META_VERIFY=... \
   vectorwake-server calibrate stages 24 Apex melee .
+VW_POOL_DIGEST=sha256:... VW_META_VERIFY=... \
+  vectorwake-server calibrate profiles 3402 melee . flight-eight-v1
 ```
 
 The stage harness holds hull and skill constant, varies only the granted kit,
@@ -197,9 +199,40 @@ choice, but a named zone supplies the real weapon table and add-on limits.
 Passing `baseline` avoids catalog loading.
 
 Nothing loads `stages.json`. It is a balance report to compare across tuning
-changes. The same `calibrate` command also provides `profiles`, `hulls`, and
-`teams` measurements for questions that need the shipped map rotation or more
-than one pilot per side.
+changes. The profile harness declares ten comparisons among legal 30-point
+builds: five one-point stat margins near Control's starter allocation and five
+matched seventh-to-eighth stat-pip margins. Every
+stat margin prices the named pip against the same bomb-bounce pip. Fixed bots
+and controllers play mirrored 4v4 matches for the full 180 seconds, with seeds
+cycled evenly over the six Melee maps and seven cyclic lineups. Every hull
+occupies four lineup seats per cycle. The ten win-rate contrasts share one
+Bonferroni family and report conservative approximate family-wise 95% paired t
+intervals against the 45 to 55 band. Kill intervals are descriptive. The
+stricter fifteen-comparison planning bound needs 3,384 pairs for at least 90%
+power under a worst-case paired standard deviation of 0.5 and a true 50% rate.
+The prespecified run rounds that minimum to 3,402, which is 81 complete
+six-map by seven-lineup blocks. Any other count is labeled exploratory. Before
+a powered run, add exactly one attempt for the
+current design to `zone/profile-calibration-attempts.json`. The command prints
+the design fingerprint before it collects a match. That fingerprint includes
+the compiler, C toolchain, build flags and target, so collect confirmatory
+evidence with the same release build that the registry names. The attempt ID
+selects a fresh seed namespace, and the registry rejects another attempt ID for
+the same design. The release procedure accepts only the first run triggered by
+that registration; it does not rerun the workflow or push the registered
+candidate again. `profiles-<attempt>.json` keeps every mirrored seed-level
+observation beside the summary and is never overwritten within a powered run.
+Use `exploratory` as the attempt ID with any other sample count while tuning.
+Each comparison on each map must also clear fixed activity and mirrored-outcome
+sensitivity gates. The report also warns on a gross observed side gap, but the
+mirrored estimator averages both sides and that warning does not block its
+verdict. These are unpowered fixture diagnostics, not certified side
+equivalence. The 90% target covers the ten declared contrasts only, not
+the chance that the run clears every validity gate.
+This screen says nothing about human fun or fairness, and it does not establish
+balance for every legal kit. The same `calibrate` command also provides `hulls`
+and `teams` measurements for other questions that need the shipped map rotation
+or more than one pilot per side.
 
 ## Public transport
 

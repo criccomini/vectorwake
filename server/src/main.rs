@@ -404,22 +404,35 @@ fn run_stage_tournament() {
     }
 }
 
-/// `calibrate profiles <paired_seeds> <zone> <dir>`: the three starter
-/// profiles and a bought-up specialization, four a side on the zone's full map
-/// rotation. Every seed is mirrored with the two profiles exchanging sides.
+const PROFILE_CALIBRATION_ATTEMPTS: &str =
+    include_str!("../../zone/profile-calibration-attempts.json");
+
+/// `calibrate profiles <paired_seeds> <zone> <dir> <attempt_id>`: ten
+/// declared starter-margin and eighth-pip contrasts, four a side on the zone's
+/// full map rotation. Every seed is mirrored with the two profiles exchanging
+/// sides.
 fn run_profile_tournament() {
-    let paired_seeds: u32 = std::env::args()
-        .nth(3)
-        .and_then(|value| value.parse().ok())
-        .unwrap_or(200);
-    if paired_seeds < calibrate::PROFILE_MIN_PAIRS {
+    let paired_seeds: u32 = match std::env::args().nth(3) {
+        Some(value) => match value.parse() {
+            Ok(value) => value,
+            Err(error) => {
+                println!("profiles: invalid paired seed count {value:?}: {error}");
+                std::process::exit(2);
+            }
+        },
+        None => calibrate::PROFILE_POWERED_PAIRS,
+    };
+    if paired_seeds != calibrate::PROFILE_POWERED_PAIRS {
         println!(
-            "profiles: exploratory run only; at least {} paired seeds are required for a balance verdict",
-            calibrate::PROFILE_MIN_PAIRS
+            "profiles: exploratory run only; the prespecified powered screen uses exactly {} paired seeds",
+            calibrate::PROFILE_POWERED_PAIRS
         );
     }
     let requested = std::env::args().nth(4);
     let dir = std::env::args().nth(5).unwrap_or_else(|| ".".into());
+    let attempt_id = std::env::args()
+        .nth(6)
+        .unwrap_or_else(|| calibrate::PROFILE_EXPLORATORY_ATTEMPT.into());
     let cat = match catalog::load("catalog") {
         Ok(catalog) => catalog,
         Err(error) => {
@@ -443,19 +456,103 @@ fn run_profile_tournament() {
         println!("profiles: {zone:?} has no readable maps");
         std::process::exit(1);
     }
+    if let Err(error) = std::fs::create_dir_all(&dir) {
+        println!("profiles: cannot create output directory {dir:?}: {error}");
+        std::process::exit(1);
+    }
+    let probe =
+        std::path::Path::new(&dir).join(format!(".profiles-write-check-{}", std::process::id()));
+    if let Err(error) = std::fs::write(&probe, b"") {
+        println!("profiles: output directory {dir:?} is not writable: {error}");
+        std::process::exit(1);
+    }
+    if let Err(error) = std::fs::remove_file(&probe) {
+        println!(
+            "profiles: cannot remove output preflight {:?}: {error}",
+            probe
+        );
+        std::process::exit(1);
+    }
     println!(
-        "comparing full profiles in {zone}: {paired_seeds} paired seeds across {} maps",
+        "comparing profile contrasts in {zone}: {paired_seeds} paired seeds across {} maps",
         maps.len()
     );
-    let results = calibrate::run_profiles(paired_seeds, 0.50, Some(&definition.arena), &maps, true);
-    let report = calibrate::report_profiles(&results, paired_seeds, &zone, &maps);
-    let path = format!("{dir}/profiles.json");
-    match std::fs::write(
-        &path,
-        serde_json::to_string_pretty(&report).expect("serialize profile report"),
+    let skill = 0.50;
+    let match_seconds = definition.arena.match_seconds.unwrap_or(180);
+    let zone_fingerprint = format!("sha256:{}", catalog::sha256_hex(definition.raw.as_bytes()));
+    let run = match calibrate::prepare_profile_calibration(
+        paired_seeds,
+        &attempt_id,
+        PROFILE_CALIBRATION_ATTEMPTS,
+        &zone,
+        &definition.raw,
+        skill,
+        &maps,
     ) {
-        Ok(()) => println!("\nwrote {path}"),
-        Err(error) => println!("\ncould not write {path}: {error}"),
+        Ok(run) => run,
+        Err(error) => {
+            println!("profiles: {error}");
+            std::process::exit(1);
+        }
+    };
+    println!(
+        "profile calibration attempt {:?}: design {}, seed base {}",
+        run.attempt_id(),
+        run.design_fingerprint(),
+        run.seed_base()
+    );
+    let path = std::path::Path::new(&dir).join(format!("profiles-{}.json", run.attempt_id()));
+    if run.is_powered() && path.exists() {
+        println!(
+            "profiles: refusing to overwrite confirmatory evidence at {}",
+            path.display()
+        );
+        std::process::exit(1);
+    }
+    let results = match calibrate::run_profiles(
+        &run,
+        paired_seeds,
+        &zone,
+        &definition.raw,
+        skill,
+        &maps,
+        true,
+    ) {
+        Ok(results) => results,
+        Err(error) => {
+            println!("profiles: {error}");
+            std::process::exit(1);
+        }
+    };
+    let report = calibrate::report_profiles(
+        &run,
+        &results,
+        &zone,
+        &zone_fingerprint,
+        skill,
+        match_seconds,
+        &maps,
+    );
+    let encoded = serde_json::to_string_pretty(&report).expect("serialize profile report");
+    let write_result = if run.is_powered() {
+        use std::io::Write as _;
+        std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .and_then(|mut file| file.write_all(encoded.as_bytes()))
+    } else {
+        std::fs::write(&path, encoded)
+    };
+    if let Err(error) = write_result {
+        println!("\nprofiles: could not write {}: {error}", path.display());
+        std::process::exit(1);
+    }
+    println!("\nwrote {}", path.display());
+
+    if run.is_powered() && results.iter().any(|result| result.verdict != "balanced") {
+        println!("profiles: the powered screen did not balance all ten comparisons");
+        std::process::exit(1);
     }
 }
 
@@ -2941,8 +3038,17 @@ mod tests {
                     (tile.1 * sim::TILE_PX + sim::TILE_PX / 2) * 256,
                 )
             );
-            assert_eq!(row.heading, if team == 0 { 0 } else { 32768 });
         }
+        let human_row = z.rooms[0].world.state.ships[human_ship as usize];
+        let bot_row = z.rooms[0].world.state.ships[bot_ship as usize];
+        assert_eq!(
+            human_row.heading,
+            room::heading_toward((human_row.x, human_row.y), (bot_row.x, bot_row.y))
+        );
+        assert_eq!(
+            bot_row.heading,
+            room::heading_toward((bot_row.x, bot_row.y), (human_row.x, human_row.y))
+        );
 
         let human_rid = z.rooms[0].names[&human_ship].rid.clone();
         let bot_rid = z.rooms[0].names[&bot_ship].rid.clone();
@@ -3547,6 +3653,56 @@ mod tests {
             (2, 2),
             "and the whistle evens them"
         );
+        let mut newest = ships.clone();
+        newest.sort_unstable();
+        newest.reverse();
+        assert!(
+            newest[..2]
+                .iter()
+                .all(|ship| a.world.state.ships[*ship as usize].team == 1),
+            "same-tick joins use the ship id as a stable mover tie-break"
+        );
+
+        let mut ordered = ships.clone();
+        ordered.sort_unstable();
+        let centers = [0u8, 1u8].map(|team| {
+            let members: Vec<_> = ships
+                .iter()
+                .map(|ship| a.world.state.ships[*ship as usize])
+                .filter(|row| row.team == team)
+                .collect();
+            (
+                members.iter().map(|row| i64::from(row.x)).sum::<i64>() as i32
+                    / members.len() as i32,
+                members.iter().map(|row| i64::from(row.y)).sum::<i64>() as i32
+                    / members.len() as i32,
+            )
+        });
+        let mut nth = [0u32; 2];
+        for ship in ordered {
+            let row = a.world.state.ships[ship as usize];
+            let team = row.team as usize;
+            let (tx, ty) = a
+                .world
+                .map_spawn(row.team, nth[team])
+                .expect("a team start");
+            nth[team] += 1;
+            let expected = (
+                tx * sim::TILE_PX * 256 + sim::TILE_PX * 128,
+                ty * sim::TILE_PX * 256 + sim::TILE_PX * 128,
+            );
+            assert_eq!(
+                (row.spawn_x, row.spawn_y),
+                expected,
+                "the restart uses the pilot's new side"
+            );
+            assert_eq!((row.x, row.y), expected, "the pilot opens at that start");
+            assert_eq!(
+                row.heading,
+                room::heading_toward((row.x, row.y), centers[1 - team]),
+                "both sides face into the match"
+            );
+        }
     }
 
     /// A bot is never moved to make the sides look even. Bots fill what humans
@@ -3596,11 +3752,11 @@ mod tests {
         assert_eq!(sh.charge[sim::CHARGE_REPEL], 2);
 
         // Past what the account owns. The arena has five spray steps and the
-        // starter profile union owns two.
+        // starter equipment envelope owns two.
         let spray = sim::slot_mod(sim::TRIG_GUN, sim::MOD_MULTI) as usize;
         assert_eq!(
             base[spray], 2,
-            "a fresh account owns the starter profiles' spray"
+            "a fresh account owns the starter equipment spray"
         );
         let mut deep = [0u8; sim::SLOT_COUNT];
         deep[spray] = 3;
@@ -3779,7 +3935,7 @@ mod tests {
         kit[slot] = 3;
         assert!(
             !a.set_kit(ship, &kit),
-            "the third spray step is not in the starter union"
+            "the third spray step is not in the starter envelope"
         );
 
         // What buying one does, which is raise this account's ceiling by one.
@@ -3831,6 +3987,11 @@ mod tests {
             "the build a pilot arrived with is dealt at once, mid-match or not"
         );
         assert_eq!(
+            a.world.state.ships[ship as usize].energy,
+            a.world.eff_max_energy(ship as usize),
+            "and its first authored build starts on its own full bar"
+        );
+        assert_eq!(
             a.names[&ship].pending_kit, None,
             "and nothing is left waiting for a whistle"
         );
@@ -3844,6 +4005,80 @@ mod tests {
             "a re-spec mid-match still waits"
         );
         assert_eq!(a.names[&ship].pending_kit, Some(again), "and is held");
+    }
+
+    #[test]
+    fn a_delayed_first_kit_neither_heals_nor_wakes_a_benched_seat() {
+        let mut live = match_room(1, 1);
+        let live_ship = seat_human(&mut live, "late packet");
+        live.tick();
+        assert!(live.mode.match_state().unwrap().playing);
+        let held = live.world.eff_max_energy(live_ship as usize) / 2;
+        live.world.state.ships[live_ship as usize].energy = held;
+        let mut tank = [0u8; sim::SLOT_COUNT];
+        tank[sim::slot_stat(sim::UP_ENERGY) as usize] = sim::UP_STEPS;
+        live.ask_kit(live_ship, &tank);
+        assert_eq!(
+            live.world.state.ships[live_ship as usize].energy, held,
+            "delaying the first kit packet cannot refill damage"
+        );
+
+        let mut waiting = match_room(1, 1);
+        let waiting_ship = seat_human(&mut waiting, "between matches");
+        for _ in 0..120 {
+            waiting.tick();
+        }
+        assert!(
+            !waiting.mode.match_state().unwrap().playing,
+            "the seat is actually waiting between matches"
+        );
+        assert_eq!(waiting.world.state.ships[waiting_ship as usize].alive, 0);
+        assert_eq!(waiting.world.state.ships[waiting_ship as usize].energy, 0);
+        waiting.ask_kit(waiting_ship, &tank);
+        assert_eq!(waiting.world.state.ships[waiting_ship as usize].alive, 0);
+        assert_eq!(
+            waiting.world.state.ships[waiting_ship as usize].energy, 0,
+            "a first kit cannot put charge into a benched hull"
+        );
+        for _ in 0..120 {
+            waiting.tick();
+            if waiting.mode.match_state().unwrap().playing {
+                break;
+            }
+        }
+        assert!(
+            waiting.mode.match_state().unwrap().playing,
+            "the next whistle opens a match"
+        );
+        assert_eq!(
+            waiting.world.state.ships[waiting_ship as usize].energy,
+            waiting.world.eff_max_energy(waiting_ship as usize),
+            "the whistle fills that kit through the ordinary match path"
+        );
+    }
+
+    #[test]
+    fn a_delayed_first_kit_preserves_damage_when_its_energy_ceiling_falls() {
+        let mut live = match_room(1, 1);
+        let ship = seat_human(&mut live, "lower ceiling");
+        live.tick();
+        assert!(live.mode.match_state().unwrap().playing);
+
+        let energy_slot = sim::slot_stat(sim::UP_ENERGY) as usize;
+        let mut lower = live.world.state.ships[ship as usize].kit;
+        assert!(lower[energy_slot] > 0, "the starter has energy to remove");
+
+        let old_full = live.world.eff_max_energy(ship as usize);
+        live.world.state.ships[ship as usize].energy = old_full - 1;
+        lower[energy_slot] = 0;
+
+        live.ask_kit(ship, &lower);
+
+        let new_full = live.world.eff_max_energy(ship as usize);
+        let held = live.world.state.ships[ship as usize].energy;
+        assert!(new_full < old_full, "the authored kit lowers the ceiling");
+        assert_eq!(held, new_full - 1, "the existing damage is preserved");
+        assert!(held < new_full, "the lower ceiling does not fill the bar");
     }
 
     /// The hull is locked for a match and the kit with it, so a kit asked for
@@ -3882,6 +4117,11 @@ mod tests {
             a.world.state.ships[ship as usize].up[sim::UP_ENERGY],
             1,
             "dealt onto the hull, not merely stored"
+        );
+        assert_eq!(
+            a.world.state.ships[ship as usize].energy,
+            a.world.eff_max_energy(ship as usize),
+            "with the new Energy ceiling filled at the whistle"
         );
         assert!(
             a.names[&ship].pending_kit.is_none(),

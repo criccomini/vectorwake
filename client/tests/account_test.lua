@@ -167,6 +167,16 @@ check("and the token the arena will check carries it",
 local profile_kit = {}
 for i = 1, 23 do profile_kit[i] = 0 end
 profile_kit[1] = 7
+local kit_request_at = #requests
+account.save_kit(3, profile_kit)
+check("saving an active kit names its schema and carries its counts",
+      requests[kit_request_at + 1].url == "https://meta/v1/kit"
+      and requests[kit_request_at + 1].body.class == 3
+      and requests[kit_request_at + 1].body.kit_schema == 2
+      and requests[kit_request_at + 1].body.kit == profile_kit,
+      requests[kit_request_at + 1]
+          and requests[kit_request_at + 1].url or "no request")
+answer(requests[kit_request_at + 1], "kit", {})
 local profile_saved = nil
 local profile_request_at = #requests
 account.save_profile("Screen", profile_kit, function(ok, why, profile)
@@ -175,6 +185,7 @@ end)
 check("saving a profile names the build and carries its kit",
       requests[profile_request_at + 1].url == "https://meta/v1/profile"
       and requests[profile_request_at + 1].body.name == "Screen"
+      and requests[profile_request_at + 1].body.kit_schema == 2
       and requests[profile_request_at + 1].body.kit == profile_kit,
       requests[profile_request_at + 1]
           and requests[profile_request_at + 1].url or "no request")

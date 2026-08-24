@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "attempts": [
+    {
+      "attempt_id": "flight-eight-v1",
+      "design_fingerprint": "sha256:1fa84bbf97ddb148d6cbf0240404b2def19e893338deeb6cab015823c297e1a8"
+    }
+  ]
+}

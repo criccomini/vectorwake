@@ -346,7 +346,7 @@ end
 function M.save_kit(class, kit)
     M.kits[class] = kit
     if M.base == "" then return end
-    post("/v1/kit", {secret = secret, class = class, kit = kit}, function(r, err)
+    post("/v1/kit", {secret = secret, class = class, kit_schema = 2, kit = kit}, function(r, err)
         if not r then M.note = err or "cannot save that kit" end
     end)
 end
@@ -359,7 +359,7 @@ function M.save_profile(name, kit, cb)
         if cb then cb(false, "no meta-layer") end
         return
     end
-    post("/v1/profile", {secret = secret, name = name, kit = kit},
+    post("/v1/profile", {secret = secret, name = name, kit_schema = 2, kit = kit},
          function(r, err)
              local profile = r and r.profile
              if type(profile) ~= "table" then

@@ -206,15 +206,16 @@ local function ship(opts)
     return #drawn_halos, #drawn_discs, #drawn_blooms
 end
 
+local SPARKS = 7
 local plain_halos, plain_discs, plain_blooms = ship({})
 local gold_halos, gold_discs, gold_blooms = ship({gleam = 0.4})
-check("a hull on a streak grows four sparks",
-      gold_halos - plain_halos == 4 and gold_discs - plain_discs == 4,
+check("a hull on a streak grows seven sparks",
+      gold_halos - plain_halos == SPARKS and gold_discs - plain_discs == SPARKS,
       (gold_halos - plain_halos) .. " halos, "
           .. (gold_discs - plain_discs) .. " discs")
 check("and one more bloom over it", gold_blooms - plain_blooms == 1)
 
--- The sparks are the four the streak added, which is the tail of the list:
+-- The sparks are the seven the streak added, which is the tail of the list:
 -- the block draws last. Picking them out by distance instead would collect
 -- whichever lamp or engine halo the hull happens to carry out at that radius.
 local function sparks(t)
@@ -233,15 +234,37 @@ end
 local first = sparks(0)
 local turned = sparks(0.5)
 check("the sparks clear the hull",
-      #first == 4 and first[1].r > 14,
-      #first == 4 and tostring(first[1].r) or (#first .. " sparks"))
-check("and they turn", #first == 4 and #turned == 4
+      #first == SPARKS and first[1].r > 14,
+      #first == SPARKS and tostring(first[1].r) or (#first .. " sparks"))
+check("and they turn", #first == SPARKS and #turned == SPARKS
           and math.abs(first[1].a - turned[1].a) > 1e-3,
-      #first == 4 and #turned == 4
-          and (first[1].a .. " -> " .. turned[1].a) or "not four sparks")
+      #first == SPARKS and #turned == SPARKS
+          and (first[1].a .. " -> " .. turned[1].a) or "not seven sparks")
 check("spread around the hull rather than stacked",
-      #first == 4 and math.abs(first[1].a - first[2].a) > 1e-3
+      #first == SPARKS and math.abs(first[1].a - first[2].a) > 1e-3
           and math.abs(first[2].a - first[3].a) > 1e-3)
+
+-- A spark dims on its own clock but never goes out. Each one's faintest
+-- moment over two seconds has to hold a real fraction of its brightest, or
+-- the ring is back to strobing lamps: a spark at zero is a gap, and a gap
+-- plus a bright opposite is the lopsided look this effect must not have.
+do
+    local floor_ok, detail = true, nil
+    for k = 1, SPARKS do
+        local lo2, hi2 = math.huge, 0
+        for i = 0, 40 do
+            local s = sparks(i * 0.05)[k]
+            local a = s.col[4]
+            if a < lo2 then lo2 = a end
+            if a > hi2 then hi2 = a end
+        end
+        if not (lo2 > 0 and lo2 > 0.25 * hi2) then
+            floor_ok = false
+            detail = "spark " .. k .. " runs " .. lo2 .. " to " .. hi2
+        end
+    end
+    check("every spark dims without going out", floor_ok, detail)
+end
 
 -- Gold, not the team color it was handed. A streak has to read the same
 -- whichever side you are on, or it is a second question inside the one call a

@@ -24,7 +24,7 @@ use crate::experiment::{
     SeededMeasurements, Sidedness, SimultaneousBootstrapReport, TostResult,
 };
 use crate::pilots::{self, PilotSpec};
-use crate::{ai, config, nav, profiles, rating, shopper, sim};
+use crate::{ai, catalog, config, nav, profiles, rating, shopper, sim};
 
 /// A match ends at this many kills, or this many ticks if the two are too
 /// evenly matched to settle it. 100 ticks is a second.
@@ -198,6 +198,9 @@ pub const STAGES: &[Stage] = &[
     },
     Stage {
         name: "stats",
+        // This ceiling-only diagnostic prices the whole flight axis. With
+        // five eight-step ladders it is deliberately not a legal thirty-point
+        // build; the profile harness uses legal matched one-point margins.
         kit: &[
             (sim::slot_stat(0), TO_CEILING),
             (sim::slot_stat(1), TO_CEILING),
@@ -302,6 +305,10 @@ fn wear(world: &mut sim::World, ship: usize, stage: &Stage) -> u32 {
             worn += 1;
         }
     }
+    // `wear` is called only at a spawn edge. The core filled the bar before
+    // these grants raised its ceiling, while a live room opens after dealing
+    // its kit. Put both fixtures on the same full starting bar.
+    world.state.ships[ship].energy = world.eff_max_energy(ship);
     worn
 }
 
@@ -915,6 +922,13 @@ impl Arena {
         }
     }
 
+    fn fingerprint(&self) -> String {
+        match self {
+            Arena::Built(_) => "built-core-map".into(),
+            Arena::Packed(bytes) => format!("sha256:{}", catalog::sha256_hex(bytes)),
+        }
+    }
+
     /// Seat both hulls, once the room is tuned.
     fn seat(&self, w: &mut sim::World, salt: u32, classes: [u8; 2]) -> Option<[u8; 2]> {
         match self {
@@ -1021,7 +1035,11 @@ fn deal_kit(world: &mut sim::World, ship: usize, budget: u32, rng: &mut u32) -> 
     // then keeps what it had. Left as it was rather than made an assertion,
     // which is a thread of its own: what this change owes is that the charge
     // cap above is not a new way to be refused.
-    world.set_kit(ship, &kit);
+    if world.set_kit(ship, &kit) {
+        // `deal_kit` is likewise a spawn-edge helper. A random Energy count
+        // must change the bar that this life starts with, not only its cap.
+        world.state.ships[ship].energy = world.eff_max_energy(ship);
+    }
     spent
 }
 
@@ -1503,10 +1521,11 @@ pub struct Seat {
 
 /// One match: `lineup` seated in order, the first half on team 0.
 ///
-/// Ends when a side reaches `KILL_TARGET` per player, so a four a side match
-/// runs to twenty, or when the clock does. A match that ran out of clock is
-/// still scored on kills, because a team ahead on the board when time expires
-/// has out-fought the other one whether or not it finished the job.
+/// Ordinary team matches end when a side reaches `KILL_TARGET` per player or
+/// when the clock does. Profile fixtures disable the score target and run the
+/// full configured clock. A match that ran out of clock is still scored on
+/// kills, because a team ahead on the board when time expires has out-fought
+/// the other one whether or not it finished the job.
 fn team_world(salt: u32, tuning: Option<&config::ArenaConfig>, map: &Arena) -> Option<sim::World> {
     let mut world = map.build(salt)?;
     if let Some(c) = tuning {
@@ -1517,9 +1536,45 @@ fn team_world(salt: u32, tuning: Option<&config::ArenaConfig>, map: &Arena) -> O
     Some(world)
 }
 
+/// Geometry and navigation prepared once for every profile-screen map.
+///
+/// A packed map otherwise gets unpacked and its six landmark tables rebuilt
+/// for every match. The powered screen plays more than a hundred thousand
+/// matches, while both halves are immutable once loaded and can be shared by
+/// every comparison worker.
+struct ProfileMapFixture {
+    map: std::sync::Arc<sim::sim_map>,
+    route: nav::Nav,
+}
+
+impl ProfileMapFixture {
+    fn new(map: std::sync::Arc<sim::sim_map>) -> Self {
+        let route = nav::Nav::build(&map);
+        Self { map, route }
+    }
+
+    fn world(&self, salt: u32, tuning: Option<&config::ArenaConfig>) -> sim::World {
+        // Arena::build uses the same seed transformation before unpacking a
+        // packed map. Reusing its immutable geometry must not change the
+        // simulation stream.
+        let mut world = sim::World::on_map(0x5ea1 ^ salt, std::sync::Arc::clone(&self.map));
+        if let Some(config) = tuning {
+            crate::Room::apply_config(&mut world, config);
+        }
+        world
+    }
+}
+
+#[derive(Clone, Copy)]
+enum TeamMap<'a> {
+    Arena(&'a Arena),
+    Profile(&'a ProfileMapFixture),
+}
+
 struct TeamMatchOptions<'a> {
     kits: Option<&'a [[u8; sim::SLOT_COUNT]; 2]>,
     tick_limit: u32,
+    kill_target_per_player: Option<i16>,
 }
 
 fn live_team_score(world: &sim::World, ships: &[u8], seats: &[Seat]) -> [i32; 2] {
@@ -1530,20 +1585,62 @@ fn live_team_score(world: &sim::World, ships: &[u8], seats: &[Seat]) -> [i32; 2]
     side
 }
 
+fn dress_team(
+    world: &mut sim::World,
+    ships: &[u8],
+    seats: &mut [Seat],
+    budget: u32,
+    kits: Option<&[[u8; sim::SLOT_COUNT]; 2]>,
+    prng: &mut [u32],
+) -> bool {
+    for i in 0..ships.len() {
+        let converted = match kits {
+            Some(kits) => {
+                let kit = &kits[seats[i].team as usize];
+                if !world.set_kit(ships[i] as usize, kit) {
+                    return false;
+                }
+                sim::World::kit_cost(kit)
+            }
+            None => deal_kit(world, ships[i] as usize, budget, &mut prng[i]),
+        };
+        seats[i].converted += converted;
+        seats[i].budget += budget;
+    }
+
+    // A live match opens after every seat has its kit, then restarts the room:
+    // full bars, loaded charges and authored starts. Spawning first and merely
+    // dealing the kit left the first life at the zero-point energy ceiling,
+    // so the harness measured a fixture the game never deliberately opens.
+    world.restart();
+    crate::room::face_public_teams(world);
+    true
+}
+
 fn team_match_with_options(
     lineup: &[u8],
     skill: f32,
     budget: u32,
     salt: u32,
     tuning: Option<&config::ArenaConfig>,
-    map: &Arena,
+    map: TeamMap<'_>,
     options: TeamMatchOptions<'_>,
 ) -> (Vec<Seat>, bool) {
     let per_side = lineup.len() / 2;
-    let Some(mut world) = team_world(salt, tuning, map) else {
+    let Some(mut world) = (match map {
+        TeamMap::Arena(map) => team_world(salt, tuning, map),
+        TeamMap::Profile(fixture) => Some(fixture.world(salt, tuning)),
+    }) else {
         return (Vec::new(), false);
     };
-    let route = nav::Nav::build(&world.map);
+    let local_route;
+    let route = match map {
+        TeamMap::Arena(_) => {
+            local_route = nav::Nav::build(&world.map);
+            &local_route
+        }
+        TeamMap::Profile(fixture) => &fixture.route,
+    };
 
     let mut seats: Vec<Seat> = Vec::with_capacity(lineup.len());
     let mut ships: Vec<u8> = Vec::with_capacity(lineup.len());
@@ -1569,20 +1666,15 @@ fn team_match_with_options(
             ..Default::default()
         });
     }
-    for i in 0..ships.len() {
-        let converted = match options.kits {
-            Some(kits) => {
-                let kit = &kits[seats[i].team as usize];
-                if world.set_kit(ships[i] as usize, kit) {
-                    sim::World::kit_cost(kit)
-                } else {
-                    0
-                }
-            }
-            None => deal_kit(&mut world, ships[i] as usize, budget, &mut prng[i]),
-        };
-        seats[i].converted += converted;
-        seats[i].budget += budget;
+    if !dress_team(
+        &mut world,
+        &ships,
+        &mut seats,
+        budget,
+        options.kits,
+        &mut prng,
+    ) {
+        return (Vec::new(), false);
     }
 
     let mut bots: Vec<ai::Bot> = ships
@@ -1600,7 +1692,6 @@ fn team_match_with_options(
         .map(|&c| spec_triggers(&world.cfg, c))
         .collect();
     let mut alive_was = vec![true; ships.len()];
-    let target = KILL_TARGET as i32 * per_side as i32;
     let mut decided = false;
 
     for _ in 0..options.tick_limit {
@@ -1611,7 +1702,7 @@ fn team_match_with_options(
         for i in 0..ships.len() {
             let own = ai::own(&world, ships[i]);
             let look = bots[i].looks_due().then(|| ai::scan(&world, ships[i]));
-            let buttons = bots[i].think(&own, &route, look);
+            let buttons = bots[i].think(&own, route, look);
             if let Some(distance) = bots[i].engagement_distance() {
                 seats[i].engagement_distance += distance as f64;
                 seats[i].engagement_samples += 1;
@@ -1669,7 +1760,7 @@ fn team_match_with_options(
         }
 
         let side = live_team_score(&world, &ships, &seats);
-        if side[0] >= target || side[1] >= target {
+        if match_reached_target(side, per_side, options.kill_target_per_player) {
             decided = true;
             break;
         }
@@ -1681,6 +1772,18 @@ fn team_match_with_options(
         seats[i].kills = score.max(0) as u32;
     }
     (seats, decided)
+}
+
+fn match_reached_target(
+    score: [i32; 2],
+    per_side: usize,
+    kill_target_per_player: Option<i16>,
+) -> bool {
+    let Some(per_player) = kill_target_per_player else {
+        return false;
+    };
+    let target = i32::from(per_player) * per_side as i32;
+    score[0] >= target || score[1] >= target
 }
 
 pub fn team_match(
@@ -1697,10 +1800,11 @@ pub fn team_match(
         budget,
         salt,
         tuning,
-        map,
+        TeamMap::Arena(map),
         TeamMatchOptions {
             kits: None,
             tick_limit: MATCH_TICKS,
+            kill_target_per_player: Some(KILL_TARGET),
         },
     )
 }
@@ -1708,6 +1812,7 @@ pub fn team_match(
 /// One full-loadout comparison from mirrored live-format matches.
 #[derive(Clone, Debug, serde::Serialize)]
 pub struct ProfileResult {
+    pub contrast: &'static str,
     pub a: &'static str,
     pub b: &'static str,
     pub paired_seeds: u32,
@@ -1719,18 +1824,185 @@ pub struct ProfileResult {
     pub kill_difference_low: f64,
     pub kill_difference_high: f64,
     pub verdict: &'static str,
+    pub powered_fixture: bool,
+    pub fixture_valid: bool,
+    pub fixture_validity: Vec<ProfileMapValidity>,
+    pub observations: Vec<ProfileObservation>,
 }
 
-pub const PROFILE_MIN_PAIRS: u32 = 100;
+/// Fixed descriptive fixture checks for one map in one profile comparison.
+///
+/// These fields preserve exploratory diagnostics without turning the checks
+/// into inferential claims. Thresholds and definitions live beside the run in
+/// the report so every measured value has its declared interpretation.
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct ProfileMapValidity {
+    pub map_index: usize,
+    pub map: String,
+    pub paired_seeds: u32,
+    pub matches: u32,
+    pub mean_positive_scored_kills_per_match: f64,
+    pub mean_profile_sensitivity: f64,
+    pub absolute_observed_side_gap: f64,
+    pub valid: bool,
+    pub failures: Vec<&'static str>,
+    pub warnings: Vec<&'static str>,
+}
+
+/// One preregistered confirmatory attempt for a fixed profile-screen design.
+/// A design can appear only once in the append-only registry, so inspecting a
+/// confirmatory result cannot become an invitation to rerun the same design
+/// against a fresh seed stream.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProfileCalibrationAttempt {
+    pub attempt_id: String,
+    pub design_fingerprint: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProfileCalibrationAttemptRegistry {
+    pub schema_version: u32,
+    pub attempts: Vec<ProfileCalibrationAttempt>,
+}
+
+/// Authorization and seed namespace prepared before profile matches begin.
+///
+/// Its fields are private so callers cannot manufacture a powered run. The
+/// collector also recomputes the design fingerprint before the first match,
+/// which prevents a prepared attempt from being reused with changed inputs.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct ProfileCalibrationRun {
+    attempt_id: String,
+    design_fingerprint: String,
+    seed_base: u32,
+    powered_fixture: bool,
+}
+
+impl ProfileCalibrationRun {
+    pub fn attempt_id(&self) -> &str {
+        &self.attempt_id
+    }
+
+    pub fn design_fingerprint(&self) -> &str {
+        &self.design_fingerprint
+    }
+
+    pub fn seed_base(&self) -> u32 {
+        self.seed_base
+    }
+
+    pub fn is_powered(&self) -> bool {
+        self.powered_fixture
+    }
+}
+
+/// One paired seed before any interval or verdict is computed.
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct ProfileObservation {
+    pub scenario_seed: u32,
+    pub map_index: usize,
+    pub lineup_index: usize,
+    pub first_win_score: f64,
+    pub mirror_win_score: f64,
+    pub first_kill_difference: f64,
+    pub mirror_kill_difference: f64,
+    /// Positive team scores after suicide penalties, summed across both teams.
+    /// This is match activity that self-destruction alone cannot manufacture.
+    pub first_scored_kills: u32,
+    pub mirror_scored_kills: u32,
+    pub first_deaths: u32,
+    pub mirror_deaths: u32,
+}
+
+#[derive(Clone, Copy)]
+struct ProfileGame {
+    win_score: f64,
+    kill_difference: f64,
+    scored_kills: u32,
+    deaths: u32,
+}
+
+/// Prespecified size for a powered whole-family profile screen.
+///
+/// The declared family has ten contrasts. Its critical values retain the
+/// older fifteen-comparison bound, so 3,384 pairs meet the normal-approximation
+/// union-bound target of at least 90% whole-family power at a true rate of 0.5
+/// and worst-case paired standard deviation of 0.5. The exact confirmatory
+/// sample rounds that minimum up to a complete six-map, seven-lineup block.
+/// Runs at smaller samples remain useful exploration, but cannot issue a
+/// balance verdict. Exploration stops below the confirmatory boundary so it
+/// cannot consume a registered attempt's seed range.
+const PROFILE_POWER_MINIMUM_PAIRS: u32 = 3_384;
+pub const PROFILE_POWERED_PAIRS: u32 = 3_402;
+pub const PROFILE_EXPLORATORY_ATTEMPT: &str = "exploratory";
+const PROFILE_SEED_NAMESPACE: u32 = 0x8F31_0000;
+const PROFILE_POWERED_MAPS: [&str; 6] = [
+    "drydock",
+    "relay",
+    "convoy",
+    "shoal",
+    "breakwater",
+    "switchyard",
+];
+const PROFILE_SIDE_SIZE: usize = 4;
+const PROFILE_LINEUP_SEATS: usize = PROFILE_SIDE_SIZE * 2;
+const PROFILE_LINEUP_ROTATIONS: usize = sim::MAX_CLASSES;
+const PROFILE_POWERED_MAP_BYTES: [&[u8]; 6] = [
+    include_bytes!("../../catalog/zones/melee/drydock.vwmap"),
+    include_bytes!("../../catalog/zones/melee/relay.vwmap"),
+    include_bytes!("../../catalog/zones/melee/convoy.vwmap"),
+    include_bytes!("../../catalog/zones/melee/shoal.vwmap"),
+    include_bytes!("../../catalog/zones/melee/breakwater.vwmap"),
+    include_bytes!("../../catalog/zones/melee/switchyard.vwmap"),
+];
+const PROFILE_POWERED_ZONE: &[u8] = include_bytes!("../../catalog/zones/melee/zone.toml");
 const PROFILE_BALANCE_LOW: f64 = 0.45;
 const PROFILE_BALANCE_HIGH: f64 = 0.55;
-// Four profiles make six comparisons. 2.70 is a conservative two-sided
-// Student t critical value at the hundred-pair floor after a Bonferroni
-// correction. The six reported intervals therefore retain at least 95%
-// family confidence rather than each spending 5% alone.
-const PROFILE_FAMILY_T: f64 = 2.70;
+const PROFILE_COMPARISONS: usize = 10;
+const PROFILE_PLANNING_COMPARISONS: usize = 15;
+const PROFILE_JOINT_POWER: f64 = 0.90;
+const PROFILE_WORST_VARIANCE: f64 = 0.25;
+/// Fixed, descriptive fixture checks. Activity and sensitivity block a
+/// powered verdict when the arena cannot expose a profile effect. The side
+/// gap remains a warning rather than an inferential side-equivalence claim.
+const PROFILE_MIN_SCORED_KILLS_PER_MATCH: f64 = 8.0;
+const PROFILE_MIN_SENSITIVITY: f64 = 0.10;
+const PROFILE_SIDE_GAP_WARNING: f64 = 0.10;
+// The central-normal quantile after allocating the ten-percent family beta
+// across fifteen comparisons: P(|Z| <= value) = 1 - 0.10 / 15. The declared
+// family now has ten, so retaining it is conservative.
+const PROFILE_POWER_Z: f64 = 2.713_051_888_472;
+// 3.10 is a conservative two-sided critical value after a fifteen-comparison
+// Bonferroni correction. The ten declared win-rate intervals therefore
+// have conservative approximate family-wise 95% coverage. Kill-difference
+// intervals are descriptive and do not enter this family or a verdict.
+const PROFILE_FAMILY_T: f64 = 3.10;
+const PROFILE_DESCRIPTIVE_T: f64 = 1.96;
 
-fn mean_interval(samples: &[f64]) -> (f64, f64, f64) {
+fn profile_lineup(rotation: usize) -> [u8; PROFILE_LINEUP_SEATS] {
+    let mut lineup = [0; PROFILE_LINEUP_SEATS];
+    let rotation = rotation % PROFILE_LINEUP_ROTATIONS;
+    for seat in 0..PROFILE_SIDE_SIZE {
+        let class = ((rotation + seat) % sim::MAX_CLASSES) as u8;
+        lineup[seat] = class;
+        lineup[PROFILE_LINEUP_SEATS - 1 - seat] = class;
+    }
+    lineup
+}
+
+fn profile_stratum(sample: u32, map_count: usize) -> (usize, usize) {
+    let sample = sample as usize;
+    (
+        sample % map_count,
+        (sample / map_count) % PROFILE_LINEUP_ROTATIONS,
+    )
+}
+
+fn profile_stratification_block(map_count: usize) -> u32 {
+    (map_count * PROFILE_LINEUP_ROTATIONS) as u32
+}
+
+fn mean_interval_with_critical(samples: &[f64], critical: f64) -> (f64, f64, f64) {
     if samples.is_empty() {
         return (0.0, f64::NEG_INFINITY, f64::INFINITY);
     }
@@ -1744,13 +2016,32 @@ fn mean_interval(samples: &[f64]) -> (f64, f64, f64) {
         .map(|sample| (sample - mean).powi(2))
         .sum::<f64>()
         / (n - 1.0);
-    let margin = PROFILE_FAMILY_T * (variance / n).sqrt();
+    let margin = critical * (variance / n).sqrt();
     (mean, mean - margin, mean + margin)
 }
 
-fn profile_verdict(pairs: u32, low: f64, high: f64) -> &'static str {
-    if pairs < PROFILE_MIN_PAIRS {
-        "inconclusive: below minimum sample"
+fn family_win_interval(samples: &[f64]) -> (f64, f64, f64) {
+    mean_interval_with_critical(samples, PROFILE_FAMILY_T)
+}
+
+fn descriptive_kill_interval(samples: &[f64]) -> (f64, f64, f64) {
+    mean_interval_with_critical(samples, PROFILE_DESCRIPTIVE_T)
+}
+
+fn profile_verdict(
+    powered_fixture: bool,
+    fixture_valid: bool,
+    low: f64,
+    high: f64,
+) -> &'static str {
+    if !fixture_valid {
+        if powered_fixture {
+            "invalid fixture"
+        } else {
+            "exploratory: fixture checks failed"
+        }
+    } else if !powered_fixture {
+        "exploratory: not prespecified sample"
     } else if low > PROFILE_BALANCE_HIGH {
         "overpowered"
     } else if high < PROFILE_BALANCE_LOW {
@@ -1762,148 +2053,867 @@ fn profile_verdict(pairs: u32, low: f64, high: f64) -> &'static str {
     }
 }
 
+// Kits, lineup, mirror assignment, controller strength, seed, tuning and map
+// stay explicit because each one is a frozen dimension of the profile fixture.
+#[allow(clippy::too_many_arguments)]
 fn profile_game(
     a: &[u8; sim::SLOT_COUNT],
     b: &[u8; sim::SLOT_COUNT],
+    lineup: &[u8; PROFILE_LINEUP_SEATS],
     flip: bool,
     skill: f32,
     salt: u32,
     tuning: Option<&config::ArenaConfig>,
-    map: &Arena,
-) -> (f64, f64) {
-    // The same four hulls on each side. Profile, side, spawn and bot seed are
-    // the only things the mirrored pair exchanges.
-    let lineup = [0, 1, 3, 4, 0, 1, 3, 4];
+    map: &ProfileMapFixture,
+) -> Option<ProfileGame> {
+    // Team one is reversed because the authored half-turn spawn pairs appear
+    // in reverse row-major order. Each hull starts opposite its own class
+    // rather than inheriting a lane effect from a different footprint.
+    // Profile, side, spawn and bot seed are the only things a mirrored pair
+    // exchanges.
     let kits = if flip { [*b, *a] } else { [*a, *b] };
     let seconds = tuning
         .and_then(|config| config.match_seconds)
         .unwrap_or(180) as u32;
     let (seats, _) = team_match_with_options(
-        &lineup,
+        lineup,
         skill,
         sim::KIT_BUDGET,
         salt,
         tuning,
-        map,
+        TeamMap::Profile(map),
         TeamMatchOptions {
             kits: Some(&kits),
             tick_limit: seconds * 100,
+            // This fixture measures a fixed three-minute exposure, so every
+            // mirrored game runs the complete configured clock.
+            kill_target_per_player: None,
         },
     );
+    if seats.len() != lineup.len() {
+        return None;
+    }
+    let deaths = seats.iter().map(|seat| seat.deaths).sum();
     let mut kills = [0i32; 2];
     for seat in seats {
         kills[seat.team as usize] += seat.score;
     }
+    let (result, kill_difference, scored_kills) = profile_score(kills, flip);
+    Some(ProfileGame {
+        win_score: result,
+        kill_difference,
+        scored_kills,
+        deaths,
+    })
+}
+
+/// Score a profile leg exactly as live Melee presents it. A side can run its
+/// signed ship total below zero with suicides or team kills, but the match
+/// scoreboard clamps that total into its unsigned wire range before it chooses
+/// a winner.
+fn profile_score(kills: [i32; 2], flip: bool) -> (f64, f64, u32) {
+    let score = kills.map(|value| value.clamp(0, u16::MAX as i32));
+    let scored_kills = score
+        .iter()
+        .map(|&value| value as u32)
+        .fold(0u32, u32::saturating_add);
     let (ours, theirs) = if flip {
-        (kills[1], kills[0])
+        (score[1], score[0])
     } else {
-        (kills[0], kills[1])
+        (score[0], score[1])
     };
     let result = match ours.cmp(&theirs) {
         std::cmp::Ordering::Greater => 1.0,
         std::cmp::Ordering::Equal => 0.5,
         std::cmp::Ordering::Less => 0.0,
     };
-    (result, f64::from(ours - theirs))
+    (result, f64::from(ours - theirs), scored_kills)
 }
 
-/// Compare the three starter profiles and a bought-up specialization in
-/// four-a-side, three-minute matches on the shipped map rotation. Each seed is
-/// played twice with the profiles exchanging sides, then treated as one paired
-/// observation.
-pub fn run_profiles(
+/// Compiler, flags and target that turn the fixed calibration sources into an
+/// executable. Source identity alone is not enough: a local binary and the
+/// pinned release image must not authorize the same confirmatory attempt when
+/// they were produced by different toolchains.
+fn calibration_execution_fingerprint() -> String {
+    fingerprint(&[
+        env!("CARGO_PKG_VERSION").as_bytes(),
+        env!("VW_RUSTC_VERSION").as_bytes(),
+        env!("VW_BUILD_PROFILE").as_bytes(),
+        env!("VW_BUILD_OPT_LEVEL").as_bytes(),
+        env!("VW_BUILD_DEBUG").as_bytes(),
+        env!("VW_BUILD_TARGET").as_bytes(),
+        env!("VW_BUILD_HOST").as_bytes(),
+        env!("VW_BUILD_TARGET_FEATURES").as_bytes(),
+        env!("VW_BUILD_RUSTFLAGS").as_bytes(),
+        env!("VW_CC_IDENTITY").as_bytes(),
+        std::env::consts::ARCH.as_bytes(),
+        std::env::consts::OS.as_bytes(),
+        std::env::consts::FAMILY.as_bytes(),
+    ])
+}
+
+fn profile_controller_fingerprint() -> String {
+    profile_controller_fingerprint_with_modes(include_bytes!("modes.rs"))
+}
+
+fn profile_controller_fingerprint_with_modes(modes_source: &[u8]) -> String {
+    fingerprint(&[
+        include_bytes!("ai.rs"),
+        include_bytes!("arena.rs"),
+        include_bytes!("bots.rs"),
+        include_bytes!("calibrate.rs"),
+        include_bytes!("catalog.rs"),
+        include_bytes!("config.rs"),
+        include_bytes!("main.rs"),
+        modes_source,
+        include_bytes!("nav.rs"),
+        include_bytes!("pilots.rs"),
+        include_bytes!("profiles.rs"),
+        include_bytes!("room.rs"),
+        include_bytes!("shopper.rs"),
+        include_bytes!("sim.rs"),
+        include_bytes!("../build.rs"),
+        include_bytes!("../Cargo.toml"),
+        include_bytes!("../Cargo.lock"),
+        include_bytes!("../../Dockerfile"),
+        include_bytes!("../../sim/src/baseline.c"),
+        include_bytes!("../../sim/src/check.c"),
+        include_bytes!("../../sim/src/pack.c"),
+        include_bytes!("../../sim/src/sim.c"),
+        include_bytes!("../../sim/src/sintab.h"),
+        include_bytes!("../../sim/include/sim/baseline.h"),
+        include_bytes!("../../sim/include/sim/pack.h"),
+        include_bytes!("../../sim/include/sim/sim.h"),
+    ])
+}
+
+/// Fingerprint the profile-screen design without its attempt name or seed
+/// namespace. Raw fixture content, loadouts, analysis constants and every
+/// source file that can change match behavior are bound into the digest.
+pub fn profile_design_fingerprint(
     paired_seeds: u32,
+    zone: &str,
+    zone_source: &str,
     skill: f32,
-    tuning: Option<&config::ArenaConfig>,
+    maps: &[(String, Arena)],
+) -> Result<String, String> {
+    profile_design_fingerprint_with_execution(
+        paired_seeds,
+        zone,
+        zone_source,
+        skill,
+        maps,
+        &calibration_execution_fingerprint(),
+    )
+}
+
+fn profile_design_fingerprint_with_execution(
+    paired_seeds: u32,
+    zone: &str,
+    zone_source: &str,
+    skill: f32,
+    maps: &[(String, Arena)],
+    execution_fingerprint: &str,
+) -> Result<String, String> {
+    let contrasts = profiles::calibration_contrasts();
+    profile_design_fingerprint_for_contrasts(
+        paired_seeds,
+        zone,
+        zone_source,
+        skill,
+        maps,
+        execution_fingerprint,
+        &contrasts,
+    )
+}
+
+fn profile_design_fingerprint_for_contrasts(
+    paired_seeds: u32,
+    zone: &str,
+    zone_source: &str,
+    skill: f32,
+    maps: &[(String, Arena)],
+    execution_fingerprint: &str,
+    contrasts: &[profiles::ProfileContrast],
+) -> Result<String, String> {
+    let definition: catalog::ZoneDef = toml::from_str(zone_source)
+        .map_err(|error| format!("profile calibration cannot parse zone {zone:?}: {error}"))?;
+    validate_profile_contrasts(contrasts, Some(&definition.arena))?;
+    if contrasts.len() != PROFILE_COMPARISONS {
+        return Err(format!(
+            "profile calibration defines {} comparisons; the powered design requires {PROFILE_COMPARISONS}",
+            contrasts.len()
+        ));
+    }
+    let map_fingerprints: Vec<_> = maps
+        .iter()
+        .map(|(name, map)| (name, map.fingerprint()))
+        .collect();
+    let profile_contrasts: Vec<_> = contrasts
+        .iter()
+        .map(|contrast| {
+            (
+                contrast.name,
+                (contrast.a.name, contrast.a.kit),
+                (contrast.b.name, contrast.b.kit),
+            )
+        })
+        .collect();
+    let lineups: Vec<_> = (0..PROFILE_LINEUP_ROTATIONS).map(profile_lineup).collect();
+    let payload = serde_json::json!({
+        "schema_version": 2,
+        "paired_seeds": paired_seeds,
+        "zone": zone,
+        "zone_fingerprint": fingerprint(&[zone_source.as_bytes()]),
+        "maps": map_fingerprints,
+        "contrasts": profile_contrasts,
+        "skill_bits": skill.to_bits(),
+        "match_seconds": definition.arena.match_seconds,
+        "comparisons": PROFILE_COMPARISONS,
+        "planning_comparisons": PROFILE_PLANNING_COMPARISONS,
+        "balance_band": [PROFILE_BALANCE_LOW, PROFILE_BALANCE_HIGH],
+        "family_critical": PROFILE_FAMILY_T,
+        "descriptive_critical": PROFILE_DESCRIPTIVE_T,
+        "target_whole_family_power": PROFILE_JOINT_POWER,
+        "worst_case_paired_variance": PROFILE_WORST_VARIANCE,
+        "per_comparison_central_power_z": PROFILE_POWER_Z,
+        "minimum_powered_paired_seeds": PROFILE_POWER_MINIMUM_PAIRS,
+        "maximum_exploratory_paired_seeds": PROFILE_POWERED_PAIRS - 1,
+        "lineups": lineups,
+        "lineup_index_policy": "floor(sample / map count) modulo seven",
+        "map_index_policy": "sample modulo map count",
+        "stratification_block_paired_seeds": profile_stratification_block(maps.len()),
+        "minimum_mean_scored_kills_per_match_per_map": PROFILE_MIN_SCORED_KILLS_PER_MATCH,
+        "minimum_mean_profile_sensitivity_per_map": PROFILE_MIN_SENSITIVITY,
+        "absolute_observed_side_gap_warning_threshold_per_map": PROFILE_SIDE_GAP_WARNING,
+        "controller_fingerprint": profile_controller_fingerprint(),
+        "execution_fingerprint": execution_fingerprint,
+    });
+    let encoded = serde_json::to_vec(&payload)
+        .map_err(|error| format!("profile design could not be fingerprinted: {error}"))?;
+    Ok(fingerprint(&[&encoded]))
+}
+
+fn valid_profile_attempt_id(attempt_id: &str) -> bool {
+    let mut bytes = attempt_id.bytes();
+    bytes
+        .next()
+        .is_some_and(|byte| byte.is_ascii_alphanumeric())
+        && bytes.all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
+}
+
+fn valid_sha256_fingerprint(value: &str) -> bool {
+    value.strip_prefix("sha256:").is_some_and(|digest| {
+        digest.len() == 64
+            && digest
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    })
+}
+
+fn profile_attempt_seed_base(attempt_id: &str) -> u32 {
+    let digest = catalog::sha256_hex(attempt_id.as_bytes());
+    let mut folded = PROFILE_SEED_NAMESPACE;
+    for offset in (0..digest.len()).step_by(8) {
+        let word = u32::from_str_radix(&digest[offset..offset + 8], 16)
+            .expect("a SHA-256 word is hexadecimal");
+        folded = folded
+            .rotate_left(7)
+            .wrapping_add(word)
+            .wrapping_mul(0x9E37_79B1);
+    }
+    // Keep the full powered range away from wrapping and from the seed-zero
+    // exploratory stream. The registry rejects the unlikely case where two
+    // attempt IDs still land on overlapping ranges.
+    let first = PROFILE_POWERED_PAIRS as u64;
+    let choices = u32::MAX as u64 - 2 * PROFILE_POWERED_PAIRS as u64 + 2;
+    (first + u64::from(folded) % choices) as u32
+}
+
+fn parse_profile_attempt_registry(
+    registry_json: &str,
+) -> Result<ProfileCalibrationAttemptRegistry, String> {
+    let registry: ProfileCalibrationAttemptRegistry = serde_json::from_str(registry_json)
+        .map_err(|error| format!("profile attempt registry is invalid: {error}"))?;
+    if registry.schema_version != 1 {
+        return Err(format!(
+            "profile attempt registry schema {} is unsupported",
+            registry.schema_version
+        ));
+    }
+    let mut attempt_ids = HashSet::new();
+    let mut designs = HashSet::new();
+    let mut seed_bases = Vec::<(u32, &str)>::new();
+    for attempt in &registry.attempts {
+        if !valid_profile_attempt_id(&attempt.attempt_id)
+            || attempt.attempt_id == PROFILE_EXPLORATORY_ATTEMPT
+            || !attempt_ids.insert(attempt.attempt_id.as_str())
+            || !valid_sha256_fingerprint(&attempt.design_fingerprint)
+        {
+            return Err(
+                "profile attempt registry has an invalid, reserved or duplicate attempt".into(),
+            );
+        }
+        if !designs.insert(attempt.design_fingerprint.as_str()) {
+            return Err(format!(
+                "profile design {} has more than one registered attempt",
+                attempt.design_fingerprint
+            ));
+        }
+        let base = profile_attempt_seed_base(&attempt.attempt_id);
+        if let Some((_, other)) = seed_bases
+            .iter()
+            .find(|(other_base, _)| base.abs_diff(*other_base) < PROFILE_POWERED_PAIRS)
+        {
+            return Err(format!(
+                "profile attempts {:?} and {:?} have overlapping seed namespaces",
+                other, attempt.attempt_id
+            ));
+        }
+        seed_bases.push((base, &attempt.attempt_id));
+    }
+    Ok(registry)
+}
+
+/// Validate an exploratory or confirmatory profile request before collection.
+/// Exact powered runs fail closed unless the requested attempt is the sole
+/// registry entry for the current design.
+pub fn prepare_profile_calibration(
+    paired_seeds: u32,
+    attempt_id: &str,
+    registry_json: &str,
+    zone: &str,
+    zone_source: &str,
+    skill: f32,
+    maps: &[(String, Arena)],
+) -> Result<ProfileCalibrationRun, String> {
+    if maps.is_empty() {
+        return Err("profile calibration requires at least one readable map".into());
+    }
+    if paired_seeds == 0 {
+        return Err("profile calibration requires at least one paired seed".into());
+    }
+    if !paired_seeds.is_multiple_of(maps.len() as u32) {
+        return Err(format!(
+            "{paired_seeds} paired seeds do not divide evenly across {} maps",
+            maps.len()
+        ));
+    }
+    let definition: catalog::ZoneDef = toml::from_str(zone_source)
+        .map_err(|error| format!("profile calibration cannot parse zone {zone:?}: {error}"))?;
+    let powered_fixture = is_powered_profile_fixture(
+        paired_seeds,
+        zone,
+        zone_source,
+        skill,
+        &definition.arena,
+        maps,
+    );
+    if paired_seeds == PROFILE_POWERED_PAIRS && !powered_fixture {
+        return Err(format!(
+            "the {PROFILE_POWERED_PAIRS}-pair powered screen requires the shipped melee zone, its ordered six-map rotation, seven cyclic lineups, and a 180-second clock"
+        ));
+    }
+    if !powered_fixture && paired_seeds >= PROFILE_POWERED_PAIRS {
+        return Err(format!(
+            "exploratory profile calibration requires fewer than {PROFILE_POWERED_PAIRS} paired seeds so its seed-zero stream cannot overlap confirmatory evidence"
+        ));
+    }
+    let design_fingerprint =
+        profile_design_fingerprint(paired_seeds, zone, zone_source, skill, maps)?;
+    if !powered_fixture {
+        if attempt_id != PROFILE_EXPLORATORY_ATTEMPT {
+            return Err(format!(
+                "profile attempt {attempt_id:?} is confirmatory, but only the exact {PROFILE_POWERED_PAIRS}-pair fixture can use a registered attempt"
+            ));
+        }
+        return Ok(ProfileCalibrationRun {
+            attempt_id: attempt_id.into(),
+            design_fingerprint,
+            seed_base: 0,
+            powered_fixture: false,
+        });
+    }
+    if !valid_profile_attempt_id(attempt_id) || attempt_id == PROFILE_EXPLORATORY_ATTEMPT {
+        return Err(
+            "the powered profile screen requires a valid non-exploratory attempt ID".into(),
+        );
+    }
+    let registry = parse_profile_attempt_registry(registry_json)
+        .map_err(|error| format!("{error}; current profile design is {design_fingerprint}"))?;
+    let matching: Vec<_> = registry
+        .attempts
+        .iter()
+        .filter(|attempt| attempt.design_fingerprint == design_fingerprint)
+        .collect();
+    if matching.len() != 1 || matching[0].attempt_id != attempt_id {
+        return Err(format!(
+            "profile attempt {attempt_id:?} is not preregistered for design {design_fingerprint}"
+        ));
+    }
+    Ok(ProfileCalibrationRun {
+        attempt_id: attempt_id.into(),
+        design_fingerprint,
+        seed_base: profile_attempt_seed_base(attempt_id),
+        powered_fixture: true,
+    })
+}
+
+struct ProfileScreen<'a> {
+    paired_seeds: u32,
+    seed_base: u32,
+    skill: f32,
+    tuning: &'a config::ArenaConfig,
+    maps: &'a [ProfileMapFixture],
+    map_names: Vec<String>,
+    powered_fixture: bool,
+}
+
+fn run_profile_comparison(
+    contrast: &profiles::ProfileContrast,
+    screen: &ProfileScreen<'_>,
+) -> Result<ProfileResult, String> {
+    let a = &contrast.a;
+    let b = &contrast.b;
+    let mut outcomes = Vec::with_capacity(screen.paired_seeds as usize);
+    let mut differences = Vec::with_capacity(screen.paired_seeds as usize);
+    let mut observations = Vec::with_capacity(screen.paired_seeds as usize);
+    for sample in 0..screen.paired_seeds {
+        let (map_index, lineup_index) = profile_stratum(sample, screen.maps.len());
+        let map = &screen.maps[map_index];
+        let lineup = profile_lineup(lineup_index);
+        // Every comparison gets the same map, lineup, spawn and bot streams.
+        // Bonferroni does not require comparisons to be independent, and
+        // common random numbers make differences between rows easier to
+        // attribute to the profiles they name.
+        let scenario_seed = screen.seed_base.wrapping_add(sample);
+        let salt = scenario_seed.wrapping_mul(2654435761);
+        let first = profile_game(
+            &a.kit,
+            &b.kit,
+            &lineup,
+            false,
+            screen.skill,
+            salt,
+            Some(screen.tuning),
+            map,
+        )
+        .ok_or_else(|| {
+            format!(
+                "profile match {} versus {} failed to seat on map {:?}",
+                a.name, b.name, screen.map_names[map_index]
+            )
+        })?;
+        let second = profile_game(
+            &a.kit,
+            &b.kit,
+            &lineup,
+            true,
+            screen.skill,
+            salt,
+            Some(screen.tuning),
+            map,
+        )
+        .ok_or_else(|| {
+            format!(
+                "profile mirror {} versus {} failed to seat on map {:?}",
+                a.name, b.name, screen.map_names[map_index]
+            )
+        })?;
+        outcomes.push((first.win_score + second.win_score) / 2.0);
+        differences.push((first.kill_difference + second.kill_difference) / 2.0);
+        observations.push(ProfileObservation {
+            scenario_seed,
+            map_index,
+            lineup_index,
+            first_win_score: first.win_score,
+            mirror_win_score: second.win_score,
+            first_kill_difference: first.kill_difference,
+            mirror_kill_difference: second.kill_difference,
+            first_scored_kills: first.scored_kills,
+            mirror_scored_kills: second.scored_kills,
+            first_deaths: first.deaths,
+            mirror_deaths: second.deaths,
+        });
+    }
+    let fixture_validity = profile_fixture_validity(&observations, &screen.map_names);
+    let fixture_valid = fixture_validity.iter().all(|map| map.valid);
+    let (win_rate, win_rate_low, win_rate_high) = family_win_interval(&outcomes);
+    let (kill_difference, kill_difference_low, kill_difference_high) =
+        descriptive_kill_interval(&differences);
+    let verdict = profile_verdict(
+        screen.powered_fixture,
+        fixture_valid,
+        win_rate_low,
+        win_rate_high,
+    );
+    Ok(ProfileResult {
+        contrast: contrast.name,
+        a: a.name,
+        b: b.name,
+        paired_seeds: screen.paired_seeds,
+        matches: screen.paired_seeds * 2,
+        win_rate,
+        win_rate_low,
+        win_rate_high,
+        kill_difference,
+        kill_difference_low,
+        kill_difference_high,
+        verdict,
+        powered_fixture: screen.powered_fixture,
+        fixture_valid,
+        fixture_validity,
+        observations,
+    })
+}
+
+/// Run the ten declared marginal-pip contrasts in four-a-side,
+/// configured-length matches on the shipped map and hull rotations. Each seed
+/// is played twice with the two profiles exchanging sides, then treated as one
+/// paired observation.
+pub fn run_profiles(
+    run: &ProfileCalibrationRun,
+    paired_seeds: u32,
+    zone: &str,
+    zone_source: &str,
+    skill: f32,
     maps: &[(String, Arena)],
     verbose: bool,
-) -> Vec<ProfileResult> {
+) -> Result<Vec<ProfileResult>, String> {
     if maps.is_empty() {
-        return Vec::new();
+        return Err("profile calibration requires at least one readable map".into());
     }
-    let choices = profiles::calibration_profiles();
-    let mut out = Vec::new();
-    for i in 0..choices.len() {
-        for j in (i + 1)..choices.len() {
-            let mut outcomes = Vec::with_capacity(paired_seeds as usize);
-            let mut differences = Vec::with_capacity(paired_seeds as usize);
-            for sample in 0..paired_seeds {
-                let map = &maps[sample as usize % maps.len()].1;
-                // Every comparison gets the same map, spawn and bot streams.
-                // Bonferroni does not require comparisons to be independent,
-                // and common random numbers make differences between rows far
-                // easier to attribute to the profiles they name.
-                let salt = sample.wrapping_mul(2654435761);
-                let first = profile_game(
-                    &choices[i].kit,
-                    &choices[j].kit,
-                    false,
-                    skill,
-                    salt,
-                    tuning,
-                    map,
-                );
-                let second = profile_game(
-                    &choices[i].kit,
-                    &choices[j].kit,
-                    true,
-                    skill,
-                    salt,
-                    tuning,
-                    map,
-                );
-                outcomes.push((first.0 + second.0) / 2.0);
-                differences.push((first.1 + second.1) / 2.0);
+    if paired_seeds == 0 {
+        return Err("profile calibration requires at least one paired seed".into());
+    }
+    if !paired_seeds.is_multiple_of(maps.len() as u32) {
+        return Err(format!(
+            "{paired_seeds} paired seeds do not divide evenly across {} maps",
+            maps.len()
+        ));
+    }
+    let definition: catalog::ZoneDef = toml::from_str(zone_source)
+        .map_err(|error| format!("profile calibration cannot parse zone {zone:?}: {error}"))?;
+    let tuning = &definition.arena;
+    let mut map_geometries = Vec::with_capacity(maps.len());
+    for (name, map) in maps {
+        let world = team_world(0, Some(tuning), map)
+            .ok_or_else(|| format!("profile calibration cannot build map {name:?}"))?;
+        map_geometries.push(std::sync::Arc::clone(&world.map));
+    }
+    let powered_fixture =
+        is_powered_profile_fixture(paired_seeds, zone, zone_source, skill, tuning, maps);
+    if paired_seeds == PROFILE_POWERED_PAIRS && !powered_fixture {
+        return Err(format!(
+            "the {PROFILE_POWERED_PAIRS}-pair powered screen requires the shipped melee zone, its ordered six-map rotation, seven cyclic lineups, and a 180-second clock"
+        ));
+    }
+    if !powered_fixture && paired_seeds >= PROFILE_POWERED_PAIRS {
+        return Err(format!(
+            "exploratory profile calibration requires fewer than {PROFILE_POWERED_PAIRS} paired seeds so its seed-zero stream cannot overlap confirmatory evidence"
+        ));
+    }
+    let design_fingerprint =
+        profile_design_fingerprint(paired_seeds, zone, zone_source, skill, maps)?;
+    if design_fingerprint != run.design_fingerprint
+        || powered_fixture != run.powered_fixture
+        || (powered_fixture && run.attempt_id == PROFILE_EXPLORATORY_ATTEMPT)
+        || (powered_fixture && run.seed_base != profile_attempt_seed_base(&run.attempt_id))
+        || (!powered_fixture
+            && (run.attempt_id != PROFILE_EXPLORATORY_ATTEMPT || run.seed_base != 0))
+    {
+        return Err(
+            "profile calibration inputs do not match the prepared attempt authorization".into(),
+        );
+    }
+    let contrasts = profiles::calibration_contrasts();
+    validate_profile_contrasts(&contrasts, Some(tuning))?;
+    if contrasts.len() != PROFILE_COMPARISONS {
+        return Err(format!(
+            "profile calibration defines {} comparisons; the powered design requires {PROFILE_COMPARISONS}",
+            contrasts.len()
+        ));
+    }
+    // Navigation is expensive to construct and depends only on immutable map
+    // geometry. Build it after authorization, once per map, before any worker
+    // starts a match.
+    let fixtures: Vec<_> = map_geometries
+        .into_iter()
+        .map(ProfileMapFixture::new)
+        .collect();
+    let screen = ProfileScreen {
+        paired_seeds,
+        seed_base: run.seed_base,
+        skill,
+        tuning,
+        maps: &fixtures,
+        map_names: maps.iter().map(|(name, _)| name.clone()).collect(),
+        powered_fixture,
+    };
+
+    // A contrast owns its entire accumulation stream. Running the ten
+    // streams concurrently changes neither sample order nor floating-point
+    // addition order, and joining in the declared pair order keeps the report
+    // byte-for-byte stable across scheduler decisions.
+    std::thread::scope(|scope| -> Result<Vec<ProfileResult>, String> {
+        let mut workers = Vec::with_capacity(contrasts.len());
+        for contrast in &contrasts {
+            let screen = &screen;
+            workers.push((
+                contrast.name,
+                contrast.a.name,
+                contrast.b.name,
+                scope.spawn(move || run_profile_comparison(contrast, screen)),
+            ));
+        }
+
+        let mut out = Vec::with_capacity(workers.len());
+        let mut first_error = None;
+        for (contrast, a, b, worker) in workers {
+            match worker.join() {
+                Ok(Ok(result)) => {
+                    if verbose {
+                        println!("{contrast} done: {paired_seeds} paired seeds");
+                    }
+                    out.push(result);
+                }
+                Ok(Err(error)) => {
+                    first_error.get_or_insert(error);
+                }
+                Err(_) => {
+                    first_error.get_or_insert_with(|| {
+                        format!("profile contrast {contrast} ({a} versus {b}) worker panicked")
+                    });
+                }
             }
-            let (win_rate, win_rate_low, win_rate_high) = mean_interval(&outcomes);
-            let (kill_difference, kill_difference_low, kill_difference_high) =
-                mean_interval(&differences);
-            let verdict = profile_verdict(paired_seeds, win_rate_low, win_rate_high);
-            out.push(ProfileResult {
-                a: choices[i].name,
-                b: choices[j].name,
-                paired_seeds,
-                matches: paired_seeds * 2,
-                win_rate,
-                win_rate_low,
-                win_rate_high,
-                kill_difference,
-                kill_difference_low,
-                kill_difference_high,
-                verdict,
-            });
-            if verbose {
-                println!(
-                    "{} vs {} done: {paired_seeds} paired seeds",
-                    choices[i].name, choices[j].name
-                );
+        }
+        if let Some(error) = first_error {
+            Err(error)
+        } else {
+            Ok(out)
+        }
+    })
+}
+
+fn validate_profile_contrasts(
+    contrasts: &[profiles::ProfileContrast],
+    tuning: Option<&config::ArenaConfig>,
+) -> Result<(), String> {
+    let mut names = HashSet::new();
+    for contrast in contrasts {
+        if contrast.name.trim().is_empty() || !names.insert(contrast.name) {
+            return Err("profile calibration has a blank or duplicate contrast name".into());
+        }
+        if contrast.a.name.trim().is_empty()
+            || contrast.b.name.trim().is_empty()
+            || contrast.a.name == contrast.b.name
+        {
+            return Err(format!(
+                "profile contrast {:?} does not name both sides unambiguously",
+                contrast.name
+            ));
+        }
+    }
+    let profiles: Vec<_> = contrasts
+        .iter()
+        .flat_map(|contrast| [&contrast.a, &contrast.b])
+        .cloned()
+        .collect();
+    validate_profile_kits(&profiles, tuning)
+}
+
+fn validate_profile_kits(
+    choices: &[profiles::Profile],
+    tuning: Option<&config::ArenaConfig>,
+) -> Result<(), String> {
+    for profile in choices {
+        let cost = sim::World::kit_cost(&profile.kit);
+        if cost != sim::KIT_BUDGET {
+            return Err(format!(
+                "profile {:?} costs {cost} points; expected {}",
+                profile.name,
+                sim::KIT_BUDGET
+            ));
+        }
+        for class in 0..sim::MAX_CLASSES as u8 {
+            let mut world = sim::World::with_map(1, sim::build_pit);
+            if let Some(config) = tuning {
+                crate::Room::apply_config(&mut world, config);
+            }
+            let ship = world.spawn(class, 0, 505, 522, 0);
+            if ship < 0 || !world.set_kit(ship as usize, &profile.kit) {
+                return Err(format!(
+                    "profile {:?} is rejected by hull {class} in the selected zone",
+                    profile.name
+                ));
             }
         }
     }
-    out
+    Ok(())
+}
+
+fn profile_fixture_validity<S: AsRef<str>>(
+    observations: &[ProfileObservation],
+    maps: &[S],
+) -> Vec<ProfileMapValidity> {
+    let mut validity = Vec::with_capacity(maps.len());
+    for (map_index, map) in maps.iter().enumerate() {
+        let map = map.as_ref();
+        let rows: Vec<_> = observations
+            .iter()
+            .filter(|row| row.map_index == map_index)
+            .collect();
+        if rows.is_empty() {
+            validity.push(ProfileMapValidity {
+                map_index,
+                map: map.into(),
+                paired_seeds: 0,
+                matches: 0,
+                mean_positive_scored_kills_per_match: 0.0,
+                mean_profile_sensitivity: 0.0,
+                absolute_observed_side_gap: 0.0,
+                valid: false,
+                failures: vec!["no_paired_observations"],
+                warnings: Vec::new(),
+            });
+            continue;
+        }
+        let scored_kills: u64 = rows
+            .iter()
+            .map(|row| u64::from(row.first_scored_kills) + u64::from(row.mirror_scored_kills))
+            .sum();
+        let matches = (rows.len() * 2) as f64;
+        let mean_scored_kills = scored_kills as f64 / matches;
+        let mut failures = Vec::new();
+        if mean_scored_kills < PROFILE_MIN_SCORED_KILLS_PER_MATCH {
+            failures.push("mean_positive_scored_kills_per_match_below_minimum");
+        }
+
+        // A owns team 0 in the first leg and team 1 in the mirror. From A's
+        // recentered perspective, first minus mirror is therefore the observed
+        // team-0 score minus team-1 score for the pair.
+        let side_gap = (rows
+            .iter()
+            .map(|row| row.first_win_score - row.mirror_win_score)
+            .sum::<f64>()
+            / rows.len() as f64)
+            .abs();
+        let warnings = if side_gap > PROFILE_SIDE_GAP_WARNING {
+            vec!["absolute_observed_side_gap_above_warning"]
+        } else {
+            Vec::new()
+        };
+
+        // A pair that reads 0.5 can be two draws or one side winning both
+        // legs. Either way it provides no evidence that profiles can affect
+        // the result. Weight partial 0.25/0.75 departures by half so this is a
+        // mean profile-decisiveness score on zero through one.
+        let sensitivity = rows
+            .iter()
+            .map(|row| {
+                let paired = (row.first_win_score + row.mirror_win_score) / 2.0;
+                2.0 * (paired - 0.5).abs()
+            })
+            .sum::<f64>()
+            / rows.len() as f64;
+        if sensitivity < PROFILE_MIN_SENSITIVITY {
+            failures.push("mean_profile_sensitivity_below_minimum");
+        }
+
+        validity.push(ProfileMapValidity {
+            map_index,
+            map: map.into(),
+            paired_seeds: rows.len() as u32,
+            matches: rows.len() as u32 * 2,
+            mean_positive_scored_kills_per_match: mean_scored_kills,
+            mean_profile_sensitivity: sensitivity,
+            absolute_observed_side_gap: side_gap,
+            valid: failures.is_empty(),
+            failures,
+            warnings,
+        });
+    }
+    validity
+}
+
+fn is_powered_profile_fixture(
+    paired_seeds: u32,
+    zone: &str,
+    zone_source: &str,
+    skill: f32,
+    tuning: &config::ArenaConfig,
+    maps: &[(String, Arena)],
+) -> bool {
+    paired_seeds == PROFILE_POWERED_PAIRS
+        && zone == "melee"
+        && zone_source.as_bytes() == PROFILE_POWERED_ZONE
+        && skill.to_bits() == 0.50f32.to_bits()
+        && tuning.match_seconds == Some(180)
+        && maps
+            .iter()
+            .map(|(name, _)| name.as_str())
+            .eq(PROFILE_POWERED_MAPS)
+        && maps
+            .iter()
+            .zip(PROFILE_POWERED_MAP_BYTES)
+            .all(|((_, map), expected)| {
+                matches!(map, Arena::Packed(bytes) if bytes.as_slice() == expected)
+            })
 }
 
 pub fn report_profiles(
+    run: &ProfileCalibrationRun,
     results: &[ProfileResult],
-    paired_seeds: u32,
     zone: &str,
+    zone_fingerprint: &str,
+    skill: f32,
+    match_seconds: u16,
     maps: &[(String, Arena)],
 ) -> serde_json::Value {
+    let contrasts = profiles::calibration_contrasts();
+    assert_eq!(
+        contrasts.len(),
+        PROFILE_COMPARISONS,
+        "profile report family does not match its declared comparison count"
+    );
+    assert_eq!(
+        results.len(),
+        PROFILE_COMPARISONS,
+        "profile report is missing declared contrast results"
+    );
+    for (result, contrast) in results.iter().zip(&contrasts) {
+        assert_eq!(
+            (result.contrast, result.a, result.b),
+            (contrast.name, contrast.a.name, contrast.b.name),
+            "profile report results do not follow the declared contrast order"
+        );
+    }
+    let paired_seeds = results.first().map_or(0, |result| result.paired_seeds);
+    let stratification_block = profile_stratification_block(maps.len());
+    let lineups: Vec<_> = (0..PROFILE_LINEUP_ROTATIONS).map(profile_lineup).collect();
+    assert!(
+        results
+            .iter()
+            .all(|result| result.paired_seeds == paired_seeds),
+        "profile report results use different paired sample counts"
+    );
     println!(
         "\nprofile balance: {zone}, {paired_seeds} paired seeds and {} matches per comparison",
         paired_seeds * 2
     );
     println!(
-        "family-wise 95% intervals across six comparisons; balance band 45% to 55%; minimum {PROFILE_MIN_PAIRS} paired seeds"
+        "conservative approximate family-wise 95% win-rate intervals across {} declared contrasts; critical value planned for {}; balance band 45% to 55%; prespecified powered sample {PROFILE_POWERED_PAIRS}",
+        PROFILE_COMPARISONS, PROFILE_PLANNING_COMPARISONS
     );
+    println!("kill-difference intervals are descriptive and do not enter the verdict");
     println!(
-        "\n{:<18} {:>7} {:>19} {:>8} {:>19}  verdict",
-        "comparison", "win%", "family 95%", "kill +/-", "family 95%"
+        "\n{:<48} {:>7} {:>19} {:>8} {:>19}  verdict",
+        "contrast", "win%", "win family 95%", "kill +/-", "descriptive 95%"
     );
     for result in results {
         println!(
-            "{:<18} {:>7.1} {:>8.1} to {:>7.1} {:>8.2} {:>8.2} to {:>7.2}  {}",
-            format!("{} / {}", result.a, result.b),
+            "{:<48} {:>7.1} {:>8.1} to {:>7.1} {:>8.2} {:>8.2} to {:>7.2}  {}",
+            result.contrast,
             result.win_rate * 100.0,
             result.win_rate_low * 100.0,
             result.win_rate_high * 100.0,
@@ -1913,14 +2923,89 @@ pub fn report_profiles(
             result.verdict,
         );
     }
+    println!(
+        "\nfixture gates: positive scored kills per match and profile sensitivity; absolute observed side gap is a warning"
+    );
+    for result in results {
+        for map in &result.fixture_validity {
+            let notes = map
+                .failures
+                .iter()
+                .chain(&map.warnings)
+                .copied()
+                .collect::<Vec<_>>()
+                .join(", ");
+            println!(
+                "{:<48} {:<12} {:>6.2} {:>7.3} {:>7.3}  {}",
+                result.contrast,
+                map.map,
+                map.mean_positive_scored_kills_per_match,
+                map.mean_profile_sensitivity,
+                map.absolute_observed_side_gap,
+                if notes.is_empty() { "pass" } else { &notes },
+            );
+        }
+    }
+    let fixture_valid = results.iter().all(|result| result.fixture_valid);
     serde_json::json!({
+        "attempt_id": run.attempt_id(),
+        "design_fingerprint": run.design_fingerprint(),
+        "seed_base": run.seed_base(),
         "zone": zone,
-        "maps": maps.iter().map(|(name, _)| name).collect::<Vec<_>>(),
+        "zone_fingerprint": zone_fingerprint,
+        "maps": maps.iter().map(|(name, map)| serde_json::json!({
+            "name": name,
+            "fingerprint": map.fingerprint()
+        })).collect::<Vec<_>>(),
+        "contrasts": contrasts,
+        "skill": skill,
+        "match_seconds": match_seconds,
         "paired_seeds": paired_seeds,
         "matches_per_comparison": paired_seeds * 2,
-        "confidence": "family-wise 95% Bonferroni paired t intervals",
+        "comparisons": PROFILE_COMPARISONS,
+        "win_rate_confidence": "conservative approximate family-wise 95% Bonferroni paired t intervals across 10 declared contrasts; critical value planned for 15",
+        "kill_difference_confidence": "descriptive approximate 95% paired intervals; excluded from the family and verdict",
+        "family_critical": PROFILE_FAMILY_T,
+        "descriptive_critical": PROFILE_DESCRIPTIVE_T,
         "balance_band": [PROFILE_BALANCE_LOW, PROFILE_BALANCE_HIGH],
-        "minimum_paired_seeds": PROFILE_MIN_PAIRS,
+        "prespecified_powered_paired_seeds": PROFILE_POWERED_PAIRS,
+        "seed_namespace_policy": format!("zero-based and capped below {PROFILE_POWERED_PAIRS} pairs for exploration; SHA-256-derived and registry-checked for a powered attempt"),
+        "fixture_schedule": {
+            "side_size": PROFILE_SIDE_SIZE,
+            "lineups": lineups,
+            "map_index_policy": "sample modulo map count",
+            "lineup_index_policy": "floor(sample / map count) modulo seven",
+            "stratification_block_paired_seeds": stratification_block,
+            "complete_stratification_blocks": paired_seeds / stratification_block,
+            "partial_block_paired_seeds": paired_seeds % stratification_block,
+        },
+        "build": crate::metrics::commit(),
+        "execution_fingerprint": calibration_execution_fingerprint(),
+        "fixture_valid": fixture_valid,
+        "powered_design": {
+            "target_whole_family_power": PROFILE_JOINT_POWER,
+            "comparisons": PROFILE_COMPARISONS,
+            "planning_comparisons": PROFILE_PLANNING_COMPARISONS,
+            "minimum_powered_paired_seeds": PROFILE_POWER_MINIMUM_PAIRS,
+            "worst_case_paired_sd": PROFILE_WORST_VARIANCE.sqrt(),
+            "centered_true_win_rate": 0.5,
+            "per_comparison_central_power_z": PROFILE_POWER_Z,
+            "method": "conservative normal-approximation two-sided union bound; the power minimum and critical values retain a fifteen-comparison planning bound for ten declared contrasts, and the confirmatory sample rounds up to a complete map-by-lineup block",
+            "power_scope": "The design targets at least 90% whole-family power for the ten declared flight-stat contrasts under the stated assumptions because it retains the stricter fifteen-comparison allocation. The fixed fixture-validity gates are unpowered, and no 90% claim covers the chance that the full screen passes.",
+            "fixture_validity": {
+                "kind": "fixed descriptive activity and sensitivity gates, plus an unpowered side-gap warning; not certified side equivalence",
+                "minimum_mean_positive_scored_kills_per_match_per_map": PROFILE_MIN_SCORED_KILLS_PER_MATCH,
+                "minimum_mean_profile_sensitivity_per_map": PROFILE_MIN_SENSITIVITY,
+                "profile_sensitivity_definition": "mean of 2 * abs((first win score + mirror win score) / 2 - 0.5)",
+                "absolute_observed_side_gap_warning_threshold_per_map": PROFILE_SIDE_GAP_WARNING,
+                "side_gap_definition": "absolute mean of first win score - mirror win score"
+            }
+        },
+        "run_kind": if run.is_powered() {
+            "prespecified powered screen"
+        } else {
+            "exploratory"
+        },
         "results": results,
     })
 }
@@ -2788,7 +3873,7 @@ fn load_pilot_fixture(roster: &[PilotSpec]) -> Result<PilotFixtureRuntime, Pilot
         "cycle through all {} valid team-zero by team-one Drydock start pairs by scenario seed",
         start_pairs.len()
     );
-    let heading_policy = "team zero starts at heading 0 and team one at heading 32768; the mirror exchanges pilots between them".to_string();
+    let heading_policy = "each side faces its selected opposing start; the mirror exchanges pilots between those fixed side headings".to_string();
     let kit_bytes = format!("{pilot_kits:?}");
     let start_bytes = format!("{start_pairs:?}");
     let fixture_fingerprint = fingerprint(&[
@@ -3255,20 +4340,27 @@ pub fn pilot_mirror_assignments(
     a: &PilotSpec,
     b: &PilotSpec,
     start_indices: [u32; 2],
+    start_positions: [[i32; 2]; 2],
 ) -> [[PilotMirrorAssignment; 2]; 2] {
+    let first = (start_positions[0][0], start_positions[0][1]);
+    let second = (start_positions[1][0], start_positions[1][1]);
+    let headings = [
+        crate::room::heading_toward(first, second),
+        crate::room::heading_toward(second, first),
+    ];
     [
         [
             PilotMirrorAssignment {
                 pilot_id: a.id.0,
                 side: 0,
                 start: start_indices[0],
-                heading: 0,
+                heading: headings[0],
             },
             PilotMirrorAssignment {
                 pilot_id: b.id.0,
                 side: 1,
                 start: start_indices[1],
-                heading: 32768,
+                heading: headings[1],
             },
         ],
         [
@@ -3276,13 +4368,13 @@ pub fn pilot_mirror_assignments(
                 pilot_id: b.id.0,
                 side: 0,
                 start: start_indices[0],
-                heading: 0,
+                heading: headings[0],
             },
             PilotMirrorAssignment {
                 pilot_id: a.id.0,
                 side: 1,
                 start: start_indices[1],
-                heading: 32768,
+                heading: headings[1],
             },
         ],
     ]
@@ -3411,12 +4503,7 @@ fn death_tick_score(deaths: &[(u8, u8)], a_ship: u8, b_ship: u8) -> Option<f64> 
 /// selected kits, restart to refill their upgraded bars and ammunition, then
 /// apply the seeded Ladder start pair and headings over the core's ordinary
 /// team lineup.
-fn restart_pilot_leg(
-    world: &mut sim::World,
-    ships: [u8; 2],
-    positions: [(i32, i32); 2],
-    headings: [u16; 2],
-) {
+fn restart_pilot_leg(world: &mut sim::World, ships: [u8; 2], positions: [(i32, i32); 2]) {
     world.restart();
     for index in 0..2 {
         let row = &mut world.state.ships[ships[index] as usize];
@@ -3426,8 +4513,8 @@ fn restart_pilot_leg(
         row.spawn_y = positions[index].1;
         row.vx = 0;
         row.vy = 0;
-        row.heading = headings[index];
     }
+    crate::room::face_public_teams(world);
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -3447,7 +4534,7 @@ fn pilot_leg(
     debug_assert!(warnings.is_empty(), "validated Ladder tuning changed");
     world.cfg.max_ships = fixture.definition.max_ships.unwrap_or(2).min(2);
 
-    let assignments = pilot_mirror_assignments(a, b, start_indices);
+    let assignments = pilot_mirror_assignments(a, b, start_indices, start_positions);
     let leg = assignments[usize::from(mirrored)];
     let (seat_specs, a_seat) = if mirrored { ([b, a], 1) } else { ([a, b], 0) };
     let actual_positions = [
@@ -3499,11 +4586,14 @@ fn pilot_leg(
             "the fixture kit was validated before collection"
         );
     }
-    restart_pilot_leg(
-        &mut world,
-        ships,
-        actual_positions,
+    restart_pilot_leg(&mut world, ships, actual_positions);
+    debug_assert_eq!(
+        [
+            world.state.ships[ships[0] as usize].heading,
+            world.state.ships[ships[1] as usize].heading,
+        ],
         [leg[0].heading, leg[1].heading],
+        "the recorded facing policy changed"
     );
     let mut ticks = 0;
     let regulation_ticks = fixture.manifest.regulation_ticks;
@@ -4403,24 +5493,6 @@ fn pilot_report_fingerprint(
     Ok(fingerprint(&[&encoded]))
 }
 
-fn pilot_execution_fingerprint() -> String {
-    fingerprint(&[
-        env!("CARGO_PKG_VERSION").as_bytes(),
-        env!("VW_RUSTC_VERSION").as_bytes(),
-        env!("VW_BUILD_PROFILE").as_bytes(),
-        env!("VW_BUILD_OPT_LEVEL").as_bytes(),
-        env!("VW_BUILD_DEBUG").as_bytes(),
-        env!("VW_BUILD_TARGET").as_bytes(),
-        env!("VW_BUILD_HOST").as_bytes(),
-        env!("VW_BUILD_TARGET_FEATURES").as_bytes(),
-        env!("VW_BUILD_RUSTFLAGS").as_bytes(),
-        env!("VW_CC_IDENTITY").as_bytes(),
-        std::env::consts::ARCH.as_bytes(),
-        std::env::consts::OS.as_bytes(),
-        std::env::consts::FAMILY.as_bytes(),
-    ])
-}
-
 fn pilot_attestation_payload(
     attestation: &PilotCalibrationAttestation,
 ) -> Result<Vec<u8>, PilotCalibrationError> {
@@ -4458,7 +5530,7 @@ pub fn attest_pilot_calibration(
         design_fingerprint: pilot_design_fingerprint(&plan)?,
         dataset_fingerprint: report.dataset_fingerprint.clone(),
         report_fingerprint: pilot_report_fingerprint(report)?,
-        execution_fingerprint: pilot_execution_fingerprint(),
+        execution_fingerprint: calibration_execution_fingerprint(),
         manifest: report.manifest.clone(),
         fixture: report.fixture.clone(),
         certified_ladder,
@@ -4481,7 +5553,7 @@ pub fn verified_current_attestation(
     if attestation.schema_version != PILOT_ATTESTATION_SCHEMA
         || !attestation.dataset_fingerprint.starts_with("sha256:")
         || !attestation.report_fingerprint.starts_with("sha256:")
-        || attestation.execution_fingerprint != pilot_execution_fingerprint()
+        || attestation.execution_fingerprint != calibration_execution_fingerprint()
         || attestation.certified_ladder.len() != roster.len()
     {
         return Ok(false);
@@ -4790,7 +5862,12 @@ fn validate_pilot_dataset(
                     observation.seed, pair.0, pair.1
                 )));
             }
-            let assignments = pilot_mirror_assignments(a, b, observation.start_indices);
+            let assignments = pilot_mirror_assignments(
+                a,
+                b,
+                observation.start_indices,
+                observation.start_positions,
+            );
             let first_a = assignments[0]
                 .iter()
                 .find(|assignment| assignment.pilot_id == observation.a_id)
@@ -5426,7 +6503,12 @@ mod pilot_certification_tests {
                     .iter()
                     .find(|pair| pair.indices == indices)
                     .expect("selected fixture pair");
-                let assignments = pilot_mirror_assignments(&roster[0], &roster[1], starts.indices);
+                let assignments = pilot_mirror_assignments(
+                    &roster[0],
+                    &roster[1],
+                    starts.indices,
+                    starts.positions,
+                );
                 let first_a = assignments[0]
                     .iter()
                     .find(|assignment| assignment.pilot_id == roster[0].id.0)
@@ -5489,7 +6571,8 @@ mod pilot_certification_tests {
     #[test]
     fn a_pair_exchanges_pilots_sides_starts_and_headings() {
         let roster = two_pilots();
-        let legs = pilot_mirror_assignments(&roster[0], &roster[1], [1, 3]);
+        let positions = [[10, 20], [110, 20]];
+        let legs = pilot_mirror_assignments(&roster[0], &roster[1], [1, 3], positions);
         let first_a = legs[0]
             .iter()
             .find(|seat| seat.pilot_id == roster[0].id.0)
@@ -5667,14 +6750,18 @@ mod pilot_certification_tests {
             assert!(world.set_kit(ships[index] as usize, &kit));
         }
 
-        restart_pilot_leg(&mut world, ships, positions, [0, 32768]);
+        restart_pilot_leg(&mut world, ships, positions);
+        let headings = [
+            crate::room::heading_toward(positions[0], positions[1]),
+            crate::room::heading_toward(positions[1], positions[0]),
+        ];
 
         for index in 0..2 {
             let row = &world.state.ships[ships[index] as usize];
             assert_eq!(row.energy, world.eff_max_energy(ships[index] as usize));
             assert_eq!((row.x, row.y), positions[index]);
             assert_eq!((row.spawn_x, row.spawn_y), positions[index]);
-            assert_eq!(row.heading, if index == 0 { 0 } else { 32768 });
+            assert_eq!(row.heading, headings[index]);
         }
     }
 
@@ -5989,20 +7076,512 @@ fn diagnostic_calibration_ladder() {
 mod tests {
     use super::*;
 
+    fn powered_profile_maps() -> Vec<(String, Arena)> {
+        PROFILE_POWERED_MAPS
+            .iter()
+            .zip(PROFILE_POWERED_MAP_BYTES)
+            .map(|(name, bytes)| {
+                (
+                    (*name).into(),
+                    Arena::Packed(std::sync::Arc::new(bytes.into())),
+                )
+            })
+            .collect()
+    }
+
     #[test]
     fn profile_balance_requires_the_declared_sample_and_whole_interval() {
         assert_eq!(
-            profile_verdict(PROFILE_MIN_PAIRS - 1, 0.60, 0.70),
-            "inconclusive: below minimum sample"
+            profile_verdict(false, true, 0.60, 0.70),
+            "exploratory: not prespecified sample"
         );
         assert_eq!(
-            profile_verdict(PROFILE_MIN_PAIRS, 0.56, 0.63),
-            "overpowered"
+            profile_verdict(false, false, 0.46, 0.54),
+            "exploratory: fixture checks failed"
         );
-        assert_eq!(profile_verdict(PROFILE_MIN_PAIRS, 0.46, 0.54), "balanced");
+        assert_eq!(profile_verdict(true, false, 0.46, 0.54), "invalid fixture");
+        assert_eq!(profile_verdict(true, true, 0.56, 0.63), "overpowered");
+        assert_eq!(profile_verdict(true, true, 0.46, 0.54), "balanced");
+        assert_eq!(profile_verdict(true, true, 0.44, 0.56), "inconclusive");
+    }
+
+    #[test]
+    fn profile_family_matches_its_prespecified_correction() {
+        let contrasts = profiles::calibration_contrasts();
+        assert_eq!(contrasts.len(), PROFILE_COMPARISONS);
+        assert!(contrasts.len() < PROFILE_PLANNING_COMPARISONS);
+
+        let half_width = (PROFILE_BALANCE_HIGH - PROFILE_BALANCE_LOW) / 2.0;
+        let raw = PROFILE_WORST_VARIANCE * (PROFILE_FAMILY_T + PROFILE_POWER_Z).powi(2)
+            / half_width.powi(2);
+        let maps = PROFILE_POWERED_MAPS.len() as u32;
+        let map_stratified = (raw.ceil() as u32).div_ceil(maps) * maps;
+        assert_eq!(map_stratified, PROFILE_POWER_MINIMUM_PAIRS);
+        let full_block = profile_stratification_block(PROFILE_POWERED_MAPS.len());
+        let fixture_stratified = PROFILE_POWER_MINIMUM_PAIRS.div_ceil(full_block) * full_block;
+        assert_eq!(fixture_stratified, PROFILE_POWERED_PAIRS);
+        assert_eq!(PROFILE_POWERED_PAIRS % full_block, 0);
+
+        let conservative_joint_power = 1.0
+            - (1.0 - PROFILE_JOINT_POWER) * PROFILE_COMPARISONS as f64
+                / PROFILE_PLANNING_COMPARISONS as f64;
+        assert!(conservative_joint_power >= PROFILE_JOINT_POWER);
+    }
+
+    #[test]
+    fn only_the_frozen_melee_fixture_can_issue_a_profile_verdict() {
+        let zone_source = std::str::from_utf8(PROFILE_POWERED_ZONE).expect("zone source");
+        let definition: catalog::ZoneDef = toml::from_str(zone_source).expect("shipped zone");
+        let maps = powered_profile_maps();
+        assert!(is_powered_profile_fixture(
+            PROFILE_POWERED_PAIRS,
+            "melee",
+            zone_source,
+            0.50,
+            &definition.arena,
+            &maps
+        ));
+        assert!(!is_powered_profile_fixture(
+            PROFILE_POWERED_PAIRS - 6,
+            "melee",
+            zone_source,
+            0.50,
+            &definition.arena,
+            &maps
+        ));
+        assert!(!is_powered_profile_fixture(
+            PROFILE_POWERED_PAIRS,
+            "ladder",
+            zone_source,
+            0.50,
+            &definition.arena,
+            &maps
+        ));
+        assert!(!is_powered_profile_fixture(
+            PROFILE_POWERED_PAIRS,
+            "melee",
+            "description = 'changed'",
+            0.50,
+            &definition.arena,
+            &maps
+        ));
+        assert!(!is_powered_profile_fixture(
+            PROFILE_POWERED_PAIRS,
+            "melee",
+            zone_source,
+            0.49,
+            &definition.arena,
+            &maps
+        ));
+        let mut changed_maps = maps.clone();
+        changed_maps[0].1 = Arena::Built(sim::build_pit);
+        assert!(!is_powered_profile_fixture(
+            PROFILE_POWERED_PAIRS,
+            "melee",
+            zone_source,
+            0.50,
+            &definition.arena,
+            &changed_maps
+        ));
+        let short = config::ArenaConfig {
+            match_seconds: Some(179),
+            ..Default::default()
+        };
+        assert!(!is_powered_profile_fixture(
+            PROFILE_POWERED_PAIRS,
+            "melee",
+            zone_source,
+            0.50,
+            &short,
+            &maps
+        ));
+    }
+
+    #[test]
+    fn powered_profile_attempt_is_preregistered_before_collection() {
+        let zone_source = std::str::from_utf8(PROFILE_POWERED_ZONE).expect("zone source");
+        let maps = powered_profile_maps();
+        let design =
+            profile_design_fingerprint(PROFILE_POWERED_PAIRS, "melee", zone_source, 0.50, &maps)
+                .expect("a design fingerprint");
+        let empty_registry = serde_json::to_string(&ProfileCalibrationAttemptRegistry {
+            schema_version: 1,
+            attempts: Vec::new(),
+        })
+        .expect("an empty registry");
+        let error = prepare_profile_calibration(
+            PROFILE_POWERED_PAIRS,
+            "flight-eight-v1",
+            &empty_registry,
+            "melee",
+            zone_source,
+            0.50,
+            &maps,
+        )
+        .unwrap_err();
+        assert!(error.contains(&design));
+
+        let registry = serde_json::to_string(&ProfileCalibrationAttemptRegistry {
+            schema_version: 1,
+            attempts: vec![ProfileCalibrationAttempt {
+                attempt_id: "flight-eight-v1".into(),
+                design_fingerprint: design.clone(),
+            }],
+        })
+        .expect("a registry");
+
+        let run = prepare_profile_calibration(
+            PROFILE_POWERED_PAIRS,
+            "flight-eight-v1",
+            &registry,
+            "melee",
+            zone_source,
+            0.50,
+            &maps,
+        )
+        .expect("a registered powered run");
+        assert!(run.is_powered());
+        assert_eq!(run.attempt_id(), "flight-eight-v1");
+        assert_eq!(run.design_fingerprint(), design);
         assert_eq!(
-            profile_verdict(PROFILE_MIN_PAIRS, 0.44, 0.56),
-            "inconclusive"
+            run.seed_base(),
+            profile_attempt_seed_base("flight-eight-v1")
+        );
+        assert_ne!(run.seed_base(), 0);
+    }
+
+    #[test]
+    fn profile_design_fingerprint_binds_fixture_content_and_parameters() {
+        let zone_source = std::str::from_utf8(PROFILE_POWERED_ZONE).expect("zone source");
+        let maps = powered_profile_maps();
+        let design =
+            profile_design_fingerprint(PROFILE_POWERED_PAIRS, "melee", zone_source, 0.50, &maps)
+                .expect("a design fingerprint");
+        let mut reordered = maps.clone();
+        reordered.swap(0, 1);
+        assert_ne!(
+            profile_design_fingerprint(
+                PROFILE_POWERED_PAIRS,
+                "melee",
+                zone_source,
+                0.50,
+                &reordered,
+            )
+            .expect("a reordered design fingerprint"),
+            design
+        );
+        assert_ne!(
+            profile_design_fingerprint(
+                PROFILE_POWERED_PAIRS,
+                "melee",
+                &format!("{zone_source}\n"),
+                0.50,
+                &maps,
+            )
+            .expect("a changed-source design fingerprint"),
+            design
+        );
+        assert_ne!(
+            profile_design_fingerprint(PROFILE_POWERED_PAIRS, "melee", zone_source, 0.49, &maps,)
+                .expect("a changed-skill design fingerprint"),
+            design
+        );
+    }
+
+    #[test]
+    fn profile_design_fingerprint_binds_execution_identity() {
+        let zone_source = std::str::from_utf8(PROFILE_POWERED_ZONE).expect("zone source");
+        let maps = powered_profile_maps();
+        let execution = calibration_execution_fingerprint();
+        let design =
+            profile_design_fingerprint(PROFILE_POWERED_PAIRS, "melee", zone_source, 0.50, &maps)
+                .expect("a design fingerprint");
+        assert_eq!(
+            profile_design_fingerprint_with_execution(
+                PROFILE_POWERED_PAIRS,
+                "melee",
+                zone_source,
+                0.50,
+                &maps,
+                &execution,
+            )
+            .expect("the current execution fingerprint"),
+            design
+        );
+        assert_ne!(
+            profile_design_fingerprint_with_execution(
+                PROFILE_POWERED_PAIRS,
+                "melee",
+                zone_source,
+                0.50,
+                &maps,
+                &format!("{execution}-different-toolchain"),
+            )
+            .expect("a changed execution fingerprint"),
+            design
+        );
+    }
+
+    #[test]
+    fn profile_design_fingerprint_binds_ordered_contrast_family() {
+        let zone_source = std::str::from_utf8(PROFILE_POWERED_ZONE).expect("zone source");
+        let maps = powered_profile_maps();
+        let execution = calibration_execution_fingerprint();
+        let contrasts = profiles::calibration_contrasts();
+        let design = profile_design_fingerprint_for_contrasts(
+            PROFILE_POWERED_PAIRS,
+            "melee",
+            zone_source,
+            0.50,
+            &maps,
+            &execution,
+            &contrasts,
+        )
+        .expect("the declared contrast fingerprint");
+
+        let mut reordered = contrasts.clone();
+        reordered.swap(0, 1);
+        assert_ne!(
+            profile_design_fingerprint_for_contrasts(
+                PROFILE_POWERED_PAIRS,
+                "melee",
+                zone_source,
+                0.50,
+                &maps,
+                &execution,
+                &reordered,
+            )
+            .expect("a reordered contrast fingerprint"),
+            design
+        );
+
+        let mut reversed = contrasts;
+        let first = &mut reversed[0];
+        std::mem::swap(&mut first.a, &mut first.b);
+        assert_ne!(
+            profile_design_fingerprint_for_contrasts(
+                PROFILE_POWERED_PAIRS,
+                "melee",
+                zone_source,
+                0.50,
+                &maps,
+                &execution,
+                &reversed,
+            )
+            .expect("a reversed contrast fingerprint"),
+            design
+        );
+    }
+
+    #[test]
+    fn profile_controller_fingerprint_binds_live_melee_scoring() {
+        let modes = include_bytes!("modes.rs");
+        assert_eq!(
+            profile_controller_fingerprint_with_modes(modes),
+            profile_controller_fingerprint()
+        );
+        let mut changed = modes.to_vec();
+        changed.extend_from_slice(b"\nchanged live Melee scoring");
+        assert_ne!(
+            profile_controller_fingerprint_with_modes(&changed),
+            profile_controller_fingerprint()
+        );
+    }
+
+    #[test]
+    fn profile_report_records_execution_identity() {
+        let maps = powered_profile_maps();
+        let run = ProfileCalibrationRun {
+            attempt_id: "report-test".into(),
+            design_fingerprint: "sha256:report-test".into(),
+            seed_base: 1,
+            powered_fixture: true,
+        };
+        let results: Vec<_> = profiles::calibration_contrasts()
+            .into_iter()
+            .map(|contrast| ProfileResult {
+                contrast: contrast.name,
+                a: contrast.a.name,
+                b: contrast.b.name,
+                paired_seeds: PROFILE_POWERED_PAIRS,
+                matches: PROFILE_POWERED_PAIRS * 2,
+                win_rate: 0.5,
+                win_rate_low: 0.46,
+                win_rate_high: 0.54,
+                kill_difference: 0.0,
+                kill_difference_low: -1.0,
+                kill_difference_high: 1.0,
+                verdict: "balanced",
+                powered_fixture: true,
+                fixture_valid: true,
+                fixture_validity: Vec::new(),
+                observations: Vec::new(),
+            })
+            .collect();
+        let report = report_profiles(
+            &run,
+            &results,
+            "melee",
+            "sha256:zone-test",
+            0.50,
+            180,
+            &maps,
+        );
+        let execution = calibration_execution_fingerprint();
+        assert_eq!(
+            report["execution_fingerprint"].as_str(),
+            Some(execution.as_str())
+        );
+        assert_eq!(
+            report["comparisons"].as_u64(),
+            Some(PROFILE_COMPARISONS as u64)
+        );
+        assert_eq!(
+            report["powered_design"]["planning_comparisons"].as_u64(),
+            Some(PROFILE_PLANNING_COMPARISONS as u64)
+        );
+        assert_eq!(
+            report["powered_design"]["minimum_powered_paired_seeds"].as_u64(),
+            Some(PROFILE_POWER_MINIMUM_PAIRS as u64)
+        );
+        assert_eq!(
+            report["fixture_schedule"]["stratification_block_paired_seeds"].as_u64(),
+            Some(profile_stratification_block(maps.len()) as u64)
+        );
+        assert_eq!(
+            report["fixture_schedule"]["lineups"]
+                .as_array()
+                .map(Vec::len),
+            Some(PROFILE_LINEUP_ROTATIONS)
+        );
+        assert_eq!(
+            report["fixture_schedule"]["partial_block_paired_seeds"].as_u64(),
+            Some(0)
+        );
+        assert_eq!(
+            report["contrasts"].as_array().map(Vec::len),
+            Some(PROFILE_COMPARISONS)
+        );
+    }
+
+    #[test]
+    fn a_profile_design_can_register_only_one_attempt() {
+        let zone_source = std::str::from_utf8(PROFILE_POWERED_ZONE).expect("zone source");
+        let maps = powered_profile_maps();
+        let design =
+            profile_design_fingerprint(PROFILE_POWERED_PAIRS, "melee", zone_source, 0.50, &maps)
+                .expect("a design fingerprint");
+        let registry = serde_json::to_string(&ProfileCalibrationAttemptRegistry {
+            schema_version: 1,
+            attempts: vec![
+                ProfileCalibrationAttempt {
+                    attempt_id: "first-attempt".into(),
+                    design_fingerprint: design.clone(),
+                },
+                ProfileCalibrationAttempt {
+                    attempt_id: "second-attempt".into(),
+                    design_fingerprint: design,
+                },
+            ],
+        })
+        .expect("a registry");
+
+        let error = prepare_profile_calibration(
+            PROFILE_POWERED_PAIRS,
+            "first-attempt",
+            &registry,
+            "melee",
+            zone_source,
+            0.50,
+            &maps,
+        )
+        .unwrap_err();
+        assert!(error.contains("more than one registered attempt"));
+    }
+
+    #[test]
+    fn nonpowered_profile_runs_are_exploratory() {
+        let zone_source = std::str::from_utf8(PROFILE_POWERED_ZONE).expect("zone source");
+        let maps = powered_profile_maps();
+        let paired_seeds = PROFILE_POWERED_PAIRS - maps.len() as u32;
+        let run = prepare_profile_calibration(
+            paired_seeds,
+            PROFILE_EXPLORATORY_ATTEMPT,
+            "not parsed for exploration",
+            "melee",
+            zone_source,
+            0.50,
+            &maps,
+        )
+        .expect("an exploratory run");
+        assert!(!run.is_powered());
+        assert_eq!(run.seed_base(), 0);
+        assert_eq!(
+            profile_verdict(run.is_powered(), true, 0.56, 0.63),
+            "exploratory: not prespecified sample"
+        );
+
+        let error = prepare_profile_calibration(
+            paired_seeds,
+            "unregistered-confirmatory-run",
+            "{}",
+            "melee",
+            zone_source,
+            0.50,
+            &maps,
+        )
+        .unwrap_err();
+        assert!(error.contains("only the exact"));
+
+        let error = prepare_profile_calibration(
+            PROFILE_POWERED_PAIRS + maps.len() as u32,
+            PROFILE_EXPLORATORY_ATTEMPT,
+            "not parsed for exploration",
+            "melee",
+            zone_source,
+            0.50,
+            &maps,
+        )
+        .unwrap_err();
+        assert!(error.contains(&format!("fewer than {PROFILE_POWERED_PAIRS} paired seeds")));
+    }
+
+    #[test]
+    fn profile_attempts_get_distinct_deterministic_seed_namespaces() {
+        assert_eq!(
+            profile_attempt_seed_base("flight-eight-v1"),
+            profile_attempt_seed_base("flight-eight-v1")
+        );
+        assert_ne!(
+            profile_attempt_seed_base("flight-eight-v1"),
+            profile_attempt_seed_base("flight-eight-v2")
+        );
+    }
+
+    #[test]
+    fn calibration_spawn_dressing_fills_the_resolved_bar() {
+        let mut stage_world = sim::World::with_map(1, sim::build_pit);
+        let stage_ship = stage_world.spawn(0, 0, 505, 522, 0) as usize;
+        let stats = STAGES
+            .iter()
+            .find(|stage| stage.name == "stats")
+            .expect("the stats diagnostic");
+        wear(&mut stage_world, stage_ship, stats);
+        assert_eq!(
+            stage_world.state.ships[stage_ship].energy,
+            stage_world.eff_max_energy(stage_ship)
+        );
+
+        let mut hull_world = sim::World::with_map(2, sim::build_pit);
+        let hull_ship = hull_world.spawn(0, 0, 505, 522, 0) as usize;
+        let mut rng = 0x1234_5678;
+        assert_eq!(
+            deal_kit(&mut hull_world, hull_ship, sim::KIT_BUDGET, &mut rng),
+            sim::KIT_BUDGET
+        );
+        assert_eq!(
+            hull_world.state.ships[hull_ship].energy,
+            hull_world.eff_max_energy(hull_ship)
         );
     }
 
@@ -6010,10 +7589,232 @@ mod tests {
     fn paired_interval_tightens_when_the_same_evidence_repeats() {
         let noisy = [0.0, 1.0, 0.0, 1.0];
         let repeated: Vec<f64> = noisy.into_iter().cycle().take(400).collect();
-        let (_, low_small, high_small) = mean_interval(&noisy);
-        let (mean, low_large, high_large) = mean_interval(&repeated);
+        let (_, low_small, high_small) = family_win_interval(&noisy);
+        let (mean, low_large, high_large) = family_win_interval(&repeated);
         assert_eq!(mean, 0.5);
         assert!(high_large - low_large < high_small - low_small);
+    }
+
+    #[test]
+    fn clock_only_team_match_never_stops_on_score() {
+        assert!(match_reached_target([20, 0], 4, Some(5)));
+        assert!(!match_reached_target([20, 0], 4, None));
+    }
+
+    #[test]
+    fn profile_seed_count_must_weight_every_map_equally() {
+        let maps = vec![
+            ("first".into(), Arena::Built(sim::build_pit)),
+            ("second".into(), Arena::Built(sim::build_pit)),
+        ];
+        let run = ProfileCalibrationRun {
+            attempt_id: PROFILE_EXPLORATORY_ATTEMPT.into(),
+            design_fingerprint: "unused".into(),
+            seed_base: 0,
+            powered_fixture: false,
+        };
+        let error = run_profiles(&run, 1, "test", "test", 0.5, &maps, false).unwrap_err();
+        assert!(error.contains("do not divide evenly across 2 maps"));
+    }
+
+    #[test]
+    fn profile_contrast_order_is_stable() {
+        let names: Vec<_> = profiles::calibration_contrasts()
+            .into_iter()
+            .map(|contrast| contrast.name)
+            .collect();
+        assert_eq!(
+            names,
+            [
+                "Starter margin: Energy 6 vs bomb bounce 2",
+                "Starter margin: Recharge 5 vs bomb bounce 2",
+                "Starter margin: Speed 6 vs bomb bounce 2",
+                "Starter margin: Thrust 3 vs bomb bounce 2",
+                "Starter margin: Rotation 3 vs bomb bounce 2",
+                "Top margin: Energy 8 vs bomb bounce 2",
+                "Top margin: Recharge 8 vs bomb bounce 2",
+                "Top margin: Speed 8 vs bomb bounce 2",
+                "Top margin: Thrust 8 vs bomb bounce 2",
+                "Top margin: Rotation 8 vs bomb bounce 2",
+            ]
+        );
+    }
+
+    #[test]
+    fn profile_lineup_pairs_each_hull_with_its_rotated_start() {
+        for rotation in 0..PROFILE_LINEUP_ROTATIONS {
+            let lineup = profile_lineup(rotation);
+            for (name, bytes) in PROFILE_POWERED_MAPS.iter().zip(PROFILE_POWERED_MAP_BYTES) {
+                let mut world = sim::World::from_packed(1, bytes).expect("a shipped Melee map");
+                let mut ships = [0u8; PROFILE_LINEUP_SEATS];
+                for (index, &class) in lineup.iter().enumerate() {
+                    let team = (index / PROFILE_SIDE_SIZE) as u8;
+                    let heading = if team == 0 { 0 } else { 32768 };
+                    let ship = world.spawn_on_map(
+                        class,
+                        team,
+                        (index % PROFILE_SIDE_SIZE) as u32,
+                        heading,
+                    );
+                    assert!(ship >= 0, "{name} seats profile hull {index}");
+                    ships[index] = ship as u8;
+                }
+                world.restart();
+                crate::room::face_public_teams(&mut world);
+
+                let span_x = i32::from(world.map.w) * sim::TILE_PX * 256;
+                let span_y = i32::from(world.map.h) * sim::TILE_PX * 256;
+                for index in 0..PROFILE_SIDE_SIZE {
+                    let opposite = PROFILE_LINEUP_SEATS - 1 - index;
+                    let a = world.state.ships[ships[index] as usize];
+                    let b = world.state.ships[ships[opposite] as usize];
+                    assert_eq!(a.cls, b.cls, "{name} counterpart hull {index}");
+                    assert_eq!(a.x + b.x, span_x, "{name} counterpart x {index}");
+                    assert_eq!(a.y + b.y, span_y, "{name} counterpart y {index}");
+                    assert_eq!(
+                        b.heading,
+                        a.heading.wrapping_add(32768),
+                        "{name} counterpart heading {index}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn profile_lineup_rotation_covers_every_hull_four_times() {
+        let mut appearances = [0u8; sim::MAX_CLASSES];
+        for rotation in 0..PROFILE_LINEUP_ROTATIONS {
+            let lineup = profile_lineup(rotation);
+            for seat in 0..PROFILE_SIDE_SIZE {
+                let opposite = PROFILE_LINEUP_SEATS - 1 - seat;
+                assert_eq!(lineup[seat], lineup[opposite]);
+                appearances[lineup[seat] as usize] += 1;
+            }
+        }
+        assert_eq!(appearances, [PROFILE_SIDE_SIZE as u8; sim::MAX_CLASSES]);
+    }
+
+    #[test]
+    fn powered_profile_sample_exactly_stratifies_maps_and_lineups() {
+        let mut cells = [[0u32; PROFILE_LINEUP_ROTATIONS]; PROFILE_POWERED_MAPS.len()];
+        for sample in 0..PROFILE_POWERED_PAIRS {
+            let (map, lineup) = profile_stratum(sample, PROFILE_POWERED_MAPS.len());
+            cells[map][lineup] += 1;
+        }
+        assert_eq!(
+            cells,
+            [[81; PROFILE_LINEUP_ROTATIONS]; PROFILE_POWERED_MAPS.len()]
+        );
+    }
+
+    #[test]
+    fn profile_map_fixture_reuses_geometry_without_changing_the_world() {
+        let arena = Arena::Built(sim::build_pit);
+        let prepared = team_world(0, None, &arena).expect("a prepared map");
+        let fixture = ProfileMapFixture::new(std::sync::Arc::clone(&prepared.map));
+        let original = team_world(97, None, &arena).expect("an ordinary world");
+        let cached = fixture.world(97, None);
+        let cached_again = fixture.world(97, None);
+
+        assert_eq!(cached.hash(), original.hash());
+        assert_eq!(cached.packed_map(), original.packed_map());
+        assert_eq!(cached.packed_settings(), original.packed_settings());
+        assert!(std::sync::Arc::ptr_eq(&fixture.map, &cached.map));
+        assert!(std::sync::Arc::ptr_eq(&cached.map, &cached_again.map));
+    }
+
+    #[test]
+    fn profile_fixture_validity_reports_every_map_and_failure() {
+        let observation =
+            |map_index, first_win_score, mirror_win_score, scored_kills| ProfileObservation {
+                scenario_seed: 1,
+                map_index,
+                lineup_index: 0,
+                first_win_score,
+                mirror_win_score,
+                first_kill_difference: 0.0,
+                mirror_kill_difference: 0.0,
+                first_scored_kills: scored_kills,
+                mirror_scored_kills: scored_kills,
+                first_deaths: 8,
+                mirror_deaths: 8,
+            };
+        let observations = [
+            observation(0, 0.5, 0.5, 0),
+            // Team 0 wins both legs. From A's perspective that is one win and
+            // one loss, so the balance outcome alone would hide the side bias.
+            observation(1, 1.0, 0.0, 8),
+            // Opposite side advantages can average away while leaving every
+            // paired profile outcome at 0.5.
+            observation(2, 1.0, 0.0, 8),
+            observation(2, 0.0, 1.0, 8),
+            observation(3, 1.0, 1.0, 8),
+        ];
+        let validity = profile_fixture_validity(
+            &observations,
+            &["dead", "side", "insensitive", "active", "missing"],
+        );
+
+        assert_eq!(validity.len(), 5);
+        assert_eq!(
+            validity[0].failures,
+            [
+                "mean_positive_scored_kills_per_match_below_minimum",
+                "mean_profile_sensitivity_below_minimum"
+            ]
+        );
+        assert_eq!(validity[0].mean_positive_scored_kills_per_match, 0.0);
+        assert_eq!(
+            validity[1].failures,
+            ["mean_profile_sensitivity_below_minimum"]
+        );
+        assert_eq!(
+            validity[1].warnings,
+            ["absolute_observed_side_gap_above_warning"]
+        );
+        assert_eq!(validity[1].absolute_observed_side_gap, 1.0);
+        assert_eq!(
+            validity[2].failures,
+            ["mean_profile_sensitivity_below_minimum"]
+        );
+        assert_eq!(validity[2].absolute_observed_side_gap, 0.0);
+        assert_eq!(validity[2].mean_profile_sensitivity, 0.0);
+        assert!(validity[3].valid);
+        assert!(validity[3].failures.is_empty());
+        assert_eq!(validity[3].mean_positive_scored_kills_per_match, 8.0);
+        assert_eq!(validity[3].mean_profile_sensitivity, 1.0);
+        assert!(!validity[4].valid);
+        assert_eq!(validity[4].failures, ["no_paired_observations"]);
+    }
+
+    #[test]
+    fn profile_preflight_names_a_rejected_full_cost_kit() {
+        let mut profile = profiles::builtins().remove(0);
+        let energy = sim::slot_stat(sim::UP_ENERGY) as usize;
+        let recharge = sim::slot_stat(sim::UP_RECHARGE) as usize;
+        profile.kit[energy] += 4;
+        profile.kit[recharge] -= 4;
+        assert_eq!(sim::World::kit_cost(&profile.kit), sim::KIT_BUDGET);
+
+        let error = validate_profile_kits(&[profile], None).unwrap_err();
+        assert!(error.contains("Gunner"));
+        assert!(error.contains("rejected by hull"));
+    }
+
+    #[test]
+    fn profile_preflight_rejects_ambiguous_contrast_names() {
+        let mut contrasts = profiles::calibration_contrasts();
+        let duplicate = contrasts[0].name;
+        contrasts[1].name = duplicate;
+        let error = validate_profile_contrasts(&contrasts, None).unwrap_err();
+        assert!(error.contains("blank or duplicate contrast name"));
+
+        let mut contrasts = profiles::calibration_contrasts();
+        let duplicate = contrasts[0].a.name;
+        contrasts[0].b.name = duplicate;
+        let error = validate_profile_contrasts(&contrasts, None).unwrap_err();
+        assert!(error.contains("does not name both sides unambiguously"));
     }
 
     #[test]
@@ -6038,6 +7839,70 @@ mod tests {
     }
 
     #[test]
+    fn profile_results_use_the_live_melee_score_floor() {
+        assert_eq!(profile_score([-1, -2], false), (0.5, 0.0, 0));
+        assert_eq!(profile_score([-1, 2], false), (0.0, -2.0, 2));
+        assert_eq!(profile_score([-1, 2], true), (1.0, 2.0, 2));
+        assert_eq!(profile_score([70_000, 80_000], false), (0.5, 0.0, 131_070));
+    }
+
+    #[test]
+    fn profile_dressing_opens_on_the_authored_full_match_state() {
+        let kit = profiles::builtins()[0].kit;
+        let mut world = sim::World::with_map(23, sim::build_pit);
+        let first = world.spawn_on_map(0, 0, 0, 0) as u8;
+        let second = world.spawn_on_map(1, 1, 0, 32768) as u8;
+        assert_ne!(first, u8::MAX);
+        assert_ne!(second, u8::MAX);
+        let ships = [first, second];
+        for &ship in &ships {
+            let row = &mut world.state.ships[ship as usize];
+            row.x += 12_345;
+            row.y -= 5_432;
+            row.vx = 777;
+            row.vy = -333;
+            row.energy = 1;
+        }
+        let mut seats = [
+            Seat {
+                team: 0,
+                ..Default::default()
+            },
+            Seat {
+                team: 1,
+                ..Default::default()
+            },
+        ];
+        let mut prng = [1, 2];
+
+        assert!(dress_team(
+            &mut world,
+            &ships,
+            &mut seats,
+            sim::KIT_BUDGET,
+            Some(&[kit, kit]),
+            &mut prng,
+        ));
+
+        for (index, &ship) in ships.iter().enumerate() {
+            let row = &world.state.ships[ship as usize];
+            assert_eq!(row.kit, kit);
+            assert_eq!(row.energy, world.eff_max_energy(ship as usize));
+            assert_eq!((row.vx, row.vy), (0, 0));
+            assert_eq!((row.x, row.y), (row.spawn_x, row.spawn_y));
+            let other = world.state.ships[ships[1 - index] as usize];
+            assert_eq!(
+                row.heading,
+                crate::room::heading_toward((row.x, row.y), (other.x, other.y))
+            );
+            assert_eq!(row.alive, 1);
+            for charge in 0..sim::MAX_CHARGES {
+                assert_eq!(row.charge[charge], kit[sim::slot_charge(charge) as usize]);
+            }
+        }
+    }
+
+    #[test]
     fn explicit_profiles_are_dealt_once_per_match() {
         let kit = profiles::builtins()[0].kit;
         let (seats, _) = team_match_with_options(
@@ -6046,10 +7911,11 @@ mod tests {
             sim::KIT_BUDGET,
             19,
             None,
-            &Arena::Built(sim::build_pit),
+            TeamMap::Arena(&Arena::Built(sim::build_pit)),
             TeamMatchOptions {
                 kits: Some(&[kit, kit]),
                 tick_limit: 12_000,
+                kill_target_per_player: Some(KILL_TARGET),
             },
         );
 

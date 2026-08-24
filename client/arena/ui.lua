@@ -1754,9 +1754,7 @@ local function scores(me, pilots, watchers, viewer_name)
     local shown = math.min(n, SHOWN)
     local w = COL_W * F.scale
     local head = 24 * F.scale
-    -- Header, rows, and a line of totals under them.
-    local foot = 16 * F.scale
-    local h = head + shown * LINE * F.scale + foot + 8 * F.scale
+    local h = head + shown * LINE * F.scale + 8 * F.scale
     local x = F.safe_l + PAD * F.scale
     -- Enough behind it to read over a starfield, and no border: a rule down
     -- the left is what holds the column, the way it holds a wall face.
@@ -1908,36 +1906,10 @@ local function scores(me, pilots, watchers, viewer_name)
         y = y + LINE * F.scale
     end
 
-    -- Who is in the room, by what the zone is willing to say about them.
-    --
-    -- Three numbers rather than one, because "sixty in the room" is a
-    -- different room depending on how many of them are people. The three are
-    -- the three labels a seat can wear: a claimed account, a guest, and a
-    -- declared bot. A guest is counted apart from a claimed pilot rather than
-    -- folded into the humans, because the label is a statement about what the
-    -- server knows and most guests are people in their first session.
-    --
-    -- Spelled out rather than punched into "0/2/50". Three bare numbers in a
-    -- corner are a code, and this line is read once by somebody deciding
-    -- whether a room is worth joining.
-    local claimed, guests, bots, watching = 0, 0, 0, 0
-    for i = 1, n do
-        local r = rows[i]
-        if r.watch then watching = watching + 1
-        elseif r.label == "bot" or r.label == "bot?" then bots = bots + 1
-        elseif r.label == "human" then claimed = claimed + 1
-        else guests = guests + 1 end
-    end
-    local fy = y + foot / 2
-    -- The head count is people in the game. Watchers are counted apart and
-    -- only when there are any, because a zero on the end of every room's
-    -- line would be a column about nothing most of the time.
-    local line = string.format("%d HERE: %d SIGNED, %d GUEST, %d AI",
-                               n - watching, claimed, guests, bots)
-    if watching > 0 then
-        line = line .. string.format(", %d WATCHING", watching)
-    end
-    txt(line, x + 12 * F.scale, fy, (FONT - 3) * F.scale, pal.a(pal.DIM, 0.8))
+    -- No line of totals under the rows. It counted the room by seat label,
+    -- "8 here: 1 signed, 0 guest, 7 ai", and went at Chris's request: the
+    -- marks in the rows already say who is a person, and the PLAYERS chip
+    -- that opens this panel carries the head count.
 
     -- Only when there is something to scroll to. A bar on a list that fits is
     -- a control that does nothing.
@@ -4962,8 +4934,14 @@ local function compact_deploy(a, x, y, w, h)
     end
 
     if a.room and a.row then
-        key_box(x, ky, rmargin, kh, pal.a(pal.FRIEND, 0.10),
-                pal.a(pal.FRIEND, 0.9))
+        -- The key breathes, on the tally's slow swell rather than a blink:
+        -- it is the one press this page exists for, and a still box at the
+        -- foot of the screen reads as a label. Floored well above dark, so
+        -- the trough never looks like a key that stopped working.
+        local breath = 0.5 + 0.5 * math.sin(F.now * 2.6)
+        key_box(x, ky, rmargin, kh,
+                pal.a(pal.FRIEND, 0.06 + 0.12 * breath),
+                pal.a(pal.FRIEND, 0.62 + 0.38 * breath))
         txt("DEPLOY", x + rmargin / 2, ky + kh / 2, 19 * F.scale,
             pal.a(pal.INK, 1), "center")
         hit(x - 6 * F.scale, ky - 6 * F.scale, rmargin + 12 * F.scale,
@@ -5481,7 +5459,7 @@ function pages.kit(v, x, y, w, h, focused)
     end
 
     -- A label and nothing beside it. Each of these heads carried a sentence
-    -- about its group: what six of a stat costs, what a dim step means, that
+    -- about its group: what a stat ladder costs, what a dim step means, that
     -- spent charges do not come back. They were rules of the game printed on
     -- the furniture, read once and then in the way of the thing they
     -- introduced, and the page says most of it now by drawing it: a dim step
@@ -5635,9 +5613,9 @@ function pages.kit(v, x, y, w, h, focused)
         cy = cy + srow
     end
 
-    -- The stats: five ladders of six, and the two steps past six that the
-    -- shelf sells, behind a divider so the page says which is which without a
-    -- word about it. Then the two weapons, on the same ladders. Those were
+    -- The stats: five eight-step ladders behind a divider, each pip a real
+    -- point the pilot already owns and may put into this build. Then the two
+    -- weapons, on the same ladders. Those were
     -- chips, both wearing the word "rung": one word for two different weapons,
     -- and no way to see which rung you were on or to climb one. What a level
     -- is is a position on a ladder, so it is drawn as one and reads as L1,
@@ -6549,9 +6527,9 @@ function pages.shop(v, x, y, w, h, focused)
     -- ladder is the most rungs anybody could buy rather than the tallest slot.
     -- The bar's width is reserved on every row whether or not the row has one,
     -- which is what puts the first buyable rung in the same column all the way
-    -- down: a stat opens at six and a charge kind at nothing, and pips that
-    -- started where each row's own dealt part ended made a ragged edge out of
-    -- the one column worth comparing.
+    -- down: a stat is fully dealt while a charge kind can start at nothing,
+    -- and pips that started where each row's own dealt part ended made a
+    -- ragged edge out of the one column worth comparing.
     local DEALT = 28 * F.scale
     local most = 1
     for _, r in ipairs(v.rows or {}) do
@@ -6617,8 +6595,8 @@ function pages.shop(v, x, y, w, h, focused)
             if base > 0 then
                 -- What everybody is dealt, as one bar. Pips would be a ladder
                 -- with its bottom half permanently lit and nothing to say
-                -- where the buying starts, and on a stat that is six of the
-                -- eight.
+                -- where the buying starts, especially on a stat whose full
+                -- eight-step ladder is universal.
                 rect(lx, ly - 1.5 * F.scale, DEALT - 10 * F.scale,
                      3 * F.scale, pal.a(pal.DIM, 0.45))
             end

@@ -103,8 +103,8 @@ pub fn next_buy(wants: &[usize], shelf: &[(usize, u32)], rivets: i64) -> Option<
 /// Thirty points, spent in the order this pilot wants them, inside whatever
 /// ceiling it is flying under.
 ///
-/// A pass at a time rather than filling each slot to its top in turn: six
-/// points into one stat before anything else is a ship nobody would build,
+/// A pass at a time rather than filling each slot to its top in turn: filling
+/// one stat before anything else is a ship nobody would build,
 /// and the repeats in `wants` are what weight the front of the list instead.
 /// Slots that are full, or that the account has not bought, are skipped, so an
 /// unspent budget flows to whatever is left.
@@ -130,11 +130,11 @@ pub fn build(wants: &[usize], ceiling: &[u8; sim::SLOT_COUNT]) -> [u8; sim::SLOT
             }
         }
         if !moved {
-            // A taste can saturate before the budget does, especially now
-            // that thrust and rotation stop after their first effective step.
-            // Flow the remainder across the live ceiling rather than flying
-            // points short. This is still the last choice: every weighted
-            // preference above has already reached its top.
+            // A taste can saturate before the budget does when its preferred
+            // rungs are shallower than thirty points. Flow the remainder
+            // across the live ceiling rather than flying points short. This
+            // is still the last choice: every weighted preference above has
+            // already reached its top.
             let charge0 = sim::slot_charge(0) as usize;
             for slot in 0..sim::SLOT_COUNT {
                 if spent >= sim::KIT_BUDGET {
@@ -235,6 +235,27 @@ mod tests {
         }
     }
 
+    /// Deeper stat ladders must not quietly collapse three named tastes into
+    /// the same all-stat build. These counts are the intentional full-shelf
+    /// specializations that the authored pilot roster flies.
+    #[test]
+    fn full_shelf_builds_keep_their_distinct_flight_tastes() {
+        let ceiling = full_ceiling();
+        let stat_counts = |plan| {
+            let kit = build(&wants(plan), &ceiling);
+            [
+                kit[sim::slot_stat(sim::UP_ENERGY) as usize],
+                kit[sim::slot_stat(sim::UP_RECHARGE) as usize],
+                kit[sim::slot_stat(sim::UP_SPEED) as usize],
+                kit[sim::slot_stat(sim::UP_THRUST) as usize],
+                kit[sim::slot_stat(sim::UP_ROTATION) as usize],
+            ]
+        };
+        assert_eq!(stat_counts(BuildPlan::Gunner), [7, 6, 3, 0, 0]);
+        assert_eq!(stat_counts(BuildPlan::Bomber), [7, 3, 0, 4, 0]);
+        assert_eq!(stat_counts(BuildPlan::Runner), [0, 3, 6, 6, 3]);
+    }
+
     /// The ceiling is the account's as well as the arena's, so a pilot that
     /// owns nothing flies the same shape a fresh player does rather than
     /// nothing at all.
@@ -248,5 +269,16 @@ mod tests {
         for slot in 0..sim::SLOT_COUNT {
             assert!(kit[slot] <= base[slot], "slot {slot} is not owned");
         }
+        assert_eq!(
+            [
+                kit[sim::slot_stat(sim::UP_ENERGY) as usize],
+                kit[sim::slot_stat(sim::UP_RECHARGE) as usize],
+                kit[sim::slot_stat(sim::UP_SPEED) as usize],
+                kit[sim::slot_stat(sim::UP_THRUST) as usize],
+                kit[sim::slot_stat(sim::UP_ROTATION) as usize],
+            ],
+            [0, 3, 7, 7, 4],
+            "a new Runner commits to movement without inventing extra points"
+        );
     }
 }

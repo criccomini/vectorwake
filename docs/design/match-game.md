@@ -354,7 +354,7 @@ costs exactly one:
 
 | kind | ceiling |
 |---|---|
-| a step of a stat | the depth that changes physics: 7, 5, 5, 1, 1 |
+| a step of a stat | eight useful steps on each of five ladders |
 | a rung of a trigger's ladder | the arena's row |
 | an add-on on a trigger | the arena's row |
 | a charge carried | the arena's row |
@@ -375,15 +375,18 @@ are not a pilot's to rename or drop, since those names are the code's.
 Profiles are ordinary hull-independent kits, so there is no second balance
 system hiding behind the convenience.
 
-The stat ceilings are the counts that still change the resolved ship: seven
-energy, five recharge, five speed, one thrust and one rotation. The old flat
-ceiling of eight sold and spent points after several of those values had
-already clamped. A point that changes no physics is not a subtle tradeoff. It
-is a broken contract, so those steps do not exist on the page or in the shop.
+The old flight row clamped after seven Energy points, five Recharge, five
+Speed, one Thrust and one Rotation. Hiding those dead points made the page
+honest, but it also erased most of the flight build space. The row now gives
+all five stats eight useful steps. The standard `5/4/5/2/2` allocation still
+resolves to 1600 Energy, 1150 Recharge, 3250 Speed, 17 Thrust and 230 Rotation,
+so the starter still flies the same. Moving away from it is the new choice.
 
-The useful stat depths total nineteen. A full kit therefore has to make at
-least eleven points of weapon and charge decisions, which gives thirty a
-clearer identity than the old all-stat reference build did.
+The five ladders contain forty useful points against a budget of thirty. A
+pilot may spend the whole kit on flight, with only the base gun and bomb, but
+cannot maximize every stat. The starter spends eighteen on flight and leaves
+twelve for weapons and charges. Each extra pip therefore has both a physical
+effect and a visible opportunity cost.
 
 **Death re-deals the frame, never the ammunition.** Stats, rungs and add-ons
 come back at every spawn, because they are what your ship is. Charge counts
@@ -476,21 +479,40 @@ the room.
 ## What rivets buy
 
 **Slots, and looks. Never strength.** Everything trades against the same
-thirty. The balance harness compares the three starters and a bought-up
-specialization in mirrored four-a-side matches across the live map rotation.
-Each result carries its paired sample size, a family-wise 95% confidence
-interval, and a verdict against the 45 to 55 band. Under one hundred paired
-seeds is inconclusive by definition. A point estimate does not get to call
-itself balance.
+thirty. The profile harness declares ten comparisons among legal 30-point
+builds: one matched margin for each stat beside the starter allocation and one
+matched seventh-to-eighth margin for each stat.
+Every stat margin spends its last point on that pip or the same bomb-bounce pip,
+so it asks about one price instead of a bundle. Fixed bots and controllers play
+mirrored four-a-side matches for the full 180 seconds, with seeds spread evenly
+over the six Melee maps and seven cyclic lineups. Every hull occupies four
+lineup seats per cycle. Each declared contrast has a conservative approximate
+family-wise 95% paired t interval and a verdict against the 45 to 55 band. The
+fifteen-comparison planning bound needs 3,384 pairs for the stated 90% power
+target under worst-case paired variance. The frozen screen rounds that minimum
+to 3,402, or 81 complete map-by-lineup blocks. Other sample counts are
+exploratory. The powered seed stream belongs
+to one preregistered attempt for an exact content and analysis fingerprint, so
+tuning cannot reuse the confirmatory evidence. Every map and build pair must
+also clear fixed activity and mirrored sensitivity gates. A gross observed
+side gap is reported as a warning rather than a blocker because the estimator
+averages both side assignments. None of those diagnostics is a powered
+side-equivalence claim. Kill intervals are descriptive.
+
+That experiment estimates the ten marginal-pip questions
+under its bot, controller, map and match fixture. It does not establish that
+every legal kit is balanced, nor does it measure fun or perceived fairness for
+people.
 
 - **Add-ons and rungs** the arena allows but your account has not bought. Those
   are the purchasable combat upgrades. First the roster held several of them:
   the second barrel, the third bomb rung, the deepest rung of shrapnel and the
   mine count were one hull's each, and nothing can be sold that exists on one
   hull.
-  A new account now owns the union of the three starter profiles. The shop
-  begins beyond that union, where deeper spray, shrapnel and racks create
-  specialization rather than basic competitiveness.
+  A new account owns the three starter profiles, every stat step and the
+  established second gun and spray rungs used by saved remixes. The shop begins
+  beyond that base equipment envelope, where deeper weapons, add-ons and racks
+  create specialization rather than basic competitiveness.
 - **Deeper racks.** Two repels and two bursts support the starters, against
   the three the arena allows, so the last rung of each is bought.
 - **Charge kinds** beyond those two.

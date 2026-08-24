@@ -335,10 +335,10 @@ static void test_flight_and_damage(const sim_settings *base) {
         s.ships[0].energy = 0;
         step_n(&s, &cfg, 0, 0, 10);
         CHECK(s.ships[0].energy > 0, "energy recharges");
-        /* Four thousand ticks, not two. A fresh hull recharges at
-         * InitialRecharge, which is 400 in the original's units and so 40
-         * energy a second against a 1000 bar: twenty-five seconds to fill
-         * from empty, where our own numbers used to do it in nine. */
+        /* Four thousand ticks is deliberately longer than the zero-point
+         * hull needs. Its 1070 recharge fills a 1475 bar in about fourteen
+         * seconds, and this check is about reaching the cap rather than an
+         * exact recovery clock. */
         step_n(&s, &cfg, 0, 0, 4000);
         CHECK(s.ships[0].energy == sim_eff_max_energy(&cfg.classes[APEX], &s.ships[0]),
               "energy clamps at the effective maximum");
@@ -388,7 +388,7 @@ static void test_flight_and_damage(const sim_settings *base) {
     /* Sustained unanswered fire kills. Energy is the whole economy: it is the
      * health pool and the ammunition at once, and a ship that is being hit
      * faster than it recharges dies. A hit takes two thirds of the listed 200,
-     * so a fresh 1000-energy hull takes eight hits rather than five.
+     * so a zero-point 1475-energy hull takes twelve hits before recharge.
      *
      * This asserted the opposite until the firing costs were corrected. A
      * bullet used to cost 35% of a full bar, so an attacker ran itself dry
@@ -1534,6 +1534,59 @@ static void test_maps(const sim_settings *base) {
             free(band);
         }
 
+        /* The end of a finite pair run. The two faces stop there, and what a
+         * hull cutting the corner at the exposed end used to find was the
+         * inside of the wall: the axis clamps see no slope, and between two
+         * parallel faces the deepest alternates every tick, so the hull sat
+         * on the seam jittering forever. It is a wall and has to answer like
+         * one, whatever the speed and wherever across the tip the hull
+         * arrives. */
+        {
+            sim_map *stub = malloc(sizeof *stub);
+            sim_map_size(stub, 200, 200);
+            for (int i = 0; i <= 12; i++) {
+                SIM_MAP_AT(stub, 60 + i, 60 + i) =
+                    SIM_TILE(SIM_TILE_SLOPE, SIM_SLOPE_NE);
+                SIM_MAP_AT(stub, 61 + i, 60 + i) =
+                    SIM_TILE(SIM_TILE_SLOPE, SIM_SLOPE_SW);
+            }
+            sim_map_index(stub);
+            sim_settings ec = cfg;
+            ec.map = stub;
+
+            int stuck = 0;
+            for (int spd = 4; spd <= 20 && !stuck; spd += 2) {
+                for (int off = -10; off <= 10 && !stuck; off++) {
+                    static sim_state t;
+                    /* Square across the run, aimed to shave its upper end. */
+                    sim_init(&t, 26);
+                    sim_spawn(&t, APEX, 0, 61 * 16 - 43 + off,
+                              60 * 16 + 100, 0, &ec);
+                    t.ships[0].vx = spd * 65536;
+                    t.ships[0].vy = -spd * 65536;
+                    step_n(&t, &ec, 0, 0, 300);
+                    int32_t px = t.ships[0].x / 256, py = t.ships[0].y / 256;
+                    if (px > py && px < py + 16 && py >= 60 * 16 - 8
+                        && py <= 73 * 16 + 8)
+                        stuck = 1;
+                    /* And down the run's own axis into the mouth. */
+                    sim_init(&t, 27);
+                    sim_spawn(&t, APEX, 0, 55 * 16 + 8 + off, 55 * 16,
+                              24576, &ec);
+                    t.ships[0].vx = spd * 65536;
+                    t.ships[0].vy = spd * 65536;
+                    step_n(&t, &ec, 0, 0, 300);
+                    px = t.ships[0].x / 256;
+                    py = t.ships[0].y / 256;
+                    if (px > py && px < py + 16 && py >= 60 * 16 - 8
+                        && py <= 73 * 16 + 8)
+                        stuck = 1;
+                }
+            }
+            CHECK(!stuck, "no approach to a run's end leaves a hull inside it");
+            free(stub);
+        }
+
         /* And the reason it is that shape rather than a stepped line with the
          * steps filed off.
          *
@@ -2520,10 +2573,77 @@ static void test_tech_tree(const sim_settings *base) {
          * hull no longer has a say: seven identical answers, one per class. */
         const uint8_t *ceil = cfg.kit_ceiling;
         const int CIPHER = 4, LATTICE = 6;
-        const uint8_t stat_steps[SIM_UP_COUNT] = {7, 5, 5, 1, 1};
         for (int u = 0; u < SIM_UP_COUNT; u++)
-            CHECK(ceil[SIM_SLOT_STAT(u)] == stat_steps[u],
-                  "every stat stops at its last effective step");
+            CHECK(ceil[SIM_SLOT_STAT(u)] == SIM_UP_STEPS,
+                  "every stat offers eight effective steps");
+
+        /* Every displayed pip changes resolved behavior. The eighth used to
+         * be dead on Energy, the last three on Recharge and Speed, and all but
+         * the first on Thrust and Rotation. Check the converted core values,
+         * where truncation can make a source-unit equality look true while a
+         * runtime step still clips. */
+        {
+            const sim_ship_class *h = &cfg.classes[APEX];
+            const int32_t init[SIM_UP_COUNT] = {
+                h->init_energy, h->init_recharge, h->init_speed,
+                h->init_thrust, h->init_rot
+            };
+            const int32_t step[SIM_UP_COUNT] = {
+                h->up_energy, h->up_recharge, h->up_speed,
+                h->up_thrust, h->up_rot
+            };
+            const int32_t top[SIM_UP_COUNT] = {
+                h->max_energy, h->recharge, h->max_speed, h->thrust, h->rot
+            };
+            for (int u = 0; u < SIM_UP_COUNT; u++) {
+                int32_t seven = init[u] + 7 * step[u];
+                if (seven > top[u]) seven = top[u];
+                int32_t eight = init[u] + 8 * step[u];
+                if (eight > top[u]) eight = top[u];
+                CHECK(step[u] > 0, "a stat point has a positive increment");
+                CHECK(eight > seven, "the eighth stat point changes physics");
+            }
+        }
+
+        /* The wider ladders create choices above and below the familiar ship,
+         * not a stealth retune of the build everybody starts from. Compare in
+         * converted core units so this also catches fixed-point drift. */
+        {
+            static const uint8_t starter[SIM_UP_COUNT] = {5, 4, 5, 2, 2};
+            const sim_ship_class *h = &cfg.classes[APEX];
+            sim_class_units familiar_units = {
+                3250, 0, 3250,
+                170, 0, 170,
+                230, 0, 230,
+                1600, 0, 1600,
+                1150, 0, 1150,
+            };
+            sim_ship_class familiar;
+            sim_class_from_units(&familiar, &familiar_units);
+            const int32_t init[SIM_UP_COUNT] = {
+                h->init_energy, h->init_recharge, h->init_speed,
+                h->init_thrust, h->init_rot
+            };
+            const int32_t step[SIM_UP_COUNT] = {
+                h->up_energy, h->up_recharge, h->up_speed,
+                h->up_thrust, h->up_rot
+            };
+            const int32_t top[SIM_UP_COUNT] = {
+                h->max_energy, h->recharge, h->max_speed, h->thrust, h->rot
+            };
+            const int32_t expected[SIM_UP_COUNT] = {
+                familiar.max_energy, familiar.recharge, familiar.max_speed,
+                familiar.thrust, familiar.rot
+            };
+            for (int u = 0; u < SIM_UP_COUNT; u++) {
+                int32_t resolved = init[u] + starter[u] * step[u];
+                if (resolved > top[u]) resolved = top[u];
+                int32_t delta = resolved - expected[u];
+                if (delta < 0) delta = -delta;
+                CHECK(delta <= 8,
+                      "the starter resolves within fixed-point rounding of its familiar flight value");
+            }
+        }
         CHECK(ceil[SIM_SLOT_LEVEL(SIM_TRIG_GUN)] == 2,
               "MaxGuns is 3, so two rungs are buyable above the first");
         CHECK(ceil[SIM_SLOT_LEVEL(SIM_TRIG_BOMB)] == 2,
@@ -2571,14 +2691,15 @@ static void test_tech_tree(const sim_settings *base) {
                   "every hull takes the same kit as every other one");
         }
 
-        /* The useful stat depths total less than a whole kit, so every full
-         * build also makes weapon and charge choices. */
+        /* Five complete stat ladders exceed a whole kit, so no build can take
+         * every flight advantage at once. */
         int useful_stats = 0;
         for (int u = 0; u < SIM_UP_COUNT; u++)
             useful_stats += ceil[SIM_SLOT_STAT(u)];
-        CHECK(useful_stats == 19, "the effective stat depths are explicit");
-        CHECK(useful_stats < SIM_KIT_BUDGET,
-              "and stats alone cannot fill a build");
+        CHECK(useful_stats == SIM_UP_COUNT * SIM_UP_STEPS,
+              "all five eight-step ladders are present");
+        CHECK(useful_stats > SIM_KIT_BUDGET,
+              "and one kit cannot maximize every stat");
 
         /* What is left of a hull is its footprint, and it had better still
          * differ or the roster is seven names for one ship. */
@@ -4974,14 +5095,12 @@ static void test_kits_and_matches(const sim_settings *base) {
     /* A starter kit spends the whole budget on any hull, inside the ceilings
      * it was handed, and it is what a seat with no kit of its own flies. */
     {
+        static const uint8_t starter_stats[SIM_UP_COUNT] = {5, 4, 5, 2, 2};
         uint8_t base[SIM_SLOT_COUNT];
         sim_base_entitlements(base);
-        CHECK(base[SIM_SLOT_STAT(SIM_UP_ENERGY)] == 7
-              && base[SIM_SLOT_STAT(SIM_UP_RECHARGE)] == 5
-              && base[SIM_SLOT_STAT(SIM_UP_SPEED)] == 5
-              && base[SIM_SLOT_STAT(SIM_UP_THRUST)] == 1
-              && base[SIM_SLOT_STAT(SIM_UP_ROTATION)] == 1,
-              "an account owns every effective stat step");
+        for (int u = 0; u < SIM_UP_COUNT; u++)
+            CHECK(base[SIM_SLOT_STAT(u)] == SIM_UP_STEPS,
+                  "an account owns every effective stat step");
         CHECK(base[SIM_SLOT_CHARGE(SIM_CHARGE_REPEL)] == 2
               && base[SIM_SLOT_CHARGE(SIM_CHARGE_BURST)] == 2,
               "two repels and two bursts support the starter profiles");
@@ -4991,7 +5110,7 @@ static void test_kits_and_matches(const sim_settings *base) {
               && base[SIM_SLOT_LEVEL(SIM_TRIG_BOMB)] == 1
               && base[SIM_SLOT_MOD(SIM_TRIG_GUN, SIM_MOD_MULTI)] == 2
               && base[SIM_SLOT_MOD(SIM_TRIG_BOMB, SIM_MOD_SHRAPNEL)] == 1,
-              "the starter profile specialties are owned");
+              "the base equipment envelope is owned");
         /* Nothing granted exceeds what the arena can resolve. */
         for (int i = 0; i < SIM_SLOT_COUNT; i++)
             CHECK(base[i] <= cfg.kit_ceiling[i],
@@ -5005,6 +5124,9 @@ static void test_kits_and_matches(const sim_settings *base) {
             int spent = sim_starter_kit(ceiling, kit);
             CHECK(spent == SIM_KIT_BUDGET, "a starter kit spends the budget");
             CHECK(sim_kit_cost(kit) == spent, "and costs what it spent");
+            for (int u = 0; u < SIM_UP_COUNT; u++)
+                CHECK(kit[SIM_SLOT_STAT(u)] == starter_stats[u],
+                      "the core starter keeps the familiar flight allocation");
             int over = 0;
             for (int i = 0; i < SIM_SLOT_COUNT; i++)
                 if (kit[i] > ceiling[i]) over = 1;

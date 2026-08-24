@@ -11,6 +11,16 @@ use crate::{
     select, sim, spool, token, DEFAULT_MAX_PLAYERS, DEFAULT_MAX_WATCHERS,
 };
 
+fn account_entitlements(claimed: &[u8]) -> [u8; sim::SLOT_COUNT] {
+    let mut entitlements = sim::World::base_entitlements();
+    for (slot, n) in claimed.iter().enumerate() {
+        if let Some(c) = entitlements.get_mut(slot) {
+            *c = (*c).max(*n);
+        }
+    }
+    entitlements
+}
+
 /// This process: one arena server, serving one zone, holding that zone's
 /// rooms.
 ///
@@ -676,16 +686,11 @@ impl ArenaServer {
                 "a bot account has to declare itself a bot".into()
             });
         }
-        // The baseline where the token carries none, which is a meta-layer
-        // that predates them. A pilot who owns nothing flies a whole ship;
-        // reading an absent list as an account that owns nothing would put
-        // them in a chassis.
-        let mut entitlements = sim::World::base_entitlements();
-        for (slot, n) in claims.entitlements.iter().enumerate() {
-            if let Some(c) = entitlements.get_mut(slot) {
-                *c = *n;
-            }
-        }
+        // The baseline is a floor, including for a token minted just before a
+        // release raises a universal entitlement. A pilot who owns nothing
+        // flies a whole ship; reading an absent or older list as an account
+        // that owns nothing would put them in a chassis until login refresh.
+        let entitlements = account_entitlements(&claims.entitlements);
         Ok(Seat {
             name: claims.name.clone(),
             bot: declared_bot,
@@ -1726,7 +1731,25 @@ impl ArenaServer {
 mod tests {
     use std::collections::HashSet;
 
-    use super::{pilot_release_claim, ArenaServer, MAX_ROOM_NUMBER};
+    use super::{account_entitlements, pilot_release_claim, ArenaServer, MAX_ROOM_NUMBER};
+
+    #[test]
+    fn a_token_cannot_lower_a_new_universal_entitlement() {
+        let mut old = vec![0; crate::sim::SLOT_COUNT];
+        old[crate::sim::slot_stat(crate::sim::UP_ENERGY) as usize] = 7;
+        old[crate::sim::slot_stat(crate::sim::UP_RECHARGE) as usize] = 5;
+        old[crate::sim::slot_stat(crate::sim::UP_SPEED) as usize] = 5;
+        old[crate::sim::slot_stat(crate::sim::UP_THRUST) as usize] = 1;
+        old[crate::sim::slot_stat(crate::sim::UP_ROTATION) as usize] = 1;
+
+        let merged = account_entitlements(&old);
+        for stat in 0..crate::sim::UP_COUNT {
+            assert_eq!(
+                merged[crate::sim::slot_stat(stat) as usize],
+                crate::sim::UP_STEPS
+            );
+        }
+    }
 
     #[test]
     fn room_numbers_fill_the_wire_range_then_reuse_a_gap() {

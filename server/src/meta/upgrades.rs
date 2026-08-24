@@ -2,9 +2,10 @@
 //!
 //! Slots, and looks. Never strength. Everything in a kit trades against the
 //! same thirty points, so what is sold is *which* upgrades a pilot may slot
-//! rather than how many. The profile harness compares full builds in mirrored
-//! live-format matches and reports family-wise confidence intervals. See
-//! docs/design/match-game.md.
+//! rather than how many. The profile harness runs ten prespecified
+//! matched contrasts in mirrored live-format bot matches and reports
+//! approximate family-wise win intervals. It does not price fun or cover the
+//! whole kit space. See docs/design/match-game.md.
 //!
 //! Every slot in the selected zone is on this shelf, which used to be untrue
 //! and was the reason the shelf got rebuilt. Four traits sat on the roster
@@ -37,9 +38,9 @@ pub(super) fn next_step(slot: usize, owned: u8, ceiling: u8) -> Option<(u8, u32)
         return None;
     }
 
-    // Stat ceilings are their effective physics depths. Every one is part of
-    // the starter profile union, so there is no stat step left to sell and no
-    // purchase that can disappear into a clamp.
+    // Stats are universal build choices, so a new account owns all eight
+    // effective steps. The shelf cannot sell a ninth or charge for a point
+    // that disappears into a clamp.
     if slot < sim::UP_COUNT {
         return None;
     }
@@ -50,9 +51,9 @@ pub(super) fn next_step(slot: usize, owned: u8, ceiling: u8) -> Option<(u8, u32)
     // is dealt, and charge the same for the first step of either.
     let bought = owned.saturating_sub(sim::World::base_entitlements()[slot]) as u32;
 
-    // A rung of a trigger's ladder. Everything above the first is bought,
-    // and the ceiling is how far the arena's own ladder climbs, so a rung
-    // sold is a rung something actually fires.
+    // A rung of a trigger's ladder. Everything above the account's base
+    // envelope is bought, and the ceiling is how far the arena's own ladder
+    // climbs, so a rung sold is a rung something actually fires.
     if slot < sim::UP_COUNT + sim::TRIG_COUNT {
         return match owned {
             n if n < ceiling => Some((n + 1, 30 + 30 * bought)),

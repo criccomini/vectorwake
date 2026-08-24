@@ -337,6 +337,37 @@ create table if not exists kit_profiles (
     kit     bytea not null,
     primary key (account, name)
 );
+-- The old built-ins all used the same 6/5/5/1/1 flight allocation. Eight
+-- useful stat ladders preserve that ship at 5/4/5/2/2, with the same eighteen
+-- points. Move saved active kits and named copies that still carry the exact
+-- old allocation. Other custom stat choices remain the counts their authors
+-- picked; there is no honest one-size remap for them.
+do $$
+begin
+    perform pg_advisory_xact_lock(707345922);
+    if exists (select 1 from schema_marks where name = 'flight_eight_steps') then
+        return;
+    end if;
+    update kits
+       set kit = set_byte(set_byte(set_byte(set_byte(set_byte(kit,
+                         0, 5), 1, 4), 2, 5), 3, 2), 4, 2)
+     where octet_length(kit) >= 5
+       and get_byte(kit, 0) = 6
+       and get_byte(kit, 1) = 5
+       and get_byte(kit, 2) = 5
+       and get_byte(kit, 3) = 1
+       and get_byte(kit, 4) = 1;
+    update kit_profiles
+       set kit = set_byte(set_byte(set_byte(set_byte(set_byte(kit,
+                         0, 5), 1, 4), 2, 5), 3, 2), 4, 2)
+     where octet_length(kit) >= 5
+       and get_byte(kit, 0) = 6
+       and get_byte(kit, 1) = 5
+       and get_byte(kit, 2) = 5
+       and get_byte(kit, 3) = 1
+       and get_byte(kit, 4) = 1;
+    insert into schema_marks (name) values ('flight_eight_steps');
+end $$;
 -- Gun spray and a second barrel were two add-ons that both meant more
 -- bullets, and they are one ladder now. Dropping the seventh add-on moved
 -- every slot after it: the six gun add-ons stay where they were, the bomb ones
@@ -1338,7 +1369,12 @@ fn kit_profile_name(value: &str) -> Result<String, &'static str> {
     Ok(name.to_string())
 }
 
+const KIT_SCHEMA: u64 = 2;
+
 fn kit_from_body(body: &serde_json::Value) -> Result<Vec<u8>, &'static str> {
+    if body.get("kit_schema").and_then(|value| value.as_u64()) != Some(KIT_SCHEMA) {
+        return Err("reload before saving this kit");
+    }
     let values = body
         .get("kit")
         .and_then(|value| value.as_array())
@@ -3917,7 +3953,7 @@ async fn route(
         // What one account owns, slot by slot, and what each slot could hold.
         //
         // Its own route rather than a field on the pilot card, because it is
-        // nineteen rows and the card is read far more often than it is edited.
+        // a couple dozen rows and the card is read far more often than it is edited.
         // Slots the game does not have are left out entirely: a bullet with a
         // proximity fuse has a ceiling of zero, and a row offering to grant
         // one is a row that can only refuse.
@@ -3973,7 +4009,7 @@ async fn route(
         // purchase; setting a slot below the baseline is not revoking an
         // upgrade, it is crippling an account, and the game has no concept for
         // a pilot who owns less than a fresh one. Where the baseline is zero,
-        // which is most add-ons, the two are the same number anyway.
+        // the two are the same number anyway.
         //
         // Nothing is refunded. This is an operator deciding rather than a
         // trade being unwound, and the wallet is editable beside it for an
@@ -5696,16 +5732,39 @@ mod tests {
     fn a_profile_kit_is_a_bounded_vector_of_counts() {
         let mut kit = vec![0u8; sim::SLOT_COUNT];
         kit[0] = sim::KIT_BUDGET as u8;
-        let body = serde_json::json!({"kit": kit});
+        let body = serde_json::json!({"kit_schema": KIT_SCHEMA, "kit": kit});
         assert_eq!(kit_from_body(&body).unwrap()[0], sim::KIT_BUDGET as u8);
 
-        assert!(kit_from_body(&serde_json::json!({"kit": [1, 2]})).is_err());
+        assert!(
+            kit_from_body(&serde_json::json!({"kit_schema": KIT_SCHEMA, "kit": [1, 2]})).is_err()
+        );
         let mut over = vec![0u8; sim::SLOT_COUNT];
         over[0] = sim::KIT_BUDGET as u8 + 1;
-        assert!(kit_from_body(&serde_json::json!({"kit": over})).is_err());
+        assert!(
+            kit_from_body(&serde_json::json!({"kit_schema": KIT_SCHEMA, "kit": over})).is_err()
+        );
         let mut malformed = vec![serde_json::json!(0); sim::SLOT_COUNT];
         malformed[0] = serde_json::json!("one");
-        assert!(kit_from_body(&serde_json::json!({"kit": malformed})).is_err());
+        assert!(
+            kit_from_body(&serde_json::json!({"kit_schema": KIT_SCHEMA, "kit": malformed}))
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn a_current_kit_schema_preserves_every_valid_count() {
+        let mut counts = vec![0u8; sim::SLOT_COUNT];
+        counts[..sim::UP_COUNT].copy_from_slice(&[6, 5, 5, 1, 1]);
+        let current = serde_json::json!({"kit_schema": KIT_SCHEMA, "kit": counts});
+        assert_eq!(kit_from_body(&current).unwrap(), counts);
+
+        let old = serde_json::json!({"kit_schema": KIT_SCHEMA - 1, "kit": counts});
+        assert_eq!(kit_from_body(&old), Err("reload before saving this kit"));
+        let missing = serde_json::json!({"kit": counts});
+        assert_eq!(
+            kit_from_body(&missing),
+            Err("reload before saving this kit")
+        );
     }
 
     #[test]
@@ -6057,6 +6116,64 @@ mod tests {
         assert_eq!(index.get::<_, String>(0), "btree");
         let predicate: String = index.get(1);
         assert!(predicate.contains("bots_only"), "{predicate}");
+
+        // Recreate the saved build a pilot had before the eight-step flight
+        // rows. The one-shot migration preserves its resolved handling while
+        // leaving a genuinely custom stat allocation alone.
+        let kit_account: i64 = db
+            .query_one("insert into accounts (kind) values (0) returning id", &[])
+            .await
+            .expect("kit account")
+            .get(0);
+        let mut old_starter = vec![0u8; sim::SLOT_COUNT];
+        old_starter[..5].copy_from_slice(&[6, 5, 5, 1, 1]);
+        let mut custom = vec![0u8; sim::SLOT_COUNT];
+        custom[..5].copy_from_slice(&[4, 5, 5, 1, 1]);
+        db.execute(
+            "insert into kits (account, class, kit) values ($1, 'Apex', $2)",
+            &[&kit_account, &old_starter],
+        )
+        .await
+        .expect("old active kit");
+        db.execute(
+            "insert into kit_profiles (account, name, kit)
+             values ($1, 'starter copy', $2), ($1, 'custom', $3)",
+            &[&kit_account, &old_starter, &custom],
+        )
+        .await
+        .expect("old saved profiles");
+        db.execute(
+            "delete from schema_marks where name = 'flight_eight_steps'",
+            &[],
+        )
+        .await
+        .expect("clear flight migration mark");
+        db.batch_execute(SCHEMA)
+            .await
+            .expect("flight migration schema apply");
+        let active: Vec<u8> = db
+            .query_one(
+                "select kit from kits where account = $1 and class = 'Apex'",
+                &[&kit_account],
+            )
+            .await
+            .expect("migrated active kit")
+            .get(0);
+        let saved = db
+            .query(
+                "select name, kit from kit_profiles where account = $1 order by name",
+                &[&kit_account],
+            )
+            .await
+            .expect("migrated saved profiles");
+        assert_eq!(&active[..5], &[5, 4, 5, 2, 2]);
+        assert_eq!(saved[0].get::<_, String>(0), "custom");
+        assert_eq!(&saved[0].get::<_, Vec<u8>>(1)[..5], &[4, 5, 5, 1, 1]);
+        assert_eq!(saved[1].get::<_, String>(0), "starter copy");
+        assert_eq!(&saved[1].get::<_, Vec<u8>>(1)[..5], &[5, 4, 5, 2, 2]);
+        db.batch_execute(SCHEMA)
+            .await
+            .expect("idempotent flight migration schema apply");
 
         // Remove the empty-database mark and give the one-shot backfill
         // historical work. A second schema apply must leave the projection

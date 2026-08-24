@@ -10,31 +10,28 @@
 #include <string.h>
 #include "sim/baseline.h"
 
-/* Flight, identical on every hull, straight off the original's ship files.
- * All eight of them carry the same numbers: a Warbird and a Leviathan fly
- * exactly alike there, and what tells them apart is the ten capability flags
- * and nothing else.
+/* Flight, identical on every hull. The starter resolves to the original's
+ * familiar 3250 speed, 17 thrust, 230 rotation, 1600 energy and 1150 recharge,
+ * but those values no longer double as the edge of the build space.
  *
  * The footprint is the exception and it is not here: those files carry no
  * ship size at all. `hull_extent` below gives every hull a fixed target budget,
  * and the client fits each drawing around that collision rectangle.
  *
- * The step counts fall out rather than being chosen: five greens take speed
- * from 2010 to its 3250 ceiling, seven take energy from 1000 to 1700, and one
- * is enough for thrust. `eff` clamps at the ceiling, so a sixth speed green
- * is simply worth nothing, which is what the original does with it too. */
+ * Every row has eight useful kit steps. The old inherited triplets reached
+ * their clamps after 7, 5, 5, 1 and 1 points, so most of the visible ladder
+ * was either removed or dead. These ranges keep the starter's handling at an
+ * 18-point allocation and leave controlled room above it for a specialist.
+ * Near that allocation, one point changes its stat by roughly two to eight
+ * percent, so the five rows ask comparable prices without pretending they do
+ * the same job. */
 static const sim_class_units flight = {
-    2010, 250, 3250,      /* InitialSpeed, UpgradeSpeed, MaximumSpeed */
-    15,     2,   17,      /* thrust */
-    200,   40,  230,      /* rotation */
-    1000, 100, 1700,      /* energy */
-    400,  166, 1150,      /* recharge */
+    2010, 248, 3994,      /* InitialSpeed, UpgradeSpeed, MaximumSpeed */
+    154,    8,  218,      /* thrust, in tenths of the documented unit */
+    210,   10,  290,      /* rotation */
+    1475,  25, 1675,      /* energy */
+    1070,  20, 1230,      /* recharge */
 };
-
-/* The useful kit depth of those five rows, in kit order. `eff` clamps at the
- * last number in each triplet, so selling or spending past these counts would
- * buy nothing. Keep the ceiling beside the arithmetic that determines it. */
-static const uint8_t flight_steps[SIM_UP_COUNT] = {7, 5, 5, 1, 1};
 
 /* The weapons, also identical on every hull, from the same files and the
  * arena settings beside them. */
@@ -193,7 +190,7 @@ static const uint16_t hull_extent[SIM_MAX_CLASSES][3] = {
 static void fill_kit_ceiling(sim_settings *cfg) {
     memset(cfg->kit_ceiling, 0, sizeof cfg->kit_ceiling);
     for (int u = 0; u < SIM_UP_COUNT; u++)
-        cfg->kit_ceiling[SIM_SLOT_STAT(u)] = flight_steps[u];
+        cfg->kit_ceiling[SIM_SLOT_STAT(u)] = SIM_UP_STEPS;
     /* A ladder of N rungs is N-1 steps to buy: rung zero is what the trigger
      * already fires. */
     cfg->kit_ceiling[SIM_SLOT_LEVEL(SIM_TRIG_GUN)] = GUN_RUNGS - 1;
@@ -544,9 +541,9 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
          * to be climbed past rather than for themselves.
          *
          * Costs are absolute rather than a share of the bar, which they can
-         * be now that every hull carries the same 1700 the original gives
-         * them all. A gun rung also multiplies BulletFireEnergy by its level,
-         * which is the original's `(weapon level + 1)` rule. */
+         * be because every hull has the same energy ladder. A gun rung also
+         * multiplies BulletFireEnergy by its level, which is the original's
+         * `(weapon level + 1)` rule. */
         for (int k = 0; k < GUN_RUNGS && k < SIM_MAX_RUNGS; k++) {
             sim_weapon_spec bolt;
             memset(&bolt, 0, sizeof bolt);

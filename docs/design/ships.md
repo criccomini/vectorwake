@@ -42,24 +42,29 @@ differences.
 
 ## Standard settings
 
-There is one row, and every hull is on it.
+There is one flight row, and every hull is on it. Each stat has eight real kit
+steps. The starter sits inside those ladders instead of at their edge.
 
-| Speed | Thrust | Rotation | Energy | Recharge |
-|---|---|---|---|---|
-| 3250 | 17 | 230 | 1700 | 1150 |
+| Stat | Zero points | Per point | Starter | Eight points |
+|---|---:|---:|---:|---:|
+| Speed | 2010 | 248 | 5 = 3250 | 3994 |
+| Thrust | 15.4 | 0.8 | 2 = 17 | 21.8 |
+| Rotation | 210 | 10 | 2 = 230 | 290 |
+| Energy | 1475 | 25 | 5 = 1600 | 1675 |
+| Recharge | 1070 | 20 | 4 = 1150 | 1230 |
 
-Those are ceilings; each stat also has a floor a fresh ship starts at and a
-step one kit slot adds, and all three are in `sim/src/baseline.c`. Units follow
-[simulation-core.md](../architecture/simulation-core.md): speed and thrust in
-the Subspace-derived scales, rotation where 400 is one full turn per second,
-recharge in energy per second times ten.
+The starter values preserve the familiar ship. The values above them create
+room for a specialist, and the values below them make cutting a stat a real
+way to fund weapons and charges. Units follow
+[simulation-core.md](../architecture/simulation-core.md): speed and thrust use
+the Subspace-derived scales, rotation uses 400 for one full turn per second,
+and recharge is energy per second times ten.
 
 A table of seven rows stood here, giving the Apex a 420 rotation against the
 Anvil's 240 and the Anvil a 2600 energy pool against the Cipher's 1100. It was
 never what the simulation did. `baseline.c` has carried one shared `flight`
-struct since it was written, for a reason it states plainly: all eight of the
-original's ships fly identically, and what tells them apart there is ten
-capability flags. The table was an intention nobody had implemented.
+struct since it was written. The inherited game also used one shared row. The
+table was an intention nobody had implemented.
 
 It is not going to be implemented, either, and that is the decision worth
 writing down. A kit is thirty points and
@@ -110,13 +115,13 @@ The square hulls present about 25 pixels from either direction. Facing still
 matters without changing how much target any hull receives.
 
 The ceiling is a diagonal: no hull's nose-corner reach, the square root of
-nose squared plus side squared, may pass 23 pixels. That is the number all
-three shipped maps were flood-filled and spawn-checked against, so holding it
-means every room stays reachable, every spawn stays safe, and a full rotation
-fits a three-tile corridor, for every hull, on any map drawn to the same
-promise. It is why each box sits about a pixel inside its drawing rather than
-flush: a pixel of art crossing a wall at the moment of contact is invisible,
-and it buys the diagonal back.
+nose squared plus side squared, may pass 23 pixels. That is the number all six
+shipped maps were flood-filled and spawn-checked against, so holding it means
+every room stays reachable, every spawn stays safe, and a full rotation fits a
+three-tile corridor, for every hull, on any map drawn to the same promise. It
+is why each box sits about a pixel inside its drawing rather than flush: a
+pixel of art crossing a wall at the moment of contact is invisible, and it
+buys the diagonal back.
 
 `client/tests/hull_fit_test.lua` reads the extents out of `sim/src/baseline.c`
 and measures every face of the client's hulls against them, so the two cannot

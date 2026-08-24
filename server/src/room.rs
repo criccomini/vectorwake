@@ -11,6 +11,55 @@ use crate::{
     token, CHANNEL_DELAY, CHANNEL_HOLD, DEFAULT_MAX_WATCHERS,
 };
 
+/// The simulation heading for a vector from `from` to `to`.
+///
+/// Heading zero is north and increases clockwise. Match setup happens once at
+/// the authoritative server, outside the fixed-point tick loop, so this uses
+/// the same angle convention as the AI and rounds to the nearest wire heading.
+pub(crate) fn heading_toward(from: (i32, i32), to: (i32, i32)) -> u16 {
+    let dx = f64::from(to.0) - f64::from(from.0);
+    let dy = f64::from(to.1) - f64::from(from.1);
+    if dx == 0.0 && dy == 0.0 {
+        return 0;
+    }
+    let turns = dx.atan2(-dy) / std::f64::consts::TAU;
+    let units = (turns.rem_euclid(1.0) * 65536.0).round() as i64;
+    (units & 0xffff) as u16
+}
+
+/// Face both public teams toward the current center of the other side.
+///
+/// Starts are authored on different axes from map to map. A fixed north and
+/// south facing made one layout open sideways and another open with both teams
+/// looking away from the fight. Positions are already fixed at the whistle,
+/// so the opposing centroid is the match-facing contract.
+pub(crate) fn face_public_teams(world: &mut sim::World) {
+    let mut sums = [(0i64, 0i64, 0u32); 2];
+    for row in world.state.ships.iter() {
+        if row.active == 0 || row.team >= 2 {
+            continue;
+        }
+        let side = &mut sums[row.team as usize];
+        side.0 += i64::from(row.x);
+        side.1 += i64::from(row.y);
+        side.2 += 1;
+    }
+    for row in world.state.ships.iter_mut() {
+        if row.active == 0 || row.team >= 2 {
+            continue;
+        }
+        let target = sums[1 - row.team as usize];
+        if target.2 == 0 {
+            continue;
+        }
+        let at = (
+            (target.0 / i64::from(target.2)) as i32,
+            (target.1 / i64::from(target.2)) as i32,
+        );
+        row.heading = heading_toward((row.x, row.y), at);
+    }
+}
+
 pub(crate) struct Player {
     pub(crate) ship: u8,
     /// Changes whenever this connection moves between flying and watching.
@@ -2111,6 +2160,14 @@ impl Room {
                 .is_some_and(|expected| expected == *kit);
         let playing = self.mode.match_state().is_some_and(|m| m.playing);
         let settled = self.names.get(&ship).is_some_and(|s| s.kitted);
+        let first_build_state = (!settled).then(|| {
+            let row = &self.world.state.ships[ship as usize];
+            (
+                row.alive != 0,
+                row.energy,
+                self.world.eff_max_energy(ship as usize),
+            )
+        });
         let accepted = if !requested {
             false
         } else if playing && settled {
@@ -2121,6 +2178,23 @@ impl Room {
         } else {
             self.set_kit(ship, kit)
         };
+        if let (true, Some((was_alive, held, old_full))) = (accepted, first_build_state) {
+            // This is the seat's first authored build, not a mid-life respec.
+            // Joining filled the starter's bar before the client could name
+            // its kit. Move a full live bar to the new ceiling, preserve any
+            // damage taken before the packet arrived, and keep a benched seat
+            // at zero so a dead snapshot stays valid.
+            let new_full = self.world.eff_max_energy(ship as usize);
+            self.world.state.ships[ship as usize].energy = if !was_alive {
+                0
+            } else if held >= old_full {
+                new_full
+            } else if new_full < old_full {
+                held.saturating_sub(old_full - new_full).max(1)
+            } else {
+                held
+            };
+        }
         if accepted || !ladder_bot {
             return false;
         }
@@ -3484,8 +3558,12 @@ impl Room {
             self.match_no,
             self.players.len()
         );
+        // Settle the sides before the restart chooses one side's starts. A
+        // pilot moved afterward kept the old pocket for the opening life.
+        self.rebalance();
         self.world.restart();
         self.place_ladder_starts();
+        face_public_teams(&mut self.world);
         // A whistle is where a hull and its kit are unlocked, so anything
         // asked for during the last match lands here. After `restart`, which
         // deals what each seat is already wearing: this deals the new one over
@@ -3493,8 +3571,13 @@ impl Room {
         let seats: Vec<u8> = self.names.keys().copied().collect();
         for ship in seats {
             self.deal_seat(ship);
+            // A pending build lands after `restart`, and Energy may move its
+            // ceiling. Match setup is the safe place to fill the new bar;
+            // doing this in `set_kit` would turn a mid-life respec into a
+            // refill exploit.
+            let full = self.world.eff_max_energy(ship as usize);
+            self.world.state.ships[ship as usize].energy = full;
         }
-        self.rebalance();
         self.broadcast_roster();
         self.broadcast_match();
     }
@@ -3534,7 +3617,6 @@ impl Room {
             row.spawn_y = y;
             row.vx = 0;
             row.vy = 0;
-            row.heading = if team == 0 { 0 } else { 32768 };
         }
     }
 
@@ -3671,12 +3753,13 @@ impl Room {
                 return;
             }
             // The newest arrival on the fullest side. `joined` is the tick
-            // they took the seat, so the largest is the most recent.
+            // they took the seat, and the ship id breaks the common tie where
+            // several joins land before the next simulation tick.
             let Some(ship) = self
                 .players
                 .values()
                 .filter(|p| !p.bot && self.world.state.ships[p.ship as usize].team == thick)
-                .max_by_key(|p| p.joined)
+                .max_by_key(|p| (p.joined, p.ship))
                 .map(|p| p.ship)
             else {
                 return;
@@ -4547,6 +4630,15 @@ mod ladder_wire_tests {
 
     fn u32_at(message: &[u8], at: usize) -> u32 {
         u32::from_le_bytes(message[at..at + 4].try_into().unwrap())
+    }
+
+    #[test]
+    fn match_headings_point_at_all_four_cardinal_targets() {
+        let from = (100, 100);
+        assert_eq!(heading_toward(from, (100, 0)), 0);
+        assert_eq!(heading_toward(from, (200, 100)), 16384);
+        assert_eq!(heading_toward(from, (100, 200)), 32768);
+        assert_eq!(heading_toward(from, (0, 100)), 49152);
     }
 
     #[test]
