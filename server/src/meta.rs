@@ -1901,6 +1901,111 @@ async fn route(
             )
         }
 
+        // A saved build, dropped. The three the game ships are not in this
+        // table and cannot be: `kit_profile_name` refuses their names on the
+        // way in, so a delete that named one would find nothing and say so
+        // rather than reaching for something it does not own.
+        //
+        // The whole list comes back, because the page that asked is a list of
+        // profiles and what it needs to know is what is left rather than what
+        // went.
+        "/v1/profile/delete" => {
+            let account = match account_from_secret(&db, &s("secret")).await {
+                Ok(account) => account,
+                Err(reply) => return reply,
+            };
+            let name = match kit_profile_name(&s("name")) {
+                Ok(name) => name,
+                Err(error) => return (400, serde_json::json!({ "error": error })),
+            };
+            let gone = match db
+                .execute(
+                    "delete from kit_profiles
+                      where account = $1 and lower(name) = lower($2)",
+                    &[&account, &name],
+                )
+                .await
+            {
+                Ok(rows) => rows,
+                Err(error) => return database_error(error),
+            };
+            if gone == 0 {
+                return (
+                    404,
+                    serde_json::json!({ "error": "no profile of yours by that name" }),
+                );
+            }
+            match profiles_of(&db, account).await {
+                Ok(profiles) => (200, serde_json::json!({ "profiles": profiles })),
+                Err(e) => (500, serde_json::json!({ "error": e })),
+            }
+        }
+
+        // A saved build, under a different name. One statement rather than a
+        // delete and an insert, so a rename cannot lose the kit halfway; the
+        // primary key does the refusing where the new name is already taken.
+        "/v1/profile/rename" => {
+            let account = match account_from_secret(&db, &s("secret")).await {
+                Ok(account) => account,
+                Err(reply) => return reply,
+            };
+            let name = match kit_profile_name(&s("name")) {
+                Ok(name) => name,
+                Err(error) => return (400, serde_json::json!({ "error": error })),
+            };
+            let to = match kit_profile_name(&s("to")) {
+                Ok(to) => to,
+                Err(error) => return (400, serde_json::json!({ "error": error })),
+            };
+            // Its own name, in its own spelling, is a rename that changed
+            // nothing and would trip the key check below on the way to saying
+            // so. Answered as it stands.
+            if to.eq_ignore_ascii_case(&name) {
+                return match profiles_of(&db, account).await {
+                    Ok(profiles) => (200, serde_json::json!({ "profiles": profiles })),
+                    Err(e) => (500, serde_json::json!({ "error": e })),
+                };
+            }
+            let taken = match db
+                .query_opt(
+                    "select 1 from kit_profiles
+                      where account = $1 and lower(name) = lower($2)",
+                    &[&account, &to],
+                )
+                .await
+            {
+                Ok(row) => row.is_some(),
+                Err(error) => return database_error(error),
+            };
+            if taken {
+                return (
+                    409,
+                    serde_json::json!({ "error": "you have a build by that name" }),
+                );
+            }
+            let moved = match db
+                .execute(
+                    "update kit_profiles set name = $3
+                      where account = $1 and lower(name) = lower($2)",
+                    &[&account, &name, &to],
+                )
+                .await
+            {
+                Ok(rows) => rows,
+                Err(error) => return database_error(error),
+            };
+            if moved == 0 {
+                return (
+                    404,
+                    serde_json::json!({ "error": "no profile of yours by that name" }),
+                );
+            }
+            match profiles_of(&db, account).await {
+                Ok(profiles) => (200, serde_json::json!({ "profiles": profiles })),
+                Err(e) => (500, serde_json::json!({ "error": e })),
+            }
+        }
+
         // The catalog: every slot the game has, with how far this account owns
         // it, how far it goes, and what the next rung costs. The name a person
         // reads it by comes with it, so the client never has to learn the kit

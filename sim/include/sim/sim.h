@@ -650,6 +650,17 @@ typedef struct {
     uint16_t bounty_base;
     /* Points on top of the victim's bounty for each flag they were carrying. */
     uint16_t points_per_flag;
+    /* How many kills without dying make a streak, and what being on one adds
+     * to what you are worth. Zero kills turns the whole thing off, which is
+     * the switch a zone that does not want it gets.
+     *
+     * Separate from `bounty_per_kill` on purpose: that is a price and this is
+     * a count, and a zone that pays two points a kill has not thereby decided
+     * a streak starts at two kills. The bonus is a step rather than a slope,
+     * so the pilot on a tear is worth visibly more than the arithmetic of
+     * their run alone, and taking them costs the room nothing to work out. */
+    uint16_t streak_kills;
+    uint16_t streak_bounty;
     /* What one rung of each add-on is worth. Units are the field it changes:
      * extra projectiles, walls, Q8 px of fuse, ticks of stall, Q16 push. */
     int32_t mod_step[SIM_MOD_COUNT];
@@ -876,6 +887,12 @@ typedef struct {
      * beyond the base. Cleared by death, which is what makes the number over
      * a ship say "this one is on a run" rather than "this one shopped well". */
     uint16_t run;
+    /* The same kills, counted rather than priced: `run` moves by
+     * `bounty_per_kill` and this moves by one, so a zone that changes what a
+     * kill pays does not thereby change what a streak is. Cleared everywhere
+     * `run` is, since both answer "how has this pilot been doing since they
+     * last died" and an answer that outlived a death would be a lie. */
+    uint16_t streak;
     /* The score. Not cleared by death: what you have been paid is yours,
      * and what you are worth is a different number entirely. */
     uint32_t points;
@@ -888,8 +905,17 @@ typedef struct {
  * dealt back at every spawn that sum says only what you shopped for, it is
  * the same for a pilot who has just undocked as for one on a tear, and a
  * fresh spawn becomes worth thirty to whoever camps it. So bounty counts the
- * run instead: one on arrival, one more per kill, gone when you die. */
+ * run instead: one on arrival, one more per kill, gone when you die.
+ *
+ * A streak adds `streak_bounty` on top of that, so the pilot the room has
+ * been told about is worth more than the run alone would say. It is a step,
+ * and it goes when the streak does. */
 int32_t sim_bounty(const sim_settings *cfg, const sim_ship *sh);
+
+/* Whether this pilot is on a streak, which is `streak_kills` kills without
+ * dying. Asked by everything that draws one, so the threshold is compared in
+ * one place rather than in each of them. */
+int sim_on_streak(const sim_settings *cfg, const sim_ship *sh);
 
 
 /* What an account owns before it has bought anything, over the same flat
@@ -1067,7 +1093,16 @@ typedef enum {
      * the same assist the scoreboard counts rather than a second definition
      * of one. Also appended rather than filed beside SIM_EV_DEATH, because
      * the numbers are mirrored by hand in server/src/sim.rs. */
-    SIM_EV_ASSIST /* a: the pilot credited, b: victim, v: killer (255 none) */
+    SIM_EV_ASSIST, /* a: the pilot credited, b: victim, v: killer (255 none) */
+    /* A pilot's kills without dying reached `streak_kills`. Said once, on the
+     * kill that got them there, rather than left for a reader to notice: the
+     * arena announces this and the announcement has to land on the tick it
+     * happened, not on whichever tick somebody next looked at the counter.
+     *
+     * The room is what reads it. A client predicting locally would emit this
+     * again on every rollback that re-ran the kill, so the arena's own copy
+     * is the one that reaches a feed. */
+    SIM_EV_STREAK /* a: ship, b: unused, v: kills on the streak */
 } sim_event_type;
 
 typedef struct {

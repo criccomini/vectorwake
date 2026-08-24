@@ -25,7 +25,7 @@ SO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "libvwprobe.so")
 C2S_JOIN, C2S_INPUT = 1, 2
 # The client wire's version, checked by the zone before it reads anything else
 # in a join. Bumped whenever any client message changes shape.
-PROTOCOL = 20
+PROTOCOL = 22
 (S2C_WELCOME, S2C_SNAPSHOT, S2C_ROSTER, S2C_KILL, S2C_BANNER,
  S2C_ZONE, S2C_DENIED, S2C_MAP, S2C_SETTINGS) = 1, 2, 3, 4, 5, 6, 7, 9, 10
 S2C_MATCH = 14

@@ -47,7 +47,7 @@ boundaries in more detail.
 
 ## Client protocol
 
-Client messages are binary and currently use protocol version 20. WebSocket and
+Client messages are binary and currently use protocol version 22. WebSocket and
 WebTransport carry the same message definitions; `wt.rs` assigns the reliable
 and datagram lanes.
 

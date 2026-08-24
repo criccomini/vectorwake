@@ -1551,6 +1551,41 @@ mod tests {
         .expect("the signed replica verifies")
     }
 
+    /// A signed house identity that is not one of the rungs: an ordinary
+    /// roster pilot, which is what the director claims for a Ladder room's
+    /// stand-in. `nth` counts from the first generated pilot, so no call sign
+    /// here can be mistaken for a rung's replica.
+    fn signed_stand_in(z: &ArenaServer, account: u64, nth: usize) -> (Seat, pilots::PilotSpec) {
+        let pilot = pilots::individual(pilots::PROVISIONAL_LADDER_RUNG_COUNT + nth);
+        let seat = z
+            .identify(
+                &a_token_for(
+                    account,
+                    token::Kind::HouseBot,
+                    true,
+                    &pilot.callsign,
+                    Vec::new(),
+                ),
+                "",
+                true,
+                &pilot::Session::new("ws"),
+            )
+            .expect("the signed stand-in verifies");
+        (seat, pilot)
+    }
+
+    /// Seat the stand-in the empty room is asking for.
+    fn join_stand_in(z: &mut ArenaServer, account: u64, nth: usize) -> (u64, u8) {
+        let (seat, pilot) = signed_stand_in(z, account, nth);
+        let (tx, rx) = mpsc::channel(OUT_QUEUE);
+        std::mem::forget(rx);
+        let id = z.rooms[0]
+            .join(seat, pilot.hull, 1, tx)
+            .expect("the stand-in seat");
+        let ship = z.rooms[0].players[&id].ship;
+        (id, ship)
+    }
+
     fn join_ready_ladder_rival(
         z: &mut ArenaServer,
         account: u64,
@@ -2184,24 +2219,41 @@ mod tests {
     }
 
     #[test]
-    fn a_ladder_room_requests_one_named_opponent_only_after_a_human_arrives() {
+    fn a_ladder_room_requests_one_named_opponent_beside_whoever_is_climbing() {
         let mut z = ladder_serving_with_accounts();
+        let room = z.rooms[0].number;
 
-        assert_eq!(z.bots_wanted(), 0, "an empty run has no bot-only fight");
-        assert_eq!(z.status().bot_requests, Some(Vec::new()));
+        // Nobody here, so the room the menu watches fights on without them:
+        // the rung its run is standing on, and a stand-in to climb it.
+        assert_eq!(z.bots_wanted(), 2, "an empty run is still a run");
+        assert_eq!(
+            z.status().bot_requests,
+            Some(vec![
+                fleet::BotRequest {
+                    room,
+                    count: 1,
+                    target_slot: Some(0),
+                },
+                fleet::BotRequest {
+                    room,
+                    count: 1,
+                    target_slot: None,
+                },
+            ])
+        );
 
         let (tx, _rx) = mpsc::channel(OUT_QUEUE);
         z.rooms[0]
             .join(Seat::guest("Climber", false), 0, 1, tx)
             .expect("the human seat");
-        let room = z.rooms[0].number;
         assert_eq!(
             z.status().bot_requests,
             Some(vec![fleet::BotRequest {
                 room,
                 count: 1,
                 target_slot: Some(0),
-            }])
+            }]),
+            "and stands down to the one rival the moment somebody arrives"
         );
         let correct_archetype = bots::ladder_archetype_for_slot(0).expect("the first rung");
         let correct_hull = pilots::individual(correct_archetype).hull;
@@ -2242,6 +2294,157 @@ mod tests {
             z.room_for_bot_request(room, &correct),
             None,
             "the requested final population is already present"
+        );
+    }
+
+    /// The play page watches the room it would deploy you into, so a Ladder
+    /// zone with nobody in it is an empty arena on the menu of everybody
+    /// deciding whether to press play. The room fights on without them.
+    #[test]
+    fn an_empty_ladder_room_flies_a_duel_of_its_own() {
+        let mut z = ladder_serving_with_accounts();
+        let room = z.rooms[0].number;
+
+        let (stand_in, _) = signed_stand_in(&z, 5_101, 0);
+        assert_eq!(
+            z.room_for_bot_request(room, &stand_in),
+            Some(0),
+            "an ordinary house pilot may climb where nobody is climbing"
+        );
+        let (_, climbing) = join_stand_in(&mut z, 5_101, 0);
+        assert_eq!(z.rooms[0].stand_in(), Some(climbing));
+        assert_eq!(
+            z.rooms[0].world.state.ships[climbing as usize].team, 0,
+            "and climbs on the scored side a person would"
+        );
+
+        let (second, _) = signed_stand_in(&z, 5_102, 1);
+        assert_eq!(
+            z.room_for_bot_request(room, &second),
+            None,
+            "a duel has one climber in it"
+        );
+
+        let (_, rival) = join_ready_ladder_rival(&mut z, 5_103, 0, 0);
+        assert_eq!(z.rooms[0].ladder_rival(), Some(rival));
+        assert_eq!(z.rooms[0].world.state.ships[rival as usize].team, 1);
+        z.rooms[0].tick();
+        assert!(
+            z.rooms[0]
+                .ladder_state()
+                .expect("Ladder state")
+                .state
+                .playing,
+            "a life nobody is watching is still a life"
+        );
+        assert_eq!(
+            z.room_for_bot_request(room, &second),
+            None,
+            "and the room now holds the population it asked for"
+        );
+
+        // Neither seat can be claimed twice. A rung's own pilot in the
+        // climber's seat would be the ladder climbing itself.
+        let spare = signed_ladder_replica(&z, 5_104, 0, 1);
+        assert_eq!(z.room_for_bot_request(room, &spare), None);
+        let hull =
+            pilots::individual(bots::ladder_archetype_for_slot(0).expect("the first rung")).hull;
+        let (tx, _rx) = mpsc::channel(OUT_QUEUE);
+        assert!(
+            z.rooms[0].join(spare, hull, 1, tx).is_none(),
+            "and the room refuses it at the door as well"
+        );
+    }
+
+    /// The stand-in is holding the seat, not keeping it. A person walks into
+    /// a room with two bots in it and both stand down.
+    #[test]
+    fn an_arriving_climber_takes_the_stand_ins_seat() {
+        let mut z = ladder_serving_with_accounts();
+        let room = z.rooms[0].number;
+        join_stand_in(&mut z, 5_111, 0);
+        join_ready_ladder_rival(&mut z, 5_112, 0, 0);
+        z.rooms[0].tick();
+        assert_eq!(z.rooms[0].bot_count(), 2);
+
+        let (tx, _rx) = mpsc::channel(OUT_QUEUE);
+        let id = z.rooms[0]
+            .join(Seat::guest("Climber", false), 0, 1, tx)
+            .expect("a person is never refused a room full of AI");
+        assert_eq!(z.rooms[0].bot_count(), 0, "both seats are given back");
+        assert_eq!(
+            z.rooms[0].world.state.ships[z.rooms[0].players[&id].ship as usize].team, 0,
+            "and the person climbs on the climber's side"
+        );
+        let state = z.rooms[0].ladder_state().expect("Ladder state").state;
+        assert_eq!(state.rung, 0, "their run is their own");
+        assert!(!state.playing);
+        assert_eq!(
+            z.status().bot_requests,
+            Some(vec![fleet::BotRequest {
+                room,
+                count: 1,
+                target_slot: Some(0),
+            }])
+        );
+    }
+
+    /// Only the room the menu watches. Rooms open because people arrive and
+    /// are given back when they empty, and a room with a stand-in flying in
+    /// it never empties.
+    #[test]
+    fn a_second_ladder_room_does_not_get_a_stand_in() {
+        let mut z = ladder_serving_with_accounts();
+        z.open_room().expect("a second Ladder room");
+        let second = z.rooms[1].number;
+
+        let (stand_in, _) = signed_stand_in(&z, 5_121, 0);
+        assert_eq!(z.room_for_bot_request(second, &stand_in), None);
+        let rival = signed_ladder_replica(&z, 5_122, 0, 0);
+        assert_eq!(
+            z.room_for_bot_request(second, &rival),
+            None,
+            "and a room nobody is climbing in wants no rival either"
+        );
+        assert_eq!(
+            z.status().bot_requests,
+            Some(vec![
+                fleet::BotRequest {
+                    room: z.rooms[0].number,
+                    count: 1,
+                    target_slot: Some(0),
+                },
+                fleet::BotRequest {
+                    room: z.rooms[0].number,
+                    count: 1,
+                    target_slot: None,
+                },
+            ]),
+            "an empty second room asks for nobody at all"
+        );
+    }
+
+    /// A rung is a measured fixture and the stand-in is not one. It wears
+    /// what its own career bought, exactly as the person it is holding the
+    /// room for would.
+    #[test]
+    fn a_stand_in_wears_its_own_kit_rather_than_a_rungs() {
+        let mut z = ladder_serving_with_accounts();
+        let (_, climbing) = join_stand_in(&mut z, 5_131, 0);
+        assert!(
+            z.rooms[0].expected_ladder_rival_kit(climbing).is_none(),
+            "nothing about the stand-in is a fixture"
+        );
+        let own = z.rooms[0].world.state.ships[climbing as usize].kit;
+        assert!(
+            z.rooms[0].set_kit(climbing, &own),
+            "an ordinary legal build is accepted"
+        );
+
+        let (_, rival) = join_ready_ladder_rival(&mut z, 5_132, 0, 0);
+        assert!(
+            !z.rooms[0].set_kit(rival, &own),
+            "and the rival beside it is still held to its own"
         );
     }
 
@@ -3060,8 +3263,8 @@ mod tests {
         assert_eq!(room.rating.log[0].victim, prey_rid);
         assert!(room.rating.rating_of(&prey_rid) < 1200.0, "and it cost");
         assert!(room.rating.rating_of(&hunter_rid) > 1200.0, "and it paid");
-        assert_eq!(room.channel.pending_kills.len(), 1, "and the feed says so");
-        let m = &room.channel.pending_kills[0];
+        assert_eq!(room.channel.pending_feed.len(), 1, "and the feed says so");
+        let m = &room.channel.pending_feed[0];
         assert_eq!(m[0], S2C_KILL);
         assert_eq!(m[1], ship, "the victim's seat");
         assert_eq!(m[2], room.players[&hunter].ship, "credited to the hunter");
@@ -3103,7 +3306,7 @@ mod tests {
         assert!(room.rating.log.is_empty(), "nothing settled");
         assert_eq!(room.rating.rating_of(&prey_rid), 1200.0);
         assert_eq!(room.rating.rating_of(&hunter_rid), 1200.0);
-        assert!(room.channel.pending_kills.is_empty(), "and no feed line");
+        assert!(room.channel.pending_feed.is_empty(), "and no feed line");
     }
 
     #[test]
@@ -4716,6 +4919,109 @@ mod tests {
         );
     }
 
+    /// Three kills without dying, and the room hears about it once.
+    ///
+    /// Driven through real rounds rather than by writing the counter, because
+    /// what is under test is the whole path: the core reaching the threshold,
+    /// the room noticing on the tick it happened, and the message going to
+    /// everybody rather than to whoever was close enough to watch. The
+    /// arithmetic of the counter itself is `sim/tests/test_sim.c`.
+    #[test]
+    fn a_third_kill_without_dying_tells_the_whole_room() {
+        let mut a = room_with_teams("teams = [\"Keel\", \"Vane\"]\n");
+        let (killer, _, mut killer_rx) = seat_rx(&mut a, "killer");
+        let (victim, _, mut victim_rx) = seat_rx(&mut a, "victim");
+        let (far, _, mut far_rx) = seat_rx(&mut a, "far");
+        assert_ne!(
+            a.world.state.ships[killer as usize].team, a.world.state.ships[victim as usize].team,
+            "the two are on opposite sides, or nothing here is a kill"
+        );
+        // Out past the fairness circle, so the streak has to reach a pilot
+        // who cannot see either of them. A kill on the far side of the map is
+        // exactly the news a feed exists to carry.
+        send_far(&mut a, far);
+
+        // Nose to nose at the killer's own start, which is ground the map
+        // guarantees is flyable, with the victim four tiles down the barrel.
+        let (ox, oy) = {
+            let sh = &a.world.state.ships[killer as usize];
+            (sh.x, sh.y)
+        };
+        a.world.state.ships[killer as usize].heading = 32768;
+        let mut streaks = Vec::new();
+        let mut at_two = None;
+        for _ in 0..2000 {
+            if a.world.state.ships[killer as usize].kills >= 4 {
+                break;
+            }
+            {
+                let sh = &mut a.world.state.ships[victim as usize];
+                if sh.alive != 0 {
+                    sh.x = ox;
+                    sh.y = oy + 64 * 256;
+                    sh.vx = 0;
+                    sh.vy = 0;
+                    sh.energy = 1;
+                }
+            }
+            let killer_ship = &mut a.world.state.ships[killer as usize];
+            killer_ship.x = ox;
+            killer_ship.y = oy;
+            killer_ship.vx = 0;
+            killer_ship.vy = 0;
+            a.world.step(&[sim::sim_input {
+                ship: killer,
+                buttons: sim::BTN_FIRE,
+            }]);
+            a.score_events();
+            streaks.extend(
+                drain(&mut killer_rx)
+                    .into_iter()
+                    .filter(|m| m.first() == Some(&S2C_STREAK)),
+            );
+            if a.world.state.ships[killer as usize].kills == 2 && at_two.is_none() {
+                at_two = Some(streaks.len());
+            }
+        }
+
+        assert_eq!(
+            a.world.state.ships[killer as usize].kills, 4,
+            "four kills went in"
+        );
+        assert_eq!(at_two, Some(0), "and nothing was said at two");
+        assert_eq!(streaks.len(), 1, "the third says it, and only the third");
+        let m = &streaks[0];
+        assert_eq!(m.len(), 7);
+        assert_eq!(m[1], killer, "named the pilot on the run");
+        assert_eq!(
+            u16::from(m[2]),
+            a.world.cfg.streak_kills,
+            "and how many kills it took"
+        );
+
+        // Everybody, not only whoever was near enough to watch.
+        let victim_saw = drain(&mut victim_rx)
+            .into_iter()
+            .filter(|m| m.first() == Some(&S2C_STREAK))
+            .count();
+        let far_saw = drain(&mut far_rx)
+            .into_iter()
+            .filter(|m| m.first() == Some(&S2C_STREAK))
+            .count();
+        assert_eq!(victim_saw, 1, "the pilot it was taken out on hears it");
+        assert_eq!(far_saw, 1, "and so does the far side of the map");
+
+        // And the price moved with it.
+        let worth = a.world.bounty(killer as usize);
+        let run = i32::from(a.world.state.ships[killer as usize].run);
+        assert!(a.world.on_streak(killer as usize));
+        assert_eq!(
+            worth,
+            i32::from(a.world.cfg.bounty_base) + run + i32::from(a.world.cfg.streak_bounty),
+            "a pilot on a streak is worth their run and the step on top"
+        );
+    }
+
     #[test]
     fn a_charge_action_reveals_no_inventory_and_stays_inside_fair_sight() {
         let mut a = room_with_teams("teams = [\"Keel\"]\n");
@@ -4819,7 +5125,7 @@ mod tests {
             "the pilot who died reads a death"
         );
         assert_eq!(
-            a.channel.pending_kills[0][14], 0,
+            a.channel.pending_feed[0][14], 0,
             "and the copy the stands watch claims nothing"
         );
     }
@@ -5699,7 +6005,7 @@ mod tests {
         assert!(a.sit_out(id, false));
         assert_eq!(a.watchers[&id].team, Some(1));
         assert_eq!(
-            a.seat_team(ship, false),
+            a.seat_team(ship, &Seat::guest("pilot", false)),
             0,
             "what a re-pick would have said"
         );
@@ -6184,7 +6490,7 @@ mod tests {
         let (hs, ps) = (a.players[&hunter].ship, a.players[&prey].ship);
         let bots = seat_bots(a, 2);
 
-        a.note_death(ps, hs, 120);
+        a.note_death(ps, hs, 120, 119);
         let filed = rows(&pilots);
         let combat: Vec<(&str, &str)> = filed
             .iter()
@@ -6197,7 +6503,7 @@ mod tests {
             "Hunter",
         );
 
-        a.note_death(bots[0], bots[1], 60);
+        a.note_death(bots[0], bots[1], 60, 59);
         let with_bots = rows(&pilots);
         assert_eq!(
             with_bots.len(),
@@ -6216,7 +6522,7 @@ mod tests {
         // kill: crediting the victim with their own destruction would say it
         // twice, and it is not a thing anybody should be paid for. The
         // meta-layer takes a rivet off the wallet for this row.
-        a.note_death(hs, hs, 0);
+        a.note_death(hs, hs, 0, 0);
         let after = rows(&pilots);
         assert_eq!(after.len(), filed.len() + 2);
         assert_eq!(
@@ -6245,7 +6551,7 @@ mod tests {
         // table counted as a kill.
         let team = a.world.state.ships[hs as usize].team;
         a.world.state.ships[ps as usize].team = team;
-        a.note_death(ps, hs, 0);
+        a.note_death(ps, hs, 0, 0);
         let after = rows(&pilots);
         assert_eq!(after.len(), filed.len() + 2);
         assert_eq!(

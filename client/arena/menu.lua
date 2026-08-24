@@ -179,11 +179,6 @@ M.can_cap = false       -- whether this engine can be asked to cap frames
 -- with the saved pilot rather than the current connection, so a reload cannot
 -- bring the offer back after it has been dismissed.
 M.help_prompt_seen = false
--- Which of the two flying controls a thumb gets: false is the stick that
--- points where the nose should go, true is the d-pad that pushes. The arena
--- reads it and arena/touch.lua acts on it; nothing here draws with it. See
--- the settings page below for why it is only offered on glass.
-M.dpad = false
 
 -- Whether the ship page's answer is currently "no hull". In a game that is
 -- what the connection says you are; on the home screen it is what you have
@@ -264,7 +259,7 @@ function M.save_identity()
     pcall(sys.save, SAVE, {
         name = M.name, class = M.class, volume = M.volume, music = M.music,
         cap = M.cap, zone = M.zone, spectate = M.spectate,
-        help_prompt_seen = M.help_prompt_seen, dpad = M.dpad,
+        help_prompt_seen = M.help_prompt_seen,
         -- The wake, with the rest of what this pilot looks like.
         wake = M.wake,
         -- Which charge the first key throws, which is a preference about a
@@ -302,10 +297,6 @@ function M.load_identity()
         -- is an answer to the same question the hull answers.
         M.spectate = d.spectate == true
         M.help_prompt_seen = d.help_prompt_seen == true
-        -- Compared against true rather than read, so a save carrying anything
-        -- else under this name lands on the stick rather than on a value the
-        -- touch layer would try to steer with.
-        M.dpad = d.dpad == true
         M.charge_flip = d.charge_flip == true
         -- Whatever survives being read against this build's key list. A
         -- missing table is a stock keyboard, which is what `load` does with
@@ -557,7 +548,16 @@ end
 -- until you leave the page.
 M.kit = nil
 M.kit_class = nil
+-- Which profile this kit is, exactly, and which one it was loaded from.
+--
+-- Two facts rather than one. `profile_at` is equality: the kit in hand is
+-- byte for byte one of the pilot's profiles, which is what writes that row of
+-- the list in the color that means yours. `profile_from` outlives the first
+-- edit, so a build opened from Screen and tuned still knows its own name, and
+-- saving it again offers that name back instead of asking a pilot to remember
+-- how they spelled it.
 M.profile_at = nil
+M.profile_from = nil
 
 local function same_kit(a, b)
     if type(a) ~= "table" or type(b) ~= "table" then return false end
@@ -676,6 +676,9 @@ function M.open_kit(class)
     end
     M.kit, M.kit_class = kit, class
     M.profile_at = matching_profile(kit)
+    -- A hull's saved build is not recorded as having come from anywhere: the
+    -- account keeps the kit and not the name of the template it started as.
+    M.profile_from = nil
 end
 
 function M.kit_spent(kit)
@@ -727,34 +730,89 @@ function M.kit_set(slot, want)
     return true
 end
 
-local function profile_name()
-    local profile = M.profile_at and (account.profiles or {})[M.profile_at]
-    return profile and profile.name or "custom"
+-- The build the pane is about: the one this kit was loaded from, or the one
+-- it exactly is. Nil for a kit tuned out of a hull's own saved build, which
+-- came from nowhere and has no name to rename.
+function M.selected_profile()
+    return (account.profiles or {})[M.profile_from or M.profile_at or 0]
+end
+
+-- And whether it is one of the pilot's own rather than one of the three the
+-- game ships.
+function M.own_profile()
+    local p = M.selected_profile()
+    return (p and p.builtin ~= true) and p or nil
+end
+
+-- Which row of the list this kit is, worked out again. The list itself can
+-- change under the page: a build is renamed, or dropped, and the index that
+-- was pointing at it is pointing at whatever slid into its place.
+function M.reread_profile()
+    M.profile_at = M.kit and matching_profile(M.kit) or nil
+    M.profile_from = M.profile_at
+end
+
+-- What the head of the pane says these thirty points are: a name, and whether
+-- the build still matches it.
+--
+-- Exactly a profile: its name, and nothing else. Whether the game shipped it
+-- or a pilot saved it was said here too, and it was a word on the page
+-- answering a question nobody had asked: the three the game ships are the
+-- three at the top of the list, and whether you may save over one is the
+-- meta-layer's to say when you try. Edited away from one: still that name,
+-- said as edited, because "custom" would throw away the only word a pilot has
+-- for the build they are working on. Neither: custom, which is what a kit
+-- tuned from the hull's own saved build is.
+function M.profile_band()
+    local profiles = account.profiles or {}
+    local exact = M.profile_at and profiles[M.profile_at]
+    if exact then
+        return {name = exact.name or "profile"}
+    end
+    local from = M.profile_from and profiles[M.profile_from]
+    if from then
+        return {name = from.name or "profile", state = "edited"}
+    end
+    return {name = "custom"}
 end
 
 -- Put one named template in the editor. It is trimmed through the same two
 -- ceilings as a saved hull build, so a profile made in another zone can be
 -- opened here without showing a kit this arena will refuse.
-local function choose_profile(by)
+--
+-- By index rather than by a direction. The library was a dial once: one row
+-- at the foot of the page, and left and right walked it a build at a time
+-- past builds a pilot could not see. Every profile is a row of its own now
+-- and this is the press on one.
+local function choose_profile(at)
     local profiles = account.profiles or {}
-    if #profiles == 0 then return false end
-    local at = M.profile_at or ((by or 1) < 0 and 1 or 0)
-    at = (at - 1 + (by or 1)) % #profiles + 1
-    local source = profiles[at] and profiles[at].kit or {}
+    if not profiles[at] then return false end
+    local source = profiles[at].kit or {}
     local ceiling = kit_ceiling()
     local kit, spent, kinds = {}, 0, 0
+    local trimmed = false
     local first = charge_slot0()
     for i = 1, simn("SLOT_COUNT", 23) do
-        local want = math.min(tonumber(source[i]) or 0, ceiling[i] or 0)
+        local asked = tonumber(source[i]) or 0
+        local want = math.min(asked, ceiling[i] or 0)
         if i - 1 >= first and want > 0 then
             kinds = kinds + 1
             if kinds > simn("KIT_CHARGE_SLOTS", 2) then want = 0 end
         end
         want = math.min(want, math.max(0, simn("KIT_BUDGET", 30) - spent))
+        if want < asked then trimmed = true end
         kit[i], spent = want, spent + want
     end
-    M.kit, M.profile_at = kit, at
-    M.note = spent < simn("KIT_BUDGET", 30)
+    -- Read back rather than assumed. A profile trimmed by this zone's
+    -- ceilings is no longer the profile, so the mark that would claim it is
+    -- what you are flying stays off and the head says edited.
+    M.kit, M.profile_from = kit, at
+    M.profile_at = matching_profile(kit)
+    -- Said when this zone actually took something off the build, rather than
+    -- whenever the kit comes to less than thirty. A profile that spends
+    -- twenty-nine spends twenty-nine everywhere, and telling its owner it had
+    -- been trimmed was the page inventing a rule the zone had not applied.
+    M.note = trimmed
         and "this game trims that profile below thirty points" or nil
     return true
 end
@@ -853,6 +911,43 @@ local function kit_rows(class)
     -- the cursor never has to stand on a readout: the page opens on the
     -- first thing a press can change.
     local rows = {}
+    -- The library, down the left of the page, with the build it names in the
+    -- pane beside it. Two columns, and the cursor walks the first of them and
+    -- then the second: a page about picking a build and then spending thirty
+    -- points on it is two activities taking turns, which is the shape the
+    -- shelf already uses for the same reason.
+    --
+    -- It was two rows at the foot of the kit carrying no group of their own,
+    -- which put them in the gun's chip run, and then a box that dropped a
+    -- list out of itself. What a list of your own builds wants is to be
+    -- looked at while you work, not opened and shut.
+    --
+    for i, p in ipairs(account.profiles or {}) do
+        rows[#rows + 1] = {
+            label = p.name or "profile", group = "profiles",
+            verbatim = true,
+            -- Which one the kit in hand actually is, for the mark on the
+            -- row. Nothing else: a name is what a pilot is reading for here.
+            choice = function() return (M.profile_at == i) and 1 or 0, 1 end,
+            act = "profile", value = i,
+        }
+    end
+    -- The key that adds one, after them, because that is where it is drawn:
+    -- at the foot of the column, the width of it. Over the list it sat
+    -- between the tabs and the first name wearing the shape of a thing to
+    -- press, which is the wrong first thing to meet on a page whose first act
+    -- is reading a list.
+    rows[#rows + 1] = {label = "add", group = "list", act = "save_profile"}
+    -- And what can be done to the one the pane is about, in the pane. Only
+    -- for a build the pilot made: the three the game ships are not theirs to
+    -- rename or drop, and the meta-layer refuses both, so offering the keys
+    -- would be a control that exists to explain itself.
+    if M.own_profile() then
+        rows[#rows + 1] = {label = "rename", group = "pane",
+                           act = "rename_profile"}
+        rows[#rows + 1] = {label = "delete", group = "pane",
+                           act = "delete_profile"}
+    end
     for _, s in ipairs(kit_slots()) do
         local max = ceiling[s.slot + 1] or 0
         -- On the page if this account can actually fly it, not if the arena
@@ -899,17 +994,6 @@ local function kit_rows(class)
             }
         end
     end
-    rows[#rows + 1] = {
-        sect = "profiles", label = "profile", detail = profile_name(),
-        choice = function()
-            return M.profile_at or 0, #(account.profiles or {})
-        end,
-        act = "profile",
-    }
-    rows[#rows + 1] = {
-        label = "save as profile", detail = "name this build",
-        act = "save_profile",
-    }
     -- Flair: what the ship looks like, apart from what it can do. The hull
     -- is here now rather than standing as its own stop at the head of the
     -- page: choosing a shape and choosing a wake are the same kind of
@@ -2135,23 +2219,6 @@ local NODES = {
              help = "Hide the browser controls while you play.",
              act = "fullscreen"},
         }
-        -- Only where there are thumbs. A keyboard has a key for each of
-        -- these and no question to answer.
-        --
-        -- One box, because it is one question, and a detail that names the
-        -- control rather than saying "on": the two are alternatives and
-        -- neither is the absence of the other.
-        if M.touching then
-            rows[#rows + 1] = {
-                label = "steering",
-                help = "Choose how the left thumb steers.",
-                detail = function()
-                    if M.dpad then return "a pad to push" end
-                    return "a stick to point"
-                end,
-                choice = function() return M.dpad and 1 or 0, 1 end,
-                act = "steering"}
-        end
         -- Only where there is somewhere to add it to and it is not there
         -- already. A row offering to install an app you are running inside is
         -- a row that makes the menu look like it is not paying attention.
@@ -2711,6 +2778,12 @@ local function settle(act, asked, by)
         local f = asked and asked.fields and asked.fields[1]
         M.add_name = f and f.value or M.add_name
         M.send_add()
+    elseif act == "do_rename_profile" then
+        local field = asked and asked.fields and asked.fields[1]
+        M.pending_rename = field and field.value or ""
+        return "rename_profile"
+    elseif act == "do_delete_profile" then
+        return "delete_profile"
     elseif act == "do_save_profile" then
         local field = asked and asked.fields and asked.fields[1]
         M.pending_profile = field and field.value or ""
@@ -2736,12 +2809,6 @@ local function settle(act, asked, by)
         -- number, and arena.script turns it into the instance they are in.
         M.pending = asked and asked.who or 0
         return "join_friend"
-    elseif act == "steering" then
-        -- Nothing to apply: the arena reads this every frame and the touch
-        -- layer redraws from it, so there is no engine state to keep in step
-        -- the way sound and frames have.
-        M.dpad = not M.dpad
-        M.save_identity()
     else
         return act
     end
@@ -3419,6 +3486,11 @@ function M.view()
         -- what a kit may. It was a row, and a cursor kept opening on it.
         out.kit_spent = M.kit_spent()
         out.kit_total = simn("KIT_BUDGET", 30)
+        -- What the build is called, for the head of the page. The hull used
+        -- to stand there with a carousel through it; it is picked down in
+        -- flair with the rest of what a ship looks like, and what belongs at
+        -- the head of a page about thirty points is which thirty these are.
+        out.profile = M.profile_band()
         out.hulls = {}
         for i, r in ipairs(hull_rows()) do
             out.hulls[i] = view_row(r, i)
@@ -3644,16 +3716,53 @@ local function activate(by)
         end
         return nil
     elseif r.act == "profile" then
-        if choose_profile(by or 1) then return "kit" end
-        M.note = "profiles arrive with your account"
+        -- Enter, and right, which is enter on any row that is a place rather
+        -- than a range. Left never arrives: while the list is down it is what
+        -- puts it away, above.
+        if choose_profile(r.value) then return "kit" end
         return nil
     elseif r.act == "save_profile" then
+        -- Prefilled with the name this build already answers to, where it has
+        -- one of the pilot's own. Saving over a profile you loaded and tuned
+        -- is then the same two presses as naming a new one, and the
+        -- meta-layer replaces by name. The three starter names are not
+        -- offered: it keeps those for itself and would refuse them.
+        local from = (account.profiles or {})[M.profile_from or M.profile_at or 0]
+        local named = (from and from.builtin ~= true and from.name) or ""
         M.ask = {
             head = "Save this build as a profile.",
             keys = {{label = "save", act = "do_save_profile"},
                     {label = "cancel"}},
             sel = 1, field = 1,
-            fields = {{label = "profile name", value = "", max = 24}},
+            fields = {{label = "profile name", value = named, max = 24}},
+        }
+        return nil
+    elseif r.act == "rename_profile" then
+        local p = M.own_profile()
+        if not p then return nil end
+        M.pending_profile = p.name
+        M.ask = {
+            head = "Rename " .. (p.name or "this build") .. ".",
+            keys = {{label = "rename", act = "do_rename_profile"},
+                    {label = "cancel"}},
+            sel = 1, field = 1,
+            fields = {{label = "profile name", value = p.name or "", max = 24}},
+        }
+        return nil
+    elseif r.act == "delete_profile" then
+        -- Asked first. Everything else on this page can be pressed again to
+        -- undo it, and this is the one thing here that takes something away
+        -- for good: the meta-layer keeps no copy and there is nothing on the
+        -- page that would bring it back.
+        local p = M.own_profile()
+        if not p then return nil end
+        M.pending_profile = p.name
+        M.ask = {
+            head = "Delete " .. (p.name or "this build") .. "?",
+            note = "the kit in hand stays as it is; the name goes",
+            keys = {{label = "delete", act = "do_delete_profile"},
+                    {label = "cancel"}},
+            sel = 2,
         }
         return nil
     elseif r.act == "hull" then

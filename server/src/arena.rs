@@ -334,7 +334,7 @@ impl ArenaServer {
         self.rooms
             .iter()
             .enumerate()
-            .map(|(i, r)| (i, Self::bots_requested_by(r).saturating_sub(r.bot_count())))
+            .map(|(i, r)| (i, self.bots_requested_by(i).saturating_sub(r.bot_count())))
             .filter(|(_, short)| *short > 0)
             .max_by_key(|(_, short)| *short)
             .map(|(i, _)| i)
@@ -364,20 +364,60 @@ impl ArenaServer {
             .iter()
             .enumerate()
             .find(|(_, candidate)| candidate.number == room)?;
-        if !found.accepts_ladder_rival(seat) {
-            return None;
+        if found.ladder_state().is_some() {
+            if self.bots_requested_by(index) == 0 {
+                return None;
+            }
+            // Which of the room's two seats this pilot is for, and whether
+            // that one is free. A shortfall in the count is the ordinary
+            // rooms' rule and the wrong question here: a room holding a
+            // stand-in is a room still waiting for its rival.
+            let free = if found.accepts_ladder_rival(seat) {
+                found.ladder_rival().is_none()
+            } else {
+                self.wants_stand_in(index) && found.accepts_stand_in(seat)
+            };
+            return free.then_some(index);
         }
-        (Self::bots_requested_by(found) > found.bot_count()).then_some(index)
+        (self.bots_requested_by(index) > found.bot_count()).then_some(index)
     }
 
-    fn bots_requested_by(room: &Room) -> usize {
-        if room.ladder_state().is_some() {
-            // A Ladder room exists for one person and their current rival. If
-            // that person leaves, the rival leaves too instead of inviting a
-            // second bot into an empty progression run.
-            usize::from(room.humans() > 0)
+    /// Whether this room is the one that keeps a duel going for anybody
+    /// reading the menu: the zone's first, which `reclaim_rooms` keeps and a
+    /// browsing client watches, and only while nobody is playing in it.
+    ///
+    /// Only the first, because a room is given back when it empties and one
+    /// with a stand-in flying in it never empties. One duel is also all this
+    /// is for: the play page watches a single room.
+    fn wants_stand_in(&self, index: usize) -> bool {
+        index == 0
+            && self
+                .rooms
+                .first()
+                .is_some_and(|room| room.ladder_state().is_some() && room.humans() == 0)
+    }
+
+    fn bots_requested_by(&self, index: usize) -> usize {
+        let Some(room) = self.rooms.get(index) else {
+            return 0;
+        };
+        if room.ladder_state().is_none() {
+            return room.bots_wanted();
+        }
+        // A Ladder room is one climber and the rival their rung named. While a
+        // person is climbing it holds that rival and nothing else: a second
+        // bot would be a third ship in a duel.
+        //
+        // With nobody climbing, the room the menu watches gets both: a
+        // stand-in and the rival it is up against. Every other room gets
+        // neither, and the rival of the person who just left goes home rather
+        // than waiting alone in a room nobody can see.
+        if room.humans() > 0 {
+            1
+        } else if self.wants_stand_in(index) {
+            2
         } else {
-            room.bots_wanted()
+            0
         }
     }
 
@@ -387,15 +427,35 @@ impl ArenaServer {
         }
         self.rooms
             .iter()
-            .filter_map(|room| {
-                let count = Self::bots_requested_by(room);
-                (count > 0).then(|| fleet::BotRequest {
+            .enumerate()
+            .flat_map(|(index, room)| {
+                let count = self.bots_requested_by(index);
+                if count == 0 {
+                    return Vec::new();
+                }
+                let Some(ladder) = room.ladder_state() else {
+                    return vec![fleet::BotRequest {
+                        room: room.number,
+                        count: count as u32,
+                        target_slot: None,
+                    }];
+                };
+                let mut asked = vec![fleet::BotRequest {
                     room: room.number,
-                    count: count as u32,
-                    target_slot: room
-                        .ladder_state()
-                        .map(|ladder| ladder.state.desired_opponent_slot),
-                })
+                    count: 1,
+                    target_slot: Some(ladder.state.desired_opponent_slot),
+                }];
+                // The stand-in names no slot. It is climbing the ladder rather
+                // than standing on one, so the director draws it from the same
+                // roster every other room's bots come from.
+                if count > 1 {
+                    asked.push(fleet::BotRequest {
+                        room: room.number,
+                        count: 1,
+                        target_slot: None,
+                    });
+                }
+                asked
             })
             .collect()
     }
@@ -407,7 +467,9 @@ impl ArenaServer {
         if self.draining {
             return 0;
         }
-        self.rooms.iter().map(Self::bots_requested_by).sum()
+        (0..self.rooms.len())
+            .map(|index| self.bots_requested_by(index))
+            .sum()
     }
 
     /// Every room number the zone is using anywhere, as far as this process can

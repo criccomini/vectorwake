@@ -121,11 +121,16 @@ static void step_n(sim_state *s, const sim_settings *cfg, uint16_t b0,
  * because recharge erases the evidence within a second; events do not lie. */
 typedef struct {
     int fires, hits, deaths, bounces, spawns, warps, predicted_deaths;
+    /* Streaks, and who the last one belonged to, since a count alone cannot
+     * say the arena named the right pilot. 255 for nobody. */
+    int streaks;
+    uint8_t streak_ship;
+    int32_t streak_len;
 } ev_counts;
 
 static ev_counts step_counting(sim_state *s, const sim_settings *cfg,
                                uint16_t b0, uint16_t b1, int n) {
-    ev_counts c = {0, 0, 0, 0, 0, 0, 0};
+    ev_counts c = {0, 0, 0, 0, 0, 0, 0, 0, 255, 0};
     sim_state tmp;
     sim_events ev;
     for (int i = 0; i < n; i++) {
@@ -140,6 +145,11 @@ static ev_counts step_counting(sim_state *s, const sim_settings *cfg,
                 case SIM_EV_BOUNCE: c.bounces++; break;
                 case SIM_EV_SPAWN: c.spawns++; break;
                 case SIM_EV_WARP: c.warps++; break;
+                case SIM_EV_STREAK:
+                    c.streaks++;
+                    c.streak_ship = ev.e[e].a;
+                    c.streak_len = ev.e[e].v;
+                    break;
                 default: break;
             }
     }
@@ -2987,7 +2997,7 @@ static void test_tech_tree(const sim_settings *base) {
          * and wrong twice over: it read a splinter as a trigger pull, and it
          * stopped being true the day splinters stopped emitting one. */
         int seen = 0, carried = 0;
-        ev_counts ec = {0, 0, 0, 0, 0, 0, 0};
+        ev_counts ec = {0, 0, 0, 0, 0, 0, 0, 0, 255, 0};
         for (int t = 0; t < 200; t++) {
             ev_counts one = step_counting(&s, &w, 0, 0, 1);
             ec.fires += one.fires;
@@ -3265,6 +3275,116 @@ static void test_scoring(const sim_settings *base) {
         sh.run = 6;
         CHECK(sim_bounty(&cfg, &sh) == cfg.bounty_base + 6,
               "what moves it is the run");
+    }
+
+    /* --- a streak --------------------------------------------------------
+     *
+     * Three kills without dying, and the pilot on one is worth a step more
+     * than their run alone says. The count is its own field rather than the
+     * run divided by what a kill pays, so a zone that changes the price does
+     * not thereby change what a streak is. */
+    {
+        sim_settings paid = cfg;
+        paid.bounty_per_kill = 5;
+        sim_ship sh;
+        memset(&sh, 0, sizeof sh);
+        sh.run = 10;
+        sh.streak = 2;
+        CHECK(!sim_on_streak(&paid, &sh), "two kills is not a streak");
+        CHECK(sim_bounty(&paid, &sh) == paid.bounty_base + 10,
+              "so the run is the whole of what they are worth");
+        sh.streak = 3;
+        sh.run = 15;
+        CHECK(sim_on_streak(&paid, &sh), "the third kill makes one");
+        CHECK(sim_bounty(&paid, &sh)
+                  == paid.bounty_base + 15 + paid.streak_bounty,
+              "and it is worth the same step whatever a kill pays");
+        sh.streak = 9;
+        sh.run = 45;
+        CHECK(sim_bounty(&paid, &sh)
+                  == paid.bounty_base + 45 + paid.streak_bounty,
+              "a step rather than a slope: nine kills adds it once");
+
+        /* And a zone that wants none of it says so with a zero. */
+        sim_settings off = cfg;
+        off.streak_kills = 0;
+        sh.streak = 40;
+        CHECK(!sim_on_streak(&off, &sh), "no threshold, no streak");
+        CHECK(sim_bounty(&off, &sh) == off.bounty_base + 45,
+              "and nothing added for one");
+    }
+
+    {
+        /* The arena is told, once, on the kill that reaches the threshold.
+         *
+         * A respawn draws a fresh start somewhere else on the map, so the
+         * victim is put back in front of the guns each time rather than left
+         * to be hunted: what is under test is the counter, not the shooting.
+         */
+        static sim_state s;
+        sim_init(&s, 1);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 32768, &cfg);      /* faces down */
+        sim_spawn(&s, APEX, 1, 8192, 8192 + 200, 0, &cfg);    /* the victim */
+        int streaks = 0, at_two = -1;
+        uint8_t who = 255;
+        int32_t len = 0;
+        /* Positions inside the state are Q8, where sim_spawn takes pixels. */
+        const int32_t px = 8192 << 8, py = (8192 + 200) << 8;
+        for (int t = 0; t < 4000 && s.ships[0].kills < 4; t++) {
+            if (s.ships[1].alive) {
+                s.ships[1].x = px;
+                s.ships[1].y = py;
+                s.ships[1].vx = s.ships[1].vy = 0;
+                s.ships[1].energy = 1;
+            }
+            sim_state tmp;
+            sim_events ev;
+            sim_input in[2] = {{0, SIM_BTN_FIRE}, {1, 0}};
+            sim_step(&tmp, &s, in, 2, &cfg, &ev);
+            s = tmp;
+            for (uint16_t e = 0; e < ev.count; e++) {
+                if (ev.e[e].type != SIM_EV_STREAK) continue;
+                streaks++;
+                who = ev.e[e].a;
+                len = ev.e[e].v;
+            }
+            if (s.ships[0].kills == 2 && at_two < 0) at_two = streaks;
+        }
+        CHECK(s.ships[0].kills == 4, "four kills, and no death in between");
+        CHECK(at_two == 0, "nothing is said at two");
+        CHECK(streaks == 1, "the third says it, and the fourth says nothing");
+        CHECK(who == 0, "named the pilot who is on it");
+        CHECK(len == (int32_t)cfg.streak_kills, "and how long it is");
+        CHECK(s.ships[0].streak == 4, "the count carries on past the news");
+        CHECK(sim_on_streak(&cfg, &s.ships[0]), "and they are still on it");
+        CHECK(sim_bounty(&cfg, &s.ships[0])
+                  == (int32_t)(cfg.bounty_base + s.ships[0].run
+                               + cfg.streak_bounty),
+              "worth their run and the streak on top");
+
+        /* Until somebody takes them, which is the whole of what ends it. */
+        s.ships[0].x = px;
+        s.ships[0].y = 8192 << 8;
+        s.ships[0].vx = s.ships[0].vy = 0;
+        s.ships[0].energy = 1;
+        s.ships[1].x = px;
+        s.ships[1].y = py;
+        s.ships[1].heading = 0;
+        s.ships[1].vx = s.ships[1].vy = 0;
+        /* The victim was mid-respawn when the loop stopped. Put them back on
+         * their feet with a bar to shoot with, since what is under test now
+         * is the streak ending rather than how they got up. */
+        s.ships[1].alive = 1;
+        s.ships[1].respawn_at = 0;
+        s.ships[1].energy =
+            sim_eff_max_energy(&cfg.classes[APEX], &s.ships[1]);
+        ev_counts c = step_counting(&s, &cfg, 0, SIM_BTN_FIRE, 400);
+        CHECK(c.deaths > 0, "the pilot on the streak dies");
+        CHECK(s.ships[0].streak == 0, "which is what ends a streak");
+        CHECK(!sim_on_streak(&cfg, &s.ships[0]), "they are off it");
+        CHECK(sim_bounty(&cfg, &s.ships[0]) == (int32_t)cfg.bounty_base,
+              "and back to what a fresh pilot is worth");
+        CHECK(c.streaks == 0, "the kill that ended it was only their first");
     }
 
     {

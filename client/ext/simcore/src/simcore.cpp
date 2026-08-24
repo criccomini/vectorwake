@@ -562,6 +562,29 @@ int ShipPoints(lua_State* L) {
     return 1;
 }
 
+// Kills without dying, and whether they add up to a streak by this zone's
+// reckoning. Both come off the snapshot and the settings the client already
+// holds, so a hull on a tear can be drawn as one without a message for it.
+//
+// The threshold is asked of the core rather than compared here, because the
+// same comparison decides what the pilot is worth and the two must not be
+// able to disagree.
+SHIP_GETTER(ShipStreak, s->streak)
+
+int ShipOnStreak(lua_State* L) {
+    int i = CheckShip(L);
+    lua_pushboolean(L, sim_on_streak(&g_cfg, &g_cur->ships[i]));
+    return 1;
+}
+
+// What a streak takes in this zone, for the one thing the client says rather
+// than draws: how many kills the pilot the arena just named has strung
+// together.
+int StreakKills(lua_State* L) {
+    lua_pushnumber(L, g_cfg.streak_kills);
+    return 1;
+}
+
 // How big a spec's blast is, which is what an explosion has to be drawn at
 // for the picture to match the damage. Zero means it has none, which is also
 // how the client decides a projectile is a bolt rather than a bomb -- a
@@ -1143,6 +1166,9 @@ const luaL_reg kFunctions[] = {
     {"ship_level", ShipLevel},
     {"ship_charge", ShipCharge},
     {"ship_bounty", ShipBounty},
+    {"ship_streak", ShipStreak},
+    {"ship_on_streak", ShipOnStreak},
+    {"streak_kills", StreakKills},
     {"ship_points", ShipPoints},
     {"ship_kit", ShipKit},
     {"has_trigger", HasTrigger},

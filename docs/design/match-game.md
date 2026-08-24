@@ -355,8 +355,10 @@ traits could never be sold at all because they existed on one hull each. See
 **Everyone deals thirty**, new pilot and veteran alike. A new account owns
 three complete profiles: Gunner, Bomber and Control. Choosing one takes a
 press; changing its slots makes a custom build, and that build can be saved
-under a new profile name. Profiles are ordinary hull-independent kits, so
-there is no second balance system hiding behind the convenience.
+under a new profile name, renamed later, or dropped. The three the game ships
+are not a pilot's to rename or drop, since those names are the code's.
+Profiles are ordinary hull-independent kits, so there is no second balance
+system hiding behind the convenience.
 
 The stat ceilings are the counts that still change the resolved ship: seven
 energy, five recharge, five speed, one thrust and one rotation. The old flat
@@ -412,6 +414,49 @@ login bonus.
 
 Every price in the shop is denominated in this, which means prices are tens
 rather than thousands. A match pays a pilot something in the low tens.
+
+## Kill streaks
+
+**Three kills without dying is a streak. The room is told, the hull is marked,
+and the pilot is worth two more until somebody takes them.**
+
+A run is already priced, one point a kill, and that is a slope: at three kills
+a pilot is worth four rather than one, and nobody in the room has been told
+anything. What the slope cannot do is name a moment. A streak is a step, and a
+step is what a room can react to.
+
+So three kills is a threshold rather than a curve. It is the shortest run that
+cannot be luck and it is reachable inside a three minute match, which are the
+two things the number has to be at once. Counted in kills rather than in
+bounty, so a zone that decides a kill pays three has not thereby decided a
+streak starts at one.
+
+Three things happen at once, and each of them reaches a pilot who is missing
+the other two. The feed is read, the hull is caught out of the corner of an
+eye, and the sound needs no looking at all.
+
+- **The feed says so, in gold that shimmers.** The feed is otherwise a column
+  of things that have finished happening. This is the one line in it about
+  something still going on, and it moves because a still line among still
+  lines is only a sixth line.
+- **The hull wears it.** Gold outside the silhouette, a bloom, and four sparks
+  going round. In a hue no side owns, because friend or foe is a call a pilot
+  makes in a tenth of a second and nothing may put a second question inside
+  it. This is what makes a streaking pilot findable across the arena rather
+  than only nameable in a corner.
+- **A fanfare plays.** Not attenuated by distance, unlike everything else the
+  arena makes noise about. This one is an announcement, and an announcement
+  that fades with range is a rumor.
+
+**And two more bounty.** The step has to move the price by more than one more
+kill would, or the bonus says nothing the run was not already saying. Two is
+that: a pilot three kills into a run jumps from four to six, and the pilot who
+ends the run is paid for having ended it rather than merely for a kill.
+
+All four are after the thing `bounty.md` asks for: the pilot who is winning
+should be the pilot everybody else is hunting. Bounty said it quietly, in a
+figure over a hull that you had to be close enough to read. This says it across
+the room.
 
 ## What rivets buy
 

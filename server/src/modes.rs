@@ -16,9 +16,16 @@ use crate::{
 
 pub struct ModeCtx<'a> {
     pub world: &'a mut World,
-    /// Active seats as `(ship, is_bot)`. Match modes use this snapshot to
-    /// decide whether the required opponents are actually ready.
-    pub seats: &'a [(u8, bool)],
+    /// The seats a mode may count this tick: every occupied ship, less any
+    /// the room does not consider ready yet. Match modes use this snapshot to
+    /// decide whether the opponents a life needs are actually on the field.
+    pub seats: &'a [u8],
+    /// Which of those seats holds the Ladder rival: the house pilot the room
+    /// seated for the rung being played. Whoever else is in the room is
+    /// climbing, and that is a person when one is here and the stand-in when
+    /// nobody is. `None` in every other mode, and in a Ladder room still
+    /// waiting on its rival.
+    pub rival: Option<u8>,
     /// The zone's own sides, by name, in the order it scores them. A mode
     /// writes banners about the game, and a side is a name to everybody
     /// reading one: "Vantage holds all four flags" is news, "team 1 holds all
@@ -539,12 +546,19 @@ impl Mode for Melee {
     }
 }
 
-/// Ladder: one person against one house pilot, first to a configured score.
+/// Ladder: one climber against one house pilot, first to a configured score.
 ///
 /// A series is the indivisible difficulty step. The active opponent slot is
 /// copied from the run when the series opens and cannot move while it is being
 /// played. A result changes only the desired slot, giving the room's future bot
 /// assignment path the whole intermission to seat the next opponent.
+///
+/// The climber is a person wherever there is one, and the room's stand-in
+/// where there is not: the play page watches the room it would deploy you
+/// into, so a zone with nobody in it is an empty arena on the menu of anyone
+/// deciding whether to press play. Nothing here knows which it has. A run
+/// belongs to whoever is flying it, and the mode starts a new one whenever
+/// that seat changes hands.
 pub struct Ladder {
     rules: LadderRules,
     run: LadderProgression,
@@ -615,6 +629,27 @@ impl Ladder {
             self.log[self.logged] = leg;
             self.logged += 1;
         }
+    }
+
+    /// Put a fresh run on the board and take the room back to the edge it
+    /// starts from: nothing flying, the full clock, and the first life of that
+    /// run waiting on its rival. The floor is whatever the run was opened
+    /// with, which is rung one for anybody starting over and the saved
+    /// checkpoint for a session resuming one.
+    fn open_run(&mut self, run: LadderProgression) {
+        self.active_opponent_slot = run.rung();
+        self.run = run;
+        self.clear_log();
+        self.elapsed = 0;
+        self.playing = false;
+        self.left = self.match_ticks;
+        self.score = [0, 0];
+        self.result = None;
+        self.cleared = false;
+        self.interrupted = false;
+        self.opponent_ready = false;
+        self.replacement_vacated = false;
+        self.opened = false;
     }
 
     /// Start the run's log over. A run is the unit the log is about, so the
@@ -697,13 +732,19 @@ impl Ladder {
         ctx.abort_match = true;
     }
 
-    /// The only supported field shape is one person and one bot. An accidental
-    /// extra seat must not turn an unrelated death into Ladder progress.
-    fn opponents(seats: &[(u8, bool)]) -> Option<(u8, u8)> {
-        let mut humans = seats.iter().filter(|(_, bot)| !bot).map(|(ship, _)| *ship);
-        let mut bots = seats.iter().filter(|(_, bot)| *bot).map(|(ship, _)| *ship);
-        let pair = (humans.next()?, bots.next()?);
-        (humans.next().is_none() && bots.next().is_none()).then_some(pair)
+    /// The only supported field shape is the seated rival and one climber. An
+    /// accidental extra seat must not turn an unrelated death into Ladder
+    /// progress, and a rival the room has not called ready is not on the
+    /// field at all: it is missing from `seats` until its calibrated build is
+    /// dealt.
+    fn opponents(seats: &[u8], rival: Option<u8>) -> Option<(u8, u8)> {
+        let rival = rival?;
+        if !seats.contains(&rival) {
+            return None;
+        }
+        let mut climbing = seats.iter().copied().filter(|ship| *ship != rival);
+        let climber = climbing.next()?;
+        climbing.next().is_none().then_some((climber, rival))
     }
 
     /// The one line across the middle of the screen, and only what the readout
@@ -765,7 +806,7 @@ impl Ladder {
 impl Mode for Ladder {
     fn tick(&mut self, ctx: &mut ModeCtx) {
         let was_ready = self.opponent_ready;
-        let opponent_ready = Self::opponents(ctx.seats).is_some();
+        let opponent_ready = Self::opponents(ctx.seats, ctx.rival).is_some();
         self.opponent_ready = opponent_ready;
         if !self.opened {
             self.playing = false;
@@ -804,12 +845,12 @@ impl Mode for Ladder {
         if !self.playing {
             return;
         }
-        let Some((human, bot)) = Self::opponents(ctx.seats) else {
+        let Some((climber, rival)) = Self::opponents(ctx.seats, ctx.rival) else {
             return;
         };
-        let side = if victim == bot {
+        let side = if victim == rival {
             0
-        } else if victim == human {
+        } else if victim == climber {
             1
         } else {
             return;
@@ -827,12 +868,12 @@ impl Mode for Ladder {
         if !self.playing {
             return;
         }
-        let Some((human, bot)) = Self::opponents(ctx.seats) else {
+        let Some((climber, rival)) = Self::opponents(ctx.seats, ctx.rival) else {
             return;
         };
-        let human_died = deaths.iter().any(|(victim, _)| *victim == human);
-        let bot_died = deaths.iter().any(|(victim, _)| *victim == bot);
-        if human_died && bot_died {
+        let climber_died = deaths.iter().any(|(victim, _)| *victim == climber);
+        let rival_died = deaths.iter().any(|(victim, _)| *victim == rival);
+        if climber_died && rival_died {
             self.score[0] = self.score[0].saturating_add(1);
             self.score[1] = self.score[1].saturating_add(1);
             self.draw_series(ctx);
@@ -844,8 +885,16 @@ impl Mode for Ladder {
         }
     }
 
-    fn on_departure(&mut self, ctx: &mut ModeCtx, _ship: u8, _bot: bool) {
+    /// A rival leaving voids the life and the same rung reopens against the
+    /// replacement. A climber leaving ends the run: the rung, the streak and
+    /// the log are one pilot's evening, and the next person through the door,
+    /// or the stand-in that takes the seat back when they go, is not standing
+    /// where they were.
+    fn on_departure(&mut self, ctx: &mut ModeCtx, ship: u8, _bot: bool) {
         self.interrupt_series(ctx);
+        if ctx.rival != Some(ship) {
+            self.open_run(LadderProgression::new(self.rules));
+        }
         ctx.banner = self.banner();
     }
 
@@ -888,36 +937,14 @@ impl Mode for Ladder {
     }
 
     fn first_human(&mut self) -> bool {
-        self.run = LadderProgression::new(self.rules);
-        self.clear_log();
-        self.elapsed = 0;
-        self.playing = false;
-        self.left = self.match_ticks;
-        self.score = [0, 0];
-        self.active_opponent_slot = 0;
-        self.result = None;
-        self.cleared = false;
-        self.interrupted = false;
-        self.opponent_ready = false;
-        self.replacement_vacated = false;
-        self.opened = false;
+        self.open_run(LadderProgression::new(self.rules));
         true
     }
 
     fn restore_ladder(&mut self, checkpoint: u32, best: u32) -> bool {
-        self.run = LadderProgression::restore(self.rules, checkpoint, 0, checkpoint, best);
-        self.clear_log();
-        self.elapsed = 0;
-        self.playing = false;
-        self.left = self.match_ticks;
-        self.score = [0, 0];
-        self.active_opponent_slot = checkpoint;
-        self.result = None;
-        self.cleared = false;
-        self.interrupted = false;
-        self.opponent_ready = false;
-        self.replacement_vacated = false;
-        self.opened = false;
+        self.open_run(LadderProgression::restore(
+            self.rules, checkpoint, 0, checkpoint, best,
+        ));
         true
     }
 }
@@ -1070,6 +1097,7 @@ mod melee_tests {
         ModeCtx {
             world,
             seats: &[],
+            rival: None,
             team_names: names,
             banner: String::new(),
             finished: false,
@@ -1237,10 +1265,18 @@ mod melee_tests {
 mod ladder_tests {
     use super::*;
 
-    fn ctx<'a>(world: &'a mut World, seats: &'a [(u8, bool)]) -> ModeCtx<'a> {
+    /// The house rival's seat throughout these tests. A seat list without it
+    /// is a room whose rival has gone, which is what the mode is watching for
+    /// between rungs.
+    const RIVAL: u8 = 9;
+
+    /// A Ladder room's ready seats as the room reports them, and which of
+    /// them the room seated as the rival.
+    fn ctx<'a>(world: &'a mut World, seats: &'a [u8]) -> ModeCtx<'a> {
         ModeCtx {
             world,
             seats,
+            rival: seats.contains(&RIVAL).then_some(RIVAL),
             team_names: &[],
             banner: String::new(),
             finished: false,
@@ -1331,7 +1367,7 @@ mod ladder_tests {
 
     #[test]
     fn configured_first_to_three_changes_the_slot_only_after_the_series() {
-        let seats = [(3, false), (9, true)];
+        let seats = [3, RIVAL];
         let mut world = World::new(7);
         let mut ladder = Ladder::new(
             LadderRules {
@@ -1373,8 +1409,8 @@ mod ladder_tests {
             "the next foe is now requested"
         );
 
-        let human_only = [(3, false)];
-        let mut waiting = ctx(&mut world, &human_only);
+        let rival_gone = [3];
+        let mut waiting = ctx(&mut world, &rival_gone);
         ladder.tick(&mut waiting);
         assert!(!waiting.open_match);
         let mut next = ctx(&mut world, &seats);
@@ -1392,16 +1428,10 @@ mod ladder_tests {
     /// The rival's seat is emptied on the way in, because the room refuses to
     /// open the next rung until it has watched the last one's bot leave. That
     /// is the director's swap, and a run of lives has to include it.
-    fn one_life(
-        ladder: &mut Ladder,
-        world: &mut World,
-        seats: &[(u8, bool)],
-        ticks: u32,
-        won: bool,
-    ) {
-        let human_only = [(3, false)];
+    fn one_life(ladder: &mut Ladder, world: &mut World, seats: &[u8], ticks: u32, won: bool) {
+        let rival_gone = [3];
         for _ in 0..4 {
-            ladder.tick(&mut ctx(world, &human_only));
+            ladder.tick(&mut ctx(world, &rival_gone));
         }
         for _ in 0..4 {
             if ladder.ladder_state().unwrap().playing {
@@ -1422,7 +1452,7 @@ mod ladder_tests {
 
     #[test]
     fn every_finished_life_lands_in_the_run_log() {
-        let seats = [(3, false), (9, true)];
+        let seats = [3, RIVAL];
         let mut world = World::new(7);
         let mut ladder = Ladder::new(LadderRules::default(), 100_000, 2);
 
@@ -1452,8 +1482,8 @@ mod ladder_tests {
     /// make the run read as longer and worse than it was.
     #[test]
     fn a_void_life_is_not_a_leg() {
-        let seats = [(3, false), (9, true)];
-        let human_only = [(3, false)];
+        let seats = [3, RIVAL];
+        let rival_gone = [3];
         let mut world = World::new(7);
         let mut ladder = Ladder::new(LadderRules::default(), 100_000, 2);
 
@@ -1461,7 +1491,7 @@ mod ladder_tests {
         for _ in 0..400 {
             ladder.tick(&mut ctx(&mut world, &seats));
         }
-        ladder.tick(&mut ctx(&mut world, &human_only));
+        ladder.tick(&mut ctx(&mut world, &rival_gone));
         let state = ladder.ladder_state().unwrap();
         assert_eq!(state.legs, 0);
         assert_eq!(state.logged, 0);
@@ -1471,7 +1501,7 @@ mod ladder_tests {
     /// tick, the rung is replayed, and the log says it happened.
     #[test]
     fn a_double_death_logs_a_drawn_leg() {
-        let seats = [(3, false), (9, true)];
+        let seats = [3, RIVAL];
         let mut world = World::new(7);
         let mut ladder = Ladder::new(LadderRules::default(), 100_000, 2);
         ladder.tick(&mut ctx(&mut world, &seats));
@@ -1488,7 +1518,7 @@ mod ladder_tests {
     /// total says how much fell off the front.
     #[test]
     fn a_long_run_keeps_its_newest_legs() {
-        let seats = [(3, false), (9, true)];
+        let seats = [3, RIVAL];
         let mut world = World::new(7);
         let mut ladder = Ladder::new(LadderRules::default(), 100_000, 2);
         for _ in 0..LADDER_LOG_LEGS + 3 {
@@ -1508,7 +1538,7 @@ mod ladder_tests {
     /// evening that already finished.
     #[test]
     fn a_cleared_roster_starts_the_next_run_with_an_empty_log() {
-        let seats = [(3, false), (9, true)];
+        let seats = [3, RIVAL];
         let mut world = World::new(7);
         let mut ladder = Ladder::new(LadderRules::default(), 100_000, 2);
         for _ in 0..pilots::PROVISIONAL_LADDER_RUNG_COUNT {
@@ -1534,7 +1564,7 @@ mod ladder_tests {
     /// and with nobody else's evening behind it.
     #[test]
     fn restoring_progress_starts_a_fresh_log() {
-        let seats = [(3, false), (9, true)];
+        let seats = [3, RIVAL];
         let mut world = World::new(7);
         let mut ladder = Ladder::new(LadderRules::default(), 100_000, 2);
         one_life(&mut ladder, &mut world, &seats, 100, true);
@@ -1549,9 +1579,94 @@ mod ladder_tests {
         assert_eq!(ladder.ladder_state().unwrap().logged, 0);
     }
 
+    /// A run belongs to whoever is flying it. The seat changes hands when a
+    /// person arrives and again when they go and the stand-in takes it back,
+    /// and neither of them inherits the other's rung.
+    #[test]
+    fn a_departing_climber_ends_the_run() {
+        let seats = [3, RIVAL];
+        let mut world = World::new(7);
+        let mut ladder = Ladder::new(LadderRules::default(), 1_000, 2);
+        ladder.tick(&mut ctx(&mut world, &seats));
+        ladder.on_death(&mut ctx(&mut world, &seats), RIVAL, 3);
+        assert_eq!(ladder.ladder_state().unwrap().rung, 1, "one rung climbed");
+
+        let mut gone = ctx(&mut world, &seats);
+        ladder.on_departure(&mut gone, 3, false);
+        let state = ladder.ladder_state().unwrap();
+        assert_eq!(state.rung, 0, "the next pilot in that seat starts over");
+        assert_eq!(state.legs, 0, "and the log is not their evening");
+        assert!(!state.playing);
+    }
+
+    /// The rival is the one departure that is not the end of a run: the same
+    /// rung reopens against the replacement.
+    #[test]
+    fn a_departing_rival_keeps_the_run_where_it_was() {
+        let seats = [3, RIVAL];
+        let mut world = World::new(7);
+        let mut ladder = Ladder::new(LadderRules::default(), 1_000, 2);
+        ladder.tick(&mut ctx(&mut world, &seats));
+        ladder.on_death(&mut ctx(&mut world, &seats), RIVAL, 3);
+        let climbed = ladder.ladder_state().unwrap();
+
+        let mut gone = ctx(&mut world, &seats);
+        ladder.on_departure(&mut gone, RIVAL, true);
+        let state = ladder.ladder_state().unwrap();
+        assert_eq!(state.rung, climbed.rung);
+        assert_eq!(state.streak, climbed.streak);
+        assert_eq!(state.legs, climbed.legs);
+    }
+
+    /// Nothing here asks whether the climber is a person. Two bots in the
+    /// room, one of them the rung's own rival, is a life like any other.
+    #[test]
+    fn a_stand_in_climbs_the_same_ladder_a_person_would() {
+        let seats = [3, RIVAL];
+        let mut world = World::new(7);
+        let mut ladder = Ladder::new(LadderRules::default(), 1_000, 2);
+        let mut opening = ctx(&mut world, &seats);
+        ladder.tick(&mut opening);
+        assert!(opening.open_match);
+
+        let mut point = ctx(&mut world, &seats);
+        ladder.on_death(&mut point, RIVAL, 3);
+        assert!(point.close_match);
+        let state = ladder.ladder_state().unwrap();
+        assert_eq!(state.score, [1, 0], "the climber's side scores first");
+        assert_eq!(state.rung, 1);
+        assert_eq!(state.log[0].result, LegResult::Cleared);
+    }
+
+    /// A rival the room has not called ready is not on the field: its seat is
+    /// taken and its client is connected, and until the calibrated build is
+    /// dealt there is nobody to fight.
+    #[test]
+    fn an_unready_rival_is_not_an_opponent() {
+        assert_eq!(
+            Ladder::opponents(&[3, RIVAL], Some(RIVAL)),
+            Some((3, RIVAL))
+        );
+        assert_eq!(
+            Ladder::opponents(&[3], Some(RIVAL)),
+            None,
+            "the rival is seated but not dealt"
+        );
+        assert_eq!(
+            Ladder::opponents(&[3, RIVAL], None),
+            None,
+            "no rival is seated at all"
+        );
+        assert_eq!(
+            Ladder::opponents(&[RIVAL], Some(RIVAL)),
+            None,
+            "and a rival alone has nobody to climb over it"
+        );
+    }
+
     #[test]
     fn an_extra_seat_cannot_score_ladder_progress() {
-        let seats = [(3, false), (9, true), (10, true)];
+        let seats = [3, 9, 10];
         let mut world = World::new(7);
         let mut ladder = Ladder::new(LadderRules::default(), 1_000, 2);
         ladder.tick(&mut ctx(&mut world, &seats));
@@ -1561,7 +1676,7 @@ mod ladder_tests {
 
     #[test]
     fn first_human_starts_a_new_run() {
-        let seats = [(3, false), (9, true)];
+        let seats = [3, RIVAL];
         let mut world = World::new(7);
         let mut ladder = Ladder::new(
             LadderRules {
@@ -1587,7 +1702,7 @@ mod ladder_tests {
     #[test]
     fn default_ladder_is_single_life() {
         assert_eq!(LadderRules::default().first_to, 1);
-        let seats = [(3, false), (9, true)];
+        let seats = [3, RIVAL];
         let mut world = World::new(7);
         let mut ladder = Ladder::new(LadderRules::default(), 1_000, 2);
         ladder.tick(&mut ctx(&mut world, &seats));
@@ -1600,7 +1715,7 @@ mod ladder_tests {
 
     #[test]
     fn the_top_opponent_produces_a_clear_instead_of_a_plateau() {
-        let seats = [(3, false), (9, true)];
+        let seats = [3, RIVAL];
         let mut world = World::new(7);
         let mut ladder = Ladder::new(LadderRules::default(), 1_000, 2);
         let last = pilots::PROVISIONAL_LADDER_RUNG_COUNT as u32 - 1;
@@ -1617,8 +1732,8 @@ mod ladder_tests {
         assert_eq!(state.best, last + 1);
         assert_eq!(state.rung, 5);
 
-        let human_only = [(3, false)];
-        ladder.tick(&mut ctx(&mut world, &human_only));
+        let rival_gone = [3];
+        ladder.tick(&mut ctx(&mut world, &rival_gone));
         let mut replacement = ctx(&mut world, &seats);
         ladder.tick(&mut replacement);
         assert!(replacement.open_match);
@@ -1645,14 +1760,14 @@ mod ladder_tests {
 
     #[test]
     fn a_series_waits_at_full_time_until_both_opponents_arrive() {
-        let human_only = [(3, false)];
-        let pair = [(3, false), (9, true)];
+        let rival_gone = [3];
+        let pair = [3, RIVAL];
         let mut world = World::new(7);
         let mut ladder = Ladder::new(LadderRules::default(), 500, 20);
         assert!(ladder.first_human());
 
         for _ in 0..300 {
-            let mut waiting = ctx(&mut world, &human_only);
+            let mut waiting = ctx(&mut world, &rival_gone);
             ladder.tick(&mut waiting);
             assert!(!waiting.open_match);
         }
@@ -1668,8 +1783,8 @@ mod ladder_tests {
 
     #[test]
     fn a_departed_opponent_invalidates_and_replays_the_life() {
-        let pair = [(3, false), (9, true)];
-        let human_only = [(3, false)];
+        let pair = [3, RIVAL];
+        let rival_gone = [3];
         let mut world = World::new(7);
         let mut ladder = Ladder::new(LadderRules::default(), 500, 20);
         ladder.tick(&mut ctx(&mut world, &pair));
@@ -1677,7 +1792,7 @@ mod ladder_tests {
         assert_eq!(ladder.left, 499);
 
         let before = ladder.ladder_state().unwrap();
-        let mut interrupted = ctx(&mut world, &human_only);
+        let mut interrupted = ctx(&mut world, &rival_gone);
         ladder.tick(&mut interrupted);
         assert!(interrupted.abort_match);
         assert!(!interrupted.close_match);
@@ -1691,7 +1806,7 @@ mod ladder_tests {
         assert_eq!(stopped.best, before.best);
 
         for _ in 0..20 {
-            ladder.tick(&mut ctx(&mut world, &human_only));
+            ladder.tick(&mut ctx(&mut world, &rival_gone));
         }
         let mut replacement = ctx(&mut world, &pair);
         ladder.tick(&mut replacement);
@@ -1705,8 +1820,8 @@ mod ladder_tests {
 
     #[test]
     fn opponent_change_waits_at_zero_for_the_replacement() {
-        let pair = [(3, false), (9, true)];
-        let human_only = [(3, false)];
+        let pair = [3, RIVAL];
+        let rival_gone = [3];
         let mut world = World::new(7);
         let mut ladder = Ladder::new(LadderRules::default(), 500, 2);
         ladder.tick(&mut ctx(&mut world, &pair));
@@ -1718,7 +1833,7 @@ mod ladder_tests {
         assert!(!zero.open_match, "the old pair cannot open the next rung");
         assert_eq!(ladder.left, 0);
 
-        ladder.tick(&mut ctx(&mut world, &human_only));
+        ladder.tick(&mut ctx(&mut world, &rival_gone));
         assert_eq!(ladder.left, 0, "the wait stays at zero");
         let mut replacement = ctx(&mut world, &pair);
         ladder.tick(&mut replacement);
@@ -1728,7 +1843,7 @@ mod ladder_tests {
 
     #[test]
     fn a_mutual_kill_is_a_draw_in_either_event_order() {
-        let seats = [(3, false), (9, true)];
+        let seats = [3, RIVAL];
         for deaths in [[(3, 9), (9, 3)], [(9, 3), (3, 9)]] {
             let mut world = World::new(7);
             let mut ladder = Ladder::new(LadderRules::default(), 500, 2);
@@ -1764,6 +1879,7 @@ mod warzone_tests {
         ModeCtx {
             world,
             seats: &[],
+            rival: None,
             team_names: &[],
             banner: String::new(),
             finished: false,

@@ -1019,6 +1019,52 @@ static void k_count(voice *v) {
 // The same note an octave up with the fifth over it, so it lands as the answer
 // to the five under it rather than as a sixth of them. Longer, because this
 // one is allowed to be an event.
+// Somebody in the room is on a run: the arena's one announcement.
+//
+// A rising major triad with a fifth over the top of it, which is a fanfare and
+// arguing with that is not worth the novelty. It is the same bargain k_prize
+// makes with the reward interval, an octave up and three notes longer. What
+// keeps it from being the prize sound again is that the notes arrive rather
+// than stack: each is a delayed copy, so the ear hears a figure being played.
+//
+// The shimmer at the top is a detuned pair a few cents apart. Two sines that
+// close beat against each other at their difference, which is a slow tremble
+// on one tone rather than two tones, and it is the same thing the hull is
+// doing on screen said in the one medium that can say it without a picture.
+static void k_streak(voice *v) {
+    // G5, C6, E6, G6: up, and landing where it started an octave higher.
+    static const double note[4] = {784.0, 1046.5, 1318.5, 1568.0};
+    static const double when[4] = {0.0, 0.075, 0.15, 0.235};
+    int k, i;
+    for (k = 0; k < 4; k++) {
+        voice a;
+        int d = (int)(when[k] * RATE);
+        if (!voice_init(&a, v->dur)) return;
+        // The last note is held: the first three are the run up to it, and a
+        // fanfare whose last note is as short as its first has no arrival.
+        v_sine(&a, note[k], note[k], k == 3 ? 0.34 : 0.24, k == 3 ? 0.9 : 2.2);
+        v_sine(&a, note[k] * 2.0, note[k] * 2.0, 0.07, 2.6);
+        for (i = d; i < v->n; i++) v->buf[i] += a.buf[i - d];
+        voice_free(&a);
+    }
+    // The gleam: two high sines four cents apart, beating slowly, arriving
+    // with the last note rather than under the whole figure.
+    {
+        voice a;
+        int d = (int)(0.235 * RATE);
+        if (!voice_init(&a, v->dur)) return;
+        v_sine(&a, 3136.0, 3136.0, 0.05, 1.4);
+        v_sine(&a, 3143.0, 3143.0, 0.05, 1.4);
+        for (i = d; i < v->n; i++) v->buf[i] += a.buf[i - d];
+        voice_free(&a);
+    }
+    // A little air on the front so the first note has an edge to it, and a
+    // limiter so the four notes stacking at the end do not simply get louder
+    // than the one that matters.
+    v_noise(v, 0.05, 7000, 1800, 3.0, 61);
+    v_drive(v, 1.25);
+}
+
 static void k_start(voice *v) {
     v_sine(v, 880, 1320, 0.34, 1.1);
     v_sine(v, 1320, 1760, 0.16, 1.3);
@@ -1556,6 +1602,7 @@ static const entry KIT[] = {
     {"ui_go",   0.16,  0, k_ui_go},
     {"count",   0.10,  0, k_count},
     {"start",   0.40,  0, k_start},
+    {"streak",  0.85,  0, k_streak},
     // The soundtrack has two components and no maker. Which of the eight
     // tracks is in one changes while the game runs, so they are built through
     // sfx_music_begin rather than rendered from a name, and there are two of
@@ -1573,7 +1620,7 @@ const char *const sfx_names[] = {
     "blast0", "blast1", "blast2", "blast3",
     "death", "hit", "bounce", "spawn", "prize",
     "rust", "charge", "flag", "thrust", "ui_move", "ui_go",
-    "count", "start",
+    "count", "start", "streak",
     "music_a", "music_b", NULL,
 };
 

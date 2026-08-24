@@ -789,6 +789,7 @@ struct Live {
     name: String,
     room: u32,
     target_slot: Option<u32>,
+    stand_in: bool,
     born_ms: u64,
     /// Set when this bot has been asked to stand down. It leaves at the next
     /// good moment rather than at once, per the graceful rules in
@@ -868,6 +869,13 @@ struct Instance {
 struct Assignment {
     room: u32,
     target_slot: Option<u32>,
+    /// A slot-less seat in a room that is also asking for a rung: Ladder's
+    /// stand-in, the pilot that keeps a duel in the zone while nobody is
+    /// playing. It draws from the generated roster rather than the eight
+    /// authored personalities, because those eight are the rungs it is
+    /// climbing and one of them is the fixed point every rating is measured
+    /// against. Nothing else about the flight differs from an ordinary fill.
+    stand_in: bool,
 }
 
 impl Live {
@@ -875,6 +883,7 @@ impl Live {
         Assignment {
             room: self.room,
             target_slot: self.target_slot,
+            stand_in: self.stand_in,
         }
     }
 }
@@ -918,6 +927,7 @@ impl ArenaWant {
                 .map(|_| Assignment {
                     room: 0,
                     target_slot: None,
+                    stand_in: false,
                 })
                 .collect();
         };
@@ -929,16 +939,27 @@ impl ArenaWant {
             &self.pilot_attestation,
             crate::arena::certified_pilot_attestation_id(),
         );
+        // Which rooms are running Ladder, which is a thing only a rung can
+        // say: no other room ever names a slot. It decides both what a
+        // slot-less seat there means and whether this release may fill one at
+        // all, since the stand-in has nothing to climb without its rival.
+        let ladder: HashSet<u32> = requests
+            .iter()
+            .filter(|request| request.target_slot.is_some())
+            .map(|request| request.room)
+            .collect();
         requests
             .into_iter()
             .filter(|request| {
                 (1..=crate::MAX_ROOM_NUMBER).contains(&request.room)
-                    && (request.target_slot.is_none() || certified_release)
+                    && (!ladder.contains(&request.room) || certified_release)
             })
             .flat_map(|request| {
+                let stand_in = request.target_slot.is_none() && ladder.contains(&request.room);
                 (0..request.count).map(move |_| Assignment {
                     room: request.room,
                     target_slot: request.target_slot,
+                    stand_in,
                 })
             })
             .collect()
@@ -968,8 +989,10 @@ struct Reconciliation {
 }
 
 /// Match the live population to the final room-scoped population an arena
-/// requested. A yielding ordinary bot no longer fills a request. Ladder waits
-/// until the old room task is gone because its one rival seat is still held.
+/// requested. A yielding ordinary bot no longer fills a request. A new rival
+/// waits until the old room task is gone, because Ladder's one rival seat is
+/// still held; the stand-in beside it names no slot and is not what that wait
+/// is about, so only a rival's own flight holds the seat.
 fn reconcile_assignments(current: &[(Assignment, bool)], desired: &[Assignment]) -> Reconciliation {
     let mut remaining = desired.to_vec();
     let mut kept = vec![false; current.len()];
@@ -1006,7 +1029,7 @@ fn reconcile_assignments(current: &[(Assignment, bool)], desired: &[Assignment])
         wanted.target_slot.is_none()
             || !current
                 .iter()
-                .any(|(present, _)| present.room == wanted.room)
+                .any(|(present, _)| present.room == wanted.room && present.target_slot.is_some())
     });
     plan
 }
@@ -1209,7 +1232,7 @@ pub async fn run() {
                 if assignment.target_slot.is_none() && !ordinary_refill_ready {
                     continue;
                 }
-                let Some(who) = claim(&taken, &blocked, now, assignment.target_slot) else {
+                let Some(who) = claim(&taken, &blocked, now, assignment) else {
                     break;
                 };
                 let yielding = Arc::new(AtomicBool::new(false));
@@ -1228,6 +1251,7 @@ pub async fn run() {
                     name: who.callsign,
                     room: assignment.room,
                     target_slot: assignment.target_slot,
+                    stand_in: assignment.stand_in,
                     born_ms: now,
                     yielding,
                     task,
@@ -1313,7 +1337,7 @@ fn claim(
     taken: &Arc<Mutex<HashSet<pilots::PilotId>>>,
     blocked: &Arc<Mutex<HashMap<String, u64>>>,
     now: u64,
-    target_slot: Option<u32>,
+    want: Assignment,
 ) -> Option<pilots::PilotSpec> {
     let mut t = taken.lock().ok()?;
     let mut blocked = blocked.lock().ok()?;
@@ -1330,8 +1354,19 @@ fn claim(
         }
     };
 
-    let Some(target_slot) = target_slot else {
-        return (0..PILOT_POOL).map(pilots::individual).find_map(&mut take);
+    let Some(target_slot) = want.target_slot else {
+        // Ladder's stand-in starts past the authored eight. Those are the
+        // rungs, so one of them climbing would put a pilot on the field
+        // against a replica of itself, and one of them is the rating anchor,
+        // which a room that never empties would hold for ever.
+        let from = if want.stand_in {
+            pilots::PROVISIONAL_LADDER_RUNG_COUNT
+        } else {
+            0
+        };
+        return (from..PILOT_POOL)
+            .map(pilots::individual)
+            .find_map(&mut take);
     };
     let archetype = ladder_archetype_for_slot(target_slot)?;
     (0..pilots::LADDER_REPLICAS_PER_RUNG)
@@ -2358,6 +2393,25 @@ where
 
 #[cfg(test)]
 mod tests {
+
+    /// An ordinary fill seat in `room`, which is what every request that
+    /// names no rung is outside a Ladder room.
+    fn fill(room: u32) -> Assignment {
+        Assignment {
+            room,
+            target_slot: None,
+            stand_in: false,
+        }
+    }
+
+    /// The rival seat a Ladder room's rung asks for.
+    fn rung(slot: u32) -> Assignment {
+        Assignment {
+            room: 1,
+            target_slot: Some(slot),
+            stand_in: false,
+        }
+    }
     use super::*;
 
     fn map_message(world: &sim::World) -> Vec<u8> {
@@ -2548,6 +2602,7 @@ mod tests {
                 Assignment {
                     room: 0,
                     target_slot: None,
+                    stand_in: false,
                 };
                 3
             ]
@@ -2596,16 +2651,145 @@ mod tests {
                 Assignment {
                     room: 3,
                     target_slot: None,
+                    stand_in: false,
                 },
                 Assignment {
                     room: 3,
                     target_slot: None,
+                    stand_in: false,
                 },
                 Assignment {
                     room: 7,
                     target_slot: Some(12),
+                    stand_in: false,
                 },
             ]
+        );
+    }
+
+    /// A room that names a rung is a Ladder room, and no other room ever
+    /// names one. So a slot-less seat there is the stand-in that keeps a duel
+    /// in the zone, and a slot-less seat anywhere else is an ordinary fill.
+    #[test]
+    fn a_slot_less_seat_beside_a_rung_is_the_stand_in() {
+        let wanted = ArenaWant::new(
+            3,
+            Some(vec![
+                crate::fleet::BotRequest {
+                    room: 1,
+                    count: 1,
+                    target_slot: Some(3),
+                },
+                crate::fleet::BotRequest {
+                    room: 1,
+                    count: 1,
+                    target_slot: None,
+                },
+                crate::fleet::BotRequest {
+                    room: 2,
+                    count: 1,
+                    target_slot: None,
+                },
+            ]),
+        );
+        assert_eq!(
+            wanted.assignments(),
+            vec![
+                Assignment {
+                    room: 1,
+                    target_slot: None,
+                    stand_in: true,
+                },
+                Assignment {
+                    room: 1,
+                    target_slot: Some(3),
+                    stand_in: false,
+                },
+                fill(2),
+            ]
+        );
+    }
+
+    /// A rung is a measured fixture, so an arena on another signed release
+    /// gets no rival from this one. The stand-in goes with it: a climber with
+    /// nothing to climb is one ship flying around an empty arena.
+    #[test]
+    fn a_ladder_room_on_another_release_is_left_alone_entirely() {
+        let wanted = ArenaWant::from_release(
+            2,
+            Some(vec![
+                crate::fleet::BotRequest {
+                    room: 1,
+                    count: 1,
+                    target_slot: Some(3),
+                },
+                crate::fleet::BotRequest {
+                    room: 1,
+                    count: 1,
+                    target_slot: None,
+                },
+            ]),
+            "another-build".into(),
+            "signed-a".into(),
+        );
+        assert!(wanted.assignments().is_empty());
+    }
+
+    /// The stand-in never comes out of the authored eight. Those are the
+    /// rungs, so one of them climbing would put a pilot against a replica of
+    /// itself, and one of them is the fixed point every rating in the fleet
+    /// is measured against, which a room that never empties would hold for
+    /// ever.
+    #[test]
+    fn the_stand_in_is_never_one_of_the_rungs_it_climbs() {
+        let taken = Arc::new(Mutex::new(HashSet::new()));
+        let blocked = Arc::new(Mutex::new(HashMap::new()));
+        let want = Assignment {
+            room: 1,
+            target_slot: None,
+            stand_in: true,
+        };
+        let got = claim(&taken, &blocked, 10_000, want).expect("the roster is not empty");
+        assert_eq!(
+            got.callsign,
+            pilots::individual(pilots::PROVISIONAL_LADDER_RUNG_COUNT).callsign,
+            "the first pilot past the authored roster"
+        );
+        assert!(pilots::CALIBRATED
+            .iter()
+            .all(|(callsign, _, _)| *callsign != got.callsign));
+        assert!(pilots::ladder_archetype_for_callsign(&got.callsign).is_none());
+        assert_ne!(
+            got.callsign,
+            crate::ai::ANCHOR,
+            "and never the rating anchor"
+        );
+    }
+
+    /// The wait for a rival seat to come free is about the rival's own
+    /// flight. The stand-in beside it holds the other seat, and a rung change
+    /// that waited on that one would wait for ever.
+    #[test]
+    fn a_stand_in_does_not_hold_the_rival_seat() {
+        let stand_in = Assignment {
+            room: 1,
+            target_slot: None,
+            stand_in: true,
+        };
+        let next = rung(12);
+        assert_eq!(
+            reconcile_assignments(&[(stand_in, false)], &[stand_in, next]).missing,
+            vec![next],
+            "the climber in the other seat is not what the wait is about"
+        );
+        assert_eq!(
+            reconcile_assignments(&[(stand_in, false), (rung(11), false)], &[stand_in, next]),
+            Reconciliation {
+                immediate: vec![1],
+                surplus: Vec::new(),
+                missing: Vec::new(),
+            },
+            "and the rung being replaced still stands down before its replacement dials"
         );
     }
 
@@ -2627,10 +2811,12 @@ mod tests {
         let old = Assignment {
             room: 7,
             target_slot: Some(11),
+            stand_in: false,
         };
         let next = Assignment {
             room: 7,
             target_slot: Some(12),
+            stand_in: false,
         };
         assert_eq!(
             reconcile_assignments(&[(old, false)], &[next]),
@@ -2652,10 +2838,12 @@ mod tests {
         let room_one = Assignment {
             room: 1,
             target_slot: None,
+            stand_in: false,
         };
         let room_two = Assignment {
             room: 2,
             target_slot: None,
+            stand_in: false,
         };
         assert_eq!(
             reconcile_assignments(
@@ -2675,6 +2863,7 @@ mod tests {
         let assignment = Assignment {
             room: 4,
             target_slot: Some(2),
+            stand_in: false,
         };
         assert_eq!(
             reconcile_assignments(&[(assignment, true)], &[assignment]),
@@ -2695,6 +2884,7 @@ mod tests {
         let assignment = Assignment {
             room: 4,
             target_slot: None,
+            stand_in: false,
         };
         assert_eq!(
             reconcile_assignments(&[(assignment, true)], &[assignment]).missing,
@@ -3386,7 +3576,7 @@ mod tests {
             .lock()
             .unwrap()
             .insert(first.callsign.clone(), 20_000);
-        let got = claim(&taken, &blocked, 10_000, None).unwrap();
+        let got = claim(&taken, &blocked, 10_000, fill(0)).unwrap();
         assert_ne!(got.callsign, first.callsign);
         assert_eq!(got.callsign, pilots::individual(1).callsign);
     }
@@ -3437,7 +3627,7 @@ mod tests {
         let blocked = Arc::new(Mutex::new(HashMap::new()));
         let target = 7usize;
         let expected = pilots::ladder_replica(ladder_order()[target], 0).unwrap();
-        let got = claim(&taken, &blocked, 10_000, Some(target as u32)).unwrap();
+        let got = claim(&taken, &blocked, 10_000, rung(target as u32)).unwrap();
         assert_eq!(got.id, expected.id);
     }
 
@@ -3447,8 +3637,8 @@ mod tests {
         let archetype = ladder_order()[target];
         let taken = Arc::new(Mutex::new(HashSet::new()));
         let blocked = Arc::new(Mutex::new(HashMap::new()));
-        let first = claim(&taken, &blocked, 10_000, Some(target as u32)).unwrap();
-        let second = claim(&taken, &blocked, 10_000, Some(target as u32)).unwrap();
+        let first = claim(&taken, &blocked, 10_000, rung(target as u32)).unwrap();
+        let second = claim(&taken, &blocked, 10_000, rung(target as u32)).unwrap();
         assert_ne!(first.id, second.id);
         assert_eq!(first.id, pilots::ladder_replica(archetype, 0).unwrap().id);
         assert_eq!(second.id, pilots::ladder_replica(archetype, 1).unwrap().id);
@@ -3469,6 +3659,6 @@ mod tests {
         assert_eq!(occupied.len(), pilots::LADDER_REPLICAS_PER_RUNG);
         let taken = Arc::new(Mutex::new(occupied));
         let blocked = Arc::new(Mutex::new(HashMap::new()));
-        assert!(claim(&taken, &blocked, 10_000, Some(target)).is_none());
+        assert!(claim(&taken, &blocked, 10_000, rung(target)).is_none());
     }
 }

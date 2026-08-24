@@ -141,6 +141,10 @@ pub struct ArenaConfig {
     pub bounty_per_kill: Option<u16>,
     /// Points on top of the victim's bounty for each flag they were holding.
     pub points_per_flag: Option<u16>,
+    /// How many kills without dying put a pilot on a streak, and what being on
+    /// one adds to their bounty. Zero kills turns streaks off in this zone.
+    pub streak_kills: Option<u16>,
+    pub streak_bounty: Option<u16>,
     /// What a rung of multifire adds to the cost of pulling the trigger, as a
     /// percentage of the shot's own energy and cooldown. The original's are 50
     /// and 100: three rounds for half again the energy and twice the wait.

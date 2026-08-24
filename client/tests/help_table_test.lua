@@ -294,7 +294,7 @@ do
     -- weapon, because a kit carries two kinds and which two is the pilot's
     -- choice. They still need the sentence: what a thumb has to be told is
     -- where the cell is, and that is the same wherever the choice landed.
-    local MUST_SAY = {"turn left", "thrust", "reverse", "guns", "bombs",
+    local MUST_SAY = {"turn left", "thrust", "guns", "bombs",
                       "charge 1", "charge 2", "multifire", "map", "players"}
     local pad = {}
     for _, r in ipairs(ROWS) do pad[r.name] = r.pad end
@@ -308,9 +308,12 @@ do
 
     -- The ones that say nothing, and why. The controls page is the page being
     -- read; turn right shares the stick with turn left and is named by it.
-    -- Page Up and Page Down are replaced by tapping the pilot row. Anything
-    -- else arriving with no `pad` is a control a phone has quietly lost.
-    local QUIET = {controls = true, ["turn right"] = true,
+    -- Page Up and Page Down are replaced by tapping the pilot row. Reverse is
+    -- keyboard-only: the stick points where the nose should go and a push
+    -- behind it is a turn, so a phone has no way to ask for it and nothing to
+    -- describe. Anything else arriving with no `pad` is a control a phone has
+    -- quietly lost.
+    local QUIET = {controls = true, ["turn right"] = true, reverse = true,
                    ["previous player"] = true, ["next player"] = true}
     local mute = {}
     for _, r in ipairs(ROWS) do

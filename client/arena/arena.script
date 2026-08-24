@@ -21,7 +21,6 @@ local frame = require("arena.frame")
 local binds = require("arena.binds")
 local keys = require("arena.keys")
 local touch = require("arena.touch")
-local threat = require("arena.threat")
 local account = require("arena.account")
 local directory = require("arena.directory")
 local menu = require("arena.menu")
@@ -480,9 +479,6 @@ local function pad_reach(w, h, s)
     if L.mine and L.mine.y + L.mine.r > reach then
         reach = L.mine.y + L.mine.r
     end
-    if L.reverse and L.reverse.y + L.reverse.r > reach then
-        reach = L.reverse.y + L.reverse.r
-    end
     for _, c in ipairs(L.charge or {}) do
         local top = c.y + (c.w and c.w / 2 or c.r)
         if top > reach then reach = top end
@@ -889,8 +885,12 @@ end
 -- A phone has room for one line at a time and shows only these. A desktop also
 -- carries arena arrivals and departures, but kill lines have already been
 -- limited to this pilot's own kills and deaths by the network queue.
-local function notify(text, col, mine)
-    table.insert(feed, 1, {text = text, col = col, t = 0, mine = mine})
+-- `gleam` marks a line as shimmering rather than sitting in `col`. One thing
+-- uses it and one thing should: a streak is the only line here about something
+-- that is still going on while it is being read.
+local function notify(text, col, mine, gleam)
+    table.insert(feed, 1,
+                 {text = text, col = col, t = 0, mine = mine, gleam = gleam})
     while #feed > ui.FEED_MAX do table.remove(feed) end
 end
 
@@ -962,6 +962,33 @@ local function drain_kills()
         notify(line, col, mine)
     end
     if #net.kills > 0 then net.kills = {} end
+end
+
+-- Somebody is on a run.
+--
+-- Drained after the kills and inserted the same way, so the streak line ends
+-- up over the kill that earned it: both arrive on one tick and the feed is
+-- newest first. Gold, and shimmering, which is the arena's one exception to
+-- "a feed where every line is lit says nothing by lighting one". This is not
+-- a report of something that has finished, it is a standing fact about
+-- somebody who is still flying, and it is the fact that decides who the room
+-- goes after next.
+--
+-- Marked `mine` when it is yours, so a phone shows it: the one line a
+-- thumb-sized screen has is spent on things this pilot can act on, and being
+-- told the room has just been told about you is one of them.
+--
+-- The alert is not attenuated and does not care where the pilot is. Every
+-- other sound in this game is a thing happening somewhere; this one is an
+-- announcement, and an announcement that fades with distance is a rumour.
+local function drain_streaks()
+    for _, k in ipairs(net.streaks) do
+        local mine = not watching and k.ship == me
+        notify({pilot_named(k.ship, true),
+                " is on a streak of " .. k.kills}, nil, mine, true)
+        sfx.ui("streak")
+    end
+    if #net.streaks > 0 then net.streaks = {} end
 end
 
 -- Who arrived and who went. A room that fills up around you while you are
@@ -1269,14 +1296,6 @@ function update(self, dt)
     local ww, wh, density, live = frame.begin(self, dt, net, sfx, menu, sim)
     if not ww then return end
 
-    -- The pad's turn ramp keeps time here because only the frame loop has dt;
-    -- reading the buttons deliberately does not advance it.
-    touch.step(dt)
-    -- And whether the fight is ahead, which is half of what a rearward push
-    -- on the stick means. From the flying ship only: a watcher steers nobody.
-    touch.threat = (live and not watching and touch.used)
-        and threat.ahead(sim, me) or false
-
     -- A control waiting for a key takes the whole keyboard, and takes it here,
     -- before anything else in this function has looked at a press. Every key
     -- on the board is an answer while this is up, including the ones that walk
@@ -1504,10 +1523,6 @@ function update(self, dt)
         -- rows depend on it: there is no board to draw on glass and no key
         -- column to fill in, so the same list comes out as gestures.
         menu.touching = touch.used
-        -- Which of the two flying controls the thumb gets. Gated on there
-        -- being thumbs at all, so a save written on a phone cannot put a
-        -- desktop on a control it has no way to press.
-        touch.dpad = menu.dpad and touch.used
         -- Something is being typed into, and the trigger is the space bar.
         -- Every call sign has a space in it, so a line that still read the
         -- trigger as "send" answered itself partway through: "Vesper 412"
@@ -1647,6 +1662,7 @@ function update(self, dt)
     -- them, before the expiry pass so a line's clock starts the frame it
     -- appears.
     drain_kills()
+    drain_streaks()
     drain_comings()
 
     -- Notifications expire. A feed that only ever scrolls leaves the last few
@@ -1918,6 +1934,11 @@ function update(self, dt)
                     roll = ship_roll(i, hdg, dt),
                     hurt = wound,
                     flash = world.hit_flash(i),
+                    -- The clock this hull's shimmer runs on, and nil for a
+                    -- hull that is not on a run. Offset by the seat so two
+                    -- streaking pilots are a fraction out of step: in step
+                    -- they read as one effect drawn twice.
+                    gleam = sim.ship_on_streak(i) and (t + i * 0.31) or nil,
                 })
                 -- Only the wounded carry a pip. A bar over every hull in a
                 -- nine-ship room is noise; a bar over the one that is hurt is
@@ -2347,14 +2368,46 @@ function apply_menu(self, act)
             function(ok, why, profile)
                 if ok then
                     menu.note = "saved " .. (profile.name or "profile")
+                    -- The saved build is now a profile the page can light,
+                    -- and the one the next save offers a name from.
                     for i, item in ipairs(account.profiles or {}) do
-                        if item == profile then menu.profile_at = i break end
+                        if item == profile then
+                            menu.profile_at, menu.profile_from = i, i
+                            break
+                        end
                     end
                     sfx.ui("ui_go")
                 else
                     menu.note = why or "cannot save that profile"
                     sfx.ui("ui_move")
                 end
+            end)
+        return
+    end
+    -- A saved build under a different name, and a saved build dropped. Both
+    -- answer with the whole list, so what the page draws next is the
+    -- meta-layer's own answer rather than this client's guess at it.
+    --
+    -- The kit in hand is not touched by either. A rename moves a name and a
+    -- delete takes one away; what the pilot is flying is the thirty points in
+    -- the editor, which are the same thirty points afterwards. What does move
+    -- is which row of the list those points match, so both re-read it.
+    if act == "rename_profile" then
+        account.rename_profile(menu.pending_profile or "",
+                               menu.pending_rename or "",
+            function(ok, why)
+                menu.note = ok and nil or (why or "cannot rename that build")
+                menu.reread_profile()
+                sfx.ui(ok and "ui_go" or "ui_move")
+            end)
+        return
+    end
+    if act == "delete_profile" then
+        account.delete_profile(menu.pending_profile or "",
+            function(ok, why)
+                menu.note = ok and nil or (why or "cannot delete that build")
+                menu.reread_profile()
+                sfx.ui(ok and "ui_go" or "ui_move")
             end)
         return
     end
