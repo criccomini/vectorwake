@@ -1,14 +1,15 @@
 # Podium redesign
 
-Three artboards for the match ending. The shipped podium in
-`client/arena/ui.lua` is one card capped at 620pt, sized so a phone can hold
-it, and a desktop shows that same small card floating in scrim. These boards
-propose an ending that owns whatever window it is given, carrying less than
-the card does today: watch replay and the banked readout are dropped, leaving
-the result, the score, both rosters, comms, the next-match clock, and one
-share key.
+Three artboards for the match ending. The podium was one card capped at 620pt,
+sized so a phone could hold it, and a desktop was shown that same small card
+floating in scrim. These boards are the ending that owns whatever window it is
+given, carrying less than the card did: watch replay and the banked readout are
+gone, leaving the result, the score, both rosters, comms, the next-match clock,
+and one share key.
 
-They are drawings of a proposal, not a plan of record.
+This landed. `podium()` in `client/arena/ui.lua` draws what these boards draw,
+and `client/tests/podium_test.lua` holds the geometry to it. The boards stay as
+the drawing the layout was settled against.
 
 ## The proposal
 

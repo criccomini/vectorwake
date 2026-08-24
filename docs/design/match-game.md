@@ -126,15 +126,30 @@ are match-scoped below, and a mid-match hull change would have to answer what
 happens to a half-spent charge ledger across two different charge rows. The
 honest answer is to not let the question exist.
 
-**The ending is a podium and a payday**, and the intermission is where the
-hangar is one key away. The card leads with the scoreline, set large with the
-split of the match drawn between the two figures, because that is the one thing
-anybody wants off it in the first half second; the rosters are underneath for
-whoever reads further. The last five seconds are counted out loud, one pip a
-second and a different sound at nought, since a pilot picking a hull is not
-looking at the clock.
+**The ending is a podium**, and the intermission is where the hangar is one
+key away. It leads with the scoreline, set large with the split of the match
+drawn between the two figures, because that is the one thing anybody wants off
+it in the first half second; the rosters are underneath for whoever reads
+further, and under those what there is to say and what the room is counting
+down to. The last five seconds are counted out loud, one pip a second and a
+different sound at nought, since a pilot picking a hull is not looking at the
+clock.
 
-**And six things a player can say**, off chips at the foot of the card: "gg",
+It is a page rather than a card. The card was capped at the width a phone can
+hold and drawn at that size on every monitor, which ended a match four people
+had just played in a box in the middle of the screen. Now one measure
+spans the window up to a thousand and forty points, the two sides stand abreast
+where there is room for them and stack where there is not, and each group under
+the scoreline wears its name over a rule.
+
+What the match paid is not on it. That was BANKED and a rivet in the corner,
+and it reads better where the wallet already is: an ending is about the match,
+and a running total belongs on the page that spends it. The film has no key either. A second key of equal
+weight on the one screen with a countdown running made the ending a choice
+between leaving and staying, so what remains is the one key that hands the
+match to somebody else.
+
+**And six things a player can say**, off chips under the rosters: "gg",
 "nice shot", "close one", "good luck", "thanks", "sorry". A press puts the
 words on your own row on every screen in the room for four seconds. It is a
 closed list, one byte on the wire, refused while a match is running and
