@@ -84,9 +84,6 @@ local function pad_reach(w, h, s)
     if L.mine and L.mine.y + L.mine.r > reach then
         reach = L.mine.y + L.mine.r
     end
-    if L.reverse and L.reverse.y + L.reverse.r > reach then
-        reach = L.reverse.y + L.reverse.r
-    end
     for _, c in ipairs(L.charge or {}) do
         local top = c.y + (c.w and c.w / 2 or c.r)
         if top > reach then reach = top end

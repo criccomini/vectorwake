@@ -360,11 +360,14 @@ time the pilot steers, and it costs the arena the frame's circumcircle rather
 than the frame, since a turned frame reaches into corners its width and height
 do not describe.
 
-What survived is the control it was built with. The turning view had no
-direction left on the glass to point at, so it needed a d-pad, and the d-pad
-turned out to be worth having on its own: it is now the second of two steering
-settings, beside the stick, on a north-up screen like everybody else's. See
-`arena/touch.lua`.
+The control it was built with outlived it, though not by long. The turning view
+had no direction left on the glass to point at, so it needed a d-pad, and the
+d-pad was kept afterward as a second steering setting beside the stick, on a
+north-up screen like everybody else's. Both that and the reverse that came with
+it are gone now. One push of a thumb meant one thing on the pad and another on
+the stick, and on the stick it changed again while the guns were up, so a phone
+flies with the stick alone and a pilot who wants to be going the other way turns
+the ship around. See `arena/touch.lua`.
 
 
 **Status:** accepted
