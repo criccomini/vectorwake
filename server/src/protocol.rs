@@ -210,7 +210,11 @@ pub(crate) const JOIN_WATCH: u8 = 2;
 /// 23 takes the ship byte off `C2S_WATCH`. Spectating is the room channel and
 /// nothing else now, so a client built for 22 would send a subject this zone
 /// has no way to honor and sit waiting for a view it will never be given.
-pub(crate) const CLIENT_PROTOCOL: u8 = 23;
+///
+/// 24 changes what the five flight-stat counts mean. Old tabs would send a
+/// legal byte vector that resolves to a different ship, so they must reload
+/// before joining or saving a kit under the new row.
+pub(crate) const CLIENT_PROTOCOL: u8 = 24;
 
 /// The biggest message a client may send. The largest legitimate one is a join:
 /// tag, class, protocol, a zone name and a call sign. 8 KB is two orders of

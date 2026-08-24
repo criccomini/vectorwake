@@ -144,10 +144,11 @@ Seed ranges are named, role-tagged, and disjoint within their namespace.
 | Replication | Test the shipped claim on untouched seeds later |
 
 Looking at a final holdout turns it into development data. A failed final run
-does not get repaired and rerun on the unused tail of the same range. A checked-in,
-append-only attempt registry allows only one confirmatory attempt for a design
-fingerprint. Another attempt needs a reviewed design or content change, a new
-fingerprint, and a new disjoint seed namespace.
+does not get repaired and rerun on the unused tail of the same range. A
+checked-in, append-only registry binds one attempt ID and seed namespace to a
+design fingerprint. The release procedure accepts only the first run triggered
+by that registration. Another attempt needs a reviewed design or content
+change, a new fingerprint, and a new disjoint seed namespace.
 
 A confirmatory attempt also runs exactly the sample count calculated by its
 release plan. More rows are not a harmless extension after the holdout has been
@@ -214,6 +215,35 @@ Unit tests cover deterministic pilot resolution, profile wiring, arithmetic,
 seed-pool separation, and the statistical implementations. A short simulation
 smoke test catches crashes and gross controller failures. Neither supplies a
 balance claim.
+
+`calibrate profiles` is a separate, narrower flight-stat screen. It declares
+ten comparisons among legal 30-point builds: five stat margins beside the
+starter allocation and five matched seventh-to-eighth stat
+pip margins. Every stat margin spends its final point on the named pip or the
+same bomb-bounce pip. Fixed bots and controllers play mirrored 4v4 matches for
+the full 180 seconds. Paired seeds cycle evenly over the six Melee maps and
+seven cyclic lineups, with every hull occupying four lineup seats per cycle.
+The ten win-rate contrasts form one Bonferroni family and use conservative
+approximate family-wise 95% paired t intervals. Kill intervals are descriptive.
+The stricter fifteen-comparison planning bound needs 3,384 pairs for the stated
+90% whole-family power target. The prespecified screen rounds that minimum to
+3,402, or 81 complete map-by-lineup blocks. Another sample count is
+exploratory. Confirmatory seeds come from the
+preregistered attempt's namespace. A design fingerprint binds the ordered
+contrasts and their builds, maps, zone, controller, live Melee scoring,
+simulation, analysis policy, compiler and build target. The registry allows one
+confirmatory attempt for that design, while exploratory runs use a separate
+seed stream and cannot issue a verdict. The report retains each mirrored
+seed-level observation. Before any verdict, each comparison on each map must
+average at least eight net positive scored kills per match and preserve a
+minimum amount of mirrored outcome sensitivity. A gross observed side gap is
+retained as a warning, not a gate, because each contrast averages both side
+assignments.
+These are fixed, unpowered diagnostics. They do not certify side equivalence,
+and the 90% target applies only to the ten declared contrasts. The result
+estimates those marginal-pip questions under that fixture. It does
+not cover every legal kit and cannot establish human fun or perceived
+fairness.
 
 Powered bot experiments can establish whole-pilot outcome ordering,
 per-matchup side neutrality, matchup structure, and uncertainty under the

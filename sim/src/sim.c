@@ -95,7 +95,10 @@ int32_t sim_units_speed(int32_t v) {
 }
 
 static int32_t sim_units_thrust(int32_t t) {
-    return (int32_t)(((int64_t)t << 16) / 1000);
+    /* Thrust uses tenths of the documented settings unit. Its useful
+     * increments are smaller than one whole unit now, and integer source
+     * values would otherwise force a point to be either too strong or dead. */
+    return (int32_t)(((int64_t)t << 16) / 10000);
 }
 
 static int32_t sim_units_rotation(int32_t r) {
@@ -116,13 +119,10 @@ void sim_class_from_units(sim_ship_class *c, const sim_class_units *u) {
     c->rot = sim_units_rotation(u->max_rotation);
     c->max_energy = sim_units_energy(u->max_energy);
     c->recharge = sim_units_recharge(u->max_recharge);
-    /* Where a fresh hull starts and what one prize is worth, both named
-     * rather than derived. They used to be a flat seventy per cent of the
-     * ceiling and an eighth of the gap, which is tidy and is not what the
-     * original does: it starts a pilot at 62% of top speed but 88% of top
-     * thrust, and one green is worth a quarter of the speed gap against a
-     * seventh of the energy gap. A rule cannot express that, so it is a
-     * table. */
+    /* Where a zero-point hull starts and what one kit point is worth, both
+     * named rather than derived. Every row has eight steps, but its useful
+     * range and marginal value are tuned independently. A single percentage
+     * cannot express those five decisions, so they remain a table. */
     c->init_speed = sim_units_speed(u->init_speed);
     c->up_speed = sim_units_speed(u->up_speed);
     c->init_thrust = sim_units_thrust(u->init_thrust);
@@ -210,19 +210,19 @@ void sim_deal_kit(sim_ship *sh, const sim_settings *cfg, int ammunition) {
 
 /* What an account owns before it has bought anything.
  *
- * This is the union of the three starter profiles, plus every effective stat
- * step because stats are not shop items. Progression unlocks deeper
+ * This includes the three starter profiles, every effective stat step and the
+ * established second gun and spray rungs for heavier remixes. Progression unlocks deeper
  * specialization, while a first-session pilot begins with three complete
- * competitive choices and can remix every point in them. */
+ * competitive choices and can rearrange their points. */
 void sim_base_entitlements(uint8_t *out) {
     memset(out, 0, SIM_SLOT_COUNT);
-    /* The union of Gunner, Bomber and Control. A new pilot owns all three
-     * complete thirty-point builds and can remix them immediately; the shelf
-     * starts beyond this union and unlocks specialization, never basic
-     * competitiveness. The stat counts are their effective physics ceilings,
-     * so none of these points disappear into a clamp. */
-    static const uint8_t stats[SIM_UP_COUNT] = {7, 5, 5, 1, 1};
-    for (int u = 0; u < SIM_UP_COUNT; u++) out[SIM_SLOT_STAT(u)] = stats[u];
+    /* A new pilot owns Gunner, Bomber and Control and can remix them
+     * immediately. Stats are build choices rather than purchases, so all
+     * eight effective steps are available from the first flight. The base
+     * envelope also keeps the second gun and spray rungs used by saved remixes.
+     * The shelf starts beyond this envelope and unlocks specialization. */
+    for (int u = 0; u < SIM_UP_COUNT; u++)
+        out[SIM_SLOT_STAT(u)] = SIM_UP_STEPS;
     out[SIM_SLOT_LEVEL(SIM_TRIG_GUN)] = 2;
     out[SIM_SLOT_LEVEL(SIM_TRIG_BOMB)] = 1;
     out[SIM_SLOT_MOD(SIM_TRIG_GUN, SIM_MOD_MULTI)] = 2;
@@ -244,7 +244,7 @@ int sim_starter_kit(const uint8_t *ceiling, uint8_t *out) {
      * The account layer offers the other two named builds. Keeping this one in
      * the core makes an offline arena and a joining client agree. */
     uint8_t target[SIM_SLOT_COUNT] = {0};
-    static const uint8_t stats[SIM_UP_COUNT] = {6, 5, 5, 1, 1};
+    static const uint8_t stats[SIM_UP_COUNT] = {5, 4, 5, 2, 2};
     for (int u = 0; u < SIM_UP_COUNT; u++) target[SIM_SLOT_STAT(u)] = stats[u];
     target[SIM_SLOT_LEVEL(SIM_TRIG_GUN)] = 2;
     target[SIM_SLOT_LEVEL(SIM_TRIG_BOMB)] = 1;

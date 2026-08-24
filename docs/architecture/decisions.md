@@ -2215,9 +2215,9 @@ fixed area. The dimensions above record the state before that budget existed.
 **Cost:** the roster is thinner. Seven silhouettes with identical engines is
 less differentiation than seven stat blocks, and the roles in `ships.md` are now
 names for shapes rather than for capabilities. Balance also moved without a
-referee: `match-game.md` promises a drill harness that benches anything winning
-more than 55% of matched bouts, and that harness measures bot behavior rather
-than kits, so the new ceilings are a guess like every price in the shop.
+referee. The profile harness now measures full kits directly, but a simulation
+cannot price what people enjoy building or expose a live metagame before it
+exists, so the new ceilings still need selection and outcome telemetry.
 
 **Reconsider if:** shapes turn out not to be enough to tell hulls apart in play.
 The answer then is more shape, not a stat table coming back: extents that vary
@@ -2615,3 +2615,58 @@ deterministic core means a match is its initial state plus its inputs.
 wants a director and a longer delay rather than a shorter one; or replays
 land and somebody still asks to follow a teammate live, which would be
 evidence that the delay rather than the sharing was what people minded.
+---
+
+## 60. Every flight stat gets eight real steps
+
+**Status:** accepted, superseding decision 50's inherited flight ranges
+
+The hangar once drew eight pips for every flight stat even though the core
+stopped changing Energy after seven points, Recharge and Speed after five, and
+Thrust and Rotation after one. Removing the dead pips fixed the lie, but it
+also reduced the flight build space to nineteen useful points. Rotation and
+Thrust were settings more than choices.
+
+The five shared flight rows now each have eight useful steps:
+
+| Stat | Zero points | Per point | Starter | Eight points |
+|---|---:|---:|---:|---:|
+| Speed | 2010 | 248 | 5 = 3250 | 3994 |
+| Thrust | 15.4 | 0.8 | 2 = 17 | 21.8 |
+| Rotation | 210 | 10 | 2 = 230 | 290 |
+| Energy | 1475 | 25 | 5 = 1600 | 1675 |
+| Recharge | 1070 | 20 | 4 = 1150 | 1230 |
+
+The `5/4/5/2/2` starter spends eighteen points and resolves to the same
+familiar ship. Its Speed floor also stays at 2010, which keeps the authored map
+contact-time contract intact. The change opens space on both sides of the
+starter instead of making the default ship faster or moving the first fight.
+
+Forty useful stat points now compete for a thirty-point kit. A pilot can build
+an engine or a tank, but cannot maximize both, and a kit spent entirely on
+flight gives up weapon rungs, add-ons and charges. Stats remain universal
+choices rather than shop purchases. The profile harness tests each stat's next
+starter pip and eighth pip against the same bomb-bounce point. Those ten margins
+form its confirmatory family. The more conservative fifteen-comparison planning
+bound needs 3,384 paired seeds
+for the stated 90% power target under worst-case paired variance. The
+prespecified screen rounds that minimum to 3,402, or 81 complete blocks across
+six maps and seven cyclic lineups. Every hull occupies four lineup seats per
+cycle. The report keeps every mirrored seed-level row. Fixed activity and
+mirrored sensitivity gates reject a fixture that cannot expose build
+differences. A gross observed side gap is preserved as a
+warning because the estimator averages both assignments. These diagnostics are
+unpowered and sit outside the contrast-power claim.
+
+**Cost:** saved custom kits store counts, not resolved values. Active kits and
+named copies carrying the exact old starter allocation are remapped because
+the new allocation costs the same eighteen points and preserves their handling.
+Other custom counts keep what their authors picked and may resolve to a
+slightly different ship. House-pilot build plans also have more room to
+specialize, so their provisional Ladder order must be measured again before it
+can become certified.
+
+**Reconsider if:** live selection concentrates at the edges, or a matched
+starter-margin or eighth-pip contrast falls outside the balance band. Adjust
+the range or the per-point jump while keeping eight meaningful steps. Do not
+bring back pips that spend a point without changing the ship.

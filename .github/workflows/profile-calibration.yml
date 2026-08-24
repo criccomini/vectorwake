@@ -1,0 +1,130 @@
+name: profile calibration
+
+# Choose the candidate branch in the Actions dispatch form. A powered run also
+# needs its attempt registered on that branch before it starts.
+on:
+  # A candidate branch can collect evidence before anything reaches main. The
+  # first push prints the exact production-image design digest and fails closed
+  # while its registry entry is absent. Register that digest, push once more,
+  # and the same event runs the one confirmatory attempt.
+  push:
+    branches:
+      - "profile-calibration/**"
+  workflow_dispatch:
+    inputs:
+      paired_seeds:
+        description: Paired seeds; 3402 is the prespecified powered screen
+        required: true
+        type: number
+        default: 3402
+      zone:
+        description: Catalog zone to measure
+        required: true
+        type: string
+        default: melee
+      attempt_id:
+        description: Registered attempt ID, or exploratory for a smaller run
+        required: true
+        type: string
+  workflow_call:
+    inputs:
+      paired_seeds:
+        description: Paired seeds; 3402 is the prespecified powered screen
+        required: true
+        type: number
+        default: 3402
+      zone:
+        description: Catalog zone to measure
+        required: true
+        type: string
+        default: melee
+      attempt_id:
+        description: Registered attempt ID, or exploratory for a smaller run
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: profile-calibration-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PAIRED_SEEDS: ${{ inputs.paired_seeds || 3402 }}
+  ZONE: ${{ inputs.zone || 'melee' }}
+  ATTEMPT_ID: ${{ inputs.attempt_id || 'flight-eight-v1' }}
+
+jobs:
+  calibrate:
+    name: calibrate ${{ inputs.attempt_id || 'flight-eight-v1' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+
+      - name: short sha
+        id: rev
+        run: echo "short=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
+
+      # This is the same root Dockerfile, architecture, commit stamp, and final
+      # runtime image that the production image workflow builds.
+      - name: build production candidate
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          build-args: |
+            VW_COMMIT=${{ steps.rev.outputs.short }}
+          tags: vectorwake-profile-calibration:${{ steps.rev.outputs.short }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64
+          provenance: false
+          load: true
+
+      - name: run profile calibration
+        shell: bash
+        env:
+          IMAGE: vectorwake-profile-calibration:${{ steps.rev.outputs.short }}
+          OUTPUT_DIR: ${{ runner.temp }}/profile-calibration
+          # Catalog identity is required to parse the production catalog. The
+          # calibration does not authenticate to either service.
+          VW_POOL_DIGEST: "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          VW_META_VERIFY: "0000000000000000000000000000000000000000000000000000000000000000"
+        run: |
+          mkdir -p "$OUTPUT_DIR"
+          set +e
+          docker run --rm \
+            --platform linux/amd64 \
+            --workdir / \
+            --env VW_POOL_DIGEST \
+            --env VW_META_VERIFY \
+            --volume "$OUTPUT_DIR:/output" \
+            "$IMAGE" \
+            calibrate profiles "$PAIRED_SEEDS" "$ZONE" /output "$ATTEMPT_ID" \
+            2>&1 | tee "$OUTPUT_DIR/calibration.log"
+          statuses=("${PIPESTATUS[@]}")
+          printf 'calibration=%s\ntee=%s\n' \
+            "${statuses[0]}" "${statuses[1]}" > "$OUTPUT_DIR/exit-codes.txt"
+          if (( statuses[0] != 0 )); then
+            exit "${statuses[0]}"
+          fi
+          exit "${statuses[1]}"
+
+      # A failed balance verdict is still evidence. Upload its report and full
+      # console log, then leave the failed calibration step as the job result.
+      - name: upload calibration evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: profile-calibration-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/profile-calibration/*.json
+            ${{ runner.temp }}/profile-calibration/*.log
+            ${{ runner.temp }}/profile-calibration/exit-codes.txt
+          if-no-files-found: warn
+          retention-days: 90

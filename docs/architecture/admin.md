@@ -451,8 +451,8 @@ The floor is the baseline rather than zero. An upgrade is a rung above what
 everybody is dealt, so revoking one means taking back a purchase; setting a
 slot below the baseline is not revoking an upgrade, it is crippling an
 account, and the game has no concept for a pilot who owns less than a fresh
-one. Where the baseline is zero, which is most add-ons, the two are the same
-number. Slots the game does not have are left out of the table entirely: a
+one. Where the baseline is zero, the two are the same number. Slots the game
+does not have are left out of the table entirely: a
 bullet with a proximity fuse has a ceiling of zero, and a row offering to
 grant one could only ever refuse.
 

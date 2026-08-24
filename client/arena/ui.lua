@@ -5372,7 +5372,7 @@ function pages.kit(v, x, y, w, h, focused)
     end
 
     -- A label and nothing beside it. Each of these heads carried a sentence
-    -- about its group: what six of a stat costs, what a dim step means, that
+    -- about its group: what a stat ladder costs, what a dim step means, that
     -- spent charges do not come back. They were rules of the game printed on
     -- the furniture, read once and then in the way of the thing they
     -- introduced, and the page says most of it now by drawing it: a dim step
@@ -5526,9 +5526,9 @@ function pages.kit(v, x, y, w, h, focused)
         cy = cy + srow
     end
 
-    -- The stats: five ladders of six, and the two steps past six that the
-    -- shelf sells, behind a divider so the page says which is which without a
-    -- word about it. Then the two weapons, on the same ladders. Those were
+    -- The stats: five eight-step ladders behind a divider, each pip a real
+    -- point the pilot already owns and may put into this build. Then the two
+    -- weapons, on the same ladders. Those were
     -- chips, both wearing the word "rung": one word for two different weapons,
     -- and no way to see which rung you were on or to climb one. What a level
     -- is is a position on a ladder, so it is drawn as one and reads as L1,
@@ -6440,9 +6440,9 @@ function pages.shop(v, x, y, w, h, focused)
     -- ladder is the most rungs anybody could buy rather than the tallest slot.
     -- The bar's width is reserved on every row whether or not the row has one,
     -- which is what puts the first buyable rung in the same column all the way
-    -- down: a stat opens at six and a charge kind at nothing, and pips that
-    -- started where each row's own dealt part ended made a ragged edge out of
-    -- the one column worth comparing.
+    -- down: a stat is fully dealt while a charge kind can start at nothing,
+    -- and pips that started where each row's own dealt part ended made a
+    -- ragged edge out of the one column worth comparing.
     local DEALT = 28 * F.scale
     local most = 1
     for _, r in ipairs(v.rows or {}) do
@@ -6508,8 +6508,8 @@ function pages.shop(v, x, y, w, h, focused)
             if base > 0 then
                 -- What everybody is dealt, as one bar. Pips would be a ladder
                 -- with its bottom half permanently lit and nothing to say
-                -- where the buying starts, and on a stat that is six of the
-                -- eight.
+                -- where the buying starts, especially on a stat whose full
+                -- eight-step ladder is universal.
                 rect(lx, ly - 1.5 * F.scale, DEALT - 10 * F.scale,
                      3 * F.scale, pal.a(pal.DIM, 0.45))
             end
