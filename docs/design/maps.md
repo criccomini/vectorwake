@@ -430,16 +430,11 @@ language:
 - Relay ring uses stations, signal marks, and paired slope runs.
 
 The client gives those materials one visual grammar without flattening them
-into one tileset. A bulkhead keeps a continuous bright collision edge, with
-sparse machinery borrowed from the station behind it. One-tile partitions are
-open rails: brackets, braces, warning cuts, and exposed conduits, without a row
-of enclosed access capsules. A wall at least two tiles deep can carry larger
-hatches, vents, pipe elbows, stepped plates, and structural ribs. Those deeper
-machines change silhouette from one occupied slot to the next instead of
-repeating one fitting with different lines inside it. Every line is horizontal,
-vertical, or 45 degrees, and broad stretches of bare armor keep the collision
-edge dominant. The schedule is anchored to world coordinates, so a wall keeps
-the same fittings as the camera's terrain window moves across it.
+into one tileset. A bulkhead is deliberately plain: a dark solid body, a
+continuous bright collision edge, and enough rim shading to show its depth. It
+carries no hatches, pipes, braces, warning marks, panels, or interior seams.
+Thin partitions and deep walls use the same treatment, so walls stay quiet
+while the objects around them carry the arena's mechanical detail.
 
 A rock is warmer, faceted, cratered, and carries sparse mineral seams while it
 tumbles. A station fills the whole six-tile square the simulation collides
@@ -447,9 +442,8 @@ with, then cuts docking throats, armor quarters, trusses, and a cold reactor
 into that mass. The detail is subordinate to the outside edge at combat zoom.
 A player reads collision first and fiction on the second look.
 
-The thick perimeter mass uses the deeper grammar at a slower rhythm. Its long
-dark rests distinguish the arena boundary from an interior partition, but
-machinery still reaches into the slab from each exposed face.
+The thick perimeter mass uses the same plain treatment. Its broad dark body
+distinguishes the arena boundary from an interior partition.
 
 This keeps theme and topology independent. Ring and spokes can be a relay or a
 dockyard without becoming the same room with a different seed. Large objects
