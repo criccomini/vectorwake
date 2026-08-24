@@ -217,10 +217,11 @@ end
 -- --- the short landing keeps its deploy key clear -------------------------
 --
 -- The full landing column was taller than an iPhone SE or a short Android
--- screen. DEPLOY stayed pinned to the bottom and covered the room, hull, and
--- call sign above it. These sizes include the two shortest supported phones
--- and the common 360 and 375 point shapes. A phone held sideways is wide
--- enough for the two-column play page and is checked separately below.
+-- screen. DEPLOY stayed pinned to the bottom and covered the readings above
+-- it. These sizes include the two shortest supported phones and the common
+-- 360 and 375 point shapes. A phone held sideways clears the 620-point bar
+-- and takes the wide layout, which is the same deck across a wider page,
+-- and it is checked separately below.
 do
     local function landing_view()
         return {
@@ -232,7 +233,6 @@ do
                 zones = 1, at = 1, sub = "the busiest room with a seat",
                 room = {players = 1, bots = 7, seats = 8},
                 clock = 72, playing = true, score = {2, 4}, row = 1,
-                arrive = {hull = 0, name = "Apex", call = "Vantage 7"},
             },
         }
     end
@@ -283,12 +283,30 @@ do
         return best
     end
 
+    -- Each band holds its own figures. The clock is sized off the band it
+    -- stands in rather than set at a constant, and on a short screen a flat
+    -- 28 ran it out of the bottom of that band into the label under it.
+    local function bands_hold(landing, name)
+        local clock = text_named(landing, "1:12")
+        -- Whichever block landed under the clock. A column with no height
+        -- for a roster drops it and the score follows the clock instead.
+        local under = text_named(landing, "Players")
+                      or text_named(landing, "Score")
+        local clock_y = clock and (H - clock.y) or nil
+        local under_y = under and (H - under.y) or nil
+        check(name .. " keeps the clock clear of the label under it",
+              clock_y and under_y
+                  and clock_y + clock.px * 0.5 <= under_y - under.px * 0.5,
+              string.format("clock %.0f at %.0f, label %.0f at %.0f",
+                            clock and clock.px or -1, clock_y or -1,
+                            under and under.px or -1, under_y or -1))
+    end
+
     for _, shape in ipairs({{320, 480}, {320, 568}, {360, 640},
                              {375, 667}, {390, 664}, {390, 844}}) do
         local landing = draw(landing_view(), shape[1], shape[2], true)
         local deploy = hit_named("stage")
-        local apex = baseline(landing, "Apex")
-        local call = baseline(landing, "Vantage 7")
+        local score = baseline(landing, "Score")
         local inside = deploy and deploy.x >= 0 and deploy.y >= 0
                        and deploy.x + deploy.w <= W
                        and deploy.y + deploy.h <= H
@@ -298,12 +316,10 @@ do
                                        deploy.x, deploy.y, deploy.w, deploy.h,
                                        W, H)
                   or "no deploy box")
-        check(string.format("%dx%d keeps the arrival clear of DEPLOY",
+        check(string.format("%dx%d keeps the last reading clear of DEPLOY",
                             shape[1], shape[2]),
-              deploy and apex and call
-                  and math.max(apex, call) < deploy.y - 2,
-              string.format("arrival %.0f, deploy %.0f",
-                            math.max(apex or -1, call or -1),
+              deploy and score and score < deploy.y - 2,
+              string.format("score %.0f, deploy %.0f", score or -1,
                             deploy and deploy.y or -1))
         local crosses_rail = false
         if deploy then
@@ -318,19 +334,19 @@ do
         check(string.format("%dx%d keeps DEPLOY above the tab rail",
                             shape[1], shape[2]), not crosses_rail,
               crosses_rail and "the hit boxes overlap" or nil)
+        bands_hold(landing, string.format("%dx%d", shape[1], shape[2]))
         if shape[1] == 390 and shape[2] == 844 then
             local note = baseline(landing,
                 "Everybody against everybody until the whistle")
-            local clock = baseline(landing, "On the clock")
-            local arrival = baseline(landing, "You arrive as")
+            local clock = baseline(landing, "Time")
             check("portrait leaves the arena between the description and facts",
                   note and clock and clock - note > 200,
                   string.format("description %.0f, facts %.0f",
                                 note or -1, clock or -1))
             check("portrait keeps the deployment facts in one bottom block",
-                  clock and arrival and arrival - clock < 150,
-                  string.format("clock %.0f, arrival %.0f",
-                                clock or -1, arrival or -1))
+                  clock and score and score - clock < 150,
+                  string.format("clock %.0f, score %.0f",
+                                clock or -1, score or -1))
 
             local human = text_named(landing, "1")
             local robot = text_named(landing, "7")
@@ -341,30 +357,32 @@ do
                   human_y and robot_y and math.abs(human_y - robot_y) < 0.1,
                   string.format("human %.1f, robot %.1f",
                                 human_y or -1, robot_y or -1))
-            check("the arrival names publish both page destinations",
-                  hit_named("ship_page") and hit_named("pilot_page"),
+            check("the deck sends nobody to a page of its own",
+                  not hit_named("ship_page") and not hit_named("pilot_page"),
                   table.concat(actions(), ", "))
         end
     end
 
-    -- A phone held sideways clears the 620-point bar and takes the desktop
-    -- shape: the zones list beside the room's readings, and the row under
-    -- the cursor is the deploy control. There is no DEPLOY key, because
-    -- the rows a key would repeat are on screen and pressable.
+    -- Held sideways the window is wide, and the deck takes that width. The
+    -- zones list is not on either shape: the deck's own carousel is the zone
+    -- picker, and the key under the readings is the press.
     local sideways = draw(landing_view(), 844, 390, true)
     local said_deploy = false
     for i = 1, sideways.n do
         if is(sideways.text[i], "Deploy") then said_deploy = true end
     end
-    check("sideways draws the zones list, not the deck",
-          has(sideways, "zone1"), table.concat(texts(sideways), " "))
-    check("and its readings", has(sideways, "on the clock")
-              and has(sideways, "the room"),
+    check("sideways draws the deck, not the zones list",
+          not has(sideways, "zone1"), table.concat(texts(sideways), " "))
+    -- Two readings, and no roster: 390 points of height has no room for a
+    -- list of names under a clock, a score and a key.
+    check("and its readings", has(sideways, "time")
+              and has(sideways, "score"),
           table.concat(texts(sideways), " "))
-    check("and no deploy key", not said_deploy)
+    check("and the key that presses them", said_deploy)
+    bands_hold(sideways, "sideways")
     local row_press = hit_named("stage")
-    check("the zone row takes the press", row_press ~= nil
-              and row_press.value == 1, "no stage target on the row")
+    check("the deploy key takes the press", row_press ~= nil
+              and row_press.value == 1, "no stage target on the key")
 end
 
 -- --- the rail does not move when you go a level in ------------------------
