@@ -2109,12 +2109,14 @@ do
         if r.ship then hull_at2 = i end
         if r.group == "flair" and not r.ship then wake_at2 = i end
     end
-    check("the arena's slots and the two profile controls are on the page",
-          #v.rows == 7, table.concat(labels, ", "))
-    -- The slots first, then profiles, then flair: the hull with the wake
+    check("the arena's slots and the add key are on the page",
+          #v.rows == 6, table.concat(labels, ", "))
+    -- The library first, then the slots, then flair: the hull with the wake
     -- beside it at the foot, since choosing a shape and choosing a wake are
-    -- the same kind of choice. No budget row anywhere: the figure rides the
-    -- view, so the cursor never opens on a readout.
+    -- the same kind of choice. This account has no profiles, so the head of
+    -- the page is the one chip that does not need any. No budget row
+    -- anywhere: the figure rides the view, so the cursor never opens on a
+    -- readout.
     check("with the hull and the wake in the flair at the foot",
           hull_at2 == #v.rows - 1 and wake_at2 == #v.rows
               and v.rows[hull_at2].detail == "Apex",
@@ -2131,9 +2133,16 @@ do
           menu.at() == "hangar", table.concat(menu.stack, "/"))
 
     -- Right spends a point, left takes it back, and neither goes anywhere.
-    -- The first stat is the first row now: nothing stands ahead of the
-    -- things a press can change.
-    menu.sel.hangar = 1
+    -- Found rather than counted to: the library rides above the stats, so
+    -- which row the first of them is depends on how many builds this pilot
+    -- has saved.
+    local function first_slot()
+        for i, r in ipairs(menu.view().rows) do
+            if r.act == "kit_step" then return i end
+        end
+    end
+    local slot1 = first_slot()
+    menu.sel.hangar = slot1
     menu.step({right = true})
     check("right spends a point",
           menu.kit[1] == 1 and menu.at() == "hangar",
@@ -2152,7 +2161,7 @@ do
           tostring(menu.kit[1]))
 
     -- The budget, which is what every row on the page is spending against.
-    menu.sel.hangar = 3
+    menu.sel.hangar = slot1 + 2
     for _ = 1, 6 do menu.step({right = true}) end
     check("nor past the budget", menu.kit_spent() == 6,
           tostring(menu.kit_spent()))
@@ -2162,7 +2171,7 @@ do
     account.entitlements = {[1] = 2}
     menu.kit = nil
     menu.open_kit(0)
-    menu.sel.hangar = 1
+    menu.sel.hangar = first_slot()
     for _ = 1, 6 do menu.step({right = true}) end
     check("and never past what the account owns", menu.kit[1] == 2,
           tostring(menu.kit[1]))
@@ -2247,9 +2256,11 @@ do
     check("and a saved kit is left alone", menu.kit[1] == 2 and menu.kit[6] == 0,
           tostring(menu.kit[1]) .. "/" .. tostring(menu.kit[6]))
 
-    -- The three starter profiles and any named builds ride above the flair.
-    -- Choosing one replaces the editor whole; changing a point makes it
-    -- custom, and saving that custom build raises a named field.
+    -- The three starter profiles and any named builds are a list that drops
+    -- out of the box at the head of the page. Nothing of them is on the page
+    -- while it is shut. Pressing a row replaces the editor whole and puts the
+    -- list away; changing a point makes it custom, and saving that custom
+    -- build raises a named field with the name it was edited from in it.
     CEIL[1], CEIL[6] = 4, 2
     local first_profile, second_profile = {}, {}
     for i = 1, 23 do
@@ -2265,30 +2276,106 @@ do
     menu.open_kit(0)
     check("a saved hull build recognizes its matching profile",
           menu.profile_at == 1, tostring(menu.profile_at))
-    local profile_row, save_row = nil, nil
-    for i, row in ipairs(menu.view().rows) do
-        if row.act == "profile" then profile_row = i end
-        if row.act == "save_profile" then save_row = i end
+    local function library()
+        local add_row, rows_at, keys = nil, {}, {}
+        for i, row in ipairs(menu.view().rows) do
+            if row.act == "save_profile" then add_row = i end
+            if row.act == "profile" then rows_at[#rows_at + 1] = i end
+            if row.act == "rename_profile" then keys.rename = i end
+            if row.act == "delete_profile" then keys.delete = i end
+        end
+        return add_row, rows_at, keys
     end
-    menu.sel.hangar = profile_row
-    local selected_profile = menu.step({right = true})
-    check("the profile row loads the next complete build",
+    local add_row, listed, keys = library()
+    check("every build is a row, with the key that adds one under them",
+          add_row == 3 and #listed == 2 and listed[1] == 1 and listed[2] == 2,
+          tostring(add_row) .. "/" .. #listed)
+    check("and the one the kit matches carries the mark",
+          menu.view().rows[listed[1]].choice == 1
+          and menu.view().rows[listed[2]].choice == 0,
+          tostring(menu.view().rows[listed[2]].choice))
+    check("a starter offers no rename and no delete",
+          keys.rename == nil and keys.delete == nil,
+          tostring(keys.rename) .. "/" .. tostring(keys.delete))
+    menu.sel.hangar = listed[2]
+    local selected_profile = menu.step({go = true})
+    check("pressing a row loads that whole build",
           selected_profile == "kit" and menu.profile_at == 2
           and menu.kit[1] == 4 and menu.kit[6] == 2,
           tostring(selected_profile) .. "/" .. tostring(menu.profile_at))
+    check("and the head of the pane names it",
+          menu.profile_band().name == "Bomber"
+          and menu.profile_band().state == nil,
+          menu.profile_band().name .. "/"
+              .. tostring(menu.profile_band().state))
     menu.kit_step(0, -1)
     check("editing a profile turns it into a custom build",
           menu.profile_at == nil, tostring(menu.profile_at))
-    menu.sel.hangar = save_row
+    check("and the head still says which build it came from",
+          menu.profile_band().name == "Bomber"
+          and menu.profile_band().state == "edited",
+          menu.profile_band().name .. "/"
+              .. tostring(menu.profile_band().state))
+    menu.sel.hangar = add_row
     menu.step({go = true})
     check("a custom build can be named",
           menu.ask ~= nil and menu.ask.fields[1].label == "profile name",
           menu.ask and menu.ask.head or "no card")
+    -- Nothing offered, because this build was edited from a starter and the
+    -- meta-layer keeps those three names for itself.
+    check("and a starter's name is not offered back",
+          menu.ask.fields[1].value == "", menu.ask.fields[1].value)
     menu.ask.fields[1].value = "Screen"
     local save_action = menu.click_answer(1)
     check("saving hands the named profile to the arena",
           save_action == "save_profile" and menu.pending_profile == "Screen",
           tostring(save_action) .. "/" .. tostring(menu.pending_profile))
+
+    -- Saving over one of your own is the same two presses as naming a new
+    -- one: the card opens with the name the build already answers to.
+    account.profiles[3] = {name = "Screen", builtin = false,
+                           kit = second_profile}
+    menu.profile_from, menu.profile_at = 3, nil
+    menu.ask = nil
+    menu.sel.hangar = (library())
+    menu.step({go = true})
+    check("a build tuned from one of yours offers its name back",
+          menu.ask ~= nil and menu.ask.fields[1].value == "Screen",
+          menu.ask and menu.ask.fields[1].value or "no card")
+    menu.ask = nil
+
+    -- A build of the pilot's own can be renamed and dropped, and both are the
+    -- pane's own keys rather than rows in the list: they are about the one
+    -- build the pane is showing.
+    local _, _, own_keys = library()
+    check("one of yours offers both",
+          own_keys.rename ~= nil and own_keys.delete ~= nil,
+          tostring(own_keys.rename) .. "/" .. tostring(own_keys.delete))
+    menu.sel.hangar = own_keys.rename
+    menu.step({go = true})
+    check("rename opens a card carrying the name it would change",
+          menu.ask ~= nil and menu.ask.fields[1].value == "Screen"
+          and menu.pending_profile == "Screen",
+          menu.ask and menu.ask.fields[1].value or "no card")
+    menu.ask.fields[1].value = "Bomb run"
+    local renamed = menu.click_answer(1)
+    check("and answering it hands both names to the arena",
+          renamed == "rename_profile" and menu.pending_profile == "Screen"
+          and menu.pending_rename == "Bomb run",
+          tostring(renamed) .. "/" .. tostring(menu.pending_rename))
+    menu.ask = nil
+    menu.sel.hangar = own_keys.delete
+    menu.step({go = true})
+    check("delete asks first, and the answer that changes nothing is the one lit",
+          menu.ask ~= nil and menu.ask.sel == 2
+          and menu.ask.keys[2].act == nil,
+          menu.ask and menu.ask.head or "no card")
+    local dropped = menu.click_answer(1)
+    check("and answering it names the build to drop",
+          dropped == "delete_profile" and menu.pending_profile == "Screen",
+          tostring(dropped) .. "/" .. tostring(menu.pending_profile))
+    menu.ask = nil
+    menu.profile_from = nil
     account.profiles = {}
 
     -- Nothing on this page is for sale. The prices rode these rows for a
@@ -2311,7 +2398,7 @@ do
 
     -- And a press that cannot spend says which of the two refusals it is,
     -- rather than offering to sell the way out of one of them.
-    menu.sel.hangar = 1
+    menu.sel.hangar = first_slot()
     menu.ask = nil
     for _ = 1, 4 do menu.step({right = true}) end
     check("the ladder stops at what the account owns", menu.kit[1] == 1,
@@ -2475,8 +2562,11 @@ do
     menu.open_kit(0)
     local owned = {}
     for _, r in ipairs(menu.view().rows) do owned[#owned + 1] = r.label end
+    -- Nine: the six slots this zone allows, the hull and the wake, and the
+    -- key that adds a build. This account has kept none, so the column down
+    -- the left is that key alone.
     check("every slot the arena takes is on the page while the account owns it",
-          #owned == 10, table.concat(owned, ", "))
+          #owned == 9, table.concat(owned, ", "))
 
     -- Now the account owns none of the gun's ladder and one of three repels.
     account.entitlements = {[6] = 0, [20] = 1}
@@ -2488,7 +2578,7 @@ do
         if r.label == "repel" then charge = r end
     end
     check("a slot the account owns none of is off the page altogether",
-          #mine == 9 and not string.find(table.concat(mine, ","),
+          #mine == 8 and not string.find(table.concat(mine, ","),
                                          "gun level", 1, true),
           table.concat(mine, ", "))
     check("and a ladder stops at what the account owns, not at the arena's",
@@ -2561,7 +2651,7 @@ do
 
     -- A stat is still a ladder, because that is what it is: left and right
     -- spend and unspend along it.
-    menu.sel.hangar = 1
+    menu.sel.hangar = first_slot()
     menu.step({right = true})
     check("but a stat still takes a step from the arrows",
           (menu.kit[1] or 0) == 2, tostring(menu.kit[1]))

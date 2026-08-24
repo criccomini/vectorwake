@@ -351,8 +351,10 @@ traits could never be sold at all because they existed on one hull each. See
 **Everyone deals thirty**, new pilot and veteran alike. A new account owns
 three complete profiles: Gunner, Bomber and Control. Choosing one takes a
 press; changing its slots makes a custom build, and that build can be saved
-under a new profile name. Profiles are ordinary hull-independent kits, so
-there is no second balance system hiding behind the convenience.
+under a new profile name, renamed later, or dropped. The three the game ships
+are not a pilot's to rename or drop, since those names are the code's.
+Profiles are ordinary hull-independent kits, so there is no second balance
+system hiding behind the convenience.
 
 The stat ceilings are the counts that still change the resolved ship: seven
 energy, five recharge, five speed, one thrust and one rotation. The old flat

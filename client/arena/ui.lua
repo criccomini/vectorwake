@@ -4855,38 +4855,46 @@ end
 -- are one page rather than two levels of a stack. A page that showed one at a
 -- time made a player memorise the ship they had just left.
 function pages.kit(v, x, y, w, h, focused)
-    -- One ship in a header band, and the kit under it in two columns.
+    -- The builds you can fly, and the thirty points of the one you are on.
     --
-    -- This was three columns: every hull listed down the left, a detail panel
-    -- beside it carrying the role, a sentence and three footprint numbers, and
-    -- the kit third. Two thirds of the page went to choosing between seven
-    -- things you choose between once, and the numbers were reference material
-    -- on a page about spending points.
+    -- The page has been a column of hulls, then a carousel in a column of its
+    -- own, then one column of kit under a band that named the ship. All three
+    -- spent most of a monitor on the hull, which is a thing you choose once,
+    -- and the hull is chosen in flair now.
     --
-    -- Then it was a carousel in a column of its own, which is the same
-    -- complaint one size smaller: a drawing and two arrows do not justify a
-    -- third of a monitor, and the kit was reading as one long column beside a
-    -- mostly empty panel. The hull, its name and the budget are one line
-    -- across the top now, which says "this is what you are spending, on this"
-    -- in the space a heading would take anyway, and everything below it is
-    -- kit. See the mocks: this is option B.
-    -- One line where the band has the width for two halves, two where it does
-    -- not: on a phone the budget bar would be a negative number of points
-    -- wide, which draws as a smear over the count beside it.
-    local BAND = 66 * F.scale
-    -- One column, walked top to bottom. It was two when the page was wide,
-    -- ordered down the left and then down the right, and the cursor walked
-    -- exactly that: halfway down the page it jumped back to the top of the
-    -- other side, which a hand on the arrows read as the cursor escaping.
-    -- The width a second column took goes to the ship instead, drawn large,
-    -- because this is the one page that is about it.
-    local stacked = w < 560 * F.scale
-    local kwidth = math.min(w, 500 * F.scale)
+    -- Two columns: the builds you have kept down the left, and the thirty
+    -- points of whichever one the pane is about on the right. It is the shape
+    -- the shelf uses, and for the same reason: browsing a list and working on
+    -- one thing are two activities taking turns, and a page that gives the
+    -- first no room makes you open and shut something to do the second.
+    --
+    -- One column where there is no width for two. The list goes above the kit
+    -- there rather than beside it, and the kit starts under it.
+    local stacked = w < 620 * F.scale
+    local listw = stacked and 0 or math.min(210 * F.scale, w * 0.28)
+    local gap = stacked and 0 or 26 * F.scale
+    local panex = x + listw + gap
+    -- Everything past the list. The ship was drawn out here, turning, and it
+    -- is gone: what a page about thirty points owes the eye is the thirty
+    -- points, and the flair section names the hull for anyone asking which
+    -- one they are spending them on.
+    local kwidth = w - listw - gap
+    -- The head of the pane: what this build is called, what it is spending,
+    -- and the two things that can be done to a name. One line where there is
+    -- width for it, two where there is not.
+    local BAND = (stacked and 60 or 42) * F.scale
 
-    local stats, levels, guns, bombs, charges, flair =
-        {}, {}, {}, {}, {}, {}
+    local list, pane, profiles, stats, levels, guns, bombs, charges, flair =
+        {}, {}, {}, {}, {}, {}, {}, {}, {}
     for _, r in ipairs(v.rows or {}) do
-        if r.group == "flair" then flair[#flair + 1] = r
+        -- Named first, because everything below this line falls through to
+        -- the gun. That is where the two profile controls used to land: they
+        -- carried no group, so a page about bullets offered SAVE AS PROFILE
+        -- between BOUNCE and FREEZE.
+        if r.group == "list" then list[#list + 1] = r
+        elseif r.group == "pane" then pane[#pane + 1] = r
+        elseif r.group == "profiles" then profiles[#profiles + 1] = r
+        elseif r.group == "flair" then flair[#flair + 1] = r
         elseif r.group == "flight" then stats[#stats + 1] = r
         elseif r.group == "levels" then levels[#levels + 1] = r
         elseif r.group == "charges" then charges[#charges + 1] = r
@@ -4896,90 +4904,51 @@ function pages.kit(v, x, y, w, h, focused)
     local live = not v.kit_preview
     local function cursor(r) return live and r.index == v.sel end
 
-    local pick
-    for _, e in ipairs(v.hulls or {}) do
-        if e.index == v.hull_sel then pick = e end
-    end
-
-    -- --- the band
+    -- --- the pane's head
     --
-    -- Hull, name, and the budget it is being spent against, on one line. The
-    -- hull is drawn small because it is a label for which ship this is rather
-    -- than a portrait of it: the roster is eight silhouettes and the name
-    -- under the cursor says which one you are on.
+    -- What this build is called, and the budget it is being spent against.
+    -- The ship stood here once, with an arrow either side, which was the
+    -- second hull selector on a page whose flair section already picks one.
+    --
+    -- Beside the name, the two things that can be done to it. They are here
+    -- rather than in the list because they are about the one build the pane
+    -- is showing, and a key on every row of a list is a list you cannot read.
     local mid = y + BAND * 0.46
-    local shipw = 210 * F.scale
+    local key_h = 22 * F.scale
+    local function pane_key(r, kx0, label)
+        local kw0 = text_w(label, LBL_PX * F.scale) + 24 * F.scale
+        local hot = cursor(r)
+        key_box(kx0, mid - key_h / 2, kw0, key_h,
+                hot and pal.a(pal.FRIEND, 0.2) or nil,
+                pal.a(pal.FRIEND, hot and (focused and 1 or 0.55) or 0.4))
+        lbl(label, kx0 + kw0 / 2, mid,
+            pal.a(pal.INK, hot and 1 or 0.75), "center")
+        if live then hit(kx0, mid - key_h / 2, kw0, key_h, "stage", r.index) end
+        return kx0 + kw0 + 8 * F.scale
+    end
     do
-        -- The band names the ship and the budget and takes no cursor: the
-        -- hull is chosen down in the flair section now, with the rest of
-        -- what the ship looks like, so nothing up here is a stop the
-        -- arrows have to visit. The carousel arrows stay for a pointer,
-        -- since turning the ship is still this drawing's own control.
-        local cx = x + 56 * F.scale
-        if pick and pick.figure == "pilot" then
-            pilot_mark(cx, mid, pal.a(pal.FRIEND, 0.95), 30 * F.scale,
-                       1.8 * F.scale)
-        elseif pick then
-            -- Turning, because it is the one drawing on this page that is
-            -- about the ship rather than about the choosing, and a hull seen
-            -- from one angle is a silhouette rather than a shape.
-            thumb(cx, mid, pick.hull or 0, pal.a(pal.FRIEND, 0.95),
-                  1.7, F.now * 0.7)
+        local p = v.profile or {}
+        local name = p.name or "custom"
+        local size = 17 * F.scale
+        txt(name, panex, mid, size, pal.a(pal.INK, 0.95), nil, MENU_FONT)
+        local at = panex + text_w(name, size, MENU_FONT) + 12 * F.scale
+        -- Whether the build still is what that name says, in the register a
+        -- label is said in. Nothing at all while the two agree, which is the
+        -- ordinary case and needs no word for it.
+        if p.state then
+            lbl(p.state, at, mid, pal.a(pal.DIM, 0.75))
+            at = at + text_w(p.state, LBL_PX * F.scale) + 16 * F.scale
         end
-        -- The arrows, either side, at the ship's own height. They are the
-        -- control: a press moves to the next ship along and wraps, so the
-        -- whole roster is reachable without a list of it.
-        local n = #(v.hulls or {})
-        if n > 1 then
-            local ax = 24 * F.scale
-            for _, side in ipairs({{-1, x + 8 * F.scale},
-                                   {1, cx + 48 * F.scale}}) do
-                local dir, px = side[1], side[2]
-                local lit = v.carousel_hot == dir
-                local col = pal.a(pal.FRIEND, lit and 1 or 0.6)
-                F.layer:tri(px + dir * 5 * F.scale, ry(mid),
-                            px - dir * 4 * F.scale, ry(mid - 8 * F.scale),
-                            px - dir * 4 * F.scale, ry(mid + 8 * F.scale), col)
-                hit(px - ax / 2, mid - 20 * F.scale, ax, 40 * F.scale,
-                    "carousel", dir)
-            end
-        end
-        local nx = cx + 68 * F.scale
-        txt(pick and pick.label or "", nx, mid - 6 * F.scale, 20 * F.scale,
-            pal.a(pal.INK, 0.95), nil, MENU_FONT)
-        -- Which of the eight this is, so the arrows say where they are going.
-        if n > 1 and pick then
-            lbl(tostring(pick.index) .. " of " .. tostring(n), nx,
-                mid + 14 * F.scale, pal.a(pal.DIM, 0.7))
+        for _, r in ipairs(pane) do
+            at = pane_key(r, at, r.label or "")
         end
     end
-    -- The one rule on the page that is not a group head: it separates the ship
-    -- from what is being spent on it, which are the two halves of the line.
-    -- Stacked, they are not halves of a line and there is nothing to separate.
-    if not stacked then
-        vrule(x + shipw + 16 * F.scale, y + 6 * F.scale, BAND - 20 * F.scale,
-              pal.a(pal.RADAR_TILE, 0.45), 14 * F.scale)
-    end
-
-    -- The kit. `v.rows` is the model in the order a pilot thinks about it, and
-    -- the groups are drawn where they belong rather than where they fall.
-    --
-    -- While the arrows are in the roster this is a preview of the hull they
-    -- are standing on, so nothing in it is the cursor and nothing in it takes
-    -- a press. `v.sel` indexes the roster then, and a kit row whose index
-    -- happened to match would light for no reason a player could explain.
-    -- What the budget is, as a bar and as a number, on the band's other half.
-    -- It is the one figure the whole page is spending against, and the ship it
-    -- is being spent on is at the far end of the same line.
+    -- What the budget is, at the other end of the head's own line. It is the
+    -- one figure the whole pane is spending against.
     if v.kit_spent then
         local spent, total = v.kit_spent, v.kit_total or 30
-        -- The figure, and only the figure. There was a bar the width of
-        -- the band's other half, and it answered nothing the two numbers
-        -- beside it had not: a budget of thirty is not a quantity anybody
-        -- reads off a length. The wallet went with it, to the page that
-        -- spends rivets; this page is the thirty points and nothing else.
         local by = stacked and (y + BAND - 10 * F.scale) or mid
-        local bx = x + w - 4 * F.scale
+        local bx = panex + kwidth - 4 * F.scale
         txt("/ " .. total, bx, by + 1 * F.scale, 12 * F.scale,
             pal.a(pal.DIM, 0.9), "right")
         txt(tostring(spent),
@@ -4988,16 +4957,114 @@ function pages.kit(v, x, y, w, h, focused)
         lbl("kit", bx - 92 * F.scale, by)
     end
 
-    -- --- the kit, under the band
+    -- --- the list, down the left
+    --
+    -- Every build this pilot can fly: the three the game ships and whatever
+    -- they have kept, with the one the kit in hand actually is written in the
+    -- color everything else on this page uses for "yours". It carried a pip
+    -- as well, which is the mark a ladder is read in and one more thing in a
+    -- column whose whole job is names.
+    --
+    -- The key that adds one is at the foot of the column, the width of it.
+    -- Over the list it sat between the tabs and the first name with the
+    -- shape of a thing you press, which is where the eye lands first on a
+    -- page whose first act is reading a list.
+    --
+    -- Pinned rather than scrolled with the kit: it is the page's other
+    -- column, not the top of this one. Where the window is too narrow to hold
+    -- two columns it goes above the kit instead, and the kit starts below it.
+    local LIST_ROW = 26 * F.scale
+    local list_h = 0
+    do
+        local lx = x
+        local lw = stacked and math.min(kwidth, 260 * F.scale) or listw
+        local ly = stacked and (y + BAND + 4 * F.scale) or (y + 6 * F.scale)
+        local at = ly
+        -- What the key at the foot costs the rows above it.
+        local foot = (#list > 0) and (key_h + 12 * F.scale) or 0
+        -- As many as the column can hold whole, wound to keep the cursor's
+        -- own row in view. A pilot may keep two dozen builds and a list
+        -- taller than the window is a list with rows nobody can reach.
+        local n = #profiles
+        if n > 0 then
+            local room = stacked and (h * 0.30)
+                or (y + h - at - foot - 8 * F.scale)
+            local fit = math.max(3, math.floor(room / LIST_ROW))
+            local shown = math.min(n, fit)
+            local on_at = 1
+            for i, r in ipairs(profiles) do
+                if cursor(r) then on_at = i end
+            end
+            local first = math.max(1, math.min(on_at - math.floor(shown / 2),
+                                               n - shown + 1))
+            for i = first, first + shown - 1 do
+                local r = profiles[i]
+                local ry0 = at + (i - first) * LIST_ROW
+                local rmid = ry0 + LIST_ROW / 2
+                local hot = cursor(r)
+                if hot then
+                    wash(lx, ry0, lw, LIST_ROW,
+                         pal.a(pal.FRIEND, focused and 0.2 or 0.1))
+                end
+                txt(r.label or "", lx + 10 * F.scale, rmid, 13 * F.scale,
+                    pal.a((r.choice or 0) > 0 and pal.FRIEND or pal.INK,
+                          hot and 1 or 0.82),
+                    nil, MENU_FONT, true)
+                if live and r.pick then
+                    hit(lx, ry0, lw, LIST_ROW, "stage", r.index)
+                end
+            end
+            -- Only where some of it is out of sight, said the way every other
+            -- overflowing list here says it.
+            if n > shown then
+                local track = shown * LIST_ROW
+                local bar = math.max(20 * F.scale, track * (shown / n))
+                local slid = ((first - 1) / math.max(1, n - shown))
+                             * (track - bar)
+                F.layer:seg(lx + lw - 3 * F.scale, ry(at + slid),
+                            lx + lw - 3 * F.scale, ry(at + slid + bar),
+                            2 * F.scale, pal.a(pal.RADAR_TILE, 0.8))
+            end
+            at = at + shown * LIST_ROW
+        end
+        -- The key, at the foot of the column and as wide as it. Against the
+        -- bottom of the page where the column is one, and under the last name
+        -- where the list is stacked over the kit and there is no bottom of
+        -- the page to speak of.
+        for _, r in ipairs(list) do
+            local ky = stacked and (at + 10 * F.scale)
+                or (y + h - key_h - 8 * F.scale)
+            local hot = cursor(r)
+            key_box(lx, ky, lw, key_h,
+                    hot and pal.a(pal.FRIEND, 0.2) or nil,
+                    pal.a(pal.FRIEND, hot and (focused and 1 or 0.55) or 0.4))
+            lbl(r.label or "", lx + lw / 2, ky + key_h / 2,
+                pal.a(pal.INK, hot and 1 or 0.75), "center")
+            if live then hit(lx, ky, lw, key_h, "stage", r.index) end
+            at = ky + key_h
+        end
+        -- Only the stacked page pays for it in height. Beside the kit it is
+        -- its own column and costs the pane nothing.
+        if stacked then list_h = at - (y + BAND) + 8 * F.scale end
+    end
+    -- A rule between the two columns, which is what every other pair of
+    -- columns in this menu hangs off.
+    if not stacked then
+        vrule(panex - gap / 2, y + 4 * F.scale, h - 8 * F.scale,
+              pal.a(pal.RADAR_TILE, 0.45), 14 * F.scale)
+    end
+    local head = BAND + list_h
+
+    -- --- the kit, under the head
     --
     -- `kx`, `kw` and `cy` are where the next group goes: one column, at
-    -- the kit's own width, whatever the window offers past it.
-    local kx, kw = x, kwidth
-    -- The band stays where it is and the kit slides under it. What the band
+    -- the pane's own width, whatever the window offers past it.
+    local kx, kw = panex, kwidth
+    -- The head stays where it is and the kit slides under it. What the head
     -- carries is the budget every row below it is spent against, so it is the
     -- one thing on this page that should still be there when you have scrolled
     -- to the charges.
-    local kit_top = y + BAND + 4 * F.scale
+    local kit_top = y + head + 4 * F.scale
     local cy = kit_top - M.page_scroll
     -- Whether a row at `cy` is inside the window the kit is drawn in. Rows
     -- outside it are stepped over rather than drawn: a glyph queued off the
@@ -5200,15 +5267,15 @@ function pages.kit(v, x, y, w, h, focused)
     -- fixed 62 points fit "PROX" and clipped anything longer, which is what
     -- kept these labelled with three letter codes nobody could read.
     local ch = 36 * F.scale
-    local function chips_for(list, label)
-        if #list == 0 then return end
+    local function chips_for(group, label)
+        if #group == 0 then return end
         rule(label)
         -- Spray first, on a ladder. It is a count of rounds rather than a
         -- switch with rungs behind it, so a chip is the wrong control for it:
         -- what a pilot is setting is how many leave the gun, and the readout
         -- says exactly that. Every other add-on in the group is a chip.
         local chips = {}
-        for _, r in ipairs(list) do
+        for _, r in ipairs(group) do
             if r.ladder then
                 ladder(r, function(n) return tostring(n + 1) end)
             else
@@ -5258,15 +5325,19 @@ function pages.kit(v, x, y, w, h, focused)
             pal.a(pal.FRIEND, hot and 1 or 0.85), nil, MENU_FONT)
         -- The triangles, published before the row so a press on one beats
         -- the press behind it. The hull's pair turn the same carousel the
-        -- band's arrows do; the wake's step its own choice.
+        -- head's arrows once did; the wake's step its own choice.
         local dirs = {{-1, vx - 16 * F.scale}, {1, vx + vw + 14 * F.scale}}
         local action = r.ship and "carousel" or "wake"
         for _, d in ipairs(dirs) do
             local dir, px2 = d[1], d[2]
+            -- Lit under the pointer as well as under the cursor. These are
+            -- the only hull arrows the page has, and the pair that used to
+            -- stand in the head were the ones that answered a hovering mouse.
+            local warm = hot or (r.ship and v.carousel_hot == dir)
             F.layer:tri(px2 + dir * 4 * F.scale, ry(cy),
                         px2 - dir * 3.5 * F.scale, ry(cy - 5 * F.scale),
                         px2 - dir * 3.5 * F.scale, ry(cy + 5 * F.scale),
-                        pal.a(pal.FRIEND, hot and 0.9 or 0.55))
+                        pal.a(pal.FRIEND, warm and 0.9 or 0.55))
             if live then
                 hit(px2 - 11 * F.scale, cy - srow / 2, 22 * F.scale, srow,
                     action, dir)
@@ -5301,10 +5372,10 @@ function pages.kit(v, x, y, w, h, focused)
     -- shared out between its heads rather than left at the bottom. The chips
     -- are measured by the same wrap the drawing uses, since a narrow column
     -- puts them on two lines and a wide one on one.
-    local function chip_lines(list, width)
-        if #list == 0 then return 0 end
+    local function chip_lines(group, width)
+        if #group == 0 then return 0 end
         local lines, px = 1, 0
-        for _, r in ipairs(list) do
+        for _, r in ipairs(group) do
             local cw = math.max(62 * F.scale,
                                 text_w(r.short or r.label or "",
                                        LBL_PX * F.scale) + 24 * F.scale)
@@ -5314,13 +5385,15 @@ function pages.kit(v, x, y, w, h, focused)
         return lines
     end
     local function share(heads, natural)
-        local room = h - BAND - 10 * F.scale
+        local room = h - head - 10 * F.scale
         if heads < 1 then return 0 end
         return math.max(0, math.min(52 * F.scale, (room - natural) / heads))
     end
 
     local top = cy
     local width = kwidth
+    -- The library is not counted: it stands above the kit rather than in it,
+    -- and `head` has already taken its room out of the page.
     local heads = 1 + ((#levels > 0) and 1 or 0)
         + ((#guns > 0) and 1 or 0) + ((#bombs > 0) and 1 or 0)
         + ((#charges > 0) and 1 or 0) + ((#flair > 0) and 1 or 0)
@@ -5332,7 +5405,7 @@ function pages.kit(v, x, y, w, h, focused)
     -- How far down the page came, so the next frame knows what there is to
     -- scroll to. Measured from the top of the kit rather than from the top
     -- of the page, because the band above it does not move.
-    kx, kw = x, kwidth
+    kx, kw = panex, kwidth
     pad = share(heads, natural)
     ladders()
     triggers()
@@ -5343,37 +5416,32 @@ function pages.kit(v, x, y, w, h, focused)
     local low = cy
     -- Follow the arrows. A frame late, since the offsets only exist once
     -- the rows have walked; the page settles on the very next draw.
-    if live then
-        follow_cursor(cur_at and (cur_at - srow / 2) or nil, srow + 8 * F.scale,
-                      h - BAND, focused)
-    end
-
-    -- The ship itself, in the width the second column gave back: the one
-    -- page about a machine finally shows the machine, plates and panel
-    -- lines in, turning. Decoration with a subject, and no cursor in it.
-    if not stacked and w - kwidth >= 230 * F.scale and pick then
-        local cx2 = x + kwidth + (w - kwidth) / 2 + 12 * F.scale
-        local cy2 = y + BAND + (h - BAND) * 0.42
-        if pick.figure == "pilot" then
-            pilot_mark(cx2, cy2, pal.a(pal.FRIEND, 0.9), 80 * F.scale,
-                       4 * F.scale)
-        else
-            thumb(cx2, cy2, pick.hull or 0, pal.a(pal.FRIEND, 0.95), 5.0,
-                  F.now * 0.35, true)
+    -- A cursor outside the kit is at the top of it by definition: the list,
+    -- the add key and the two keys in the head are all drawn where the kit's
+    -- scroll cannot reach them, so what the page owes them is the top of the
+    -- column rather than nothing.
+    for _, group in ipairs({list, pane, profiles}) do
+        for _, r in ipairs(group) do
+            if cursor(r) then cur_at = 0 end
         end
     end
-    M.page_extent = (low - top) + BAND + 16 * F.scale
+    if live then
+        follow_cursor(cur_at and (cur_at - srow / 2) or nil, srow + 8 * F.scale,
+                      h - head, focused)
+    end
+
+    M.page_extent = (low - top) + head + 16 * F.scale
     M.page_room = h
     -- And a thumb down the edge where there is more than fits, which is the
     -- only thing on the page that says a page can be moved at all.
     if M.page_extent > h then
-        local track = h - BAND
+        local track = h - head
         local bar = math.max(30 * F.scale, track * track / M.page_extent)
         local at = (M.page_scroll / math.max(1, M.page_extent - h))
                    * (track - bar)
-        local bx = x + w - 3 * F.scale
-        rect(bx, y + BAND, 3 * F.scale, track, pal.a(pal.DIM, 0.12))
-        rect(bx, y + BAND + at, 3 * F.scale, bar, pal.a(pal.RADAR_TILE, 0.8))
+        local sx = panex + kwidth - 3 * F.scale
+        rect(sx, y + head, 3 * F.scale, track, pal.a(pal.DIM, 0.12))
+        rect(sx, y + head + at, 3 * F.scale, bar, pal.a(pal.RADAR_TILE, 0.8))
     end
 end
 
