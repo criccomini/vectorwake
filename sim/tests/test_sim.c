@@ -369,9 +369,8 @@ int main(void) {
 
     /* Sustained unanswered fire kills. Energy is the whole economy: it is the
      * health pool and the ammunition at once, and a ship that is being hit
-     * faster than it recharges dies. The listed 200 is a ceiling and the SVS
-     * random curve averages near two thirds of it, so a fresh 1000-energy
-     * hull usually takes around eight hits rather than exactly five.
+     * faster than it recharges dies. A hit takes two thirds of the listed 200,
+     * so a fresh 1000-energy hull takes eight hits rather than five.
      *
      * This asserted the opposite until the firing costs were corrected. A
      * bullet used to cost 35% of a full bar, so an attacker ran itself dry
@@ -2765,9 +2764,9 @@ int main(void) {
     }
 
     {
-        /* ExactDamage is off in SVS. A bullet's table damage is the ceiling,
-         * not the amount every hit removes. Drive rounds directly into a
-         * stationary hull so flight and recharge cannot muddy the sample. */
+        /* A bullet always deals the old damage curve's mean. Drive rounds
+         * directly into a stationary hull so flight and recharge cannot
+         * muddy the amount. */
         sim_settings w = cfg;
         w.classes[APEX].recharge = 0;
         static sim_state s;
@@ -2776,8 +2775,7 @@ int main(void) {
         sim_spawn(&s, APEX, 1, 8200, 8192, 0, &w);
         uint8_t bullet = gun_of(&w, APEX)->spec;
         int32_t ceiling = w.specs[bullet].damage;
-        int32_t lo = ceiling, hi = 0;
-        int64_t total = 0;
+        int32_t expected = (int32_t)((int64_t)ceiling * 2 / 3);
         for (int n = 0; n < 128; n++) {
             sim_weapon *round = &s.weapons[s.weapon_count++];
             memset(round, 0, sizeof *round);
@@ -2793,17 +2791,9 @@ int main(void) {
             int32_t before = s.ships[1].energy;
             step_n(&s, &w, 0, 0, 1);
             int32_t dealt = before - s.ships[1].energy;
-            if (dealt < lo) lo = dealt;
-            if (dealt > hi) hi = dealt;
-            total += dealt;
+            CHECK(dealt == expected,
+                  "every bullet deals the fixed average damage");
         }
-        CHECK(lo >= 0 && hi <= ceiling,
-              "random bullet damage stays inside its listed ceiling");
-        CHECK(lo < ceiling / 2 && hi > ceiling * 9 / 10,
-              "the damage curve reaches both ends of the range");
-        CHECK(total > (int64_t)ceiling * 128 * 3 / 5
-              && total < (int64_t)ceiling * 128 * 3 / 4,
-              "and averages near two thirds of the ceiling");
     }
 
     {
@@ -2812,7 +2802,7 @@ int main(void) {
          * three hits on the same target. */
         sim_settings w = cfg;
         uint8_t bullet = gun_of(&w, APEX)->spec;
-        w.specs[bullet].stall = 1; /* even a zero-damage roll reports the hit */
+        w.specs[bullet].stall = 1; /* make each sibling collision observable */
         static sim_state s;
         sim_init(&s, 1);
         sim_spawn(&s, APEX, 0, 8192, 8192, 0, &w);

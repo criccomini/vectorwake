@@ -47,26 +47,6 @@ static uint32_t xorshift32(uint32_t x) {
     return x ? x : 0x9e3779b9u;
 }
 
-/* SVS's non-exact bullet damage, with a roll local to this impact.
- *
- * Using the arena generator here would make an off-screen hit advance the
- * server's RNG without advancing a filtered client's. The next nearby hit
- * would then predict a different amount. The impact already has enough
- * deterministic entropy to make the same curve without coupling fights that
- * cannot see each other. */
-static int32_t random_bullet_damage(const sim_state *s, const sim_weapon *w,
-                                    int32_t ceiling) {
-    uint32_t maximum = (uint32_t)(ceiling / 1024);
-    uint64_t span = (uint64_t)maximum * maximum + 1;
-    uint32_t roll = s->tick ^ (uint32_t)w->x ^ ((uint32_t)w->y << 7)
-                    ^ ((uint32_t)w->vx << 13) ^ ((uint32_t)w->vy << 19)
-                    ^ ((uint32_t)w->life << 16) ^ w->link
-                    ^ ((uint32_t)w->owner << 24) ^ ((uint32_t)w->spec << 28);
-    roll = xorshift32(roll);
-    uint64_t square = ((uint64_t)roll * 1000u) % span;
-    return (int32_t)(isqrt64((int64_t)square) * 1024);
-}
-
 /* A whole-pixel position squeezed into an event's one payload word, with the
  * round's rung in two of the bits left over. The map is 16384 px on a side,
  * so fourteen bits hold a coordinate exactly and the pair fits with four to
@@ -1239,12 +1219,12 @@ static void weapon_end(sim_state *s, const sim_settings *cfg,
         && (uint16_t)(spec->life - w->life) < cfg->shrap_inactive_ticks) {
         damage = cfg->shrap_inactive;
     }
-    /* ExactDamage is off in SVS. Bullets, burst rounds, and shrapnel draw
-     * from a square distribution, then take its square root. That makes the
-     * listed damage a ceiling, with an average near two thirds of it. Bombs
+    /* Bullets, burst rounds, and shrapnel used to draw from a distribution
+     * whose mean was two thirds of the listed ceiling. Keep that mean as one
+     * fixed amount, so removing variance does not move average damage. Bombs
      * stay exact and continue through their distance falloff below. */
     if (spec->blast == 0 && damage > 0) {
-        damage = random_bullet_damage(s, w, damage);
+        damage = (int32_t)((int64_t)damage * 2 / 3);
     }
     if (spec->blast > 0) {
         int64_t rad = spec->blast;

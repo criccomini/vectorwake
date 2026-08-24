@@ -1,14 +1,14 @@
-tick 500 hash 9e9f3fb007d75261
-tick 1000 hash a05acb81d06e9ea0
-tick 1500 hash 2e31fe792bfbd087
-tick 2000 hash 99614caec91992cd
-tick 2500 hash 44deec038abcd1fa
-tick 3000 hash 039c461ac44fc385
-tick 3500 hash 77196d77c4133b99
-tick 4000 hash 50afebbe5663b90d
-tick 4500 hash d5e7e0f28f8cadcd
-tick 5000 hash cd5b49fc80a55023
-tick 5500 hash bcac65ebd64c19b2
+tick 500 hash 7110b1297b531380
+tick 1000 hash 3bdbba48ca48eed0
+tick 1500 hash 2c7d90a969a7d54f
+tick 2000 hash 0970030bca7ce5b7
+tick 2500 hash ca179d7f95806bd7
+tick 3000 hash e2919c32d27f1489
+tick 3500 hash a8285dbb3e175595
+tick 4000 hash 4c3e92afe5d3d998
+tick 4500 hash d6ba002043609fcd
+tick 5000 hash 555807d887b907e3
+tick 5500 hash 2c50b1195d766672
 tick 6000 hash ebf1e53b21b5c9e2
 tick 6500 hash 8f985f3fda110ef6
 tick 7000 hash 8cd30871cd4badca
@@ -30,4 +30,4 @@ tick 14500 hash 60f268ff5483810b
 tick 15000 hash a60fa21f03e44f5d
 tick 15500 hash 22386cf46921836d
 tick 16000 hash 8420f6280ee6bd3f
-final tick 16320 hash 0acf45c235f99bf3 fires 172 hits 24 deaths 5 bounces 6
+final tick 16320 hash 0acf45c235f99bf3 fires 172 hits 21 deaths 5 bounces 6

@@ -404,9 +404,9 @@ any spray, a level-one shot costs 20, level two costs 40, and level three costs
 take from its target.
 
 The damage number is a ceiling. SVS left exact damage off for bullets, burst
-rounds, and shrapnel, and Vectorwake follows it. Each hit uses the same
-square-root random curve and averages near two thirds of the listed value. Bomb
-damage stays exact before blast-distance falloff.
+rounds, and shrapnel. Vectorwake keeps that curve's mean without its variance:
+every hit deals a fixed two thirds of the listed value. Bomb damage stays exact
+before blast-distance falloff.
 
 **A second barrel is one rung of spray.** `DoubleBarrel` was a per-ship setting
 and the Terrier alone carried it: two rounds abreast for one pull where every
