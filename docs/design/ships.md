@@ -122,6 +122,13 @@ and it buys the diagonal back.
 and measures every face of the client's hulls against them, so the two cannot
 drift apart again, and the sim's own tests hold the diagonal ceiling.
 
+The client draws a hull as a solid: a deck lofted over that plan and a nearly
+flat keel under it, turning about its own nose-to-tail axis when the pilot
+banks. None of that touches any number above. The loft moves no part of the
+drawing sideways, so the plan in this section is the plan on the screen, and
+`client/tests/hull3d_test.lua` measures every vertex of every solid against the
+same boxes. See [decision 58](../architecture/decisions.md).
+
 ## What each ship is for
 
 Every hull flies alike, climbs alike and holds alike. What differs is the
