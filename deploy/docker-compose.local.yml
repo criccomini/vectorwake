@@ -1,6 +1,6 @@
 # Overlay for running the whole stack on one machine, before it goes anywhere.
 #
-#   printf 'VW_HOST=play.localhost\nVW_POOL_TOKEN=...\n' > deploy/.env
+#   printf 'VW_HOST=play.localhost\nVW_POOL_TOKEN=...\nVW_META_VERIFY=...\n' > deploy/.env
 #   docker compose -f deploy/docker-compose.caddy.yml \
 #       -f deploy/docker-compose.central.yml -f deploy/docker-compose.arena.yml \
 #       -f deploy/docker-compose.local.yml --env-file deploy/.env up -d --build
@@ -31,7 +31,7 @@
 # This overlay is the whole stack and only the whole stack: all three base
 # files, or none of it. An override naming a service the base set does not have
 # is not ignored, it is created, so `caddy.yml + central.yml + local.yml` starts
-# three arenas built from this file with no command and no idea what they are.
+# two arenas and a bot process with no command and no idea what they are.
 # To run one role on a laptop, use its base files without this overlay and set
 # VW_IMAGE to a tag you built.
 x-build: &build
@@ -48,6 +48,9 @@ services:
     <<: *build
     extra_hosts: *names
   a1:
+    <<: *build
+    extra_hosts: *names
+  a2:
     <<: *build
     extra_hosts: *names
   bots:

@@ -9,6 +9,7 @@ FRONT=play.vectorwake.net
 ADMIN_HOST=admin.vectorwake.net
 TTL=300
 REGION=atl
+BRANCH=main
 
 die() {
 	echo "test failed: $*" >&2
@@ -28,6 +29,52 @@ contains() {
 HERE=$ROOT
 . "$ROOT/lib/fleet_secrets.sh"
 . "$ROOT/lib/fleet_instance.sh"
+
+# An arena gets the public verifier from the bucket without fetching either
+# meta-layer secret. The runtime needs the verifier before it receives a
+# catalog, while the signing key and database credential never belong there.
+TEST_TMP=$(mktemp -d)
+TEST_KEY=$TEST_TMP/deploy-key
+trap 'rm -rf "$TEST_TMP"' EXIT HUP INT TERM
+printf '%s\n' "private deploy key" >"$TEST_KEY"
+: >"$TEST_TMP/vultr-cli"
+chmod +x "$TEST_TMP/vultr-cli"
+PATH=$TEST_TMP:$PATH
+VW_POOL_TOKEN=pool-token
+VW_DEPLOY_KEY=$TEST_KEY
+VULTR_API_KEY=test
+TEST_VERIFY=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+unset VW_META_DATABASE VW_META_KEY VW_META_VERIFY
+os_row() { printf '%s\n' '{}'; }
+s3_env() { :; }
+find_bucket() { :; }
+s3_get() {
+	case $1 in
+	VW_META_VERIFY) printf '%s' "$TEST_VERIFY" ;;
+	*) die "an arena fetched $1 from the secrets bucket" ;;
+	esac
+}
+secrets_fill arena
+[ "$VW_META_VERIFY" = "$TEST_VERIFY" ] \
+	|| die "an arena did not fetch the public verifier"
+[ -z "${VW_META_KEY:-}" ] && [ -z "${VW_META_DATABASE:-}" ] \
+	|| die "an arena fetched a meta-layer secret"
+
+# The rendered host keeps that public verifier and blanks the two credentials
+# that would let a compromised arena sign sessions or read player data.
+VW_META_KEY=private-signing-key
+VW_META_DATABASE=postgres://private-database
+cloud=$(render arena edge "" atl 2>/dev/null)
+encoded=$(printf '%s\n' "$cloud" | sed -n 's/^    content: //p' | tail -1)
+provision=$(printf '%s' "$encoded" | base64 -d)
+contains "$provision" "VW_META_VERIFY=$TEST_VERIFY"
+contains "$provision" "VW_META_KEY="
+contains "$provision" "VW_META_DATABASE="
+case $provision in
+*private-signing-key*|*postgres://private-database*)
+	die "an arena render carried a meta-layer secret" ;;
+esac
+unset VULTR_API_KEY VW_META_DATABASE VW_META_KEY
 
 [ "$(serves central play)" = "$FRONT" ] \
 	|| die "a central host no longer serves the front door"
@@ -83,9 +130,6 @@ contains "$out" \
 	"would: vultr-cli database create --database-engine pg --database-engine-version 16 --region dfw --plan vultr-dbaas-startup-cc-1-55-2 --label vectorwake"
 
 # The split secrets module still validates a render before any host exists.
-TEST_KEY=$(mktemp)
-trap 'rm -f "$TEST_KEY"' EXIT HUP INT TERM
-printf '%s\n' "private deploy key" >"$TEST_KEY"
 VW_POOL_TOKEN=pool-token
 VW_DEPLOY_KEY=$TEST_KEY
 secrets_fill() { :; }

@@ -6,6 +6,7 @@
 !server
 !sim
 !catalog
+!Dockerfile
 # The reference zone is two small files, and the binary compiles one of them in:
 # main.rs takes zone/ladder.json with include_str!. Without this line the build
 # context has no such path and the compile fails, whatever the Dockerfile copies.

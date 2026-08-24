@@ -1797,6 +1797,9 @@ local function deploying(sel)
         if M.live_match and M.live_match.left then
             out.clock = M.live_match.left
             out.playing = M.live_match.playing == true
+            local ladder = M.live_match.ladder
+            out.finding_rival = ladder ~= nil and not out.playing
+                and ladder.waiting == true
             -- The score rides along only while it is being made: between
             -- matches the podium in the backdrop is already saying how the
             -- last one ended. Indexed from zero, because the wire counts
@@ -1806,9 +1809,10 @@ local function deploying(sel)
                and s[0] ~= nil and s[1] ~= nil then
                 out.score = {s[0], s[1]}
             end
-        elseif (r.clock or 0) > 0 then
+        elseif r.waiting == true or (r.clock or 0) > 0 then
             out.clock = math.max(0, math.floor(r.clock - directory.aged))
             out.playing = r.playing == true
+            out.finding_rival = not out.playing and r.waiting == true
         end
         -- What the big key at the foot of the panel joins.
         out.row = sel

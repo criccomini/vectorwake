@@ -413,8 +413,9 @@ Bots are rated by the same math, which is what lets a player be ranked in an
 arena with no humans in it, with one reference personality pinned to a fixed
 rating so the bot population cannot drift as a closed system.
 
-Every rated event is stored with its weights and the ratings before and after.
-Ratings are a projection of that log rather than the source of truth.
+Every human-involving rated event is stored with its weights and the ratings
+before and after. Bot-only events advance the same rating projection but keep a
+compact exactly-once receipt instead of the full payload.
 
 **On model choice:** Elo first because it is explainable. The intended successor
 is the Weng-Lin model as implemented by OpenSkill, which is patent-free and
@@ -422,18 +423,18 @@ commercially usable. TrueSkill is deliberately excluded: Microsoft licenses it
 only for Xbox Live titles and non-commercial projects. Glicko-2 is a free
 fallback if rating periods fit better than per-event updates.
 
-**Cost:** Damage ledgers per victim, an event log that grows forever, and a
+**Cost:** Damage ledgers per victim, a human event log that grows forever, and a
 model that will need retuning once real data exists.
 
 **Measured, once bots held accounts:** "grows forever" turned out to be set by
 the bot population rather than by the players, since bots fight at fill around
 the clock. The live fleet writes on the order of 300,000 events a day, which is
 40 to 50 GB a year and fills a 25 GB database in six to nine months. Throughput
-is nowhere near a limit; space is. The answer is retention rather than a bigger
-disk: every event says whether a human was in it, and a sweeper drops bot-only
-rows after three weeks while human ones are kept for good. That is what makes
-"stored as an event log" affordable, and it is in
-[meta-layer.md](meta-layer.md).
+is nowhere near a limit; space is. Full bot-only rows were first retained for
+three weeks, but even that left millions of irrelevant payloads on the weekly
+query path. The running design keeps a compact receipt for three weeks and no
+bot-only payload, while human rows are kept for good. That is what makes
+"stored as an event log" affordable, and it is in [meta-layer.md](meta-layer.md).
 
 **Reconsider if:** the pairwise decomposition produces ratings that disagree with
 what good players can see with their own eyes. The event log is what makes that
@@ -1096,9 +1097,8 @@ than on anybody's: see [design/friends.md](../design/friends.md). Parties and
 tournaments still are not.) What remains that we need now is identity, and our identity has
 shapes Nakama does not: accounts minted silently on first contact, bot
 accounts with owners, a human, bot, or unknown label derived from credential
-shape, session tokens carrying rating claims that arenas verify offline, and a
-rating that is a projection of an event log no general backend has an opinion
-about.
+shape, session tokens carrying rating claims that arenas verify offline, and
+transactional rating settlement no general backend has an opinion about.
 
 Meanwhile the cost argument collapsed. Decision 27 priced Nakama at roughly
 $20 a month and observed that nearly all of it is Postgres, and this design
@@ -1108,8 +1108,9 @@ actually want, bearer secrets, account keys, platform identities later, is
 small.
 
 So the meta-layer is `vectorwake-server meta`: a fourth subcommand of the one
-binary, on managed Postgres, holding accounts, credentials, names, the rated
-event log, the rating projection, and fleet bans. It issues signed session
+binary, on managed Postgres, holding accounts, credentials, names, the human
+event log, compact event receipts, the rating projection, and fleet bans. It
+issues signed session
 tokens that arenas verify with a key distributed in the catalog, it refuses
 tokens to banned accounts, and it ingests the rated event batches that arenas
 submit under their pool credential. [meta-layer.md](meta-layer.md) is the
@@ -1117,7 +1118,7 @@ design, and [design/accounts.md](../design/accounts.md) is the account model.
 
 This also closes the handoff question in [server.md](server.md): rated events
 go to the meta-layer rather than the directory, because the directory is the
-piece we most want to be able to lose and the event log is the piece we can
+piece we most want to be able to lose and the rating state is the piece we can
 least afford to.
 
 **Cost:** Authentication becomes our security surface: token signing, secret

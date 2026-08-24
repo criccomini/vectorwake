@@ -15,6 +15,22 @@ mod commands;
 /// seconds, so this leaves one half-interval of scheduling slack.
 pub(crate) const SESSION_QUIET: std::time::Duration = std::time::Duration::from_secs(45);
 
+fn ladder_bot_release_allowed(certified: bool, declared: &str, current: &str) -> bool {
+    !certified
+        || (!declared.is_empty()
+            && declared != "unknown"
+            && current != "unknown"
+            && declared == current)
+}
+
+fn complete_join_payload(data: &[u8]) -> bool {
+    if data.len() < C2S_JOIN_HEADER {
+        return false;
+    }
+    let payload = data[4] as usize + data[5] as usize + data[7] as usize;
+    data.len() >= C2S_JOIN_HEADER + payload
+}
+
 /// One client from join to cleanup, fed by whichever transport carried it.
 ///
 /// `inbound` is complete messages, first byte the tag, however they travelled:
@@ -172,6 +188,7 @@ pub(crate) async fn serve_client(
                 let is_bot = flags & JOIN_BOT != 0;
                 let zlen = data.get(4).copied().unwrap_or(0) as usize;
                 let nlen = data.get(5).copied().unwrap_or(0) as usize;
+                let blen = data.get(7).copied().unwrap_or(0) as usize;
                 // Which room, or zero for "whichever the ladder picks", which
                 // is what every arrival that has not been shown a list says.
                 let want_room = data.get(6).copied().unwrap_or(0) as u32;
@@ -181,8 +198,13 @@ pub(crate) async fn serve_client(
                 let claimed_name = sanitize_name(&String::from_utf8_lossy(
                     data.get(h + zlen..h + zlen + nlen).unwrap_or_default(),
                 ));
+                let declared_release = String::from_utf8_lossy(
+                    data.get(h + zlen + nlen..h + zlen + nlen + blen)
+                        .unwrap_or_default(),
+                )
+                .to_string();
                 let presented =
-                    String::from_utf8_lossy(data.get(h + zlen + nlen..).unwrap_or_default())
+                    String::from_utf8_lossy(data.get(h + zlen + nlen + blen..).unwrap_or_default())
                         .to_string();
                 let mut z = zone.lock().await;
 
@@ -247,6 +269,14 @@ pub(crate) async fn serve_client(
                     )));
                     break;
                 }
+                if !complete_join_payload(&data) {
+                    let _ = tx.try_send(Message::Binary(deny(
+                        DENY_VERSION,
+                        "malformed join message",
+                        None,
+                    )));
+                    break;
+                }
                 // Nothing to join. An instance waiting for a directory to name
                 // its zone holds no room, and it is answered before the check
                 // below rather than by it: that one would report the zone this
@@ -303,6 +333,45 @@ pub(crate) async fn serve_client(
                     )));
                     break;
                 }
+                if is_bot && !z.accepts_bot_seat(&seat_of) {
+                    let _ = tx.try_send(Message::Binary(deny(
+                        DENY_BANNED,
+                        "Ladder rival seats are reserved for the house director",
+                        Some(&seat_of),
+                    )));
+                    break;
+                }
+                let certified_ladder = z.rooms.iter().any(|room| room.ladder_state().is_some())
+                    && crate::arena::certified_pilot_attestation().is_some();
+                if is_bot
+                    && !ladder_bot_release_allowed(
+                        certified_ladder,
+                        &declared_release,
+                        &crate::arena::house_bot_release_claim(),
+                    )
+                {
+                    let _ = tx.try_send(Message::Binary(deny(
+                        DENY_VERSION,
+                        "this certified Ladder requires the current verified house bot release",
+                        Some(&seat_of),
+                    )));
+                    break;
+                }
+                // A house rival has one job in Ladder: take the exact room and
+                // archetype the director requested. Entering as a watcher used
+                // to skip that room-bound check and later turn C2S_SHIP into an
+                // unverified rival seat.
+                if is_bot
+                    && flags & JOIN_WATCH != 0
+                    && z.rooms.iter().any(|room| room.ladder_state().is_some())
+                {
+                    let _ = tx.try_send(Message::Binary(deny(
+                        DENY_BANNED,
+                        "Ladder rivals cannot enter as spectators",
+                        Some(&seat_of),
+                    )));
+                    break;
+                }
                 let name = seat_of.name.clone();
                 // A per-zone ban, checked against the name the token
                 // carries. The fleet ban never reaches this door: the
@@ -339,6 +408,7 @@ pub(crate) async fn serve_client(
                             }
                         };
                         let rated_spool = z.spools.rated.clone();
+                        let pilot_spool = z.spools.pilots.clone();
                         drop(z);
                         let claimed = RatedLease::claim(
                             base,
@@ -348,15 +418,17 @@ pub(crate) async fn serve_client(
                             account,
                             session.id.clone(),
                             rated_spool,
+                            pilot_spool,
                         )
                         .await;
                         let lease = match claimed {
-                            Ok(Some((lease, ratings))) => {
+                            Ok(Some((lease, ratings, ladders))) => {
                                 // The signed token is an admission credential,
                                 // not a rating checkpoint. The lease response
                                 // carries current standing so replaying an old
                                 // token cannot seed another room from old data.
                                 seat_of.carried = Some(ratings);
+                                seat_of.carried_ladders = ladders;
                                 lease
                             }
                             Ok(None) => {
@@ -454,9 +526,8 @@ pub(crate) async fn serve_client(
                             c.extend_from_slice(&a.settings_generation.to_le_bytes());
                             c.extend_from_slice(&a.world.packed_settings());
                             let _ = tx.try_send(Message::Binary(c));
-                            // The clock, so somebody arriving ninety seconds
-                            // into a match knows they arrived ninety seconds
-                            // into a match.
+                            // One match packet owns the clock, result, and any
+                            // Ladder progress, so join sync cannot split them.
                             if let Some(m) = a.match_msg() {
                                 let _ = tx.try_send(Message::Binary(m));
                             }
@@ -488,7 +559,7 @@ pub(crate) async fn serve_client(
                 // room has the population it asked for. It never opens a
                 // room: rooms exist because people arrived.
                 let room = if is_bot {
-                    z.room_for_bot()
+                    z.room_for_bot_request(want_room, &seat_of)
                 } else {
                     z.room_wanted(want_room)
                 };
@@ -510,6 +581,7 @@ pub(crate) async fn serve_client(
                 // Into the room they are actually joining. Rooms keep their
                 // own ladders, so putting a returning player's rating in
                 // room zero would leave them unrated wherever they landed.
+                let ladder = z.token_ladder(&seat_of);
                 z.restore_pilot(idx, &seat_of);
                 // Same reason as the watcher path above: the seat goes into
                 // the room, and the refusal that follows a failed seating
@@ -519,6 +591,9 @@ pub(crate) async fn serve_client(
                 if let Some(new_id) =
                     a.join_with_presence(seat_of, class, cap, tx.clone(), presence.clone())
                 {
+                    if let Some((checkpoint, best)) = ladder {
+                        a.restore_ladder(checkpoint, best);
+                    }
                     credential_expires = presented_expires;
                     let ship = a.players[&new_id].ship;
                     let mut m = vec![S2C_MAP];
@@ -585,7 +660,7 @@ pub(crate) async fn serve_client(
                             let ship = a.players.get(&member).map(|p| p.ship);
                             if let Some(ship) = ship {
                                 let was = a.world.state.ships[ship as usize].cls;
-                                a.world.set_ship_class(ship, cls);
+                                a.set_ship_class(ship, cls);
                                 // Read back, not echoed. The core refuses this
                                 // for anyone dead or short of a full bar and
                                 // says nothing about it, so the asking and the
@@ -629,6 +704,7 @@ pub(crate) async fn serve_client(
                                                     instance,
                                                     serving,
                                                     z.spools.rated.clone(),
+                                                    z.spools.pilots.clone(),
                                                 )
                                             },
                                         )
@@ -641,19 +717,24 @@ pub(crate) async fn serve_client(
                         };
                         let mut candidate = None;
                         let mut standing = None;
-                        if let Some((base, pool_token, instance, serving, rated_spool)) =
-                            match lease_args {
-                                Ok(v) => v,
-                                Err(e) => {
-                                    let mut m = vec![S2C_DENIED, DENY_RATED_SESSION];
-                                    m.extend_from_slice(
-                                        format!("cannot open a rated session: {e}").as_bytes(),
-                                    );
-                                    let _ = tx.try_send(Message::Binary(m));
-                                    continue;
-                                }
+                        if let Some((
+                            base,
+                            pool_token,
+                            instance,
+                            serving,
+                            rated_spool,
+                            pilot_spool,
+                        )) = match lease_args {
+                            Ok(v) => v,
+                            Err(e) => {
+                                let mut m = vec![S2C_DENIED, DENY_RATED_SESSION];
+                                m.extend_from_slice(
+                                    format!("cannot open a rated session: {e}").as_bytes(),
+                                );
+                                let _ = tx.try_send(Message::Binary(m));
+                                continue;
                             }
-                        {
+                        } {
                             let account = carried.as_ref().and_then(|s| s.account).unwrap();
                             match RatedLease::claim(
                                 base,
@@ -663,12 +744,13 @@ pub(crate) async fn serve_client(
                                 account,
                                 session.id.clone(),
                                 rated_spool,
+                                pilot_spool,
                             )
                             .await
                             {
-                                Ok(Some((lease, ratings))) => {
+                                Ok(Some((lease, ratings, ladders))) => {
                                     candidate = Some(lease);
-                                    standing = Some(ratings);
+                                    standing = Some((ratings, ladders));
                                 }
                                 Ok(None) => {
                                     let mut m = vec![S2C_DENIED, DENY_RATED_SESSION];
@@ -706,18 +788,25 @@ pub(crate) async fn serve_client(
                         };
                         // The rating they carried in comes back with
                         // them, exactly as it would at the door.
+                        let mut ladder = None;
                         if let Some(s) = carried.as_ref() {
                             let mut current = s.clone();
-                            if let Some(ratings) = standing {
+                            if let Some((ratings, ladders)) = standing {
                                 current.carried = Some(ratings);
+                                current.carried_ladders = ladders;
                             }
+                            ladder = z.token_ladder(&current);
                             z.restore_pilot(index, &current);
                             if let Some(watcher) = z.rooms[index].watchers.get_mut(&member) {
                                 watcher.seat.carried = current.carried;
+                                watcher.seat.carried_ladders = current.carried_ladders;
                             }
                         }
                         let flew = z.rooms[index].fly(member, cls, cap).is_some();
                         if flew {
+                            if let Some((checkpoint, best)) = ladder {
+                                z.rooms[index].restore_ladder(checkpoint, best);
+                            }
                             // A human entered the game count.
                             z.push_status();
                         }
@@ -740,7 +829,20 @@ pub(crate) async fn serve_client(
                 }
             }
             C2S_KIT => {
+                let before = presence.current().flying();
                 commands::kit(&zone, &presence, &data).await;
+                // The room removes a Ladder rival that supplied the wrong
+                // calibrated build. The command helper owns the mutation, but
+                // the connection still owns the fleet-visible departure edge.
+                if let Some((room, _)) = before {
+                    if presence.current() == Presence::Unjoined {
+                        let z = zone.lock().await;
+                        if let Some(index) = z.rooms.iter().position(|a| a.number == room) {
+                            z.rooms[index].broadcast_roster();
+                        }
+                        z.push_status();
+                    }
+                }
             }
             C2S_SAY => {
                 commands::say(&zone, &presence, &data).await;
@@ -821,5 +923,39 @@ pub(crate) async fn serve_client(
 
     if let Some(lease) = rated_lease {
         lease.release().await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{complete_join_payload, ladder_bot_release_allowed};
+
+    #[test]
+    fn a_certified_ladder_refuses_unknown_or_mixed_house_bot_releases() {
+        assert!(ladder_bot_release_allowed(
+            true,
+            "v1:abc:signed-a",
+            "v1:abc:signed-a"
+        ));
+        assert!(!ladder_bot_release_allowed(true, "abc", "v1:abc:signed-a"));
+        assert!(!ladder_bot_release_allowed(
+            true,
+            "v1:abc:signed-b",
+            "v1:abc:signed-a"
+        ));
+        assert!(!ladder_bot_release_allowed(true, "", "new"));
+        assert!(!ladder_bot_release_allowed(true, "unknown", "unknown"));
+        assert!(ladder_bot_release_allowed(false, "old", "new"));
+    }
+
+    #[test]
+    fn a_join_must_contain_every_declared_payload_byte() {
+        assert!(complete_join_payload(&[
+            1, 0, 0, 0, 1, 1, 0, 1, b'z', b'n', b'b'
+        ]));
+        assert!(!complete_join_payload(&[
+            1, 0, 0, 0, 1, 1, 0, 1, b'z', b'n'
+        ]));
+        assert!(!complete_join_payload(&[1, 0, 0, 0, 0, 0, 0]));
     }
 }

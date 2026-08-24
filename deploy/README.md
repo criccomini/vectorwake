@@ -16,7 +16,7 @@ Every host runs Caddy. The rest of its process set comes from its role:
 
 The `all` role is the smallest complete production deployment. A split fleet has one central host and as many arena hosts as it needs. PostgreSQL holds the durable player state. Arena volumes keep an instance ID and rated events waiting for delivery, but they do not hold accounts or ratings.
 
-The services use host networking and bind their private endpoints to loopback. Caddy owns the public WebSocket routes. WebTransport is the exception: the arena terminates QUIC itself on UDP 9443 and reads the certificate from Caddy's persistent certificate volume.
+The services use host networking and bind their private endpoints to loopback. Caddy owns the public WebSocket routes. WebTransport is the exception: the two arenas terminate QUIC themselves on UDP 9443 and 9444, then read the certificate from Caddy's persistent certificate volume.
 
 ## Files
 
@@ -137,7 +137,7 @@ Create or repair the provider firewall before creating a host:
 ./deploy/fleet.sh firewall
 ```
 
-The provider firewall and `ufw` both admit TCP 22, 80, and 443 plus UDP 9443. Opening a port in only one firewall leaves it closed.
+The provider firewall and `ufw` both admit TCP 22, 80, and 443 plus UDP 9443 through 9444. Opening a port in only one firewall leaves it closed.
 
 ### Create a host
 
@@ -181,6 +181,12 @@ The script prints the account and any registered bot accounts, then requires the
 Pushes to `main` build both server and client images in [GitHub Actions](../.github/workflows/). Each uses the same immutable `sha-<commit>` tag. The moving `prod` tags remain useful for local and manual work, but production does not follow them.
 
 Provisioning installs `vw-update.timer`. Once a minute it fetches `main` and pulls both immutable images for that commit. It changes neither the checkout nor the containers until both pulls succeed. It then runs `docker compose up -d`, which recreates only services whose configuration or image changed. In particular, a client release copies a page into Caddy's volume without restarting Caddy or dropping live WebSockets.
+
+Every arena receives `VW_META_VERIFY` from the fleet's secret store. A host
+provisioned before that value became required fetches the public half once from
+its configured HTTPS meta endpoint, writes it to `.env`, and uses the pinned
+value from then on. The signing key and database credential never reach an
+arena-only host.
 
 The checkout on a host is deployment state, not a place to edit. The updater resets it to `origin/main`.
 
@@ -230,7 +236,7 @@ Provisioning brings up a temporary HTTP server before Docker is ready, then Cadd
 | `/health` | Caddy is answering, and nothing more |
 | `/metrics/dir` | Directory metrics on a central host |
 | `/metrics/meta` | Meta-layer metrics on a central host |
-| `/metrics/a1` | Arena metrics on an arena host |
+| `/metrics/a1`, `/metrics/a2` | Arena metrics on an arena host |
 | `/metrics/bots` | Bot process metrics on an arena host |
 
 The deploy logs and metrics are public by design. Never write secrets to them.

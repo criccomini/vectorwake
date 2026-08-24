@@ -555,6 +555,7 @@ mod tests {
             0,
             name.len() as u8,
             0,
+            0,
         ];
         join.extend_from_slice(name);
         write_frame(&mut reliable_tx, &join)

@@ -2,10 +2,10 @@
 """Fly real clients against a live vectorwake arena and report what happened.
 
 Not a connectivity check. Each pilot joins, takes the map and the settings the
-zone sends, flies with real inputs, and decodes every snapshot through the
-simulation core itself -- so what is being verified is that ships move, energy
-drains and recharges, weapons appear, kills land, and the numbers the server
-sends are numbers the core accepts.
+zone sends, flies with real inputs while a match is live, and decodes every
+snapshot through the simulation core itself. That verifies that ships move,
+energy drains and recharges, weapons appear, kills land, and the numbers the
+server sends are numbers the core accepts.
 
   pilot.py wss://play.vectorwake.net/dir melee 4 30  # browse, then join
   pilot.py --direct ws://127.0.0.1:9001 "" 2 20      # dial one arena, no browse
@@ -19,16 +19,16 @@ right and the test being wrong.
 """
 import asyncio, ctypes, os, random, struct, sys, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import websockets
 
 SO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "libvwprobe.so")
 
 C2S_JOIN, C2S_INPUT = 1, 2
 # The client wire's version, checked by the zone before it reads anything else
 # in a join. Bumped whenever any client message changes shape.
-PROTOCOL = 18
+PROTOCOL = 20
 (S2C_WELCOME, S2C_SNAPSHOT, S2C_ROSTER, S2C_KILL, S2C_BANNER,
  S2C_ZONE, S2C_DENIED, S2C_MAP, S2C_SETTINGS) = 1, 2, 3, 4, 5, 6, 7, 9, 10
+S2C_MATCH = 14
 
 BTN_LEFT, BTN_RIGHT, BTN_THRUST, BTN_FIRE = 1, 2, 4, 16
 HULL_CLASSES = 7
@@ -54,6 +54,12 @@ def snapshot_distance(newer, older):
 
 def snapshot_after(newer, older):
     return newer != older and snapshot_distance(newer, older) < SERIAL_HALF
+
+
+def match_is_playing(body):
+    """Read the playing bit from the body of an atomic match packet."""
+    return len(body) >= 3 and bool(body[0] & 1)
+
 
 def lib():
     l = ctypes.CDLL(SO)
@@ -123,6 +129,9 @@ class Pilot:
         self.max_ships = None
         self.specs = None
         self.lifecycle = 0
+        # Zones without a match clock remain flyable. A S2C_MATCH packet takes
+        # ownership of this bit as soon as the server sends one.
+        self.match_playing = True
         self.snapshot_ack = 0
         self.snapshot_mask = 0
 
@@ -289,6 +298,8 @@ class Pilot:
                 self.seen["moved"] = True
 
     async def fly(self):
+        import websockets
+
         try:
             ws = await websockets.connect(self.url, max_size=None, open_timeout=25)
         except Exception as e:
@@ -297,14 +308,15 @@ class Pilot:
         async with ws:
             z = self.zone.encode()
             n = self.name.encode()
-            # tag, hull, protocol, flags, then the lengths of the zone and the
-            # name. The session token runs to the end and is empty here: a
-            # pilot with no token is seated as an unknown guest, which is
-            # exactly what this harness wants to be.
+            # Tag, hull, protocol, flags, then the lengths of the zone, name,
+            # and bot build. A person sends an empty build. The session token
+            # runs to the end and is empty here: a pilot with no token is
+            # seated as an unknown guest, which is exactly what this harness
+            # wants to be.
             # Room zero: whichever the fill ladder picks, which is what a
             # pilot that never read a room list asks for.
             await ws.send(bytes([C2S_JOIN, self.rng.randrange(HULL_CLASSES), PROTOCOL, 0,
-                                 len(z), len(n), self.room or 0]) + z + n)
+                                 len(z), len(n), self.room or 0, 0]) + z + n)
 
             async def drive():
                 # Real flight: hold a turn for a while, thrust, and fire in
@@ -319,12 +331,17 @@ class Pilot:
                 # noticed a scheduling problem if it tried.
                 n, turn, fire = 0, BTN_LEFT, False
                 while True:
-                    n += 1
-                    if n % 20 == 0:
-                        turn = self.rng.choice([BTN_LEFT, BTN_RIGHT, 0])
-                    if n % 12 == 0:
-                        fire = not fire
-                    b = turn | BTN_THRUST | (BTN_FIRE if fire else 0)
+                    if self.match_playing:
+                        n += 1
+                        if n % 20 == 0:
+                            turn = self.rng.choice([BTN_LEFT, BTN_RIGHT, 0])
+                        if n % 12 == 0:
+                            fire = not fire
+                        b = turn | BTN_THRUST | (BTN_FIRE if fire else 0)
+                    else:
+                        # Keep sending neutral inputs so a held turn or trigger
+                        # is released while the room waits for the next whistle.
+                        b = 0
                     try:
                         await ws.send(struct.pack(
                             "<BBIIIIH", C2S_INPUT, 1, self.lifecycle,
@@ -368,6 +385,8 @@ class Pilot:
                     elif tag == S2C_WELCOME:
                         self.me = body[0]
                         self.lifecycle = struct.unpack("<I", body[1:5])[0]
+                    elif tag == S2C_MATCH and len(body) >= 3:
+                        self.match_playing = match_is_playing(body)
                     elif tag == S2C_SNAPSHOT:
                         self.n["snaps"] += 1
                         sequence = struct.unpack("<I", body[18:22])[0]
@@ -441,6 +460,8 @@ class Pilot:
 
 async def resolve(directory, zone):
     """Ask the directory where this zone is, exactly as a client does."""
+    import websockets
+
     async with websockets.connect(directory, max_size=None, open_timeout=25) as ws:
         await ws.send(bytes([4]))                      # C2S_STATUS
         for _ in range(20):
@@ -492,4 +513,5 @@ async def main():
         for pilot in pilots:
             pilot.close()
 
-asyncio.run(main())
+if __name__ == "__main__":
+    asyncio.run(main())

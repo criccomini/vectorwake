@@ -154,12 +154,16 @@ identity, since a Steam ban is the one consequence that genuinely sticks.
 
 ## Rank over time
 
-Rating already belongs to the event log, per [rating.md](rating.md): every
-rated death is stored with its weights and the ratings before and after, and
-the current number is a projection of that history. Accounts are what the log
-is keyed by, so a profile can draw a career. The log carries no foreign key to
-the account on purpose, so a swept guest's deaths stay in the record as
-numbers: what happened stays happened.
+A human rating already belongs to the event log, per [rating.md](rating.md):
+every human-involving rated death is stored with its weights and the ratings
+before and after, and the current human number can be replayed from that
+history. Accounts are what the log is keyed by, so a human profile can draw a
+career. The log carries no foreign key to the account on purpose, so a swept
+guest's deaths stay in the record as numbers: what happened stays happened.
+
+Bot-only fights keep the bot's current rating and career totals but not the
+full event payload. A bot profile can show its current record; its exact
+lifetime rating path is not permanent player history.
 
 ## Bans
 

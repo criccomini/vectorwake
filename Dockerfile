@@ -6,11 +6,10 @@
 # result needs neither. The binary statically links the simulation core, so the
 # runtime layer holds a binary, a certificate store, and the catalog.
 
-FROM rust:1-slim-bookworm AS build
-# The core is C99 compiled by build.rs, so a C compiler is not optional here.
-RUN apt-get update \
- && apt-get install -y --no-install-recommends build-essential \
- && rm -rf /var/lib/apt/lists/*
+# Calibration binds the Rust and C toolchains to the executable it measures.
+# The immutable full image already contains build-essential, so the release
+# rebuild cannot silently pick up a newer compiler from a floating apt index.
+FROM rust:1.89.0-bookworm@sha256:948f9b08a66e7fe01b03a98ef1c7568292e07ec2e4fe90d88c07bb14563c84ff AS build
 WORKDIR /src
 # Both trees, and in this shape: server/build.rs reaches ../sim, so the build
 # context has to be the repository root rather than server/.
@@ -33,9 +32,14 @@ RUN mkdir -p server/src && echo 'fn main() {}' > server/src/main.rs \
  && rm -rf server/src
 COPY sim ./sim
 COPY server ./server
+# Calibration fingerprints the shipped catalog fixture and this build recipe.
+# Both must exist at their repository-relative paths during the real build.
+COPY catalog ./catalog
+COPY Dockerfile ./Dockerfile
 # And the reference zone, because the binary compiles part of it in: main.rs
-# takes ladder.json with include_str!, so a context without this directory does
-# not build a server with no ladder, it fails to compile. Which is how it broke.
+# takes the Ladder seed, attempt registry, and signed calibration attestation
+# with include_str!, so a context without this directory does not build a
+# server with no ladder, it fails to compile. Which is how it broke.
 # The file landed, every test passed on a full checkout, and this build stopped
 # dead at `couldn't read src/../../zone/ladder.json` for four pushes running,
 # each of them green on the test job above it.
@@ -55,14 +59,13 @@ ARG VW_COMMIT=unknown
 ENV VW_COMMIT=$VW_COMMIT
 RUN cargo build --release --manifest-path server/Cargo.toml
 
-FROM debian:bookworm-slim
+FROM debian:bookworm-slim@sha256:abd67ffcfa541b485a3dff59865ab629aa048a6c613e639d36e7456b0b229241
 # The directory dials a wss arena to verify its address. tokio-tungstenite is
 # built with webpki-roots so the roots are compiled in, but anything else that
 # ever makes an outbound TLS connection from this image will want the system
-# store, and a missing root reads as an inscrutable handshake failure.
-RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates \
- && rm -rf /var/lib/apt/lists/*
+# store. Copy the builder's bundle instead of resolving packages from a live
+# apt index, which keeps the measured runtime libraries and final image fixed.
+COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=build /src/server/target/release/vectorwake-server /usr/local/bin/
 # Baked in rather than mounted. The catalog is a versioned artifact with one
 # author, so a catalog change is a new image and a restart, which is what

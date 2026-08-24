@@ -464,10 +464,10 @@ and the other is an operator deciding, and a log that called both "bought"
 would hide the second inside the first. A bot is refused, on the argument the
 wallet is refused on.
 
-Three things stay uneditable on purpose. A rating is a projection of
-`rated_events`, so setting one by hand would leave the number disagreeing with
-the history it is supposed to be derived from; the way to move a rating is to
-change what happened or how it is scored. A password is the pilot's, and an
+Three things stay uneditable on purpose. A rating is maintained by transactional
+event settlement, so setting one by hand would leave the number disagreeing
+with the fights that moved it; the way to move a rating is to change what
+happened or how it is scored. A password is the pilot's, and an
 admin who can set one can take an account, which is a larger power than
 anything else on this page and buys nothing a ban does not. And an account's
 kind is load-bearing in two directions at once: only a house bot may anchor

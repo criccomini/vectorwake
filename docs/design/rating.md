@@ -194,16 +194,17 @@ and the least needs saying about them.
 
 ## Storage
 
-Every rated event is stored with its inputs: participants, weights, ratings
-before and after, arena, mode class, and timestamp. Ratings are a projection of
-that log, not the source of truth.
+Every rated event involving a human is stored with its inputs: participants,
+weights, ratings before and after, arena, mode class, and timestamp. Bot-only
+events update the live ratings and career totals but retain only a compact
+exactly-once receipt.
 
-This costs disk and buys the ability to change the model. When we replace Elo
-with something better, we recompute history rather than resetting everybody,
-and we can test a proposed model against real data before shipping it. The disk
-is not a rounding error once bots hold accounts, because bots fight around the
-clock: the measured rate and what to do about it are in
-[meta-layer.md](../architecture/meta-layer.md).
+The human history buys the ability to change the model without resetting the
+people who played it, and it lets us test a proposed model against real player
+data before shipping it. Bots instead begin from the calibrated ladder and
+keep their current projection. Their round-the-clock fights are useful for live
+Elo but not worth a permanent payload; the measured rate and storage design are
+in [meta-layer.md](../architecture/meta-layer.md).
 The same log read along its time axis is a career, which is how a profile draws
 rating over time without any storage of its own, per [accounts.md](accounts.md).
 

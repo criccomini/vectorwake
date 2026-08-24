@@ -105,6 +105,7 @@ local function zone_rooms(z)
                     full = rm.full == true,
                     clock = rm.clock or 0,
                     playing = rm.playing == true,
+                    waiting = rm.waiting == true,
                 }
             end
         end
@@ -213,11 +214,12 @@ local function on_message(s)
             -- from a directory that predates the field, and the drawing
             -- falls back to bare marks.
             seats = z.seats or 0,
-            -- The clock of the room a join would land in, in whole seconds,
-            -- and whether that room is mid-match or between them. Zero from
-            -- a fleet that predates the field, and the page draws no clock.
+            -- The clock of the room a join would land in, whether that room is
+            -- mid-match, and whether it is holding for a required rival. Zero
+            -- and false from an older fleet keep the ordinary countdown.
             clock = landing and landing.clock or 0,
             playing = landing ~= nil and landing.playing == true,
+            waiting = landing ~= nil and landing.waiting == true,
             live = up ~= nil,
             -- No seat and no headroom to make one, as the instance at the head
             -- of the list reports it. The row keeps its counts rather than

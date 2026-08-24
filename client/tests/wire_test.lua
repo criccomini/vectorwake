@@ -203,6 +203,10 @@ check("the join rides the reliable lane", #wt.sent == 1
 check("and speaks the wire's own protocol",
       string.byte(wt.sent[1], 3) == net.PROTOCOL,
       "spoke " .. tostring(string.byte(wt.sent[1], 3)))
+local canonical_join = string.char(1, 0, net.PROTOCOL, 0, 5, 5, 0, 0)
+    .. "chaospilot"
+check("the join header and payload agree byte for byte",
+      wt.sent[1] == canonical_join)
 
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
             message = welcome(3)})
@@ -255,11 +259,41 @@ check("and the whistle replaces it rather than queueing behind it",
       net.match and not net.match.playing and net.match.left == 25)
 local artifact = 4294967296 + 123456
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
-            message = string.char(14, 0, 24, 2, 3, 0, 5, 0)
+            message = string.char(14, 2, 24, 2, 3, 0, 5, 0)
                 .. u32le(123456) .. u32le(1)})
 check("the whistle carries its public match film",
       net.match and net.match.artifact == artifact,
       tostring(net.match and net.match.artifact))
+
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
+            message = string.char(14, 4, 180, 2, 0, 0, 0, 0, 4)
+                .. u32le(0) .. u32le(0) .. u32le(0) .. u32le(0)
+                .. u32le(0) .. u32le(0) .. string.char(1, 0)})
+check("an unopened Ladder arrives as one waiting match state",
+      net.match and not net.match.playing and net.match.artifact == nil
+      and net.match.ladder and net.match.ladder.waiting
+      and not net.match.ladder.opponent_ready
+      and net.match.ladder.rung == 0
+      and net.match.ladder.first_to == 1)
+
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
+            message = string.char(14, 6, 24, 2, 3, 0, 5, 0)
+                .. u32le(123456) .. u32le(1) .. string.char(3)
+                .. u32le(7) .. u32le(3) .. u32le(5) .. u32le(9)
+                .. u32le(7) .. u32le(8) .. string.char(1, 0)})
+check("a Ladder result replaces clock, film, and progress atomically",
+      net.match and net.match.ladder
+      and net.match.ladder.opponent_ready
+      and net.match.ladder.cleared
+      and not net.match.ladder.waiting
+      and net.match.ladder.rung == 7
+      and net.match.ladder.streak == 3
+      and net.match.ladder.checkpoint == 5
+      and net.match.ladder.best == 9
+      and net.match.ladder.active_opponent == 7
+      and net.match.ladder.desired_opponent == 8
+      and net.match.ladder.first_to == 1
+      and net.match.artifact == artifact)
 
 local reliable_before, unreliable_before = #wt.sent, #wt.unsent
 check("focus loss can release held controls", net.release_controls())
@@ -494,7 +528,7 @@ check("three quiet seconds turn to the socket", ws.dialled == 1,
       "dialled " .. ws.dialled)
 ws.cb(nil, ws.handle, {event = websocket.EVENT_CONNECTED})
 check("and the join is the same message", #ws.sent == 1
-      and string.byte(ws.sent[1], 1) == 1)
+      and ws.sent[1] == canonical_join)
 check("the readout says so", net.stats.wire == "ws")
 
 -- The same door again. It went unanswered a moment ago and three more
@@ -577,7 +611,7 @@ check("but a session that never delivers loses the join", ws.dialled == 1,
       "dialled " .. ws.dialled)
 ws.cb(nil, ws.handle, {event = websocket.EVENT_CONNECTED})
 check("and the socket carries the same join", #ws.sent == 1
-      and string.byte(ws.sent[1], 1) == 1)
+      and ws.sent[1] == canonical_join)
 
 -- Bytes moving on either lane prove the session is working through a slow
 -- map or a large first snapshot. Progress resets the settle clock without

@@ -1,7 +1,8 @@
 use crate::directory;
 
 // Client to server
-/// `[C2S_JOIN, class, protocol, flags, zone_len, name_len, room] zone name token`
+/// `[C2S_JOIN, class, protocol, flags, zone_len, name_len, room, build_len]
+/// zone name build token`
 ///
 /// `room` is which room of the zone to land in, by the number the server gave
 /// it, and zero for "whichever the fill ladder picks", which is what every
@@ -13,12 +14,21 @@ use crate::directory;
 /// game it chose. Empty means "whatever you are running", which is what somebody
 /// typing an address directly means.
 ///
+/// `build` is empty for people. A house bot reports its release claim: the
+/// immutable build alone for a provisional Ladder, or that build plus the
+/// verified pilot-attestation signature for a certified one. The latter binds
+/// the seat to the exact signed controller artifact, not only to a source
+/// revision that could have been built several ways.
+///
 /// The token is a session token from the meta-layer, and it runs to the end of
 /// the message because it is the only variable-length field left without a
 /// length. It may be empty: a client that has never reached the meta-layer, or
 /// reached it while it was down, still flies. It just flies as a guest whose
 /// name this room believes and whose rating goes nowhere.
 pub(crate) const C2S_JOIN: u8 = 1;
+/// Room zero asks the arena to choose. Every named room must fit in the join's
+/// single room byte.
+pub(crate) const MAX_ROOM_NUMBER: u32 = u8::MAX as u32;
 /// How long that fixed part is.
 ///
 /// Named because this process holds two senders of it, a player's client in
@@ -28,7 +38,7 @@ pub(crate) const C2S_JOIN: u8 = 1;
 /// its name was read a byte late, ran off the end of a message carrying no
 /// session token, came back empty, and an empty name is the one thing
 /// `sanitize_name` answers with that word.
-pub(crate) const C2S_JOIN_HEADER: usize = 7;
+pub(crate) const C2S_JOIN_HEADER: usize = 8;
 /// `[C2S_INPUT, count, lifecycle, snapshot ack, snapshot mask,
 /// (tick, buttons)...]`.
 /// Records name their own ticks, so a packet can repair a hole without spending
@@ -175,7 +185,12 @@ pub(crate) const JOIN_WATCH: u8 = 2;
 /// 15 links the rounds fired in one gun volley. A hull hit removes its
 /// siblings, matching SVS multifire without affecting wall collisions.
 /// 18 appends the public match artifact id to the intermission message.
-pub(crate) const CLIENT_PROTOCOL: u8 = 18;
+///
+/// 19 makes match state self-describing and carries Ladder progress in the
+/// same packet. Older clients would misread its flags and must not enter.
+/// 20 adds the bot build field to a join so a certified Ladder can refuse a
+/// controller from another deployment revision.
+pub(crate) const CLIENT_PROTOCOL: u8 = 20;
 
 /// The biggest message a client may send. The largest legitimate one is a join:
 /// tag, class, protocol, a zone name and a call sign. 8 KB is two orders of
@@ -236,16 +251,27 @@ pub(crate) const S2C_TEAMS: u8 = 12;
 /// them is knowing it: two minutes on camera is something a pilot can play
 /// around, and only if they are told.
 pub(crate) const S2C_ONAIR: u8 = 13;
-/// `[S2C_MATCH, playing, seconds left, sides, score per side as u16,
-/// artifact id as u64 when complete]`.
+/// `[S2C_MATCH, flags, seconds left, sides, score per side as u16,
+/// optional artifact id as u64, optional Ladder body]`.
 ///
-/// The clock and the score of a match game, at a second's resolution, which is
-/// what a clock draws. `playing` is zero through the intermission, when the
-/// podium is up, nobody is flying, and the score is the one just settled.
+/// Flag bit 0 says the match is playing, bit 1 says an artifact follows the
+/// scores, and bit 2 says the 27-byte Ladder body follows that. The Ladder body
+/// is `[status, rung, streak, checkpoint, best, active opponent, desired
+/// opponent, first-to]`. Status bit 0 says the requested rival is seated, bit
+/// 1 says the finite roster was cleared, and bit 2 says the room is waiting for
+/// a rival rather than counting down. The six progression fields are u32 and
+/// first-to is u16.
+///
+/// One packet owns the clock, result artifact, and Ladder transition. Queue
+/// pressure can delay the newest answer, but it cannot combine halves from two
+/// different states.
 ///
 /// Sent at a join, at every whistle, and whenever either number moves, so a
 /// three minute match costs about two hundred of these.
 pub(crate) const S2C_MATCH: u8 = 14;
+pub(crate) const MATCH_PLAYING: u8 = 1 << 0;
+pub(crate) const MATCH_HAS_ARTIFACT: u8 = 1 << 1;
+pub(crate) const MATCH_HAS_LADDER: u8 = 1 << 2;
 /// `[S2C_CHARGE, ship, slot, x, y, tick]`, a public action without the private
 /// inventory count. Sent only to views whose fixed fairness circle contains
 /// the firing ship; x and y are signed Q8 positions.

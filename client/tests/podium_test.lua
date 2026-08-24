@@ -46,6 +46,14 @@ layer.rect = function(self, x, y, w, h)
     rects[#rects + 1] = {x = x, y = y, w = w, h = h}
 end
 
+-- Lines are kept for the score check. A line behind a large figure is not a
+-- styling detail. It changes the figure into something crossed out.
+local segs = {}
+layer.seg = function(self, x1, y1, x2, y2, t)
+    self.n = self.n + 1
+    segs[#segs + 1] = {x1 = x1, y1 = y1, x2 = x2, y2 = y2, t = t or 0}
+end
+
 -- The room. Ship 0 is us; the rest are strangers, all on one other team so
 -- that the free-for-all test can hand out a team per seat instead.
 local room = {count = 4, teams = {[0] = 0, 1, 0, 1}, active = {}, alive = {},
@@ -121,8 +129,9 @@ local W, H = 1280, 800
 local function frame(o)
     o = o or {}
     rects = {}
+    segs = {}
     package.loaded["arena.state"].n = 0
-    ui.begin(layer, o.w or W, o.h or H, 1, false)
+    ui.begin(layer, o.w or W, o.h or H, 1, false, o.now)
     ui.hud({
         me = o.me or 0,
         watch = o.watch,
@@ -216,6 +225,7 @@ local function counted(what)
 end
 
 local NAMES = {[0] = "Pylon", [1] = "Caisson"}
+local SAYS = {"gg", "nice shot", "close one", "good luck", "thanks", "sorry"}
 
 -- --- while a match is running ----------------------------------------------
 
@@ -225,9 +235,105 @@ check("nothing is settled while the clock is running",
       said("takes it") == nil and said("next match in") == nil,
       tostring(said("takes it") or said("next match in")))
 
+frame({match = {playing = true, left = 96, score = {[0] = 0, [1] = 0},
+                ladder = {rung = 7, streak = 3, checkpoint = 5,
+                          opponent_ready = true, waiting = false}},
+       side_names = NAMES, side = 0})
+check("a live Ladder fight shows its run",
+      said("RUNG 8  STREAK 3  FLOOR 6") ~= nil,
+      table.concat(words(), " | "))
+
+frame({match = {playing = false, left = 180, score = {[0] = 0, [1] = 0},
+                ladder = {rung = 0, streak = 0, checkpoint = 0,
+                          active_opponent = 0, desired_opponent = 0,
+                          opponent_ready = false, waiting = true}},
+       side_names = NAMES, side = 0})
+check("waiting for the first rival is not a loss podium",
+      said("RUNG 1  STREAK 0  FLOOR 1  FINDING RIVAL") ~= nil
+      and said("--:--") ~= nil
+      and said("Pylon") == nil and said("Caisson") == nil
+      and said("back to rung 1") == nil,
+      table.concat(words(), " | "))
+
+frame({match = {playing = false, left = 0, artifact = 1,
+                score = {[0] = 1, [1] = 0},
+                ladder = {rung = 1, streak = 1, checkpoint = 0,
+                          active_opponent = 0, desired_opponent = 1,
+                          opponent_ready = true, waiting = true}},
+       side_names = NAMES, side = 0})
+check("an overdue old rival becomes a waiting state",
+      said("RUNG 2  STREAK 1  FLOOR 1  FINDING RIVAL") ~= nil
+      and said("--:--") ~= nil and said("rung 1 cleared") == nil,
+      table.concat(words(), " | "))
+
+frame({match = {playing = false, left = 8, artifact = 1,
+                score = {[0] = 1, [1] = 0},
+                ladder = {rung = 7, active_opponent = 6,
+                          opponent_ready = false, waiting = false}},
+       side_names = NAMES, side = 0})
+check("a Ladder result remains up while the next rival leaves",
+      said("rung 7 cleared") ~= nil and said("FINDING RIVAL") == nil,
+      table.concat(words(), " | "))
+
+ui.podium_at = nil
+ui.podium_artifact = nil
+frame({now = 5, match = {playing = false, left = 8, artifact = 1,
+                         score = {[0] = 1, [1] = 0}},
+       side_names = NAMES, side = 0})
+local first_podium_at = ui.podium_at
+frame({now = 9, match = {playing = false, left = 8, artifact = 2,
+                         score = {[0] = 0, [1] = 1}},
+       side_names = NAMES, side = 0})
+check("a new result starts a fresh podium after rendering was paused",
+      first_podium_at == 5 and ui.podium_at == 9,
+      tostring(first_podium_at) .. " | " .. tostring(ui.podium_at))
+frame({now = 10, match = {playing = true, left = 180,
+                          score = {[0] = 0, [1] = 0}},
+       side_names = NAMES, side = 0})
+check("play releases the prior podium entrance", ui.podium_at == nil,
+      tostring(ui.podium_at))
+
+frame({match = {playing = false, left = 8, artifact = 1,
+                score = {[0] = 1, [1] = 0},
+                ladder = {rung = 7, active_opponent = 6}},
+       side_names = NAMES, side = 1, watch = {subject = 1}})
+check("a watcher sees the climber's result rather than their viewing side",
+      said("rung 7 cleared") ~= nil, table.concat(words(), " | "))
+
+frame({match = {playing = false, left = 8, artifact = 1,
+                score = {[0] = 0, [1] = 1},
+                ladder = {rung = 5, active_opponent = 7}},
+       side_names = NAMES, side = 0})
+check("a Ladder loss names the new rung",
+      said("back to rung 6") ~= nil, table.concat(words(), " | "))
+
+frame({match = {playing = false, left = 8, artifact = 1,
+                score = {[0] = 1, [1] = 1},
+                ladder = {rung = 7, active_opponent = 7}},
+       side_names = NAMES, side = 0})
+check("a mutual kill replays the rung as a draw",
+      said("rung 8 drawn") ~= nil, table.concat(words(), " | "))
+
+frame({match = {playing = false, left = 8, artifact = 1,
+                score = {[0] = 1, [1] = 0},
+                ladder = {rung = 5, checkpoint = 5,
+                          active_opponent = 7, desired_opponent = 5,
+                          cleared = true}},
+       side_names = NAMES, side = 0})
+check("the top rung gets a distinct clear",
+      said("Ladder cleared") ~= nil, table.concat(words(), " | "))
+
+frame({match = {playing = false, left = 23,
+                score = {[0] = 11, [1] = 14}},
+       side_names = NAMES, side = 0})
+check("a non-Ladder intermission does not require an artifact",
+      said("takes it") ~= nil and said("next match") ~= nil
+          and said("0:23") ~= nil,
+      table.concat(words(), " | "))
+
 -- --- at the whistle --------------------------------------------------------
 
-frame({match = {playing = false, left = 23, score = {[0] = 11, [1] = 14}},
+frame({match = {playing = false, left = 23, artifact = 1, score = {[0] = 11, [1] = 14}},
        side_names = NAMES, side = 0})
 
 -- The result is two draws rather than one line: the winner's name in the
@@ -244,10 +350,10 @@ check("the verb follows it on the same line",
 check("and the name is in the winner's color rather than the verb's",
       who_t ~= nil and who_t.col ~= verb_t.col)
 check("and the room says when the next one starts",
-      said("next match in 0:23") ~= nil)
--- Once, at the card's foot. The topbar's own caption stands down for it.
-check("and says it once", counted("next match in") == 0,
-      tostring(counted("next match in")))
+      said("next match") ~= nil and said("0:23") ~= nil)
+-- Once, at the ending's foot. The topbar's own caption stands down for it.
+check("and says it once", counted("next match") == 1,
+      tostring(counted("next match")))
 
 -- Everybody who flew it is on it, whichever side they were on.
 for _, who in ipairs({"you", "Kestrel", "Plinth", "Vesper"}) do
@@ -259,13 +365,21 @@ end
 check("one pilot is marked mvp", counted("mvp") == 1, tostring(counted("mvp")))
 
 -- What the match paid you is your own bounty taken, which is what the wallet
--- moves by. Seat zero collected seven.
-check("the payout is your own bounty taken", said("banked 7 rivets") ~= nil,
+-- moves by. The unit is the drawn rivet every other price wears, so the text
+-- is the label followed by the figure rather than a sentence.
+local banked = nil
+for i = 1, state.n - 1 do
+    if state.text[i].s == "BANKED" and state.text[i + 1].s == "7" then
+        banked = {state.text[i], state.text[i + 1]}
+    end
+end
+check("the payout is your own bounty taken",
+      banked ~= nil and banked[2].x > banked[1].x,
       table.concat(words(), " | "))
 
 -- Nobody is the best gun in a match where nothing was shot down.
 room.kills = {[0] = 0, 0, 0, 0}
-frame({match = {playing = false, left = 23, score = {[0] = 0, [1] = 0}},
+frame({match = {playing = false, left = 23, artifact = 1, score = {[0] = 0, [1] = 0}},
        side_names = NAMES, side = 0})
 check("a scoreless match has no mvp", counted("mvp") == 0,
       tostring(counted("mvp")))
@@ -278,7 +392,7 @@ room.kills = {[0] = 2, 5, 1, 3}
 frame({match = {playing = true, left = 90, score = {[0] = 3, [1] = 3}},
        side_names = NAMES, side = 0})
 local plates_playing = counted("Kestrel")
-frame({match = {playing = false, left = 23, score = {[0] = 11, [1] = 14}},
+frame({match = {playing = false, left = 23, artifact = 1, score = {[0] = 11, [1] = 14}},
        side_names = NAMES, side = 0})
 check("a plate is drawn while the match runs", plates_playing > 0,
       tostring(plates_playing))
@@ -287,7 +401,7 @@ check("and only the card's copy survives the whistle",
 
 -- --- a draw ----------------------------------------------------------------
 
-frame({match = {playing = false, left = 9, score = {[0] = 9, [1] = 9}},
+frame({match = {playing = false, left = 9, artifact = 1, score = {[0] = 9, [1] = 9}},
        side_names = NAMES, side = 0})
 check("level at the whistle is a draw rather than a winner",
       said("drawn") ~= nil and said("takes it") == nil,
@@ -295,13 +409,12 @@ check("level at the whistle is a draw rather than a winner",
 
 -- --- the scoreline ---------------------------------------------------------
 --
--- Two numbers set large either side of a bar, which is the shape of the match
--- in one mark. The check that matters is which figure is on which side: your
--- own side is on the left however the zone numbered the teams, the same rule
--- the clock's own score follows, and a card that reversed them would be
--- telling everybody in the losing half that they won.
+-- Two numbers set large either side of the score bar. The check that matters
+-- is which figure is on which side: your own side is on the left however the
+-- zone numbered the teams, the same rule the clock's own score follows. A card
+-- that reversed them would tell everybody in the losing half that they won.
 
-frame({match = {playing = false, left = 23, score = {[0] = 11, [1] = 14}},
+frame({match = {playing = false, left = 23, artifact = 1, score = {[0] = 11, [1] = 14}},
        side_names = NAMES, side = 0})
 local big = nil
 for i = 1, state.n do
@@ -313,15 +426,103 @@ for i = 1, state.n do
 end
 check("the score is set large", big ~= nil and #big == 2,
       tostring(big and #big))
+check("and the score stays in the instrument face",
+      big ~= nil and big[1].font == nil and big[2].font == nil)
 check("and your own side is the left of the two",
       big ~= nil and big[1].s == "11" and big[1].x < big[2].x,
       big and (big[1].s .. " at " .. math.floor(big[1].x)))
+
+-- Every viewport uses one bounded measure. The only screen-wide rectangle is
+-- the scrim, each roster half lands on three columns, and the score bar stays
+-- in the two center columns without touching either figure.
+local ADVANCE = 1233 / 2048
+local function near(a, b)
+    return math.abs(a - b) < 0.01
+end
+
+local function seg_hits_box(s, b)
+    local r = (s.t or 0) / 2
+    local sx0 = math.min(s.x1, s.x2) - r
+    local sx1 = math.max(s.x1, s.x2) + r
+    local sy0 = math.min(s.y1, s.y2) - r
+    local sy1 = math.max(s.y1, s.y2) + r
+    return sx1 >= b.x0 and sx0 <= b.x1 and sy1 >= b.y0 and sy0 <= b.y1
+end
+
+local function result_geometry(width, height)
+    frame({match = {playing = false, left = 23,
+                    score = {[0] = 11, [1] = 14}},
+           side_names = NAMES, side = 0, w = width, h = height})
+
+    local scores = {}
+    for i = 1, state.n do
+        local t = state.text[i]
+        if t.px >= 40 and (t.s == "11" or t.s == "14") then
+            scores[#scores + 1] = t
+        end
+    end
+    table.sort(scores, function(a, b) return a.x < b.x end)
+
+    local gap = 6
+    local available = math.min(width - 36, 620)
+    local cell = math.floor((available - 5 * gap) / 6)
+    local grid_w = 6 * cell + 5 * gap
+    local grid_x = (width - grid_w) / 2
+    local half = 3 * cell + 2 * gap
+    local bar_x = grid_x + 2 * (cell + gap)
+    local bar_w = 2 * cell + gap
+
+    local full, covers = 0, false
+    local bar = nil
+    for _, r in ipairs(rects) do
+        if near(r.x, 0) and near(r.w, width) then
+            full = full + 1
+            if near(r.y, 0) and near(r.h, height) then covers = true end
+        end
+        if near(r.x, bar_x) and near(r.w, bar_w) and near(r.h, 8) then
+            bar = r
+        end
+    end
+    check(width .. " result has one screen-wide field",
+          full == 1 and covers, tostring(full))
+
+    local roster_left, roster_right = false, false
+    for _, s in ipairs(segs) do
+        if near(s.y1, s.y2) and near(s.x2 - s.x1, half) then
+            if near(s.x1, grid_x) then roster_left = true end
+            if near(s.x1, grid_x + 3 * (cell + gap)) then roster_right = true end
+        end
+    end
+    check(width .. " roster halves use the shared measure",
+          roster_left and roster_right)
+
+    check(width .. " score bar stays between the figures",
+          #scores == 2 and bar ~= nil
+          and bar.x > scores[1].x
+          and bar.x + bar.w < scores[2].x)
+
+    local crossed = false
+    for _, t in ipairs(scores) do
+        local tw = #t.s * t.px * ADVANCE
+        local x0 = t.pivot == "right" and t.x - tw or t.x
+        local x1 = t.pivot == "right" and t.x or t.x + tw
+        local box = {x0 = x0, x1 = x1,
+                     y0 = t.y - t.px * 0.55, y1 = t.y + t.px * 0.55}
+        for _, s in ipairs(segs) do
+            if seg_hits_box(s, box) then crossed = true end
+        end
+    end
+    check(width .. " score figures have no line through them", not crossed)
+end
+
+result_geometry(710, 378)
+result_geometry(1280, 720)
 
 -- A filed result turns the podium into the earned sharing moment. The share
 -- press is a real browser overlay, while film and claim return through the
 -- ordinary action path.
 ui.hits = {}
-frame({match = {playing = false, left = 23, score = {[0] = 11, [1] = 14}},
+frame({match = {playing = false, left = 23, artifact = 1, score = {[0] = 11, [1] = 14}},
        side_names = NAMES, side = 0,
        match_url = "https://vectorwake.net/matches/42", keep_pilot = true})
 check("a filed match offers its share link", said("share match") ~= nil
@@ -341,9 +542,8 @@ check("an unclaimed winner can keep their pilot", said("keep you") ~= nil
 -- can send another player, so what this test is really guarding is that the
 -- list on screen is the list the wire has and nothing else can get onto it.
 
-local SAYS = {"gg", "nice shot", "close one", "good luck", "thanks", "sorry"}
 ui.hits = {}
-frame({match = {playing = false, left = 23, score = {[0] = 11, [1] = 14}},
+frame({match = {playing = false, left = 23, artifact = 1, score = {[0] = 11, [1] = 14}},
        side_names = NAMES, side = 0, sayings = SAYS})
 for _, phrase in ipairs(SAYS) do
     check("you can say " .. phrase, said(phrase) ~= nil)
@@ -363,11 +563,94 @@ check("and each one carries its number on the wire",
           return true
       end)())
 
+-- The same six columns own quick chat and the action row. That makes every
+-- outer edge, gap, and label center exact at both rendered sizes.
+local function whole(n)
+    return near(n, math.floor(n + 0.5))
+end
+
+local function control_geometry(width, height, keep)
+    frame({match = {playing = false, left = 23,
+                    score = {[0] = 11, [1] = 14}},
+           side_names = NAMES, side = 0, sayings = SAYS,
+           match_url = "https://vectorwake.net/matches/42",
+           keep_pilot = keep, w = width, h = height})
+
+    local control_chips, control_actions = {}, {}
+    for _, r in ipairs(ui.hits) do
+        if r.action == "say" then
+            control_chips[#control_chips + 1] = r
+        elseif r.action == "share" or r.action == "open_replay"
+               or r.action == "keep_pilot" then
+            control_actions[#control_actions + 1] = r
+        end
+    end
+    table.sort(control_chips, function(a, b) return a.x < b.x end)
+    table.sort(control_actions, function(a, b) return a.x < b.x end)
+
+    local exact = #control_chips == 6
+        and #control_actions == (keep and 3 or 2)
+    local integer = exact
+    for i, r in ipairs(control_chips) do
+        integer = integer and whole(r.x) and whole(r.y)
+            and whole(r.w) and whole(r.h)
+        if i > 1 then
+            exact = exact
+                and near(r.x - control_chips[i - 1].x
+                         - control_chips[i - 1].w, 6)
+                and near(r.w, control_chips[1].w)
+                and near(r.h, control_chips[1].h)
+        end
+    end
+    for i, r in ipairs(control_actions) do
+        integer = integer and whole(r.x) and whole(r.y)
+            and whole(r.w) and whole(r.h)
+        if i > 1 then
+            exact = exact
+                and near(r.x - control_actions[i - 1].x
+                         - control_actions[i - 1].w, 6)
+                and near(r.w, control_actions[1].w)
+                and near(r.h, control_actions[1].h)
+        end
+    end
+    exact = exact and near(control_actions[1].x, control_chips[1].x)
+        and near(control_actions[#control_actions].x
+                 + control_actions[#control_actions].w,
+                 control_chips[#control_chips].x
+                 + control_chips[#control_chips].w)
+
+    local centered = exact
+    local labels = {
+        {"GG", control_chips[1]},
+        {"SHARE MATCH", control_actions[1]},
+    }
+    for _, pair in ipairs(labels) do
+        local t = nil
+        for i = 1, state.n do
+            if state.text[i].s == pair[1] then t = state.text[i] break end
+        end
+        local r = pair[2]
+        centered = centered and t ~= nil
+            and near(t.x, r.x + r.w / 2)
+            and near(t.y, height - r.y - r.h / 2)
+    end
+
+    local name = width .. (keep and " three-action" or " two-action")
+    check(name .. " controls use one grid", exact)
+    check(name .. " controls land on whole pixels", integer)
+    check(name .. " labels are centered", centered)
+end
+
+control_geometry(710, 378, false)
+control_geometry(710, 378, true)
+control_geometry(1280, 720, false)
+control_geometry(1280, 720, true)
+
 -- Somebody said one. It lands on their row, in place of their name, with the
 -- name kept small after it: a phrase in a column of its own would be a chat
 -- window, and a row that lost its name for four seconds is a card you cannot
 -- find yourself on.
-frame({match = {playing = false, left = 23, score = {[0] = 11, [1] = 14}},
+frame({match = {playing = false, left = 23, artifact = 1, score = {[0] = 11, [1] = 14}},
        side_names = NAMES, side = 0, sayings = SAYS,
        said = {[1] = {phrase = "nice shot", n = 1, t = 0.2}}})
 local line, name_after = nil, nil
@@ -390,7 +673,7 @@ check("with the name kept, small, after the words",
 -- phrase and a call sign together ran through the kills and deaths at the
 -- other end of it. The name is what goes.
 ui.compact = nil
-frame({match = {playing = false, left = 23, score = {[0] = 11, [1] = 14}},
+frame({match = {playing = false, left = 23, artifact = 1, score = {[0] = 11, [1] = 14}},
        side_names = NAMES, side = 0, sayings = SAYS, w = 390, h = 844,
        said = {[1] = {phrase = "nice shot", n = 1, t = 0.2}}})
 local narrow, beside = nil, nil
@@ -410,7 +693,7 @@ check("a narrow column keeps the phrase and drops the name",
 -- A phrase this build does not have is an arena talking about a list it does
 -- not share. Nothing is drawn for it rather than a number or a blank chip.
 ui.hits = {}
-frame({match = {playing = false, left = 23, score = {[0] = 11, [1] = 14}},
+frame({match = {playing = false, left = 23, artifact = 1, score = {[0] = 11, [1] = 14}},
        side_names = NAMES, side = 0})
 local none = 0
 for _, r in ipairs(ui.hits) do
@@ -430,7 +713,7 @@ local kept_k, kept_d, kept_a = room.kills, room.deaths, room.assists
 room.kills = {[0] = 4, 14, 1, 0}
 room.deaths = {[0] = 3, 6, 6, 3}
 room.assists = {[0] = 2, 2, 6, 11}
-frame({match = {playing = false, left = 12, score = {[0] = 5, [1] = 8}},
+frame({match = {playing = false, left = 12, artifact = 1, score = {[0] = 5, [1] = 8}},
        side_names = NAMES, side = 0})
 -- Every right-aligned figure on the card, gathered by the line it sits on.
 -- Both sides draw a row at the same height, so a line carries six of them:
@@ -475,7 +758,7 @@ room.kills, room.deaths, room.assists = kept_k, kept_d, kept_a
 -- The intermission is when the hangar opens, so the one thing a player is
 -- likely to do here is open it. The card sits exactly where the menu does.
 
-frame({match = {playing = false, left = 23, score = {[0] = 11, [1] = 14}},
+frame({match = {playing = false, left = 23, artifact = 1, score = {[0] = 11, [1] = 14}},
        side_names = NAMES, side = 0, menu_open = true})
 check("the menu covers it", said("takes it") == nil,
       tostring(said("takes it")))
@@ -527,7 +810,7 @@ layer.frame = function(self, _, _, _, _, t)
 end
 ui.details = true
 ui.inspect = 1
-frame({match = {playing = false, left = 23, score = {[0] = 11, [1] = 14}},
+frame({match = {playing = false, left = 23, artifact = 1, score = {[0] = 11, [1] = 14}},
        side_names = NAMES, side = 0, sayings = SAYS, pilots = eight,
        said = {[1] = {phrase = "nice shot", n = 1, t = 0.2}},
        feed = {{text = "sable killed cirrus (+3)", t = 1},

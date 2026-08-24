@@ -19,9 +19,10 @@ records why this is our own service rather than Nakama.
 | accounts | id, kind (`human`, `house_bot`, `third_party_bot`), created, standing, the admin flag that opens [the panel](admin.md), and the owner id when the kind is a third-party bot |
 | credentials | account, method (`secret`, `password`, `steam`, more later), identifier or hash. A human account whose only credential is its secret is a guest |
 | names | account, call sign, unique fleet-wide under a case-insensitive index |
-| rated_events | the log [rating.md](../design/rating.md) specifies: participants, weights, ratings before and after, arena, mode class, opponent kind, timestamp |
+| rated_events | full records for human-involving fights: participants, weights, ratings before and after, arena, mode class, opponent kind, timestamp |
+| rated_event_receipts | the event id, filing time, and bot-only flag used to make rating ingest exactly once without retaining every bot payload |
 | pilot_events | what happened to a pilot rather than to their rating: arrivals, refusals, hull and side changes, departures and why, tied together by a session. See [the pilot log](#the-pilot-log) |
-| ratings | account, mode class, rating, games. A projection, rebuildable from `rated_events` at any time |
+| ratings | account, mode class, rating, games. The authoritative projection; human ratings are replayable from `rated_events`, while bots retain their live projection and calibrated seed |
 | client_errors | grouped browser failures: account, build, message, stack, page, user agent, first and last occurrence, and count. Deleted thirty days after the latest occurrence |
 
 A house bot needs no table of its own: the roster individual's name *is* its
@@ -48,7 +49,7 @@ framework would be the larger change.
 | `/v1/rename` | a client | A fresh call sign from the pool; the account and its record stay put |
 | `/v1/bot` | the bot server, with a pool token | The account for one roster individual, the same one every time. A new one is seeded from the calibrated ladder |
 | `/v1/bot/register` | anyone, with a claimed account | A third-party bot account under that owner, who answers for it |
-| `/v1/events` | an arena, with a pool token | Rated events, appended to the log and applied to the projection |
+| `/v1/events` | an arena, with a pool token | Rated events, filed exactly once and applied to the projections; human-involving fights also enter the full log |
 | `/v1/pilot-events` | an arena, with a pool token | The pilot log, appended. No projection to keep in step, because nothing the game reads back is derived from it |
 | `/v1/client-error` | the browser client | Adds or increments a bounded error group for this build and reported account. Throttled per address and across the service |
 | `/v1/admin/fleet` | the admin panel | Every instance the directory on this host has observed, relayed from it over loopback, plus the catalog version and whether its verifying key is the one this process signs with |
@@ -106,15 +107,16 @@ accounts are never swept.
 ## Rated events leave the arena
 
 An arena batches rated events and posts them with its pool credential, and the
-meta-layer appends them to the log and advances the rating projection. This
+meta-layer files them and advances the rating projection. Human-involving
+fights also enter the full event log. This
 closes the question [server.md](server.md) left open, and it lands on the
 meta-layer rather than the directory for the reason that document predicted:
-the directory is the piece we most want to be able to lose, and the event log
-is the piece we can least afford to.
+the directory is the piece we most want to be able to lose, and pilot ratings
+are durable state.
 
 Two instances of one zone can now both rate the same pilot without
-disagreeing, which is M7.7's exit test. Both submit events, the log orders
-them, and the projection is computed in one place. What an arena shows
+disagreeing, which is M7.7's exit test. Both submit events and the projection
+is computed in one place. What an arena shows
 mid-session is its own running ledger, so the in-room rating display is a
 prediction of the authoritative number in exactly the way a client's sim is a
 prediction of the arena's: small, brief disagreement, converging on the
@@ -130,10 +132,11 @@ a room in progress.
 Delivery is at-least-once, and the meta-layer is what makes that safe. A
 spool retries a whole batch when any of it fails, and a batch that committed
 under a lost reply gets posted again, so events arrive twice in ordinary
-operation. Each one carries an id the arena mints when it files it; the log
-is unique on that id, and a second arrival is refused without touching the
-projection. Without the refusal a retry would re-add deltas the log recorded
-once, which is how a rating drifts from its own history.
+operation. Each one carries an id the arena mints when it files it. A compact
+receipt is unique on that id, and a second arrival stops without touching the
+projection. Receipt, optional full event record, rating, and career totals move
+in one transaction, so the id cannot land without the numbers moving and the
+numbers cannot move twice.
 
 Only participants with accounts travel. A guest is rated inside the room and
 forgotten when it ends, so an event where the victim has no account is not
@@ -153,15 +156,16 @@ rating from the first tick rather than climb to it.
 
 ## What the log costs
 
-The event log grows forever by design, and the rate it grows at is not set by
-how many people are playing. It is set by the bots, which fight around the
-clock at bot fill whether or not anybody is watching.
+The fleet still processes every bot fight because live bot Elo is useful. Bots
+are the opponents available when few people are online, and their ratings must
+move with their results if those matches are going to mean anything. What the
+fleet does not need is the full JSON record after the bot projections move.
 
 Measured on the live fleet: Chaos alone resolves about 1.8 deaths a second with
 its rooms full, so three arenas run somewhere near 3 to 4 a second, which is
-roughly 300,000 events a day and 100 million rows a year. At 400 to 500 bytes a
-row with its indexes, that is 40 to 50 GB a year against the 25 GB the
-hobbyist plan holds. So the disk fills in six to nine months.
+roughly 300,000 events a day and 100 million events a year. Keeping each one as
+a 400 to 500 byte row with indexes would cost 40 to 50 GB a year against the
+25 GB the hobbyist plan holds.
 
 Throughput is not the problem and will not be for a long time. A batch arrives
 every five seconds, each event is one small transaction, and the projection
@@ -169,32 +173,27 @@ update is an indexed upsert per participant. That is single-digit transactions
 per second against a database that does thousands on one vCPU, and login is a
 primary-key lookup. What runs out is space.
 
-What is kept follows from what the log is for. The rows worth keeping forever
-are the ones with a human in them, because a model migration or a disputed
-rating replays those; bot-on-bot events have done their work the moment the
-projection applies them, and a bot's career re-seeds from calibration anyway.
+Every accepted event now keeps a compact receipt containing only its id, filing
+time, and `bots_only` flag. That receipt is the exactly-once boundary. A fight
+with a human also keeps the full record forever, because a model migration or a
+disputed rating may need it. A bot-only fight updates ratings and career totals
+in the receipt transaction, then leaves no payload behind.
 
-So every event carries a `bots_only` flag, set in the arena because that is the
-only place that knows which pilot was a person, and an hourly sweeper deletes
-bot-only rows older than three weeks. Everything with a human on either side
-stays. A partial index covers exactly the rows the sweeper is looking for,
-which in steady state is one hour's worth of newly expired events in a table of
-millions.
+Bot receipts remain for three weeks, long enough to outlive a delayed arena
+spool, and then an hourly bounded sweep removes them. Human receipts remain
+beside the full history. A partial index covers only the bot receipts due for
+retention.
 
-This is a plainer mechanism than the partitioning this document used to
-specify, and the reason is what partitioning would have cost around it. Dropping
-a partition is cheaper per row than deleting one, but it needs the table
-partitioned by bot-only and by month at once, a job to create next month's
-partitions ahead of time, and a migration for the table already in service.
-A month nobody created is a month that refuses every write. Measured on a
-database loaded with a day of fleet production, a sweep costs about 16
-milliseconds, which is far enough below one vCPU's idle capacity that the extra
-machinery buys nothing.
+The old full bot rows do not need a blocking table rewrite. The same hourly
+pass converts up to 50,000 of them to receipts and deletes their payloads in
+one statement. New bot fights no longer add to that backlog, so it drains after
+deployment.
 
-The cruder alternatives are worth naming so they are not rediscovered as
-insights. Not spooling bot-vs-bot events at all would break the rule that a
-rating is a projection of the log, for bots. Buying a larger plan defers the
-question by about a year per step and answers nothing.
+This makes one tradeoff explicit: a bot's exact lifetime path cannot be rebuilt
+from the human event log. That path is not player history. A bot starts from
+the calibrated ladder and its live projection refines that seed; if the bot
+model is reset, it can be seeded again. Human-involving records remain available
+for rating disputes and model work.
 
 [Decision 15](decisions.md#15-rating-is-damage-weighted-pairwise-elo-stored-as-an-event-log)
 priced this as "an event log that grows forever" and meant it, but the estimate
@@ -209,7 +208,7 @@ but it is the same unbounded thing in a place nobody is watching.
 
 ## The pilot log
 
-`rated_events` answers what a fight did to somebody's number. It does not
+`rated_events` answers what a human-involving fight did to somebody's number. It does not
 answer where they were, how they got in, or why they stopped being there, and
 those are the questions anybody actually asks when something goes wrong. A room
 knows all of it and keeps none of it: the tick that produced the fact is the
@@ -245,7 +244,7 @@ us who they are.
 
 Thirteen kinds from an arena. Eleven are changes of state rather than things
 that happen every tick, and two are combat. Combat started outside this log on
-the reasoning that `rated_events` already keeps every death and a log should
+the reasoning that `rated_events` already keeps every human-involving death and a log should
 not say things twice; what that produced was a session that read as a join and
 a leave with an hour of silence between them. So the human-involving deaths
 are filed here too, as the pilot's own rows. The rated log stays the authority
@@ -332,10 +331,10 @@ after long enough it is just a record of how people play, held by a service
 whose whole appeal is holding nothing of the sort. So the same hourly sweeper
 runs a second bounded pass: bot rows at seven days, everybody at ninety.
 
-The rate follows the players rather than the bots, which is the point of
-leaving routine bot refusals out. A stay is a handful of rows against the 1.8
-deaths a second Chaos alone resolves at fill, so this table is a small fraction
-of the one beside it and, unlike that one, it converges instead of growing.
+The rate follows the players rather than bot combat, which is the point of
+leaving routine bot refusals out. This table converges under retention; the
+full rated log grows only with human play, and round-the-clock bot combat leaves
+the smaller receipt stream.
 
 ## Turning it on over a running fleet
 

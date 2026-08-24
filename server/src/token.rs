@@ -14,7 +14,7 @@ use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 
 /// Bumped when the payload layout changes. A token from a previous version is
 /// refused rather than misread, the same rule the client wire follows.
-const VERSION: u8 = 2;
+const VERSION: u8 = 3;
 
 /// How long a token is good for. Short enough that a ban lands within one
 /// lifetime, since the meta-layer enforces bans by refusing to mint, and long
@@ -91,6 +91,16 @@ pub struct ClassRating {
     pub games: u32,
 }
 
+/// Durable progress in one Ladder zone. The current run is deliberately not a
+/// checkpoint: reconnecting resumes at earned ground, not in the middle of a
+/// series whose opponent and score no longer exist.
+#[derive(Clone, Debug, PartialEq)]
+pub struct LadderProgress {
+    pub zone: String,
+    pub checkpoint: u16,
+    pub best: u16,
+}
+
 /// The contents of a token, once the signature has been checked.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Claims {
@@ -114,6 +124,9 @@ pub struct Claims {
     /// Empty from an older meta-layer, which an arena reads as the baseline
     /// rather than as an account that owns nothing.
     pub entitlements: Vec<u8>,
+    /// Earned checkpoints per Ladder zone. Empty for an account that has never
+    /// played one.
+    pub ladders: Vec<LadderProgress>,
 }
 
 impl Claims {
@@ -151,6 +164,12 @@ impl Claims {
         }
         p.push(self.entitlements.len().min(255) as u8);
         p.extend_from_slice(&self.entitlements[..self.entitlements.len().min(255)]);
+        p.push(self.ladders.len().min(255) as u8);
+        for progress in self.ladders.iter().take(255) {
+            push_str(&mut p, &progress.zone);
+            p.extend_from_slice(&progress.checkpoint.to_le_bytes());
+            p.extend_from_slice(&progress.best.to_le_bytes());
+        }
         p
     }
 }
@@ -250,6 +269,34 @@ pub fn verify(key: &VerifyingKey, token: &str, now: u64) -> Result<Claims, Bad> 
     let n = *payload.get(at).ok_or(Bad::Malformed)? as usize;
     at += 1;
     let entitlements = payload.get(at..at + n).ok_or(Bad::Malformed)?.to_vec();
+    at += n;
+    let n = *payload.get(at).ok_or(Bad::Malformed)? as usize;
+    at += 1;
+    let mut ladders = Vec::with_capacity(n);
+    for _ in 0..n {
+        let zone = take_str(payload, &mut at).ok_or(Bad::Malformed)?;
+        let checkpoint = u16::from_le_bytes(
+            payload
+                .get(at..at + 2)
+                .ok_or(Bad::Malformed)?
+                .try_into()
+                .unwrap(),
+        );
+        at += 2;
+        let best = u16::from_le_bytes(
+            payload
+                .get(at..at + 2)
+                .ok_or(Bad::Malformed)?
+                .try_into()
+                .unwrap(),
+        );
+        at += 2;
+        ladders.push(LadderProgress {
+            zone,
+            checkpoint,
+            best,
+        });
+    }
 
     // Expiry last. A signature check on an expired token still tells us the
     // token was ours, which is the difference between "log in again" and
@@ -265,6 +312,7 @@ pub fn verify(key: &VerifyingKey, token: &str, now: u64) -> Result<Claims, Bad> 
         expires,
         ratings,
         entitlements,
+        ladders,
     })
 }
 
@@ -346,6 +394,11 @@ mod tests {
                 },
             ],
             entitlements: vec![6, 6, 6, 6, 6, 1, 1],
+            ladders: vec![LadderProgress {
+                zone: "ladder".into(),
+                checkpoint: 8,
+                best: 11,
+            }],
         }
     }
 
@@ -434,6 +487,7 @@ mod tests {
             expires: 100,
             ratings: vec![],
             entitlements: Vec::new(),
+            ladders: Vec::new(),
         };
         let got = verify(&k.verifying_key(), &mint(&k, &c), 1).unwrap();
         assert_eq!(got, c);

@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::OnceLock;
 
 use tokio_tungstenite::tungstenite::Message;
 
@@ -6,8 +7,8 @@ use crate::delivery::next_nonzero;
 use crate::protocol::*;
 use crate::room::*;
 use crate::{
-    ai, catalog, config, fleet, meta, modes, pilot, rating, reporting_enabled, select, sim, spool,
-    token, DEFAULT_CHANNEL_DELAY, DEFAULT_MAX_PLAYERS, DEFAULT_MAX_WATCHERS,
+    ai, calibrate, catalog, config, fleet, meta, modes, pilot, pilots, rating, reporting_enabled,
+    select, sim, spool, token, DEFAULT_CHANNEL_DELAY, DEFAULT_MAX_PLAYERS, DEFAULT_MAX_WATCHERS,
 };
 
 /// This process: one arena server, serving one zone, holding that zone's
@@ -55,10 +56,9 @@ pub(crate) struct ArenaServer {
     /// directories pushed, what it has announced. Empty and harmless when no
     /// directory was ever configured.
     pub(crate) fleet: select::Fleet,
-    /// Calibrated bot ratings, held here because every room needs them and a
-    /// room is opened long after startup. Read once; the two places that build
-    /// a room used to go back to the disk for it and named a path relative to
-    /// the working directory, which on the fleet is not where it lives.
+    /// Certified bot ratings, or only the defined anchor before certification.
+    /// Held here because every room needs the same seed and a room may open
+    /// long after startup.
     pub(crate) ladder: HashMap<String, f64>,
 }
 
@@ -75,6 +75,7 @@ pub(crate) struct RatedLease {
     pub(crate) account: u64,
     pub(crate) session: String,
     pub(crate) spool: std::sync::Arc<std::sync::Mutex<spool::Spool<spool::Event>>>,
+    pub(crate) pilot_spool: std::sync::Arc<std::sync::Mutex<spool::Spool<crate::pilot::Event>>>,
     pub(crate) touched: std::time::Instant,
 }
 
@@ -105,14 +106,22 @@ impl RatedLease {
         account: u64,
         session: String,
         spool: std::sync::Arc<std::sync::Mutex<spool::Spool<spool::Event>>>,
-    ) -> Result<Option<(RatedLease, Vec<token::ClassRating>)>, String> {
+        pilot_spool: std::sync::Arc<std::sync::Mutex<spool::Spool<crate::pilot::Event>>>,
+    ) -> Result<
+        Option<(
+            RatedLease,
+            Vec<token::ClassRating>,
+            Vec<token::LadderProgress>,
+        )>,
+        String,
+    > {
         // A reconnect can reach the door just before the old connection's
         // cleanup releases its row. Give that settlement a brief chance to
         // finish instead of turning a millisecond race into a denial. The row
         // is never stolen: another live session waits through the same grace
         // and is still refused.
         let mut waits = 0;
-        let (claimed, ratings) = loop {
+        let (claimed, ratings, ladders) = loop {
             let result =
                 meta::claim_rated_session(&base, &pool_token, account, &session, &instance, &zone)
                     .await?;
@@ -132,9 +141,11 @@ impl RatedLease {
                     account,
                     session,
                     spool,
+                    pilot_spool,
                     touched: std::time::Instant::now(),
                 },
                 ratings,
+                ladders,
             )
         }))
     }
@@ -150,7 +161,7 @@ impl RatedLease {
             &self.zone,
         )
         .await
-        .map(|(claimed, _)| claimed)
+        .map(|(claimed, _, _)| claimed)
     }
 
     pub(crate) async fn release(self) {
@@ -160,9 +171,21 @@ impl RatedLease {
     pub(crate) async fn release_after_settlement(mut self) {
         let mut attempts = 0u32;
         loop {
-            match spool::settle_account(&self.spool, &self.base, &self.pool_token, self.account)
+            let rated =
+                spool::settle_account(&self.spool, &self.base, &self.pool_token, self.account)
+                    .await;
+            let ladder = if rated.is_ok() {
+                spool::settle_ladder_account(
+                    &self.pilot_spool,
+                    &self.base,
+                    &self.pool_token,
+                    self.account,
+                )
                 .await
-            {
+            } else {
+                Ok(())
+            };
+            match rated.and(ladder) {
                 Ok(()) => break,
                 Err(e) => {
                     attempts += 1;
@@ -311,10 +334,70 @@ impl ArenaServer {
         self.rooms
             .iter()
             .enumerate()
-            .map(|(i, r)| (i, r.bots_wanted().saturating_sub(r.bot_count())))
+            .map(|(i, r)| (i, Self::bots_requested_by(r).saturating_sub(r.bot_count())))
             .filter(|(_, short)| *short > 0)
             .max_by_key(|(_, short)| *short)
             .map(|(i, _)| i)
+    }
+
+    /// Honor a room named by the bot director. Zero keeps the old behavior for
+    /// ordinary zones whose directors only understand an instance-wide count.
+    /// Ladder requires an exact room and the signed house identity measured for
+    /// that room's requested rung. A stale or manual director therefore cannot
+    /// fill a live run with a pilot from another difficulty band.
+    pub(crate) fn room_for_bot_request(&self, room: u32, seat: &Seat) -> Option<usize> {
+        if room == 0 {
+            if self
+                .rooms
+                .iter()
+                .any(|candidate| candidate.ladder_state().is_some())
+            {
+                return None;
+            }
+            return self.room_for_bot();
+        }
+        if self.draining {
+            return None;
+        }
+        let (index, found) = self
+            .rooms
+            .iter()
+            .enumerate()
+            .find(|(_, candidate)| candidate.number == room)?;
+        if !found.accepts_ladder_rival(seat) {
+            return None;
+        }
+        (Self::bots_requested_by(found) > found.bot_count()).then_some(index)
+    }
+
+    fn bots_requested_by(room: &Room) -> usize {
+        if room.ladder_state().is_some() {
+            // A Ladder room exists for one person and their current rival. If
+            // that person leaves, the rival leaves too instead of inviting a
+            // second bot into an empty progression run.
+            usize::from(room.humans() > 0)
+        } else {
+            room.bots_wanted()
+        }
+    }
+
+    fn bot_requests(&self) -> Vec<fleet::BotRequest> {
+        if self.draining {
+            return Vec::new();
+        }
+        self.rooms
+            .iter()
+            .filter_map(|room| {
+                let count = Self::bots_requested_by(room);
+                (count > 0).then(|| fleet::BotRequest {
+                    room: room.number,
+                    count: count as u32,
+                    target_slot: room
+                        .ladder_state()
+                        .map(|ladder| ladder.state.desired_opponent_slot),
+                })
+            })
+            .collect()
     }
 
     /// What this process would like the bot server to supply, across every room.
@@ -324,7 +407,7 @@ impl ArenaServer {
         if self.draining {
             return 0;
         }
-        self.rooms.iter().map(|r| r.bots_wanted()).sum()
+        self.rooms.iter().map(Self::bots_requested_by).sum()
     }
 
     /// Every room number the zone is using anywhere, as far as this process can
@@ -350,9 +433,9 @@ impl ArenaServer {
         taken
     }
 
-    /// The lowest number free of a set.
-    pub(crate) fn lowest_free(taken: &std::collections::HashSet<u32>) -> u32 {
-        (1..).find(|n| !taken.contains(n)).unwrap_or(1)
+    /// The lowest representable room number free of a set.
+    pub(crate) fn lowest_free(taken: &std::collections::HashSet<u32>) -> Option<u32> {
+        (1..=MAX_ROOM_NUMBER).find(|n| !taken.contains(n))
     }
 
     /// The lowest number no live room of this zone is using.
@@ -362,7 +445,7 @@ impl ArenaServer {
     /// room two rather than room ninety. A number is only reused after the room
     /// holding it closed, and a room closes only when it empties, so every
     /// "meet me in room two" the old one earned had already gone stale.
-    pub(crate) fn free_room_number(&self) -> u32 {
+    pub(crate) fn free_room_number(&self) -> Option<u32> {
         let mut taken = self.elsewhere_in_zone(&self.zone_name);
         taken.extend(self.rooms.iter().map(|r| r.number));
         Self::lowest_free(&taken)
@@ -406,9 +489,15 @@ impl ArenaServer {
             if !theirs.contains(&was) {
                 continue;
             }
-            let next = (1..)
-                .find(|n| !theirs.contains(n) && !mine.contains(n))
-                .unwrap_or(was);
+            let mut taken = theirs.clone();
+            taken.extend(mine.iter().copied());
+            let Some(next) = Self::lowest_free(&taken) else {
+                println!(
+                    "room {was} of {:?} is also {:?}'s, but all {MAX_ROOM_NUMBER} room numbers are occupied; keeping it until a number frees",
+                    self.zone_name, "an older instance"
+                );
+                continue;
+            };
             mine.remove(&was);
             mine.insert(next);
             self.rooms[i].renumber(next);
@@ -424,13 +513,19 @@ impl ArenaServer {
     /// dying, since rooms in a process share its fate.
     pub(crate) fn open_room(&mut self) -> Result<usize, String> {
         let z = self.wire_zone().cloned().ok_or("no zone definition")?;
+        let number = self.free_room_number().ok_or_else(|| {
+            format!(
+                "all {MAX_ROOM_NUMBER} room numbers for zone {:?} are occupied",
+                z.name
+            )
+        })?;
         // On the map the first room already holds, rather than unpacking the
         // bytes again. Geometry is a megabyte and immutable, so a hundred rooms
         // share one copy; without this the ceiling would be a memory limit
         // instead of a blast-radius one. There is no first room before a zone
         // arrives, and then the bytes are the only source there is.
         let mut fresh = Self::build_room(&z, self.rooms.first())?;
-        fresh.number = self.free_room_number();
+        fresh.number = number;
         fresh.spool = self.spools.rated.clone();
         fresh.pilots = self.spools.pilots.clone();
         fresh.matches = self.spools.matches.clone();
@@ -477,6 +572,7 @@ impl ArenaServer {
             rid: name.to_string(),
             account: None,
             carried: None,
+            carried_ladders: Vec::new(),
             entitlements: sim::World::base_entitlements(),
             pending_kit: None,
             kitted: false,
@@ -535,6 +631,7 @@ impl ArenaServer {
             rid: account_rid(claims.account),
             account: Some(claims.account),
             carried: Some(claims.ratings),
+            carried_ladders: claims.ladders,
             entitlements,
             pending_kit: None,
             kitted: false,
@@ -573,6 +670,17 @@ impl ArenaServer {
     pub(crate) fn token_rating(&self, seat: &Seat, class: &str) -> Option<(f64, u32)> {
         let r = seat.carried.as_ref()?.iter().find(|r| r.class == class)?;
         Some((r.rating, r.games))
+    }
+
+    /// The durable floor this account earned in the zone currently served.
+    /// A checkpoint from another Ladder zone is a different progression and
+    /// never crosses over by accident.
+    pub(crate) fn token_ladder(&self, seat: &Seat) -> Option<(u32, u32)> {
+        let saved = seat
+            .carried_ladders
+            .iter()
+            .find(|progress| progress.zone == self.zone_name)?;
+        Some((saved.checkpoint as u32, saved.best as u32))
     }
 
     /// Tell the spool where to send, which cannot be known until a catalog
@@ -638,6 +746,14 @@ impl ArenaServer {
         self.wire_zone()
             .map(|z| z.admission == "claimed")
             .unwrap_or(false)
+    }
+
+    pub(crate) fn accepts_bot_seat(&self, seat: &Seat) -> bool {
+        let ladder = self
+            .wire_zone()
+            .map(|zone| zone.mode == "ladder")
+            .unwrap_or_else(|| self.cfg.current.arena.mode == "ladder");
+        !ladder || seat.label == token::Label::HouseBot.to_byte()
     }
 
     /// The class this zone rates into. One number per kind of game, per
@@ -707,6 +823,12 @@ impl ArenaServer {
     /// running this zone, whose map the new one borrows instead of unpacking a
     /// second megabyte of identical tiles.
     pub(crate) fn build_room(z: &fleet::WireZone, on: Option<&Room>) -> Result<Room, String> {
+        if z.mode == "ladder" && !certified_pilot_fixture_allows(z) {
+            return Err(
+                "the live Ladder differs from its certified pilot fixture; refusing to serve it"
+                    .into(),
+            );
+        }
         let (maps, names) = match on {
             Some(r) => (r.maps.clone(), r.map_names.clone()),
             None => {
@@ -793,63 +915,74 @@ impl ArenaServer {
         // next drain. A catalog edit is not a reason to disconnect anybody.
         if !self.zone_name.is_empty() {
             if let Some(z) = c.zone(&self.zone_name).cloned() {
-                // The rotation is taken here too, and it is the reason an
-                // operator can change what a zone plays without emptying it.
-                // Unpacked once for the whole process rather than per room,
-                // the way `build_room` shares one set of tiles between rooms
-                // serving the same zone.
-                //
-                // The match in progress finishes on the ground it started on:
-                // swapping the map under a live fight is a desync everybody
-                // sees, and the next whistle is seconds away.
-                let maps: Vec<std::sync::Arc<sim::sim_map>> = z
-                    .maps_b64
-                    .iter()
-                    .filter_map(|m| fleet::unb64(m))
-                    .filter_map(|b| sim::unpack_map(&b).ok())
-                    .collect();
-                if !maps.is_empty() {
-                    for r in self.rooms.iter_mut() {
-                        let same = r.maps.len() == maps.len()
-                            && r.maps
-                                .iter()
-                                .zip(maps.iter())
-                                .all(|(a, b)| std::sync::Arc::ptr_eq(a, b) || a.tile == b.tile);
-                        if same {
-                            continue;
-                        }
-                        println!("room {}: rotation is now {} map(s)", r.number, maps.len());
-                        r.maps = maps.clone();
-                        // Only when they line up: the tiles above skip
-                        // anything unreadable, and a shifted list would
-                        // caption the wrong ground, which is worse than no
-                        // caption.
-                        r.map_names = if z.map_names.len() == maps.len() {
-                            z.map_names.clone()
-                        } else {
-                            Vec::new()
-                        };
-                        // Whatever the room is standing on stays under it, so
-                        // the index only has to be somewhere the next whistle
-                        // can step from.
-                        if r.map_at >= r.maps.len() {
-                            r.map_at = 0;
+                let protects_certified_fixture =
+                    self.rooms.iter().any(|room| room.ladder_state().is_some())
+                        && !certified_pilot_fixture_allows(&z);
+                if protects_certified_fixture {
+                    println!(
+                        "catalog: Ladder update does not match the certified pilot fixture; \
+                         keeping the running map and tuning"
+                    );
+                } else {
+                    // The rotation is taken here too, and it is the reason an
+                    // operator can change what a zone plays without emptying it.
+                    // Unpacked once for the whole process rather than per room,
+                    // the way `build_room` shares one set of tiles between rooms
+                    // serving the same zone.
+                    //
+                    // The match in progress finishes on the ground it started on:
+                    // swapping the map under a live fight is a desync everybody
+                    // sees, and the next whistle is seconds away.
+                    let maps: Vec<std::sync::Arc<sim::sim_map>> = z
+                        .maps_b64
+                        .iter()
+                        .filter_map(|m| fleet::unb64(m))
+                        .filter_map(|b| sim::unpack_map(&b).ok())
+                        .collect();
+                    if !maps.is_empty() {
+                        for r in self.rooms.iter_mut() {
+                            let same = r.maps.len() == maps.len()
+                                && r.maps
+                                    .iter()
+                                    .zip(maps.iter())
+                                    .all(|(a, b)| std::sync::Arc::ptr_eq(a, b) || a.tile == b.tile);
+                            if same {
+                                continue;
+                            }
+                            println!("room {}: rotation is now {} map(s)", r.number, maps.len());
+                            r.maps = maps.clone();
+                            // Only when they line up: the tiles above skip
+                            // anything unreadable, and a shifted list would
+                            // caption the wrong ground, which is worse than no
+                            // caption.
+                            r.map_names = if z.map_names.len() == maps.len() {
+                                z.map_names.clone()
+                            } else {
+                                Vec::new()
+                            };
+                            // Whatever the room is standing on stays under it, so
+                            // the index only has to be somewhere the next whistle
+                            // can step from.
+                            if r.map_at >= r.maps.len() {
+                                r.map_at = 0;
+                            }
                         }
                     }
-                }
-                if let Ok(def) = toml::from_str::<catalog::ZoneDef>(&z.zone_toml) {
-                    let name = self.zone_name.clone();
-                    for r in self.rooms.iter_mut() {
-                        for w in r.retune(&def.arena) {
-                            println!("zone {name}: {w}");
+                    if let Ok(def) = toml::from_str::<catalog::ZoneDef>(&z.zone_toml) {
+                        let name = self.zone_name.clone();
+                        for r in self.rooms.iter_mut() {
+                            for w in r.retune(&def.arena) {
+                                println!("zone {name}: {w}");
+                            }
+                            if let Some(m) = def.max_ships {
+                                r.world.cfg.max_ships = m;
+                            }
+                            r.max_watchers = def.max_watchers.unwrap_or(DEFAULT_MAX_WATCHERS);
+                            r.lag_policy = def.arena.lag.clone();
+                            r.channel.delay =
+                                def.channel_delay_ticks.unwrap_or(DEFAULT_CHANNEL_DELAY);
+                            r.broadcast_settings();
                         }
-                        if let Some(m) = def.max_ships {
-                            r.world.cfg.max_ships = m;
-                        }
-                        r.max_watchers = def.max_watchers.unwrap_or(DEFAULT_MAX_WATCHERS);
-                        r.lag_policy = def.arena.lag.clone();
-                        r.channel.delay = def.channel_delay_ticks.unwrap_or(DEFAULT_CHANNEL_DELAY);
-                        r.broadcast_settings();
                     }
                 }
             }
@@ -1044,6 +1177,7 @@ impl ArenaServer {
             .map(|z| z.max_rooms as usize)
             .unwrap_or(1)
             .max(1)
+            .min(MAX_ROOM_NUMBER as usize)
     }
 
     pub(crate) fn max_players(&self) -> usize {
@@ -1088,6 +1222,12 @@ impl ArenaServer {
     /// settings, its mode. The one path by which a process changes what game it
     /// is running, so the map failing is a refusal rather than a half-change.
     pub(crate) fn serve_zone(&mut self, z: &fleet::WireZone) -> Result<(), String> {
+        let number = Self::lowest_free(&self.elsewhere_in_zone(&z.name)).ok_or_else(|| {
+            format!(
+                "all {MAX_ROOM_NUMBER} room numbers for zone {:?} are occupied",
+                z.name
+            )
+        })?;
         // From the bytes, not from a sibling: this is a change of zone, so the
         // map the running rooms hold is the wrong map.
         let mut room = Self::build_room(z, None)?;
@@ -1095,7 +1235,7 @@ impl ArenaServer {
         // own: every room we are holding served the old game and is about to be
         // replaced by this one, so counting their numbers would reserve names
         // that are being given up in the same breath.
-        room.number = Self::lowest_free(&self.elsewhere_in_zone(&z.name));
+        room.number = number;
         room.spool = self.spools.rated.clone();
         room.pilots = self.spools.pilots.clone();
         room.matches = self.spools.matches.clone();
@@ -1180,11 +1320,9 @@ pub(crate) fn sanitize_name(raw: &str) -> String {
 
 /// Seed a room's ladder with what the offline tournament measured.
 ///
-/// Only the calibrated pilots, because they are the only pilots it measured. The
-/// bot server draws from a much longer roster than that, and the rest arrive
-/// unrated and earn their number in play, which is what a new individual is
-/// supposed to do. Who is a bot at all is no longer decided here either: it is
-/// whoever said so at join, and `Room::join` marks them.
+/// Mark the authored roster as bots and apply whatever certified seed exists.
+/// Before certification the map contains only the defined anchor, so every
+/// other individual arrives unrated and earns a live number.
 pub(crate) fn prime_ratings(r: &mut rating::Rating, ladder: &HashMap<String, f64>) {
     for (name, _, _) in ai::CALIBRATED {
         r.mark_bot(name);
@@ -1195,50 +1333,119 @@ pub(crate) fn prime_ratings(r: &mut rating::Rating, ladder: &HashMap<String, f64
     r.set_anchor(ai::ANCHOR, ai::ANCHOR_RATING);
 }
 
-/// The calibrated ladder, compiled in.
-///
-/// It is a property of the roster in `ai.rs` rather than of any one zone: the
-/// the same calibrated pilots fly in every room this binary serves, so their ratings
-/// travel with the binary the way `sim/tests/golden.txt` travels with the core.
-/// Regenerate with `calibrate`, which writes the file, and commit it.
-///
-/// Shipping it as a file is what did not work. The fleet runs the arena with a
-/// data volume as its directory and the image never put a ladder in it, so every
-/// room on the live server started its bots level while two documents said the
-/// ladder seeds every zone.
+/// The checked-in rating seed. A powered `calibrate pilots` run may replace it
+/// only when the report passes every certification gate. The repository ships
+/// the anchor alone until that has happened.
 pub(crate) const LADDER: &str = include_str!("../../zone/ladder.json");
+/// Compact release-time attestation. `null` means no powered roster has passed
+/// against the content in this binary yet.
+pub(crate) const PILOT_CALIBRATION: &str = include_str!("../../zone/pilot-calibration.json");
+pub(crate) const PILOT_CALIBRATION_ATTEMPTS: &str =
+    include_str!("../../zone/pilot-calibration-attempts.json");
 
-/// What the offline tournament measured for one calibrated individual.
+fn certified_pilot_fixture_allows(zone: &fleet::WireZone) -> bool {
+    certified_pilot_attestation()
+        .is_none_or(|release| calibrate::runtime_pilot_fixture_matches(&release.fixture, zone))
+}
+
+pub(crate) fn certified_pilot_attestation(
+) -> Option<&'static calibrate::PilotCalibrationAttestation> {
+    static RELEASE: OnceLock<Option<calibrate::PilotCalibrationAttestation>> = OnceLock::new();
+    RELEASE
+        .get_or_init(|| {
+            let release = serde_json::from_str::<Option<calibrate::PilotCalibrationAttestation>>(
+                PILOT_CALIBRATION,
+            )
+            .ok()
+            .flatten()?;
+            let verifying_key = std::env::var("VW_META_VERIFY")
+                .ok()
+                .and_then(|key| token::verifying_key_from_hex(&key))?;
+            calibrate::verified_current_attestation(
+                &release,
+                &pilots::roster(),
+                PILOT_CALIBRATION_ATTEMPTS,
+                &verifying_key,
+            )
+            .ok()
+            .filter(|verified| *verified)
+            .map(|_| release)
+        })
+        .as_ref()
+}
+
+/// The public identity of the exact signed pilot artifact this process could
+/// verify. A signature is enough because it covers the execution fingerprint
+/// as well as every statistical and content input in the attestation.
+pub(crate) fn certified_pilot_attestation_id() -> &'static str {
+    certified_pilot_attestation()
+        .map(|release| release.signature.as_str())
+        .unwrap_or_default()
+}
+
+fn pilot_release_claim(build: &str, attestation: &str) -> String {
+    if build.is_empty() || build == "unknown" || attestation.is_empty() {
+        build.to_string()
+    } else {
+        format!("v1:{build}:{attestation}")
+    }
+}
+
+/// What a house bot presents in the existing JOIN build field. Provisional
+/// play stays build-only. Certified play binds that build to the precise
+/// attestation this binary verified locally.
+pub(crate) fn house_bot_release_claim() -> String {
+    pilot_release_claim(crate::metrics::commit(), certified_pilot_attestation_id())
+}
+
+fn certified_pilot_ratings() -> &'static HashMap<String, f64> {
+    static RATINGS: OnceLock<HashMap<String, f64>> = OnceLock::new();
+    RATINGS.get_or_init(|| {
+        certified_pilot_attestation()
+            .map(|release| &release.certified_ladder)
+            .into_iter()
+            .flatten()
+            .map(|entry| (entry.callsign.clone(), entry.elo))
+            .collect()
+    })
+}
+
+/// What a certified offline tournament measured for one authored individual.
 ///
 /// The meta-layer seeds a house bot's account from this the first time it is
 /// claimed, which is where the calibrated ladder now enters the fleet. It used
 /// to enter by priming every room, and that stopped reaching accounted bots the
 /// moment their rating started being filed under an account rather than a name:
 /// a room primes what it knows, and it no longer knows them by name.
-pub fn calibrated_rating(name: &str) -> Option<f64> {
-    if name == ai::ANCHOR {
+pub(crate) fn calibrated_rating_from(name: &str, ratings: &HashMap<String, f64>) -> Option<f64> {
+    let authored = pilots::ladder_archetype_for_callsign(name)
+        .and_then(|archetype| ai::CALIBRATED.get(archetype))
+        .map(|(callsign, _, _)| *callsign)
+        .or_else(|| {
+            ai::CALIBRATED
+                .iter()
+                .find_map(|(callsign, _, _)| (*callsign == name).then_some(*callsign))
+        })?;
+    if authored == ai::ANCHOR {
         // The pinned reference personality. It is a definition rather than a
         // measurement, so it does not depend on a calibration run having
         // happened.
         return Some(ai::ANCHOR_RATING);
     }
-    if !ai::CALIBRATED.iter().any(|(n, _, _)| *n == name) {
-        return None;
-    }
-    serde_json::from_str::<HashMap<String, f64>>(LADDER)
-        .ok()
-        .and_then(|m| m.get(name).copied())
+    ratings.get(authored).copied()
 }
 
-/// Read the ladder a calibration run wrote, falling back to the compiled one.
-/// A missing file is the normal case and not a warning: it means nobody has
-/// calibrated since this build.
-pub(crate) fn load_ladder(dir: &str) -> HashMap<String, f64> {
-    std::fs::read_to_string(format!("{dir}/ladder.json"))
-        .ok()
-        .and_then(|t| serde_json::from_str::<HashMap<String, f64>>(&t).ok())
-        .filter(|m| !m.is_empty())
-        .unwrap_or_else(|| serde_json::from_str(LADDER).unwrap_or_default())
+pub fn calibrated_rating(name: &str) -> Option<f64> {
+    calibrated_rating_from(name, certified_pilot_ratings())
+}
+
+/// Read a certified seed an operator placed beside the arena, falling back to
+/// the checked-in anchor. The calibration command never writes this file for
+/// an exploratory or failed run.
+pub(crate) fn load_ladder(_dir: &str) -> HashMap<String, f64> {
+    let mut ratings = certified_pilot_ratings().clone();
+    ratings.insert(ai::ANCHOR.into(), ai::ANCHOR_RATING);
+    ratings
 }
 
 impl ArenaServer {
@@ -1323,10 +1530,13 @@ impl ArenaServer {
         let target = self.fill_target();
         fleet::Status {
             zone,
+            build: crate::metrics::commit().to_string(),
+            pilot_attestation: certified_pilot_attestation_id().to_string(),
             players: self.total_players() as u32,
             spectators: self.total_spectators() as u32,
             bots: self.total_bots() as u32,
             bots_wanted: self.bots_wanted() as u32,
+            bot_requests: Some(self.bot_requests()),
             rooms: self
                 .rooms
                 .iter()
@@ -1342,6 +1552,7 @@ impl ArenaServer {
                         full: r.humans() >= self.max_players(),
                         clock: m.as_ref().map(|m| m.seconds_left as u32).unwrap_or(0),
                         playing: m.is_some_and(|m| m.playing),
+                        waiting: r.ladder_state().is_some_and(|ladder| ladder.state.waiting),
                     }
                 })
                 .collect(),
@@ -1424,5 +1635,43 @@ impl ArenaServer {
         };
         m.extend_from_slice(format!("{name}\n{desc}").as_bytes());
         m
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+
+    use super::{pilot_release_claim, ArenaServer, MAX_ROOM_NUMBER};
+
+    #[test]
+    fn room_numbers_fill_the_wire_range_then_reuse_a_gap() {
+        let mut taken: HashSet<u32> = (1..MAX_ROOM_NUMBER).collect();
+        assert_eq!(ArenaServer::lowest_free(&taken), Some(MAX_ROOM_NUMBER));
+
+        taken.insert(MAX_ROOM_NUMBER);
+        assert_eq!(ArenaServer::lowest_free(&taken), None);
+
+        taken.remove(&137);
+        taken.insert(MAX_ROOM_NUMBER + 1);
+        assert_eq!(
+            ArenaServer::lowest_free(&taken),
+            Some(137),
+            "an out-of-range observation cannot consume or become a room name"
+        );
+    }
+
+    #[test]
+    fn a_certified_pilot_claim_identifies_the_exact_signed_artifact() {
+        assert_eq!(
+            pilot_release_claim("abc123", "deadbeef"),
+            "v1:abc123:deadbeef"
+        );
+        assert_eq!(pilot_release_claim("abc123", ""), "abc123");
+        assert_eq!(
+            pilot_release_claim("unknown", "deadbeef"),
+            "unknown",
+            "a signature cannot turn an unidentified build into a certified release"
+        );
     }
 }

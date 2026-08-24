@@ -36,8 +36,9 @@ nearby-combat snapshots at 50 Hz.
   membership, built-in game modes, and the client wire.
 - `directory.rs`, `select.rs`, `fleet.rs`, and `catalog.rs` own
   discovery and zone selection.
-- `bots.rs` runs the live bot supervisor. `ai.rs`, `pilot.rs`, and
-  `nav.rs` are shared with offline calibration.
+- `bots.rs` runs the live bot supervisor. `ai.rs`, `pilots.rs`, and
+  `nav.rs` are shared with offline calibration; `pilot.rs` records live pilot
+  telemetry.
 - `meta.rs` owns accounts and the admin API over PostgreSQL. Arena processes
   hand it records through the delivery spools in `spool.rs`.
 
@@ -46,15 +47,15 @@ boundaries in more detail.
 
 ## Client protocol
 
-Client messages are binary and currently use protocol version 18. WebSocket and
+Client messages are binary and currently use protocol version 20. WebSocket and
 WebTransport carry the same message definitions; `wt.rs` assigns the reliable
 and datagram lanes.
 
 A join declares a hull, protocol version, flags, requested zone and room, call
-sign, and optional session token. Input messages carry a lifecycle generation,
-selective receipt windows, and up to four independently ticked button records.
-The other client messages request a hull, kit, team action, watch target, or one
-of the fixed phrases.
+sign, optional house-bot build, and optional session token. Input messages carry
+a lifecycle generation, selective receipt windows, and up to four independently
+ticked button records. The other client messages request a hull, kit, team
+action, watch target, or one of the fixed phrases.
 
 The server replies with a welcome, complete owner-filtered snapshots, rosters,
 events, map and settings packs, teams, lag policy, and match state. The C core
@@ -123,23 +124,54 @@ inside the lease's renewal slack, and durable records wait in local spools.
 
 ## Calibrate the bot ladder
 
-Run these commands from the repository root. Ladder and real-map measurements
-load the shipped Drydock map; named-zone measurements load `catalog/`.
+Run an exploratory pilot tournament from the repository root:
 
 ```sh
-vectorwake-server calibrate 200 zone
+mkdir -p /tmp/vectorwake-pilots
+vectorwake-server calibrate pilots 32 /tmp/vectorwake-pilots
 ```
 
-This writes `zone/ladder.json`. Every roster pilot fights every other in the
-real simulation with the deployed AI and rating code. The fixture is the shipped
-`drydock.vwmap`, not the old 32-tile pit, and both pilots receive the same
-30-point kit at every life. Distance and charge use therefore remain part of
-the measurement without letting loadout luck decide it.
+That writes raw paired observations to `pilot-calibration-data.json` and the
+complete analysis to `pilot-calibration-report.json`, but it cannot change the
+live Ladder. The command prints separate superiority and side-equivalence
+requirements and uses the larger count. Every scenario mirrors two single-life
+fights on the shipped Ladder fixture.
 
-Two hundred rounds is a production run. Small runs are useful for exercising
-the harness, but their Elo gaps are mostly sampling noise.
-`zone/ladder.json` is compiled into the binary; a file beside a standalone
-zone overrides it on restart.
+A confirmatory run also names its registered attempt. Run it from the immutable
+release-candidate image that contains the registered attempt, since the
+attestation binds the compiler, target, build profile, C compiler, and container
+recipe:
+
+```sh
+mkdir -p "$PWD/pilot-output"
+docker run --rm \
+  -e VW_META_KEY -e VW_META_VERIFY \
+  -v "$PWD/pilot-output:/out" \
+  "$VW_IMAGE" \
+  calibrate pilots <printed-count> /out release-2026-01
+```
+
+Add the attempt and printed design fingerprint to the append-only
+`zone/pilot-calibration-attempts.json` first. Set `VW_META_KEY` to the release
+signing key, set `VW_META_VERIFY` to its deployed public half, and set
+`VW_IMAGE` to that image's immutable digest. The command checks the
+registration, exact sample count, output volume, and key pair before it
+collects any scenarios. A passing run writes a signed compact
+`pilot-calibration.json` attestation and a derived `ladder.json` beside the
+full report and raw data.
+
+The release gate checks power, practical effect, family-wise multiplicity,
+simultaneous intervals, validation replication, a final holdout, per-matchup
+side equivalence, convergence, censoring, and current-content fingerprints.
+The order measures whole pilots, including hull, strategy, competence, and
+build. It does not isolate any one field, and bot evidence does not establish
+monotonic human difficulty. See
+[bot-calibration.md](../docs/architecture/bot-calibration.md) for the contract.
+
+Review and archive the evidence, then commit the attestation and Ladder map
+under `zone/`. A loose Elo map is ignored. Until a powered attestation is
+checked in, the server uses the authored provisional order and seeds only the
+fixed rating anchor.
 
 Long measurements that explain the ladder are commands rather than ignored
 tests:

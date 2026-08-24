@@ -341,29 +341,48 @@ on. Being one binary is the same guarantee with nothing to arrange.
 
 ## Calibration stays direct
 
-The ladder tournament in `calibrate.rs` keeps calling the brain against a bare
-`World`, with no server and no socket, because it is a measuring instrument
-that wants thousands of matches at CPU speed rather than a seat in the fleet.
+The tournament in `calibrate.rs` calls the brain against a `World`, with no
+server and no socket, because it is a measuring instrument that wants thousands
+of matches at CPU speed rather than a seat in the fleet. Its fixture is the
+shipped single-life Ladder on Drydock. Each pilot receives the deterministic
+build from its specification, limited by the base-account entitlement ceiling
+used for live Ladder rivals. Scenario seeds cycle every valid team start pair,
+and the mirror exchanges pilots between the two opposing headings. The live
+room uses the same start policy.
+
+Confirmatory profile comparisons mirror each scenario seed with controllers
+exchanging sides and starts. The pair is one observation. Power, intervals,
+multiplicity, equivalence, anchored strength, and seed holdouts are specified in
+[bot-calibration.md](bot-calibration.md).
 
 The residual gap is the wire itself. Calibration feeds the brain fresh state at
 look cadence; a live bot reads 20 Hz snapshots and steps its own copy between
-them. The brain was tuned for 10 to 20 Hz looks, so the live picture is no
-staler than the measured one, but calibration measures the brain and not the
-path around it, and a wire bug will show up in play before it shows up in a
-tournament.
+them. Its look cadence limits how often it reacts, but it does not remove the
+predictor's observation error or reveal a human's current input between
+snapshots. Calibration measures the direct controller fixture, not the path
+around it. A wire bug can therefore show up in play before it appears in a
+tournament, and the signed result is not evidence of monotonic human
+difficulty.
 
 ## Budget
 
-The costs moved rather than grew. Measured on the deployed shape, three
-64-seat arenas at `bot_fill` 0.8 with 153 pilots in the air: each arena
-process spends about 7% of a core, and the bot server about 40% of one, the
-whole population inside about 60 MB. Prediction dominates that 40%, and the
-shared rig is what holds it there: stepping a private copy per pilot instead
-costs 141% of a core on the same fleet, which is more than the host has.
+The last measured load shape had three 64-seat arenas at `bot_fill` 0.8 with
+153 pilots in the air. Each arena process spent about 7 percent of a core, the
+bot server about 40 percent of one, and the population used about 60 MB.
+Prediction dominated that 40 percent. Stepping a private copy per pilot instead
+cost 141 percent of a core on the same host.
 
-Memory stays small because the bots of one zone share one map, and the bots
-of one arena share one world, the same `Arc` trick that keeps a room at
-79 KB.
+That result does not certify the new Ladder topology. A Ladder arena can hold
+20 simultaneous two-ship rooms. Shared predictors are therefore keyed by the
+room number in the welcome packet as well as arena and map, so different rooms
+never force each other into private 100 Hz worlds. The configured room cap has
+deployment coverage, but its CPU budget still needs a measured 20-room soak
+before it can inherit a capacity claim from the old 64-seat benchmark.
+
+Memory stays small because the bots of one zone share map data, and the bots
+in one arena room share one predictor. The room number separates simultaneous
+matches while the underlying map still uses the same `Arc` storage that keeps
+a room at 79 KB.
 
 Traffic is free while the bot server sits beside its arenas, since 30 KB/s per
 client is loopback. It stops being free for a region with arenas and no bot
@@ -377,18 +396,15 @@ any AI running, and without requiring the AI to be deterministic: the behavior
 layer can use floats, hash iteration order, and wall-clock timing without
 endangering the property that makes the whole architecture work.
 
-## Zone-authored bots
+## Authored pilots
 
-A zone declares its roster shape in configuration: the archetype mix, the
-skill distribution, and the roster size. The bot server generates the
-individuals from that shape and persists them, with their ratings, careers,
-and schedules. That covers most needs without code.
-
-A zone that wants its own behavior ships a module the bot server runs
-sandboxed, where a misbehaving controller loses its turn and its bot flies
-straight, which is embarrassing rather than fatal. None of it touches the
-arena anymore, which is the improvement: custom AI used to be a tenant of the
-server's tick and is now a tenant of a process whose whole job is bots.
+Pilot behavior is compiled, versioned content today. `PilotSpec` separates
+identity, hull, aim, judgment, strategy, preference weights, build plan, and
+stable configuration seed. Zones can request ordinary fill, while Ladder can
+request a particular measured archetype for one room. No runtime module or
+zone-authored controller sandbox ships yet. Adding one would need its own
+resource limits, trust boundary, and calibration fingerprint before a custom
+controller could enter the house roster.
 
 ## Testing
 
@@ -399,13 +415,12 @@ job of measuring prediction agreement, which bots never exercise: their
 prediction is overwritten by every snapshot rather than reconciled against it.
 
 Bot-versus-bot tournaments calibrate the rating ladder before humans arrive,
-as described in [design/rating.md](../design/rating.md).
-
-That tournament is not a test of flying, and reading it as one cost a long time.
-It is fought in `sim_map_pit`, a bare thirty-tile box with two blocks in it, no
-greens and two ships, which is the right room for ranking two pilots and a room
-in which routing, dodging, a crowd and a prize economy cannot happen. Every
-failure that only shows up in Chaos is invisible to the ladder rating them.
+as described in [bot-calibration.md](bot-calibration.md). The fixture uses the
+shipped single-life Ladder zone, Drydock, each pilot's deterministic
+base-account build, every valid start pair, and the live opposing headings. It
+covers real walls and the equipped combat branches, but it still has two bots
+and no human adaptation. Crowd behavior and failures peculiar to another map
+remain outside its claim.
 
 `vectorwake-server drill [zone] [seconds] [bots]` is the other half: the roster on
 a zone's own map, reporting kills, wall contacts, shots, what fraction of them
@@ -413,6 +428,12 @@ land, how much of the time a pilot is going nowhere and how much ground the
 roster covers. It ranks nobody. It exists so that a change to the brain has a
 number on either side of it. `DRILL_TRACE=1 DRILL_FROM=<tick>` prints one pilot's
 control loop tick by tick, which is how the wall-pusher above was found.
+
+The command currently runs only the zone's first map and always starts from seed
+`0xd2111`. One run is a repeatable diagnostic, not a statistically independent
+sample and not evidence about every map in the rotation. A comparative drill
+needs an explicit seed set and per-map results before it can support an outcome
+claim.
 
 ## Open questions
 
@@ -430,5 +451,4 @@ particular.
 Whether perception at 10 Hz is too generous or too stingy. It is a difficulty
 parameter as much as a performance one.
 
-How expensive a sandboxed zone-authored controller is per bot per decision,
-now inside the bot server's budget rather than the arena's.
+What the measured CPU and memory envelope is with all 20 Ladder rooms active.

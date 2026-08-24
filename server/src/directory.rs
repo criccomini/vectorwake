@@ -130,6 +130,12 @@ pub struct BrowseInstance {
     /// one buys nothing the games list does not already hand out.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub id: String,
+    /// Immutable build reported when this arena registered.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub build: String,
+    /// The pilot attestation signature this arena reports as locally verified.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub pilot_attestation: String,
     pub address: String,
     /// The WebTransport address, when the instance serves one. A client that
     /// can speak it dials this first and keeps `address` as the fallback; one
@@ -146,6 +152,10 @@ pub struct BrowseInstance {
     /// size the directory would otherwise have to look up per instance.
     #[serde(default)]
     pub bots_wanted: u32,
+    /// The room-scoped form of `bots_wanted`. Kept optional so a bot server can
+    /// still tend an arena from before this field existed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bot_requests: Option<Vec<fleet::BotRequest>>,
     /// The directory's summary of whether a join would be refused, which saves a
     /// client the round trip it would otherwise spend learning the same thing.
     /// Counts humans, so a room holding bots a human would displace is not full.
@@ -289,6 +299,7 @@ impl Directory {
                     players: r.status.players,
                     bots: r.status.bots,
                     bots_wanted: r.status.bots_wanted,
+                    bot_requests: r.status.bot_requests.clone(),
                     rooms: r.status.rooms.clone(),
                     max_rooms: r.status.max_rooms,
                     capped: r.status.capped,
@@ -303,6 +314,7 @@ impl Directory {
                     pool: r.pool.clone(),
                     metrics: r.status.metrics.clone(),
                     build: r.build.clone(),
+                    pilot_attestation: r.status.pilot_attestation.clone(),
                     host_id: r.host_id.clone(),
                     pinned: r.status.pinned.clone(),
                     pinned_by: r.status.pinned_by.clone(),
@@ -354,12 +366,15 @@ impl Directory {
                 z.bots += r.status.bots;
                 z.instances.push(BrowseInstance {
                     id: r.instance.clone(),
+                    build: r.build.clone(),
+                    pilot_attestation: r.status.pilot_attestation.clone(),
                     address: r.address.clone(),
                     wt: r.wt.clone(),
                     region: r.region.clone(),
                     players: people,
                     bots: r.status.bots,
                     bots_wanted: r.status.bots_wanted,
+                    bot_requests: r.status.bot_requests.clone(),
                     // Full means no seat and no headroom to make one.
                     full: r.status.players >= cap
                         && r.status.rooms.len() as u32 >= r.status.max_rooms.max(1),
@@ -1306,6 +1321,19 @@ mod tests {
             chaos.instances[0].players, 7,
             "fullest first concentrates by default"
         );
+    }
+
+    #[test]
+    fn pilot_attestation_identity_is_relayed_without_becoming_a_credential() {
+        let mut d = Directory::new(cat());
+        reg(&mut d, "a", "chaos", 1, true);
+        d.regs.get_mut("a").unwrap().status.pilot_attestation = "signed-release".into();
+
+        assert_eq!(
+            d.browse().zones[0].instances[0].pilot_attestation,
+            "signed-release"
+        );
+        assert_eq!(d.view().instances[0].pilot_attestation, "signed-release");
     }
 
     #[test]

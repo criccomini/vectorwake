@@ -22,11 +22,13 @@ to hosts that scale independently is [scaling-plan.md](scaling-plan.md).
       /      ──────────────────────►  client/dist/, on disk
       /dir   ──────────────────────►  directory :9000
       /meta  ──────────────────────►  meta      :9400
-      /a1    ──────────────────────►  arena     :9001   as many rooms as max_rooms
+      /a1    ──────────────────────►  arena     :9001   one zone process
+      /a2    ──────────────────────►  arena     :9002   one zone process
       /metrics/* ──────────────────►  each process     open, loopback ports
 
-  play.vectorwake.net, 9443/udp        direct, no Caddy
+  play.vectorwake.net, 9443-9444/udp   direct, no Caddy
       :9443  ──────────────────────►  arena     WebTransport, terminated in-process
+      :9444  ──────────────────────►  arena     WebTransport, terminated in-process
 ```
 
 **The client is served from here because it cannot be served from anywhere
@@ -58,22 +60,23 @@ Everything runs `--network host`, so the services reach each other on loopback
 and only Caddy listens on a public port.
 
 **One game hostname, paths underneath.** `play.vectorwake.net` serves the client at
-`/`, the directory at `/dir`, and the arena at `/a1`. One port is one thing to
-open and nothing between a player and the game objects to it, and adding an
-arena is a path rather than a DNS record.
+`/`, the directory at `/dir`, and the arenas at `/a1` and `/a2`. One TCP port is
+one thing to open and nothing between a player and the game objects to it. An
+arena adds a path rather than a DNS record.
 
 The bare `vectorwake.net` is a separate static site. It points at the same
 central host but has no game routes and no reason to share the client's socket
 policy. Caddy reads it from `deploy/site/` in the checkout. A page edit ships
 with the updater and does not rebuild the client bundle or restart an arena.
 
-**One arena process, and it is not one room.** A process runs one zone's
+**One arena process per zone, and neither is one room.** A process runs one zone's
 configuration and holds as many rooms of it as that zone's `max_rooms` allows,
 opened on demand and reclaimed when they empty, so the seats a host offers come
 from `zone.toml` rather than from the number of services in the compose file.
 The count of processes tracks how many zones a host covers, since an arena
 picks a zone nobody is serving and stays with it. It was three when the catalog
-held three zones; the catalog holds Alpha alone.
+held three zones. The catalog now holds Melee and Ladder, so the deployment runs
+two arenas.
 
 This started as a name per service, which reads better and cost an outage. Caddy
 fetches a certificate per name without being told to, a reinstall wipes the volume
@@ -162,7 +165,7 @@ loopback and Caddy is the wss endpoint, so `VW_ADDRESS` advertises
 **The WebTransport door is the exception, and it borrows rather than owns.**
 Caddy cannot front QUIC the way it fronts the socket: a WebTransport session
 is the HTTP/3 connection itself, not an upgrade a proxy can pass along. So
-each arena terminates QUIC on its own public UDP port, 9443 for the first, and
+each arena terminates QUIC on its own public UDP port, 9443 and 9444 today, and
 reads the certificate out of Caddy's own store, mounted read-only into the
 container. `VW_WT_CERT` and `VW_WT_KEY` are glob patterns because the store
 nests the PEM pair under the ACME issuer's directory name, which is Caddy's
@@ -176,10 +179,10 @@ A host provisioned before that port existed needs it opened in both firewalls,
 once. On the host:
 
 ```sh
-ufw allow 9443/udp
+ufw allow 9443:9444/udp
 ```
 
-And in the Vultr firewall group the instance belongs to, UDP 9443 from
+And in the Vultr firewall group the instance belongs to, UDP 9443 through 9444 from
 anywhere. Opening one and not the other looks exactly like opening neither,
 because the arena binds its endpoint either way and reports itself listening.
 
@@ -318,7 +321,7 @@ and a restart.
 ## Running it somewhere else, or locally
 
 ```sh
-printf 'VW_HOST=play.localhost\nVW_POOL_TOKEN=...\n' > deploy/.env
+printf 'VW_HOST=play.localhost\nVW_POOL_TOKEN=...\nVW_META_VERIFY=...\n' > deploy/.env
 docker compose -f deploy/docker-compose.caddy.yml \
     -f deploy/docker-compose.central.yml -f deploy/docker-compose.arena.yml \
     -f deploy/docker-compose.local.yml --env-file deploy/.env up -d --build
@@ -341,7 +344,7 @@ What a stranger can reach, what each layer is for, and the risks that are
 accepted rather than closed. Checked against the live host from outside, not
 asserted from the config.
 
-**Reachable from the internet: 22, 80 and 443, and UDP 9443.** The
+**Reachable from the internet: 22, 80 and 443, and UDP 9443 through 9444.** The
 directory, the meta-layer and the admin surface bind loopback; the arena binds
 loopback for its WebSocket and Caddy is the only way in. Its WebTransport
 endpoint is the exception, and the only part of this fleet a stranger reaches
@@ -415,16 +418,16 @@ names an address, and opens no port at all when it does not.
 
 | Port | Process |
 |---|---|
-| 9101 | the arena, and 9102 up for any beside it |
+| 9101, 9102 | the two arenas |
 | 9105 | the bot server |
 | 9106 | the directory |
 | 9107 | the meta-layer |
 
 9100 is missing from the list because the admin surface has it.
 
-Caddy publishes them at `/metrics/a1`, `/metrics/bots`, `/metrics/dir` and
-`/metrics/meta`, open to anyone. The ports themselves stay on loopback, so those
-routes are the only way in.
+Caddy publishes them at `/metrics/a1`, `/metrics/a2`, `/metrics/bots`,
+`/metrics/dir` and `/metrics/meta`, open to anyone. The ports themselves stay on
+loopback, so those routes are the only way in.
 
 They carried a `basic_auth` once, on the argument that a read view is the
 dangerous kind to publish because it is useful without a token. The password

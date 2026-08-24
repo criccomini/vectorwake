@@ -28,7 +28,7 @@ check_secrets() {
 	# on output, so it cannot tell you what a container actually received; and
 	# a wrong guess rewrites every secret on the host silently. This costs one
 	# rotation and cannot be wrong.
-	for _n in VW_POOL_TOKEN VW_META_DATABASE VW_META_KEY \
+	for _n in VW_POOL_TOKEN VW_META_DATABASE VW_META_KEY VW_META_VERIFY \
 		  VW_REGISTRY_TOKEN VW_REGISTRY_USER; do
 		eval "_v=\${$_n:-}"
 		case $_v in
@@ -87,6 +87,20 @@ check_secrets() {
        the catalog rather than with this host, so it is not generated here."
 		fi ;;
 	esac
+
+	# Arena processes verify the signed Ladder calibration locally. They need
+	# the public half of the signing key, including on an arena-only host, but
+	# never the signing key or the database credential themselves.
+	case $role in
+	arena|all) needs_verify=1 ;;
+	*)         needs_verify=$accounts ;;
+	esac
+	if [ "$needs_verify" = 1 ] && [ -z "${VW_META_VERIFY:-}" ]; then
+		die "VW_META_VERIFY is not set and the secrets bucket has no copy.
+       It is the public 64 hex from the second line of
+       'vectorwake-server metakey'. Store it:
+         fleet.sh secrets put VW_META_VERIFY"
+	fi
 
 	case $role in
 	all|central|arena)
@@ -200,7 +214,15 @@ secrets_fill() {
 	sf_need=0
 	[ -n "${VW_POOL_TOKEN:-}" ] && [ -n "${VW_DEPLOY_KEY:-}" ] || sf_need=1
 	case $sf_role in
-	all|central)
+	arena)
+		[ -n "${VW_META_VERIFY:-}" ] || sf_need=1 ;;
+	all)
+		[ -n "${VW_META_VERIFY:-}" ] || sf_need=1
+		if [ "${VW_ACCOUNTS:-}" != 0 ]; then
+			[ -n "${VW_META_DATABASE:-}" ] && [ -n "${VW_META_KEY:-}" ] \
+				|| sf_need=1
+		fi ;;
+	central)
 		if [ "${VW_ACCOUNTS:-}" != 0 ]; then
 			[ -n "${VW_META_DATABASE:-}" ] && [ -n "${VW_META_KEY:-}" ] \
 				&& [ -n "${VW_META_VERIFY:-}" ] || sf_need=1
@@ -216,9 +238,17 @@ secrets_fill() {
 	find_bucket
 	echo "fleet: filling missing secrets from the $OS_LABEL bucket" >&2
 	[ -n "${VW_POOL_TOKEN:-}" ]    || VW_POOL_TOKEN=$(s3_get VW_POOL_TOKEN || true)
-	[ -n "${VW_META_DATABASE:-}" ] || VW_META_DATABASE=$(s3_get VW_META_DATABASE || true)
-	[ -n "${VW_META_KEY:-}" ]      || VW_META_KEY=$(s3_get VW_META_KEY || true)
-	[ -n "${VW_META_VERIFY:-}" ]   || VW_META_VERIFY=$(s3_get VW_META_VERIFY || true)
+	case $sf_role in
+	arena)
+		[ -n "${VW_META_VERIFY:-}" ] \
+			|| VW_META_VERIFY=$(s3_get VW_META_VERIFY || true) ;;
+	*)
+		[ -n "${VW_META_DATABASE:-}" ] \
+			|| VW_META_DATABASE=$(s3_get VW_META_DATABASE || true)
+		[ -n "${VW_META_KEY:-}" ] || VW_META_KEY=$(s3_get VW_META_KEY || true)
+		[ -n "${VW_META_VERIFY:-}" ] \
+			|| VW_META_VERIFY=$(s3_get VW_META_VERIFY || true) ;;
+	esac
 	if [ -z "${VW_DEPLOY_KEY:-}" ]; then
 		# The bucket holds the key material; the interface wants a path. A
 		# 0600 temporary file bridges them. Install cleanup here, before any

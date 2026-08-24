@@ -1,0 +1,74 @@
+# One life against one measured house pilot. A win advances one rung. A loss
+# drops two rungs without crossing the last five-rung checkpoint.
+
+description = "one life at a time, climb the house pilot ladder"
+mode = "ladder"
+
+# Drydock is also the calibration ground. Keeping the live arena and the
+# measurement fixture aligned prevents a rating earned in open space from
+# pretending to describe a close fight around walls.
+maps = ["../melee/drydock.vwmap"]
+
+max_players = 1
+max_ships = 2
+bot_fill = 1.0
+fill_target = 1
+max_rooms = 20
+
+teams = ["Pilot", "Rival"]
+max_teams = 2
+max_humans_per_team = 1
+max_bots_per_team = 1
+
+# Progress belongs to an account. Guests can still play melee.
+admission = "claimed"
+max_watchers = 8
+channel_delay_ticks = 0
+
+[arena]
+match_seconds = 180
+intermission_seconds = 8
+
+# Ladder is one life. Catalog validation refuses any other value for this mode.
+ladder_first_to = 1
+ladder_loss_drop = 2
+ladder_checkpoint_interval = 5
+
+# The same movement, collision, weapon, and kit economy used in melee. A rung
+# should measure the opponent, not a private ruleset the player never sees in
+# the main game.
+bounce = 12
+friction = 12
+respawn_delay = 200
+spawn_radius = 0
+safe_limit = 3000
+bounty_base = 1
+bounty_per_kill = 1
+points_per_flag = 0
+mod_spread = 5
+multi_energy = 25
+multi_delay = 25
+prox_step = 16
+prox_delay = 150
+bomb_safety = true
+bbomb_damage = 1000
+shrap_inactive = 3
+shrap_inactive_ticks = 25
+
+[arena.mod_step]
+multi = 1
+bounce = 1
+prox = 48
+
+[[arena.weapons]]
+name = "mine"
+life = 3000
+
+[[arena.weapons]]
+name = "burst"
+damage = 515
+
+[arena.kit]
+gun_mods = { multi = 5, bounce = 1, freeze = 1 }
+bomb_mods = { prox = 1, shrapnel = 3, bounce = 2, freeze = 1 }
+charges = [3, 3, 6]

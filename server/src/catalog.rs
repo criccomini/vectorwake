@@ -552,6 +552,26 @@ fn validate_zone(name: &str, z: &ZoneDef, zdir: &Path) -> Result<(), String> {
             ));
         }
     }
+    if z.mode == "ladder"
+        && (z.teams.len() != 2
+            || z.max_teams() != 2
+            || z.max_players() != 1
+            || z.max_ships.unwrap_or(64) != 2
+            || z.max_humans_per_team() != 1
+            || z.max_bots_per_team() != 1
+            || z.admission != "claimed"
+            || z.arena
+                .ladder_first_to
+                .unwrap_or(crate::modes::DEFAULT_LADDER_FIRST_TO)
+                != 1
+            || z.arena.spawn_radius.unwrap_or(0) != 0)
+    {
+        return Err(format!(
+            "zone {name:?}: Ladder requires admission=\"claimed\", exactly two named teams, \
+             max_teams=2, max_players=1, max_ships=2, both per-team caps at 1, \
+             ladder_first_to=1, and spawn_radius=0"
+        ));
+    }
     Ok(())
 }
 
@@ -840,6 +860,57 @@ mod tests {
             Some("war"),
             "first when none is named"
         );
+    }
+
+    #[test]
+    fn ladder_rejects_every_shape_that_breaks_a_two_role_fight() {
+        let d = tmp("ladder-shape");
+        write(&d, "duel.vwmap", "map");
+        let valid = "mode = \"ladder\"\n\
+                     maps = [\"duel.vwmap\"]\n\
+                     admission = \"claimed\"\n\
+                     teams = [\"Pilot\", \"Rival\"]\n\
+                     max_teams = 2\n\
+                     max_players = 1\n\
+                     max_ships = 2\n\
+                     fill_target = 1\n\
+                     max_humans_per_team = 1\n\
+                     max_bots_per_team = 1\n\
+                     [arena]\n\
+                     ladder_first_to = 1\n\
+                     spawn_radius = 0\n";
+        let good: ZoneDef = toml::from_str(valid).unwrap();
+        validate_zone("ladder", &good, &d).expect("the exact Ladder shape");
+
+        for (tag, from, to) in [
+            (
+                "teams",
+                "teams = [\"Pilot\", \"Rival\"]",
+                "teams = [\"Pilot\"]",
+            ),
+            ("team count", "max_teams = 2", "max_teams = 3"),
+            ("people", "max_players = 1", "max_players = 2"),
+            ("seats", "max_ships = 2", "max_ships = 3"),
+            (
+                "human side cap",
+                "max_humans_per_team = 1",
+                "max_humans_per_team = 2",
+            ),
+            (
+                "bot side cap",
+                "max_bots_per_team = 1",
+                "max_bots_per_team = 2",
+            ),
+            ("identity", "admission = \"claimed\"", "admission = \"any\""),
+            ("series", "ladder_first_to = 1", "ladder_first_to = 3"),
+            ("placement", "spawn_radius = 0", "spawn_radius = 4"),
+        ] {
+            let broken: ZoneDef = toml::from_str(&valid.replacen(from, to, 1)).unwrap();
+            let error = validate_zone("ladder", &broken, &d)
+                .expect_err("an invalid Ladder shape must not load");
+            assert!(error.contains("Ladder requires"), "{tag}: {error}");
+        }
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]

@@ -120,9 +120,43 @@ pub(super) async fn route(
                     } else {
                         Vec::new()
                     };
+                    let ladders = if claimed {
+                        match db
+                            .query(
+                                "select zone, checkpoint, best from ladder_progress where account = $1",
+                                &[&account],
+                            )
+                            .await
+                        {
+                            Ok(rows) => rows
+                                .iter()
+                                .map(|row| {
+                                    serde_json::json!({
+                                        "zone": row.get::<_, String>(0),
+                                        "checkpoint": row.get::<_, i32>(1).max(0),
+                                        "best": row.get::<_, i32>(2).max(0),
+                                    })
+                                })
+                                .collect::<Vec<_>>(),
+                            Err(error) => {
+                                return Some((
+                                    500,
+                                    serde_json::json!({
+                                        "error": format!("cannot read Ladder progress: {error}")
+                                    }),
+                                ));
+                            }
+                        }
+                    } else {
+                        Vec::new()
+                    };
                     (
                         200,
-                        serde_json::json!({ "claimed": claimed, "ratings": ratings }),
+                        serde_json::json!({
+                            "claimed": claimed,
+                            "ratings": ratings,
+                            "ladders": ladders,
+                        }),
                     )
                 }
                 Err(error) => (500, serde_json::json!({ "error": format!("{error}") })),
@@ -186,9 +220,9 @@ pub(super) async fn route(
             }
         }
 
-        // An arena handing off what it rated. The log is the durable artifact
-        // and the ratings table is a projection of it, per
-        // docs/design/rating.md.
+        // An arena handing off what it rated. Human-involving fights keep the
+        // full record; bot-only fights keep a compact receipt after their
+        // rating and career projections move.
         "/v1/events" => {
             if catalog.pool_for_token(&s("pool_token")).is_none() {
                 return Some((403, serde_json::json!({ "error": "unknown pool token" })));
@@ -329,24 +363,23 @@ pub(super) async fn route(
     Some(reply)
 }
 
-/// One rated death: appended to the log, then applied to the projection.
+/// One rated death, filed exactly once and applied to the projections.
 ///
 /// The projection moves by the delta the arena computed rather than being
 /// recomputed from the number it saw, which is what lets two instances of one
 /// zone rate the same pilot without disagreeing. Addition commutes, so the
 /// order two arenas arrive in does not change where a rating lands.
 ///
-/// Log and projection move in one transaction. They are not equals, since the
-/// log is the durable artifact and the rating is derived from it, but an event
-/// that landed without moving anybody would leave the two disagreeing until
-/// somebody recomputed, and nothing here is worth that.
+/// Receipt, optional human event record, and projections move in one
+/// transaction. An event cannot be marked filed without moving its ratings,
+/// and a projection cannot move without leaving its idempotency receipt.
 ///
 /// Delivery is at-least-once. A spool retries a whole batch when any of it
 /// fails, and a batch that committed under a lost reply is posted again, so
 /// the same event arriving twice is ordinary weather rather than a fault.
-/// The arena-minted id is the umbrella: the log refuses the second copy, and
-/// a refused copy must not touch the projection, or every retry would bend
-/// somebody's rating by a delta the log recorded once.
+/// The arena-minted id is the umbrella: the receipt table refuses the second
+/// copy, and a refused copy must not touch the projection, or every retry would
+/// bend somebody's rating by the same delta.
 pub(super) fn validate_rated_event(event: &serde_json::Value) -> Result<(), String> {
     let victim = event
         .get("victim")
@@ -431,7 +464,7 @@ pub(super) fn validate_rated_event(event: &serde_json::Value) -> Result<(), Stri
     Ok(())
 }
 
-async fn ingest(
+pub(super) async fn ingest(
     db: &mut Client,
     class: &str,
     zone: &str,
@@ -486,13 +519,49 @@ async fn ingest(
         .await
         .map_err(|error| format!("cannot open a transaction: {error}"))?;
 
-    let stored = db
+    let filed = db
         .execute(
+            "insert into rated_event_receipts (event_id, bots_only)
+             values ($1, $2)
+             on conflict (event_id) do nothing",
+            &[&event_id, &bots_only],
+        )
+        .await
+        .map_err(|error| format!("cannot file event receipt: {error}"))?;
+    // A retry finding its work already done. Reported as success, because the
+    // spool is asking "is this filed", and it is; applying the deltas again is
+    // what this function exists to never do.
+    if filed == 0 {
+        return db
+            .commit()
+            .await
+            .map_err(|error| format!("cannot commit: {error}"));
+    }
+
+    // Rows written before receipts existed still carry the original unique
+    // event id. Claiming a receipt first makes this a lazy migration: a late
+    // retry records the compact key and leaves the already-applied projections
+    // alone, even after the legacy bot payload is compacted.
+    let legacy = db
+        .query_opt(
+            "select 1 from rated_events where event_id = $1",
+            &[&event_id],
+        )
+        .await
+        .map_err(|error| format!("cannot check legacy event: {error}"))?;
+    if legacy.is_some() {
+        return db
+            .commit()
+            .await
+            .map_err(|error| format!("cannot commit: {error}"));
+    }
+
+    if !bots_only {
+        db.execute(
             "insert into rated_events
                (event_id, class, zone, instance, tick, victim, victim_kind,
                 victim_before, victim_after, credits, bots_only, killer)
-             values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
-             on conflict (event_id) do nothing",
+             values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,false,$11)",
             &[
                 &event_id,
                 &class,
@@ -504,20 +573,11 @@ async fn ingest(
                 &before,
                 &after,
                 &serde_json::Value::Array(credits.clone()),
-                &bots_only,
                 &killer,
             ],
         )
         .await
-        .map_err(|error| format!("cannot store event: {error}"))?;
-    // A retry finding its work already done. Reported as success, because the
-    // spool is asking "is this filed", and it is; applying the deltas again is
-    // what this function exists to never do.
-    if stored == 0 {
-        return db
-            .commit()
-            .await
-            .map_err(|error| format!("cannot commit: {error}"));
+        .map_err(|error| format!("cannot store human-involving event: {error}"))?;
     }
 
     apply(&db, victim, class, after - before).await?;
@@ -639,6 +699,21 @@ pub(super) fn validate_pilot_event(event: &serde_json::Value) -> Result<(), Stri
     }) {
         return Err("invalid tick".into());
     }
+    if let Some(ladder) = event.get("detail").and_then(|detail| detail.get("ladder")) {
+        let checkpoint = ladder
+            .get("checkpoint")
+            .and_then(|value| value.as_u64())
+            .filter(|value| *value <= u16::MAX as u64)
+            .ok_or("invalid Ladder checkpoint")?;
+        let best = ladder
+            .get("best")
+            .and_then(|value| value.as_u64())
+            .filter(|value| *value <= u16::MAX as u64)
+            .ok_or("invalid Ladder best")?;
+        if best < checkpoint {
+            return Err("Ladder best is below its checkpoint".into());
+        }
+    }
     Ok(())
 }
 
@@ -747,6 +822,35 @@ async fn ingest_pilot(
             .commit()
             .await
             .map_err(|error| format!("cannot commit: {error}"));
+    }
+
+    if kind == crate::pilot::MATCH && !bot {
+        if let (Some(account), Some(ladder)) = (
+            pilot,
+            detail.get("ladder").and_then(|value| value.as_object()),
+        ) {
+            let checkpoint = ladder
+                .get("checkpoint")
+                .and_then(|value| value.as_u64())
+                .unwrap_or(0)
+                .min(u16::MAX as u64) as i32;
+            let best = ladder
+                .get("best")
+                .and_then(|value| value.as_u64())
+                .unwrap_or(checkpoint as u64)
+                .min(u16::MAX as u64) as i32;
+            db.execute(
+                "insert into ladder_progress (account, zone, checkpoint, best, updated)
+                 select id, $2, $3, $4, now() from accounts where id = $1
+                 on conflict (account, zone) do update
+                 set checkpoint = greatest(ladder_progress.checkpoint, excluded.checkpoint),
+                     best = greatest(ladder_progress.best, excluded.best),
+                     updated = now()",
+                &[&account, &zone, &checkpoint, &best],
+            )
+            .await
+            .map_err(|error| format!("cannot save Ladder progress: {error}"))?;
+        }
     }
 
     // Rivets come from bounty taken and from reaching the whistle. The match
