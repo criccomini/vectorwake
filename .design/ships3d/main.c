@@ -550,26 +550,20 @@ static void mesh_reach(const hull3d *h, float *fwd, float *aft, float *side) {
     }
 }
 
-/* Is the hull its own mirror about the plane it flies in? A ship in a top-down
- * game with no floor has no up, and more practically: a hull holding 54 degrees
- * of bank shows a viewer above it most of one face, so a face that is not the
- * other face is a hull that changes identity halfway through a turn. */
-static int mesh_symmetric(const mesh *m, float *worst) {
-    int i, j, missing = 0;
-    *worst = 0.0f;
+/* How deep the keel is against how tall the crown is. The underside is meant
+ * to be nearly flat, so this is a number that should stay small: at one the
+ * hull is a lens with two decks and no way to tell which face you are looking
+ * at, which is what it was for one revision. */
+#define KEEL_MAX 0.35f
+
+static float keel_ratio(const mesh *m) {
+    float hi = 0.0f, lo = 0.0f;
+    int i;
     for (i = 0; i < m->vn; i++) {
-        v3 want = vec(m->pos[i].x, m->pos[i].y, -m->pos[i].z);
-        float best = 1e9f;
-        for (j = 0; j < m->vn; j++) {
-            v3 d = sub(m->pos[j], want);
-            float dd = dot(d, d);
-            if (dd < best) best = dd;
-        }
-        best = sqrtf(best);
-        if (best > *worst) *worst = best;
-        if (best > 1e-4f) missing++;
+        if (m->pos[i].z > hi) hi = m->pos[i].z;
+        if (m->pos[i].z < lo) lo = m->pos[i].z;
     }
-    return missing;
+    return hi > 1e-6f ? -lo / hi : 0.0f;
 }
 
 static int cmd_fit(void) {
@@ -581,7 +575,7 @@ static int cmd_fit(void) {
         return 1;
     }
     printf("%-8s %-22s %-22s %-22s %9s %7s %7s\n", "hull", "nose  box / drawn",
-           "tail  box / drawn", "flank box / drawn", "area px^2", "diag", "mirror");
+           "tail  box / drawn", "flank box / drawn", "area px^2", "diag", "keel");
     for (i = 0; i < 7; i++) {
         hull3d h;
         float fore = ext[i][0], aft = ext[i][1], halfw = ext[i][2];
@@ -598,18 +592,17 @@ static int cmd_fit(void) {
         if (fabsf(area - FIT_AREA) > 1e-3f) fail = 1;
         if (diag > FIT_CEILING) fail = 1;
         {
-            float worst;
-            int off = mesh_symmetric(&h.body, &worst);
-            if (off) fail = 1;
-            printf("%-8s %8.4g / %-11.2f %8.4g / %-11.2f %8.4g / %-11.2f %9.3f %7.2f %7s  %s\n",
+            float keel = keel_ratio(&h.body);
+            if (keel > KEEL_MAX) fail = 1;
+            printf("%-8s %8.4g / %-11.2f %8.4g / %-11.2f %8.4g / %-11.2f %9.3f %7.2f %7.2f  %s\n",
                    hull3d_name(i), fore, df, aft, da, halfw, ds, area, diag,
-                   off ? "no" : "yes", fail ? "FAIL" : "ok");
+                   keel, fail ? "FAIL" : "ok");
         }
         bad += fail;
         hull3d_free(&h);
     }
     printf(bad ? "%d hull(s) failed\n"
-                : "every hull spends the same 625 px^2, stays on its box, and mirrors about its own plane\n",
+                : "every hull spends the same 625 px^2, stays on its box, and keeps a flat keel\n",
            bad);
     return bad ? 1 : 0;
 }

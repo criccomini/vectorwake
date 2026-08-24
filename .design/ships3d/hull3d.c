@@ -14,13 +14,16 @@
  * rather than a top surface that fades into its own silhouette. */
 #define EDGE 0.62f
 
-/* There is no underside. A hull is mirrored about its own plane, and the
- * reason is the bank: a ship holding 54 degrees of roll shows a viewer from
- * above most of one face, and if that face is a flat dark belly then the
- * hull stops being the hull halfway through every turn. It is also just true
- * of this game, which has no floor and no up. Whatever the crown does above
- * the waterline it does below it. */
-#define BELLY 1.0f
+/* The underside is nearly flat: a keel plate rather than a second crown. What
+ * the top does with a distance field the bottom does barely at all, so a hull
+ * is a shape with a deck and a floor rather than a lens.
+ *
+ * A mirrored hull was the previous rule here and it was wrong for a reason
+ * worth leaving written down: it makes every class read the same from either
+ * face, which sounds like the top-down argument and is actually the opposite
+ * of one. Somebody looking at a banked ship should be able to tell they are
+ * seeing its belly. */
+#define BELLY 0.12f
 
 /* How far in the one inset ring sits, as a fraction of how far that vertex
  * could travel before leaving the hull, and how deep the crown height under
@@ -279,7 +282,9 @@ static palette build_palette(mesh *m, v3 team, float dim) {
         float light = (float)i / (float)(FILL_BINS - 1);
         p.fill[i] = fill_material(m, body, team, 0.20f * light, dim);
     }
-    p.belly = fill_material(m, mul(body, 0.7f), team, 0.02f, dim);
+    /* The keel is a surface, not a hole. Darker than any deck face and still
+     * above the starfield it sits against. */
+    p.belly = fill_material(m, mul(body, 0.9f), team, 0.045f, dim);
     p.deck = fill_material(m, mul(body, 1.35f), team, 0.10f, dim);
     /* A canopy is the one bright cell every hull carries forward of center. */
     mt.albedo = to_linear(mul(add(mul(body, 0.5f), mul(team, 0.62f)), 1.0f));
@@ -403,32 +408,6 @@ static void dome(mesh *m, v3 c, float r, int mat, hull3d *h, int *lcap, v3 col) 
     }
 }
 
-/* Copy every triangle added since `tri0` to the other face. Winding is
- * reversed with the copy, or the mirrored half draws its normals inward and
- * takes the fill of a surface pointing the wrong way. */
-static void mirror_faces(mesh *m, int tri0) {
-    int n = m->tn, i;
-    for (i = tri0; i < n; i++) {
-        v3 a = m->pos[m->idx[i * 3 + 0]];
-        v3 b = m->pos[m->idx[i * 3 + 1]];
-        v3 c = m->pos[m->idx[i * 3 + 2]];
-        a.z = -a.z;
-        b.z = -b.z;
-        c.z = -c.z;
-        mesh_face(m, a, c, b, m->tri_mat[i]);
-    }
-}
-
-static void mirror_lines(hull3d *h, int *cap, int line0) {
-    int n = h->line_n, i;
-    for (i = line0; i < n; i++) {
-        v3 a = h->lines[i].a, b = h->lines[i].b;
-        a.z = -a.z;
-        b.z = -b.z;
-        add_line(h, cap, a, b, h->lines[i].col, h->lines[i].width);
-    }
-}
-
 /* --- the hull ------------------------------------------------------------- */
 
 void hull3d_build(hull3d *h, int cls, v3 team) {
@@ -447,7 +426,7 @@ void hull3d_build(hull3d *h, int cls, v3 team) {
     float area = 0.0f, cy = 0.0f;
     float lo_x = 1e9f, hi_x = -1e9f, lo_y = 1e9f, hi_y = -1e9f;
     float cap;
-    int i, q, lcap = 0, face0_tri, face0_line;
+    int i, q, lcap = 0;
     v3 wash = to_linear(team);
 
     memset(h, 0, sizeof *h);
@@ -537,7 +516,7 @@ void hull3d_build(hull3d *h, int cls, v3 team) {
         int k = (i + 1) % n;
         lit_quad(&h->body, &pal, rim_lo[i], rim_lo[k], rim_hi[k], rim_hi[i]);
         lit_quad(&h->body, &pal, rim_hi[i], rim_hi[k], top[k], top[i]);
-        lit_quad(&h->body, &pal, rim_lo[k], rim_lo[i], bot[i], bot[k]);
+        mesh_quad(&h->body, rim_lo[k], rim_lo[i], bot[i], bot[k], pal.belly);
     }
     {
         int *tri = malloc((size_t)n * 3 * sizeof *tri);
@@ -545,15 +524,10 @@ void hull3d_build(hull3d *h, int cls, v3 team) {
         for (i = 0; i < tn; i++) {
             int a = tri[i * 3], b = tri[i * 3 + 1], c = tri[i * 3 + 2];
             lit_tri(&h->body, &pal, top[a], top[b], top[c]);
-            lit_tri(&h->body, &pal, bot[a], bot[c], bot[b]);
+            mesh_face(&h->body, bot[a], bot[c], bot[b], pal.belly);
         }
         free(tri);
     }
-
-    /* Everything from here to the mirror below is built on one face and then
-     * copied to the other. */
-    face0_tri = h->body.tn;
-    face0_line = h->line_n;
 
     /* Plates: interior loops in the drawing, raised into decks here. One
      * height for the whole deck, taken from the highest ground it covers, so
@@ -636,10 +610,9 @@ void hull3d_build(hull3d *h, int cls, v3 team) {
     }
 
     /* Hardpoints: where a round actually leaves the ship, per ships.md. On the
-     * deck rather than on the waterline, and so mirrored onto both decks. Sunk
-     * into the equator they vanish inside the hulls whose tubes run down the
-     * spine, which is most of them: the Wedge's bomb tube is the brightest
-     * thing on that ship and it disappeared entirely. */
+     * deck rather than sunk to the waterline, where they end up inside the
+     * hull on every class whose tube runs down its spine: the Wedge's bomb
+     * tube is the brightest thing on that ship and it vanished entirely. */
     for (i = 0; i < art->tube_n; i++) {
         float x0 = art->tubes[i * 5 + 0], y0 = art->tubes[i * 5 + 1];
         float x1 = art->tubes[i * 5 + 2], y1 = art->tubes[i * 5 + 3];
@@ -662,9 +635,6 @@ void hull3d_build(hull3d *h, int cls, v3 team) {
                  add(mul(wash, 0.9f), lin(0xffffff, 0.35f)), 0.09f);
         if (h->muzzle_n < 4) h->muzzles[h->muzzle_n++] = add(fwd, mul(dir, 0.4f));
     }
-
-    mirror_faces(&h->body, face0_tri);
-    mirror_lines(h, &lcap, face0_line);
 
     /* Engines. The mouths are where world.lua puts them, so a plume drawn off
      * this model leaves the ship where the flat game's does. */
@@ -691,13 +661,15 @@ void hull3d_build(hull3d *h, int cls, v3 team) {
         float ny = len > 1e-6f ? -dx / len : 0.0f;
         float light = 0.40f + 0.60f * (0.5f + 0.5f * ny);
         add_line(h, &lcap, rim_hi[i], rim_hi[k], mul(wash, light * 2.3f), 0.15f);
+        /* The keel's outline draws as brightly as the deck's. It is the same
+         * edge of the same silhouette, and a hull rolled far enough to show
+         * its underside still has to be identifiable from it. */
         add_line(h, &lcap, rim_lo[i], rim_lo[k], mul(wash, light * 2.3f), 0.15f);
         add_line(h, &lcap, rim_lo[i], rim_hi[i], mul(wash, light * 0.60f), 0.06f);
         if (reach[i] > 0.9f) {
             add_line(h, &lcap, rim_hi[i], top[i], mul(wash, light * 0.45f), 0.05f);
             add_line(h, &lcap, top[i], top[k], mul(wash, light * 0.85f), 0.08f);
-            add_line(h, &lcap, rim_lo[i], bot[i], mul(wash, light * 0.45f), 0.05f);
-            add_line(h, &lcap, bot[i], bot[k], mul(wash, light * 0.85f), 0.08f);
+            add_line(h, &lcap, bot[i], bot[k], mul(wash, light * 0.40f), 0.05f);
         }
     }
     free(rim_lo);
