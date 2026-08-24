@@ -2119,7 +2119,7 @@ function update(self, dt)
             -- mark that says so is the one courtesy the channel owes.
             on_air = net.on_air,
             watchers = net.watchers,
-            class_names = TUNE.CLASS_NAMES, menu_open = menu.open,
+            menu_open = menu.open,
             -- The server's roster, because those are other people's names and
             -- only it knows them.
             pilots = net.pilots,

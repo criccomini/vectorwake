@@ -1999,11 +1999,11 @@ local function run_log(o, top)
     local w = COL_W * F.scale
     local head = 24 * F.scale
     local y0 = top + 8 * F.scale
-    -- However many legs fit above the loadout this panel pushes down. Two
-    -- thirds of the screen is the ceiling: the loadout is 60 points under
-    -- whatever this returns, and the corner stack grows up from the bottom
-    -- left into the same column. A phone gets fewer rows rather than a panel
-    -- running off the bottom, and the rows it drops are the oldest.
+    -- However many legs the column has room for. Two thirds of the screen is
+    -- the ceiling, because the pilot box hangs under whatever this returns
+    -- and the corner stack grows up from the bottom left into the same
+    -- column. A phone gets fewer rows rather than a panel running off the
+    -- bottom, and the rows it drops are the oldest.
     local room = math.floor((F.h * 0.66 - y0 - head) / (LINE * F.scale))
     local shown = math.min(#log, math.max(0, room))
     if shown == 0 then return top end
@@ -2479,46 +2479,13 @@ local function status(me, charges, lift)
     return 0
 end
 
--- What this pilot is flying, under the same toggle as the scoreboard: which
--- hull, and how far up each stat their kit took them.
---
--- The gun and bomb ladders used to be here too. They are what a trigger does
--- rather than what a run has accumulated, and they belong in the corner with
--- the rest of what the ship is carrying, where they can be read without
--- opening a panel at all.
-local function loadout(me, class_names, top)
-    if not M.details then return top or 0 end
-    local w = COL_W * F.scale
-    local x = F.safe_l + PAD * F.scale
-    local h = 54 * F.scale
-    local y = (top or 0) + 6 * F.scale
-    rect(x, y, w, h, pal.a(pal.BG, 0.62))
-    vrule(x, y, h, pal.a(pal.RADAR_TILE, 0.7))
-
-    txt(class_names[sim.ship_class(me) + 1] or "?", x + 12 * F.scale, y + 16 * F.scale,
-        (FONT - 1) * F.scale, pal.FRIEND)
-    txt(sim.ship_kills(me) .. "k  " .. sim.ship_deaths(me) .. "d  "
-        .. sim.ship_assists(me) .. "a",
-        x + w - 12 * F.scale, y + 16 * F.scale, (FONT - 3) * F.scale, pal.a(pal.DIM, 0.85),
-        "right")
-
-    -- Every stat always present, and the pips run to the kit space's own
-    -- ceiling rather than to a number written here: a pilot who bought the
-    -- last two steps of a stat should see two more places to fill, not a row
-    -- that silently stops counting.
-    -- Through tonumber, because a stub `sim` that answers every unknown key
-    -- with a function would otherwise be counted with.
-    local steps = tonumber(sim.UP_STEPS) or 8
-    local gap = (w - 24 * F.scale) / #pal.UPGRADES
-    for i, up in ipairs(pal.UPGRADES) do
-        local held = sim.ship_up(me, i - 1)
-        local sx = x + 14 * F.scale + (i - 1) * gap
-        txt(up.short, sx, y + 32 * F.scale, (FONT - 3) * F.scale, pal.a(pal.DIM, 0.75))
-        pips(sx + 3 * F.scale, y + 42 * F.scale, steps, held, up.col,
-             1.7 * F.scale, 4.6 * F.scale)
-    end
-    return y + h
-end
+-- The hull's own panel, which named the ship and drew a row of pips per
+-- stat, is gone. Every fact on it is somewhere a pilot already looks: the
+-- hull is the shape you are flying and its name is on the ship page you
+-- chose it from, the three figures are your own row of the scoreboard, and
+-- what a kit bought is a decision made in the hangar rather than a reading
+-- taken mid-fight. It cost a panel's worth of the left column to say none of
+-- it at a moment anybody could act on.
 
 -- Who that is: one pilot, read off the roster and the simulation.
 --
@@ -4095,7 +4062,7 @@ function M.hud(o)
     if not (o.watch or M.touching) then
         status(me, o.charges, lift)
     end
-    inspect(o, o.watch and top or loadout(me, o.class_names, top))
+    inspect(o, top)
     -- A watcher is never the subject, so the tally can only be about a pilot
     -- who is flying, and the two never contend for the slot.
     -- The room chip only where there is a room to move to. `rooms` is the
@@ -5380,8 +5347,9 @@ function pages.kit(v, x, y, w, h, focused)
     -- between them: "SPD [pips] 4 Speed" is two labels for one thing at
     -- opposite ends of a row, and the eye reads the second one as a new fact.
     -- The mark sits against its own word now, which is where an abbreviation
-    -- is taught rather than merely used, and the arena's corner stack that
-    -- draws NRG and SPD over its pips is the reason it is still here at all.
+    -- is taught rather than merely used. This is the only place it is taught:
+    -- the arena drew NRG and SPD over pips of its own until the hull panel
+    -- that carried them came out.
     -- Where the pips begin, which is the same on every row of the page so the
     -- ladders line up under each other whatever their names are worth.
     local NAMEW = 118 * F.scale
