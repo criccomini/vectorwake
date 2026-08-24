@@ -190,7 +190,13 @@ pub(crate) const JOIN_WATCH: u8 = 2;
 /// same packet. Older clients would misread its flags and must not enter.
 /// 20 adds the bot build field to a join so a certified Ladder can refuse a
 /// controller from another deployment revision.
-pub(crate) const CLIENT_PROTOCOL: u8 = 20;
+///
+/// 21 carries kill streaks: two more bytes in every ship record, two more
+/// numbers in the settings, and `S2C_STREAK`. An older client would read the
+/// snapshot's ship tail off by two bytes from the first streaking pilot's
+/// record onward, which is the class of fault that once showed a healthy
+/// fleet as DESTROYED.
+pub(crate) const CLIENT_PROTOCOL: u8 = 21;
 
 /// The biggest message a client may send. The largest legitimate one is a join:
 /// tag, class, protocol, a zone name and a call sign. 8 KB is two orders of
@@ -290,3 +296,13 @@ pub(crate) const S2C_SAID: u8 = 17;
 /// field on the map, which is packed bytes the sim core hashes: a name is
 /// presentation, and a client that predates it ignores the kind unread.
 pub(crate) const S2C_MAPNAME: u8 = 18;
+/// `[S2C_STREAK, ship, kills, tick as u32]`: this pilot has reached the zone's
+/// streak, which is that many kills without dying. Sent once, on the kill that
+/// got them there, and carrying the tick for the same reason a kill does: the
+/// feed line has to land with the death that caused it rather than ahead of
+/// the snapshot that shows it.
+///
+/// The arena's message rather than the client's own reading of the counter. A
+/// client predicts, and a prediction that rolled back over the kill would
+/// announce the streak again on every replay of it.
+pub(crate) const S2C_STREAK: u8 = 19;

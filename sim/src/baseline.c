@@ -275,6 +275,14 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
     cfg->bounty_per_kill = 1;
     cfg->points_per_flag = 100;
 
+    /* Three kills without dying, and two points on top of the run for as long
+     * as it lasts. Three because it is the shortest run that cannot be an
+     * accident and is still reachable in a three-minute match; two because a
+     * streak has to move what the pilot is worth by more than one more kill
+     * would, or the bonus says nothing the run was not already saying. */
+    cfg->streak_kills = 3;
+    cfg->streak_bounty = 2;
+
     /* What one rung of each add-on is worth, in the units of the field it
      * moves. These values live here rather than inside the transform that
      * applies them. */

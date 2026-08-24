@@ -172,6 +172,16 @@ M.CHARGE_COL = rgb(0xffd166)
 M.BOUNTY    = rgb(0xffe08a)
 M.MOD_COL   = rgb(0x9df0ff)
 
+-- A pilot on a run. Gold, and the only gold in the arena that moves: the two
+-- ends of a shimmer, run between by `M.gleam` below.
+--
+-- Neither is a team color and neither is near one, which is the point. A
+-- streak is the one fact on screen that is about a person rather than about a
+-- side, so it has to read the same whichever side you are on and it must not
+-- be mistaken for either.
+M.STREAK    = rgb(0xffc23d)
+M.STREAK_HI = rgb(0xfff3c4)
+
 -- A copy at a different alpha. Draw code asks for these constantly and must
 -- never mutate the shared table to get one.
 function M.a(col, alpha)
@@ -185,6 +195,28 @@ function M.hot(col, k, alpha)
         col[2] + (1 - col[2]) * k,
         col[3] + (1 - col[3]) * k,
         alpha or col[4],
+    }
+end
+
+-- The shimmer itself: gold that travels between its two ends and back on a
+-- clock, so a streak announces itself by moving in a picture where nothing
+-- else in that hue does.
+--
+-- A raised cosine rather than a straight one. A linear sweep spends most of
+-- its time in the middle, which reads as a color that cannot make its mind up;
+-- weighting it toward the ends makes it read as a gleam crossing something.
+--
+-- `t` is seconds and needs no origin: any two callers a fraction apart are a
+-- shimmer that is not quite in step, which is what a room full of them should
+-- look like. `speed` is cycles a second.
+function M.gleam(t, alpha, speed)
+    local x = math.cos(t * (speed or 1.6) * 2 * math.pi)
+    local k = x * x * (x > 0 and 1 or 0.55)
+    return {
+        M.STREAK[1] + (M.STREAK_HI[1] - M.STREAK[1]) * k,
+        M.STREAK[2] + (M.STREAK_HI[2] - M.STREAK[2]) * k,
+        M.STREAK[3] + (M.STREAK_HI[3] - M.STREAK[3]) * k,
+        alpha or 1,
     }
 end
 

@@ -144,7 +144,10 @@ pub(crate) struct ChannelFrame {
     /// now", which is a question about the frame going out rather than about
     /// the camera: with a delay on the channel those are seconds apart.
     pub(crate) subject: u8,
-    pub(crate) kills: Vec<Vec<u8>>,
+    /// The lines this frame's watchers are owed: kills, and the streaks
+    /// they started. Whatever a player was told, held back to the frame it
+    /// belongs with.
+    pub(crate) feed: Vec<Vec<u8>>,
     pub(crate) charges: Vec<Vec<u8>>,
     pub(crate) msg: Vec<u8>,
 }
@@ -164,8 +167,8 @@ pub(crate) struct Channel {
     /// the subject leaves.
     pub(crate) hold: u32,
     pub(crate) ring: std::collections::VecDeque<ChannelFrame>,
-    /// Kills waiting for the next frame.
-    pub(crate) pending_kills: Vec<Vec<u8>>,
+    /// Feed lines waiting for the next frame.
+    pub(crate) pending_feed: Vec<Vec<u8>>,
     /// Public charge actions waiting for the next frame. The ship byte stays
     /// beside each message until the frame center is known, so an event
     /// outside that frame's fairness circle is discarded rather than leaked.
@@ -183,7 +186,7 @@ impl Channel {
             showing: None,
             hold: 0,
             ring: std::collections::VecDeque::new(),
-            pending_kills: Vec::new(),
+            pending_feed: Vec::new(),
             pending_charges: Vec::new(),
             delay: DEFAULT_CHANNEL_DELAY,
             rng: 0x9e3779b97f4a7c15,
@@ -831,6 +834,12 @@ impl Room {
         }
         if let Some(v) = c.points_per_flag {
             world.cfg.points_per_flag = v;
+        }
+        if let Some(v) = c.streak_kills {
+            world.cfg.streak_kills = v;
+        }
+        if let Some(v) = c.streak_bounty {
+            world.cfg.streak_bounty = v;
         }
         if let Some(v) = c.multi_energy {
             world.cfg.mod_multi_energy = v;
@@ -1728,6 +1737,7 @@ impl Room {
             sh.charge = [0; sim::MAX_CHARGES];
             sh.kit = [0; sim::SLOT_COUNT];
             sh.run = 0;
+            sh.streak = 0;
             sh.points = 0;
             sh.stall = 0;
             sh.repel = 0;
@@ -2643,14 +2653,18 @@ impl Room {
     /// person does. The week's table reads `where not bot`, so what this adds
     /// is a wallet and a log, not a machine in the standings. See
     /// docs/design/ai-players.md.
-    pub(crate) fn note_death(&self, victim: u8, killer: u8, paid: i32) {
+    pub(crate) fn note_death(&self, victim: u8, killer: u8, paid: i32, run: u16) {
         let bounty = paid.clamp(0, u16::MAX as i32);
-        // The run the victim was on, which is the bounty minus what a fresh
-        // spawn is worth: `sim_bounty` is the base plus the run and nothing
-        // else. Filed on the death rather than on the kill because it belongs
-        // to whoever was on it, and a pilot's best week is the longest one of
+        // The run the victim was on, handed in rather than worked back out of
+        // what the kill paid. It used to be `bounty - bounty_base`, on the
+        // reasoning that a bounty is the base plus the run and nothing else.
+        // A streak is now the something else: it adds a step to the bounty
+        // without lengthening the run, and a subtraction that does not know
+        // about it files every streaking pilot's last run two long. Filed on
+        // the death rather than on the kill because the run belongs to
+        // whoever was on it, and a pilot's best week is the longest one of
         // theirs that anybody managed to end.
-        let run = (bounty - self.world.cfg.bounty_base as i32).max(0);
+        let run = run as i32;
         if let Some(seat) = self.names.get(&victim) {
             let seat = seat.clone();
             self.note(
@@ -2827,7 +2841,7 @@ impl Room {
                             let _ = w.tx.try_send(Message::Binary(m.clone()));
                         }
                     }
-                    self.channel.pending_kills.push(m);
+                    self.channel.pending_feed.push(m);
                 }
             }
             // Filed before the seat is torn down, since the seat is what says
@@ -3766,7 +3780,15 @@ impl Room {
     pub(crate) fn score_events(&mut self) {
         let tick = self.world.state.tick;
         let events = self.world.events.e[..self.world.events.count as usize].to_vec();
+        // Held rather than sent where they are found, because a streak has to
+        // reach a feed under the kill that started it and the kills go out
+        // below. Both carry this tick, so what decides the order a player
+        // reads them in is the order they are written.
+        let mut streaks = Vec::new();
         for e in events {
+            if e.etype == sim::EV_STREAK {
+                streaks.push((e.a, e.v));
+            }
             if e.etype == sim::EV_CHARGE {
                 let Some(sh) = self.world.state.ships.get(e.a as usize) else {
                     continue;
@@ -3848,7 +3870,10 @@ impl Room {
             if let Some(r) = rated.as_ref() {
                 self.hand_off(r, Some(&kname));
             }
-            self.note_death(victim, killer, paid);
+            // Read before the note, because a death clears the run and the
+            // live state no longer has it.
+            let run = self.world.run_before(victim as usize);
+            self.note_death(victim, killer, paid, run);
             let mut m = vec![S2C_KILL];
             m.push(victim);
             m.push(killer);
@@ -3874,7 +3899,7 @@ impl Room {
                     let _ = w.tx.try_send(Message::Binary(m.clone()));
                 }
             }
-            self.channel.pending_kills.push(m.clone());
+            self.channel.pending_feed.push(m.clone());
             let assists = rated.as_ref().map_or(0, |r| r.credits.len());
             if assists > 1 {
                 println!(
@@ -3883,6 +3908,28 @@ impl Room {
                     self.name_of(victim)
                 );
             }
+        }
+        // The room's news, said to everybody: a streak is the one thing here
+        // that is about the arena rather than about a fight somebody can see.
+        // No fairness circle, for the same reason a kill has none: knowing
+        // that a stranger is on a tear is what makes it worth ending, and it
+        // is not a position.
+        for (ship, kills) in streaks {
+            let mut m = vec![S2C_STREAK, ship, kills.clamp(0, 255) as u8];
+            m.extend_from_slice(&tick.to_le_bytes());
+            for p in self.players.values() {
+                let _ = p.tx.try_send(Message::Binary(m.clone()));
+            }
+            for w in self.watchers.values() {
+                if matches!(w.mode, WatchMode::Follow(_)) {
+                    let _ = w.tx.try_send(Message::Binary(m.clone()));
+                }
+            }
+            self.channel.pending_feed.push(m);
+            println!(
+                "tick {tick}: {} is on a streak of {kills}",
+                self.name_of(ship)
+            );
         }
         if mode_finished {
             self.finished = true;
@@ -4222,7 +4269,7 @@ impl Room {
             self.channel.ring.push_back(ChannelFrame {
                 tick: self.world.state.tick,
                 subject,
-                kills: std::mem::take(&mut self.channel.pending_kills),
+                feed: std::mem::take(&mut self.channel.pending_feed),
                 charges,
                 msg,
             });
@@ -4252,7 +4299,7 @@ impl Room {
                 if w.mode != WatchMode::Channel {
                     continue;
                 }
-                for k in &f.kills {
+                for k in &f.feed {
                     let _ = w.tx.try_send(Message::Binary(k.clone()));
                 }
                 for charge in &f.charges {

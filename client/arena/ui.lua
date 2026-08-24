@@ -2033,8 +2033,16 @@ local function feed(lines, top)
         local left = M.FEED_LIFE - f.t
         if left < FEED_FADE then a = a * math.max(0, left / FEED_FADE) end
         local w = feed_line_w(f.text, size)
-        draw_feed_line(f.text, right - w, y + LINE * F.scale / 2,
-                       size, pal.a(f.col or pal.DIM, a))
+        -- A streak line gleams rather than sitting in a color. It is the one
+        -- line in this column that is not a report of something that has
+        -- finished happening: somebody is still on it while you are reading,
+        -- and a still gold among five still lines is just a sixth line. The
+        -- shimmer rides the line's own age, so two of them at once are a
+        -- fraction out of step, which is what a room of them should look
+        -- like.
+        draw_feed_line(f.text, right - w, y + LINE * F.scale / 2, size,
+                       f.gleam and pal.gleam(f.t, a)
+                               or pal.a(f.col or pal.DIM, a))
         y = y + LINE * F.scale
     end
     -- As wide as the widest line it drew rather than a guess, since a feed of
@@ -2119,7 +2127,7 @@ local function toast(lines, reach)
     local h = LINE * F.scale + 6 * F.scale
     rect(F.w / 2 - w / 2, y - h / 2, w, h, pal.rgb(0x03050a, 0.62 * a))
     draw_feed_line(f.text, F.w / 2 - line_w / 2, y, size,
-                   pal.a(f.col or pal.INK, a))
+                   f.gleam and pal.gleam(f.t, a) or pal.a(f.col or pal.INK, a))
 end
 
 -- The corner stack: what the triggers do, what you carry and can spend, and

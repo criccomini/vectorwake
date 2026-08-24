@@ -116,6 +116,13 @@ bounty_base = 1
 bounty_per_kill = 3
 points_per_flag = 100
 
+# A streak: kills without dying, counted rather than priced, so this threshold
+# does not move when `bounty_per_kill` does. Reaching it tells the room, marks
+# the hull, and adds `streak_bounty` to what the pilot is worth until somebody
+# takes them. Set `streak_kills = 0` for a zone that wants none of it.
+streak_kills = 3
+streak_bounty = 2
+
 # Connection diagnostics come from selective receipt windows. They describe
 # round trip, jitter and snapshot delivery, but never restrict gameplay. The
 # arena releases stale controls after one second without an input packet and

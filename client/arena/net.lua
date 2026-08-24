@@ -59,6 +59,7 @@ local S2C_LAG = 16
 -- docs/design/match-game.md.
 local S2C_SAID = 17
 local S2C_MAPNAME = 18
+local S2C_STREAK = 19
 local C2S_SAY = 11
 
 -- The fixed things, in the order the wire numbers them. Short, positive, and
@@ -73,7 +74,7 @@ M.said = {}
 -- The client wire's own version, checked by the zone before it reads anything
 -- else in a join. A stale build is told its build is stale rather than left to
 -- misparse snapshots.
-local CLIENT_PROTOCOL = 20
+local CLIENT_PROTOCOL = 21
 -- Published, because the about page says what this build talks, and a second
 -- copy of the number is a second thing to forget to bump.
 M.PROTOCOL = CLIENT_PROTOCOL
@@ -140,6 +141,13 @@ M.kills = {}
 -- Public charge actions inside the server's fairness circle. These name the
 -- charge that was used, never how many remain in the private inventory.
 M.charge_events = {}
+-- Who the arena has just named as being on a run, and how many kills they have
+-- strung together. Drained the same tick as the kill that started it, because
+-- the zone sends it straight after that kill and both wait on the same clock.
+--
+-- Not the Ladder's streak, which rides in the match message and counts matches
+-- won rather than kills taken. Same word, two ladders, no relation.
+M.streaks = {}
 -- What the room is doing, in a zone that plays matches: `playing`, `left` in
 -- whole seconds, `score`, and any result film or Ladder progress. Nil in a room
 -- that runs forever, which is how the interface decides whether to draw a
@@ -325,8 +333,8 @@ local snap_tick = 0
 -- Reliable news and snapshots use independent WebTransport lanes. Hold news
 -- until an authoritative snapshot at or beyond its tick has landed, so the
 -- feed and effects cannot announce state the picture has not shown.
-local pending_kills, pending_charges = {}, {}
-local seen_kills, seen_charges = {}, {}
+local pending_kills, pending_charges, pending_streaks = {}, {}, {}
+local seen_kills, seen_charges, seen_streaks = {}, {}, {}
 local net_clock, last_snap_at = 0, nil
 local SNAP_TICKS = 5
 -- Corrections on a continuous local hull are filed for diagnosis. Half a pixel
@@ -469,8 +477,9 @@ local function hangup()
     -- roster that has been emptied.
     M.kills = {}
     M.charge_events = {}
-    pending_kills, pending_charges = {}, {}
-    seen_kills, seen_charges = {}, {}
+    M.streaks = {}
+    pending_kills, pending_charges, pending_streaks = {}, {}, {}
+    seen_kills, seen_charges, seen_streaks = {}, {}, {}
     M.comings = {}
     M.snap_deaths = {}
     M.snap_blasts = {}
@@ -716,6 +725,15 @@ local function publish_timed_events()
         end
     end
     pending_charges = waiting
+    waiting = {}
+    for _, e in ipairs(pending_streaks) do
+        if serial_at_or_before(e.tick, snap_tick) then
+            M.streaks[#M.streaks + 1] = e
+        else
+            waiting[#waiting + 1] = e
+        end
+    end
+    pending_streaks = waiting
     for key, tick in pairs(seen_kills) do
         if serial_after(snap_tick, tick)
             and u32n(snap_tick - tick) > EVENT_MEMORY then
@@ -726,6 +744,12 @@ local function publish_timed_events()
         if serial_after(snap_tick, tick)
             and u32n(snap_tick - tick) > EVENT_MEMORY then
             seen_charges[key] = nil
+        end
+    end
+    for key, tick in pairs(seen_streaks) do
+        if serial_after(snap_tick, tick)
+            and u32n(snap_tick - tick) > EVENT_MEMORY then
+            seen_streaks[key] = nil
         end
     end
 end
@@ -808,6 +832,30 @@ local function on_charge(s)
     if serial_at_or_before(e.tick, snap_tick) then
         M.charge_events[#M.charge_events + 1] = e
     else pending_charges[#pending_charges + 1] = e end
+end
+
+-- Somebody is on a run: the arena's word for it, held to the same clock the
+-- kill that started it is held to. Both carry the tick they happened on, and
+-- the zone writes this one second, so a feed drains them in the order that
+-- puts the streak line above the kill that earned it.
+--
+-- Not read off the snapshot's own streak counter, which the client also has.
+-- A counter says a pilot is on a run; it cannot say which tick they got there,
+-- and a client that watched for the number to change would announce it again
+-- every time prediction rolled back over the kill.
+local function on_streak(s)
+    if #s < 7 then return end
+    local e = {
+        ship = string.byte(s, 2),
+        kills = string.byte(s, 3),
+        tick = u32(string.byte(s, 4, 7)),
+    }
+    local key = e.tick .. ":" .. e.ship
+    if seen_streaks[key] then return end
+    seen_streaks[key] = e.tick
+    if serial_at_or_before(e.tick, snap_tick) then
+        M.streaks[#M.streaks + 1] = e
+    else pending_streaks[#pending_streaks + 1] = e end
 end
 
 -- What names a round on both sides of a snapshot: its owner, its spec and
@@ -1363,6 +1411,8 @@ local function on_message(s)
             -- way it ages a kill line rather than against a wall clock.
             M.said[ship] = {phrase = M.SAYINGS[phrase + 1], n = phrase, t = 0}
         end
+    elseif kind == S2C_STREAK then
+        on_streak(s)
     elseif kind == S2C_CHARGE then
         on_charge(s)
     elseif kind == S2C_LAG and #s >= 10 then
@@ -1540,6 +1590,7 @@ function M.connect(url, class, name, on_lost, zone, watch, wt, room, instance)
     M.ratings = {}
     M.kills = {}
     M.charge_events = {}
+    M.streaks = {}
     M.match = nil
     -- Back to knowing nobody, so the next room's first roster seeds rather
     -- than announcing everyone in it as having just walked in.

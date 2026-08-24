@@ -734,6 +734,7 @@ void sim_restart(sim_state *s, const sim_settings *cfg) {
         clear_hurt(sh);
         sh->points = 0;
         sh->run = 0;
+        sh->streak = 0;
         /* With ammunition, which is the one thing a match start does that a
          * respawn does not. */
         sim_deal_kit(sh, cfg, 1);
@@ -991,8 +992,14 @@ static void kill_weapon(sim_state *s, uint16_t i) {
 static void drop_flags(sim_state *s, const sim_settings *cfg, uint8_t ship,
                        sim_events *ev);
 
+int sim_on_streak(const sim_settings *cfg, const sim_ship *sh) {
+    return cfg->streak_kills && sh->streak >= cfg->streak_kills;
+}
+
 int32_t sim_bounty(const sim_settings *cfg, const sim_ship *sh) {
-    return (int32_t)cfg->bounty_base + sh->run;
+    int32_t worth = (int32_t)cfg->bounty_base + sh->run;
+    if (sim_on_streak(cfg, sh)) worth += cfg->streak_bounty;
+    return worth;
 }
 
 
@@ -1101,6 +1108,13 @@ static void apply_damage(sim_state *s, const sim_settings *cfg, uint8_t victim,
                         paid += cfg->points_per_flag;
                 k->points += (uint32_t)paid;
                 k->run = (uint16_t)(k->run + cfg->bounty_per_kill);
+                if (k->streak < 65535) k->streak++;
+                /* Exactly the kill that reaches it, so the room is told once
+                 * and not again on the fourth, fifth and sixth. The streak
+                 * itself carries on: what it is worth does not climb, but a
+                 * pilot stays on it until somebody takes them. */
+                if (cfg->streak_kills && k->streak == cfg->streak_kills)
+                    emit(ev, SIM_EV_STREAK, attacker, 0, k->streak);
             } else {
                 k->kills--;
             }
@@ -1126,6 +1140,7 @@ static void apply_damage(sim_state *s, const sim_settings *cfg, uint8_t victim,
         v->repel = 0;
         v->repel_speed = 0;
         v->run = 0;
+        v->streak = 0;
         drop_flags(s, cfg, victim, ev);
         emit(ev, SIM_EV_DEATH, victim, attacker, paid);
     }
@@ -1503,6 +1518,7 @@ int sim_set_ship_class(sim_state *s, const sim_settings *cfg, uint8_t i,
      * this the reload a death deliberately is not. */
     sim_deal_kit(sh, cfg, 0);
     sh->run = 0;
+    sh->streak = 0;
     sh->alive = 1;
     sh->respawn_at = 0;
     sh->x = sh->spawn_x;
@@ -1538,6 +1554,7 @@ int sim_set_ship_team(sim_state *s, const sim_settings *cfg, uint8_t i,
      * each other kills is the oldest arrangement in this genre, and what a
      * kill pays is the victim's bounty. */
     sh->run = 0;
+    sh->streak = 0;
 
     /* And your start moves to the new side's. A map that marks no start for
      * this team hands out somebody else's, which `sim_map_spawn` already does
@@ -2542,6 +2559,7 @@ uint64_t sim_hash(const sim_state *s) {
         h = hash_u32(h, sh->multi_off);
         h = hash_u32(h, sh->btn_prev);
         h = hash_u32(h, sh->run);
+        h = hash_u32(h, sh->streak);
         h = hash_u32(h, sh->points);
         /* The kit, because a respawn re-deals from it: a client holding a
          * different one would rebuild a different ship on the tick a pilot

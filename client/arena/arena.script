@@ -918,8 +918,12 @@ end
 -- A phone has room for one line at a time and shows only these. A desktop also
 -- carries arena arrivals and departures, but kill lines have already been
 -- limited to this pilot's own kills and deaths by the network queue.
-local function notify(text, col, mine)
-    table.insert(feed, 1, {text = text, col = col, t = 0, mine = mine})
+-- `gleam` marks a line as shimmering rather than sitting in `col`. One thing
+-- uses it and one thing should: a streak is the only line here about something
+-- that is still going on while it is being read.
+local function notify(text, col, mine, gleam)
+    table.insert(feed, 1,
+                 {text = text, col = col, t = 0, mine = mine, gleam = gleam})
     while #feed > ui.FEED_MAX do table.remove(feed) end
 end
 
@@ -974,6 +978,33 @@ local function drain_kills()
             or {pilot_named(k.killer, true), " killed ", vn, paid}, col, mine)
     end
     if #net.kills > 0 then net.kills = {} end
+end
+
+-- Somebody is on a run.
+--
+-- Drained after the kills and inserted the same way, so the streak line ends
+-- up over the kill that earned it: both arrive on one tick and the feed is
+-- newest first. Gold, and shimmering, which is the arena's one exception to
+-- "a feed where every line is lit says nothing by lighting one". This is not
+-- a report of something that has finished, it is a standing fact about
+-- somebody who is still flying, and it is the fact that decides who the room
+-- goes after next.
+--
+-- Marked `mine` when it is yours, so a phone shows it: the one line a
+-- thumb-sized screen has is spent on things this pilot can act on, and being
+-- told the room has just been told about you is one of them.
+--
+-- The alert is not attenuated and does not care where the pilot is. Every
+-- other sound in this game is a thing happening somewhere; this one is an
+-- announcement, and an announcement that fades with distance is a rumour.
+local function drain_streaks()
+    for _, k in ipairs(net.streaks) do
+        local mine = not watching and k.ship == me
+        notify({pilot_named(k.ship, true),
+                " is on a streak of " .. k.kills}, nil, mine, true)
+        sfx.ui("streak")
+    end
+    if #net.streaks > 0 then net.streaks = {} end
 end
 
 -- Who arrived and who went. A room that fills up around you while you are
@@ -1686,6 +1717,7 @@ function update(self, dt)
     -- them, before the expiry pass so a line's clock starts the frame it
     -- appears.
     drain_kills()
+    drain_streaks()
     drain_comings()
 
     -- Notifications expire. A feed that only ever scrolls leaves the last few
@@ -1957,6 +1989,11 @@ function update(self, dt)
                     roll = ship_roll(i, hdg, dt),
                     hurt = wound,
                     flash = world.hit_flash(i),
+                    -- The clock this hull's shimmer runs on, and nil for a
+                    -- hull that is not on a run. Offset by the seat so two
+                    -- streaking pilots are a fraction out of step: in step
+                    -- they read as one effect drawn twice.
+                    gleam = sim.ship_on_streak(i) and (t + i * 0.31) or nil,
                 })
                 -- Only the wounded carry a pip. A bar over every hull in a
                 -- nine-ship room is noise; a bar over the one that is hurt is

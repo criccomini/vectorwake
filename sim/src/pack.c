@@ -127,6 +127,9 @@ int sim_pack_around(const sim_state *s, uint8_t *out, int cap,
         w16(&w, sh->deaths);
         w16(&w, sh->assists);
         w16(&w, sh->run);
+        /* Public, because it is drawn on the hull: a client has to know which
+         * ships in front of it are on a run without being told separately. */
+        w16(&w, sh->streak);
         w32(&w, sh->points);
         /* Energy is the fight's health bar. Anyone who can see the hull can
          * see how close it is to dying, which requires its capacity rung as
@@ -307,6 +310,7 @@ int sim_unpack(sim_state *out, const uint8_t *in, int len) {
         sh->deaths = (uint16_t)r16(&r);
         sh->assists = (uint16_t)r16(&r);
         sh->run = (uint16_t)r16(&r);
+        sh->streak = (uint16_t)r16(&r);
         sh->points = r32(&r);
         sh->energy = (int32_t)r32(&r);
         if ((sh->alive && sh->energy <= 0) || (!sh->alive && sh->energy != 0))
@@ -469,8 +473,12 @@ int sim_unpack(sim_state *out, const uint8_t *in, int len) {
  * again, so `mine` and `mine_max` go back to `charge[]` and the hull's
  * charge row; gunners are gone, so their three fields go; and `bounty_base`
  * arrives, because bounty is a run rather than a sum over what is held and
- * the client derives the price from it. */
-#define CFG_VERSION 17
+ * the client derives the price from it.
+ *
+ * 18: kill streaks. `streak_kills` and `streak_bounty` travel because the
+ * client draws the hull of a pilot on one and prices them from the same two
+ * numbers the arena does. */
+#define CFG_VERSION 18
 
 static int settings_valid(const sim_settings *cfg) {
     if (cfg->class_count == 0 || cfg->class_count > SIM_MAX_CLASSES
@@ -582,6 +590,8 @@ int sim_settings_pack(const sim_settings *cfg, uint8_t *out, int cap) {
     w16(&w, cfg->bounty_base);
     w16(&w, cfg->bounty_per_kill);
     w16(&w, cfg->points_per_flag);
+    w16(&w, cfg->streak_kills);
+    w16(&w, cfg->streak_bounty);
     for (int m = 0; m < SIM_MOD_COUNT; m++) w32(&w, (uint32_t)cfg->mod_step[m]);
     w16(&w, cfg->mod_spread);
     w16(&w, cfg->mod_pair_spread);
@@ -696,6 +706,8 @@ int sim_settings_unpack(sim_settings *out, const uint8_t *in, int len) {
     cfg->bounty_base = (uint16_t)r16(&r);
     cfg->bounty_per_kill = (uint16_t)r16(&r);
     cfg->points_per_flag = (uint16_t)r16(&r);
+    cfg->streak_kills = (uint16_t)r16(&r);
+    cfg->streak_bounty = (uint16_t)r16(&r);
     for (int m = 0; m < SIM_MOD_COUNT; m++) cfg->mod_step[m] = (int32_t)r32(&r);
     cfg->mod_spread = (uint16_t)r16(&r);
     cfg->mod_pair_spread = (uint16_t)r16(&r);

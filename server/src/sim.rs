@@ -74,6 +74,7 @@ pub const EV_FLAG_DROP: u8 = 9;
 pub const EV_GOAL: u8 = 10;
 pub const EV_WARP: u8 = 11;
 pub const EV_RICOCHET: u8 = 12;
+pub const EV_STREAK: u8 = 13;
 
 pub const MAX_FEATURES: usize = 256;
 pub const MAP_PACK_MAX: usize = MAP_TILES * MAP_TILES * 3 + 14;
@@ -330,6 +331,10 @@ pub struct sim_settings {
     pub bounty_base: u16,
     /// Points on top of the victim's bounty per flag they were carrying.
     pub points_per_flag: u16,
+    /// How many kills without dying make a streak, and what being on one adds
+    /// to the pilot's bounty. Zero kills turns it off.
+    pub streak_kills: u16,
+    pub streak_bounty: u16,
     /// What one rung of each add-on is worth, in the units of the field it
     /// moves.
     pub mod_step: [i32; MOD_COUNT],
@@ -439,6 +444,9 @@ pub struct sim_ship {
     /// Kills since this hull last spawned, which is its whole bounty beyond
     /// the base. Cleared by death.
     pub run: u16,
+    /// The same kills counted rather than priced, which is what a streak is
+    /// measured in. Cleared wherever `run` is.
+    pub streak: u16,
     /// The score. Not cleared by death.
     pub points: u32,
 }
@@ -564,6 +572,9 @@ extern "C" {
     /// settings now because the base is a zone number rather than a sum over
     /// what the hull is holding.
     pub fn sim_bounty(cfg: *const sim_settings, sh: *const sim_ship) -> i32;
+    /// Whether this pilot has `streak_kills` kills without dying, which is
+    /// the one place the threshold is compared.
+    pub fn sim_on_streak(cfg: *const sim_settings, sh: *const sim_ship) -> c_int;
     pub fn sim_pack_around(
         s: *const sim_state,
         out: *mut u8,
@@ -660,7 +671,7 @@ extern "C" {
 }
 
 pub const PACK_MAX: usize = 64 * 1024;
-pub const STATE_PACK_MAX: usize = 65_688;
+pub const STATE_PACK_MAX: usize = 66_198;
 pub const PACK_PRIVATE_ALL: u8 = 0x01;
 pub const SETTINGS_PACK_MAX: usize = 8192;
 pub const UP_COUNT: usize = 5;
@@ -1046,6 +1057,18 @@ impl World {
         std::mem::swap(&mut self.state, &mut self.scratch);
     }
 
+    /// What a ship's run was going into the step whose events are still in
+    /// hand, which is the one thing about a dead pilot the live state cannot
+    /// answer: a death clears the run, and the run is what the kill was
+    /// priced on.
+    ///
+    /// `scratch` is the state the last step started from. The swap above
+    /// leaves it there rather than throwing it away, so this is free and
+    /// exact, and it means only until the next step.
+    pub fn run_before(&self, ship: usize) -> u16 {
+        self.scratch.ships[ship].run
+    }
+
     pub fn hash(&self) -> u64 {
         unsafe { sim_hash(&*self.state) }
     }
@@ -1122,6 +1145,10 @@ impl World {
 
     pub fn bounty(&self, ship: usize) -> i32 {
         unsafe { sim_bounty(&*self.cfg, &self.state.ships[ship]) }
+    }
+
+    pub fn on_streak(&self, ship: usize) -> bool {
+        unsafe { sim_on_streak(&*self.cfg, &self.state.ships[ship]) != 0 }
     }
 
     /// The common gate for voluntarily replacing a hull or leaving it behind:
@@ -1378,6 +1405,7 @@ mod layout {
             ("SIM_EV_GOAL", EV_GOAL),
             ("SIM_EV_WARP", EV_WARP),
             ("SIM_EV_RICOCHET", EV_RICOCHET),
+            ("SIM_EV_STREAK", EV_STREAK),
         ] {
             assert_eq!(
                 found.get(name).copied(),
@@ -1387,7 +1415,7 @@ mod layout {
         }
         assert_eq!(
             found.len(),
-            12,
+            13,
             "the core has an event the mirror has never heard of"
         );
     }

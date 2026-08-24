@@ -271,6 +271,17 @@ for _, h in ipairs(M.HULLS) do
     h.cx, h.cy = sx / n, sy / n
     h.nose = nose
 
+    -- The circle that holds this hull, measured from the point it turns
+    -- about. What it is for is anything drawn around the outside of a ship:
+    -- an Anvil is twice the beam of a Cipher, and one constant radius would
+    -- put the same decoration inside one hull and a long way off the other.
+    local far = 0
+    for i = 1, #p, 2 do
+        local d = p[i] * p[i] + p[i + 1] * p[i + 1]
+        if d > far then far = d end
+    end
+    h.reach = math.sqrt(far)
+
     -- The outward normal of every edge, and from those, how brightly the edge
     -- draws: a light fixed to the hull's own nose. Fixed to the world instead,
     -- the same ship would look like a different ship depending on which way it
@@ -2040,6 +2051,44 @@ function M.ship(fill, glow, cls, x, y, heading, col, opts)
     -- one question a player asks every second is "which one is me".
     if mine then
         glow:halo(x, y, 26, 12, pal.a(col, 0.10 * dim))
+    end
+
+    -- A pilot on a run wears gold, and the gold moves.
+    --
+    -- Last, so it sits over the silhouette rather than under it, and in a hue
+    -- no side owns: the friend-or-foe read is made on the outline's color in a
+    -- tenth of a second and nothing may put a second question inside it. What
+    -- this adds is a third thing that is true of a hull at the same time as
+    -- its side and its health, and it has to survive being seen at the edge of
+    -- vision, which is why it is the one thing in the arena that shimmers.
+    --
+    -- Three parts. A gold skirt outside the hull's own, so the shape reads as
+    -- gilded rather than repainted; a bloom saying there is something lit
+    -- here; and four sparks going round, each on its own phase so the ring of
+    -- them turns rather than blinking together. The sparks are what carries it
+    -- at distance, where the skirt is a few pixels and the bloom is a smudge.
+    if opts and opts.gleam then
+        local t = opts.gleam
+        local gold = pal.gleam(t, 1)
+        local beat = 0.62 + 0.38 * math.sin(t * 3.4)
+        glow:glow_band(pts, nrm, 13.0, 0.085 * beat * dim, gold, h.wide)
+        glow:bloom(x, y, 46, 0.055 * beat * dim, gold)
+        for k = 0, 3 do
+            -- Around the hull rather than around the point: an Anvil is twice
+            -- the beam of a Cipher, and sparks at one radius would be inside
+            -- one and a long way off the other.
+            local a2 = t * 1.25 + k * (TAU / 4)
+            local r = h.reach + 7 + 2.5 * math.sin(t * 5.1 + k)
+            local px, py = x + math.cos(a2) * r, y + math.sin(a2) * r
+            -- Each spark has its own gleam, a beat behind its neighbour, so
+            -- the four of them are a gleam travelling round rather than four
+            -- lamps on one switch.
+            local sc = pal.gleam(t + k * 0.17, 1)
+            local up = 0.45 + 0.55 * math.sin(t * 4.3 + k * 1.9)
+            glow:halo(px, py, 5.4 * (0.7 + 0.3 * up), 6,
+                      pal.a(sc, 0.5 * up * dim))
+            glow:disc(px, py, 1.15, 4, pal.a(pal.hot(sc, 0.7, 1), up * dim))
+        end
     end
 end
 

@@ -3057,8 +3057,8 @@ mod tests {
         assert_eq!(room.rating.log[0].victim, prey_rid);
         assert!(room.rating.rating_of(&prey_rid) < 1200.0, "and it cost");
         assert!(room.rating.rating_of(&hunter_rid) > 1200.0, "and it paid");
-        assert_eq!(room.channel.pending_kills.len(), 1, "and the feed says so");
-        let m = &room.channel.pending_kills[0];
+        assert_eq!(room.channel.pending_feed.len(), 1, "and the feed says so");
+        let m = &room.channel.pending_feed[0];
         assert_eq!(m[0], S2C_KILL);
         assert_eq!(m[1], ship, "the victim's seat");
         assert_eq!(m[2], room.players[&hunter].ship, "credited to the hunter");
@@ -3099,7 +3099,7 @@ mod tests {
         assert!(room.rating.log.is_empty(), "nothing settled");
         assert_eq!(room.rating.rating_of(&prey_rid), 1200.0);
         assert_eq!(room.rating.rating_of(&hunter_rid), 1200.0);
-        assert!(room.channel.pending_kills.is_empty(), "and no feed line");
+        assert!(room.channel.pending_feed.is_empty(), "and no feed line");
     }
 
     #[test]
@@ -4668,6 +4668,109 @@ mod tests {
         );
     }
 
+    /// Three kills without dying, and the room hears about it once.
+    ///
+    /// Driven through real rounds rather than by writing the counter, because
+    /// what is under test is the whole path: the core reaching the threshold,
+    /// the room noticing on the tick it happened, and the message going to
+    /// everybody rather than to whoever was close enough to watch. The
+    /// arithmetic of the counter itself is `sim/tests/test_sim.c`.
+    #[test]
+    fn a_third_kill_without_dying_tells_the_whole_room() {
+        let mut a = room_with_teams("teams = [\"Keel\", \"Vane\"]\n");
+        let (killer, _, mut killer_rx) = seat_rx(&mut a, "killer");
+        let (victim, _, mut victim_rx) = seat_rx(&mut a, "victim");
+        let (far, _, mut far_rx) = seat_rx(&mut a, "far");
+        assert_ne!(
+            a.world.state.ships[killer as usize].team, a.world.state.ships[victim as usize].team,
+            "the two are on opposite sides, or nothing here is a kill"
+        );
+        // Out past the fairness circle, so the streak has to reach a pilot
+        // who cannot see either of them. A kill on the far side of the map is
+        // exactly the news a feed exists to carry.
+        send_far(&mut a, far);
+
+        // Nose to nose at the killer's own start, which is ground the map
+        // guarantees is flyable, with the victim four tiles down the barrel.
+        let (ox, oy) = {
+            let sh = &a.world.state.ships[killer as usize];
+            (sh.x, sh.y)
+        };
+        a.world.state.ships[killer as usize].heading = 32768;
+        let mut streaks = Vec::new();
+        let mut at_two = None;
+        for _ in 0..2000 {
+            if a.world.state.ships[killer as usize].kills >= 4 {
+                break;
+            }
+            {
+                let sh = &mut a.world.state.ships[victim as usize];
+                if sh.alive != 0 {
+                    sh.x = ox;
+                    sh.y = oy + 64 * 256;
+                    sh.vx = 0;
+                    sh.vy = 0;
+                    sh.energy = 1;
+                }
+            }
+            let killer_ship = &mut a.world.state.ships[killer as usize];
+            killer_ship.x = ox;
+            killer_ship.y = oy;
+            killer_ship.vx = 0;
+            killer_ship.vy = 0;
+            a.world.step(&[sim::sim_input {
+                ship: killer,
+                buttons: sim::BTN_FIRE,
+            }]);
+            a.score_events();
+            streaks.extend(
+                drain(&mut killer_rx)
+                    .into_iter()
+                    .filter(|m| m.first() == Some(&S2C_STREAK)),
+            );
+            if a.world.state.ships[killer as usize].kills == 2 && at_two.is_none() {
+                at_two = Some(streaks.len());
+            }
+        }
+
+        assert_eq!(
+            a.world.state.ships[killer as usize].kills, 4,
+            "four kills went in"
+        );
+        assert_eq!(at_two, Some(0), "and nothing was said at two");
+        assert_eq!(streaks.len(), 1, "the third says it, and only the third");
+        let m = &streaks[0];
+        assert_eq!(m.len(), 7);
+        assert_eq!(m[1], killer, "named the pilot on the run");
+        assert_eq!(
+            u16::from(m[2]),
+            a.world.cfg.streak_kills,
+            "and how many kills it took"
+        );
+
+        // Everybody, not only whoever was near enough to watch.
+        let victim_saw = drain(&mut victim_rx)
+            .into_iter()
+            .filter(|m| m.first() == Some(&S2C_STREAK))
+            .count();
+        let far_saw = drain(&mut far_rx)
+            .into_iter()
+            .filter(|m| m.first() == Some(&S2C_STREAK))
+            .count();
+        assert_eq!(victim_saw, 1, "the pilot it was taken out on hears it");
+        assert_eq!(far_saw, 1, "and so does the far side of the map");
+
+        // And the price moved with it.
+        let worth = a.world.bounty(killer as usize);
+        let run = i32::from(a.world.state.ships[killer as usize].run);
+        assert!(a.world.on_streak(killer as usize));
+        assert_eq!(
+            worth,
+            i32::from(a.world.cfg.bounty_base) + run + i32::from(a.world.cfg.streak_bounty),
+            "a pilot on a streak is worth their run and the step on top"
+        );
+    }
+
     #[test]
     fn a_charge_action_reveals_no_inventory_and_stays_inside_fair_sight() {
         let mut a = room_with_teams("teams = [\"Keel\"]\n");
@@ -6100,7 +6203,7 @@ mod tests {
         let (hs, ps) = (a.players[&hunter].ship, a.players[&prey].ship);
         let bots = seat_bots(a, 2);
 
-        a.note_death(ps, hs, 120);
+        a.note_death(ps, hs, 120, 119);
         let filed = rows(&pilots);
         let combat: Vec<(&str, &str)> = filed
             .iter()
@@ -6113,7 +6216,7 @@ mod tests {
             "Hunter",
         );
 
-        a.note_death(bots[0], bots[1], 60);
+        a.note_death(bots[0], bots[1], 60, 59);
         let with_bots = rows(&pilots);
         assert_eq!(
             with_bots.len(),
@@ -6132,7 +6235,7 @@ mod tests {
         // kill: crediting the victim with their own destruction would say it
         // twice, and it is not a thing anybody should be paid for. The
         // meta-layer takes a rivet off the wallet for this row.
-        a.note_death(hs, hs, 0);
+        a.note_death(hs, hs, 0, 0);
         let after = rows(&pilots);
         assert_eq!(after.len(), filed.len() + 2);
         assert_eq!(
@@ -6161,7 +6264,7 @@ mod tests {
         // table counted as a kill.
         let team = a.world.state.ships[hs as usize].team;
         a.world.state.ships[ps as usize].team = team;
-        a.note_death(ps, hs, 0);
+        a.note_death(ps, hs, 0, 0);
         let after = rows(&pilots);
         assert_eq!(after.len(), filed.len() + 2);
         assert_eq!(
