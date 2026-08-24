@@ -12,16 +12,16 @@ They are drawings of a proposal, not a plan of record.
 ## The proposal
 
 - One measure spans the window, capped near 1040pt, and type scales with it.
-- The page is sectioned in the play page's aside grammar: SCORE holds the
-  band and both rosters, SAY the comms, SHARE the two keys, each header hung
-  off its own vrule. Wide windows set the rosters abreast; upright phones
-  stack them at full width rather than halving the measure between them.
+- The page is sectioned: SCORE holds the band and both rosters, SAY the
+  comms, SHARE the two keys. Each header sits over a rule, padded equally
+  off the head and the content. Wide windows set the rosters abreast;
+  upright phones stack them at full width rather than halving the measure
+  between them.
 - The foot runs the next-match clock on the left, over a drain bar in the
   score bar's own language, and the banked rivets on the right, in the
   wallet's yellow.
-- A phone held sideways keeps both rosters up, moves the countdown, the
-  payout and the actions to a right rail, and leaves comms one row under
-  the thumbs.
+- A phone held sideways keeps the same sections, SAY and SHARE sharing one
+  row to spend width instead of height.
 
 ## What is here
 
