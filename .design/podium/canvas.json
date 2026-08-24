@@ -1,0 +1,21 @@
+{
+  "artboards": [
+    { "file": "Main.dc.html", "x": 0, "y": 0, "w": 1440, "h": 810,
+      "title": "Desktop" },
+    { "file": "Mobile.dc.html", "x": 1560, "y": 0, "w": 390, "h": 844,
+      "title": "Phone upright" },
+    { "file": "Landscape.dc.html", "x": 0, "y": 950, "w": 844, "h": 390,
+      "title": "Phone on its side" }
+  ],
+  "annotations": [
+    { "id": "why", "x": -310, "y": 0, "w": 260,
+      "text": "The shipped podium is one card capped at 620pt, sized for a phone and shown at that size on every desktop. Here the ending owns the window: one measure up to 1040pt, type scaled with it, and less than the card carries today, since watch replay and the banked readout are gone." },
+    { "id": "spine", "x": -310, "y": 250, "w": 260,
+      "text": "The scoreline stands at the head with no label over it. Below it two sections, SAY and NEXT MATCH, each header over a rule padded equally off the head and the content. Sharing is one key inside NEXT MATCH: a header over a single key names it twice." },
+    { "id": "upright", "x": 2000, "y": 0, "w": 240,
+      "text": "Upright, the sides stack at full width instead of halving the measure, so a name and its figures stop fighting for the same 180 points. Every key is 44pt or taller." },
+    { "id": "sideways", "x": 900, "y": 950, "w": 240,
+      "text": "Sideways the sections span the measure as they do everywhere else, and only the rosters stay in two columns. Everything is a size or two down, which is what buys the room for it." }
+  ],
+  "launch": { "view": "canvas" }
+}

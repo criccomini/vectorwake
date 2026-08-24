@@ -2865,17 +2865,6 @@ function on_input(self, action_id, action)
                 sfx.ui("ui_go")
                 return true
             end
-            if r.action == "open_replay" and net.match and net.match.artifact then
-                local route = "replay/" .. tostring(net.match.artifact)
-                if html5 then
-                    pcall(html5.run, "window.location.hash='" .. route
-                          .. "';window.location.reload()")
-                else
-                    pcall(sys.open_url, "https://play.vectorwake.net/#" .. route)
-                end
-                sfx.ui("ui_go")
-                return true
-            end
             if r.action == "details" then
                 toggle_details()
                 sfx.ui("ui_move")

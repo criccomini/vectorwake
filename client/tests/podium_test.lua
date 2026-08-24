@@ -371,17 +371,10 @@ end
 -- or the one on your side. Kestrel has five against everybody else's fewer.
 check("one pilot is marked mvp", counted("mvp") == 1, tostring(counted("mvp")))
 
--- What the match paid you is your own bounty taken, which is what the wallet
--- moves by. The unit is the drawn rivet every other price wears, so the text
--- is the label followed by the figure rather than a sentence.
-local banked = nil
-for i = 1, state.n - 1 do
-    if state.text[i].s == "BANKED" and state.text[i + 1].s == "7" then
-        banked = {state.text[i], state.text[i + 1]}
-    end
-end
-check("the payout is your own bounty taken",
-      banked ~= nil and banked[2].x > banked[1].x,
+-- What the match paid is not said here at all. It was, as BANKED and a rivet
+-- in the corner, and it went where the wallet already is: an ending is about
+-- the match, and a running total belongs on the page that spends it.
+check("the payout is not on the ending", said("banked") == nil,
       table.concat(words(), " | "))
 
 -- Nobody is the best gun in a match where nothing was shot down.
@@ -471,7 +464,7 @@ local function result_geometry(width, height)
     table.sort(scores, function(a, b) return a.x < b.x end)
 
     local gap = 6
-    local available = math.min(width - 36, 620)
+    local available = math.min(width - 36, 1040)
     local cell = math.floor((available - 5 * gap) / 6)
     local grid_w = 6 * cell + 5 * gap
     local grid_x = (width - grid_w) / 2
@@ -486,22 +479,34 @@ local function result_geometry(width, height)
             full = full + 1
             if near(r.y, 0) and near(r.h, height) then covers = true end
         end
-        if near(r.x, bar_x) and near(r.w, bar_w) and near(r.h, 8) then
+        if near(r.x, bar_x) and near(r.w, bar_w) and near(r.h, 9) then
             bar = r
         end
     end
     check(width .. " result has one screen-wide field",
           full == 1 and covers, tostring(full))
 
+    -- Wide enough to stand the two sides abreast, or not. Under seven
+    -- hundred points they stack at the full measure instead of halving it,
+    -- which is the one question this layout asks of a window.
+    local wide = grid_w >= 700
     local roster_left, roster_right = false, false
+    local stacked = 0
     for _, s in ipairs(segs) do
         if near(s.y1, s.y2) and near(s.x2 - s.x1, half) then
             if near(s.x1, grid_x) then roster_left = true end
             if near(s.x1, grid_x + 3 * (cell + gap)) then roster_right = true end
         end
+        if near(s.y1, s.y2) and near(s.x2 - s.x1, grid_w)
+           and near(s.x1, grid_x) then
+            stacked = stacked + 1
+        end
     end
-    check(width .. " roster halves use the shared measure",
-          roster_left and roster_right)
+    -- Stacked, a side rules the whole measure, and so does the head of every
+    -- group under it: one measure, one left edge, whatever is hanging off it.
+    check(width .. " rosters use the shared measure",
+          wide and (roster_left and roster_right) or (not wide and stacked >= 2),
+          wide and "abreast" or ("stacked " .. stacked))
 
     check(width .. " score bar stays between the figures",
           #scores == 2 and bar ~= nil
@@ -526,7 +531,7 @@ result_geometry(710, 378)
 result_geometry(1280, 720)
 
 -- A filed result turns the podium into the earned sharing moment. The share
--- press is a real browser overlay, while film and claim return through the
+-- press is a real browser overlay; claiming a pilot returns through the
 -- ordinary action path.
 ui.hits = {}
 frame({match = {playing = false, left = 23, artifact = 1, score = {[0] = 11, [1] = 14}},
@@ -537,8 +542,11 @@ check("a filed match offers its share link", said("share match") ~= nil
       and string.find(ui.link_dom, "vwshare:https://vectorwake.net/matches/42", 1, true))
 local actions = {}
 for _, hit in ipairs(ui.hits) do actions[hit.action] = true end
-check("the podium offers its film", said("watch replay") ~= nil
-      and actions.open_replay == true)
+-- And offers nothing beside it. Watching the film was a second key of equal
+-- weight on the one screen with a countdown running, which made the ending a
+-- choice between leaving and staying rather than a result.
+check("and no film beside it", said("watch replay") == nil
+      and actions.open_replay == nil)
 check("an unclaimed winner can keep their pilot", said("keep you") ~= nil
       and actions.keep_pilot == true)
 
@@ -570,8 +578,8 @@ check("and each one carries its number on the wire",
           return true
       end)())
 
--- The same six columns own quick chat and the action row. That makes every
--- outer edge, gap, and label center exact at both rendered sizes.
+-- The same six columns own quick chat, and a key spans all six of them. That
+-- makes every outer edge, gap, and label center exact at both rendered sizes.
 local function whole(n)
     return near(n, math.floor(n + 0.5))
 end
@@ -587,16 +595,15 @@ local function control_geometry(width, height, keep)
     for _, r in ipairs(ui.hits) do
         if r.action == "say" then
             control_chips[#control_chips + 1] = r
-        elseif r.action == "share" or r.action == "open_replay"
-               or r.action == "keep_pilot" then
+        elseif r.action == "share" or r.action == "keep_pilot" then
             control_actions[#control_actions + 1] = r
         end
     end
     table.sort(control_chips, function(a, b) return a.x < b.x end)
-    table.sort(control_actions, function(a, b) return a.x < b.x end)
+    table.sort(control_actions, function(a, b) return a.y < b.y end)
 
     local exact = #control_chips == 6
-        and #control_actions == (keep and 3 or 2)
+        and #control_actions == (keep and 2 or 1)
     local integer = exact
     for i, r in ipairs(control_chips) do
         integer = integer and whole(r.x) and whole(r.y)
@@ -609,37 +616,48 @@ local function control_geometry(width, height, keep)
                 and near(r.h, control_chips[1].h)
         end
     end
+    -- The keys stack rather than share a row, each one the width of the
+    -- measure. A key beside a key is two things of equal weight, and only one
+    -- of these is what the ending is offering.
     for i, r in ipairs(control_actions) do
         integer = integer and whole(r.x) and whole(r.y)
             and whole(r.w) and whole(r.h)
+        exact = exact
+            and near(r.x, control_chips[1].x)
+            and near(r.x + r.w, control_chips[#control_chips].x
+                     + control_chips[#control_chips].w)
         if i > 1 then
             exact = exact
-                and near(r.x - control_actions[i - 1].x
-                         - control_actions[i - 1].w, 6)
-                and near(r.w, control_actions[1].w)
+                and near(r.y - control_actions[i - 1].y
+                         - control_actions[i - 1].h, 6)
                 and near(r.h, control_actions[1].h)
         end
     end
-    exact = exact and near(control_actions[1].x, control_chips[1].x)
-        and near(control_actions[#control_actions].x
-                 + control_actions[#control_actions].w,
-                 control_chips[#control_chips].x
-                 + control_chips[#control_chips].w)
 
+    -- A chip's label is centered on it. The share key's is not: it carries a
+    -- mark, and the two are centered together, so the words sit left of the
+    -- middle by the room the mark takes and no more.
     local centered = exact
-    local labels = {
-        {"GG", control_chips[1]},
-        {"SHARE MATCH", control_actions[1]},
-    }
-    for _, pair in ipairs(labels) do
-        local t = nil
+    local function found(s)
         for i = 1, state.n do
-            if state.text[i].s == pair[1] then t = state.text[i] break end
+            if state.text[i].s == s then return state.text[i] end
         end
-        local r = pair[2]
-        centered = centered and t ~= nil
-            and near(t.x, r.x + r.w / 2)
-            and near(t.y, height - r.y - r.h / 2)
+    end
+    local gg, chip = found("GG"), control_chips[1]
+    centered = centered and gg ~= nil
+        and near(gg.x, chip.x + chip.w / 2)
+        and near(gg.y, height - chip.y - chip.h / 2)
+    local share, skey = found("SHARE MATCH"), control_actions[1]
+    centered = centered and share ~= nil
+        and near(share.y, height - skey.y - skey.h / 2)
+        and share.x < skey.x + skey.w / 2
+        and share.x > skey.x + skey.w / 2 - skey.w / 4
+    if keep then
+        -- No mark on this one, so it is centered outright.
+        local kt, kkey = found("KEEP YOU"), control_actions[2]
+        centered = centered and kt ~= nil
+            and near(kt.x, kkey.x + kkey.w / 2)
+            and near(kt.y, height - kkey.y - kkey.h / 2)
     end
 
     local name = width .. (keep and " three-action" or " two-action")

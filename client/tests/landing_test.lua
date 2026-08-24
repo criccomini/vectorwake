@@ -299,6 +299,40 @@ check("and no key that would join a room they are already in",
 check("and no name over the fight they are already in",
       word("vectorwake") == nil)
 
+-- --- the podium does not bury the key ---------------------------------------
+--
+-- Between matches the room puts up a podium, and the podium washes the whole
+-- window at 0.8 so the card is what gets read. The landing's key is drawn
+-- after that wash rather than before it: laid down first it is still there to
+-- a hit test and gone to a person, for the twenty five seconds a stranger is
+-- most likely to be deciding. Deploying then is legal and lands you at the
+-- next whistle.
+do
+    local ended = {playing = false, left = 15, artifact = 7,
+                   score = {[0] = 3, [1] = 5}}
+    frame(1440, 810, {match = ended})
+    local key = box("play_now")
+    check("the key survives a podium", key ~= nil)
+    check("and the name with it", word("vectorwake") ~= nil)
+    if key then
+        check("and is still what a press there reaches",
+              press(key.x + key.w / 2, key.y + key.h / 2) == "play_now")
+        -- The podium is centered and the key sits at the foot, so the wash is
+        -- the only thing between them. Nothing the podium writes may land on
+        -- the key itself.
+        local on_key = 0
+        for _, t in ipairs(words()) do
+            local y = H - t.y
+            if y >= key.y - 6 and y <= key.y + key.h + 6
+               and t.s ~= "PLAY NOW" then
+                on_key = on_key + 1
+            end
+        end
+        check("and the podium writes nothing across it",
+              on_key == 0, on_key .. " words on the key")
+    end
+end
+
 -- --- the menu takes the screen ---------------------------------------------
 
 -- Opening the menu draws the panel over all of this, so the key underneath it
