@@ -13,7 +13,6 @@
 
 local pal = require("arena.palette")
 local fx = require("arena.fx")
-local hull3d = require("arena.hull3d")
 
 local M = {}
 
@@ -147,9 +146,79 @@ M.DETAIL_RANGE = 260
 --
 -- Everything about a hull that never changes, worked out once at load.
 
--- The polygon helpers live in hull3d now, which is the file that has to know
--- how a hull's outline becomes a solid. This one still wants the winding.
-local turn = hull3d.turn
+-- Twice the signed area, whose sign is the winding.
+local function turn(p)
+    local a, n = 0, #p
+    for i = 1, n, 2 do
+        local j = (i + 1 < n) and i + 2 or 1
+        a = a + p[i] * p[j + 1] - p[j] * p[i + 1]
+    end
+    return a
+end
+
+-- Triangulate by ear clipping, into flat vertex-index triples.
+--
+-- The body fill used to fan from the centroid, which covers a hull only if the
+-- centroid can see all of it. Every hull that shipped before this was
+-- star-shaped like that, and that is exactly why none of them had a notch: the
+-- Apex's wings could not clear its engine block without the fill spilling into
+-- the gap between them. Run once, at load, so a frame pays nothing for it.
+local function triangulate(p)
+    local n = #p / 2
+    local idx = {}
+    for i = 1, n do idx[i] = (turn(p) > 0) and i or (n + 1 - i) end
+
+    local function cross(a, b, c)
+        return (p[b * 2 - 1] - p[a * 2 - 1]) * (p[c * 2] - p[a * 2])
+             - (p[b * 2] - p[a * 2]) * (p[c * 2 - 1] - p[a * 2 - 1])
+    end
+
+    -- Is vertex q inside the triangle abc? Barycentric, since an ear may not
+    -- swallow a vertex of the polygon it is being cut from.
+    local function inside(q, a, b, c)
+        local qx, qy = p[q * 2 - 1], p[q * 2]
+        local ax, ay = p[a * 2 - 1], p[a * 2]
+        local bx, by = p[b * 2 - 1], p[b * 2]
+        local cx, cy = p[c * 2 - 1], p[c * 2]
+        local d = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy)
+        if math.abs(d) < 1e-12 then return false end
+        local s = ((by - cy) * (qx - cx) + (cx - bx) * (qy - cy)) / d
+        local t = ((cy - ay) * (qx - cx) + (ax - cx) * (qy - cy)) / d
+        return s > 1e-9 and t > 1e-9 and (1 - s - t) > 1e-9
+    end
+
+    local out, guard = {}, 0
+    while #idx > 3 and guard < 4096 do
+        guard = guard + 1
+        local cut
+        for i = 1, #idx do
+            local a = idx[(i - 2) % #idx + 1]
+            local b = idx[i]
+            local c = idx[i % #idx + 1]
+            if cross(a, b, c) > 0 then
+                local clear = true
+                for k = 1, #idx do
+                    local q = idx[k]
+                    if q ~= a and q ~= b and q ~= c and inside(q, a, b, c) then
+                        clear = false
+                        break
+                    end
+                end
+                if clear then
+                    out[#out + 1], out[#out + 2], out[#out + 3] = a, b, c
+                    cut = i
+                    break
+                end
+            end
+        end
+        if not cut then break end
+        table.remove(idx, cut)
+    end
+    if #idx == 3 then
+        out[#out + 1], out[#out + 2], out[#out + 3] = idx[1], idx[2], idx[3]
+    end
+    return out
+end
 
 -- Refit a hull to its collision-space budget before deriving any render data.
 -- The three numbers are horizontal scale, vertical scale and vertical offset.
@@ -243,56 +312,26 @@ for _, h in ipairs(M.HULLS) do
         h.nrm[v * 2 - 1], h.nrm[v * 2] = mx * k, my * k
     end
 
+    -- Where each vertex sits between stern and bow, which is what lights the
+    -- front of the body and leaves the back of it nearly black.
+    local span = (hi - lo)
+    if span < 1e-6 then span = 1 end
+    h.lit = {}
+    for v = 1, n do
+        local t = (p[v * 2] - lo) / span
+        h.lit[v] = t * t
+    end
     -- Halfway up the hull, which is where a thumbnail has to be centered: every
     -- one of these reaches further forward than back, so its origin is not its
     -- middle and a row of them drawn about the origin sits low.
     h.mid = (lo + hi) / 2
 
-    -- The solid: a deck over a keel, lofted off this outline and moving no
-    -- part of it sideways. See arena/hull3d.lua.
-    hull3d.build(h)
-
-    -- Every part a hull carries is drawn on its deck, so every part needs a
-    -- height. Worked out here rather than per frame, because the answer is a
-    -- distance field query and it cannot change.
-    local function heights(pts)
-        local z = {}
-        for i = 1, #pts, 2 do z[(i + 1) / 2] = hull3d.deck_at(h, pts[i], pts[i + 1]) end
-        return z
-    end
-    h.plate_z, h.line_z = {}, {}
-    for k = 1, #(h.plates or {}) do
-        -- One height for a whole plate, taken off the highest ground it
-        -- covers, so a deck never fights the surface it sits on.
-        local zs, top = heights(h.plates[k]), 0
-        for i = 1, #zs do if zs[i] > top then top = zs[i] end end
-        h.plate_z[k] = top + 0.30
-    end
-    for k = 1, #(h.lines or {}) do h.line_z[k] = heights(h.lines[k]) end
-    if h.canopy then h.canopy_z = heights(h.canopy) end
-    if h.pods then
-        h.pod_z = {}
-        for k = 1, #h.pods do
-            h.pod_z[k] = hull3d.deck_at(h, h.pods[k][1], h.pods[k][2])
-        end
-    end
-    if h.tubes then
-        -- A hardpoint sits on the deck rather than sunk to the waterline,
-        -- where it ends up inside the hull on every class whose tube runs down
-        -- its spine. The Wedge's bomb tube is the brightest thing on that ship
-        -- and at the waterline it vanishes entirely.
-        h.tube_z = {}
-        for k = 1, #h.tubes do
-            local t = h.tubes[k]
-            h.tube_z[k] = math.max(hull3d.deck_at(h, t[1], t[2]),
-                                   hull3d.deck_at(h, t[3], t[4]))
-        end
-    end
+    h.tris = triangulate(p)
 
     -- Somewhere to transform into. A fresh table per part per hull per frame
     -- is a hundred tables a frame and all of them garbage, on a collector that
     -- runs in the same thread as the draw.
-    h.tmp, h.ntmp, h.ctmp, h.ktmp = {}, {}, {}, {}
+    h.tmp, h.ntmp, h.ctmp = {}, {}, {}
     h.ptmp, h.ltmp = {}, {}
     for k = 1, #(h.plates or {}) do h.ptmp[k] = {} end
     for k = 1, #(h.lines or {}) do h.ltmp[k] = {} end
@@ -366,13 +405,6 @@ local NEB_COLS = {
 -- near layer sometimes an eight-segment halo on the glow layer. Published
 -- because the budget below is only as good as the drawing agreeing with it,
 -- and a test that watches the drawing is how that stays true.
--- How many seats the two figures below are built to carry. Zones run eight
--- now, per match-game.md; this is the ceiling those numbers have always been
--- sized against and it is left where it is rather than cut to the room of the
--- day, since a layer that runs out loses geometry silently.
-local SEAT_CEILING = 64
-M.SEAT_CEILING = SEAT_CEILING
-
 local STAR_VERTS = 6
 local HALO_SEGS = 8
 local HALO_VERTS = HALO_SEGS * 3
@@ -386,20 +418,7 @@ M.STAR_VERTS, M.HALO_SEGS = STAR_VERTS, HALO_SEGS
 -- property of the room. Sixty-four seats of detailed hull is past the glow
 -- figure already and always has been; see the ceiling note where the layers
 -- are made.
--- Raised when the hulls became solids. A flat hull was its outline
--- triangulated, fourteen or sixteen triangles; a solid is its deck, its
--- waterline and whichever flank a bank has lifted, which is thirty-four facets
--- at rest and seventy holding the whole roll.
---
--- The figure is the seat ceiling times the worst hull there is, which is the
--- Chord at seventy facets: it has the most outline points and the shallowest
--- crown, so a bank lifts more of it than of anything else. That was how 3072
--- was arrived at when a body was sixteen flat triangles, and keeping the same
--- promise rather than quietly shrinking it is the point. A fill layer that
--- runs out does not report it, it stops drawing whatever came last, so
--- hull3d_test prices a full room against this number.
-local FILL_FIGHT = 16384
-M.FILL_FIGHT = FILL_FIGHT
+local FILL_FIGHT = 3072
 -- Grown when the trails and the wall light arrived: sixty-four ribbons at
 -- M.TRAIL_VERTS each and ten lights' worth of lit edges are about seven
 -- thousand vertices on a bad frame, and a glow layer that runs out does not
@@ -407,15 +426,7 @@ M.FILL_FIGHT = FILL_FIGHT
 -- Raised again for the blooms: every bolt, bomb, hull, engine and shockwave
 -- now sheds a six-segment halo of its own, which is eighteen vertices each
 -- and a few thousand across a busy frame.
---
--- And again when the hulls became solids, for the same reason the fill layer
--- moved: the wash over the body is one triangle per facet, so it grew exactly
--- as the body did. The note above used to say a full room was past this figure
--- already and always had been, which was true and is the kind of thing that
--- stays true until somebody prices it. Priced now, in hull3d_test, against the
--- worst seat the roster can produce.
-local GLOW_FIGHT = 57344
-M.GLOW_FIGHT = GLOW_FIGHT
+local GLOW_FIGHT = 40960
 
 -- Capacities move in steps of this, so dragging a window edge does not
 -- allocate a new buffer on every frame of the drag.
@@ -1758,22 +1769,16 @@ end
 
 -- --- ships -----------------------------------------------------------------
 
--- One part of a hull, from its own space into the world.
+-- Transform a hull into world space. Heading a travels along (sin a, -cos a)
+-- in simulation coordinates, so that is where the local +y axis has to point.
 --
--- Bank first, about the hull's own nose-to-tail axis, then heading. `zs` is a
--- height per point, or `z0` for a part flat enough to have one.
---
--- The camera looks straight down and does not lean. Height therefore leaves
--- the projection alone until a pilot banks, and then it is the whole of what
--- makes a ship roll rather than narrow. No perspective: a hull drawn a pixel
--- off where the core collides it is the defect hull_fit_test exists to
--- prevent, and a lean would be worst at the edges of the screen, which is
--- where a wall usually is.
-local function place_z(pts, zs, z0, out, x, y, ca, sa, cr, sr)
+-- `sx` scales the lateral axis alone, and it is how a hull banks: rolled
+-- about its own long axis and seen from above, the wings foreshorten and
+-- nothing else moves, which is exactly a cosine on local x.
+local function place(pts, out, x, y, ca, sa, scale, sx)
+    local kx = scale * (sx or 1)
     for i = 1, #pts, 2 do
-        local lz = zs and zs[(i + 1) / 2] or z0
-        local px = pts[i] * cr + lz * sr
-        local py = pts[i + 1]
+        local px, py = pts[i] * kx, pts[i + 1] * scale
         out[i] = x + px * ca + py * sa
         out[i + 1] = y + px * sa - py * ca
     end
@@ -1809,10 +1814,6 @@ local lit_col = {0, 0, 0, 1}
 -- The hot edge, graded. Same bargain as lit_col: read during the call and
 -- never kept, so one table serves every hull in the room.
 local edge_col = {0, 0, 0, 1}
--- The additive wash over one facet of the body. Same bargain again: the layer
--- reads it inside the call and never keeps it, so one table serves every facet
--- of every hull in the room rather than sixty tables a ship a frame.
-local wash_col = {0, 0, 0, 1}
 
 function M.ship(fill, glow, cls, x, y, heading, col, opts)
     local h = M.HULLS[cls + 1] or M.HULLS[1]
@@ -1831,33 +1832,15 @@ function M.ship(fill, glow, cls, x, y, heading, col, opts)
     end
     local a = heading / 65536 * TAU
     local ca, sa = math.cos(a), math.sin(a)
-    -- Bank, handed in as radians, and spent on a rotation about the hull's own
-    -- nose-to-tail axis. It used to be spent on `squash = cos(roll)`, a scale
-    -- on local x: a lean drawn as a narrowing, because a flat drawing has no
-    -- axis to turn about. arena.script's `ship_roll` has been working the
-    -- number out all along and this is the first time it turns anything.
-    local roll = (opts and opts.roll) or 0
-    local cr, sr = 1, 0
-    if roll ~= 0 then cr, sr = math.cos(roll), math.sin(roll) end
-    local mesh = h.mesh
-    local qx, qy = mesh.px, mesh.py
-    do
-        local vx, vy, vz = mesh.x, mesh.y, mesh.z
-        for i = 1, mesh.n do
-            local px = vx[i] * cr + vz[i] * sr
-            local py = vy[i]
-            qx[i] = x + px * ca + py * sa
-            qy[i] = y + px * sa - py * ca
-        end
+    -- Roll, handed in as radians of bank. Everything below that speaks a
+    -- local x multiplies by this, so the whole ship leans together: hull,
+    -- plates, canopy, hardpoints, lamps and the engines, whose plumes stay
+    -- on the heading while their nozzles come inboard.
+    local squash = 1
+    if opts and opts.roll and opts.roll ~= 0 then
+        squash = math.cos(opts.roll)
     end
-    -- The silhouette is the waterline, which is the ring the drawing has
-    -- always been. Under bank it is no longer the plan: the two rims separate,
-    -- and the one the hot edge rides is the one on the deck's side.
-    local ring = mesh.ring
-    local pts = h.tmp
-    for i = 1, ring do
-        pts[i * 2 - 1], pts[i * 2] = qx[i], qy[i]
-    end
+    local pts = place(h.poly, h.tmp, x, y, ca, sa, 1, squash)
     local mine = opts and opts.mine
     local dim = ((opts and opts.alpha) or 1) * (h.dim or 1)
     local near = not (opts and opts.far)
@@ -1875,8 +1858,8 @@ function M.ship(fill, glow, cls, x, y, heading, col, opts)
     if opts and opts.thrusting then
         local flick = 0.72 + (opts.flicker or 0) * 0.28
         for i = 1, #h.jets, 2 do
-            local jx = x + h.jets[i] * cr * ca + h.jets[i + 1] * sa
-            local jy = y + h.jets[i] * cr * sa - h.jets[i + 1] * ca
+            local jx = x + h.jets[i] * squash * ca + h.jets[i + 1] * sa
+            local jy = y + h.jets[i] * squash * sa - h.jets[i + 1] * ca
             local len = 17 * flick
             local mx, my = jx + sa * 1.5, jy - ca * 1.5
             glow:halo(jx, jy, 5.4 * flick, 8, pal.a(pal.THRUST, 0.42 * dim))
@@ -1920,25 +1903,14 @@ function M.ship(fill, glow, cls, x, y, heading, col, opts)
     -- through the hull.
     local body = {col[1] * 0.055 + 0.018, col[2] * 0.055 + 0.026,
                   col[3] * 0.055 + 0.042, 0.95 * dim}
-    wash_col[1], wash_col[2], wash_col[3] = col[1], col[2], col[3]
-    local fa, fb, fc = mesh.fa, mesh.fb, mesh.fc
-    local fnx, fnz, flit = mesh.fnx, mesh.fnz, mesh.flit
-    for k = 1, mesh.fn do
-        -- Back-face cull, against a camera that looks straight down. Bank is
-        -- clamped well inside a quarter turn, so what survives is the deck and
-        -- whichever flank the roll has lifted: a height field over the plan,
-        -- and a height field cannot occlude itself. That is the whole reason
-        -- nothing here is depth sorted, and the reason the keel is never drawn
-        -- even though it is always there.
-        if fnz[k] * cr - fnx[k] * sr > 0 then
-            local i1, i2, i3 = fa[k], fb[k], fc[k]
-            local x1, y1 = qx[i1], qy[i1]
-            local x2, y2 = qx[i2], qy[i2]
-            local x3, y3 = qx[i3], qy[i3]
-            fill:tri(x1, y1, x2, y2, x3, y3, body)
-            wash_col[4] = flit[k] * 0.20 * dim
-            glow:tri(x1, y1, x2, y2, x3, y3, wash_col)
-        end
+    local tris, lit = h.tris, h.lit
+    for i = 1, #tris, 3 do
+        local a1, b1, c1 = tris[i], tris[i + 1], tris[i + 2]
+        fill:tri(pts[a1 * 2 - 1], pts[a1 * 2], pts[b1 * 2 - 1], pts[b1 * 2],
+                 pts[c1 * 2 - 1], pts[c1 * 2], body)
+        glow:tri_fade(pts[a1 * 2 - 1], pts[a1 * 2], lit[a1] * 0.20 * dim,
+                      pts[b1 * 2 - 1], pts[b1 * 2], lit[b1] * 0.20 * dim,
+                      pts[c1 * 2 - 1], pts[c1 * 2], lit[c1] * 0.20 * dim, col)
     end
 
     -- Interior structure, under the silhouette so the outline always wins.
@@ -1948,16 +1920,16 @@ function M.ship(fill, glow, cls, x, y, heading, col, opts)
     if near then
         if h.plates then
             for k = 1, #h.plates do
-                local q = place_z(h.plates[k], nil, h.plate_z[k], h.ptmp[k],
-                                  x, y, ca, sa, cr, sr)
+                local q = place(h.plates[k], h.ptmp[k], x, y, ca, sa, 1,
+                                squash)
                 glow:fan(q, pal.a(pal.PANEL_INK, 0.035 * dim))
                 glow:outline(q, 0.85, pal.a(pal.PANEL_INK, 0.36 * dim), true)
             end
         end
         if h.lines then
             for k = 1, #h.lines do
-                local q = place_z(h.lines[k], h.line_z[k], nil, h.ltmp[k],
-                                  x, y, ca, sa, cr, sr)
+                local q = place(h.lines[k], h.ltmp[k], x, y, ca, sa, 1,
+                                squash)
                 for i = 1, #q - 3, 2 do
                     glow:seg(q[i], q[i + 1], q[i + 2], q[i + 3], 0.7,
                              pal.a(pal.PANEL_INK, 0.26 * dim), true)
@@ -1972,13 +1944,10 @@ function M.ship(fill, glow, cls, x, y, heading, col, opts)
     if h.tubes then
         for k = 1, #h.tubes do
             local t = h.tubes[k]
-            local tz = h.tube_z[k]
-            local a1 = t[1] * cr + tz * sr
-            local b1 = t[3] * cr + tz * sr
-            local ax = x + a1 * ca + t[2] * sa
-            local ay = y + a1 * sa - t[2] * ca
-            local bx = x + b1 * ca + t[4] * sa
-            local by = y + b1 * sa - t[4] * ca
+            local ax = x + t[1] * squash * ca + t[2] * sa
+            local ay = y + t[1] * squash * sa - t[2] * ca
+            local bx = x + t[3] * squash * ca + t[4] * sa
+            local by = y + t[3] * squash * sa - t[4] * ca
             glow:seg_glow(ax, ay, bx, by, t[5] + 4.0, 0.09 * dim, col)
             glow:seg(ax, ay, bx, by, t[5], pal.a(col, 0.30 * dim), true)
             glow:seg(ax, ay, bx, by, t[5] * 0.34,
@@ -2037,26 +2006,11 @@ function M.ship(fill, glow, cls, x, y, heading, col, opts)
         e = e + 1
     end
 
-    -- The keel's rim. Rolled far enough, a hull shows the edge of its
-    -- underside as well as the edge of its deck, and both are the same edge of
-    -- the same silhouette. At level flight the two project onto each other
-    -- exactly, and this layer adds rather than paints, so drawing it there
-    -- would simply double the outline: it fades in with the bank, which is
-    -- when the two rims separate and there is a second edge to see.
-    local keel_a = (sr < 0 and -sr or sr) * ea
-    if keel_a > 0.02 then
-        for i = 1, ring do
-            local j = i % ring + 1
-            glow:seg(qx[ring + i], qy[ring + i], qx[ring + j], qy[ring + j],
-                     1.2, pal.a(edge, math.min(1, h.hot[i] * keel_a)), true)
-        end
-    end
-
     -- The canopy. Every hull has one, it is always the brightest closed shape
     -- on the ship, and it is always forward of center, so "which end is the
     -- front" never needs a second look.
     if h.canopy then
-        local q = place_z(h.canopy, h.canopy_z, nil, h.ctmp, x, y, ca, sa, cr, sr)
+        local q = place(h.canopy, h.ctmp, x, y, ca, sa, 1, squash)
         glow:fan(q, pal.a(pal.hot(col, 0.3, 1), 0.42 * dim))
         glow:outline(q, 0.9, pal.a(pal.hot(col, 0.8, 1), 0.95 * dim), true)
     end
@@ -2067,10 +2021,8 @@ function M.ship(fill, glow, cls, x, y, heading, col, opts)
     if near and h.pods then
         for k = 1, #h.pods do
             local d = h.pods[k]
-            local pz = h.pod_z[k]
-            local d1 = d[1] * cr + pz * sr
-            local lx = x + d1 * ca + d[2] * sa
-            local ly = y + d1 * sa - d[2] * ca
+            local lx = x + d[1] * squash * ca + d[2] * sa
+            local ly = y + d[1] * squash * sa - d[2] * ca
             glow:halo(lx, ly, d[3] * 2.6, 6, pal.a(col, 0.30 * dim))
             glow:disc(lx, ly, d[3] * 0.45, 4,
                       pal.a(pal.hot(col, 0.8, 1), 0.8 * dim))
@@ -2079,8 +2031,8 @@ function M.ship(fill, glow, cls, x, y, heading, col, opts)
 
     -- Engines lit at idle, so a coasting hull still has something running.
     for i = 1, #h.jets, 2 do
-        local jx = x + h.jets[i] * cr * ca + h.jets[i + 1] * sa
-        local jy = y + h.jets[i] * cr * sa - h.jets[i + 1] * ca
+        local jx = x + h.jets[i] * squash * ca + h.jets[i + 1] * sa
+        local jy = y + h.jets[i] * squash * sa - h.jets[i + 1] * ca
         glow:halo(jx, jy, 4.2, 6, pal.a(pal.THRUST, 0.15 * dim))
     end
 
