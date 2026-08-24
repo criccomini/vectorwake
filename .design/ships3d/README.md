@@ -1,15 +1,20 @@
 # Ships in three dimensions
 
-Where this was designed. It asked one question, what would the seven hulls look
-like with a third dimension under them and would the game still look like
-itself, and the answer went into the client: see
-[decision 58](../../docs/architecture/decisions.md) and
-`client/arena/hull3d.lua`, which builds the same shape off the same outline.
+A mock, and it stayed one. It asks what the seven hulls would look like with a
+third dimension under them, and whether the game would still look like itself.
 
-What stays here is the offline renderer and `battlecap`, because the pictures
-below are made from recorded fights and the client cannot make those. The two
-lofts are separate code and are allowed to drift: this one is for looking at a
-hull, the client's is for flying one.
+It went into the client once and came back out. The pictures below are made
+with a perspective camera at a finite height, and the arena's is orthographic
+and points straight down under a fixed zoom, which is decision 13 and is what
+stops a resize from stretching the world. An orthographic camera pointed at a
+plane draws a solid as its own plan: the hulls were genuinely solids in there,
+and in the arena they looked exactly like the flat drawings they replaced.
+
+Three things would have made the height visible and none of them earned its
+place. A perspective lean draws a hull off where the core collides it. A drawn
+deck fold is two more strokes per outline point on every ship in the room. A
+bank only shows while somebody is turning. So the client draws what it drew
+before, and this is the record of what the other answer looked like.
 
 The answer this settles on is that the third dimension goes into the geometry
 and nothing else. These are solids, occluding each other and the walls, seen
