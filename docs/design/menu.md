@@ -1,5 +1,16 @@
 # Landing, and the menu
 
+> **The landing is the game now.** Opening the client seats you in the stands
+> of a real melee room and draws the watcher's HUD; the front end is that
+> screen with the wordmark and a pulsing PLAY NOW key over its foot. The deck
+> this file describes below is gone, and so is the zone carousel that lived on
+> it. What is left of the menu is a panel you open over the stands, closable
+> like the one opened mid-fight, with the play tab back to being the list of
+> games. See [decision 61](../architecture/decisions.md) and the section
+> "Behind it, the sky the game is played under", which is now literally the
+> game. The reasoning below is kept where it still holds; where it describes a
+> deck, the stands are what exists.
+
 > **The split happened.** [match-game.md](match-game.md) moved the ship page,
 > the upgrades and the standings out of this tree and into pages of their own,
 > with settings beside them, so the front end is six tabs and help folds
@@ -28,13 +39,17 @@ once.
 
 ## The only difference between the two
 
-Whether there is a game behind the panel. That is one flag, `menu.home`, and
-everything else follows from it: with nothing behind it the menu cannot be
-closed, the corner stops offering a way out, and a `leave` row appears in the
-root only once there is something to leave.
+Whether you are in a hull. That is `menu.home`, and the tab row follows it: six
+stops with no hull, the short row with one. A pilot the room benched is in the
+stands too, same empty cockpit and same time to read, so they get the six back
+with `leave` added, which is the one stop that needs a zone to mean anything.
 
-Closing a menu with nothing behind it would leave a player on an empty
-starfield with no way back, which is a button that breaks the game.
+Whether the menu can be *closed* is a different question, and it used to be the
+same one. Closing a menu with nothing behind it would leave a player on an
+empty starfield with no way back, which is a button that breaks the game. There
+is a game behind it now whenever the client has reached a room, seat or no
+seat, so the panel is forced up only before the first room answers or after one
+drops.
 
 ## A tab row, and a page under it
 
@@ -271,38 +286,46 @@ list.
 
 ### The landing
 
-On the home screen with a game running, the play tab is not a list at all. It
-is the landing: one panel down the left with the fight itself in the glass
-beside it, carrying the room's name, its clock, the score, both sides with
-their rosters, the ground they are standing on, and the key that joins.
+There is no landing page. Opening the client dials the game at the head of the
+list as a watcher and draws the room, and the front end is that: the watcher's
+own HUD, with the corner keys, the clock and the score, the radar and the feed,
+and none of a hull's furniture. Two things are laid over the foot of it, and
+they are the whole of the front end's chrome: the wordmark, and a PLAY NOW key
+that takes a seat in the room already on screen.
 
-It hangs off no rule and starts at the page's own left edge, flush with the
-wordmark and the tabs directly above it. Every other panel in the menu hangs
-from a lit vertical, which is the arena's own shape and is right where a panel
-stands beside something; this one is the leftmost thing on the screen, so the
-rule was separating it from the window and the gutter it needed was pushing
-the page a rail's width inboard of the row it sits under.
+The key breathes on the same slow swell the on-air tally uses, with its edge
+floored well above dark so the trough never reads as a key that stopped
+working. It is the one press this screen exists for. Enter is the same press,
+because a keyboard should not have to open a menu to start the game.
 
-Nothing is captioned that the page already says. A room's name does not need
-"deploying to" over it and a running clock does not need "on the clock". A
-clock between matches keeps its label, because counting to a start is a
-different fact from counting to a finish and the numerals cannot say which.
+**The name sits directly over the key.** It could have gone under the clock, in
+the broadcast bug's slot, or into the corner the missing corner stack leaves
+empty; all three were drawn, and the mocks are in `.design/spectator-landing`.
+A stranger's eye ends on the pulsing thing at the foot of the screen, and the
+name has to be where that look lands or the page never says what it is. Read as
+one block the two are a title and its button; read apart they are a mark in a
+corner nobody looks at.
 
-Every pilot wears the mark for whatever is flying them. It used to be the
-people who were marked and the machines who went bare, which asks a reader to
-know the convention before the column says anything, and in a room mostly full
-of bots the rows it drew were mostly the blank one. Both sides head their own
-two score columns, on their own line, rather than one heading floating above
-the first of them and the second side's numbers running unlabeled a screen
-further down.
+Nothing else is added. Every reading a panel would carry is one the HUD
+already draws, to the people in the room, in code that has to be right anyway.
 
-The key sits directly under whatever the panel turned out to be, not at the
-foot of the window. A four-a-side roster and a map panel leave most of a
-desktop's height empty below them, and a button parked at the bottom of that
-belongs to the window rather than to the page it is the end of. The hull you
-would arrive in turns inside the key, beside the word, which is where it was
-already pointing: it had been a line of its own above, reading "arriving as
-Apex" next to a drawing of an Apex.
+The corner keeps MENU and PLAYERS and the green CHANNEL mark, and drops TAKE
+SEAT. That key means the same act as PLAY NOW, and two controls for one act,
+one of them pulsing at the foot of the screen and one a chip in the corner, is
+the offer made twice. A pilot the room benched mid-match keeps TAKE SEAT: they
+are not on the landing, and the seat being held is theirs already.
+
+Which game you land in is the head of the directory's list, which is the
+deployment's own first zone and is Melee. Moving the cursor down the games list
+re-dials the stands to whatever it lands on, so what is on screen is always
+what the key would join, and the choice outlives the menu closing.
+
+On a phone the clock and the score come off the corner keys' line and take one
+of their own beneath it, giving up the side names as they go: at 390 points
+MENU, PLAYERS and the channel mark reach most of the way across and the clock
+was drawn straight through them. The score's two colors and the roster carry
+which side is which. That was always wrong and it was always somebody watching
+on a phone who saw it; the landing is that screen for everybody now.
 
 ## Nothing pauses
 

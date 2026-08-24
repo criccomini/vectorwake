@@ -39,6 +39,32 @@ eq(frame.live(state, net, sim, menu), false, "offline world")
 eq(menu.home, true, "offline menu state")
 eq(menu.open, true, "offline menu stays open")
 
+-- The landing: a watch nobody deployed from. There is no seat, so the menu
+-- keeps its no-hull tree, and there is a room, so the menu is the player's to
+-- close. That second half is the whole of the spectator-first front end: the
+-- panel used to be forced up whenever there was no seat, which over the stands
+-- would be a menu nobody can put away covering the game it describes.
+state.online = true
+state.attract = true
+menu.open = false
+eq(frame.live(state, net, sim, menu), true, "the stands are a live world")
+eq(menu.home, true, "the stands hold no seat")
+eq(menu.open, false, "and the menu is not forced over them")
+
+-- Deploying clears the flag, and the same frame reads as a session.
+state.attract = false
+eq(frame.live(state, net, sim, menu), true, "deployed world")
+eq(menu.home, false, "deploying takes the seat")
+eq(menu.open, false, "and leaves the menu shut")
+
+-- Losing the room puts it back up, because now there is nothing behind it.
+state.online = false
+state.attract = true
+eq(frame.live(state, net, sim, menu), false, "no room to stand in")
+eq(menu.open, true, "so the menu stands on its own again")
+state.attract = nil
+state.online = false
+
 state.replay = {}
 menu.open = false
 eq(frame.live(state, net, sim, menu), true, "replay world")

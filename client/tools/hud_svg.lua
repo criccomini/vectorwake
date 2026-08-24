@@ -4,7 +4,8 @@
 --
 -- Scenarios: after (a Ladder run five rungs in), fresh (its first life), deep
 -- (far enough to have a floor), before (with the banner the server used to
--- send). Rasterize with any browser:
+-- send), landing (the front end, watched from the stands). Rasterize with any
+-- browser:
 --
 --     chromium --headless --screenshot=out.png --window-size=1280,800 out.svg
 --
@@ -202,24 +203,51 @@ if scenario == "before" then
     banner = "Ladder rung 5: first to 1, 0 to 0"
 end
 
+-- The front end: a melee room watched from the stands, with the game's name
+-- and PLAY NOW over the foot of it. Worth a scenario of its own because this
+-- is the first screen anybody sees and it is the one made of two pieces laid
+-- out by different code, the watcher's HUD and the lockup over the key, so
+-- whether they collide is a question only a picture answers.
+local landing = scenario == "landing"
+if landing then
+    room.count = 8
+    room.teams = {[0] = 0, 0, 0, 0, 1, 1, 1, 1}
+    match = {playing = true, left = 107, score = {[0] = 3, [1] = 5}}
+end
+
 ui.details = true
 state.n = 0
 ui.begin(layer, W, H, 1, false, 0)
 ui.hud({
-    me = 0,
+    me = landing and 0 or 0,
+    -- A watcher's camera stands behind a hull that is not yours, and the
+    -- landing is a watch nobody deployed from.
+    watch = landing and {subject = 0} or nil,
+    landing = landing or nil,
     side = 0,
     viewer_name = "Kestrel 8",
     class_names = {"Apex", "Wedge", "Chord", "Anvil", "Facet", "Cipher", "Lattice"},
     menu_open = false,
-    pilots = {
+    pilots = landing and (function()
+        local out = {}
+        local names = {"Krait 4", "Vireo 9", "Saber 3", "Plinth 41",
+                       "Mantis 7", "Halcyon 2", "Sable 09", "Orrery 3"}
+        for i = 0, 7 do
+            out[i] = {name = names[i + 1],
+                      label = i % 2 == 0 and "unknown" or "bot",
+                      ai = i % 2 == 1}
+        end
+        return out
+    end)() or {
         [0] = {name = "Kestrel 8", label = "unknown", tier = "Wing", games = 41},
         [1] = {name = "Ozone 12", label = "bot", ai = true, tier = "Ace", games = 900},
     },
-    ratings = {[0] = 1183.4, [1] = 1346.6},
+    ratings = landing and {} or {[0] = 1183.4, [1] = 1346.6},
     watchers = nil,
     teams = {},
     match = match,
-    side_names = {[0] = "Pilot", [1] = "Rival"},
+    side_names = landing and {[0] = "Pylon", [1] = "Caisson"}
+                 or {[0] = "Pilot", [1] = "Rival"},
     feed = {},
     hurt = 0,
     charges = {},
@@ -229,7 +257,7 @@ ui.hud({
     lag_notice = "",
     rtt = 22,
     link_bars = 4,
-    zone = "ladder",
+    zone = landing and "melee" or "ladder",
     room = 1,
     fps = 60, frame_ms = 16.7, rx_rate = 31000, tx_rate = 700,
 })

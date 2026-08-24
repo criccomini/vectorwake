@@ -198,6 +198,30 @@ one hull that goes unlabeled is your own and a watcher has none. That is the
 answer to the only question a spectator has constantly, and it belongs on the
 hull rather than in a caption at the foot of the screen.
 
+## The stands are the front end
+
+Everything below was written about a mode a player chooses. It is the first
+thing that happens now: opening the client seats you in the stands of a melee
+room, and the front end is the watcher's screen with the game's name and a PLAY
+NOW key over its foot. See [decision 61](../architecture/decisions.md) and
+[menu.md](menu.md#the-landing).
+
+Nothing in the rule above changes, which is the point of writing it down as a
+rule. A visitor gets the room channel, five seconds behind, exactly as anybody
+watching does; they are named in the roster like anybody watching; and the seat
+they take when they press the key is dealt on the side they were watching with,
+because they were in the room the whole time.
+
+What does change is the volume. Every page load is now a watcher, so
+`max_watchers` is the front door's capacity rather than a gallery's, and the
+count that used to describe a handful of interested people now describes
+everybody who has opened the site. Two consequences are accepted rather than
+fixed. A room fills its watcher slots before its seats, which arena servers
+answer by opening rooms as they fill. And the roster carries a row for every
+drive-by, so a pilot is on air more of the time than the tally was designed
+for: that dilutes what it says, and the alternative is an unnamed watcher,
+which is the second kind of watcher this design spent real effort deleting.
+
 ## Where the door is
 
 Spectating is a hull you can be in, so it is the eighth cell of the ship page.

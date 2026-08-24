@@ -2670,3 +2670,51 @@ can become certified.
 starter-margin or eighth-pip contrast falls outside the balance band. Adjust
 the range or the per-point jump while keeping eight meaningful steps. Do not
 bring back pips that spend a point without changing the ship.
+
+---
+
+## 61. The landing is the game, watched from the stands
+
+**Status:** accepted, superseding decision 56's deck
+
+**Decision:** opening the client seats you in the stands of a real melee room
+and draws the watcher's own HUD. The front end is that screen plus two things
+over its foot: the wordmark, and a breathing PLAY NOW key that takes a seat in
+the room already on screen. The deck is deleted, along with the zone carousel
+it carried. The menu becomes an ordinary panel over the stands, closable like
+the one opened mid-fight, and forced up only when the client has reached no
+room at all. Its tab row is decided by whether you are in a hull rather than by
+which screen you are on: six stops with none, the short row with one, so a
+pilot the room benched gets the whole row back with `leave` added to it.
+
+**Why:** decision 56 already ran a real watch connection behind the landing and
+already converted it on deploy, so the panel in front of it was describing a
+room the player could see. Every reading on it, the clock and the score and the
+roster and who is winning, is one the HUD draws better, to the people in the
+room, in code that has to be right anyway. Deleting the deck removes a second
+renderer for the same facts rather than adding a screen.
+
+It is also aimed at a number: 67% of accounts have never scored, and the wall
+is the first session. A stranger now watches a real fight in the real
+interface before deciding anything, which is how the game this one inherits
+its simulation from taught itself, and the thing they press is the only
+control on the screen.
+
+The name goes directly over the key. Three placements were drawn (over the key,
+under the clock, in the corner the missing corner stack leaves empty); the
+mocks are in `.design/spectator-landing`. A stranger's eye ends on the pulsing
+thing at the foot of the screen, so the name has to be where that look lands.
+
+**Cost:** the same as decision 56's, and more of it: every page load holds a
+watcher slot, so `max_watchers` is now the front door's capacity rather than a
+gallery's. Arena servers open rooms as they fill, which is the answer at this
+population and is not the answer at every population. Every drive-by visitor is
+also a named row in the roster and puts pilots on air more of the time, which
+dilutes what the tally says; that is accepted rather than fixed, because the
+alternative is an unnamed watcher and decision 59 spent real effort killing the
+second kind of watcher.
+
+**Reconsider if:** watcher slots become the thing that fills first on a popular
+room (give the landing a lighter feed, or seat visitors only where a room has
+spare egress), or the roster noise makes the on-air tally something pilots stop
+reading.

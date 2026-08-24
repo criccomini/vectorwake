@@ -2979,5 +2979,64 @@ do
     menu.sel = {}
 end
 
+-- --- the menu is a panel over the stands ----------------------------------
+--
+-- The front end is a room now: opening the client seats you in the stands of
+-- one, so a menu opened there has a game behind it and closes like any other.
+-- What is left unclosable is a client that has reached no room at all, where
+-- escape really would land on an empty starfield with no way back.
+do
+    local kept = {home = menu.home, scenery = menu.scenery,
+                 watching = menu.watching, open = menu.open,
+                 stack = menu.stack, sel = menu.sel}
+
+    menu.home, menu.scenery = true, true
+    menu.open, menu.stack, menu.sel = true, {"root"}, {}
+    check("a menu over the stands closes", menu.close() == true)
+    check("and says so to the drawing", (function()
+        menu.open, menu.stack, menu.sel = true, {"root"}, {}
+        return menu.view().closable == true
+    end)())
+
+    menu.home, menu.scenery = true, false
+    menu.open, menu.stack, menu.sel = true, {"root"}, {}
+    check("a menu with no room behind it refuses to close",
+          menu.close() == false and menu.open == true)
+    check("and says that too", menu.view().closable ~= true,
+          tostring(menu.view().closable))
+
+    -- The tab set follows the cockpit, not the zone. Six stops with no hull,
+    -- wherever you are standing; the short row only once you are flying one.
+    local function labels()
+        local out = {}
+        for _, r in ipairs(menu.view().rail) do out[#out + 1] = r.label end
+        return table.concat(out, " ")
+    end
+
+    menu.home, menu.scenery, menu.watching = true, true, false
+    menu.open, menu.stack, menu.sel = true, {"root"}, {}
+    check("the stands carry the whole row",
+          labels() == "play ship upgrades friends standings settings",
+          labels())
+
+    menu.home, menu.watching = false, false
+    check("a pilot in a hull gets the short one",
+          labels():find("play") == nil and labels():find("leave") ~= nil,
+          labels())
+
+    -- A pilot the room benched is in the stands too: same empty cockpit, same
+    -- time to read, so the same six stops. What they keep that the landing
+    -- does not is `leave`, because they are in a zone there is something to
+    -- leave.
+    menu.home, menu.watching = false, true
+    check("a benched pilot gets the whole row back",
+          labels() == "play ship upgrades friends standings settings leave",
+          labels())
+
+    menu.home, menu.scenery, menu.watching = kept.home, kept.scenery,
+                                             kept.watching
+    menu.open, menu.stack, menu.sel = kept.open, kept.stack, kept.sel
+end
+
 print(fails == 0 and "all good" or (fails .. " failed"))
 os.exit(fails == 0 and 0 or 1)
