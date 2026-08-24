@@ -46,10 +46,11 @@ with `leave` added, which is the one stop that needs a zone to mean anything.
 
 Whether the menu can be *closed* is a different question, and it used to be the
 same one. Closing a menu with nothing behind it would leave a player on an
-empty starfield with no way back, which is a button that breaks the game. There
-is a game behind it now whenever the client has reached a room, seat or no
-seat, so the panel is forced up only before the first room answers or after one
-drops.
+empty starfield with no way back, which is a button that breaks the game. What
+is behind it now is either the stands or the waiting screen, and both of those
+carry MENU, so it always closes and nothing ever opens it but a player. Escape
+means the same thing from every level: put the panel away. Left and the chevron
+are what walk back through the tree.
 
 ## A tab row, and a page under it
 
@@ -314,6 +315,25 @@ SEAT. That key means the same act as PLAY NOW, and two controls for one act,
 one of them pulsing at the foot of the screen and one a chip in the corner, is
 the offer made twice. A pilot the room benched mid-match keeps TAKE SEAT: they
 are not on the landing, and the seat being held is theirs already.
+
+### Before a room answers
+
+A directory lookup and a handshake stand between the engine's first frame and
+the first snapshot, and something has to be on screen for them. It is the
+loading screen's own picture, held: the lockup centered on the starfield at the
+size and place the loader drew it, one line under it saying where the wait is,
+and MENU in its usual corner. Nothing visible changes at the hand-off, and the
+game appears when it appears.
+
+What used to fill that gap was the menu, opened by the client rather than by
+anybody, which is the one thing this whole design is against. It also meant the
+first screen of a game about flying was a list. The line under the wordmark
+says "looking for games" while the directory is being asked, "joining" while a
+room is answering, and whatever went wrong when something does.
+
+MENU is on it because a directory that never answers must not leave a wordmark
+and no way out. That is also what lets the menu always close: there is always
+something behind it that has a way back in.
 
 Which game you land in is the head of the directory's list, which is the
 deployment's own first zone and is Melee. Moving the cursor down the games list

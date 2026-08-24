@@ -299,6 +299,49 @@ check("and no key that would join a room they are already in",
 check("and no name over the fight they are already in",
       word("vectorwake") == nil)
 
+-- --- before a room answers ---------------------------------------------------
+--
+-- The gap between the engine's first frame and the first snapshot is a
+-- directory lookup plus a handshake, and what used to fill it was the menu:
+-- a panel nobody asked for, standing between a player and the game for as
+-- long as the network took. What fills it now is the loader's own picture,
+-- so nothing visible changes at the hand-off.
+do
+    for _, s in ipairs(SHAPES) do
+        local w, h, shape = s[1], s[2], s[3]
+        boxes, rects = {}, {}
+        state.n = 0
+        H = h
+        ui.begin(layer, w, h, 1, false, 0)
+        ui.waiting("finding a game")
+        ui.finish()
+
+        check(shape .. " waiting says what this is", word("vectorwake") ~= nil)
+        check(shape .. " waiting says where the wait is",
+              word("finding a game") ~= nil)
+        -- The loader centers the lockup, so this has to as well or the
+        -- hand-off jumps.
+        local name = word("vectorwake")
+        if name then
+            check(shape .. " waiting centers the lockup vertically",
+                  math.abs(name.y - h / 2) < 2,
+                  string.format("%.0f against %d", name.y, h / 2))
+        end
+        -- And a way in, because a directory that never answers must not leave
+        -- a wordmark and no exit.
+        local menu_key = box("open")
+        check(shape .. " waiting keeps a way into the menu", menu_key ~= nil)
+        if menu_key then
+            check(shape .. " waiting puts that key where it always is",
+                  menu_key.x < w / 2 and menu_key.y < h / 2,
+                  string.format("%.0f,%.0f", menu_key.x, menu_key.y))
+        end
+        -- Nothing to deploy into yet.
+        check(shape .. " waiting offers no key to a room it has not found",
+              box("play_now") == nil)
+    end
+end
+
 -- --- the podium does not bury the key ---------------------------------------
 --
 -- Between matches the room puts up a podium, and the podium washes the whole

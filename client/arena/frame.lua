@@ -12,16 +12,16 @@ local M = {}
 -- stands of a real room, and pressing play is what turns the connection into a
 -- session. It clears the flag itself.
 --
--- The menu is forced up only with nothing at all behind it, which means before
--- the first room answers or after one drops. It used to stand whenever there
--- was no seat, the same rule while the front end was a screen of its own; over
--- the stands it would be a panel nobody can put away covering the game it is
--- describing.
+-- Nothing here opens the menu any more. It used to stand itself up whenever
+-- there was no seat, and later whenever there was no room, so a player who had
+-- asked for nothing met a panel for as long as a directory and a handshake
+-- took. With no room the client draws the loader's own picture instead and
+-- keeps MENU in the corner, so the menu is only ever open because somebody
+-- opened it. See `ui.waiting`.
 function M.live(self, net, sim, menu)
     local live = (self.replay ~= nil or (self.online and net.connected))
         and sim.ship_count() > 0
     menu.home = not live or self.attract == true
-    if not live then menu.open = true end
     return live
 end
 

@@ -37,13 +37,14 @@ state.online = false
 menu.open = false
 eq(frame.live(state, net, sim, menu), false, "offline world")
 eq(menu.home, true, "offline menu state")
-eq(menu.open, true, "offline menu stays open")
+-- And it stays shut. This used to stand the menu up whenever there was no
+-- world, which is how a player who had asked for nothing met a panel for the
+-- length of a directory lookup and a handshake. What goes there now is the
+-- loader's own picture, held until a room answers; see `ui.waiting`.
+eq(menu.open, false, "no world does not open the menu")
 
 -- The landing: a watch nobody deployed from. There is no seat, so the menu
--- keeps its no-hull tree, and there is a room, so the menu is the player's to
--- close. That second half is the whole of the spectator-first front end: the
--- panel used to be forced up whenever there was no seat, which over the stands
--- would be a menu nobody can put away covering the game it describes.
+-- keeps its no-hull tree, and the menu is nobody's business but the player's.
 state.online = true
 state.attract = true
 menu.open = false
@@ -57,11 +58,14 @@ eq(frame.live(state, net, sim, menu), true, "deployed world")
 eq(menu.home, false, "deploying takes the seat")
 eq(menu.open, false, "and leaves the menu shut")
 
--- Losing the room puts it back up, because now there is nothing behind it.
+-- Losing the room takes the seat back and leaves the menu where it was. The
+-- waiting screen is what stands in for the world, and it carries MENU, so
+-- nothing here has to open a panel to keep a way out on the screen.
 state.online = false
 state.attract = true
 eq(frame.live(state, net, sim, menu), false, "no room to stand in")
-eq(menu.open, true, "so the menu stands on its own again")
+eq(menu.home, true, "and no seat either")
+eq(menu.open, false, "still nobody's menu but the player's")
 state.attract = nil
 state.online = false
 

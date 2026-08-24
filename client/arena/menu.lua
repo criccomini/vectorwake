@@ -1958,7 +1958,7 @@ local NODES = {
                                    go = "settings"}
             end
             rows[#rows + 1] = {label = "leave", icon = "zones",
-                               detail = "back to the games", act = "leave"}
+                               detail = "back to the stands", act = "leave"}
             return rows
         end
         local rows = {
@@ -2005,7 +2005,7 @@ local NODES = {
         -- holding. Never at home: the stands there are where leaving goes.
         if not M.home then
             rows[#rows + 1] = {label = "leave", icon = "zones",
-                               detail = "back to the games", act = "leave"}
+                               detail = "back to the stands", act = "leave"}
         end
         return rows
     end},
@@ -3021,13 +3021,11 @@ end
 -- version of this kept the stack, and pressing escape then down then enter,
 -- which had meant a play row a moment earlier, silently changed hull instead.
 function M.close()
-    -- Not while this is the only thing on screen, which is now a narrower
-    -- case than "no seat": the stands are behind this panel, so closing it
-    -- lands on a game rather than on an empty starfield with no way back.
-    -- What is left is a client that has not reached one, with a directory
-    -- that has not answered or a zone that refused, where there really is
-    -- nothing underneath and escape has nowhere to go.
-    if M.home and not M.scenery then return false end
+    -- Always. There was a rule here refusing to close a menu with nothing
+    -- behind it, because closing onto an empty starfield with no way back is
+    -- a button that breaks the game. What is behind it now is either the
+    -- stands or the waiting screen, and both of those carry MENU, so there is
+    -- no state this can strand anybody in.
     M.open = false
     M.stack = {"root"}
     M.hover = nil
@@ -3065,17 +3063,19 @@ end
 
 -- Escape, from anywhere in here.
 --
--- Over a game it shuts the panel and puts you back in the fight, whatever
--- level you are on. One press put the menu up, so one press has to take it
--- down: the menu opens on the games rather than at the root now, and walking
--- back out a level at a time made leaving cost three presses where it used to
--- cost two. Left is still what walks back through the tree.
+-- It shuts the panel and puts you back in what is behind it, whatever level
+-- you are on. One press put the menu up, so one press has to take it down;
+-- walking back out a level at a time made leaving cost three presses where it
+-- used to cost two. Left and the chevron are what walk back through the tree,
+-- which is a different question with its own keys.
 --
--- With nothing behind the panel there is nothing to shut it onto, so escape
--- walks back like left does and means at the root what it always meant.
+-- This used to be two behaviors that nobody chose between: it tried to close,
+-- and the front end's refusal to close turned it into `back` there. Both
+-- halves of that are gone, since everything is over a room now, so the one
+-- meaning is written here rather than falling out of a refusal.
 local function escape()
-    if M.close() then return nil, true end
-    return back()
+    M.close()
+    return nil, true
 end
 
 -- Put the cursor on the game you were in last, once the directory has
@@ -3263,7 +3263,7 @@ function M.view()
                  -- level in", because the same control did the going back as
                  -- well; the rail does that from every level now, and this is
                  -- only the way out.
-                 note = M.note, closable = not M.home or M.scenery,
+                 note = M.note, closable = true,
                  -- Which page this is, by name. The drawing keeps a scroll
                  -- position and has to know when it is looking at something
                  -- else: carried across, opening standings from the bottom of

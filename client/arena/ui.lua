@@ -4081,6 +4081,49 @@ local function landing()
                ky - (M.compact and 16 or 20) * F.scale - size / 2, size)
 end
 
+-- Before a room answers: the same picture the page was already showing.
+--
+-- The loader draws a starfield with the lockup centered on it and a hairline
+-- under that, and hands over the moment the engine has a frame. What the
+-- engine used to put there was the menu, which is a panel nobody asked for
+-- standing between a player and the game for as long as a directory and a
+-- handshake take. So the hand-off now lands on this: the same lockup, in the
+-- same place, at the same size, over the engine's own starfield. Nothing
+-- changes on screen until the stands come up.
+--
+-- One line under it says where the wait is, and MENU is in its usual corner,
+-- because a directory that never answers has to leave a way to the settings
+-- and to the games list rather than a wordmark and no exit.
+function M.waiting(note)
+    local pts_w = F.w / math.max(F.density, 0.0001)
+    -- The loader's own measure, so neither the size nor the position moves
+    -- across the hand-off: min(width/11, 44) points, centered.
+    local size = math.min(pts_w / 11, 44) * F.scale
+    local span = M.wordmark_w(size)
+    if span > F.w * 0.8 then
+        size = size * F.w * 0.8 / span
+        span = M.wordmark_w(size)
+    end
+    local x0 = (F.w - span) / 2
+    local cy = F.h / 2
+    M.wordmark(x0, cy, size)
+    if note and note ~= "" then
+        -- Where the loader's hairline was, in the menu's face and in the case
+        -- it was written in. The interface shouts a label because a label is
+        -- a thing to find at a glance; this is a sentence about what the
+        -- client is doing, and it is set like one.
+        txt(note, F.w / 2, cy + size * 0.95 + 10 * F.scale,
+            (M.compact and 10 or 12) * F.scale, pal.a(pal.DIM, 0.9), "center",
+            MENU_FONT, true)
+    end
+    -- The one control. Drawn here rather than through the corner row, which
+    -- carries a roster and a channel mark this screen has neither of.
+    local x, y = F.safe_l + PAD * F.scale, F.safe_t + PAD * F.scale
+    local w = key_w("MENU")
+    key_cap(x, y, w, "MENU", F.menu_up)
+    hit(x, y, w, KEY_H * F.scale, "open")
+end
+
 function M.hud(o)
     F.case = "upper"
     local ending = match_ended(o.match)

@@ -4,8 +4,8 @@
 --
 -- Scenarios: after (a Ladder run five rungs in), fresh (its first life), deep
 -- (far enough to have a floor), before (with the banner the server used to
--- send), landing (the front end, watched from the stands). Rasterize with any
--- browser:
+-- send), landing (the front end, watched from the stands), waiting (what the
+-- loader hands off to before a room answers). Rasterize with any browser:
 --
 --     chromium --headless --screenshot=out.png --window-size=1280,800 out.svg
 --
@@ -218,6 +218,12 @@ end
 ui.details = true
 state.n = 0
 ui.begin(layer, W, H, 1, false, 0)
+
+-- Before a room answers. Not a HUD at all: the loader's picture, held by the
+-- engine until the stands arrive, which is what the hand-off lands on.
+if scenario == "waiting" then
+    ui.waiting("finding a game")
+else
 ui.hud({
     me = landing and 0 or 0,
     -- A watcher's camera stands behind a hull that is not yours, and the
@@ -261,6 +267,7 @@ ui.hud({
     room = 1,
     fps = 60, frame_ms = 16.7, rx_rate = 31000, tx_rate = 700,
 })
+end
 ui.finish()
 
 -- --- out --------------------------------------------------------------------

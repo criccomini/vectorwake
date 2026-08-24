@@ -826,7 +826,7 @@ local function leave_world()
     ui.room_ask = nil
 end
 
-function go_home(self, at)
+function go_home(self)
     leave_world()
     self.replay = nil
     self.replay_loading = nil
@@ -839,9 +839,6 @@ function go_home(self, at)
     self.attract = false
     self.attract_zone = nil
     self.attract_instance = nil
-    -- And the stands have to be found again, so the menu standing over the
-    -- empty starfield steps aside when they are.
-    self.landed = nil
     watching = false
     -- The rooms of the zone being left, and a question about one of them. The
     -- panel is deliberately left standing across a move within a zone, which
@@ -854,7 +851,12 @@ function go_home(self, at)
     -- Who is beside you is a fact about the room you were in, and you are
     -- not in it any more.
     account.room_changed()
-    menu.show(at)
+    -- And the menu goes with the room. Leaving lands in the stands, by way of
+    -- the waiting screen while the next room is found: this used to open the
+    -- games list, which is a page to pick from rather than a place to be, and
+    -- under a front end that is itself a game there is somewhere to put a
+    -- player down. The list is a press on MENU away.
+    menu.close()
     directory.open(menu.directory)
 end
 
@@ -1200,7 +1202,7 @@ function init(self)
             url, menu.class, sys.get_config_string("vectorwake.name", "pilot"),
             function(why)
                 menu.note = why
-                go_home(self, "play")
+                go_home(self)
             end)
         if not started then return end
         self.online = true
@@ -1214,7 +1216,7 @@ function init(self)
     -- and the cursor lands on the game they were in last as soon as the
     -- directory answers, so arriving and pressing enter is arriving and
     -- flying. The rail is still beside it, one press left.
-    go_home(self, "play")
+    go_home(self)
 
 end
 
@@ -1372,7 +1374,7 @@ function update(self, dt)
         while accum >= TUNE.DT and steps < TUNE.MAX_CATCHUP do
             if not session.playback.step(self.replay, sim) then
                 menu.note = "match replay ended early"
-                go_home(self, "play")
+                go_home(self)
                 break
             end
             drain_events()
@@ -1426,6 +1428,11 @@ function update(self, dt)
     if menu.open and (menu.at() == "play" or menu.at() == "root") then
         directory.tick(dt)
     elseif ui.rooms_open and not menu.open then
+        directory.tick(dt)
+    elseif not live then
+        -- Waiting for a first room. The list is what the attract loop dials
+        -- from, so nothing arrives until it does; this used to be covered by
+        -- the menu standing open over the wait, and the menu no longer does.
         directory.tick(dt)
     else
         directory.idle()
@@ -1612,22 +1619,6 @@ function update(self, dt)
             if self.attract then
                 self.joining = nil
                 menu.note = nil
-                -- The stands are up. The menu that was standing because there
-                -- was nothing behind it steps aside, and what is left is the
-                -- landing: a real room, drawn by the code that draws it to the
-                -- people in it, with the name and PLAY NOW over the foot.
-                --
-                -- Once a session, and only once the close actually lands. Every
-                -- later dial is a player moving the cursor down the games list
-                -- with the menu deliberately open, and shutting it under them
-                -- would take away the page they are reading to show them the
-                -- game they were only looking at. A close is refused while the
-                -- menu believes there is nothing behind it, so marking this
-                -- done on a refusal would leave the panel standing over the
-                -- game with nothing left to try again.
-                if not self.landed and menu.close() then
-                    self.landed = true
-                end
             else
             menu.home = false
             menu.close()
@@ -1661,7 +1652,7 @@ function update(self, dt)
                     session.attract_drop(self)
                 else
                     menu.note = "no answer from the zone"
-                    go_home(self, "play")
+                    go_home(self)
                 end
             end
         end
@@ -2195,6 +2186,26 @@ function update(self, dt)
             layers = layers,
         })
     end
+    -- No room to draw: the loader's own picture, held until one answers. It
+    -- is what the page was already showing, so the hand-off from the loading
+    -- screen to the engine changes nothing anybody can see, and the wait for
+    -- a directory and a handshake happens behind a wordmark rather than
+    -- behind a menu.
+    if not live then
+        -- What the wait is, in the words of whoever knows. A note from a join
+        -- that failed says the most and goes first. Then the two phases this
+        -- screen actually covers: asking a directory which games are running,
+        -- and shaking hands with the room it named. `directory.note` is the
+        -- short headline for the first ("looking for games", "no games are
+        -- running"); `why` is a sentence written for a menu's empty state and
+        -- is too long to sit under a wordmark.
+        local why = menu.note
+        if not why or why == "" then
+            why = self.joining and "joining" or directory.note
+        end
+        if not why or why == "" then why = "finding a game" end
+        ui.waiting(why)
+    end
     if menu.open then ui.menu(menu.view()) end
     -- The question about moving room, last of everything that publishes a hit
     -- box. `ask_card` drops the ones already published, which is what makes a
@@ -2240,7 +2251,7 @@ function session.enter(self, address, zone_name, wt, room, watch, instance)
     -- since changed game refuses rather than surprising anybody.
     local started = net.connect(address, menu.class, menu.name, function(why)
         menu.note = why
-        go_home(self, "play")
+        go_home(self)
     end, zone_name, watch, wt, room, instance)
     if not started then return false end
     self.online = true
@@ -2257,7 +2268,7 @@ function session.replay(self, reply)
     local state, why = session.playback.load(reply, sim, net)
     if not state then
         menu.note = why or "cannot load match replay"
-        go_home(self, "play")
+        go_home(self)
         return false
     end
     self.replay = state
@@ -2335,7 +2346,7 @@ function session.attract_tick(self, dt)
             session.attract_drop(self)
         else
             menu.note = why
-            go_home(self, "play")
+            go_home(self)
         end
     end, r.zone, true, r.wt, nil, r.instance)
     if started then
@@ -2687,7 +2698,7 @@ function apply_menu(self, act)
         if self.attract then return end
         if self.online then
             menu.note = nil
-            go_home(self, "play")
+            go_home(self)
             -- Made here rather than by the caller. Escape at the root of the
             -- home screen produces this same action and does nothing with it,
             -- and a click for a keystroke that changed nothing is how an
