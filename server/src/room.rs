@@ -598,6 +598,20 @@ fn match_message(
         out.extend_from_slice(&value.to_le_bytes());
     }
     out.extend_from_slice(&ladder.first_to.to_le_bytes());
+    // The run so far, oldest leg first. It rides in the same packet as the
+    // clock for the same reason the rest of the body does: a client that can
+    // hold only one message must not end up with a rung from one state and a
+    // log from another.
+    out.extend_from_slice(&ladder.legs.to_le_bytes());
+    let logged = (ladder.logged as usize).min(modes::LADDER_LOG_LEGS);
+    out.push(logged as u8);
+    for leg in &ladder.log[..logged] {
+        out.extend_from_slice(&leg.rung.to_le_bytes());
+        out.push(leg.result.to_byte());
+        out.extend_from_slice(&leg.kills.to_le_bytes());
+        out.extend_from_slice(&leg.deaths.to_le_bytes());
+        out.extend_from_slice(&leg.seconds.to_le_bytes());
+    }
     out
 }
 
@@ -2819,6 +2833,11 @@ impl Room {
                     // and the sim saw no death.
                     m.extend_from_slice(&0u16.to_le_bytes());
                     m.extend_from_slice(&tick.to_le_bytes());
+                    // Nobody is told they helped, for the same reason. The
+                    // sim never ran a death here, so no assist column moved,
+                    // and a notice about one the scoreboard does not show is
+                    // the disagreement this byte exists to avoid.
+                    m.push(0);
                     for pl in self.players.values() {
                         let _ = pl.tx.try_send(Message::Binary(m.clone()));
                     }
@@ -3766,7 +3785,17 @@ impl Room {
     pub(crate) fn score_events(&mut self) {
         let tick = self.world.state.tick;
         let events = self.world.events.e[..self.world.events.count as usize].to_vec();
+        // Who this tick's deaths handed an assist to, as (the pilot credited,
+        // the victim). Read off the core's own report rather than worked out
+        // from the rating layer's credits, so a pilot is told about exactly
+        // the assist their scoreboard column is about to count: the two
+        // definitions differ at the edges and only one of them is in the row
+        // the pilot can see (decision 53).
+        let mut assists: Vec<(u8, u8)> = Vec::new();
         for e in events {
+            if e.etype == sim::EV_ASSIST {
+                assists.push((e.a, e.b));
+            }
             if e.etype == sim::EV_CHARGE {
                 let Some(sh) = self.world.state.ships.get(e.a as usize) else {
                     continue;
@@ -3863,12 +3892,29 @@ impl Room {
             // not inherit i32 from the event struct.
             m.extend_from_slice(&(paid.clamp(0, u16::MAX as i32) as u16).to_le_bytes());
             m.extend_from_slice(&tick.to_le_bytes());
+            // Everyone the core credited for this particular death.
+            let assisted: Vec<u8> = assists
+                .iter()
+                .filter(|(_, dead)| *dead == victim)
+                .map(|(who, _)| *who)
+                .collect();
+            // The last byte is the one thing on this message that is not the
+            // same for everybody: "you helped with this one". Told to the
+            // pilot who did and to nobody else, because who else was shooting
+            // is a fact about somebody's own fight, and a room that read it
+            // off the feed would be reading a list of who is working together
+            // and how hurt the loser already was.
             for p in self.players.values() {
-                let _ = p.tx.try_send(Message::Binary(m.clone()));
+                let mut theirs = m.clone();
+                theirs.push(u8::from(assisted.contains(&p.ship)));
+                let _ = p.tx.try_send(Message::Binary(theirs));
             }
-            // Live to anyone riding a pilot's shoulder; the channel's copy
-            // waits in the ring with the frame it belongs to, or the feed
-            // would announce a death the delayed picture has not shown yet.
+            // And the copy that claims nothing, which is the one every other
+            // seat gets. Live to anyone riding a pilot's shoulder; the
+            // channel's copy waits in the ring with the frame it belongs to,
+            // or the feed would announce a death the delayed picture has not
+            // shown yet.
+            m.push(0);
             for w in self.watchers.values() {
                 if matches!(w.mode, WatchMode::Follow(_)) {
                     let _ = w.tx.try_send(Message::Binary(m.clone()));
@@ -4550,10 +4596,13 @@ mod ladder_wire_tests {
                 first_to: 0x5152,
                 active_opponent_slot: 0x4142_4344,
                 desired_opponent_slot: 0x6162_6364,
+                log: two_legs(),
+                logged: 2,
+                legs: 0x7182_7384,
             }),
         );
 
-        assert_eq!(message.len(), 43);
+        assert_eq!(message.len(), 43 + 5 + 2 * 11);
         assert_eq!(message[0], S2C_MATCH);
         assert_eq!(message[1], 6, "artifact and Ladder are present");
         assert_eq!(message[2], 0x50);
@@ -4578,5 +4627,101 @@ mod ladder_wire_tests {
             u16::from_le_bytes(message[41..43].try_into().unwrap()),
             0x5152
         );
+        assert_eq!(u32_at(&message, 43), 0x7182_7384, "legs the run has had");
+        assert_eq!(message[47], 2, "legs the window still holds");
+        assert_eq!(u32_at(&message, 48), 4, "the oldest leg first");
+        assert_eq!(message[52], modes::LegResult::Cleared.to_byte());
+        assert_eq!(u16::from_le_bytes(message[53..55].try_into().unwrap()), 1);
+        assert_eq!(u16::from_le_bytes(message[55..57].try_into().unwrap()), 0);
+        assert_eq!(u16::from_le_bytes(message[57..59].try_into().unwrap()), 41);
+        assert_eq!(u32_at(&message, 59), 5);
+        assert_eq!(message[63], modes::LegResult::Lost.to_byte());
+        assert_eq!(u16::from_le_bytes(message[64..66].try_into().unwrap()), 0);
+        assert_eq!(u16::from_le_bytes(message[66..68].try_into().unwrap()), 1);
+        assert_eq!(u16::from_le_bytes(message[68..70].try_into().unwrap()), 7);
+    }
+
+    /// A body with no run behind it still says so, rather than leaving the
+    /// reader to guess whether the log was omitted or empty.
+    #[test]
+    fn a_run_with_no_finished_leg_sends_an_empty_log() {
+        let message = match_message(
+            modes::MatchState {
+                playing: true,
+                seconds_left: 180,
+                score: vec![0, 0],
+            },
+            None,
+            Some(a_state()),
+        );
+        assert_eq!(message.len(), 8 + 32, "the body with no legs on it");
+        assert_eq!(u32_at(&message, 35), 0, "no leg has finished");
+        assert_eq!(message[39], 0, "and none is carried");
+    }
+
+    /// Only the legs the window holds are written. A run longer than the
+    /// window keeps its most recent, and `legs` is what says so.
+    #[test]
+    fn the_log_never_writes_past_what_it_holds() {
+        let mut state = a_state();
+        state.log = two_legs();
+        state.logged = modes::LADDER_LOG_LEGS as u8 + 9;
+        state.legs = 300;
+        let message = match_message(
+            modes::MatchState {
+                playing: true,
+                seconds_left: 180,
+                score: vec![0, 0],
+            },
+            None,
+            Some(state),
+        );
+        assert_eq!(
+            message.len(),
+            8 + 32 + modes::LADDER_LOG_LEGS * 11,
+            "a claim past the window is clamped to it"
+        );
+        assert_eq!(message[39], modes::LADDER_LOG_LEGS as u8);
+        assert_eq!(u32_at(&message, 35), 300, "and the real count still rides");
+    }
+
+    fn a_state() -> modes::LadderState {
+        modes::LadderState {
+            playing: true,
+            waiting: false,
+            opponent_ready: true,
+            cleared: false,
+            rung: 0,
+            streak: 0,
+            checkpoint: 0,
+            best: 0,
+            score: [0, 0],
+            first_to: 1,
+            active_opponent_slot: 0,
+            desired_opponent_slot: 0,
+            log: [modes::LadderLeg::default(); modes::LADDER_LOG_LEGS],
+            logged: 0,
+            legs: 0,
+        }
+    }
+
+    /// A rung taken and the next one lost, which is the shape of every run.
+    fn two_legs() -> [modes::LadderLeg; modes::LADDER_LOG_LEGS] {
+        let mut log = [modes::LadderLeg::default(); modes::LADDER_LOG_LEGS];
+        log[0] = modes::LadderLeg {
+            rung: 4,
+            result: modes::LegResult::Cleared,
+            kills: 1,
+            deaths: 0,
+            seconds: 41,
+        };
+        log[1] = modes::LadderLeg {
+            rung: 5,
+            result: modes::LegResult::Lost,
+            kills: 0,
+            deaths: 1,
+            seconds: 7,
+        };
+        log
     }
 }

@@ -74,6 +74,7 @@ pub const EV_FLAG_DROP: u8 = 9;
 pub const EV_GOAL: u8 = 10;
 pub const EV_WARP: u8 = 11;
 pub const EV_RICOCHET: u8 = 12;
+pub const EV_ASSIST: u8 = 13;
 
 pub const MAX_FEATURES: usize = 256;
 pub const MAP_PACK_MAX: usize = MAP_TILES * MAP_TILES * 3 + 14;
@@ -1378,6 +1379,7 @@ mod layout {
             ("SIM_EV_GOAL", EV_GOAL),
             ("SIM_EV_WARP", EV_WARP),
             ("SIM_EV_RICOCHET", EV_RICOCHET),
+            ("SIM_EV_ASSIST", EV_ASSIST),
         ] {
             assert_eq!(
                 found.get(name).copied(),
@@ -1387,7 +1389,7 @@ mod layout {
         }
         assert_eq!(
             found.len(),
-            12,
+            13,
             "the core has an event the mirror has never heard of"
         );
     }

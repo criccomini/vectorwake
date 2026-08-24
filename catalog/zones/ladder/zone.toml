@@ -20,8 +20,12 @@ max_teams = 2
 max_humans_per_team = 1
 max_bots_per_team = 1
 
-# Progress belongs to an account. Guests can still play melee.
-admission = "claimed"
+# A guest is an account: the meta-layer mints one per device, and a run's
+# checkpoint and best rung hang off whatever account id is flying. Nobody has to
+# claim a pilot before their first climb. A guest account is swept after a week
+# away and its progress goes with it; claiming the pilot is what makes a
+# checkpoint permanent, and it keeps whatever was already climbed.
+admission = "any"
 max_watchers = 8
 channel_delay_ticks = 0
 

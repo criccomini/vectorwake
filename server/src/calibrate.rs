@@ -5631,8 +5631,11 @@ mod pilot_certification_tests {
         changed_map.maps_b64[0] = crate::fleet::b64(&map);
         assert!(!runtime_pilot_fixture_matches(&plan.fixture, &changed_map));
 
+        // Served admission has to agree with the zone file it claims to be
+        // serving. The shipped Ladder admits anybody, so the mutation that has
+        // to be caught is a fleet quietly shutting the door.
         let mut changed_policy = exact;
-        changed_policy.admission = "any".into();
+        changed_policy.admission = "claimed".into();
         assert!(!runtime_pilot_fixture_matches(
             &plan.fixture,
             &changed_policy

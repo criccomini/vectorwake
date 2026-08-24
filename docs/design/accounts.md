@@ -128,10 +128,11 @@ in their first sessions, which is why unknown is not a punishment: an unknown
 pilot joins anything a default zone offers and rates normally.
 
 Zones that care can raise the bar. A zone sets `admission` in its `zone.toml`
-to `any`, the default, or `claimed`, for ladder arenas where knowing the field
-is vouched for matters more than a newcomer joining in one second. The bar is
-on the label, so it is a statement about the account rather than about anything
-a client said.
+to `any`, the default, or `claimed`, for an arena where knowing every pilot is
+vouched for matters more than a newcomer joining in one second. The shipped
+zones all take the default, Ladder included: a guest holds an account, so a run
+has somewhere to hang. The bar is on the label, so it is a statement about the
+account rather than about anything a client said.
 
 ## Bots hold accounts
 

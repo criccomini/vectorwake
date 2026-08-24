@@ -939,6 +939,13 @@ local function drain_kills()
         -- Never while watching. From that seat `me` is the sentinel 255,
         -- which is also the killer on a wall death, so every rock somebody
         -- flew into would have been lit as a kill of your own.
+        --
+        -- Three now rather than two: the third is a kill you helped with,
+        -- which the zone tells you and tells nobody else. It is the same
+        -- fight seen one step back, so it goes in the same family of green
+        -- one shade down rather than in a color of its own. It can never
+        -- collide with the other two, since the core hands an assist to
+        -- neither the pilot who finished it nor the one who died.
         local col, mine = nil, false
         if not watching and k.killer == me and k.victim ~= me then
             col, mine = pal.PAID, true
@@ -953,10 +960,20 @@ local function drain_kills()
             end
         elseif not watching and k.victim == me then
             col, mine = pal.HURT, true
+        elseif not watching and k.assist then
+            col, mine = pal.ASSIST, true
         end
-        notify((k.victim == k.killer) and {vn, " killed by self"}
+        local line = (k.victim == k.killer) and {vn, " killed by self"}
             or (k.killer == 255) and {vn, " flew into the wall"}
-            or {pilot_named(k.killer, true), " killed ", vn, paid}, col, mine)
+            or {pilot_named(k.killer, true), " killed ", vn, paid}
+        -- Said in words as well as in color, because your name is nowhere on
+        -- this line: a kill of yours and a death of yours both name you, and
+        -- a lit line about two other people with nothing on it to say why is
+        -- a color a player has to be taught. Appended rather than written
+        -- into each of the three shapes above, because it is equally true of
+        -- all of them: you can soften somebody who then flies into a wall.
+        if k.assist then line[#line + 1] = ", you assisted" end
+        notify(line, col, mine)
     end
     if #net.kills > 0 then net.kills = {} end
 end
@@ -2905,7 +2922,10 @@ function on_input(self, action_id, action)
             end
             -- The list itself swallows the click so a tap meant for a
             -- pilot's row does not fall through to whatever is behind it.
-            if r.action == "scores" then return true end
+            -- The run log under it is the same kind of surface: nothing in it
+            -- is a control, and a press that fell through a solid panel would
+            -- fire into a wall.
+            if r.action == "scores" or r.action == "run_log" then return true end
             if not menu.open then return false end
             -- A press anywhere but the filter box lets go of it, which is
             -- what a caret does everywhere else. Before the branches
