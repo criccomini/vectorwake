@@ -5,9 +5,9 @@ The shipped podium is one card capped at 620pt, sized so a phone can hold it,
 and a desktop shows that same small card floating in scrim. These boards
 redesign the ending to own whatever window it is given, in the play page's
 section grammar: SCORE holds the band and both rosters, SAY the comms, SHARE
-the two keys. Same content as the shipped screen, nothing invented: the
-result, the score, both rosters, comms, share and replay, what the match
-banked, and the next-match clock.
+its one key, NEXT MATCH opening the page with the clock beside its drain.
+Watch replay and the banked readout are dropped; what remains is the result,
+the score, both rosters, comms, and the one share key.
 
 The design system is the client's, same sources as ../rethink/build.py:
 client/arena/palette.lua for hues, client/arena/ui.lua for panel grammar
@@ -214,25 +214,19 @@ def section(label, inner, style="", label_px=10, gap=12):
             + inner + '</div>')
 
 
-# The foot every board shares: the next-match clock on the left over a drain
-# in the score bar's own language, and the payout on the right, wearing the
-# rivet and CHARGE_COL, the wallet's yellow, because a payout is a price.
-def foot(label_px, clock_px, bank_px, rivet_k, mt, drain_mt, drain_h=4):
-    return (f'<div class="row" style="margin-top:{mt}px">'
-            f'<div class="row" style="gap:12px">'
-            f'<div class="lbl" style="font-size:{label_px}px">Next match</div>'
-            f'<div class="num" style="font-size:{clock_px}px;line-height:1;'
-            f'color:rgba(223,233,245,.92)">0:06</div></div>'
-            f'<div style="flex:1"></div>'
-            f'<div class="row" style="gap:10px">'
-            f'<div class="lbl" style="font-size:{label_px}px">Banked</div>'
-            f'{rivet(rivet_k, "#ffd166")}'
-            f'<div class="num" style="font-size:{bank_px}px;line-height:1;'
-            f'color:var(--charge)">0</div></div></div>'
-            f'<div style="position:relative;height:{drain_h}px;'
-            f'margin-top:{drain_mt}px;background:rgba(108,122,144,.16)">'
-            f'<div style="position:absolute;left:0;top:0;bottom:0;width:24%;'
-            f'background:rgba(255,209,102,.55)"></div></div>')
+# The section every board opens on: the next-match clock beside its drain, a
+# bar in the score bar's own language running out rather than filling.
+def next_section(label_px, gap, clock_px):
+    return section(
+        "Next match",
+        f'<div class="row" style="gap:18px">'
+        f'<div class="num" style="font-size:{clock_px}px;line-height:1;'
+        f'color:rgba(223,233,245,.92)">0:06</div>'
+        f'<div style="position:relative;height:4px;flex:1;'
+        f'background:rgba(108,122,144,.16)">'
+        f'<div style="position:absolute;left:0;top:0;bottom:0;width:24%;'
+        f'background:rgba(255,209,102,.55)"></div></div></div>',
+        label_px=label_px, gap=gap)
 
 
 def board(w, h, stars, body):
@@ -253,7 +247,7 @@ def desktop():
     score = section(
         "Score",
         score_band(112, 560, 12, 30)
-        + '<div class="row" style="gap:40px;margin-top:28px;'
+        + '<div class="row" style="gap:40px;margin-top:24px;'
         'align-items:flex-start">'
         + roster(SIDES[0], 44, 17, 15, 34, 16, "flex:1")
         + roster(SIDES[1], 44, 17, 15, 34, 16, "flex:1")
@@ -267,18 +261,17 @@ def desktop():
 
     share = section(
         "Share",
-        '<div class="row" style="gap:14px">'
-        + key("Share match", 48, 12, primary=True, style="flex:1")
-        + key("Watch replay", 48, 12, style="flex:1") + '</div>',
-        style="margin-top:26px")
+        key("Share match", 48, 12, primary=True),
+        style="margin-top:22px")
 
     body = ('<div class="col" style="position:absolute;inset:0;'
-            'justify-content:center;padding:40px 0">'
+            'justify-content:center;padding:32px 0">'
+            '<div class="col" style="width:1040px;align-self:center">'
+            + next_section(10, 12, 20)
+            + '<div style="height:18px"></div>'
             + headline(42, 16)
-            + '<div style="height:24px"></div>'
-            + '<div class="col" style="width:1040px;align-self:center">'
-            + score + say + share + foot(10, 20, 19, 15, 28, 12)
-            + '</div></div>')
+            + '<div style="height:20px"></div>'
+            + score + say + share + '</div></div>')
     return board(1440, 810, STARS_DESKTOP, body)
 
 
@@ -290,9 +283,9 @@ def mobile():
         "Score",
         score_band(52, 170, 8, 18)
         + '<div style="height:14px"></div>'
-        + roster(SIDES[0], 36, 15, 13.5, 28, 14)
+        + roster(SIDES[0], 34, 15, 13.5, 28, 14)
         + '<div style="height:12px"></div>'
-        + roster(SIDES[1], 36, 15, 13.5, 28, 14),
+        + roster(SIDES[1], 34, 15, 13.5, 28, 14),
         label_px=9, gap=10)
 
     say = section(
@@ -304,17 +297,16 @@ def mobile():
 
     share = section(
         "Share",
-        '<div class="row" style="gap:10px">'
-        + key("Share match", 48, 10.5, primary=True, style="flex:1")
-        + key("Watch replay", 48, 10.5, style="flex:1") + '</div>',
+        key("Share match", 48, 10.5, primary=True),
         style="margin-top:16px", label_px=9, gap=10)
 
     body = ('<div class="col" style="position:absolute;inset:0;'
             'padding:44px 16px 20px;justify-content:center">'
+            + next_section(9, 10, 16)
+            + '<div style="height:12px"></div>'
             + headline(24, 10)
             + '<div style="height:14px"></div>'
-            + score + say + share + foot(9, 16, 15, 13, 16, 8)
-            + '</div>')
+            + score + say + share + '</div>')
     return board(390, 844, STARS_MOBILE, body)
 
 
@@ -325,10 +317,10 @@ def landscape():
     score = section(
         "Score",
         score_band(36, 420, 8, 22)
-        + '<div class="row" style="gap:32px;margin-top:12px;'
+        + '<div class="row" style="gap:32px;margin-top:10px;'
         'align-items:flex-start">'
-        + roster(SIDES[0], 28, 13, 12, 24, 13, "flex:1")
-        + roster(SIDES[1], 28, 13, 12, 24, 13, "flex:1")
+        + roster(SIDES[0], 26, 13, 12, 24, 13, "flex:1")
+        + roster(SIDES[1], 26, 13, 12, 24, 13, "flex:1")
         + '</div>',
         label_px=9, gap=8)
 
@@ -340,19 +332,18 @@ def landscape():
 
     share = section(
         "Share",
-        '<div class="row" style="gap:8px">'
-        + key("Share match", 44, 9.5, primary=True, style="flex:1")
-        + key("Watch replay", 44, 9.5, style="flex:1") + '</div>',
+        key("Share match", 44, 9.5, primary=True),
         style="flex:1", label_px=9, gap=8)
 
     body = ('<div class="col" style="position:absolute;inset:0;'
-            'padding:12px 18px;justify-content:center">'
+            'padding:10px 18px;justify-content:center">'
+            + next_section(9, 8, 16)
+            + '<div style="height:8px"></div>'
             + headline(18, 8)
-            + '<div style="height:10px"></div>'
+            + '<div style="height:8px"></div>'
             + score
-            + '<div class="row" style="gap:24px;margin-top:12px;'
+            + '<div class="row" style="gap:24px;margin-top:10px;'
             'align-items:flex-start">' + say + share + '</div>'
-            + foot(9, 16, 15, 13, 12, 6)
             + '</div>')
     return board(844, 390, STARS_LANDSCAPE, body)
 
