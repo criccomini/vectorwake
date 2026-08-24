@@ -288,15 +288,18 @@ do
     -- 28 ran it out of the bottom of that band into the label under it.
     local function bands_hold(landing, name)
         local clock = text_named(landing, "1:12")
-        local room = text_named(landing, "The room")
+        -- Whichever block landed under the clock. A column with no height
+        -- for a roster drops it and the score follows the clock instead.
+        local under = text_named(landing, "Players")
+                      or text_named(landing, "The score")
         local clock_y = clock and (H - clock.y) or nil
-        local room_y = room and (H - room.y) or nil
-        check(name .. " keeps the clock clear of the room's label",
-              clock_y and room_y
-                  and clock_y + clock.px * 0.5 <= room_y - room.px * 0.5,
+        local under_y = under and (H - under.y) or nil
+        check(name .. " keeps the clock clear of the label under it",
+              clock_y and under_y
+                  and clock_y + clock.px * 0.5 <= under_y - under.px * 0.5,
               string.format("clock %.0f at %.0f, label %.0f at %.0f",
                             clock and clock.px or -1, clock_y or -1,
-                            room and room.px or -1, room_y or -1))
+                            under and under.px or -1, under_y or -1))
     end
 
     for _, shape in ipairs({{320, 480}, {320, 568}, {360, 640},
@@ -370,8 +373,10 @@ do
     end
     check("sideways draws the deck, not the zones list",
           not has(sideways, "zone1"), table.concat(texts(sideways), " "))
+    -- Two readings, and no roster: 390 points of height has no room for a
+    -- list of names under a clock, a score and a key.
     check("and its readings", has(sideways, "on the clock")
-              and has(sideways, "the room"),
+              and has(sideways, "the score"),
           table.concat(texts(sideways), " "))
     check("and the key that presses them", said_deploy)
     bands_hold(sideways, "sideways")

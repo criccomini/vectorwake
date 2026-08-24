@@ -4431,6 +4431,13 @@ end
 -- it shrinks to on a page too narrow to hold it there.
 local DECK_NAME, DECK_NAME_MIN = 64, 26
 
+-- How many rows of `rows` the landing's roster may draw. The scoreboard
+-- fills that list while a client is in a game; the landing stands outside
+-- one and the arena behind it draws none of its own instruments, so `M.menu`
+-- refreshes it and says here how much of it is this room's. Zero with no
+-- game behind the panel, where the list would be the last room's.
+local deck_n = 0
+
 -- The landing: which game, what it is, and how the room is doing, over the
 -- key that puts you in it.
 --
@@ -4445,8 +4452,11 @@ local DECK_NAME, DECK_NAME_MIN = 64, 26
 -- standing over showing through everything between them.
 local function compact_deploy(a, x, y, w, h)
     local rmargin = w - 24 * F.scale
-    vrule(x - 18 * F.scale, y + 6 * F.scale, h - 12 * F.scale,
-          pal.a(pal.RADAR_TILE, 0.45), 18 * F.scale)
+    -- No rule down the left of it, and no gutter in from the stage's own
+    -- edge. Both are what a page hangs off when a page is a panel laid over
+    -- something else; this one is not laid over anything, and a lit line
+    -- running the height of a monitor beside a fight marks nothing. The name
+    -- starts where the wordmark above it starts.
 
     -- The zone is the picker, and its name is the biggest thing on the page.
     -- This screen asks one question, which game, and the name was set at the
@@ -4529,21 +4539,50 @@ local function compact_deploy(a, x, y, w, h)
     -- height stays between the description and this block, where it shows
     -- the fight the panel is standing over.
     --
-    -- Counted rather than fixed at three. A zone nobody is running has no
-    -- clock and no room, and between matches there is no score: a reserved
-    -- band with nothing in it is a hole the eye reads as something missing.
-    local bands = 0
-    if a.clock then bands = bands + 1 end
-    if a.room then bands = bands + 1 end
-    if a.score then bands = bands + 1 end
-    local spread = math.max(1, bands - 1)
-    local gap = math.min(10 * F.scale,
-                         math.max(0, (available - 42 * F.scale * bands)
-                                     / spread))
-    local band = math.min(54 * F.scale,
-                          math.max(0, (available - gap * spread)
-                                      / math.max(1, bands)))
-    local cy = room_bottom - band * bands - gap * spread
+    -- Two figure bands, either of which may be missing: a zone nobody is
+    -- running has no clock, and a room between matches has no score. A
+    -- reserved band with nothing in it is a hole the eye reads as something
+    -- missing, so they are counted rather than assumed.
+    local gap = 10 * F.scale
+    local head_h = 24 * F.scale
+    local line = 17 * F.scale
+    local nb = (a.clock and 1 or 0) + (a.score and 1 or 0)
+    -- Each block gets an even share, and then the roster keeps whatever is
+    -- over, up to what its rows actually need. Any beyond that stays above
+    -- the whole stack, where it shows the fight.
+    local listing = deck_n > 0 or a.room ~= nil
+    local band, list_h
+    local function share(n)
+        return math.min(54 * F.scale,
+                        math.max(0, (available - gap * math.max(0, n - 1))
+                                    / math.max(1, n)))
+    end
+    band = share(nb + (listing and 1 or 0))
+    -- A column with no room for three readings loses the roster rather than
+    -- drawing all three too small to read. The clock and the score are the
+    -- two facts that have to survive, and a phone held sideways has about
+    -- two hundred points for the whole page.
+    if listing and band < 30 * F.scale then
+        listing = false
+        band = share(nb)
+    end
+    if listing then
+        local slots = nb + 1
+        local spare = math.max(0, available - gap * (slots - 1)
+                                  - band * slots)
+        local want = deck_n > 0 and (head_h + deck_n * line) or 0
+        list_h = math.min(math.max(band, want), band + spare)
+        -- A head with no row under it is a heading for nothing.
+        if list_h < head_h + line then
+            listing = false
+            band = share(nb)
+        end
+    end
+    if not listing then list_h = 0 end
+    local shown = list_h > head_h
+        and math.min(deck_n, math.floor((list_h - head_h) / line)) or 0
+    local cy = room_bottom - nb * (band + gap) - list_h
+                              - (listing and gap or 0)
 
     -- The clock, which between matches is the boarding window.
     if a.clock then
@@ -4565,26 +4604,92 @@ local function compact_deploy(a, x, y, w, h)
                              a.clock % 60)
         txt(clock, x - 1 * F.scale, value_y, clock_px,
             pal.a(pal.INK, 0.95))
+        cy = cy + band + gap
     end
 
-    -- Occupancy becomes two marked counts. The full seat strip is still used
-    -- wherever the column has enough height to draw it.
-    local room_y = a.clock and (cy + band + gap) or cy
-    if a.room then
-        lbl("the room", x, room_y + 8 * F.scale)
-        if (a.room.seats or 0) > 0 then
-            lbl((a.room.seats or 0) .. " seats", x + rmargin,
-                room_y + 8 * F.scale, pal.a(pal.DIM, 0.8), "right")
+    -- Who is in there, as the scoreboard draws them: a mark for what kind of
+    -- pilot, the name in their side's own color, and what they have done to
+    -- the right of it. It was two marked counts, which answers how many and
+    -- not who, and who is the question somebody deciding whether to press
+    -- this is actually asking.
+    if listing then
+        lbl("players", x, cy + 8 * F.scale)
+        local mark_px = 11 * F.scale
+        local num = 11.5 * F.scale
+        if shown > 0 then
+            -- Three columns as wide as the widest figure anybody in the room
+            -- holds, so they agree with each other down the list.
+            local figs = 2
+            for i = 1, shown do
+                local r = rows[i]
+                figs = math.max(figs, #tostring(r.k), #tostring(r.d),
+                                #tostring(r.a))
+            end
+            local numw = text_w(string.rep("0", figs), num)
+            local numgap = 12 * F.scale
+            local ax2 = x + rmargin
+            local dx2 = ax2 - numw - numgap
+            local kx2 = dx2 - numw - numgap
+            for _, at2 in ipairs({{"k", kx2}, {"d", dx2}, {"a", ax2}}) do
+                lbl(at2[1], at2[2], cy + 8 * F.scale,
+                    pal.a(pal.DIM, 0.75), "right")
+            end
+            local ly = cy + head_h + line * 0.5
+            for i = 1, shown do
+                local r = rows[i]
+                -- A watcher is on nobody's side, so they are drawn in
+                -- neither's color and their columns say what they are doing
+                -- instead of three zeroes.
+                --
+                -- Cyan and amber rather than the scoreboard's per-team hues.
+                -- Those exist for a room that can hold a dozen sides; this
+                -- list is drawn straight over the fight it is naming, where
+                -- every hull is already cyan for the side the camera is on
+                -- and amber for the other, and the bar under it says the
+                -- score in the same two.
+                local col = pal.DIM
+                if not r.watch then
+                    col = r.mine and pal.FRIEND or pal.ENEMY
+                end
+                if r.ai then
+                    bot_mark(x, ly, pal.a(pal.DIM, 0.75), mark_px)
+                else
+                    pilot_mark(x + mark_px / 2, ly, pal.a(pal.DIM, 0.75),
+                               mark_px)
+                end
+                txt(r.name, x + mark_px + 9 * F.scale, ly, 12.5 * F.scale,
+                    pal.a(col, r.self and 1 or 0.85), nil, nil, true)
+                if r.watch then
+                    txt("watching", ax2, ly, 10 * F.scale,
+                        pal.a(pal.DIM, 0.7), "right")
+                else
+                    txt(tostring(r.k), kx2, ly, num, pal.a(pal.INK, 0.85),
+                        "right")
+                    txt(tostring(r.d), dx2, ly, num, pal.a(pal.INK, 0.85),
+                        "right")
+                    txt(tostring(r.a), ax2, ly, num, pal.a(pal.INK, 0.85),
+                        "right")
+                end
+                ly = ly + line
+            end
+        elseif a.room then
+            -- Nothing behind the panel to have a roster: the directory's own
+            -- two counts, which is what this block said before it could name
+            -- anybody.
+            if (a.room.seats or 0) > 0 then
+                lbl((a.room.seats or 0) .. " seats", x + rmargin,
+                    cy + 8 * F.scale, pal.a(pal.DIM, 0.8), "right")
+            end
+            local count_y = cy + head_h + line * 0.5
+            pilot_mark(x + 6 * F.scale, count_y, pal.a(pal.INK, 0.95),
+                       mark_px)
+            txt(tostring(a.room.players or 0), x + 17 * F.scale, count_y,
+                mark_px, pal.a(pal.INK, 0.95), nil, nil, true)
+            bot_mark(x + 54 * F.scale, count_y, pal.a(pal.DIM, 0.8), mark_px)
+            txt(tostring(a.room.bots or 0), x + 70 * F.scale, count_y,
+                mark_px, pal.a(pal.DIM, 0.9), nil, nil, true)
         end
-        local count_y = room_y + math.min(band - 7 * F.scale, 30 * F.scale)
-        pilot_mark(x + 6 * F.scale, count_y, pal.a(pal.INK, 0.95),
-                   11 * F.scale)
-        txt(tostring(a.room.players or 0), x + 17 * F.scale, count_y,
-            11 * F.scale, pal.a(pal.INK, 0.95), nil, nil, true)
-        bot_mark(x + 54 * F.scale, count_y,
-                 pal.a(pal.DIM, 0.8), 11 * F.scale)
-        txt(tostring(a.room.bots or 0), x + 70 * F.scale, count_y,
-            11 * F.scale, pal.a(pal.DIM, 0.9), nil, nil, true)
+        cy = cy + list_h + gap
     end
 
     -- The score as the bar the podium ends a match on: a track the width of
@@ -4592,8 +4697,8 @@ local function compact_deploy(a, x, y, w, h)
     -- the left however the zone numbered the teams. Two figures with a colon
     -- between them are a subtraction; a bar is who is ahead, read at the
     -- speed of a glance from across a room.
-    local score_y = room_y + (a.room and (band + gap) or 0)
     if a.score then
+        local score_y = cy
         lbl("the score", x, score_y + 8 * F.scale)
         local bar_h = math.max(4 * F.scale,
                                math.min(7 * F.scale, band * 0.13))
@@ -7751,6 +7856,14 @@ function M.menu(v)
     -- its list and the readings in a column beside it, since what it answers
     -- there is which room to leave this one for.
     local deck = (home and v.aside and v.aside.deploy) and v.aside or nil
+    -- And the roster of the room in the glass behind it, since the arena
+    -- draws none of its own instruments while the backdrop is up and this
+    -- page is about to name everybody in there. See `deck_n`.
+    deck_n = 0
+    if deck and v.arena then
+        deck_n = refresh_players(v.arena.pilots, v.arena.watchers,
+                                 v.arena.side, v.pilot and v.pilot.name)
+    end
 
     -- Not a curtain. Over an arena you can see the fight you left, and that
     -- you are still in it; on the way in the starfield is what is behind it.
@@ -8502,7 +8615,12 @@ function M.menu(v)
         -- The landing takes the page, on a phone and on a monitor alike: the
         -- name across the top of it, the key across the foot, and the fight
         -- between them.
-        pages.aside(deck, tx, top, avail + 24 * F.scale, room)
+        --
+        -- The stage's own edges rather than a gutter in from them, so the
+        -- name starts where the wordmark starts and the key ends where the
+        -- account button ends. Every other page keeps the gutter, because
+        -- every other page is a list whose rows are lit across it.
+        pages.aside(deck, sx, top, sw + 24 * F.scale, room)
     elseif v.rows and #v.rows > 0 and v.rows[1].hull then
         ship_grid(tx, top, avail, room, v, focused)
     else

@@ -38,7 +38,22 @@ layer.rect = function(_, x, y, w, h, col)
     rects[#rects + 1] = {x = x, y = y, w = w, h = h, col = col}
 end
 
-_G.sim = setmetatable({}, {__index = function()
+-- A room with three seats in it, so the landing has a roster to name. The
+-- list reads the simulation for the seats it can see and the server's own
+-- list for their names, which is what the scoreboard does.
+local SEATS = {
+    [0] = {name = "Halcyon", team = 0, k = 4, d = 2, a = 1},
+    [1] = {name = "Sable", team = 1, k = 1, d = 3, a = 0, ai = true},
+    [2] = {name = "Vantage", team = 0, k = 0, d = 0, a = 2},
+}
+_G.sim = setmetatable({
+    ship_count = function() return 3 end,
+    ship_active = function() return 1 end,
+    ship_team = function(i) return SEATS[i].team end,
+    ship_kills = function(i) return SEATS[i].k end,
+    ship_deaths = function(i) return SEATS[i].d end,
+    ship_assists = function(i) return SEATS[i].a end,
+}, {__index = function()
     return function() return 0 end
 end})
 package.loaded["arena.state"] = {text = {}, n = 0, version = 0}
@@ -94,10 +109,10 @@ local function view(finding_rival)
             row = 1,
             arrive = {hull = 0, name = "Apex", call = "you"},
         },
-        -- The live arena keeps the fight visible in the glass beside the
-        -- summary. Its roster does not replace the summary on desktop.
+        -- The room in the glass behind the panel, which is what the
+        -- landing lists: the same roster and side the scoreboard reads.
         arena = {
-            pilots = {{name = "Halcyon"}},
+            pilots = SEATS,
             watchers = {},
             side = 0,
             score = {[0] = 1, [1] = 1},
@@ -165,8 +180,12 @@ local function readings_checks(name, texts)
           has(texts, "Four a side, three minutes"))
     check(name .. " carries the live clock",
           has(texts, "On the clock") and has(texts, "2:40"))
-    check(name .. " carries the room",
-          has(texts, "The room") and has(texts, "8 seats"))
+    check(name .. " heads the roster", has(texts, "Players"))
+    check(name .. " names everybody in the room",
+          has(texts, "Halcyon") and has(texts, "Sable")
+              and has(texts, "Vantage"))
+    check(name .. " carries what each of them has done",
+          has(texts, "4") and has(texts, "3") and has(texts, "2"))
     check(name .. " says nothing about arriving",
           not has(texts, "You arrive as"),
           "the arrival row was taken out")
@@ -211,8 +230,6 @@ for _, hit in ipairs(hits or {}) do
 end
 check("the key presses the zone the carousel is on", key_hit ~= nil,
       "no stage target on the key")
-check("desktop does not replace the summary with a roster",
-      not has(desktop, "Halcyon"), "roster name was drawn")
 -- The key runs the page. It was a box a third of a monitor wide, standing
 -- in a column with a screen of nothing beside it.
 check("the key takes the width of the page",
