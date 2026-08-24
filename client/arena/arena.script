@@ -499,26 +499,6 @@ local function charge_row()
     return out
 end
 
--- How far up the screen the thumb's controls reach, in drawable pixels from
--- the bottom: the top of the gun pad, or of the charge rail when one is
--- carried. The interface places its own things clear of this rather than
--- guessing at a fraction of the screen.
-local function pad_reach(w, h, s)
-    local L = touch.layout(w, h, s)
-    local reach = L.guns.y + L.guns.r
-    if L.mine and L.mine.y + L.mine.r > reach then
-        reach = L.mine.y + L.mine.r
-    end
-    if L.reverse and L.reverse.y + L.reverse.r > reach then
-        reach = L.reverse.y + L.reverse.r
-    end
-    for _, c in ipairs(L.charge or {}) do
-        local top = c.y + (c.w and c.w / 2 or c.r)
-        if top > reach then reach = top end
-    end
-    return reach
-end
-
 -- The menu and the info panels are the same kind of thing, a slab of text
 -- laid over a fight that does not pause for it, so they are one at a time.
 -- Opening either shuts the other. Two of them at once was the exact thing the
@@ -2071,6 +2051,16 @@ function update(self, dt)
                    vi = self.vp_inner or 0, vo = self.vp_outer or 0,
                    vs = self.vp_screen or 0, vt = self.vp_top or 0}
     ui.begin(layers.ui, ww, wh, density, touch.used, self.clock or 0)
+    -- In a game with the window the wrong way round. Everything the arena
+    -- draws is laid out along the wide axis, so on a screen standing on end
+    -- none of it is drawn: not the HUD, not the menu over it, not the room
+    -- question, and not either thumb's controls. One card stands in for the
+    -- lot until the phone comes round. The home menu is never asked and keeps
+    -- both ways up, which is why this turns on being in a game rather than on
+    -- the window alone.
+    local in_game = live and not self.attract
+    local turned_away = in_game and not frame.landscape(self)
+    if turned_away then ui.turn_card() end
     -- The interface stays up under the menu. Nothing is paused, so hiding the
     -- scoreboard and the radar behind a panel would be a lie about what is
     -- happening: you can be shot while reading this.
@@ -2079,7 +2069,7 @@ function update(self, dt)
     -- seat: the deck carries the clock and the score, and a corner stack of
     -- instruments about a fight you are not in would fight the menu for the
     -- pointer.
-    if live and not self.attract then
+    if in_game and not turned_away then
         local e = eye()
         -- The perspective seat: yours, or the watched subject's, and nil when
         -- the channel has nobody to stand behind. Written out rather than as
@@ -2159,11 +2149,6 @@ function update(self, dt)
             -- limit means the room never takes a seat back and there is no
             -- countdown to draw, only the label.
             safe = safe_ticks, safe_limit = sim.safe_limit(),
-            -- How far up the screen the thumb's controls climb, so the one
-            -- feed line a phone shows can be placed clear of them. Measured
-            -- from the same layout the taps are tested against, because a
-            -- rail is as tall as the charges a hull happens to carry.
-            pad_top = touch.used and pad_reach(ww, wh, density) or nil,
             charges = charge_row(),
             cam_x = cx, cam_y = cy,
             half_w = self.hw, half_h = self.hh,
@@ -2192,17 +2177,22 @@ function update(self, dt)
             layers = layers,
         })
     end
-    if menu.open then ui.menu(menu.view()) end
+    -- The menu at home in either orientation; the menu over a game only
+    -- sideways. `frame.live` has already shut the second one in the other
+    -- case, so this reads the flag rather than asking again.
+    if menu.open and not turned_away then ui.menu(menu.view()) end
     -- The question about moving room, last of everything that publishes a hit
     -- box. `ask_card` drops the ones already published, which is what makes a
     -- card the only thing on screen that can be pressed, and it can only do
     -- that from here: drawn inside the HUD it would clear nothing but its own
     -- panel and leave the menu's rows live underneath.
-    ui.room_card(my_rooms())
+    if not turned_away then ui.room_card(my_rooms()) end
     -- Not over the menu: the stick and the pads belong to flight, and drawn
     -- under a panel they read as buttons that do nothing. Not while watching
-    -- either, for the same reason: there is nothing for them to drive.
-    if live and not menu.open and not watching then
+    -- either, for the same reason: there is nothing for them to drive. And not
+    -- on a screen standing on end, where a thumb in each bottom corner is not
+    -- a shape the screen has.
+    if live and not turned_away and not menu.open and not watching then
         touch.draw(layers.ui, ww, wh, density)
     end
     session.browser.finish(self, dt, wh, html5, touch, ui, menu, sfx, apply_menu)
@@ -3202,6 +3192,17 @@ function on_input(self, action_id, action)
                     end
                 end
             end
+            return
+        end
+        -- In a game with the phone stood on end there are no controls: none
+        -- were drawn, so none may be tested. A pad answering where nothing is
+        -- drawn is a fault this interface has had before, and a rail of
+        -- invisible triggers under a card asking for the phone to be turned is
+        -- the worst version of it. Whatever was held goes with them, or a
+        -- trigger latched at the moment of the turn keeps firing until the
+        -- hand comes back.
+        if not menu.home and not frame.landscape(self) then
+            touch.release_all()
             return
         end
         touch.on_touch(action, self.vw or 0, self.vh or 0, self.density or 1,

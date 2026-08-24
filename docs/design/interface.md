@@ -290,6 +290,23 @@ two big statements, DESTROYED and SAFE ZONE, and for the cards and tables a
 player asks for. On a touchscreen the bottom of the screen belongs to the
 thumbs and everything else lifts out of their way.
 
+A game is landscape only, and the geography above is why. Every corner is
+spoken for, two of them by a thumb on a touchscreen, and the fight happens in
+what is left in the middle of the four. Stood on end there is no middle: the
+dial came down on the scoreboard, the corner stack came up into both, and the
+fight went on underneath. So a game is not drawn at all on a screen taller than
+it is wide. One card stands in its place. It asks for the phone to be turned or
+the window to be widened, and it says the game has not stopped meanwhile. The
+HUD, the menu opened over a game, and both thumbs' controls all wait for it,
+and no finger is tested against a control that was not drawn.
+
+The menu at home is the exception and keeps both ways up. It is a page of
+reading with a rail of tabs, a page reads perfectly well in a column, and
+nothing about it is arranged around a fight in the middle. A phone can browse
+zones, buy kit, read the standings and sign in held either way, and only has to
+turn to fly. The rule is `ui.landscape` and `frame.landscape`, asked of the
+window's own shape and never of the device.
+
 Panels in the left column size themselves to their content, count their rows,
 and measure their columns against the widest thing actually in them, headed
 by that column's label; fixed offsets do not survive four numeric columns in

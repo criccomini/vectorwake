@@ -94,6 +94,14 @@ changes address mid-match, so sessions are identified by a token rather than by
 an address, and the server accepts a rebind from a client that proves it holds
 the session.
 
+**A phone plays sideways and browses either way up.** The HUD puts an
+instrument in each top corner and a thumb in each bottom one, which needs the
+wide axis, so a game is drawn in landscape and not otherwise: upright, the
+client shows a card asking for the phone to be turned and draws no game
+interface at all ([decision 58](decisions.md)). The menu at home keeps both
+orientations, since browsing zones and buying kit is reading rather than
+flying.
+
 **Controllers forced an aiming decision, and it is made.** Mouse aim and stick
 aim are not equivalent, and a game where one input class reliably beats another
 splits the population. The original avoided the problem entirely: guns fire

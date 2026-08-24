@@ -4,6 +4,21 @@ local link_quality = require("arena.link_quality")
 
 local M = {}
 
+-- Whether the window is the right way round for a game.
+--
+-- A game is landscape only: the arena is laid out along the wide axis, and so
+-- is everything that opens over one. The home menu keeps both orientations,
+-- so this is asked about the arena and never about that. See `M.landscape` in
+-- ui.lua for what the shape of the arena has to do with it.
+--
+-- Here rather than in ui.lua because the drawing is not the only reader. The
+-- input path asks the same question about the same frame, and a control
+-- tested against a layout that was never drawn is a bug this interface has
+-- had before.
+function M.landscape(self)
+    return (self.vw or 0) >= (self.vh or 0)
+end
+
 -- Recompute whether the connection has a world ready to draw. Call this again
 -- after input handling because a menu action can join or leave during a frame.
 --
@@ -16,6 +31,11 @@ function M.live(self, net, sim, menu)
         and sim.ship_count() > 0
     menu.home = not live or self.attract == true
     if menu.home then menu.open = true end
+    -- The menu over a game goes with the game when the window stands on end.
+    -- Shut rather than left open and undrawn: an open menu still takes the
+    -- arrow keys and the go key, and a cursor moving through a panel nobody
+    -- can see is worse than no panel at all.
+    if not menu.home and not M.landscape(self) then menu.open = false end
     return live
 end
 

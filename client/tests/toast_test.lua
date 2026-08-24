@@ -5,14 +5,12 @@
 -- A desktop reads the whole feed in the corner. A phone cannot: that corner
 -- is where a thumb flies the ship. So the phone gets the same feed filtered
 -- to one line, the newest one that is about this pilot, over the middle of
--- the screen and away from the thumbs in whichever way the phone is held.
+-- the screen and clear of the thumbs.
 --
--- Three rules, and each has a way of going quietly wrong that only shows up
--- on somebody's phone mid-fight: a stranger's kill leaking through, two
--- lines stacking into a panel over the game, and the line landing on the
--- controls in portrait, where the charge rail's height depends on what the
--- hull happens to be carrying. All three are arithmetic about what was
--- drawn, so they are measured here.
+-- Two rules, and each has a way of going quietly wrong that only shows up on
+-- somebody's phone mid-fight: a stranger's kill leaking through, and two
+-- lines stacking into a panel over the game. Both are arithmetic about what
+-- was drawn, so they are measured here.
 
 package.path = "client/?.lua;" .. package.path
 
@@ -77,23 +75,6 @@ local pal = require("arena.palette")
 
 -- --- the harness -----------------------------------------------------------
 
--- The same reach the frame loop hands down: how far up the controls climb.
-local function pad_reach(w, h, s)
-    local L = touch.layout(w, h, s)
-    local reach = L.guns.y + L.guns.r
-    if L.mine and L.mine.y + L.mine.r > reach then
-        reach = L.mine.y + L.mine.r
-    end
-    if L.reverse and L.reverse.y + L.reverse.r > reach then
-        reach = L.reverse.y + L.reverse.r
-    end
-    for _, c in ipairs(L.charge or {}) do
-        local top = c.y + (c.w and c.w / 2 or c.r)
-        if top > reach then reach = top end
-    end
-    return reach
-end
-
 local H
 
 local function frame(w, h, feed, opts)
@@ -111,7 +92,7 @@ local function frame(w, h, feed, opts)
         menu_open = false,
         pilots = {[0] = {name = "you", label = "human"}},
         teams = {}, feed = feed or {}, hurt = 0,
-        charges = {}, pad_top = pad_reach(w, h, 1),
+        charges = {},
         cam_x = 400, cam_y = 400, half_w = w / 2, half_h = h / 2,
         banner = "", lag = 4,
         stats = {lag = 4, lead = 2, err = 1, err_max = 2, rewind = 1,
@@ -210,30 +191,17 @@ check("landscape puts it in the upper band", land and land.y < 390 * 0.33,
 check("and centered", land and math.abs(land.x - 844 / 2) < 1,
       land and string.format("x %.0f", land.x) or "not drawn")
 
--- Portrait: two thirds down, and above the controls. Checked with a full
--- rack, since the charge rail is as tall as the hull's charges.
-frame(390, 844, {MY_DEATH}, {charges = {0, 2}})
-local port = shown("other killed you")
-local reach = pad_reach(390, 844, 1)
-check("portrait puts it two thirds down",
-      port and port.y > 844 * 0.55 and port.y <= 844 * 0.67,
-      port and string.format("y %.0f of 844", port.y) or "not drawn")
-check("and centered", port and math.abs(port.x - 390 / 2) < 1)
--- touch.lua counts up from the bottom; the toast counts down from the top.
-check("and clear of the controls under it",
-      port and port.y + 12 < 844 - reach,
-      port and string.format("line at %.0f, controls reach %.0f",
-                             port.y, 844 - reach) or "not drawn")
-
--- The clamp has to bite when a rail climbs into that two-thirds line, or the
--- fraction is just a guess that happens to work on one loadout.
-frame(390, 500, {MY_DEATH}, {charges = {0, 2}})
-local tight = shown("other killed you")
-local treach = pad_reach(390, 500, 1)
-check("a short window pulls it up off the controls",
-      tight and tight.y + 12 < 500 - treach,
-      tight and string.format("line at %.0f, controls reach %.0f",
-                              tight.y, 500 - treach) or "not drawn")
+-- A rack full of charges builds a taller rail, and the line stays where it
+-- is: the top band is measured off the safe area rather than off the
+-- controls, so nothing a hull happens to carry can push it. There was a
+-- second placement here, two thirds down a phone held upright, clamped clear
+-- of that rail. A game is landscape only now, so both are gone.
+frame(844, 390, {MY_DEATH}, {charges = {0, 2}})
+local packed = shown("other killed you")
+check("a full charge rail does not move it",
+      packed and land and math.abs(packed.y - land.y) < 0.01,
+      packed and string.format("y %.0f, was %.0f", packed.y,
+                               land and land.y or -1) or "not drawn")
 
 -- --- and a desktop is untouched --------------------------------------------
 

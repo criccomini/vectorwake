@@ -919,6 +919,134 @@ function M.finish()
     F:finish()
 end
 
+-- --- orientation -----------------------------------------------------------
+
+-- Whether the window is the right way round to hold a game.
+--
+-- A game is landscape only. The arena is laid out along the wide axis and
+-- always was: the dial in one top corner and the scoreboard in the other, a
+-- thumb in each bottom corner, and the field of play in what is left in the
+-- middle of the four. Stood on end there is no middle left, so each of those
+-- was drawn over another and the fight went on underneath. Everything that
+-- opens over a game inherits the rule, the menu included, because it is the
+-- same screen with a panel on it.
+--
+-- The menu at home keeps both, and that is not an exception to this. It is a
+-- page of reading with a rail of tabs, a page reads perfectly well in a
+-- column, and nothing about it is arranged around a fight in the middle.
+--
+-- Square counts as landscape. The instruments have the room they want at that
+-- point and there is nothing to ask a player to do about it.
+--
+-- Asked of the window and of nothing else. There is no device test here, the
+-- way there is none in zoom.lua: a desktop window dragged narrower than it is
+-- tall is the same shape as a phone held upright and gets the same answer.
+function M.landscape()
+    return F.w >= F.h
+end
+
+-- A screen, for the mark below: the shape being turned, and the shape it is
+-- being turned into, which are the same rectangle each way up.
+local function screen_mark(cx, cy, w, h, col, line)
+    -- A screen as a chamfered box, which is the shape this interface cuts a
+    -- corner with everywhere else. A sixth of the short side: enough to read
+    -- as the house's corner and not so much that the rectangle turns into an
+    -- octagon, which is what a quarter did.
+    local c = math.min(w, h) / 6
+    local x0, y0, x1, y1 = cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2
+    local pts = {
+        {x0 + c, y0}, {x1 - c, y0}, {x1, y0 + c}, {x1, y1 - c},
+        {x1 - c, y1}, {x0 + c, y1}, {x0, y1 - c}, {x0, y0 + c},
+    }
+    for i = 1, #pts do
+        local a, b = pts[i], pts[i % #pts + 1]
+        F.layer:seg(a[1], ry(a[2]), b[1], ry(b[2]), line, col, true)
+    end
+end
+
+-- What stands in the arena's place while the window is the wrong way round.
+--
+-- Drawn instead of the HUD, the menu over it and the thumb controls, rather
+-- than over them. A control tested where nothing was drawn is a fault this
+-- interface has had before, and the way not to have it again is for there to
+-- be no second thing under the card.
+--
+-- The wash is heavy. A lighter one would be saying the game is still being
+-- shown, and it is not.
+function M.turn_card()
+    F.case = "sentence"
+    F.text_dim = 1
+    rect(0, 0, F.w, F.h, pal.rgb(0x03050a, 0.9))
+    -- Nothing behind this is listening. Hit boxes are first come first
+    -- served and this is drawn before anything publishes one, so the list is
+    -- already empty; it is cleared anyway, because what makes that true is a
+    -- draw order somewhere else.
+    M.hits = {}
+
+    -- One number the whole mark is measured in: the long side of a screen.
+    local k = math.min(math.min(F.w, F.h) * 0.16, 84 * F.scale)
+    local cx, cy = F.w / 2, F.h * 0.44
+    local line = 1.6 * F.scale
+    -- The same rectangle twice, once each way up, laid out from the pair's
+    -- own edges so the two of them sit centered rather than the first of
+    -- them. Where it is, dim; where it has to go, lit: the two-color read
+    -- the rest of the game uses for "not yours" and "yours".
+    local up_x, flat_x = cx - k * 0.7, cx + k * 0.51
+    screen_mark(up_x, cy, k * 0.62, k, pal.a(pal.DIM, 0.75), line)
+    screen_mark(flat_x, cy, k, k * 0.62, pal.a(pal.FRIEND, 0.95), line)
+
+    -- The turn: an arc over the pair, from the screen as it is held to the
+    -- screen as it wants to be, with the head on the end that arrives.
+    --
+    -- Laid out in the interface's own top-down coordinates and flipped at the
+    -- draw call, like everything else in this file, so the arithmetic here is
+    -- the arithmetic on screen. The angle is the one whose cosine puts the
+    -- arc's ends over the two screens' middles, so the arch clears both by
+    -- the same amount whatever `k` is, and the center rides high enough that
+    -- the head lands above the wide screen instead of through its edge.
+    local mx = (up_x + flat_x) / 2
+    local my = cy - k * 0.14
+    local ar = k * 0.78
+    local a0 = math.acos(math.min(1, (flat_x - mx) / ar))
+    F.layer:arc(mx, ry(my), ar, a0, math.pi - a0, line, 20,
+                pal.a(pal.FRIEND, 0.55))
+    -- Where the arc comes down on the wide screen, and the way it is going
+    -- when it gets there: the tangent, so the head sits on the curve rather
+    -- than beside it. Longer than it is wide, or a triangle this small reads
+    -- as pointing along its widest edge instead of at its tip.
+    local ex, ey = mx + ar * math.cos(a0), my - ar * math.sin(a0)
+    local dx, dy = math.sin(a0), math.cos(a0)
+    local hd = k * 0.3
+    local bx, by = ex - dx * hd * 0.55, ey - dy * hd * 0.55
+    F.layer:tri(ex + dx * hd, ry(ey + dy * hd),
+                bx - dy * hd * 0.42, ry(by + dx * hd * 0.42),
+                bx + dy * hd * 0.42, ry(by - dx * hd * 0.42),
+                pal.a(pal.FRIEND, 0.95))
+
+    -- A phone is turned and a window is dragged, and telling either one to do
+    -- the other is telling them nothing. The interface already knows which it
+    -- is on, so it says the one that applies.
+    local head = M.touching and "Turn the phone sideways"
+        or "Widen the window"
+    txt(head, cx, cy + k * 0.98, (M.compact and 17 or 21) * F.scale,
+        pal.a(pal.INK, 0.95), "center", MENU_FONT)
+    -- Why, and then the thing a player wants to know before they take their
+    -- eyes off the glass: nothing here is paused and the hull is still where
+    -- it was left.
+    --
+    -- Two lines rather than one sentence. The narrowest screen this can be
+    -- read on is about 320 points, and the two of them together ran off both
+    -- edges of it. There is no wrapping to hand this far up the file, and a
+    -- line that has to be broken at one width is a line that was written too
+    -- long.
+    local sub = (M.compact and 11 or 13) * F.scale
+    local sy = cy + k * 0.98 + (M.compact and 24 or 28) * F.scale
+    txt("A game is played in landscape.", cx, sy, sub,
+        pal.a(pal.DIM, 0.95), "center")
+    txt("You are still in it.", cx, sy + sub * 1.45, sub,
+        pal.a(pal.DIM, 0.95), "center")
+end
+
 -- --- radar -----------------------------------------------------------------
 --
 -- A hundred and fifty tiles around you, which is the prototype's span and
@@ -2075,29 +2203,20 @@ end
 local TOAST_LIFE = 3.6
 local TOAST_FADE = 0.9
 
--- Where it sits, which is the far side of the screen from the thumbs in
--- whichever way the phone is being held.
--- `reach` is how far up the screen the controls climb, in drawable pixels
--- from the bottom, handed down by the frame loop. Asked for rather than
--- worked out here: touch.lua owns where a thumb's controls go, this file owns
--- where the instruments go, and the two stopped requiring each other on
--- purpose.
-local function toast_y(reach)
-    if F.w >= F.h then
-        -- Landscape: under the flags, in the band across the top that the
-        -- corner chips and the dial leave empty between them.
-        return F.safe_t + 62 * F.scale
-    end
-    -- Portrait: two thirds of the way down, the empty band between the ship
-    -- and the controls. Clamped clear of what the pads actually reach rather
-    -- than trusting the fraction, since a hull carrying two kinds of charge
-    -- builds a taller rail than one carrying none, and the rail is the thing
-    -- this must not land on.
-    local floor = reach and (F.h - reach - 22 * F.scale) or F.h
-    return math.min(F.h * 0.66, floor)
+-- Where it sits: the far side of the screen from the thumbs, which on a
+-- phone held sideways is the band across the top that the corner chips and
+-- the dial leave empty between them.
+--
+-- There was a second answer here, two thirds of the way down, for a phone
+-- held upright, and it had to be clamped clear of a charge rail whose height
+-- depended on what the hull was carrying. A game is landscape only now (see
+-- ui.landscape), so the clamp and the pad reach it was measured against are
+-- both gone.
+local function toast_y()
+    return F.safe_t + 62 * F.scale
 end
 
-local function toast(lines, reach)
+local function toast(lines)
     local f = nil
     for i = 1, #lines do
         if lines[i].mine and lines[i].t < TOAST_LIFE then
@@ -2110,7 +2229,7 @@ local function toast(lines, reach)
     local left = TOAST_LIFE - f.t
     if left < TOAST_FADE then a = math.max(0, left / TOAST_FADE) end
     local size = (FONT + 1) * F.scale
-    local y = toast_y(reach)
+    local y = toast_y()
     -- A wash under it rather than a box round it, the width of the words and
     -- no wider. Mid-screen over a starfield the type needs something to sit
     -- on; a border would be the one shape this interface does not draw.
@@ -3912,7 +4031,7 @@ function M.hud(o)
     -- The phone's own reading of that same feed, and not in the same place:
     -- this one is over the middle of the screen rather than in the corner the
     -- debug readout took, so the two do not argue about a strip.
-    if M.touching then toast(o.feed, o.pad_top) end
+    if M.touching then toast(o.feed) end
     -- Stacked, not overlaid: the panel that is always there sits at the
     -- bottom and the one you asked for sits on top of it. A watcher has no
     -- hull, so the hull's furniture -- the corner stack, the loadout -- is

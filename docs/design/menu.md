@@ -117,7 +117,17 @@ button while its page is.
 
 ## What the window decides
 
-Two questions, not one, and for a while it was only the first.
+Two questions, not one, and for a while it was only the first. There is a
+third, but it is asked before either of these and answers something else: is
+the window the right way round for the menu to be up at all.
+
+**Which way round** decides whether this menu exists on this screen. At home it
+always does, in both orientations: a page of reading with a rail of tabs reads
+perfectly well in a column, and browsing zones or buying kit is reading. Over a
+game it does not. A game is landscape only (decision 58), and the menu opened
+over one is the same screen with a panel on it, so it shuts when the window
+stands on end and comes back when it turns. The rest of this section is about
+the menu at home, where both orientations survive.
 
 **Width** decides where the tabs go. Under 620 points they are a bar along the
 bottom edge, where a thumb reaches them; over it they are a row across the top

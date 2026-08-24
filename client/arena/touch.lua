@@ -4,6 +4,12 @@
 -- spectating one. This is the playing answer: one thumb for flying, and pads
 -- for the weapons.
 --
+-- Sideways, and only sideways. A thumb in each bottom corner is what this
+-- layout is, and a phone held upright has no two bottom corners far enough
+-- apart to hold two hands. Nothing in here asks: the arena draws these only
+-- in landscape and stops feeding them touches otherwise, so the layout below
+-- is written for one shape of screen. See decision 58.
+--
 -- What the flying thumb reads depends on what the screen is doing, and the two
 -- answers come out opposite.
 --

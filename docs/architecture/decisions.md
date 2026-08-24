@@ -2529,3 +2529,51 @@ edge.
 **Reconsider if:** the simulation adopts polygon collision. Normalize the
 polygon areas then and retire the rectangle budget rather than layering one
 shape contract over another.
+
+---
+
+## 58. A game is landscape only, and the home menu is not
+
+**Status:** accepted
+
+The HUD has a fixed geography and it uses the wide axis for all of it: the
+button row and the scoreboard down the top left, the LINK bars and the dial
+down the top right, the corner stack growing up from the bottom left, the score
+and the clock across the top center, and on a touchscreen a thumb parked in
+each bottom corner. What is left in the middle of those is the field of play.
+
+Held upright there is no middle. The dial came down onto the scoreboard, the
+corner stack came up into both, and the fight carried on underneath a pile of
+instruments. Every fix for that is a second layout: a stacked HUD, a second
+place for the kill line, a rail of thumb controls measured against a screen
+that has no room for it. We were carrying and testing pieces of that second
+layout without ever having designed the control scheme it would need, and
+platforms.md still lists that scheme as an open question.
+
+So a game is drawn in landscape and not otherwise. On a window taller than it
+is wide, the arena draws no HUD, no menu over the game, and no thumb controls.
+One card stands in their place: turn the phone, or widen the window, and the
+game has not stopped while you do. Touches are released and ignored for as long
+as it stands, because a control tested where nothing was drawn is a bug this
+client has already had.
+
+The home menu keeps both orientations. It is a page of reading with a rail of
+tabs, not a fight with furniture around it, and a page reads perfectly well in
+a column. A phone can browse the zones, buy kit, read the standings and sign in
+held either way. Deploying is the point where it has to be turned.
+
+The question is asked of the window and never of the device, the same way
+zoom.lua asks. A desktop window dragged narrower than it is tall is the same
+shape as a phone stood on end and gets the same answer. Square counts as
+landscape: the instruments have the room they want by then and there is nothing
+to ask a player to do.
+
+**Cost:** a player who rotates mid-fight loses sight of the game for as long as
+the card is up, and the hull keeps flying. The alternative was a layout that
+drew everything and let none of it be read, so this is the honest version of
+the same loss. It also settles that a phone cannot be played one-handed, which
+the two-thumb control scheme had already decided in practice.
+
+**Reconsider if:** we design a portrait control scheme rather than reflowing
+the landscape one. That would be a different game surface with its own
+geography, not this HUD stood on end, and it would want its own record.
