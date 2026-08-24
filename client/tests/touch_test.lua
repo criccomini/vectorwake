@@ -6,9 +6,10 @@
 -- sends, and this pins that mapping: ahead thrusts, a course to the side
 -- turns toward it, and a course behind the nose is a turn like any other.
 -- That last one is a decision, not an accident. A rear cone that held the
--- nose and backed up shipped and was taken out within the day because it
--- did not feel good under a thumb. Reverse therefore has its own held pad and
--- never changes what a course on the stick means.
+-- nose and backed up shipped and was taken out within the day because it did
+-- not feel good under a thumb; a second attempt read the same push as backing
+-- out of a fight, lasted longer, and is gone as well. A phone has no reverse,
+-- so a course behind the nose means one thing whatever else is held.
 
 package.path = "client/?.lua;" .. package.path
 
@@ -60,11 +61,11 @@ end
 -- A drag of `mag` pixels at `deg` degrees off the nose, against a ship
 -- heading north, which is screen up: 0 degrees is dead ahead, 180 dead
 -- astern, positive to the right.
-local function ask(deg, mag)
+local function ask(deg, mag, heading)
     local a = math.rad(deg)
     press()
     drag(math.sin(a) * mag, math.cos(a) * mag)
-    local bits = touch.bits(0)
+    local bits = touch.bits(heading or 0)
     lift()
     return bits
 end
@@ -84,6 +85,14 @@ b = ask(-90, 60)
 check("a course to the left turns left",
       has(b, sim.BTN_LEFT) and not has(b, sim.BTN_RIGHT))
 
+-- The stick names a course rather than a direction to spin in, so a thumb
+-- already on the ship's heading asks for no turn wherever that heading is.
+-- Headings are the simulation's: 0..65535, zero north, clockwise.
+b = ask(90, 60, 65536 / 4)
+check("a thumb on the current heading turns nothing",
+      not has(b, sim.BTN_LEFT) and not has(b, sim.BTN_RIGHT))
+check("and drives the ship along it", has(b, sim.BTN_THRUST))
+
 -- A resting thumb inside the dead zone asks nothing.
 b = ask(180, 8)
 check("a thumb that barely moved does nothing", #b == 0, #b .. " bits")
@@ -100,11 +109,12 @@ end
 -- Lifting the thumb clears the ask.
 check("after the lift the stick is quiet", #touch.bits(0) == 0)
 
--- --- reverse from the stick -------------------------------------------------
+-- --- and none of it changes while a trigger is down -------------------------
 --
--- Reverse has no pad. In a fight, a push behind the nose backs the ship out
--- with the guns still on it; the trigger is what says fight here, and the
--- hostile-ahead half has its own tests beside the d-pad's.
+-- The trigger used to be half of what said "fight", and in a fight a rearward
+-- push backed the ship out instead of turning it. It says nothing now: the
+-- pads decide what is fired and the stick decides where the nose goes, and
+-- neither reads the other.
 
 local L = touch.layout(W, H, 1)
 touch.on_touch({touch = {{id = 9, pressed = true,
@@ -113,12 +123,15 @@ touch.on_touch({touch = {{id = 8, pressed = true,
                           screen_x = 120, screen_y = 250}}}, W, H, 1)
 touch.on_touch({touch = {{id = 8, screen_x = 120, screen_y = 190}}}, W, H, 1)
 local held = touch.bits(0)
-check("firing, a push behind the nose backs up",
-      has(held, sim.BTN_REVERSE) and has(held, sim.BTN_FIRE))
+check("firing, a push behind the nose is still a turn",
+      (has(held, sim.BTN_LEFT) or has(held, sim.BTN_RIGHT))
+          and not has(held, sim.BTN_REVERSE))
+check("and the gun is still firing through it", has(held, sim.BTN_FIRE))
 touch.release(9)
 held = touch.bits(0)
-check("with the fight over the same push turns instead",
-      not has(held, sim.BTN_REVERSE) and not has(held, sim.BTN_FIRE))
+check("letting the trigger go leaves the same turn",
+      (has(held, sim.BTN_LEFT) or has(held, sim.BTN_RIGHT))
+          and not has(held, sim.BTN_FIRE))
 touch.release(8)
 
 -- --- the gun's multifire gesture -------------------------------------------

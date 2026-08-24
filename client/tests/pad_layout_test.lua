@@ -542,8 +542,7 @@ do
         else
             for _, bit in ipairs(touch.bits(0)) do
                 if bit == sim.BTN_FIRE then out = "guns"
-                elseif bit == sim.BTN_BOMB then out = "bombs"
-                elseif bit == sim.BTN_REVERSE then out = "reverse" end
+                elseif bit == sim.BTN_BOMB then out = "bombs" end
             end
         end
         if not out and touch.steering() then out = "stick" end

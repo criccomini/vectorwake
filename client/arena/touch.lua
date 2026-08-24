@@ -4,50 +4,22 @@
 -- spectating one. This is the playing answer: one thumb for flying, and pads
 -- for the weapons.
 --
--- What the flying thumb reads depends on what the screen is doing, and the two
--- answers come out opposite.
+-- The flying thumb is a thumbstick, and it points where you want the nose to
+-- go. Pointing beats a rotate-left/rotate-right pair on glass: there is no
+-- tactile edge to feel for, so a player cannot hold a rotation and stop it on
+-- time, but they can put a thumb where they want to be facing. The ship still
+-- turns at its own rate, so nothing about the flight model changes. This only
+-- decides which way the turn is applied, exactly as the AI does it.
 --
--- In the ordinary north-up view it is a thumbstick that points where you want
--- the nose to go. Pointing beats a rotate-left/rotate-right pair on glass:
--- there is no tactile edge to feel for, so a player cannot hold a rotation and
--- stop it on time, but they can put a thumb where they want to be facing. The
--- ship still turns at its own rate, so nothing about the flight model changes.
--- This only decides which way the turn is applied, exactly as the AI does it.
---
--- A player who would rather push than point gets a d-pad instead, which is a
--- setting. Eight ways, so a diagonal thrusts and turns at once, and the turn
--- runs for as long as the thumb is held. It is the older idiom and it is the
--- one a thumb raised on other games arrives already knowing, which is worth
--- more than the argument above to the player who wants it.
---
--- The pad is anchored where the resting mark sits, unlike the stick, which
--- appears wherever a thumb lands. Anchoring is what makes it tappable: a tap
--- on the left arm is a nudge left, with no drag to perform first, and a fixed
--- position is the closest glass gets to a tactile edge, because the thumb
--- learns where left lives. It is also what pays for the pad's known cost. A
--- held turn runs on until the thumb answers what the eye sees, which is a
--- fifth of a second late, and at these hulls' turn rates that is thirty-odd
--- degrees past wherever the player meant to stop; the correction has to be a
--- tap, so taps have to exist.
---
--- Fresh turns also ramp: a turn starts at a fraction of the hull's rate and
--- reaches full over a quarter second held, so a tap nudges a few degrees and
--- a committed swing still spins. The simulation knows nothing of it. The rate
--- is the hull's own and the client cannot change it, so the ramp is made by
--- withholding the turn bit on a share of ticks, which the input path treats
--- like any other buttons and the render smoothing hides.
---
--- Reverse has no pad of its own anywhere. On the d-pad, down is backwards.
--- On the stick it is read from intent: in a fight, a push away from where the
--- nose points backs the ship out with its guns still on it, which is the only
--- moment backwards is worth a full-strength engine (and it is full strength:
--- the simulation applies the same thrust either sign). "In a fight" is the
--- trigger held, or a hostile close ahead, and the second half is what keeps a
--- kite whole: guns lift between bursts to let the energy climb, and the ship
--- must not wheel toward its own retreat every time they do. See
--- arena/threat.lua for what counts and for the two signals deliberately not
--- consulted. The held pad this replaces sat above the stick and went unused,
--- because the thumb that could hold it was the thumb already steering.
+-- It is the only flying control, and it only ever drives the ship forward.
+-- Beside it for a while sat a d-pad, chosen in the settings, and a reverse
+-- with no pad of its own: down on the d-pad, and on the stick a rearward push
+-- read as backing out whenever the guns were up or a hostile sat ahead. Both
+-- are gone. A thumb pushed the same way meant one thing on the pad and another
+-- on the stick, and on the stick it changed again mid-burst, which cost a
+-- field on every caller, a clock run from the frame loop, and a module of its
+-- own deciding what counted as a fight. A pilot who wants to be going the
+-- other way turns the ship around.
 --
 -- The simulation never learns any of this happened: it receives the same
 -- button bitfield a keyboard produces.
@@ -70,34 +42,10 @@ local marks = require("arena.marks")
 local pal = require("arena.palette")
 
 local DEAD_PX = 14        -- ignore a thumb that has barely moved
--- While firing, how far from the nose a push has to point before it means
--- "back out" rather than "turn there", and how close it has to come back
--- before it means turning again. Two numbers rather than one because a thumb
--- resting near the boundary would otherwise flap between the ship's two ends
--- several times a second.
-local REAR_ENTER = 1.75   -- radians past this, a firing push steers the tail
-local REAR_EXIT = 1.40    -- and back inside this, the nose again
--- The pad's inert middle, as a share of its radius: a thumb resting on the
--- anchor is resting, not steering. The stick needs no such gap because its
--- center is wherever the thumb pressed, which cannot be pressed again.
-local PAD_GAP = 0.24
--- What share of the hull's turn rate a fresh turn starts at, and how long it
--- is held before the whole rate arrives. The floor is the tap: at these
--- numbers a quick tap turns a few degrees. The window is the reaction time it
--- exists to forgive, and matching it is what makes the end of a deliberate
--- swing arrive gently instead of thirty degrees late.
-local RAMP_FLOOR = 0.4
-local RAMP_S = 0.25
 local THRUST_PX = 46      -- push past this and the engine lights
 local FAN_SWIPE_PX = 32   -- deliberate upward pull while holding the gun
 
 M.used = false            -- has this device ever reported a touch?
--- Whether the flying thumb gets a d-pad rather than the stick. Set by the
--- arena from the player's setting; it decides what a thumb direction means.
-M.dpad = false
--- Whether a hostile sits close ahead of the nose, set by the arena each
--- frame from arena/threat.lua. Half of what "in a fight" means to the stick.
-M.threat = false
 M.scale = 1               -- drawable pixels per point
 -- How many of each charge slot are in hand, by slot. Set by the caller.
 M.counts = {}
@@ -143,9 +91,6 @@ M.me = nil
 M.ceiling = math.huge
 
 local stick = nil         -- {id, ox, oy, x, y}
--- Whether the stick is currently steering the tail (firing, push rearward).
--- Kept between reads for the hysteresis above, and dropped with the stick.
-local rear = false
 local guns = nil          -- touch id holding the guns pad
 local gun_ox, gun_oy = nil, nil
 local gun_fanned = false
@@ -162,13 +107,6 @@ local bombs = nil
 -- would spend a second one the moment the cooldown lapsed, and there are only
 -- three.
 local fired = nil
-
--- The turn ramp: which way the pad is turning, how long it has been held, and
--- the running remainder that decides which ticks get the turn bit. The
--- accumulator starts at one so the first frame of any fresh turn always
--- answers; a pad that waited a frame to say anything would read as broken in
--- exactly the moment a tap is quickest.
-local ramp = {dir = 0, held = 0, acc = 1}
 
 -- Whether an upward gun pull happened since it was last asked. The core toggles
 -- multifire on a rising edge, so one gun hold may produce at most one edge.
@@ -195,8 +133,7 @@ M.charges = {}
 -- The two triggers keep the corner, side by side along the bottom. Their
 -- secondary actions form one fixed row above them: charge slots in stable
 -- positions, two over the guns and the rest continuing left over the bomb.
--- Empty slots disappear but never pull a neighbor into their place. Reverse
--- mirrors that row above the flight stick.
+-- Empty slots disappear but never pull a neighbor into their place.
 function M.layout(w, h, s)
     s = s or 1
     local r = math.max(30 * s, math.min(math.min(w, h) * 0.11, 62 * s))
@@ -304,16 +241,7 @@ function M.on_touch(action, w, h, s, claimed)
         elseif t.pressed then
             local z = zone(tx, ty, w, h, s)
             if z == "stick" and not stick then
-                if M.dpad then
-                    -- Anchored: the pad's center is the resting mark, not the
-                    -- press, so the press itself already names a direction
-                    -- and a tap needs no drag to mean something.
-                    local hm = M.layout(w, h, s).home
-                    stick = {id = t.id, ox = hm.x, oy = hm.y, x = tx, y = ty,
-                             gap = hm.r * PAD_GAP}
-                else
-                    stick = {id = t.id, ox = tx, oy = ty, x = tx, y = ty}
-                end
+                stick = {id = t.id, ox = tx, oy = ty, x = tx, y = ty}
             elseif z == "guns" then
                 guns = t.id
                 gun_ox, gun_oy = tx, ty
@@ -345,11 +273,7 @@ end
 -- batch that another leaves a pad. Passing that release through here first
 -- keeps the panel's early return from leaving the other control held.
 function M.release(id)
-    if stick and stick.id == id then
-        stick = nil
-        rear = false
-        ramp.dir, ramp.held, ramp.acc = 0, 0, 1
-    end
+    if stick and stick.id == id then stick = nil end
     if guns == id then
         guns, gun_ox, gun_oy, gun_fanned = nil, nil, nil, false
     end
@@ -360,8 +284,6 @@ end
 -- a lost touch has to be forgettable.
 function M.release_all()
     stick, guns, bombs = nil, nil, nil
-    rear = false
-    ramp.dir, ramp.held, ramp.acc = 0, 0, 1
     gun_ox, gun_oy, gun_fanned = nil, nil, false
 end
 
@@ -386,85 +308,11 @@ end
 -- A list rather than a bitfield, because the caller merges this with the
 -- keyboard and HTML5 builds run Lua 5.1, which has no bitwise or. Summing a
 -- set of distinct bits is exact and needs no library.
--- Which way the pad is being pushed, as the four arms it lights.
---
--- Read by the input and by the drawing, so the arm that lights is the arm that
--- is doing something rather than a second opinion about the same thumb. All
--- four come back false while nothing is pushing it.
---
--- Eight ways, so a diagonal thrusts and turns at once. Sectors rather than a
--- threshold on each axis, because independent thresholds leave a corner where
--- a thumb pushed exactly between two of them does nothing at all.
-local function pad_arms()
-    if not stick then return false, false, false, false end
-    local dx, dy = stick.x - stick.ox, stick.y - stick.oy
-    -- The inert middle. The anchored pad's is sized to the pad, because its
-    -- center can be pressed directly; the drag threshold is for a stick whose
-    -- center is wherever the press was.
-    local dead = stick.gap or (DEAD_PX * M.scale)
-    if dx * dx + dy * dy < dead * dead then
-        return false, false, false, false
-    end
-    -- Zero is straight up the screen and it runs clockwise: 1 is up and to the
-    -- right, 2 is right, 4 is straight down. The sweep runs from -4 to 4, so
-    -- straight down arrives under either sign depending on which side of it
-    -- the thumb sits. Backing up is therefore read off the magnitude, which is
-    -- what lets both ends mean the same thing without normalizing one away.
-    local oct = math.floor(math.atan2(dx, dy) / (math.pi / 4) + 0.5)
-    return oct <= -1 and oct >= -3,     -- turning left
-           oct >= 1 and oct <= 3,       -- turning right
-           oct >= -1 and oct <= 1,      -- thrusting
-           math.abs(oct) >= 3           -- backing up
-end
-
--- The ramp's clock, run by the arena once a frame. Kept apart from M.bits so
--- that reading the buttons never advances time: the drawing asks pad_arms the
--- same question and must see the same answer.
-function M.step(dt)
-    if not M.dpad then
-        ramp.dir, ramp.held, ramp.acc = 0, 0, 1
-        return
-    end
-    local left, right = pad_arms()
-    local dir = (left and -1 or 0) + (right and 1 or 0)
-    if dir ~= ramp.dir then
-        -- A fresh turn, including a reversal mid-hold: the ramp starts over,
-        -- so correcting an overshoot is as gentle as the tap that made it.
-        ramp.dir, ramp.held, ramp.acc = dir, 0, 1
-    elseif dir ~= 0 then
-        ramp.held = ramp.held + (dt or 0)
-    end
-end
-
 function M.bits(heading)
     local out = {}
     if guns then out[#out + 1] = sim.BTN_FIRE end
     if bombs then out[#out + 1] = sim.BTN_BOMB end
     if not stick then return out end
-
-    -- The pad says which way the thumb is pushing and holds it there. The
-    -- stick below says where the nose should end up and stops when it
-    -- arrives. Both come out as the same turn bits; what differs is who
-    -- decides when the turn ends, the player or the arithmetic.
-    if M.dpad then
-        local left, right, fwd, back = pad_arms()
-        -- Turning is pulsed by the ramp; thrust and reverse are not. The
-        -- overshoot this forgives is angular, and an engine that came up
-        -- softly would read as mush without buying anything for it.
-        if left or right then
-            local f = RAMP_FLOOR
-                + (1 - RAMP_FLOOR) * math.min(ramp.held / RAMP_S, 1)
-            ramp.acc = ramp.acc + f
-            if ramp.acc >= 1 then
-                ramp.acc = ramp.acc - 1
-                if left then out[#out + 1] = sim.BTN_LEFT end
-                if right then out[#out + 1] = sim.BTN_RIGHT end
-            end
-        end
-        if fwd then out[#out + 1] = sim.BTN_THRUST end
-        if back then out[#out + 1] = sim.BTN_REVERSE end
-        return out
-    end
 
     local dx, dy = stick.x - stick.ox, stick.y - stick.oy
     local mag = math.sqrt(dx * dx + dy * dy)
@@ -478,38 +326,15 @@ function M.bits(heading)
     while diff > math.pi do diff = diff - math.pi * 2 end
     while diff < -math.pi do diff = diff + math.pi * 2 end
 
-    -- Which end of the ship the thumb is steering.
-    --
-    -- Not firing, always the nose: the stick points where the nose should go,
-    -- and a push behind you is a turn, exactly as it has always been.
-    --
-    -- Firing, a push far enough behind the nose steers the tail instead. The
-    -- intent it reads is the kite: guns on the fight, ship backing out of it,
-    -- which no pointing stick could say because pointing away is turning
-    -- away. Mirroring the error swings the tail onto the thumb, so small
-    -- moves of a rearward thumb steer the retreat while the guns stay
-    -- forward, and the engine below fires backward under the same alignment
-    -- gate thrust uses. The one thing this costs is a nose-first turn of
-    -- more than about a hundred degrees mid-burst; letting go of the trigger
-    -- for a beat buys it back.
-    if guns or M.threat then
-        rear = math.abs(diff) > (rear and REAR_EXIT or REAR_ENTER)
-    else
-        rear = false
-    end
-    if rear then
-        diff = diff > 0 and diff - math.pi or diff + math.pi
-    end
-
+    -- The nose, always: the stick points where the nose should go, so a push
+    -- behind you is a turn like any other rather than an order to back up.
     if diff > 0.06 then out[#out + 1] = sim.BTN_RIGHT
     elseif diff < -0.06 then out[#out + 1] = sim.BTN_LEFT end
 
-    -- The engine once the thumb is committed and the steered end is roughly
-    -- there, so a hard turn does not fling the ship the way it used to be
-    -- facing. Backing out it is the same gate on the other end of the hull,
-    -- and the simulation's reverse is the same thrust with the sign flipped.
+    -- The engine once the thumb is committed and the nose is roughly there,
+    -- so a hard turn does not fling the ship the way it used to be facing.
     if mag > THRUST_PX * M.scale and math.abs(diff) < 1.0 then
-        out[#out + 1] = rear and sim.BTN_REVERSE or sim.BTN_THRUST
+        out[#out + 1] = sim.BTN_THRUST
     end
     return out
 end
@@ -635,27 +460,7 @@ function M.draw(u, w, h, s)
         end
     end
 
-    if M.dpad then
-        -- The pad. Four chevrons pointing out of a middle, lit where the
-        -- thumb is pushing.
-        -- At the anchor whether held or not: the pad's fixed position is
-        -- what a thumb learns, so it is never drawn anywhere else. Holding it
-        -- only brightens it.
-        local cx, cy = L.home.x, L.home.y
-        local col = stick and dim or pal.a(pal.DIM, 0.35)
-        local reach, span = L.home.r * 0.92, L.home.r * 0.30
-        local left, right, fwd, back = pad_arms()
-        for _, arm in ipairs({{0, 1, fwd}, {0, -1, back},
-                              {-1, 0, left}, {1, 0, right}}) do
-            local ux, uy, on = arm[1], arm[2], arm[3]
-            local c = on and pal.a(pal.FRIEND, 0.9) or col
-            -- Tip out along the arm, arms swept back either side of it.
-            local tx, ty = cx + ux * reach, cy + uy * reach
-            local bx, by = cx + ux * (reach - span), cy + uy * (reach - span)
-            u:seg(bx - uy * span, by + ux * span, tx, ty, 2 * s, c)
-            u:seg(tx, ty, bx + uy * span, by - ux * span, 2 * s, c)
-        end
-    elseif stick then
+    if stick then
         local live = pal.a(pal.FRIEND, 0.9)
         u:ring(stick.ox, stick.oy, L.home.r, 1.8 * s, 26, dim)
         u:ring(stick.x, stick.y, L.r * 0.42, 1.8 * s, 16, live)
