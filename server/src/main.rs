@@ -92,10 +92,13 @@ fn reporting_from(v: Option<&str>) -> bool {
 /// Watchers a room admits when its zone says nothing. Deliberately low: a
 /// watcher is a full player's egress, and egress is the fleet's whole bill.
 const DEFAULT_MAX_WATCHERS: usize = 8;
-/// How far the room channel runs behind when the zone does not say: five
-/// seconds. Enough that what a second tab sees is film rather than targeting
-/// data, short enough to still read as the fight it is.
-const DEFAULT_CHANNEL_DELAY: u32 = 500;
+/// How far the room channel runs behind: five seconds, everywhere, and not a
+/// zone's to set. Enough that what a second tab sees is film rather than
+/// targeting data, short enough to still read as the fight it is. A dial here
+/// was a dial for turning the protection off, and the one zone that turned it
+/// down to zero did not need it: watching is the shared feed now, so nobody
+/// can aim it at a chosen pilot however fresh the frame is.
+const CHANNEL_DELAY: u32 = 500;
 /// How long the channel holds one subject, in ticks. Long enough to catch a
 /// fight's arc, short enough that a room's whole cast comes round.
 const CHANNEL_HOLD: u32 = 9000;
@@ -2302,7 +2305,7 @@ mod tests {
         let (tx, rx) = mpsc::channel(OUT_QUEUE);
         std::mem::forget(rx);
         let watcher = z.rooms[0]
-            .watch_join(wrong.clone(), false, tx)
+            .watch_join(wrong.clone(), tx)
             .expect("the wrong rival can be constructed in the stands");
         assert!(
             z.rooms[0].fly(watcher, wrong_spec.hull, 1).is_none(),
@@ -3850,7 +3853,7 @@ mod tests {
         let (tx, rx) = mpsc::channel(OUT_QUEUE);
         std::mem::forget(rx);
         let watcher = a
-            .watch_join(Seat::guest("pilot", false), false, tx)
+            .watch_join(Seat::guest("pilot", false), tx)
             .expect("a place in the stands");
         a.fly(watcher, 0, 8).expect("a seat on the field");
         a.tick();
@@ -4994,28 +4997,30 @@ mod tests {
         );
     }
 
+    /// Put the camera on a chosen hull and leave it there, so a test about
+    /// what a frame contains is not also a test of the picker's dice.
+    fn point_camera(a: &mut Room, ship: u8) {
+        a.channel.subject = Some(ship);
+        a.channel.hold = CHANNEL_HOLD;
+    }
+
     #[test]
-    fn a_watchers_snapshot_is_the_followed_pilots_sight_exactly() {
-        // Bound sight's whole guarantee, as bytes: what a same-side watcher
-        // receives is a human-radius pack at the followed hull, nothing more.
+    fn the_channels_frame_is_the_subjects_sight_exactly() {
+        // Bound sight's whole guarantee, as bytes: what the stands receive is
+        // a human-radius pack at the hull the camera is on, and nothing else.
         // If these ever differ, the mode has started leaking.
         let mut a = room_with_teams("teams = [\"Keel\"]\n");
         let target = seat_human(&mut a, "flown");
-        let (_, wid, mut rx) = seat_rx(&mut a, "watching");
-        assert!(a.sit_out(wid, target, false, false), "a pilot can sit out");
-        assert_eq!(
-            a.watchers[&wid].mode,
-            WatchMode::Follow(target),
-            "same side, so the follow is granted"
-        );
+        let (_, wid, _rx) = seat_rx(&mut a, "watching");
+        assert!(a.sit_out(wid, false), "a pilot can sit out");
+        point_camera(&mut a, target);
 
         let mut buf = vec![0u8; sim::PACK_MAX];
         a.broadcast_snapshot(&mut buf);
 
-        let got = snapshots(&drain(&mut rx));
-        let last = got.last().expect("a follow snapshot arrived");
-        assert_eq!(last[1], target, "the subject byte names the followed hull");
-
+        let frame = a.channel.ring.back().expect("a frame was packed");
+        assert_eq!(frame.subject, target);
+        assert_eq!(frame.msg[1], target, "the subject byte names the hull");
         let sh = &a.world.state.ships[target as usize];
         let mut fresh = vec![0u8; sim::PACK_MAX];
         let n = a
@@ -5023,29 +5028,29 @@ mod tests {
             .pack_around(&mut fresh, sh.x, sh.y, FAIR_INTEREST, target, 255, 0);
         assert!(n > 0);
         assert_eq!(
-            &last[SNAPSHOT_HEADER..],
+            &frame.msg[SNAPSHOT_HEADER..],
             &fresh[..n as usize],
             "byte for byte"
         );
     }
 
     #[test]
-    fn follow_does_not_restore_the_old_160_tile_disclosure() {
+    fn the_channel_does_not_restore_the_old_160_tile_disclosure() {
         let mut a = room_with_teams("teams = [\"Keel\"]\n");
         let target = seat_human(&mut a, "flown");
-        let (_, wid, mut rx) = seat_rx(&mut a, "watching");
+        let (_, wid, _rx) = seat_rx(&mut a, "watching");
         let hidden = seat_human(&mut a, "hidden");
         let center = a.world.state.ships[target as usize];
         a.world.state.ships[hidden as usize].x = center.x + 120 * 16 * 256;
         a.world.state.ships[hidden as usize].y = center.y;
-        assert!(a.sit_out(wid, target, false, false));
+        assert!(a.sit_out(wid, false));
+        point_camera(&mut a, target);
 
         let mut buf = vec![0u8; sim::PACK_MAX];
         a.broadcast_snapshot(&mut buf);
-        let got = snapshots(&drain(&mut rx));
-        let last = got.last().expect("a follow snapshot arrived");
+        let frame = a.channel.ring.back().expect("a frame was packed");
         let mut view = sim::World::new(1);
-        assert!(view.apply_snapshot(&last[SNAPSHOT_HEADER..]));
+        assert!(view.apply_snapshot(&frame.msg[SNAPSHOT_HEADER..]));
         assert_eq!(
             view.state.ships[hidden as usize].active, 0,
             "a ship inside the old 160-tile ceiling but outside fair sight stays hidden",
@@ -5053,100 +5058,125 @@ mod tests {
     }
 
     #[test]
-    fn following_a_bot_never_inherits_its_whole_room_stream() {
-        // A watcher gets the interest radius at the followed hull whatever
-        // that hull's own stream looks like. It matters most when the subject
-        // is one of ours, which is sent the whole room: sight must not be
+    fn a_bot_subject_never_puts_its_whole_room_stream_on_the_channel() {
+        // The camera lands on bots: an empty-handed room has nobody else to
+        // point at. A bot is sent the whole room, and sight must not be
         // inheritable, or the one seat that sees everything becomes a door.
         let mut a = room_with_teams("teams = [\"Keel\"]\n");
         let bots = seat_bots(&mut a, 1);
-        let (_, wid, mut rx) = seat_rx(&mut a, "watching");
-        assert!(a.sit_out(wid, bots[0], false, false));
-        assert_eq!(a.watchers[&wid].mode, WatchMode::Follow(bots[0]));
+        let (tx, _rx) = mpsc::channel(OUT_QUEUE);
+        a.watch_join(Seat::guest("gallery", false), tx).unwrap();
+        point_camera(&mut a, bots[0]);
 
         let mut buf = vec![0u8; sim::PACK_MAX];
         a.broadcast_snapshot(&mut buf);
-        let got = snapshots(&drain(&mut rx));
-        let last = got.last().expect("a follow snapshot");
+        let frame = a.channel.ring.back().expect("a frame was packed");
         let sh = &a.world.state.ships[bots[0] as usize];
         let mut fresh = vec![0u8; sim::PACK_MAX];
         let n = a
             .world
             .pack_around(&mut fresh, sh.x, sh.y, FAIR_INTEREST, bots[0], 255, 0);
         assert_eq!(
-            &last[SNAPSHOT_HEADER..],
+            &frame.msg[SNAPSHOT_HEADER..],
             &fresh[..n as usize],
             "human radius, always"
         );
     }
 
     #[test]
-    fn a_hostile_ask_lands_on_the_channel_and_moves_no_state() {
-        // Live sight of a stranger is the one thing the mode never hands out:
-        // the ask is not an error, it is the channel. And nothing a watcher
-        // sends perturbs the simulation.
+    fn the_stands_are_one_feed_whoever_is_in_them() {
+        // Shared is the whole security model. Nobody in the gallery has a view
+        // of their own to aim, so there is no lever to pull until a victim
+        // comes up: a pilot who sat out from the far side, a pilot who sat out
+        // from the camera's own side, and a stranger who walked in to watch
+        // are all served the same bytes. And none of them moves the world.
         let mut a = room_with_teams("teams = [\"Keel\", \"Vantage\"]\n");
-        let keel = seat_human(&mut a, "keel");
-        let (vantage, wid, _rx) = seat_rx(&mut a, "vantage");
-        assert_ne!(
-            a.world.state.ships[keel as usize].team, a.world.state.ships[vantage as usize].team,
-            "the arrivals spread over the two sides"
-        );
-        assert!(a.sit_out(wid, keel, false, false), "sitting out succeeds");
-        assert_eq!(
-            a.watchers[&wid].mode,
-            WatchMode::Channel,
-            "but the hostile follow fell to the channel"
-        );
+        let shown = seat_human(&mut a, "shown");
+        let (mate, mid, mut mate_rx) = seat_rx(&mut a, "mate");
+        let (other, oid, mut other_rx) = seat_rx(&mut a, "other");
+        a.world.state.ships[mate as usize].team = a.world.state.ships[shown as usize].team;
+        a.world.state.ships[other as usize].team = 1 - a.world.state.ships[shown as usize].team;
+        assert!(a.sit_out(mid, false));
+        assert!(a.sit_out(oid, false));
+        let (tx, mut stranger_rx) = mpsc::channel(OUT_QUEUE);
+        a.watch_join(Seat::guest("stranger", false), tx).unwrap();
+        point_camera(&mut a, shown);
+        // These pilots send no inputs, and the run below is longer than the
+        // ladder's patience for that. Being benched mid-test would empty the
+        // room the camera is pointed at.
+        a.lag_policy.spectate_silence_ticks = u32::MAX;
 
         let h0 = a.world.hash();
-        a.set_watch(wid, keel);
         let mut buf = vec![0u8; sim::PACK_MAX];
-        a.broadcast_snapshot(&mut buf);
+        for _ in 0..(CHANNEL_DELAY / SNAPSHOT_EVERY + 2) {
+            for _ in 0..SNAPSHOT_EVERY {
+                a.tick();
+            }
+            a.broadcast_snapshot(&mut buf);
+        }
+        assert_ne!(a.world.hash(), h0, "the room ran");
+
+        // Identical but for the one field the fan-out patches per watcher:
+        // the lifecycle, which says which of this socket's lives the frame
+        // belongs to and is nobody else's business.
+        let served = |rx: &mut mpsc::Receiver<Message>| -> Vec<Vec<u8>> {
+            snapshots(&drain(rx))
+                .into_iter()
+                .map(|mut m| {
+                    m[3..7].fill(0);
+                    m
+                })
+                .collect()
+        };
+        let mine = served(&mut mate_rx);
+        assert!(!mine.is_empty(), "the ring warmed up and served");
         assert_eq!(
-            a.watchers[&wid].mode,
-            WatchMode::Channel,
-            "asked again, same floor"
+            mine,
+            served(&mut other_rx),
+            "the far side sees exactly what the near side does"
         );
-        assert_eq!(a.world.hash(), h0, "watching is read-only on the world");
+        assert_eq!(
+            mine,
+            served(&mut stranger_rx),
+            "and so does somebody who never flew here"
+        );
+
+        let h1 = a.world.hash();
+        a.broadcast_snapshot(&mut buf);
+        assert_eq!(a.world.hash(), h1, "watching is read-only on the world");
     }
 
     #[test]
-    fn the_channel_is_one_set_of_bytes_running_the_dial_behind() {
+    fn the_channel_runs_five_seconds_behind_wherever_it_is() {
+        // Not a dial any more. A zone that could turn the delay down could
+        // turn the protection off, and the one that set zero did it because
+        // its audience was the mode; the shared feed answers that without
+        // handing anybody a fresh map of the room.
         let mut a = room_with_teams("teams = [\"Keel\"]\n");
         seat_human(&mut a, "flown");
-        a.channel.delay = 20;
-        let (tx1, mut rx1) = mpsc::channel(OUT_QUEUE);
-        let (tx2, mut rx2) = mpsc::channel(OUT_QUEUE);
-        let w1 = a.watch_join(Seat::guest("one", false), false, tx1).unwrap();
-        let _w2 = a.watch_join(Seat::guest("two", false), false, tx2).unwrap();
-        assert_eq!(
-            a.watchers[&w1].mode,
-            WatchMode::Channel,
-            "arrivals get the channel"
-        );
+        let (tx, mut rx) = mpsc::channel(OUT_QUEUE);
+        a.watch_join(Seat::guest("one", false), tx).unwrap();
+        a.lag_policy.spectate_silence_ticks = u32::MAX;
 
         let mut buf = vec![0u8; sim::PACK_MAX];
-        for _ in 0..12 {
+        for _ in 0..(CHANNEL_DELAY / SNAPSHOT_EVERY + 2) {
             for _ in 0..SNAPSHOT_EVERY {
                 a.tick();
             }
             a.broadcast_snapshot(&mut buf);
         }
 
-        let s1 = snapshots(&drain(&mut rx1));
-        let s2 = snapshots(&drain(&mut rx2));
-        assert!(!s1.is_empty(), "the ring warmed up and served");
-        assert_eq!(s1, s2, "every channel watcher gets identical bytes");
-        for m in &s1 {
+        let served = snapshots(&drain(&mut rx));
+        assert!(!served.is_empty(), "the ring warmed up and served");
+        for m in &served {
             let frame = u32::from_le_bytes(
                 m[SNAPSHOT_HEADER..SNAPSHOT_HEADER + 4]
                     .try_into()
                     .expect("snapshot tick"),
             );
             assert!(
-                frame + a.channel.delay <= a.world.state.tick,
-                "a served frame is at least the dial behind the room: \
+                frame + CHANNEL_DELAY <= a.world.state.tick,
+                "a served frame is at least five seconds behind the room: \
                  frame {frame}, now {}",
                 a.world.state.tick
             );
@@ -5161,8 +5191,7 @@ mod tests {
         let humans = a.humans();
         let bots_wanted = a.bots_wanted();
         let (tx, _rx) = mpsc::channel(OUT_QUEUE);
-        a.watch_join(Seat::guest("gallery", false), false, tx)
-            .unwrap();
+        a.watch_join(Seat::guest("gallery", false), tx).unwrap();
         assert_eq!(a.humans(), humans, "not a human in the cap's sense");
         assert_eq!(a.bots_wanted(), bots_wanted, "and no ballast moves for one");
         assert_eq!(z.total_players(), 2, "the flying count stays put");
@@ -5185,7 +5214,7 @@ mod tests {
                 member: id,
             }
         );
-        assert!(a.sit_out(id, 255, false, false));
+        assert!(a.sit_out(id, false));
         assert_eq!(
             presence.current(),
             Presence::Watching {
@@ -5350,7 +5379,7 @@ mod tests {
             let mut z = zone.lock().await;
             let id = *z.rooms[0].players.keys().next().expect("the joined pilot");
             assert!(
-                z.rooms[0].sit_out(id, 255, false, true),
+                z.rooms[0].sit_out(id, true),
                 "the safe-zone sweep moves it to the stands",
             );
             id
@@ -5480,10 +5509,10 @@ mod tests {
         let mut a = room_with_teams("teams = [\"Keel\"]\n");
         a.max_watchers = 1;
         let (tx, _r1) = mpsc::channel(OUT_QUEUE);
-        assert!(a.watch_join(Seat::guest("one", false), false, tx).is_some());
+        assert!(a.watch_join(Seat::guest("one", false), tx).is_some());
         let (tx, _r2) = mpsc::channel(OUT_QUEUE);
         assert!(
-            a.watch_join(Seat::guest("two", false), false, tx).is_none(),
+            a.watch_join(Seat::guest("two", false), tx).is_none(),
             "the cap is a bandwidth number and it holds"
         );
     }
@@ -5494,18 +5523,12 @@ mod tests {
         let (ship, id, _rx) = seat_rx(&mut a, "wounded");
         let full = a.world.eff_max_energy(ship as usize);
         a.world.state.ships[ship as usize].energy = full - 1;
-        assert!(
-            !a.sit_out(id, 255, false, false),
-            "a wounded pilot keeps the hull"
-        );
+        assert!(!a.sit_out(id, false), "a wounded pilot keeps the hull");
         assert!(a.players.contains_key(&id));
         assert!(!a.watchers.contains_key(&id));
 
         a.world.state.ships[ship as usize].energy = full;
-        assert!(
-            a.sit_out(id, 255, false, false),
-            "a whole pilot may sit out"
-        );
+        assert!(a.sit_out(id, false), "a whole pilot may sit out");
     }
 
     #[test]
@@ -5513,10 +5536,9 @@ mod tests {
         let mut a = room_with_teams("teams = [\"Keel\"]\n");
         a.max_watchers = 1;
         let (tx, _keep) = mpsc::channel(OUT_QUEUE);
-        a.watch_join(Seat::guest("gallery", false), false, tx)
-            .unwrap();
+        a.watch_join(Seat::guest("gallery", false), tx).unwrap();
         let (_, id, _rx) = seat_rx(&mut a, "pilot");
-        assert!(!a.sit_out(id, 255, false, false));
+        assert!(!a.sit_out(id, false));
         assert!(
             a.players.contains_key(&id),
             "the cap refuses without despawning"
@@ -5534,7 +5556,9 @@ mod tests {
         // away from being shown.
         let mut a = room_with_teams("teams = [\"Keel\"]\n");
         let (ship, _, mut rx) = seat_rx(&mut a, "starred");
-        a.channel.delay = 10;
+        // Warming the ring takes longer than the lag ladder's patience with a
+        // pilot who sends nothing, and a benched pilot is no camera subject.
+        a.lag_policy.spectate_silence_ticks = u32::MAX;
         let mut buf = vec![0u8; sim::PACK_MAX];
 
         // Drained as we go: the outbound queue is bounded and drops rather
@@ -5556,7 +5580,13 @@ mod tests {
                 }
             };
 
-        run(&mut a, &mut rx, &mut said, 20);
+        // Long enough for the ring to warm and start serving.
+        run(
+            &mut a,
+            &mut rx,
+            &mut said,
+            (CHANNEL_DELAY / SNAPSHOT_EVERY) as usize + 2,
+        );
         assert_eq!(a.channel.subject, Some(ship), "the camera did pick them");
         assert_eq!(
             a.channel.showing,
@@ -5568,9 +5598,7 @@ mod tests {
 
         // Somebody arrives on the channel.
         let (tx, _keep) = mpsc::channel(OUT_QUEUE);
-        let w = a
-            .watch_join(Seat::guest("gallery", false), false, tx)
-            .unwrap();
+        let w = a.watch_join(Seat::guest("gallery", false), tx).unwrap();
         run(&mut a, &mut rx, &mut said, 5);
         assert!(a.on_air.contains(&ship), "now somebody is looking");
         assert_eq!(said, vec![1], "told once, on the edge");
@@ -5584,14 +5612,13 @@ mod tests {
 
     #[test]
     fn a_watcher_is_told_which_side_is_theirs() {
-        // The interface offers to follow a hull only where the zone would
-        // grant it, which is your own side, so a watcher who does not know
-        // their own side has to offer every pilot or none. Walked the way
-        // client/arena/net.lua walks it, and landing on the end.
+        // A watcher's screen is colored from their own side, so a watcher who
+        // does not know it reads every hull in the room as an enemy's. Walked
+        // the way client/arena/net.lua walks it, and landing on the end.
         let mut a = room_with_teams("teams = [\"Keel\", \"Vantage\"]\n");
         let (ship, id, _rx) = seat_rx(&mut a, "sat-out");
         let mine = a.world.state.ships[ship as usize].team;
-        assert!(a.sit_out(id, 255, false, false));
+        assert!(a.sit_out(id, false));
 
         let m = a.watcher_teams_msg(&a.watchers[&id]);
         assert_eq!(m[0], S2C_TEAMS);
@@ -5609,9 +5636,7 @@ mod tests {
         // And somebody who arrived to watch gets the same message with a real
         // side in it, because they were seated on one at the door.
         let (tx, _keep) = mpsc::channel(OUT_QUEUE);
-        let w = a
-            .watch_join(Seat::guest("stranger", false), false, tx)
-            .unwrap();
+        let w = a.watch_join(Seat::guest("stranger", false), tx).unwrap();
         let theirs = a.watcher_teams_msg(&a.watchers[&w])[1];
         assert!(a.teams.get(&theirs).is_some_and(|t| t.public));
     }
@@ -5628,9 +5653,7 @@ mod tests {
         let taken = a.world.state.ships[one as usize].team;
 
         let (tx, _keep) = mpsc::channel(OUT_QUEUE);
-        let w = a
-            .watch_join(Seat::guest("gallery", false), false, tx)
-            .unwrap();
+        let w = a.watch_join(Seat::guest("gallery", false), tx).unwrap();
         let side = a.watchers[&w]
             .team
             .expect("a side, the same as any arrival");
@@ -5645,13 +5668,6 @@ mod tests {
         // And they weigh nothing while they sit there: a watcher holds no seat,
         // so the balance the caps measure cannot see them.
         assert_eq!(a.team_census(side, None), (0, 0));
-
-        // Which is what the side is for. A hull arriving on it is now theirs to
-        // follow live, where before the ask fell through to the room channel.
-        let mate = seat_human(&mut a, "mate");
-        assert_eq!(a.world.state.ships[mate as usize].team, side);
-        a.set_watch(w, mate);
-        assert_eq!(a.watchers[&w].mode, WatchMode::Follow(mate));
     }
 
     #[test]
@@ -5661,15 +5677,11 @@ mod tests {
         // and the channel is the whole of what anybody watching can see.
         let mut a = room_with_teams("teams = []\n");
         assert!(a.free_for_all());
-        let target = seat_human(&mut a, "flying");
+        seat_human(&mut a, "flying");
         let (tx, _keep) = mpsc::channel(OUT_QUEUE);
-        let w = a
-            .watch_join(Seat::guest("gallery", false), false, tx)
-            .unwrap();
+        let w = a.watch_join(Seat::guest("gallery", false), tx).unwrap();
         assert_eq!(a.watchers[&w].team, None);
         assert_eq!(a.watcher_teams_msg(&a.watchers[&w])[1], 255);
-        a.set_watch(w, target);
-        assert_eq!(a.watchers[&w].mode, WatchMode::Channel, "and no live sight");
     }
 
     #[test]
@@ -5684,7 +5696,7 @@ mod tests {
         // would not pick: a tie goes to the first.
         a.world.state.ships[ship as usize].team = 1;
 
-        assert!(a.sit_out(id, 255, false, false));
+        assert!(a.sit_out(id, false));
         assert_eq!(a.watchers[&id].team, Some(1));
         assert_eq!(
             a.seat_team(ship, false),
@@ -5706,7 +5718,7 @@ mod tests {
         let mut a = room_with_teams("teams = [\"Keel\", \"Vantage\"]\nmax_humans_per_team = 1\n");
         let (ship, id, _rx) = seat_rx(&mut a, "pilot");
         let mine = a.world.state.ships[ship as usize].team;
-        assert!(a.sit_out(id, 255, false, false));
+        assert!(a.sit_out(id, false));
 
         let taker = seat_human(&mut a, "taker");
         assert_eq!(
@@ -5720,35 +5732,6 @@ mod tests {
             a.world.state.ships[back as usize].team, mine,
             "the other side"
         );
-    }
-
-    #[test]
-    fn a_follower_lights_the_tally_on_the_hull_they_follow() {
-        // The other way to be seen. This one is not delayed and not shared:
-        // one teammate, one hull, live.
-        let mut a = room_with_teams("teams = [\"Keel\"]\n");
-        let (target, _, mut rx) = seat_rx(&mut a, "flown");
-        let (_, wid, _w) = seat_rx(&mut a, "watching");
-        assert!(a.sit_out(wid, target, false, false));
-        assert_eq!(a.watchers[&wid].mode, WatchMode::Follow(target));
-
-        let mut buf = vec![0u8; sim::PACK_MAX];
-        a.broadcast_snapshot(&mut buf);
-        assert!(a.on_air.contains(&target));
-        assert!(
-            drain(&mut rx)
-                .iter()
-                .any(|m| m.as_slice() == [S2C_ONAIR, 1]),
-            "a teammate on your shoulder is somebody looking at you"
-        );
-
-        // Their view moves off you, and so does the tally.
-        a.set_watch(wid, 255);
-        a.broadcast_snapshot(&mut buf);
-        assert!(!a.on_air.contains(&target));
-        assert!(drain(&mut rx)
-            .iter()
-            .any(|m| m.as_slice() == [S2C_ONAIR, 0]));
     }
 
     #[test]
@@ -6086,7 +6069,7 @@ mod tests {
         std::mem::forget(rx);
         let id = a.join(Seat::guest("Wanderer", false), 0, cap, tx).unwrap();
 
-        assert!(a.sit_out(id, 255, false, false), "gives up the hull");
+        assert!(a.sit_out(id, false), "gives up the hull");
         let back = a.fly(id, 1, cap).expect("and takes one again");
         assert_eq!(back, id, "the connection keeps one room member id");
         a.leave(back, pilot::why::LEFT);
@@ -6324,7 +6307,7 @@ mod tests {
         std::mem::forget(rx);
         let mut id = a.join(Seat::guest("Loop", false), 0, cap, tx).unwrap();
         for _ in 0..pilot::PER_SESSION {
-            assert!(a.sit_out(id, 255, false, false));
+            assert!(a.sit_out(id, false));
             id = a.fly(id, 0, cap).expect("a seat is still there");
         }
         let filed = rows(&pilots);
@@ -6421,7 +6404,7 @@ mod tests {
         seat(&mut z, second, 1);
         let number = z.rooms[second].number;
         let id = *z.rooms[second].players.keys().next().expect("the pilot");
-        assert!(z.rooms[second].sit_out(id, 255, false, false));
+        assert!(z.rooms[second].sit_out(id, false));
 
         z.reclaim_rooms();
 

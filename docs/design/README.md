@@ -22,7 +22,7 @@ engineering, see [docs/architecture](../architecture/README.md).
 | [accounts.md](accounts.md) | Guest-first accounts, claiming, generated names, the human/bot/unknown label, and bots as account holders |
 | [friends.md](friends.md) | Add somebody mutually off a roster you are already reading, see which friends are on and what they are in, and join them; presence off the rated seat, and no chat to moderate |
 | [teams.md](teams.md) | Named public and private teams, invitations instead of passwords, three caps instead of a balance rule, and bots as the ballast |
-| [spectating.md](spectating.md) | Watching without flying: same-side live follow, the shared delayed room channel, the on-air mark, and why hostile live sight is never for sale |
+| [spectating.md](spectating.md) | Watching without flying: one shared room channel five seconds behind, the on-air mark, and why nobody gets a live camera on a hull |
 | [community.md](community.md) | Where the players talk, since the game will not carry it: our Discord server, the one address that reaches it, and the one-way wire from fleet to channel |
 
 ## The one-line version

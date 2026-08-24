@@ -8,7 +8,7 @@ use crate::presence::*;
 use crate::protocol::*;
 use crate::{
     ai, catalog, config, fleet, growth, metrics, modes, pilot, pilots, rating, shopper, sim, spool,
-    token, CHANNEL_HOLD, DEFAULT_CHANNEL_DELAY, DEFAULT_MAX_WATCHERS,
+    token, CHANNEL_DELAY, CHANNEL_HOLD, DEFAULT_MAX_WATCHERS,
 };
 
 pub(crate) struct Player {
@@ -120,15 +120,11 @@ pub(crate) struct Watcher {
     /// straight back to `join`, so watching and returning is a despawn and a
     /// spawn rather than a reconnect.
     pub(crate) seat: Seat,
-    /// The side they sat out from, which is what a follow ask is checked
-    /// against. None for a client that arrived watching: no side, no live
-    /// follow, channel only.
+    /// The side they sat out from. It colors their screen, it is the side the
+    /// team list calls theirs, and it is the seat they prefer when they fly
+    /// again. None until the room seats them, which `watch_join` does at the
+    /// door for somebody who arrived watching.
     pub(crate) team: Option<u8>,
-    /// Holder of the `watch` capability, checked once at the door against the
-    /// catalog's staff list. A live view of anybody, which is the operator's
-    /// reason to be here at all.
-    pub(crate) any: bool,
-    pub(crate) mode: WatchMode,
     pub(crate) tx: mpsc::Sender<Message>,
     pub(crate) presence: PresenceHandle,
 }
@@ -150,10 +146,11 @@ pub(crate) struct ChannelFrame {
 }
 
 /// The room channel: one shared feed per room, subject picked by the server on
-/// its own clock, same bytes for every watcher on it. Shared is what makes it
-/// safe: reconnecting lands on the same channel everyone else is watching, so
-/// there is no re-rolling for a victim, and the delay is what makes the frame
-/// that does show them film rather than targeting data.
+/// its own clock, same bytes for every watcher on it, and the whole of what
+/// spectating is. Shared is what makes it safe: reconnecting lands on the same
+/// channel everyone else is watching, so there is no re-rolling for a victim,
+/// and the delay is what makes the frame that does show them film rather than
+/// targeting data.
 pub(crate) struct Channel {
     pub(crate) subject: Option<u8>,
     /// The subject of the newest frame actually served, which is what channel
@@ -170,7 +167,6 @@ pub(crate) struct Channel {
     /// beside each message until the frame center is known, so an event
     /// outside that frame's fairness circle is discarded rather than leaked.
     pub(crate) pending_charges: Vec<(i32, i32, Vec<u8>)>,
-    pub(crate) delay: u32,
     /// Its own generator, not the simulation's: the pick must not perturb the
     /// state the golden traces hash.
     pub(crate) rng: u64,
@@ -185,7 +181,6 @@ impl Channel {
             ring: std::collections::VecDeque::new(),
             pending_kills: Vec::new(),
             pending_charges: Vec::new(),
-            delay: DEFAULT_CHANNEL_DELAY,
             rng: 0x9e3779b97f4a7c15,
         }
     }
@@ -2841,11 +2836,6 @@ impl Room {
                     for pl in self.players.values() {
                         let _ = pl.tx.try_send(Message::Binary(m.clone()));
                     }
-                    for w in self.watchers.values() {
-                        if matches!(w.mode, WatchMode::Follow(_)) {
-                            let _ = w.tx.try_send(Message::Binary(m.clone()));
-                        }
-                    }
                     self.channel.pending_kills.push(m);
                 }
             }
@@ -2916,42 +2906,25 @@ impl Room {
         }
     }
 
-    /// What a watch ask resolves to. The one rule of the whole mode: live
-    /// sight is your own side or the written-down capability, and everything
-    /// else is the channel. Never an error, because "watch that stranger" is
-    /// an ask whose lawful answer exists; it is just not the live one.
-    pub(crate) fn watch_mode(&self, team: Option<u8>, any: bool, want: u8) -> WatchMode {
-        if want == 255 || !self.names.contains_key(&want) {
-            return WatchMode::Channel;
-        }
-        if any {
-            return WatchMode::Follow(want);
-        }
-        match team {
-            Some(t) if self.world.state.ships[want as usize].team == t => WatchMode::Follow(want),
-            _ => WatchMode::Channel,
-        }
-    }
-
     /// A flying pilot becomes a watcher on the same socket. A despawn and a
     /// seat change, not a reconnect: map, settings and socket all stay. The
-    /// side they sat out from is remembered, and it is what their follow asks
-    /// are checked against until they fly again.
+    /// side they sat out from is remembered, because it colors their screen
+    /// and it is the seat they prefer when they fly again.
     ///
     /// `swept` says the safe-zone timer moved them rather than the pilot
     /// asking. The two are the same operation and read very differently in a
     /// log: one is a player taking a break and the other is the room deciding
     /// they were loitering.
-    pub(crate) fn sit_out(&mut self, id: u64, want: u8, any: bool, swept: bool) -> bool {
+    pub(crate) fn sit_out(&mut self, id: u64, swept: bool) -> bool {
         let why = if swept {
             SitOutWhy::Safe
         } else {
             SitOutWhy::Asked
         };
-        self.sit_out_for(id, want, any, why)
+        self.sit_out_for(id, why)
     }
 
-    pub(crate) fn sit_out_for(&mut self, id: u64, want: u8, any: bool, why: SitOutWhy) -> bool {
+    pub(crate) fn sit_out_for(&mut self, id: u64, why: SitOutWhy) -> bool {
         if self.watchers.len() >= self.max_watchers {
             return false;
         }
@@ -3000,15 +2973,12 @@ impl Room {
                 reason: why,
             })
             .expect("validated move to the stands");
-        let mode = self.watch_mode(Some(team), any, want);
         self.watchers.insert(
             id,
             Watcher {
                 lifecycle,
                 seat,
                 team: Some(team),
-                any,
-                mode,
                 tx: tx.clone(),
                 presence,
             },
@@ -3029,48 +2999,30 @@ impl Room {
         self.broadcast_roster();
         // After the watcher row exists, not before: `leave` above broadcast a
         // list this pilot was no longer on, and the side they sat out from is
-        // what the interface needs to know whose hull it may offer to follow.
+        // what colors the room for them from here.
         self.broadcast_teams();
         true
     }
 
-    /// A watcher looks somewhere else. The resolver does the law; this only
-    /// files the answer.
-    pub(crate) fn set_watch(&mut self, id: u64, want: u8) {
-        let Some(w) = self.watchers.get(&id) else {
-            return;
-        };
-        let mode = self.watch_mode(w.team, w.any, want);
-        if let Some(w) = self.watchers.get_mut(&id) {
-            w.mode = mode;
-        }
-    }
-
     /// A client that arrived to watch. They are seated on a side at the door,
     /// the same as anybody else who walks in: watching is a way of being in
-    /// this room rather than a lobby beside it. So the sight rule has a side to
-    /// check a follow against, and the team list has one to call theirs.
+    /// this room rather than a lobby beside it. So the team list has a side to
+    /// call theirs, and the room is colored from it.
     ///
     /// Arriving to watch used to hand out no side at all, on the reasoning that
     /// somebody who never flew here sat out from nowhere. What that produced
-    /// was a spectator alone off the edge of a room's two teams, shown every
-    /// hull as an enemy's and offered no live sight of any of them, while the
-    /// same person joining in a hull and then sitting out kept their side and
-    /// everything that came with it.
+    /// was a spectator alone off the edge of a room's two teams, with every
+    /// hull on screen drawn as an enemy's, while the same person joining in a
+    /// hull and then sitting out kept their side and everything that came with
+    /// it.
     #[cfg(test)]
-    pub(crate) fn watch_join(
-        &mut self,
-        seat: Seat,
-        any: bool,
-        tx: mpsc::Sender<Message>,
-    ) -> Option<u64> {
-        self.watch_join_with_presence(seat, any, tx, PresenceHandle::new())
+    pub(crate) fn watch_join(&mut self, seat: Seat, tx: mpsc::Sender<Message>) -> Option<u64> {
+        self.watch_join_with_presence(seat, tx, PresenceHandle::new())
     }
 
     pub(crate) fn watch_join_with_presence(
         &mut self,
         seat: Seat,
-        any: bool,
         tx: mpsc::Sender<Message>,
         presence: PresenceHandle,
     ) -> Option<u64> {
@@ -3089,31 +3041,20 @@ impl Room {
                 member: id,
             })
             .expect("validated watcher entry");
-        self.note(
-            pilot::WATCH,
-            &seat,
-            // Staff sight is a grant the catalog wrote down, and a log of who
-            // watched what is thin without it: the difference between a
-            // spectator on the shared feed and somebody who may follow any
-            // hull in the room is the whole of what this event is about.
-            serde_json::json!({ "any": any, "team": team }),
-        );
+        self.note(pilot::WATCH, &seat, serde_json::json!({ "team": team }));
         self.watchers.insert(
             id,
             Watcher {
                 lifecycle: 1,
                 seat,
                 team,
-                any,
-                mode: WatchMode::Channel,
                 tx,
                 presence,
             },
         );
         self.debug_assert_member(id, &self.watchers[&id].presence);
-        // The room feed is still what they open on, since they have asked to
-        // watch nobody in particular yet. Their side is what makes the asking
-        // possible.
+        // Their side is what colors the room for them, so the list saying
+        // which one it is goes out before the first frame does.
         self.broadcast_teams();
         Some(id)
     }
@@ -3339,7 +3280,7 @@ impl Room {
             self.last_match = now_match;
         }
         for id in spectate {
-            if self.sit_out_for(id, 255, false, SitOutWhy::Lag) {
+            if self.sit_out_for(id, SitOutWhy::Lag) {
                 player_count_changed = true;
                 metrics::LAG_ACTIONS.inc();
             } else if let Some(tx) = self.players.get(&id).map(|p| p.tx.clone()) {
@@ -3771,13 +3712,7 @@ impl Room {
         }
         let mut changed = false;
         for id in evicted {
-            // The channel rather than a hull to follow, and no live sight of
-            // strangers: a pilot who has just been taken out of the game has
-            // chosen nobody to watch, and the room's own camera is the answer
-            // to a question they did not ask. The staff grant that widens this
-            // is a property of a watch request, and nobody made this one; the
-            // first request they do make carries it.
-            changed |= self.sit_out(id, 255, false, true);
+            changed |= self.sit_out(id, true);
         }
         changed
     }
@@ -3807,13 +3742,6 @@ impl Room {
                 for p in self.players.values() {
                     if p.ship != e.a && fair_contains(&self.world, p.ship, e.a) {
                         let _ = p.tx.try_send(Message::Binary(m.clone()));
-                    }
-                }
-                for w in self.watchers.values() {
-                    if let WatchMode::Follow(subject) = w.mode {
-                        if fair_contains(&self.world, subject, e.a) {
-                            let _ = w.tx.try_send(Message::Binary(m.clone()));
-                        }
                     }
                 }
                 self.channel.pending_charges.push((sh.x, sh.y, m));
@@ -3909,17 +3837,11 @@ impl Room {
                 theirs.push(u8::from(assisted.contains(&p.ship)));
                 let _ = p.tx.try_send(Message::Binary(theirs));
             }
-            // And the copy that claims nothing, which is the one every other
-            // seat gets. Live to anyone riding a pilot's shoulder; the
-            // channel's copy waits in the ring with the frame it belongs to,
-            // or the feed would announce a death the delayed picture has not
-            // shown yet.
+            // And the copy that claims nothing, which is the one the stands
+            // get. It waits in the ring with the frame it belongs to, or the
+            // feed would announce a death the delayed picture has not shown
+            // yet.
             m.push(0);
-            for w in self.watchers.values() {
-                if matches!(w.mode, WatchMode::Follow(_)) {
-                    let _ = w.tx.try_send(Message::Binary(m.clone()));
-                }
-            }
             self.channel.pending_kills.push(m.clone());
             let assists = rated.as_ref().map_or(0, |r| r.credits.len());
             if assists > 1 {
@@ -4136,57 +4058,8 @@ impl Room {
     pub(crate) fn broadcast_snapshot(&mut self, buf: &mut [u8]) {
         self.broadcast_player_snapshots(buf, false);
         let buf = Self::snapshot_buffer(buf, false);
-
-        // Watchers riding one pilot's eyes, live. Packed at the followed hull
-        // with the server's fixed human radius. The subject supplies the
-        // camera and minefield perspective, not owner state: watching a pilot
-        // does not disclose their energy, inventory, cooldowns or upgrades.
-        let mut fallen: Vec<u64> = Vec::new();
-        for (id, w) in self.watchers.iter() {
-            let WatchMode::Follow(t) = w.mode else {
-                continue;
-            };
-            let lawful = self.names.contains_key(&t)
-                && (w.any || w.team == Some(self.world.state.ships[t as usize].team));
-            if !lawful {
-                fallen.push(*id);
-                continue;
-            }
-            let sh = &self.world.state.ships[t as usize];
-            let n = self
-                .world
-                .pack_around(buf, sh.x, sh.y, FAIR_INTEREST, t, 255, 0);
-            if n <= 0 {
-                continue;
-            }
-            let mut msg = Vec::with_capacity(n as usize + SNAPSHOT_HEADER);
-            msg.push(S2C_SNAPSHOT);
-            // Whose eyes these are, which is what the watcher's camera reads.
-            msg.push(t);
-            msg.push(SNAPSHOT_WATCHING);
-            msg.extend_from_slice(&w.lifecycle.to_le_bytes());
-            msg.extend_from_slice(&self.settings_generation.to_le_bytes());
-            // No input to acknowledge: a watcher sends none.
-            msg.extend_from_slice(&0u32.to_le_bytes());
-            msg.extend_from_slice(&0u32.to_le_bytes());
-            msg.extend_from_slice(&0u32.to_le_bytes());
-            msg.extend_from_slice(&[0; 9]);
-            msg.extend_from_slice(&buf[..n as usize]);
-            metrics::SNAPSHOT_BYTES.add(msg.len() as u64);
-            metrics::SNAPSHOT_LAST.set(msg.len() as i64);
-            if w.tx.try_send(Message::Binary(msg)).is_err() {
-                metrics::SEND_DROPPED.inc();
-            }
-        }
-        // A follow whose ground fell away: the seat emptied, or its pilot
-        // crossed to another side. The floor is the channel, never an error
-        // and never a stale stream.
-        for id in fallen {
-            if let Some(w) = self.watchers.get_mut(&id) {
-                w.mode = WatchMode::Channel;
-            }
-        }
-
+        // Everybody in the stands is on the one feed, so there is nothing to
+        // pack per watcher: the channel is packed once and fanned out.
         self.channel_frame(buf);
     }
 
@@ -4278,7 +4151,7 @@ impl Room {
         // is warm, each with the kills it was holding, so the feed cannot
         // spoil a death the picture has not shown.
         let now = self.world.state.tick;
-        let delay = self.channel.delay;
+        let delay = CHANNEL_DELAY;
         while self
             .channel
             .ring
@@ -4295,9 +4168,6 @@ impl Room {
                 Some(f.subject)
             };
             for w in self.watchers.values() {
-                if w.mode != WatchMode::Channel {
-                    continue;
-                }
                 for k in &f.kills {
                     let _ = w.tx.try_send(Message::Binary(k.clone()));
                 }
@@ -4319,29 +4189,17 @@ impl Room {
     /// Who is being looked at, and telling them when that changes.
     ///
     /// The tally has to mean "somebody is seeing you", so it is derived from
-    /// the audience rather than from the camera. Two ways to be seen: the
-    /// channel is showing you and at least one watcher is on the channel, or
-    /// somebody is following your hull directly. Neither is the same as the
-    /// channel having picked you, which is what this used to announce: a
-    /// pilot alone in a room with no watchers at all wore the tally, and a
-    /// pilot the camera had just landed on wore it for the whole delay before
-    /// a single frame of them was served.
-    ///
-    /// Staff following you light it like anybody else. They are already named
-    /// in the roster, so hiding them here would let a room see that somebody
-    /// is watching without being able to tell they are watching you. Covert
-    /// observation is the invisibility capability, and when that arrives it
-    /// takes the roster row and this together rather than half of each.
+    /// the audience rather than from the camera: the frame going out shows
+    /// you, and there is somebody in the stands to see it. That is not the
+    /// same as the channel having picked you, which is what this used to
+    /// announce: a pilot alone in a room with no watchers at all wore the
+    /// tally, and a pilot the camera had just landed on wore it for the whole
+    /// delay before a single frame of them was served.
     pub(crate) fn refresh_on_air(&mut self) {
         let mut lit: std::collections::HashSet<u8> = std::collections::HashSet::new();
-        if self.watchers.values().any(|w| w.mode == WatchMode::Channel) {
+        if !self.watchers.is_empty() {
             if let Some(s) = self.channel.showing {
                 lit.insert(s);
-            }
-        }
-        for w in self.watchers.values() {
-            if let WatchMode::Follow(t) = w.mode {
-                lit.insert(t);
             }
         }
         if lit == self.on_air {

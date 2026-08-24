@@ -65,12 +65,6 @@ pub struct ZoneDef {
     /// nothing per tick and a full player's egress, so this is a bandwidth
     /// number rather than a feel number.
     pub max_watchers: Option<usize>,
-    /// How far behind the room channel runs, in ticks. The channel is the
-    /// neutral view, one shared feed per room, and the delay is what keeps it
-    /// from being a live map of the fight for whoever opens a second tab. A
-    /// duel zone sets zero on purpose: there the audience is the mode and both
-    /// pilots are equally exposed.
-    pub channel_delay_ticks: Option<u32>,
     pub arena: crate::config::ArenaConfig,
     /// The text this was parsed from, kept so a directory can hand the zone to
     /// an arena verbatim rather than re-serialising it. Not a field in the file;
@@ -96,7 +90,6 @@ impl Default for ZoneDef {
             max_bots_per_team: None,
             admission: "any".into(),
             max_watchers: None,
-            channel_delay_ticks: None,
             arena: crate::config::ArenaConfig::default(),
             raw: String::new(),
         }

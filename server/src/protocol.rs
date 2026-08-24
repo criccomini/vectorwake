@@ -108,15 +108,19 @@ pub(crate) const C2S_INVITE: u8 = 8;
 /// four a side, two pilots on one hull is a quarter of a team's guns parked.
 /// The number is left unused rather than reissued, so an old client asking
 /// for it is refused rather than being understood as something else.
-/// `[C2S_WATCH, ship]`: whose eyes to borrow. From a player it means sit out,
-/// from a watcher it means look somewhere else. 255 asks for the room channel.
+/// `[C2S_WATCH]`: sit out. One byte, because there is nothing to name: the
+/// room channel is the whole of what a watcher can see, so the only question
+/// this message ever asked has one answer.
 ///
-/// A request like the team asks, not an assertion: the answer is the subject
-/// byte of the next snapshot. Asking for a hostile or absent ship is not an
-/// error, it lands the asker on the channel, because live sight of a stranger
-/// is the one thing this mode must never hand out. A watcher tailing the pilot
-/// they are hunting from a second tab is a wallhack with a menu entry, and the
-/// scout team it imitates pays for a seat, shows on radar, and can be shot.
+/// A request like the team asks, not an assertion: the answer is the next
+/// welcome, and a room whose gallery is full leaves the pilot in their hull.
+/// From somebody already watching it is the keepalive, since a client with no
+/// inputs to send has nothing else to prove the socket is alive with.
+///
+/// It used to carry a ship: whose eyes to borrow. Live sight of a stranger is
+/// the one thing this mode must never hand out, so a hostile ask already fell
+/// to the channel; then same-side follow and the staff grant went too, and a
+/// byte whose every value meant the channel is a byte saying nothing.
 pub(crate) const C2S_WATCH: u8 = 9;
 /// `[C2S_KIT, kit[0..SLOT_COUNT]]`: what this pilot wants to fly, over the
 /// core's flat kit space, one byte a slot.
@@ -196,7 +200,11 @@ pub(crate) const JOIN_WATCH: u8 = 2;
 /// message it wants and ignore a byte; one built for 21 against a zone
 /// serving 20 would find every kill a byte short and print no feed at all,
 /// which is the direction this number exists to refuse.
-pub(crate) const CLIENT_PROTOCOL: u8 = 21;
+///
+/// 22 takes the ship byte off `C2S_WATCH`. Spectating is the room channel and
+/// nothing else now, so a client built for 21 would send a subject this zone
+/// has no way to honor and sit waiting for a view it will never be given.
+pub(crate) const CLIENT_PROTOCOL: u8 = 22;
 
 /// The biggest message a client may send. The largest legitimate one is a join:
 /// tag, class, protocol, a zone name and a call sign. 8 KB is two orders of
@@ -264,11 +272,12 @@ pub(crate) const S2C_YIELD: u8 = 11;
 /// as one buffer, because the last of those is a different answer for every
 /// pilot: a private side is a door only the invited can see open.
 pub(crate) const S2C_TEAMS: u8 = 12;
-/// `[S2C_ONAIR, 0|1]`: you are the room channel's subject, or you have stopped
-/// being it. Sent to the subject and nobody else. The channel is a shared feed
-/// whose subject does not choose to be watched, so the least the room owes
-/// them is knowing it: two minutes on camera is something a pilot can play
-/// around, and only if they are told.
+/// `[S2C_ONAIR, 0|1]`: the frame going out is centered on you and somebody is
+/// in the stands to see it, or that has stopped being true. Sent to the
+/// subject and nobody else. The channel is a shared feed whose subject does
+/// not choose to be watched, so the least the room owes them is knowing it:
+/// two minutes on camera is something a pilot can play around, and only if
+/// they are told.
 pub(crate) const S2C_ONAIR: u8 = 13;
 /// `[S2C_MATCH, flags, seconds left, sides, score per side as u16,
 /// optional artifact id as u64, optional Ladder body]`.

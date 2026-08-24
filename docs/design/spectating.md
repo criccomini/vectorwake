@@ -11,27 +11,11 @@ faced: who may see what, live.
 
 ## The rule
 
-Live sight is your own side, or a written-down grant. Everything else is the
-room channel, delayed. That single sentence is the whole security model, and
-each clause is load-bearing.
+One feed. Everybody watching a room sees the same frames, centered on a subject
+the server picks, five seconds late. There is no second way to watch, and that
+is the whole security model.
 
-**Same-side live follow leaks nothing the side lacks.** A teammate's screen is
-already lawful knowledge, shared over voice every day, and the teammate paid
-for a seat, shows on radar, and can be shot. Your side's bots count as
-teammates, which mostly dissolves the lonely-side case: bots flow toward
-whichever side is short, so a team zone rarely leaves a pilot with nobody
-lawful to follow.
-
-**Hostile live follow is a wallhack with a menu entry.** Following your victim
-puts a camera on the one hull the fog is supposed to hide, with its movement
-and surroundings always centered on screen. The fleet already prices pooled
-sight as a scout team, answered with seats, radar visibility and bans; a
-hostile follower would pay none of that, on a free guest account, from a
-second browser tab. So the ask is never an error and never granted: it lands
-on the channel.
-
-**The channel is shared because shared is what defeats re-rolling.** One feed
-per room, subject picked by the server on its own clock, identical bytes to
+**Shared is what defeats re-rolling.** One feed per room, identical bytes to
 every watcher on it. Reconnecting lands you on the same channel everyone else
 is watching, so there is no pulling the lever until your victim comes up. A
 per-watcher random pick would die to exactly that: watcher joins cost nothing
@@ -39,13 +23,48 @@ and guests are free, so a room of nine humans falls to the intended victim
 inside nine rejoins.
 
 **The delay is what makes the frame that does show a stranger film rather than
-targeting data.** `channel_delay_ticks` in the zone file, five seconds by
-default. A bound radius can afford a short delay and still feel live, which
-the whole-room delayed stream this replaced never could, because full
-positions only seconds old are still a map of the room. Kills ride the ring
-with the frame they belong to, or the feed would announce a death the delayed
-picture has not shown yet. A duel zone sets the dial to zero on purpose: there
-the audience is the mode and both pilots are equally exposed.
+targeting data.** Five seconds, everywhere. A bound radius can afford a short
+delay and still feel live, which the whole-room delayed stream this replaced
+never could, because full positions only seconds old are still a map of the
+room. Kills ride the ring with the frame they belong to, or the feed would
+announce a death the delayed picture has not shown yet.
+
+It was a zone's number for a while, `channel_delay_ticks`, five seconds by
+default and zero in the ladder zone on the reasoning that there the audience
+is the mode and both pilots are equally exposed. A dial whose interesting
+setting is off is a way to ship the protection turned off by accident, in a
+file nobody reads twice, and the zone that wanted zero wanted an audience
+rather than a fresh map of a live room. The audience is what it still gets.
+Five seconds is a constant in the server now and there is nothing in a zone
+file to set.
+
+**There is no live view of any hull, for anybody.** Following your victim puts
+a camera on the one hull the fog is supposed to hide, with its movement and
+surroundings always centered on screen, so a hostile ask was never granted:
+it landed on the channel. Two lawful follows did exist beside it. A watcher
+could ride a teammate live, on the reasoning that a teammate's screen is
+knowledge the side already has and shares over voice every day; and the
+`watch` capability in the catalog's staff list granted live sight of anybody
+to a named account.
+
+Both are gone, and the argument for the teammate case was never the problem.
+The cost was: a second way to be a watcher, a stream packed per follower
+beside the shared one, a sight check on every frame in case the followed hull
+crossed sides, a control in the info box, a camera walk on the arrow keys, a
+tap target on each half of a phone screen, and a ship byte on the wire. All of
+it to serve, live, a fight the channel already shows. Every one of those is
+also somewhere a room can start leaking, and none of them can leak now,
+because the mode they belonged to does not exist.
+
+What that costs is worth stating plainly. A pilot who sat out, or whom the lag
+ladder benched, watches their own side five seconds late along with everybody
+else, and cannot choose to watch them at all. In a four a side match that is
+somebody's own game being played back at them a beat behind.
+
+**An operator watches what the room watches.** The `watch` capability is gone
+with the follow it granted, and nothing in the shipped catalog held it. The
+admin surface wanted a way in here to see a game rather than a number, which
+the channel gives it.
 
 **The subject is told, when somebody is actually looking.** The tally means a
 person is seeing you, not that a camera is pointed at you, and those are two
@@ -53,8 +72,8 @@ different facts here. The channel picks a subject and fills its ring whether
 or not anybody is on it, so an arriving watcher lands in a warm picture rather
 than staring at the delay; and the channel runs behind, so a pilot the camera
 has just landed on is seconds away from being shown. So `S2C_ONAIR` is derived
-from the audience: the channel is showing you and at least one watcher is on
-it, or somebody is following your hull directly. Edges only, recomputed every
+from the audience: the frame going out is centered on you, and there is at
+least one person in the stands to see it. Edges only, recomputed every
 snapshot.
 
 It is a red tally beside the MENU and PLAYERS keys, swelling slowly rather
@@ -62,11 +81,11 @@ than blinking, since it has to hold attention for minutes and a blink that
 long is something a player stops seeing. Two minutes on air is something a
 pilot can play around, and only if they know.
 
-Staff following you light it like anybody else, because they are already
-named in the roster: hiding them here would let a room see that somebody is
-watching without being able to tell they are watching you. Covert observation
-is the invisibility capability, and when it arrives it should take the roster
-row and the tally together rather than half of each.
+Everybody watching is named in the roster, staff included, which is what makes
+the tally worth reading: the room can see who is in the stands and the subject
+can see that the camera is on them. Covert observation is the invisibility
+capability, and when it arrives it should take the roster row and the tally
+together rather than half of each.
 
 It sat at the top of the middle first, and could not stay: that strip carries
 the flag pennants and the round's banner, both centered, and a notice laid over
@@ -75,30 +94,25 @@ about the round; this is about you, like the keys it now sits with. Being on
 that row also means the map opening across the corner keeps clear of it under
 the rule that already keeps it clear of the keys.
 
-**Staff is the exception that is written down.** The `watch` capability in the
-catalog's staff list grants live follow of anybody, and it requires the
-account as well as the name, because a guest can claim any name and a grant a
-claim could hold would be no grant at all. This sits beside the full-view
-capability [networking.md](../architecture/networking.md) already plans, and
-it is the operator's reason to be here: watching a room instead of a number.
-
 ## What a watcher receives
 
-A follower's snapshot is packed at the followed hull with the human interest
-radius, whatever the target's own stream gets. That last clause is not
-pedantry: a declared bot is sent radius -1, the whole prize table, and a
-watcher who inherited it would hold sight no human lawfully has. A server test
-compares the packed bodies byte for byte against a fresh human-radius pack at
-the target's coordinates, so the day the two diverge, the mode has started
-leaking and CI says so.
-
 The channel is packed once per snapshot tick and fanned out, so its cost is
-flat in CPU however many watch, and the ring runs whether anybody is on the
-channel or not, so an arriving watcher lands in a warm picture instead of
-staring at the delay's worth of nothing. An empty room points the camera at
-the middle of the map, and the picker prefers live humans, because a random
-camera in a bot-filled room is a bot documentary five frames out of six. The
-heat-scored director can replace the picker later without touching the wire.
+flat in CPU however many watch. Only one field differs between the copies: the
+lifecycle, which says which of a socket's lives the frame belongs to. The ring
+runs whether anybody is on the channel or not, so an arriving watcher lands in
+a warm picture instead of staring at the delay's worth of nothing. An empty
+room points the camera at the middle of the map, and the picker prefers live
+humans, because a random camera in a bot-filled room is a bot documentary five
+frames out of six. The heat-scored director can replace the picker later
+without touching the wire.
+
+The frame is packed at the subject's hull with the human interest radius,
+whatever that hull's own stream gets. That last clause is not pedantry: the
+camera lands on bots, a declared bot is sent radius -1 and the whole prize
+table, and a channel that inherited it would hold sight no human lawfully has.
+A server test compares the packed body byte for byte against a fresh
+human-radius pack at the subject's coordinates, so the day the two diverge,
+the mode has started leaking and CI says so.
 
 ## What a watcher is, to the room
 
@@ -137,33 +151,29 @@ The hull's furniture comes off: corner stack, charge cells, trigger pads, the
 DESTROYED card. The room's instruments stay. Exact vitals are drawn for
 same-side subjects only; the wire carries them regardless, but wire-reading is
 the modified-client tier, and the interface should not hand the number to the
-two-tab tier. The arrows walk the camera along the occupied seats, one step
-past the end is the channel, and on glass a tap on either half of the screen
-does the same.
+two-tab tier.
 
-Picking a particular pilot is the info box. You open it by tapping a name in
-the player list, which is already how you ask who somebody is, and while
-watching it carries a WATCH key at its foot, in the slot an invitation would
-use and drawn as a key like every other thing in this interface you can press. The two never appear together: inviting wants somebody who is not
-on your side, following wants somebody who is. It is drawn only on a
-teammate, because the zone grants live sight of your own side and refuses it
-of anybody else's, and a control that quietly dropped you back on the channel
-would be worse than no control. The box shuts behind the press, unlike an
-invitation, since the answer is the whole screen becoming their view.
+Nothing on the pad or the keyboard aims the camera, because the camera is not
+this client's to aim. The arrows used to walk it along the occupied seats and
+a tap on either half of a phone screen did the same; both are gone, along with
+the WATCH key the info box used to carry on a teammate. What is left is a
+green play mark and the word CHANNEL in the corner row, in the slot the on-air
+tally uses, since a watcher is never on air and the two are the same kind of
+fact about the connection. It says CHANNEL rather than a name because the
+corner is where a fact about your own connection goes, and the pilot on screen
+is already labeled at their hull.
 
-That needs the watcher to know their own side, so the team list goes to
-watchers too: their side, and no open doors, because a watcher crosses nothing
-until they take a hull again.
+The team list goes to watchers too: their side, and no open doors, because a
+watcher crosses nothing until they take a hull again.
 
-Every watcher has one, including somebody who never flew here. They are seated
-at the door by the rule that seats a pilot, on the emptiest of the zone's own
-sides, because watching is a way of being in this room rather than a lobby
-beside it. The first cut handed an arrival nothing, on the reasoning that they
+Every watcher has a side, including somebody who never flew here. They are
+seated at the door by the rule that seats a pilot, on the emptiest of the
+zone's own sides, because watching is a way of being in this room rather than
+a lobby beside it. The first cut handed an arrival nothing, on the reasoning that they
 had sat out from nowhere, and what that produced in Alpha was a spectator
-alone off the edge of a ten-team zone: every hull on screen drawn as an
-enemy's, and no live sight offered of any of them, while the same person
-joining in a hull and then sitting out kept their side and everything that
-came with it.
+alone off the edge of a ten-team zone, with every hull on screen drawn as an
+enemy's, while the same person joining in a hull and then sitting out kept
+their side and everything that came with it.
 
 A watcher weighs nothing while they sit there, since they hold no seat, so the
 balance the caps measure cannot see them. Room is checked when they fly, which
@@ -180,15 +190,13 @@ channel is the whole of what anybody watching can see.
 And the screen is colored from that side rather than from the subject's.
 Deriving it from the hull the camera is behind is the obvious reading and the
 wrong one, because the camera moves: it repainted your own side as hostile
-whenever the channel crossed the line, and told the info box that a teammate
-of the pilot you happen to be watching is a teammate of yours.
+whenever the channel crossed the line.
 
-Nothing on screen says the word "watching". The pilot being observed wears
-their call sign and their bounty at their hull's lower right, exactly as every
-other pilot on screen does, because the one hull that goes unlabeled is your
-own and a watcher has none. That is also the answer to the only question a
-spectator has constantly, and it belongs on the hull rather than in a caption
-at the foot of the screen.
+The pilot being observed wears their call sign and their bounty at their
+hull's lower right, exactly as every other pilot on screen does, because the
+one hull that goes unlabeled is your own and a watcher has none. That is the
+answer to the only question a spectator has constantly, and it belongs on the
+hull rather than in a caption at the foot of the screen.
 
 ## Where the door is
 
@@ -229,14 +237,12 @@ with you, and somebody watching the fight is in the room.
 ## In a match game
 
 [match-game.md](match-game.md) changes what this is for without changing the
-rule above, which is the good news and worth stating plainly: live sight is
-still your own side or a written grant, and everything else is still the
-delayed channel. That rule was about who may see what, not about how long a
-match runs, so it survives the move to four a side intact. In particular
-`channel_delay_ticks` stays at five seconds rather than dropping to the zero a
-duel zone uses. A duel sets zero because both pilots are equally exposed and
-the audience is the point; in a four a side match a watcher can be partisan
-and relay to one side, so the delay is still doing work.
+rule above, which is the good news and worth stating plainly: the stands see
+the channel, five seconds behind. That rule was about who may see what, not
+about how long a match runs, so it survives the move to four a side intact.
+The delay does more work here than it did in an open arena, not less: a
+watcher in a match can be partisan and relay to one side, and four a side is
+small enough that one relayed position decides a fight.
 
 What does change is the reason anybody is in the stands. The old one is gone,
 since duels wanted a gallery because a queue is pilots present and not
@@ -258,7 +264,7 @@ When it is full, though, opening a fresh bot-filled room is the exact wrong
 answer, and the gallery is what stops the friends list breaking at the one
 moment it is useful.
 
-**Operators**, through the `watch` capability, unchanged.
+**Operators**, who watch what everybody else in the stands watches.
 
 ### Two kinds of watcher
 
@@ -308,3 +314,8 @@ whole-room stream for film study, and replays from the input trace, which
 invert the economics entirely: a deterministic core means a match is its
 initial state plus its inputs, and nobody pays egress at match time. Each of
 these changes no wire decision made here.
+
+Replays are also where a pilot who wanted to watch their own team gets to,
+and the reason losing live follow costs less than it looks. A finished match
+played back from its trace shows any seat from any angle with nothing to leak,
+because the fight is over.

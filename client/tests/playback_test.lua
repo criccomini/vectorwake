@@ -59,7 +59,7 @@ check("the replay exposes its score and roster",
       net.match.score[0] == 7 and net.match.score[1] == 5
       and net.pilots[0].name == "Chord" and net.pilots[1].ai == true)
 check("the human pilot is the first camera subject",
-      net.subject == 0 and net.want == 0 and net.watching == true)
+      net.subject == 0 and net.watching == true)
 check("map and rules invalidate the renderer caches",
       net.map_epoch == 5 and net.settings_epoch == 10 and mortal == 255)
 

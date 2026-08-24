@@ -149,16 +149,18 @@ check("and never replays a ship it does not have", calls.replay == replays)
 check("but the world still steps", calls.step == steps + 1,
       "a watcher that stops stepping is a slideshow")
 
--- The ask, and the keepalive that repeats it.
-net.watch(7)
-check("an ask goes out as C2S_WATCH", string.byte(sent[#sent], 1) == 9
-      and string.byte(sent[#sent], 2) == 7, sent_kinds())
+-- Sitting out, and the keepalive that repeats it. One byte either way: the
+-- room channel is the whole of what a watcher sees, so there is nobody to
+-- name and nothing for a second byte to say.
+net.sit_out()
+check("sitting out goes out as C2S_WATCH", string.byte(sent[#sent], 1) == 9
+      and #sent[#sent] == 1, sent_kinds())
 before = #sent
 for _ = 1, 3000 do net.step(0) end
 check("the keepalive fires on the quiet socket", #sent == before + 1)
-check("and repeats the ask rather than resetting it",
-      string.byte(sent[#sent], 2) == 7,
-      "asked for " .. tostring(string.byte(sent[#sent], 2)))
+check("and it is the same one byte",
+      string.byte(sent[#sent], 1) == 9 and #sent[#sent] == 1,
+      "sent " .. tostring(#sent[#sent]) .. " bytes")
 
 -- On air, and off again.
 deliver(string.char(13, 1))

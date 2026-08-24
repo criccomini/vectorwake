@@ -257,7 +257,7 @@ where they live.
 |---|---|---|
 | `join` | seated in a room | hull, sim slot, side, label, transport |
 | `denied` | refused at the door | the deny code, the sentence sent back, the name and zone claimed, protocol, transport |
-| `watch` | arrived to spectate | the side they were seated on, and whether they hold the `watch` capability |
+| `watch` | arrived to spectate | the side they were seated on |
 | `ship` | a hull change that took effect | from, to |
 | `team` | crossed to a side | from, to, whether the side is public |
 | `found` | founded a private side | its byte and generated name |

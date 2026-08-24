@@ -53,10 +53,6 @@ max_teams = 2
 max_humans_per_team = 4
 max_bots_per_team = 4
 
-# Five seconds behind, which is what the gallery runs at everywhere. See
-# docs/design/spectating.md.
-channel_delay_ticks = 500
-
 [arena]
 # Three minutes of play, fifteen seconds of podium. It was twenty-five, which
 # is a long time to look at a result on an empty arena: the wait is for reading

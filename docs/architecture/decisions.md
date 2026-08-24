@@ -2529,3 +2529,46 @@ edge.
 **Reconsider if:** the simulation adopts polygon collision. Normalize the
 polygon areas then and retire the rectangle budget rather than layering one
 shape contract over another.
+
+## 58. Spectating is one shared feed, five seconds behind
+
+**Decision:** a watcher sees the room channel and nothing else. Same-side live
+follow, the `watch` staff capability that granted live sight of anybody, and
+the per-zone `channel_delay_ticks` dial are all removed. The delay is a server
+constant at five seconds. `C2S_WATCH` loses its ship byte and means sit out,
+so `CLIENT_PROTOCOL` moves to 22.
+
+**Why:** the sight rule had three branches and the interesting one was already
+never granted. Watching a hostile hull live is a wallhack with a menu entry,
+so that ask always fell to the channel. What remained lawful was following a
+teammate, on the reasoning that a teammate's screen is knowledge the side
+already has, and a named staff account following anybody. Neither was wrong.
+Both were expensive: a second stream packed per follower beside the shared
+one, a lawfulness check on every frame in case the followed hull crossed
+sides, a control in the info box, a camera walk on the arrow keys, a tap
+target on each half of a phone screen, a capability checked at the door and
+carried on every request, and a byte on the wire whose values mostly meant
+"the channel". All of it served, live, a fight the channel already shows five
+seconds later.
+
+The dial went for a different reason. `channel_delay_ticks` defaulted to five
+seconds and the ladder zone set zero, which is the protection switched off in
+a file nobody reads twice. What that zone wanted was an audience, and the
+channel is an audience whatever the delay; what zero bought on top of that was
+a fresh map of a live room for anybody who opened a second tab. Five seconds
+is a server constant now, so a zone file cannot turn it down.
+
+The rule that is left fits in a sentence: one feed per room, the same bytes to
+everybody on it, five seconds late.
+
+**Cost:** a benched pilot cannot watch their own side. In a four a side match
+a sit-out, a dropped socket or a lag bench now means watching the room's
+camera, seconds behind, while your side plays without you. Operators lose the
+live room view and get the delayed one everybody else has. Replays from the
+input trace answer both, and they cost no egress at match time because a
+deterministic core means a match is its initial state plus its inputs.
+
+**Reconsider if:** a competitive format wants a produced broadcast, which
+wants a director and a longer delay rather than a shorter one; or replays
+land and somebody still asks to follow a teammate live, which would be
+evidence that the delay rather than the sharing was what people minded.

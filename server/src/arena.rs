@@ -8,7 +8,7 @@ use crate::protocol::*;
 use crate::room::*;
 use crate::{
     ai, calibrate, catalog, config, fleet, meta, modes, pilot, pilots, rating, reporting_enabled,
-    select, sim, spool, token, DEFAULT_CHANNEL_DELAY, DEFAULT_MAX_PLAYERS, DEFAULT_MAX_WATCHERS,
+    select, sim, spool, token, DEFAULT_MAX_PLAYERS, DEFAULT_MAX_WATCHERS,
 };
 
 /// This process: one arena server, serving one zone, holding that zone's
@@ -872,7 +872,6 @@ impl ArenaServer {
         room.bot_fill = def.bot_fill();
         room.lag_policy = def.arena.lag.clone();
         room.max_watchers = def.max_watchers.unwrap_or(DEFAULT_MAX_WATCHERS);
-        room.channel.delay = def.channel_delay_ticks.unwrap_or(DEFAULT_CHANNEL_DELAY);
         Ok(room)
     }
 
@@ -979,8 +978,6 @@ impl ArenaServer {
                             }
                             r.max_watchers = def.max_watchers.unwrap_or(DEFAULT_MAX_WATCHERS);
                             r.lag_policy = def.arena.lag.clone();
-                            r.channel.delay =
-                                def.channel_delay_ticks.unwrap_or(DEFAULT_CHANNEL_DELAY);
                             r.broadcast_settings();
                         }
                     }
@@ -1184,18 +1181,6 @@ impl ArenaServer {
         self.wire_zone()
             .map(|z| z.max_players as usize)
             .unwrap_or(DEFAULT_MAX_PLAYERS)
-    }
-
-    /// Whether this pilot may watch anybody, live. A named grant in the
-    /// catalog's staff list, and it needs the account as well as the name: a
-    /// guest can claim any name, and a grant a claim could hold would be no
-    /// grant at all.
-    pub(crate) fn watch_any(&self, seat: &Seat) -> bool {
-        seat.account.is_some()
-            && self
-                .catalog
-                .as_ref()
-                .is_some_and(|c| c.has_capability(&seat.name, "watch"))
     }
 
     /// Which room a watcher lands in: the fullest, because they came to see

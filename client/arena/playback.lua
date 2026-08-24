@@ -122,7 +122,6 @@ function M.load(payload, sim, net)
     net.map_name = artifact.map or ""
     net.room = artifact.room
     net.subject = subject
-    net.want = subject or 255
     net.my_team = subject and sim.ship_team(subject) or 255
     net.me = 255
     net.watching = true

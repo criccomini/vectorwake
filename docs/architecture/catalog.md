@@ -101,7 +101,6 @@ max_ships = 8
 bot_fill = 1.0
 fill_target = 8
 max_rooms = 10
-channel_delay_ticks = 500
 
 teams = ["Pylon", "Caisson"]
 max_teams = 2
@@ -145,7 +144,6 @@ The zone fields are:
 | `max_bots_per_team` | Bot seats allowed on one team. |
 | `admission` | `any` or `claimed`. |
 | `max_watchers` | Watcher connections admitted beside the player seats. |
-| `channel_delay_ticks` | Delay on the shared neutral watcher feed. |
 
 `[arena]` is the simulation settings overlay. Missing values keep the core
 baseline, while zero remains a real value. The current field set is defined by

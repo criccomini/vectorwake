@@ -993,9 +993,8 @@ end
 -- Flying they are the same and it never mattered. Watching they come apart:
 -- the camera stands behind whoever the channel picked, and deriving "my team"
 -- from that repainted your own side as hostile every time the camera crossed
--- the line, and told the info box that a teammate of the pilot you happen to
--- be watching is a teammate of yours. Set once per frame from what the zone
--- told this client its side is.
+-- the line. Set once per frame from what the zone told this client its side
+-- is.
 local view_team = 255
 
 -- What color to write a side's name in.
@@ -2551,18 +2550,10 @@ local function inspect(o, top)
     -- menu. Drawn only when it would do something: you are on a private side,
     -- and this is somebody other than you who is not already on it.
     local invite = o.may_invite and i ~= o.me and not same_team
-    -- The other thing this panel can offer, and it belongs here for the same
-    -- reason the invitation does: you opened it by picking a person, and
-    -- borrowing their eyes is a thing you do to a person rather than to a
-    -- seat number. Drawn only where it would work, which is a teammate: the
-    -- zone grants live sight of your own side and refuses it of anybody
-    -- else's, so offering it on an enemy would be a control that quietly
-    -- dropped you back on the room channel.
-    local follow = o.watch and same_team and o.watch.subject ~= i
     -- The team row always exists now, so the count is fixed.
     local rows_n = 8
     local h = 30 * F.scale + rows_n * rowh
-        + ((invite or follow) and (KEY_H + 12) * F.scale or 0)
+        + (invite and (KEY_H + 12) * F.scale or 0)
         + 10 * F.scale
     -- Under whatever is in the column, and never above where the column
     -- starts: with the scoreboard shut there is nothing above it, and a panel
@@ -2646,22 +2637,12 @@ local function inspect(o, top)
     -- rest of this matters right now.
     row("BOUNTY", tostring(bty), pal.a(pal.BOUNTY, 0.9))
 
-    -- One word and a rule under it, because that is what a control looks like
-    -- inside a panel. Once it is sent it says so and stops taking
-    -- clicks: the zone answers an invitation with a team list that does not
-    -- name the invitee, so this mark is the only acknowledgement there is, and
-    -- a button that stayed pressable would invite an anxious second tap.
     -- Drawn as a key, the way everything else in this interface that is a
     -- thing to press is drawn: the corner's MENU and PLAYERS, the answers on
-    -- a confirm card, every key on the help board. They were a word over a
-    -- rule, which is what a control looked like here before the board taught
-    -- the same hand what a key looks like, and a panel keeping the old idiom
-    -- asks a player to know that this particular word is pressable.
-    --
-    -- Both verbs use the same slot, since a panel with two possible actions
-    -- should put them where the eye already found the first one. They never
-    -- appear together: inviting wants somebody who is not on your side and
-    -- following wants somebody who is.
+    -- a confirm card, every key on the help board. It was a word over a rule,
+    -- which is what a control looked like here before the board taught the
+    -- same hand what a key looks like, and a panel keeping the old idiom asks
+    -- a player to know that this particular word is pressable.
     local label, action = nil, nil
     if invite then
         -- Once it is sent it says so and stops taking clicks: the zone answers
@@ -2670,8 +2651,6 @@ local function inspect(o, top)
         -- pressable would invite an anxious second tap.
         label = (o.invited and o.invited[i]) and "INVITED" or "INVITE"
         action = (o.invited and o.invited[i]) and nil or "invite"
-    elseif follow then
-        label, action = "WATCH", "watch"
     end
     if label then
         local by = ry_ + 4 * F.scale
@@ -3165,14 +3144,13 @@ local function menu_button(on_air, watch, room, pilots, watchers)
         F.layer:tri(cx, ry(mid - h, 0), cx, ry(mid + h, 0),
               cx + wsym, ry(mid, 0), col)
         local size = key_size()
-        -- The room's feed says so in the interface's own word; a pilot says
-        -- their own call sign, in their own case, the way a name is written
-        -- everywhere else here.
-        local named = watch.name ~= nil
-        txt(named and watch.name or "CHANNEL",
-            cx + wsym + 6 * F.scale, mid, size, col, nil, nil, named)
-        cx = cx + wsym + 6 * F.scale
-            + text_w(named and watch.name or "CHANNEL", size) + KEY_GAP * F.scale
+        -- One word, because there is one thing to be watching: the room's own
+        -- feed. The pilot it is pointed at wears their call sign on their hull
+        -- like everybody else on screen, which is where a spectator's constant
+        -- question is already answered.
+        local label = "CHANNEL"
+        txt(label, cx + wsym + 6 * F.scale, mid, size, col)
+        cx = cx + wsym + 6 * F.scale + text_w(label, size) + KEY_GAP * F.scale
     end
     chip_right = cx - KEY_GAP * F.scale
 end

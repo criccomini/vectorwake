@@ -2,18 +2,6 @@ use std::sync::Arc;
 
 use tokio::sync::mpsc;
 
-#[derive(Clone, Copy, PartialEq, Debug)]
-pub(crate) enum WatchMode {
-    /// One pilot's eyes, live. Granted only for a ship on the watcher's own
-    /// side, or to a holder of the `watch` capability, because same-side sight
-    /// is information the side already has and staff sight is a grant the
-    /// catalog wrote down. Everybody else gets the channel.
-    Follow(u8),
-    /// The room channel: the shared, delayed feed. The default, and the floor
-    /// every unlawful ask falls to.
-    Channel,
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum SitOutWhy {
     Asked,
@@ -75,13 +63,6 @@ impl Presence {
     pub(crate) fn flying(self) -> Option<(u32, u64)> {
         match self {
             Presence::Flying { room, member } => Some((room, member)),
-            _ => None,
-        }
-    }
-
-    pub(crate) fn watching(self) -> Option<(u32, u64)> {
-        match self {
-            Presence::Watching { room, member } => Some((room, member)),
             _ => None,
         }
     }

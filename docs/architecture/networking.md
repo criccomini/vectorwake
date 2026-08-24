@@ -320,9 +320,9 @@ radius. A modified client therefore cannot widen disclosure by claiming a
 larger window, and a very wide legitimate window does not become permission
 to see more of the arena.
 
-Flying, live follow, and the delayed room channel use the same radius. A
-followed pilot supplies the camera center and the minefield perspective, but
-not the recipient's ownership. The watcher receives public ship records only.
+Flying and the delayed room channel use the same radius. The channel's subject
+supplies the camera center and the minefield perspective, but not the
+recipient's ownership. A watcher receives public ship records only.
 
 House bots retain their signed whole-room position stream because their shared
 room model requires it. The grant comes from the token label, not the bot bit a
@@ -606,9 +606,9 @@ side, position, velocity, heading, current energy, energy capacity, shove
 state, score, bounty, and carrier. Cooldowns, spawn state, other upgrades,
 weapon rungs, add-ons, charges, toggle edges, and earned-bounty composition
 travel only in the owner tail. A spectator camera does not confer ownership,
-so following another pilot does not include that tail. House bots may receive
-every private tail through their signed label, but an ordinary client cannot
-request the grant.
+so the channel's frame does not include the subject's tail. House bots may
+receive every private tail through their signed label, but an ordinary client
+cannot request the grant.
 
 A one-tick repel used to be drawn by watching the remote pilot's charge count
 fall, which made the private count necessary for presentation. `S2C_CHARGE`

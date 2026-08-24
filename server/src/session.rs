@@ -60,10 +60,6 @@ pub(crate) async fn serve_client(
     let mut rated_lease: Option<RatedLease> = None;
     let mut standing_check: Option<StandingCheck> = None;
     let mut credential_expires: Option<u64> = None;
-    // Whether this pilot holds the `watch` capability, decided once at
-    // the door where the token was checked, because the ask arrives
-    // later on a message that carries no identity.
-    let mut watch_any = false;
     // A connection that says nothing for this long is gone. A joined
     // client sends its buttons every frame whatever the player is doing,
     // even sitting in the menu, so silence is not idleness. Without this
@@ -483,12 +479,10 @@ pub(crate) async fn serve_client(
                     }
                 }
                 let _ = tx.try_send(Message::Binary(z.zone_msg()));
-                watch_any = z.watch_any(&seat_of);
-                // Arrived to watch. No seat, no side, no live follow:
-                // the channel is the whole of what a stranger at the
-                // door can see, and the staff capability is the
-                // written-down exception. Checked before the bot flag
-                // on purpose; a client claiming both came to watch.
+                // Arrived to watch. The room channel is the whole of
+                // what anybody in the stands can see, whoever they are.
+                // Checked before the bot flag on purpose; a client
+                // claiming both came to watch.
                 if flags & JOIN_WATCH != 0 {
                     // The fullest room: a watcher came to see people. An
                     // instance with no room refused this arrival above; the
@@ -508,7 +502,6 @@ pub(crate) async fn serve_client(
                     let refused = seat_of.clone();
                     let joined = z.rooms[idx].watch_join_with_presence(
                         seat_of,
-                        watch_any,
                         tx.clone(),
                         presence.clone(),
                     );
@@ -848,35 +841,28 @@ pub(crate) async fn serve_client(
                 commands::say(&zone, &presence, &data).await;
             }
             C2S_WATCH => {
-                // Whose eyes to borrow. From a player: sit out. From a
-                // watcher: look somewhere else. Both are requests; the
-                // subject byte of the next snapshot is the answer, and
-                // an unlawful ask falls to the channel rather than
-                // erroring. Also the watcher's keepalive: a client
-                // with no inputs to send repeats its ask so the quiet
-                // timeout knows the socket is alive.
-                if data.len() >= 2 {
-                    let want = data[1];
-                    let mut z = zone.lock().await;
-                    let mut release = false;
-                    if let Some((room, member)) = presence.current().flying() {
-                        if let Some(index) = z.rooms.iter().position(|a| a.number == room) {
-                            if z.rooms[index].sit_out(member, want, watch_any, false) {
-                                release = true;
-                                // A human left the game count.
-                                z.push_status();
-                            }
-                        }
-                    } else if let Some((room, member)) = presence.current().watching() {
-                        if let Some(index) = z.rooms.iter().position(|a| a.number == room) {
-                            z.rooms[index].set_watch(member, want);
+                // Sit out, from a pilot who is flying. A request rather
+                // than an assertion: the next welcome is the answer, and
+                // a room whose gallery is full leaves them in their hull.
+                // From somebody already watching it is the keepalive and
+                // nothing else, since there is one feed and they are on
+                // it: a client with no inputs to send repeats the ask so
+                // the quiet timeout knows the socket is alive.
+                let mut z = zone.lock().await;
+                let mut release = false;
+                if let Some((room, member)) = presence.current().flying() {
+                    if let Some(index) = z.rooms.iter().position(|a| a.number == room) {
+                        if z.rooms[index].sit_out(member, false) {
+                            release = true;
+                            // A human left the game count.
+                            z.push_status();
                         }
                     }
-                    drop(z);
-                    if release {
-                        if let Some(lease) = rated_lease.take() {
-                            lease.release().await;
-                        }
+                }
+                drop(z);
+                if release {
+                    if let Some(lease) = rated_lease.take() {
+                        lease.release().await;
                     }
                 }
             }

@@ -516,11 +516,6 @@ impl WireCatalog {
     pub fn is_banned(&self, name: &str) -> bool {
         self.bans.iter().any(|b| b.eq_ignore_ascii_case(name))
     }
-    pub fn has_capability(&self, name: &str, cap: &str) -> bool {
-        self.staff
-            .iter()
-            .any(|s| s.name.eq_ignore_ascii_case(name) && s.capabilities.iter().any(|c| c == cap))
-    }
 }
 
 /// Frame a message: one tag byte, then JSON.

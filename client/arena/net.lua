@@ -33,9 +33,10 @@ local C2S_TEAM, C2S_FOUND, C2S_INVITE = 6, 7, 8
 -- request used to hold, because gunners are gone and a wire with a hole in it
 -- is a wire somebody has to remember about.
 local C2S_KIT = 10
--- Whose eyes to borrow. From a player it means sit out; from a watcher, look
--- somewhere else. A request like the team asks: the subject byte of the next
--- snapshot is the answer, and an unlawful ask lands on the room channel.
+-- Sit out: give up the hull and watch. One byte, because the room channel is
+-- the whole of what a watcher sees and there is nothing to name. Also the
+-- watcher's keepalive, since a client with no inputs to send has nothing else
+-- to prove the socket alive with.
 local C2S_WATCH = 9
 -- The one flag a player sets in a join: this client came to watch, not to
 -- fly. The class byte is ignored, no ship is spawned, and the seat taken is a
@@ -73,7 +74,7 @@ M.said = {}
 -- The client wire's own version, checked by the zone before it reads anything
 -- else in a join. A stale build is told its build is stale rather than left to
 -- misparse snapshots.
-local CLIENT_PROTOCOL = 21
+local CLIENT_PROTOCOL = 22
 -- Published, because the about page says what this build talks, and a second
 -- copy of the number is a second thing to forget to bump.
 M.PROTOCOL = CLIENT_PROTOCOL
@@ -102,13 +103,9 @@ M.me = 0
 -- that, and the extension now refuses the read loudly rather than serving
 -- whatever memory sits past it.
 M.watching = false
--- Whose eyes the last snapshot was: the followed hull, or whoever the room
--- channel is on. 255 when the room is empty and the camera holds the middle.
+-- Whose eyes the last snapshot was: whoever the room channel is on. 255 when
+-- the room is empty and the camera holds the middle.
 M.subject = nil
--- The last hull this client asked to follow, 255 for the room channel. The
--- subject alone cannot say which of the two you are on, since the channel is
--- usually pointed at somebody too; asked-for and got, together, can.
-M.want = 255
 -- Whether this pilot is the channel's subject right now, for the mark that
 -- says so.
 M.on_air = false
@@ -312,11 +309,9 @@ local function resolve_predicted_deaths(sent)
         end
     end
 end
--- The last thing this watcher asked to look at, so the keepalive in `step`
--- repeats the ask rather than quietly resetting a follow to the channel.
--- Declared up here because `connect` resets them and Lua scopes a local from
--- its declaration down: assigned any later, these would be globals.
-local watch_want = 255
+-- Steps since the last word out of a watcher's socket. Declared up here
+-- because `connect` resets it and Lua scopes a local from its declaration
+-- down: assigned any later, this would be a global.
 local keepalive = 0
 -- The transport rejects callbacks from a connection this facade has left, so
 -- the state below belongs only to the live arena.
@@ -1636,8 +1631,6 @@ function M.connect(url, class, name, on_lost, zone, watch, wt, room, instance)
     M.subject = nil
     M.on_air = false
     M.watchers = {}
-    watch_want = 255
-    M.want = 255
     keepalive = 0
     M.zone = ""
     M.map_name = ""
@@ -1737,22 +1730,19 @@ function M.invite(ship)
     return true
 end
 
--- Watch somebody, or 255 for the room channel. From a flying pilot this is
--- sitting out; from a watcher it is looking somewhere else. Either way the
--- next snapshot's subject byte is the answer, and an ask the sight rules
--- refuse lands on the channel rather than erroring.
-function M.watch(ship)
-    watch_want = ship or 255
-    M.want = watch_want
+-- Give up the hull and watch. A request rather than an assertion: the next
+-- welcome is the answer, and a room whose gallery is full leaves this pilot
+-- in their hull.
+function M.sit_out()
     keepalive = 0
-    return ask(string.char(C2S_WATCH, watch_want))
+    return ask(string.char(C2S_WATCH))
 end
 
--- How often a watcher repeats its ask, in steps. The server drops a socket
+-- How often a watcher says something, in steps. The server drops a socket
 -- that says nothing for 45 seconds, because a flying client sends buttons
 -- every frame and silence means the network ate it. A watcher has no buttons,
--- so the ask itself is the heartbeat: it repeats what is already true, and
--- the simulation does not move for it. Counted in this client's own steps
+-- so the sit-out message is the heartbeat: from somebody already watching it
+-- means nothing, and the simulation does not move for it. Counted in this client's own steps
 -- rather than in ticks, because a channel snapshot can move the tick
 -- backwards across the delay.
 local WATCH_KEEPALIVE = 3000
@@ -1799,7 +1789,7 @@ function M.step(buttons)
         keepalive = keepalive + 1
         if keepalive >= WATCH_KEEPALIVE then
             keepalive = 0
-            local msg = string.char(C2S_WATCH, watch_want)
+            local msg = string.char(C2S_WATCH)
             -- Reliable on either wire: this is the socket's proof of life,
             -- and a datagram that vanished would leave the next proof a
             -- minute out with the server's patience running.
