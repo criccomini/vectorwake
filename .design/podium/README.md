@@ -11,10 +11,10 @@ They are drawings of a proposal, not a plan of record.
 
 ## The proposal
 
-- One measure spans the window, capped near 1200pt, and type scales with it.
-- Wide windows stand the payout, the countdown and the actions in a spine
-  between the two rosters. Narrow windows fold the spine back into the stack
-  and the foot, which is the order the shipped card already keeps.
+- One measure spans the window, capped near 1040pt, and type scales with it.
+- Every window keeps the shipped card's order: the result, the score, the
+  rosters, comms, the actions, and a foot of the payout and the countdown.
+  Wide windows set the rosters abreast with nothing between them.
 - Upright phones stack the sides at full width rather than halving the
   measure between them.
 - A phone held sideways keeps both rosters up, moves the spine to a right
