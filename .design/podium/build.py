@@ -63,6 +63,15 @@ a{color:var(--friend)}a:hover{color:#8ee6ff}
   background-image:repeating-linear-gradient(90deg,
     rgba(63,88,120,.4) 0 1px,transparent 1px 14px)}
 
+/* A section, the play page's grammar: content hung 18px off its own vrule,
+   at the aside's lighter weight. ui.lua deploy_aside(). */
+.sect{position:relative;padding-left:18px}
+.sect::before{content:"";position:absolute;left:0;top:6px;bottom:6px;
+  width:1.4px;background:rgba(63,88,120,.45)}
+.sect::after{content:"";position:absolute;left:1.4px;top:6px;bottom:6px;
+  width:18px;background:linear-gradient(90deg,rgba(63,88,120,.09),transparent);
+  pointer-events:none}
+
 /* A selection: bright where it meets its rule and gone across the row. */
 .wash{background:linear-gradient(90deg,rgba(79,214,255,.14),rgba(79,214,255,0) 70%)}
 
@@ -174,12 +183,14 @@ SCORE = (22, 20)
 PHRASES = ["GG", "NICE SHOT", "CLOSE ONE", "GOOD LUCK", "THANKS", "SORRY"]
 
 
-def roster(side, row_h, name_px, num_px, cell_w, pad, head_px, style=""):
+def roster(side, row_h, name_px, num_px, cell_w, pad, head_px, style="",
+           panel=True):
     name, col, _, pilots = side
     cells = "".join(
         f'<div class="lbl" style="width:{cell_w}px;text-align:right;'
         f'font-size:{max(9, num_px - 4)}px">{c}</div>' for c in "KDA")
-    out = [f'<div class="panel col" style="padding:{pad}px 0;{style}">',
+    cls = "panel col" if panel else "col"
+    out = [f'<div class="{cls}" style="padding:{pad}px 0;{style}">',
            f'<div class="row" style="padding:2px {pad + 2}px 8px">'
            f'<div style="font-size:{head_px}px;font-weight:600;color:{col}">'
            f'{name}</div><div style="flex:1"></div>{cells}</div>',
@@ -233,13 +244,23 @@ def score_band(fig_px, bar_w, bar_h, gap):
             f'font-weight:500;color:var(--enemy)">{rs}</div></div>')
 
 
+# A payout is a price, so it wears the rivet and the wallet's own yellow,
+# CHARGE_COL, the color every price on the shelf is set in.
 def banked(label_px, fig_px):
     return (f'<div class="col" style="gap:8px">'
             f'<div class="lbl" style="font-size:{label_px}px">Banked</div>'
             f'<div class="row" style="gap:9px">'
-            f'{rivet(int(fig_px * 0.62), "#8dffb0")}'
+            f'{rivet(int(fig_px * 0.62), "#ffd166")}'
             f'<div class="num" style="font-size:{fig_px}px;line-height:1;'
-            f'color:var(--prize)">0</div></div></div>')
+            f'color:var(--charge)">0</div></div></div>')
+
+
+# The play page's aside grammar: a header on content hung off its own vrule.
+def section(label, inner, style="", label_px=10, head_gap=12):
+    return (f'<div class="sect col" style="{style}">'
+            f'<div class="lbl" style="font-size:{label_px}px;'
+            f'margin-bottom:{head_gap}px">{label}</div>'
+            + inner + '</div>')
 
 
 def next_match(label_px, fig_px, drain_h):
@@ -266,89 +287,106 @@ def board(w, h, stars, body):
 
 
 # --- desktop: the ending owns the window -------------------------------------
-# One 1040pt measure and the shipped card's own order, scaled: the result and
-# the score band on top, the two rosters abreast and nothing between them, then
-# comms, the actions, and a foot of the payout and the countdown, whose drain
-# runs the full measure.
+# One 1040pt measure in the play page's section grammar: SCORE holds the band
+# and both rosters abreast, SAY the comms, SHARE the two keys, each hung off
+# its own vrule. The foot runs the countdown on the left and the payout on the
+# right, over a drain the full measure wide.
 def desktop():
-    rosters = (
-        '<div class="row" style="gap:40px;align-items:stretch;'
-        'justify-content:center;margin-top:36px">'
-        + roster(SIDES[0], 44, 17, 15, 34, 16, 16, "width:500px;flex:none")
-        + roster(SIDES[1], 44, 17, 15, 34, 16, 16, "width:500px;flex:none")
+    score = section(
+        "Score",
+        score_band(112, 560, 12, 30)
+        + '<div class="row" style="gap:40px;margin-top:28px;'
+        'align-items:flex-start">'
+        + roster(SIDES[0], 44, 17, 15, 34, 0, 16, "flex:1", panel=False)
+        + roster(SIDES[1], 44, 17, 15, 34, 0, 16, "flex:1", panel=False)
         + '</div>')
 
-    tail = (
-        '<div class="col" style="width:1040px;align-self:center;'
-        'margin-top:30px">'
+    say = section(
+        "Say",
         '<div class="row" style="gap:14px">'
-        + "".join(chip(p, 46, 11, "flex:1") for p in PHRASES) + '</div>'
-        '<div class="row" style="gap:14px;margin-top:14px">'
+        + "".join(chip(p, 46, 11, "flex:1") for p in PHRASES) + '</div>',
+        style="margin-top:26px")
+
+    share = section(
+        "Share",
+        '<div class="row" style="gap:14px">'
         + key("Share match", 48, 12, primary=True, style="flex:1")
-        + key("Watch replay", 48, 12, style="flex:1") + '</div>'
-        '<div class="row" style="margin-top:26px">'
-        '<div class="row" style="gap:11px">'
-        '<div class="lbl" style="font-size:10px">Banked</div>'
-        + rivet(15, "#8dffb0")
-        + '<div class="num" style="font-size:19px;line-height:1;'
-        'color:var(--prize)">0</div></div>'
-        '<div style="flex:1"></div>'
+        + key("Watch replay", 48, 12, style="flex:1") + '</div>',
+        style="margin-top:26px")
+
+    foot = (
+        '<div class="row" style="margin-top:28px">'
         '<div class="row" style="gap:12px">'
         '<div class="lbl" style="font-size:10px">Next match</div>'
         '<div class="num" style="font-size:20px;line-height:1;'
-        'color:rgba(223,233,245,.92)">0:06</div></div></div>'
+        'color:rgba(223,233,245,.92)">0:06</div></div>'
+        '<div style="flex:1"></div>'
+        '<div class="row" style="gap:11px">'
+        '<div class="lbl" style="font-size:10px">Banked</div>'
+        + rivet(15, "#ffd166")
+        + '<div class="num" style="font-size:19px;line-height:1;'
+        'color:var(--charge)">0</div></div></div>'
         '<div style="position:relative;height:4px;margin-top:12px;'
         'background:rgba(108,122,144,.16)">'
-        '<div style="position:absolute;right:0;top:0;bottom:0;width:24%;'
-        'background:rgba(255,209,102,.55)"></div></div>'
-        '</div>')
+        '<div style="position:absolute;left:0;top:0;bottom:0;width:24%;'
+        'background:rgba(255,209,102,.55)"></div></div>')
 
     body = ('<div class="col" style="position:absolute;inset:0;'
             'justify-content:center;padding:40px 0">'
             + headline(42, 16)
-            + '<div style="height:22px"></div>'
-            + score_band(112, 560, 12, 30)
-            + rosters + tail + '</div>')
+            + '<div style="height:24px"></div>'
+            + '<div class="col" style="width:1040px;align-self:center">'
+            + score + say + share + foot + '</div></div>')
     return board(1440, 810, STARS_DESKTOP, body)
 
 
-# --- phone, upright: the same order the shipped card keeps, given room -------
+# --- phone, upright: the desktop's sections, stacked -------------------------
 # The sides stack full width instead of halving the measure, so a name and its
 # figures stop fighting for the same 180 points.
 def mobile():
-    chips = ('<div style="display:grid;grid-template-columns:'
-             'repeat(3, minmax(0, 1fr));gap:10px;margin-top:16px">'
-             + "".join(chip(p, 46, 9.5) for p in PHRASES) + '</div>')
+    score = section(
+        "Score",
+        score_band(52, 170, 8, 18)
+        + '<div style="height:14px"></div>'
+        + roster(SIDES[0], 36, 15, 13.5, 28, 0, 14, panel=False)
+        + '<div style="height:12px"></div>'
+        + roster(SIDES[1], 36, 15, 13.5, 28, 0, 14, panel=False),
+        label_px=9, head_gap=10)
 
-    actions = ('<div class="row" style="gap:10px;margin-top:12px">'
-               + key("Share match", 48, 10.5, primary=True, style="flex:1")
-               + key("Watch replay", 48, 10.5, style="flex:1") + '</div>')
+    say = section(
+        "Say",
+        '<div style="display:grid;grid-template-columns:'
+        'repeat(3, minmax(0, 1fr));gap:10px">'
+        + "".join(chip(p, 46, 9.5) for p in PHRASES) + '</div>',
+        style="margin-top:16px", label_px=9, head_gap=10)
+
+    share = section(
+        "Share",
+        '<div class="row" style="gap:10px">'
+        + key("Share match", 48, 10.5, primary=True, style="flex:1")
+        + key("Watch replay", 48, 10.5, style="flex:1") + '</div>',
+        style="margin-top:16px", label_px=9, head_gap=10)
 
     foot = ('<div class="row" style="margin-top:16px">'
-            '<div class="row" style="gap:8px">'
-            '<div class="lbl">Banked</div>' + rivet(13, "#8dffb0")
-            + '<div class="num" style="font-size:15px;color:var(--prize)">0'
-              '</div></div>'
-            '<div style="flex:1"></div>'
             '<div class="row" style="gap:10px">'
             '<div class="lbl">Next match</div>'
             '<div class="num" style="font-size:16px;'
-            'color:rgba(223,233,245,.92)">0:06</div></div></div>'
+            'color:rgba(223,233,245,.92)">0:06</div></div>'
+            '<div style="flex:1"></div>'
+            '<div class="row" style="gap:8px">'
+            '<div class="lbl">Banked</div>' + rivet(13, "#ffd166")
+            + '<div class="num" style="font-size:15px;color:var(--charge)">0'
+              '</div></div></div>'
             '<div style="position:relative;height:4px;margin-top:8px;'
             'background:rgba(108,122,144,.16)">'
-            '<div style="position:absolute;right:0;top:0;bottom:0;width:24%;'
+            '<div style="position:absolute;left:0;top:0;bottom:0;width:24%;'
             'background:rgba(255,209,102,.55)"></div></div>')
 
     body = ('<div class="col" style="position:absolute;inset:0;'
             'padding:44px 16px 20px;justify-content:center">'
             + headline(24, 10)
-            + '<div style="height:10px"></div>'
-            + score_band(52, 170, 8, 18)
-            + '<div style="height:18px"></div>'
-            + roster(SIDES[0], 36, 15, 13.5, 28, 12, 14)
-            + '<div style="height:12px"></div>'
-            + roster(SIDES[1], 36, 15, 13.5, 28, 12, 14)
-            + chips + actions + foot + '</div>')
+            + '<div style="height:14px"></div>'
+            + score + say + share + foot + '</div>')
     return board(390, 844, STARS_MOBILE, body)
 
 
@@ -360,9 +398,8 @@ def landscape():
             'padding:14px 16px;justify-content:space-between">'
             + bracket()
             + '<div class="row" style="align-items:flex-start;gap:20px">'
-            + banked(9, 20)
             + '<div class="col" style="flex:1">' + next_match(9, 20, 4)
-            + '</div></div>'
+            + '</div>' + banked(9, 20) + '</div>'
             + '<div class="ticks" style="margin:12px 0"></div>'
             + '<div class="col" style="gap:8px">'
             + key("Share match", 44, 10, primary=True)
