@@ -8,7 +8,7 @@ from pilot import PROTOCOL, S2C_MATCH, match_is_playing
 
 class MatchStateTest(unittest.TestCase):
     def test_protocol_and_match_tag_follow_the_live_wire(self):
-        self.assertEqual(PROTOCOL, 20)
+        self.assertEqual(PROTOCOL, 21)
         self.assertEqual(S2C_MATCH, 14)
 
     def test_only_the_playing_flag_releases_flight_inputs(self):
