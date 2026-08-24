@@ -4,10 +4,10 @@
 The shipped podium is one card capped at 620pt, sized so a phone can hold it,
 and a desktop shows that same small card floating in scrim. These boards
 redesign the ending to own whatever window it is given, in the play page's
-section grammar: SCORE holds the band and both rosters, SAY the comms, SHARE
-its one key, NEXT MATCH opening the page with the clock beside its drain.
-Watch replay and the banked readout are dropped; what remains is the result,
-the score, both rosters, comms, and the one share key.
+section grammar. The result, the score band and both rosters stand at the
+head without a header over them, since a scoreline needs no label; under them
+SAY holds the comms and NEXT MATCH the clock beside its drain, with the share
+key below it. Watch replay and the banked readout are dropped.
 
 The design system is the client's, same sources as ../rethink/build.py:
 client/arena/palette.lua for hues, client/arena/ui.lua for panel grammar
@@ -89,17 +89,30 @@ def rivet(k, col):
             f'stroke-linecap="square"/></svg>')
 
 
+# The share mark: a tray with an arrow leaving it, the glyph every phone puts
+# on the control that sends a thing somewhere else. Square caps and one weight,
+# like every other mark the client draws.
+def share_mark(k, col):
+    return (f'<svg width="{k}" height="{k}" viewBox="0 0 16 16" fill="none" '
+            f'style="flex:none">'
+            f'<path d="M8 2 V10.2 M4.9 5.1 L8 2 L11.1 5.1 '
+            f'M4.6 7.4 H2.6 V14 H13.4 V7.4 H11.4" stroke="{col}" '
+            f'stroke-width="1.4" stroke-linecap="square"/></svg>')
+
+
 # A key is the one stroked box the interface contains. ui.lua key_box().
-def key(label, h, px, primary=False, style=""):
+def key(label, h, px, primary=False, style="", mark=None):
     if primary:
         edge, fill, ink = "rgba(79,214,255,.95)", "rgba(79,214,255,.16)", \
                           "rgba(79,214,255,.95)"
     else:
         edge, fill, ink = "rgba(63,88,120,.62)", "rgba(63,88,120,.05)", \
                           "rgba(223,233,245,.92)"
+    glyph = mark(round(px * 1.35), ink) + f'<div style="width:{px * 0.8:.0f}px">'\
+        '</div>' if mark else ''
     return (f'<div class="row hud" style="height:{h}px;justify-content:center;'
             f'border:1.1px solid {edge};background:{fill};color:{ink};'
-            f'font-size:{px}px;{style}">{label}</div>')
+            f'font-size:{px}px;{style}">{glyph}{label}</div>')
 
 
 def chip(label, h, px, style=""):
@@ -215,8 +228,10 @@ def section(label, inner, style="", label_px=10, gap=12):
 
 
 # The next-match clock beside its drain, a bar in the score bar's own
-# language running out rather than filling. It sits between SAY and SHARE.
-def next_section(label_px, gap, clock_px, style=""):
+# language running out rather than filling, and under it the key that acts on
+# the wait. Sharing had a section head of its own and did not need one: a
+# header over a single key names the key twice.
+def next_section(label_px, gap, clock_px, share_key, share_mt, style=""):
     return section(
         "Next match",
         f'<div class="row" style="gap:18px">'
@@ -225,7 +240,8 @@ def next_section(label_px, gap, clock_px, style=""):
         f'<div style="position:relative;height:4px;flex:1;'
         f'background:rgba(108,122,144,.16)">'
         f'<div style="position:absolute;left:0;top:0;bottom:0;width:24%;'
-        f'background:rgba(255,209,102,.55)"></div></div></div>',
+        f'background:rgba(255,209,102,.55)"></div></div></div>'
+        f'<div style="height:{share_mt}px"></div>' + share_key,
         style=style, label_px=label_px, gap=gap)
 
 
@@ -240,14 +256,12 @@ def board(w, h, stars, body):
 
 
 # --- desktop: the ending owns the window -------------------------------------
-# One 1040pt measure: SCORE holds the band and both rosters abreast, SAY the
-# comms, SHARE the two keys, each header over its own rule, and the
-# foot runs the full measure.
+# One 1040pt measure: the band and both rosters abreast under the result,
+# then SAY and NEXT MATCH, each header over its own rule.
 def desktop():
-    score = section(
-        "Score",
+    score = (
         score_band(112, 560, 12, 30)
-        + '<div class="row" style="gap:40px;margin-top:24px;'
+        + '<div class="row" style="gap:40px;margin-top:26px;'
         'align-items:flex-start">'
         + roster(SIDES[0], 44, 17, 15, 34, 16, "flex:1")
         + roster(SIDES[1], 44, 17, 15, 34, 16, "flex:1")
@@ -259,18 +273,15 @@ def desktop():
         + "".join(chip(p, 46, 11, "flex:1") for p in PHRASES) + '</div>',
         style="margin-top:20px")
 
-    share = section(
-        "Share",
-        key("Share match", 48, 12, primary=True),
-        style="margin-top:20px")
-
     body = ('<div class="col" style="position:absolute;inset:0;'
             'justify-content:center;padding:32px 0">'
             '<div class="col" style="width:1040px;align-self:center">'
             + headline(42, 16)
             + '<div style="height:20px"></div>'
-            + score + say + next_section(10, 12, 20, "margin-top:20px")
-            + share + '</div></div>')
+            + score + say
+            + next_section(10, 12, 20, key("Share match", 48, 12, primary=True, mark=share_mark),
+                           14, "margin-top:20px")
+            + '</div></div>')
     return board(1440, 810, STARS_DESKTOP, body)
 
 
@@ -278,14 +289,12 @@ def desktop():
 # The sides stack full width instead of halving the measure, so a name and its
 # figures stop fighting for the same 180 points.
 def mobile():
-    score = section(
-        "Score",
+    score = (
         score_band(52, 170, 8, 18)
-        + '<div style="height:14px"></div>'
+        + '<div style="height:16px"></div>'
         + roster(SIDES[0], 34, 15, 13.5, 28, 14)
         + '<div style="height:12px"></div>'
-        + roster(SIDES[1], 34, 15, 13.5, 28, 14),
-        label_px=9, gap=10)
+        + roster(SIDES[1], 34, 15, 13.5, 28, 14))
 
     say = section(
         "Say",
@@ -294,34 +303,30 @@ def mobile():
         + "".join(chip(p, 46, 9.5) for p in PHRASES) + '</div>',
         style="margin-top:16px", label_px=9, gap=10)
 
-    share = section(
-        "Share",
-        key("Share match", 48, 10.5, primary=True),
-        style="margin-top:16px", label_px=9, gap=10)
-
     body = ('<div class="col" style="position:absolute;inset:0;'
             'padding:40px 16px 20px;justify-content:center">'
             + headline(24, 10)
             + '<div style="height:14px"></div>'
-            + score + say + next_section(9, 10, 16, "margin-top:16px")
-            + share + '</div>')
+            + score + say
+            + next_section(9, 10, 16,
+                           key("Share match", 48, 10.5, primary=True, mark=share_mark),
+                           12, "margin-top:16px")
+            + '</div>')
     return board(390, 844, STARS_MOBILE, body)
 
 
 # --- phone, on its side: the same sections, spending width -------------------
-# SCORE keeps the band and the rosters abreast; then SAY's grid stands
-# beside NEXT MATCH over SHARE, since sideways the height is the scarce
-# edge and the reading order holds.
+# The band and the rosters stay abreast; then SAY's grid stands beside
+# NEXT MATCH, since sideways the height is the scarce edge and the reading
+# order holds.
 def landscape():
-    score = section(
-        "Score",
+    score = (
         score_band(36, 420, 8, 22)
-        + '<div class="row" style="gap:32px;margin-top:10px;'
+        + '<div class="row" style="gap:32px;margin-top:12px;'
         'align-items:flex-start">'
         + roster(SIDES[0], 26, 13, 12, 24, 13, "flex:1")
         + roster(SIDES[1], 26, 13, 12, 24, 13, "flex:1")
-        + '</div>',
-        label_px=9, gap=8)
+        + '</div>')
 
     say = section(
         "Say",
@@ -330,13 +335,10 @@ def landscape():
         + "".join(chip(p, 44, 9) for p in PHRASES) + '</div>',
         style="flex:1.6", label_px=9, gap=8)
 
-    share = section(
-        "Share",
-        key("Share match", 44, 9.5, primary=True),
-        label_px=9, gap=8)
-
-    aside = ('<div class="col" style="flex:1;gap:8px">'
-             + next_section(9, 8, 16) + share + '</div>')
+    aside = ('<div class="col" style="flex:1">'
+             + next_section(9, 8, 16,
+                            key("Share match", 44, 9.5, primary=True, mark=share_mark), 10)
+             + '</div>')
 
     body = ('<div class="col" style="position:absolute;inset:0;'
             'padding:10px 18px;justify-content:center">'

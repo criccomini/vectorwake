@@ -5,22 +5,27 @@ Three artboards for the match ending. The shipped podium in
 it, and a desktop shows that same small card floating in scrim. These boards
 propose an ending that owns whatever window it is given, carrying less than
 the card does today: watch replay and the banked readout are dropped, leaving
-the result, the score, both rosters, comms, one share key, and the next-match
-clock.
+the result, the score, both rosters, comms, the next-match clock, and one
+share key.
 
 They are drawings of a proposal, not a plan of record.
 
 ## The proposal
 
 - One measure spans the window, capped near 1040pt, and type scales with it.
-- The page is sectioned: SCORE holds the band and both rosters, SAY the
-  comms, NEXT MATCH the clock beside a drain bar in the score bar's own
-  language, and SHARE its one key. Each header sits over a rule, padded
-  equally off the head and the content.
+- The result, the score band and both rosters stand at the head with no
+  header over them: a scoreline needs no label. Under them come two
+  sections, SAY for the comms and NEXT MATCH for the clock beside a drain
+  bar in the score bar's own language, with the share key under it. Each of
+  those headers sits over a rule, padded equally off the head and the
+  content.
+- Sharing has no section of its own. A header over a single key names the
+  key twice, so the key sits inside NEXT MATCH, wearing the tray-and-arrow
+  mark every phone puts on the control that sends a thing somewhere else.
 - Wide windows set the rosters abreast; upright phones stack them at full
   width rather than halving the measure between them. A phone held sideways
-  stands SAY's grid beside NEXT MATCH over SHARE, spending width where
-  height is scarce and keeping that reading order.
+  stands SAY's grid beside NEXT MATCH, spending width where height is
+  scarce and keeping that reading order.
 
 ## What is here
 
