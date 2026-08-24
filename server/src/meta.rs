@@ -144,11 +144,10 @@ create index if not exists rated_events_by_victim on rated_events (victim, at);
 -- a human-involving row is kept forever and the sweeper never looks at it.
 alter table rated_events add column if not exists bots_only boolean not null default false;
 create index if not exists rated_events_botsweep on rated_events (at) where bots_only;
--- The arena mints event_id when it files the event, and it rides through
--- every retry of the batch. Unique here is what makes ingest idempotent:
--- delivery is at-least-once, so the second arrival of an event has to be
--- refused rather than applied again. Rows from before the id existed are
--- null, which the index does not mind.
+-- Full human event records are unique too. The receipt table below is the
+-- ingest boundary now, while this index protects legacy rows and prevents the
+-- durable human history from ever holding two copies. Rows from before the id
+-- existed are null, which the index does not mind.
 alter table rated_events add column if not exists event_id bigint;
 create unique index if not exists rated_events_once on rated_events (event_id);
 -- The final blow, separate from the damage credits that move ratings. Older
@@ -163,15 +162,25 @@ create index if not exists rated_events_by_killer on rated_events (killer, at)
 -- walking roughly two million irrelevant rows for a completed week.
 create index if not exists rated_events_week
     on rated_events (at) where not bots_only;
+-- Every accepted rating event gets one small receipt. It is the idempotency
+-- boundary for both kinds of event: human-involving fights also keep their
+-- full row above, while bot-only fights need no payload after their rating and
+-- career projections have moved.
+create table if not exists rated_event_receipts (
+    event_id  bigint primary key,
+    at        timestamptz not null default now(),
+    bots_only boolean not null
+);
+create index if not exists rated_event_receipts_botsweep
+    on rated_event_receipts (at) where bots_only;
 -- One-shot migrations that have run, so a schema step that cannot be written
 -- as `if not exists` runs once and not on every boot.
 create table if not exists schema_marks (
     name text primary key,
     at   timestamptz not null default now()
 );
--- The public career line. This survives the short retention on bot-only rated
--- events, which is what makes an all-time bot total possible without keeping
--- their round-the-clock combat log forever.
+-- The public career line. This keeps an all-time bot total without retaining
+-- the payload from every round-the-clock bot fight.
 create table if not exists pilot_stats (
     account  bigint primary key references accounts(id) on delete cascade,
     kills    bigint not null default 0,
@@ -561,6 +570,9 @@ const PILOT_EVENT_DAYS: i32 = 90;
 /// with a half-life of about a day, and there are two orders of magnitude more
 /// of them: 153 bot connections cycle through the fleet around the clock.
 const BOT_EVENT_DAYS: i32 = 7;
+/// A bot-only rating receipt only has to outlive any plausible arena spool.
+/// Human receipts remain beside their full event records without a deadline.
+const BOT_RATING_RECEIPT_DAYS: i32 = 21;
 /// Browser diagnostics are useful across a release cycle, then stale. The
 /// clock restarts when a grouped error happens again so a live fault remains
 /// visible while an old one falls away.
@@ -5021,6 +5033,45 @@ fn why(e: &(dyn std::error::Error + 'static)) -> String {
     out
 }
 
+/// Replace legacy bot-only payloads with idempotency receipts, then age out
+/// receipts that have outlived any plausible arena spool. Each statement is
+/// bounded so a large production backlog never becomes one large transaction.
+async fn compact_bot_rating_events(db: &Client) -> Result<(u64, u64), tokio_postgres::Error> {
+    let compacted = db
+        .execute(
+            "with retired as materialized (
+                 select id, event_id, at
+                   from rated_events
+                  where bots_only
+                  order by at, id
+                  limit 50000
+                  for update skip locked
+             ), receipts as (
+                 insert into rated_event_receipts (event_id, at, bots_only)
+                 select event_id, at, true from retired where event_id is not null
+                 on conflict (event_id) do nothing
+                 returning event_id
+             )
+             delete from rated_events stored using retired
+              where stored.id = retired.id",
+            &[],
+        )
+        .await?;
+    let expired = db
+        .execute(
+            "delete from rated_event_receipts where event_id in (
+                 select event_id from rated_event_receipts
+                  where bots_only
+                    and at < now() - make_interval(days => $1)
+                  order by at, event_id
+                  limit 50000
+             )",
+            &[&BOT_RATING_RECEIPT_DAYS],
+        )
+        .await?;
+    Ok((compacted, expired))
+}
+
 pub async fn run() {
     crate::metrics::spawn("meta", "");
     let dir = std::env::args().nth(2).unwrap_or_else(|| ".".into());
@@ -5221,24 +5272,10 @@ pub async fn run() {
         });
     }
 
-    // The retention sweeper. The log grows at a rate the players do not set:
-    // bots fight at fill around the clock, which is most of ~300,000 events a
-    // day, and at 400 to 500 bytes a row that fills a 25 GB database inside a
-    // year. Throughput was never the problem. Space is.
-    //
-    // What gets dropped follows from what the log is for. A row with a person
-    // in it is replayed by a model migration or a disputed rating, so it is
-    // kept for good. A bot-on-bot row has done its work the moment the
-    // projection applies it, and a bot's career re-seeds from calibration
-    // anyway.
-    //
-    // A bounded delete rather than the partition drop meta-layer.md sketched.
-    // Dropping a partition is cheaper per row, but it needs the table
-    // partitioned by bot-only and by month together, a job to make next
-    // month's partitions, and a migration to convert the table that exists.
-    // At a few hundred thousand rows a day the delete is far below what one
-    // vCPU does without noticing, and it is twenty lines that cannot leave a
-    // month unpartitioned and silently refuse every write.
+    // Older releases kept a full JSON row for every bot fight. New writes keep
+    // only a receipt, and this bounded pass compacts the old rows without a
+    // table rewrite. The receipt is inserted before its source row disappears,
+    // in the same statement, so a delayed spool retry stays harmless.
     {
         let pool = pool.clone();
         tokio::spawn(async move {
@@ -5246,20 +5283,10 @@ pub async fn run() {
             loop {
                 tick.tick().await;
                 let Ok(db) = pool.get().await else { continue };
-                // Bounded so one pass cannot open a transaction over a
-                // backlog. An hour's production is a fraction of this, so a
-                // sweeper behind after an outage still catches up.
-                match db
-                    .execute(
-                        "delete from rated_events where ctid in (
-                           select ctid from rated_events
-                           where bots_only and at < now() - interval '21 days'
-                           limit 50000)",
-                        &[],
-                    )
-                    .await
-                {
-                    Ok(n) if n > 0 => println!("meta: retired {n} bot-only rated event(s)"),
+                match compact_bot_rating_events(&db).await {
+                    Ok((compacted, expired)) if compacted > 0 || expired > 0 => println!(
+                        "meta: compacted {compacted} bot rating event(s), expired {expired} receipt(s)"
+                    ),
                     Err(e) => println!("meta: retention pass failed: {e}"),
                     _ => {}
                 }
@@ -5818,6 +5845,19 @@ mod tests {
         assert_eq!(index.get::<_, String>(0), "btree");
         let predicate: String = index.get(1);
         assert!(predicate.contains("NOT bots_only"), "{predicate}");
+        let index = db
+            .query_one(
+                "select am.amname, pg_get_expr(i.indpred, i.indrelid)
+                   from pg_class c join pg_am am on am.oid = c.relam
+                   join pg_index i on i.indexrelid = c.oid
+                  where c.relname = 'rated_event_receipts_botsweep'",
+                &[],
+            )
+            .await
+            .expect("bot receipt retention index");
+        assert_eq!(index.get::<_, String>(0), "btree");
+        let predicate: String = index.get(1);
+        assert!(predicate.contains("bots_only"), "{predicate}");
 
         // Remove the empty-database mark and give the one-shot backfill
         // historical work. A second schema apply must leave the projection
@@ -5875,6 +5915,155 @@ mod tests {
         assert_eq!(stats(&db, victim).await, (0, 1, 0));
         assert_eq!(stats(&db, killer).await, (1, 0, 0));
         assert_eq!(stats(&db, helper).await, (0, 0, 1));
+
+        // A row from before receipts existed is already applied. Its first
+        // retry creates the compact key, then stops before touching either
+        // projection.
+        let mut legacy = rated_event();
+        legacy["id"] = serde_json::json!(1);
+        legacy["victim"] = serde_json::json!(victim);
+        legacy["killer"] = serde_json::json!(killer);
+        legacy["credits"] = credits.clone();
+        settlement::ingest(&mut db, DEFAULT_CLASS, "test", "test-1", &legacy)
+            .await
+            .expect("legacy retry");
+        assert_eq!(stats(&db, victim).await, (0, 1, 0));
+        assert_eq!(stats(&db, killer).await, (1, 0, 0));
+        let projected: i64 = db
+            .query_one("select count(*) from ratings", &[])
+            .await
+            .expect("legacy ratings")
+            .get(0);
+        assert_eq!(projected, 0);
+        let receipt: bool = db
+            .query_one(
+                "select bots_only from rated_event_receipts where event_id = 1",
+                &[],
+            )
+            .await
+            .expect("legacy receipt")
+            .get(0);
+        assert!(!receipt);
+
+        // Bot-only fights update the live rating and career projections but
+        // retain no JSON payload. A retry sees the receipt and changes
+        // nothing.
+        let bot_victim: i64 = db
+            .query_one("insert into accounts (kind) values (1) returning id", &[])
+            .await
+            .expect("bot victim")
+            .get(0);
+        let bot_killer: i64 = db
+            .query_one("insert into accounts (kind) values (1) returning id", &[])
+            .await
+            .expect("bot killer")
+            .get(0);
+        let mut bot_event = rated_event();
+        bot_event["id"] = serde_json::json!(1001);
+        bot_event["victim"] = serde_json::json!(bot_victim);
+        bot_event["killer"] = serde_json::json!(bot_killer);
+        bot_event["victim_kind"] = serde_json::json!(1);
+        bot_event["bots_only"] = serde_json::json!(true);
+        bot_event["credits"][0]["account"] = serde_json::json!(bot_killer);
+        settlement::ingest(
+            &mut db,
+            DEFAULT_CLASS,
+            "test",
+            "test-bot-receipt",
+            &bot_event,
+        )
+        .await
+        .expect("bot-only event");
+        let bot_payloads: i64 = db
+            .query_one(
+                "select count(*) from rated_events where event_id = 1001",
+                &[],
+            )
+            .await
+            .expect("bot payload count")
+            .get(0);
+        assert_eq!(bot_payloads, 0);
+        let receipt: bool = db
+            .query_one(
+                "select bots_only from rated_event_receipts where event_id = 1001",
+                &[],
+            )
+            .await
+            .expect("bot receipt")
+            .get(0);
+        assert!(receipt);
+        let bot_rating = db
+            .query_one(
+                "select rating, games from ratings where account = $1 and class = $2",
+                &[&bot_victim, &DEFAULT_CLASS],
+            )
+            .await
+            .expect("bot rating");
+        assert_eq!(bot_rating.get::<_, f64>(0), 1184.0);
+        assert_eq!(bot_rating.get::<_, i32>(1), 1);
+        assert_eq!(stats(&db, bot_victim).await, (0, 1, 0));
+        assert_eq!(stats(&db, bot_killer).await, (1, 0, 0));
+        settlement::ingest(
+            &mut db,
+            DEFAULT_CLASS,
+            "test",
+            "test-bot-receipt",
+            &bot_event,
+        )
+        .await
+        .expect("bot-only retry");
+        let bot_rating = db
+            .query_one(
+                "select rating, games from ratings where account = $1 and class = $2",
+                &[&bot_victim, &DEFAULT_CLASS],
+            )
+            .await
+            .expect("bot rating after retry");
+        assert_eq!(bot_rating.get::<_, f64>(0), 1184.0);
+        assert_eq!(bot_rating.get::<_, i32>(1), 1);
+        assert_eq!(stats(&db, bot_victim).await, (0, 1, 0));
+        assert_eq!(stats(&db, bot_killer).await, (1, 0, 0));
+
+        // A human-involving fight uses the same receipt boundary and also
+        // keeps the replayable event record.
+        let human_victim: i64 = db
+            .query_one("insert into accounts (kind) values (0) returning id", &[])
+            .await
+            .expect("human victim")
+            .get(0);
+        let human_killer: i64 = db
+            .query_one("insert into accounts (kind) values (0) returning id", &[])
+            .await
+            .expect("human killer")
+            .get(0);
+        let mut human_event = rated_event();
+        human_event["id"] = serde_json::json!(1002);
+        human_event["victim"] = serde_json::json!(human_victim);
+        human_event["killer"] = serde_json::json!(human_killer);
+        human_event["bots_only"] = serde_json::json!(false);
+        human_event["credits"][0]["account"] = serde_json::json!(human_killer);
+        settlement::ingest(
+            &mut db,
+            DEFAULT_CLASS,
+            "test",
+            "test-human-record",
+            &human_event,
+        )
+        .await
+        .expect("human-involving event");
+        let human_record = db
+            .query_one(
+                "select count(*) filter (where re.event_id = 1002),
+                        bool_and(not rr.bots_only)
+                   from rated_events re
+                   join rated_event_receipts rr on rr.event_id = re.event_id
+                  where re.event_id = 1002",
+                &[],
+            )
+            .await
+            .expect("human event record");
+        assert_eq!(human_record.get::<_, i64>(0), 1);
+        assert!(human_record.get::<_, bool>(1));
 
         let meta = Meta {
             pool: pool.clone(),
@@ -5940,6 +6129,44 @@ mod tests {
             .expect("killer in standings");
         assert_eq!(killer_week["swing"], 24);
         assert_eq!(killer_week["banked"], 7);
+
+        // Legacy bot payloads become receipts in a bounded, atomic pass. Bot
+        // receipts expire later; human receipts remain.
+        assert_eq!(
+            compact_bot_rating_events(&db)
+                .await
+                .expect("compact legacy bot payload"),
+            (1, 0)
+        );
+        let legacy_bot_payloads: i64 = db
+            .query_one("select count(*) from rated_events where event_id = 3", &[])
+            .await
+            .expect("legacy bot payload count")
+            .get(0);
+        assert_eq!(legacy_bot_payloads, 0);
+        db.execute(
+            "update rated_event_receipts
+                set at = now() - interval '22 days'
+              where bots_only",
+            &[],
+        )
+        .await
+        .expect("age bot receipts");
+        assert_eq!(
+            compact_bot_rating_events(&db)
+                .await
+                .expect("expire bot receipts"),
+            (0, 2)
+        );
+        let human_receipts: i64 = db
+            .query_one(
+                "select count(*) from rated_event_receipts where not bots_only",
+                &[],
+            )
+            .await
+            .expect("human receipt count")
+            .get(0);
+        assert_eq!(human_receipts, 2);
 
         db.batch_execute("alter table rated_events rename to rated_events_unavailable")
             .await

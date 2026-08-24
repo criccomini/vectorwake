@@ -89,8 +89,8 @@ pub fn tier(rating: f64) -> &'static str {
 /// filling a vacated slot must not inherit the player's.
 pub type Id = String;
 
-/// One entry of the permanent record. Ratings are a projection of this log,
-/// which is what lets the model be replaced by recomputing history.
+/// One rated death. Human-involving entries become permanent records at the
+/// meta-layer; bot-only entries move the live projections and leave receipts.
 #[derive(Clone, Debug)]
 pub struct RatedEvent {
     pub tick: u32,
@@ -306,10 +306,9 @@ impl Rating {
     /// pilot. Returns what they are actually paid.
     ///
     /// Applied where the delta is decided rather than where it is stored, so
-    /// the event log records what the pilot was paid. The log is the durable
-    /// artifact and every rating is a projection of it; a cap applied later
-    /// would make the two disagree, and replaying the log under a new model
-    /// would quietly hand back every point this ever withheld.
+    /// the human event log records what the pilot was paid. A cap applied
+    /// later would make the rating disagree with that history, and replaying
+    /// it under a new model would quietly hand back every point this withheld.
     fn throttle_ai_gain(&mut self, tick: u32, who: &str, rating: f64, delta: f64) -> f64 {
         if delta <= 0.0 || rating < AI_FARM_FLOOR {
             return delta;
