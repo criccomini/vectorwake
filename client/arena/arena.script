@@ -21,7 +21,6 @@ local frame = require("arena.frame")
 local binds = require("arena.binds")
 local keys = require("arena.keys")
 local touch = require("arena.touch")
-local threat = require("arena.threat")
 local account = require("arena.account")
 local directory = require("arena.directory")
 local menu = require("arena.menu")
@@ -494,9 +493,6 @@ local function pad_reach(w, h, s)
     if L.mine and L.mine.y + L.mine.r > reach then
         reach = L.mine.y + L.mine.r
     end
-    if L.reverse and L.reverse.y + L.reverse.r > reach then
-        reach = L.reverse.y + L.reverse.r
-    end
     for _, c in ipairs(L.charge or {}) do
         local top = c.y + (c.w and c.w / 2 or c.r)
         if top > reach then reach = top end
@@ -939,6 +935,13 @@ local function drain_kills()
         -- Never while watching. From that seat `me` is the sentinel 255,
         -- which is also the killer on a wall death, so every rock somebody
         -- flew into would have been lit as a kill of your own.
+        --
+        -- Three now rather than two: the third is a kill you helped with,
+        -- which the zone tells you and tells nobody else. It is the same
+        -- fight seen one step back, so it goes in the same family of green
+        -- one shade down rather than in a color of its own. It can never
+        -- collide with the other two, since the core hands an assist to
+        -- neither the pilot who finished it nor the one who died.
         local col, mine = nil, false
         if not watching and k.killer == me and k.victim ~= me then
             col, mine = pal.PAID, true
@@ -953,10 +956,20 @@ local function drain_kills()
             end
         elseif not watching and k.victim == me then
             col, mine = pal.HURT, true
+        elseif not watching and k.assist then
+            col, mine = pal.ASSIST, true
         end
-        notify((k.victim == k.killer) and {vn, " killed by self"}
+        local line = (k.victim == k.killer) and {vn, " killed by self"}
             or (k.killer == 255) and {vn, " flew into the wall"}
-            or {pilot_named(k.killer, true), " killed ", vn, paid}, col, mine)
+            or {pilot_named(k.killer, true), " killed ", vn, paid}
+        -- Said in words as well as in color, because your name is nowhere on
+        -- this line: a kill of yours and a death of yours both name you, and
+        -- a lit line about two other people with nothing on it to say why is
+        -- a color a player has to be taught. Appended rather than written
+        -- into each of the three shapes above, because it is equally true of
+        -- all of them: you can soften somebody who then flies into a wall.
+        if k.assist then line[#line + 1] = ", you assisted" end
+        notify(line, col, mine)
     end
     if #net.kills > 0 then net.kills = {} end
 end
@@ -1266,14 +1279,6 @@ function update(self, dt)
     local ww, wh, density, live = frame.begin(self, dt, net, sfx, menu, sim)
     if not ww then return end
 
-    -- The pad's turn ramp keeps time here because only the frame loop has dt;
-    -- reading the buttons deliberately does not advance it.
-    touch.step(dt)
-    -- And whether the fight is ahead, which is half of what a rearward push
-    -- on the stick means. From the flying ship only: a watcher steers nobody.
-    touch.threat = (live and not watching and touch.used)
-        and threat.ahead(sim, me) or false
-
     -- A control waiting for a key takes the whole keyboard, and takes it here,
     -- before anything else in this function has looked at a press. Every key
     -- on the board is an answer while this is up, including the ones that walk
@@ -1501,10 +1506,6 @@ function update(self, dt)
         -- rows depend on it: there is no board to draw on glass and no key
         -- column to fill in, so the same list comes out as gestures.
         menu.touching = touch.used
-        -- Which of the two flying controls the thumb gets. Gated on there
-        -- being thumbs at all, so a save written on a phone cannot put a
-        -- desktop on a control it has no way to press.
-        touch.dpad = menu.dpad and touch.used
         -- Something is being typed into, and the trigger is the space bar.
         -- Every call sign has a space in it, so a line that still read the
         -- trigger as "send" answered itself partway through: "Vesper 412"
@@ -2102,7 +2103,7 @@ function update(self, dt)
             -- mark that says so is the one courtesy the channel owes.
             on_air = net.on_air,
             watchers = net.watchers,
-            class_names = TUNE.CLASS_NAMES, menu_open = menu.open,
+            menu_open = menu.open,
             -- The server's roster, because those are other people's names and
             -- only it knows them.
             pilots = net.pilots,
@@ -2937,7 +2938,10 @@ function on_input(self, action_id, action)
             end
             -- The list itself swallows the click so a tap meant for a
             -- pilot's row does not fall through to whatever is behind it.
-            if r.action == "scores" then return true end
+            -- The run log under it is the same kind of surface: nothing in it
+            -- is a control, and a press that fell through a solid panel would
+            -- fire into a wall.
+            if r.action == "scores" or r.action == "run_log" then return true end
             if not menu.open then return false end
             -- A press anywhere but the filter box lets go of it, which is
             -- what a caret does everywhere else. Before the branches
@@ -3030,10 +3034,6 @@ function on_input(self, action_id, action)
                 -- The call sign at the far end of the tab row. There is no
                 -- pilot stop on that row any more: the name is the stop.
                 act, moved = menu.click_pilot()
-            elseif r.action == "ship_page" then
-                -- The hull named beside Deploy opens the page where that
-                -- choice is made.
-                act, moved = menu.click_ship()
             elseif r.action == "rail" then
                 act, moved = menu.click_rail(r.value)
             elseif r.action == "close" then

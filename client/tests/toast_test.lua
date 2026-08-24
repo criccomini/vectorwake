@@ -84,9 +84,6 @@ local function pad_reach(w, h, s)
     if L.mine and L.mine.y + L.mine.r > reach then
         reach = L.mine.y + L.mine.r
     end
-    if L.reverse and L.reverse.y + L.reverse.r > reach then
-        reach = L.reverse.y + L.reverse.r
-    end
     for _, c in ipairs(L.charge or {}) do
         local top = c.y + (c.w and c.w / 2 or c.r)
         if top > reach then reach = top end
@@ -170,6 +167,11 @@ local MY_KILL = {text = {{"you"}, " killed ", {"other"}},
                  col = pal.PAID, t = 0, mine = true}
 local MY_DEATH = {text = {{"other"}, " killed ", {"you"}},
                   col = pal.HURT, t = 0, mine = true}
+-- A kill you helped with names neither pilot as you, which is why it says so
+-- in words: the color alone would be a lit line about two strangers.
+local MY_ASSIST = {text = {{"someone"}, " killed ", {"other"}, "",
+                           ", you assisted"},
+                   col = pal.ASSIST, t = 0, mine = true}
 
 -- --- only what is about you ------------------------------------------------
 
@@ -181,6 +183,10 @@ check("a death of yours is shown on a phone", shown("other killed you") ~= nil)
 
 frame(844, 390, {MY_KILL})
 check("and so is a kill you made", shown("you killed other") ~= nil)
+
+frame(844, 390, {MY_ASSIST})
+check("and so is one you helped with",
+      shown("someone killed other, you assisted") ~= nil)
 
 -- --- one at a time ---------------------------------------------------------
 

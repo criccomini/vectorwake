@@ -1060,7 +1060,14 @@ typedef enum {
      *
      * Appended rather than slotted next to SIM_EV_BOUNCE where it belongs,
      * because the numbers are mirrored by hand in server/src/sim.rs. */
-    SIM_EV_RICOCHET /* a: owner, b: weapon type, v: packed position */
+    SIM_EV_RICOCHET, /* a: owner, b: weapon type, v: packed position */
+    /* A death handed somebody an assist: they had damaged the victim recently
+     * enough, and they are not the pilot who finished them. One per
+     * contributor, emitted where the column is incremented, so a caller reads
+     * the same assist the scoreboard counts rather than a second definition
+     * of one. Also appended rather than filed beside SIM_EV_DEATH, because
+     * the numbers are mirrored by hand in server/src/sim.rs. */
+    SIM_EV_ASSIST /* a: the pilot credited, b: victim, v: killer (255 none) */
 } sim_event_type;
 
 typedef struct {

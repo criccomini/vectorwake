@@ -150,6 +150,10 @@ the ground the next match is played on, which is the one you spend the wait
 looking at. Nothing anybody earned is touched: the tallies the podium is
 reading live on the ships, and nobody is killed to take them off the map.
 
+They go out rather than blowing up, and so does whatever was in the air. A
+wreck is what a kill looks like, so eight of them at once said the room had
+been wiped rather than that time was up.
+
 ## What a death costs
 
 Nothing you own, and a walk.

@@ -41,6 +41,7 @@ _G.sim = {
     set_mortal = function() end,
     ship_count = function() return 2 end,
     ship_alive = function() return 1 end,
+    ship_deaths = function() return 0 end,
     ship_active = function() return 1 end,
     ship_vel = function() return 0, 0 end,
     ship_x_raw = function() return 0 end,

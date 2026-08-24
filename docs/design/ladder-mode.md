@@ -1,8 +1,8 @@
 # Ladder mode
 
-Ladder is a solo run through the house bot roster. One human faces one bot. A
-win asks the director for the next difficulty slot, while a loss moves the run
-back far enough to matter without discarding the whole evening.
+Ladder is a solo run through the house bot roster. One climber faces one house
+pilot. A win asks the director for the next difficulty slot, while a loss moves
+the run back far enough to matter without discarding the whole evening.
 
 Ladder is one life per opponent. `ladder_first_to` is one, so the first death
 settles the rung. Catalog validation refuses a longer series under this mode.
@@ -30,8 +30,9 @@ wrap a run from the top to the bottom.
 
 ## One opponent for one life
 
-A life starts only when the room contains exactly one human and one bot. The
-match clock waits at its full value while the first opponent is being seated.
+A life starts only when the room contains the rival its rung asked for and one
+climber, and nobody else. The match clock waits at its full value while the
+first opponent is being seated.
 If the rival leaves during play, that life is void. The room files no result,
 pays no completion reward, and changes no progress or rating. Both ships reset
 before the same rung reopens against a replacement. A damaged rival cannot
@@ -51,6 +52,38 @@ settles the rung. Calibration gives sudden death a recorded safety boundary so
 a broken or nonterminating leg cannot run forever. Any leg that reaches that
 boundary blocks certification; live play itself remains uncensored.
 
+## A duel is always on
+
+The play page joins the zone under the cursor as a watcher, so the match behind
+the menu is the match a deploy would put you in. A zone nobody is playing is
+therefore an empty arena on the screen of everybody deciding whether to press
+play, which is an argument against pressing it.
+
+So a Ladder room with nobody in it climbs anyway. The director seats a stand-in
+beside the rung's own rival, and the two fly the same one-life duel a person
+would: the same rungs, the same rival builds, the same clock, the same
+progression. The stand-in is an ordinary house pilot with an ordinary career,
+drawn from the same roster that fills a melee room, and never one of the eight
+authored archetypes, because those eight are the rungs it is climbing and one
+of them is the fixed point the fleet's ratings are measured against.
+
+It is holding the seat, not keeping it. A person walking in takes it back on
+the tick they arrive, exactly as a bot in any other room stands down for
+somebody who wants to fly, and the run starts over at that person's own floor.
+A run belongs to whoever is flying it: the rung, the streak and the log all go
+back to the beginning when the seat changes hands, in either direction, so
+nobody inherits a stranger's evening and the stand-in never climbs on the back
+of the player who just left.
+
+One room does this, the zone's first, which is the room that outlives all the
+others and the one a browsing client watches. A second room opens because
+people arrived and is given back when it empties, and a room with a stand-in
+flying in it never empties.
+
+Nothing about the stand-in is durable. Its results file no ladder progress,
+because that belongs to accounts people hold, and a bot beating a bot moves no
+rating.
+
 ## Persistence
 
 Checkpoint and best rung are durable per account and per Ladder zone. The
@@ -58,10 +91,46 @@ server carries them in the signed session claims and projects completed match
 events into the meta-layer. Replaying an event is safe because progress only
 moves forward in that projection.
 
+Per account, not per claimed account. The meta-layer mints a guest an account of
+its own on first contact, and a run hangs off whatever account id is flying, so
+the zone admits anybody and nobody has to pick a password before their first
+climb. What a guest gives up is the week: an unclaimed account that goes seven
+days without a session is swept and its progress goes with it. Claiming the
+pilot stops that clock and keeps every rung already climbed.
+
 An unfinished stretch above the checkpoint is intentionally temporary. A new
 session resumes at the saved checkpoint with a streak of zero, while best rung
 remains available for the player's record. This gives checkpoints a real job
 and prevents reconnecting from becoming a way to preserve every attempt.
+
+## The run behind the rung
+
+The rung a player is standing on is one number about an evening of ten-second
+fights. The room keeps the rest: every finished life of the current run, with
+the opponent slot it was against, whether it was cleared, lost or drawn, the
+score either way, and how long it lasted. That log rides in the same packet as
+the clock and the rung, so a client can never hold a run from one state beside
+progress from another.
+
+It is a fixed window of the most recent legs rather than a list that grows, and
+the packet also carries how many lives the run has really had, so a long evening
+reads as its recent stretch plus an honest count rather than as a short one. A
+void life is not a leg: a rival who leaves mid-fight files no result and changes
+no progress, and a log that recorded it would make the run read as longer and
+worse than it was.
+
+The log belongs to one run. Clearing the roster ends a run and the next life
+starts the log over, and so does resuming at a checkpoint in a new session,
+which is the rule the streak already follows.
+
+The client draws the log under the roster, behind the same toggle, newest leg
+first: the window is fixed, so the end worth keeping on screen is the one just
+flown. Beside the clock it draws something else, on each side's own name line:
+what that side is rated. That number is about the fight in front of the player
+rather than the ones behind them, and the roster already carries it for every
+seat, so nothing new travels for it. It shares the name's line rather than
+taking one of its own because the band under the clock belongs to the readout,
+which is centered and reaches out past the clock once a run has a floor.
 
 Ladder progress is not Elo. Rung records progress through a run. Rating
 estimates strength across rated results. The bot roster may use calibrated Elo

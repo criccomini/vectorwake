@@ -69,6 +69,7 @@ _G.sim = {
     set_mortal = function() end,
     ship_count = function() return 2 end,
     ship_alive = function(i) return i == 3 and own_alive or 1 end,
+    ship_deaths = function() return 0 end,
     ship_active = function() return 1 end,
     ship_vel = function() return own_vx, own_vy end,
     ship_repel = function() return own_repel_ticks, own_repel_speed end,
@@ -268,19 +269,32 @@ check("the whistle carries its public match film",
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
             message = string.char(14, 4, 180, 2, 0, 0, 0, 0, 4)
                 .. u32le(0) .. u32le(0) .. u32le(0) .. u32le(0)
-                .. u32le(0) .. u32le(0) .. string.char(1, 0)})
+                .. u32le(0) .. u32le(0) .. string.char(1, 0)
+                .. u32le(0) .. string.char(0)})
 check("an unopened Ladder arrives as one waiting match state",
       net.match and not net.match.playing and net.match.artifact == nil
       and net.match.ladder and net.match.ladder.waiting
       and not net.match.ladder.opponent_ready
       and net.match.ladder.rung == 0
-      and net.match.ladder.first_to == 1)
+      and net.match.ladder.first_to == 1
+      and net.match.ladder.legs == 0
+      and #net.match.ladder.log == 0)
+
+-- One rung taken and the next one lost, which is the shape of every run.
+local function leg(rung, result, kills, deaths, seconds)
+    return u32le(rung) .. string.char(result)
+        .. string.char(kills % 256, math.floor(kills / 256))
+        .. string.char(deaths % 256, math.floor(deaths / 256))
+        .. string.char(seconds % 256, math.floor(seconds / 256))
+end
 
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
             message = string.char(14, 6, 24, 2, 3, 0, 5, 0)
                 .. u32le(123456) .. u32le(1) .. string.char(3)
                 .. u32le(7) .. u32le(3) .. u32le(5) .. u32le(9)
-                .. u32le(7) .. u32le(8) .. string.char(1, 0)})
+                .. u32le(7) .. u32le(8) .. string.char(1, 0)
+                .. u32le(19) .. string.char(2)
+                .. leg(5, 1, 1, 0, 41) .. leg(6, 0, 0, 1, 7)})
 check("a Ladder result replaces clock, film, and progress atomically",
       net.match and net.match.ladder
       and net.match.ladder.opponent_ready
@@ -294,6 +308,36 @@ check("a Ladder result replaces clock, film, and progress atomically",
       and net.match.ladder.desired_opponent == 8
       and net.match.ladder.first_to == 1
       and net.match.artifact == artifact)
+-- The run rides in the same packet as the rung it produced, so no client ever
+-- holds a log from one state beside progress from another.
+check("and the run log rides with it, oldest leg first",
+      net.match.ladder.legs == 19
+      and #net.match.ladder.log == 2
+      and net.match.ladder.log[1].rung == 5
+      and net.match.ladder.log[1].result == "cleared"
+      and net.match.ladder.log[1].kills == 1
+      and net.match.ladder.log[1].deaths == 0
+      and net.match.ladder.log[1].seconds == 41
+      and net.match.ladder.log[2].rung == 6
+      and net.match.ladder.log[2].result == "lost"
+      and net.match.ladder.log[2].seconds == 7,
+      tostring(net.match.ladder.legs) .. " legs, "
+      .. tostring(#net.match.ladder.log) .. " logged")
+
+-- A body promising more legs than it carries is a truncated message, not a
+-- short run. Half a log would draw an evening that stopped where the packet
+-- did, so the whole message is dropped and the last good one stands.
+local before = net.match.ladder.log[2].rung
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
+            message = string.char(14, 4, 24, 2, 3, 0, 5, 0)
+                .. string.char(3)
+                .. u32le(7) .. u32le(3) .. u32le(5) .. u32le(9)
+                .. u32le(7) .. u32le(8) .. string.char(1, 0)
+                .. u32le(19) .. string.char(4) .. leg(1, 1, 1, 0, 5)})
+check("a truncated run log is refused rather than half read",
+      net.match.ladder.log[2] ~= nil
+      and net.match.ladder.log[2].rung == before
+      and #net.match.ladder.log == 2)
 
 local reliable_before, unreliable_before = #wt.sent, #wt.unsent
 check("focus loss can release held controls", net.release_controls())
@@ -352,20 +396,34 @@ check("snapshot sequences and world ticks cross rollover together",
 
 -- Reliable events can pass the datagram carrying the state that depicts them.
 -- They wait for that authoritative tick, then become visible together.
-local remote_kill = string.char(4, 1, 0, 176, 4, 176, 4, 1, 5, 0) .. u32le(5010)
-local my_kill = string.char(4, 1, 3, 176, 4, 176, 4, 1, 5, 0) .. u32le(5010)
-local my_death = string.char(4, 3, 0, 176, 4, 176, 4, 1, 5, 0) .. u32le(5010)
+-- The last byte is the private one: 1 says this pilot helped with that kill,
+-- and the zone sets it on one copy of the message and zeroes every other.
+local remote_kill = string.char(4, 1, 0, 176, 4, 176, 4, 1, 5, 0)
+    .. u32le(5010) .. string.char(0)
+local my_kill = string.char(4, 1, 3, 176, 4, 176, 4, 1, 5, 0)
+    .. u32le(5010) .. string.char(0)
+local my_death = string.char(4, 3, 0, 176, 4, 176, 4, 1, 5, 0)
+    .. u32le(5010) .. string.char(0)
+local my_assist = string.char(4, 2, 0, 176, 4, 176, 4, 2, 5, 0)
+    .. u32le(5010) .. string.char(1)
 local charge = string.char(15, 1, 0)
     .. string.char(0, 1, 0, 0, 0, 2, 0, 0) .. u32le(5010)
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = remote_kill})
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = my_kill})
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = my_death})
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = my_assist})
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = charge})
 check("combat news waits for its snapshot",
       #net.kills == 0 and #net.charge_events == 0)
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = snapshot(3, 5010)})
 check("combat news lands with its authoritative tick",
-      #net.kills == 3 and #net.charge_events == 1)
+      #net.kills == 4 and #net.charge_events == 1)
+-- Whether you helped with one is carried on the kill it belongs to rather
+-- than as news of its own, so the feed has one line to write and not two.
+check("a kill you helped with says so, and the others do not",
+      net.kills[4].assist == true and net.kills[1].assist == false
+      and net.kills[2].assist == false and net.kills[3].assist == false,
+      tostring(net.kills[4].assist))
 -- Every kill in the room, in the order the wire carried them, whoever was in
 -- it. The queue used to hold only the two you were part of, which left the
 -- feed unable to say who was doing the killing while it happened; a melee room
@@ -380,9 +438,10 @@ check("every kill in the room is news, not only yours",
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = remote_kill})
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = my_kill})
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = my_death})
+wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = my_assist})
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE, message = charge})
 check("combat news is idempotent",
-      #net.kills == 3 and #net.charge_events == 1)
+      #net.kills == 4 and #net.charge_events == 1)
 
 -- A pack the core refuses has not happened. It is not counted, and the client
 -- reports that this build cannot read the zone rather than calling a broken

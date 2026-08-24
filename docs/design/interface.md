@@ -88,7 +88,7 @@ Past those, a hue means one thing, one thing per hue, across every screen:
 | pink | `#ff5ea8` | the bomb |
 | violet | `#c27bff`, `#a06bff` | a place, not a player: the burst's rounds, a wormhole |
 | green | `#35e0a0` | a door (the open state is a darker step of the same band) |
-| pale green | `#8dffb0` | what you were paid |
+| pale green | `#8dffb0` | what you were paid, and `#5aa874` a step down from it for a kill you only helped with |
 | gold | `#ffd166` | a charge you carry and spend, and a price you can afford |
 | deep gold | `#ffe08a` | bounty: what a pilot is worth |
 | red | `#ff505a` | you are being hurt, or about to lose something |
@@ -271,24 +271,25 @@ The constants that repeat, from ui.lua:
 | name | value | what it measures |
 |---|---|---|
 | PAD | 14 | the margin instruments keep from the screen edge |
-| COL_W | 248 | the left column's panels: scoreboard, loadout, pilot box |
+| COL_W | 248 | the left column's panels: scoreboard, run log, pilot box |
 | LINE | 18 | one row of a HUD list |
 | RADAR | 168 | the dial's side at rest |
 | GUTTER | 22 | the inset a menu row's type keeps from both of its edges |
 | ROW_PAD | 16 | how far a lit row reaches past its column of type |
 | KEY_H | 26 | a button's height |
 
-The HUD has a fixed geography, and it is the prototype's. Top left: the
-button row (MENU, ROOM, PLAYERS, the on-air or watching chip), then the
-scoreboard or the rooms panel (one at a time, same slot), the loadout under
-it, the pilot box under that. Top right: the LINK bars, then the radar or the
-map (one corner, one instrument), with POS on the dial's other shoulder and
-the feed hanging under it. Bottom left: the corner stack, what your triggers
-do and what you carry, growing upward. Top center: the match score and
-clock, the flag pennants, the round banner. Dead center is reserved for the
-two big statements, DESTROYED and SAFE ZONE, and for the cards and tables a
-player asks for. On a touchscreen the bottom of the screen belongs to the
-thumbs and everything else lifts out of their way.
+The HUD has a fixed geography, and it is the prototype's. Top left: the button
+row (MENU, ROOM, PLAYERS, the on-air or watching chip), then the scoreboard or
+the rooms panel (one at a time, same slot), the run log under the scoreboard
+where a mode keeps one, the pilot box under that. Top right: the LINK bars,
+then the radar or the map (one corner, one instrument), with POS on the dial's
+other shoulder and the feed hanging under it. Bottom left: the corner stack,
+what your triggers do and what you carry, growing upward. Top center: the match
+score and clock, each side's rating beside its name where a side is one pilot,
+the flag pennants, the round banner. Dead center is reserved for the two big
+statements, DESTROYED and SAFE ZONE, and for the cards and tables a player asks
+for. On a touchscreen the bottom of the screen belongs to the thumbs and
+everything else lifts out of their way.
 
 Panels in the left column size themselves to their content, count their rows,
 and measure their columns against the widest thing actually in them, headed
@@ -430,12 +431,12 @@ creeping in from the edges, which never hides the ship shooting you. The
 words for any row are an ask away: rest the pointer and a card names it,
 lists what the greens taught it, and says which key spends it.
 
-Panels appear because they were asked for. The scoreboard and loadout are a
-toggle; the pilot box opens from a scoreboard row and closes with the
-scoreboard; the map replaces the radar in its own corner and the same click
-puts it back. What was not asked for stays off, and what cannot be used is
-not drawn: a scrollbar on a list that fits, a spent charge's row, empty
-charge slots.
+Panels appear because they were asked for. The scoreboard is a toggle, and
+the run log comes up with it; the pilot box opens from a scoreboard row and
+closes with the scoreboard; the map replaces the radar in its own corner and
+the same click puts it back. What was not asked for stays off, and what
+cannot be used is not drawn: a scrollbar on a list that fits, a spent
+charge's row, empty charge slots.
 
 On a phone, the pads carry the weapon marks themselves, so the stack stands
 down to nothing and the one feed line that is about you appears as a short

@@ -559,7 +559,6 @@ fn validate_zone(name: &str, z: &ZoneDef, zdir: &Path) -> Result<(), String> {
             || z.max_ships.unwrap_or(64) != 2
             || z.max_humans_per_team() != 1
             || z.max_bots_per_team() != 1
-            || z.admission != "claimed"
             || z.arena
                 .ladder_first_to
                 .unwrap_or(crate::modes::DEFAULT_LADDER_FIRST_TO)
@@ -567,9 +566,9 @@ fn validate_zone(name: &str, z: &ZoneDef, zdir: &Path) -> Result<(), String> {
             || z.arena.spawn_radius.unwrap_or(0) != 0)
     {
         return Err(format!(
-            "zone {name:?}: Ladder requires admission=\"claimed\", exactly two named teams, \
-             max_teams=2, max_players=1, max_ships=2, both per-team caps at 1, \
-             ladder_first_to=1, and spawn_radius=0"
+            "zone {name:?}: Ladder requires exactly two named teams, max_teams=2, \
+             max_players=1, max_ships=2, both per-team caps at 1, ladder_first_to=1, \
+             and spawn_radius=0"
         ));
     }
     Ok(())
@@ -868,7 +867,7 @@ mod tests {
         write(&d, "duel.vwmap", "map");
         let valid = "mode = \"ladder\"\n\
                      maps = [\"duel.vwmap\"]\n\
-                     admission = \"claimed\"\n\
+                     admission = \"any\"\n\
                      teams = [\"Pilot\", \"Rival\"]\n\
                      max_teams = 2\n\
                      max_players = 1\n\
@@ -881,6 +880,12 @@ mod tests {
                      spawn_radius = 0\n";
         let good: ZoneDef = toml::from_str(valid).unwrap();
         validate_zone("ladder", &good, &d).expect("the exact Ladder shape");
+        // Admission is the operator's call rather than the mode's. A run
+        // belongs to whatever account is flying it, and a guest has one.
+        let shut: ZoneDef =
+            toml::from_str(&valid.replacen("admission = \"any\"", "admission = \"claimed\"", 1))
+                .unwrap();
+        validate_zone("ladder", &shut, &d).expect("a Ladder zone may still want claimed pilots");
 
         for (tag, from, to) in [
             (
@@ -901,7 +906,6 @@ mod tests {
                 "max_bots_per_team = 1",
                 "max_bots_per_team = 2",
             ),
-            ("identity", "admission = \"claimed\"", "admission = \"any\""),
             ("series", "ladder_first_to = 1", "ladder_first_to = 3"),
             ("placement", "spawn_radius = 0", "spawn_radius = 4"),
         ] {
