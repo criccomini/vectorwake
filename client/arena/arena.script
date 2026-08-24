@@ -346,25 +346,10 @@ session.replay_route = session.deep_route.new({
     start = function(state, reply) session.replay(state, reply) end,
 })
 
-local function uri_part(s)
-    return (s or ""):gsub("([^%w%-_%.~])", function(c)
-        return string.format("%%%02X", string.byte(c))
-    end)
-end
-
 local function uri_read(s)
     return (s or ""):gsub("%%(%x%x)", function(h)
         return string.char(tonumber(h, 16))
     end)
-end
-
-function session.room_url(kind, zone, instance, room)
-    if not html5 or not instance or not room then return nil end
-    local route = string.format("#%s/%s/%s/%d", kind, uri_part(zone),
-                                uri_part(instance), room)
-    local ok, base = pcall(html5.run,
-        "window.location.origin + window.location.pathname")
-    return ok and type(base) == "string" and (base .. route) or nil
 end
 
 function session.enter_deep_route(self)
@@ -2091,9 +2076,6 @@ function update(self, dt)
         local hud_me = me
         if watching then hud_me = e end
         if hud_me and sim.ship_private and not sim.ship_private(hud_me) then hud_me = nil end
-        local joined = not self.replay and net.last_join() or nil
-        local invite_url = joined and session.room_url("watch", menu.zone,
-                                                       joined.instance, net.room)
         local artifact = net.match and net.match.artifact or nil
         ui.hud({
             me = hud_me,
@@ -2138,7 +2120,6 @@ function update(self, dt)
             -- runs forever, which is how the HUD decides whether to draw a
             -- clock at all.
             match = net.match,
-            invite_url = invite_url,
             match_url = artifact and
                 ("https://vectorwake.net/matches/" .. artifact) or nil,
             keep_pilot = not account.claimed and account.base ~= "",

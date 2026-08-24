@@ -2993,7 +2993,7 @@ end
 --
 -- `KEY_H` and `KEY_SIZE` are the two of them a caller has to lay out around,
 -- so they live out here with it rather than being repeated at each call.
-local function menu_button(on_air, watch, room, pilots, watchers, invite_url)
+local function menu_button(on_air, watch, room, pilots, watchers)
     -- Two keys, drawn the way the help page draws a key. They were two bare
     -- words over a shared rule, which asked a player to know that a word in
     -- that corner was a thing to press, and the board has taught the same hand
@@ -3025,10 +3025,6 @@ local function menu_button(on_air, watch, room, pilots, watchers, invite_url)
     if watch then
         keys[#keys + 1] = {"TAKE SEAT", "take_seat", false}
     end
-    if invite_url then
-        keys[#keys + 1] = {"INVITE", "invite", false,
-                          "vwshare:" .. invite_url}
-    end
     -- Which copy of this game you are in, and the way to a different one.
     --
     -- Only when the zone is holding more than one, which is the caller's
@@ -3049,11 +3045,6 @@ local function menu_button(on_air, watch, room, pilots, watchers, invite_url)
         local ww = key_w(c[1])
         key_cap(cx, y, ww, c[1], c[3])
         hit(cx, y, ww, KEY_H * F.scale, c[2])
-        if c[4] then
-            M.link_dom = string.format("%.1f,%.1f,%.1f,%.1f,%s",
-                cx / F.density, y / F.density, ww / F.density,
-                (KEY_H * F.scale) / F.density, c[4])
-        end
         cx = cx + ww + KEY_GAP * F.scale
     end
     local players_w = players_cap(cx, y, M.details, humans, bots)
@@ -3935,7 +3926,7 @@ function M.hud(o)
     -- making it again from a number.
     local several = o.rooms and #o.rooms > 1
     menu_button(o.on_air and not o.watch, o.watch, several and o.room or nil,
-                o.pilots, o.watchers, ending and nil or o.invite_url)
+                o.pilots, o.watchers)
     vignette(o.hurt or 0)
     -- After the stack, because it is hung off the rows the stack published,
     -- and after the tint so a hurt frame does not wash out the words.
