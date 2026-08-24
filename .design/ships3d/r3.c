@@ -92,6 +92,34 @@ mat4 mat_trs(v3 t, float yaw_turns, float scale) {
     return r;
 }
 
+/* Ship space is +y forward, +x right, +z up, so bank turns about +y and pitch
+ * about +x. Applied inboard of the heading: a hull banks around the direction
+ * it is pointing, not around the world's. */
+mat4 mat_ship(v3 t, float yaw_turns, float roll, float pitch, float scale) {
+    float a = (float)(-yaw_turns * 2.0 * M_PI);
+    float cz = cosf(a), sz = sinf(a);
+    float cr = cosf(roll), sr = sinf(roll);
+    float cp = cosf(pitch), sp = sinf(pitch);
+    /* Ry(roll) then Rx(pitch) then Rz(heading), column by column. */
+    float m00 = cr, m01 = 0.0f, m02 = sr;
+    float m10 = sr * sp, m11 = cp, m12 = -cr * sp;
+    float m20 = -sr * cp, m21 = sp, m22 = cr * cp;
+    mat4 o = mat_identity();
+    o.m[0] = (cz * m00 - sz * m10) * scale;
+    o.m[1] = (sz * m00 + cz * m10) * scale;
+    o.m[2] = m20 * scale;
+    o.m[4] = (cz * m01 - sz * m11) * scale;
+    o.m[5] = (sz * m01 + cz * m11) * scale;
+    o.m[6] = m21 * scale;
+    o.m[8] = (cz * m02 - sz * m12) * scale;
+    o.m[9] = (sz * m02 + cz * m12) * scale;
+    o.m[10] = m22 * scale;
+    o.m[12] = t.x;
+    o.m[13] = t.y;
+    o.m[14] = t.z;
+    return o;
+}
+
 v3 mat_apply(mat4 a, v3 p) {
     float x = a.m[0] * p.x + a.m[4] * p.y + a.m[8] * p.z + a.m[12];
     float y = a.m[1] * p.x + a.m[5] * p.y + a.m[9] * p.z + a.m[13];

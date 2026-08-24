@@ -81,11 +81,18 @@ drawing; `./mock3d kills <cap>` lists every kill with the frame a few ticks
 after it, because by the time a blast is big enough to notice it is mostly
 over.
 
+Every frame below is straight down. That is where this game is played from and
+nothing about the extra dimension asks to move the camera off it: a perspective
+lens pointed at the floor gives you the sides of everything away from the
+middle of the screen, so a wall reads as a slab you can be behind and a hull
+away from the center shows its flank. The roster page above is the one picture
+here taken from an angle, because a catalog is allowed to be.
+
 A kill on convoy, nine ticks after the bomb:
 
 ![a kill](renders/battle-kill.png)
 
-A Lattice and a Wedge on switchyard, from low enough to see they are solids:
+A Lattice and a Wedge on switchyard, both of them holding a bank:
 
 ![a duel](renders/battle-duel.png)
 
@@ -93,9 +100,47 @@ Four hulls and a fading blast on shoal:
 
 ![a melee](renders/battle-melee.png)
 
-Nearly overhead, which is where the game is actually played from:
+Breakwater, eight in the room:
 
 ![as played](renders/battle-topdown.png)
+
+## Ships lean, and already did
+
+A bank is not new here and is not a proposal. `ship_roll` in
+`client/arena/arena.script` already reads one off the heading and hands it to
+`world.ship`, which has nowhere to put it: a flat drawing has no axis to turn
+about, so it scales the hull's local x by the cosine. A lean drawn as a squash.
+
+So the meshes take that function's numbers to the digit and spend them on a
+rotation instead. Read off the heading rather than off the buttons, because
+buttons are yours alone and everybody's ship should lean into a turn; smoothed
+on about a tenth of a second, because a remote heading arrives in snapshot
+steps and a raw difference is a spike and four zeroes; three radians a second
+of turn earns the whole bank; the whole bank is 0.95 radians, which is 54
+degrees, past which a wing foreshortens faster than the eye reads it as a wing.
+
+![the bank](renders/bank-strip.png)
+
+The same tick, without the bank and with it:
+
+![without](renders/bank-off.png)
+![with](renders/bank-on.png)
+
+`ship_bank()` in `arena3d.c` is that rule, walking the recording's own heading
+history so a frame shows the lean a client watching those ticks would be
+holding.
+
+There is a second attitude in there, off by default, behind `slip`. A hull in
+this game can hold a heading while its momentum carries it sideways, and that
+is the one attitude a turn rate cannot see: the nose is steady, `ship_roll`
+reads zero, and the ship crabs across the screen flat. Leaning it into the
+drift is a guess and is drawn only when asked for, since decision 5 is what
+lets any of this be free, and the way to keep it free is to keep proposing
+attitudes rather than smuggling them in.
+
+Neither one touches the simulation. The core builds a collision box from the
+world-axis bounds of an oriented rectangle at the ship's heading, and a rolled
+hull's box is whatever the core says it is.
 
 ## Running it
 
@@ -107,7 +152,10 @@ make meshes          # write meshes/*.obj
 
 ./mock3d sheet renders/roster.png 1680 880 1.02 0
 ./mock3d hull 4 cipher.png 900 900 0.95 0
-./mock3d battle battle.vwcap 842 kill.png 1400 800 1.05 0
+./mock3d bank 0 strip.png 1680 380 1.42 0
+
+# w h tilt dist turn focus-x focus-y bank slip; tilt 1.5708 is straight down
+./mock3d battle battle.vwcap 842 kill.png 1400 800 1.5708 330 0 1003 -1554 1 0
 ```
 
 The renderer is C99 with zlib for the PNG and nothing else: triangles, a

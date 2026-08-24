@@ -26,7 +26,17 @@ typedef struct {
     shot_cam cam;
     int trail_frames;
     int shadow;
+    /* How much of each attitude to draw. Bank is the client's own rule and
+     * ships at 1; slip is a proposal and ships at 0. Both are here as knobs
+     * because the point of the picture is the comparison. */
+    float bank;
+    float slip;
 } shot_opts;
+
+/* Radians of bank this ship is holding at this frame, worked out the way
+ * arena.script works it out: off the heading, smoothed, clamped. Exposed so a
+ * still can be drawn of one hull at a known lean. */
+float ship_bank(const capture *c, int ship, int frame, float slip_gain);
 
 /* `hulls` is fourteen meshes, a roster per side: the team color is mixed into
  * every fill at build time the way world.lua mixes it at draw time, so a hull

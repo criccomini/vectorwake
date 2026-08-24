@@ -41,6 +41,10 @@ mat4 mat_perspective(float fov_deg, float aspect, float znear, float zfar);
 mat4 mat_ortho(float l, float r, float b, float t, float n, float f);
 mat4 mat_look(v3 eye, v3 at, v3 up);
 mat4 mat_trs(v3 t, float yaw_turns, float scale);
+/* The same, with the two attitudes a hull is allowed to hold: bank about its
+ * own nose-to-tail axis and pitch about its beam. Both are radians and both
+ * are drawing only, per decision 5. */
+mat4 mat_ship(v3 t, float yaw_turns, float roll, float pitch, float scale);
 v3 mat_apply(mat4 a, v3 p);        /* point, w divided out */
 v3 mat_apply_dir(mat4 a, v3 d);    /* direction, no translation */
 

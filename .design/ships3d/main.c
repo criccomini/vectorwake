@@ -206,6 +206,47 @@ static int cmd_one(const char *out, int cls, int width, int height, float tilt,
     return 0;
 }
 
+/* One hull at a row of bank angles, from overhead. The client already banks a
+ * ship this much; what it cannot do is turn it, so it scales the hull's local
+ * x by the cosine instead. The left half of this row is that squash, the right
+ * half is the rotation, and the middle column is where the two agree. */
+static int cmd_bank(const char *out, int cls, int width, int height,
+                    float tilt, int enemy) {
+    static const float ROLL[] = {-0.95f, -0.62f, -0.30f, 0.0f, 0.30f, 0.62f, 0.95f};
+    const int n = (int)(sizeof ROLL / sizeof ROLL[0]);
+    target *t = target_new(width, height, 0);
+    mat4 proj, view, vp;
+    scene_light lit;
+    v3 eye, team = srgb(enemy ? COL_ENEMY : COL_FRIEND, 1.0f);
+    hull3d h;
+    unsigned char *rgb;
+    float focal = (float)height * 0.5f / tanf((float)(26.0 * M_PI / 360.0));
+    float dist = 150.0f;
+    int i;
+
+    hull3d_build(&h, cls, team);
+    hero_light(&lit, team);
+    target_clear(t, srgb(COL_BG, 1.0f));
+    proj = mat_perspective(26.0f, (float)width / (float)height, 1.0f, 4000.0f);
+    eye = vec(0.0f, -dist * cosf(tilt), dist * sinf(tilt));
+    view = mat_look(eye, vec(0, 0, 0),
+                    tilt > 1.52f ? vec(0, 1, 0) : vec(0, 0, 1));
+    vp = mat_mul(proj, view);
+    stars(t, vp, 500, 700.0f, 700.0f);
+    for (i = 0; i < n; i++) {
+        float gx = ((float)i - (float)(n - 1) * 0.5f) * 30.0f;
+        mat4 model = mat_ship(vec(gx, 0, 0), 0.0f, ROLL[i], 0.0f, 1.0f);
+        draw_hull(t, &h, model, vp, eye, &lit, focal);
+        plume(t, &h, model, vp, 0.8f);
+    }
+    rgb = resolve(t, 0.85f, 9.0f, 2.2f);
+    png_write(out, rgb, width, height);
+    free(rgb);
+    hull3d_free(&h);
+    target_free(t);
+    return 0;
+}
+
 static int cmd_obj(const char *dir) {
     int i;
     for (i = 0; i < hull3d_count(); i++) {
@@ -417,6 +458,10 @@ static int cmd_battle(int argc, char **argv) {
     o.cam.fov = 32.0f;
     o.trail_frames = 16;
     o.shadow = 1;
+    /* Bank ships with the client's own rule by default; the slip is a
+     * proposal and stays off unless asked for. */
+    o.bank = argc > 12 ? (float)atof(argv[12]) : 1.0f;
+    o.slip = argc > 13 ? (float)atof(argv[13]) : 0.0f;
     rgb = battle_frame(c, hulls, o);
     png_write(out, rgb, w, hgt);
     free(rgb);
@@ -553,6 +598,11 @@ int main(int argc, char **argv) {
                        argc > 6 ? (float)atof(argv[6]) : 0.95f,
                        argc > 7 ? (float)atof(argv[7]) : 0.0f, 0);
     if (!strcmp(cmd, "obj") && argc > 2) return cmd_obj(argv[2]);
+    if (!strcmp(cmd, "bank") && argc > 3)
+        return cmd_bank(argv[3], atoi(argv[2]), argc > 4 ? atoi(argv[4]) : 1600,
+                        argc > 5 ? atoi(argv[5]) : 400,
+                        argc > 6 ? (float)atof(argv[6]) : 1.4f,
+                        argc > 7 ? atoi(argv[7]) : 0);
     if (!strcmp(cmd, "fit")) return cmd_fit();
     if (!strcmp(cmd, "kills") && argc > 2)
         return cmd_kills(argv[2], argc > 3 ? atoi(argv[3]) : 8);

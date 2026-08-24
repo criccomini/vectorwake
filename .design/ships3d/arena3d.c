@@ -234,6 +234,87 @@ static void build_arena(const capture *c, mesh *m, glow_line **ln, int *lnn,
 
 /* --- the frame ------------------------------------------------------------ */
 
+/* --- attitude -------------------------------------------------------------
+ *
+ * The bank is not new. `ship_roll` in client/arena/arena.script already reads
+ * one off the heading and hands it to `world.ship`, which fakes it by scaling
+ * the hull's local x by its cosine: a lean drawn as a squash, because a flat
+ * drawing has no axis to turn about. The numbers below are that function's,
+ * to the digit, so what changes in three dimensions is only what the number
+ * is spent on.
+ *
+ * Read off the heading rather than off the buttons, because buttons are yours
+ * alone and everybody's ship should lean into a turn. Smoothed on about a
+ * tenth of a second, since a remote heading arrives in snapshot steps and a
+ * raw difference is a spike and four zeroes.
+ *
+ * Purely visual, per decision 5. The core collides the world-axis box of an
+ * oriented rectangle in a plane; a rolled hull's box is whatever the core
+ * says it is, and nothing here is asking it to change.
+ */
+#define BANK_TAU 6.2831853f
+#define BANK_FULL_TURN 3.0f   /* rad/s of turn that earns the whole bank */
+#define BANK_MAX 0.95f        /* 54 degrees, past which a wing stops reading */
+#define BANK_SMOOTH 0.11f
+#define BANK_DT 0.01f         /* the core runs at 100 Hz and a frame is a tick */
+#define BANK_HISTORY 48       /* ticks of run-up, well past the smoothing */
+
+/* The slip is the proposal. A hull in this game can hold a heading while its
+ * momentum carries it sideways, which is the one attitude a turn rate cannot
+ * see: the nose is steady, so `ship_roll` reads zero, and the ship crabs
+ * across the screen flat. This leans it into the drift. */
+#define SLIP_FULL 2.6f        /* px a tick of sideways drift for the whole lean */
+#define SLIP_MAX 0.42f
+
+float ship_bank(const capture *c, int ship, int frame, float slip_gain) {
+    int f0 = frame - BANK_HISTORY;
+    float v = 0.0f, k, roll;
+    int f;
+    if (f0 < 1) f0 = 1;
+    for (f = f0; f <= frame; f++) {
+        int dh;
+        float rate;
+        if (ship >= c->ship_n[f] || ship >= c->ship_n[f - 1]) return 0.0f;
+        dh = (int)c->ships[f][ship].heading - (int)c->ships[f - 1][ship].heading;
+        if (dh > 32768) dh -= 65536;
+        else if (dh < -32768) dh += 65536;
+        /* A jump no rudder reaches inside a tick is a respawn or a seat handed
+         * to somebody new, and neither is a turn. */
+        if (dh > 4096 || dh < -4096) {
+            v = 0.0f;
+            continue;
+        }
+        rate = (float)dh / 65536.0f * BANK_TAU / BANK_DT;
+        v += (rate - v) * (1.0f - expf(-BANK_DT / BANK_SMOOTH));
+    }
+    k = v / BANK_FULL_TURN;
+    if (k > 1.0f) k = 1.0f;
+    else if (k < -1.0f) k = -1.0f;
+    roll = k * BANK_MAX;
+
+    if (slip_gain > 0.0f && frame >= 4 && ship < c->ship_n[frame - 4]) {
+        /* Sideways travel, measured against where the nose points. Positions
+         * are the only velocity a recording carries, and four ticks is enough
+         * to be a drift rather than a jitter. */
+        const cap_ship *now = &c->ships[frame][ship];
+        const cap_ship *was = &c->ships[frame - 4][ship];
+        float a = (float)now->heading / 65536.0f * BANK_TAU;
+        float vx = ((float)now->x - (float)was->x) / 256.0f / 4.0f;
+        float vy = ((float)now->y - (float)was->y) / 256.0f / 4.0f;
+        /* The nose in sim space, where y runs south and zero heading is north,
+         * and the beam ninety degrees clockwise of it. */
+        float rx = cosf(a), ry = sinf(a);
+        float slip = vx * rx + vy * ry;
+        float s = slip / SLIP_FULL;
+        if (s > 1.0f) s = 1.0f;
+        else if (s < -1.0f) s = -1.0f;
+        roll += s * SLIP_MAX * slip_gain;
+    }
+    if (roll > BANK_MAX) roll = BANK_MAX;
+    else if (roll < -BANK_MAX) roll = -BANK_MAX;
+    return roll;
+}
+
 static v3 ship_pos(const cap_ship *s) {
     return vec((float)s->x / 256.0f, -(float)s->y / 256.0f, 0.0f);
 }
@@ -273,7 +354,12 @@ unsigned char *battle_frame(const capture *c, const hull3d *hulls, shot_opts o) 
     eye = add(focus, vec(o.cam.dist * cosf(o.cam.tilt) * sinf(o.cam.turn),
                          -o.cam.dist * cosf(o.cam.tilt) * cosf(o.cam.turn),
                          o.cam.dist * sinf(o.cam.tilt)));
-    view = mat_look(eye, focus, vec(0, 0, 1));
+    /* Straight down, the world's up is the view direction and mat_look has no
+     * side to cross against. Hand it the direction that reads as up on the
+     * screen instead, which is the arena's north. */
+    view = mat_look(eye, focus,
+                    o.cam.tilt > 1.52f ? vec(sinf(o.cam.turn), cosf(o.cam.turn), 0.0f)
+                                       : vec(0, 0, 1));
     vp = mat_mul(proj, view);
 
     memset(&lit, 0, sizeof lit);
@@ -313,7 +399,8 @@ unsigned char *battle_frame(const capture *c, const hull3d *hulls, shot_opts o) 
         const hull3d *h = &hulls[(s->team & 1) * 7 + s->cls % 7];
         mat4 model;
         if (!s->alive) continue;
-        model = mat_trs(ship_pos(s), (float)s->heading / 65536.0f, 1.0f);
+        model = mat_ship(ship_pos(s), (float)s->heading / 65536.0f,
+                         o.bank * ship_bank(c, i, o.frame, o.slip), 0.0f, 1.0f);
         draw_mesh(t, &h->body, model, vp, eye, &lit);
         for (k = 0; k < h->line_n; k++) {
             if (line_n + 1 > line_cap) {
@@ -341,7 +428,8 @@ unsigned char *battle_frame(const capture *c, const hull3d *hulls, shot_opts o) 
             mat4 model;
             int j;
             if (!s->alive || !s->thrust) continue;
-            model = mat_trs(ship_pos(s), (float)s->heading / 65536.0f, 1.0f);
+            model = mat_ship(ship_pos(s), (float)s->heading / 65536.0f,
+                         o.bank * ship_bank(c, i, o.frame, o.slip), 0.0f, 1.0f);
             for (j = 0; j < h->jet_n; j++) {
                 v3 p = mat_apply(model, add(h->jets[j], vec(0, -1.2f, 0)));
                 v3 q = p;
@@ -352,8 +440,10 @@ unsigned char *battle_frame(const capture *c, const hull3d *hulls, shot_opts o) 
                 if (f + 1 <= o.frame && i < c->ship_n[f + 1]
                     && c->ships[f + 1][i].alive) {
                     const cap_ship *nx = &c->ships[f + 1][i];
-                    q = mat_apply(mat_trs(ship_pos(nx),
-                                          (float)nx->heading / 65536.0f, 1.0f),
+                    q = mat_apply(mat_ship(ship_pos(nx),
+                                           (float)nx->heading / 65536.0f,
+                                           o.bank * ship_bank(c, i, f + 1, o.slip),
+                                           0.0f, 1.0f),
                                   add(h->jets[j], vec(0, -1.2f, 0)));
                 }
                 for (step = 0; step < 3; step++) {
