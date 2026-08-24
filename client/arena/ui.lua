@@ -4847,8 +4847,14 @@ local function compact_deploy(a, x, y, w, h)
     end
 
     if a.room and a.row then
-        key_box(x, ky, rmargin, kh, pal.a(pal.FRIEND, 0.10),
-                pal.a(pal.FRIEND, 0.9))
+        -- The key breathes, on the tally's slow swell rather than a blink:
+        -- it is the one press this page exists for, and a still box at the
+        -- foot of the screen reads as a label. Floored well above dark, so
+        -- the trough never looks like a key that stopped working.
+        local breath = 0.5 + 0.5 * math.sin(F.now * 2.6)
+        key_box(x, ky, rmargin, kh,
+                pal.a(pal.FRIEND, 0.06 + 0.12 * breath),
+                pal.a(pal.FRIEND, 0.62 + 0.38 * breath))
         txt("DEPLOY", x + rmargin / 2, ky + kh / 2, 19 * F.scale,
             pal.a(pal.INK, 1), "center")
         hit(x - 6 * F.scale, ky - 6 * F.scale, rmargin + 12 * F.scale,
