@@ -13,14 +13,14 @@ They are drawings of a proposal, not a plan of record.
 ## The proposal
 
 - One measure spans the window, capped near 1040pt, and type scales with it.
-- The page is sectioned: NEXT MATCH opens it with the clock beside a drain
-  bar in the score bar's own language, then SCORE holds the band and both
-  rosters, SAY the comms, and SHARE its one key. Each header sits over a
-  rule, padded equally off the head and the content.
+- The page is sectioned: SCORE holds the band and both rosters, SAY the
+  comms, NEXT MATCH the clock beside a drain bar in the score bar's own
+  language, and SHARE its one key. Each header sits over a rule, padded
+  equally off the head and the content.
 - Wide windows set the rosters abreast; upright phones stack them at full
   width rather than halving the measure between them. A phone held sideways
-  keeps the same sections, SAY and SHARE sharing one row to spend width
-  instead of height.
+  stands SAY's grid beside NEXT MATCH over SHARE, spending width where
+  height is scarce and keeping that reading order.
 
 ## What is here
 

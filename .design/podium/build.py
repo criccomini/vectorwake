@@ -214,9 +214,9 @@ def section(label, inner, style="", label_px=10, gap=12):
             + inner + '</div>')
 
 
-# The section every board opens on: the next-match clock beside its drain, a
-# bar in the score bar's own language running out rather than filling.
-def next_section(label_px, gap, clock_px):
+# The next-match clock beside its drain, a bar in the score bar's own
+# language running out rather than filling. It sits between SAY and SHARE.
+def next_section(label_px, gap, clock_px, style=""):
     return section(
         "Next match",
         f'<div class="row" style="gap:18px">'
@@ -226,7 +226,7 @@ def next_section(label_px, gap, clock_px):
         f'background:rgba(108,122,144,.16)">'
         f'<div style="position:absolute;left:0;top:0;bottom:0;width:24%;'
         f'background:rgba(255,209,102,.55)"></div></div></div>',
-        label_px=label_px, gap=gap)
+        style=style, label_px=label_px, gap=gap)
 
 
 def board(w, h, stars, body):
@@ -257,21 +257,20 @@ def desktop():
         "Say",
         '<div class="row" style="gap:14px">'
         + "".join(chip(p, 46, 11, "flex:1") for p in PHRASES) + '</div>',
-        style="margin-top:26px")
+        style="margin-top:20px")
 
     share = section(
         "Share",
         key("Share match", 48, 12, primary=True),
-        style="margin-top:22px")
+        style="margin-top:20px")
 
     body = ('<div class="col" style="position:absolute;inset:0;'
             'justify-content:center;padding:32px 0">'
             '<div class="col" style="width:1040px;align-self:center">'
-            + next_section(10, 12, 20)
-            + '<div style="height:18px"></div>'
             + headline(42, 16)
             + '<div style="height:20px"></div>'
-            + score + say + share + '</div></div>')
+            + score + say + next_section(10, 12, 20, "margin-top:20px")
+            + share + '</div></div>')
     return board(1440, 810, STARS_DESKTOP, body)
 
 
@@ -301,18 +300,18 @@ def mobile():
         style="margin-top:16px", label_px=9, gap=10)
 
     body = ('<div class="col" style="position:absolute;inset:0;'
-            'padding:44px 16px 20px;justify-content:center">'
-            + next_section(9, 10, 16)
-            + '<div style="height:12px"></div>'
+            'padding:40px 16px 20px;justify-content:center">'
             + headline(24, 10)
             + '<div style="height:14px"></div>'
-            + score + say + share + '</div>')
+            + score + say + next_section(9, 10, 16, "margin-top:16px")
+            + share + '</div>')
     return board(390, 844, STARS_MOBILE, body)
 
 
 # --- phone, on its side: the same sections, spending width -------------------
-# SCORE keeps the band and the rosters abreast; SAY and SHARE share one row,
-# since sideways the height is the scarce edge.
+# SCORE keeps the band and the rosters abreast; then SAY's grid stands
+# beside NEXT MATCH over SHARE, since sideways the height is the scarce
+# edge and the reading order holds.
 def landscape():
     score = section(
         "Score",
@@ -326,24 +325,26 @@ def landscape():
 
     say = section(
         "Say",
-        '<div class="row" style="gap:8px">'
-        + "".join(chip(p, 44, 9, "flex:1") for p in PHRASES) + '</div>',
+        '<div style="display:grid;grid-template-columns:'
+        'repeat(3, minmax(0, 1fr));gap:8px">'
+        + "".join(chip(p, 44, 9) for p in PHRASES) + '</div>',
         style="flex:1.6", label_px=9, gap=8)
 
     share = section(
         "Share",
         key("Share match", 44, 9.5, primary=True),
-        style="flex:1", label_px=9, gap=8)
+        label_px=9, gap=8)
+
+    aside = ('<div class="col" style="flex:1;gap:8px">'
+             + next_section(9, 8, 16) + share + '</div>')
 
     body = ('<div class="col" style="position:absolute;inset:0;'
             'padding:10px 18px;justify-content:center">'
-            + next_section(9, 8, 16)
-            + '<div style="height:8px"></div>'
             + headline(18, 8)
-            + '<div style="height:8px"></div>'
+            + '<div style="height:6px"></div>'
             + score
             + '<div class="row" style="gap:24px;margin-top:10px;'
-            'align-items:flex-start">' + say + share + '</div>'
+            'align-items:flex-start">' + say + aside + '</div>'
             + '</div>')
     return board(844, 390, STARS_LANDSCAPE, body)
 

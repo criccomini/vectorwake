@@ -11,11 +11,11 @@
     { "id": "why", "x": -310, "y": 0, "w": 260,
       "text": "The shipped podium is one card capped at 620pt, sized for a phone and shown at that size on every desktop. Here the ending owns the window: one measure up to 1040pt, type scaled with it, and less than the card carries today, since watch replay and the banked readout are gone." },
     { "id": "spine", "x": -310, "y": 250, "w": 260,
-      "text": "NEXT MATCH opens the page as its own section, the clock beside a drain in the score bar's language. Every header sits over a rule, padded equally off the head and the content, and sharing is the one key, the full measure wide." },
+      "text": "The page reads SCORE, SAY, NEXT MATCH, SHARE. Every header sits over a rule, padded equally off the head and the content; the clock stands beside a drain in the score bar's language, and sharing is one key, the full measure wide." },
     { "id": "upright", "x": 2000, "y": 0, "w": 240,
       "text": "Upright, the sides stack at full width instead of halving the measure, so a name and its figures stop fighting for the same 180 points. Every key is 44pt or taller." },
     { "id": "sideways", "x": 900, "y": 950, "w": 240,
-      "text": "On a phone held sideways the sections hold, SAY and SHARE sharing one row to spend width instead of height." }
+      "text": "On a phone held sideways the sections hold: SAY's grid stands beside NEXT MATCH over SHARE, so the reading order survives the short measure." }
   ],
   "launch": { "view": "canvas" }
 }
