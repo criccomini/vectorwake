@@ -218,8 +218,9 @@ end
 --
 -- The full landing column was taller than an iPhone SE or a short Android
 -- screen. DEPLOY stayed pinned to the bottom and covered the room, hull, and
--- call sign above it. These sizes include the two shortest supported phones,
--- the common 360 and 375 point shapes, and a phone held sideways.
+-- call sign above it. These sizes include the two shortest supported phones
+-- and the common 360 and 375 point shapes. A phone held sideways is wide
+-- enough for the two-column play page and is checked separately below.
 do
     local function landing_view()
         return {
@@ -283,8 +284,7 @@ do
     end
 
     for _, shape in ipairs({{320, 480}, {320, 568}, {360, 640},
-                             {375, 667}, {390, 664}, {390, 844},
-                             {844, 390}}) do
+                             {375, 667}, {390, 664}, {390, 844}}) do
         local landing = draw(landing_view(), shape[1], shape[2], true)
         local deploy = hit_named("stage")
         local apex = baseline(landing, "Apex")
@@ -346,6 +346,25 @@ do
                   table.concat(actions(), ", "))
         end
     end
+
+    -- A phone held sideways clears the 620-point bar and takes the desktop
+    -- shape: the zones list beside the room's readings, and the row under
+    -- the cursor is the deploy control. There is no DEPLOY key, because
+    -- the rows a key would repeat are on screen and pressable.
+    local sideways = draw(landing_view(), 844, 390, true)
+    local said_deploy = false
+    for i = 1, sideways.n do
+        if is(sideways.text[i], "Deploy") then said_deploy = true end
+    end
+    check("sideways draws the zones list, not the deck",
+          has(sideways, "zone1"), table.concat(texts(sideways), " "))
+    check("and its readings", has(sideways, "on the clock")
+              and has(sideways, "the room"),
+          table.concat(texts(sideways), " "))
+    check("and no deploy key", not said_deploy)
+    local row_press = hit_named("stage")
+    check("the zone row takes the press", row_press ~= nil
+              and row_press.value == 1, "no stage target on the row")
 end
 
 -- --- the rail does not move when you go a level in ------------------------
