@@ -746,6 +746,13 @@ local function on_kill(s)
     else pending_kills[#pending_kills + 1] = e end
 end
 
+-- What a finished Ladder life was, in the mode's own words rather than in the
+-- byte it arrives as. Three values, because a single-life rung can also be
+-- drawn: both pilots died on the same tick and the rung is replayed. Named
+-- here for the same reason a rating becomes a tier here, which is that the
+-- wire is where a number stops being a number.
+local LEG_RESULT = {[0] = "lost", [1] = "cleared", [2] = "drawn"}
+
 -- The clock and the score. Replaces whatever was held rather than queueing,
 -- because there is one answer and the newest is it: a message lost to a full
 -- socket queue costs a second of clock and the next one repairs it.
@@ -770,7 +777,7 @@ local function on_match(s)
     end
     local ladder = nil
     if math.floor(flags / 4) % 2 == 1 then
-        if #s < at + 26 then return end
+        if #s < at + 31 then return end
         local status = string.byte(s, at)
         ladder = {
             opponent_ready = status % 2 == 1,
@@ -783,7 +790,26 @@ local function on_match(s)
             active_opponent = u32(string.byte(s, at + 17, at + 20)),
             desired_opponent = u32(string.byte(s, at + 21, at + 24)),
             first_to = u16(string.byte(s, at + 25, at + 26)),
+            -- Every life this run has finished, which is larger than the log
+            -- once a long evening outruns the window the room carries.
+            legs = u32(string.byte(s, at + 27, at + 30)),
+            log = {},
         }
+        local logged = string.byte(s, at + 31)
+        -- A body that promises more legs than it carries is a truncated
+        -- message rather than a short run, and half a log is worse than none:
+        -- the panel would draw an evening that stopped where the packet did.
+        if #s < at + 31 + logged * 11 then return end
+        for k = 1, logged do
+            local o = at + 32 + (k - 1) * 11
+            ladder.log[k] = {
+                rung = u32(string.byte(s, o, o + 3)),
+                result = LEG_RESULT[string.byte(s, o + 4)] or "drawn",
+                kills = u16(string.byte(s, o + 5, o + 6)),
+                deaths = u16(string.byte(s, o + 7, o + 8)),
+                seconds = u16(string.byte(s, o + 9, o + 10)),
+            }
+        end
     end
     M.match = {
         playing = flags % 2 == 1,

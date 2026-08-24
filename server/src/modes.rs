@@ -62,6 +62,10 @@ pub struct MatchState {
     pub score: Vec<u16>,
 }
 
+/// Simulation ticks in one second, which is the unit every clock in here is
+/// counted in and every clock out of here is reported in.
+pub const TICKS_PER_SECOND: u32 = 100;
+
 pub const DEFAULT_LADDER_FIRST_TO: u16 = 1;
 pub const DEFAULT_LADDER_LOSS_DROP: u32 = 2;
 pub const DEFAULT_LADDER_CHECKPOINT_INTERVAL: u32 = 5;
@@ -170,6 +174,73 @@ impl LadderProgression {
     }
 }
 
+/// How one finished life ended, from the climbing pilot's side. The byte is
+/// what rides the wire, so the values are pinned rather than derived from the
+/// declaration order.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LegResult {
+    Lost,
+    Cleared,
+    Drawn,
+}
+
+impl LegResult {
+    pub fn to_byte(self) -> u8 {
+        match self {
+            LegResult::Lost => 0,
+            LegResult::Cleared => 1,
+            LegResult::Drawn => 2,
+        }
+    }
+}
+
+/// One finished life of the run in progress.
+///
+/// A rung is over in a few seconds and a run is an evening of them, so the
+/// thing a climber wants back is not the rung they are on but the shape of how
+/// they got there: which opponents cost them a life, how long each fight ran,
+/// where the run turned around. The room is the only thing that sees all of
+/// that, so it keeps it.
+///
+/// Void lives are not legs. A rival who leaves mid-fight files no result and
+/// changes no progress, and a log that recorded it would be a log of things
+/// that did not count.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LadderLeg {
+    /// The opponent slot fought, zero-based like every other rung here.
+    pub rung: u32,
+    pub result: LegResult,
+    /// Deaths either way. `first_to` is one under this mode, so these are
+    /// almost always one and zero; the mode does not assume it.
+    pub kills: u16,
+    pub deaths: u16,
+    /// How long the life lasted, in whole seconds, rounded the way the clock
+    /// rounds. Sudden death is included, so this can exceed the match timer.
+    pub seconds: u16,
+}
+
+impl Default for LadderLeg {
+    fn default() -> Self {
+        Self {
+            rung: 0,
+            result: LegResult::Lost,
+            kills: 0,
+            deaths: 0,
+            seconds: 0,
+        }
+    }
+}
+
+/// How many finished legs the room carries. The log rides in every clock
+/// packet, so it is a fixed window rather than a growing list: a long evening
+/// is bounded at the most recent legs and the total count says what fell off
+/// the end.
+///
+/// Twelve because that is about what the panel drawing it can hold on a screen
+/// with room to spare, and a window larger than any screen shows is bytes a
+/// second nobody reads.
+pub const LADDER_LOG_LEGS: usize = 12;
+
 /// A structured Ladder snapshot for the room, bot assignment, and future
 /// client message. Scores are always `[human, bot]`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -191,6 +262,13 @@ pub struct LadderState {
     pub opponent_ready: bool,
     /// The result on the podium completed the finite provisional roster.
     pub cleared: bool,
+    /// Finished legs of this run, oldest first, most recent last.
+    pub log: [LadderLeg; LADDER_LOG_LEGS],
+    /// How many of `log` are filled.
+    pub logged: u8,
+    /// Legs this run has finished in total, which is larger than `logged` once
+    /// a run outlives the window.
+    pub legs: u32,
 }
 
 impl ModeCtx<'_> {
@@ -446,7 +524,7 @@ impl Mode for Melee {
             playing: self.playing,
             // Rounded up, so a clock reads 1 for the last second rather than
             // sitting on 0 while there is still a second to play in.
-            seconds_left: self.left.div_ceil(100).min(255) as u8,
+            seconds_left: self.left.div_ceil(TICKS_PER_SECOND).min(255) as u8,
             score: self.score.clone(),
         })
     }
@@ -484,6 +562,14 @@ pub struct Ladder {
     opponent_ready: bool,
     /// A changed slot is not accepted until the old seat has gone away once.
     replacement_vacated: bool,
+    /// Ticks the life on the field has actually been flown. Counted up rather
+    /// than read off `left`, which stops at zero and then stays there for the
+    /// whole of sudden death.
+    elapsed: u32,
+    /// The run so far, oldest first, and how many legs it has really had.
+    log: [LadderLeg; LADDER_LOG_LEGS],
+    logged: usize,
+    legs: u32,
 }
 
 impl Ladder {
@@ -504,12 +590,53 @@ impl Ladder {
             interrupted: false,
             opponent_ready: false,
             replacement_vacated: false,
+            elapsed: 0,
+            log: [LadderLeg::default(); LADDER_LOG_LEGS],
+            logged: 0,
+            legs: 0,
         }
     }
 
+    /// File a finished life. The window keeps the most recent legs, so a run
+    /// long enough to fill it drops its oldest rather than its newest: what a
+    /// climber is looking back at is the stretch they are in.
+    fn log_leg(&mut self, result: LegResult) {
+        let leg = LadderLeg {
+            rung: self.active_opponent_slot,
+            result,
+            kills: self.score[0],
+            deaths: self.score[1],
+            seconds: self.elapsed.div_ceil(TICKS_PER_SECOND).min(u16::MAX as u32) as u16,
+        };
+        self.legs = self.legs.saturating_add(1);
+        if self.logged == LADDER_LOG_LEGS {
+            self.log.rotate_left(1);
+            self.log[LADDER_LOG_LEGS - 1] = leg;
+        } else {
+            self.log[self.logged] = leg;
+            self.logged += 1;
+        }
+    }
+
+    /// Start the run's log over. A run is the unit the log is about, so the
+    /// session that resumes at a checkpoint starts with an empty one rather
+    /// than with the tail of somebody else's evening.
+    fn clear_log(&mut self) {
+        self.log = [LadderLeg::default(); LADDER_LOG_LEGS];
+        self.logged = 0;
+        self.legs = 0;
+    }
+
     fn begin_series(&mut self) {
+        // A cleared roster ends a run, and the next life is the next run's
+        // first. The log survives the podium that reports the clear and is
+        // emptied here, so the card still shows the evening it is about.
+        if self.cleared {
+            self.clear_log();
+        }
         self.playing = true;
         self.left = self.match_ticks;
+        self.elapsed = 0;
         self.score = [0, 0];
         self.active_opponent_slot = self.run.rung();
         self.result = None;
@@ -523,6 +650,11 @@ impl Ladder {
         if !self.playing {
             return;
         }
+        self.log_leg(if human_won {
+            LegResult::Cleared
+        } else {
+            LegResult::Lost
+        });
         self.cleared = if human_won {
             self.run.win()
         } else {
@@ -541,6 +673,7 @@ impl Ladder {
         if !self.playing {
             return;
         }
+        self.log_leg(LegResult::Drawn);
         self.playing = false;
         self.left = self.intermission_ticks;
         self.result = None;
@@ -574,33 +707,28 @@ impl Ladder {
         (humans.next().is_none() && bots.next().is_none()).then_some(pair)
     }
 
+    /// The one line across the middle of the screen, and only what the readout
+    /// beside the clock cannot already say.
+    ///
+    /// It used to read "Ladder rung 5: first to 1, 0 to 0" through every second
+    /// of every life. The rung is in the readout under the clock, the score is
+    /// on either side of the clock, and first-to is a rule of the mode that
+    /// never moves: three facts already on screen, in the largest type on it,
+    /// over the fight they are about. So an ordinary life gets no banner.
+    ///
+    /// What is left is what nothing else says: that the clock has run out and
+    /// the next death settles it, and that the rival went away mid-life.
     fn banner(&self) -> String {
-        if !self.opened {
-            format!(
-                "Waiting for Ladder opponent at rung {}",
-                self.run.rung().saturating_add(1)
-            )
-        } else if self.playing && !self.opponent_ready {
-            format!(
-                "Waiting for Ladder opponent at rung {}",
-                self.active_opponent_slot.saturating_add(1)
-            )
+        if !self.opened || (self.playing && !self.opponent_ready) {
+            // The clock reads dashes and the readout says the room is looking
+            // for a rival. A sentence repeating that is the interface reading
+            // its own label back.
+            String::new()
         } else if self.playing {
             if self.left == 0 {
-                format!(
-                    "Ladder rung {}: sudden death, {} to {}",
-                    self.active_opponent_slot.saturating_add(1),
-                    self.score[0],
-                    self.score[1]
-                )
+                "Sudden death".to_string()
             } else {
-                format!(
-                    "Ladder rung {}: first to {}, {} to {}",
-                    self.active_opponent_slot.saturating_add(1),
-                    self.rules.first_to,
-                    self.score[0],
-                    self.score[1]
-                )
+                String::new()
             }
         } else if self.interrupted {
             format!(
@@ -653,6 +781,7 @@ impl Mode for Ladder {
                 self.interrupt_series(ctx);
             } else if opponent_ready {
                 self.left = self.left.saturating_sub(1);
+                self.elapsed = self.elapsed.saturating_add(1);
                 if self.left == 0 && self.score[0] != self.score[1] {
                     self.finish_series(self.score[0] > self.score[1], ctx);
                 }
@@ -729,7 +858,7 @@ impl Mode for Ladder {
     fn match_state(&self) -> Option<MatchState> {
         Some(MatchState {
             playing: self.playing,
-            seconds_left: self.left.div_ceil(100).min(255) as u8,
+            seconds_left: self.left.div_ceil(TICKS_PER_SECOND).min(255) as u8,
             score: self.score.to_vec(),
         })
     }
@@ -753,11 +882,16 @@ impl Mode for Ladder {
             desired_opponent_slot: self.run.rung(),
             opponent_ready: self.opponent_ready,
             cleared: self.cleared,
+            log: self.log,
+            logged: self.logged.min(u8::MAX as usize) as u8,
+            legs: self.legs,
         })
     }
 
     fn first_human(&mut self) {
         self.run = LadderProgression::new(self.rules);
+        self.clear_log();
+        self.elapsed = 0;
         self.playing = false;
         self.left = self.match_ticks;
         self.score = [0, 0];
@@ -772,6 +906,8 @@ impl Mode for Ladder {
 
     fn restore_ladder(&mut self, checkpoint: u32, best: u32) -> bool {
         self.run = LadderProgression::restore(self.rules, checkpoint, 0, checkpoint, best);
+        self.clear_log();
+        self.elapsed = 0;
         self.playing = false;
         self.left = self.match_ticks;
         self.score = [0, 0];
@@ -1240,6 +1376,168 @@ mod ladder_tests {
         assert_eq!(state.score, [0, 0]);
         assert_eq!(state.active_opponent_slot, 1);
         assert_eq!(state.desired_opponent_slot, 1);
+    }
+
+    /// One life from the whistle to its deciding death, flown for `ticks`.
+    ///
+    /// The rival's seat is emptied on the way in, because the room refuses to
+    /// open the next rung until it has watched the last one's bot leave. That
+    /// is the director's swap, and a run of lives has to include it.
+    fn one_life(
+        ladder: &mut Ladder,
+        world: &mut World,
+        seats: &[(u8, bool)],
+        ticks: u32,
+        won: bool,
+    ) {
+        let human_only = [(3, false)];
+        for _ in 0..4 {
+            ladder.tick(&mut ctx(world, &human_only));
+        }
+        for _ in 0..4 {
+            if ladder.ladder_state().unwrap().playing {
+                break;
+            }
+            ladder.tick(&mut ctx(world, seats));
+        }
+        assert!(
+            ladder.ladder_state().unwrap().playing,
+            "the replacement rival should have opened a life"
+        );
+        for _ in 0..ticks {
+            ladder.tick(&mut ctx(world, seats));
+        }
+        let (victim, killer) = if won { (9, 3) } else { (3, 9) };
+        ladder.on_death(&mut ctx(world, seats), victim, killer);
+    }
+
+    #[test]
+    fn every_finished_life_lands_in_the_run_log() {
+        let seats = [(3, false), (9, true)];
+        let mut world = World::new(7);
+        let mut ladder = Ladder::new(LadderRules::default(), 100_000, 2);
+
+        one_life(&mut ladder, &mut world, &seats, 250, true);
+        one_life(&mut ladder, &mut world, &seats, 1_050, false);
+        let state = ladder.ladder_state().unwrap();
+        assert_eq!(state.legs, 2);
+        assert_eq!(state.logged, 2);
+
+        let won = state.log[0];
+        assert_eq!(won.rung, 0, "the first rung, zero-based like the rest");
+        assert_eq!(won.result, LegResult::Cleared);
+        assert_eq!(won.kills, 1);
+        assert_eq!(won.deaths, 0);
+        assert_eq!(won.seconds, 3, "250 ticks is two and a half seconds of it");
+
+        let lost = state.log[1];
+        assert_eq!(lost.rung, 1, "and the rung the win moved the run to");
+        assert_eq!(lost.result, LegResult::Lost);
+        assert_eq!(lost.kills, 0);
+        assert_eq!(lost.deaths, 1);
+        assert_eq!(lost.seconds, 11, "and a life is rounded up, like the clock");
+    }
+
+    /// A rival who leaves mid-life voids it. Nothing is filed, nothing is
+    /// paid, and nothing is logged: a log of lives that did not count would
+    /// make the run read as longer and worse than it was.
+    #[test]
+    fn a_void_life_is_not_a_leg() {
+        let seats = [(3, false), (9, true)];
+        let human_only = [(3, false)];
+        let mut world = World::new(7);
+        let mut ladder = Ladder::new(LadderRules::default(), 100_000, 2);
+
+        ladder.tick(&mut ctx(&mut world, &seats));
+        for _ in 0..400 {
+            ladder.tick(&mut ctx(&mut world, &seats));
+        }
+        ladder.tick(&mut ctx(&mut world, &human_only));
+        let state = ladder.ladder_state().unwrap();
+        assert_eq!(state.legs, 0);
+        assert_eq!(state.logged, 0);
+    }
+
+    /// A draw is a real result at this table: both pilots died on the same
+    /// tick, the rung is replayed, and the log says it happened.
+    #[test]
+    fn a_double_death_logs_a_drawn_leg() {
+        let seats = [(3, false), (9, true)];
+        let mut world = World::new(7);
+        let mut ladder = Ladder::new(LadderRules::default(), 100_000, 2);
+        ladder.tick(&mut ctx(&mut world, &seats));
+        ladder.on_deaths(&mut ctx(&mut world, &seats), &[(3, 9), (9, 3)]);
+        let state = ladder.ladder_state().unwrap();
+        assert_eq!(state.logged, 1);
+        assert_eq!(state.log[0].result, LegResult::Drawn);
+        assert_eq!(state.log[0].kills, 1);
+        assert_eq!(state.log[0].deaths, 1);
+        assert_eq!(state.rung, 0, "a draw moves nothing");
+    }
+
+    /// An evening longer than the window keeps its most recent legs, and the
+    /// total says how much fell off the front.
+    #[test]
+    fn a_long_run_keeps_its_newest_legs() {
+        let seats = [(3, false), (9, true)];
+        let mut world = World::new(7);
+        let mut ladder = Ladder::new(LadderRules::default(), 100_000, 2);
+        for _ in 0..LADDER_LOG_LEGS + 3 {
+            one_life(&mut ladder, &mut world, &seats, 100, false);
+        }
+        let state = ladder.ladder_state().unwrap();
+        assert_eq!(state.legs, LADDER_LOG_LEGS as u32 + 3);
+        assert_eq!(state.logged, LADDER_LOG_LEGS as u8);
+        assert!(
+            state.log.iter().all(|leg| leg.result == LegResult::Lost),
+            "every leg in the window is one that was really flown"
+        );
+    }
+
+    /// A run is what the log is about. Clearing the roster ends one, and the
+    /// first life of the next starts the log over rather than continuing an
+    /// evening that already finished.
+    #[test]
+    fn a_cleared_roster_starts_the_next_run_with_an_empty_log() {
+        let seats = [(3, false), (9, true)];
+        let mut world = World::new(7);
+        let mut ladder = Ladder::new(LadderRules::default(), 100_000, 2);
+        for _ in 0..pilots::PROVISIONAL_LADDER_RUNG_COUNT {
+            one_life(&mut ladder, &mut world, &seats, 100, true);
+        }
+        assert!(
+            ladder.ladder_state().unwrap().cleared,
+            "the finite roster is finished"
+        );
+        assert_eq!(
+            ladder.ladder_state().unwrap().logged,
+            pilots::PROVISIONAL_LADDER_RUNG_COUNT as u8,
+            "and the card that reports it still has the whole run"
+        );
+
+        one_life(&mut ladder, &mut world, &seats, 100, true);
+        let state = ladder.ladder_state().unwrap();
+        assert_eq!(state.legs, 1, "the next run counts from its own first life");
+        assert_eq!(state.logged, 1);
+    }
+
+    /// A new session resumes at the saved checkpoint with a streak of zero,
+    /// and with nobody else's evening behind it.
+    #[test]
+    fn restoring_progress_starts_a_fresh_log() {
+        let seats = [(3, false), (9, true)];
+        let mut world = World::new(7);
+        let mut ladder = Ladder::new(LadderRules::default(), 100_000, 2);
+        one_life(&mut ladder, &mut world, &seats, 100, true);
+        assert_eq!(ladder.ladder_state().unwrap().logged, 1);
+
+        assert!(ladder.restore_ladder(0, 3));
+        let state = ladder.ladder_state().unwrap();
+        assert_eq!(state.legs, 0);
+        assert_eq!(state.logged, 0);
+
+        ladder.first_human();
+        assert_eq!(ladder.ladder_state().unwrap().logged, 0);
     }
 
     #[test]

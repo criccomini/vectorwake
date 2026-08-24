@@ -1963,6 +1963,115 @@ local function scores(me, pilots, watchers, viewer_name)
     return top_y() + h
 end
 
+-- What a finished leg was, as the row says it and in the color it says it.
+--
+-- "won" rather than the mode's "cleared", because a row in a list of fights is
+-- read as a result and clearing is what the rung was, not what you did.
+local LEG_WORD = {
+    lost = {"lost", pal.ENEMY},
+    cleared = {"won", pal.FRIEND},
+    drawn = {"drew", pal.DIM},
+}
+
+-- The run so far, under the roster, for the one game that is a run.
+--
+-- Ladder is an evening of ten-second fights and the only part of it the screen
+-- keeps is the rung you are standing on. This is the rest of it: which
+-- opponents you took, which ones took you, and how long each fight lasted. The
+-- room is the only thing that sees a whole run, so the room is where it comes
+-- from; this draws what arrived.
+--
+-- Behind the scoreboard's own toggle, because it answers the same kind of
+-- question and a player who opened one wants the other.
+--
+-- Newest first. The room sends a window rather than a whole evening and this
+-- draws as much of that window as the column has room for, so a long run loses
+-- one end of itself either way. The end worth keeping is the one you just flew.
+local function run_log(o, top)
+    if not M.details then return top end
+    local ladder = o.match and o.match.ladder
+    local log = ladder and ladder.log
+    if not log or #log == 0 then return top end
+
+    local small = (FONT - 3) * F.scale
+    local num = (FONT - 2) * F.scale
+    local x = F.safe_l + PAD * F.scale
+    local w = COL_W * F.scale
+    local head = 24 * F.scale
+    local y0 = top + 8 * F.scale
+    -- However many legs fit above the loadout this panel pushes down. Two
+    -- thirds of the screen is the ceiling: the loadout is 60 points under
+    -- whatever this returns, and the corner stack grows up from the bottom
+    -- left into the same column. A phone gets fewer rows rather than a panel
+    -- running off the bottom, and the rows it drops are the oldest.
+    local room = math.floor((F.h * 0.66 - y0 - head) / (LINE * F.scale))
+    local shown = math.min(#log, math.max(0, room))
+    if shown == 0 then return top end
+    local h = head + shown * LINE * F.scale + 6 * F.scale
+
+    rect(x, y0, w, h, pal.a(pal.BG, 0.62))
+    vrule(x, y0, h, pal.a(pal.RADAR_TILE, 0.7))
+
+    -- Right-aligned off the panel's own edge, each column as wide as the
+    -- widest thing in it, which is the rule the roster above follows and the
+    -- reason a five-digit score there does not eat the names.
+    local GAP = 7 * F.scale
+    local function col_w(label, of)
+        local wide = math.max(text_w(label, small), 16 * F.scale)
+        for k = 1, shown do
+            wide = math.max(wide, text_w(of(log[#log - k + 1]), num))
+        end
+        return wide
+    end
+    local function scored(leg)
+        return string.format("%d-%d", leg.kills or 0, leg.deaths or 0)
+    end
+    local function clocked(leg)
+        local secs = leg.seconds or 0
+        return string.format("%d:%02d", math.floor(secs / 60), secs % 60)
+    end
+    local tw = col_w("time", clocked)
+    local sw = col_w("score", scored)
+    local tx = x + w - 12 * F.scale
+    local sx = tx - tw - GAP
+    local wx = sx - sw - GAP
+    local rung_x = x + 12 * F.scale
+
+    -- How many fights the run has cost, which is the part of the list that
+    -- scrolled off the top of the window the room keeps. A count rather than a
+    -- promise: six rows and "run: 19 fights" says plainly that this is the end
+    -- of a longer evening.
+    -- Three headings for four columns. The result column goes without: its
+    -- rows read "won", "lost" and "drew", which is already the label, and a
+    -- word over them saying "result" is the interface reading its own label
+    -- back.
+    local title = string.format("run: %d fights", ladder.legs or #log)
+    txt(title, rung_x, y0 + 14 * F.scale, small, pal.a(pal.DIM, 0.7))
+    txt("score", sx, y0 + 14 * F.scale, small, pal.a(pal.DIM, 0.7), "right")
+    txt("time", tx, y0 + 14 * F.scale, small, pal.a(pal.DIM, 0.7), "right")
+    ticks(rung_x, y0 + 20 * F.scale, w - 24 * F.scale,
+          pal.a(pal.RADAR_TILE, 0.35), 14 * F.scale)
+
+    local y = y0 + head
+    for k = 1, shown do
+        local leg = log[#log - k + 1]
+        local cy = y + LINE * F.scale / 2
+        local said = LEG_WORD[leg.result] or LEG_WORD.drawn
+        txt(string.format("rung %d", (leg.rung or 0) + 1), rung_x, cy, num,
+            pal.a(pal.INK, 0.85))
+        txt(said[1], wx, cy, num, pal.a(said[2], 0.9), "right")
+        txt(scored(leg), sx, cy, num, pal.a(pal.INK, 0.8), "right")
+        txt(clocked(leg), tx, cy, num, pal.a(pal.INK, 0.8), "right")
+        y = y + LINE * F.scale
+    end
+
+    -- A backdrop, the way the roster's own is one: nothing in here is a
+    -- control, and a press landing on the arena behind a solid panel is the
+    -- kind of thing that shoots a wall.
+    hit(x, y0, w, h, "run_log", nil, nil, -1)
+    return y0 + h
+end
+
 -- The notification feed: kills, arrivals, departures and flags. Newest first.
 --
 -- Bare. No panel: this is the one thing on screen that is already a list of
@@ -3370,7 +3479,35 @@ end
 -- Drawn under the menu as well, unlike the two big centered lines below,
 -- because the menu is a scrim rather than a curtain and "how are you doing in
 -- the thing you are in" is exactly what a player opening it wants to keep.
-local function match_clock(m, names, alone)
+-- The one pilot on a side, for a game that has one to a side.
+--
+-- Ladder is that game: one person, one house rival, and the whole question a
+-- climber has about the rung in front of them is who they are fighting. The
+-- roster already carries every seat's rating and how many rated games are
+-- behind it, so this is a lookup rather than anything new on the wire.
+local function side_seat(o, team)
+    for i = 0, sim.ship_count() - 1 do
+        local p = o.pilots and o.pilots[i]
+        if (p or seat_here(i)) and seat_team(i, p) == team then
+            return i, p
+        end
+    end
+end
+
+-- A rating as the corner stack would say it, or nil where there is nothing
+-- honest to say. Still placing draws dim: ten games in it is a number that has
+-- not settled, and reading it as firm is reading it wrong. The same rule the
+-- pilot card follows, because it is the same number.
+local function rating_line(o, team)
+    local i, p = side_seat(o, team)
+    if i == nil then return end
+    local score = o.ratings and o.ratings[i]
+    if not score then return end
+    local placing = (p and p.tier) == "placing"
+    return string.format("%d", math.floor(score + 0.5)), placing
+end
+
+local function match_clock(o, m, names, alone)
     if not m then return end
     local left = m.left or 0
     local clock = ladder_waiting(m) and "--:--"
@@ -3382,13 +3519,21 @@ local function match_clock(m, names, alone)
     -- The middle first, because everything else is placed off it.
     local dim = m.playing and 1 or 0.55
     txt(clock, F.w / 2, y, big, pal.a(pal.INK, 0.95 * dim), "center")
+    -- Where the run is, under the clock, and only the parts of it that have
+    -- happened. "RUNG 5 STREAK 4 FLOOR 1" was three labeled numbers all match,
+    -- two of which say nothing until they move: a streak of none is not a
+    -- streak, and floor one is the bottom of the ladder, which is where a run
+    -- starts and cannot fall below. Every run opened reading STREAK 0 FLOOR 1
+    -- and taught the eye to skip the line the numbers eventually appear on.
     if m.ladder and not match_ended(m) then
         local ladder = m.ladder
-        local progress = string.format(
-            "RUNG %d  STREAK %d  FLOOR %d",
-            (ladder.rung or 0) + 1,
-            ladder.streak or 0,
-            (ladder.checkpoint or 0) + 1)
+        local progress = string.format("RUNG %d", (ladder.rung or 0) + 1)
+        if (ladder.streak or 0) > 0 then
+            progress = progress .. string.format("  STREAK %d", ladder.streak)
+        end
+        if (ladder.checkpoint or 0) > 0 then
+            progress = progress .. string.format("  FLOOR %d", ladder.checkpoint + 1)
+        end
         if ladder_waiting(m) then
             progress = progress .. "  FINDING RIVAL"
         end
@@ -3443,6 +3588,20 @@ local function match_clock(m, names, alone)
         end
         if nm ~= "" then
             txt(nm, at, y + 2 * F.scale, small, pal.a(col, 0.85 * dim), align)
+        end
+        -- And what that side is rated, under its name.
+        --
+        -- Only where one pilot is one side, which is Ladder and nothing else:
+        -- a number under "VANTAGE" in a four a side match would be one of the
+        -- four pilots' ratings wearing the team's name. Under the name rather
+        -- than on a line of its own, because the name is already the label for
+        -- "who that is" and a rating is the rest of that sentence.
+        if m.ladder then
+            local score, placing = rating_line(o, side.team)
+            if score then
+                txt(score, at, y + 2 * F.scale + small * 1.15, small - 2 * F.scale,
+                    pal.a(placing and pal.DIM or col, 0.8 * dim), align)
+            end
         end
     end
 end
@@ -3881,6 +4040,9 @@ function M.hud(o)
     local top = rooms_panel(o.rooms, o.room)
     if top == 0 then
         top = scores(me, o.pilots, o.watchers, o.viewer_name)
+        -- And under the roster, for a mode whose roster is two rows and whose
+        -- real scoreboard is the run behind them.
+        top = run_log(o, top)
     end
     -- Names hanging off ships, but not under the menu. Glyphs come from the
     -- gui and the gui draws over every mesh, so nothing the menu lays down
@@ -3955,7 +4117,7 @@ function M.hud(o)
     if o.menu_open then
         refresh_players(o.pilots, o.watchers, nil, o.viewer_name)
     end
-    match_clock(o.match, o.side_names, o.menu_open)
+    match_clock(o, o.match, o.side_names, o.menu_open)
     -- The two big centered lines are the only interface that sits where the
     -- menu does. The panels can share the screen with it; these cannot.
     if o.menu_open then return end

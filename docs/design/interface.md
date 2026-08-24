@@ -280,15 +280,17 @@ The constants that repeat, from ui.lua:
 
 The HUD has a fixed geography, and it is the prototype's. Top left: the
 button row (MENU, ROOM, PLAYERS, the on-air or watching chip), then the
-scoreboard or the rooms panel (one at a time, same slot), the loadout under
-it, the pilot box under that. Top right: the LINK bars, then the radar or the
-map (one corner, one instrument), with POS on the dial's other shoulder and
-the feed hanging under it. Bottom left: the corner stack, what your triggers
-do and what you carry, growing upward. Top center: the match score and
-clock, the flag pennants, the round banner. Dead center is reserved for the
-two big statements, DESTROYED and SAFE ZONE, and for the cards and tables a
-player asks for. On a touchscreen the bottom of the screen belongs to the
-thumbs and everything else lifts out of their way.
+scoreboard or the rooms panel (one at a time, same slot), the run log under
+the scoreboard where a mode keeps one, the loadout under that, the pilot box
+under that. Top right: the LINK bars, then the radar or the map (one corner,
+one instrument), with POS on the dial's other shoulder and the feed hanging
+under it. Bottom left: the corner stack, what your triggers do and what you
+carry, growing upward. Top center: the match score and clock, each side's
+rating under its name where a side is one pilot, the flag pennants, the round
+banner. Dead center is reserved for the two big statements, DESTROYED and SAFE
+ZONE, and for the cards and tables a player asks for. On a touchscreen the
+bottom of the screen belongs to the thumbs and everything else lifts out of
+their way.
 
 Panels in the left column size themselves to their content, count their rows,
 and measure their columns against the widest thing actually in them, headed

@@ -2924,7 +2924,10 @@ function on_input(self, action_id, action)
             end
             -- The list itself swallows the click so a tap meant for a
             -- pilot's row does not fall through to whatever is behind it.
-            if r.action == "scores" then return true end
+            -- The run log under it is the same kind of surface: nothing in it
+            -- is a control, and a press that fell through a solid panel would
+            -- fire into a wall.
+            if r.action == "scores" or r.action == "run_log" then return true end
             if not menu.open then return false end
             -- A press anywhere but the filter box lets go of it, which is
             -- what a caret does everywhere else. Before the branches

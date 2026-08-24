@@ -255,16 +255,22 @@ pub(crate) const S2C_ONAIR: u8 = 13;
 /// optional artifact id as u64, optional Ladder body]`.
 ///
 /// Flag bit 0 says the match is playing, bit 1 says an artifact follows the
-/// scores, and bit 2 says the 27-byte Ladder body follows that. The Ladder body
-/// is `[status, rung, streak, checkpoint, best, active opponent, desired
-/// opponent, first-to]`. Status bit 0 says the requested rival is seated, bit
-/// 1 says the finite roster was cleared, and bit 2 says the room is waiting for
-/// a rival rather than counting down. The six progression fields are u32 and
-/// first-to is u16.
+/// scores, and bit 2 says the Ladder body follows that. The Ladder body is
+/// `[status, rung, streak, checkpoint, best, active opponent, desired
+/// opponent, first-to, legs, logged, log[logged]]`. Status bit 0 says the
+/// requested rival is seated, bit 1 says the finite roster was cleared, and bit
+/// 2 says the room is waiting for a rival rather than counting down. The six
+/// progression fields are u32 and first-to is u16.
 ///
-/// One packet owns the clock, result artifact, and Ladder transition. Queue
-/// pressure can delay the newest answer, but it cannot combine halves from two
-/// different states.
+/// `legs` is a u32 count of every life this run has finished and `logged` is a
+/// byte saying how many of them the window still holds, oldest first. Each of
+/// those is eleven bytes: `[rung as u32, result, kills as u16, deaths as u16,
+/// seconds as u16]`, where result is 0 lost, 1 cleared, 2 drawn. So the body is
+/// 32 bytes plus eleven a leg, and a full window of 12 makes it 164.
+///
+/// One packet owns the clock, result artifact, Ladder transition, and the run
+/// log. Queue pressure can delay the newest answer, but it cannot combine
+/// halves from two different states.
 ///
 /// Sent at a join, at every whistle, and whenever either number moves, so a
 /// three minute match costs about two hundred of these.

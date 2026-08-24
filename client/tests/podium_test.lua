@@ -249,10 +249,15 @@ frame({match = {playing = false, left = 180, score = {[0] = 0, [1] = 0},
                           opponent_ready = false, waiting = true}},
        side_names = NAMES, side = 0})
 check("waiting for the first rival is not a loss podium",
-      said("RUNG 1  STREAK 0  FLOOR 1  FINDING RIVAL") ~= nil
+      said("RUNG 1  FINDING RIVAL") ~= nil
       and said("--:--") ~= nil
       and said("Pylon") == nil and said("Caisson") == nil
       and said("back to rung 1") == nil,
+      table.concat(words(), " | "))
+-- A streak of none is not a streak and floor one is the ground a run starts
+-- on. Every run opened saying both, which taught the eye to skip the line.
+check("the opening rung says only the rung",
+      said("STREAK") == nil and said("FLOOR") == nil,
       table.concat(words(), " | "))
 
 frame({match = {playing = false, left = 0, artifact = 1,
@@ -262,9 +267,11 @@ frame({match = {playing = false, left = 0, artifact = 1,
                           opponent_ready = true, waiting = true}},
        side_names = NAMES, side = 0})
 check("an overdue old rival becomes a waiting state",
-      said("RUNG 2  STREAK 1  FLOOR 1  FINDING RIVAL") ~= nil
+      said("RUNG 2  STREAK 1  FINDING RIVAL") ~= nil
       and said("--:--") ~= nil and said("rung 1 cleared") == nil,
       table.concat(words(), " | "))
+check("a streak that exists is said, a floor still at the ground is not",
+      said("FLOOR") == nil, table.concat(words(), " | "))
 
 frame({match = {playing = false, left = 8, artifact = 1,
                 score = {[0] = 1, [1] = 0},
