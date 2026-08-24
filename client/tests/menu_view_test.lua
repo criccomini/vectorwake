@@ -219,8 +219,9 @@ end
 -- The full landing column was taller than an iPhone SE or a short Android
 -- screen. DEPLOY stayed pinned to the bottom and covered the room, hull, and
 -- call sign above it. These sizes include the two shortest supported phones
--- and the common 360 and 375 point shapes. A phone held sideways is wide
--- enough for the two-column play page and is checked separately below.
+-- and the common 360 and 375 point shapes. A phone held sideways clears the
+-- 620-point bar and takes the wide layout, which is the same deck in a
+-- column, and it is checked separately below.
 do
     local function landing_view()
         return {
@@ -283,6 +284,22 @@ do
         return best
     end
 
+    -- Each band holds its own figures. The clock is sized off the band it
+    -- stands in rather than set at a constant, and on a short screen a flat
+    -- 28 ran it out of the bottom of that band into the label under it.
+    local function bands_hold(landing, name)
+        local clock = text_named(landing, "1:12")
+        local room = text_named(landing, "The room")
+        local clock_y = clock and (H - clock.y) or nil
+        local room_y = room and (H - room.y) or nil
+        check(name .. " keeps the clock clear of the room's label",
+              clock_y and room_y
+                  and clock_y + clock.px * 0.5 <= room_y - room.px * 0.5,
+              string.format("clock %.0f at %.0f, label %.0f at %.0f",
+                            clock and clock.px or -1, clock_y or -1,
+                            room and room.px or -1, room_y or -1))
+    end
+
     for _, shape in ipairs({{320, 480}, {320, 568}, {360, 640},
                              {375, 667}, {390, 664}, {390, 844}}) do
         local landing = draw(landing_view(), shape[1], shape[2], true)
@@ -318,6 +335,7 @@ do
         check(string.format("%dx%d keeps DEPLOY above the tab rail",
                             shape[1], shape[2]), not crosses_rail,
               crosses_rail and "the hit boxes overlap" or nil)
+        bands_hold(landing, string.format("%dx%d", shape[1], shape[2]))
         if shape[1] == 390 and shape[2] == 844 then
             local note = baseline(landing,
                 "Everybody against everybody until the whistle")
@@ -347,24 +365,25 @@ do
         end
     end
 
-    -- A phone held sideways clears the 620-point bar and takes the desktop
-    -- shape: the zones list beside the room's readings, and the row under
-    -- the cursor is the deploy control. There is no DEPLOY key, because
-    -- the rows a key would repeat are on screen and pressable.
+    -- Held sideways the window is wide, and a wide window draws the deck in
+    -- a column rather than across the glass. The zones list is not on either
+    -- shape: the deck's own carousel is the zone picker, and the key under
+    -- the readings is the press.
     local sideways = draw(landing_view(), 844, 390, true)
     local said_deploy = false
     for i = 1, sideways.n do
         if is(sideways.text[i], "Deploy") then said_deploy = true end
     end
-    check("sideways draws the zones list, not the deck",
-          has(sideways, "zone1"), table.concat(texts(sideways), " "))
+    check("sideways draws the deck, not the zones list",
+          not has(sideways, "zone1"), table.concat(texts(sideways), " "))
     check("and its readings", has(sideways, "on the clock")
               and has(sideways, "the room"),
           table.concat(texts(sideways), " "))
-    check("and no deploy key", not said_deploy)
+    check("and the key that presses them", said_deploy)
+    bands_hold(sideways, "sideways")
     local row_press = hit_named("stage")
-    check("the zone row takes the press", row_press ~= nil
-              and row_press.value == 1, "no stage target on the row")
+    check("the deploy key takes the press", row_press ~= nil
+              and row_press.value == 1, "no stage target on the key")
 end
 
 -- --- the rail does not move when you go a level in ------------------------

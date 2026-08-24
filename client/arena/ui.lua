@@ -4427,11 +4427,20 @@ local function thumb(cx, cy, cls, col, scale, turn, detail)
     if h.canopy then trace(h.canopy, 1.0 * F.scale, pal.a(col, 0.55)) end
 end
 
--- The landing in the short window a phone or a low desktop gives it. The
--- full column spends height on sentences and a drawn seat strip. Below six
--- hundred points those marks run into the key pinned at its foot, so this
--- version keeps the same readings in three compact bands: the clock, the
--- room, and the hull that will enter it.
+-- The column the landing is drawn in, in points. It is a tall phone's own
+-- stage, and it is a constant because the deck is what every screen draws:
+-- a window with more than this to give keeps the rest for the arena behind
+-- rather than running three short facts out to its edges.
+local DECK = {w = 386, h = 620}
+
+-- The landing: which game, what it is, the room a press would drop you in,
+-- and the ship you would arrive in, over the key that presses it.
+--
+-- Three compact bands rather than sentences and a drawn seat strip. The
+-- column that spent its height on those was taller than a short phone, so
+-- the marks ran into the key pinned at its foot. The bands fit the shortest
+-- screen there is, and they are what the tall ones draw as well: a landing
+-- that reads the same everywhere is one screen to learn instead of two.
 local function compact_deploy(a, x, y, w, h)
     local rmargin = w - 24 * F.scale
     vrule(x - 18 * F.scale, y + 6 * F.scale, h - 12 * F.scale,
@@ -4505,14 +4514,22 @@ local function compact_deploy(a, x, y, w, h)
             lbl("the score", x + rmargin, cy + 8 * F.scale, nil,
                 "right")
         end
-        local value_y = cy + math.min(band - 7 * F.scale, 31 * F.scale)
+        -- The figures are sized off the band rather than set at a constant.
+        -- A band is worth whatever the column has left once the key and the
+        -- description are out of it, and a phone held sideways leaves two
+        -- thirds of what a portrait one does: at a flat 28 the clock ran
+        -- out of the bottom of its own band and into the label under it. A
+        -- column with the height for them still draws them at 28.
+        local clock_px = math.min(28 * F.scale, band - 18 * F.scale)
+        local value_y = math.min(cy + 31 * F.scale,
+                                 cy + band - clock_px * 0.5)
         local clock = a.finding_rival and "--:--"
             or string.format("%d:%02d", math.floor(a.clock / 60),
                              a.clock % 60)
-        txt(clock, x - 1 * F.scale, value_y, 28 * F.scale,
+        txt(clock, x - 1 * F.scale, value_y, clock_px,
             pal.a(pal.INK, 0.95))
         if a.score then
-            local score_px = 21 * F.scale
+            local score_px = clock_px * 0.75
             local left = tostring(a.score[1])
             local right = tostring(a.score[2])
             local middle = " : "
@@ -4593,10 +4610,12 @@ end
 -- The room's readings, in a column beside the zones list: the clock of the
 -- match the row under the cursor would drop you into, its score, and who is
 -- in it. The row itself is the deploy control (enter presses it, and a
--- click is a press), so this column carries no key. It replaced a full
--- landing that stood alone on the page and anchored the same readings to a
--- DEPLOY key at the bottom of the window, which on a desktop put most of a
--- screen of nothing between the zone's name and the facts about it.
+-- click is a press), so this column carries no key.
+--
+-- Mid-game only. The home landing is the deck on every window, because the
+-- question there is which game to go to and the deck asks it one game at a
+-- time; in a match the page is a list of rooms to leave this one for, and a
+-- list wants what a press on it would do written beside it.
 function pages.deploy_aside(a, x, y, w, h)
     vrule(x - 18 * F.scale, y + 6 * F.scale, h - 12 * F.scale,
           pal.a(pal.RADAR_TILE, 0.45), 18 * F.scale)
@@ -4676,10 +4695,9 @@ end
 -- in it and a question it has not answered.
 function pages.aside(a, x, y, w, h)
     if not a then return end
-    -- The deck: the whole page on a window too narrow for columns, with
-    -- the readings gathered over the one key that deploys. Any wider
-    -- window gets the zones list and the readings as columns instead, so
-    -- this is the phone's landing rather than the landing.
+    -- The deck: the landing, wherever it is drawn. A phone spends the whole
+    -- page on it and a wider window gives it a column of a phone's measure,
+    -- with the readings gathered over the one key that deploys either way.
     if a.deploy then
         compact_deploy(a, x, y, w, h)
         return
@@ -8226,17 +8244,27 @@ function M.menu(v)
     -- narrower than the row of tabs over it reads as a page that failed to
     -- fill.
     local panel_x, panel_w = sx, avail
-    -- The deck, the readings gathered over one big key, is the play
-    -- page only where the window is a phone's: there is no room for
-    -- columns and no enter to press a row with. Any wider window draws
-    -- the play page as two columns, the zones list and the room's
-    -- readings beside it, and the row under the cursor is what enter
-    -- and a click deploy. Home or mid-game alike; `v.aside.deploy`
-    -- rather than `v.at == "play"` because the aside arrives whenever
-    -- the play page is showing, previewed from the root or entered, and
-    -- a preview is the page.
-    local deck = (narrow and v.home and v.aside and v.aside.deploy)
-                 and v.aside or nil
+    -- The deck, the readings gathered over one big key, is the landing on
+    -- every window. It was the phone's alone, and anything wider drew the
+    -- zones list with the room's readings in a column beside it, because a
+    -- key pinned to the foot of a monitor put a screen of nothing between
+    -- the name of a game and the facts about it. That is a complaint about
+    -- the height of the column, and the answer to it is to hold the column
+    -- to the height it was drawn at rather than to lay the screen out twice.
+    --
+    -- Home only. `v.aside.deploy` rather than `v.at == "play"` because the
+    -- aside arrives whenever the play page is showing, previewed from the
+    -- root or entered, and a preview is the page. Mid-game that page keeps
+    -- its list and the column beside it, since what it answers there is
+    -- which room to leave this one for.
+    local deck = (v.home and v.aside and v.aside.deploy) and v.aside or nil
+    -- A phone's measure wherever the window is wider than a phone. Run out
+    -- to the full width the clock sits at one edge of the screen and the
+    -- score at the other, which is two columns nobody reads as one line.
+    local deck_w = avail + 24 * F.scale
+    if deck and not narrow then
+        deck_w = math.min(deck_w, DECK.w * F.scale)
+    end
     local asidew = 0
     -- Where the deploy columns sit: beside each other at the page's left,
     -- with the glass beyond them left to the fight. Every other aside
@@ -8272,13 +8300,12 @@ function M.menu(v)
         -- row and marked nothing, which is furniture. Gone, along with the
         -- overhang the rows had so they could reach it.
         --
-        -- Under the home landing it is a strip over the two columns rather
-        -- than the whole block: the glass beside them belongs to the fight
-        -- or the stars behind it.
-        if v.home and asidex and asidew > 0 then
+        -- Under the home landing it is a strip over the deck rather than the
+        -- whole block: the glass beside it belongs to the fight or to the
+        -- stars behind it.
+        if deck then
             rect(panel_x, sy,
-                 math.min(panel_w,
-                          asidex + asidew + 8 * F.scale - panel_x), ph,
+                 math.min(panel_w, GUTTER * F.scale + deck_w), ph,
                  pal.rgb(0x05070c, 0.5))
         else
             rect(panel_x, sy, panel_w, ph, pal.rgb(0x05070c, 0.5))
@@ -8452,9 +8479,12 @@ function M.menu(v)
         pages.shop_item(v, panel_x + GUTTER * F.scale, top,
                         panel_w - 14 * F.scale - GUTTER * F.scale, room)
     elseif deck then
-        -- The phone's landing: the deck takes the whole page, readings
-        -- gathered over the one key that deploys.
-        pages.aside(deck, tx, top, avail + 24 * F.scale, room)
+        -- The landing. A window taller than the column it is drawn in
+        -- keeps what is left for the arena behind, rather than sinking the
+        -- key to the bottom of the glass, which is the complaint the
+        -- two-column landing was built out of.
+        pages.aside(deck, tx, top, deck_w,
+                    narrow and room or math.min(room, DECK.h * F.scale))
     elseif v.rows and #v.rows > 0 and v.rows[1].hull then
         ship_grid(tx, top, avail, room, v, focused)
     else

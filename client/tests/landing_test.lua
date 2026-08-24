@@ -1,14 +1,15 @@
--- The landing: what a press on a zone row will do.
+-- The landing: where a press would put you, and what it takes to say so.
 --
 --     lua5.1 client/tests/landing_test.lua
 --
--- Desktop draws the play page as two columns: the zones list, which is the
--- deploy control (enter presses the row, a click is a press), and the room's
--- readings beside it. A phone keeps the deck: the same readings gathered
--- over one DEPLOY key, because there is no list on screen and no enter.
--- Desktop once anchored the readings to a DEPLOY key at the bottom of the
--- window, which put most of a screen of nothing between the zone's name and
--- the facts about it.
+-- Every window draws the same one: the deck, which is the game's name on a
+-- carousel, what that game is, the room a press would drop you in, the ship
+-- you would arrive in, and one DEPLOY key under all of it. A monitor holds
+-- it to a phone's column, because at the width of a stage the clock sits at
+-- one edge of the screen and the score at the other. A tall window keeps
+-- the key with the readings instead of sinking it to the bottom of the
+-- glass. Desktop drew the zones list with those readings in a column beside
+-- it before this.
 
 package.path = "client/?.lua;" .. package.path
 
@@ -163,37 +164,48 @@ local function readings_checks(name, texts)
           has(texts, "The room") and has(texts, "8 seats"))
 end
 
--- --- desktop: two columns, and the row is the deploy control ---------------
+-- --- desktop: the deck, in a column of a phone's measure ------------------
 
 local desktop, hits = draw(1280, 800)
 readings_checks("desktop", desktop)
-check("desktop draws no deploy key", not has(desktop, "Deploy"))
-check("desktop says nothing about arriving",
-      not has(desktop, "You arrive as"),
-      "the arrive band belongs to the phone's deck")
-local row_hit
+check("desktop says which ship arrives",
+      has(desktop, "You arrive as") and has(desktop, "Apex"))
+check("desktop ends in one Deploy key", has(desktop, "Deploy"))
+local key_hit
 for _, hit in ipairs(hits or {}) do
-    if hit.action == "stage" and hit.value == 1 then row_hit = hit end
+    if hit.action == "stage" and hit.value == 1 then key_hit = hit end
 end
-check("the zone row is the press that deploys", row_hit ~= nil,
-      "no stage target on the row")
+check("the key presses the zone the carousel is on", key_hit ~= nil,
+      "no stage target on the key")
 check("desktop does not replace the summary with a roster",
       not has(desktop, "Halcyon"), "roster name was drawn")
--- The readings stand beside the list rather than a screen below it: the
--- clock's caption shares the list's band rather than hanging at the foot.
+check("the deck keeps a phone's measure on a monitor",
+      key_hit and key_hit.w < W * 0.45,
+      key_hit and string.format("key %.0f wide in %d", key_hit.w, W)
+          or "no key")
+-- One column: the readings hang under the name of the game rather than
+-- standing in a second column beside it.
 local melee = find_text(desktop, "Melee")
 local clock = find_text(desktop, "On the clock")
--- state holds y counting up from the bottom, so near the top is a large y.
-check("the readings sit beside the list, not at the foot",
-      melee and clock and math.abs(melee.y - clock.y) < 120,
-      string.format("melee %.0f, clock %.0f",
-                    melee and melee.y or -1, clock and clock.y or -1))
-check("and in a column of their own, to the list's right",
-      melee and clock and clock.x > melee.x + 200,
+check("the readings sit under the name, not beside it",
+      melee and clock and math.abs(melee.x - clock.x) < 40,
       string.format("melee %.0f, clock %.0f",
                     melee and melee.x or -1, clock and clock.x or -1))
 
--- --- phone: the deck, whole page, one key ----------------------------------
+-- A window taller than a phone keeps the key with the readings. Given the
+-- whole of one the three bands sink to the foot of the window, which leaves
+-- the name of the game a screen away from the facts about it.
+local _, tall_hits = draw(1280, 1500)
+local tall_key
+for _, hit in ipairs(tall_hits or {}) do
+    if hit.action == "stage" then tall_key = hit end
+end
+check("a tall window does not sink the key to the bottom of the glass",
+      tall_key and tall_key.y + tall_key.h < H * 0.72,
+      tall_key and string.format("key foot at %.0f of %d",
+                                 tall_key.y + tall_key.h, H) or "no key")
+
+-- --- phone: the same deck, given the whole page ----------------------------
 
 local phone, phits = draw(420, 780)
 readings_checks("phone", phone)
