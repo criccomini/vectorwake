@@ -19,6 +19,11 @@ local M = {}
 local TILE = 16
 local TAU = math.pi * 2
 
+-- The ring of sparks a streaking hull wears. An odd count on purpose: an even
+-- ring keeps presenting opposite pairs, and two bright opposites with the
+-- rest between beats read as an axis rather than a circle.
+local GLEAM_SPARKS = 7
+
 -- Is this world point outside what the camera can see? Every draw that walks
 -- a list of things in the world asks this first.
 --
@@ -2132,27 +2137,31 @@ function M.ship(fill, glow, cls, x, y, heading, col, opts)
     --
     -- Three parts. A gold skirt outside the hull's own, so the shape reads as
     -- gilded rather than repainted; a bloom saying there is something lit
-    -- here; and four sparks going round, each on its own phase so the ring of
-    -- them turns rather than blinking together. The sparks are what carries it
-    -- at distance, where the skirt is a few pixels and the bloom is a smudge.
+    -- here; and seven sparks going round, each breathing on its own clock.
+    -- The sparks are what carries it at distance, where the skirt is a few
+    -- pixels and the bloom is a smudge.
     if opts and opts.gleam then
         local t = opts.gleam
         local gold = pal.gleam(t, 1)
         local beat = 0.62 + 0.38 * math.sin(t * 3.4)
         glow:glow_band(pts, nrm, 13.0, 0.085 * beat * dim, gold, h.wide)
         glow:bloom(x, y, 46, 0.055 * beat * dim, gold)
-        for k = 0, 3 do
+        for k = 0, GLEAM_SPARKS - 1 do
             -- Around the hull rather than around the point: an Anvil is twice
             -- the beam of a Cipher, and sparks at one radius would be inside
             -- one and a long way off the other.
-            local a2 = t * 1.25 + k * (TAU / 4)
-            local r = h.reach + 7 + 2.5 * math.sin(t * 5.1 + k)
+            local a2 = t * 1.25 + k * (TAU / GLEAM_SPARKS)
+            local r = h.reach + 7 + 2.5 * math.sin(t * (4.3 + k * 0.61) + k * 2.1)
             local px, py = x + math.cos(a2) * r, y + math.sin(a2) * r
-            -- Each spark has its own gleam, a beat behind its neighbour, so
-            -- the four of them are a gleam travelling round rather than four
-            -- lamps on one switch.
             local sc = pal.gleam(t + k * 0.17, 1)
-            local up = 0.45 + 0.55 * math.sin(t * 4.3 + k * 1.9)
+            -- Each spark breathes at its own frequency, floored well above
+            -- dark. Sparks stepped along one shared clock put several dim
+            -- moments together, and the ring reads as two or three lamps
+            -- strobing off center; unshared frequencies keep the dips apart,
+            -- and the floor keeps every spark present, so the ring reads
+            -- whole and round from any single glance.
+            local up = 0.35 + 0.65 * (0.5 + 0.5 * math.sin(t * (3.1 + k * 0.83)
+                                                           + k * 2.4))
             glow:halo(px, py, 5.4 * (0.7 + 0.3 * up), 6,
                       pal.a(sc, 0.5 * up * dim))
             glow:disc(px, py, 1.15, 4, pal.a(pal.hot(sc, 0.7, 1), up * dim))
