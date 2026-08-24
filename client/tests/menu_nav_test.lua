@@ -2287,9 +2287,19 @@ do
           menu.view().rows[listed[1]].choice == 1
           and menu.view().rows[listed[2]].choice == 0,
           tostring(menu.view().rows[listed[2]].choice))
-    check("a starter offers no rename and no delete",
-          keys.rename == nil and keys.delete == nil,
+    check("a starter offers both keys, dim",
+          keys.rename ~= nil and keys.delete ~= nil
+          and menu.view().rows[keys.rename].dim == true
+          and menu.view().rows[keys.delete].dim == true,
           tostring(keys.rename) .. "/" .. tostring(keys.delete))
+    menu.sel.hangar = keys.rename
+    menu.note = nil
+    check("and pressing one explains instead of opening a card",
+          menu.step({go = true}) == nil and menu.ask == nil
+          and menu.note ~= nil
+          and string.find(menu.note, "starter", 1, true) ~= nil,
+          tostring(menu.note))
+    menu.note = nil
     menu.sel.hangar = listed[2]
     local selected_profile = menu.step({go = true})
     check("pressing a row loads that whole build",
@@ -2301,6 +2311,44 @@ do
           and menu.profile_band().state == nil,
           menu.profile_band().name .. "/"
               .. tostring(menu.profile_band().state))
+
+    -- The list is a selector: an arrow landing on a build loads it, so the
+    -- pane beside the list is always about the row the cursor is on. Enter
+    -- commits the same load, for a pointer.
+    menu.sel.hangar = listed[1]
+    local walked = menu.step({up = true, down = false})
+    check("up onto a build is back off the page",
+          walked == nil and menu.at() ~= "hangar",
+          table.concat(menu.stack, "/"))
+    menu.stack = {"root", "hangar"}
+    menu.sel.hangar = listed[1]
+    walked = menu.step({down = true})
+    check("down onto a build loads it",
+          walked == "kit" and menu.profile_at == 2
+          and menu.kit[1] == 4 and menu.kit[6] == 2,
+          tostring(walked) .. "/" .. tostring(menu.profile_at))
+    walked = menu.step({up = true})
+    check("and up onto the one above loads that one",
+          walked == "kit" and menu.profile_at == 1
+          and menu.kit[1] == 2 and menu.kit[6] == 0,
+          tostring(walked) .. "/" .. tostring(menu.profile_at))
+
+    -- Entering the page lands the cursor on the build the kit in hand is,
+    -- so the washed row and the name in the head agree from the first
+    -- frame. It opened on row one, which washed the first starter while the
+    -- head named whichever build the kit actually was.
+    menu.sel.hangar = add_row
+    menu.stack = {"root"}
+    menu.sel.root = ship_at
+    menu.step({go = true})
+    check("entering the hangar lands on the matching build",
+          menu.at() == "hangar" and menu.sel.hangar == 1,
+          table.concat(menu.stack, "/") .. " row "
+              .. tostring(menu.sel.hangar))
+
+    -- Back onto the second build for the edits below.
+    menu.sel.hangar = listed[2]
+    menu.step({go = true})
     menu.kit_step(0, -1)
     check("editing a profile turns it into a custom build",
           menu.profile_at == nil, tostring(menu.profile_at))
