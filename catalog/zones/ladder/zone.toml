@@ -1,5 +1,10 @@
 # One life against one measured house pilot. A win advances one rung. A loss
 # drops two rungs without crossing the last five-rung checkpoint.
+#
+# With nobody here the room climbs anyway, against the same rivals, so the play
+# page has a fight to show whoever is deciding what to press. That is why both
+# sides below take a bot as well as a person: the stand-in flies the climber's
+# seat and gives it back the moment somebody wants it.
 
 description = "one life at a time, climb the house pilot ladder"
 mode = "ladder"

@@ -555,6 +555,26 @@ pub(crate) struct LadderRoomState {
     pub state: modes::LadderState,
 }
 
+/// Whether this seat is one of the house pilots the Ladder is made of, told
+/// from its call sign: every rung's rival is a numbered replica of an authored
+/// archetype, and nothing else in the roster wears that suffix. So the two
+/// bots a Ladder room may hold can never be mistaken for each other, including
+/// while a rival authorized for the rung just finished is still on its way
+/// out.
+fn is_house_rival(seat: &Seat) -> bool {
+    seat.bot
+        && seat.label == token::Label::HouseBot.to_byte()
+        && pilots::ladder_archetype_for_callsign(&seat.name).is_some()
+}
+
+/// And whether it is a house pilot climbing rather than one of the rungs: the
+/// stand-in that keeps a duel in the zone while nobody is here. It wears an
+/// ordinary roster name and its own career, and has no claim on the rival
+/// seat.
+fn stands_in(seat: &Seat) -> bool {
+    seat.bot && seat.label == token::Label::HouseBot.to_byte() && !is_house_rival(seat)
+}
+
 fn match_message(
     state: modes::MatchState,
     artifact: Option<u64>,
@@ -1050,6 +1070,53 @@ impl Room {
         })
     }
 
+    /// The seat holding the house rival, whichever rung it was seated for.
+    /// The other side of a Ladder duel is whoever else is in the room.
+    pub(crate) fn ladder_rival(&self) -> Option<u8> {
+        self.mode.ladder_state()?;
+        self.names
+            .iter()
+            .find_map(|(ship, seat)| is_house_rival(seat).then_some(*ship))
+    }
+
+    /// The stand-in climbing while nobody is here, if one is seated.
+    pub(crate) fn stand_in(&self) -> Option<u8> {
+        self.mode.ladder_state()?;
+        self.names
+            .iter()
+            .find_map(|(ship, seat)| stands_in(seat).then_some(*ship))
+    }
+
+    /// Whether this room would take that pilot as its stand-in: a Ladder room
+    /// with nobody in it and no stand-in already flying. One at a time,
+    /// because the duel has two seats and the other one is the rival's.
+    pub(crate) fn accepts_stand_in(&self, seat: &Seat) -> bool {
+        self.mode.ladder_state().is_some()
+            && self.humans() == 0
+            && stands_in(seat)
+            && self.stand_in().is_none()
+    }
+
+    /// The two bots a Ladder room takes: the rival its current rung asked for,
+    /// in that rung's own hull, and the stand-in that flies the run while
+    /// nobody is here. Every other room takes any declared bot.
+    ///
+    /// One of each. The mode is a duel and reads the room as one, so a second
+    /// pilot of either kind would be a third ship in it, and a rung's own
+    /// pilot arriving into the climber's seat would be the ladder climbing
+    /// itself. A rival on its way out still holds the rival seat: the room has
+    /// to watch it leave before the next rung is allowed to open, which is the
+    /// rule the whole replacement path rests on.
+    pub(crate) fn accepts_ladder_bot(&self, seat: &Seat, class: u8) -> bool {
+        if self.mode.ladder_state().is_none() {
+            return true;
+        }
+        if self.accepts_ladder_rival_hull(seat, class) {
+            return self.ladder_rival().is_none();
+        }
+        self.accepts_stand_in(seat)
+    }
+
     /// Whether this authenticated bot is the rival the current Ladder rung
     /// requested. Ordinary rooms accept any declared bot; Ladder binds the seat
     /// to one authored archetype as well as to the house account kind.
@@ -1104,22 +1171,26 @@ impl Room {
     /// the room has dealt it. Rechecking the identity, hull, ceiling and current
     /// kit here also keeps a rival authorized for an old rung from opening the
     /// next one while its replacement is on the way.
-    fn ready_mode_seats(&self) -> Vec<(u8, bool)> {
-        let ladder = self.mode.ladder_state().is_some();
+    ///
+    /// The climber's seat is nobody's fixture, so it is ready as soon as it is
+    /// taken. The stand-in wears what its own career bought, exactly as the
+    /// person it is holding the room for would.
+    fn ready_mode_seats(&self) -> Vec<u8> {
+        let rival = self.ladder_rival();
         self.names
-            .iter()
-            .filter(|(ship, seat)| {
-                !ladder
-                    || !seat.bot
-                    || (seat.kitted
-                        && self
-                            .expected_ladder_rival_kit(**ship)
-                            .is_some_and(|expected| {
-                                self.world.state.ships[**ship as usize].kit == expected
-                            }))
-            })
-            .map(|(ship, seat)| (*ship, seat.bot))
+            .keys()
+            .copied()
+            .filter(|ship| Some(*ship) != rival || self.rival_wears_its_fixture(*ship))
             .collect()
+    }
+
+    /// Whether the seated rival is flying the exact build its rung was
+    /// measured with.
+    fn rival_wears_its_fixture(&self, ship: u8) -> bool {
+        self.names.get(&ship).is_some_and(|seat| seat.kitted)
+            && self
+                .expected_ladder_rival_kit(ship)
+                .is_some_and(|expected| self.world.state.ships[ship as usize].kit == expected)
     }
 
     /// Restore a claimed pilot's durable Ladder floor before their first
@@ -1625,7 +1696,7 @@ impl Room {
     ) -> Option<u64> {
         let name = seat.name.clone();
         let bot = seat.bot;
-        if bot && !self.accepts_ladder_rival_hull(&seat, class) {
+        if bot && !self.accepts_ladder_bot(&seat, class) {
             return None;
         }
         let valid_entry = match (member, presence.current()) {
@@ -1693,7 +1764,7 @@ impl Room {
         // where the zone names none. Moving is then one selection away in the
         // team list, and only a full side can refuse it.
         let team = if self.mode.ladder_state().is_some() {
-            self.seat_team(ship, seat.bot)
+            self.seat_team(ship, &seat)
         } else {
             match prefer {
                 Some(t)
@@ -1701,7 +1772,7 @@ impl Room {
                 {
                     t
                 }
-                _ => self.seat_team(ship, seat.bot),
+                _ => self.seat_team(ship, &seat),
             }
         };
         // Where a fresh pilot starts, worked out before anything about them is
@@ -1931,13 +2002,12 @@ impl Room {
     }
 
     /// Apply an in-seat hull change without letting a Ladder rival leave its
-    /// authored hull. Human and ordinary-room changes keep the core's rules.
+    /// authored hull. Human, stand-in and ordinary-room changes keep the
+    /// core's rules.
     pub(crate) fn set_ship_class(&mut self, ship: u8, class: u8) -> bool {
-        if self
-            .names
-            .get(&ship)
-            .is_some_and(|seat| seat.bot && !self.accepts_ladder_rival_hull(seat, class))
-        {
+        if self.names.get(&ship).is_some_and(|seat| {
+            is_house_rival(seat) && !self.accepts_ladder_rival_hull(seat, class)
+        }) {
             return false;
         }
         self.world.set_ship_class(ship, class)
@@ -1952,9 +2022,7 @@ impl Room {
     /// the entitlement half is only checked here, because an account is not
     /// something the core knows about.
     pub(crate) fn set_kit(&mut self, ship: u8, kit: &[u8; sim::SLOT_COUNT]) -> bool {
-        let ladder_bot = self.mode.ladder_state().is_some()
-            && self.names.get(&ship).is_some_and(|seat| seat.bot);
-        if ladder_bot
+        if self.ladder_rival() == Some(ship)
             && self
                 .expected_ladder_rival_kit(ship)
                 .is_none_or(|expected| expected != *kit)
@@ -2031,8 +2099,7 @@ impl Room {
     /// True means a Ladder rival supplied a refused build and was removed. A
     /// human refusal retains the old all-or-nothing behavior and returns false.
     pub(crate) fn ask_kit(&mut self, ship: u8, kit: &[u8; sim::SLOT_COUNT]) -> bool {
-        let ladder_bot = self.mode.ladder_state().is_some()
-            && self.names.get(&ship).is_some_and(|seat| seat.bot);
+        let ladder_bot = self.ladder_rival() == Some(ship);
         let requested = !ladder_bot
             || self
                 .expected_ladder_rival_kit(ship)
@@ -2308,14 +2375,17 @@ impl Room {
     /// room, which is a default rather than a rule: the list is one selection
     /// away and only a full side can refuse it. A free-for-all has no such
     /// list, so an arrival founds their own side of one.
-    pub(crate) fn seat_team(&mut self, joining: u8, bot: bool) -> u8 {
-        // Ladder's score is [human, bot], in the same order as its two named
-        // public sides. General team balancing counts humans and bots apart,
-        // which would put the first of each on side zero and turn the duel
-        // friendly. Pin the roles here so combat, the scoreboard, and match
-        // settlement all describe the same two opponents.
+    pub(crate) fn seat_team(&mut self, joining: u8, seat: &Seat) -> u8 {
+        // Ladder's score is [climber, rival], in the same order as its two
+        // named public sides. General team balancing counts humans and bots
+        // apart, which would put the first of each on side zero and turn the
+        // duel friendly, and it would put the stand-in on the rival's own side
+        // where neither can shoot the other. Pin the roles here so combat, the
+        // scoreboard, and match settlement all describe the same two
+        // opponents.
+        let bot = seat.bot;
         if self.mode.ladder_state().is_some() && self.public_teams >= 2 {
-            let team = u8::from(bot);
+            let team = u8::from(is_house_rival(seat));
             if self.team_has_room(team, bot, Some(joining)) {
                 return team;
             }
@@ -2865,15 +2935,16 @@ impl Room {
                     }),
                 );
             }
-            let seats: Vec<(u8, bool)> = self
-                .names
-                .iter()
-                .map(|(ship, seat)| (*ship, seat.bot))
-                .collect();
+            // Every seat, not the ready ones: the mode is being told about a
+            // departure and needs the room as it stands, including the seat
+            // that is leaving.
+            let seats: Vec<u8> = self.names.keys().copied().collect();
+            let rival = self.ladder_rival();
             let team_names = self.public_team_names();
             let mut ctx = modes::ModeCtx {
                 world: &mut self.world,
                 seats: &seats,
+                rival,
                 team_names: &team_names,
                 banner: std::mem::take(&mut self.banner),
                 finished: false,
@@ -3299,10 +3370,12 @@ impl Room {
         player_count_changed |= self.sweep_safe();
 
         let seats = self.ready_mode_seats();
+        let rival = self.ladder_rival();
         let names = self.public_team_names();
         let mut ctx = modes::ModeCtx {
             world: &mut self.world,
             seats: &seats,
+            rival,
             team_names: &names,
             banner: std::mem::take(&mut self.banner),
             finished: false,
@@ -3842,10 +3915,12 @@ impl Room {
         let mut open_match = false;
         if !deaths.is_empty() {
             let seats = self.ready_mode_seats();
+            let rival = self.ladder_rival();
             let names = self.public_team_names();
             let mut ctx = modes::ModeCtx {
                 world: &mut self.world,
                 seats: &seats,
+                rival,
                 team_names: &names,
                 banner: std::mem::take(&mut self.banner),
                 finished: false,
