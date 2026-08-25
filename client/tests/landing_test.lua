@@ -226,7 +226,11 @@ check("the landing draws the room's own clock", word("1:47") ~= nil)
 check("and both sides of the score",
       word("3") ~= nil and word("5") ~= nil)
 check("and names the sides", word("PYLON") ~= nil and word("CAISSON") ~= nil)
-check("and says what it is looking at", word("CHANNEL") ~= nil)
+-- And says nothing about being a watcher. A green play mark and the word
+-- CHANNEL sat in the corner row: a label on the obvious, since no hull on
+-- screen wears this client's call sign.
+check("and says nothing about the channel it is watching",
+      word("CHANNEL") == nil)
 check("and keeps the way into the menu", box("open") ~= nil)
 check("and the roster key beside it", box("details") ~= nil)
 
@@ -237,9 +241,9 @@ check("the landing carries no TAKE SEAT chip",
 
 -- --- a phone's top row -----------------------------------------------------
 --
--- At 390 points MENU, PLAYERS and the channel mark reach most of the way
--- across, and the clock was drawn straight through them: the front page's
--- first line was two readings on top of each other. Nothing asserted it,
+-- At 390 points MENU and PLAYERS reach the middle of the screen, which is
+-- where a centered clock starts, and it was drawn through them: the front
+-- page's first line was two readings on top of each other. Nothing asserted it,
 -- because both were drawn and both were where their own code meant to put
 -- them. So the band comes off that row on a narrow screen and gives up the
 -- side names with it, and the scoreboard starts under the band rather than
@@ -350,8 +354,6 @@ do
               box("play_now") == nil)
         check(shape .. " waiting draws no roster key", box("details") == nil)
         check(shape .. " waiting draws no radar", box("map") == nil)
-        check(shape .. " waiting says nothing about a channel",
-              word("CHANNEL") == nil)
         check(shape .. " waiting says nothing while it is only waiting",
               #words() == 2,
               #words() .. " words on screen")

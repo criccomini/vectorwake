@@ -3121,29 +3121,14 @@ local function menu_button(on_air, watch, room, pilots, watchers, landed)
         local size = key_size()
         txt(label, cx + 2 * r + 5 * F.scale, mid, size, pal.a(pal.HURT, 0.9))
         cx = cx + 2 * r + 5 * F.scale + text_w(label, size) + KEY_GAP * F.scale
-    elseif watch then
-        -- Watching, and what of. The same slot, because the two are the same
-        -- kind of fact about the connection and a watcher is never on air.
-        --
-        -- Green and a play mark rather than the tally's red dot: the red one
-        -- is a warning about you and this is a statement about what you are
-        -- looking at, which is the difference between being filmed and
-        -- holding the camera.
-        local mid = y + KEY_H * F.scale / 2
-        local h = 4.6 * F.scale
-        local wsym = h * 1.5
-        local col = pal.a(pal.PAID, 0.92)
-        F.layer:tri(cx, ry(mid - h, 0), cx, ry(mid + h, 0),
-              cx + wsym, ry(mid, 0), col)
-        local size = key_size()
-        -- One word, because there is one thing to be watching: the room's own
-        -- feed. The pilot it is pointed at wears their call sign on their hull
-        -- like everybody else on screen, which is where a spectator's constant
-        -- question is already answered.
-        local label = "CHANNEL"
-        txt(label, cx + wsym + 6 * F.scale, mid, size, col)
-        cx = cx + wsym + 6 * F.scale + text_w(label, size) + KEY_GAP * F.scale
     end
+    -- Nothing in this slot for a watcher. A green play mark and the word
+    -- CHANNEL sat here, on the argument that what you are looking at is the
+    -- same kind of fact about the connection as the tally beside it. It is
+    -- not: the tally is a warning, because being on air changes how you fly,
+    -- and this was a label on the obvious. Every hull on screen wears somebody
+    -- else's call sign and none of them wears yours, which is the whole of
+    -- what the word was there to say. Removed at Chris's request.
     chip_right = cx - KEY_GAP * F.scale
 end
 
@@ -3441,8 +3426,10 @@ local function match_clock(o, m, names, alone)
     local clock = ladder_waiting(m) and "--:--"
         or string.format("%d:%02d", math.floor(left / 60), left % 60)
     -- A phone has no room for a centered band on the line the corner keys are
-    -- on: at 390 points MENU, PLAYERS and the channel mark reach most of the
-    -- way across, and the clock was drawn straight through them. So there the
+    -- on: at 390 points MENU and PLAYERS reach the middle of the screen, which
+    -- is where a centered clock starts, and it was drawn straight through the
+    -- roster count. Still true with the channel mark gone, by a smaller margin:
+    -- the row ends at 196 and the clock spans about 168 to 222. So there the
     -- band drops below that row and gives up the side names, which the score's
     -- own two colors and the roster already carry. It was always wrong and it
     -- was always somebody watching on a phone who saw it; the landing is that
@@ -4119,8 +4106,8 @@ end
 -- place, and the same MENU in the same corner, so when the stands arrive the
 -- only thing that happens is that the room and the key appear. Nothing already
 -- on screen moves. The instruments a watcher gets are all about a room this
--- client has not found yet, so the radar, the coordinates, the link bars, the
--- roster and the channel mark are simply absent rather than drawn empty.
+-- client has not found yet, so the radar, the coordinates, the link bars and
+-- the roster are simply absent rather than drawn empty.
 --
 -- What used to be here was a lockup centered in the window, which was the
 -- loading screen held one beat longer and read as a third screen between the
@@ -4129,7 +4116,7 @@ end
 function M.waiting(note)
     landing_mark()
     -- The one control, drawn here rather than through the corner row, which
-    -- carries a roster and a channel mark this screen has neither of.
+    -- carries a roster this screen has not got.
     local x, y = F.safe_l + PAD * F.scale, F.safe_t + PAD * F.scale
     local w = key_w("MENU")
     key_cap(x, y, w, "MENU", F.menu_up)

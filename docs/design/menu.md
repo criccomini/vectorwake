@@ -324,8 +324,7 @@ corner nobody looks at.
 Nothing else is added. Every reading a panel would carry is one the HUD
 already draws, to the people in the room, in code that has to be right anyway.
 
-The corner keeps MENU and PLAYERS and the green CHANNEL mark, and drops TAKE
-SEAT. That key means the same act as PLAY NOW, and two controls for one act,
+The corner keeps MENU and PLAYERS and drops TAKE SEAT. That key means the same act as PLAY NOW, and two controls for one act,
 one of them pulsing at the foot of the screen and one a chip in the corner, is
 the offer made twice. A pilot the room benched mid-match keeps TAKE SEAT: they
 are not on the landing, and the seat being held is theirs already.
@@ -368,7 +367,7 @@ what the key would join, and the choice outlives the menu closing.
 
 On a phone the clock and the score come off the corner keys' line and take one
 of their own beneath it, giving up the side names as they go: at 390 points
-MENU, PLAYERS and the channel mark reach most of the way across and the clock
+MENU and PLAYERS reach the middle of the screen and the clock
 was drawn straight through them. The score's two colors and the roster carry
 which side is which. That was always wrong and it was always somebody watching
 on a phone who saw it; the landing is that screen for everybody now.

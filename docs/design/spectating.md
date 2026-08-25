@@ -156,12 +156,14 @@ two-tab tier.
 Nothing on the pad or the keyboard aims the camera, because the camera is not
 this client's to aim. The arrows used to walk it along the occupied seats and
 a tap on either half of a phone screen did the same; both are gone, along with
-the WATCH key the info box used to carry on a teammate. What is left is a
-green play mark and the word CHANNEL in the corner row, in the slot the on-air
-tally uses, since a watcher is never on air and the two are the same kind of
-fact about the connection. It says CHANNEL rather than a name because the
-corner is where a fact about your own connection goes, and the pilot on screen
-is already labeled at their hull.
+the WATCH key the info box used to carry on a teammate. Nothing is left in
+their place. A green play mark and the word CHANNEL sat in the corner row for
+a while, in the slot the on-air tally uses, on the argument that a watcher is
+never on air and the two are the same kind of fact about the connection. They
+are not the same kind of fact. The tally is a warning, because being on air
+changes how you fly; a watcher being a watcher changes nothing, and every hull
+on screen wears somebody else's call sign while none wears yours, which says
+it already.
 
 The team list goes to watchers too: their side, and no open doors, because a
 watcher crosses nothing until they take a hull again.
