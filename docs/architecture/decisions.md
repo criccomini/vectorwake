@@ -1933,9 +1933,8 @@ private record, the prediction seed revealed future greens, sitting out could
 discard a wounded hull, and the same account could enter rated rooms on two
 arena processes. Local limits did not cover any of those boundaries.
 
-The sight radius now comes from the arena. A camera subject controls centering
-and which minefield remains in view, while a separate owner byte controls the
-private ship tail. Public records carry motion, side, score, bounty, shove and
+The sight radius now comes from the arena. A camera subject controls centering,
+while a separate owner byte controls the private ship tail. Public records carry motion, side, score, bounty, shove and
 carrier state. Cooldowns, upgrades, rungs, add-ons, charges, respawn state and
 input edges stay in the owner tail. Follow and channel snapshots name no owner.
 Remote one-tick charges use a filtered public action message, so the effect
@@ -2707,12 +2706,13 @@ thing at the foot of the screen, so the name has to be where that look lands.
 
 Nothing opens the menu but a player. Between the engine's first frame and the
 first snapshot there is a directory lookup and a handshake, and what fills that
-gap is the loading screen's own picture held a little longer: the lockup
-centered on the starfield with one line under it and MENU in the corner. The
-menu standing itself up there was the first version of this and it was the same
-mistake in miniature, a panel nobody asked for between a player and the game.
-That is also what lets the menu always close, since whatever is behind it, the
-stands or the waiting screen, carries a way back in.
+gap is this same screen with everything that needs a room taken off it: the
+starfield, the name where the room will leave it, and MENU. The menu standing
+itself up there was the first version and it was the same mistake in miniature,
+a panel nobody asked for between a player and the game; a lockup centered in
+the window was the second, and it made the name jump to the foot of the screen
+the moment a game answered. That is also what lets the menu always close, since
+whatever is behind it carries a way back in.
 
 **Cost:** the same as decision 56's, and more of it: every page load holds a
 watcher slot, so `max_watchers` is now the front door's capacity rather than a
@@ -2728,7 +2728,63 @@ room (give the landing a lighter feed, or seat visitors only where a room has
 spare egress), or the roster noise makes the on-air tally something pilots stop
 reading.
 
-## 62. The menu is one column docked to the left edge
+---
+
+## 62. Mines are gone
+
+**Decided:** the mine is removed from the game. `SIM_CHARGE_MINE`, its pattern
+and its kit ceiling go; so do the three spec and pattern fields that existed
+only for it, `still`, `blast_up` and `energy_up`. The charge rack still holds
+four kinds and ships two, a repel and a burst. `CFG_VERSION` moves to 19.
+
+**Why:** it was the one weapon that did not fit any rule the rest of the game
+runs on, and every one of those exceptions cost something somewhere else.
+
+A round takes the firer's velocity on top of its own speed, which is why a shot
+fired at a run is faster over the ground. A mine had to not, so the spec grew
+`still`. A weapon's rung is a row on its ladder, so a rung is a different spec
+with different numbers; a charge fires one pattern for everybody, so a mine
+wore its layer's bomb rung instead, and the spec grew `blast_up` and the
+pattern grew `energy_up` to make that rung mean anything. A proximity add-on
+adds a fuse to a round that has none, so on the one round that arrived with a
+fuse the add-on had to take the larger of the two instead of the sum. A repel
+shoves a round, so a mine had to stop being a mine when shoved, which needed a
+lookup from the round back to the class that laid it. The renderer could not
+recover a mine's rung from its spec, so the expiry event carried the rung in
+two spare bits of its position word, and the client learned to mask them.
+
+The network paid the largest bill. Rounds are filtered by distance, and the
+whole argument for that is that a round is spent within seconds and never
+leaves the hull that fired it. A mine sat for two minutes while its layer flew
+away, so `sim_pack_around` grew a `viewer` seat whose own rounds traveled
+however far off they were (decision 43). The client then had to tell a mine
+that detonated from a mine an enemy repel had converted, by scanning the
+snapshot for a freshly born bomb near where the mine had been, or a scattered
+field flashed and banged as though it had gone off.
+
+Every one of those is a special case sitting at a point where the model is
+otherwise uniform, and all of them are the price of one round that is laid
+rather than thrown. The four phases a projectile lives through exist so that a
+weapon is a set of numbers instead of a branch. This weapon was the branch.
+
+**Cost:** the game loses its only way to deny ground without standing on it,
+and nothing left in the arena does that job. The Denier profile stays, since a
+long working range and low pursuit hold up on their own, but it no longer has
+the weapon it was named for. Bots lose `should_mine`, the corridor test behind
+it, and the `mine_preference` knob. Accounts that bought mine rungs hold rows
+in a slot whose ceiling is now zero: the shelf already skips those and a kit
+that names one is already trimmed, so nothing breaks, but nobody is refunded
+either.
+
+**Reconsider if:** area denial turns out to be what the melee arena is missing,
+in which case the thing to build is a weapon designed for these rules rather
+than the original's mine bolted onto them. A charge with a short life and a
+wide blast that leaves the rack at the ship's speed would need none of the
+exceptions above.
+
+---
+
+## 63. The menu is one column docked to the left edge
 
 **Status:** accepted, superseding the two-layout menu
 
@@ -2785,3 +2841,4 @@ beat it.
 **Reconsider if:** a page turns up that genuinely cannot be read at 390 points
 and cannot be split, or the stands stop being where players spend their time
 between matches, which is the whole argument for keeping the fight visible.
+

@@ -1474,7 +1474,6 @@ pub struct TeamRow {
     /// their own life and it belongs in this number all the same.
     pub deaths: u32,
     pub shots: [u32; sim::TRIG_COUNT],
-    pub mines: u32,
     pub engagement_distance: f64,
     pub engagement_samples: u64,
     pub planned_range: f64,
@@ -1507,7 +1506,6 @@ pub struct Seat {
     pub kills: u32,
     pub deaths: u32,
     pub shots: [u32; sim::TRIG_COUNT],
-    pub mines: u32,
     pub engagement_distance: f64,
     pub engagement_samples: u64,
     pub planned_range: f64,
@@ -1725,9 +1723,7 @@ fn team_match_with_options(
                 match e.etype {
                     sim::EV_FIRE => {
                         if let Some(i) = ships.iter().position(|&s| s == e.a) {
-                            if world.cfg.specs[e.b as usize].still != 0 {
-                                seats[i].mines += 1;
-                            } else if let Some(&t) = trig_of[i].get(&e.b) {
+                            if let Some(&t) = trig_of[i].get(&e.b) {
                                 seats[i].shots[t] += 1;
                             }
                         }
@@ -3031,7 +3027,6 @@ pub fn run_teams(
             kills: 0,
             deaths: 0,
             shots: [0; sim::TRIG_COUNT],
-            mines: 0,
             engagement_distance: 0.0,
             engagement_samples: 0,
             planned_range: 0.0,
@@ -3086,7 +3081,6 @@ pub fn run_teams(
             r.hits += s.hits;
             r.damage += s.damage;
             r.self_damage += s.self_damage;
-            r.mines += s.mines;
             r.engagement_distance += s.engagement_distance;
             r.engagement_samples += s.engagement_samples;
             r.planned_range += s.planned_range;
@@ -3139,7 +3133,7 @@ pub fn report_teams(
 lineups drawn at random"
     );
     println!(
-        "\n{:<10} {:>7} {:>7} {:>7} {:>8} {:>8} {:>7} {:>8} {:>7} {:>7} {:>7} {:>7} {:>7}",
+        "\n{:<10} {:>7} {:>7} {:>7} {:>8} {:>8} {:>7} {:>8} {:>7} {:>7} {:>7} {:>7}",
         "hull",
         "win%",
         "+-95%",
@@ -3150,7 +3144,6 @@ lineups drawn at random"
         "hit/pull",
         "gun/s",
         "bomb/s",
-        "mine/s",
         "target",
         "actual"
     );
@@ -3158,7 +3151,7 @@ lineups drawn at random"
         let fired: u32 = r.shots.iter().sum();
         let s = r.seats.max(1) as f64;
         println!(
-            "{:<10} {:>7.1} {:>7.1} {:>7} {:>8.2} {:>8.2} {:>7.2} {:>8.2} {:>7.1} {:>7.1} {:>7.2} {:>7.0} {:>7.0}",
+            "{:<10} {:>7.1} {:>7.1} {:>7} {:>8.2} {:>8.2} {:>7.2} {:>8.2} {:>7.1} {:>7.1} {:>7.0} {:>7.0}",
             r.name,
             100.0 * r.win_rate(),
             r.margin(),
@@ -3169,7 +3162,6 @@ lineups drawn at random"
             r.hits as f64 / fired.max(1) as f64,
             r.shots[sim::TRIG_GUN] as f64 / s,
             r.shots[sim::TRIG_BOMB] as f64 / s,
-            r.mines as f64 / s,
             r.planned_range / r.planned_range_samples.max(1) as f64,
             r.engagement_distance / r.engagement_samples.max(1) as f64,
         );
@@ -3191,7 +3183,6 @@ is the one to read the board by."
             "drawn": r.drawn, "win_rate": r.win_rate(), "win_rate_margin": r.margin(),
             "kills": r.kills, "deaths": r.deaths,
             "gun_shots": r.shots[sim::TRIG_GUN], "bomb_shots": r.shots[sim::TRIG_BOMB],
-            "mines": r.mines,
             "mean_planned_range": r.planned_range / r.planned_range_samples.max(1) as f64,
             "mean_engagement_distance": r.engagement_distance / r.engagement_samples.max(1) as f64,
             "hits": r.hits, "damage": r.damage, "self_damage": r.self_damage,

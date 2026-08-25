@@ -47,8 +47,8 @@ pub const BTN_USE: u16 = 64;
 pub const BTN_SLOT_SHIFT: u16 = 7;
 pub const BTN_MULTI: u16 = 0x0200;
 
-/// Spend the mine slot, which is what laying one is now: 0x0400 used to be a
-/// button of its own, because a mine was the bomb trigger's other posture.
+/// The buttons that spend charge kind `k`: `BTN_USE` with the slot in the two
+/// bits above it.
 pub const fn btn_charge(k: usize) -> u16 {
     BTN_USE | ((k as u16) << BTN_SLOT_SHIFT)
 }
@@ -239,10 +239,6 @@ pub struct sim_weapon_spec {
     pub life: u16,
     pub on_wall: u8,
     pub bounces: u8,
-    /// Whether the round is laid rather than thrown: it takes none of the
-    /// firer's velocity and stays where it was let go. A mine, and nothing
-    /// else, because everything that flies wants the ship's speed added.
-    pub still: u8,
     pub trigger: i32,
     pub expire_ends: u8,
     pub splinter: u8,
@@ -251,9 +247,6 @@ pub struct sim_weapon_spec {
     /// fragment, whose rung is its thrower's gun rather than a ladder.
     pub damage_up: i32,
     pub blast: i32,
-    /// Blast a rung adds, for the weapon whose rung is not a ladder either: a
-    /// mine is a charge, so it is one spec wearing the layer's bomb rung.
-    pub blast_up: i32,
     pub push: i32,
     /// Ticks a shoved hull keeps the repel's speed ceiling. RepelTime.
     pub push_time: u16,
@@ -269,10 +262,6 @@ pub struct sim_fire_pattern {
     pub count: u8,
     pub spacing: u16,
     pub energy: i32,
-    /// Energy a rung adds, for a trigger whose rungs are not separate
-    /// patterns. LandmineFireEnergyUpgrade; a mine is one pattern wearing the
-    /// pilot's bomb rung.
-    pub energy_up: i32,
     pub delay: u16,
     pub recoil: i32,
 }
@@ -583,7 +572,6 @@ extern "C" {
         cx: i32,
         cy: i32,
         radius: i32,
-        viewer: u8,
         owner: u8,
         options: u8,
     ) -> c_int;
@@ -707,10 +695,10 @@ pub const SLOT_COUNT: usize = UP_COUNT + TRIG_COUNT + TRIG_COUNT * MOD_COUNT + M
 /// points in total.
 pub const UP_STEPS: u8 = 8;
 pub const KIT_BUDGET: u32 = 30;
-/// Charge kinds. A mine is one: a count you carry and spend.
+/// Charge kinds: a count you carry and spend. Two of the four slots the rack
+/// holds, the rest left for a zone that ships more.
 pub const CHARGE_REPEL: usize = 0;
 pub const CHARGE_BURST: usize = 1;
-pub const CHARGE_MINE: usize = 2;
 pub const MOD_MULTI: usize = 0;
 pub const MOD_BOUNCE: usize = 1;
 pub const MOD_PROX: usize = 2;
@@ -1077,20 +1065,17 @@ impl World {
         unsafe { sim_pack(&*self.state, out.as_mut_ptr(), out.len() as c_int) }
     }
 
-    /// A snapshot carrying only what is within `radius` of a point, plus
-    /// `viewer`'s own rounds wherever they are. Pass 255 for nobody's. See the
+    /// A snapshot carrying only what is within `radius` of a point. See the
     /// note on `sim_pack_around` in sim/include/sim/pack.h.
     ///
     /// The argument list is the C function's, for the reason the rest of this
     /// file mirrors it exactly.
-    #[allow(clippy::too_many_arguments)]
     pub fn pack_around(
         &self,
         out: &mut [u8],
         cx: i32,
         cy: i32,
         radius: i32,
-        viewer: u8,
         owner: u8,
         options: u8,
     ) -> i32 {
@@ -1102,7 +1087,6 @@ impl World {
                 cx,
                 cy,
                 radius,
-                viewer,
                 owner,
                 options,
             )
@@ -1484,7 +1468,7 @@ mod layout {
         }
 
         let mut packed = vec![0u8; STATE_PACK_MAX];
-        let len = world.pack_around(&mut packed, 0, 0, -1, 0, 0, PACK_PRIVATE_ALL);
+        let len = world.pack_around(&mut packed, 0, 0, -1, 0, PACK_PRIVATE_ALL);
         assert!(
             len > PACK_MAX as i32,
             "the maximum private state exceeds 64 KiB"
@@ -1496,7 +1480,7 @@ mod layout {
 
         let mut network = vec![0u8; PACK_MAX];
         assert!(
-            world.pack_around(&mut network, 0, 0, -1, 0, 0, PACK_PRIVATE_ALL) <= 0,
+            world.pack_around(&mut network, 0, 0, -1, 0, PACK_PRIVATE_ALL) <= 0,
             "the network scratch buffer must refuse this whole-state shape"
         );
     }

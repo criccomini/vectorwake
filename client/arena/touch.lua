@@ -113,9 +113,7 @@ local fired = nil
 local fanned = false
 
 -- The charge slots this hull can carry, newest set by the caller. Empty until
--- told, so a hull with none draws none. A mine is one of them: it used to be
--- a cell of its own tied to the bomb pad, and it is a count you carry and
--- spend now, which is what every cell on this rail already is.
+-- told, so a hull with none draws none.
 M.charges = {}
 
 -- Where the controls are. One definition, used by the hit test and by the

@@ -69,14 +69,10 @@ bounce = 1
 prox = 48
 
 [[arena.weapons]]
-name = "mine"
-life = 3000
-
-[[arena.weapons]]
 name = "burst"
 damage = 515
 
 [arena.kit]
 gun_mods = { multi = 5, bounce = 1, freeze = 1 }
 bomb_mods = { prox = 1, shrapnel = 3, bounce = 2, freeze = 1 }
-charges = [3, 3, 6]
+charges = [3, 3]

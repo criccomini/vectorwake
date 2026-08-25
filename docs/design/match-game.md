@@ -225,26 +225,24 @@ page, and which key spends which is decided there too.
 
 Each charge row carries a box beside its pips reading "charge 1 (Q)" or
 "charge 2 (W)", and pressing either one trades them. Before that the order was
-the core's numbering of the kinds, which meant a pilot carrying a repel and
-mines got the repel on Q whether they wanted it there or not, and the only
-sign of it was a lone letter at the far right edge of the page. What key
-throws what is a preference about a keyboard rather than a fact about a ship,
-so it is kept on the device beside the bindings and nothing about the kit
-changes when it moves.
+the core's numbering of the kinds, which meant the lower-numbered kind took Q
+whether the pilot wanted it there or not, and the only sign of it was a lone
+letter at the far right edge of the page. What key throws what is a preference
+about a keyboard rather than a fact about a ship, so it is kept on the device
+beside the bindings and nothing about the kit changes when it moves.
 
-There are three kinds today and the shelf sells them: a repel and a burst come
-with the account, and mines are bought. Carrying all of them at once would mean
-there was nothing to decide, so the arena refuses a kit that names a third and
-the page will not offer one. Taking one off to fit another is the whole of the
-interaction.
+Two kinds ship today, a repel and a burst, and the rack above the account's
+two of each is what the shelf sells. The rack holds four, so a zone may write
+more; the arena refuses a kit that names a third kind and the page will not
+offer one, because carrying every kind at once would mean there was nothing to
+decide.
 
-That is also what the mine key was in the way of. Mines used to sit on Shift
-and the bomb trigger, then on a key of their own, which is a key that does
-nothing on a ship carrying no mines and a row on the controls page describing a
-weapon most pilots have never bought. What a key spends is a slot; what a slot
-holds is the pilot's business. So the two keys are named for their positions,
-the corner stack says what is in each while you fly, and the ship page says
-which key each row landed on.
+The keys are named for their positions rather than for weapons. A key named
+for a weapon does nothing on a ship not carrying it, and puts a row on the
+controls page describing something the pilot may never have bought. What a key
+spends is a slot; what a slot holds is the pilot's business. So the corner
+stack says what is in each while you fly, and the ship page says which key each
+row landed on.
 
 ## Assists
 
@@ -506,9 +504,8 @@ people.
 
 - **Add-ons and rungs** the arena allows but your account has not bought. Those
   are the purchasable combat upgrades. First the roster held several of them:
-  the second barrel, the third bomb rung, the deepest rung of shrapnel and the
-  mine count were one hull's each, and nothing can be sold that exists on one
-  hull.
+  the second barrel, the third bomb rung and the deepest rung of shrapnel were
+  one hull's each, and nothing can be sold that exists on one hull.
   A new account owns the three starter profiles, every stat step and the
   established second gun and spray rungs used by saved remixes. The shop begins
   beyond that base equipment envelope, where deeper weapons, add-ons and racks
@@ -557,21 +554,6 @@ See [ai-players.md](ai-players.md).
 Two slots to start, four in the core (`SIM_MAX_CHARGES`). Two repels and two
 bursts are in the starter union, against the three of each the arena allows;
 the last rung of both racks, and every other kind, are bought.
-
-**A mine is a charge.** It was the bomb trigger's other posture, limited by how
-many of yours were already lying about. As a charge it is a count you carry and
-spend, which is what the kit makes coherent: how many mines you bring is a
-loadout decision priced against everything else, and fitting them means taking
-a repel or a burst off, because a kit carries two kinds.
-
-Two changes ride along. A mine currently wears its layer's bomb rung, and a
-charge fires one pattern that means the same thing to everybody, so mines
-standardize. And the mining role stops belonging to a hull. Six mines was the
-Lattice's row, which was exactly the shape of problem this whole space was
-flattened to fix: six is the arena's ceiling now, the kind is a purchase, and
-whoever is willing to spend a fifth of their kit on mines is the miner.
-`mine_max` went with the Shift+Tab chord and its touch cell, and so, in the
-end, did the key of its own that replaced them.
 
 ## Friends
 
@@ -818,8 +800,8 @@ Each step leaves a running game. The first five are done, for Melee.
    unique event index makes an at-least-once delivery pay once.
 4. **Maps.** Two pockets, point symmetry, two layouts, and the zone rotates
    between them.
-5. **Charges.** Mines as one, match-scoped counts, and the shop selling the
-   kinds beyond repel and burst.
+5. **Charges.** Match-scoped counts, and the shop selling the rungs of a rack
+   above what an account is dealt.
 6. **Friends**, and parties into a match. Not built.
 
 Turrets and gunners are gone, along with the open arena and mode rotation.

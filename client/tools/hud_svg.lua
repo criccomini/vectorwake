@@ -222,7 +222,9 @@ ui.begin(layer, W, H, 1, false, 0)
 -- Before a room answers. Not a HUD at all: the loader's picture, held by the
 -- engine until the stands arrive, which is what the hand-off lands on.
 if scenario == "waiting" then
-    ui.waiting("finding a game")
+    -- Silent, which is the normal case: a wait of a couple of seconds says
+    -- nothing and the line is kept for a fleet that is not there.
+    ui.waiting(nil)
 else
 ui.hud({
     me = landing and 0 or 0,

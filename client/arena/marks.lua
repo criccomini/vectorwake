@@ -133,33 +133,6 @@ function M.charge(slot, cx, cy, k, col)
     end
 end
 
--- A mine: the spiked hexagon the arena draws, at the same fixed rotation, so
--- the control and the thing it puts down are recognisably one object. Hollow,
--- because a dark centre is the whole of what separates a mine from a bomb at
--- a glance, and it is what makes this mark unmistakable beside the bomb head
--- it sits next to -- that one is a ring with its middle filled in.
---
--- Not a charge mark, because a mine is not a charge: it is the bomb trigger
--- held differently, which is why it wears the bomb's colour wherever it is
--- drawn.
-function M.mine(cx, cy, k, col)
-    local rot, hub = 0.26, k * 0.62
-    local pts = {}
-    for i = 0, 5 do
-        local a = rot + i / 6 * math.pi * 2
-        pts[#pts + 1] = cx + math.cos(a) * hub
-        pts[#pts + 1] = cy + math.sin(a) * hub
-    end
-    u:outline(pts, M.pen(k, 0.20), col, true)
-    for i = 0, 5 do
-        local a = rot + (i + 0.5) / 6 * math.pi * 2
-        local c, s = math.cos(a), math.sin(a)
-        u:seg(cx + c * hub, cy + s * hub,
-              cx + c * k * 1.18, cy + s * k * 1.18,
-              M.pen(k, 0.18), col)
-    end
-end
-
 -- --- a whole weapon, wearing its loadout -----------------------------------
 
 -- One barrel on a mark under construction, rather than on bare coordinates:

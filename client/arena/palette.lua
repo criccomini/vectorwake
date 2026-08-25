@@ -166,11 +166,12 @@ M.PAID      = rgb(0x8dffb0)
 M.ASSIST    = rgb(0x5aa874)
 -- Charges: things you carry a count of and spend.
 -- Display names for the charge-kind space the core can represent. A kit may
--- carry two kinds; the fourth kind remains reserved and has no decided name.
+-- carry two kinds; the two slots above them are reserved for a zone that
+-- ships more and have no decided names.
 M.CHARGES = {
     {name = "repel", short = "RPL"},
     {name = "burst", short = "BST"},
-    {name = "mine",  short = "MIN"},
+    {name = "charge 3", short = "C3"},
     {name = "charge 4", short = "C4"},
 }
 M.CHARGE_COL = rgb(0xffd166)

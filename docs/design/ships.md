@@ -172,21 +172,19 @@ plus what their account has bought. The matrix is in
 This is a change, and it is the reason the sections above no longer talk about
 bomb racks and barrel counts. A row per hull said which add-ons that hull could
 hold and how deep: shrapnel to three on the bombers, multifire to two on the
-spread hulls, six mines on the denial hull, a second barrel on the brawler
-alone, a third bomb rung on the heavy alone. Four of those were the whole of
-what made those hulls what they were, and all four had the same defect. A shop
-cannot sell a trait that exists on one hull, so none of them could ever be
-bought; and a pilot who bought a rung anyway would find the hull they wanted to
-fly it on refused it.
+spread hulls, a second barrel on the brawler alone, a third bomb rung on the
+heavy alone. Those were most of what made those hulls what they were, and they
+all had the same defect. A shop cannot sell a trait that exists on one hull, so
+none of them could ever be bought; and a pilot who bought a rung anyway would
+find the hull they wanted to fly it on refused it.
 
 They are slots now, on the same shelf as everything else. What was the
 brawler's barrel is one rung of gun spray, which anybody may buy five of: it
 was an add-on of its own for a while, and then it and multifire turned out to
 be two ladders that both meant more bullets.
 What was the heavy's third bomb rung is a rung on a ladder every hull climbs.
-Six mines is what the arena allows anyone willing to spend a fifth of their kit
-on mines, and a kit carries two kinds of charge at once, so fitting them means
-taking a repel or a burst off. See
+A charge rack is a ladder too, and a kit carries two kinds of charge at once,
+so a deep rack means giving up somewhere else. See
 [match-game.md](match-game.md#two-charges-and-which-two-is-the-choice).
 
 ## Design rules that hold across the roster

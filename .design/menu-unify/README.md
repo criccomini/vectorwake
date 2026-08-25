@@ -19,7 +19,7 @@ the front end now (decision 61) and changing a ship or a zone should not mean
 leaving them.
 
 **Dock was chosen and is built.** See
-[decision 62](../../docs/architecture/decisions.md). Card loses the fight it is
+[decision 63](../../docs/architecture/decisions.md). Card loses the fight it is
 drawn over, which is the one thing docking exists to keep. Console is the
 stronger answer in the stands and the wrong one over a match, where a permanent
 strip of chrome forks the same behavior into two; it stays open as a later step,

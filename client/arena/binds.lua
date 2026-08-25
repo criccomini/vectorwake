@@ -1,8 +1,8 @@
 -- Where each control actually is, as against where it starts.
 --
 -- A binding is a chord: one or more keys held together, triggered by the last
--- of them. Most are one key. Mines are Shift and the bomb key, which is the
--- original's own chord and the reason this file counts rather than compares.
+-- of them. Every default is one key; a pilot may put a control on a modifier
+-- and a key, which is the reason this file counts rather than compares.
 --
 -- The engine hands `on_input` one action per key, named for the key, and this
 -- turns that into the name of the thing the key does. Everything downstream
@@ -10,10 +10,11 @@
 -- which is the point: a rebound key arrives under the name of its job, so
 -- there is one place that has to be right rather than thirty.
 --
--- Two controls may share a trigger as long as their modifiers differ, and that
--- is what makes Shift+Tab a mine while Tab alone is a bomb. A press picks the
--- most specific chord whose modifiers are all down, so adding a modifier can
--- only ever take presses away from the barer binding, never the reverse.
+-- Two controls may share a trigger as long as their modifiers differ, so a
+-- pilot may put one control on Shift+Tab and another on Tab alone. A press
+-- picks the most specific chord whose modifiers are all down, so adding a
+-- modifier can only ever take presses away from the barer binding, never the
+-- reverse.
 --
 -- Identical chords swap. The one already spoken for hands its control the
 -- chord the arriving one is leaving, so the two trade and neither ends up on

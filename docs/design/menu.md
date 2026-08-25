@@ -7,7 +7,7 @@
 > what that phone already got; anything wider keeps the fight beside it, so a
 > ship or a zone can be changed without leaving the stands. The two layouts this
 > file describes below, a tab bar under a thumb and a row of words across the
-> top, are one layout now. See [decision 62](../architecture/decisions.md) and
+> top, are one layout now. See [decision 63](../architecture/decisions.md) and
 > the mocks in `.design/menu-unify`. Three things went with the width: the
 > picture of a keyboard on the controls page, the reading pane beside the
 > upgrades shelf, and the second column that carried the room's roster beside a
@@ -333,17 +333,29 @@ are not on the landing, and the seat being held is theirs already.
 ### Before a room answers
 
 A directory lookup and a handshake stand between the engine's first frame and
-the first snapshot, and something has to be on screen for them. It is the
-loading screen's own picture, held: the lockup centered on the starfield at the
-size and place the loader drew it, one line under it saying where the wait is,
-and MENU in its usual corner. Nothing visible changes at the hand-off, and the
-game appears when it appears.
+the first snapshot. What is on screen for them is this same page with
+everything that needs a room taken off it: the starfield, the name, and MENU.
+No key, because there is nothing to join yet, and none of the instruments,
+because the radar, the coordinates, the link bars, the roster and the channel
+mark are all about a room this client has not found. They are absent rather
+than drawn empty.
+
+**The name does not move.** It sits exactly where it sits once the room is
+there, with the key appearing underneath it, so arriving is two things fading
+in rather than the page rearranging itself. A centered lockup was tried first
+and it jumped to the foot of the screen the moment a game answered, which is
+the one move a hand-off should never make.
+
+Nothing is said while it is only waiting. A couple of seconds of network is not
+worth a caption, and a wordmark on a starfield is what this game looks like. A
+line appears where the key will be when something has actually gone wrong: a
+join that failed, or a directory that has answered and named no games. Silence
+there would be a client that looks like it is still trying when it has finished
+looking and found nothing.
 
 What used to fill that gap was the menu, opened by the client rather than by
 anybody, which is the one thing this whole design is against. It also meant the
-first screen of a game about flying was a list. The line under the wordmark
-says "looking for games" while the directory is being asked, "joining" while a
-room is answering, and whatever went wrong when something does.
+first screen of a game about flying was a list.
 
 MENU is on it because a directory that never answers must not leave a wordmark
 and no way out. That is also what lets the menu always close: there is always

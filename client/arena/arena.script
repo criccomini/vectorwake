@@ -279,10 +279,10 @@ end
 -- the order Q and W spend them in.
 --
 -- Off the ship's own kit rather than off the arena's ceiling. The ceiling says
--- what a kit may hold and every hull in the zone shares it, so it answered
--- "repel, burst, mine" for everybody and put a mine on E whether the pilot had
--- one or not. A kit carries two kinds and which two is the pilot's choice, so
--- the kit is the only thing that can say which key spends what.
+-- what a kit may hold and every hull in the zone shares it, so it named every
+-- kind for everybody and bound keys to charges the pilot was not carrying. A
+-- kit carries two kinds and which two is the pilot's choice, so the kit is the
+-- only thing that can say which key spends what.
 --
 -- The kit, not the count in hand: the corner shows what is left, and binding
 -- to that would move Q onto the burst the moment the last repel went, which is
@@ -476,9 +476,6 @@ end
 local function pad_reach(w, h, s)
     local L = touch.layout(w, h, s)
     local reach = L.guns.y + L.guns.r
-    if L.mine and L.mine.y + L.mine.r > reach then
-        reach = L.mine.y + L.mine.r
-    end
     for _, c in ipairs(L.charge or {}) do
         local top = c.y + (c.w and c.w / 2 or c.r)
         if top > reach then reach = top end
@@ -1054,22 +1051,6 @@ end
 
 -- One predicted tick. The server owns the arena, so this sends buttons and
 -- replays its own ship; nothing else in the world is stepped here.
--- Whether the mine input was down on the previous step, so a held chord asks
--- once rather than a hundred times a second.
-
--- Why nothing happened when you asked for a mine.
---
--- The core simply refuses: a trigger that costs a bar for nothing is worse
--- than one that does nothing, so a mine over the ceiling is not fired and not
--- charged for. That is right and it is silent, and silence on a keypress reads
--- as a dropped input rather than as a rule. On a phone the rail says it -- the
--- cell's pips are the room left, and none lit is a full field -- but there are
--- no pips on a keyboard.
---
--- Asked here rather than reported by the core, because the client already
--- holds both numbers to draw those pips with and a refusal is not simulation
--- state: nothing about the world changed, so there is nothing to put in a
--- snapshot and nobody else to tell.
 local function step_once()
     local b = my_buttons()
     if net.step(b) then drain_events() end
@@ -2187,18 +2168,16 @@ function update(self, dt)
     -- a directory and a handshake happens behind a wordmark rather than
     -- behind a menu.
     if not live then
-        -- What the wait is, in the words of whoever knows. A note from a join
-        -- that failed says the most and goes first. Then the two phases this
-        -- screen actually covers: asking a directory which games are running,
-        -- and shaking hands with the room it named. `directory.note` is the
-        -- short headline for the first ("looking for games", "no games are
-        -- running"); `why` is a sentence written for a menu's empty state and
-        -- is too long to sit under a wordmark.
+        -- Only what has gone wrong. A normal wait is a directory lookup and a
+        -- handshake, two seconds of it, and a caption narrating that is a
+        -- label on the one screen that should look like the game. What earns
+        -- the line is a join that failed, or a directory that has answered and
+        -- named no games: silence there is a client that looks like it is
+        -- still trying when it has already finished and found nothing.
         local why = menu.note
-        if not why or why == "" then
-            why = self.joining and "joining" or directory.note
+        if (not why or why == "") and directory.answered then
+            why = directory.note
         end
-        if not why or why == "" then why = "finding a game" end
         ui.waiting(why)
     end
     if menu.open then ui.menu(menu.view()) end
@@ -3328,12 +3307,12 @@ function on_input(self, action_id, action)
     -- asked about.
     --
     -- Which control that is depends on what else is down, since a binding may
-    -- be a chord: Shift and Tab together are a mine where Tab alone is a bomb.
-    -- The question is asked on the press and the answer is remembered, so a
-    -- key goes on holding whatever it started until it comes up. Deciding
-    -- again on the release would let a modifier lifted early hand the press to
-    -- the barer binding halfway through, which is a bomb thrown by letting go
-    -- of shift.
+    -- be a chord: Shift and Tab together may be one control where Tab alone is
+    -- another. The question is asked on the press and the answer is
+    -- remembered, so a key goes on holding whatever it started until it comes
+    -- up. Deciding again on the release would let a modifier lifted early hand
+    -- the press to the barer binding halfway through, which is a bomb thrown
+    -- by letting go of shift.
     local name = action_id
     if action.pressed then
         held[name] = true

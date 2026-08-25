@@ -42,29 +42,23 @@ int sim_pack(const sim_state *s, uint8_t *out, int cap);
  * the gap between one snapshot and the next. Prediction is unaffected: a
  * client steps the same core between authoritative replacements.
  *
- * `viewer` is the camera seat, or 255 for nobody. Its own rounds
- * travel however far away they are, and that exception is the whole of what a
- * pilot's minefield needs to survive the trip home. Every other round is spent
+ * Rounds are filtered by distance alone. Every round in the game is spent
  * within seconds and near the hull that fired it, so the radius is the only
- * rule they ever meet; a mine is the one round a pilot leaves behind and comes
- * back to, and filtering it by distance told the client the mine had gone. The
- * client draws a round that stops existing as a round that went off, its own
- * prediction lays a sixth mine because it can no longer see the five, and the
- * pilot is shown a minefield detonating behind them that is still sitting
- * there.
+ * rule they ever meet; a weapon left behind for a pilot to fly back to would
+ * need an exception, and there is no longer one in the game.
  *
  * Energy and its capacity rung travel in every visible ship record because
  * together they are the public health bar. `owner` is the only ship whose
- * other upgrades, inventory, cooldowns and owner-only state travel. It is
- * separate from `viewer` because a spectator may borrow a pilot's camera
- * without becoming that pilot.
+ * other upgrades, inventory, cooldowns and owner-only state travel, and it is
+ * a seat rather than the camera because a spectator may borrow a pilot's
+ * camera without becoming that pilot.
  * `SIM_PACK_PRIVATE_ALL` is reserved for trusted whole-room consumers.
  *
  * A negative radius means everything, which is what `sim_pack` passes.
  * SIM_PACK_MAX bytes suffice for the network shape with no private-all
  * option; SIM_STATE_PACK_MAX bytes suffice for every option. */
 int sim_pack_around(const sim_state *s, uint8_t *out, int cap,
-                    int32_t cx, int32_t cy, int32_t radius, uint8_t viewer,
+                    int32_t cx, int32_t cy, int32_t radius,
                     uint8_t owner, uint8_t options);
 
 /* Read a snapshot into s. Returns 0, or -1 on malformed input. */

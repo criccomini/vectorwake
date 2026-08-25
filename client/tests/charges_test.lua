@@ -30,7 +30,7 @@ end
 -- Slot 0 is a repel: a blast, and a round that is gone in a tick. Slot 1 is a
 -- burst: no blast of its own and rounds that fly for ages.
 -- Spec 12 is the case that only the life test catches: a charge that both goes
--- off and flies, a mine or a lobbed bomb. It draws itself all the way there
+-- off and flies, such as a lobbed bomb. It draws itself all the way there
 -- and detonates on its own expiry like any other blast, so drawing it from the
 -- inventory as well would put a second explosion at the launcher.
 local SPECS = {

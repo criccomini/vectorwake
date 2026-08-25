@@ -59,12 +59,12 @@ static int world_velocity(int32_t v) {
 }
 
 int sim_pack(const sim_state *s, uint8_t *out, int cap) {
-    return sim_pack_around(s, out, cap, 0, 0, -1, 255, 255,
+    return sim_pack_around(s, out, cap, 0, 0, -1, 255,
                            SIM_PACK_PRIVATE_ALL);
 }
 
 int sim_pack_around(const sim_state *s, uint8_t *out, int cap,
-                    int32_t cx, int32_t cy, int32_t radius, uint8_t viewer,
+                    int32_t cx, int32_t cy, int32_t radius,
                     uint8_t owner, uint8_t options) {
     if (!s || !out || cap < 0) return -1;
     if (s->weapon_count > SIM_MAX_WEAPONS || s->flag_count > SIM_MAX_FLAGS)
@@ -75,7 +75,7 @@ int sim_pack_around(const sim_state *s, uint8_t *out, int cap,
     w32(&w, s->tick);
     w32(&w, s->rng);
 
-    /* Which ships this viewer is told about, as a bitmap ahead of the records.
+    /* Which ships this camera is told about, as a bitmap ahead of the records.
      *
      * A bitmap rather than a shorter array because a ship index is identity
      * everywhere else: the roster names seat 12, the kill feed credits seat
@@ -163,8 +163,7 @@ int sim_pack_around(const sim_state *s, uint8_t *out, int cap,
         }
     }
 
-    /* Rounds in the air, near ones only, plus this viewer's own wherever they
-     * are.
+    /* Rounds in the air, near ones only.
      *
      * Measured on the live arena, four fifths of them belong to fights nobody
      * here can see: 20.9% of 191,115 weapon-snapshots fell inside the radius.
@@ -180,25 +179,20 @@ int sim_pack_around(const sim_state *s, uint8_t *out, int cap,
      * before the next snapshot. Nothing arrives from outside the radius
      * without a snapshot in between announcing it.
      *
-     * That argument holds for a round and not for a minefield, which is what
-     * the owner test is doing here. A bullet is spent in a second or two and
-     * never leaves the pilot who fired it; a mine sits for two minutes while
-     * the pilot flies off, and measured on alpha every mine laid dropped out
-     * of its own layer's snapshot inside seven seconds. See the note in
-     * pack.h. Costing at most a pilot's five mines a snapshot, so the
-     * bandwidth answer above is untouched. */
+     * Distance is the only rule a round ever meets here, which holds because
+     * every round in the game is spent within seconds and near the hull that
+     * fired it. A weapon that outlived its owner's flight home would need the
+     * exception this used to carry for one. */
     uint16_t sent = 0;
     for (uint16_t i = 0; i < s->weapon_count; i++) {
         const sim_weapon *p = &s->weapons[i];
-        sent = (uint16_t)(sent + ((p->owner == viewer
-                                   || within(p->x, p->y, cx, cy, radius, r2))
+        sent = (uint16_t)(sent + (within(p->x, p->y, cx, cy, radius, r2)
                                   ? 1 : 0));
     }
     w16(&w, sent);
     for (uint16_t i = 0; i < s->weapon_count; i++) {
         const sim_weapon *p = &s->weapons[i];
-        if (p->owner != viewer
-            && !within(p->x, p->y, cx, cy, radius, r2)) continue;
+        if (!within(p->x, p->y, cx, cy, radius, r2)) continue;
         w8(&w, p->spec);
         w8(&w, p->left);
         w8(&w, p->depth);
@@ -211,8 +205,8 @@ int sim_pack_around(const sim_state *s, uint8_t *out, int cap,
         w32(&w, (uint32_t)p->vx);
         w32(&w, (uint32_t)p->vy);
         w16(&w, p->life);
-        /* A proximity fuse that has latched a seat this viewer is not being
-         * sent travels unarmed.
+        /* A proximity fuse that has latched a seat this snapshot is not
+         * carrying travels unarmed.
          *
          * It has to, and finding out why is the one sharp edge in filtering
          * ships. The fuse holds a ship index, and `sim_step` reads
@@ -442,14 +436,12 @@ int sim_unpack(sim_state *out, const uint8_t *in, int len) {
  */
 
 #define CFG_MAGIC 0x56434647u /* "VCFG" */
-/* 11: `still` and `blast_up` joined the spec. The version is the whole of the
- * compatibility story -- a mismatch is refused, and CI ships both ends of the
- * wire from the same commit -- but the fields still have to be *here*: this
- * file is a hand-written mirror of the spec struct, and a field it does not
- * carry arrives at every client as zero. For these two that is a mine that
- * flies off at its layer's speed in the client's predicted world and wears a
- * blast the ladder never grew, while the server plays the weapon correctly,
- * which is the exact drift this message exists to prevent.
+/* 11: two fields joined the spec. The version is the whole of the
+ * compatibility story, since a mismatch is refused and CI ships both ends of
+ * the wire from the same commit, but a field still has to be *here*: this file
+ * is a hand-written mirror of the spec struct, and one it does not carry
+ * arrives at every client as zero, so the client predicts a weapon the server
+ * is playing differently. That drift is what this message exists to prevent.
  *
  * 12: `spawn_radius` and `show_spawns`. Two branches both called themselves 11
  * and both changed the layout, which is what a merge of them has to notice: a
@@ -458,27 +450,25 @@ int sim_unpack(sim_state *out, const uint8_t *in, int len) {
  * has to travel because the client predicts a respawn's position, and the mark
  * because the client is what draws it.
  *
- * 13: `mine` and `mine_max`. Mines stopped being a charge, so the pattern is
- * no longer reachable through `charge[]` and the ceiling is no longer a
- * count in hand. Both travel because the client predicts laying one: without
- * them it either cannot find the weapon at all or lets a pilot put down more
- * than the room allows and watches the server delete them.
- *
  * 14: public energy state and the capacity rung returned to ship records.
  *
  * 15: gunner limits plus the carrier thrust and speed penalties.
  *
  * 16: the match game. Greens are gone, so every weight, rate, bound and
- * lifetime that placed or priced one leaves with them; a mine is a charge
- * again, so `mine` and `mine_max` go back to `charge[]` and the hull's
- * charge row; gunners are gone, so their three fields go; and `bounty_base`
- * arrives, because bounty is a run rather than a sum over what is held and
- * the client derives the price from it.
+ * lifetime that placed or priced one leaves with them; gunners are gone, so
+ * their three fields go; and `bounty_base` arrives, because bounty is a run
+ * rather than a sum over what is held and the client derives the price from
+ * it.
  *
  * 18: kill streaks. `streak_kills` and `streak_bounty` travel because the
  * client draws the hull of a pilot on one and prices them from the same two
- * numbers the arena does. */
-#define CFG_VERSION 18
+ * numbers the arena does.
+ *
+ * 19: mines are gone, and the three fields that existed for them go with
+ * them: `still` and `blast_up` off the spec, `energy_up` off the pattern.
+ * Nothing else in the game was ever laid rather than thrown, wore a rung
+ * from another trigger's ladder, or charged more for one. */
+#define CFG_VERSION 19
 
 static int settings_valid(const sim_settings *cfg) {
     if (cfg->class_count == 0 || cfg->class_count > SIM_MAX_CLASSES
@@ -561,14 +551,12 @@ int sim_settings_pack(const sim_settings *cfg, uint8_t *out, int cap) {
         w16(&w, sp->life);
         w8(&w, sp->on_wall);
         w8(&w, sp->bounces);
-        w8(&w, sp->still);
         w32(&w, (uint32_t)sp->trigger);
         w8(&w, sp->expire_ends);
         w8(&w, sp->splinter);
         w32(&w, (uint32_t)sp->damage);
         w32(&w, (uint32_t)sp->damage_up);
         w32(&w, (uint32_t)sp->blast);
-        w32(&w, (uint32_t)sp->blast_up);
         w32(&w, (uint32_t)sp->push);
         w16(&w, sp->push_time);
         w16(&w, sp->stall);
@@ -581,7 +569,6 @@ int sim_settings_pack(const sim_settings *cfg, uint8_t *out, int cap) {
         w8(&w, p->count);
         w16(&w, p->spacing);
         w32(&w, (uint32_t)p->energy);
-        w32(&w, (uint32_t)p->energy_up);
         w16(&w, p->delay);
         w32(&w, (uint32_t)p->recoil);
     }
@@ -675,14 +662,12 @@ int sim_settings_unpack(sim_settings *out, const uint8_t *in, int len) {
         sp->life = (uint16_t)r16(&r);
         sp->on_wall = (uint8_t)r8(&r);
         sp->bounces = (uint8_t)r8(&r);
-        sp->still = (uint8_t)r8(&r);
         sp->trigger = (int32_t)r32(&r);
         sp->expire_ends = (uint8_t)r8(&r);
         sp->splinter = (uint8_t)r8(&r);
         sp->damage = (int32_t)r32(&r);
         sp->damage_up = (int32_t)r32(&r);
         sp->blast = (int32_t)r32(&r);
-        sp->blast_up = (int32_t)r32(&r);
         sp->push = (int32_t)r32(&r);
         sp->push_time = (uint16_t)r16(&r);
         sp->stall = (uint16_t)r16(&r);
@@ -697,7 +682,6 @@ int sim_settings_unpack(sim_settings *out, const uint8_t *in, int len) {
         p->count = (uint8_t)r8(&r);
         p->spacing = (uint16_t)r16(&r);
         p->energy = (int32_t)r32(&r);
-        p->energy_up = (int32_t)r32(&r);
         p->delay = (uint16_t)r16(&r);
         p->recoil = (int32_t)r32(&r);
     }

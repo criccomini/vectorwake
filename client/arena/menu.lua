@@ -524,8 +524,8 @@ local function kit_ceiling()
     local own = account.entitlements or {}
     -- The baseline where the account has said nothing, which is a deployment
     -- with no meta-layer and a session that has not answered yet. Not "no
-    -- limit": that offered a mine to a pilot who cannot slot one, and the
-    -- arena, which reads the same baseline, refused it.
+    -- limit": that offered slots to a pilot who cannot take them, and the
+    -- arena, which reads the same baseline, refused them.
     local base = (core and core.base_entitlements and core.base_entitlements())
         or {}
     local out = {}
@@ -828,10 +828,10 @@ end
 -- Which of the two the arrows and the keys call first.
 --
 -- The kit carries counts by kind and the core numbers the kinds, so without
--- this the first key always throws the lower-numbered one: a pilot carrying
--- repel and mines got repel on Q whatever they would rather have. It is a
--- preference about a keyboard rather than a fact about a ship, so it lives
--- here and on this device, beside the bindings it is really part of.
+-- this the first key always throws the lower-numbered one, whatever the pilot
+-- would rather have. It is a preference about a keyboard rather than a fact
+-- about a ship, so it lives here and on this device, beside the bindings it is
+-- really part of.
 M.charge_flip = false
 
 -- The kinds a kit carries, in the order the keys spend them.
@@ -1455,8 +1455,6 @@ local TEACH = {
             .. " a corner you should not have flown into.",
         burst = "a ring of rounds off your own hull, every direction at"
             .. " once. the close-quarters answer.",
-        mine = "a bomb of your bomb rung that lies still and waits. only"
-            .. " so many of yours can be out at once.",
     },
 }
 

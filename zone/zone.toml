@@ -173,24 +173,19 @@ spectate_silence_ticks = 500
 # weapon, which a hull can carry or another weapon can splinter into.
 #
 # The weapons that belong to a slot in the settings rather than to a hull are
-# named for what they are: `repel`, `burst` and `mine` for the three charges
-# the baseline fills, `charge-4` for the slot it leaves empty, and shrapnel-1
-# up, one per rung of the add-on. So the repel's own radius is `repel`'s
-# blast, and what a second rung of shrapnel breaks into is shrapnel-2. Naming
-# the empty charge slot makes the weapon and fills the slot at once.
+# named for what they are: `repel` and `burst` for the two charges the
+# baseline fills, `charge-3` and `charge-4` for the slots it leaves empty, and
+# shrapnel-1 up, one per rung of the add-on. So the repel's own radius is
+# `repel`'s blast, and what a second rung of shrapnel breaks into is
+# shrapnel-2. Naming an empty charge slot makes the weapon and fills the slot
+# at once.
 #
 # Units are the file's: px, px/s/10, energy, ticks, and degrees.
 #
-#   speed life on_wall bounces still    how it flies (end, bounce, pass)
+#   speed life on_wall bounces    how it flies (end, bounce, pass)
 #   trigger expire_ends splinter    what counts as arriving somewhere
-#   damage blast blast_up push push_time stall    what happens there
+#   damage blast push push_time stall    what happens there
 #   count spread energy delay recoil    what one pull of the trigger makes
-#
-# `still` is the odd one and it is what a mine is made of. Every round takes
-# the firer's velocity on top of its own speed, which is why a shot fired at a
-# run is faster over the ground; a speed-zero round with that added leaves at
-# exactly the speed the ship was doing and never stops. `still = true` is a
-# round that stays where it was let go.
 #
 # Three examples, all off. Uncomment one and save; the zone re-reads it and
 # every client in the room gets the new table without reconnecting.
@@ -261,12 +256,10 @@ spectate_silence_ticks = 500
 #   name = "Anvil"
 #   charges = [3, 3, 3, 2]
 #
-# A mine is a charge like any other: a count you carry and spend, laid where
-# you are rather than thrown. What a zone decides is how long one sits there,
-# which is a map setting as much as a weapon one, and how many each hull may
-# slot.
+# An empty charge slot is a charge kind waiting to be written. Name it, give
+# it a shape, and say how many of it a hull may slot.
 #   [[arena.weapons]]
-#   name = "mine"
+#   name = "charge-3"
 #   life = 3000
 #   blast = 120
 #
@@ -343,9 +336,9 @@ spectate_silence_ticks = 500
 #   gun_mods = { multi = 1 }
 #
 # A charge is a weapon you carry a count of and spend, and the count is a kit
-# slot: one key per charge, so a zone can fill the fourth slot without asking
-# for a key. The baseline fills three of the four -- a repel, a burst and a
-# mine -- and what each hull may slot is the `charges` row under it.
+# slot: one key per charge, so a zone can fill an empty slot without asking
+# for a key. The baseline fills two of the four, a repel and a burst, and what
+# each hull may slot is the `charges` row under it.
 #
 # Nothing here decides what a pilot ends up flying. That is theirs: a kit is
 # chosen in the hangar out of what their account owns, inside the ceilings

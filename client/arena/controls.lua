@@ -57,13 +57,13 @@ return {
     -- Two charge keys, and they are positions rather than weapons.
     --
     -- A kit carries two kinds of charge and the pilot chooses which, so what
-    -- Q spends is whatever they put in the first slot on the ship page. There
-    -- were three keys named repel, burst and mine, on the argument that a
-    -- pilot should not have to learn a second name for a thing the corner
-    -- stack already calls by its own; that was true while every hull carried
-    -- all three and it stopped being true the moment the pair became a
-    -- choice. A key named for a weapon that is not fitted is worse than one
-    -- named for the slot it spends.
+    -- Q spends is whatever they put in the first slot on the ship page. The
+    -- keys used to be named for the weapons, on the argument that a pilot
+    -- should not have to learn a second name for a thing the corner stack
+    -- already calls by its own; that was true while every hull carried every
+    -- kind and it stopped being true the moment the pair became a choice. A
+    -- key named for a weapon that is not fitted is worse than one named for
+    -- the slot it spends.
     --
     -- The corner stack still says what is in each, which is where a pilot
     -- reads it in a fight, and the ship page says which key each row is on.

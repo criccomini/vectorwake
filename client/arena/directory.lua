@@ -49,6 +49,10 @@ M.aged = 0
 -- They read logs; a player reads this.
 M.note = "looking for games"
 M.why = "asking the directory"
+-- Whether any answer has landed, good or bad. The waiting screen reads it to
+-- tell a normal two second wait from a fleet that is not there: before the
+-- first reply it says nothing, and after one it can say what came back.
+M.answered = false
 
 local conn = nil
 local since = 0
@@ -172,6 +176,7 @@ local function on_message(s)
     local ok, reply = pcall(json.decode, string.sub(s, 2))
     if not ok or type(reply) ~= "table" or type(reply.zones) ~= "table" then
         M.note = "the directory sent something unreadable"
+        M.answered = true
         M.why = "retrying"
         return
     end
@@ -256,6 +261,7 @@ local function on_message(s)
     -- second instead of every refresh.
     M.aged = 0
     M.note = (#rows == 0) and "no games are running" or ""
+    M.answered = true
     M.why = "the list fills in by itself when one starts"
 end
 
@@ -298,6 +304,7 @@ local function dial()
                     -- something they have done wrong; the address under it
                     -- is still there for whoever is running the thing.
                     M.note = "no servers found"
+                    M.answered = true
                     M.why = "retrying"
                 end
             end
@@ -306,6 +313,7 @@ local function dial()
     if not ok then
         conn = nil
         M.note = "that address cannot be dialled"
+        M.answered = true
         M.why = "the client was pointed somewhere it cannot reach"
     end
 end

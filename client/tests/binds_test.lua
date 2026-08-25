@@ -270,8 +270,7 @@ end
 -- player can put a control on Shift and the bomb key while the bomb key alone
 -- stays the bomb.
 --
--- Nothing ships on a chord any more. The mine was the last one, and it is a
--- charge with a key of its own now; the mechanism stays because a player may
+-- Nothing ships on a chord any more; the mechanism stays because a player may
 -- still want one.
 
 do

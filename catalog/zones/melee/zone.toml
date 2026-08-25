@@ -128,15 +128,6 @@ multi = 1
 bounce = 1
 prox = 48
 
-# Thirty seconds a mine. The open arena's two minutes made a doorway posted
-# early in a fight still posted at the end of it, which is a fair trade over an
-# evening and not over three minutes: a mine is a slot in a kit here, and a slot
-# that denies a lane for a sixth of the match is the strongest thing anybody
-# could buy.
-[[arena.weapons]]
-name = "mine"
-life = 3000
-
 # The damage of one of the twenty-four rounds a burst throws. Lower than the
 # baseline's 700, so a burst is survivable at a range that one is not.
 [[arena.weapons]]
@@ -175,8 +166,6 @@ damage = 515
 gun_mods = { multi = 5, bounce = 1, freeze = 1 }
 bomb_mods = { prox = 1, shrapnel = 3, bounce = 2, freeze = 1 }
 
-# Three repels, three bursts, and six mines for anyone who buys the kind and
-# is willing to spend a fifth of their kit on them. Six was the denial hull's
-# row, which is how that hull kept a role; it is a purchase now, and the role
-# goes to whoever wants to pay for it.
-charges = [3, 3, 6]
+# Three repels and three bursts for anyone who buys the rungs and is willing
+# to spend a fifth of their kit on them.
+charges = [3, 3]

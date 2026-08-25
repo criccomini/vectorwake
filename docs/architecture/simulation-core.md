@@ -69,8 +69,8 @@ Each tick, in this order:
    ship's maximum, and position gains velocity. There is no drag term anywhere.
 3. Resolve collisions against the tile grid. A ship that hits a wall reflects
    with speed scaled by the arena's bounce factor, where 16/16 means no loss.
-4. Advance projectiles, including bounces, proximity triggers, mine arming, and
-   lifetime expiry.
+4. Advance projectiles, including bounces, proximity triggers, and lifetime
+   expiry.
 5. Resolve damage. Every hit is decided here and nowhere else.
 6. Recharge energy, tick down timers, expire bricks and decoys, and settle
    region effects.

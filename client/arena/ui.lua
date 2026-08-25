@@ -4047,7 +4047,11 @@ end
 -- clock and score and radar and feed, is the rest of this screen. See
 -- decision 61 for why a spectator's view of a game beats a panel describing
 -- one as a front page.
-local function landing()
+-- Where the front end's two pieces sit. One function because the waiting
+-- screen draws the same wordmark in the same place as the landing does, and a
+-- logo that jumps when the room arrives is the reason this is shared rather
+-- than written twice.
+local function landing_geom()
     local pts_w = F.w / math.max(F.density, 0.0001)
     -- Edge to edge on a phone held upright, where a centered key of fixed
     -- width leaves two margins of nothing either side of the only control on
@@ -4055,7 +4059,6 @@ local function landing()
     -- PLAY NOW is a banner rather than a button.
     local narrow = pts_w < 620
     local kh = (narrow and 50 or (M.compact and 44 or 54)) * F.scale
-    local kpx = (narrow and 16 or (M.compact and 14 or 19)) * F.scale
     local margin = 14 * F.scale
     local kw = narrow and (F.w - F.safe_l - F.safe_r - 2 * margin)
                or (M.compact and 240 or 320) * F.scale
@@ -4063,6 +4066,40 @@ local function landing()
     -- `y` counts down from the top here, as it does everywhere in this file,
     -- so the foot of the screen is measured back from `F.h`.
     local ky = F.h - F.safe_b - (M.compact and 18 or 22) * F.scale - kh
+    local size = (M.compact and 20 or 26) * F.scale
+    -- `txt` sets a string on the middle of its line, so half the type goes
+    -- back to put the baseline where it belongs above the key.
+    local wy = ky - (M.compact and 16 or 20) * F.scale - size / 2
+    return kx, ky, kw, kh, size, wy,
+           (narrow and 16 or (M.compact and 14 or 19)) * F.scale
+end
+
+-- The name, where it sits whether or not there is a room to join yet.
+local function landing_mark()
+    local kx, _, kw, _, size, wy = landing_geom()
+    M.wordmark(kx + kw / 2 - M.wordmark_w(size) / 2, wy, size)
+end
+
+-- The landing: the game's name over the one key the screen exists for.
+--
+-- This is the whole of the front end now. Opening the client seats you in the
+-- stands of a real room, so what a stranger meets is the game being played,
+-- drawn by the same code that draws it to the people in it, with two things
+-- laid over the bottom of it: what this is, and the way in.
+--
+-- The name goes directly over the key rather than into a corner or under the
+-- clock. A stranger's eye ends on the pulsing thing at the foot of the screen,
+-- and the name has to be where that look lands or it is a page that never says
+-- what it is. Read as one object the two are a title and its button; read
+-- apart they are a mark in a corner nobody looks at. Three placements were
+-- drawn before this one was picked; see .design/spectator-landing.
+--
+-- Nothing else is added. The HUD a watcher already gets, corner keys and
+-- clock and score and radar and feed, is the rest of this screen. See
+-- decision 61 for why a spectator's view of a game beats a panel describing
+-- one as a front page.
+local function landing()
+    local kx, ky, kw, kh, _, _, kpx = landing_geom()
     -- The key breathes on the same clock the on-air tally swells at, and the
     -- edge is floored well above dark so the trough never reads as a key that
     -- has stopped working. `F.now` is zero under the test harness, which is
@@ -4072,55 +4109,41 @@ local function landing()
             pal.a(pal.FRIEND, 0.62 + 0.38 * breath))
     txt("PLAY NOW", kx + kw / 2, ky + kh / 2, kpx, pal.a(pal.INK, 1), "center")
     hit(kx, ky, kw, kh, "play_now")
-    -- Above it, centered on the same axis, close enough that the two read as
-    -- one block and far enough that the name is not inside the button. `txt`
-    -- sets a string on the middle of its line, so half the type goes back.
-    local size = (M.compact and 20 or 26) * F.scale
-    M.wordmark(kx + kw / 2 - M.wordmark_w(size) / 2,
-               ky - (M.compact and 16 or 20) * F.scale - size / 2, size)
+    landing_mark()
 end
 
--- Before a room answers: the same picture the page was already showing.
+-- Before a room answers: the landing with everything that needs a room taken
+-- off it.
 --
--- The loader draws a starfield with the lockup centered on it and a hairline
--- under that, and hands over the moment the engine has a frame. What the
--- engine used to put there was the menu, which is a panel nobody asked for
--- standing between a player and the game for as long as a directory and a
--- handshake take. So the hand-off now lands on this: the same lockup, in the
--- same place, at the same size, over the engine's own starfield. Nothing
--- changes on screen until the stands come up.
+-- Not a screen of its own. It is the same starfield, the same name in the same
+-- place, and the same MENU in the same corner, so when the stands arrive the
+-- only thing that happens is that the room and the key appear. Nothing already
+-- on screen moves. The instruments a watcher gets are all about a room this
+-- client has not found yet, so the radar, the coordinates, the link bars, the
+-- roster and the channel mark are simply absent rather than drawn empty.
 --
--- One line under it says where the wait is, and MENU is in its usual corner,
--- because a directory that never answers has to leave a way to the settings
--- and to the games list rather than a wordmark and no exit.
+-- What used to be here was a lockup centered in the window, which was the
+-- loading screen held one beat longer and read as a third screen between the
+-- loader and the game. The logo moved when the game arrived, which is the one
+-- thing the hand-off should never do.
 function M.waiting(note)
-    local pts_w = F.w / math.max(F.density, 0.0001)
-    -- The loader's own measure, so neither the size nor the position moves
-    -- across the hand-off: min(width/11, 44) points, centered.
-    local size = math.min(pts_w / 11, 44) * F.scale
-    local span = M.wordmark_w(size)
-    if span > F.w * 0.8 then
-        size = size * F.w * 0.8 / span
-        span = M.wordmark_w(size)
-    end
-    local x0 = (F.w - span) / 2
-    local cy = F.h / 2
-    M.wordmark(x0, cy, size)
-    if note and note ~= "" then
-        -- Where the loader's hairline was, in the menu's face and in the case
-        -- it was written in. The interface shouts a label because a label is
-        -- a thing to find at a glance; this is a sentence about what the
-        -- client is doing, and it is set like one.
-        txt(note, F.w / 2, cy + size * 0.95 + 10 * F.scale,
-            (M.compact and 10 or 12) * F.scale, pal.a(pal.DIM, 0.9), "center",
-            MENU_FONT, true)
-    end
-    -- The one control. Drawn here rather than through the corner row, which
+    landing_mark()
+    -- The one control, drawn here rather than through the corner row, which
     -- carries a roster and a channel mark this screen has neither of.
     local x, y = F.safe_l + PAD * F.scale, F.safe_t + PAD * F.scale
     local w = key_w("MENU")
     key_cap(x, y, w, "MENU", F.menu_up)
     hit(x, y, w, KEY_H * F.scale, "open")
+    -- And a line where the key will be, but only when something has gone
+    -- wrong. Waiting says nothing: the wordmark on a starfield is what this
+    -- game looks like and a caption narrating a normal two second wait is
+    -- noise. A fleet that is down is different, and silence there would be a
+    -- client that looks like it is still trying.
+    if note and note ~= "" then
+        local _, ky, _, kh = landing_geom()
+        txt(note, F.w / 2, ky + kh / 2, (M.compact and 11 or 13) * F.scale,
+            pal.a(pal.DIM, 0.9), "center", MENU_FONT, true)
+    end
 end
 
 function M.hud(o)
@@ -5798,8 +5821,8 @@ end
 -- everybody knows before it is a number; an add-on as the round wearing the
 -- rung on offer, which is the same statement the corner stack makes about a
 -- round you already fire. A charge draws the mark it goes off as, in the
--- color it goes off in, and a mine wears the bomb's pink the way it does
--- everywhere. The stats draw nothing: a stat has no object to draw, and a
+-- color it goes off in. The stats draw nothing: a stat has no object to draw,
+-- and a
 -- symbol invented for a shelf would be the one mark in the game that is not
 -- a picture of its thing.
 function pages.shelf_mark(r, cx, cy)
@@ -5815,9 +5838,7 @@ function pages.shelf_mark(r, cx, cy)
         marks.round(cx, ry(cy), k, r.trigger == 0, r.lvl or 0, modn)
     elseif r.group == "charges" then
         local name = string.lower(r.label or "")
-        if string.find(name, "mine", 1, true) then
-            marks.mine(cx, ry(cy), k, pal.a(pal.BOMB, 0.9))
-        elseif string.find(name, "repel", 1, true) then
+        if string.find(name, "repel", 1, true) then
             marks.charge(0, cx, ry(cy), k, pal.a(pal.CHARGE_COL, 0.9))
         elseif string.find(name, "burst", 1, true) then
             marks.charge(1, cx, ry(cy), k, pal.a(pal.BURST, 0.9))
@@ -6067,16 +6088,6 @@ function pages.range(r, bx, by, bw, bh)
                                 ry(cy + math.sin(a) * d * 0.7),
                                 5 * F.scale, true, 1)
                 end
-            end
-        elseif string.find(name, "mine", 1, true) then
-            -- The thing that blunders into a mine is a ship.
-            local mx = bx + bw * 0.4
-            marks.mine(mx, ry(cy), 9 * F.scale, pal.a(pal.BOMB, 0.9))
-            local ex = bx + bw - 30 * F.scale - t * (bw * 0.5 - 50 * F.scale)
-            if t < 0.8 then
-                thumb(ex, cy, 0, pal.a(pal.ENEMY, 0.9), 1.2)
-            else
-                blast(mx, cy, (t - 0.8) / 0.2, pal.BOMB, 40 * F.scale)
             end
         else
             marks.charge(2, bx + bw / 2, ry(cy), 16 * F.scale,

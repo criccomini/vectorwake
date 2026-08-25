@@ -398,7 +398,6 @@ _G.sim = {
     ship_team = function() return 1 end,
     tick = function() return 0 end,
     spec_blast = function(id) return SPECS[id].blast end,
-    spec_still = function() return false end,
     spec_trigger = function() return 0 end,
     spec_life = function(id) return SPECS[id].life end,
     spec_level = function(id) return SPECS[id].level end,
@@ -488,8 +487,6 @@ _G.sim = {
     ship_level = function() return 1 end,
     ship_max_energy = function() return 1000 end,
     spec_blast = function(id) return SPECS[id].blast end,
-    spec_blast_up = function() return 0 end,
-    spec_still = function() return false end,
     spec_level = function(id) return SPECS[id].level end,
     spec_life = function(id) return SPECS[id].life end,
 }

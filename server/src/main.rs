@@ -3519,11 +3519,9 @@ mod tests {
             2,
             "with Gunner's spray rather than the old pilot's add-ons"
         );
-        assert_eq!(
-            sh.charge[sim::CHARGE_MINE],
-            0,
-            "nor a charge kind this account does not own"
-        );
+        for k in sim::CHARGE_BURST + 1..sim::MAX_CHARGES {
+            assert_eq!(sh.charge[k], 0, "nor a kind this arena does not ship");
+        }
         assert_eq!(sh.run, 0, "nor the run somebody else was on");
         assert_eq!(sh.points, 0, "nor their score");
         assert_eq!(sh.vx, 0, "and it arrives at rest");
@@ -3765,10 +3763,11 @@ mod tests {
             "a specialty nobody bought is refused"
         );
 
-        // A charge kind the account does not own, which the hull would carry.
-        let mut mined = [0u8; sim::SLOT_COUNT];
-        mined[sim::slot_charge(sim::CHARGE_MINE) as usize] = 1;
-        assert!(!a.set_kit(ship, &mined), "and so is a charge kind");
+        // A rung of a charge rack past what the account owns, which the hull
+        // would otherwise carry.
+        let mut racked = [0u8; sim::SLOT_COUNT];
+        racked[sim::slot_charge(sim::CHARGE_REPEL) as usize] = 3;
+        assert!(!a.set_kit(ship, &racked), "and so is a charge rung");
 
         // Refused whole, so the pilot keeps what they were flying.
         assert_eq!(
@@ -3779,9 +3778,9 @@ mod tests {
 
         // And the account's ceiling can be raised, which is what buying is.
         if let Some(s) = a.names.get_mut(&ship) {
-            s.entitlements[sim::slot_charge(sim::CHARGE_MINE) as usize] = 255;
+            s.entitlements[sim::slot_charge(sim::CHARGE_REPEL) as usize] = 255;
         }
-        assert!(a.set_kit(ship, &mined), "what was bought, the hull takes");
+        assert!(a.set_kit(ship, &racked), "what was bought, the hull takes");
     }
 
     #[test]
@@ -5130,15 +5129,9 @@ mod tests {
         // chosen in, and it still fits a datagram with room to spare.
         let mut buf = vec![0u8; sim::PACK_MAX];
         let sh = a.world.state.ships[me as usize];
-        let alone = a.world.pack_around(
-            &mut buf,
-            sh.x,
-            sh.y,
-            crate::delivery::FAIR_INTEREST,
-            me,
-            me,
-            0,
-        );
+        let alone =
+            a.world
+                .pack_around(&mut buf, sh.x, sh.y, crate::delivery::FAIR_INTEREST, me, 0);
         assert!(alone > 0, "a snapshot packs");
         assert!(
             (alone as usize) < DATAGRAM,
@@ -5150,15 +5143,9 @@ mod tests {
         for i in 0..40i32 {
             a.world.spawn(0, 1, btx + i % 7 - 3, bty + i / 7 - 3, 0);
         }
-        let crowded = a.world.pack_around(
-            &mut buf,
-            sh.x,
-            sh.y,
-            crate::delivery::FAIR_INTEREST,
-            me,
-            me,
-            0,
-        );
+        let crowded =
+            a.world
+                .pack_around(&mut buf, sh.x, sh.y, crate::delivery::FAIR_INTEREST, me, 0);
         assert!(
             (crowded as usize) > DATAGRAM,
             "a crowd still fits a datagram at {crowded} bytes, so this test no \
@@ -5419,39 +5406,26 @@ mod tests {
     }
 
     #[test]
-    fn a_pilot_is_still_told_about_the_minefield_they_flew_away_from() {
-        // The other half of the same filter, and the half that was wrong.
-        //
-        // A mine sits for two minutes while the pilot who laid it leaves, so
-        // it is the one round that goes out of the radius without ending.
-        // Filtered by distance like any other round it simply stopped being in
-        // the snapshot, and a client reads a round that stops existing as a
-        // round that went off: the pilot was shown their minefield detonating
-        // behind them seconds after laying it, with the arena still flying it.
-        // Their own client then laid a sixth mine, because it could no longer
-        // count the five, and the arena refused that too.
-        //
-        // Measured on alpha before the fix: every mine laid left its layer's
-        // own snapshot inside about seven seconds, against a real median life
-        // of fifty-two.
+    fn a_round_left_behind_travels_no_further_than_anybody_else_sees_it() {
+        // The other half of the same filter. Rounds are cut by distance and
+        // nothing else: whose round it is buys no exception, because every
+        // round in the game is spent within seconds and near the hull that
+        // fired it. The snapshot a pilot who flew off is sent says so.
         let mut a = room_with_teams("teams = [\"Keel\"]\n");
-        let (me, _, mut rx) = seat_rx(&mut a, "layer");
+        let (me, _, mut rx) = seat_rx(&mut a, "shooter");
 
-        // A mine is a charge, so the kit is what puts one in hand.
-        a.world.state.ships[me as usize].charge[sim::CHARGE_MINE] = 1;
-        let laid = a.world.state.ships[me as usize];
+        let fired_at = a.world.state.ships[me as usize];
         a.world.step(&[sim::sim_input {
             ship: me,
-            buttons: sim::btn_charge(sim::CHARGE_MINE),
+            buttons: sim::BTN_FIRE,
         }]);
-        assert_eq!(a.world.state.weapon_count, 1, "a mine is in the world");
-        let mine = a.world.state.weapons[0];
-        assert_eq!(mine.owner, me, "and it is this pilot's");
+        assert!(a.world.state.weapon_count > 0, "a round is in the world");
+        assert_eq!(a.world.state.weapons[0].owner, me, "and it is this pilot's");
 
         // Off to the far side, well past any radius a client may ask for.
         send_far(&mut a, me);
         let sh = &a.world.state.ships[me as usize];
-        let gap = ((sh.x - laid.x) as i64).abs();
+        let gap = ((sh.x - fired_at.x) as i64).abs();
         assert!(
             gap > FAIR_INTEREST as i64,
             "the pilot is outside fair sight"
@@ -5466,29 +5440,9 @@ mod tests {
             w.apply_snapshot(&last[SNAPSHOT_HEADER..]),
             "the snapshot unpacks"
         );
-        assert_eq!(w.state.weapon_count, 1, "their own mine is still in it");
         assert_eq!(
-            (w.state.weapons[0].x, w.state.weapons[0].y),
-            (mine.x, mine.y),
-            "at the pixel they left it on"
-        );
-        assert_eq!(
-            w.state.weapons[0].life, mine.life,
-            "and on the clock it has"
-        );
-
-        // And it is theirs that travels, not everybody's: the pilot next to
-        // them, equally far from the mine, is told nothing about it.
-        let (stranger, _, mut rx2) = seat_rx(&mut a, "stranger");
-        send_far(&mut a, stranger);
-        a.broadcast_snapshot(&mut buf);
-        let got = snapshots(&drain(&mut rx2));
-        let last = got.last().expect("a snapshot for the stranger");
-        let mut w2 = sim::World::new(1);
-        assert!(w2.apply_snapshot(&last[SNAPSHOT_HEADER..]));
-        assert_eq!(
-            w2.state.weapon_count, 0,
-            "somebody else's mine that far off is not their business"
+            w.state.weapon_count, 0,
+            "their own round that far behind them is not in it"
         );
     }
 
@@ -5619,7 +5573,7 @@ mod tests {
         let mut fresh = vec![0u8; sim::PACK_MAX];
         let n = a
             .world
-            .pack_around(&mut fresh, sh.x, sh.y, FAIR_INTEREST, target, 255, 0);
+            .pack_around(&mut fresh, sh.x, sh.y, FAIR_INTEREST, 255, 0);
         assert!(n > 0);
         assert_eq!(
             &frame.msg[SNAPSHOT_HEADER..],
@@ -5669,7 +5623,7 @@ mod tests {
         let mut fresh = vec![0u8; sim::PACK_MAX];
         let n = a
             .world
-            .pack_around(&mut fresh, sh.x, sh.y, FAIR_INTEREST, bots[0], 255, 0);
+            .pack_around(&mut fresh, sh.x, sh.y, FAIR_INTEREST, 255, 0);
         assert_eq!(
             &frame.msg[SNAPSHOT_HEADER..],
             &fresh[..n as usize],
@@ -7910,46 +7864,6 @@ mod tests {
         );
     }
 
-    /// How long a mine sits there, which is the setting a zone is most likely
-    /// to want off the baseline: it is the whole of how long the ground a
-    /// minefield denies stays denied, and the original bounds its own
-    /// MineAliveTime anywhere from two seconds to ten minutes.
-    ///
-    /// The baseline's two minutes is a number rather than a mechanism, so
-    /// what this pins is that a zone can move it at all, and that moving it
-    /// touches nothing else about the weapon.
-    #[test]
-    fn a_zone_sets_how_long_a_mine_lives() {
-        let mine = |w: &sim::World| {
-            w.cfg.specs[w.cfg.patterns[w.cfg.charge[sim::CHARGE_MINE] as usize].spec as usize]
-        };
-        let (base, warn) = tuned("");
-        assert!(warn.is_empty(), "{warn:?}");
-        assert_eq!(mine(&base).life, 12_000, "two minutes, out of the box");
-
-        let (w, warn) = tuned(
-            r#"
-            [[arena.weapons]]
-            name = "mine"
-            life = 30000
-        "#,
-        );
-        assert!(warn.is_empty(), "{warn:?}");
-        let m = mine(&w);
-        assert_eq!(m.life, 30_000, "five minutes, because the zone said so");
-        // And it is still a mine: the fields that make it one are untouched by
-        // a clock change, which is what stops this being a way to quietly turn
-        // the charge into something else.
-        assert_eq!(m.still, 1, "still laid rather than thrown");
-        assert_eq!(m.expire_ends, 1, "and running out still sets it off");
-        assert_eq!(m.blast, base_blast(&base), "with the blast it had");
-        assert_eq!(m.trigger, mine(&base).trigger, "and the same fuse");
-    }
-
-    fn base_blast(w: &sim::World) -> i32 {
-        w.cfg.specs[w.cfg.patterns[w.cfg.charge[sim::CHARGE_MINE] as usize].spec as usize].blast
-    }
-
     /// Alpha's own file, applied the way a room applies it.
     ///
     /// The shipped zone files are read by nothing else in this suite: the map
@@ -7989,11 +7903,6 @@ mod tests {
             "the file reached the weapon table at all"
         );
 
-        let mine =
-            w.cfg.specs[w.cfg.patterns[w.cfg.charge[sim::CHARGE_MINE] as usize].spec as usize];
-        assert_eq!(mine.life, 3_000, "a mine sits for thirty seconds");
-        assert_eq!(mine.still, 1, "and is a still mine");
-
         // The clock, which is the whole of what makes this a match game and is
         // the one setting no other zone in the history of this repository had.
         assert_eq!(z.arena.match_seconds, Some(180));
@@ -8013,15 +7922,15 @@ mod tests {
         );
         assert_eq!(z.max_humans_per_team, Some(4), "four a side");
         assert_eq!(z.teams.len(), 2);
-        // Six mines, for anybody who buys the kind and spends six of thirty
-        // points on them. This used to be one hull's row and six numbers in a
-        // TOML file; it is the arena's, written nowhere, which means this
-        // assertion is what would catch the baseline moving underneath the
-        // zone.
+        // Three of a charge kind, for anybody who buys the rung and spends
+        // three of thirty points on it. This used to be a hull's row and a
+        // number in a TOML file; it is the arena's, written nowhere, which
+        // means this assertion is what would catch the baseline moving
+        // underneath the zone.
         assert_eq!(
-            w.cfg.kit_ceiling[sim::slot_charge(sim::CHARGE_MINE) as usize],
-            6,
-            "anybody may bring six mines"
+            w.cfg.kit_ceiling[sim::slot_charge(sim::CHARGE_BURST) as usize],
+            3,
+            "anybody may bring three bursts"
         );
     }
 
@@ -8030,9 +7939,8 @@ mod tests {
     /// charge is one block rather than a block plus a wiring line.
     #[test]
     fn naming_an_empty_charge_slot_fills_it() {
-        // The fourth slot, because the baseline now fills the first three: a
-        // repel, a burst and a mine. This test is about a slot the zone finds
-        // empty, so it has to name one that actually is.
+        // The fourth slot. Any slot above the burst is empty in the baseline;
+        // this test is about a slot the zone finds that way.
         let (w, warn) = tuned(
             r#"
             [[arena.weapons]]

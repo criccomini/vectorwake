@@ -41,8 +41,8 @@ skirmishing, heavy fighting, ambush, brawling, area denial, and running
 objectives. Their profiles vary working range, pursuit, aggression, objective
 priority, retreat bias, and weapon preferences.
 
-These are style controls. A Denier can value mines and chokepoints without
-receiving hidden map knowledge. A Runner can prefer an objective without moving
+These are style controls. A Denier can value chokepoints without receiving
+hidden map knowledge. A Runner can prefer an objective without moving
 faster. A Brawler can accept close fights without getting extra energy.
 
 Competence has two axes:
