@@ -24,7 +24,7 @@ mid-fight, out of the corner of an eye. The menu is read, parked, between
 matches. Everything else in this document follows from that split.
 
 The HUD speaks in capitals, because capitals are the case an instrument is
-labeled in: LINK, POS, MENU, PLAYERS, DESTROYED. The menu speaks in a
+labeled in: LINK, POS, MENU, PILOTS, DESTROYED. The menu speaks in a
 sentence's case, one capital at the front of a line and nothing else, because
 a page of capitals is a page nobody reads twice. The switch is made in one
 place (`cased` in ui.lua), set by whichever surface is drawing, never written
@@ -152,8 +152,8 @@ alignment.
 The interface owns a small number of shapes and each one means one thing.
 
 **A button is a stroked box**: a rectangle outlined all the way round with a
-wash inside it (`key_box`). It is what MENU and PLAYERS wear in the corner,
-what a card's answers wear, what the help board draws a key as, so a hand
+wash inside it (`key_box`). It is what MENU wears in the corner, what a
+card's answers wear, what the help board draws a key as, so a hand
 that has learned one has learned all of them. On or off is one rule
 everywhere: lit in cyan with a stronger wash when active, dim otherwise.
 
@@ -225,8 +225,7 @@ in `marks.lua` because the corner stack and the touch pads both draw them,
 and two copies once disagreed about which add-ons a hull was wearing. The
 pennant is the same pennant on the radar, in the flag strip, and on the team
 mark. The helmet and the machine, a person and a bot, are the same pair in
-the games list, the scoreboard, the nameplates, and the PLAYERS key: a round
-crowned shell with a wrapped visor against a squared shell with two lamps and
+the games list, the scoreboard, and the nameplates: a round crowned shell with a wrapped visor against a squared shell with two lamps and
 an antenna. Curved is grown, boxed is built, and that difference survives
 being drawn at eleven points.
 
@@ -279,14 +278,21 @@ The constants that repeat, from ui.lua:
 | KEY_H | 26 | a button's height |
 
 The HUD has a fixed geography, and it is the prototype's. Top left: the button
-row (MENU, ROOM, PLAYERS, the on-air or watching chip), then the scoreboard or
-the rooms panel (one at a time, same slot), the run log under the scoreboard
-where a mode keeps one, the pilot box under that. Top right: the LINK bars,
-then the radar or the map (one corner, one instrument), with POS on the dial's
-other shoulder and the feed hanging under it. Bottom left: the corner stack,
-what your triggers do and what you carry, growing upward. Top center: the match
-score and clock, each side's rating beside its name where a side is one pilot,
-the flag pennants, the round banner. Dead center is reserved for the two big
+row (MENU, ROOM, the on-air or watching chip) and the rooms panel under it.
+Top right: the LINK bars, then the radar or the map (one corner, one
+instrument), with POS on the dial's other shoulder and the feed hanging under
+it. Bottom left: the corner stack, what your triggers do and what you carry,
+growing upward.
+
+Top center is the band: the clock, with a side either side of it as a name
+over a number (a team over its score, a duel's pilot over their rating),
+the two lines of a side adding up to the clock's own height so the whole
+thing reads as one line. Under it, the flag pennants and whatever the room
+has to say. The band is also the control: a press opens the board under it,
+which is the roster, then whatever else the zone keeps (a run of fights, in
+the mode that is a run), then the pilot box a row was pressed on. While that
+board is up the fight behind it is washed and every other instrument's type
+recedes, because the board is the thing being read. Dead center is reserved for the two big
 statements, DESTROYED and SAFE ZONE, and for the cards and tables a player asks
 for. On a touchscreen the bottom of the screen belongs to the thumbs and
 everything else lifts out of their way.

@@ -239,8 +239,11 @@ frame({match = {playing = true, left = 96, score = {[0] = 0, [1] = 0},
                 ladder = {rung = 7, streak = 3, checkpoint = 5,
                           opponent_ready = true, waiting = false}},
        side_names = NAMES, side = 0})
-check("a live Ladder fight shows its run",
-      said("RUNG 8  STREAK 3  FLOOR 6") ~= nil,
+-- The rung, the streak and the floor were a line under the clock. They are
+-- rows on the board behind the band now, and the band carries the two pilots
+-- instead: a duel's side is a person, so it reads a call sign over a rating.
+check("a live Ladder fight keeps the rung off the band",
+      said("RUNG 8") == nil and said("STREAK") == nil and said("FLOOR") == nil,
       table.concat(words(), " | "))
 
 frame({match = {playing = false, left = 180, score = {[0] = 0, [1] = 0},
@@ -248,16 +251,18 @@ frame({match = {playing = false, left = 180, score = {[0] = 0, [1] = 0},
                           active_opponent = 0, desired_opponent = 0,
                           opponent_ready = false, waiting = true}},
        side_names = NAMES, side = 0})
+-- A room still looking for a rival is not a room that just lost one. The
+-- clock reads dashes and the band says nothing else at all: whoever is about
+-- to be across the arena has not been chosen, so a side drawn here would be
+-- the last fight's, and a stale name beside a dead clock reads as a fight in
+-- progress.
 check("waiting for the first rival is not a loss podium",
-      said("RUNG 1  FINDING RIVAL") ~= nil
-      and said("--:--") ~= nil
+      said("--:--") ~= nil
       and said("Pylon") == nil and said("Caisson") == nil
       and said("back to rung 1") == nil,
       table.concat(words(), " | "))
--- A streak of none is not a streak and floor one is the ground a run starts
--- on. Every run opened saying both, which taught the eye to skip the line.
-check("the opening rung says only the rung",
-      said("STREAK") == nil and said("FLOOR") == nil,
+check("and says nothing about the rung while it waits",
+      said("RUNG") == nil and said("STREAK") == nil and said("FLOOR") == nil,
       table.concat(words(), " | "))
 
 frame({match = {playing = false, left = 0, artifact = 1,
@@ -267,11 +272,8 @@ frame({match = {playing = false, left = 0, artifact = 1,
                           opponent_ready = true, waiting = true}},
        side_names = NAMES, side = 0})
 check("an overdue old rival becomes a waiting state",
-      said("RUNG 2  STREAK 1  FINDING RIVAL") ~= nil
-      and said("--:--") ~= nil and said("rung 1 cleared") == nil,
+      said("--:--") ~= nil and said("rung 1 cleared") == nil,
       table.concat(words(), " | "))
-check("a streak that exists is said, a floor still at the ground is not",
-      said("FLOOR") == nil, table.concat(words(), " | "))
 
 frame({match = {playing = false, left = 8, artifact = 1,
                 score = {[0] = 1, [1] = 0},

@@ -209,54 +209,94 @@ check("a match with no run draws no ratings beside its clock",
       exactly("1183") == nil and exactly("1346") == nil,
       table.concat(words(), " | "))
 
--- The readout under the clock is centered and grows with the run. At its
--- widest it reaches out past the clock, so nothing else may share that band:
--- a rating on a line of its own under each name collided with both ends of
--- "RUNG 8  STREAK 2  FLOOR 6", which only happens once a run has a floor.
+-- --- what the band no longer says ------------------------------------------
+--
+-- The rung, the streak and the floor were a line under the clock, in the band
+-- itself. They are on the board behind it now, where they were always drawn
+-- better: the rung is the row at the top of the run, the streak is the run of
+-- wins under it, and the floor is where those rows stop falling. A band that
+-- repeated them was the same fight stated a third time.
+ui.details = false
 frame({match = a_fight({rung = 7, streak = 2, checkpoint = 5}),
        ratings = {[0] = 1183, [1] = 1347}})
-local readout, left_rating, right_rating
-for i = 1, state.n do
-    local t = state.text[i]
-    if t.s == "RUNG 8  STREAK 2  FLOOR 6" then readout = t end
-    if t.s == "1183" then left_rating = t end
-    if t.s == "1347" then right_rating = t end
-end
-check("the widest readout and both ratings all draw",
-      readout and left_rating and right_rating,
-      table.concat(words(), " | "))
--- The box a drawn string covers. Width off the same mono advance ui.lua
--- measures with; height off the size, since every pivot centers vertically.
-local function box(t)
-    local w = #t.s * t.px * (1233 / 2048)
-    local x0 = t.x
-    if t.pivot == "right" then x0 = t.x - w
-    elseif t.pivot == "center" then x0 = t.x - w / 2 end
-    return x0, t.y - t.px / 2, x0 + w, t.y + t.px / 2
-end
-local function clear(a, b)
-    local ax0, ay0, ax1, ay1 = box(a)
-    local bx0, by0, bx1, by1 = box(b)
-    return ax1 <= bx0 or bx1 <= ax0 or ay1 <= by0 or by1 <= ay0
-end
-check("the readout does not touch your rating",
-      clear(readout, left_rating), left_rating.s .. " vs " .. readout.s)
-check("nor the rival's", clear(readout, right_rating),
-      right_rating.s .. " vs " .. readout.s)
-
--- --- the readout under the clock -------------------------------------------
-
-frame({match = a_fight({streak = 0, checkpoint = 0}),
-       ratings = {[0] = 1200, [1] = 1200}})
-check("a run with nothing behind it says only the rung",
-      said("RUNG 5") ~= nil and said("STREAK") == nil and said("FLOOR") == nil,
+check("the band says nothing about rungs",
+      said("RUNG 8") == nil and said("STREAK") == nil and said("FLOOR") == nil,
       table.concat(words(), " | "))
 
-frame({match = a_fight({streak = 3, checkpoint = 4}),
-       ratings = {[0] = 1200, [1] = 1200}})
-check("a streak and a floor are said once they are worth saying",
-      said("RUNG 5  STREAK 3  FLOOR 5") ~= nil,
+-- And the board says all of it, at the head of the run it belongs to: the
+-- rung a climber is standing on is what this mode is played for, so taking it
+-- off the band had to put it somewhere rather than nowhere.
+ui.details = true
+frame({match = a_fight({rung = 7, streak = 2, checkpoint = 5}),
+       ratings = {[0] = 1183, [1] = 1347}})
+check("the board carries the standing the band gave up",
+      said("RUNG 8  STREAK 2  FLOOR 6") ~= nil,
       table.concat(words(), " | "))
+ui.details = false
+
+-- What it says instead: who is flying, over what they are rated. A duel's
+-- side is a person, so the name on the band is the name on their hull rather
+-- than the zone's word for the seat they are in.
+check("each side is a pilot over their rating",
+      exactly("you") ~= nil and exactly("Ozone 12") ~= nil
+      and exactly("1183") ~= nil and exactly("1347") ~= nil,
+      table.concat(words(), " | "))
+check("and not the seat the zone calls them",
+      exactly("Pilot") == nil and exactly("Rival") == nil,
+      table.concat(words(), " | "))
+
+-- The band's own copy of a string, which is the last one drawn: a rival's
+-- call sign is on the plate hanging off their hull as well, and the plates go
+-- down before the band does. Without this the rival's stack is measured
+-- against a name out in the arena.
+local function on_band(what)
+    local found
+    for i = 1, state.n do
+        if state.text[i].s == what then found = state.text[i] end
+    end
+    return found
+end
+
+-- A name and the number under it are one side, so they stand in one column:
+-- the two are drawn to the same edge, on the side of the clock they belong
+-- to. A rating adrift of its own name is two sides' worth of reading.
+local function stack_of(name, rating)
+    local nm, rt = on_band(name), on_band(rating)
+    if not nm or not rt then return nil end
+    return nm, rt
+end
+local nm, rt = stack_of("you", "1183")
+check("your name and rating share an edge",
+      nm and rt and nm.pivot == rt.pivot and math.abs(nm.x - rt.x) < 0.5,
+      nm and (nm.x .. " " .. tostring(nm.pivot) .. " vs " .. rt.x .. " "
+              .. tostring(rt.pivot)) or "missing")
+local rnm, rrt = stack_of("Ozone 12", "1347")
+check("so do the rival's", rnm and rrt and rnm.pivot == rrt.pivot
+      and math.abs(rnm.x - rrt.x) < 0.5,
+      rnm and (rnm.x .. " vs " .. rrt.x) or "missing")
+
+-- Each side reads away from the clock: yours ends where the clock begins and
+-- theirs begins where it ends, so the two numbers that are compared sit
+-- against the numerals they are compared across.
+local clock = on_band("2:46")
+check("the clock is between them",
+      clock and nm.x < clock.x and rnm.x > clock.x,
+      clock and (nm.x .. " | " .. clock.x .. " | " .. rnm.x) or "no clock")
+check("yours is right aligned into it and theirs left aligned out of it",
+      nm.pivot == "right" and rnm.pivot ~= "right",
+      tostring(nm.pivot) .. " | " .. tostring(rnm.pivot))
+
+-- The whole point of the stack: a side is exactly as tall as the clock it
+-- stands beside, so the band reads as one line rather than as a tall block
+-- with a clock in the middle of it. Name box, gap, rating box, and the three
+-- of them come to the numerals' own height.
+-- state.text counts y up from the bottom, so the name is the higher number
+-- and the stack runs from the top of the name box to the bottom of the
+-- rating's.
+local tall = (nm.y + nm.px / 2) - (rt.y - rt.px / 2)
+check("a side is as tall as the clock",
+      tall <= clock.px + 0.5 and tall > clock.px * 0.9,
+      tall .. " vs " .. clock.px)
 
 -- --- the run log -----------------------------------------------------------
 
@@ -300,10 +340,18 @@ check("a short run draws every leg it has", said("run: 2 fights") ~= nil
       and said("RUNG 1") ~= nil and said("RUNG 4") ~= nil,
       table.concat(words(), " | "))
 
-frame({match = a_fight({legs = 0, log = {}}),
+-- A run with nothing behind it yet still says where it stands. There is no
+-- count, because there is nothing to count, and no columns, because there are
+-- no rows under them.
+frame({match = a_fight({legs = 0, log = {}, rung = 0, streak = 0,
+                        checkpoint = 0}),
        ratings = {[0] = 1200, [1] = 1200}})
-check("a run with no finished leg draws no panel at all",
-      said("run: ") == nil, table.concat(words(), " | "))
+check("a run with no finished leg still says which rung it is on",
+      said("RUNG 1") ~= nil and said("run: ") == nil
+      and said("score") == nil, table.concat(words(), " | "))
+check("and a run at the bottom says only the rung",
+      said("STREAK") == nil and said("FLOOR") == nil,
+      table.concat(words(), " | "))
 
 frame({match = {playing = true, left = 166, score = {[0] = 2, [1] = 1}},
        ratings = {[0] = 1200, [1] = 1200}})

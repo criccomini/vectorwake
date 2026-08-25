@@ -88,7 +88,7 @@ from the audience: the frame going out is centered on you, and there is at
 least one person in the stands to see it. Edges only, recomputed every
 snapshot.
 
-It is a red tally beside the MENU and PLAYERS keys, swelling slowly rather
+It is a red tally beside the MENU key, swelling slowly rather
 than blinking, since it has to hold attention for minutes and a blink that
 long is something a player stops seeing. Two minutes on air is something a
 pilot can play around, and only if they know.

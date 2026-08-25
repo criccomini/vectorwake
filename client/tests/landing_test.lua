@@ -232,7 +232,9 @@ check("and names the sides", word("PYLON") ~= nil and word("CAISSON") ~= nil)
 check("and says nothing about the channel it is watching",
       word("CHANNEL") == nil)
 check("and keeps the way into the menu", box("open") ~= nil)
-check("and the roster key beside it", box("details") ~= nil)
+-- The roster is opened from the band across the top rather than from a key
+-- beside this one. What is asserted here is that a watcher can still reach it.
+check("and a way into the roster", box("details") ~= nil)
 
 -- --- the way in wears three bars ------------------------------------------
 --
@@ -280,39 +282,53 @@ check("the landing carries no TAKE SEAT chip",
 
 -- --- a phone's top row -----------------------------------------------------
 --
--- At 390 points MENU and PLAYERS reach the middle of the screen, which is
--- where a centered clock starts, and it was drawn through them: the front
--- page's first line was two readings on top of each other. Nothing asserted it,
--- because both were drawn and both were where their own code meant to put
--- them. So the band comes off that row on a narrow screen and gives up the
--- side names with it, and the scoreboard starts under the band rather than
--- under the keys.
+-- At 390 points MENU and PLAYERS reached the middle of the screen, which is
+-- where a centered clock starts, and the band was drawn straight through them:
+-- the front page's first line was two readings on top of each other. The band
+-- came off that row to get clear, and gave up the side names on the way down.
+--
+-- PLAYERS is gone, since the band is what opens the roster now, but the top
+-- right of a phone still carries the link bars and the tile readout, and a
+-- centered band with two names on it reaches them. So the band keeps a line of
+-- its own down there. What it no longer gives up to fit is the names.
 do
-    local function ink(shape)
-        local menu_key = box("open")
-        local players = box("details")
-        local clock = word("1:47")
-        return menu_key, players, clock, shape
-    end
-
     frame(390, 844)
-    local menu_key, players, clock = ink("portrait")
-    check("portrait draws the corner keys and the clock",
-          menu_key and players and clock,
-          "missing one of them")
+    local menu_key, clock = box("open"), word("1:47")
+    check("portrait draws the corner key and the clock",
+          menu_key and clock, "missing one of them")
     if menu_key and clock then
-        check("portrait drops the clock below the corner keys",
+        check("portrait drops the band below the corner key",
               clock.y > menu_key.y + menu_key.h,
-              string.format("clock at %.0f, keys end %.0f",
+              string.format("clock at %.0f, key ends %.0f",
                             clock.y, menu_key.y + menu_key.h))
     end
-    check("portrait gives up the side names for the room",
-          word("PYLON") == nil and word("CAISSON") == nil,
-          "a name is still drawn")
-    -- The score itself stays, in the two colors that say whose it is.
-    check("but keeps both figures", word("3") ~= nil and word("5") ~= nil)
+    check("and keeps the side names down there",
+          word("PYLON") ~= nil and word("CAISSON") ~= nil,
+          "a name is missing")
+    check("and both figures", word("3") ~= nil and word("5") ~= nil)
+    -- The corner the band is clearing: LINK and the tile readout own the top
+    -- right, and the band's own line starts under them.
+    local link = word("LINK")
+    if link and clock then
+        check("clear of the dial's own readouts",
+              clock.y > link.y,
+              string.format("clock at %.0f, LINK at %.0f", clock.y, link.y))
+    end
 
-    -- The scoreboard is the other thing laid out from the top of the screen.
+    -- The band is the control, so the press that opens the roster is on the
+    -- band rather than in the corner beside the way into the menu.
+    local band = box("details")
+    check("the roster opens from the band itself",
+          band and clock and clock.x > band.x
+              and clock.x < band.x + band.w,
+          band and string.format("band %.0f..%.0f, clock at %.0f",
+                                 band.x, band.x + band.w, clock.x)
+              or "no band press")
+    check("and nothing in the corner row offers it a second time",
+          band == nil or band.x > menu_key.x + menu_key.w,
+          "a roster key is still beside MENU")
+
+    -- The board opens under the band, wherever the band ends.
     frame(390, 844, {details = true})
     local heading, clock2 = word("PILOTS"), word("1:47")
     check("portrait starts the roster under the clock",
@@ -321,13 +337,13 @@ do
                         tostring(heading and heading.y),
                         tostring(clock2 and clock2.y)))
 
-    -- A window with room keeps the band where it was, names and all.
+    -- A window with room keeps the same band on the same line.
     frame(1440, 810)
-    local wide_menu, _, wide_clock = ink("desktop")
-    check("a wide window keeps the clock on the corner keys' own line",
+    local wide_menu, wide_clock = box("open"), word("1:47")
+    check("a wide window keeps the clock on the corner key's own line",
           wide_menu and wide_clock
               and math.abs(wide_clock.y - (wide_menu.y + wide_menu.h / 2)) < 24,
-          string.format("clock at %s, keys mid %s",
+          string.format("clock at %s, key mid %s",
                         tostring(wide_clock and wide_clock.y),
                         tostring(wide_menu and wide_menu.y + wide_menu.h / 2)))
     check("and keeps the side names", word("PYLON") ~= nil)

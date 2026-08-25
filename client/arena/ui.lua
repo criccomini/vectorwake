@@ -787,36 +787,6 @@ local function burger_cap(x, y, on)
     return w
 end
 
--- PLAYERS carries the room's composition with it. The helmet and machine are
--- the same marks the directory and scoreboard already use, kept inside the
--- one key rather than hung off it as another piece of HUD chrome.
-local function players_cap(x, y, on, humans, bots)
-    local size, count_size = key_size(), (FONT - 2) * F.scale
-    local label = "PLAYERS"
-    local human, bot = tostring(humans), tostring(bots)
-    local mark = 10 * F.scale
-    local label_gap, mark_gap, group_gap = 10 * F.scale, 4 * F.scale, 9 * F.scale
-    local w = 2 * KEY_PAD * F.scale + text_w(label, size) + label_gap
-        + mark + mark_gap + text_w(human, count_size) + group_gap
-        + mark + mark_gap + text_w(bot, count_size)
-    local col, h = key_frame(x, y, w, on)
-    local mid = y + h / 2
-    local at = x + KEY_PAD * F.scale
-    local cap_col = pal.a(col, on and 1 or 0.85)
-    txt(label, at, mid, size, cap_col, nil, nil, true)
-    at = at + text_w(label, size) + label_gap
-
-    pilot_mark(at + mark / 2, mid, cap_col, mark)
-    at = at + mark + mark_gap
-    txt(human, at, mid, count_size, cap_col)
-    at = at + text_w(human, count_size) + group_gap
-
-    bot_mark(at, mid, cap_col, mark)
-    at = at + mark + mark_gap
-    txt(bot, at, mid, count_size, cap_col)
-    return w
-end
-
 -- Close, as a drawn mark rather than the letter x.
 --
 -- A letter is a letter: at this size an x reads as text somebody left in the
@@ -1520,19 +1490,77 @@ function M.row_pitch()
     return LINE * F.scale
 end
 
--- Where the scoreboard starts: under the menu chip when there is one, since
--- the chip owns the corner.
---
--- And under the clock as well on a phone, where the clock and the score come
--- off the corner row and take a line of their own beneath it. See
--- `match_clock`: this column and that band are the two things laid out from
--- the top of the screen, so one of them has to be told about the other.
+-- Where the left column starts: under the menu chip, since the chip owns the
+-- corner. The rooms list is what stands there now; the scoreboard moved out
+-- from under the corner keys and into the column under the band that opens
+-- it. See `board` below.
 local function top_y()
-    local narrow = (F.w / math.max(F.density, 0.0001)) < 620
-    if narrow then
-        return F.safe_t + (PAD + KEY_H + 20) * F.scale + 22 * F.scale
-    end
     return F.safe_t + PAD * F.scale + 32 * F.scale
+end
+
+-- The band's own measurements, in one place because three things need them:
+-- the band draws itself from these, the column under it starts where they
+-- end, and a test can ask what the band is rather than working the sizes out
+-- a second time.
+--
+-- Everything on the band is a fraction of the clock. A side is two lines,
+-- who they are over how they are doing, and those two plus the gap between
+-- them add up to exactly the clock's height, so the band reads as one line of
+-- instrument however many words are in it. That is the whole rule; the sizes
+-- below are what it comes to at each end of the range.
+local function band_type()
+    local clock = (M.compact and 24 or 36) * F.scale
+    local name = (M.compact and 9 or 12) * F.scale
+    local gap = (M.compact and 2 or 4) * F.scale
+    return clock, name, clock - name - gap
+end
+
+-- A monitor has room for the band on the same line as the corner keys: the
+-- way into the menu is one square key at the left and the dial's readouts are
+-- at the right, with the middle of a 1440-point window empty between them.
+--
+-- A phone does not. The band is centered and grows outward with two names and
+-- two numbers, and the top right of a 390-point screen already carries the
+-- link bars and the tile readout: at that width the rival's name was drawn
+-- straight through the coordinates. So there the band takes a line of its own
+-- under the row, which is what the old one did on a narrow screen. It gave
+-- up the side names to do it, and this does not have to.
+local function band_top()
+    local under = M.compact and (KEY_H + 12) * F.scale or 0
+    return F.safe_t + PAD * F.scale + under
+end
+
+local function band_bottom()
+    return band_top() + (band_type())
+end
+
+-- Where the board column stands, and how wide it is.
+--
+-- Under the band, centered on it, because the band is the control that opens
+-- it and a panel belongs under the thing that opened it. The corner keys keep
+-- the left column for the rooms list; this column is the scoreboard's own.
+--
+-- Filled once a frame by `M.hud` rather than worked out on demand, because
+-- the top depends on what is standing between the band and the list (the
+-- band always, and a line of banner when the room has said something), and
+-- three panels read it.
+--
+-- Wider than the 248-point columns down the side of the screen, and capped
+-- rather than fluid. A roster row is a name and five numbers, and at 248 the
+-- numbers take two thirds of it and call signs are cut to nine characters; at
+-- 340 a name is a name. The cap is what stops a phone held sideways from
+-- spreading eight rows across 816 points of glass with the names at one edge
+-- and the numbers at the other, and an upright phone is narrower than the cap
+-- anyway, so there it is the margins that decide.
+local BOARD_W = 340
+local board = {x = 0, y = 0, w = 0}
+
+local function set_board(under)
+    local room = F.w - F.safe_l - F.safe_r - 2 * PAD * F.scale
+    local w = math.min(BOARD_W * F.scale, room)
+    board.w = w
+    board.x = F.safe_l + PAD * F.scale + (room - w) / 2
+    board.y = band_bottom() + (under or 0) + 10 * F.scale
 end
 
 -- Two names, in the order a person reads them. Lowercased for the comparison
@@ -1826,14 +1854,15 @@ local function scores(me, pilots, watchers, viewer_name)
     if M.scroll > max_scroll then M.scroll = max_scroll end
     if M.scroll < 0 then M.scroll = 0 end
     local shown = math.min(n, SHOWN)
-    local w = COL_W * F.scale
+    local w = board.w
     local head = 24 * F.scale
     local h = head + shown * LINE * F.scale + 8 * F.scale
-    local x = F.safe_l + PAD * F.scale
+    local x = board.x
+    local top = board.y
     -- Enough behind it to read over a starfield, and no border: a rule down
     -- the left is what holds the column, the way it holds a wall face.
-    rect(x, top_y(), w, h, pal.a(pal.BG, 0.62))
-    vrule(x, top_y(), h, pal.a(pal.RADAR_TILE, 0.7))
+    rect(x, top, w, h, pal.a(pal.BG, 0.62))
+    vrule(x, top, h, pal.a(pal.RADAR_TILE, 0.7))
 
     -- Four columns, right aligned off the panel's own edge, in the order a
     -- row is read: what you have done, then what you are worth. Bounty is
@@ -1882,7 +1911,7 @@ local function scores(me, pilots, watchers, viewer_name)
     -- is set.
     local function head_col(name, label, hx, align)
         local on = M.sort == name
-        txt(label, hx, top_y() + 14 * F.scale, small,
+        txt(label, hx, top + 14 * F.scale, small,
             on and pal.a(pal.FRIEND, 0.95) or pal.a(pal.DIM, 0.7), align)
         return on
     end
@@ -1898,16 +1927,16 @@ local function scores(me, pilots, watchers, viewer_name)
     -- Hit boxes over the headings. Each takes its whole column and the gap to
     -- its left, so the four tile without overlapping and the labels, which
     -- are one or three characters wide, are not the target.
-    hit(x + 8 * F.scale, top_y() + 4 * F.scale, 60 * F.scale, 18 * F.scale, "sort_name")
-    hit(kx - kw - GAP, top_y() + 4 * F.scale, kw + GAP, 18 * F.scale, "sort_kills")
-    hit(dx - dw - GAP, top_y() + 4 * F.scale, dw + GAP, 18 * F.scale, "sort_deaths")
-    hit(ax - aw - GAP, top_y() + 4 * F.scale, aw + GAP, 18 * F.scale, "sort_assists")
-    hit(px - pw - GAP, top_y() + 4 * F.scale, pw + GAP, 18 * F.scale, "sort_points")
-    hit(bx - bw - GAP, top_y() + 4 * F.scale, bw + GAP, 18 * F.scale, "sort_bounty")
-    ticks(x + 12 * F.scale, top_y() + 20 * F.scale, w - 24 * F.scale,
+    hit(x + 8 * F.scale, top + 4 * F.scale, 60 * F.scale, 18 * F.scale, "sort_name")
+    hit(kx - kw - GAP, top + 4 * F.scale, kw + GAP, 18 * F.scale, "sort_kills")
+    hit(dx - dw - GAP, top + 4 * F.scale, dw + GAP, 18 * F.scale, "sort_deaths")
+    hit(ax - aw - GAP, top + 4 * F.scale, aw + GAP, 18 * F.scale, "sort_assists")
+    hit(px - pw - GAP, top + 4 * F.scale, pw + GAP, 18 * F.scale, "sort_points")
+    hit(bx - bw - GAP, top + 4 * F.scale, bw + GAP, 18 * F.scale, "sort_bounty")
+    ticks(x + 12 * F.scale, top + 20 * F.scale, w - 24 * F.scale,
           pal.a(pal.RADAR_TILE, 0.35), 14 * F.scale)
 
-    local y = top_y() + head
+    local y = top + head
     for i = 1 + M.scroll, math.min(n, M.scroll + shown) do
         local r = rows[i]
         local mine = r.self
@@ -1989,7 +2018,7 @@ local function scores(me, pilots, watchers, viewer_name)
     -- a control that does nothing.
     if n > shown then
         local track = shown * LINE * F.scale
-        local ty = top_y() + head
+        local ty = top + head
         local frac = shown / n
         local bar = math.max(10 * F.scale, track * frac)
         local at = (M.scroll / math.max(1, n - shown)) * (track - bar)
@@ -2001,11 +2030,11 @@ local function scores(me, pilots, watchers, viewer_name)
     -- is the thing you point at when you mean to scroll it. A backdrop, so
     -- every row in front of it wins the press by rank rather than by the luck
     -- of publish order.
-    hit(x, top_y(), w, h, "scores", nil, nil, -1)
+    hit(x, top, w, h, "scores", nil, nil, -1)
 
     -- The bottom edge, not the height: what the loadout below needs to know
     -- is where this ends, and it does not start at the top of the screen.
-    return top_y() + h
+    return top + h
 end
 
 -- What a finished leg was, as the row says it and in the color it says it.
@@ -2035,13 +2064,13 @@ local LEG_WORD = {
 local function run_log(o, top)
     if not M.details then return top end
     local ladder = o.match and o.match.ladder
-    local log = ladder and ladder.log
-    if not log or #log == 0 then return top end
+    if not ladder then return top end
+    local log = ladder.log or {}
 
     local small = (FONT - 3) * F.scale
     local num = (FONT - 2) * F.scale
-    local x = F.safe_l + PAD * F.scale
-    local w = COL_W * F.scale
+    local x = board.x
+    local w = board.w
     local head = 24 * F.scale
     local y0 = top + 8 * F.scale
     -- However many legs the column has room for. Two thirds of the screen is
@@ -2051,7 +2080,11 @@ local function run_log(o, top)
     -- bottom, and the rows it drops are the oldest.
     local room = math.floor((F.h * 0.66 - y0 - head) / (LINE * F.scale))
     local shown = math.min(#log, math.max(0, room))
-    if shown == 0 then return top end
+    -- The standing is drawn even with nothing under it. A run that has not
+    -- finished a fight yet is still standing on a rung, and the rung is the
+    -- whole question this mode asks: it used to be a line in the band, and
+    -- taking it off the band without putting it here would have left the one
+    -- number a climber is playing for nowhere on the screen.
     local h = head + shown * LINE * F.scale + 6 * F.scale
 
     rect(x, y0, w, h, pal.a(pal.BG, 0.62))
@@ -2059,10 +2092,13 @@ local function run_log(o, top)
 
     -- Right-aligned off the panel's own edge, each column as wide as the
     -- widest thing in it, which is the rule the roster above follows and the
-    -- reason a five-digit score there does not eat the names.
+    -- reason a five-digit score there does not eat the names. The floor is a
+    -- thumb rather than a heading now that the headings are gone: a column of
+    -- single digits collapses to a few points otherwise, and the rows either
+    -- side of it stop lining up with anything.
     local GAP = 7 * F.scale
-    local function col_w(label, of)
-        local wide = math.max(text_w(label, small), 16 * F.scale)
+    local function col_w(of)
+        local wide = 26 * F.scale
         for k = 1, shown do
             wide = math.max(wide, text_w(of(log[#log - k + 1]), num))
         end
@@ -2075,25 +2111,46 @@ local function run_log(o, top)
         local secs = leg.seconds or 0
         return string.format("%d:%02d", math.floor(secs / 60), secs % 60)
     end
-    local tw = col_w("time", clocked)
-    local sw = col_w("score", scored)
+    local tw = col_w(clocked)
+    local sw = col_w(scored)
     local tx = x + w - 12 * F.scale
     local sx = tx - tw - GAP
     local wx = sx - sw - GAP
     local rung_x = x + 12 * F.scale
 
-    -- How many fights the run has cost, which is the part of the list that
-    -- scrolled off the top of the window the room keeps. A count rather than a
-    -- promise: six rows and "run: 19 fights" says plainly that this is the end
-    -- of a longer evening.
-    -- Three headings for four columns. The result column goes without: its
-    -- rows read "won", "lost" and "drew", which is already the label, and a
-    -- word over them saying "result" is the interface reading its own label
-    -- back.
-    local title = string.format("run: %d fights", ladder.legs or #log)
-    txt(title, rung_x, y0 + 14 * F.scale, small, pal.a(pal.DIM, 0.7))
-    txt("score", sx, y0 + 14 * F.scale, small, pal.a(pal.DIM, 0.7), "right")
-    txt("time", tx, y0 + 14 * F.scale, small, pal.a(pal.DIM, 0.7), "right")
+    -- Where the run stands, and then what it cost to get there.
+    --
+    -- The standing was a line under the clock, "RUNG 5  STREAK 4  FLOOR 1",
+    -- in the band, over the fight it was about. It reads here instead, at
+    -- the head of the rows that are the rest of the same story, and it keeps
+    -- the rule it had there: a streak of none is not a streak, and floor one
+    -- is the ground a run starts on, so neither is said until it has happened.
+    -- Every run opened saying both, which taught the eye to skip the line.
+    local standing = string.format("RUNG %d", (ladder.rung or 0) + 1)
+    if (ladder.streak or 0) > 0 then
+        standing = standing .. string.format("  STREAK %d", ladder.streak)
+    end
+    if (ladder.checkpoint or 0) > 0 then
+        standing = standing .. string.format("  FLOOR %d", ladder.checkpoint + 1)
+    end
+    txt(standing, rung_x, y0 + 14 * F.scale, small, pal.a(pal.INK, 0.85))
+    -- How many fights the run has cost, at the other end of the same line.
+    -- That is the part of the list which scrolled off the top of the window
+    -- the room keeps: a count rather than a promise, so eight rows under
+    -- "run: 19 fights" says plainly that this is the end of a longer evening.
+    -- Only once there is a list for it to be a count of.
+    --
+    -- No column headings over the rows. There were three, and the argument
+    -- that dropped the fourth takes all of them: a column of "won", "lost"
+    -- and "drew" is already labelled by its own rows, and so are a column of
+    -- "1-0" and a column of "0:44". What the head has room for is where the
+    -- run stands and how long it has been going, which is the pair a reader
+    -- came up here for, and at 248 points the headings were what left no room
+    -- for the count.
+    if shown > 0 then
+        txt(string.format("run: %d fights", ladder.legs or #log),
+            tx, y0 + 14 * F.scale, small, pal.a(pal.DIM, 0.7), "right")
+    end
     ticks(rung_x, y0 + 20 * F.scale, w - 24 * F.scale,
           pal.a(pal.RADAR_TILE, 0.35), 14 * F.scale)
 
@@ -2565,8 +2622,8 @@ local function inspect(o, top)
         return
     end
     local p = o.pilots[i]
-    local w = COL_W * F.scale
-    local x = F.safe_l + PAD * F.scale
+    local w = board.w
+    local x = board.x
     local rowh = 15 * F.scale
     -- Name, then the rows that always exist, then the team when it means
     -- something. Counted rather than guessed so the panel is exactly as tall
@@ -2612,7 +2669,7 @@ local function inspect(o, top)
     -- Under whatever is in the column, and never above where the column
     -- starts: with the scoreboard shut there is nothing above it, and a panel
     -- at the top of the screen lands on the menu chip.
-    local y = math.max((top or 0) + 6 * F.scale, top_y())
+    local y = math.max((top or 0) + 6 * F.scale, board.y)
     rect(x, y, w, h, pal.a(pal.BG, 0.72))
     vrule(x, y, h, pal.a(same_team and pal.FRIEND or pal.ENEMY, 0.9))
 
@@ -3102,7 +3159,7 @@ end
 --
 -- `KEY_H` and `KEY_SIZE` are the two of them a caller has to lay out around,
 -- so they live out here with it rather than being repeated at each call.
-local function menu_button(on_air, watch, room, pilots, watchers, landed)
+local function menu_button(on_air, watch, room, landed)
     -- Two keys, drawn the way the help page draws a key. They were two bare
     -- words over a shared rule, which asked a player to know that a word in
     -- that corner was a thing to press, and the board has taught the same hand
@@ -3115,20 +3172,6 @@ local function menu_button(on_air, watch, room, pilots, watchers, landed)
     local x, y = F.safe_l + PAD * F.scale, F.safe_t + PAD * F.scale
     -- Each key is as wide as its own word. A slot cut for four letters is a
     -- slot the longer of the two runs out of.
-    local humans, bots = 0, 0
-    for _, p in pairs(pilots or {}) do
-        if p.ai then bots = bots + 1 else humans = humans + 1 end
-    end
-    -- A spectator is still in the room. Guests wear the unknown label until
-    -- they claim an account, but they are people unless they arrived with one
-    -- of the two bot labels.
-    for _, w in ipairs(watchers or {}) do
-        if w.label == "bot" or w.label == "bot?" then
-            bots = bots + 1
-        else
-            humans = humans + 1
-        end
-    end
     local cx = x
     -- The way in first, as its own drawing: it is the one key here that is a
     -- mark rather than a word, and on a phone it is only a mark.
@@ -3165,9 +3208,12 @@ local function menu_button(on_air, watch, room, pilots, watchers, landed)
         hit(cx, y, ww, KEY_H * F.scale, c[2])
         cx = cx + ww + KEY_GAP * F.scale
     end
-    local players_w = players_cap(cx, y, M.details, humans, bots)
-    hit(cx, y, players_w, KEY_H * F.scale, "details")
-    cx = cx + players_w + KEY_GAP * F.scale
+    -- No PLAYERS key. It carried the head count and opened the roster, and the
+    -- band across the top of the screen does both now: the score and the clock
+    -- are what a player looks up there for, the roster is what a press on them
+    -- opens, and two keys for one panel is the offer made twice. What the chip
+    -- said about who was in the room, the rows in that panel say about each of
+    -- them. See `match_clock`.
     -- The tally, when the room channel is pointed at you.
     --
     -- It sits on this row rather than at the top of the middle, which is where
@@ -3511,77 +3557,67 @@ local function match_clock(o, m, names, alone)
     local left = m.left or 0
     local clock = ladder_waiting(m) and "--:--"
         or string.format("%d:%02d", math.floor(left / 60), left % 60)
-    -- A phone has no room for a centered band on the line the corner keys are
-    -- on: at 390 points MENU and PLAYERS reach the middle of the screen, which
-    -- is where a centered clock starts, and it was drawn straight through the
-    -- roster count. Still true with the channel mark gone, by a smaller margin:
-    -- the row ends at 196 and the clock spans about 168 to 222. So there the
-    -- band drops below that row and gives up the side names, which the score's
-    -- own two colors and the roster already carry. It was always wrong and it
-    -- was always somebody watching on a phone who saw it; the landing is that
-    -- screen for everybody now, which is what made it worth fixing.
-    local narrow = (F.w / math.max(F.density, 0.0001)) < 620
-    local y = F.safe_t + 26 * F.scale
-    if narrow then y = F.safe_t + (PAD + KEY_H + 20) * F.scale end
-    local big = (M.compact and 22 or 30) * F.scale
-    local small = (M.compact and 10 or 13) * F.scale
+    local big, name_px, under_px = band_type()
+    local top = band_top()
+    -- Every line is placed off the clock's own box rather than off a baseline
+    -- of its own, which is what keeps a side the same height as the clock
+    -- beside it: the name sits at the top of that box, the number under it
+    -- fills the rest, and the two are as tall together as the numerals in the
+    -- middle. See `band_type`.
+    local mid = top + big / 2
+    local name_y = top + name_px / 2
+    local under_y = top + big - under_px / 2
 
     -- The middle first, because everything else is placed off it.
     local dim = m.playing and 1 or 0.55
-    txt(clock, F.w / 2, y, big, pal.a(pal.INK, 0.95 * dim), "center")
-    -- What the band came to, walked outward from the clock as each piece is
+    txt(clock, F.w / 2, mid, big, pal.a(pal.INK, 0.95 * dim), "center")
+    local half = text_w(clock, big) / 2
+    -- What the band came to, walked outward from the clock as each side is
     -- laid down and read next frame by the question above.
-    band_l = F.w / 2 - text_w(clock, big) / 2
-    band_r = F.w / 2 + text_w(clock, big) / 2
+    band_l, band_r = F.w / 2 - half, F.w / 2 + half
     local function reach(x)
         if x < band_l then band_l = x end
         if x > band_r then band_r = x end
     end
-    -- Where the run is, under the clock, and only the parts of it that have
-    -- happened. "RUNG 5 STREAK 4 FLOOR 1" was three labeled numbers all match,
-    -- two of which say nothing until they move: a streak of none is not a
-    -- streak, and floor one is the bottom of the ladder, which is where a run
-    -- starts and cannot fall below. Every run opened reading STREAK 0 FLOOR 1
-    -- and taught the eye to skip the line the numbers eventually appear on.
-    if m.ladder and not match_ended(m) then
-        local ladder = m.ladder
-        local progress = string.format("RUNG %d", (ladder.rung or 0) + 1)
-        if (ladder.streak or 0) > 0 then
-            progress = progress .. string.format("  STREAK %d", ladder.streak)
-        end
-        if (ladder.checkpoint or 0) > 0 then
-            progress = progress .. string.format("  FLOOR %d", ladder.checkpoint + 1)
-        end
-        if ladder_waiting(m) then
-            progress = progress .. "  FINDING RIVAL"
-        end
-        local pw = text_w(progress, small - 1 * F.scale)
-        txt(progress, F.w / 2, y + 20 * F.scale, small - 1 * F.scale,
-            pal.a(pal.DIM, 0.88), "center")
-        reach(F.w / 2 - pw / 2)
-        reach(F.w / 2 + pw / 2)
-    end
-    -- Nothing under it while a match is being played: the clock is counting
-    -- down and a word saying "match" beneath it is the interface reading its
-    -- own label back. The intermission does need saying, because a clock
-    -- counting down to something a player cannot see is a question.
-    -- Only when the ending is not up. The card says the same thing at its
-    -- foot, with room for it, and two of them at once is the interface
-    -- answering a question nobody asked twice.
-    if match_ended(m) and alone then
-        txt("NEXT MATCH IN", F.w / 2, y + 17 * F.scale, small - 2 * F.scale,
-            pal.a(pal.DIM, 0.8), "center")
+    -- The press that opens the board. The band is the control now: PLAYERS
+    -- was a second key for the same panel and went with the redraw, so this
+    -- box is the only way in that is not the keyboard.
+    --
+    -- Exactly the drawn band, no wider. Every published box swallows the
+    -- press that lands in it, and on a mouse that press is the gun, so a
+    -- generous target here would be a strip across the top of the arena that
+    -- eats a shot whenever the cursor happens to be resting on it. A finger
+    -- gets the near-miss growth `M.pick` gives every control, and costs
+    -- nothing: a phone fires from the pads.
+    --
+    -- Nothing to press while the menu is up. The band keeps drawing under a
+    -- drawer it does not reach, since a player reading a page still wants the
+    -- clock, but the board it opens is not drawn then, and a control whose
+    -- panel cannot appear is a press that does nothing anybody can see.
+    local function press()
+        if alone then return end
+        local x0, x1 = band_l, band_r
+        hit(x0 - 6 * F.scale, top - 4 * F.scale,
+            x1 - x0 + 12 * F.scale, big + 8 * F.scale, "details")
     end
 
-    -- A rival search is not a scored life. Keeping the previous life at the
-    -- sides of the waiting clock makes a stale 1-0 look like the fight that
-    -- is about to begin.
-    if ladder_waiting(m) then return end
+    -- A rival search is not a scored life, and it is not a named one either:
+    -- the room has not chosen who is across the arena yet, so both sides would
+    -- be last fight's. The clock alone until it has.
+    if ladder_waiting(m) then
+        press()
+        return
+    end
 
-    -- A side's score sits outboard of the clock, its name outboard of that.
-    -- Yours on the left however the zone numbered the teams, so the reading
-    -- is positional and never has to be worked out from a color.
-    local gap = 26 * F.scale
+    -- What a side is, which is the one thing the two games do not share.
+    --
+    -- A team game's side is a team: its name over what it has scored, which is
+    -- the pair a player checks the clock to find out about. A duel's side is a
+    -- person: their call sign over their rating, and no score at all, because
+    -- first-to-one has nothing to say until it is over, and the board behind
+    -- the band says it better: which fight, won or lost, and how long it
+    -- took.
+    local duel = m.ladder ~= nil
     local mine = view_team
     local sides = {}
     for team, n in pairs(m.score or {}) do
@@ -3594,61 +3630,90 @@ local function match_clock(o, m, names, alone)
     for i, side in ipairs(sides) do
         local ours = side.team == mine
         local col = pal.a(ours and pal.FRIEND or pal.ENEMY, 0.95 * dim)
-        local num = tostring(side.n)
-        local nw = text_w(num, big)
-        local nm = (not narrow) and ((names and names[side.team]) or "") or ""
-        -- Outboard of the score, and which way that is depends on the side.
-        -- `at` walks away from the clock as each piece is laid down.
-        local at
-        if i == 1 then
-            at = F.w / 2 - text_w(clock, big) / 2 - gap
-            txt(num, at, y, big, col, "right")
-            at = at - nw - 10 * F.scale
-        else
-            at = F.w / 2 + text_w(clock, big) / 2 + gap
-            txt(num, at, y, big, col)
-            at = at + nw + 10 * F.scale
+        local label = (names and names[side.team]) or ""
+        -- A side's name is a label and wears the interface's own case; a
+        -- pilot's is quoted, the way the roster and the plate on their hull
+        -- quote it. Which of the two this is decides the case.
+        local quoted = false
+        local under, faint = tostring(side.n), false
+        if duel then
+            -- The seat rather than the side. One pilot is one side here, so
+            -- the name over the number is a person's, and a rating nobody has
+            -- settled yet reads dim for the same reason it does on the card:
+            -- ten games in it is a number that has not stopped moving.
+            local _, p = side_seat(o, side.team)
+            if p and p.name ~= "" then label, quoted = p.name, true end
+            local rated, placing = rating_line(o, side.team)
+            under, faint = rated or "--", placing or not rated
         end
-        -- And what that side is rated, inboard of its name on the same line.
-        --
-        -- Only where one pilot is one side, which is Ladder and nothing else:
-        -- a number beside "VANTAGE" in a four a side match would be one of the
-        -- four pilots' ratings wearing the team's name.
-        --
-        -- On the name's own line rather than under it. A line of its own would
-        -- have to sit in the band the Ladder readout already uses, and the
-        -- readout is centered and grows with the run: at "RUNG 8 STREAK 2
-        -- FLOOR 6" it reaches out past the clock and lands on both ratings,
-        -- which is a collision that only appears once a run has a floor under
-        -- it. Reading outward from the clock, each side is now score, name,
-        -- rating, and the band under the clock stays the readout's alone.
-        local rated, placing
-        if m.ladder then rated, placing = rating_line(o, side.team) end
-        local rpx = small - 1 * F.scale
-        local rcol = pal.a(placing and pal.DIM or col, 0.8 * dim)
-        local ny = y + 2 * F.scale
+        -- Right-aligned against the clock on the left of it and left-aligned
+        -- on the right, so both lines of a side run away from the middle and
+        -- the numbers that matter sit against the numerals they are read with.
+        local edge, pivot
         if i == 1 then
-            if rated then
-                txt(rated, at, ny, rpx, rcol, "right")
-                at = at - text_w(rated, rpx) - 7 * F.scale
-            end
-            if nm ~= "" then
-                txt(nm, at, ny, small, pal.a(col, 0.85 * dim), "right")
-                at = at - text_w(nm, small)
-            end
-            reach(at)
+            edge = F.w / 2 - half - (M.compact and 14 or 22) * F.scale
+            pivot = "right"
+            reach(edge - math.max(text_w(label, name_px),
+                                  text_w(under, under_px)))
         else
-            if nm ~= "" then
-                txt(nm, at, ny, small, pal.a(col, 0.85 * dim))
-                at = at + text_w(nm, small) + 7 * F.scale
-            end
-            if rated then
-                txt(rated, at, ny, rpx, rcol)
-                at = at + text_w(rated, rpx)
-            end
-            reach(at)
+            edge = F.w / 2 + half + (M.compact and 14 or 22) * F.scale
+            pivot = nil
+            reach(edge + math.max(text_w(label, name_px),
+                                  text_w(under, under_px)))
         end
+        if label ~= "" then
+            txt(label, edge, name_y, name_px, pal.a(col, 0.85 * dim), pivot,
+                nil, quoted)
+        end
+        txt(under, edge, under_y, under_px,
+            faint and pal.a(pal.DIM, 0.8 * dim) or col, pivot)
     end
+    press()
+    -- Nothing under it while a match is being played: the clock is counting
+    -- down and a word saying "match" beneath it is the interface reading its
+    -- own label back. The intermission does need saying, because a clock
+    -- counting down to something a player cannot see is a question.
+    -- Only when the ending is not up. The card says the same thing at its
+    -- foot, with room for it, and two of them at once is the interface
+    -- answering a question nobody asked twice.
+    if match_ended(m) and alone then
+        txt("NEXT MATCH IN", F.w / 2, band_bottom() + 8 * F.scale,
+            (M.compact and 9 or 11) * F.scale, pal.a(pal.DIM, 0.8), "center")
+    end
+end
+
+-- What the room has to say, under the band that carries everything else.
+--
+-- This was a sentence across the middle of the screen in the largest type on
+-- it, and it said things the instruments already said: which rung had just
+-- been cleared, what the next one is, how long the streak is. All three are
+-- on the board behind the band now, a press away. The two that are not, that
+-- the clock has run out and the next death settles it and that the rival went
+-- away mid-life, are what is left for this to carry.
+--
+-- So it is drawn the size of a label rather than the size of a headline, in
+-- the register every other instrument uses, under the band and out of the
+-- fight. See `Ladder::banner` on the server for what stopped being sent.
+local function match_note(o, m)
+    local line = o.banner
+    if not line or line == "" then return end
+    -- Not while the ending is up. The podium is the room's own account of the
+    -- match that just finished and this slot is where the band says what the
+    -- clock is counting down to, so a line here would be a third statement
+    -- laid over the second. The banner used to be drawn after the ending's
+    -- early return, which is the same rule written as an accident of order.
+    if match_ended(m) then return end
+    if band_r > band_l and M.drawer_over(band_l, band_r - band_l) then
+        return
+    end
+    -- In ink rather than in the warning color. Two of the three lines left,
+    -- a rival who disconnected and a clock that has run out, would wear red
+    -- well enough, and the third is a ladder cleared, which is the best thing
+    -- that happens in that mode. The lag notice under this one is the red one,
+    -- and two reds in a column would stop meaning anything.
+    local px = (M.compact and 9 or 11) * F.scale
+    txt(line, F.w / 2, band_bottom() + 8 * F.scale, px,
+        pal.a(pal.INK, 0.9), "center")
 end
 
 -- The ending: who took the match, what everybody did in it, and what the room
@@ -4287,7 +4352,11 @@ function M.hud(o)
     --
     -- A third rather than out: nothing is paused, you can be shot while you
     -- are answering, and a glance at your energy is still worth taking.
-    F.text_dim = (ending or o.menu_open or M.room_ask) and 0.34 or 1
+    -- An open board is the same case: it is the thing being read, so the fight
+    -- and every instrument around it recede while it is up. See the wash under
+    -- the board below, which is the mesh half of the same move.
+    local reading = M.details and not o.menu_open
+    F.text_dim = (ending or o.menu_open or M.room_ask or reading) and 0.34 or 1
 
     -- On a touchscreen the bottom of the screen belongs to the thumbs. The
     -- stick sits in the bottom left corner and the pads in the bottom right,
@@ -4298,12 +4367,36 @@ function M.hud(o)
     -- One panel in this column at a time. The rooms list stands in the
     -- scoreboard's slot, so whichever is up is the one drawn.
     M.zone_name = (o.zone or ""):match("^[^\n]*")
-    local top = rooms_panel(o.rooms, o.room)
-    if top == 0 then
-        top = scores(me, o.pilots, o.watchers, o.viewer_name)
+    -- The rooms list keeps the left column, under the key that opens it. The
+    -- board is its own column now, under the band, so the two no longer stand
+    -- in one slot and neither has to put the other away.
+    rooms_panel(o.rooms, o.room)
+    -- Where that column starts, before anything in it draws. Under the band,
+    -- and under the room's note as well when there is one, since a line of
+    -- text between them is a line the list would otherwise be drawn over.
+    local note = (o.banner and o.banner ~= "") and 16 * F.scale or 0
+    set_board(note)
+    -- The wash the board is read over. Laid down before the board's own panel
+    -- and after nothing else, so the fight behind it goes back and the panel
+    -- in front of it does not. Not under an open drawer: that is a panel over
+    -- this one, and dimming for a panel nobody can see is a screen that went
+    -- dark for no reason.
+    if reading then rect(0, 0, F.w, F.h, pal.a(pal.BG, 0.55)) end
+    -- The board itself, at full strength over that wash: it is the thing
+    -- being read, and the dim above is what everything else on the screen is
+    -- wearing while it is up.
+    if not o.menu_open then
+        local behind = F.text_dim
+        if reading then F.text_dim = 1 end
+        local top = scores(me, o.pilots, o.watchers, o.viewer_name)
         -- And under the roster, for a mode whose roster is two rows and whose
         -- real scoreboard is the run behind them.
         top = run_log(o, top)
+        -- And under that, the pilot a row was pressed on. It belongs to this
+        -- column and is drawn with it, rather than after the instruments: all
+        -- three are one panel with one wash behind them.
+        inspect(o, top)
+        F.text_dim = behind
     end
     -- Names hanging off ships, but not under the menu. Glyphs come from the
     -- gui and the gui draws over every mesh, so nothing the menu lays down
@@ -4358,7 +4451,6 @@ function M.hud(o)
     if not (o.watch or M.touching) then
         status(me, o.charges, lift)
     end
-    inspect(o, top)
     -- A watcher is never the subject, so the tally can only be about a pilot
     -- who is flying, and the two never contend for the slot.
     -- The room chip only where there is a room to move to. `rooms` is the
@@ -4371,8 +4463,8 @@ function M.hud(o)
     -- own head: the way back in is the lit stop on the column's foot row, and
     -- the way out is the x on its head.
     if not o.menu_open then
-        menu_button(o.on_air and not o.watch, o.watch, several and o.room or nil,
-                    o.pilots, o.watchers, o.landing)
+        menu_button(o.on_air and not o.watch, o.watch,
+                    several and o.room or nil, o.landing)
     end
     vignette(o.hurt or 0)
     -- After the stack, because it is hung off the rows the stack published,
@@ -4393,7 +4485,13 @@ function M.hud(o)
     if o.menu_open then
         refresh_players(o.pilots, o.watchers, nil, o.viewer_name)
     end
+    -- The band and the room's line under it read at full strength over the
+    -- wash as well. They are the instrument the board belongs to rather than
+    -- something it covers, and the clock is the one reading a player wants
+    -- whatever else is up.
+    if reading then F.text_dim = 1 end
     match_clock(o, o.match, o.side_names, o.menu_open)
+    match_note(o, o.match)
     -- The two big centered lines are the only interface that sits where the
     -- menu does. The panels can share the screen with it; these cannot.
     if o.menu_open then return end
@@ -4423,12 +4521,11 @@ function M.hud(o)
         help_prompt()
     end
     flag_strip(me)
-    if o.banner and o.banner ~= "" then
-        txt(o.banner, F.w / 2, 64 * F.scale, (M.compact and 15 or 24) * F.scale,
-            pal.a(pal.INK, 0.92), "center")
-    end
+    -- The room's own line is drawn with the band it hangs off, above. See
+    -- `match_note`.
     if o.lag_notice and o.lag_notice ~= "" then
-        txt(o.lag_notice, F.w / 2, 92 * F.scale, (M.compact and 10 or 13) * F.scale,
+        txt(o.lag_notice, F.w / 2, band_bottom() + 26 * F.scale,
+            (M.compact and 10 or 13) * F.scale,
             pal.a(pal.HURT, 0.95), "center")
     end
     if not o.watch and sim.ship_alive(me) == 0 then

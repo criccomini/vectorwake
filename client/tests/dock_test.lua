@@ -193,8 +193,12 @@ end
 frame(1440, 810)
 check("the corner row is not drawn under the column",
       box("open") == nil, "MENU is still published")
-check("nor the roster key beside it", box("details") == nil,
-      "PLAYERS is still published")
+-- Nor the band's own press, which is what opens the roster now. It keeps
+-- drawing over a drawer that does not reach it, because a player reading a
+-- page still wants the clock; it stops being a control, because the board it
+-- opens is not drawn while the menu is.
+check("nor the band's press across the top", box("details") == nil,
+      "the band is still a control under the menu")
 -- And a press on the head reaches the head.
 local sign = box("pilot_page")
 if sign then

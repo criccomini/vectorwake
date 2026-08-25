@@ -747,22 +747,30 @@ impl Ladder {
         climbing.next().is_none().then_some((climber, rival))
     }
 
-    /// The one line across the middle of the screen, and only what the readout
-    /// beside the clock cannot already say.
+    /// The one line the client puts under the band, and only what the board
+    /// behind the band cannot already say.
     ///
     /// It used to read "Ladder rung 5: first to 1, 0 to 0" through every second
-    /// of every life. The rung is in the readout under the clock, the score is
-    /// on either side of the clock, and first-to is a rule of the mode that
-    /// never moves: three facts already on screen, in the largest type on it,
-    /// over the fight they are about. So an ordinary life gets no banner.
+    /// of every life. The rung is on the board, the score is on either side of
+    /// the clock, and first-to is a rule of the mode that never moves: three
+    /// facts already on screen, in the largest type on it, over the fight they
+    /// are about. So an ordinary life gets no banner.
+    ///
+    /// Nor does an ordinary result. "Rung 3 cleared. Next rung 4, streak 3"
+    /// was every one of those numbers a second time: the rung and the streak
+    /// head the run on the board, and the fight that just ended is its top
+    /// row, saying won or lost, by what, and how long it took. A sentence
+    /// restating a panel a press away is the same reading twice, and it was
+    /// the largest type on the screen while a player was still flying.
     ///
     /// What is left is what nothing else says: that the clock has run out and
-    /// the next death settles it, and that the rival went away mid-life.
+    /// the next death settles it, that the rival went away mid-life, and that
+    /// the whole ladder has been climbed.
     fn banner(&self) -> String {
         if !self.opened || (self.playing && !self.opponent_ready) {
-            // The clock reads dashes and the readout says the room is looking
-            // for a rival. A sentence repeating that is the interface reading
-            // its own label back.
+            // The clock reads dashes and the room is looking for a rival. A
+            // sentence repeating that is the interface reading its own label
+            // back.
             String::new()
         } else if self.playing {
             if self.left == 0 {
@@ -780,25 +788,8 @@ impl Ladder {
                 "Ladder cleared. New run starts at checkpoint {}",
                 self.run.checkpoint().saturating_add(1)
             )
-        } else if self.result == Some(true) {
-            format!(
-                "Rung {} cleared. Next rung {}, streak {}",
-                self.active_opponent_slot.saturating_add(1),
-                self.run.rung().saturating_add(1),
-                self.run.streak()
-            )
-        } else if self.result == Some(false) {
-            format!(
-                "Run stopped at rung {}. Next rung {}, checkpoint {}",
-                self.active_opponent_slot.saturating_add(1),
-                self.run.rung().saturating_add(1),
-                self.run.checkpoint().saturating_add(1)
-            )
         } else {
-            format!(
-                "Rung {} drawn. Replay after the reset",
-                self.active_opponent_slot.saturating_add(1)
-            )
+            String::new()
         }
     }
 }
@@ -1636,6 +1627,36 @@ mod ladder_tests {
         assert_eq!(state.score, [1, 0], "the climber's side scores first");
         assert_eq!(state.rung, 1);
         assert_eq!(state.log[0].result, LegResult::Cleared);
+    }
+
+    /// A cleared rung says nothing across the screen. It used to read "Rung 3
+    /// cleared. Next rung 4, streak 3" in the largest type the client draws,
+    /// over the arena, while the next life was starting. Every number in it is
+    /// on the board a press away: the rung and the streak head the run, and
+    /// the fight that just ended is the row under them. The banner is for what
+    /// nothing else says.
+    #[test]
+    fn an_ordinary_result_says_nothing_over_the_arena() {
+        let seats = [3, RIVAL];
+        let mut world = World::new(7);
+        let mut ladder = Ladder::new(LadderRules::default(), 1_000, 2);
+        ladder.tick(&mut ctx(&mut world, &seats));
+
+        let mut cleared = ctx(&mut world, &seats);
+        ladder.on_death(&mut cleared, RIVAL, 3);
+        assert!(cleared.close_match, "the life ended");
+        assert_eq!(ladder.ladder_state().unwrap().rung, 1, "and it advanced");
+        let mut settling = ctx(&mut world, &seats);
+        ladder.tick(&mut settling);
+        assert_eq!(settling.banner, "", "a won rung is not an announcement");
+
+        // And a lost one is not either: the row says lost, and the standing
+        // above it says what the run fell to.
+        let mut lost = ctx(&mut world, &seats);
+        ladder.on_death(&mut lost, 3, RIVAL);
+        let mut after = ctx(&mut world, &seats);
+        ladder.tick(&mut after);
+        assert_eq!(after.banner, "", "a lost rung is not one either");
     }
 
     /// A rival the room has not called ready is not on the field: its seat is

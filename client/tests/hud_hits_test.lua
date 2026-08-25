@@ -329,7 +329,12 @@ if #dbg == 2 then
 end
 ui.debug = false
 
--- --- the Players key carries the whole room -------------------------------
+-- --- the band is what opens the room ---------------------------------------
+--
+-- PLAYERS was a key in the corner row carrying the room's head count, and it
+-- opened the roster. The band across the top opens the roster now, and the
+-- count went with the key: the rows in the panel are the room, one line each,
+-- which is the same fact drawn once instead of twice.
 
 local counted_room = {pilots = {
            [0] = {name = "you", label = "human"},
@@ -341,66 +346,47 @@ local counted_room = {pilots = {
            {name = "gallery", label = "human"},
            {name = "newcomer", label = "unknown"},
            {name = "camera", label = "bot?"},
-       }}
+       },
+       -- The band is the room's clock, so a frame that wants one has to be a
+       -- frame with a room in it.
+       match = {playing = true, left = 96, score = {[0] = 4, [1] = 7}},
+       side_names = {[0] = "Pylon", [1] = "Caisson"}}
 frame(counted_room)
 do
-    local chip = box("details")
-    local words = {}
-    local colors = {}
-    if chip then
+    local band = box("details")
+    check("the band publishes the press that opens the roster", band ~= nil)
+    check("nothing in the corner row offers it a second time",
+          band == nil or box("open") == nil
+              or band.x > box("open").x + box("open").w,
+          "a roster key is still beside MENU")
+    if band then
+        -- The clock is what sits in the middle of the window; the two sides
+        -- hang off it and are as wide as their own names, so the band itself
+        -- is only centered when both sides are named alike.
         local st = package.loaded["arena.state"]
+        local clock
         for k = 1, st.n do
-            local t = st.text[k]
-            local y = H - t.y
-            if t.x >= chip.x and t.x <= chip.x + chip.w
-                    and y >= chip.y and y <= chip.y + chip.h then
-                words[#words + 1] = t.s
-                colors[#colors + 1] = t.col
-            end
+            if st.text[k].s == "1:36" then clock = st.text[k] end
         end
+        check("the clock is centered on the window",
+              clock ~= nil and clock.pivot == "center"
+                  and math.abs(clock.x - W / 2) < 1,
+              clock and string.format("%.0f of %d, %s", clock.x, W / 2,
+                                      tostring(clock.pivot)) or "no clock")
+        check("and the band covers it, across the top of the screen",
+              band.x < W / 2 and band.x + band.w > W / 2 and band.y < 60,
+              string.format("%.0f..%.0f, top %.0f", band.x, band.x + band.w,
+                            band.y))
+        check("a press on the clock opens the roster",
+              press(W / 2, band.y + band.h / 2) == "details",
+              tostring(press(W / 2, band.y + band.h / 2)))
+        -- The band is the only thing on that line, and it is no wider than
+        -- what it draws: every published box eats the press that lands in it,
+        -- and on a mouse that press is the gun.
+        check("and it is a band rather than a strip across the arena",
+              band.w < W / 2, string.format("%.0f of %d", band.w, W))
     end
-    check("the Players key carries human and bot counts",
-          table.concat(words, ",") == "PLAYERS,5,2",
-          table.concat(words, ","))
-    check("an idle Players key uses one muted text color",
-          #colors == 3 and colors[1][1] == colors[2][1]
-              and colors[2][1] == colors[3][1]
-              and colors[1][2] == colors[2][2]
-              and colors[2][2] == colors[3][2]
-              and colors[1][3] == colors[2][3]
-              and colors[2][3] == colors[3][3]
-              and colors[1][4] == colors[2][4]
-              and colors[2][4] == colors[3][4])
 end
-
-ui.details = true
-frame(counted_room)
-do
-    local chip = box("details")
-    local st = package.loaded["arena.state"]
-    local colors = {}
-    for k = 1, st.n do
-        local t = st.text[k]
-        local y = H - t.y
-        if chip and t.x >= chip.x and t.x <= chip.x + chip.w
-                and y >= chip.y and y <= chip.y + chip.h then
-            colors[#colors + 1] = t.col
-        end
-    end
-    check("a selected Players key lights every label and count cyan",
-          #colors == 3 and colors[1][1] == pal.FRIEND[1]
-              and colors[2][1] == pal.FRIEND[1]
-              and colors[3][1] == pal.FRIEND[1]
-              and colors[1][2] == pal.FRIEND[2]
-              and colors[2][2] == pal.FRIEND[2]
-              and colors[3][2] == pal.FRIEND[2]
-              and colors[1][3] == pal.FRIEND[3]
-              and colors[2][3] == pal.FRIEND[3]
-              and colors[3][3] == pal.FRIEND[3]
-              and colors[1][4] == 1 and colors[2][4] == 1
-              and colors[3][4] == 1)
-end
-ui.details = false
 
 -- --- the menu takes the screen ---------------------------------------------
 
@@ -480,12 +466,18 @@ frame({pilots = {[0] = {name = "zulu", label = "human"},
                  [2] = {name = "bravo", label = "human"},
                  [3] = {name = "Charlie", label = "human"}}})
 -- Read out of the scoreboard's own column rather than off the whole screen:
--- the same names are drawn again over the hulls they belong to.
+-- the same names are drawn again over the hulls they belong to. The column is
+-- asked where it is rather than assumed, since it moved out from under the
+-- corner keys and now stands under the band that opens it.
+local function in_board(t)
+    local col = box("scores")
+    return col ~= nil and t.x >= col.x and t.x <= col.x + col.w
+end
 local order = {}
 for k = 1, package.loaded["arena.state"].n do
     local t = package.loaded["arena.state"].text[k]
     for _, nm in ipairs({"zulu", "Alpha", "bravo", "Charlie"}) do
-        if t.s == nm and t.x < 300 then order[#order + 1] = nm end
+        if t.s == nm and in_board(t) then order[#order + 1] = nm end
     end
 end
 check("your side comes first, then the rest, each alphabetical",
@@ -616,14 +608,18 @@ do
     -- The widest row, found by its points, and then everything sharing its
     -- baseline inside the panel. Bottom-up, so one y is one row.
     local row_y
+    local col = box("scores")
+    local function in_col(t)
+        return col ~= nil and t.x >= col.x and t.x <= col.x + col.w
+    end
     for k = 1, st.n do
         local t = st.text[k]
-        if t.s == "12750" and t.x < 300 then row_y = t.y end
+        if t.s == "12750" and in_col(t) then row_y = t.y end
     end
     local span = {}
     for k = 1, st.n do
         local t = st.text[k]
-        if t.y == row_y and t.x < 300 then
+        if t.y == row_y and in_col(t) then
             local wide = #t.s * t.px * (1233 / 2048)
             local x0 = t.pivot == "right" and (t.x - wide) or t.x
             span[#span + 1] = {s = t.s, x0 = x0, x1 = x0 + wide}

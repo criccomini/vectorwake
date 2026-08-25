@@ -376,9 +376,11 @@ end
 
 -- --- the machine is square -------------------------------------------------
 
--- The scoreboard, nameplates, and PLAYERS count all answer the same question
--- with the same pair of marks. This room has a human pilot and a bot, with the
--- bot's hull on screen.
+-- The scoreboard and the nameplates answer the same question with the same
+-- pair of marks. This room has a human pilot and a bot, with the bot's hull on
+-- screen. The PLAYERS chip used to carry a standing pair of its own and be a
+-- third answer; the band that replaced it carries a score and a clock, and
+-- says who is in the room by opening the list that names them.
 ui.details = true
 local board_frame = frame(function()
     ui.hud({
@@ -395,14 +397,15 @@ local board_frame = frame(function()
 end)
 ui.details = false
 local board = boxes(board_frame)
-check("the scoreboard, nameplate, and player count box the bot", #board == 3,
+check("the scoreboard and the nameplate box the bot", #board == 2,
       #board .. " boxes beside one bot")
-check("the scoreboard and player count mark the human pilot",
-      #crowns(board_frame) == 2,
+check("the scoreboard marks the human pilot",
+      #crowns(board_frame) == 1,
       #crowns(board_frame) .. " round helmets beside one human pilot")
 
 -- With the list shut, a human stranger's hull keeps the human mark beside its
--- name. PLAYERS contributes the other helmet and its standing zero-bot mark.
+-- name, and it is the only mark on the frame: nothing in the chrome carries a
+-- standing pair any more.
 local human_plate = frame(function()
     ui.hud({
         me = 0, class_names = {"Apex"}, menu_open = false,
@@ -416,13 +419,13 @@ local human_plate = frame(function()
         zone = "chaos", fps = 60, frame_ms = 16, rx_rate = 0, tx_rate = 0,
     })
 end)
-check("a human nameplate wears the pilot helmet", #crowns(human_plate) == 2,
-      #crowns(human_plate) .. " helmets across PLAYERS and one nameplate")
+check("a human nameplate wears the pilot helmet", #crowns(human_plate) == 1,
+      #crowns(human_plate) .. " helmets for one nameplate")
 
 -- A kill line marks nobody. It names two pilots in words, and hanging a
 -- helmet and a machine on them says the same thing twice in the one panel
--- whose argument is that short lines need no chrome. The room still
--- contributes the standing pair in PLAYERS, so that pair is the whole count.
+-- whose argument is that short lines need no chrome. With the roster shut and
+-- no chip in the corner, that leaves no marks on the frame at all.
 local kill_frame = frame(function()
     ui.hud({
         me = 0, class_names = {"Apex"}, menu_open = false,
@@ -438,10 +441,10 @@ local kill_frame = frame(function()
         zone = "chaos", fps = 60, frame_ms = 16, rx_rate = 0, tx_rate = 0,
     })
 end)
-check("a kill line hangs no helmet on its human", #crowns(kill_frame) == 1,
-      #crowns(kill_frame) .. " helmets, wanted only the one in PLAYERS")
-check("and none on its bot", #boxes(kill_frame) == 1,
-      #boxes(kill_frame) .. " bot marks, wanted only the one in PLAYERS")
+check("a kill line hangs no helmet on its human", #crowns(kill_frame) == 0,
+      #crowns(kill_frame) .. " helmets, wanted none")
+check("and none on its bot", #boxes(kill_frame) == 0,
+      #boxes(kill_frame) .. " bot marks, wanted none")
 
 -- The line still measures and right-aligns off its words alone, which is what
 -- the marks used to be folded into. A name keeps its own capitals.

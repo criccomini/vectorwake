@@ -3011,3 +3011,65 @@ which point one row is a toolbar and the friends page's card is the better
 shape; or a zone list grows long enough that the row you are in is off screen
 when you open the panel, which would put the way out somewhere you have to
 scroll to find.
+
+## 67. The scoreboard is a band you press
+
+**Decision:** the clock and the score are one instrument across the top of the
+screen, and pressing it opens everything else. Each side of the clock is a
+two-line stack in that side's color: a team over its score in a team game, a
+pilot over their rating in a duel. The two lines and the gap between them add
+up to the clock's own height, so a side is exactly as tall as the numerals it
+stands beside and the band reads as one line however many words are in it. The
+left side is right-aligned into the clock and the right side left-aligned out
+of it. Nothing else rides the band: no rung, no streak, no zone's line of its
+own.
+
+A press opens the board, in a column centered under the band. The board is
+sections, and the sections are what a zone shares or does not: every zone
+stacks the roster, a duel adds the run of fights under it headed by where the
+run stands, and any zone's row opens the same pilot box. While the board is up
+the fight behind it is washed and every other instrument's type recedes, the
+way they do behind the menu, because the board is the thing being read.
+
+The PLAYERS key is gone. So is the sentence across the middle of the arena:
+what the room still has to say is a label under the band, and the ladder
+stopped saying most of it.
+
+**Why:** four complaints, one cause. The band overran an upright phone, Melee
+and Ladder filled it so differently that the two zones looked unrelated, its
+type was fixed at 13 and 30 points and read small across a desk, and match
+events arrived as 24-point white text over the fight.
+
+The cause is that the scoreboard was three things in three places. A clock with
+a score either side of it, a key in the corner that opened the roster, and a
+banner in the middle that repeated what both already said. Nothing bounded any
+of them, so each grew until it hit something.
+
+One object with one control fixes all four at once. Bounded, because a side is
+the height of the clock and the board has a column of its own. Common, because
+the chassis is the same drawing in every zone and only the sections under it
+differ. Legible, because the type is sized off the window rather than fixed.
+And quiet, because an event that used to shout now prints small under the band
+or, in the ladder's case, is not sent at all: "rung 3 cleared, next rung 4,
+streak 3" was every one of those numbers a second time, and all of them are on
+the board a press away.
+
+The band is an instrument, not a control, which is why it does not wear a key's
+box or sit in the key row. It is dynamic, colored and progressive; MENU is
+static, plain and not. Dressing one as the other was what made the first draft
+of this look wrong, and it is why the two now sit at opposite ends of the same
+line.
+
+**Cost:** a published hit box over the top center of the arena eats the press
+that lands in it, and on a mouse that press is the gun. The box is exactly the
+drawn band and no wider for that reason, but a cursor resting up there costs a
+shot. A phone gives the band a line of its own under the corner key, because
+the dial's own readouts own the top right at 390 points, which is a line of
+chrome a monitor does not spend. And nothing on the glass says the band opens
+anything: it is an instrument that happens to be pressable, discovered the way
+the rest of this interface is discovered, by pressing it.
+
+**Reconsider if:** the gun and the band start arguing on a desk, which would
+mean publishing the box only while the pointer is already resting on it; or a
+zone turns up whose scoreboard is not a clock and two sides, at which point the
+chassis is a third thing rather than the shared one.
