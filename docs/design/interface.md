@@ -214,9 +214,9 @@ Every mark is a picture of the thing, not a symbol somebody has to learn.
 The rail's play stop is a world with a ring around it; settings is three
 sliders at three different positions, because a row of identical sliders is a
 picture of nothing being adjustable; leave is a doorway with the arrow going
-out the open side; standings is three columns that step rather than a podium,
-because a symmetric podium reads as a logo. The ship stop is the hull you are
-flying, drawn as itself. When a mark cannot be a picture of its object it is
+out the open side; friends is two helmets, one behind the other. The ship stop
+is the hull you are flying, drawn as itself. When a mark cannot be a picture of
+its object it is
 the object's own instrument: upgrades is the rivet, the mark that stands in
 front of every price.
 

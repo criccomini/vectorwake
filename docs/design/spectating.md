@@ -29,6 +29,18 @@ never could, because full positions only seconds old are still a map of the
 room. Kills ride the ring with the frame they belong to, or the feed would
 announce a death the delayed picture has not shown yet.
 
+**The delay is on the whole broadcast rather than on the picture alone.** The
+clock, the score, the banner, the scoreboard and the ground ride the ring
+beside the frame they belong to. Sent live they described a room five seconds
+ahead of the one on screen: a duel's last five seconds ticked away over two
+ships still fighting, and the death that settled it arrived under a clock
+already counting the next match down. The ground was the worse half of it. A
+whistle changes the map and bumps the settings generation, and a client refuses
+a frame whose generation is not the one it holds, so every frame still in the
+ring at a rotation was thrown away and the stands went blank for the whole
+delay. What a side is called and which of its doors are open stays live: that
+describes the room rather than the moment.
+
 It was a zone's number for a while, `channel_delay_ticks`, five seconds by
 default and zero in the ladder zone on the reasoning that there the audience
 is the mode and both pilots are equally exposed. A dial whose interesting

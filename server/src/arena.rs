@@ -1123,7 +1123,7 @@ impl ArenaServer {
         self.draining = true;
         let gone: usize = self.rooms.iter_mut().map(|r| r.evict_all_bots()).sum();
         if gone > 0 {
-            for r in self.rooms.iter() {
+            for r in self.rooms.iter_mut() {
                 r.broadcast_roster();
             }
         }

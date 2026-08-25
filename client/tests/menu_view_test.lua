@@ -117,18 +117,12 @@ local function says(st, s)
 end
 
 -- What the last draw published, by action. `ui.hits` is rebuilt every draw,
--- so these read whichever one just ran.
+-- so this reads whichever one just ran.
 local function hit_named(action)
     for _, h in ipairs(ui.hits) do
         if h.action == action then return h end
     end
     return nil
-end
-
-local function actions()
-    local out = {}
-    for _, h in ipairs(ui.hits) do out[#out + 1] = h.action end
-    return out
 end
 
 -- --- the rail is always there, and every stop is reachable by pointer ------
@@ -212,8 +206,7 @@ check("the stage shows what the rail points at", has(st, "zone1"))
 do
     local all = {}
     local names = {"zones", "ship", "pilot", "team", "settings", "controls",
-                   "discord", "about", "friends", "standings", "upgrades",
-                   "leave"}
+                   "discord", "about", "friends", "upgrades", "leave"}
     for i, name in ipairs(names) do
         all[i] = {label = name, icon = name, index = i}
     end
@@ -938,214 +931,6 @@ do
 
 end
 
--- --- the week's table -----------------------------------------------------
---
--- A `won` column stood at the end of this with a zero in every cell, because
--- nothing files a match result. What is here instead is what the log actually
--- holds.
---
--- There was also a card down the right hand side saying more about whichever
--- row the cursor was on, and every line in it was a column this table could
--- carry instead. It is columns now, and the quarter of the page the card took
--- is what pays for them.
-do
-    local week = draw({
-        depth = 2, sel = 2, rail = RAIL, rail_sel = 1, focus = "stage",
-        home = true, closable = false, page = "week",
-        pilot = {name = "Vantage 7", rivets = 12},
-        table = true,
-        week = {sort = "kills", filter = "", back = 0, since = ""},
-        rows = {
-            {label = "Halcyon 1", rank = 1, kills = 9, deaths = 3, assists = 6,
-             kd = 3, run = 4, banked = 180, rating = 1240, swing = 29,
-             played = "22m", index = 1, pick = true},
-            {label = "Vantage 7", rank = 2, kills = 5, deaths = 4, assists = 1,
-             kd = 1.25, run = 2, banked = 90, rating = 1190, swing = -12,
-             played = "8m", index = 2, pick = true, mark = true},
-        },
-    })
-    check("the table says nothing about matches won", not has(week, "won"),
-          table.concat(texts(week), " "))
-    -- Each figure and the word for it are one string in the packed row, which
-    -- is the only row this table has now: the menu is one column at a phone's
-    -- measure, so the wide table of separate columns has no window to be
-    -- drawn on. `says` is what asks for a piece of one.
-    check("and carries deaths and time instead",
-          says(week, "3 deaths") and says(week, "22m time"),
-          table.concat(texts(week), " "))
-    -- Every line the card used to hold, as a figure on the row beside it.
-    check("the ratio is a column now", says(week, "3.00 k/d"),
-          table.concat(texts(week), " "))
-    check("and so is the best run", says(week, "4 streak"),
-          table.concat(texts(week), " "))
-    -- Kills a pilot was part of and did not finish. A hull rarely comes apart
-    -- to one pilot's fire, and two columns told whoever did four fifths of
-    -- the work and lost the last shot that they had done nothing.
-    check("assists are a column beside the two they belong with",
-          says(week, "6 assists"),
-          table.concat(texts(week), " "))
-    -- Two different facts, and the table wants both: what somebody is rated
-    -- at, and what this week did to it.
-    check("a rating is what a pilot is rated at",
-          says(week, "1240 rating"),
-          table.concat(texts(week), " "))
-    check("and the rating change says what the week did to it",
-          says(week, "+29 rating change") and says(week, "-12 rating change"),
-          table.concat(texts(week), " "))
-    -- The week's earnings, and the word for them. "Earned" keeps this separate
-    -- from the balance left after purchases.
-    check("what the week paid is earned",
-          says(week, "180 earned"),
-          table.concat(texts(week), " "))
-    -- Nothing falls off the end of the row. It used to stop at the end of the
-    -- first line, which lost the last four figures in a column this narrow.
-    check("and nothing a pilot could sort by is missing from the row",
-          says(week, "180 earned") and says(week, "22m time")
-              and says(week, "1240 rating"),
-          table.concat(texts(week), " "))
-    check("and there is no card beside any of it",
-          not has(week, "your week") and not has(week, "kills per death"),
-          table.concat(texts(week), " "))
-    -- Which way the sorted column runs is a triangle, not a caret and a
-    -- letter v. Those were the two characters nearest the shape and read as
-    -- exactly what they are at nine points. Checked as an absence, because
-    -- the mark itself is geometry and nothing this test reads can see it: the
-    -- head is the bare word and the direction is drawn.
-    local heading = nil
-    for _, t in ipairs(texts(week)) do
-        if string.lower(t) == "kills" then heading = t end
-    end
-    check("the sorted head is the word alone", heading ~= nil,
-          table.concat(texts(week), " "))
-    check("with no caret or vee standing in for an arrow",
-          not has(week, "^") and not has(week, "kills v"),
-          table.concat(texts(week), " "))
-
-    -- A guest has no account to keep a rating under, and a zero drawn as a
-    -- number would read as a very bad pilot rather than as nobody's rating.
-    local guest = draw({
-        depth = 2, sel = 1, rail = RAIL, rail_sel = 1, focus = "stage",
-        home = true, closable = false, page = "week",
-        pilot = {name = "Vantage 7", rivets = 12},
-        table = true,
-        week = {sort = "kills", filter = "", back = 0, since = ""},
-        rows = {
-            {label = "Halcyon 1", rank = 1, kills = 9, deaths = 3, assists = 2,
-             kd = 3, run = 4, banked = 180, rating = 0, swing = 5,
-             played = "22m", index = 1, pick = true},
-        },
-    })
-    check("an unrated pilot is drawn as nothing, not as zero",
-          says(guest, "- rating") and not says(guest, "0 rating"),
-          table.concat(texts(guest), " "))
-end
-
--- --- the week steps the way it points --------------------------------------
---
--- `week_back` counts weeks behind the one running, so the arrow pointing left
--- asks for one more of them. Both arrows once published the direction they
--- pointed, which is the opposite, and both were dead: left asked to go
--- forward from the week that is running and right was drawn dark until you
--- were already back.
-do
-    local wk = function(back)
-        return draw({
-            depth = 2, sel = 1, rail = RAIL, rail_sel = 1, focus = "stage",
-            home = true, closable = false, page = "week",
-            pilot = {name = "Vantage 7", rivets = 12}, table = true,
-            week = {sort = "kills", filter = "", back = back, since = ""},
-            rows = {{label = "Halcyon 1", rank = 1, kills = 9, deaths = 3,
-                     kd = 3, run = 4, banked = 180, rating = 1240, swing = 29,
-                     played = "22m", index = 1, pick = true}},
-        })
-    end
-    local function offered()
-        local out = {}
-        for _, h in ipairs(ui.hits) do
-            if h.action == "week" then out[#out + 1] = h.value end
-        end
-        table.sort(out)
-        return out
-    end
-    wk(0)
-    local one = offered()
-    check("the week that is running offers one step, and it goes back",
-          #one == 1 and one[1] == 1, table.concat(one, "/"))
-    wk(2)
-    local both = offered()
-    check("and a week already back offers both ways",
-          #both == 2 and both[1] == -1 and both[2] == 1,
-          table.concat(both, "/"))
-
-    -- A week nobody played says so under its own heading. Drawn instead of
-    -- the page, as it was, the line carrying the way to another week goes
-    -- with it and a pilot who stepped back one week could not step forward.
-    local bare = draw({
-        depth = 2, sel = 1, rail = RAIL, rail_sel = 1, focus = "stage",
-        home = true, closable = false, page = "week",
-        pilot = {name = "Vantage 7", rivets = 12}, table = true,
-        week = {sort = "kills", filter = "", back = 2, since = "Aug 3"},
-        rows = {},
-        empty = {head = "nobody played that week",
-                 line = "the weeks before it are still there"},
-    })
-    check("an empty week still says which week it is",
-          has(bare, "week of Aug 3") and has(bare, "nobody played that week"),
-          table.concat(texts(bare), " "))
-    check("and still offers the way out of it", #offered() == 2,
-          table.concat(actions(), " "))
-end
-
--- --- the filter is a box ---------------------------------------------------
---
--- It was a dim line of type at the end of the rule saying "type to filter",
--- which is a control that looks like a caption. On glass there is no keyboard
--- to find it with at all.
-do
-    local empty = draw({
-        depth = 2, sel = 1, rail = RAIL, rail_sel = 1, focus = "stage",
-        home = true, closable = false, page = "week",
-        pilot = {name = "Vantage 7", rivets = 12}, table = true,
-        week = {sort = "kills", filter = "", back = 0, since = ""},
-        rows = {{label = "Halcyon 1", rank = 1, kills = 9, deaths = 3,
-                 kd = 3, run = 4, banked = 180, rating = 1240, swing = 29,
-                 played = "22m", index = 1, pick = true}},
-    })
-    check("the empty box says what it takes",
-          has(empty, "filter by pilot"), table.concat(texts(empty), " "))
-    check("and it is a thing to press",
-          hit_named("filter_box") ~= nil, table.concat(actions(), " "))
-    check("with nothing to clear yet",
-          hit_named("filter_wipe") == nil, table.concat(actions(), " "))
-
-    local typed = draw({
-        depth = 2, sel = 1, rail = RAIL, rail_sel = 1, focus = "stage",
-        home = true, closable = false, page = "week",
-        pilot = {name = "Vantage 7", rivets = 12}, table = true,
-        week = {sort = "kills", filter = "hal", filter_on = true,
-                back = 0, since = ""},
-        rows = {{label = "Halcyon 1", rank = 1, kills = 9, deaths = 3,
-                 kd = 3, run = 4, banked = 180, rating = 1240, swing = 29,
-                 played = "22m", index = 1, pick = true}},
-    })
-    check("what was typed is in the box",
-          has(typed, "hal") and not has(typed, "filter by pilot"),
-          table.concat(texts(typed), " "))
-    check("and there is a way to empty it",
-          hit_named("filter_wipe") ~= nil, table.concat(actions(), " "))
-    -- The mark sits inside the box, and hit boxes are tested in the order
-    -- they went out with the first one winning. Published the other way round
-    -- the box swallows every press on its own mark.
-    local wipe, box
-    for i, h in ipairs(ui.hits) do
-        if h.action == "filter_wipe" and not wipe then wipe = i end
-        if h.action == "filter_box" and not box then box = i end
-    end
-    check("and the mark is reachable inside the box it sits in",
-          wipe and box and wipe < box,
-          tostring(wipe) .. " against " .. tostring(box))
-end
-
 -- --- the ship page is a ship and its thirty points ------------------------
 --
 -- Two columns stood to the left of the kit: every hull as a row, and a panel
@@ -1299,49 +1084,49 @@ end
 --
 -- The scroll was clamped against the stage rectangle while the pages that
 -- overflow are handed a shorter box that starts under the heading. Every one
--- of them stopped 56 points short on a phone: a week with a dozen pilots on
--- it would not move at all, and a longer one would not reach its last row.
--- Both were reported as the standings not scrolling.
+-- of them stopped 56 points short on a phone: a list a dozen names long would
+-- not move at all, and a longer one would not reach its last row. Both were
+-- reported as the page not scrolling.
 --
 -- Measured rather than looked at, because the difference is a heading's worth
 -- of pixels and it looks like the page simply ending.
 do
-    local function week_rows(n)
+    local function friend_rows(n)
         local out = {}
         for i = 1, n do
-            out[i] = {label = "Pilot " .. i, rank = i, kills = n - i,
-                      deaths = 1, kd = 1, run = 2, banked = 10 * i,
-                      rating = 1200, swing = 3, played = "9m", index = i,
-                      pick = true}
+            out[i] = {label = "Pilot " .. i, index = i, pick = true,
+                      detail = "in a game", act = "unfriend",
+                      who = i, state = "friend"}
         end
         return out
     end
-    local function week_view(n)
+    local function friend_view(n)
         return {depth = 2, sel = 1, rail = RAIL, rail_sel = 1,
                 focus = "stage", home = true, closable = false,
-                at = "standings", table = true,
+                at = "friends", social = true,
                 pilot = {name = "Vantage 7", rivets = 0},
-                week = {sort = "kills", filter = "", back = 0, since = ""},
-                rows = week_rows(n)}
+                add = {name = "", on = false, note = "", bad = false,
+                       found = {}},
+                rows = friend_rows(n)}
     end
 
     -- The window a page publishes is its own, and it is shorter than the
     -- stage. Clamping against the stage is what lost the difference.
     ui.page_scroll = 0
-    draw(week_view(20), 390, 844, true)
+    draw(friend_view(20), 390, 844, true)
     check("a page publishes the box it drew into",
           ui.page_room > 0 and ui.page_room < 844,
           tostring(ui.page_room))
 
-    -- A phone-sized week with a dozen pilots on it overflows by less than a
-    -- heading, which is exactly the case that would not move at all.
+    -- A phone-sized page eleven names long overflows by less than a heading,
+    -- which is exactly the case that would not move at all.
     ui.page_scroll = 0
-    draw(week_view(13), 390, 844, true)
+    draw(friend_view(11), 390, 844, true)
     local over = ui.page_extent - ui.page_room
-    check("a week that overflows by a little still has somewhere to go",
+    check("a page that overflows by a little still has somewhere to go",
           over > 0, "overflow " .. string.format("%.0f", over))
     ui.page_scroll = 9999
-    draw(week_view(13), 390, 844, true)
+    draw(friend_view(11), 390, 844, true)
     check("and a finger can reach all of it",
           math.abs(ui.page_scroll - over) < 1,
           string.format("%.0f of %.0f", ui.page_scroll, over))
@@ -1351,10 +1136,10 @@ do
     -- the right place and a row that is drawn are two different claims.
     for _, size in ipairs({{390, 844, 20}, {844, 390, 20}}) do
         ui.page_scroll = 0
-        draw(week_view(size[3]), size[1], size[2], true)
+        draw(friend_view(size[3]), size[1], size[2], true)
         ui.page_scroll = 9999
-        local drawn = draw(week_view(size[3]), size[1], size[2], true)
-        check("the last pilot of a week is reachable at "
+        local drawn = draw(friend_view(size[3]), size[1], size[2], true)
+        check("the last name on a page is reachable at "
               .. size[1] .. "x" .. size[2],
               has(drawn, "Pilot " .. size[3]),
               "scrolled " .. string.format("%.0f", ui.page_scroll))

@@ -1236,236 +1236,17 @@ local function builds_empty()
     return nil
 end
 
--- The week. Read off the standings the meta-layer publishes, which is the
--- same list the public site draws.
--- How long somebody was in a room, as a person reads it.
-local function spell_time(secs)
-    secs = math.max(0, math.floor(tonumber(secs) or 0))
-    if secs < 60 then return secs .. "s" end
-    local mins = math.floor(secs / 60)
-    if mins < 60 then return mins .. "m" end
-    return math.floor(mins / 60) .. "h " .. (mins % 60) .. "m"
-end
-
--- How the table is read: which column it is ordered on, which way, and what
--- has been typed to narrow it. All three belong to the page rather than to
--- the reply, so they survive the table being asked for again.
-M.sort = "kills"
-M.sort_up = false
-M.filter = ""
--- Whether the box is taking type, which is what the caret in it says. The
--- table filters as you type either way: a printable character arriving on
--- this page goes in the box and lights it, so a keyboard needs no click
--- first. What the flag buys is a box that reads as a control rather than as a
--- readout, and somewhere for a pointer to press.
-M.filter_on = false
--- Which week. Zero is the one running and one is the week before it, which is
--- what the meta-layer counts in.
-M.week_back = 0
-
 -- What is typed into the friends page's add field, and whether the field is
--- taking type. The same pair the filter box keeps, and for the same reason: a
--- printable character arriving on that page goes in the box and lights it, so
--- a keyboard needs no click first.
+-- taking type. A printable character arriving on that page goes in the box
+-- and lights it, so a keyboard needs no click first.
 --
--- The difference is that this one has something to send. A filter answers
--- every letter; a call sign is only a call sign once it is finished, so there
--- is a button beside it and enter does the same thing.
+-- And this one has something to send. A call sign is only a call sign once it
+-- is finished, so there is a button beside it and enter does the same thing.
 M.add_name = ""
 M.add_on = false
 
--- Kills over deaths, as the number everybody means by it: a pilot who has
--- died once and killed nobody is 0.00, and one who has not died yet is
--- however many they took. Dividing by a zero denominator is what makes the
--- second case worth writing down.
-local function ratio(kills, deaths)
-    kills, deaths = kills or 0, deaths or 0
-    if deaths > 0 then return kills / deaths end
-    return kills
-end
-
--- What each column is worth, for the ordering. A name sorts as a name and
--- everything else as a number, and the rank column is the order the fleet
--- sent it in, which is by kills.
-local SORTS = {
-    rank = function(p, i) return i end,
-    pilot = function(p) return string.lower(p.name or "") end,
-    kills = function(p) return -(p.kills or 0) end,
-    deaths = function(p) return -(p.deaths or 0) end,
-    assists = function(p) return -(p.assists or 0) end,
-    kd = function(p) return -ratio(p.kills, p.deaths) end,
-    banked = function(p) return -(p.banked or 0) end,
-    run = function(p) return -(p.run or 0) end,
-    rating = function(p) return -(p.rating or 0) end,
-    swing = function(p) return -(p.swing or 0) end,
-    time = function(p) return -(p.seconds or 0) end,
-}
-
-local function standings_rows()
-    local want = string.lower(M.filter or "")
-    -- Filtered first, so the rank a row carries is its place in the week
-    -- rather than its place in what somebody typed: a pilot who is 14th does
-    -- not become 1st because the other thirteen were filtered away.
-    local shown = {}
-    for i, p in ipairs(account.week or {}) do
-        p.rank = i
-        if want == "" or string.find(string.lower(p.name or ""), want, 1, true) then
-            shown[#shown + 1] = p
-        end
-    end
-    local key = SORTS[M.sort] or SORTS.kills
-    -- A stable order under a stable sort: two pilots with the same number keep
-    -- the order the fleet sent them in, which is by kills.
-    local seq = {}
-    for i, p in ipairs(shown) do seq[p] = i end
-    table.sort(shown, function(a, b)
-        local ka, kb = key(a, a.rank), key(b, b.rank)
-        if ka == kb then return seq[a] < seq[b] end
-        if M.sort_up then return ka > kb end
-        return ka < kb
-    end)
-    local rows = {}
-    for i, p in ipairs(shown) do
-        rows[#rows + 1] = {
-            label = p.name or "?", named = true,
-            -- Pressable, so the panel beside the table can say more about one
-            -- pilot than a row has room for. A row with no action publishes no
-            -- hit box, which is why this table did not answer a mouse at all.
-            act = "inspect_pilot", value = i,
-            -- A table rather than a sentence: the page draws these in their
-            -- own columns, so the row carries the numbers and not a phrasing
-            -- of them. `detail` is what a list would have shown and is what
-            -- the preview still shows.
-            detail = (p.kills or 0) .. "k",
-            rank = p.rank, kills = p.kills or 0, deaths = p.deaths or 0,
-            assists = p.assists or 0,
-            kd = ratio(p.kills, p.deaths),
-            -- What the week's kills paid. Not the wallet: rivets get spent,
-            -- and a table of what everybody currently has left would say who
-            -- has been saving rather than who has been playing.
-            banked = p.banked or 0,
-            run = p.run or 0, played = spell_time(p.seconds),
-            -- What they are rated at, and what this week did to it. The
-            -- swing is signed, because a week that cost you rating is the
-            -- fact somebody is looking for and an unsigned 40 reads as a
-            -- gain.
-            rating = p.rating or 0, swing = p.swing or 0,
-            mark = function() return p.name == M.name end,
-        }
-        if i >= 60 then break end
-    end
-    return rows
-end
-
--- The order the columns step in, for a table with no room to draw them as a
--- row of headings.
---
--- A phone gets one column at a time and a stepper to choose which, which is
--- the control the week above it already uses, so the page teaches it once.
--- Rank and pilot ride at the end: they are the two orders somebody asks for
--- least and the two the first line of every row already carries.
-local SORT_ORDER = {"kills", "deaths", "kd", "banked", "run", "rating",
-                    "swing", "time", "pilot", "rank"}
-
--- One column along, wrapping. Always down from the top of that column's
--- order: stepping onto a new column and landing on it backwards is a table
--- that reordered itself twice for one press.
-function M.step_sort(by)
-    local at = 1
-    for i, k in ipairs(SORT_ORDER) do
-        if k == M.sort then at = i end
-    end
-    M.sort = SORT_ORDER[(at - 1 + (by or 1)) % #SORT_ORDER + 1]
-    M.sort_up = false
-    return nil, true
-end
-
--- A column header, pressed. The same column again turns the order over.
-function M.click_sort(key)
-    if not SORTS[key] then return nil, false end
-    if M.sort == key then
-        M.sort_up = not M.sort_up
-    else
-        M.sort, M.sort_up = key, false
-    end
-    return nil, true
-end
-
--- One week along, either way. Zero is the week running, and there is no
--- forward from it: a table of a week that has not happened is an empty page
--- with a date on it.
-function M.step_week(by)
-    local want = math.max(0, math.min(52, (M.week_back or 0) + by))
-    if want == M.week_back then return nil, false end
-    M.week_back = want
-    account.refresh_week(want)
-    return nil, true
-end
-
--- Typing on the standings page narrows it. There is nothing to submit and the
--- table answers every letter, so a character arriving here goes straight in
--- rather than waiting to be clicked into first; what it also does is light
--- the box, so the page shows where the letters are landing.
-function M.type_filter(ch)
-    if not M.open or M.showing() ~= "standings" then return false end
-    if type(ch) ~= "string" or #ch ~= 1 then return false end
-    local b = string.byte(ch)
-    if b < 32 or b > 126 then return false end
-    if #(M.filter or "") >= 24 then return false end
-    M.filter = (M.filter or "") .. ch
-    M.filter_on = true
-    return true
-end
-
-function M.rub_filter()
-    if not M.open or M.showing() ~= "standings" then return false end
-    if (M.filter or "") == "" then return false end
-    M.filter = string.sub(M.filter, 1, #M.filter - 1)
-    M.filter_on = true
-    return true
-end
-
--- The box, pressed.
---
--- On a machine with keys this is a caret: what is typed from here lands in
--- it. On glass there are no keys, and a drawn box that raises no keyboard is
--- a control that does nothing, so a thumb gets the card instead. A card's
--- line is a real input element on the web, which is the only thing that
--- raises a phone's keyboard, and that machinery already exists for logging
--- in. See `pull`.
-function M.click_filter()
-    if M.showing() ~= "standings" then return nil, false end
-    if M.touching then
-        M.ask = {head = "Filter by pilot", sel = 1, field = 1,
-                 keys = {{label = "filter", act = "do_filter"},
-                         {label = "cancel"}},
-                 fields = {{label = "call sign", value = M.filter or "",
-                            max = 24}}}
-        return nil, true
-    end
-    if M.filter_on then return nil, false end
-    M.filter_on = true
-    return nil, true
-end
-
--- And let go of it, which is a press landing anywhere else.
-function M.blur_filter()
-    if not M.filter_on then return false end
-    M.filter_on = false
-    return true
-end
-
--- Emptied, from the mark on the end of the box. A filter you cannot see the
--- end of is one you clear by holding backspace, and the table under it is
--- the wrong table until you do.
-function M.wipe_filter()
-    if (M.filter or "") == "" then return nil, false end
-    M.filter = ""
-    return nil, true
-end
-
--- The friends page's add field. The filter box's four functions again, with
--- one more: this one has something to send.
+-- The friends page's add field: type into it, take a letter back off it,
+-- press it, let go of it, and send what is in it.
 --
 -- A call sign is a word and a number, so 24 characters is generous and the
 -- gate is the same printable ASCII every other typed line in this client is
@@ -1490,8 +1271,8 @@ end
 --
 -- A page with a field rather than a card over one. Naming a build is the
 -- whole of what that page is for, so a card raised over it would be a box
--- over a box; the two fields the menu already has, the week's filter and the
--- friends page's add, work the same way and take the same keys.
+-- over a box; the friends page's add field works the same way and takes the
+-- same keys.
 M.new_name = ""
 M.new_on = false
 
@@ -1642,27 +1423,6 @@ function M.send_add()
     account.friend_bad = false
     account.friend(name, true)
     return nil, true
-end
-
-local function standings_empty()
-    if account.week and #account.week > 0 then
-        -- A filter that matches nobody is not an empty week, and saying so
-        -- would blame the fleet for what somebody typed.
-        if #standings_rows() == 0 then
-            return {head = "nobody by that name",
-                    line = "backspace to widen it again"}
-        end
-        return nil
-    end
-    if not account.week then
-        return {head = "asking for the table", line = "the week is coming"}
-    end
-    if (M.week_back or 0) > 0 then
-        return {head = "nobody played that week",
-                line = "the weeks before it are still there"}
-    end
-    return {head = "nobody has played this week yet",
-            line = "the table resets on Monday"}
 end
 
 -- The friends page: three sections, from one reply.
@@ -2040,22 +1800,23 @@ local NODES = {
     -- The tab row, and the whole of the front end's shape.
     --
     -- Which of the two you get is decided by whether you are in a hull, not by
-    -- whether you are in a zone. Five with no hull: play, ship, friends,
-    -- standings, settings. Flying: play, friends, settings, and ship in the
-    -- window between matches where a hull is not locked. Friends stays out
-    -- when the account service is absent. The row keeps the same place and
-    -- chrome in both contexts.
+    -- whether you are in a zone. Four with no hull: play, ship, friends,
+    -- settings. Flying: play, friends, settings, and ship in the window
+    -- between matches where a hull is not locked. Friends stays out when the
+    -- account service is absent. The row keeps the same place and chrome in
+    -- both contexts.
     --
     -- The question used to be `M.home`, which was the same answer while the
     -- front end was a place of its own. It is the stands now, and a pilot who
     -- sat out mid-match is in the stands too: same empty cockpit, same time to
-    -- read, so the same five stops.
+    -- read, so the same four stops. What separates the two is `leave`, which
+    -- only means anything where there is a zone to leave.
     --
     -- Nothing you cannot act on right now is on that row while you are
     -- flying. A three minute match is short enough that a menu deep enough to
     -- browse a shelf in costs a real fraction of it, and nothing pauses: you
-    -- can be shot while you read, which is why the standings are not on it.
-    -- See docs/design/match-game.md.
+    -- can be shot while you read, which is why the hangar is on it only in the
+    -- window between matches. See docs/design/match-game.md.
     --
     -- The games are, and they were not. Leaving is a button on the row of the
     -- game you are in now rather than a stop of its own, so the list is the
@@ -2132,8 +1893,6 @@ local NODES = {
             -- they are standing. See docs/design/friends.md.
             {label = "friends", icon = "friends", go = "friends",
              detail = friends_detail},
-            {label = "standings", icon = "standings", detail = "this week",
-             go = "standings"},
             -- No pilot stop. The call sign is already written at the far end
             -- of this row, and a tab whose whole detail is that same name says
             -- it twice. Pressing the name is the way in; see `M.click_pilot`.
@@ -2188,11 +1947,6 @@ local NODES = {
     -- because those are the two places the question comes up. See
     -- docs/design/friends.md.
     friends = {rows = friend_rows, empty = friends_empty},
-
-    -- The week: matches won, kills, and the best run, resetting Monday. The
-    -- short ladder beside the rating, which answers "how good am I" on a
-    -- career scale and moves slowly.
-    standings = {rows = standings_rows, empty = standings_empty},
 
     teams = {rows = team_rows},
 
@@ -2650,11 +2404,6 @@ local function view_row(r, i)
         group = r.group, short = r.short, tint_col = r.tint_col,
         on_key = r.on_key, ladder = r.ladder, mod = r.mod, lvl = r.lvl,
         sold = r.sold, teach = r.teach, charge_slot = r.charge_slot,
-        -- The week's own columns.
-        rank = r.rank, kills = r.kills, deaths = r.deaths, run = r.run,
-        assists = r.assists,
-        kd = r.kd, played = r.played, banked = r.banked,
-        rating = r.rating, swing = r.swing,
         -- What a row costs to upgrade, and whether the wallet covers it.
         icon = r.icon, price = r.price, afford = r.afford,
         -- A row the page draws as a button, and which mark goes on it.
@@ -2847,9 +2596,6 @@ local function settle(act, asked, by)
         -- asks, and the reply is the answer.
         M.pending = asked and asked.slot or 0
         return "buy"
-    elseif act == "do_filter" then
-        local f = asked and asked.fields and asked.fields[1]
-        M.filter = f and f.value or ""
     elseif act == "do_add" then
         -- The call sign somebody typed. The meta-layer looks it up whole:
         -- there is no search here and nothing is offered, so what comes back
@@ -3243,10 +2989,10 @@ function M.tick(dt)
         end
     end
     if M.at() ~= "controls" then M.foot = nil end
-    -- Two pages ask the meta-layer for their contents when they open. Asked
-    -- on the edge rather than every frame: a catalog and a week's table are
-    -- read while somebody looks at them, and a page nobody is on should cost
-    -- the fleet nothing.
+    -- The ship page asks the meta-layer for its contents when it opens.
+    -- Asked on the edge rather than every frame: a catalog is read while
+    -- somebody looks at it, and a page nobody is on should cost the fleet
+    -- nothing.
     --
     -- "On screen" rather than "entered". At the root the stage previews the
     -- tab under the cursor, so a player who arrows onto the ship reads the
@@ -3262,7 +3008,6 @@ function M.tick(dt)
         if at == "hangar" or at == "slot" then
             account.refresh_upgrades(M.zone)
         end
-        if at == "standings" then account.refresh_week(M.week_back) end
         was_at = at
     end
     -- Friends is asked for on two pages rather than one, and again while
@@ -3276,8 +3021,8 @@ function M.tick(dt)
     --
     -- And again on a timer because this is the one page whose answer goes
     -- stale on its own: a friend joins a game or leaves one, and nothing the
-    -- pilot reading it does makes that so. The shelf and the week's table only
-    -- move when the pilot moves them.
+    -- pilot reading it does makes that so. The shelf only moves when the
+    -- pilot moves it.
     friends_due = friends_due - (dt or 0)
     if (at == "friends" or at == "play") and (arrived or friends_due <= 0) then
         friends_due = FRIENDS_EVERY
@@ -3392,17 +3137,9 @@ function M.view()
                  note = M.note, closable = true,
                  -- Which page this is, by name. The drawing keeps a scroll
                  -- position and has to know when it is looking at something
-                 -- else: carried across, opening standings from the bottom of
+                 -- else: carried across, opening friends from the bottom of
                  -- the ship page would open it halfway down.
                  at = M.at(),
-                 -- How the week's table is being read: which column it is
-                 -- ordered on, which way, what has been typed to narrow it,
-                 -- and which week it is. All four belong to the page rather
-                 -- than to the reply.
-                 week = {sort = M.sort, sort_up = M.sort_up,
-                         filter = M.filter, filter_on = M.filter_on,
-                         back = M.week_back,
-                         since = account.week_since or ""},
                  -- The friends page's add field: what is in it, whether it is
                  -- taking type, and what the last press on this page came to.
                  -- The sentence belongs to the account layer because that is
@@ -3469,17 +3206,9 @@ function M.view()
     -- root the stage is a preview of the tab under the cursor, and these read
     -- the page you are standing in, so resting on Upgrades showed a column of
     -- slot names with no ladders and no prices and entering it showed the
-    -- shelf. A preview is the page. The standings already worked this way,
-    -- one branch further down, and the other two are now the same rule rather
-    -- than a special case that had to be remembered.
+    -- shelf. A preview is the page, so each of these reads the page it is
+    -- standing in rather than the name the stack happens to be parked on.
     local page = M.showing()
-    -- The week is a table, and the page draws it as one. Whatever is in it,
-    -- including nothing: the line above the table is how a week is picked and
-    -- how the table is narrowed, so a page that swapped it for a card the
-    -- moment a week came back empty was a page you could step into and not
-    -- step out of. The table draws the card itself now, under its own
-    -- heading. See `pages.week`.
-    if page == "standings" then out.table = true end
     -- And the friends page: an add field over sections whose rows carry their
     -- own buttons.
     if page == "friends" then out.social = true end
@@ -3699,8 +3428,7 @@ end
 -- and the flag each one keeps that in. Named here because two things ask the
 -- same question about them: `activate`, which turns the field on as it goes
 -- in, and `enterable`, which counts a field as somewhere to stand.
-local FIELD_PAGE = {friends = "add_on", standings = "filter_on",
-                    newbuild = "new_on"}
+local FIELD_PAGE = {friends = "add_on", newbuild = "new_on"}
 
 -- Is there anywhere to be on that page yet?
 --
@@ -3887,13 +3615,6 @@ local function activate(by)
         return "team"
     elseif r.act == "found" then
         return "found"
-    elseif r.act == "inspect_pilot" then
-        -- The cursor is already on the row: standing on one is what fills the
-        -- panel beside the table, so a press has nothing left to do. It is an
-        -- action rather than nothing so that the row publishes a hit box and
-        -- the mouse can move the cursor here at all.
-        M.note = nil
-        return nil
     elseif r.act == "friend_card" then
         M.ask_friend(r.value, r.label, r.acts)
         return nil
@@ -4047,10 +3768,8 @@ function M.step(keys)
     -- A question owns the keys while it is up, which is the whole of what
     -- makes it a question rather than a notice: the list underneath cannot be
     -- walked, and nothing behind it can be pressed by accident.
-    -- Backspace on the week's table takes a letter back off the filter. Above
-    -- the card check, because nothing is asking: the page is.
-    if not M.ask and keys.rub and M.rub_filter() then return nil, true end
-    -- And on the friends page it takes a letter back off the add field.
+    -- Backspace on the friends page takes a letter back off the add field.
+    -- Above the card check, because nothing is asking: the page is.
     if not M.ask and keys.rub and M.rub_add() then return nil, true end
     if not M.ask and keys.rub and M.rub_new() then return nil, true end
     -- Enter sends what is in that field rather than pressing the row the
@@ -4096,52 +3815,6 @@ function M.step(keys)
     local nd = node()
     local rows = rows_of(nd)
     local n = #rows
-
-    -- And the week's filter is the same stop on the standings page. It is the
-    -- same object as the friends field now, so it answers the same arrows:
-    -- up off the first row of the table lights it, down goes back to the
-    -- table, up out of it goes to the tabs.
-    --
-    -- No list of names under this one, which is the difference between the
-    -- two: a call sign has to be exact before it can be added, and a filter
-    -- narrows the table as it is typed. Enter here does nothing, because
-    -- there is nothing to send.
-    if M.at() == "standings" then
-        if M.filter_on then
-            if keys.back or keys.left then
-                M.filter_on = false
-            end
-            if keys.up then
-                M.filter_on = false
-                return back()
-            end
-            if keys.down then
-                M.filter_on = false
-                if n == 0 then return nil, false end
-                return nil, true
-            end
-            if keys.go then return nil, false end
-        elseif keys.up and (n == 0 or row_index(rows) <= 1) then
-            M.filter_on = true
-            return nil, true
-        elseif keys.left or keys.right then
-            -- The table's own two axes. Down the page is the ladder and
-            -- across it is time, which is what the pair of arrows over the
-            -- table already says and what the page has no other use for:
-            -- there is nothing to the side of a pilot's row.
-            --
-            -- Left goes back a week because the arrow pointing left points at
-            -- the earlier one, which is the direction that reading a date
-            -- runs. There is no forward from the week that is running, and
-            -- the step says so by refusing rather than by drawing an empty
-            -- table with a date on it.
-            --
-            -- This takes left off the way back. Up does it: out of the first
-            -- row into the filter box, and out of the box to the tabs. So
-            -- does escape. See docs/design/menu.md.
-            return M.step_week(keys.left and 1 or -1)
-        end
-    end
 
     -- The friends page's field is a stop above the first row.
     --

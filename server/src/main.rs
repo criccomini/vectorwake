@@ -5731,6 +5731,146 @@ mod tests {
         }
     }
 
+    /// Every match message a stream carried, oldest first, as the seconds its
+    /// clock read.
+    fn clocks(msgs: &[Vec<u8>]) -> Vec<u8> {
+        msgs.iter()
+            .filter(|m| m.first() == Some(&S2C_MATCH))
+            .map(|m| m[2])
+            .collect()
+    }
+
+    #[test]
+    fn the_clock_the_stands_read_belongs_to_the_frame_under_it() {
+        // The fault this fixes, as it was reported: watching a duel, the last
+        // five seconds ticked away over two ships still fighting, and the
+        // death that ended the match arrived under a clock already counting
+        // the next one down. The picture ran five seconds behind and the
+        // clock over it did not.
+        let mut a = match_room(60, 4);
+        let (_, _pid, mut cockpit_rx) = seat_rx(&mut a, "pilot");
+        let (tx, mut stands_rx) = mpsc::channel(OUT_QUEUE);
+        a.watch_join(Seat::guest("gallery", false), tx).unwrap();
+        // Nobody here sends input, and this runs well past the ladder's
+        // patience for that. See `spectate_silence_ticks`.
+        a.lag_policy.spectate_silence_ticks = u32::MAX;
+
+        // Drained every pass rather than at the end: an output queue holds
+        // forty and drops the rest, so a whole run read afterward is the
+        // opening seconds of it.
+        let mut cockpit: Vec<u8> = Vec::new();
+        let mut stands: Vec<u8> = Vec::new();
+        let mut buf = vec![0u8; sim::PACK_MAX];
+        for _ in 0..(CHANNEL_DELAY / SNAPSHOT_EVERY * 2) {
+            for _ in 0..SNAPSHOT_EVERY {
+                a.tick();
+            }
+            a.broadcast_snapshot(&mut buf);
+            cockpit.extend(clocks(&drain(&mut cockpit_rx)));
+            stands.extend(clocks(&drain(&mut stands_rx)));
+        }
+
+        assert!(stands.len() > 1, "the ring warmed up and served the clock");
+        assert_eq!(
+            stands,
+            cockpit[..stands.len()],
+            "the stands read the same clock the cockpit did, later"
+        );
+        let delay = (CHANNEL_DELAY / modes::TICKS_PER_SECOND) as u8;
+        assert_eq!(
+            *stands.last().expect("a clock in the stands"),
+            *cockpit.last().expect("a clock in the cockpit") + delay,
+            "and it is behind by exactly the delay on the picture"
+        );
+    }
+
+    #[test]
+    fn the_ground_the_stands_are_given_is_the_one_their_frames_are_packed_on() {
+        // A whistle changes the map and bumps the settings generation. Sent
+        // live, both landed five seconds before the frames they described,
+        // and a client refuses a snapshot whose generation is not the one it
+        // holds: a rotation blanked the stands for the whole delay, and the
+        // seconds before it were drawn on the wrong ground.
+        let mut a = match_room(1, 1);
+        seat_human(&mut a, "pilot");
+        let (_, wid, mut rx) = seat_rx(&mut a, "gallery");
+        assert!(a.sit_out(wid, false), "a pilot can sit out");
+        a.lag_policy.spectate_silence_ticks = u32::MAX;
+
+        let mut seen: Vec<Vec<u8>> = drain(&mut rx);
+        let mut buf = vec![0u8; sim::PACK_MAX];
+        for _ in 0..(CHANNEL_DELAY / SNAPSHOT_EVERY * 3) {
+            for _ in 0..SNAPSHOT_EVERY {
+                a.tick();
+            }
+            a.broadcast_snapshot(&mut buf);
+            seen.extend(drain(&mut rx));
+        }
+
+        let mut holding: Option<u32> = None;
+        let (mut frames, mut rotations) = (0, 0);
+        for m in &seen {
+            match m.first() {
+                Some(&S2C_SETTINGS) => {
+                    let g = u32::from_le_bytes(m[1..5].try_into().expect("a generation"));
+                    if holding.is_some_and(|had| had != g) {
+                        rotations += 1;
+                    }
+                    holding = Some(g);
+                }
+                Some(&S2C_SNAPSHOT) => {
+                    let g = u32::from_le_bytes(m[7..11].try_into().expect("a generation"));
+                    assert_eq!(
+                        Some(g),
+                        holding,
+                        "a frame packed under rules the stands were not holding yet"
+                    );
+                    frames += 1;
+                }
+                _ => {}
+            }
+        }
+        assert!(rotations > 0, "the ground changed while they watched");
+        assert!(frames > 0, "and they were served frames across it");
+    }
+
+    #[test]
+    fn the_door_to_the_stands_hands_out_the_clock_the_channel_is_showing() {
+        // Somebody arriving used to be set up from the live room and then
+        // served a five second old picture, so their first seconds in the
+        // stands disagreed with themselves.
+        let mut a = match_room(60, 4);
+        seat_human(&mut a, "pilot");
+        let (tx, _rx) = mpsc::channel(OUT_QUEUE);
+        a.watch_join(Seat::guest("first", false), tx).unwrap();
+        a.lag_policy.spectate_silence_ticks = u32::MAX;
+
+        let mut buf = vec![0u8; sim::PACK_MAX];
+        for _ in 0..(CHANNEL_DELAY / SNAPSHOT_EVERY * 2) {
+            for _ in 0..SNAPSHOT_EVERY {
+                a.tick();
+            }
+            a.broadcast_snapshot(&mut buf);
+        }
+
+        let live = a.match_msg().expect("a match zone has a clock");
+        let door = a.channel_sync();
+        let shown = door
+            .iter()
+            .find(|m| m.first() == Some(&S2C_MATCH))
+            .expect("the door hands out a clock");
+        let delay = (CHANNEL_DELAY / modes::TICKS_PER_SECOND) as u8;
+        assert_eq!(
+            shown[2],
+            live[2] + delay,
+            "the door's clock is the one over the picture, not the one in the room"
+        );
+        assert!(
+            door.iter().any(|m| m.first() == Some(&S2C_MAP)),
+            "and the ground that picture is packed on"
+        );
+    }
+
     #[test]
     fn watchers_enter_presence_without_moving_the_counts_the_room_polices() {
         let mut z = serving(1, 9, 16);

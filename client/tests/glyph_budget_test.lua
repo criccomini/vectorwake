@@ -4,11 +4,11 @@
 --
 -- Every glyph in this game is a gui text node out of one pool, and the pool
 -- has an end: `client/ui/vwui.gui_script` clamps the frame at POOL nodes and
--- draws nothing past it. That clamp is silent, and what silence looks like is
--- what the week's table looked like for months: ten pilots, then a row with a
--- highlight on it and no name in it, and eleven more pilots below that which
--- were never drawn at all. The shapes kept coming, because those are mesh;
--- only the words stopped.
+-- draws nothing past it. That clamp is silent, and what silence looked like
+-- is what the standings table looked like for months before it was taken out:
+-- ten pilots, then a row with a highlight on it and no name in it, and eleven
+-- more pilots below that which were never drawn at all. The shapes kept
+-- coming, because those are mesh; only the words stopped.
 --
 -- So the pool is a number this suite knows, and the pages that ask for the
 -- most are drawn here at the sizes that ask for the most. A page that grows a
@@ -55,8 +55,7 @@ local layer = harness.layer()
 local ui = harness.install()
 
 local RAIL = {}
-for i, n in ipairs({"zones", "ship", "upgrades", "friends", "standings",
-                    "settings"}) do
+for i, n in ipairs({"zones", "ship", "upgrades", "friends", "settings"}) do
     RAIL[i] = {label = n, icon = n, index = i}
 end
 
@@ -70,24 +69,24 @@ local function draw(view, w, h)
     return st.n
 end
 
--- --- the week's table, which is the widest page in the menu ----------------
+-- --- the friends page, which is the longest list in the menu ---------------
 --
--- Sixty rows because that is where `standings_rows` stops; the drawing only
--- publishes the ones that land inside the panel, so the number that matters
--- is how many fit rather than how many came back.
-local function week_view(n)
+-- Sixty names because a room holds fewer than that and the page carries the
+-- room on top of the friends; the drawing only publishes the rows that land
+-- inside the panel, so the number that matters is how many fit rather than
+-- how many came back.
+local function friend_view(n)
     local rows = {}
     for i = 1, n do
         rows[i] = {label = "Pilot " .. (100 + i), index = i, pick = true,
-                   rank = i, kills = 21, deaths = 13, assists = 8,
-                   kd = "1.62", banked = 4210, run = 11, played = "2h 41m",
-                   rating = 1685, swing = -128, detail = "21k"}
+                   detail = "flying halcyon", act = "unfriend",
+                   who = i, state = "friend",
+                   sect = (i % 10 == 1) and "a section" or nil}
     end
-    return {depth = 2, sel = 1, rail = RAIL, rail_sel = 5, focus = "stage",
-            home = true, closable = false, table = true, rows = rows,
+    return {depth = 2, sel = 1, rail = RAIL, rail_sel = 4, focus = "stage",
+            home = true, closable = false, social = true, rows = rows,
             pilot = {name = "Squall 586"}, discord = "https://example.invalid",
-            week = {sort = "kills", sort_up = false, filter = "",
-                    filter_on = false, back = 0, since = "Aug 17"}}
+            add = {name = "", on = false, note = "", bad = false, found = {}}}
 end
 
 -- The window a laptop opens at, two desktops, and four tall narrow shapes,
@@ -97,16 +96,16 @@ local SHAPES = {{1280, 800}, {1920, 1200}, {2560, 1440}, {1100, 1600},
                 {900, 2000}, {800, 2400}, {1000, 3000}}
 for _, size in ipairs(SHAPES) do
     local w, h = size[1], size[2]
-    local n = draw(week_view(60), w, h)
-    check(string.format("the week's table fits the pool at %dx%d", w, h),
+    local n = draw(friend_view(60), w, h)
+    check(string.format("the friends page fits the pool at %dx%d", w, h),
           n <= POOL, n .. " of " .. POOL)
 end
 
--- --- and the pages beside it ----------------------------------------------
+-- --- and the page beside it -----------------------------------------------
 --
--- Not because any of them is close, but because "close" is a thing that
--- changes when somebody adds a column, and a suite that only watches the
--- widest page finds out about the second widest from a player.
+-- Not because it is close, but because "close" is a thing that changes when
+-- somebody adds a column, and a suite that only watches the widest page finds
+-- out about the second widest from a player.
 do
     local rows = {}
     for i = 1, 40 do
@@ -119,20 +118,6 @@ do
                     shop = true, rows = rows, rivets = 5000,
                     pilot = {name = "Squall 586"}}, 2560, 1440)
     check("the shelf fits the pool", n <= POOL, n .. " of " .. POOL)
-end
-
-do
-    local rows = {}
-    for i = 1, 40 do
-        rows[i] = {label = "Pilot " .. i, index = i, pick = true,
-                   detail = "in a game", act = "unfriend",
-                   sect = (i % 10 == 1) and "a section" or nil}
-    end
-    local n = draw({depth = 2, sel = 1, rail = RAIL, rail_sel = 4,
-                    focus = "stage", home = true, closable = false,
-                    social = true, rows = rows, add = {name = "", on = false},
-                    pilot = {name = "Squall 586"}}, 2560, 1440)
-    check("the friends page fits the pool", n <= POOL, n .. " of " .. POOL)
 end
 
 print(fails == 0 and "PASS" or (fails .. " FAILED"))

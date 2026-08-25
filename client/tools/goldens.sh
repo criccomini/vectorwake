@@ -108,18 +108,13 @@ run() {
     ENGINE=""
 }
 
-# The six tabs and the boards under settings. Standings is photographed last
-# of the walk because its page takes the arrows for its own sort the moment
-# the cursor is inside it, which strands a scripted walk; from the tab row it
-# is one Down on the way past.
+# The four tabs and the boards under settings.
 # Two Ups out of the landing: the first can step the zone carousel (the
 # cursor may open on a later zone), the second reaches the tab row.
 run "shot menu-play;\
  key Up; key Up; key Right; key Down; shot menu-ship;\
- key Up; key Right; key Down; shot menu-upgrades;\
- key Up; key Right; key Down; shot menu-friends;\
- key Up; key Right; key Down; shot menu-standings"
-run "key Up; key Right; key Right; key Right; key Right; key Right;\
+ key Up; key Right; key Down; shot menu-friends"
+run "key Up; key Right; key Right; key Right;\
  key Down; shot menu-settings;\
  key Down; key Down; key Down; key Down; key Return; shot menu-controls;\
  key Down; key Down; key Down; key Return; shot menu-about"
