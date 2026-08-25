@@ -55,7 +55,7 @@ boundary blocks certification; live play itself remains uncensored.
 ## A duel is always on
 
 The play page joins the zone under the cursor as a watcher, so the match behind
-the menu is the match a deploy would put you in. A zone nobody is playing is
+the menu is the match pressing that row would put you in. A zone nobody is playing is
 therefore an empty arena on the screen of everybody deciding whether to press
 play, which is an argument against pressing it.
 
