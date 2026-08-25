@@ -1080,13 +1080,81 @@ fn client_debug_of(body: &serde_json::Value) -> Result<ClientDebug, String> {
 // ---------------------------------------------------------------- accounts
 
 async fn create_account(db: &Client, kind: i16, owner: Option<i64>) -> Result<i64, String> {
-    db.query_one(
-        "insert into accounts (kind, owner) values ($1, $2) returning id",
-        &[&kind, &owner],
+    let account = db
+        .query_one(
+            "insert into accounts (kind, owner) values ($1, $2) returning id",
+            &[&kind, &owner],
+        )
+        .await
+        .map(|r| r.get::<_, i64>(0))
+        .map_err(|e| format!("cannot create account: {e}"))?;
+    seed_profiles(db, account).await?;
+    Ok(account)
+}
+
+/// The same three, dealt once to every pilot who predates them being rows.
+///
+/// It cannot be a schema step, because what a starter holds is defined in
+/// Rust beside the core it is built against, and a copy of those bytes in SQL
+/// is a copy that goes stale. Guarded by the same marks table the schema's own
+/// one-shots use, and every write is idempotent, so two meta processes booting
+/// together deal one set between them.
+async fn deal_starter_profiles(db: &Client) -> Result<(), String> {
+    let done: bool = db
+        .query_one(
+            "select exists (select 1 from schema_marks
+                            where name = 'starter_profiles_dealt')",
+            &[],
+        )
+        .await
+        .map(|row| row.get(0))
+        .map_err(|e| format!("cannot read the schema marks: {e}"))?;
+    if done {
+        return Ok(());
+    }
+    for profile in crate::profiles::builtins() {
+        let kit = profile.kit.to_vec();
+        db.execute(
+            "insert into kit_profiles (account, name, kit)
+             select id, $1, $2 from accounts
+             on conflict (account, name) do nothing",
+            &[&profile.name, &kit],
+        )
+        .await
+        .map_err(|e| format!("cannot deal the starter builds: {e}"))?;
+    }
+    db.execute(
+        "insert into schema_marks (name) values ('starter_profiles_dealt')
+         on conflict (name) do nothing",
+        &[],
     )
     .await
-    .map(|r| r.get::<_, i64>(0))
-    .map_err(|e| format!("cannot create account: {e}"))
+    .map_err(|e| format!("cannot mark the starter builds dealt: {e}"))?;
+    Ok(())
+}
+
+/// The three the game ships, written into a new pilot's own list.
+///
+/// They used to be prepended to every read of that list and never stored, so
+/// they could not be saved over or dropped: the shape of the list said they
+/// were the game's rather than the pilot's. They are ordinary rows now, dealt
+/// once, and everything after that treats them like any other build.
+///
+/// The kits come from `profiles::builtins` rather than from the schema, so the
+/// one definition of what a starter is stays in Rust beside the core it is
+/// built against.
+async fn seed_profiles(db: &Client, account: i64) -> Result<(), String> {
+    for profile in crate::profiles::builtins() {
+        let kit = profile.kit.to_vec();
+        db.execute(
+            "insert into kit_profiles (account, name, kit) values ($1, $2, $3)
+             on conflict (account, name) do nothing",
+            &[&account, &profile.name, &kit],
+        )
+        .await
+        .map_err(|e| format!("cannot deal the starter builds: {e}"))?;
+    }
+    Ok(())
 }
 
 async fn add_credential(db: &Client, account: i64, method: &str, hash: &str) -> Result<(), String> {
@@ -1327,14 +1395,14 @@ async fn kits_of(db: &Client, account: i64) -> Result<serde_json::Value, String>
     Ok(serde_json::Value::Object(out))
 }
 
-const KIT_PROFILE_LIMIT: i64 = 24;
+/// Twenty-four of a pilot's own, plus the three they are dealt: the limit was
+/// on what somebody had saved, and the starters becoming ordinary rows should
+/// not quietly take three off it.
+const KIT_PROFILE_LIMIT: i64 = 27;
 
-/// The built-in choices followed by this pilot's saved templates.
+/// This pilot's builds, the three they were dealt among them.
 async fn profiles_of(db: &Client, account: i64) -> Result<serde_json::Value, String> {
-    let mut out: Vec<serde_json::Value> = crate::profiles::builtins()
-        .into_iter()
-        .map(|profile| serde_json::json!(profile))
-        .collect();
+    let mut out: Vec<serde_json::Value> = Vec::new();
     let rows = db
         .query(
             "select name, kit from kit_profiles where account = $1 order by lower(name), name",
@@ -1345,7 +1413,6 @@ async fn profiles_of(db: &Client, account: i64) -> Result<serde_json::Value, Str
     for row in rows {
         out.push(serde_json::json!({
             "name": row.get::<_, String>(0),
-            "builtin": false,
             "kit": row.get::<_, Vec<u8>>(1),
         }));
     }
@@ -1362,9 +1429,6 @@ fn kit_profile_name(value: &str) -> Result<String, &'static str> {
         .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b' ' | b'-' | b'_'))
     {
         return Err("profile names use letters, numbers, spaces, dashes, and underscores");
-    }
-    if crate::profiles::is_builtin_name(name) {
-        return Err("that starter profile already has a name");
     }
     Ok(name.to_string())
 }
@@ -1932,7 +1996,7 @@ async fn route(
             (
                 200,
                 serde_json::json!({
-                    "profile": {"name": stored_name, "builtin": false, "kit": kit}
+                    "profile": {"name": stored_name, "kit": kit}
                 }),
             )
         }
@@ -5392,6 +5456,10 @@ pub async fn run() {
                 eprintln!("meta: cannot apply schema: {}", why(&e));
                 std::process::exit(1);
             }
+            if let Err(e) = deal_starter_profiles(&db).await {
+                eprintln!("meta: {e}");
+                std::process::exit(1);
+            }
         }
         Err(e) => {
             eprintln!("meta: cannot reach the database: {}", why(&e));
@@ -5721,11 +5789,10 @@ mod tests {
         assert!(kit_profile_name("").is_err(), "an empty name is not a name");
         assert!(kit_profile_name("name/with/path").is_err());
         assert!(kit_profile_name("1234567890123456789012345").is_err());
-        assert!(
-            kit_profile_name("gunner").is_err(),
-            "built-ins are reserved"
-        );
-        assert!(kit_profile_name("CONTROL").is_err());
+        // Nothing is reserved. The three a pilot is dealt are rows of their
+        // own list, so those names are theirs to reuse like any other.
+        assert_eq!(kit_profile_name("gunner"), Ok("gunner".into()));
+        assert_eq!(kit_profile_name("CONTROL"), Ok("CONTROL".into()));
     }
 
     #[test]

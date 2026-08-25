@@ -59,8 +59,7 @@ local ui = harness.install({sim = SIM})
 
 local RAIL = {}
 for i, e in ipairs({{"play", "zones"}, {"ship", "ship"},
-                    {"upgrades", "upgrades"}, {"friends", "friends"},
-                    {"settings", "settings"}}) do
+                    {"friends", "friends"}, {"settings", "settings"}}) do
     RAIL[i] = {label = e[1], icon = e[2], index = i}
 end
 
@@ -258,18 +257,16 @@ do
         check("and square, the size the menu key is",
               math.abs(x.w - x.h) < 1.5,
               string.format("%.0fx%.0f", x.w, x.h))
-        -- The name has moved out of its way rather than sitting under it.
-        local name
-        for i = 1, st.n do
-            if string.lower(st.text[i].s) == "vectorwake" then
-                name = st.text[i]
-            end
-        end
-        check("and the name starts to the right of it",
-              name ~= nil and name.x > x.x + x.w,
-              name and string.format("name at %.0f, x ends %.0f",
-                                     name.x, x.x + x.w) or "no name")
     end
+    -- And the name is not on that line at all. It sat between the x and the
+    -- call sign on every page, turning: a picture of a name the reader has
+    -- already read, animating in the corner of a panel they opened to do
+    -- something else. The landing keeps it, over the key it is a title for.
+    local named = false
+    for i = 1, st.n do
+        if string.lower(st.text[i].s) == "vectorwake" then named = true end
+    end
+    check("and the head carries no wordmark", not named, "the name is on it")
 end
 
 print(fails == 0 and "all dock checks passed"

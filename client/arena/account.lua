@@ -364,7 +364,7 @@ function M.save_profile(name, kit, cb)
              end
              local replaced = false
              for i, old in ipairs(M.profiles) do
-                 if old.builtin ~= true and type(old.name) == "string"
+                 if type(old.name) == "string"
                     and string.lower(old.name) == string.lower(profile.name or "") then
                      M.profiles[i] = profile
                      replaced = true

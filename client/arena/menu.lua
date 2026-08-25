@@ -546,6 +546,36 @@ M.profile_from = nil
 -- catalog arriving underneath would renumber the rows out from under it.
 M.slot_at = nil
 
+-- The thirty points as they stood when this page was opened, or when a build
+-- was last loaded or saved. It is what the save key is drawn against: a key
+-- that stands there on a kit nobody has touched is a control offering to keep
+-- what is already kept, and the first thing a pilot sees on this page should
+-- not be one.
+--
+-- A copy rather than a reference, or it would be the same table it is being
+-- compared with and nothing would ever look changed.
+M.kit_baseline = nil
+
+local function keep_baseline(kit)
+    local out = {}
+    for i = 1, simn("SLOT_COUNT", 23) do out[i] = kit[i] or 0 end
+    M.kit_baseline = out
+end
+
+-- Whether the thirty points in hand differ from that.
+function M.kit_changed()
+    if not (M.kit and M.kit_baseline) then return false end
+    for i = 1, simn("SLOT_COUNT", 23) do
+        if (M.kit[i] or 0) ~= (M.kit_baseline[i] or 0) then return true end
+    end
+    return false
+end
+
+-- And the page has kept them: what is on screen is what the build now holds.
+function M.mark_saved()
+    if M.kit then keep_baseline(M.kit) end
+end
+
 local function same_kit(a, b)
     if type(a) ~= "table" or type(b) ~= "table" then return false end
     for i = 1, simn("SLOT_COUNT", 23) do
@@ -662,6 +692,7 @@ function M.open_kit(class)
         kit = core.starter_kit(kit_ceiling())
     end
     M.kit, M.kit_class = kit, class
+    keep_baseline(kit)
     M.profile_at = matching_profile(kit)
     -- A hull's saved build is not recorded as having come from anywhere: the
     -- account keeps the kit and not the name of the template it started as.
@@ -724,12 +755,11 @@ function M.selected_profile()
     return (account.profiles or {})[M.profile_from or M.profile_at or 0]
 end
 
--- And whether it is one of the pilot's own rather than one of the three the
--- game ships.
-function M.own_profile()
-    local p = M.selected_profile()
-    return (p and p.builtin ~= true) and p or nil
-end
+-- No `own_profile`. It answered "and is it one of yours", because the three
+-- starters were prepended to the list rather than stored in it and the
+-- meta-layer refused to write over them or to drop them. They are ordinary
+-- rows dealt to a new pilot now, so every build in the list is theirs and
+-- `selected_profile` is the whole of the question.
 
 -- Which row of the list this kit is, worked out again. The list itself can
 -- change under the page: a build is renamed, or dropped, and the index that
@@ -794,6 +824,7 @@ local function choose_profile(at)
     -- ceilings is no longer the profile, so the mark that would claim it is
     -- what you are flying stays off and the head says edited.
     M.kit, M.profile_from = kit, at
+    keep_baseline(kit)
     M.profile_at = matching_profile(kit)
     -- Said when this zone actually took something off the build, rather than
     -- whenever the kit comes to less than thirty. A profile that spends
@@ -1048,13 +1079,15 @@ local function kit_rows(class)
         choice = function() return M.wake + 1, #M.WAKES end,
     }
     -- And the one key this page has, at its foot, while the thirty points in
-    -- hand are not the build they came from. A save key standing there on a
-    -- kit that is already what its name says would be a control that does
-    -- nothing, and the honest reading of its absence is "nothing to keep".
+    -- hand have been moved since this page opened. Drawn against the change
+    -- rather than against whether the kit matches some build: a pilot whose
+    -- saved kit happens to match none of their builds had a save key standing
+    -- there before they had touched anything, offering to keep what was
+    -- already kept.
     --
     -- A row rather than furniture, so the arrows reach it: everything a
     -- pointer can press on this page a keyboard can walk to.
-    if M.profile_at == nil then
+    if M.kit_changed() then
         rows[#rows + 1] = {label = "save", group = "save", act = "save_kit"}
     end
     return rows
@@ -1112,18 +1145,18 @@ local function builds_rows()
     for i, p in ipairs(account.profiles or {}) do
         rows[#rows + 1] = {
             label = p.name or "profile", group = "builds", verbatim = true,
-            starter = p.builtin == true,
             choice = function() return (M.profile_at == i) and 1 or 0, 1 end,
             act = "profile", value = i,
         }
     end
     rows[#rows + 1] = {label = "new", group = "keys", act = "new_build",
                        go = "newbuild"}
-    -- Dim on a starter, and still a key: the three the game ships are not the
-    -- pilot's to drop, and a control that vanished would teach that deleting
-    -- a build is not a thing this page does.
+    -- Live on every build, the three a pilot was dealt included. They are
+    -- rows of that pilot's own list rather than the game's, so dropping one
+    -- is theirs to do and getting it back is a new build with that kit.
     rows[#rows + 1] = {label = "delete", group = "keys",
-                       act = "delete_profile", dim = M.own_profile() == nil}
+                       act = "delete_profile",
+                       dim = M.selected_profile() == nil}
     return rows
 end
 
@@ -1175,14 +1208,12 @@ M.add_on = false
 M.new_name = ""
 M.new_on = false
 
--- What the box offers when it opens: a name near the one in hand, so a pilot
--- who means "keep this as it is, under a name of its own" has less to type.
--- Never a starter's own name, which the meta-layer keeps for itself and would
--- refuse.
+-- What the box offers when it opens: the name of the build these thirty
+-- points came from, so a pilot who means "keep this under a name of its own"
+-- has less to type.
 function M.new_suggestion()
-    local from = (account.profiles or {})[M.profile_from or M.profile_at or 0]
-    if from and from.builtin ~= true then return from.name or "" end
-    return ""
+    local from = M.selected_profile()
+    return from and from.name or ""
 end
 
 function M.type_new(ch)
@@ -1216,6 +1247,18 @@ function M.click_create()
         return nil, true
     end
     M.pending_profile = name
+    -- And back to whatever opened this page, which is the library where NEW
+    -- opened it and the ship page where the save key did. The page stayed up
+    -- behind the build it had just made: a page for naming one thing has
+    -- nothing left to say once it is named, and the answer to "did that
+    -- work" is the name on the page underneath.
+    --
+    -- Now rather than when the meta-layer answers. A reply that has to arrive
+    -- before the panel moves is a panel that hangs on the network; a refusal
+    -- lands as a line on the page behind, which is where every other refusal
+    -- in this menu lands.
+    M.new_on, M.new_name = false, ""
+    if #M.stack > 1 then table.remove(M.stack) end
     return "save_profile", true
 end
 
@@ -1738,7 +1781,7 @@ local NODES = {
         end
         local rows = {
             {label = "play", icon = "zones", detail = function()
-                if M.zone ~= "" then return M.zone end
+                if M.zone ~= "" then return directory.label_of(M.zone) end
                 return "choose a game"
             end, go = "play"},
             -- The hull and its kit are one choice made in one place: a kit is
@@ -2100,7 +2143,7 @@ local NODES = {
             end, verbatim = true},
             {label = "zone", detail = function()
                 if M.zone == "" then return "not in one" end
-                return M.zone
+                return directory.label_of(M.zone)
             end},
             {label = "account", detail = function()
                 if account.account and account.account > 0 then
@@ -2468,10 +2511,6 @@ local function settle(act, asked, by)
         M.send_add()
     elseif act == "do_delete_profile" then
         return "delete_profile"
-    elseif act == "do_save_profile" then
-        local field = asked and asked.fields and asked.fields[1]
-        M.pending_profile = field and field.value or ""
-        return "save_profile"
     elseif act == "do_befriend" then
         -- Adding is one press and nothing else: it is not destructive, it is
         -- reversible from the same page, and the pilot doing it is looking at
@@ -3408,12 +3447,11 @@ local function activate(by)
         -- The key at the foot of the ship page, which is there only while the
         -- kit differs from the build it came from.
         --
-        -- Over the build in hand where it is the pilot's own, since that is
-        -- what "save" means on a thing with a name. A starter cannot be
-        -- written over and a kit tuned from nowhere has no name to write to,
-        -- so both go to the page that gives it one, which is the same page
-        -- the library's NEW key opens.
-        local p = M.own_profile()
+        -- Over the build in hand, since that is what "save" means on a thing
+        -- with a name. A kit tuned from nowhere has no name to write to, so
+        -- it goes to the page that gives it one, which is the same page the
+        -- library's NEW key opens.
+        local p = M.selected_profile()
         if not p then
             M.new_name = M.new_suggestion()
             M.new_on = true
@@ -3431,34 +3469,13 @@ local function activate(by)
         -- puts it away, above.
         if choose_profile(r.value) then return "kit" end
         return nil
-    elseif r.act == "save_profile" then
-        -- Prefilled with the name this build already answers to, where it has
-        -- one of the pilot's own. Saving over a profile you loaded and tuned
-        -- is then the same two presses as naming a new one, and the
-        -- meta-layer replaces by name. The three starter names are not
-        -- offered: it keeps those for itself and would refuse them.
-        local from = (account.profiles or {})[M.profile_from or M.profile_at or 0]
-        local named = (from and from.builtin ~= true and from.name) or ""
-        M.ask = {
-            head = "Save this build as a profile.",
-            keys = {{label = "save", act = "do_save_profile"},
-                    {label = "cancel"}},
-            sel = 1, field = 1,
-            fields = {{label = "profile name", value = named, max = 24}},
-        }
-        return nil
     elseif r.act == "delete_profile" then
         -- Asked first. Everything else on this page can be pressed again to
         -- undo it, and this is the one thing here that takes something away
         -- for good: the meta-layer keeps no copy and there is nothing on the
         -- page that would bring it back.
-        local p = M.own_profile()
-        if not p then
-            if M.selected_profile() then
-                M.note = "the starter builds are not yours to delete"
-            end
-            return nil
-        end
+        local p = M.selected_profile()
+        if not p then return nil end
         M.pending_profile = p.name
         M.ask = {
             head = "Delete " .. (p.name or "this build") .. "?",
@@ -3520,7 +3537,8 @@ local function activate(by)
                                 price = r.price, note = r.shelf_note})
         return nil
     elseif r.act == "leave" then
-        local place = M.zone ~= "" and M.zone or "this game"
+        local place = M.zone ~= "" and directory.label_of(M.zone)
+            or "this game"
         M.confirm("leave " .. place .. "?",
                   {{label = "leave", act = "leave"}, {label = "stay"}})
         return nil
@@ -3632,7 +3650,8 @@ local function activate(by)
                            {label = "stay"}})
                 return nil
             elseif pick.live then
-                M.confirm("leave " .. M.zone .. " for " .. pick.name .. "?",
+                M.confirm("leave " .. directory.label_of(M.zone) .. " for "
+                          .. pick.name .. "?",
                           {{label = "switch", act = "join"},
                            {label = "stay"}})
                 return nil
@@ -3851,7 +3870,12 @@ function M.step(keys)
             M.sel[id] = row_index(rows) % n + 1
             return nil, true
         end
-        if keys.go or keys.down then
+        if keys.go or keys.down or keys.up then
+            -- Up as well as down. The page is drawn above the stops, so up is
+            -- the direction it is in: a hand that walked out of the foot of a
+            -- list by pressing down has to be able to walk back in. The
+            -- cursor lands where it was left, which is that last row.
+            --
             -- Silent where the page is still coming. A tick under a press
             -- that changed nothing is the menu saying it did something.
             local r = rows[row_index(rows)]
@@ -3959,7 +3983,14 @@ function M.step(keys)
         return landed()
     end
     if keys.down then
-        M.sel[id] = next_stop(rows, row_index(rows), 1)
+        -- Off the last row and onto the stops. The list wrapped from its foot
+        -- back to its head, which made the page a ring a hand could not get
+        -- out of downward: the tabs are drawn under it and down is where they
+        -- are, so down is how they are reached.
+        local at = row_index(rows)
+        local nxt = next_stop(rows, at, 1)
+        if nxt <= at then return back() end
+        M.sel[id] = nxt
         return landed()
     end
     if keys.go then return activate(), true end

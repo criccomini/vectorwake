@@ -232,12 +232,6 @@ pub fn calibration_contrasts() -> Vec<ProfileContrast> {
     contrasts
 }
 
-pub fn is_builtin_name(name: &str) -> bool {
-    BUILTIN_NAMES
-        .iter()
-        .any(|reserved| reserved.eq_ignore_ascii_case(name))
-}
-
 /// The slot ceiling for the zone the player named, or the catalog default.
 /// The same config application path builds a live room, so the shop cannot
 /// sell an add-on that the selected game will refuse.
@@ -281,13 +275,6 @@ mod tests {
                 );
             }
         }
-    }
-
-    #[test]
-    fn starter_profile_names_are_reserved_without_case_tricks() {
-        assert!(is_builtin_name("gunner"));
-        assert!(is_builtin_name("BOMBER"));
-        assert!(!is_builtin_name("Screen"));
     }
 
     #[test]

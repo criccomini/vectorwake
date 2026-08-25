@@ -33,8 +33,7 @@ local ui = harness.install({sim = setmetatable({
 }, {__index = function() return function() return 0 end end})})
 
 local RAIL = {}
-for i, n in ipairs({"play", "ship", "upgrades", "friends",
-                    "settings"}) do
+for i, n in ipairs({"play", "ship", "friends", "settings"}) do
     RAIL[i] = {label = n, icon = n == "play" and "zones" or n, index = i}
 end
 
@@ -266,6 +265,42 @@ do
     during = select(2, sweep(1440, 810))
     check("a monitor keeps both, the drawer being nowhere near them",
           has(during, "2:49") and has(during, "LINK"), during)
+end
+
+-- --- and the screen with no room behind it stands its key down too ---------
+--
+-- Between one game and the next there is no room to draw, so the waiting
+-- screen is what the open menu is standing over. Its key sits in the corner
+-- the drawer is docked to, and a panel's ground is a wash rather than a
+-- curtain: the key read through the panel that had replaced it, which on a
+-- zone change is a MENU flashing up under the menu.
+
+do
+    local function wait_frame(now, open)
+        ui.begin(harness.layer(), 1440, 810, 1, false, now)
+        ui.waiting("")
+        if open or ui.drawer_up() then
+            local mv = view(open)
+            mv.rows = {}
+            ui.menu(mv)
+        end
+        ui.finish()
+        local n = 0
+        for _, h in ipairs(ui.hits) do
+            if h.action == "open" then n = n + 1 end
+        end
+        return n
+    end
+
+    wait_frame(4.0, false)
+    check("the waiting screen carries a way into the menu",
+          wait_frame(4.1, false) == 1, "no key")
+    for _, at in ipairs({4.11, 4.15, 4.20, 4.50}) do wait_frame(at, true) end
+    check("and stands it down while the drawer is over it",
+          wait_frame(4.60, true) == 0, "the key is still under the panel")
+    for _, at in ipairs({4.61, 4.70, 4.90, 5.20}) do wait_frame(at, false) end
+    check("and has it back once the drawer has gone",
+          wait_frame(5.50, false) == 1, "the key did not come back")
 end
 
 print(fails == 0 and "all drawer checks passed"
