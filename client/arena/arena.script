@@ -823,7 +823,7 @@ local function leave_world()
     ui.room_ask = nil
 end
 
-function go_home(self, at)
+function go_home(self)
     leave_world()
     self.replay = nil
     self.replay_loading = nil
@@ -848,7 +848,12 @@ function go_home(self, at)
     -- Who is beside you is a fact about the room you were in, and you are
     -- not in it any more.
     account.room_changed()
-    menu.show(at)
+    -- And the menu goes with the room. Leaving lands in the stands, by way of
+    -- the waiting screen while the next room is found: this used to open the
+    -- games list, which is a page to pick from rather than a place to be, and
+    -- under a front end that is itself a game there is somewhere to put a
+    -- player down. The list is a press on MENU away.
+    menu.close()
     directory.open(menu.directory)
 end
 
@@ -1178,7 +1183,7 @@ function init(self)
             url, menu.class, sys.get_config_string("vectorwake.name", "pilot"),
             function(why)
                 menu.note = why
-                go_home(self, "play")
+                go_home(self)
             end)
         if not started then return end
         self.online = true
@@ -1192,7 +1197,7 @@ function init(self)
     -- and the cursor lands on the game they were in last as soon as the
     -- directory answers, so arriving and pressing enter is arriving and
     -- flying. The rail is still beside it, one press left.
-    go_home(self, "play")
+    go_home(self)
 
 end
 
@@ -1350,7 +1355,7 @@ function update(self, dt)
         while accum >= TUNE.DT and steps < TUNE.MAX_CATCHUP do
             if not session.playback.step(self.replay, sim) then
                 menu.note = "match replay ended early"
-                go_home(self, "play")
+                go_home(self)
                 break
             end
             drain_events()
@@ -1405,6 +1410,11 @@ function update(self, dt)
         directory.tick(dt)
     elseif ui.rooms_open and not menu.open then
         directory.tick(dt)
+    elseif not live then
+        -- Waiting for a first room. The list is what the attract loop dials
+        -- from, so nothing arrives until it does; this used to be covered by
+        -- the menu standing open over the wait, and the menu no longer does.
+        directory.tick(dt)
     else
         directory.idle()
     end
@@ -1458,21 +1468,14 @@ function update(self, dt)
     -- the list. Layout is the interface's business; which press means what
     -- is the menu's, and this is the one fact it needs to decide.
     menu.compact = ui.compact
-    -- The clock and the score of the match actually on screen behind the
-    -- landing, while the backdrop is up. The landing prefers this to the
-    -- directory's copy: it is the room a deploy would put you in, and it
-    -- moves every second without being asked.
-    menu.live_match = (self.attract and net.connected) and net.match or nil
-    -- What the zone calls the ground in the glass, for the caption on the
-    -- landing's map panel. Empty against a zone that predates the message.
-    menu.live_map = (self.attract and net.connected) and net.map_name or nil
-    -- Whether a live game is playing behind the home menu, so the landing
-    -- can part its panels around the fight instead of washing it out.
+    -- Whether the client is in the stands: watching a room it never took a
+    -- seat in. It is what says a menu opened here has a game behind it to be
+    -- closed onto, which is the difference between this and a client that has
+    -- not reached a room at all.
     menu.scenery = (self.attract and net.connected and live) or false
-    -- And who is in it, for the standings panel beside the glass: the same
-    -- roster and sides the scoreboard reads, plus the watched subject's
-    -- team, which is the perspective every ship in the glass is already
-    -- colored from.
+    -- And who is in it, for the column beside the page: the same roster and
+    -- sides the scoreboard reads, plus the watched subject's team, which is
+    -- the perspective every ship in the glass is already colored from.
     if menu.scenery then
         menu.live_pilots = net.pilots
         menu.live_watchers = net.watchers
@@ -1535,6 +1538,11 @@ function update(self, dt)
         })
         if moved then sfx.ui(act and "ui_go" or "ui_move") end
         if act then apply_menu(self, act) end
+    elseif self.attract and tapped[hash("select")] then
+        -- Enter on the landing presses the landing's key. There is exactly one
+        -- thing to press out here, and a keyboard that had to open a menu to
+        -- reach it would be a front page nobody can start the game from.
+        session.deploy(self)
     end
 
     -- And what the pointer is resting on in the corner stack, which is the
@@ -1625,7 +1633,7 @@ function update(self, dt)
                     session.attract_drop(self)
                 else
                     menu.note = "no answer from the zone"
-                    go_home(self, "play")
+                    go_home(self)
                 end
             end
         end
@@ -2038,11 +2046,14 @@ function update(self, dt)
     -- scoreboard and the radar behind a panel would be a lie about what is
     -- happening: you can be shot while reading this.
     --
-    -- Except behind the landing, where the game is scenery rather than a
-    -- seat: the deck carries the clock and the score, and a corner stack of
-    -- instruments about a fight you are not in would fight the menu for the
-    -- pointer.
-    if live and not self.attract then
+    -- Behind the landing as well, which is the whole of the idea: what a
+    -- stranger opening the client meets is the game, drawn by the code that
+    -- draws it to the people in it. The watcher's HUD already has the shape
+    -- for it, carrying the room's instruments and none of the hull's
+    -- furniture, so the landing is that HUD with two things added at the
+    -- foot, and the deck that used to describe a room from outside it is
+    -- gone.
+    if live then
         local e = eye()
         -- The perspective seat: yours, or the watched subject's, and nil when
         -- the channel has nobody to stand behind. Written out rather than as
@@ -2067,6 +2078,11 @@ function update(self, dt)
             -- be nil here, and that shape falls through to the wrong answer
             -- when it is.
             watch = watch_state(),
+            -- Whether this watch is the front end rather than a bench: no seat
+            -- was ever taken here, so the screen carries the game's name and
+            -- the key that gets you in, and the corner drops TAKE SEAT because
+            -- PLAY NOW is that key.
+            landing = self.attract or nil,
             -- The call sign belongs to this connection even while the camera
             -- belongs to a watched pilot. The roster uses it to mark this
             -- watcher's own row instead of marking the camera subject as us.
@@ -2151,6 +2167,24 @@ function update(self, dt)
             layers = layers,
         })
     end
+    -- No room to draw: the loader's own picture, held until one answers. It
+    -- is what the page was already showing, so the hand-off from the loading
+    -- screen to the engine changes nothing anybody can see, and the wait for
+    -- a directory and a handshake happens behind a wordmark rather than
+    -- behind a menu.
+    if not live then
+        -- Only what has gone wrong. A normal wait is a directory lookup and a
+        -- handshake, two seconds of it, and a caption narrating that is a
+        -- label on the one screen that should look like the game. What earns
+        -- the line is a join that failed, or a directory that has answered and
+        -- named no games: silence there is a client that looks like it is
+        -- still trying when it has already finished and found nothing.
+        local why = menu.note
+        if (not why or why == "") and directory.answered then
+            why = directory.note
+        end
+        ui.waiting(why)
+    end
     if menu.open then ui.menu(menu.view()) end
     -- The question about moving room, last of everything that publishes a hit
     -- box. `ask_card` drops the ones already published, which is what makes a
@@ -2196,7 +2230,7 @@ function session.enter(self, address, zone_name, wt, room, watch, instance)
     -- since changed game refuses rather than surprising anybody.
     local started = net.connect(address, menu.class, menu.name, function(why)
         menu.note = why
-        go_home(self, "play")
+        go_home(self)
     end, zone_name, watch, wt, room, instance)
     if not started then return false end
     self.online = true
@@ -2213,7 +2247,7 @@ function session.replay(self, reply)
     local state, why = session.playback.load(reply, sim, net)
     if not state then
         menu.note = why or "cannot load match replay"
-        go_home(self, "play")
+        go_home(self)
         return false
     end
     self.replay = state
@@ -2253,20 +2287,31 @@ function session.attract_tick(self, dt)
     self.attract_wait = math.max((self.attract_wait or 0) - dt, 0)
     -- A real session, or a real join in flight: not this loop's business.
     if self.online and not self.attract then return end
-    local r = (menu.open and menu.home)
-        and directory.rows[menu.sel.play or 1] or nil
-    if not r or not r.live or (r.address or "") == "" then
+    -- No seat of this client's anywhere, which is what puts it in the stands.
+    if not menu.home then
         session.attract_drop(self)
         return
     end
+    -- Which game the stands show. The games list answers while it is open,
+    -- and what is already standing answers when it is not: closing the menu
+    -- wipes its cursor, and the fight on screen must not change because a
+    -- panel was put away. With neither, the head of the list, which is the
+    -- deployment's own first zone.
+    local want = (menu.open and menu.sel.play)
+        and directory.rows[menu.sel.play] or nil
     if self.attract then
-        -- The carousel turned to another game: what is behind the panel
-        -- should be what the key would join, so re-dial at once rather
-        -- than waiting out a failure timer nobody's failure started.
-        if self.attract_zone ~= r.zone then
+        -- The list turned to another game: what is on screen should be what
+        -- the key would join, so re-dial at once rather than waiting out a
+        -- failure timer nobody's failure started.
+        if want and want.zone ~= self.attract_zone then
             session.attract_drop(self)
             self.attract_wait = 0
         else return end
+    end
+    local r = want or directory.rows[1]
+    if not r or not r.live or (r.address or "") == "" then
+        session.attract_drop(self)
+        return
     end
     if self.attract_wait > 0 then return end
     -- Grown before the dial, so a zone that refuses instantly cannot be
@@ -2280,7 +2325,7 @@ function session.attract_tick(self, dt)
             session.attract_drop(self)
         else
             menu.note = why
-            go_home(self, "play")
+            go_home(self)
         end
     end, r.zone, true, r.wt, nil, r.instance)
     if started then
@@ -2290,7 +2335,37 @@ function session.attract_tick(self, dt)
         self.attract = true
         self.attract_zone = r.zone
         self.attract_instance = r.instance
+        -- The game this client is on, watching or flying: one question with
+        -- one answer, so the games list opens on the room already in the glass
+        -- rather than on whichever one was last deployed into, and coming back
+        -- tomorrow lands where you left off.
+        menu.zone = r.zone
+        menu.save_identity()
     end
+end
+
+-- The landing's one press: take a seat in the room already on screen.
+--
+-- It names the row the stands are dialled to and hands it to the same path a
+-- row in the games list takes, which is what promotes the standing connection
+-- instead of dialling the same room a second time. Shared by the key and by
+-- Enter, so a hand on a keyboard never has to open a menu to reach the one
+-- control the screen exists for.
+function session.deploy(self)
+    menu.chosen = directory.rows[menu.sel.play or 1]
+    if self.attract_zone then
+        for _, row in ipairs(directory.rows) do
+            if row.zone == self.attract_zone then menu.chosen = row end
+        end
+    end
+    -- This key means fly, whatever the ship page's eighth cell was last set
+    -- to. That cell used to answer "what will you arrive as" from a screen
+    -- where you were nothing; from the stands the answer is already watching,
+    -- so a remembered "arrive as a watcher" would make the one key on the
+    -- landing do nothing anybody could see.
+    menu.spectate = false
+    apply_menu(self, "join")
+    sfx.ui("ui_go")
 end
 
 -- May this pilot spend a hull, right now?
@@ -2602,7 +2677,7 @@ function apply_menu(self, act)
         if self.attract then return end
         if self.online then
             menu.note = nil
-            go_home(self, "play")
+            go_home(self)
             -- Made here rather than by the caller. Escape at the root of the
             -- home screen produces this same action and does nothing with it,
             -- and a click for a keystroke that changed nothing is how an
@@ -2767,6 +2842,11 @@ function on_input(self, action_id, action)
                 menu.pending = menu.class
                 apply_menu(self, "ship")
                 sfx.ui("ui_go")
+                return true
+            end
+            -- The landing's one key. See session.deploy.
+            if r.action == "play_now" then
+                session.deploy(self)
                 return true
             end
             if r.action == "keep_pilot" then
@@ -2997,9 +3077,6 @@ function on_input(self, action_id, action)
                 -- The chevron a drilled-into page wears on a phone: one
                 -- level up, exactly what escape does from there.
                 act, moved = menu.click_back()
-            elseif r.action == "zone" then
-                -- The landing's zone carousel, turned by its triangles.
-                act, moved = menu.click_zone(r.value)
             elseif r.action == "panel" then
                 -- The panel's own ground. It exists to stop a press on
                 -- the space between two rows falling through to the box

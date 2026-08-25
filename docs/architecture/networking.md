@@ -262,7 +262,7 @@ pilot's own are inside the radius by construction. A weapon that outlived its
 owner's flight home would cross the boundary outward without ending, and a
 client reads a round that stops existing as a round that went off, so such a
 weapon would need an exception here. There is no longer one in the game --
-mines were it, and decision 61 removed them.
+mines were it, and decision 62 removed them.
 
 The one exemption is our own bots, and it is keyed on the token's label
 rather than on what the client said about itself at join. That distinction is the whole of

@@ -7,15 +7,21 @@ local M = {}
 -- Recompute whether the connection has a world ready to draw. Call this again
 -- after input handling because a menu action can join or leave during a frame.
 --
--- An attract watch is live to draw and is still the home screen: the battle
--- behind the landing is a backdrop, not a session, so the menu keeps its home
--- tree and stays up. Only pressing deploy turns the connection into the real
--- thing, and it clears the flag itself.
+-- A watch that nobody deployed from is live to draw and holds no seat, so the
+-- menu keeps its no-hull tree. That is the landing: the client opens in the
+-- stands of a real room, and pressing play is what turns the connection into a
+-- session. It clears the flag itself.
+--
+-- Nothing here opens the menu any more. It used to stand itself up whenever
+-- there was no seat, and later whenever there was no room, so a player who had
+-- asked for nothing met a panel for as long as a directory and a handshake
+-- took. With no room the client draws the loader's own picture instead and
+-- keeps MENU in the corner, so the menu is only ever open because somebody
+-- opened it. See `ui.waiting`.
 function M.live(self, net, sim, menu)
     local live = (self.replay ~= nil or (self.online and net.connected))
         and sim.ship_count() > 0
     menu.home = not live or self.attract == true
-    if menu.home then menu.open = true end
     return live
 end
 

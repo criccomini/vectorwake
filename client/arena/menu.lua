@@ -87,11 +87,6 @@ M.item_slot = nil
 -- page, which is move the cursor to it. The key still acts, because a key
 -- press is already aimed at the cursor and the button is what it is aimed at.
 local from_row = false
--- The clock and score of the match behind the landing, set by the arena
--- while the backdrop is up and nil otherwise. See deploying().
-M.live_match = nil
--- And what the zone calls the ground it is being played on, same lifetime.
-M.live_map = nil
 
 -- Which control is waiting for a key, and nothing while none is. It is the
 -- whole of the binding mode: the page draws the board dark around it and the
@@ -1841,77 +1836,6 @@ end
 -- the panel for a while as well, a long way from the name it belonged to,
 -- which made choosing between three games into reading three sentences one at
 -- a time.
--- What the play page says beside its list: the room a press would put you in.
---
--- Read off the same directory row the cursor is on, because "where would this
--- put me" is a question about the thing under the cursor and not about the
--- fleet in general.
-local function deploying(sel)
-    local r = directory.rows[sel]
-    if not r then return nil end
-    local out = {deploy = true, head = "deploying to", label = r.name or "",
-                 note = r.detail or "",
-                 -- The deck is the zone picker now: with three to five game
-                 -- types there is nothing a standing list says that the deck
-                 -- does not say bigger, so the name wears the carousel's
-                 -- triangles and this is what they step through.
-                 zones = #directory.rows, at = sel}
-    if r.live then
-        out.sub = "the busiest room with a seat"
-        -- The room as seats rather than as two counts. "0 people, 8 AI" is
-        -- three numbers to read and hold against each other; eight machines
-        -- in eight sockets is one look, and the marks are the ones the
-        -- scoreboard and the games list already taught. `seats` is zero from
-        -- a directory that predates the field, and the drawing falls back to
-        -- the bare marks.
-        out.room = {players = r.players or 0, bots = r.bots or 0,
-                    seats = r.seats or 0}
-        -- The room's clock. The battle behind the panel is the first
-        -- choice: its clock is the room a deploy would put you in, it
-        -- moves on its own, and it brings the score with it. The
-        -- directory's copy, aged by how long the reply has sat here, is
-        -- the answer while the backdrop is still dialling, and zero from
-        -- a fleet that predates the field draws no clock at all.
-        -- The ground's own name, off the room in the glass, for the caption
-        -- on the landing's map panel. Only the backdrop knows it: the
-        -- directory lists zones, and which map a room is standing on is a
-        -- fact that arrives with the map.
-        if M.live_map and M.live_map ~= "" then
-            out.ground = M.live_map
-        end
-        if M.live_match and M.live_match.left then
-            out.clock = M.live_match.left
-            out.playing = M.live_match.playing == true
-            local ladder = M.live_match.ladder
-            out.finding_rival = ladder ~= nil and not out.playing
-                and ladder.waiting == true
-            -- The score rides along only while it is being made: between
-            -- matches the podium in the backdrop is already saying how the
-            -- last one ended. Indexed from zero, because the wire counts
-            -- sides from zero and net.lua keeps its numbering.
-            local s = M.live_match.score
-            if out.playing and type(s) == "table"
-               and s[0] ~= nil and s[1] ~= nil then
-                out.score = {s[0], s[1]}
-            end
-        elseif r.waiting == true or (r.clock or 0) > 0 then
-            out.clock = math.max(0, math.floor(r.clock - directory.aged))
-            out.playing = r.playing == true
-            out.finding_rival = not out.playing and r.waiting == true
-        end
-        -- What the big key at the foot of the panel joins.
-        out.row = sel
-        -- The promise at the foot belongs to a room that can keep it: on a
-        -- zone nobody runs, the line about being taken the moment you press
-        -- play is a sentence about a press that does nothing.
-        out.foot = "a room takes you the moment you press play, and the "
-                   .. "bots stand down as people arrive"
-    else
-        out.sub = "nobody is running it"
-    end
-    return out
-end
-
 local function play_rows()
     local rows = {}
     for i, r in ipairs(directory.rows) do
@@ -1974,10 +1898,17 @@ end
 local NODES = {
     -- The tab row, and the whole of the front end's shape.
     --
-    -- Six of them on the home screen, where there is time to read: play, ship,
-    -- upgrades, friends, standings, settings. Three in a match: settings,
-    -- friends, leave. Friends stays out when the account service is absent.
-    -- The row keeps the same place and chrome in both contexts.
+    -- Which of the two you get is decided by whether you are in a hull, not by
+    -- whether you are in a zone. Six with no hull: play, ship, upgrades,
+    -- friends, standings, settings. Three with one: settings, friends, leave.
+    -- Friends stays out when the account service is absent. The row keeps the
+    -- same place and chrome in both contexts.
+    --
+    -- The question used to be `M.home`, which was the same answer while the
+    -- front end was a place of its own. It is the stands now, and a pilot who
+    -- sat out mid-match is in the stands too: same empty cockpit, same time to
+    -- read, so the same six stops. What separates the two is `leave`, which
+    -- only means anything where there is a zone to leave.
     --
     -- Nothing you cannot act on right now is on that row while you are
     -- flying. A three minute match is short enough that a menu deep enough to
@@ -1989,7 +1920,7 @@ local NODES = {
     -- sound, to fullscreen and to the controls reference, and a leave button
     -- alone would strand a player who needs to mute the game.
     root = {rows = function()
-        if not M.home then
+        if not M.home and not M.watching then
             local rows = {}
             local between = M.between()
             -- Between matches the hull is not locked, and this is the one
@@ -2025,10 +1956,10 @@ local NODES = {
                                    go = "settings"}
             end
             rows[#rows + 1] = {label = "leave", icon = "zones",
-                               detail = "back to the games", act = "leave"}
+                               detail = "back to the stands", act = "leave"}
             return rows
         end
-        return {
+        local rows = {
             {label = "play", icon = "zones", detail = function()
                 if M.zone ~= "" then return M.zone end
                 return "choose a game"
@@ -2068,6 +1999,13 @@ local NODES = {
             -- always the same list read two ways.
             {label = "settings", icon = "settings", go = "settings"},
         }
+        -- And the way out, for a pilot watching from a seat the room is still
+        -- holding. Never at home: the stands there are where leaving goes.
+        if not M.home then
+            rows[#rows + 1] = {label = "leave", icon = "zones",
+                               detail = "back to the stands", act = "leave"}
+        end
+        return rows
     end},
 
     -- One ship and what thirty points buy on it. The roster is a carousel at
@@ -3081,9 +3019,11 @@ end
 -- version of this kept the stack, and pressing escape then down then enter,
 -- which had meant a play row a moment earlier, silently changed hull instead.
 function M.close()
-    -- Not while this is the only thing on screen. Escape at the root of the
-    -- home screen is already as far back as there is to go.
-    if M.home then return false end
+    -- Always. There was a rule here refusing to close a menu with nothing
+    -- behind it, because closing onto an empty starfield with no way back is
+    -- a button that breaks the game. What is behind it now is either the
+    -- stands or the waiting screen, and both of those carry MENU, so there is
+    -- no state this can strand anybody in.
     M.open = false
     M.stack = {"root"}
     M.hover = nil
@@ -3121,17 +3061,19 @@ end
 
 -- Escape, from anywhere in here.
 --
--- Over a game it shuts the panel and puts you back in the fight, whatever
--- level you are on. One press put the menu up, so one press has to take it
--- down: the menu opens on the games rather than at the root now, and walking
--- back out a level at a time made leaving cost three presses where it used to
--- cost two. Left is still what walks back through the tree.
+-- It shuts the panel and puts you back in what is behind it, whatever level
+-- you are on. One press put the menu up, so one press has to take it down;
+-- walking back out a level at a time made leaving cost three presses where it
+-- used to cost two. Left and the chevron are what walk back through the tree,
+-- which is a different question with its own keys.
 --
--- With nothing behind the panel there is nothing to shut it onto, so escape
--- walks back like left does and means at the root what it always meant.
+-- This used to be two behaviors that nobody chose between: it tried to close,
+-- and the front end's refusal to close turned it into `back` there. Both
+-- halves of that are gone, since everything is over a room now, so the one
+-- meaning is written here rather than falling out of a refusal.
 local function escape()
-    if M.close() then return nil, true end
-    return back()
+    M.close()
+    return nil, true
 end
 
 -- Put the cursor on the game you were in last, once the directory has
@@ -3319,7 +3261,7 @@ function M.view()
                  -- level in", because the same control did the going back as
                  -- well; the rail does that from every level now, and this is
                  -- only the way out.
-                 note = M.note, closable = not M.home,
+                 note = M.note, closable = true,
                  -- Which page this is, by name. The drawing keeps a scroll
                  -- position and has to know when it is looking at something
                  -- else: carried across, opening standings from the bottom of
@@ -3368,20 +3310,16 @@ function M.view()
                  -- from under the thumb that had just tapped it, and the next
                  -- tap hit nothing.
                  home = M.home,
-                 -- Whether a live game is playing behind this home screen:
-                 -- the landing's backdrop. The drawing parts its panels
-                 -- around the fight when it is.
+                 -- Whether a room is playing behind this menu with no seat of
+                 -- this client's in it: the stands. It is what says the panel
+                 -- has something behind it to be closed onto.
                  scenery = M.scenery or false,
-                 -- Who is in that game, for the standings beside the glass:
-                 -- the roster feeds the scoreboard reads, the match score
-                 -- keyed by team byte, and the watched side the glass is
-                 -- already colored from.
+                 -- Who is in that room, for the column beside the page: the
+                 -- same roster the scoreboard reads, and the watched side the
+                 -- glass is already colored from.
                  arena = M.scenery and {
                      pilots = M.live_pilots, watchers = M.live_watchers,
                      side = M.live_side, names = M.live_sides,
-                     score = M.live_match and M.live_match.score or nil,
-                     playing = M.live_match ~= nil
-                         and M.live_match.playing == true,
                  } or nil,
                  -- The help page asks for the drawn keyboard; whether the
                  -- device gets one is ui.lua's call, since only it knows
@@ -3450,9 +3388,6 @@ function M.view()
         out.item = out.rows[1]
         out.rows = {}
     end
-    -- What pressing play would do, beside the list of things to press it on.
-    -- The mode list is short and the panel is wide, and the question a player
-    -- is actually asking is "where would this put me".
     -- What the stage previews at the root: the corner stop the cursor is on,
     -- else the tab it is on. One name, because the two halves of the row are
     -- one row.
@@ -3462,14 +3397,7 @@ function M.view()
                        or ((#M.stack == 1) and rows_of(NODES.root)[sel]
                            and rows_of(NODES.root)[sel].go)
                        or nil
-    if M.at() == "play" or previewing == "play" then
-        out.aside = deploying(M.at() == "play" and sel or (M.sel.play or 1))
-    elseif not M.home then
-        -- In a match the column beside the page is the match: who is in it and
-        -- what they have done, which is what the mock puts there and what a
-        -- player opening a menu mid-fight is most likely to want a look at.
-        out.aside = {match = true, head = "in this match"}
-    elseif M.at() == "pilot" or previewing == "pilot" then
+    if M.at() == "pilot" or previewing == "pilot" then
         -- Who you are, beside what you can do about it. The call sign is the
         -- page, and the rows are three things you might do to it.
         out.aside = {
@@ -3484,6 +3412,12 @@ function M.view()
                 or "a password brings this pilot back on any machine; without "
                    .. "one it lives on this one",
         }
+    elseif not M.home or M.scenery then
+        -- The room the menu is standing over: who is in it and what they have
+        -- done. The same column whether the seat is yours or you are watching
+        -- from the stands, because it is about the room rather than about you,
+        -- and there is always a room behind this panel now.
+        out.aside = {match = true, head = "in this match"}
     end
     -- The ship page carries the roster as well as the kit: the drawing at its
     -- head is a carousel through every hull, and `rows` is what thirty points
@@ -4044,17 +3978,6 @@ function M.step(keys)
         end
         if keys.go then return answer(M.ask.sel) end
         return nil, false
-    end
-
-    -- The landing's zone carousel. Left and right step through the games
-    -- the way they turn the hull carousel, and they outrank "left walks
-    -- back" here for the same reason they do there: the page's one control
-    -- is a thing you turn. Only with somewhere to turn to; with one game
-    -- running, left still walks back. Up, down and enter fall through to
-    -- the rows the deck stands in front of.
-    if M.home and M.at() == "play" and (keys.left or keys.right) then
-        local _, moved = M.click_zone(keys.right and 1 or -1)
-        if moved then return nil, true end
     end
 
     local id = M.stack[#M.stack]
@@ -4732,18 +4655,6 @@ end
 function M.click_back()
     if not M.open or #M.stack < 2 then return nil, false end
     table.remove(M.stack)
-    return nil, true
-end
-
--- One step of the landing's zone carousel, wrapping. The zone rows still
--- exist behind the deck (they are what enter presses and what the arena
--- joins); this only moves the same cursor the list used to draw.
-function M.click_zone(dir)
-    if not M.open then return nil, false end
-    local n = #directory.rows
-    if n < 2 then return nil, false end
-    local at = M.sel.play or 1
-    M.sel.play = (at - 1 + dir) % n + 1
     return nil, true
 end
 

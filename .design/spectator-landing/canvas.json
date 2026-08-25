@@ -1,0 +1,36 @@
+{
+  "artboards": [
+    { "file": "Main.dc.html", "title": "Desktop · A", "x": 0, "y": 0, "w": 1440, "h": 810 },
+    { "file": "DesktopB.dc.html", "title": "Desktop · B", "x": 1720, "y": 0, "w": 1440, "h": 810 },
+    { "file": "DesktopC.dc.html", "title": "Desktop · C", "x": 3440, "y": 0, "w": 1440, "h": 810 },
+    { "file": "LandscapeA.dc.html", "title": "Landscape · A", "x": 298, "y": 950, "w": 844, "h": 390 },
+    { "file": "LandscapeB.dc.html", "title": "Landscape · B", "x": 2018, "y": 950, "w": 844, "h": 390 },
+    { "file": "LandscapeC.dc.html", "title": "Landscape · C", "x": 3738, "y": 950, "w": 844, "h": 390 },
+    { "file": "PortraitA.dc.html", "title": "Portrait · A", "x": 525, "y": 1480, "w": 390, "h": 844 },
+    { "file": "PortraitB.dc.html", "title": "Portrait · B", "x": 2245, "y": 1480, "w": 390, "h": 844 },
+    { "file": "PortraitC.dc.html", "title": "Portrait · C", "x": 3965, "y": 1480, "w": 390, "h": 844 }
+  ],
+  "annotations": [
+    {
+      "id": "note-a",
+      "x": 0, "y": -190, "w": 340,
+      "text": "A · above PLAY NOW\n\nThe name and the way in read as one unit, at the spot a stranger's eye ends on anyway. Costs the bottom center some height, and a fight that drifts low plays behind the lockup."
+    },
+    {
+      "id": "note-b",
+      "x": 1720, "y": -190, "w": 340,
+      "text": "B · under the score\n\nHangs under the clock like a broadcast bug. That strip is free in melee, but in a flag game the pennants and the round's banner own it, so B needs an answer there."
+    },
+    {
+      "id": "note-c",
+      "x": 3440, "y": -190, "w": 340,
+      "text": "C · in the corner\n\nA watcher has no corner stack, so the bottom left is empty chrome space and the name sits in it like a station ident. Quietest of the three, and the weakest at naming the game to a first visit. Portrait has no free corner: C degrades to the bare mark under MENU."
+    },
+    {
+      "id": "note-constants",
+      "x": -420, "y": 0, "w": 360,
+      "text": "Held constant on every board: the shipped watcher HUD (MENU, PLAYERS, green CHANNEL mark; no hull furniture), the melee zone, Pylon vs Caisson, camera on the channel's subject, five seconds behind.\n\nOne departure from the shipped watcher chrome: no TAKE SEAT key in the corner row. PLAY NOW is that key, made the point of the screen. It breathes on the DEPLOY key's own swell.\n\nPortrait keeps the bottom tab bar and the key rides above it; its score band drops the side names and takes a second row. Landscape and desktop have no tab row: MENU opens the overlay."
+    }
+  ],
+  "launch": { "view": "canvas" }
+}

@@ -1,13 +1,15 @@
--- The landing: where a press would put you, and what it takes to say so.
+-- The landing: the game itself, with the name and one key over the foot.
 --
 --     lua5.1 client/tests/landing_test.lua
 --
--- Every window draws the same one: the deck, which is the game's name on a
--- carousel, what that game is, the clock and the room, the score as a bar
--- with a side coming in from each end, and one DEPLOY key across the foot.
--- The name and the bar and the key all take the page's own measure, which
--- is what these check: a landing laid out in a column somewhere in the
--- middle of a monitor is the shape this replaced.
+-- Opening the client puts you in the stands of a real room, so the front end
+-- is the watcher's HUD rather than a panel describing a game. What is added to
+-- it is a lockup and a PLAY NOW key, in that order up the screen, and what is
+-- taken away is the TAKE SEAT chip, because PLAY NOW is that key.
+--
+-- These run the real `M.hud` against a stubbed engine on four windows. The
+-- questions are the ones a hand at a mouse would ask: can I press it, is it on
+-- the screen, is the name over it, and is the room still readable behind it.
 
 package.path = "client/?.lua;" .. package.path
 
@@ -21,286 +23,424 @@ local function check(name, ok, detail)
     end
 end
 
-local W, H = 1280, 800
-local boxes, rects = {}, {}
-local layer = {}
-local function noop() end
+-- --- the engine, as much of it as ui.lua touches ---------------------------
+
+local layer = {n = 0}
+local function noop(self) self.n = self.n + 1 end
 for _, name in ipairs({"arc", "disc", "flush", "outline", "quad", "reset",
-                        "ring", "tri", "tri_fade", "fan", "seg", "seg_glow",
-                        "glow_band", "halo", "ring_fade", "seg_fade",
-                        "seg_flat", "skirt"}) do
+                       "ring", "seg", "seg_fade", "seg_flat", "skirt", "tri",
+                       "tri_fade", "fan", "seg_glow", "glow_band", "halo",
+                       "ring_fade"}) do
     layer[name] = noop
 end
-layer.frame = function(_, x, y, w, h)
+
+-- Frames and rects are kept, because the key is a stroked box over a wash and
+-- the question is where the two of them landed.
+local boxes, rects = {}, {}
+layer.frame = function(self, x, y, w, h)
+    self.n = self.n + 1
     boxes[#boxes + 1] = {x = x, y = y, w = w, h = h}
 end
-layer.rect = function(_, x, y, w, h, col)
-    rects[#rects + 1] = {x = x, y = y, w = w, h = h, col = col}
+layer.rect = function(self, x, y, w, h)
+    self.n = self.n + 1
+    rects[#rects + 1] = {x = x, y = y, w = w, h = h}
 end
 
--- A room with three seats in it, so the landing has a roster to name. The
--- list reads the simulation for the seats it can see and the server's own
--- list for their names, which is what the scoreboard does.
-local SEATS = {
-    [0] = {name = "Halcyon", team = 0, k = 4, d = 2, a = 1},
-    [1] = {name = "Sable", team = 1, k = 1, d = 3, a = 0, ai = true},
-    [2] = {name = "Vantage", team = 0, k = 0, d = 0, a = 2},
-}
+-- Eight seats, four a side, which is what a melee room holds. Seat 0 is the
+-- one the channel is pointed at; nobody here is this client, because a watcher
+-- has no hull.
+local SEATS = {}
+for i = 0, 7 do
+    SEATS[i] = {name = "pilot " .. i, label = i % 2 == 0 and "human" or "bot",
+                ai = i % 2 == 1}
+end
 _G.sim = setmetatable({
-    ship_count = function() return 3 end,
+    ship_count = function() return 8 end,
     ship_active = function() return 1 end,
-    ship_team = function(i) return SEATS[i].team end,
-    ship_kills = function(i) return SEATS[i].k end,
-    ship_deaths = function(i) return SEATS[i].d end,
-    ship_assists = function(i) return SEATS[i].a end,
-}, {__index = function()
-    return function() return 0 end
-end})
-package.loaded["arena.state"] = {text = {}, n = 0, version = 0}
+    ship_alive = function() return 1 end,
+    ship_x = function(i) return 3000 + i * 90 end,
+    ship_y = function(i) return 3000 + i * 60 end,
+    ship_team = function(i) return i < 4 and 0 or 1 end,
+    ship_kills = function(i) return i end,
+    ship_deaths = function(i) return 8 - i end,
+    ship_assists = function() return 0 end,
+    ship_energy = function() return 100 end,
+    ship_max_energy = function() return 100 end,
+    has_trigger = function() return true end,
+    weapon_count = function() return 0 end,
+    flag_count = function() return 0 end,
+    flag_at = function() return 0, 0, 255 end,
+    map_coarse = function() return nil end,
+    BTN_FIRE = 1,
+}, {__index = function() return function() return 0 end end})
+
+package.loaded["arena.state"] = dofile("client/arena/state.lua")
 package.loaded["arena.touch"] = {
     layout = function() return {charge = {}} end,
     used = false,
 }
 package.loaded["arena.world"] = {
-    build_overview = noop,
-    forget_overview = noop,
-    overview = {grid = 0},
-    radar_tiles = {},
+    build_overview = function() end,
+    forget_overview = function() end,
+    overview = function() return {grid = 0, rects = {}} end,
+    radar_tiles = {2960, 2960},
     radar_safe = {},
     radar_doors = {},
-    HULLS = {{
-        poly = {0, 20, 8, -8, 0, -12, -8, -8},
-        mid = 4,
-    }},
 }
 
 local ui = require("arena.ui")
 local state = package.loaded["arena.state"]
-local pal = require("arena.palette")
 
-local function view(finding_rival)
-    return {
-        home = true,
-        closable = false,
-        focus = "stage",
-        rail = {
-            {label = "play"},
-            {label = "ship"},
-            {label = "settings"},
-        },
-        rail_sel = 1,
-        at = "play",
-        sel = 1,
-        rows = {{sect = "zones", label = "Melee",
-                 note = "Four a side, three minutes",
-                 players = 4, bots = 4, live = true,
-                 act = "join", value = 1, index = 1, pick = true}},
-        aside = {
-            deploy = true,
-            label = "Melee",
-            note = "Four a side, three minutes",
-            zones = 3,
-            at = 1,
-            room = {players = 4, bots = 4, seats = 8},
-            clock = 160,
-            playing = not finding_rival,
-            finding_rival = finding_rival,
-            score = finding_rival and nil or {1, 1},
-            row = 1,
-            arrive = {hull = 0, name = "Apex", call = "you"},
-        },
-        -- The room in the glass behind the panel, which is what the
-        -- landing lists: the same roster and side the scoreboard reads.
-        arena = {
-            pilots = SEATS,
-            watchers = {},
-            side = 0,
-            score = {[0] = 1, [1] = 1},
-        },
-        pilot = {name = "you", rivets = 0},
-    }
-end
+-- --- the harness -----------------------------------------------------------
 
-local function draw(w, h, finding_rival)
-    W, H = w, h
+-- The window the last frame was drawn at. Only the height is read back, to
+-- flip filed type into the space hit boxes are published in.
+local H
+
+-- One frame of the landing, or of an ordinary watch when `o.landing` is false:
+-- the two differ in exactly the two things this file is about.
+local function frame(w, h, o)
+    o = o or {}
+    H = h
     boxes, rects = {}, {}
     state.n = 0
-    ui.begin(layer, W, H, 1, false)
-    ui.menu(view(finding_rival))
+    -- The scoreboard is off unless a check asks for it, the way it is off
+    -- until a player presses PLAYERS.
+    ui.details = o.details or false
+    ui.begin(layer, w, h, o.density or 1, false, 0)
+    ui.hud({
+        me = 0,
+        -- A watcher's HUD: the camera stands behind a hull that is not yours.
+        watch = {subject = 0},
+        landing = o.landing ~= false or nil,
+        side = 0,
+        viewer_name = "you",
+        menu_open = o.menu_open or false,
+        pilots = SEATS,
+        watchers = {},
+        teams = {},
+        match = o.match or {playing = true, left = 107,
+                            score = {[0] = 3, [1] = 5}},
+        side_names = {[0] = "Pylon", [1] = "Caisson"},
+        feed = {},
+        hurt = 0,
+        charges = {},
+        cam_x = 3000, cam_y = 3000,
+        half_w = w / 2, half_h = h / 2,
+        banner = "",
+        link_bars = 4,
+        zone = "melee",
+        rooms = o.rooms, room = o.room,
+        fps = 60, frame_ms = 16.7, rx_rate = 0, tx_rate = 0,
+    })
     ui.finish()
+end
+
+local function box(action)
+    for _, r in ipairs(ui.hits) do
+        if r.action == action then return r end
+    end
+    return nil
+end
+
+local function words()
     local out = {}
-    for i = 1, state.n do
-        out[#out + 1] = state.text[i]
-    end
-    return out, ui.hits or ui.boxes
+    for i = 1, state.n do out[#out + 1] = state.text[i] end
+    return out
 end
 
-local function has(texts, phrase)
-    phrase = string.lower(phrase)
-    for _, t in ipairs(texts) do
-        if string.find(string.lower(t.s or ""), phrase, 1, true) then
-            return true
-        end
-    end
-    return false
-end
-
-local function find_text(texts, phrase)
-    phrase = string.lower(phrase)
-    for _, t in ipairs(texts) do
-        if string.find(string.lower(t.s or ""), phrase, 1, true) then
-            return t
+-- Type is filed for the gui, which counts up from the bottom, and hit boxes
+-- are published in the interface's own space, which counts down from the top.
+-- Everything here compares the two, so words come back in the boxes' space.
+local function word(s)
+    for _, t in ipairs(words()) do
+        if t.s == s then
+            return {s = t.s, x = t.x, y = H - t.y, px = t.px}
         end
     end
     return nil
 end
 
--- Which of the drawn rectangles are the two halves of the score bar: a
--- short one in each side's own color. Nothing else on this page is a band
--- of team color a few points tall.
-local function bar_halves()
-    local cyan, amber
-    for _, r in ipairs(rects) do
-        local c = r.col or {}
-        if r.h < 12 and r.w > 20 then
-            if c[1] == pal.FRIEND[1] and c[2] == pal.FRIEND[2] then
-                cyan = r
-            elseif c[1] == pal.ENEMY[1] and c[2] == pal.ENEMY[2] then
-                amber = r
+-- What a press at this point reaches, through the same rule `on_input` uses.
+local function press(x, y)
+    local r = ui.pick(x, y)
+    if r then return r.action end
+    return nil
+end
+
+-- --- every window carries the key and the name -----------------------------
+
+-- Desktop, a phone on its side, a phone held upright, and the shortest screen
+-- the interface claims to support.
+local SHAPES = {
+    {1440, 810, "desktop"},
+    {844, 390, "sideways"},
+    {390, 844, "portrait"},
+    {320, 480, "small"},
+}
+
+for _, s in ipairs(SHAPES) do
+    local w, h, shape = s[1], s[2], s[3]
+    frame(w, h)
+    local key = box("play_now")
+    check(shape .. " publishes one key to press",
+          key ~= nil, "no play_now box")
+    if key then
+        check(shape .. " keeps the key on the screen",
+              key.x >= 0 and key.y >= 0
+              and key.x + key.w <= w and key.y + key.h <= h,
+              string.format("%.0f,%.0f %.0fx%.0f in %dx%d",
+                            key.x, key.y, key.w, key.h, w, h))
+        -- A thumb's worth. Anything smaller is a control a phone cannot hit.
+        check(shape .. " gives the key a thumb to land on",
+              key.h >= 44, string.format("%.0f tall", key.h))
+        check(shape .. " centers the key",
+              math.abs((key.x + key.w / 2) - w / 2) < 1,
+              string.format("middle at %.0f of %d", key.x + key.w / 2, w))
+        check(shape .. " presses the key where it is drawn",
+              press(key.x + key.w / 2, key.y + key.h / 2) == "play_now")
+    end
+    local name = word("vectorwake")
+    check(shape .. " says what the game is", name ~= nil, "no wordmark")
+    -- The name sits over the key rather than in a corner: a stranger's eye
+    -- ends on the pulsing thing at the foot, and the name has to be where that
+    -- look lands. This is placement A of the three that were drawn.
+    if name and key then
+        check(shape .. " puts the name above the key",
+              name.y < key.y,
+              string.format("name at %.0f, key top %.0f", name.y, key.y))
+        check(shape .. " keeps the name with the key",
+              key.y - name.y < 60,
+              string.format("%.0f apart", key.y - name.y))
+        check(shape .. " sets the name on the key's own middle",
+              math.abs(name.x - (key.x + key.w / 2)) < key.w / 2,
+              string.format("name at %.0f, key middle %.0f",
+                            name.x, key.x + key.w / 2))
+    end
+end
+
+-- --- the rest of the HUD is the rest of the screen --------------------------
+
+frame(1440, 810)
+check("the landing draws the room's own clock", word("1:47") ~= nil)
+check("and both sides of the score",
+      word("3") ~= nil and word("5") ~= nil)
+check("and names the sides", word("PYLON") ~= nil and word("CAISSON") ~= nil)
+check("and says what it is looking at", word("CHANNEL") ~= nil)
+check("and keeps the way into the menu", box("open") ~= nil)
+check("and the roster key beside it", box("details") ~= nil)
+
+-- The one thing a landing takes away. PLAY NOW is the way into a hull here,
+-- and a chip in the corner offering the same act is the offer made twice.
+check("the landing carries no TAKE SEAT chip",
+      box("take_seat") == nil)
+
+-- --- a phone's top row -----------------------------------------------------
+--
+-- At 390 points MENU, PLAYERS and the channel mark reach most of the way
+-- across, and the clock was drawn straight through them: the front page's
+-- first line was two readings on top of each other. Nothing asserted it,
+-- because both were drawn and both were where their own code meant to put
+-- them. So the band comes off that row on a narrow screen and gives up the
+-- side names with it, and the scoreboard starts under the band rather than
+-- under the keys.
+do
+    local function ink(shape)
+        local menu_key = box("open")
+        local players = box("details")
+        local clock = word("1:47")
+        return menu_key, players, clock, shape
+    end
+
+    frame(390, 844)
+    local menu_key, players, clock = ink("portrait")
+    check("portrait draws the corner keys and the clock",
+          menu_key and players and clock,
+          "missing one of them")
+    if menu_key and clock then
+        check("portrait drops the clock below the corner keys",
+              clock.y > menu_key.y + menu_key.h,
+              string.format("clock at %.0f, keys end %.0f",
+                            clock.y, menu_key.y + menu_key.h))
+    end
+    check("portrait gives up the side names for the room",
+          word("PYLON") == nil and word("CAISSON") == nil,
+          "a name is still drawn")
+    -- The score itself stays, in the two colors that say whose it is.
+    check("but keeps both figures", word("3") ~= nil and word("5") ~= nil)
+
+    -- The scoreboard is the other thing laid out from the top of the screen.
+    frame(390, 844, {details = true})
+    local heading, clock2 = word("PILOTS"), word("1:47")
+    check("portrait starts the roster under the clock",
+          heading and clock2 and heading.y > clock2.y,
+          string.format("roster at %s, clock at %s",
+                        tostring(heading and heading.y),
+                        tostring(clock2 and clock2.y)))
+
+    -- A window with room keeps the band where it was, names and all.
+    frame(1440, 810)
+    local wide_menu, _, wide_clock = ink("desktop")
+    check("a wide window keeps the clock on the corner keys' own line",
+          wide_menu and wide_clock
+              and math.abs(wide_clock.y - (wide_menu.y + wide_menu.h / 2)) < 24,
+          string.format("clock at %s, keys mid %s",
+                        tostring(wide_clock and wide_clock.y),
+                        tostring(wide_menu and wide_menu.y + wide_menu.h / 2)))
+    check("and keeps the side names", word("PYLON") ~= nil)
+end
+
+-- A pilot the room is holding a seat for is not on the landing, and keeps it.
+frame(1440, 810, {landing = false})
+check("a benched pilot still gets TAKE SEAT",
+      box("take_seat") ~= nil)
+check("and no key that would join a room they are already in",
+      box("play_now") == nil)
+check("and no name over the fight they are already in",
+      word("vectorwake") == nil)
+
+-- --- before a room answers ---------------------------------------------------
+--
+-- The gap between the engine's first frame and the first snapshot is a
+-- directory lookup plus a handshake. What goes there is this same screen with
+-- everything that needs a room taken off it, so when the stands arrive the
+-- only thing that happens is that the room and the key appear.
+--
+-- The name is the thing to hold still. It was drawn centered for a while,
+-- which made the logo jump to the foot of the screen the moment a room
+-- answered: the one move a hand-off should never make.
+do
+    for _, s in ipairs(SHAPES) do
+        local w, h, shape = s[1], s[2], s[3]
+
+        -- Where the name sits with a room, and then without one.
+        frame(w, h)
+        local landed = word("vectorwake")
+
+        boxes, rects = {}, {}
+        state.n = 0
+        H = h
+        ui.begin(layer, w, h, 1, false, 0)
+        ui.waiting(nil)
+        ui.finish()
+        local waiting = word("vectorwake")
+
+        check(shape .. " waiting says what this is", waiting ~= nil)
+        if landed and waiting then
+            check(shape .. " waiting puts the name where the room will put it",
+                  math.abs(landed.x - waiting.x) < 0.5
+                  and math.abs(landed.y - waiting.y) < 0.5
+                  and math.abs(landed.px - waiting.px) < 0.5,
+                  string.format("%.1f,%.1f at %.1f against %.1f,%.1f at %.1f",
+                                waiting.x, waiting.y, waiting.px,
+                                landed.x, landed.y, landed.px))
+        end
+        -- A way into the menu, because a directory that never answers must
+        -- not leave a wordmark and no exit.
+        local menu_key = box("open")
+        check(shape .. " waiting keeps a way into the menu", menu_key ~= nil)
+        if menu_key then
+            check(shape .. " waiting puts that key where it always is",
+                  menu_key.x < w / 2 and menu_key.y < h / 2,
+                  string.format("%.0f,%.0f", menu_key.x, menu_key.y))
+        end
+        -- And nothing that needs a room: no key into one, and none of the
+        -- instruments that describe one.
+        check(shape .. " waiting offers no key to a room it has not found",
+              box("play_now") == nil)
+        check(shape .. " waiting draws no roster key", box("details") == nil)
+        check(shape .. " waiting draws no radar", box("map") == nil)
+        check(shape .. " waiting says nothing about a channel",
+              word("CHANNEL") == nil)
+        check(shape .. " waiting says nothing while it is only waiting",
+              #words() == 2,
+              #words() .. " words on screen")
+    end
+
+    -- A fleet that is down does say so, in the slot the key will take. A
+    -- client that has finished looking and found nothing must not look like
+    -- one that is still trying.
+    frame(1440, 810)
+    local key = box("play_now")
+    boxes, rects = {}, {}
+    state.n = 0
+    H = 810
+    ui.begin(layer, 1440, 810, 1, false, 0)
+    ui.waiting("no games are running")
+    ui.finish()
+    local said = word("no games are running")
+    check("a failure is said", said ~= nil)
+    if said and key then
+        check("and said where the key would be",
+              said.y > key.y and said.y < key.y + key.h,
+              string.format("%.0f against %.0f..%.0f",
+                            said.y, key.y, key.y + key.h))
+    end
+end
+
+-- --- the podium does not bury the key ---------------------------------------
+--
+-- Between matches the room puts up a podium, and the podium washes the whole
+-- window at 0.8 so the card is what gets read. The landing's key is drawn
+-- after that wash rather than before it: laid down first it is still there to
+-- a hit test and gone to a person, for the twenty five seconds a stranger is
+-- most likely to be deciding. Deploying then is legal and lands you at the
+-- next whistle.
+do
+    local ended = {playing = false, left = 15, artifact = 7,
+                   score = {[0] = 3, [1] = 5}}
+    frame(1440, 810, {match = ended})
+    local key = box("play_now")
+    check("the key survives a podium", key ~= nil)
+    check("and the name with it", word("vectorwake") ~= nil)
+    if key then
+        check("and is still what a press there reaches",
+              press(key.x + key.w / 2, key.y + key.h / 2) == "play_now")
+        -- The podium is centered and the key sits at the foot, so the wash is
+        -- the only thing between them. Nothing the podium writes may land on
+        -- the key itself.
+        local on_key = 0
+        for _, t in ipairs(words()) do
+            local y = H - t.y
+            if y >= key.y - 6 and y <= key.y + key.h + 6
+               and t.s ~= "PLAY NOW" then
+                on_key = on_key + 1
             end
         end
+        check("and the podium writes nothing across it",
+              on_key == 0, on_key .. " words on the key")
     end
-    return cyan, amber
 end
 
--- What both shapes must say about the room, wherever they lay it out.
-local function readings_checks(name, texts)
-    check(name .. " names the game", has(texts, "Melee"))
-    check(name .. " says what the game is",
-          has(texts, "Four a side, three minutes"))
-    check(name .. " carries the live clock",
-          has(texts, "Time") and has(texts, "2:40"))
-    check(name .. " heads the roster", has(texts, "Players"))
-    check(name .. " names everybody in the room",
-          has(texts, "Halcyon") and has(texts, "Sable")
-              and has(texts, "Vantage"))
-    check(name .. " carries what each of them has done",
-          has(texts, "4") and has(texts, "3") and has(texts, "2"))
-    check(name .. " says nothing about arriving",
-          not has(texts, "You arrive as"),
-          "the arrival row was taken out")
-    -- The score is a bar now, with a figure at each end of it in that
-    -- side's color rather than two numbers and a colon, and no word over it:
-    -- two figures in the side colors dividing a bar at the same place is not
-    -- a reading anybody has to be told the name of.
-    check(name .. " puts no label over the score", not has(texts, "Score"))
-    local blue, orange = false, false
-    for _, t in ipairs(texts) do
-        if t.s == "1" then
-            local col = t.col or {}
-            if col[1] == pal.FRIEND[1] and col[2] == pal.FRIEND[2] then
-                blue = true
-            end
-            if col[1] == pal.ENEMY[1] and col[2] == pal.ENEMY[2] then
-                orange = true
-            end
-        end
+-- --- the menu takes the screen ---------------------------------------------
+
+-- Opening the menu draws the panel over all of this, so the key underneath it
+-- must not still be pressable: a press through a panel is a press nobody aimed.
+frame(1440, 810, {menu_open = true})
+check("an open menu takes the key off the landing",
+      box("play_now") == nil)
+
+-- --- the field of play is still the trigger ---------------------------------
+
+-- The landing adds two things at the foot of the screen and must not put a box
+-- anywhere else. Everything above the key stays what it was: a fight, with the
+-- trigger under the pointer.
+frame(1440, 810)
+local key = box("play_now")
+local free = 0
+for _, at in ipairs({{720, 300}, {400, 500}, {1000, 420}}) do
+    if key and at[2] > key.y - 80 then
+        -- Inside the block the landing owns, which is allowed to take a press.
+    else
+        free = free + 1
+        check(string.format("a press at %d,%d is still a trigger pull",
+                            at[1], at[2]),
+              press(at[1], at[2]) == nil,
+              "landed on " .. tostring(press(at[1], at[2])))
     end
-    check(name .. " colors the two scores by side", blue and orange)
-    check(name .. " says the score with no colon between the figures",
-          not has(texts, " : "))
-    local cyan, amber = bar_halves()
-    check(name .. " draws the score as a bar of two colors",
-          cyan ~= nil and amber ~= nil,
-          (cyan and "" or "no cyan half ")
-              .. (amber and "" or "no amber half"))
-    check(name .. " meets the two halves where the match stands",
-          cyan and amber and math.abs(cyan.x + cyan.w - amber.x) < 1,
-          cyan and amber
-              and string.format("cyan ends %.1f, amber starts %.1f",
-                                cyan.x + cyan.w, amber.x) or "no bar")
 end
+check("the sweep found open sky to press on", free > 0)
 
--- --- desktop: the deck, across the page ----------------------------------
-
-local desktop, hits = draw(1280, 800)
-readings_checks("desktop", desktop)
-check("desktop ends in one Deploy key", has(desktop, "Deploy"))
-local key_hit
-for _, hit in ipairs(hits or {}) do
-    if hit.action == "stage" and hit.value == 1 then key_hit = hit end
-end
-check("the key presses the zone the carousel is on", key_hit ~= nil,
-      "no stage target on the key")
--- The key runs the page. It was a box a third of a monitor wide, standing
--- in a column with a screen of nothing beside it.
-check("the key takes the width of the page",
-      key_hit and key_hit.w > W * 0.85,
-      key_hit and string.format("key %.0f wide in %d", key_hit.w, W)
-          or "no key")
--- And the bar runs the same measure, so the two read as one block. Measured
--- against the drawn key rather than its hit box, which is a few points
--- proud of it on every side so a near miss still lands.
-local cyan, amber = bar_halves()
-local key_box
-for _, b in ipairs(boxes) do
-    if not key_box or b.w > key_box.w then key_box = b end
-end
-check("the score bar takes the key's own measure",
-      cyan and amber and key_box
-          and math.abs(cyan.w + amber.w - key_box.w) < 1,
-      cyan and amber and key_box
-          and string.format("bar %.1f, key %.1f", cyan.w + amber.w,
-                            key_box.w) or "no bar")
--- One column: the readings hang under the name of the game rather than
--- standing in a second column beside it.
-local melee = find_text(desktop, "Melee")
-local clock = find_text(desktop, "Time")
-check("the readings sit under the name, not beside it",
-      melee and clock and math.abs(melee.x - clock.x) < 60,
-      string.format("melee %.0f, clock %.0f",
-                    melee and melee.x or -1, clock and clock.x or -1))
--- The name is the biggest thing on the page, which is the one question it
--- asks. It used to be set at the size of a row in a list.
-check("the game's name is the biggest type on the page",
-      melee and clock and melee.px > 40,
-      melee and string.format("name at %.0f", melee.px) or "no name")
-
--- --- phone: the same deck, given a phone's page ---------------------------
-
-local phone, phits = draw(420, 780)
-readings_checks("phone", phone)
-check("phone ends in one Deploy key", has(phone, "Deploy"))
-local stage, ship_page, pilot_page = 0, 0, 0
-for _, hit in ipairs(phits or {}) do
-    if hit.action == "stage" then stage = stage + 1 end
-    if hit.action == "ship_page" then ship_page = ship_page + 1 end
-    if hit.action == "pilot_page" then pilot_page = pilot_page + 1 end
-end
-check("phone publishes one Deploy target", stage == 1,
-      stage .. " stage targets")
--- The ship and the call sign left with the arrival row. Ship is a stop on
--- the rail and the account is the button in the header, which is where both
--- of them are on every other page.
-check("phone sends nobody to the ship page from here", ship_page == 0,
-      ship_page .. " ship targets")
-check("phone keeps the one account button", pilot_page == 1,
-      pilot_page .. " account targets")
-
--- A ladder pilot waiting on a rival reads the same label as a room between
--- matches, over a clock that is not counting. FINDING RIVAL over --:-- was
--- the same news twice, since the dashes already say nothing is counting.
-for _, shape in ipairs({{1280, 800}, {420, 780}}) do
-    local texts = draw(shape[1], shape[2], true)
-    local name = shape[1] > 500 and "desktop" or "phone"
-    check(name .. " Ladder landing waits under the one label",
-          has(texts, "Next match") and has(texts, "--:--")
-              and not has(texts, "Finding rival")
-              and not has(texts, "Time"))
-end
-
-if fails > 0 then
-    print(("\n%d check(s) failed"):format(fails))
-    os.exit(1)
-end
-print("\nall good")
+print(fails == 0 and "all landing checks passed"
+      or (fails .. " landing checks failed"))
+os.exit(fails == 0 and 0 or 1)

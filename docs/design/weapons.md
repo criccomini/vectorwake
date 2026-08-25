@@ -4,7 +4,7 @@
 > entirely, keeping the upgrade space below as the coordinate system a chosen
 > kit is built in. What the pickup, its weights and rust were is in
 > `docs/research/` with the rest of the original's tables. Mines are gone as
-> well; decision 61 says why, and the original's own tables for them stay in
+> well; decision 62 says why, and the original's own tables for them stay in
 > `docs/research/`.
 
 Everything that leaves a ship is the same thing.

@@ -338,9 +338,14 @@ check("and again, the other way", menu.stack[2] == "hangar",
 -- the navigation and there is nothing outside the panel to press, so tapping
 -- the lit stop is the way back into the game. Re-entering the page you are
 -- already reading is the only other thing it could mean, and that is nothing.
+--
+-- It shuts the menu wherever you are, seat or no seat. There used to be an
+-- exception for the front end, which had nothing behind the panel to shut it
+-- onto; the stands are behind it now, and before they arrive the waiting
+-- screen is, so there is no state this strands anybody in.
 menu.click_rail(ship_at)
-check("the lit stop with nothing behind the panel stays put",
-      menu.open and menu.stack[2] == "hangar", table.concat(menu.stack, "/"))
+check("the lit stop shuts the menu",
+      not menu.open, table.concat(menu.stack, "/"))
 
 -- In a match the tab row is a different row: settings, friends and leave,
 -- which is everything a pilot can act on from a cockpit. Nothing about an
@@ -352,6 +357,7 @@ check("the lit stop with nothing behind the panel stays put",
 -- while the fight continues behind it. Friends stays one stop away because the
 -- people to add are the people you are flying with.
 menu.home = false
+menu.open = true
 menu.stack = {"root"}
 menu.sel = {}
 local in_match = {}
@@ -699,13 +705,21 @@ menu.step({back = true})
 check("escape from a page inside it puts the fight back", not menu.open,
       "still open at " .. table.concat(menu.stack, "/"))
 
--- With nothing behind the panel there is nothing to shut it onto, so escape
--- walks back a level and the menu stays up.
+-- Escape means the same thing with no seat as with one: put the panel away,
+-- from whatever level you are on. It used to walk back a level here, which
+-- was not a decision but a consequence of the front end refusing to close;
+-- both halves of that are gone. Left and the chevron still walk back.
 menu.home = true
 menu.open = true
 menu.show("ship")
 menu.step({back = true})
-check("and with no game behind it, escape walks back instead",
+check("escape from a page shuts the menu with no seat too",
+      not menu.open, table.concat(menu.stack, "/")
+          .. ", open " .. tostring(menu.open))
+menu.open = true
+menu.show("ship")
+menu.step({left = true})
+check("but left still walks back a level",
       menu.open and menu.at() == "root", table.concat(menu.stack, "/")
           .. ", open " .. tostring(menu.open))
 
@@ -1408,6 +1422,10 @@ end
 
 local function open_about()
     menu.home = true
+    -- Said rather than assumed. The front end used to hold the menu open on
+    -- its own, so every helper in here inherited an open panel; nothing opens
+    -- it but a player now.
+    menu.open = true
     menu.stack = {"root"}
     menu.sel = {}
     menu.click_rail(top_index("settings"))
@@ -2977,6 +2995,70 @@ do
     menu.filter_on = false
     menu.stack = {"root"}
     menu.sel = {}
+end
+
+-- --- the menu is a panel over the stands ----------------------------------
+--
+-- The front end is a room now: opening the client seats you in the stands of
+-- one, so a menu opened there has a game behind it and closes like any other.
+-- What is left unclosable is a client that has reached no room at all, where
+-- escape really would land on an empty starfield with no way back.
+do
+    local kept = {home = menu.home, scenery = menu.scenery,
+                 watching = menu.watching, open = menu.open,
+                 stack = menu.stack, sel = menu.sel}
+
+    menu.home, menu.scenery = true, true
+    menu.open, menu.stack, menu.sel = true, {"root"}, {}
+    check("a menu over the stands closes", menu.close() == true)
+    check("and says so to the drawing", (function()
+        menu.open, menu.stack, menu.sel = true, {"root"}, {}
+        return menu.view().closable == true
+    end)())
+
+    -- Including with no room reached at all, which is the case the old rule
+    -- existed for. What is behind the panel then is the waiting screen, and
+    -- that carries MENU, so closing onto it strands nobody.
+    menu.home, menu.scenery = true, false
+    menu.open, menu.stack, menu.sel = true, {"root"}, {}
+    check("a menu with no room behind it closes too",
+          menu.close() == true and menu.open == false)
+    check("and says so as well", (function()
+        menu.open, menu.stack, menu.sel = true, {"root"}, {}
+        return menu.view().closable == true
+    end)())
+
+    -- The tab set follows the cockpit, not the zone. Six stops with no hull,
+    -- wherever you are standing; the short row only once you are flying one.
+    local function labels()
+        local out = {}
+        for _, r in ipairs(menu.view().rail) do out[#out + 1] = r.label end
+        return table.concat(out, " ")
+    end
+
+    menu.home, menu.scenery, menu.watching = true, true, false
+    menu.open, menu.stack, menu.sel = true, {"root"}, {}
+    check("the stands carry the whole row",
+          labels() == "play ship upgrades friends standings settings",
+          labels())
+
+    menu.home, menu.watching = false, false
+    check("a pilot in a hull gets the short one",
+          labels():find("play") == nil and labels():find("leave") ~= nil,
+          labels())
+
+    -- A pilot the room benched is in the stands too: same empty cockpit, same
+    -- time to read, so the same six stops. What they keep that the landing
+    -- does not is `leave`, because they are in a zone there is something to
+    -- leave.
+    menu.home, menu.watching = false, true
+    check("a benched pilot gets the whole row back",
+          labels() == "play ship upgrades friends standings settings leave",
+          labels())
+
+    menu.home, menu.scenery, menu.watching = kept.home, kept.scenery,
+                                             kept.watching
+    menu.open, menu.stack, menu.sel = kept.open, kept.stack, kept.sel
 end
 
 print(fails == 0 and "all good" or (fails .. " failed"))
