@@ -1,6 +1,6 @@
 # Scoreboard rethink
 
-Nine boards for the question of where the scoreboard lives. The shipped one is
+Twelve boards for the question of where the scoreboard lives. The shipped one is
 a centered band that grows outward from the clock with side names, ratings and
 the ladder readout, and it has four problems, all visible from a phone or a
 desk:
@@ -33,7 +33,7 @@ slot the zone owns.
   cap is the direction's own geometry rather than a formula that can
   overrun.
 
-## The three directions
+## The four directions
 
 - **A · the scorebug**: one contained box top center, broadcast style. Side
   chips, scores, clock, slot on its foot. Bounded, so portrait cannot
@@ -47,6 +47,12 @@ slot the zone owns.
   the ends, clock dead center, slot hanging in a tab beneath it. Adapts to
   any width by construction. Cost: the fill jumps rather than creeps in a
   legs game, and the strip's height caps the type.
+- **D · the clock key**: the scoreboard behaves like PLAYERS, a key in the
+  corner row with the full zone readout a panel behind a press. In Melee
+  the key carries the score around the clock, because a team game's score
+  is the fact you always want; in the duel it is the clock alone. Events
+  dock under the key in the scorer's color. Quietest glass of the four and
+  nothing to overrun. Cost: the readout is behind a press.
 
 Three window shapes each. Desktop shows Melee mid-match; landscape shows
 Ladder at the moment a rung clears, which is where the mid-screen banner

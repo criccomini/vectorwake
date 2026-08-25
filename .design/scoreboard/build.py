@@ -46,7 +46,7 @@ FORMS = {
     "Portrait":  (390, 844, True),
 }
 
-VARIANTS = ["A", "B", "C"]
+VARIANTS = ["A", "B", "C", "D"]
 
 FRIEND, ENEMY = "#4fd6ff", "#ffa552"
 
@@ -112,6 +112,8 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--menu)}
 a{color:var(--friend)}a:hover{color:#8ee6ff}
 .hud{font-family:var(--mono);text-transform:uppercase;letter-spacing:.04em}
 .num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.lbl{font-family:var(--mono);font-size:9px;text-transform:uppercase;
+  letter-spacing:.13em;color:var(--dim)}
 .dim{color:var(--dim)}
 .row{display:flex;align-items:center}
 .panel{position:relative;background:rgba(5,7,12,.62)}
@@ -291,9 +293,10 @@ def burger(col, k):
             f'stroke-width="1.4" stroke-linecap="square"/></svg>')
 
 
-def corner_row(compact, humans, bots, top=14):
+def corner_row(compact, humans, bots, top=14, extra=""):
     """Hamburger MENU and PLAYERS, as shipped: bars plus the word on a
-    desktop, bars alone in a square key on a phone."""
+    desktop, bars alone in a square key on a phone. `extra` is direction D's
+    clock key, riding the same row."""
     kh, px = (22, 9) if compact else (26, 11)
     mk = 10 if compact else 12
     if compact:
@@ -308,6 +311,7 @@ def corner_row(compact, humans, bots, top=14):
     <div class="key" style="height:{kh}px;padding:0 9px;font-size:{px}px">PLAYERS
       {helm('#9fb6d4', mk)}<span style="margin-left:-4px">{humans}</span>
       {bot('#9fb6d4', mk)}<span style="margin-left:-4px">{bots}</span></div>
+    {extra}
   </div>"""
 
 
@@ -530,6 +534,142 @@ def strip_board(form, mode):
     return strip + tab, sh
 
 
+# --- direction D: the clock key ----------------------------------------------
+# The scoreboard behaves like PLAYERS: a key in the corner row, the readout a
+# panel behind a press. In Melee the key carries the score around the clock,
+# because a team game's score is the fact you always want; in the duel the
+# key is the clock alone, since a first-to-one score says almost nothing
+# until the readout says why.
+
+# Melee's full readout, per pilot. Humans wear the helm, bots the antenna.
+MELEE_BOARD = [
+    ("PYLON", FRIEND, [
+        ("KRAIT 4",   True,  5, 2, 21),
+        ("VIREO 9",   True,  4, 3, 12),
+        ("SABER 3",   False, 3, 4, 9),
+        ("PLINTH 41", False, 3, 2, 8),
+    ]),
+    ("CAISSON", ENEMY, [
+        ("MANTIS 7",  True,  6, 3, 19),
+        ("HALCYON 2", False, 5, 4, 15),
+        ("ORRERY 3",  False, 4, 2, 13),
+        ("SABLE 09",  False, 4, 6, 7),
+    ]),
+]
+
+
+def clock_key(compact, mode, melee, lit):
+    kh = 22 if compact else 26
+    px = 11 if compact else 13
+    sc = 10 if compact else 12
+    wash = ("background:rgba(79,214,255,.13);"
+            "border-color:rgba(79,214,255,.65);color:var(--ink)" if lit else "")
+    inside = f'<span class="num" style="font-size:{px}px">{mode["clock"]}</span>'
+    if melee:
+        (ln, ls, lc, lr), (rn, rs, rc, rr) = mode["sides"]
+        inside = (f'<span class="num" style="font-size:{sc}px;color:{lc}">'
+                  f'{ls}</span>{inside}'
+                  f'<span class="num" style="font-size:{sc}px;color:{rc}">'
+                  f'{rs}</span>')
+    return (f'<div class="key" style="height:{kh}px;padding:0 9px;gap:7px;'
+            f'{wash}">{inside}</div>')
+
+
+def readout_head(mode, name_px, score_px, clock_px, gap):
+    (ln, ls, lc, lr), (rn, rs, rc, rr) = mode["sides"]
+
+    def side(name, col, rating, score, right):
+        rate = ("" if rating is None else
+                f'<span class="num" style="font-size:{name_px - 1}px;'
+                f'color:{col};opacity:.55;margin:0 5px">{rating}</span>')
+        label = (f'<span class="hud num" style="font-size:{name_px}px;'
+                 f'color:{col}">{name}</span>')
+        num = (f'<span class="num" style="font-size:{score_px}px;color:{col};'
+               f'margin:0 {gap // 2}px">{score}</span>')
+        return (label + rate + num) if not right else (num + rate + label)
+
+    return (f'<div class="row" style="justify-content:center;gap:{gap}px">'
+            f'<div class="row">{side(ln, lc, lr, ls, False)}</div>'
+            f'<span class="num" style="font-size:{clock_px}px;'
+            f'letter-spacing:.02em">{mode["clock"]}</span>'
+            f'<div class="row">{side(rn, rc, rr, rs, True)}</div></div>')
+
+
+def melee_readout(mode):
+    """The whole match behind the key: score band at the head, both rosters
+    under it, kills, deaths and what the match paid, the numbers the
+    scoreboard panel already carries."""
+    cols = []
+    for side_name, col, pilots in MELEE_BOARD:
+        rows = [(f'<div class="row" style="gap:8px;justify-content:flex-end">'
+                 f'<div style="flex:1"></div>'
+                 f'<span class="lbl" style="width:26px;text-align:right">k</span>'
+                 f'<span class="lbl" style="width:26px;text-align:right">d</span>'
+                 f'<span class="lbl" style="width:34px;text-align:right">pts'
+                 f'</span></div>')]
+        for name, human, k, d, pts in pilots:
+            mark = helm(col, 11) if human else bot(col, 11)
+            rows.append(
+                f'<div class="row" style="gap:8px">'
+                f'{mark}<span class="num" style="font-size:11px;color:{col}">'
+                f'{name}</span><div style="flex:1"></div>'
+                f'<span class="num" style="width:26px;text-align:right;'
+                f'font-size:11px">{k}</span>'
+                f'<span class="num dim" style="width:26px;text-align:right;'
+                f'font-size:11px">{d}</span>'
+                f'<span class="num" style="width:34px;text-align:right;'
+                f'font-size:11px;color:var(--bounty)">{pts}</span></div>')
+        cols.append(f'<div style="display:flex;flex-direction:column;gap:6px">'
+                    f'{"".join(rows)}</div>')
+    head = readout_head(mode, 12, 20, 24, 20)
+    return (f'<div class="panel" style="position:absolute;left:14px;top:50px;'
+            f'width:470px;padding:12px 14px;display:flex;'
+            f'flex-direction:column;gap:10px">{head}'
+            f'<div style="border-top:1px solid rgba(63,88,120,.5)"></div>'
+            f'<div style="display:grid;'
+            f'grid-template-columns:repeat(2, minmax(0, 1fr));gap:18px">'
+            f'{"".join(cols)}</div></div>')
+
+
+def ladder_readout(mode):
+    """The run behind the key: where it stands, what it rides on, and who is
+    across the arena. No score band, because first-to-one has nothing to
+    band; the head is both seats and the clock."""
+    def fact(label, value):
+        return (f'<div class="row"><span class="lbl">{label}</span>'
+                f'<div style="flex:1"></div>'
+                f'<span class="num" style="font-size:12px">{value}</span>'
+                f'</div>')
+
+    (ln, _, lc, lr), (rn, _, rc, rr) = mode["sides"]
+    head = (f'<div class="row" style="justify-content:center;gap:16px">'
+            f'<span class="hud num" style="font-size:11px;color:{lc}">{ln}'
+            f'<span style="opacity:.55;margin-left:5px">{lr}</span></span>'
+            f'<span class="num" style="font-size:20px;letter-spacing:.02em">'
+            f'{mode["clock"]}</span>'
+            f'<span class="hud num" style="font-size:11px;color:{rc}">{rn}'
+            f'<span style="opacity:.55;margin-left:5px">{rr}</span></span>'
+            f'</div>')
+    rival = (f'<div class="row"><span class="lbl">rival</span>'
+             f'<div style="flex:1"></div>{bot(ENEMY, 11)}'
+             f'<span class="num" style="font-size:12px;color:{ENEMY};'
+             f'margin-left:6px">VESTIGE 4</span></div>')
+    return (f'<div class="panel" style="position:absolute;left:14px;'
+            f'right:14px;top:46px;padding:12px 14px;display:flex;'
+            f'flex-direction:column;gap:9px">{head}'
+            f'<div style="border-top:1px solid rgba(63,88,120,.5)"></div>'
+            f'{fact("rung", 4)}{fact("streak", 3)}{fact("floor", 1)}'
+            f'{rival}</div>')
+
+
+def key_event_line(mode, top):
+    """A shut key still has to say what just happened: the event docks under
+    the corner row in the scoring side's color, where the readout will open."""
+    line, col = mode["event"]
+    return (f'<div class="hud" style="position:absolute;left:14px;top:{top}px;'
+            f'font-size:9px;letter-spacing:.12em;color:{col}">{line}</div>')
+
+
 # --- one window, one direction -----------------------------------------------
 
 
@@ -543,11 +683,12 @@ def screen(form, variant):
     body = [scene(w, h, compact, seed, ships, dead_rival=dead)]
 
     chrome_top = 14
+    extra = ""
     if variant == "A":
         body.append(bug_board(form, mode))
     elif variant == "B":
         body.append(tile_board(form, mode))
-    else:
+    elif variant == "C":
         strip, sh = strip_board(form, mode)
         body.append(strip)
         chrome_top = sh + 10
@@ -555,9 +696,18 @@ def screen(form, variant):
         # hanging tab, so the row drops below it.
         if form == "Portrait" and (mode["zone"] or mode["event"]):
             chrome_top = sh + 34
+    else:
+        # The key is drawn open where the board is about the readout, shut
+        # where it is about the quiet state and the event docking to it.
+        open_panel = form != "Landscape"
+        extra = clock_key(compact, mode, melee, lit=open_panel)
+        if open_panel:
+            body.append(melee_readout(mode) if melee else ladder_readout(mode))
+        elif mode["event"]:
+            body.append(key_event_line(mode, top=14 + 22 + 8))
 
     body.append(corner_row(compact, mode["humans"], mode["bots"],
-                           top=chrome_top))
+                           top=chrome_top, extra=extra))
     body.append(dial_corner(form, top=chrome_top))
 
     stars = starfield(w, h, *(dict(Desktop=(46, 30, 12), Landscape=(30, 20, 8),
@@ -594,7 +744,7 @@ def main():
         for v in VARIANTS:
             name = "Main" if (form, v) == ("Desktop", "A") else f"{form}{v}"
             page(name, screen(form, v))
-    print("nine artboards written")
+    print(f"{len(FORMS) * len(VARIANTS)} artboards written")
 
 
 if __name__ == "__main__":

@@ -3,12 +3,15 @@
     { "file": "Main.dc.html", "title": "Desktop · A", "x": 0, "y": 0, "w": 1440, "h": 810 },
     { "file": "DesktopB.dc.html", "title": "Desktop · B", "x": 1720, "y": 0, "w": 1440, "h": 810 },
     { "file": "DesktopC.dc.html", "title": "Desktop · C", "x": 3440, "y": 0, "w": 1440, "h": 810 },
+    { "file": "DesktopD.dc.html", "title": "Desktop · D", "x": 5160, "y": 0, "w": 1440, "h": 810 },
     { "file": "LandscapeA.dc.html", "title": "Landscape · A", "x": 298, "y": 950, "w": 844, "h": 390 },
     { "file": "LandscapeB.dc.html", "title": "Landscape · B", "x": 2018, "y": 950, "w": 844, "h": 390 },
     { "file": "LandscapeC.dc.html", "title": "Landscape · C", "x": 3738, "y": 950, "w": 844, "h": 390 },
+    { "file": "LandscapeD.dc.html", "title": "Landscape · D", "x": 5458, "y": 950, "w": 844, "h": 390 },
     { "file": "PortraitA.dc.html", "title": "Portrait · A", "x": 525, "y": 1480, "w": 390, "h": 844 },
     { "file": "PortraitB.dc.html", "title": "Portrait · B", "x": 2245, "y": 1480, "w": 390, "h": 844 },
-    { "file": "PortraitC.dc.html", "title": "Portrait · C", "x": 3965, "y": 1480, "w": 390, "h": 844 }
+    { "file": "PortraitC.dc.html", "title": "Portrait · C", "x": 3965, "y": 1480, "w": 390, "h": 844 },
+    { "file": "PortraitD.dc.html", "title": "Portrait · D", "x": 5685, "y": 1480, "w": 390, "h": 844 }
   ],
   "annotations": [
     {
@@ -25,6 +28,11 @@
       "id": "note-c",
       "x": 3440, "y": -210, "w": 360,
       "text": "C · the edge strip\n\nThe window's top edge is the scoreboard: a slim bar filled from each end in the sides' colors, in proportion, numbers at the ends, clock dead center. The zone line hangs in a tab under the clock; an event flashes the bar in the scoring side's color and prints in the tab. Adapts to any width by construction. Cost: the fill says the score a second way, it jumps rather than creeps in a legs game like Ladder, and the strip's own height caps how big the numbers can get."
+    },
+    {
+      "id": "note-d",
+      "x": 5160, "y": -210, "w": 360,
+      "text": "D · the clock key\n\nThe scoreboard behaves like PLAYERS: a key in the corner row, the full zone readout a panel behind a press. In Melee the key carries the score around the clock, since a team game's score is the fact you always want; in the duel it is the clock alone. The desktop board shows Melee's readout open (score band, both rosters, kills, deaths, pay); portrait shows the duel's (rung, streak, floor, the rival). Landscape shows it shut, with the rung-cleared event docking under the key in the scorer's color. Quietest glass of the four and nothing to overrun. Cost: the readout is behind a press, and a watcher who never presses only ever has the key."
     },
     {
       "id": "note-constants",
