@@ -108,6 +108,11 @@ pub struct Browse {
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct BrowseZone {
     pub name: String,
+    /// What players read this game as, where it differs from the key above.
+    /// Empty means the two are the same, which is what a zone that never set
+    /// one wants and what an older directory sends.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub label: String,
     pub description: String,
     pub players: u32,
     pub bots: u32,
@@ -332,6 +337,12 @@ impl Directory {
             .iter()
             .map(|n| BrowseZone {
                 name: n.clone(),
+                label: self
+                    .catalog
+                    .zones
+                    .get(n)
+                    .map(|z| z.label(n).to_string())
+                    .unwrap_or_default(),
                 description: self
                     .catalog
                     .zones

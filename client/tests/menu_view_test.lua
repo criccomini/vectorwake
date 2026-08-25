@@ -445,20 +445,18 @@ check("a menu over a game carries a mark and the ground behind it",
 check("and no word for it", not has(st, "close") and not has(st, "back"),
       table.concat(texts(st), " "))
 
--- The x sits on the name's line rather than at the top of the stage: a
--- dialog's close belongs on its title, and here the title is the wordmark.
-local logo_y
-for i = 1, st.n do
-    if is(st.text[i], "vectorwake") then logo_y = H - st.text[i].y end
-end
+-- The x sits on the head's own line, at the panel's left inset, where the
+-- key that opened the drawer stands: pressing the key and pressing the x are
+-- one control seen from either side. The wordmark used to share that line
+-- and does not any more.
 local xbox
 for _, h in ipairs(ui.hits) do
     if h.action == "close" and h.w < W then xbox = h end
 end
-check("the way out is on the name's line", logo_y and xbox
-      and math.abs((xbox.y + xbox.h / 2) - logo_y) < 3,
-      string.format("logo %.1f, mark %.1f", logo_y or -1,
-                    xbox and (xbox.y + xbox.h / 2) or -1))
+check("the way out is at the head's left", xbox and xbox.x < 60,
+      xbox and string.format("%.0f", xbox.x) or "none")
+check("and the head carries no wordmark", not has(st, "vectorwake"),
+      table.concat(texts(st), " "))
 
 -- Off the panel is out of the menu, which is what escape does. On the panel
 -- is not, or the space between two rows would throw a player back into the

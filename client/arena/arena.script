@@ -2431,11 +2431,21 @@ function apply_menu(self, act)
         end
         return
     end
+    -- None of the three below makes a sound on the way in. The press that
+    -- started them already made one: this menu has two sounds, `ui_move` for
+    -- a cursor and `ui_go` for an act, and the act is the press rather than
+    -- the reply to it. A reply that agreed made a second `ui_go` a few
+    -- milliseconds later, which against a meta-layer on the same box is one
+    -- press heard twice. A refusal still speaks, because there the press's
+    -- own sound was a lie.
     if act == "save_profile" then
         account.save_profile(menu.pending_profile or "", menu.kit,
             function(ok, why, profile)
                 if ok then
                     menu.note = "saved " .. (profile.name or "profile")
+                    -- What is on screen is what that build now holds, so the
+                    -- save key has nothing left to offer until the next edit.
+                    menu.mark_saved()
                     -- The saved build is now a profile the page can light,
                     -- and the one the next save offers a name from.
                     for i, item in ipairs(account.profiles or {}) do
@@ -2444,7 +2454,6 @@ function apply_menu(self, act)
                             break
                         end
                     end
-                    sfx.ui("ui_go")
                 else
                     menu.note = why or "cannot save that profile"
                     sfx.ui("ui_move")
@@ -2465,7 +2474,7 @@ function apply_menu(self, act)
             function(ok, why)
                 menu.note = ok and nil or (why or "cannot delete that build")
                 menu.reread_profile()
-                sfx.ui(ok and "ui_go" or "ui_move")
+                if not ok then sfx.ui("ui_move") end
             end)
         return
     end
@@ -2479,7 +2488,6 @@ function apply_menu(self, act)
             if ok then
                 menu.note = nil
                 account.refresh_upgrades(menu.zone)
-                sfx.ui("ui_go")
             else
                 menu.note = why or "cannot buy that"
                 sfx.ui("ui_move")

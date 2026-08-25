@@ -4222,8 +4222,21 @@ function M.waiting(note)
     landing_mark()
     -- The one control, drawn here rather than through the corner row, which
     -- carries a roster this screen has not got.
+    --
+    -- And not while the drawer is standing over it, which is the same rule
+    -- the clock band and the dial corner follow: a panel's ground is a wash
+    -- rather than a curtain, so anything drawn under it reads through, and a
+    -- key ghosting under the panel that replaced it is the interface drawn
+    -- twice. It showed up on a zone change, where the room drops for a frame
+    -- or two and this screen is what is behind the open menu.
     local x, y = F.safe_l + PAD * F.scale, F.safe_t + PAD * F.scale
-    local w = burger_cap(x, y, F.menu_up)
+    local w = KEY_H * F.scale
+    if not M.compact then
+        w = BURGER.w * F.scale + 3 * KEY_PAD * F.scale
+            + text_w("MENU", key_size())
+    end
+    if M.drawer_over(x, w) then return end
+    burger_cap(x, y, F.menu_up)
     hit(x, y, w, KEY_H * F.scale, "open")
     -- And a line where the key will be, but only when something has gone
     -- wrong. Waiting says nothing: the wordmark on a starfield is what this
@@ -7277,10 +7290,8 @@ function M.menu(v)
 
     local rx, ry_, rw, rh          -- the rail
     local icon_dy                  -- the mark's drop inside it
-    -- Where the corner buttons begin, so the head knows where the name stops.
-    local corner_left
     local sx, sy, sw, sh           -- the stage
-    local logo_y                   -- the middle of the name
+    local logo_y                   -- the line the head's controls sit on
     -- What the panel covers, name included: everything a press may land on
     -- without meaning to leave. Published as one box at the end, so the
     -- gaps between rows are not a way out of the menu.
@@ -7383,16 +7394,12 @@ function M.menu(v)
     -- the column covers the corner stack now, so this head is the only place
     -- either can be and it carries them whatever is behind the panel.
     --
-    local logo_px = (short and 24 or 28) * F.scale
-    corner_left = bare and (dx + dock - margin)
-        or pages.corner(v, dx + dock - margin, logo_y, true)
+    if not bare then pages.corner(v, dx + dock - margin, logo_y, true) end
     -- The way out stands where the way in stood: the same square, at the same
     -- inset, on the same line. Pressing the menu key and pressing the x are one
     -- control seen from either side, so a hand that learned where one of them
     -- was has learned the other, and the name moves right to make the room.
     local shut = KEY_H * F.scale
-    local logo_x = dx + margin
-    if v.closable then logo_x = logo_x + shut + 12 * F.scale end
     -- Where the x's square ends, so a page carrying its own top line knows
     -- what room is already spoken for. Published rather than worked out
     -- twice: the key is drawn from here and the band is laid out from there.
@@ -7401,11 +7408,11 @@ function M.menu(v)
     -- reading this screen has already read, and a call sign in a pill is
     -- not. Down two points at a time to a floor rather than squeezed to
     -- fit: below about twenty the mark beside it stops being a mark.
-    while logo_px > 21 * F.scale
-          and logo_x + M.wordmark_w(logo_px) > corner_left - 12 * F.scale do
-        logo_px = logo_px - 2 * F.scale
-    end
-    if not bare then M.wordmark(logo_x, logo_y, logo_px) end
+    -- No wordmark on this line. It sat between the x and the call sign on
+    -- every page of the menu, turning: a picture of a name everybody reading
+    -- this screen has already read, animating in the corner of a panel they
+    -- opened to do something else. The landing still wears it, over the key
+    -- it is a title for, which is the one place it says anything.
 
     -- Which half the arrows are in. The two halves share one cursor and mark
     -- it with the same blue field, so the half wearing the brighter one is the
