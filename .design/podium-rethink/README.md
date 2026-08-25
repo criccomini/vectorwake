@@ -1,6 +1,6 @@
 # The match ending, rethought
 
-Twelve boards for the screen a match ends on. The shipped one is a single
+Twenty one boards for the screen a match ends on. The shipped one is a single
 measure holding a title, a score bar, both rosters, six SAY chips, the
 next-match clock and a share key, and Chris's reading of it is:
 
@@ -9,8 +9,35 @@ next-match clock and a share key, and Chris's reading of it is:
 - most of it is the scoreboard's own content a second time, and the SAY row
   is about to be a keyboard shortcut anyway.
 
-Four directions, told apart by what leads the page. Drawings of a proposal,
-not a plan of record. Nothing here is built.
+Chris's reading of the first four, which is what the leading page came from:
+none of them, but keep the plain pilot list with your own row washed, keep the
+bar with each side's points on it, drop the block of big figures, drop the
+clock's drain bar, shrink the share key and call it INVITE FRIEND, and lay the
+three window shapes out the same way. And then the question that reframed it:
+maybe there is no ending page at all, and the board the band opens just comes
+up when the match does.
+
+Drawings of a proposal, not a plan of record. Nothing here is built.
+
+## The board is the ending (page one)
+
+No podium. At the whistle the board comes up by itself and grows a head and a
+foot: the bar with each side's points on its ends, the line saying who took
+it, the pilot list with your own row washed, and a foot carrying the countdown
+and one key. One layout at every size; only the measure and the type change.
+
+The three boards differ in one thing, how the list is ordered:
+
+- **One list, your side first.** Exactly what the board draws mid-match, so
+  nothing re-sorts under the reader at the whistle.
+- **A block per side.** The same rows grouped, each side's points on its own
+  head. Clearest team reading, busiest page.
+- **Best gun first.** One list across both sides ordered by kills, so the room
+  is ranked and your washed row is where you placed.
+
+## The first four directions (page two)
+
+Told apart by what leads the page.
 
 - **A · your match leads.** The result is a line; your four figures are the
   page. Everyone else is one list under them. Answers the question without
@@ -45,5 +72,5 @@ design system it borrows: hues from `client/arena/palette.lua`, panel and key
 geometry from `client/arena/ui.lua`, the seat marks and the rivet from the
 same, and the two faces the client carries.
 
-Rebuild with `python3 build.py`; the twelve `.dc.html` files and
+Rebuild with `python3 build.py`; the twenty one `.dc.html` files and
 `canvas.json` beside it are what a design canvas is seeded from.

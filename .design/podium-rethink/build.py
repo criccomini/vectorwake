@@ -508,6 +508,140 @@ def screen(variant, form):
             f'background:rgba(5,7,12,.55)"></div>{body}</div>')
 
 
+# --- the ending is the board -------------------------------------------------
+#
+# The second reading of all this, and Chris's: the match ending does not need
+# a page of its own. The board behind the band is already the room's numbers,
+# so at the whistle it opens by itself and grows a head and a foot. One
+# layout, at every window size: the bar with each side's points on it, the
+# line saying who took it, the pilot list with your own row washed, and a foot
+# carrying the countdown and one small key.
+#
+# What went, on Chris's reading of the first four: the clock's drain bar, the
+# block of large figures at the top, the six SAY chips, and the share key that
+# ran the width of the page.
+
+E_ROWS = {
+    "Merged": "the room in one list, your side first",
+    "Split": "a block per side, each with its own points",
+    "Ranked": "one list, best gun at the top",
+}
+
+
+def bar_head(px, bar_h, name_px):
+    """The scoreline as a bar with each side's points on the ends of it. The
+    proportion is the fight, the numbers are the score, and the two colors are
+    the ones every other instrument uses for these sides."""
+    total = SCORE_L + SCORE_R
+    share = SCORE_L / total * 100
+    return f"""
+    <div class="row" style="gap:{px}px">
+      <span class="hud" style="font-size:{name_px}px;color:var(--friend)">
+        Pylon</span>
+      <span class="num" style="font-size:{px * 1.9:.0f}px;color:var(--friend);
+            line-height:1">{SCORE_L}</span>
+      <div style="flex:1;height:{bar_h}px;display:flex;overflow:hidden">
+        <div style="width:{share:.1f}%;background:var(--friend)"></div>
+        <div style="flex:1;background:var(--enemy)"></div>
+      </div>
+      <span class="num" style="font-size:{px * 1.9:.0f}px;color:var(--enemy);
+            line-height:1">{SCORE_R}</span>
+      <span class="hud" style="font-size:{name_px}px;color:var(--enemy)">
+        Caisson</span>
+    </div>"""
+
+
+def took_it(px):
+    return (f'<div class="row" style="gap:8px;justify-content:center">'
+            f'<span class="hud" style="font-size:{px}px;color:var(--enemy)">'
+            f'Caisson</span>'
+            f'<span class="hud" style="font-size:{px}px">takes it</span></div>')
+
+
+def board_foot(px, key_h):
+    """The countdown as a reading rather than a draining bar, and one key
+    beside it. INVITE FRIEND rather than SHARE MATCH: the same act, named for
+    what a player wants out of it, and sized like a key rather than a banner."""
+    return f"""
+    <div class="row" style="gap:14px">
+      <span class="lbl" style="font-size:{px}px">Next match</span>
+      <span class="num" style="font-size:{px * 1.7:.0f}px">0:15</span>
+      <div style="flex:1"></div>
+      <div class="key" style="height:{key_h}px;padding:0 14px;
+           font-size:{px}px">{share_mark()}Invite friend</div>
+    </div>"""
+
+
+def board_rows(order, px):
+    """The pilot list, in whichever order this board is arguing for. Your own
+    row is washed and keeps its side's color, exactly as it does in the board
+    the band opens mid-match."""
+    if order == "Split":
+        out = []
+        for team, col, pilots, score in (("Pylon", FRIEND, PYLON, SCORE_L),
+                                         ("Caisson", ENEMY, CAISSON, SCORE_R)):
+            out.append(f'''<div class="row" style="gap:8px;padding:6px 4px 2px">
+              <span class="hud" style="font-size:{px}px;color:{col}">{team}
+              </span>
+              <span class="num" style="font-size:{px}px;color:{col}">{score}
+              </span><div style="flex:1"></div></div>''')
+            out += [roster_row(p, col, px, px, washed=(p is ME),
+                               mvp=(p is PYLON[0])) for p in pilots]
+        return out
+    if order == "Ranked":
+        everyone = [(p, FRIEND) for p in PYLON] + [(p, ENEMY) for p in CAISSON]
+        everyone.sort(key=lambda pc: (-pc[0][2], pc[0][3]))
+        return [roster_row(p, col, px, px, washed=(p is ME),
+                           mvp=(p is PYLON[0])) for p, col in everyone]
+    rows = [roster_row(p, FRIEND, px, px, washed=(p is ME),
+                       mvp=(p is PYLON[0])) for p in PYLON]
+    rows += [roster_row(p, ENEMY, px, px) for p in CAISSON]
+    return rows
+
+
+def board_ending(order, form):
+    """One layout, at every size. Only the type and the measure change."""
+    w, h, compact = FORMS[form]
+    px = 14 if not compact else 11
+    name_px = 13 if not compact else 10
+    bar_h = 10 if not compact else 7
+    key_h = 30 if not compact else 24
+    lbl_px = 11 if not compact else 9
+
+    rows = board_rows(order, px)
+    return f"""
+    <div style="display:flex;flex-direction:column;
+         gap:{16 if not compact else 10}px">
+      {bar_head(px, bar_h, name_px)}
+      {took_it(lbl_px + 3)}
+      <div style="display:flex;flex-direction:column;gap:2px">
+        {hrule()}
+        {col_heads(px)}
+        {"".join(rows)}
+        {hrule()}
+      </div>
+      {board_foot(lbl_px, key_h)}
+    </div>"""
+
+
+def screen_board(order, form):
+    w, h, compact = FORMS[form]
+    # One measure everywhere, capped so a monitor does not stretch eight rows
+    # across a thousand points and a phone still spends its whole width.
+    measure = min(w - 28, 720 if not compact else w - 28)
+    stars = starfield(w, h, *(dict(Desktop=(46, 30, 12), Landscape=(30, 20, 8),
+                                   Portrait=(30, 20, 8))[form]), seed=28)
+    return (f'''<div style="position:absolute;left:0;top:0;width:{w}px;
+            height:{h}px;overflow:hidden;background-color:var(--bg);
+            background-image:{stars}">
+            <div style="position:absolute;inset:0;background:rgba(5,7,12,.55)">
+            </div>
+            <div style="position:absolute;left:50%;top:50%;
+                 transform:translate(-50%,-50%);width:{measure}px">
+              {board_ending(order, form)}
+            </div></div>''')
+
+
 def page(name, body):
     doc = f"""<!doctype html>
 <html>
@@ -530,11 +664,18 @@ def page(name, body):
 
 
 def main():
+    n = 0
+    for order in E_ROWS:
+        for form in FORMS:
+            name = ("Main" if (order, form) == ("Merged", "Desktop")
+                    else f"{form}{order}")
+            page(name, screen_board(order, form))
+            n += 1
     for v in VARIANTS:
         for form in FORMS:
-            name = "Main" if (v, form) == ("A", "Desktop") else f"{form}{v}"
-            page(name, screen(v, form))
-    print(f"{len(VARIANTS) * len(FORMS)} artboards written")
+            page(f"{form}{v}", screen(v, form))
+            n += 1
+    print(f"{n} artboards written")
 
 
 if __name__ == "__main__":
