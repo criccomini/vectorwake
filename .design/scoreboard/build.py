@@ -355,13 +355,14 @@ def link_bars():
     return f'<svg width="16" height="12" viewBox="0 0 16 12">{bars}</svg>'
 
 
-def dial_corner(form, top=14):
-    """LINK and the radar, in the corner they own. A phone held upright keeps
-    LINK alone, the way the shipped client does."""
-    if form == "Portrait":
+def dial_corner(form, top=14, portrait_radar=False):
+    """LINK and the radar, in the corner they own. A phone held upright
+    keeps LINK alone on the first-directions boards; the band boards draw
+    the phone's radar too, since the band leaves that corner alone."""
+    if form == "Portrait" and not portrait_radar:
         return (f'<div style="position:absolute;right:14px;top:{top}px">'
                 f'{link_bars()}</div>')
-    side = 120 if form == "Landscape" else 168
+    side = {"Portrait": 90, "Landscape": 120, "Desktop": 168}[form]
     return f"""
   <div style="position:absolute;right:14px;top:{top}px;display:flex;
        flex-direction:column;align-items:flex-end;gap:10px">
@@ -624,44 +625,46 @@ D_MODES = {
 }
 
 
-def score_band(form, mode, melee, open_):
+def score_band(form, mode, melee):
     """The shut scoreboard: a bare readout at top center, no box, no
-    ground. Each side is a two-line stack in its color: in Melee the team's
-    name over its score, in the duel the pilot's call sign over their
-    rating, since the duel's score is not worth a line and the rating is.
-    The brackets are the radar's own corner marks, faint at rest and
-    brightened while the readout under them is open."""
+    ground, no ornament. Each side is a two-line stack in its color, set
+    against the clock: the left side right-aligned to it, the right side
+    left-aligned off it. The stack's two lines add up to the clock's own
+    height, so the band reads as one line of instrument however many words
+    are in it. Melee stacks the team's name over its score; the duel
+    stacks the pilot's call sign over their rating."""
     compact = FORMS[form][2]
-    clock_px = 22 if compact else 34
-    score_px = 17 if compact else 26
-    name_px = 9 if compact else 11
-    rate_px = 8 if compact else 10
+    clock_px = 24 if compact else 36
+    name_px = 9 if compact else 12
+    lh_gap = 2 if compact else 4
+    under_px = clock_px - name_px - lh_gap
     gap = 14 if compact else 22
-    pad = "4px 12px" if compact else "6px 16px"
-    bcol = "rgba(79,214,255,.55)" if open_ else "rgba(63,88,120,.55)"
-
-    def stack(name, col, under, under_px, under_dim):
-        dim = ";opacity:.6" if under_dim else ""
-        return (f'<div style="display:flex;flex-direction:column;'
-                f'align-items:center;gap:1px">'
-                f'<span class="hud num" style="font-size:{name_px}px;'
-                f'color:{col};white-space:nowrap">{name}</span>'
-                f'<span class="num" style="font-size:{under_px}px;'
-                f'color:{col}{dim}">{under}</span></div>')
-
     (ln, ls, lc, lr), (rn, rs, rc, rr) = mode["sides"]
+    # Both sides sized alike off the longer name, so the clock stays dead
+    # center however the two names differ.
+    side_w = round(max(len(ln), len(rn)) * name_px * 0.68) + 4
+
+    def stack(name, col, under, under_dim, right):
+        dim = ";opacity:.6" if under_dim else ""
+        align = "flex-start" if right else "flex-end"
+        return (f'<div style="display:flex;flex-direction:column;'
+                f'align-items:{align};gap:{lh_gap}px;width:{side_w}px">'
+                f'<span class="hud num" style="font-size:{name_px}px;'
+                f'line-height:1;color:{col};white-space:nowrap">{name}</span>'
+                f'<span class="num" style="font-size:{under_px}px;'
+                f'line-height:1;color:{col}{dim}">{under}</span></div>')
+
     if melee:
-        left = stack(ln, lc, ls, score_px, False)
-        right = stack(rn, rc, rs, score_px, False)
+        left = stack(ln, lc, ls, False, False)
+        right = stack(rn, rc, rs, False, True)
     else:
-        left = stack(ln, lc, lr, rate_px, True)
-        right = stack(rn, rc, rr, rate_px, True)
+        left = stack(ln, lc, lr, True, False)
+        right = stack(rn, rc, rr, True, True)
     clock = (f'<span class="num" style="font-size:{clock_px}px;'
-             f'letter-spacing:.02em">{mode["clock"]}</span>')
+             f'line-height:1;letter-spacing:.02em">{mode["clock"]}</span>')
     return (f'<div class="row" style="position:absolute;left:50%;'
-            f'top:{12 if compact else 14}px;transform:translateX(-50%);'
-            f'gap:{gap}px;padding:{pad}">{bracket(bcol)}'
-            f'{left}{clock}{right}</div>')
+            f'top:{14 if compact else 16}px;transform:translateX(-50%);'
+            f'gap:{gap}px">{left}{clock}{right}</div>')
 
 
 def d_cells(vals, px, col="var(--ink)", bty=True):
@@ -787,7 +790,7 @@ def ladder_readout(compact):
 # --- one window, one direction -----------------------------------------------
 
 
-def screen(form, variant):
+def screen(form, variant, open_override=None):
     w, h, compact = FORMS[form]
     mode = D_MODES[form] if variant == "D" else MODES[form]
     melee = form == "Desktop"
@@ -810,19 +813,30 @@ def screen(form, variant):
         # hanging tab, so the row drops below it.
         if form == "Portrait" and (mode["zone"] or mode["event"]):
             chrome_top = sh + 34
-    else:
+    d_overlay = ""
+    if variant == "D":
         # The band is drawn open where the board is about the readout, and
-        # shut where it is about the quiet state.
-        open_panel = form != "Landscape"
-        body.append(score_band(form, mode, melee, open_panel))
+        # shut where it is about the quiet state. Open, the readout is the
+        # thing being read: everything under it dims, radar included, and
+        # the panel is laid straight over whatever it reaches.
+        open_panel = (form != "Landscape") if open_override is None \
+            else open_override
+        parts = []
         if open_panel:
-            body.append(melee_readout(compact) if melee
-                        else ladder_readout(compact))
+            parts.append('<div style="position:absolute;inset:0;'
+                         'background:rgba(5,7,12,.55)"></div>')
+        parts.append(score_band(form, mode, melee))
+        if open_panel:
+            parts.append(melee_readout(compact) if melee
+                         else ladder_readout(compact))
+        d_overlay = "".join(parts)
 
     body.append(corner_row(compact, mode["humans"], mode["bots"],
                            top=chrome_top, extra=extra,
                            players=variant != "D"))
-    body.append(dial_corner(form, top=chrome_top))
+    body.append(dial_corner(form, top=chrome_top,
+                            portrait_radar=variant == "D"))
+    body.append(d_overlay)
 
     stars = starfield(w, h, *(dict(Desktop=(46, 30, 12), Landscape=(30, 20, 8),
                                    Portrait=(30, 20, 8))[form]),
@@ -859,7 +873,9 @@ def main():
             # Main is the leading candidate: D, since Chris picked it.
             name = "Main" if (form, v) == ("Desktop", "D") else f"{form}{v}"
             page(name, screen(form, v))
-    print(f"{len(FORMS) * len(VARIANTS)} artboards written")
+    # And the upright phone at rest: radar on, the band shut and small.
+    page("PortraitDShut", screen("Portrait", "D", open_override=False))
+    print(f"{len(FORMS) * len(VARIANTS) + 1} artboards written")
 
 
 if __name__ == "__main__":

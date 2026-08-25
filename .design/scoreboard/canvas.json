@@ -6,7 +6,8 @@
   "artboards": [
     { "file": "Main.dc.html", "title": "Desktop · D", "x": 0, "y": 0, "w": 1440, "h": 810, "page": "page-1" },
     { "file": "LandscapeD.dc.html", "title": "Landscape · D", "x": 298, "y": 950, "w": 844, "h": 390, "page": "page-1" },
-    { "file": "PortraitD.dc.html", "title": "Portrait · D", "x": 1300, "y": 950, "w": 390, "h": 844, "page": "page-1" },
+    { "file": "PortraitDShut.dc.html", "title": "Portrait · D · shut", "x": 1300, "y": 950, "w": 390, "h": 844, "page": "page-1" },
+    { "file": "PortraitD.dc.html", "title": "Portrait · D · open", "x": 1790, "y": 950, "w": 390, "h": 844, "page": "page-1" },
     { "file": "DesktopA.dc.html", "title": "Desktop · A", "x": 0, "y": 0, "w": 1440, "h": 810, "page": "page-2" },
     { "file": "DesktopB.dc.html", "title": "Desktop · B", "x": 1720, "y": 0, "w": 1440, "h": 810, "page": "page-2" },
     { "file": "DesktopC.dc.html", "title": "Desktop · C", "x": 3440, "y": 0, "w": 1440, "h": 810, "page": "page-2" },
@@ -21,7 +22,7 @@
     {
       "id": "note-d",
       "x": 0, "y": -270, "w": 400, "page": "page-1",
-      "text": "D · the expanding band\n\nThe scoreboard is an instrument, not a control, so it wears no key box and sits nowhere near MENU. Shut, it is a bare readout at top center, each side a two-line stack in its color: in Melee the team's name over its score, in the duel the pilot's call sign over their rating, with no score and no rung line, since neither says anything a duel's readout doesn't say better. The expand affordance is the instrument grammar's own: the faint corner brackets the radar wears, brightened while open. Pressed, the readout grows out of the band, so shut and open are one object at two depths. PLAYERS is gone; the readout carries the roster.\n\nThe open panel is the shipped players panel's grammar: section heads in dim capitals with their column labels on the line, dashed rules between sections. Sections are the modularity. Every zone stacks one pilot list, the sides told apart by the color the names already wear, with no team heads, since the band above carries the names and scores. The duel adds its run of fights; a pressed row opens the same pilot card in every zone.\n\nDesktop shows Melee open. Portrait shows the duel open with a pressed row's card. Landscape shows the band shut."
+      "text": "D · the expanding band\n\nThe scoreboard is an instrument, not a control, so it wears no key box, no ornament, and sits nowhere near MENU. Shut, it is a bare readout at top center, each side a two-line stack in its color set against the clock, the left right-aligned to it and the right left-aligned off it, the two lines adding up to the clock's own height: in Melee the team's name over its score, in the duel the pilot's call sign over their rating, with no score and no rung line, since neither says anything a duel's readout doesn't say better. Pressed, the readout grows out of the band and everything under it dims, radar included, the panel laid straight over whatever it reaches. PLAYERS is gone; the readout carries the roster.\n\nThe open panel is the shipped players panel's grammar: section heads in dim capitals with their column labels on the line, dashed rules between sections. Sections are the modularity. Every zone stacks one pilot list, the sides told apart by the color the names already wear, with no team heads, since the band above carries the names and scores. The duel adds its run of fights; a pressed row opens the same pilot card in every zone.\n\nDesktop shows Melee open. The two portrait boards are the phone shut (radar on, the band small over bare sky) and open (the glass dimmed under the readout). Landscape shows the band shut."
     },
     {
       "id": "note-constants",
