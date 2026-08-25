@@ -1,0 +1,27 @@
+{
+  "artboards": [
+    { "file": "Current.dc.html", "x": 0, "y": 0, "w": 830, "h": 880,
+      "title": "As shipped" },
+    { "file": "Main.dc.html", "x": 950, "y": 0, "w": 390, "h": 880,
+      "title": "One hangar" },
+    { "file": "BuyCard.dc.html", "x": 1430, "y": 0, "w": 390, "h": 880,
+      "title": "One hangar, buying" },
+    { "file": "Lenses.dc.html", "x": 0, "y": 1090, "w": 830, "h": 880,
+      "title": "Fit and buy" },
+    { "file": "Linked.dc.html", "x": 950, "y": 1090, "w": 830, "h": 880,
+      "title": "Two stops, linked" }
+  ],
+  "annotations": [
+    { "id": "diagnosis", "x": -330, "y": 0, "w": 300,
+      "text": "As shipped: five activities in one column, three control grammars, and no teaching. A slot you own none of is simply absent from the ship page, so it cannot say there is more of this and here is its price.\n\nThe shelf is smaller than its page suggests: stats are never sold and most rungs are dealt, so melee sells a new account eight purchases in all. Two stops for eight prices, both drawing the same twenty-three slots." },
+    { "id": "cleanup", "x": -330, "y": 430, "w": 300,
+      "text": "Every direction bakes in one cleanup: everything is a ladder (the chips go), the build library folds into a selector row at the head, each trigger's level moves into its group, and a teach band pinned over the stops explains whatever row the cursor is on. That alone deletes most of the bug surface: one row grammar is one hit-test path." },
+    { "id": "hangar", "x": 1910, "y": 0, "w": 290,
+      "text": "One hangar, the leading direction. The tabs merge and the drawer drops to five stops. Three kinds of step on one ladder: filled is slotted, hollow is owned, a dim square is not yours, and the next rung for sale wears the gold diamond with the price at the row's end.\n\nThe wallet never sits on the page. Pressing into the dim region opens the buy card, which is the one place gold is spent. Spend on the page always means points, so the confusion that split the pages stays answered." },
+    { "id": "lenses", "x": -330, "y": 1090, "w": 300,
+      "text": "Fit and buy: one geography, two lenses. FIT spends the thirty points and shows no prices; BUY relights the same rows in shop terms with the wallet in the band. The two questions stay two moments, and what you learn once is where a slot lives.\n\nTradeoff: the price is a toggle away rather than on the refusal itself." },
+    { "id": "linked", "x": 1870, "y": 1090, "w": 290,
+      "text": "Two stops, linked: the smallest change. The ship page draws the rungs it hides today, dim, with the bare rivet mark on rows that have something for sale; pressing one lands on that slot's card in upgrades, and buying puts the rung on the ship page at once.\n\nTradeoff: a context switch in the middle of building, and two stops that still draw mostly the same list." }
+  ],
+  "launch": { "view": "canvas" }
+}
