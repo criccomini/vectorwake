@@ -508,20 +508,16 @@ pub(crate) async fn serve_client(
                     match joined {
                         Some(_id) => {
                             credential_expires = presented_expires;
-                            let a = &z.rooms[idx];
-                            let mut m = vec![S2C_MAP];
-                            m.extend_from_slice(&a.world.packed_map());
-                            let _ = tx.try_send(Message::Binary(m));
-                            if let Some(n) = a.map_name_msg() {
-                                let _ = tx.try_send(Message::Binary(n));
-                            }
-                            let mut c = vec![S2C_SETTINGS];
-                            c.extend_from_slice(&a.settings_generation.to_le_bytes());
-                            c.extend_from_slice(&a.world.packed_settings());
-                            let _ = tx.try_send(Message::Binary(c));
-                            // One match packet owns the clock, result, and any
+                            let a = &mut z.rooms[idx];
+                            // The ground, the rules, the clock and the
+                            // scoreboard as the channel is showing them, not
+                            // as the room has them: what arrives next is a
+                            // frame from five seconds ago, and a screen set
+                            // up from the live room would spend those five
+                            // seconds disagreeing with its own picture. One
+                            // match packet owns the clock, the result and any
                             // Ladder progress, so join sync cannot split them.
-                            if let Some(m) = a.match_msg() {
+                            for m in a.channel_sync() {
                                 let _ = tx.try_send(Message::Binary(m));
                             }
                             // 255 is a watcher's ship: the client
@@ -829,7 +825,7 @@ pub(crate) async fn serve_client(
                 // the connection still owns the fleet-visible departure edge.
                 if let Some((room, _)) = before {
                     if presence.current() == Presence::Unjoined {
-                        let z = zone.lock().await;
+                        let mut z = zone.lock().await;
                         if let Some(index) = z.rooms.iter().position(|a| a.number == room) {
                             z.rooms[index].broadcast_roster();
                         }

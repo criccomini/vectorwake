@@ -1,5 +1,11 @@
 # The match game
 
+> **The week's table is gone.** The standings tab came out of the client, so
+> gripe 5 is answered outside the game again: the site publishes the ladder at
+> `/pilots` and nothing inside a session ranks you. What still accumulates is
+> the kit, the wallet and the rating. See
+> [decision 65](../architecture/decisions.md).
+
 > **Built, for Melee.** Everything below through the week is running: three
 > minute matches with an intermission, the kit and the shop that sells slots
 > for it, bounty paid as rivets, six match maps, and the six tabs. Capture and
@@ -38,14 +44,13 @@ practice room, and no lobby to wait in. You pick a mode, you are in a match
 within seconds, and three minutes later it ends with a score, a payout and a
 next one.
 
-Around that sit four things:
+Around that sit three things:
 
 - **A kit** you build and own, dealt to your hull at every spawn. Gripe 3.
 - **Bounty** that starts at one and grows with your run, paid to whoever
   ends it. Gripes 1 and 6.
 - **Rivets**, which are bounty taken, spent on what you may slot and on what
   you wear. Gripe 6.
-- **The week**, a standings table that resets on Monday. Gripe 5.
 
 Gripe 4 is answered by the match itself. A death still empties the hull, and
 the hull refills from your kit at the next spawn, so what a death costs is
@@ -614,23 +619,27 @@ with a number later.
 
 ## The menu, and where the screens live
 
-The home experience stops being a menu. Ship and standings are screens with
-panes and grids, and the menu tree was deliberately one narrow column that
+The home experience stops being a menu. The ship page is a screen with panes
+and grids, and the menu tree was deliberately one narrow column that
 [menu.md](menu.md) says "falls apart at 390 points wide". So there are two
 surfaces now rather than one:
 
-- **Five tabs** at the front end, which is where you are between matches and
-  where there is time to read: play, ship, friends, standings, settings. Your
-  call sign at the far end of the row is the way into your account. Upgrades
-  was a sixth for a while, drawing the same slots in the same order for the
+- **Four tabs** at the front end, which is where you are between matches and
+  where there is time to read: play, ship, friends, settings. Your call sign
+  at the far end of the row is the way into your account. Standings was one of
+  them until the week's table came out. Upgrades was another for a while,
+  drawing the same slots in the same order for the
   other question; the ship page is the shelf now, with the price of the next
   rung on the row that spends the point and the wallet on the reading that
   row opens. The old worry, a wallet and a budget on one screen with "spend"
   meaning both, is answered by shape: points are circles, prices wear the
   rivet mark, and nothing is bought except on the reading. See
   [menu.md](menu.md) and [decision 64](../architecture/decisions.md).
-- **Two tabs in a match**: settings and leave. Same row in the same place,
-  carrying what you can act on from a cockpit.
+- **Three tabs in a match**: play, friends and settings. Same row in the same
+  place, carrying what you can act on from a cockpit. It was two, settings and
+  leave; the games list is on it now because the way out of the game you are
+  in is a button on that game's own row, and the hangar stays off it because a
+  hull is locked for the match.
 
 Settings holds everything that is about the machine rather than about a
 match, in one column: audio, video, the control bindings, and about. Help
@@ -645,8 +654,8 @@ moderation argument as much as the vanity one. A call sign that cost six
 hundred rivets is a name a ban actually takes something from, and rivets are
 earned by flying rather than bought with money, so the cost is time.
 
-**It is one surface, and in a match it carries two tabs: settings and
-leave.** Same chrome as the front end, full screen, with the tab row on top;
+**It is one surface, and in a match it carries three tabs: play, friends and
+settings.** Same chrome as the front end, full screen, with the tab row on top;
 what differs is which tabs are on it, not how any of it looks or works. That
 is the point. A player learns one screen and meets it in both places.
 
@@ -674,9 +683,9 @@ thing you are in". Hiding the fight would be a lie about what is happening,
 which is the same reason the interface stays up today.
 
 None of this needs a new mechanism. `menu.home` already builds rows from the
-moment rather than declaring them, which is how the `leave` row appears only
-when there is something to leave. Ship and standings are the same conditional
-in the other direction.
+moment rather than declaring them, which is how the leave button appears on a
+game's row only while you are flying that game. The ship page is the same
+conditional in the other direction.
 
 ### It stays navigable from a keyboard, a d-pad and a thumb
 
@@ -690,10 +699,10 @@ than [menu.md](menu.md)'s five inputs:
   those keys already mean everywhere else in the game.
 - **Escape** closes, or steps back to the tab row first.
 
-Every screen at the front end is the same shape, so the ship page and the
-standings inherit this rather than each inventing a focus order. The one
-thing it costs is that a page needs a first row and a last row that are
-obvious, which is a layout constraint worth having anyway.
+Every screen at the front end is the same shape, so the ship page inherits
+this rather than inventing a focus order of its own. The one thing it costs is
+that a page needs a first row and a last row that are obvious, which is a
+layout constraint worth having anyway.
 
 Two consequences for [menu.md](menu.md). Changing hull is a respawn today and
 becomes a front-end action, because the hull is locked for the match. And the

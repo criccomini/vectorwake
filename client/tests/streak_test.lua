@@ -127,14 +127,14 @@ end
 -- Two lines with the same age, one shimmering and one not. Same clock, so
 -- anything that separates them is the flag rather than the frame.
 local function line(gleam, t)
-    return {text = {" is on a streak of 3"}, t = t, gleam = gleam or nil}
+    return {text = {" is on a streak"}, t = t, gleam = gleam or nil}
 end
 
 hud({line(true, 0)})
-local at_zero = drawn(" is on a streak of 3")
+local at_zero = drawn(" is on a streak")
 check("a streak line is drawn", at_zero ~= nil)
 hud({line(true, 0.31)})
-local later = drawn(" is on a streak of 3")
+local later = drawn(" is on a streak")
 check("and its color has moved a third of a second later",
       at_zero and later and math.abs(at_zero.col[1] - later.col[1])
           + math.abs(at_zero.col[2] - later.col[2])
@@ -144,9 +144,9 @@ check("and its color has moved a third of a second later",
                .. table.concat(later.col, ",")))
 
 hud({line(false, 0)})
-local plain_a = drawn(" is on a streak of 3")
+local plain_a = drawn(" is on a streak")
 hud({line(false, 0.31)})
-local plain_b = drawn(" is on a streak of 3")
+local plain_b = drawn(" is on a streak")
 check("an ordinary line holds still",
       plain_a and plain_b and math.abs(plain_a.col[1] - plain_b.col[1]) < 1e-9
           and math.abs(plain_a.col[2] - plain_b.col[2]) < 1e-9
@@ -158,11 +158,11 @@ check("an ordinary line holds still",
 local mine = line(true, 0.05)
 mine.mine = true
 hud({mine}, true)
-local phone_a = drawn(" is on a streak of 3")
+local phone_a = drawn(" is on a streak")
 local mine2 = line(true, 0.36)
 mine2.mine = true
 hud({mine2}, true)
-local phone_b = drawn(" is on a streak of 3")
+local phone_b = drawn(" is on a streak")
 check("the phone's single line shimmers as well",
       phone_a and phone_b and math.abs(phone_a.col[1] - phone_b.col[1])
           + math.abs(phone_a.col[2] - phone_b.col[2])

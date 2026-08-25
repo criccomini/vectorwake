@@ -59,8 +59,7 @@ local ui = harness.install({sim = SIM})
 
 local RAIL = {}
 for i, e in ipairs({{"play", "zones"}, {"ship", "ship"},
-                    {"upgrades", "upgrades"}, {"friends", "friends"},
-                    {"standings", "standings"}, {"settings", "settings"}}) do
+                    {"friends", "friends"}, {"settings", "settings"}}) do
     RAIL[i] = {label = e[1], icon = e[2], index = i}
 end
 
@@ -243,6 +242,53 @@ for _, s in ipairs(SHAPES) do
     end
 end
 
+-- --- and the way out of a seat is on the row of the room it is in -----------
+--
+-- A button at the row's right hand end. The row itself publishes a box the
+-- whole width of the panel, so a button drawn inside that box which lost the
+-- press would be a control you can see and cannot use. It wins because it is
+-- published first and `M.pick` breaks a tie on publish order.
+
+do
+    local flying = {}
+    for i, r in ipairs(ROWS) do
+        local c = {}
+        for k, val in pairs(r) do c[k] = val end
+        flying[i] = c
+    end
+    flying[1].acts = {{label = "leave"}}
+    for _, s in ipairs(SHAPES) do
+        local name, w, h = s[1], s[2], s[3]
+        frame(w, h, {rows = flying, home = false, scenery = false})
+        local key
+        for _, b in ipairs(ui.hits) do
+            if b.action == "row_act" then key = b end
+        end
+        check(name .. " hangs the button off the row it belongs to",
+              key ~= nil, "none published")
+        if key then
+            local dx, _, dw = ui.drawer_span()
+            check(name .. " keeps it inside the panel",
+                  key.x >= dx - 1.5 and key.x + key.w <= dx + dw + 1.5,
+                  string.format("%.0f..%.0f in %.0f..%.0f", key.x,
+                                key.x + key.w, dx, dx + dw))
+            -- At the row's right hand end rather than anywhere along it,
+            -- which is what makes the right arrow the way to it.
+            check(name .. " at that row's right hand end",
+                  key.x > dx + dw * 0.6,
+                  string.format("%.0f of %.0f", key.x - dx, dw))
+            check(name .. " sends a press on it to the button",
+                  press(key.x + key.w / 2, key.y + key.h / 2) == "row_act",
+                  tostring(press(key.x + key.w / 2, key.y + key.h / 2)))
+            -- And the rest of the row is still the row. Two controls on one
+            -- line, and the line has to keep meaning what it means.
+            check(name .. " and the rest of that row to the row",
+                  press(dx + 12, key.y + key.h / 2) == "stage",
+                  tostring(press(dx + 12, key.y + key.h / 2)))
+        end
+    end
+end
+
 -- --- the way out stands where the way in stood ------------------------------
 --
 -- The x sits in the square the menu key had, at the same inset on the same
@@ -258,18 +304,16 @@ do
         check("and square, the size the menu key is",
               math.abs(x.w - x.h) < 1.5,
               string.format("%.0fx%.0f", x.w, x.h))
-        -- The name has moved out of its way rather than sitting under it.
-        local name
-        for i = 1, st.n do
-            if string.lower(st.text[i].s) == "vectorwake" then
-                name = st.text[i]
-            end
-        end
-        check("and the name starts to the right of it",
-              name ~= nil and name.x > x.x + x.w,
-              name and string.format("name at %.0f, x ends %.0f",
-                                     name.x, x.x + x.w) or "no name")
     end
+    -- And the name is not on that line at all. It sat between the x and the
+    -- call sign on every page, turning: a picture of a name the reader has
+    -- already read, animating in the corner of a panel they opened to do
+    -- something else. The landing keeps it, over the key it is a title for.
+    local named = false
+    for i = 1, st.n do
+        if string.lower(st.text[i].s) == "vectorwake" then named = true end
+    end
+    check("and the head carries no wordmark", not named, "the name is on it")
 end
 
 print(fails == 0 and "all dock checks passed"

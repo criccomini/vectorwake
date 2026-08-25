@@ -10,6 +10,7 @@
 # here is the clock, the two pockets, and the numbers that had to move because
 # a match is three minutes rather than an evening.
 
+label = "Team Battle"
 description = "four a side, three minutes"
 
 # The clock and the score are the mode's; kills are what it counts.

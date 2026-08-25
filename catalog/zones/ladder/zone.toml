@@ -6,6 +6,7 @@
 # sides below take a bot as well as a person: the stand-in flies the climber's
 # seat and gives it back the moment somebody wants it.
 
+label = "Duel"
 description = "one life at a time, climb the house pilot ladder"
 mode = "ladder"
 

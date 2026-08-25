@@ -20,8 +20,7 @@ return {
     -- where the writer can be tested against it: the podium with the
     -- scoreboard open queued past the old pool of 128 and the phrase chips,
     -- drawn last, lost their words with nothing anywhere saying so, and the
-    -- week's table found the same wall at 320. A thousand covers sixty rows
-    -- of that table, which is where standings_rows stops, so the ceiling
+    -- standings table, since removed, found the same wall at 320. A thousand
     -- sits where no page can reach it rather than where today's pages land.
     -- podium_test and glyph_budget_test both measure against this;
     -- vwui.gui must hold at least this many nodes.

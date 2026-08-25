@@ -179,9 +179,10 @@ pub(crate) struct Watcher {
 }
 
 /// One frame of the room channel: the snapshot message as every channel
-/// watcher will receive it, and the kills announced since the frame before,
-/// which ride with it so the feed cannot spoil a death the delayed picture
-/// has not shown yet.
+/// watcher will receive it, the kills announced since the frame before, and
+/// what the room said about itself in the same span. All of it rides with the
+/// picture, so the feed cannot spoil a death that has not been shown and the
+/// clock over it cannot read five seconds into its future.
 pub(crate) struct ChannelFrame {
     pub(crate) tick: u32,
     /// Whose hull this frame is centered on, 255 for an empty room. Kept
@@ -189,11 +190,16 @@ pub(crate) struct ChannelFrame {
     /// now", which is a question about the frame going out rather than about
     /// the camera: with a delay on the channel those are seconds apart.
     pub(crate) subject: u8,
-    /// The lines this frame's watchers are owed: kills, and the streaks
-    /// they started. Whatever a player was told, held back to the frame it
-    /// belongs with.
+    /// The lines this frame's watchers are owed: kills, the streaks they
+    /// started, and anything said over the podium. Whatever a player was
+    /// told, held back to the frame it belongs with.
     pub(crate) feed: Vec<Vec<u8>>,
     pub(crate) charges: Vec<Vec<u8>>,
+    /// What the room said about itself while this frame was the live one: the
+    /// clock, the score, the banner, the ground and the scoreboard. Held here
+    /// for the same reason the feed is, and served ahead of the picture so a
+    /// map arrives before the snapshot packed on it.
+    pub(crate) state: Vec<Vec<u8>>,
     pub(crate) msg: Vec<u8>,
 }
 
@@ -203,6 +209,16 @@ pub(crate) struct ChannelFrame {
 /// channel everyone else is watching, so there is no re-rolling for a victim,
 /// and the delay is what makes the frame that does show them film rather than
 /// targeting data.
+///
+/// The delay is on the whole broadcast rather than on the picture alone. A
+/// watcher used to be sent the clock, the score, the banner and the ground the
+/// moment they changed, while the frames they were drawing were five seconds
+/// old: a duel's last five seconds ticked away over two ships still fighting,
+/// and the death that ended it landed under a clock already counting the next
+/// match down. Everything a watcher reads about the room goes through the ring
+/// now, so one clock governs the whole screen. What a side is called and who
+/// may open which door is the exception, and stays live: it describes the room
+/// rather than the moment.
 pub(crate) struct Channel {
     pub(crate) subject: Option<u8>,
     /// The subject of the newest frame actually served, which is what channel
@@ -215,6 +231,14 @@ pub(crate) struct Channel {
     pub(crate) ring: std::collections::VecDeque<ChannelFrame>,
     /// Feed lines waiting for the next frame.
     pub(crate) pending_feed: Vec<Vec<u8>>,
+    /// Room messages waiting for the next frame. See `ChannelFrame::state`.
+    pub(crate) pending_state: Vec<Vec<u8>>,
+    /// The last copy of each room message the channel has actually served,
+    /// keyed by its leading type byte. Somebody walking into the stands is
+    /// given these rather than what the room is doing now, so they land in
+    /// the picture everybody else is watching instead of five seconds ahead
+    /// of it.
+    pub(crate) served_state: std::collections::BTreeMap<u8, Vec<u8>>,
     /// Public charge actions waiting for the next frame. The ship byte stays
     /// beside each message until the frame center is known, so an event
     /// outside that frame's fairness circle is discarded rather than leaked.
@@ -232,6 +256,8 @@ impl Channel {
             hold: 0,
             ring: std::collections::VecDeque::new(),
             pending_feed: Vec::new(),
+            pending_state: Vec::new(),
+            served_state: std::collections::BTreeMap::new(),
             pending_charges: Vec::new(),
             rng: 0x9e3779b97f4a7c15,
         }
@@ -2118,9 +2144,9 @@ impl Room {
         for p in self.players.values() {
             let _ = p.tx.try_send(Message::Binary(msg.clone()));
         }
-        for w in self.watchers.values() {
-            let _ = w.tx.try_send(Message::Binary(msg.clone()));
-        }
+        // Said over a podium, and the stands are still looking at the last
+        // of the match. It waits for the podium they can see.
+        self.channel.pending_feed.push(msg);
     }
 
     /// A kit the pilot in this seat asked for: dealt now, or held to the
@@ -3145,6 +3171,13 @@ impl Room {
         w.extend_from_slice(&(self.number as u16).to_le_bytes());
         w.extend_from_slice(&self.settings_generation.to_le_bytes());
         let _ = tx.try_send(Message::Binary(w));
+        // They were flying a second ago and their screen still holds the live
+        // clock. The stands run five seconds behind, so hand them what the
+        // channel is showing rather than leaving the readout ahead of the
+        // first frame they are about to be served.
+        for m in self.channel_sync() {
+            let _ = tx.try_send(Message::Binary(m));
+        }
         self.broadcast_roster();
         // After the watcher row exists, not before: `leave` above broadcast a
         // list this pilot was no longer on, and the side they sat out from is
@@ -3784,12 +3817,17 @@ impl Room {
         Some(m)
     }
 
+    pub(crate) fn map_msg(&self) -> Vec<u8> {
+        let mut m = vec![S2C_MAP];
+        m.extend_from_slice(&self.world.packed_map());
+        m
+    }
+
     /// The ground everybody is playing on. Sent at a join and again whenever a
     /// match opens on a different map, which is the only time it changes. The
     /// name rides beside it, when the room has one.
-    pub(crate) fn broadcast_map(&self) {
-        let mut m = vec![S2C_MAP];
-        m.extend_from_slice(&self.world.packed_map());
+    pub(crate) fn broadcast_map(&mut self) {
+        let m = self.map_msg();
         let name = self.map_name_msg();
         for p in self.players.values() {
             let _ = p.tx.try_send(Message::Binary(m.clone()));
@@ -3797,11 +3835,13 @@ impl Room {
                 let _ = p.tx.try_send(Message::Binary(n.clone()));
             }
         }
-        for w in self.watchers.values() {
-            let _ = w.tx.try_send(Message::Binary(m.clone()));
-            if let Some(n) = &name {
-                let _ = w.tx.try_send(Message::Binary(n.clone()));
-            }
+        // The ground the delayed picture is packed on. Sent live it changed
+        // under a watcher five seconds before the frames drawn on it arrived,
+        // and since a new map bumps the settings generation the client refused
+        // every one of those frames: a map rotation blanked the stands.
+        self.tell_watchers(m);
+        if let Some(n) = name {
+            self.tell_watchers(n);
         }
     }
 
@@ -3820,16 +3860,15 @@ impl Room {
         ))
     }
 
-    pub(crate) fn broadcast_match(&self) {
+    pub(crate) fn broadcast_match(&mut self) {
         let Some(m) = self.match_msg() else {
             return;
         };
         for p in self.players.values() {
             let _ = p.tx.try_send(Message::Binary(m.clone()));
         }
-        for w in self.watchers.values() {
-            let _ = w.tx.try_send(Message::Binary(m.clone()));
-        }
+        // The clock belongs to the picture it is over. See `Channel`.
+        self.tell_watchers(m);
     }
 
     /// Turn this tick's events into rating movement. The simulation does not
@@ -4124,17 +4163,22 @@ impl Room {
             .unwrap_or_else(|| format!("ship{ship}"))
     }
 
-    pub(crate) fn broadcast_banner(&self) {
+    pub(crate) fn banner_msg(&self) -> Vec<u8> {
         let mut m = vec![S2C_BANNER];
         m.extend_from_slice(self.banner.as_bytes());
+        m
+    }
+
+    pub(crate) fn broadcast_banner(&mut self) {
+        let m = self.banner_msg();
         for p in self.players.values() {
             let _ = p.tx.try_send(Message::Binary(m.clone()));
         }
-        // Watchers read the round too. The banner is coarse -- a flag tally,
-        // a countdown -- so it does not ride the channel's delay.
-        for w in self.watchers.values() {
-            let _ = w.tx.try_send(Message::Binary(m.clone()));
-        }
+        // Watchers read the round too, and it is a line about the fight in
+        // front of them: "the clock has run out and the next death settles
+        // it" over two ships with five seconds still to fly is the banner
+        // arriving before the moment it describes.
+        self.tell_watchers(m);
     }
 
     fn snapshot_buffer(buf: &mut [u8], private: bool) -> &mut [u8] {
@@ -4243,6 +4287,38 @@ impl Room {
         }
     }
 
+    /// One room message for the stands, held for the frame it belongs with.
+    ///
+    /// Every watcher on the channel is served the same bytes at the same
+    /// moment, so this queues once rather than once per watcher, and it runs
+    /// with nobody in the stands: the ring is what a watcher arrives into.
+    fn tell_watchers(&mut self, m: Vec<u8>) {
+        self.channel.pending_state.push(m);
+    }
+
+    /// What the channel is showing, for somebody who has just walked into the
+    /// stands: the last copy of each room message the ring actually served,
+    /// falling back to the live one for anything it has not served yet, which
+    /// is only a room whose ring is still filling.
+    ///
+    /// A one-off line rides the feed rather than this, so nobody arrives to a
+    /// kill or a podium phrase from a match that is already over.
+    pub(crate) fn channel_sync(&self) -> Vec<Vec<u8>> {
+        let mut live = vec![self.map_msg()];
+        if let Some(n) = self.map_name_msg() {
+            live.push(n);
+        }
+        live.push(self.settings_msg());
+        if let Some(m) = self.match_msg() {
+            live.push(m);
+        }
+        live.push(self.banner_msg());
+        live.push(self.roster_msg());
+        live.into_iter()
+            .map(|m| self.channel.served_state.get(&m[0]).cloned().unwrap_or(m))
+            .collect()
+    }
+
     pub(crate) fn broadcast_snapshot(&mut self, buf: &mut [u8]) {
         self.broadcast_player_snapshots(buf, false);
         let buf = Self::snapshot_buffer(buf, false);
@@ -4329,6 +4405,7 @@ impl Room {
                 subject,
                 feed: std::mem::take(&mut self.channel.pending_feed),
                 charges,
+                state: std::mem::take(&mut self.channel.pending_state),
                 msg,
             });
         }
@@ -4353,7 +4430,16 @@ impl Room {
             } else {
                 Some(f.subject)
             };
+            // Ahead of the picture, because some of it is what the picture
+            // is read through: a map and its settings have to be in hand
+            // before the first frame packed on them arrives.
+            for m in &f.state {
+                self.channel.served_state.insert(m[0], m.clone());
+            }
             for w in self.watchers.values() {
+                for m in &f.state {
+                    let _ = w.tx.try_send(Message::Binary(m.clone()));
+                }
                 for k in &f.feed {
                     let _ = w.tx.try_send(Message::Binary(k.clone()));
                 }
@@ -4570,6 +4656,11 @@ impl Room {
 
     /// Sent on every change to who is where, and to whom. Cheap enough to send
     /// whole rather than diffed: a room holds a handful of sides.
+    ///
+    /// The one thing a watcher reads that does not ride the channel's delay.
+    /// It names the sides and colors the screen, which is the room rather than
+    /// the moment, and it is built per recipient, so there is no one copy for
+    /// the ring to hold.
     pub(crate) fn broadcast_teams(&self) {
         for p in self.players.values() {
             let _ = p.tx.try_send(Message::Binary(self.teams_msg(p.ship)));
@@ -4579,34 +4670,41 @@ impl Room {
         }
     }
 
-    /// Everyone in the room gets the new numbers. An operator retuning a
-    /// live arena would otherwise leave every client predicting the game as
-    /// it was when they joined.
-    pub(crate) fn broadcast_settings(&self) {
+    pub(crate) fn settings_msg(&self) -> Vec<u8> {
         let mut m = vec![S2C_SETTINGS];
         m.extend_from_slice(&self.settings_generation.to_le_bytes());
         m.extend_from_slice(&self.world.packed_settings());
+        m
+    }
+
+    /// Everyone in the room gets the new numbers. An operator retuning a
+    /// live arena would otherwise leave every client predicting the game as
+    /// it was when they joined.
+    pub(crate) fn broadcast_settings(&mut self) {
+        let m = self.settings_msg();
         for p in self.players.values() {
             let _ = p.tx.try_send(Message::Binary(m.clone()));
         }
         // A watcher decodes snapshots through the same core, so stale rules
         // would have it drawing a different game than the one it is shown.
-        for w in self.watchers.values() {
-            let _ = w.tx.try_send(Message::Binary(m.clone()));
-        }
+        // Rules that arrive early are that same fault the other way round.
+        // Each frame carries the generation it was packed under, so the rules
+        // reach the stands with the first frame that was played by them.
+        self.tell_watchers(m);
     }
 
     /// Called on every change, and on a two-second clock from the tick loop so a
     /// client whose queue was full gets another one. `try_send` is why it needs
     /// the clock.
-    pub(crate) fn broadcast_roster(&self) {
+    pub(crate) fn broadcast_roster(&mut self) {
         let m = self.roster_msg();
         for p in self.players.values() {
             let _ = p.tx.try_send(Message::Binary(m.clone()));
         }
-        for w in self.watchers.values() {
-            let _ = w.tx.try_send(Message::Binary(m.clone()));
-        }
+        // The scoreboard rides here, so a live copy would put the kill in the
+        // panel five seconds before the picture showed it, which is the
+        // spoiler the feed is held back to avoid.
+        self.tell_watchers(m);
     }
 }
 

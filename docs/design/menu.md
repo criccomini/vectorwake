@@ -1,5 +1,22 @@
 # Landing, and the menu
 
+> **A game row is one press, and leaving is a button on it.** Pressing a game
+> means be in that game, wherever this client happens to be: already there and
+> the panel goes, anywhere else and the stands dial it and keep dialing while a
+> network or an arena is down, with the panel up until a room answers. The way
+> out of the game you are flying is a button at the right hand end of that
+> game's own row, reached by the right arrow, and it hands the seat back rather
+> than the room. The `leave` stop is off the tab row a pilot in a match gets,
+> which is play, friends and settings. See
+> [decision 66](../architecture/decisions.md).
+
+> **The standings are gone.** The week's table came out of the client: the
+> tab, the page, the column heads it sorted by, the box you typed into to
+> narrow it, the arrows that stepped a week back, and the `/v1/week` call that
+> filled all of it. Four stops, not five. The site still publishes the ladder
+> at `/pilots`, which is where a pilot reads where they stand. See
+> [decision 65](../architecture/decisions.md).
+
 > **The ship page is the shelf.** The upgrades tab is gone: every slot the arena
 > has is a row of the ship page, drawn as circles (solid equipped, a ring owned,
 > a dim grey ring not yours) with the price of the next rung on the rows that
@@ -68,9 +85,9 @@
 > two jobs at once: a wallet and a budget on one screen, and the word "spend"
 > meaning both. They are two questions asked at different times and they are
 > two stops again. It is one full-screen surface met in
-> both places, differing only in which tabs it carries: in a match, settings
-> and leave, because nothing pauses and anything you cannot act on now costs
-> match time to read. It is still driven by the five inputs below, with left
+> both places, differing only in which tabs it carries: in a match, play,
+> friends and settings, because nothing pauses and anything you cannot act on
+> now costs match time to read. It is still driven by the five inputs below, with left
 > and right moving along the tab row and up and down moving through the page.
 > The sections about a single column and about changing hull mid-fight are
 > kept for the reasoning; where they describe a tree, the tab row is what
@@ -86,10 +103,37 @@ once.
 
 ## The only difference between the two
 
-Whether you are in a hull. That is `menu.home`, and the tab row follows it: six
-stops with no hull, the short row with one. A pilot the room benched is in the
-stands too, same empty cockpit and same time to read, so they get the six back
-with `leave` added, which is the one stop that needs a zone to mean anything.
+Whether you are in a hull. That is `menu.home`, and the tab row follows it:
+four stops with no hull, the short row with one. A pilot the room benched is in
+the stands too, same empty cockpit and same time to read, so they get the four
+back with `leave` added, which is the one stop that needs a zone to mean
+anything.
+
+The short row keeps the games. It did not, and leaving was a stop of its own
+called `leave`, which filed the way out of a game beside the way to the sound
+settings and a page away from the game it was about. It is a button at the
+right hand end of that game's own row now, and it hands the seat back rather
+than the room: what a pilot leaving a match wants is to stop flying, not to
+lose the arena they were flying in. So the row that carries it is the room's
+own, the panel stays standing over the result, and the corner offers TAKE SEAT
+for going back in. Right is the arrow that reaches the button, which is where
+it is drawn and the one thing right had no other use for on a list of games.
+
+That leaves one press on this list with one meaning: be in this game. Three
+states answer it three ways, and all three are `M.want_zone`.
+
+| where you are | a press on a game row |
+| --- | --- |
+| flying it | puts the panel away, because you are already there |
+| flying another | asks first, then joins: it costs the match you are in |
+| watching, or adrift | dials that zone and keeps dialing; the panel stays up until a room answers |
+
+The third is the one worth stating. A press is a thing this client is now
+trying to do rather than a thing it has done, so `M.await` holds which game and
+the panel is where it says so. On a fleet that is down, that panel is the whole
+of the feedback there is: the stands go on dialing, the row wears the dial
+that is looking for a room, and `M.arrived` takes the panel away the moment one
+answers.
 
 Whether the menu can be *closed* is a different question, and it used to be the
 same one. Closing a menu with nothing behind it would leave a player on an
@@ -101,9 +145,11 @@ are what walk back through the tree.
 
 ## A tab row, and a page under it
 
-Six tabs at the front end and three in a match, with one page under whichever
-is lit. Left and right walk the row, down enters the page, up from its first
-row comes back to the row, and left and right on a row set that row's value.
+Four tabs at the front end and three in a match, with one page under whichever
+is lit. Left and right walk the row; down or up enters the page, and up from
+its first row or down off its last comes back to the row, which makes the
+column a ring a thumb can walk either way. Left and right on a row set that
+row's value.
 The exception is a row drawn as a chip rather than as a ladder: the ship
 page's add-ons are a line of boxes across the page, so left and right go to
 the box beside this one and enter throws the one you are on. An arrow points
@@ -120,12 +166,11 @@ vectorwake
 ├ friends     a field you type a call sign into, who is waiting on you, who
 │             is on, the room you are in, and everybody who ever added you.
 │             See friends.md
-├ standings   the week, resetting Monday
 └ settings    sound · music · frames · fullscreen · bindings · about
 
               your call sign sits at the far end of the row and is the way
               into your account and career: a page reached from the one
-              place already naming it, rather than a seventh stop. Beside it,
+              place already naming it, rather than a fifth stop. Beside it,
               Discord, which opens a page about the room rather than the
               room: why there is one, one button that opens it, the address
               in words under that for when a popup blocker eats the button,
@@ -137,9 +182,10 @@ vectorwake
               top of the screen is the wordmark alone
 
 in a match
+├ play        the same list, because the way out of the game you are in is a
+│             button on that game's own row
 ├ friends     the people you are flying with, and who else is on
-├ settings    the same page, because sound and fullscreen are needed there
-└ leave       back to the front end
+└ settings    the same page, because sound and fullscreen are needed there
 ```
 
 Five inputs, which is exactly what a d-pad has, what a phone can draw as four
@@ -317,6 +363,12 @@ volume or ten minutes into a fight. Stopping is also what makes the next look
 start with a fresh ask: without that, coming back to the list after a match
 would show the fleet as it stood before the match began, and the interval would
 have to elapse before that corrected itself.
+
+What a row is called is the zone's label, and what a press on it names is the
+zone's own key. They were one string, so the game a player reads and the game a
+join, a rating and a kit ceiling are filed under could not differ: renaming
+Melee to Team Battle would have moved all of them. A zone that sets no label
+reads as its key, which is what every zone did before labels existed.
 
 A row is a mode, not a machine. The reply lists the instances running each zone
 underneath it, already ordered so the head is the fullest one that still has

@@ -49,10 +49,6 @@ M.profiles = {}
 -- Nothing yet, which is not the same as a catalog with nothing in it: this is
 -- the meta-layer's answer and a page that has not had one has to say so.
 M.catalog = nil
--- Which Monday the table in hand starts on, as the meta-layer spells it.
-M.week_since = ""
--- The week's table, as the meta-layer publishes it. Asked for the same way.
-M.week = nil
 -- The friends page's lists: friends with where they are flying, whoever has
 -- added this pilot and is waiting on an answer, whoever this pilot has added
 -- and is waiting on, and whoever is in the room right now and is on none of
@@ -368,7 +364,7 @@ function M.save_profile(name, kit, cb)
              end
              local replaced = false
              for i, old in ipairs(M.profiles) do
-                 if old.builtin ~= true and type(old.name) == "string"
+                 if type(old.name) == "string"
                     and string.lower(old.name) == string.lower(profile.name or "") then
                      M.profiles[i] = profile
                      replaced = true
@@ -440,9 +436,8 @@ function M.buy(slot, zone, cb)
     end)
 end
 
--- The catalog, and the week's table. Both are pages somebody is looking at
--- rather than facts a session needs, so they are asked for when the page opens
--- and left alone otherwise.
+-- The catalog. A page somebody is looking at rather than a fact a session
+-- needs, so it is asked for when the page opens and left alone otherwise.
 function M.refresh_upgrades(zone)
     if M.base == "" then return end
     post("/v1/upgrades", {secret = secret, zone = zone or ""}, function(r)
@@ -454,18 +449,6 @@ function M.refresh_upgrades(zone)
         -- began, and the only thing that moved it was a purchase. An evening's
         -- kills showed up on the next reload.
         if tonumber(r.rivets) then M.rivets = tonumber(r.rivets) end
-    end)
-end
-
--- `back` is which week: zero is the one running, one is the week before it.
-function M.refresh_week(back)
-    if M.base == "" then return end
-    post("/v1/week", {back = math.max(0, math.floor(back or 0))}, function(r)
-        if type(r) ~= "table" then return end
-        if type(r.week) == "table" then M.week = r.week end
-        -- The Monday it starts on, so the page names the week it is showing
-        -- rather than counting backwards from today itself.
-        M.week_since = type(r.since) == "string" and r.since or ""
     end)
 end
 
