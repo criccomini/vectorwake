@@ -745,6 +745,48 @@ local function key_cap(x, y, w, label, on)
         pal.a(col, on and 1 or 0.85), "center", nil, true)
 end
 
+-- The way into the menu, as the three bars the whole web uses for it.
+--
+-- The word rides beside the mark on a desktop and the mark stands alone on a
+-- phone. That is not a saving of room, or not much of one: the corner row goes
+-- from 196 points to 175 of a phone's 390, and the clock band centered at 195
+-- has to drop below the row either way. It is that a phone's corner is worked
+-- by a thumb belonging to somebody who has met this screen before, and a
+-- desktop's is read. MENU is the one word in that corner a first visit can
+-- take without being taught a convention, so it stays where there is room.
+--
+-- The box stays in both. `key_box` is the one shape a pressable thing wears
+-- here, and three bars floating on the glass would make this control the
+-- exception the corner keys were drawn as boxes to stop being.
+local BURGER = {w = 13, bar = 1.8, gap = 4.2}
+local function burger_cap(x, y, on)
+    local col = on and pal.FRIEND or pal.DIM
+    local h = KEY_H * F.scale
+    local bars = BURGER.w * F.scale
+    local word = not M.compact and "MENU" or nil
+    -- Square with the mark alone, so the key reads as one rather than as a
+    -- word's box with a picture left in it. Under a fingertip either way:
+    -- `M.pick` grows a box to the touch floor for a finger, so a 26 point key
+    -- answers a press aimed anywhere near it.
+    local w = word
+        and (bars + 3 * KEY_PAD * F.scale + text_w(word, key_size()))
+        or h
+    key_box(x, y, w, h, pal.a(col, on and 0.16 or 0.07),
+            pal.a(col, on and 0.95 or 0.55))
+    local bx = word and (x + KEY_PAD * F.scale) or (x + w / 2 - bars / 2)
+    local mid = y + h / 2
+    local ink = pal.a(col, on and 1 or 0.85)
+    for i = -1, 1 do
+        rect(bx, mid + i * BURGER.gap * F.scale - BURGER.bar * F.scale / 2,
+             bars, BURGER.bar * F.scale, ink)
+    end
+    if word then
+        txt(word, bx + bars + KEY_PAD * F.scale, mid, key_size(), ink,
+            nil, nil, true)
+    end
+    return w
+end
+
 -- PLAYERS carries the room's composition with it. The helmet and machine are
 -- the same marks the directory and scoreboard already use, kept inside the
 -- one key rather than hung off it as another piece of HUD chrome.
@@ -3064,7 +3106,12 @@ local function menu_button(on_air, watch, room, pilots, watchers, landed)
         end
     end
     local cx = x
-    local keys = {{"MENU", "open", F.menu_up}}
+    -- The way in first, as its own drawing: it is the one key here that is a
+    -- mark rather than a word, and on a phone it is only a mark.
+    local menu_w = burger_cap(cx, y, F.menu_up)
+    hit(cx, y, menu_w, KEY_H * F.scale, "open")
+    cx = cx + menu_w + KEY_GAP * F.scale
+    local keys = {}
     -- The way back into a hull, for a pilot the room is holding a seat for.
     -- Not on the landing, where PLAY NOW is that key and says it better: two
     -- controls for one act, one of them pulsing at the foot of the screen and
@@ -4118,8 +4165,7 @@ function M.waiting(note)
     -- The one control, drawn here rather than through the corner row, which
     -- carries a roster this screen has not got.
     local x, y = F.safe_l + PAD * F.scale, F.safe_t + PAD * F.scale
-    local w = key_w("MENU")
-    key_cap(x, y, w, "MENU", F.menu_up)
+    local w = burger_cap(x, y, F.menu_up)
     hit(x, y, w, KEY_H * F.scale, "open")
     -- And a line where the key will be, but only when something has gone
     -- wrong. Waiting says nothing: the wordmark on a starfield is what this

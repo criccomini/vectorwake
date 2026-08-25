@@ -234,6 +234,45 @@ check("and says nothing about the channel it is watching",
 check("and keeps the way into the menu", box("open") ~= nil)
 check("and the roster key beside it", box("details") ~= nil)
 
+-- --- the way in wears three bars ------------------------------------------
+--
+-- The menu key is a hamburger: the mark alone on a phone in either
+-- orientation, the mark and the word on anything wider. The box stays in both,
+-- because `key_box` is the one shape a thing to press wears here and bars
+-- floating on the glass would make this control the exception the corner keys
+-- were drawn as boxes to stop being.
+do
+    for _, s in ipairs(SHAPES) do
+        local w, h, shape = s[1], s[2], s[3]
+        frame(w, h)
+        local key = box("open")
+        check(shape .. " keeps a way into the menu", key ~= nil, "no key")
+        local worded = word("MENU") ~= nil
+        if shape == "desktop" then
+            check("a desktop names the key as well as marking it", worded,
+                  "no MENU beside the bars")
+        else
+            check(shape .. " gives the key the mark alone", not worded,
+                  "MENU is still written on a phone")
+        end
+        if key then
+            -- Square where it is the mark alone, so it reads as a key rather
+            -- than as a word's box with a picture left in it.
+            local square = math.abs(key.w - key.h) < 1.5
+            check(shape .. " shapes the key to what is in it",
+                  worded and not square or (not worded and square),
+                  string.format("%.0fx%.0f, word %s", key.w, key.h,
+                                tostring(worded)))
+            -- A finger reaches it whatever its width: `M.pick` grows a box to
+            -- the touch floor for a press made with one.
+            check(shape .. " answers a finger aimed near the key",
+                  ui.pick(key.x + key.w / 2, key.y + key.h + 8, true)
+                      == key,
+                  "a near miss found nothing")
+        end
+    end
+end
+
 -- The one thing a landing takes away. PLAY NOW is the way into a hull here,
 -- and a chip in the corner offering the same act is the offer made twice.
 check("the landing carries no TAKE SEAT chip",
@@ -354,9 +393,13 @@ do
               box("play_now") == nil)
         check(shape .. " waiting draws no roster key", box("details") == nil)
         check(shape .. " waiting draws no radar", box("map") == nil)
+        -- The name, and the word on the menu key where that key carries one.
+        -- A phone's is the three bars alone, in either orientation, so there
+        -- the name is the only word on the screen.
+        local said = (shape == "desktop") and 2 or 1
         check(shape .. " waiting says nothing while it is only waiting",
-              #words() == 2,
-              #words() .. " words on screen")
+              #words() == said,
+              #words() .. " words on screen, wanted " .. said)
     end
 
     -- A fleet that is down does say so, in the slot the key will take. A
