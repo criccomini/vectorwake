@@ -545,30 +545,31 @@ def bar_head(px, bar_h, name_px):
     (ln, ls, lc, _), (rn, rs, rc, _) = SIDES
     share = ls / (ls + rs) * 100
 
-    def label(name, col, right):
-        # Two lines rather than one: the word that says what this is over the
-        # name of the thing, which keeps the label as tall as the number it
-        # stands beside and stops a long side name from pushing the bar over.
-        return (f'<div style="display:flex;flex-direction:column;'
-                f'align-items:{"flex-start" if right else "flex-end"};'
-                f'gap:2px;line-height:1">'
-                f'<span class="lbl" style="font-size:{name_px - 2}px">team'
-                f'</span>'
-                f'<span class="hud" style="font-size:{name_px}px;color:{col}">'
-                f'{name}</span></div>')
+    # The names ride inside their own share of the bar rather than outside it,
+    # in the ground's own near-black: a side's color is already saying which
+    # side this is, so the name sits in the color instead of beside it, and
+    # the bar carries the whole reading in one band. Each name is set against
+    # the outer end of its own segment, so the two read outward from the
+    # middle the way the numbers beyond them do.
+    def inside(name, right):
+        return (f'<span class="hud" style="font-size:{name_px}px;'
+                f'color:var(--bg);letter-spacing:.08em;'
+                f'position:absolute;{"right" if right else "left"}:'
+                f'{max(8, bar_h * 0.5):.0f}px;top:50%;'
+                f'transform:translateY(-50%);white-space:nowrap">{name}</span>')
 
     return f"""
     <div class="row" style="gap:{px}px">
-      {label(ln, lc, False)}
       <span class="num" style="font-size:{px * 1.9:.0f}px;color:{lc};
             line-height:1">{ls}</span>
       <div style="flex:1;height:{bar_h}px;display:flex;overflow:hidden">
-        <div style="width:{share:.1f}%;background:{lc}"></div>
-        <div style="flex:1;background:{rc}"></div>
+        <div style="position:relative;width:{share:.1f}%;background:{lc}">
+          {inside(ln, False)}</div>
+        <div style="position:relative;flex:1;background:{rc}">
+          {inside(rn, True)}</div>
       </div>
       <span class="num" style="font-size:{px * 1.9:.0f}px;color:{rc};
             line-height:1">{rs}</span>
-      {label(rn, rc, True)}
     </div>"""
 
 
@@ -629,7 +630,7 @@ def board_ending(order, form):
     w, h, compact = FORMS[form]
     px = 14 if not compact else 11
     name_px = 13 if not compact else 10
-    bar_h = 10 if not compact else 7
+    bar_h = 26 if not compact else 18
     key_h = 30 if not compact else 24
     lbl_px = 11 if not compact else 9
 
@@ -656,13 +657,20 @@ def screen_board(order, form):
     measure = min(w - 28, 720 if not compact else w - 28)
     stars = starfield(w, h, *(dict(Desktop=(46, 30, 12), Landscape=(30, 20, 8),
                                    Portrait=(30, 20, 8))[form]), seed=28)
+    # Centered in a window with room, and hugging the foot of a phone held
+    # upright. The key at the bottom of this page is the only thing on it to
+    # press, and a thumb reaches the bottom of a tall screen rather than the
+    # middle of it. The layout is the same either way; only where the block
+    # sits in the window changes.
+    place = ("left:50%;bottom:26px;transform:translateX(-50%)"
+             if form == "Portrait"
+             else "left:50%;top:50%;transform:translate(-50%,-50%)")
     return (f'''<div style="position:absolute;left:0;top:0;width:{w}px;
             height:{h}px;overflow:hidden;background-color:var(--bg);
             background-image:{stars}">
             <div style="position:absolute;inset:0;background:rgba(5,7,12,.55)">
             </div>
-            <div style="position:absolute;left:50%;top:50%;
-                 transform:translate(-50%,-50%);width:{measure}px">
+            <div style="position:absolute;{place};width:{measure}px">
               {board_ending(order, form)}
             </div></div>''')
 

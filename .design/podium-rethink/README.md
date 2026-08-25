@@ -22,10 +22,12 @@ Drawings of a proposal, not a plan of record. Nothing here is built.
 ## The board is the ending (page one)
 
 No podium. At the whistle the board comes up by itself and grows a head and a
-foot: the line saying who took it, the bar under it with each side's points on
-its ends beside a two-line TEAM label, the pilot list with your own row
-washed, and a foot carrying the countdown and one key. One layout at every
-size; only the measure and the type change.
+foot: the line saying who took it, the bar under it carrying each side's name
+inside its own share of it with the points on the ends, the pilot list with
+your own row washed, and a foot with the countdown and one key. One layout at
+every size; the measure, the type and where the block sits are all that
+change, and on an upright phone it hugs the foot of the screen so the one key
+on it is under a thumb.
 
 The side that took it comes first everywhere on this page, whether or not it
 is yours, so the line, the bar and the rows all read the same way down the
