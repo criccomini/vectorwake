@@ -243,6 +243,53 @@ for _, s in ipairs(SHAPES) do
     end
 end
 
+-- --- and the way out of a seat is on the row of the room it is in -----------
+--
+-- A button at the row's right hand end. The row itself publishes a box the
+-- whole width of the panel, so a button drawn inside that box which lost the
+-- press would be a control you can see and cannot use. It wins because it is
+-- published first and `M.pick` breaks a tie on publish order.
+
+do
+    local flying = {}
+    for i, r in ipairs(ROWS) do
+        local c = {}
+        for k, val in pairs(r) do c[k] = val end
+        flying[i] = c
+    end
+    flying[1].acts = {{label = "leave"}}
+    for _, s in ipairs(SHAPES) do
+        local name, w, h = s[1], s[2], s[3]
+        frame(w, h, {rows = flying, home = false, scenery = false})
+        local key
+        for _, b in ipairs(ui.hits) do
+            if b.action == "row_act" then key = b end
+        end
+        check(name .. " hangs the button off the row it belongs to",
+              key ~= nil, "none published")
+        if key then
+            local dx, _, dw = ui.drawer_span()
+            check(name .. " keeps it inside the panel",
+                  key.x >= dx - 1.5 and key.x + key.w <= dx + dw + 1.5,
+                  string.format("%.0f..%.0f in %.0f..%.0f", key.x,
+                                key.x + key.w, dx, dx + dw))
+            -- At the row's right hand end rather than anywhere along it,
+            -- which is what makes the right arrow the way to it.
+            check(name .. " at that row's right hand end",
+                  key.x > dx + dw * 0.6,
+                  string.format("%.0f of %.0f", key.x - dx, dw))
+            check(name .. " sends a press on it to the button",
+                  press(key.x + key.w / 2, key.y + key.h / 2) == "row_act",
+                  tostring(press(key.x + key.w / 2, key.y + key.h / 2)))
+            -- And the rest of the row is still the row. Two controls on one
+            -- line, and the line has to keep meaning what it means.
+            check(name .. " and the rest of that row to the row",
+                  press(dx + 12, key.y + key.h / 2) == "stage",
+                  tostring(press(dx + 12, key.y + key.h / 2)))
+        end
+    end
+end
+
 -- --- the way out stands where the way in stood ------------------------------
 --
 -- The x sits in the square the menu key had, at the same inset on the same

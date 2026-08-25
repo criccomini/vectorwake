@@ -6269,7 +6269,10 @@ end
 -- only a button does: a button is a shape rather than a line, and a press
 -- landing anywhere along the row it sits in would make it read as a line
 -- again.
-local function stage_row(x, y, w, h, r, hot)
+--
+-- `idx` is the row's place in the page, which is what a press on it says, and
+-- `warm` is which of the row's own buttons a pointer is resting on, if any.
+local function stage_row(x, y, w, h, r, hot, idx, warm)
     -- A row drawn as a button rather than as a line of a list.
     --
     -- For a row that is not a stop on the way anywhere. Discord was the one,
@@ -6379,7 +6382,25 @@ local function stage_row(x, y, w, h, r, hot)
     end
     -- The right hand side is data, so it stays in the face the numbers in
     -- flight are set in: a call sign, a count, a hull's name.
-    if r.waiting then
+    if r.acts then
+        -- What can be done to this row, as buttons at its right hand end. The
+        -- games list carries one: the way out of the seat you are flying, on
+        -- the row of the room it is in.
+        --
+        -- A button rather than a row of its own, because it is about the row it
+        -- sits on, and the row goes on meaning what every other row in the list
+        -- means. Drawn with the friends page's own button, so the two lists
+        -- that hang controls off a name cannot drift apart.
+        local kh = math.min(h - 12 * F.scale, 26 * F.scale)
+        local edge = x + w - GUTTER * F.scale
+        for k = #r.acts, 1, -1 do
+            local a = r.acts[k]
+            -- Published inside `row_button`, and before the row's own box, so
+            -- a press on the button is the button rather than the row under it.
+            edge = row_button(edge, y + h / 2, kh, a.label, a.go,
+                              warm == k, "row_act", idx, k) - 8 * F.scale
+        end
+    elseif r.waiting then
         -- No count, because there is nothing to count. The instrument that
         -- looks for a game says what the words did, in the room the numbers
         -- would have taken, and it keeps saying it while the list refreshes
@@ -7824,7 +7845,8 @@ function M.menu(v)
                 -- home screen, where the cursor belongs to the rail and the
                 -- stage is a preview of what the mark beside it holds.
                 local own = stage_row(sx, y, GUTTER * F.scale + lw, rowh, r,
-                                      (focused and i == v.sel) or i == v.hover)
+                                      (focused and i == v.sel) or i == v.hover,
+                                      i, v.row_hot == i and v.row_hot_act)
                 if r.pick and not own then
                     -- The whole width of the panel, which is what the lit
                     -- field covers: a press that missed by a margin the eye

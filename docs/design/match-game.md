@@ -629,8 +629,11 @@ surfaces now rather than one:
   meaning both, is answered by shape: points are circles, prices wear the
   rivet mark, and nothing is bought except on the reading. See
   [menu.md](menu.md) and [decision 64](../architecture/decisions.md).
-- **Two tabs in a match**: settings and leave. Same row in the same place,
-  carrying what you can act on from a cockpit.
+- **Three tabs in a match**: play, friends and settings. Same row in the same
+  place, carrying what you can act on from a cockpit. It was two, settings and
+  leave; the games list is on it now because the way out of the game you are
+  in is a button on that game's own row, and the standings stay off it because
+  a week's table is the thing you cannot act on.
 
 Settings holds everything that is about the machine rather than about a
 match, in one column: audio, video, the control bindings, and about. Help
@@ -645,8 +648,8 @@ moderation argument as much as the vanity one. A call sign that cost six
 hundred rivets is a name a ban actually takes something from, and rivets are
 earned by flying rather than bought with money, so the cost is time.
 
-**It is one surface, and in a match it carries two tabs: settings and
-leave.** Same chrome as the front end, full screen, with the tab row on top;
+**It is one surface, and in a match it carries three tabs: play, friends and
+settings.** Same chrome as the front end, full screen, with the tab row on top;
 what differs is which tabs are on it, not how any of it looks or works. That
 is the point. A player learns one screen and meets it in both places.
 
@@ -674,9 +677,9 @@ thing you are in". Hiding the fight would be a lie about what is happening,
 which is the same reason the interface stays up today.
 
 None of this needs a new mechanism. `menu.home` already builds rows from the
-moment rather than declaring them, which is how the `leave` row appears only
-when there is something to leave. Ship and standings are the same conditional
-in the other direction.
+moment rather than declaring them, which is how the leave button appears on a
+game's row only while you are flying that game. Ship and standings are the
+same conditional in the other direction.
 
 ### It stays navigable from a keyboard, a d-pad and a thumb
 

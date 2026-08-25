@@ -68,9 +68,9 @@
 > two jobs at once: a wallet and a budget on one screen, and the word "spend"
 > meaning both. They are two questions asked at different times and they are
 > two stops again. It is one full-screen surface met in
-> both places, differing only in which tabs it carries: in a match, settings
-> and leave, because nothing pauses and anything you cannot act on now costs
-> match time to read. It is still driven by the five inputs below, with left
+> both places, differing only in which tabs it carries: in a match, play,
+> friends and settings, because nothing pauses and anything you cannot act on
+> now costs match time to read. It is still driven by the five inputs below, with left
 > and right moving along the tab row and up and down moving through the page.
 > The sections about a single column and about changing hull mid-fight are
 > kept for the reasoning; where they describe a tree, the tab row is what
@@ -90,6 +90,32 @@ Whether you are in a hull. That is `menu.home`, and the tab row follows it: six
 stops with no hull, the short row with one. A pilot the room benched is in the
 stands too, same empty cockpit and same time to read, so they get the six back
 with `leave` added, which is the one stop that needs a zone to mean anything.
+
+The short row keeps the games. It did not, and leaving was a stop of its own
+called `leave`, which filed the way out of a game beside the way to the sound
+settings and a page away from the game it was about. It is a button at the
+right hand end of that game's own row now, and it hands the seat back rather
+than the room: what a pilot leaving a match wants is to stop flying, not to
+lose the arena they were flying in. So the row that carries it is the room's
+own, the panel stays standing over the result, and the corner offers TAKE SEAT
+for going back in. Right is the arrow that reaches the button, which is where
+it is drawn and the one thing right had no other use for on a list of games.
+
+That leaves one press on this list with one meaning: be in this game. Three
+states answer it three ways, and all three are `M.want_zone`.
+
+| where you are | a press on a game row |
+| --- | --- |
+| flying it | puts the panel away, because you are already there |
+| flying another | asks first, then joins: it costs the match you are in |
+| watching, or adrift | dials that zone and keeps dialing; the panel stays up until a room answers |
+
+The third is the one worth stating. A press is a thing this client is now
+trying to do rather than a thing it has done, so `M.await` holds which game and
+the panel is where it says so. On a fleet that is down, that panel is the whole
+of the feedback there is: the stands go on dialing, the row wears the dial
+that is looking for a room, and `M.arrived` takes the panel away the moment one
+answers.
 
 Whether the menu can be *closed* is a different question, and it used to be the
 same one. Closing a menu with nothing behind it would leave a player on an
@@ -139,9 +165,10 @@ vectorwake
               top of the screen is the wordmark alone
 
 in a match
+├ play        the same list, because the way out of the game you are in is a
+│             button on that game's own row
 ├ friends     the people you are flying with, and who else is on
-├ settings    the same page, because sound and fullscreen are needed there
-└ leave       back to the front end
+└ settings    the same page, because sound and fullscreen are needed there
 ```
 
 Five inputs, which is exactly what a d-pad has, what a phone can draw as four

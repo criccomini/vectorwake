@@ -637,6 +637,8 @@ local function hover_menu(x, y, vh)
     menu.found_hot = nil
     menu.friend_hot = nil
     menu.friend_hot_act = nil
+    menu.row_hot = nil
+    menu.row_hot_act = nil
     ui.hover_say = nil
     -- The phrase chips are the one control outside the menu a pointer lights,
     -- because they are on the card that is up while the menu is shut. Walked
@@ -671,13 +673,17 @@ local function hover_menu(x, y, vh)
             if r.action == "friend_act" then
                 menu.friend_hot, menu.friend_hot_act = r.value, r.level
             end
+            if r.action == "row_act" then
+                menu.row_hot, menu.row_hot_act = r.value, r.level
+            end
             -- A pip lights the row it belongs to, so the cursor follows the
             -- pointer across a ladder the way it does down a list. So does
             -- the half of a slot row that opens its reading, which is the
             -- name and everything past the circles.
             return hovering(
                 ((r.action == "stage" or r.action == "kit_at"
-                  or r.action == "read_row" or r.action == "friend_act")
+                  or r.action == "read_row" or r.action == "friend_act"
+                  or r.action == "row_act")
                  and r.value)
                     or nil,
                 r.action == "rail" and r.value or nil)
@@ -824,7 +830,13 @@ local function leave_world()
     ui.room_ask = nil
 end
 
-function go_home(self)
+-- Everything that ends a session: a leave, a drop, a give-up on a join.
+--
+-- `keep_menu` is for the one caller that is going somewhere rather than
+-- nowhere. A press on the games list ends this session to start another, and
+-- the panel has to stay up for it: the press is a thing the client is now
+-- trying to do, and the menu is where it says so until a room answers.
+function go_home(self, keep_menu)
     leave_world()
     self.replay = nil
     self.replay_loading = nil
@@ -854,7 +866,7 @@ function go_home(self)
     -- games list, which is a page to pick from rather than a place to be, and
     -- under a front end that is itself a game there is somewhere to put a
     -- player down. The list is a press on MENU away.
-    menu.close()
+    if not keep_menu then menu.close() end
     directory.open(menu.directory)
 end
 
@@ -1470,6 +1482,10 @@ function update(self, dt)
     -- closed onto, which is the difference between this and a client that has
     -- not reached a room at all.
     menu.scenery = (self.attract and net.connected and live) or false
+    -- A press that was waiting on a room has one. It is asked here rather
+    -- than at the dial, because a socket starting is not a room answering:
+    -- what the panel is waiting for is a game on the glass behind it.
+    if net.connected and live then menu.arrived(menu.zone) end
     -- And who is in it, for the column beside the page: the same roster and
     -- sides the scoreboard reads, plus the watched subject's team, which is
     -- the perspective every ship in the glass is already colored from.
@@ -2661,9 +2677,42 @@ function apply_menu(self, act)
         return
     end
 
-    -- The eighth cell of the ship page: sit out. The hull despawns and the same
-    -- socket watches, landing on the room channel. Coming back is any of the
-    -- other seven cells, which is the same page and the same press.
+    -- The leave button on the row of the game you are flying in. The hull
+    -- despawns and the same socket watches, landing on the room channel: you
+    -- are a watcher in the same arena, so the panel is left standing, because
+    -- nothing about where this client is has changed and putting the menu away
+    -- would be answering a question nobody asked. The corner's TAKE SEAT is
+    -- the way back in.
+    if act == "leave_seat" then
+        if self.online and not self.attract and not watching then
+            net.sit_out()
+        end
+        return
+    end
+
+    -- A press on a game: be in it. The stands are what dial it, and they go
+    -- on dialing while a network or an arena is down, so there is nothing to
+    -- do here but let go of the seat this client is holding. `menu.await`
+    -- carries which game, and the panel goes when a room answers to it.
+    if act == "want_zone" then
+        if self.online and not self.attract then
+            menu.note = nil
+            go_home(self, true)
+        end
+        -- And dial on the next frame rather than waiting out a failure timer
+        -- nobody's failure started. The stands grow that timer before every
+        -- attempt so a zone that refuses instantly cannot be dialed sixty
+        -- times a second; a press is not that, and a press that sat for four
+        -- seconds under a panel saying nothing is the whole of what this
+        -- would look like from the outside.
+        self.attract_wait = 0
+        return
+    end
+
+    -- The eighth cell of the ship page: sit out. The same act as the leave
+    -- above, asked from the page about what you are flying rather than from
+    -- the row of the room you are flying it in, and it puts the panel away
+    -- because the wash moving is the answer to a press made there.
     if act == "spectate" then
         -- Off the home screen this is what you will arrive as, exactly as
         -- picking a hull there is: remembered, carried into the join, and the
@@ -3081,6 +3130,11 @@ function on_input(self, action_id, action)
                 -- One button on one friends row: accept, ignore, join,
                 -- unfriend. `level` is which of that row's own buttons.
                 act, moved = menu.click_friend(r.value, r.level)
+            elseif r.action == "row_act" then
+                -- One button hung off a row of any other page. The games
+                -- list has the one there is: leave the seat you are flying,
+                -- on the row of the room it is in.
+                act, moved = menu.click_row_act(r.value, r.level)
             elseif r.action == "buy_go" then
                 -- The BUY beside the reading pane, or the one under the
                 -- item page. `value` is the row the pane is reading, and

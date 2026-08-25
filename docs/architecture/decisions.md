@@ -2924,3 +2924,58 @@ which point browsing what is for sale is its own activity again and wants its
 own page; or if the gold on the fitting page proves noisy, in which case
 `.design/hangar` holds a drawn fallback, a FIT | BUY toggle over the same rows,
 that shares nearly all of this drawing.
+
+## 65. A game row is one press, and leaving is a button on it
+
+**Status:** accepted, superseding the `leave` stop on the tab row
+
+**Decision:** a press on a game in the games list means one thing everywhere:
+be in that game. Where this client already is, that is true the moment it is
+asked and the panel goes. Where it is not, the press is recorded in
+`menu.await`, the stands dial the zone and go on dialing while a network or an
+arena is down, and the panel goes when a room actually answers. Arriving that
+way arrives as a watcher, which is what the stands are.
+
+The one exception is a pilot in a hull pressing a different game, because that
+press costs the match they are in. It asks first, and the answer that switches
+joins the way it always did.
+
+Leaving is a button at the right hand end of the row of the game you are in,
+drawn only while you are flying it. It hands the seat back and keeps the room:
+you are a watcher in the same arena, the corner offers TAKE SEAT, and the panel
+is left standing because nothing about where this client is has changed. Right
+is the arrow that reaches the button, which is where it is drawn and the one
+thing right had no other use for on a list of games. The short tab row a pilot
+in a match gets is play, friends and settings.
+
+**Why:** the three states a player can open this panel in were answered by
+three different mechanisms, and two of them lied. In a hull, the way out was a
+stop called `leave` at the end of the tab row, which filed leaving beside the
+sound settings and a page away from the game it was about, and which meant
+"drop the room" where a pilot who wants to stop flying means "give the seat
+back". Watching, a press on the game already on screen tore down a working
+connection and handshaked its way back to where it already was, behind a card
+asking whether that was meant. And with the fleet down, a press did nothing at
+all: there was no room to enter, so the act failed silently and the panel sat
+there looking like it had not registered the tap.
+
+One act with one name answers all three, because the difference between them is
+not what the player is asking for. It is only whether the client is there yet.
+
+`menu.await` is what makes the third state visible. A press is a thing this
+client is now trying to do rather than a thing it has done, so the panel is
+where it says so: the row wears the dial that is looking for a room, the stands
+keep dialing, and `menu.arrived` takes the panel away the moment one answers.
+
+**Cost:** the games list is on the tab row during a match, which is one more
+stop than a cockpit had and a page that scrolls where the short row's pages did
+not. A row now carries two controls on one line, which is a grammar the rest of
+this list does not have and which rests on `M.pick` breaking a tie on publish
+order. And a press that waits gives no words while it waits, only the panel
+staying up, which is honest but quiet.
+
+**Reconsider if:** a second button turns up wanting the same right hand end, at
+which point one row is a toolbar and the friends page's card is the better
+shape; or a zone list grows long enough that the row you are in is off screen
+when you open the panel, which would put the way out somewhere you have to
+scroll to find.

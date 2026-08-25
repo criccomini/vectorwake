@@ -211,16 +211,73 @@ do
           joined == nil and moved == false and menu.at() == "play",
           tostring(joined) .. "/" .. tostring(moved) .. "/" .. menu.at())
     -- And the row under the cursor really was a game, which is what makes the
-    -- check above about right rather than about an empty list.
+    -- check above about right rather than about an empty list. A press on a
+    -- game is one act with one name: be in this zone. The arena dials it and
+    -- goes on dialing while a network or an arena is down.
     check("and enter on the same row still does",
-          menu.step({go = true}) == "join", "nothing joined")
+          menu.step({go = true}) == "want_zone", "nothing asked for")
+    check("and the press remembers which game it is waiting on",
+          menu.await == "chaos", tostring(menu.await))
     -- A thumb is the same act. There is no key at the foot of the column any
     -- more, so the row is the only way into a game, and a tap has to land
     -- where enter lands rather than only moving the cursor onto it.
     menu.stack, menu.sel = {"root", "play"}, {play = 1}
     local tapped, took = menu.click_stage(1)
-    check("and a tap on a game joins it", tapped == "join" and took,
+    check("and a tap on a game asks for it too",
+          tapped == "want_zone" and took,
           tostring(tapped) .. "/" .. tostring(took))
+    -- And the panel stays up for it. The press is a thing the client is now
+    -- trying to do, and this is where it says so until a room answers: on a
+    -- fleet that is down, that is the whole of the feedback there is.
+    check("and the panel stays up until a room answers", menu.open)
+    menu.arrived("chaos")
+    check("and goes when one does", not menu.open and menu.await == nil,
+          tostring(menu.open) .. "/" .. tostring(menu.await))
+    menu.open = true
+    menu.stack, menu.sel = kept_stack, kept_sel
+end
+
+-- --- the game you are in, and the way out of it ---------------------------
+--
+-- Three states, and the games list answers a press differently in each. In a
+-- hull: the row you are on carries a leave, and a press on the row itself is
+-- the way back to the fight. Watching: a press on the room you are watching
+-- puts the panel away, because that is the only thing between you and it.
+-- Adrift: nothing is in this list that you are in, so every press waits.
+do
+    local kept_stack, kept_sel = menu.stack, menu.sel
+    local kept_zone, kept_home = menu.zone, menu.home
+    menu.open, menu.home, menu.watching = true, false, false
+    menu.zone = "chaos"
+    menu.stack, menu.sel = {"root", "play"}, {play = 1}
+
+    local flying = menu.view()
+    local acts = flying.rows[1] and flying.rows[1].acts
+    check("the game you are flying carries a leave",
+          acts ~= nil and #acts == 1 and acts[1].label == "leave",
+          acts and tostring(#acts) or "none")
+
+    -- Right is the arrow that reaches it: it is drawn at the row's right hand
+    -- end, and right had nothing else to do on a list of games.
+    local left, moved = menu.step({right = true})
+    check("and right reaches it", left == "leave_seat" and moved,
+          tostring(left) .. "/" .. tostring(moved))
+    -- The panel stays: what changed is on the glass behind it, and nothing
+    -- about where this client is has moved.
+    check("and leaving the seat leaves the panel standing", menu.open)
+    -- A pointer takes the same route to the same act.
+    local clicked = menu.click_row_act(1, 1)
+    check("and a press on the button is the same act",
+          clicked == "leave_seat", tostring(clicked))
+
+    -- Watching it instead: no leave, because there is no seat to hand back.
+    menu.watching = true
+    local benched = menu.view()
+    check("a game you are only watching carries none",
+          benched.rows[1] and benched.rows[1].acts == nil)
+
+    menu.zone, menu.home = kept_zone, kept_home
+    menu.watching = false
     menu.stack, menu.sel = kept_stack, kept_sel
 end
 
@@ -357,15 +414,16 @@ menu.click_rail(ship_at)
 check("the lit stop shuts the menu",
       not menu.open, table.concat(menu.stack, "/"))
 
--- In a match the tab row is a different row: settings, friends and leave,
--- which is everything a pilot can act on from a cockpit. Nothing about an
--- upgrade or a hull is on it, because a hull is locked for the match and a
--- three minute match is short enough that browsing one costs a real fraction
--- of it.
+-- In a match the tab row is a shorter row: play, friends and settings, which
+-- is everything a pilot can act on from a cockpit. Nothing about an upgrade
+-- is on it, and no standings, because a hull is locked for the match and a
+-- three minute match is short enough that browsing either costs a real
+-- fraction of it.
 --
--- Settings comes first because it is the safe, common reason to open a menu
--- while the fight continues behind it. Friends stays one stop away because the
--- people to add are the people you are flying with.
+-- Play comes first, and it is the one stop that used not to be here at all.
+-- Leaving is a button on the row of the game you are in now, so the list is
+-- the route to it; a tab called "leave" beside the sound settings was the way
+-- out of a game filed a page away from the game it was about.
 menu.home = false
 menu.open = true
 menu.stack = {"root"}
@@ -373,18 +431,13 @@ menu.sel = {}
 local in_match = {}
 for _, r in ipairs(menu.view().rail) do in_match[#in_match + 1] = r.label end
 check("a match carries three tabs",
-      #in_match == 3 and in_match[1] == "settings"
-      and in_match[2] == "friends" and in_match[3] == "leave",
+      #in_match == 3 and in_match[1] == "play"
+      and in_match[2] == "friends" and in_match[3] == "settings",
       table.concat(in_match, "/"))
 
 local match_leave = top_index("leave")
-menu.click_rail(match_leave)
-check("leave asks before dropping the game",
-      menu.ask ~= nil and menu.ask.keys[1].act == "leave",
-      tostring(menu.ask and menu.ask.head))
-menu.step({back = true})
-check("and escape keeps the game", menu.ask == nil and menu.open,
-      tostring(menu.ask) .. "/" .. tostring(menu.open))
+check("and none of them is a leave", match_leave == nil,
+      tostring(match_leave))
 
 local match_settings = top_index("settings")
 menu.click_rail(match_settings)
@@ -411,7 +464,7 @@ menu.sel = {}
 local between = {}
 for _, r in ipairs(menu.view().rail) do between[#between + 1] = r.label end
 check("the intermission opens the hangar",
-      #between == 4 and between[1] == "ship", table.concat(between, "/"))
+      #between == 4 and between[2] == "ship", table.concat(between, "/"))
 
 menu.click_rail(top_index("ship"))
 check("and it can be walked into", menu.stack[2] == "hangar",
@@ -722,9 +775,9 @@ check("escape over a game opens on the tab row",
       menu.open and menu.at() == "root" and menu.view().focus == "rail",
       table.concat(menu.stack, "/"))
 local opened_match = menu.view()
-check("and starts on settings",
+check("and starts on the games",
       opened_match.rail[opened_match.rail_sel]
-          and opened_match.rail[opened_match.rail_sel].label == "settings",
+          and opened_match.rail[opened_match.rail_sel].label == "play",
       tostring(opened_match.rail_sel))
 menu.click_rail(top_index("settings"))
 check("and the rail still goes where it says", menu.at() == "settings",
@@ -751,16 +804,18 @@ check("but left still walks back a level",
       menu.open and menu.at() == "root", table.concat(menu.stack, "/")
           .. ", open " .. tostring(menu.open))
 
--- --- choosing the game you are already in asks rather than rejoins --------
+-- --- choosing the game you are already in puts the panel away -------------
 --
 -- The list used to carry a "leave this game" row at its foot, which is a way
 -- out written a long way from the thing it was a way out of, in a list that is
--- otherwise entirely places to go. Leaving is the game's own row now: pressing
--- enter on the one you are in cannot mean join, so it means the other thing it
--- could mean and asks first.
+-- otherwise entirely places to go. Leaving is a button on the game's own row
+-- now, so a press on the row itself means what it means everywhere else in
+-- this list: be in this game. On the one you are in that is already true, and
+-- the panel is the only thing between you and it.
 
 menu.hover_stage(nil)
 menu.home = false
+menu.watching = false
 menu.zone = "chaos"
 menu.ask = nil
 menu.show("play")
@@ -793,9 +848,23 @@ check("nothing at the foot of the list leaves the game",
       table.concat(texts_of(zones), ", "))
 
 local act2 = menu.step({go = true})
-check("enter on the game you are in asks instead of joining",
-      act2 == nil and menu.ask ~= nil,
-      tostring(act2) .. ", ask " .. tostring(menu.ask))
+check("enter on the game you are in shuts the panel onto it",
+      act2 == nil and menu.ask == nil and not menu.open,
+      tostring(act2) .. ", open " .. tostring(menu.open))
+-- And it costs nothing else. A press meaning "be here" on the room you are
+-- already in must not hand back the seat you are in it with.
+check("and nothing is left waiting on a room", menu.await == nil,
+      tostring(menu.await))
+menu.show("play")
+
+-- A different game asks first, because arriving there costs the game you are
+-- in and the press that costs it is the same press. The one card left on this
+-- list, and it is only ever raised on a pilot in a hull.
+menu.zone = "elsewhere"
+menu.chosen = nil
+local act5 = menu.step({go = true})
+check("a different game asks before it takes the one you are in",
+      act5 == nil and menu.ask ~= nil, tostring(act5))
 check("with the answer that changes nothing under the cursor",
       menu.ask.sel == #menu.ask.keys and menu.ask.keys[menu.ask.sel].act == nil,
       "on " .. tostring(menu.ask.sel) .. " of " .. tostring(#menu.ask.keys))
@@ -813,20 +882,20 @@ check("the list underneath cannot be walked", menu.sel.play == before,
 check("the arrows move between the answers, whichever pair", menu.ask.sel == 1,
       "on " .. tostring(menu.ask.sel))
 
--- Two answers, and watching is not one of them: this card is about the game
+-- Two answers, and watching is not one of them: this card is about which game
 -- you are in, and what you are flying is the ship page's question.
-check("the card offers leaving and staying, nothing else",
-      #menu.ask.keys == 2 and menu.ask.keys[1].act == "leave",
+check("the card offers switching and staying, nothing else",
+      #menu.ask.keys == 2 and menu.ask.keys[1].act == "join",
       #menu.ask.keys .. " answers, first is "
           .. tostring(menu.ask.keys[1].act))
 menu.ask.sel = 2
 menu.step({left = true})
 check("left moves to the answer beside it", menu.ask.sel == 1,
       "on " .. tostring(menu.ask.sel))
-local act3 = menu.step({go = true})
-check("and enter is worth what that answer is worth",
-      act3 == "leave" and menu.ask == nil,
-      tostring(act3) .. ", ask " .. tostring(menu.ask))
+local act6 = menu.step({go = true})
+check("and the answer that switches is a join",
+      act6 == "join" and menu.chosen ~= nil and menu.ask == nil,
+      tostring(act6))
 
 -- Escape answers it rather than shutting the panel, and answers it with the
 -- one that changes nothing: the key that gets out of everything else in here
@@ -837,25 +906,28 @@ check("escape answers the question instead of shutting the menu",
       act4 == nil and moved4 and menu.ask == nil and menu.open,
       tostring(act4) .. ", open " .. tostring(menu.open))
 
--- A different game asks as well, because arriving there costs the game you
--- are in just the same, and the press that costs it is the same press.
-menu.zone = "elsewhere"
-menu.chosen = nil
-local act5 = menu.step({go = true})
-check("a different game asks before it takes the one you are in",
-      act5 == nil and menu.ask ~= nil, tostring(act5))
-menu.ask.sel = 1
-local act6 = menu.step({go = true})
-check("and the answer that switches is a join",
-      act6 == "join" and menu.chosen ~= nil and menu.ask == nil,
-      tostring(act6))
-
--- With nothing behind the panel there is nothing to lose, so nothing to ask.
+-- With no seat there is nothing to lose, so nothing to ask: the press is the
+-- one act the list has, and the stands dial it.
 menu.home = true
+menu.scenery = false
 menu.ask = nil
 local act7 = menu.step({go = true})
-check("and from the home screen it just joins",
-      act7 == "join" and menu.ask == nil, tostring(act7))
+check("and from the home screen it just asks for the game",
+      act7 == "want_zone" and menu.ask == nil, tostring(act7))
+
+-- Unless the room it names is the one already playing behind the panel, which
+-- is the home screen's own version of being there. A remembered zone name is
+-- not: `scenery` is what says a room actually answered, and without it a press
+-- would put the panel away over a starfield.
+menu.await = nil
+menu.zone = "chaos"
+menu.scenery = true
+local standing = menu.step({go = true})
+check("and the game the stands are already showing just shuts the panel",
+      standing == nil and not menu.open and menu.await == nil,
+      tostring(standing) .. ", open " .. tostring(menu.open))
+menu.open = true
+menu.scenery = false
 
 -- --- a password is typed into the card, and the card is the whole flow ----
 --
@@ -3114,15 +3186,17 @@ do
           labels() == "play ship friends standings settings",
           labels())
 
+    -- The short row keeps the games, because that is where the way out of the
+    -- one you are in is written now, and drops the standings, which is the
+    -- stop a pilot in a three minute match cannot act on.
     menu.home, menu.watching = false, false
     check("a pilot in a hull gets the short one",
-          labels():find("play") == nil and labels():find("leave") ~= nil,
-          labels())
+          labels() == "play friends settings", labels())
 
     -- A pilot the room benched is in the stands too: same empty cockpit, same
     -- time to read, so the same five stops. What they keep that the landing
-    -- does not is `leave`, because they are in a zone there is something to
-    -- leave.
+    -- does not is `leave`: they are in a zone, and no row of the list carries
+    -- a way out of one you are not flying.
     menu.home, menu.watching = false, true
     check("a benched pilot gets the whole row back",
           labels() == "play ship friends standings settings leave",
