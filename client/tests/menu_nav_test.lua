@@ -1252,13 +1252,17 @@ open_controls()
 check("every page is reachable", menu.stack[3] == "controls",
       table.concat(menu.stack, "/"))
 
--- --- a key on the drawn board is a control, not a diagram ------------------
+-- --- a control asks, and the next key answers ------------------------------
 --
--- The page draws a keyboard and lists the controls under it, and for a while
--- only the list answered a press: you could point at the key a control was on
--- and nothing happened, which is a picture somebody has to be told is not the
--- thing. A click on a key goes to whichever control is asking, and to the one
--- under the cursor when none is.
+-- Two presses, not one. The row stops saying where its control is and starts
+-- asking where it should go, and the key pressed after that is the answer.
+-- The page used to draw a keyboard as well, and a click on a key was the same
+-- act arriving by pointer; that picture came out at 390 points and this is the
+-- whole of the gesture now.
+--
+-- Rows are pressed here the way a thumb presses them, through `click_stage`,
+-- because arming is a branch of `activate` and reaching past it would leave
+-- the one press that starts this untested.
 
 do
     local binds = require("arena.binds")
@@ -1266,15 +1270,13 @@ do
     binds.reset()
     open_controls()
 
-    -- The cursor on `map`, and a key nothing is using.
     local rows = menu.view().rows
     local catalog = binds.rows()
     local drift = {}
     for i, control in ipairs(catalog) do
         local row = rows[i]
         if not row or row.label ~= control.name or row.detail ~= control.show
-           or row.control ~= control.id or row.cat ~= control.cat
-           or row.keys ~= control.keys or row.fixed ~= control.fixed then
+           or row.control ~= control.id or row.fixed ~= control.fixed then
             drift[#drift + 1] = control.id
         end
     end
@@ -1282,93 +1284,87 @@ do
           #drift == 0 and #rows == #catalog + 1 and rows[#rows].reset == true,
           table.concat(drift, ", "))
 
-    local map_at = nil
+    local map_at, menu_at = nil, nil
     for i, r in ipairs(rows) do
         if r.control == "map" then map_at = i end
+        if r.control == "menu" then menu_at = i end
     end
     check("the controls page lists the map key", map_at ~= nil)
-    menu.sel[menu.at()] = map_at
-    local _, moved = menu.click_key("z")
-    check("clicking a free key moves the control under the cursor",
-          moved and binds.chord_of.map[1] == "z",
+
+    -- Pressing the row is the half that asks. Nothing is bound by it.
+    menu.click_stage(map_at)
+    check("pressing a control row sets it asking",
+          menu.arming == "map" and binds.chord_of.map[1] ~= "z",
+          tostring(menu.arming))
+    check("and the page says what it is waiting for",
+          (menu.foot or ""):find("press a key") ~= nil, tostring(menu.foot))
+
+    -- A key nothing is using. The control moves and the asking is over.
+    local moved = menu.bind_chord({"z"})
+    check("a free key moves the control that was asking",
+          moved and binds.chord_of.map[1] == "z" and menu.arming == nil,
           table.concat(binds.chord_of.map, "+"))
     check("and the page says so", (menu.foot or ""):find("map is on Z") ~= nil,
           tostring(menu.foot))
 
     -- A key somebody else is on: the two trade, and nothing is left over.
-    local _, traded = menu.click_key("space")
-    check("clicking a taken key trades", traded
+    menu.click_stage(map_at)
+    local traded = menu.bind_chord({"space"})
+    check("a taken key trades", traded
           and binds.chord_of.map[1] == "space"
           and binds.chord_of.guns[1] == "z",
           table.concat(binds.chord_of.map, "+") .. " / "
           .. table.concat(binds.chord_of.guns, "+"))
 
-    -- The menu key is nobody's to move, and the page says why rather than
-    -- doing nothing. It is the one refusal a pointer can reach: the board
-    -- publishes no box for escape, so the other half of the pair cannot be
-    -- clicked at all.
-    local menu_at = nil
-    for i, r in ipairs(rows) do
-        if r.control == "menu" then menu_at = i end
-    end
-    menu.sel[menu.at()] = menu_at
-    menu.foot = nil
-    menu.click_key("j")
-    check("the menu control refuses a key and says why",
-          binds.chord_of.menu[1] == "esc"
-          and (menu.foot or ""):find("escape") ~= nil,
-          tostring(menu.foot))
-    check("and escape is not a key the board offers",
+    -- The menu key is nobody's to move, and the row says why rather than
+    -- doing nothing. It refuses at the asking rather than at the answer: a
+    -- control that will not move never starts waiting for a key at all.
+    menu.arming, menu.note = nil, nil
+    menu.click_stage(menu_at)
+    check("the menu control refuses to start asking and says why",
+          menu.arming == nil and binds.chord_of.menu[1] == "esc"
+          and (menu.note or ""):find("escape") ~= nil,
+          tostring(menu.note))
+    check("and escape is not a key anything could be put on",
           not keyset.bindable("esc"))
 
-    -- The row that resets everything is not a control, so a key has nothing
-    -- to land on and the page says which half of the gesture is missing.
-    menu.sel[menu.at()] = #rows
-    menu.foot = nil
-    menu.click_key("j")
-    check("a key clicked with no control under the cursor binds nothing",
-          binds.control_of.j == nil
-          and (menu.foot or ""):find("pick a control") ~= nil,
-          tostring(menu.foot))
+    -- A key with nothing asking is a key the page is not listening for. It
+    -- lands nowhere rather than on whatever the cursor happens to be over.
+    menu.arming = nil
+    local stray = menu.bind_chord({"j"})
+    check("a key arriving with nothing asking binds nothing",
+          stray == false and binds.control_of.j == nil,
+          tostring(stray))
 
-    -- And while a control is asking, the click answers that rather than the
-    -- cursor, which are the same row in the game and need not be here.
-    menu.sel[menu.at()] = map_at
-    menu.arming = "bombs"
-    local _, armed = menu.click_key("k")
-    check("a click answers whichever control is asking",
-          armed and binds.chord_of.bombs[1] == "k" and menu.arming == nil,
-          table.concat(binds.chord_of.bombs, "+"))
-
-    -- A chord comes off the keyboard rather than a click, since there is no
-    -- holding two keys down in one press of a mouse.
-    menu.arming = "map"
+    -- A chord is two keys held together, which is a thing a keyboard can say
+    -- and the rest of this interface cannot.
+    menu.click_stage(map_at)
     local chorded = menu.bind_chord({"shift", "j"})
     check("a chord typed at an asking control lands whole",
           chorded and table.concat(binds.chord_of.map, "+") == "shift+j",
           table.concat(binds.chord_of.map, "+"))
 
-    -- Every key the picture draws is one the catalog will take. The board
-    -- publishes a box per key and this is the other end of that promise.
-    check("and the board only offers keys that bind",
+    -- A key with no trigger under it is a key a control would vanish onto.
+    check("and the catalog only takes keys that report",
           keyset.bindable("backslash") and keyset.bindable("slash")
           and not keyset.bindable("caps") and not keyset.bindable("enter"))
     binds.reset()
-    menu.foot = nil
+    menu.foot, menu.note = nil, nil
 end
 
--- --- and the view carries what the board needs to draw itself -------------
+-- --- and the view carries what the page needs to draw itself ---------------
 --
 -- The rows the page holds and the rows it hands the renderer are two shapes,
 -- and the second is built by copying named fields out of the first. A field
 -- that gets renamed on one side and not the other is invisible from both: the
 -- page goes on holding the right answer and the drawing goes on asking for a
--- name nothing sets. That shipped once. Every key on the board came out
--- unlit, because the chords were in the rows and `keys` was being read from a
--- flattened row that still said `key`.
+-- name nothing sets. That shipped once, when the page still drew a keyboard:
+-- every key on the board came out unlit, because the chords were in the rows
+-- and `keys` was being read from a flattened row that still said `key`.
 --
--- board_test builds its own rows and cannot see this; it is only visible from
--- the far end of `M.view`.
+-- The board went with the width and took `keys` and `cat` with it. What is
+-- left to lose the same way is what a row says and what it stands for, which
+-- is checked from the far end of `M.view` because that is where the copy is.
 
 do
     local binds = require("arena.binds")
@@ -1380,21 +1376,23 @@ do
     menu.stack = {"root"}
     open_controls()
     local v = menu.view()
-    local mute, unnamed = {}, {}
+    local mute, adrift = {}, {}
     for _, r in ipairs(v.rows) do
         -- Every row but the one that resets everything stands for a control,
-        -- and every control has a chord and a color band.
+        -- says which key it is on, and can be pressed to move it.
         if not r.reset then
-            if not (r.keys and #r.keys > 0) then
+            if not (r.detail and r.detail ~= "") then
                 mute[#mute + 1] = tostring(r.label)
             end
-            if not r.cat then unnamed[#unnamed + 1] = tostring(r.label) end
+            if not r.control or r.act ~= "bind" then
+                adrift[#adrift + 1] = tostring(r.label)
+            end
         end
     end
-    check("every drawn row carries the keys it is on", #mute == 0,
+    check("every drawn row says the key it is on", #mute == 0,
           table.concat(mute, ", "))
-    check("and the color band the board lights it in", #unnamed == 0,
-          table.concat(unnamed, ", "))
+    check("and which control a press on it would move", #adrift == 0,
+          table.concat(adrift, ", "))
 
     -- And a chord arrives whole rather than as its trigger.
     local chorded = nil
@@ -1402,9 +1400,8 @@ do
         if r.control == "map" then chorded = r end
     end
     check("a chord reaches the drawing with both its keys",
-          chorded ~= nil and #chorded.keys == 2
-          and table.concat(chorded.keys, "+") == "shift+tab",
-          chorded and table.concat(chorded.keys or {}, "+") or "no map row")
+          chorded ~= nil and chorded.detail == "Shift+Tab",
+          chorded and tostring(chorded.detail) or "no map row")
     binds.reset()
 end
 

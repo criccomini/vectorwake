@@ -2222,8 +2222,8 @@ local NODES = {
                                        detail = c.pad}
                 end
             else
-                rows[i] = {label = c.name, detail = c.show, cat = c.cat,
-                           control = c.id, keys = c.keys, fixed = c.fixed,
+                rows[i] = {label = c.name, detail = c.show,
+                           control = c.id, fixed = c.fixed,
                            arming = M.arming == c.id,
                            act = "bind", pick = true}
             end
@@ -2488,7 +2488,7 @@ local function view_row(r, i)
         -- that is not one.
         hull = r.hull, figure = r.figure, role = r.role,
         extent = type(r.extent) == "function" and r.extent() or r.extent,
-        players = r.players, bots = r.bots, live = r.live,
+        live = r.live,
         choice = ci, choices = cn, bar = r.bar, ship = r.ship,
         -- What the hangar's page needs to draw a slot as the thing it is:
         -- its group, its short mark, its color, the trigger it hangs off, and
@@ -2519,11 +2519,12 @@ local function view_row(r, i)
         -- A row the page draws as a button, and which mark goes on it.
         button = r.button,
         trigger = r.trigger, owned = r.owned, arena_max = r.arena_max,
-        -- What the controls page needs to draw a chip: which color band the
-        -- control is in, which key it is on so the board can be lit from the
-        -- same list, whether it is the one waiting for a key, and whether it
-        -- is the row that puts everything back.
-        cat = r.cat, control = r.control, keys = r.keys, fixed = r.fixed,
+        -- What the controls page needs from a row: which control it stands
+        -- for, whether that one is nobody's to move, whether it is the one
+        -- waiting for a key, and whether it is the row that puts everything
+        -- back. The color band and the chord went with the drawn keyboard,
+        -- which was the only thing that read either.
+        control = r.control, fixed = r.fixed,
         arming = r.arming, reset = r.reset,
         pick = (r.go or r.act) ~= nil, act = r.act,
         mark = r.mark and r.mark() or false,
@@ -2555,13 +2556,13 @@ local function bind_to(id, chord)
     M.arming = nil
     local moved, ok = binds.set(id, chord)
     if not ok then
-        -- The one refusal worth a sentence: a control that is not ours to
-        -- move. Everything else that lands here is a press that changed
+        -- Nothing to say. Everything that lands here is a press that changed
         -- nothing, and saying "that is already where it is" to somebody who
-        -- pressed the key it is already on is noise.
-        M.foot = binds.fixed(id)
-            and "escape is how you leave this page; it stays where it is"
-            or nil
+        -- pressed the key it is already on is noise. A control that is not
+        -- ours to move used to be answered here too; it is refused a step
+        -- earlier now, where the row declines to start asking at all, so an
+        -- id that reaches this line is never a fixed one.
+        M.foot = nil
         return true
     end
     M.save_identity()
@@ -4582,32 +4583,6 @@ function M.click(index)
     local act = activate()
     from_row = false
     return act, true
-end
-
--- A key on the drawn board was clicked. It goes to whichever control is
--- asking, and to the one under the cursor when none is: the picture is the
--- same list as the chips, so pointing at a key is the other half of the
--- gesture that pointing at a chip started.
---
--- No arming step in that second case, on purpose. Arming exists because a
--- keyboard has to be told which of its own presses is an answer rather than a
--- control; a click carries the key it means, so there is nothing to be told.
-function M.click_key(key)
-    if not M.open then return nil, false end
-    local id = M.arming
-    if not id then
-        local rows = rows_of(node())
-        local r = rows[row_index(rows)]
-        id = r and r.control
-    end
-    if not id then
-        M.foot = "pick a control first, then a key to put it on"
-        return nil, true
-    end
-    -- One key, since that is what a click carries. A chord is two keys held
-    -- together and there is no holding in a click, so the keyboard is the only
-    -- way to make one; the page says so while it is waiting.
-    return nil, bind_to(id, {key})
 end
 
 -- The x on the panel. It shuts the menu rather than stepping back a level,

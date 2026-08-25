@@ -219,33 +219,60 @@ for i, n in ipairs({"zones", "ship", "upgrades", "standings",
     RAIL[i] = {label = n, icon = n, index = i}
 end
 
-local function menu(rows)
-    return frame(function()
-        ui.menu({depth = 1, sel = 0, rail = RAIL, rail_sel = 3,
-                 focus = "rail", home = true, closable = false,
-                 -- Nothing in the furniture wears the person's helmet: the
-                 -- stops on this row are zones, ship, upgrades, standings and
-                 -- settings, and the far end of the head is two buttons with
-                 -- no mark on either. Where the mark still appears is where it
-                 -- counts people, which is a games row and a nameplate.
-                 pilot = {name = "Quarrel", rivets = 342},
-                 rows = rows or {}})
+-- One room, and the panel that lists them open over an otherwise empty world.
+-- That is where the pair still counts a population: the games list stopped
+-- carrying counts when the menu became one column, and the corner's ROOM key
+-- opens this instead of walking into the menu.
+local function room_frame(open)
+    ui.rooms_open = open
+    local f = frame(function()
+        ui.hud({me = 0, menu_open = false, pilots = {}, watchers = {},
+                teams = {}, feed = {}, hurt = 0, charges = {},
+                cam_x = 100, cam_y = 100, half_w = W / 2, half_h = H / 2,
+                banner = "", zone = "chaos", room = 2,
+                rooms = {{n = 1, players = 3, bots = 48}}})
     end)
+    ui.rooms_open = false
+    return f
+end
+
+-- What the panel put on the frame, rather than what is on the frame. PLAYERS
+-- keeps its own pair in the corner keys whether the panel is up or not, and
+-- the two land 26 points apart across, which is close enough that picking one
+-- by where it is would be picking whichever the layout moved last. Drawing
+-- the frame both ways and taking the difference asks the question exactly.
+-- The two kinds of mark are found by different readers and come back
+-- described differently: a shell knows where its middle is, a box knows where
+-- its top is. Across is common to both and is enough here, since nothing
+-- draws two of either at one x.
+local function where(m)
+    return string.format("%.1f", m.cx)
+end
+
+local function added(pick)
+    local was = {}
+    for _, m in ipairs(pick(room_frame(false))) do
+        was[where(m)] = true
+    end
+    local out = {}
+    for _, m in ipairs(pick(room_frame(true))) do
+        if not was[where(m)] then out[#out + 1] = m end
+    end
+    return out
 end
 
 -- --- the person is round ---------------------------------------------------
 
--- One helmet on screen: a games row counting the people in a zone.
+-- The helmet a room row counts its people with.
 --
 -- It was the topbar's, beside the call sign, and the topbar's far end is two
 -- buttons now with no mark on either. Every check below is about how the
--- shell itself is drawn, so what it wants is one of them alone on a frame and
--- not which frame that is.
-local rail_frame = menu({{label = "chaos", players = 3, bots = 48,
-                          live = true}})
-local rail_only = crowns(rail_frame)
-check("a games row counts people with a helmet", #rail_only == 1,
-      #rail_only .. " helmets in one zone row")
+-- shell itself is drawn, so what it wants is one of them and not which frame
+-- it came off.
+local rail_frame = room_frame(true)
+local rail_only = added(crowns)
+check("a room row counts people with a helmet", #rail_only == 1,
+      #rail_only .. " helmets the panel put up")
 
 if rail_only[1] then
     local shell = rail_only[1]
@@ -466,11 +493,10 @@ check("and the pilot puts nothing above hers",
 -- reads as one question needs the two answers on one line, at one size, on
 -- one collar: shape carries the meaning, but position is what makes them a
 -- pair rather than two pictures that happen to be adjacent.
-local list_frame = menu({{label = "chaos", players = 3, bots = 48,
-                          live = true}})
-local listed_round = crowns(list_frame)
-local listed_square = boxes(list_frame)
-check("the games list counts people with a helmet, not a dot",
+local list_frame = room_frame(true)
+local listed_round = added(crowns)
+local listed_square = added(boxes)
+check("the rooms list counts people with a helmet, not a dot",
       #listed_round == 1, #listed_round .. " helmets against 1 expected")
 check("and counts machines with a box", #listed_square == 1,
       #listed_square .. " boxes in the row")

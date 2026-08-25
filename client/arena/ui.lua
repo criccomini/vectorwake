@@ -6815,7 +6815,7 @@ local function stage_row(x, y, w, h, r, hot)
     local ly = note and (y + h * 0.36) or (y + h / 2)
     -- Drawn here unless the detail turns out not to fit beside it, in which
     -- case the pair is laid out as two lines below and this one is skipped.
-    local two_line = r.detail and r.detail ~= "" and not r.players
+    local two_line = r.detail and r.detail ~= ""
         and not r.choice and not note
         and text_w(r.detail, 12 * F.scale) > w - 32 * F.scale - (tx - x) - 12 * F.scale
     if not two_line then
@@ -6834,13 +6834,6 @@ local function stage_row(x, y, w, h, r, hot)
         -- would have taken, and it keeps saying it while the list refreshes
         -- underneath: an arena can come back and this row is where it lands.
         sweep_dial(x + w - GUTTER * F.scale - 11 * F.scale, ly, 11 * F.scale)
-    elseif r.players and (r.live or r.full) then
-        -- A full room keeps its count. The dial above says "looking for one of
-        -- these", which is the opposite of what a full room is: the count is
-        -- the whole reason it cannot be entered, so hiding it would leave the
-        -- row saying it is unavailable without saying why.
-        population(x + w - GUTTER * F.scale, ly, r.players, r.bots,
-                   pal.a(pal.FRIEND, sel and 1 or 0.85))
     elseif r.choice then
         -- A setting drawn as its own range: one step per value, the one it
         -- is on filled. "half" is a word to read and hold against the word

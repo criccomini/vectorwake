@@ -515,20 +515,20 @@ check("the page is named on the rail and nowhere else", names == 1,
 --
 -- The games are chosen between by reading them, and at the foot of the panel
 -- they arrived one at a time, a screen away from the name each belonged to.
--- A row with a `note` gives it the lower half and takes the upper for
--- everything else, including the count on the right.
+-- A row with a `note` gives it the lower half and takes the upper for the
+-- name. The count that used to sit on the name's line is gone with the rest
+-- of what the play page was told about a room's population.
 
 local noted = draw({depth = 2, sel = 1, rail = RAIL, rail_sel = 1,
                     focus = "stage", home = false, closable = true,
                     rows = {{label = "chaos", index = 1, pick = true,
-                             players = 4, bots = 51, live = true,
+                             live = true,
                              note = "everybody against everybody"}}})
-local name_x, name_y, note_x, note_y, count_y
+local name_x, name_y, note_x, note_y
 for i = 1, noted.n do
     local t = noted.text[i]
     if is(t, "chaos") then name_x, name_y = t.x, t.y end
     if is(t, "everybody against everybody") then note_x, note_y = t.x, t.y end
-    if is(t, "4") then count_y = t.y end
 end
 -- `state` counts y up from the bottom, so under means a smaller number.
 check("a row's sentence sits under its name",
@@ -538,10 +538,6 @@ check("a row's sentence sits under its name",
 check("and in the same column", name_x and note_x
       and math.abs(name_x - note_x) < 0.01,
       string.format("%s against %s", tostring(name_x), tostring(note_x)))
-check("with the count still on the name's line",
-      count_y and name_y and math.abs(count_y - name_y) < 1.5,
-      string.format("count at %s, name at %s", tostring(count_y),
-                    tostring(name_y)))
 
 -- --- a tab's field is centered on its stop --------------------------------
 --
