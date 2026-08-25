@@ -1463,9 +1463,22 @@ M.page_extent = 0
 --
 -- Only while the page has the arrows. A pointer moving a hover across rows is
 -- not a reason to move the page under the hand holding it.
+--
+-- And only on the frame the cursor actually moved. Held every frame, this is
+-- not a follow but a leash: a finger dragging a page the cursor is not on
+-- gets it back the moment it lets go, which on glass is every drag, because
+-- nothing there moves a cursor. A wheel escaped it only because a mouse is
+-- hovering while it turns, and a hover is the cursor, so the row under the
+-- pointer stayed on screen by definition. See `M.cursor_moved`.
 local function follow_cursor(at, rowh, room, focused)
-    if not focused or at == nil or room <= 0 then return end
-    if at < M.page_scroll then M.page_scroll = at end
+    if not focused or not M.cursor_moved or at == nil or room <= 0 then
+        return
+    end
+    -- Never past the top. A row's offset has half a row taken off it so the
+    -- cursor sits inside the window rather than against its edge, which on
+    -- the first row is a negative scroll: harmless, since the clamp at the
+    -- head of the next frame takes it back, and wrong for a frame.
+    if at < M.page_scroll then M.page_scroll = math.max(0, at) end
     if at + rowh > M.page_scroll + room then
         M.page_scroll = at + rowh - room
     end
@@ -1483,6 +1496,10 @@ end
 -- than that difference would not move at all.
 M.page_room = 0
 M.page_at = nil
+-- Which page and row the cursor was on last frame, and whether it has moved
+-- since. Read by `follow_cursor`, which only drags the page when it has.
+M.cursor_page, M.cursor_sel = nil, nil
+M.cursor_moved = false
 
 -- Where that page was drawn, for a finger to be tested against. Four returns
 -- rather than a table, because this is asked once a frame per touch point and
@@ -7409,6 +7426,12 @@ function M.menu(v)
         M.page_at = v.at
         M.page_scroll = 0
     end
+    -- Whether the cursor moved since the last frame, which is the only reason
+    -- to pull the page out from under whoever is reading it. A page arriving
+    -- counts: its scroll has just been put back to the top and the cursor may
+    -- be anywhere in it.
+    M.cursor_moved = (v.at ~= M.cursor_page) or (v.sel ~= M.cursor_sel)
+    M.cursor_page, M.cursor_sel = v.at, v.sel
     -- Against the page's own window where it published one, and the stage
     -- otherwise. A page that has never drawn has published neither, and both
     -- being zero holds the scroll at zero, which is right.
