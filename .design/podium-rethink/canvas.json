@@ -1,0 +1,44 @@
+{
+  "artboards": [
+    { "file": "Main.dc.html", "title": "Desktop · A · you lead", "x": 0, "y": 0, "w": 1440, "h": 810 },
+    { "file": "DesktopB.dc.html", "title": "Desktop · B · result leads", "x": 1720, "y": 0, "w": 1440, "h": 810 },
+    { "file": "DesktopC.dc.html", "title": "Desktop · C · the pay leads", "x": 3440, "y": 0, "w": 1440, "h": 810 },
+    { "file": "DesktopD.dc.html", "title": "Desktop · D · title card", "x": 5160, "y": 0, "w": 1440, "h": 810 },
+    { "file": "LandscapeA.dc.html", "title": "Landscape · A", "x": 298, "y": 950, "w": 844, "h": 390 },
+    { "file": "LandscapeB.dc.html", "title": "Landscape · B", "x": 2018, "y": 950, "w": 844, "h": 390 },
+    { "file": "LandscapeC.dc.html", "title": "Landscape · C", "x": 3738, "y": 950, "w": 844, "h": 390 },
+    { "file": "LandscapeD.dc.html", "title": "Landscape · D", "x": 5458, "y": 950, "w": 844, "h": 390 },
+    { "file": "PortraitA.dc.html", "title": "Portrait · A", "x": 525, "y": 1480, "w": 390, "h": 844 },
+    { "file": "PortraitB.dc.html", "title": "Portrait · B", "x": 2245, "y": 1480, "w": 390, "h": 844 },
+    { "file": "PortraitC.dc.html", "title": "Portrait · C", "x": 3965, "y": 1480, "w": 390, "h": 844 },
+    { "file": "PortraitD.dc.html", "title": "Portrait · D", "x": 5685, "y": 1480, "w": 390, "h": 844 }
+  ],
+  "annotations": [
+    {
+      "id": "note-a",
+      "x": 0, "y": -250, "w": 380,
+      "text": "A · your match leads\n\nThe result shrinks to a line and a short bar, and the page becomes your four figures at 88 points: kills, deaths, assists, and what the match paid. Your call sign sits over them with where you placed in the room. Everyone else is one list under that, at roster size, your row washed.\n\nAnswers \"how did I do\" without being asked. Cost: the score, which is what the match was actually about, is the smallest thing on a screen that exists because the match ended."
+    },
+    {
+      "id": "note-b",
+      "x": 1720, "y": -250, "w": 380,
+      "text": "B · the result leads, your row pulled out\n\nThe scoreline keeps the top of the page at full size. Under it, your row is lifted out of the roster and drawn as its own band, side rule and wash included, with your figures at 30 points on the right. The two sides keep their columns below, minus you.\n\nThe closest to what ships, and the smallest change. Cost: it is still two rosters plus a highlight, so it is still the busiest of the four, and the thing that answers the question is a band rather than the page."
+    },
+    {
+      "id": "note-c",
+      "x": 3440, "y": -250, "w": 380,
+      "text": "C · what it paid leads\n\nThe hero number is the rivets the match earned you, with the wallet it lands in beside your figures as small labels. The result is one line at the head. The room's list becomes a list of earnings rather than a second scoreboard.\n\nLeans on the one number the scoreboard does not already carry, and on the economy the game runs on. Cost: it says a bad match was profitable, which is true and may not be the note to end on; and it is the direction most likely to look like a mobile game's reward screen."
+    },
+    {
+      "id": "note-d",
+      "x": 5160, "y": -250, "w": 380,
+      "text": "D · a title card\n\nThe result at 150 points, the score bar, one line about you, the countdown, and nothing else. The roster is not repeated because the board behind the band already holds it, one press away, and the card says so.\n\nThe answer to \"it reuses a lot of what the scoreboard shows\": it reuses none of it. Cost: a player who wants the room's numbers has to press for them at the moment they are most curious, and a card this bare has nothing to look at for twenty five seconds."
+    },
+    {
+      "id": "note-constants",
+      "x": -460, "y": 0, "w": 400,
+      "text": "The same match on every board, taken from the screenshot: Caisson takes it 20 to 17, and the viewer is DRiFT, who went nought and one with six assists on the losing side. A quiet game on a losing side is the honest test of \"how did I do\", since a good game answers itself.\n\nHeld constant across all four: the SAY chips are gone, replaced by a line naming the key that will send them, since that shortcut is coming anyway and six keys is most of the old card's width. What each pilot earned is on every roster row, which the shipped ending does not show at all. The next-match countdown and one share key stay at the foot; a phone held sideways puts the share key on the countdown's own line.\n\nAll four wash the window at 0.55 the way the shipped ending does, so the fight behind is texture."
+    }
+  ],
+  "launch": { "view": "canvas" }
+}
