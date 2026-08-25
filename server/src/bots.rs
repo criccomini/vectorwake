@@ -3507,7 +3507,6 @@ mod tests {
             me.y,
             crate::delivery::FAIR_INTEREST,
             near,
-            near,
             0,
         );
         assert!(n > 0);

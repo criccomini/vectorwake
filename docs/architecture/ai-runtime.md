@@ -291,9 +291,8 @@ the angle the target actually subtends, rather than a flat 0.16 radians that was
 two ships wide up close and four at range. Before both, one shot in seventy-seven
 landed.
 
-Bombs need arc and timing rather than a lead point, mines need placement rules
-tied to chokepoints from the coarse grid, and bursts are a panic button with a
-threshold.
+Bombs need arc and timing rather than a lead point, and bursts are a panic
+button with a threshold.
 
 ## The population director
 

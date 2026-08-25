@@ -399,9 +399,9 @@ int KitCeilings(lua_State* L) {
 //
 // The hangar needs it because a kit is checked against the arena's row and the
 // account's entitlements together, and a client with no meta-layer to ask has
-// to fall back to something. Falling back to "no limit" offered a mine to
-// pilots who cannot slot one, which the arena then refused: a page that offers
-// what the server will not take is worse than one that offers less.
+// to fall back to something. Falling back to "no limit" offered slots to
+// pilots who cannot take them, which the arena then refused: a page that
+// offers what the server will not take is worse than one that offers less.
 int BaseEntitlements(lua_State* L) {
     uint8_t base[SIM_SLOT_COUNT];
     sim_base_entitlements(base);
@@ -600,41 +600,10 @@ int SpecBlast(lua_State* L) {
     return 1;
 }
 
-// Blast one rung adds, for the weapon whose rung is not a ladder of its own.
-// A mine is one spec whatever rung was posted, so the ring a detonation is
-// drawn at has to be composed the way the core composes it -- base plus the
-// round's rung times this -- or a rung three mine flashes a rung one hole
-// while dealing a rung three one.
-int SpecBlastUp(lua_State* L) {
-    int i = (int)luaL_checkinteger(L, 1);
-    if (i < 0 || i >= g_cfg.spec_count) {
-        lua_pushnumber(L, 0);
-        return 1;
-    }
-    lua_pushnumber(L, g_cfg.specs[i].blast_up / 256.0);
-    return 1;
-}
-
-// Whether a spec's rounds are laid rather than thrown: they take none of the
-// firer's velocity, so they stay where they were let go.
-//
-// With a blast beside it this is what a mine is, and the core's own test is
-// the same pair. Drawn from the fields rather than from a slot number or a
-// name, so a zone that puts a mine somewhere else still gets one that looks
-// like a mine, and one that puts something else in slot two does not.
-int SpecStill(lua_State* L) {
-    int i = (int)luaL_checkinteger(L, 1);
-    lua_pushboolean(L, i >= 0 && i < g_cfg.spec_count && g_cfg.specs[i].still);
-    return 1;
-}
-
 // The radius a spec's fuse senses at, in world pixels; 0 is a contact round.
 //
-// A mine draws its own reach once a second, which is the only thing in the
-// game that tells a pilot how far a weapon reaches instead of making them
-// learn it by dying. That ring has to be the real number or it teaches the
-// wrong lesson, so it comes from the spec rather than from a constant in the
-// renderer that a zone could quietly make a lie.
+// It comes from the spec rather than from a constant in the renderer that a
+// zone could quietly make a lie.
 int SpecTrigger(lua_State* L) {
     int i = (int)luaL_checkinteger(L, 1);
     if (i < 0 || i >= g_cfg.spec_count) {
@@ -1178,8 +1147,6 @@ const luaL_reg kFunctions[] = {
     {"safe_limit", SafeLimit},
     {"show_spawns", ShowSpawns},
     {"spec_blast", SpecBlast},
-    {"spec_blast_up", SpecBlastUp},
-    {"spec_still", SpecStill},
     {"spec_trigger", SpecTrigger},
     {"spec_life", SpecLife},
     {"spec_level", SpecLevel},
@@ -1272,7 +1239,6 @@ void LuaInit(lua_State* L) {
     lua_setfield(L, -2, "KIT_CHARGE_SLOTS");
     lua_pushnumber(L, SIM_CHARGE_REPEL); lua_setfield(L, -2, "CHARGE_REPEL");
     lua_pushnumber(L, SIM_CHARGE_BURST); lua_setfield(L, -2, "CHARGE_BURST");
-    lua_pushnumber(L, SIM_CHARGE_MINE);  lua_setfield(L, -2, "CHARGE_MINE");
     lua_pushnumber(L, SIM_BTN_USE);      lua_setfield(L, -2, "BTN_USE");
     lua_pushnumber(L, SIM_BTN_MULTI);    lua_setfield(L, -2, "BTN_MULTI");
     lua_pushnumber(L, 1u << SIM_BTN_SLOT_SHIFT); lua_setfield(L, -2, "BTN_SLOT_STEP");

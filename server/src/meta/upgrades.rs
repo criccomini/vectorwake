@@ -8,9 +8,9 @@
 //! whole kit space. See docs/design/match-game.md.
 //!
 //! Every slot in the selected zone is on this shelf, which used to be untrue
-//! and was the reason the shelf got rebuilt. Four traits sat on the roster
-//! instead of in the kit space: a second barrel, a third bomb rung, six mines,
-//! and a deeper rung of shrapnel. Nothing can be sold that exists on one hull.
+//! and was the reason the shelf got rebuilt. Several traits sat on the roster
+//! instead of in the kit space: a second barrel, a third bomb rung, and a
+//! deeper rung of shrapnel. Nothing can be sold that exists on one hull.
 //! They are slots now, so they are for sale, and the ceiling below is the
 //! arena's rather than any hull's. Nothing here can be bought and then refused
 //! by the ship somebody wanted to fly it on.
@@ -67,11 +67,10 @@ pub(super) fn next_step(slot: usize, owned: u8, ceiling: u8) -> Option<(u8, u32)
     // Starting from nothing is allowed, which it was not while every account
     // began with one rung of every add-on. It is also what the racks needed.
     // Charges used to be sold as a *kind*, one price for 255, which is "the
-    // arena decides how many": buying the mine bought all six at once, and
-    // repel and burst, which everybody was dealt without limit, could never
-    // be bought at all because nobody was ever short of one. A rack is a
-    // ladder like every other ladder on that page, and the shelf sells
-    // ladders.
+    // arena decides how many": one purchase bought the whole rack, and repel
+    // and burst, which everybody was dealt without limit, could never be
+    // bought at all because nobody was ever short of one. A rack is a ladder
+    // like every other ladder on that page, and the shelf sells ladders.
     let charges =
         sim::UP_COUNT + sim::TRIG_COUNT + sim::TRIG_COUNT * sim::MOD_COUNT + sim::MAX_CHARGES;
     if slot < charges {
@@ -95,7 +94,7 @@ pub(super) fn name_of(slot: usize) -> String {
         "freeze",
         "push",
     ];
-    const CHARGES: [&str; 4] = ["repel", "burst", "mine", "charge 4"];
+    const CHARGES: [&str; 4] = ["repel", "burst", "charge 3", "charge 4"];
     if slot < sim::UP_COUNT {
         return format!("{} depth", STATS[slot]);
     }
@@ -180,7 +179,6 @@ mod tests {
             sim::slot_mod(sim::TRIG_BOMB, sim::MOD_SHRAPNEL) as usize,
             sim::slot_charge(sim::CHARGE_REPEL) as usize,
             sim::slot_charge(sim::CHARGE_BURST) as usize,
-            sim::slot_charge(sim::CHARGE_MINE) as usize,
         ] {
             let mut owned = base[slot];
             let mut last = 0;

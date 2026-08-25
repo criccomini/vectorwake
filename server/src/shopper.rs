@@ -59,7 +59,7 @@ pub fn wants(plan: BuildPlan) -> Vec<usize> {
             c(sim::CHARGE_REPEL),
             s(sim::UP_RECHARGE),
             gun,
-            c(sim::CHARGE_MINE),
+            c(sim::CHARGE_BURST),
             s(sim::UP_ENERGY),
         ],
         // The runner: arrive, leave, and be somewhere else when the answer

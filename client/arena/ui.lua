@@ -6036,8 +6036,8 @@ end
 -- everybody knows before it is a number; an add-on as the round wearing the
 -- rung on offer, which is the same statement the corner stack makes about a
 -- round you already fire. A charge draws the mark it goes off as, in the
--- color it goes off in, and a mine wears the bomb's pink the way it does
--- everywhere. The stats draw nothing: a stat has no object to draw, and a
+-- color it goes off in. The stats draw nothing: a stat has no object to draw,
+-- and a
 -- symbol invented for a shelf would be the one mark in the game that is not
 -- a picture of its thing.
 function pages.shelf_mark(r, cx, cy)
@@ -6053,9 +6053,7 @@ function pages.shelf_mark(r, cx, cy)
         marks.round(cx, ry(cy), k, r.trigger == 0, r.lvl or 0, modn)
     elseif r.group == "charges" then
         local name = string.lower(r.label or "")
-        if string.find(name, "mine", 1, true) then
-            marks.mine(cx, ry(cy), k, pal.a(pal.BOMB, 0.9))
-        elseif string.find(name, "repel", 1, true) then
+        if string.find(name, "repel", 1, true) then
             marks.charge(0, cx, ry(cy), k, pal.a(pal.CHARGE_COL, 0.9))
         elseif string.find(name, "burst", 1, true) then
             marks.charge(1, cx, ry(cy), k, pal.a(pal.BURST, 0.9))
@@ -6305,16 +6303,6 @@ function pages.range(r, bx, by, bw, bh)
                                 ry(cy + math.sin(a) * d * 0.7),
                                 5 * F.scale, true, 1)
                 end
-            end
-        elseif string.find(name, "mine", 1, true) then
-            -- The thing that blunders into a mine is a ship.
-            local mx = bx + bw * 0.4
-            marks.mine(mx, ry(cy), 9 * F.scale, pal.a(pal.BOMB, 0.9))
-            local ex = bx + bw - 30 * F.scale - t * (bw * 0.5 - 50 * F.scale)
-            if t < 0.8 then
-                thumb(ex, cy, 0, pal.a(pal.ENEMY, 0.9), 1.2)
-            else
-                blast(mx, cy, (t - 0.8) / 0.2, pal.BOMB, 40 * F.scale)
             end
         else
             marks.charge(2, bx + bw / 2, ry(cy), 16 * F.scale,
@@ -6734,11 +6722,11 @@ local BOARD = {
 -- because that is what the drawing loop below has in its hand.
 --
 -- A binding may be a chord, so a key can belong to more than one control:
--- Shift is half of the mine and Tab is the whole of the bomb and half of the
--- mine as well. The shortest chord wins the color, which is the binding a hand
+-- Shift may be half of one and Tab the whole of another and half of the first
+-- as well. The shortest chord wins the color, which is the binding a hand
 -- falls back to and the one the key would fire on its own; every chord the key
--- is in still counts for the cursor, so resting on the mine brackets both of
--- its keys rather than one.
+-- is in still counts for the cursor, so resting on a chorded row brackets both
+-- of its keys rather than one.
 local function bind_map(v)
     local out = {}
     for i, r in ipairs(v.rows or {}) do
@@ -6756,8 +6744,8 @@ local function bind_map(v)
                 if #r.keys < e.n then e.row, e.n = r, #r.keys end
                 e.on[i] = true
                 -- And whichever chord is asking owns the whole key while it
-                -- is, however long it is. Mines are Shift and Tab, and Tab is
-                -- also the bomb: reading the shortest chord for this left the
+                -- is, however long it is. Where a chord shares a key with a
+                -- barer binding, reading the shortest chord for this left the
                 -- board lighting half the chord it was waiting to be told.
                 if r.arming then e.asking = r end
             end

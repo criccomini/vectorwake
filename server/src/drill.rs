@@ -53,9 +53,7 @@ pub struct Drill {
     /// once per round that leaves, classified by the pattern's spec.
     pub gun_rounds: u32,
     pub bomb_rounds: u32,
-    pub mine_rounds: u32,
     pub bomb_presses: u32,
-    pub mine_presses: u32,
     /// Presses per hull, so "bots never bomb" can be asked of the hull that
     /// is supposed to and the six that are not.
     pub bomb_by_class: [u32; 8],
@@ -132,15 +130,14 @@ impl Drill {
             self.shots
         );
         println!(
-            "  rounds   gun {}, bomb {}, mine {}  (gun per bomb {:.0})",
+            "  rounds   gun {}, bomb {}  (gun per bomb {:.0})",
             self.gun_rounds,
             self.bomb_rounds,
-            self.mine_rounds,
             self.gun_rounds as f64 / self.bomb_rounds.max(1) as f64
         );
         println!(
-            "  presses  gun {}, bomb {}, mine {}  (held, not comparable)",
-            self.gun_presses, self.bomb_presses, self.mine_presses
+            "  presses  gun {}, bomb {}  (held, not comparable)",
+            self.gun_presses, self.bomb_presses
         );
         let names = ai::CLASS_NAMES;
         let mut per_class: Vec<String> = Vec::new();
@@ -192,9 +189,10 @@ pub fn run_on(map: std::sync::Arc<sim::sim_map>, bots: usize, ticks: u32, seed: 
     let route = nav::Nav::build(&map);
     let mut w = sim::World::on_shared_map(seed, map);
     // Which weapon a fire event came from. `EV_FIRE` carries the pattern's
-    // spec, so walk every class's trigger ladders once and label each spec a
-    // gun, a bomb or a mine. A spec shared between two triggers would land on
-    // whichever is seen last, which no shipped zone does.
+    // spec, so walk every class's bomb ladder once and label those specs;
+    // everything else that leaves a barrel is a gun round. A spec shared
+    // between two triggers would land on whichever is seen last, which no
+    // shipped zone does.
     let mut spec_kind = [0u8; 256];
     {
         let c = &w.cfg;
@@ -210,7 +208,6 @@ pub fn run_on(map: std::sync::Arc<sim::sim_map>, bots: usize, ticks: u32, seed: 
                 mark(c.classes[cls].trigger[sim::TRIG_BOMB][r], 1);
             }
         }
-        mark(c.charge[sim::CHARGE_MINE], 2);
     }
     // How much kit the pilots here fly with. Bare by default, because this
     // measures flying; `VW_DRILL_KIT` gives them a budget, because a question
@@ -252,9 +249,7 @@ pub fn run_on(map: std::sync::Arc<sim::sim_map>, bots: usize, ticks: u32, seed: 
         gun_presses: 0,
         gun_rounds: 0,
         bomb_rounds: 0,
-        mine_rounds: 0,
         bomb_presses: 0,
-        mine_presses: 0,
         bomb_by_class: [0; 8],
         alive_by_class: [0; 8],
         hits: 0,
@@ -298,11 +293,6 @@ pub fn run_on(map: std::sync::Arc<sim::sim_map>, bots: usize, ticks: u32, seed: 
                 d.bomb_presses += 1;
                 d.bomb_by_class[cls] += 1;
             }
-            if buttons & sim::BTN_USE != 0
-                && (buttons >> sim::BTN_SLOT_SHIFT) & 3 == sim::CHARGE_MINE as u16
-            {
-                d.mine_presses += 1;
-            }
             if tracing
                 && ship == brains_first
                 && w.state.tick >= trace_from
@@ -331,7 +321,6 @@ pub fn run_on(map: std::sync::Arc<sim::sim_map>, bots: usize, ticks: u32, seed: 
                     d.shots += 1;
                     match spec_kind[ev.e[i].b as usize] {
                         1 => d.bomb_rounds += 1,
-                        2 => d.mine_rounds += 1,
                         _ => d.gun_rounds += 1,
                     }
                 }

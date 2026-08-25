@@ -68,9 +68,8 @@ M.list = {
     K("semicolon", ";", ";", "KEY_SEMICOLON"),
     K("quote", "'", "'", "KEY_QUOTE"),
 
-    -- Either shift, one control. The chord that lays a mine is held with the
-    -- hand that is not on the bomb key, and which hand that is depends on
-    -- where the bomb key has been put.
+    -- Either shift, one control, since a chord is held with whichever hand is
+    -- free and which one that is depends on where the trigger has been put.
     K("shift", "shift", "Shift", "KEY_LSHIFT", "KEY_RSHIFT"),
     K("z", "Z", "Z", "KEY_Z"), K("x", "X", "X", "KEY_X"),
     K("c", "C", "C", "KEY_C"), K("v", "V", "V", "KEY_V"),

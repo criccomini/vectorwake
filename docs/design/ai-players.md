@@ -81,7 +81,7 @@ the roster in [ships.md](ships.md) without being locked to it:
 | Heavy | Anvil | Accepts midrange fights, spends bombs readily, retreats a little later |
 | Ambusher | Cipher | Cloaks near routes, waits, commits once, leaves |
 | Brawler | Facet | Closes to knife range, fights in tunnels, dies in the open |
-| Denier | Lattice | Mines chokepoints, defends the flag room, rarely chases |
+| Denier | Lattice | Holds chokepoints at range, defends the flag room, rarely chases |
 | Runner | Any | Plays the objective over the kill, takes flags, chases the ball |
 
 An arena's bot roster mixes these, so the room feels like a room rather than

@@ -255,19 +255,16 @@ so a board can still name and score a pilot the snapshot leaves out. The client
 prefers the simulation for seats it can see, because that arrives twenty times
 a second, and the roster for the rest.
 
-**A pilot's own rounds are exempt from the radius**, which is what a minefield
-needs. Every argument above rests on a round being spent within seconds and
-never leaving the hull that fired it; a mine sits for two minutes while its
-layer flies off, so it is the one round that crosses the boundary outward
-without ending. Filtered like the rest it simply stopped being in the snapshot,
-and a client reads a round that stops existing as a round that went off: a
-pilot on alpha was shown their whole minefield detonating behind them within
-seconds of laying it, and their client, no longer able to count the five mines
-out, predicted a sixth the arena refused. It costs at most five records a
-snapshot and leaks nothing, since a pilot knows where they laid their own
-mines.
+**Rounds are cut by distance alone**, with no exemption for whose they are.
+The argument above rests on a round being spent within seconds and never
+leaving the hull that fired it, which holds for every round in the game: a
+pilot's own are inside the radius by construction. A weapon that outlived its
+owner's flight home would cross the boundary outward without ending, and a
+client reads a round that stops existing as a round that went off, so such a
+weapon would need an exception here. There is no longer one in the game --
+mines were it, and decision 61 removed them.
 
-The other exemption is our own bots, and it is keyed on the token's label
+The one exemption is our own bots, and it is keyed on the token's label
 rather than on what the client said about itself at join. That distinction is the whole of
 it: the old test was `Player::bot`, the declaration, so anybody could declare
 themselves a bot from any address and be handed every ship on the map. The
@@ -321,8 +318,8 @@ larger window, and a very wide legitimate window does not become permission
 to see more of the arena.
 
 Flying and the delayed room channel use the same radius. The channel's subject
-supplies the camera center and the minefield perspective, but not the
-recipient's ownership. A watcher receives public ship records only.
+supplies the camera center, but not the recipient's ownership. A watcher
+receives public ship records only.
 
 House bots retain their signed whole-room position stream because their shared
 room model requires it. The grant comes from the token label, not the bot bit a

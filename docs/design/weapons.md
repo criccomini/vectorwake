@@ -2,16 +2,17 @@
 
 > **Two parts of this changed.** [match-game.md](match-game.md) removed greens
 > entirely, keeping the upgrade space below as the coordinate system a chosen
-> kit is built in, and made a mine an ordinary charge rather than the bomb
-> trigger's other posture. What the pickup, its weights and rust were is in
-> `docs/research/` with the rest of the original's tables.
+> kit is built in. What the pickup, its weights and rust were is in
+> `docs/research/` with the rest of the original's tables. Mines are gone as
+> well; decision 61 says why, and the original's own tables for them stay in
+> `docs/research/`.
 
 Everything that leaves a ship is the same thing.
 
 Not "a bullet and a bomb, plus special cases". One model, two tables, and
-every weapon this game will ever have is rows in them. A burst, a spread, a
-mine, shrapnel, a repel, a bouncing bomb, a round that freezes your recharge
--- none of those is a feature in the core. They are numbers.
+every weapon this game will ever have is rows in them. A burst, a spread,
+shrapnel, a repel, a bouncing bomb, a round that freezes your recharge. None
+of those is a feature in the core. They are numbers.
 
 ## Why one model
 
@@ -50,7 +51,6 @@ sim_fire_pattern              sim_weapon_spec
   count     how many              life         ticks before it runs out
   spacing   heading units apart   on_wall      end · bounce · pass
   energy    cost of the shot      bounces      walls survived, if bouncing
-  energy_up more per rung          still        laid rather than thrown
   delay     cooldown ticks        trigger      px from a hull that counts as arriving
   recoil    kick on the shooter   expire_ends  whether running out counts as arriving
                                   splinter     a pattern fired where it ended
@@ -78,14 +78,15 @@ burst, and no new mechanism was needed to say so.
 
 It runs out · it moves · something ends it · the ending happens.
 
-That order is the model. Every difference between a bullet, a bomb, a mine and
-a fragment is a number read during those four steps rather than a branch
-between them.
+That order is the model. Every difference between a bullet, a bomb and a
+fragment is a number read during those four steps rather than a branch between
+them.
 
 **Running out is not arriving.** A bomb that crosses the arena untouched and
 expires at five seconds has *not* got anywhere, so it does nothing -- that is
 what a player means when they say a bomb that times out should not splash.
-A mine is the opposite: its whole life is a timer, and `expire_ends` says so.
+A round whose whole life is a timer asks for the opposite, and `expire_ends`
+is how it says so.
 
 **Arriving** is being within `trigger` of an enemy hull. Zero is contact, which
 is a bullet; anything larger is a proximity fuse that never touches you.
@@ -144,92 +145,6 @@ bullet and takes the same number.
 `mod_step` could not express that. A step is one number for every weapon that
 takes the add-on, and these two weapons take it and spend it differently.
 
-**Mine.** `speed: 0`, `still: 1`, a long `life`, `expire_ends: 1`, a `trigger`,
-and a blast. It sits where you left it and goes off when its fuse finds
-somebody or its timer runs out, whichever comes first. Nothing in the update
-loop knows a mine from a bomb.
-
-**It is a charge.** A count you carry out of your kit and spend, in the slot
-beside repel and burst, which is what makes "how many mines do I bring" a
-loadout decision priced against everything else in the thirty.
-
-It was the bomb trigger's other posture for a long time, on the original's own
-chord: shift and the bomb key, no inventory, mines for as long as you had a
-rack, limited by a `mine_max` per hull. That is faithful, and it was the wrong
-half of the original to keep once a pilot chose their ship. The limit lived on
-the hull rather than in the pilot's hands, so the one weapon in the game that
-denies ground could not be traded for anything.
-
-What went with it: the chord, its touch cell, and `mine_max`. Six mines was
-then the Lattice's row, which fixed the wrong half of the same problem: the
-limit had moved off the rack and onto the roster instead of into the pilot's
-hands. Six is the arena's ceiling for everyone now, the kind is something the
-shop sells, and the miner is whoever spends a fifth of their kit on mines.
-
-The count is the ordinary charge count, spent at the lay and not refilled
-until the next match. Dying does not clear your minefield, so what is already
-posted stays posted and stays yours.
-
-Two minutes of `life`, and a zone moves it the way it moves any weapon's:
-`[[arena.weapons]] name = "mine"`, `life = 12000`. That clock is the whole
-of how long the ground a minefield denies stays denied, so it is a map setting
-as much as a weapon one and worth reaching for before the damage. The original calls it MineAliveTime, bounds it at two seconds to ten minutes,
-and its vanilla settings run it at exactly this: 12000 hundredths.
-
-Laying one costs 270 energy and 150 more per bomb rung, against the 300 and 50
-of throwing one, and locks the triggers for 125 ticks against a bomb's 150.
-So a mine is cheaper and quicker than the bomb it is at rung one and dearer by
-rung three -- 570 against 400 -- which is what stops the rung being free on the
-weapon that does not have to be aimed. All four are the original's:
-LandmineFireEnergy, LandmineFireEnergyUpgrade and LandmineFireDelay.
-
-`still` is the only field the weapon needed that the model did not already
-have, and it is there because every other round in the game wants the
-opposite. A shot takes the firer's velocity on top of its own speed, which is
-what makes one fired at a run faster over the ground than one fired standing.
-A speed-zero round with that velocity added does not sit anywhere: it leaves
-the rack at exactly the speed the ship was doing and holds it until a wall
-stops it. This page called that drift for a while. It is not drift, it is
-flight, and it made the weapon usable only from a standstill.
-
-A mine is the bomb you leave behind, so it takes the bomb trigger's add-ons as
-well as its rung. Shrapnel breaks it up, and into rounds of your *gun's* rung,
-the same way a thrown bomb's fragments are read off your guns at the throw.
-Freeze stalls whoever it catches. Push shoves them. A pilot who climbed to
-shrapnel and watched their mines go off as bare blasts was being told the two
-are different weapons, and they are not.
-
-Two exceptions, in opposite directions. **Multifire is stripped**, because it
-multiplies a *pattern* rather than transforming a round: three mines out of
-one charge is not a stronger mine, it is a different inventory, and the
-inventory is exactly what the kit already decided. And **proximity
-takes the larger of the two rather than the sum**, because a mine already
-senses. Adding is right for a bomb, which is a contact round with nothing to
-add to; on a mine it stacked to two tiles further than a proximity bomb of the
-same rung, which inverts the reason the mine's own fuse is the tighter of the
-two. It does not have to be dodged in the air first, so it should not out-range
-the round that does. With the add-on a mine senses exactly as far as the bomb
-it is; without it, its own two tiles.
-
-Its rung is also its color: the color on the floor is the color of the
-bombs you throw. That is a real number rather
-than paint, because `blast_up` climbs the bomb ladder's own arithmetic and a
-rung three mine makes a rung three bomb's hole. A charge fires one pattern, so
-a mine cannot be a row per rung the way a bomb is; `blast_up` is to the mine
-what `damage_up` is to the fragment, which is the second weapon whose rung
-comes from somewhere other than a ladder of its own.
-
-**A repelled mine stops being a mine.** Shoved by an enemy repel it becomes a
-bomb of the rung it was laid at and leaves in the push direction. The shape is
-wrong for a round in flight in both directions at once -- a minute of life, and
-a fuse tuned to something standing still beside it -- so a mine pushed as
-itself would cross the map at repel speed and keep going. Clearing a posted
-doorway is what a repel is *for*, and what comes out the far side is
-recognisably the thing that was posted, still owned by whoever laid it and
-still able to kill them. Your own repel leaves your own mines alone, which is
-the push loop's hostile-only rule reaching the new round rather than a rule
-of its own.
-
 **Shrapnel.** A bomb whose `splinter` is a burst of short-lived fragments, and
 the fragments are *bullets*. That is the original's rule and it is where the
 add-on stops being a bomb thing: a fragment is a round of your **gun's** rung,
@@ -280,13 +195,10 @@ bounces = 3
 ```
 
 The weapons that belong to a settings slot rather than to a hull are named for
-the slot: `charge-1` through `charge-4`, and `shrapnel-1` up, one per rung of
-the add-on. Naming a charge slot the baseline leaves empty makes the weapon and
-fills the slot in one block.
-
-`mine` is the exception that is named rather than numbered, because it is not
-a slot whose contents a zone picks: there is one mine, it is what the bomb
-trigger lays, and calling it `charge-3` would say the opposite.
+what they are where the baseline fills them, `repel` and `burst`, and for the
+slot where it does not: `charge-3` and `charge-4`, and `shrapnel-1` up, one per
+rung of the add-on. Naming a charge slot the baseline leaves empty makes
+the weapon and fills the slot in one block.
 
 Any *other* name makes a weapon that did not exist, which a hull can carry or
 another weapon can splinter into. Order in the file does not matter -- names
@@ -549,19 +461,17 @@ able to express since the day it was written; the burst is sixteen rounds at a
 full turn's spacing, the rosette that motivated `count` and `spacing` in the
 first place.
 
-Four kinds, zone-wide, so slot two means the same weapon for everybody and a
-zone can weight "the odds of finding a burst".
+Four slots, zone-wide, so slot two means the same weapon for everybody. Two of
+them ship filled; a zone is free to write the others.
 
-**Everybody may carry three of every charge**, and six mines. That is the
-original's rule, give or take the mine:
+**Everybody may carry three of every charge.** That is the original's rule:
 `RepelMax`, `BurstMax`, `DecoyMax`, `ThorMax`, `BrickMax`, `PortalMax` and
 `RocketMax` are all 3 on all eight of its ships, and every ship starts holding
 none of them. Charges are not a roster trait there; they are loot, and the
 hull does not gate them.
 
-The ceiling is the arena's, and it is six for mines rather than three: that
-was the Lattice's row, and it is everybody's now. Charges are not a hull trait
-here for the same reason nothing else is, plus one of their own:
+The ceiling is the arena's. Charges are not a hull trait here for the same
+reason nothing else is, plus one of their own:
 
 - **A hull carries no traits at all.** Ladders, add-ons and flight are the
   arena's; the hull is a footprint. A trait one hull holds is a trait the shop
@@ -596,10 +506,9 @@ The cost is that you can only have one thing ready, so carrying a mixed
 inventory is a decision rather than a hotkey. That is slower than muscle
 memory on seven keys, and it is the trade.
 
-Repel and burst do not share the gun and bomb firing clock. A pilot may spend
-one during a weapon delay, on the same tick as a shot, or immediately after
-another charge. Their inventory and energy cost are the limits. Mines are not
-charges: they wait for the bomb clock and lock both weapon triggers when laid.
+Charges do not share the gun and bomb firing clock. A pilot may spend one
+during a weapon delay, on the same tick as a shot, or immediately after another
+charge. Their inventory and energy cost are the limits.
 
 ### Thirty is a loud opening, and that is a choice
 
@@ -641,7 +550,7 @@ prox = 24                 # px of fuse
 [arena.kit]               # and how many rungs of each a kit may hold
 gun_mods = { multi = 5, bounce = 1, freeze = 1 }
 bomb_mods = { prox = 1, shrapnel = 3, bounce = 2, freeze = 1 }
-charges = [3, 3, 6]       # repels, bursts, mines
+charges = [3, 3]          # repels, bursts
 ```
 
 An add-on left out of a map that names any is a slot this arena does not have,

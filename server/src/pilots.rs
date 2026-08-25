@@ -95,8 +95,6 @@ pub struct BehaviorProfile {
     pub retreat_bias: f32,
     /// Preference for using a bomb when both weapons are viable.
     pub bomb_preference: f32,
-    /// Preference for laying and defending mines.
-    pub mine_preference: f32,
 }
 
 impl BehaviorProfile {
@@ -110,7 +108,6 @@ impl BehaviorProfile {
                 objective: 0.75,
                 retreat_bias: -0.03,
                 bomb_preference: 0.25,
-                mine_preference: 0.10,
             },
             Strategy::Bombardier => Self {
                 strategy,
@@ -120,7 +117,6 @@ impl BehaviorProfile {
                 objective: 0.70,
                 retreat_bias: 0.02,
                 bomb_preference: 1.00,
-                mine_preference: 0.55,
             },
             Strategy::Skirmisher => Self {
                 strategy,
@@ -130,7 +126,6 @@ impl BehaviorProfile {
                 objective: 0.85,
                 retreat_bias: 0.06,
                 bomb_preference: 0.30,
-                mine_preference: 0.20,
             },
             Strategy::Heavy => Self {
                 strategy,
@@ -140,7 +135,6 @@ impl BehaviorProfile {
                 objective: 0.80,
                 retreat_bias: -0.01,
                 bomb_preference: 0.80,
-                mine_preference: 0.70,
             },
             Strategy::Ambusher => Self {
                 strategy,
@@ -150,7 +144,6 @@ impl BehaviorProfile {
                 objective: 0.65,
                 retreat_bias: -0.02,
                 bomb_preference: 0.50,
-                mine_preference: 0.20,
             },
             Strategy::Brawler => Self {
                 strategy,
@@ -160,7 +153,6 @@ impl BehaviorProfile {
                 objective: 0.55,
                 retreat_bias: -0.08,
                 bomb_preference: 0.35,
-                mine_preference: 0.15,
             },
             Strategy::Denier => Self {
                 strategy,
@@ -170,7 +162,6 @@ impl BehaviorProfile {
                 objective: 1.15,
                 retreat_bias: 0.03,
                 bomb_preference: 0.55,
-                mine_preference: 1.00,
             },
             Strategy::Runner => Self {
                 strategy,
@@ -180,7 +171,6 @@ impl BehaviorProfile {
                 objective: 1.75,
                 retreat_bias: 0.08,
                 bomb_preference: 0.20,
-                mine_preference: 0.25,
             },
         }
     }
@@ -225,7 +215,6 @@ impl PilotSpec {
         let style = self.behavior.aggression * 0.010
             + self.behavior.pursuit * 0.005
             + self.behavior.bomb_preference * 0.002
-            + self.behavior.mine_preference * 0.002
             - self.behavior.retreat_bias * 0.010;
         execution + style
     }
@@ -646,7 +635,8 @@ mod tests {
         let deny = BehaviorProfile::for_strategy(Strategy::Denier);
         let run = BehaviorProfile::for_strategy(Strategy::Runner);
         assert!(skim.engagement_range > duel.engagement_range);
-        assert!(deny.mine_preference > duel.mine_preference);
+        assert!(deny.engagement_range > skim.engagement_range);
+        assert!(duel.pursuit > deny.pursuit);
         assert!(run.objective > skim.objective);
         assert!(duel.aggression > run.aggression);
     }

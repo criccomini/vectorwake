@@ -1728,11 +1728,11 @@ static void test_lifecycle(sim_map *m, const sim_settings *base) {
          * hand-written mirror of the spec struct, so a field added to the
          * struct and forgotten by the mirror arrives at every client as
          * zero -- with the version matching, because the writer that should
-         * have bumped it is the writer that was not touched. That happened
-         * to `still` and `blast_up` in the very commit that added them: every
-         * suite stayed green while a joining client's mines flew off at
-         * their layer's speed. Every spec is built by copying a memset
-         * local, so the padding is zeroed and memcmp is a fair judge. */
+         * have bumped it is the writer that was not touched. That has
+         * happened, in the very commit that added the fields: every suite
+         * stayed green while a joining client flew the weapon differently
+         * from the server. Every spec is built by copying a memset local, so
+         * the padding is zeroed and memcmp is a fair judge. */
         CHECK(memcmp(dst.specs, src.specs,
                      sizeof(sim_weapon_spec) * src.spec_count) == 0,
               "every spec field crosses the wire");
@@ -2660,8 +2660,6 @@ static void test_tech_tree(const sim_settings *base) {
               "and the core reads it off whichever trigger carried it");
         CHECK(ceil[SIM_SLOT_MOD(SIM_TRIG_BOMB, SIM_MOD_PUSH)] == 0,
               "and shoving is off the shelf until it has been looked at");
-        CHECK(ceil[SIM_SLOT_CHARGE(SIM_CHARGE_MINE)] == 6,
-              "six mines, which the roster used to hand to one hull");
 
         /* Two combinations no hull ever had stay unbuilt, because an arena
          * ceiling of zero is a slot that does not exist. */
@@ -3607,22 +3605,32 @@ static void test_scoring(const sim_settings *base) {
          * kind at once has decided nothing. Refused here rather than on the
          * page that draws the ladders, because a rule in a client is a rule
          * until somebody writes their own. */
+        /* This arena ships two kinds, so the rule has nothing to bite on
+         * here without a zone that ships a third. The rack holds four; a
+         * copy that fills a spare slot is what any zone adding a kind would
+         * look like, and it is what the rule exists for. */
+        static sim_settings three;
+        three = cfg;
+        const int SPARE = 2;
+        three.charge[SPARE] = cfg.charge[SIM_CHARGE_REPEL];
+        three.kit_ceiling[SIM_SLOT_CHARGE(SPARE)] = 1;
+
         static sim_state s;
         sim_init(&s, 1);
-        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &cfg);
+        sim_spawn(&s, APEX, 0, 8192, 8192, 0, &three);
         uint8_t kit[SIM_SLOT_COUNT];
         memset(kit, 0, sizeof kit);
         kit[SIM_SLOT_CHARGE(SIM_CHARGE_REPEL)] = 1;
         kit[SIM_SLOT_CHARGE(SIM_CHARGE_BURST)] = 1;
-        CHECK(sim_set_kit(&s.ships[0], &cfg, kit), "two kinds is a kit");
-        kit[SIM_SLOT_CHARGE(SIM_CHARGE_MINE)] = 1;
-        CHECK(!sim_set_kit(&s.ships[0], &cfg, kit), "three is not");
-        CHECK(s.ships[0].charge[SIM_CHARGE_MINE] == 0,
+        CHECK(sim_set_kit(&s.ships[0], &three, kit), "two kinds is a kit");
+        kit[SIM_SLOT_CHARGE(SPARE)] = 1;
+        CHECK(!sim_set_kit(&s.ships[0], &three, kit), "three is not");
+        CHECK(s.ships[0].charge[SPARE] == 0,
               "and the refusal leaves the kit that was already on");
         /* Swapping one out for another is fine: which two is the choice. */
         kit[SIM_SLOT_CHARGE(SIM_CHARGE_BURST)] = 0;
-        CHECK(sim_set_kit(&s.ships[0], &cfg, kit),
-              "a repel and a mine is two kinds like any other pair");
+        CHECK(sim_set_kit(&s.ships[0], &three, kit),
+              "any other pair of the three is a kit like the first");
     }
 
     {
@@ -3991,7 +3999,7 @@ static void test_physics_and_wire(sim_map *m, const sim_settings *base) {
             static sim_state s2;
             step_n(&s, &cfg, SIM_BTN_MULTI, 0, 1);   /* down: toggles once */
             CHECK(s.ships[id].multi_off, "the key goes down and it toggles");
-            int m = sim_pack_around(&s, buf, sizeof buf, 0, 0, -1, 255, 255,
+            int m = sim_pack_around(&s, buf, sizeof buf, 0, 0, -1, 255,
                                     SIM_PACK_PRIVATE_ALL);
             CHECK(m > 0, "the state packs");
             CHECK(sim_unpack(&s2, buf, m) == 0, "and reads back");
@@ -4645,7 +4653,7 @@ static void test_spawning_and_snapshots(sim_map *m, const sim_settings *base) {
             CHECK(public_energy_ship >= 0,
                   "a visible opponent can exercise public energy capacity");
 
-            int m = sim_pack_around(&s, buf, sizeof buf, cx, cy, R, 255, 0, 0);
+            int m = sim_pack_around(&s, buf, sizeof buf, cx, cy, R, 0, 0);
             CHECK(m > 0 && m < n, "a filtered snapshot is smaller");
             static sim_state cut;
             CHECK(sim_unpack(&cut, buf, m) == 0, "and unpacks");
@@ -4765,8 +4773,7 @@ static void test_spawning_and_snapshots(sim_map *m, const sim_settings *base) {
             /* What this pilot is actually sent, which leaves the far hull out. */
             const int32_t R = 84 * 16 * 256;
             int n = sim_pack_around(&s, buf, sizeof buf, s.ships[near].x,
-                                    s.ships[near].y, R, (uint8_t)near,
-                                    (uint8_t)near, 0);
+                                    s.ships[near].y, R, (uint8_t)near, 0);
             static sim_state client;
             CHECK(n > 0 && sim_unpack(&client, buf, n) == 0, "the snapshot reads");
             CHECK(!client.ships[far].active,
@@ -4784,29 +4791,19 @@ static void test_spawning_and_snapshots(sim_map *m, const sim_settings *base) {
                   "and back on the same tile, whatever else the room did");
         }
 
-        /* Except a pilot's own, which travel however far off they are.
-         *
-         * This is the minefield. A mine sits for two minutes and the pilot who
-         * laid it flies away, so it is the one round that leaves the radius
-         * without ending, and a client that stops being told about it draws it
-         * detonating and then lays a sixth mine because it can no longer count
-         * the five. Measured on alpha, every mine laid left its own layer's
-         * snapshot inside seven seconds while the arena flew it on for the
-         * best part of a minute.
-         *
-         * Written as the round the pilot owns rather than as the mine they
-         * own: their bullets are inside the radius by construction, so the
-         * narrower rule buys nothing and reads as a special case. */
+        /* Distance is the only rule a round meets, with no exception for
+         * whose it is. Every round in the game is spent within seconds and
+         * near the hull that fired it, so a pilot's own are inside the radius
+         * by construction; a weapon that outlived the trip home would need an
+         * exception here, and there is none in the game. */
         {
             static sim_state m;
             sim_init(&m, 3);
-            int layer = sim_spawn(&m, APEX, 0, 2048, 2048, 0, &cfg);
+            int shooter = sim_spawn(&m, APEX, 0, 2048, 2048, 0, &cfg);
             int other = sim_spawn(&m, APEX, 1, 2200, 2048, 0, &cfg);
-            CHECK(layer == 0 && other == 1, "two pilots, two sides");
-            m.ships[0].charge[SIM_CHARGE_MINE] = 1;
-            step_n(&m, &cfg,
-                   SIM_BTN_USE | (SIM_CHARGE_MINE << SIM_BTN_SLOT_SHIFT), 0, 1);
-            CHECK(m.weapon_count == 1, "one of them lays a mine");
+            CHECK(shooter == 0 && other == 1, "two pilots, two sides");
+            step_n(&m, &cfg, SIM_BTN_FIRE, 0, 1);
+            CHECK(m.weapon_count > 0, "one of them shoots");
             /* Somewhere the radius below cannot reach. Moved rather than
              * flown, because what is under test is the filter and not how
              * long the trip takes. */
@@ -4814,39 +4811,21 @@ static void test_spawning_and_snapshots(sim_map *m, const sim_settings *base) {
 
             const int32_t R = 84 * 16 * 256;    /* the floor a client gets */
             int32_t vx = m.ships[0].x, vy = m.ships[0].y;
-            int n2 = sim_pack_around(&m, buf, sizeof buf, vx, vy, R, 0, 0, 0);
-            static sim_state mine_seen;
-            CHECK(n2 > 0 && sim_unpack(&mine_seen, buf, n2) == 0,
-                  "the layer's own snapshot packs");
-            CHECK(mine_seen.weapon_count == 1,
-                  "and still carries the mine they left behind");
-            CHECK(mine_seen.weapons[0].x == m.weapons[0].x
-                  && mine_seen.weapons[0].y == m.weapons[0].y
-                  && mine_seen.weapons[0].life == m.weapons[0].life,
-                  "at the pixel and on the clock it actually has");
+            int n2 = sim_pack_around(&m, buf, sizeof buf, vx, vy, R, 0, 0);
+            static sim_state left_behind;
+            CHECK(n2 > 0 && sim_unpack(&left_behind, buf, n2) == 0,
+                  "the shooter's own snapshot packs");
+            CHECK(left_behind.weapon_count == 0,
+                  "and carries nothing of the round they flew away from");
 
-            int n3 = sim_pack_around(&m, buf, sizeof buf, vx, vy, R, 1, 1, 0);
-            static sim_state stranger;
-            CHECK(n3 > 0 && sim_unpack(&stranger, buf, n3) == 0,
-                  "and so does somebody else's from the same place");
-            CHECK(stranger.weapon_count == 0,
-                  "which is told nothing about a mine that far away");
-
-            /* 255 is nobody, and it has to be: every round is owned by a seat,
-             * so the sentinel can never be somebody by accident. */
-            int n5 = sim_pack_around(&m, buf, sizeof buf, vx, vy, R, 255, 255, 0);
-            static sim_state nobody;
-            CHECK(n5 > 0 && sim_unpack(&nobody, buf, n5) == 0, "packs");
-            CHECK(nobody.weapon_count == 0, "and carries no round's exception");
-
-            /* And the exception is the owner rather than the distance: from
-             * next to the mine, everybody is told about it. */
+            /* From next to it, everybody is told about it, on the distance
+             * and nothing else. */
             int n4 = sim_pack_around(&m, buf, sizeof buf,
-                                     m.weapons[0].x, m.weapons[0].y, R, 1, 1, 0);
+                                     m.weapons[0].x, m.weapons[0].y, R, 1, 0);
             static sim_state near_by;
             CHECK(n4 > 0 && sim_unpack(&near_by, buf, n4) == 0, "packs");
-            CHECK(near_by.weapon_count == 1,
-                  "a stranger standing on the minefield sees it");
+            CHECK(near_by.weapon_count > 0,
+                  "a stranger standing on the round sees it");
         }
 
         /* A negative radius is the whole state, and has to stay bit-identical
@@ -4854,7 +4833,7 @@ static void test_spawning_and_snapshots(sim_map *m, const sim_settings *base) {
          * that way, so a filtered format that changed the unfiltered bytes
          * would be a format change wearing a disguise. */
         {
-            int whole = sim_pack_around(&s, buf, sizeof buf, 0, 0, -1, 255, 255,
+            int whole = sim_pack_around(&s, buf, sizeof buf, 0, 0, -1, 255,
                                         SIM_PACK_PRIVATE_ALL);
             CHECK(whole == n, "an unfiltered pack is the same size as sim_pack");
             static sim_state all;
@@ -4870,7 +4849,7 @@ static void test_spawning_and_snapshots(sim_map *m, const sim_settings *base) {
         for (int pick = 0; pick < s.ship_count; pick++) {
             if (!s.ships[pick].active) continue;
             int m = sim_pack_around(&s, buf, sizeof buf,
-                                    s.ships[pick].x, s.ships[pick].y, 0, 255,
+                                    s.ships[pick].x, s.ships[pick].y, 0,
                                     (uint8_t)pick, 0);
             CHECK(m > 0, "a pack around one seat succeeds");
             sim_state one;
@@ -4907,7 +4886,7 @@ static void test_spawning_and_snapshots(sim_map *m, const sim_settings *base) {
               "and the whole-state ceiling is not understated");
 
         int network = sim_pack_around(&full, packed, SIM_PACK_MAX,
-                                      0, 0, -1, 255, 0, 0);
+                                      0, 0, -1, 0, 0);
         CHECK(network > 0 && network <= SIM_PACK_MAX,
               "the largest network shape fits its separate ceiling");
     }
@@ -4984,43 +4963,6 @@ static void test_kits_and_matches(const sim_settings *base) {
         CHECK(sh->charge[SIM_CHARGE_REPEL] == 1
               && sh->charge[SIM_CHARGE_BURST] == 0,
               "and exactly the ammunition they had left");
-    }
-
-    /* A mine is a charge: a count you carry and spend, laid where you are
-     * rather than thrown. It used to be the bomb trigger's other posture,
-     * limited by how many of yours were already lying about. */
-    {
-        static sim_state s;
-        sim_init(&s, 5);
-        const int LATTICE = 6;
-        int id = sim_spawn(&s, LATTICE, 0, 8192, 8192, 0, &cfg);
-        sim_ship *sh = &s.ships[id];
-        uint8_t kit[SIM_SLOT_COUNT] = {0};
-        kit[SIM_SLOT_CHARGE(SIM_CHARGE_MINE)] = 2;
-        CHECK(sim_set_kit(sh, &cfg, kit) == 1, "a hull may slot mines");
-        CHECK(sh->charge[SIM_CHARGE_MINE] == 2, "and carries the count");
-
-        int32_t vx0 = 40000;
-        sh->vx = vx0;
-        const uint16_t lay = SIM_BTN_USE
-                             | (SIM_CHARGE_MINE << SIM_BTN_SLOT_SHIFT);
-        step_n(&s, &cfg, lay, 0, 1);
-        CHECK(s.weapon_count == 1, "pressing the slot lays one");
-        CHECK(sh->charge[SIM_CHARGE_MINE] == 1, "and spends one");
-        CHECK(s.weapons[0].vx == 0 && s.weapons[0].vy == 0,
-              "a mine is left where it was put, not thrown at ship speed");
-
-        /* And it runs out, which is what a count means. One press lays one,
-         * so the pilot has to let go and press again for the next. */
-        for (int i = 0; i < 100; i++) {
-            step_n(&s, &cfg, 0, 0, 1);
-            step_n(&s, &cfg, lay, 0, 1);
-        }
-        CHECK(sh->charge[SIM_CHARGE_MINE] == 0, "the last one is spent");
-        int mines = 0;
-        for (uint16_t w = 0; w < s.weapon_count; w++)
-            if (s.weapons[w].owner == id) mines++;
-        CHECK(mines == 2, "and no more than the kit carried were ever laid");
     }
 
     /* A match opens with everybody home, whole, and reloaded. This is the
@@ -5104,8 +5046,9 @@ static void test_kits_and_matches(const sim_settings *base) {
         CHECK(base[SIM_SLOT_CHARGE(SIM_CHARGE_REPEL)] == 2
               && base[SIM_SLOT_CHARGE(SIM_CHARGE_BURST)] == 2,
               "two repels and two bursts support the starter profiles");
-        CHECK(base[SIM_SLOT_CHARGE(SIM_CHARGE_MINE)] == 0,
-              "and the mine is bought from nothing");
+        for (int k = SIM_CHARGE_BURST + 1; k < SIM_MAX_CHARGES; k++)
+            CHECK(base[SIM_SLOT_CHARGE(k)] == 0,
+                  "and a kind this arena does not ship is owned by nobody");
         CHECK(base[SIM_SLOT_LEVEL(SIM_TRIG_GUN)] == 2
               && base[SIM_SLOT_LEVEL(SIM_TRIG_BOMB)] == 1
               && base[SIM_SLOT_MOD(SIM_TRIG_GUN, SIM_MOD_MULTI)] == 2
@@ -5131,8 +5074,6 @@ static void test_kits_and_matches(const sim_settings *base) {
             for (int i = 0; i < SIM_SLOT_COUNT; i++)
                 if (kit[i] > ceiling[i]) over = 1;
             CHECK(!over, "inside every ceiling it was handed");
-            CHECK(kit[SIM_SLOT_CHARGE(SIM_CHARGE_MINE)] == 0,
-                  "and never slots what the account does not own");
 
             /* And it is a kit a ship will actually take. */
             sim_state ks;

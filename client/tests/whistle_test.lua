@@ -71,7 +71,6 @@ _G.sim = {
     end,
     spec_life = function() return BOMB_LIFE end,
     spec_blast = function(spec) return spec == BOMB and 40 or 0 end,
-    spec_still = function() return false end,
     predicted_death_count = function() return 0 end,
     predicted_death_at = function() end,
 }

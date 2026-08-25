@@ -116,21 +116,6 @@ pub struct Shot {
     pub speed: f32,
 }
 
-/// The mine rack as the pilot sees it. Mines are part of the bomb trigger,
-/// but they are limited by how many of this pilot's are already in the world.
-#[derive(Clone, Copy)]
-pub struct Mine {
-    pub cost: f32,
-    pub blast: f32,
-    pub out: u8,
-    pub max: u8,
-    pub ready: bool,
-    /// Whether another mine is already covering the pilot's current patch.
-    /// Clients retain all of their own mines in snapshots, so this is public
-    /// cockpit information rather than map-wide knowledge.
-    pub nearby: bool,
-}
-
 /// The cockpit: what a pilot knows about their own ship without looking
 /// anywhere. Exact, and current every tick.
 pub struct Own {
@@ -173,7 +158,6 @@ pub struct Own {
     pub gun: Option<Shot>,
     pub bomb: Option<Shot>,
     pub bomb_ready: bool,
-    pub mine: Option<Mine>,
 }
 
 /// Rated deaths before a rating is worth reading. Matches the client's own
@@ -378,7 +362,6 @@ pub fn own(w: &World, ship: u8) -> Own {
         .any(|f| f.active != 0 && f.carried != 0 && f.carrier == ship);
     let gun = shot_of(w, me, sim::TRIG_GUN, max_e);
     let bomb = shot_of(w, me, sim::TRIG_BOMB, max_e);
-    let mine = mine_of(w, ship, max_e);
     Own {
         alive: me.active != 0 && me.alive != 0,
         x: me.x as f32 / 256.0,
@@ -404,7 +387,6 @@ pub fn own(w: &World, ship: u8) -> Own {
         gun,
         bomb,
         bomb_ready: me.fire_cooldown[sim::TRIG_BOMB] == 0,
-        mine,
     }
 }
 
@@ -661,55 +643,6 @@ fn shot_of(w: &World, me: &sim::sim_ship, trig: usize, max_e: f32) -> Option<Sho
     None
 }
 
-/// The mine this pilot would lay now, plus the state of its rack.
-fn mine_of(w: &World, ship: u8, max_e: f32) -> Option<Mine> {
-    let me = &w.state.ships[ship as usize];
-    // A mine is a charge now, so what limits it is how many the kit brought
-    // rather than how many of yours are already lying about. The count on
-    // the field still matters for spacing: two mines on one tile is one
-    // mine's worth of denial for two mines' worth of the budget.
-    let pat = w.cfg.charge[sim::CHARGE_MINE];
-    let held = me.charge[sim::CHARGE_MINE];
-    if held == 0
-        || w.cfg.kit_ceiling[sim::slot_charge(sim::CHARGE_MINE) as usize] == 0
-        || pat == sim::NO_PATTERN
-        || pat as usize >= w.cfg.pattern_count as usize
-        || shot_of(w, me, sim::TRIG_BOMB, max_e).is_none()
-    {
-        return None;
-    }
-    let p = &w.cfg.patterns[pat as usize];
-    if p.spec as usize >= w.cfg.spec_count as usize {
-        return None;
-    }
-    let sp = &w.cfg.specs[p.spec as usize];
-    // One pattern for everybody: a charge fires the same round whoever
-    // carries it, so a mine no longer wears the layer's bomb rung.
-    let blast = sp.blast as f32 / 256.0;
-    let spacing = blast + 96.0;
-    let mut out = 0u8;
-    let mut nearby = false;
-    for weapon in &w.state.weapons[..w.state.weapon_count as usize] {
-        if weapon.owner != ship || w.cfg.specs[weapon.spec as usize].still == 0 {
-            continue;
-        }
-        out = out.saturating_add(1);
-        let dx = weapon.x as f32 / 256.0 - me.x as f32 / 256.0;
-        let dy = weapon.y as f32 / 256.0 - me.y as f32 / 256.0;
-        if dx * dx + dy * dy < spacing * spacing {
-            nearby = true;
-        }
-    }
-    Some(Mine {
-        cost: p.energy as f32 / max_e,
-        blast,
-        out,
-        max: held,
-        ready: true,
-        nearby,
-    })
-}
-
 /// When a shot fired now would arrive, in ticks, or None when the target
 /// outruns it.
 ///
@@ -830,8 +763,6 @@ enum Mode {
     Recover(f32, f32, f32, f32),
     /// Hold station on the last foe seen, at this range, and shoot it.
     Fight(f32),
-    /// Lay one mine here, then return to the ordinary plan.
-    Mine,
 }
 
 /// The weapon the current engagement was planned around. Picking this before
@@ -842,7 +773,6 @@ enum Weapon {
     Bomb,
     BombApproach,
     BombSetup,
-    Mine,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -935,7 +865,6 @@ pub struct Bot {
     mode: Mode,
     weapon: Weapon,
     last_bomb_at: Option<u32>,
-    last_mine_at: Option<u32>,
     posture: Posture,
     shelter: Option<(f32, f32)>,
     retreat_started: u32,
@@ -1229,7 +1158,6 @@ impl Bot {
             mode: Mode::Idle,
             weapon: Weapon::Gun,
             last_bomb_at: None,
-            last_mine_at: None,
             posture: Posture::Normal,
             shelter: None,
             retreat_started: 0,
@@ -1369,7 +1297,7 @@ impl Bot {
         match self.mode {
             Mode::Idle => 0,
             Mode::Travel(..) => 1,
-            Mode::Fight(_) | Mode::Mine => 2,
+            Mode::Fight(_) => 2,
             Mode::Recover(..) => 3,
         }
     }
@@ -1726,7 +1654,6 @@ impl Bot {
         match self.weapon {
             Weapon::Gun | Weapon::BombApproach => o.gun,
             Weapon::Bomb | Weapon::BombSetup => o.bomb,
-            Weapon::Mine => None,
         }
     }
 
@@ -1815,7 +1742,7 @@ impl Bot {
         // No single gate here is unreasonable and nobody tuned their product.
         // That is the shape of the bug, so anybody loosening one should count
         // the funnel again rather than reason about the line they touched:
-        // `drill` reports gun, bomb and mine presses and the per-hull rate.
+        // `drill` reports gun and bomb presses and the per-hull rate.
         //
         // A poor pilot throws them closer together than the hull can afford,
         // which in a fight is the same mistake as firing without aiming.
@@ -1908,79 +1835,6 @@ impl Bot {
         Weapon::Bomb
     }
 
-    fn mine_corridor(&self) -> bool {
-        let short = self.seen.clear.iter().filter(|&&d| d < 88.0).count();
-        let through = (0..WHISKERS / 2)
-            .filter(|&k| self.seen.clear[k] > 144.0 && self.seen.clear[k + WHISKERS / 2] > 144.0)
-            .count();
-        short >= 4 && through >= 1
-    }
-
-    fn mine_interval(&self) -> u32 {
-        let base = match self.profile.strategy {
-            Strategy::Denier => 700,
-            Strategy::Heavy => 1_400,
-            Strategy::Bombardier => 1_800,
-            _ => (2_600.0 * (0.45 + self.dial(Knob::Permission) * 0.55)) as u32,
-        };
-        let preference = (1.35 - self.profile.mine_preference * 0.70).clamp(0.50, 1.50);
-        (base as f32 * preference) as u32
-    }
-
-    /// Mines defend ground. They are laid in lanes with room to pass through,
-    /// never in open space, on top of another mine, or while somebody already
-    /// has a point-blank shot.
-    fn should_mine(&self, o: &Own) -> bool {
-        let Some(mine) = o.mine else { return false };
-        if !mine.ready
-            || mine.out >= mine.max
-            || mine.nearby
-            || o.energy - mine.cost <= self.reserve() + 0.08
-            || !self.mine_corridor()
-        {
-            return false;
-        }
-
-        // A minefield is only useful if this hull can defend it without
-        // standing in its own blast. The mine grows with bomb level, so this
-        // has to use the current rack rather than a class name. It naturally
-        // rules out a built Anvil, Facet, or Cipher while leaving the long
-        // Lattice posture useful.
-        let defend_from = self.engagement_range(o, Weapon::Gun);
-        if defend_from <= mine.blast + o.radius + 24.0 {
-            return false;
-        }
-        if self
-            .seen
-            .threat
-            .is_some_and(|t| t.eta < 90.0 && t.miss < t.blast + o.radius)
-            || self.closest_contact(o).is_some_and(|d| d < 240.0)
-        {
-            return false;
-        }
-
-        let strategy = self.profile.strategy;
-        let cadence = self.mine_interval();
-        if self
-            .last_mine_at
-            .is_some_and(|last| self.timer.saturating_sub(last) < cadence)
-        {
-            return false;
-        }
-        match strategy {
-            Strategy::Denier => true,
-            Strategy::Heavy | Strategy::Bombardier => self.seen.company,
-            // A hostile close enough to walk into it and not yet close
-            // enough to be shooting, which the guards above have already
-            // established. This was a permission line at 0.55: the last step
-            // in the file, and the last read of `skill` that went around
-            // `dial`, where the ablation could not see it at all. A 0.54
-            // pilot never laid a mine in its life and a 0.56 pilot laid one
-            // every time the band was occupied.
-            _ => self.seen.hostiles_near > 0,
-        }
-    }
-
     /// The reflex: fire when the shot is on and the reserve allows it.
     fn trigger(&mut self, o: &Own) -> u16 {
         if !o.alive {
@@ -1994,24 +1848,6 @@ impl Bot {
         // Past breaking off, this pilot is not playing any more. Shooting on
         // the way out is how a departure stops reading as one.
         if matches!(self.exit, Exit::Leaving | Exit::Parked) {
-            return 0;
-        }
-        if self.weapon == Weapon::Mine && matches!(self.mode, Mode::Mine) {
-            // One press only. The core owns capacity, energy and cooldown, but
-            // the cockpit copy above keeps this ordinary attempt from being a
-            // held key that lays another mine as soon as the clock clears.
-            self.mode = Mode::Idle;
-            self.weapon = Weapon::Gun;
-            if let Some(mine) = o.mine {
-                if mine.ready
-                    && mine.out < mine.max
-                    && !mine.nearby
-                    && o.energy - mine.cost > self.reserve() + 0.08
-                {
-                    self.last_mine_at = Some(self.timer);
-                    return sim::btn_charge(sim::CHARGE_MINE);
-                }
-            }
             return 0;
         }
         if self.aim == (0.0, 0.0) {
@@ -2429,14 +2265,6 @@ impl Bot {
             return;
         }
 
-        if self.should_mine(o) {
-            self.aim = (0.0, 0.0);
-            self.goal = None;
-            self.weapon = Weapon::Mine;
-            self.mode = Mode::Mine;
-            return;
-        }
-
         let selected = self.select_foe(o);
         self.seen.foe = selected;
 
@@ -2525,10 +2353,6 @@ impl Bot {
         }
         match self.mode {
             Mode::Idle => {
-                self.aim = (0.0, 0.0);
-                0
-            }
-            Mode::Mine => {
                 self.aim = (0.0, 0.0);
                 0
             }
@@ -3033,7 +2857,6 @@ mod tests {
         assert!(run.retreat_at(&o) > duel.retreat_at(&o));
         assert!(run.objective_score(400.0) > duel.objective_score(400.0));
         assert!(duel.profile.pursuit > deny.profile.pursuit);
-        assert!(deny.mine_interval() < duel.mine_interval());
         assert!(configured(ship, 0.7, Strategy::Bombardier).bomb_interval() < duel.bomb_interval());
     }
 
@@ -3153,74 +2976,6 @@ mod tests {
             Weapon::Gun,
             "the closing target would meet the slow bomb inside its owner's blast"
         );
-    }
-
-    #[test]
-    fn a_hull_does_not_lay_a_mine_it_cannot_defend_safely() {
-        let mut w = sim::World::with_map(0x5eed, |_| {});
-        let ship = w.spawn(3, 0, 500, 500, 0) as u8;
-        w.state.ships[ship as usize].charge[sim::CHARGE_MINE] = 3;
-        w.state.ships[ship as usize].energy = w.eff_max_energy(ship as usize);
-        // A wide mine, which is a zone's to set: the rule under test is that
-        // a pilot will not post one it then has to fight inside. A standard
-        // mine is 80 px and an Anvil's gun reaches further than that, so at
-        // the shipped numbers there is nothing here to refuse.
-        {
-            let pat = w.cfg.charge[sim::CHARGE_MINE] as usize;
-            let spec = w.cfg.patterns[pat].spec as usize;
-            w.cfg.specs[spec].blast = 400 * 256;
-        }
-        let o = own(&w, ship);
-        let mut bot = configured(ship, 0.8, Strategy::Heavy);
-        bot.seen.company = true;
-        bot.seen.clear.fill(48.0);
-        bot.seen.clear[0] = WHISKER_PX;
-        bot.seen.clear[8] = WHISKER_PX;
-
-        assert!(bot.mine_corridor());
-        assert_eq!(o.mine.expect("a mine rack").blast, 400.0);
-        assert!(
-            bot.engagement_range(&o, Weapon::Gun) < o.mine.expect("a mine rack").blast,
-            "an Anvil fights inside a mine that wide"
-        );
-        assert!(!bot.should_mine(&o));
-    }
-
-    #[test]
-    fn lattice_mines_a_lane_but_not_an_existing_minefield() {
-        let mut w = sim::World::with_map(0x5eed, |_| {});
-        let ship = w.spawn(6, 0, 500, 500, 0) as u8;
-        let full = w.eff_max_energy(ship as usize);
-        w.state.ships[ship as usize].energy = full;
-        // Mines come out of the kit now, so a hull carrying none has no
-        // decision to make about laying one.
-        w.state.ships[ship as usize].charge[sim::CHARGE_MINE] = 3;
-        let mut o = own(&w, ship);
-        let mut bot = configured(ship, 0.8, Strategy::Denier);
-        bot.seen.clear.fill(48.0);
-        bot.seen.clear[0] = WHISKER_PX;
-        bot.seen.clear[8] = WHISKER_PX;
-        assert!(bot.should_mine(&o), "Lattice posts a narrow through-lane");
-
-        o.mine.as_mut().expect("a mine rack").nearby = true;
-        assert!(!bot.should_mine(&o), "it does not stack a covered patch");
-    }
-
-    #[test]
-    fn the_cockpit_counts_its_own_mines() {
-        let mut w = sim::World::with_map(0x5eed, |_| {});
-        let ship = w.spawn(6, 0, 500, 500, 0) as u8;
-        // A mine is a charge, so a hull with none in hand has no rack to
-        // count: the kit is what puts them there.
-        w.state.ships[ship as usize].charge[sim::CHARGE_MINE] = 3;
-        assert_eq!(own(&w, ship).mine.expect("a rack").out, 0);
-        w.step(&[sim::sim_input {
-            ship,
-            buttons: sim::btn_charge(sim::CHARGE_MINE),
-        }]);
-        let mine = own(&w, ship).mine.expect("a rack");
-        assert_eq!(mine.out, 1);
-        assert!(mine.nearby);
     }
 
     #[test]

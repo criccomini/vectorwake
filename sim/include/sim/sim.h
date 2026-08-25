@@ -398,16 +398,12 @@ typedef enum {
  * a zone can weight "the odds of finding a burst". What each hull may carry
  * is its own row, the same way add-ons work. */
 #define SIM_MAX_CHARGES 4
-/* The charge kinds this game ships, and the reason a mine is one of them.
- * A charge is a count you carry and spend, which is what a mine always was
- * once a kit made every count explicit; it used to be the bomb trigger's
- * other posture, limited by how many of yours were already lying about. As a
- * charge it fires one pattern for everybody, so a mine means the same thing
- * in every hangar and the hull's `charge_max` row is what makes mining one
- * ship's job. */
+/* The charge kinds this game ships. Two of the four the array holds: the
+ * count is a capacity rather than a census, so a zone is free to fill the
+ * slots above them. A slot nothing fills has a kit ceiling of zero, which is
+ * what keeps it out of every kit and off every shelf. */
 #define SIM_CHARGE_REPEL 0
 #define SIM_CHARGE_BURST 1
-#define SIM_CHARGE_MINE 2
 #define SIM_CHARGE_MAX 15  /* how many of one kind a pilot can hold */
 
 /* How many kinds a pilot may carry at once, whatever they own.
@@ -418,11 +414,9 @@ typedef enum {
  * refuses a kit that names a third, so the ship page cannot offer one and no
  * client can send one.
  *
- * The two are bound to Q and W in kind order, so a pilot who carries a repel
- * and a mine has the repel on Q, and a pilot who carries a burst and a mine
- * has the burst there. That is the whole of the binding: there is no key for
- * a mine and never was one worth having, since what a key spends is a slot
- * and what a slot holds is a choice. */
+ * Whichever two are carried bind to Q and W in kind order, so the lower kind
+ * is always on Q. That is the whole of the binding: what a key spends is a
+ * slot, and which kinds fill the slots is what the kit decided. */
 #define SIM_KIT_CHARGE_SLOTS 2
 
 /* The slot field in the buttons and the number of charge kinds are two halves
@@ -474,21 +468,6 @@ typedef struct {
     uint16_t life;        /* ticks before it runs out */
     uint8_t on_wall;      /* sim_wall_rule */
     uint8_t bounces;      /* walls survived, when bouncing */
-    /* Whether the round starts at rest instead of carrying the firer's
-     * velocity. Everything that flies wants the velocity: a bullet fired
-     * forwards at a run is faster over the ground than one fired from a
-     * standstill, which is the rule every shot in the game has followed since
-     * the model was written, so zero is that and the field is only ever set by
-     * something that wants the exception.
-     *
-     * A mine is the exception, and it is the whole reason this exists. Its
-     * speed is zero, so with the velocity added it does not sit anywhere: it
-     * leaves the rack at exactly the speed the ship was doing and keeps it
-     * until a wall stops it, which is a round that happens to do no steering
-     * rather than a mine. The doc called that drift for a while. It is not
-     * drift, it is flight, and it made the weapon usable only from a
-     * standstill. */
-    uint8_t still;
     /* arrival: what counts as having got somewhere */
     int32_t trigger;      /* Q8 px from a hull center; 0 is contact */
     uint8_t expire_ends;  /* whether running out of life also counts */
@@ -500,13 +479,6 @@ typedef struct {
      * rung is its thrower's gun rather than a ladder of its own. */
     int32_t damage_up;
     int32_t blast;        /* Q8 px; 0 means the damage lands on one hull */
-    /* Blast a rung adds, for the same reason `damage_up` exists: a weapon
-     * whose rung comes from somewhere other than a ladder of its own. A mine
-     * is the one, since a charge fires one pattern and the rung it wears is
-     * the pilot's bomb rung. Without it a top-rung mine is painted red and
-     * goes off like a rung one, and the ramp only means anything while it
-     * tells the truth about how hard a thing hits. */
-    int32_t blast_up;
     int32_t push;         /* Q16 px/tick a ship is shoved outward at */
     /* How long a shoved ship keeps a speed ceiling of `push` rather than its
      * hull's own. RepelTime, and the half of a repel that makes it a repel:
@@ -521,12 +493,6 @@ typedef struct {
     uint8_t count;        /* projectiles per shot */
     uint16_t spacing;     /* heading units between them; 65536 is a full turn */
     int32_t energy;       /* Q10 to fire */
-    /* Energy a rung adds, for a trigger whose rungs are not separate
-     * patterns. A bomb ladder charges more per rung by being a pattern per
-     * rung; a mine is one pattern wearing the pilot's bomb rung, so without
-     * this the rung that widens its blast costs nothing extra.
-     * LandmineFireEnergyUpgrade. */
-    int32_t energy_up;
     uint16_t delay;       /* trigger cooldown; carried charges ignore it */
     int32_t recoil;       /* Q16 px/tick backwards on the ship that fired */
 } sim_fire_pattern;
@@ -560,10 +526,10 @@ typedef enum {
  * ceilings a roll respected are the ceilings a kit is validated against.
  *
  * Everything a pilot can hold lives here, which is a rule rather than an
- * observation. A trait that sat on the hull instead -- a second barrel, a
- * third bomb rung, the mine count that made one hull the mining hull -- was
- * a trait no shop could sell and no pilot could choose, and the roster was
- * carrying four of them. They are slots now. What tells the hulls apart is
+ * observation. A trait that sat on the hull instead, such as a second barrel,
+ * a third bomb rung or a deeper rung of shrapnel, was a trait no shop could
+ * sell and no pilot could choose, and the roster was carrying several of
+ * them. They are slots now. What tells the hulls apart is
  * the shape they present to a bullet, which is the one difference nobody
  * can buy. */
 #define SIM_SLOT_STAT(u)     (u)
@@ -933,8 +899,8 @@ int sim_on_streak(const sim_settings *cfg, const sim_ship *sh);
  * The equipment row covers Gunner, Bomber and Control, plus the established
  * second gun and spray rungs used by saved remixes. A fresh pilot can rearrange
  * those points without shopping first. Deeper weapon, add-on and charge-rack
- * rungs are progression. Repel and Burst begin at two; Mine and Brick begin
- * at zero. See docs/design/match-game.md. */
+ * rungs are progression: Repel and Burst begin at two and climb from the
+ * shelf. See docs/design/match-game.md. */
 void sim_base_entitlements(uint8_t *out);
 
 /* A whole budget spent on a hull, without asking anybody what they wanted.

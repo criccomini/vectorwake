@@ -55,15 +55,6 @@ static const sim_class_units flight = {
 #define BOMB_ENERGY_UP   50   /* BombFireEnergyUpgrade, per level */
 #define BOMB_THRUST     400   /* BombThrust: the recoil of letting one go */
 #define BOMB_BLAST       80   /* BombExplodePixels, for an L1 bomb */
-/* Laying one, against the 300 and 150 throwing one costs. A mine is a little
- * cheaper and a little quicker than the bomb it is, which is the original's
- * own arrangement rather than a lever of ours. The upgrade is steeper than the
- * bomb's 50: a rung 3 mine costs 570 where a rung 3 bomb costs 400, which is
- * what stops the rung being free on the weapon that does not have to be
- * aimed. */
-#define MINE_ENERGY     270   /* LandmineFireEnergy */
-#define MINE_ENERGY_UP  150   /* LandmineFireEnergyUpgrade, per level */
-#define MINE_DELAY      125   /* LandmineFireDelay */
 
 /* Two bits per add-on, so a row reads as a list rather than a number. */
 /* One add-on's ceiling, packed the way `sim_mod_get` reads it: two bits for
@@ -119,9 +110,9 @@ static const uint16_t hull_extent[SIM_MAX_CLASSES][3] = {
  *
  * One row, for the whole zone. This was seven rows, one per hull, and every
  * number in it was something a pilot could want and not be allowed: the
- * second barrel was the Facet's, the third bomb rung was the Anvil's, six
- * mines were the Lattice's, and a deep rung of shrapnel belonged to whichever
- * two hulls the table called bombers. None of it could ever be sold, because
+ * second barrel was the Facet's, the third bomb rung was the Anvil's, and a
+ * deep rung of shrapnel belonged to whichever two hulls the table called
+ * bombers. None of it could ever be sold, because
  * a shop cannot sell a trait that exists on one hull, and a pilot who bought
  * a rung anyway would find the hull they wanted to fly refused it.
  *
@@ -177,13 +168,10 @@ static const uint16_t hull_extent[SIM_MAX_CLASSES][3] = {
                    | M3(SIM_MOD_SHRAPNEL) | M1(SIM_MOD_FREEZE))
 
 /* Repels and bursts are three, which is RepelMax and BurstMax on all eight of
- * the original's ships. Mines are six, which was the Lattice's row and is the
- * arena's now: MaxMines was five on every ship there, where carrying one cost
- * nothing, and as slots in a thirty point kit six mines is most of a build.
- * What made one hull the mining hull is a purchase. */
+ * the original's ships. Three of either is most of a thirty point kit once
+ * the rack is a ladder a pilot climbs a rung at a time. */
 #define CHARGE_REPEL_MAX 3
 #define CHARGE_BURST_MAX 3
-#define CHARGE_MINE_MAX  6
 
 /* The above, over the flat slot space: the most this arena will let a kit put
  * in each slot, and zero for a slot it does not have at all. */
@@ -201,7 +189,6 @@ static void fill_kit_ceiling(sim_settings *cfg) {
     }
     cfg->kit_ceiling[SIM_SLOT_CHARGE(SIM_CHARGE_REPEL)] = CHARGE_REPEL_MAX;
     cfg->kit_ceiling[SIM_SLOT_CHARGE(SIM_CHARGE_BURST)] = CHARGE_BURST_MAX;
-    cfg->kit_ceiling[SIM_SLOT_CHARGE(SIM_CHARGE_MINE)] = CHARGE_MINE_MAX;
 }
 
 const char *const sim_class_names[SIM_MAX_CLASSES] = {
@@ -396,7 +383,7 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
         }
     }
 
-    /* The two charges the roster uses. A charge is a pattern plus an
+    /* The two charges this arena ships. A charge is a pattern plus an
      * inventory and nothing else: the repel is `push` with no damage at all,
      * which the weapon model has been able to express since the day it was
      * written, and the burst is sixteen rounds at a full turn's spacing --
@@ -456,66 +443,9 @@ void sim_settings_baseline(sim_settings *cfg, const sim_map *map) {
         bf.spacing = 65536 / 24;
         cfg->charge[1] = (uint8_t)sim_add_pattern(cfg, &bf);
 
-        cfg->charge[3] = SIM_NO_PATTERN;
-    }
-
-    /* The mine: the bomb you leave behind you.
-     *
-     * A charge, in the slot beside repel and burst, so how many you bring is
-     * a loadout decision priced against everything else in the kit. It was
-     * the bomb trigger's other posture for a long time, which is faithful to
-     * the original -- a mine there is not a weapon type at all, the two bytes
-     * a shot travels in have five bits of type with no code for one and a
-     * single `alternate` bit that turns a bomb into a mine, and the inventory
-     * beside it lists bursts, repels, thors, bricks and portals and no mines.
-     * What that arrangement could not do is let a pilot trade for it: the
-     * limit sat on the hull rather than in their hands.
-     *
-     * Every field is one the model already had. Speed zero and `still` is a round that stays where it was
-     * let go. Two minutes of life with `expire_ends` is a timer that goes off
-     * rather than a round that quietly stops existing. A trigger is the fuse.
-     * A blast is what it does when either of those finds somebody. Nothing in
-     * the update loop knows a mine from a bomb.
-     *
-     * MineAliveTime in the original, whose own help file bounds it at 200 to
-     * 60000 hundredths -- two seconds to ten minutes -- and neither that file
-     * nor the settings template carries a default, so two minutes is ours. A
-     * mine's clock is how long the ground it denies stays denied, which is why
-     * it is not the bomb's alive time: a bomb's minute means "until it hits
-     * something".
-     *
-     * Two tiles of fuse, against the three a proximity bomb senses at. A mine
-     * is already the round you cannot see coming and does not have to be
-     * dodged in the air first, so it reaches less far than the bomb whose
-     * whole cost is being thrown accurately. The proximity add-on brings it up
-     * to that bomb's reach and no further; see `compose`.
-     *
-     * It costs what a bomb costs to let go of, which is LandmineFireEnergy
-     * sitting beside BombFireEnergy in the original rather than a number of
-     * ours. Free would make it the round you lay while waiting for your bar. */
-    {
-        sim_weapon_spec mn;
-        memset(&mn, 0, sizeof mn);
-        mn.speed = 0;
-        mn.still = 1;
-        mn.life = 12000;
-        mn.on_wall = SIM_WALL_END;
-        mn.expire_ends = 1;
-        mn.trigger = 2 * 16 * 256;
-        mn.damage = sim_units_energy(BOMB_DAMAGE);
-        /* One hole for everybody. A mine used to wear the layer's bomb rung,
-         * which is what a bomb-trigger posture meant; a charge fires one
-         * pattern for every pilot who carries it, so a mine is a mine. */
-        mn.blast = BOMB_BLAST * 256;
-        mn.splinter = SIM_NO_PATTERN;
-        sim_fire_pattern mf;
-        memset(&mf, 0, sizeof mf);
-        mf.spec = (uint8_t)sim_add_spec(cfg, &mn);
-        mf.count = 1;
-        mf.energy = sim_units_energy(MINE_ENERGY);
-        mf.energy_up = sim_units_energy(MINE_ENERGY_UP);
-        mf.delay = MINE_DELAY;
-        cfg->charge[SIM_CHARGE_MINE] = (uint8_t)sim_add_pattern(cfg, &mf);
+        /* The rack is wider than the two kinds that fill it, and a slot with
+         * no pattern is a slot nothing can be dealt from. */
+        for (int k = 2; k < SIM_MAX_CHARGES; k++) cfg->charge[k] = SIM_NO_PATTERN;
     }
 
     /* Every hull, built the same way. What differs between them is three

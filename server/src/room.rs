@@ -1253,16 +1253,16 @@ impl Room {
     }
 
     /// The weapons that belong to a settings slot rather than to a hull, under
-    /// the names a zone file reaches them by: `repel`, `burst` and `mine` for
-    /// the three charges the baseline fills, and `shrapnel-1` up, one per rung
-    /// of the add-on.
+    /// the names a zone file reaches them by: `repel` and `burst` for the two
+    /// charges the baseline fills, and `shrapnel-1` up, one per rung of the
+    /// add-on.
     ///
     /// Charges are named for what they are rather than for the slot they sit
     /// in, because a slot number is an implementation detail of the kit space
     /// and a zone file is written by a person.
     pub(crate) fn slots(world: &sim::World) -> Vec<(String, u8)> {
         let mut v = Vec::new();
-        const NAMED: [&str; 3] = ["repel", "burst", "mine"];
+        const NAMED: [&str; 2] = ["repel", "burst"];
         for k in 0..sim::MAX_CHARGES {
             let name = NAMED
                 .get(k)
@@ -1297,14 +1297,13 @@ impl Room {
     }
 
     /// The charge kinds this game ships, by the name a zone file uses. A
-    /// zone says `mine` rather than `charge-3`, because which slot a mine
+    /// zone says `repel` rather than `charge-1`, because which slot a kind
     /// sits in is an implementation detail and what it is is not. The
     /// positional names still work for the slots nothing has claimed.
     pub(crate) fn charge_named(name: &str) -> Option<usize> {
         match name {
             "repel" => Some(sim::CHARGE_REPEL),
             "burst" => Some(sim::CHARGE_BURST),
-            "mine" => Some(sim::CHARGE_MINE),
             _ => None,
         }
     }
@@ -1355,17 +1354,11 @@ impl Room {
         if let Some(v) = w.blast {
             sp.blast = v * 256;
         }
-        if let Some(v) = w.blast_up {
-            sp.blast_up = v * 256;
-        }
         if let Some(v) = w.stall {
             sp.stall = v;
         }
         if let Some(v) = w.expire_ends {
             sp.expire_ends = v as u8;
-        }
-        if let Some(v) = w.still {
-            sp.still = v as u8;
         }
         if let Some(rule) = &w.on_wall {
             match rule.as_str() {
@@ -1396,9 +1389,6 @@ impl Room {
             }
             if let Some(v) = w.energy {
                 p.energy = sim::sim_units_energy(v);
-            }
-            if let Some(v) = w.energy_up {
-                p.energy_up = sim::sim_units_energy(v);
             }
         }
         if let Some(v) = w.count {
@@ -4199,12 +4189,10 @@ impl Room {
                 continue;
             }
             let radius = if house { -1 } else { FAIR_INTEREST };
-            // Their own seat, so their own rounds travel however far behind
-            // them they are. That is the minefield: everything else a pilot
-            // fires is spent within seconds and inside the radius anyway.
+            // Their own seat, so the private half of the snapshot is theirs.
             let options = if house { sim::PACK_PRIVATE_ALL } else { 0 };
             let packed = Self::snapshot_buffer(buf, house);
-            let n = world.pack_around(packed, sh.x, sh.y, radius, p.ship, p.ship, options);
+            let n = world.pack_around(packed, sh.x, sh.y, radius, p.ship, options);
             if n <= 0 {
                 continue;
             }
@@ -4318,9 +4306,7 @@ impl Room {
                 (mid, mid, 255u8)
             }
         };
-        let n = self
-            .world
-            .pack_around(buf, cx, cy, FAIR_INTEREST, subject, 255, 0);
+        let n = self.world.pack_around(buf, cx, cy, FAIR_INTEREST, 255, 0);
         if n > 0 {
             let mut msg = Vec::with_capacity(n as usize + SNAPSHOT_HEADER);
             msg.push(S2C_SNAPSHOT);
