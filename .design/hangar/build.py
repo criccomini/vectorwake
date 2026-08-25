@@ -226,10 +226,12 @@ def scene_svg(w, h, seed):
             f'fill="#080d16" stroke="#22344f" stroke-width="1"/>'
             f'<path d="M{x} {y} H{x + bw}" stroke="#5b82b8" '
             f'stroke-width="1.4" opacity=".55"/>')
+    # Spread across the whole window, drawer and all: the panel is a wash
+    # over the room, never a curtain, so a ship under it reads through.
     for name, hull, col, (ox, oy), rot in (
-            ("KRAIT 4", "Wedge", FRIEND, (0.62, 0.62), 24),
-            ("MANTIS 7", "Cipher", ENEMY, (0.7, 0.3), 205),
-            ("HALCYON 2", "Anvil", ENEMY, (0.87, 0.55), 160)):
+            ("KRAIT 4", "Wedge", FRIEND, (0.35, 0.62), 24),
+            ("MANTIS 7", "Cipher", ENEMY, (0.72, 0.28), 205),
+            ("HALCYON 2", "Anvil", ENEMY, (0.56, 0.78), 160)):
         x, y = w * ox, h * oy
         parts.append(ship_at(hull, x, y, rot, col))
         parts.append(nameplate(x, y, name, col))
@@ -695,7 +697,8 @@ def hangar2_page(hot=None):
 
 
 def hangar2_board():
-    body = drawer2(hangar2_page(hot="shrapnel"), save=True)
+    body = scene_svg(390, 880, 61) + drawer2(
+        hangar2_page(hot="shrapnel"), save=True)
     board("Main.dc.html", 390, 880, body, seed=41)
 
 
@@ -707,7 +710,8 @@ def hangar2_board():
 
 
 def portrait_boards():
-    body = drawer2(hangar2_page(hot="shrapnel"), save=True, portrait=True)
+    body = scene_svg(390, 844, 67) + drawer2(
+        hangar2_page(hot="shrapnel"), save=True, portrait=True)
     board("PortraitShip.dc.html", 390, 844, body, seed=49)
     page = detail_page(
         "bomb add-on", "shrapnel",
@@ -716,7 +720,8 @@ def portrait_boards():
         TEACH_SHRAPNEL, price=20,
         foot=('<div class="lbl" style="margin-top:18px;line-height:15px">'
               'a swipe right, or the chevron, puts the ship page back</div>'))
-    board("PortraitBuy.dc.html", 390, 844, drawer2(page, portrait=True),
+    board("PortraitBuy.dc.html", 390, 844,
+          scene_svg(390, 844, 68) + drawer2(page, portrait=True),
           seed=50)
 
 
@@ -822,7 +827,8 @@ def buy2_board():
         TEACH_SHRAPNEL, price=20,
         foot=('<div class="lbl" style="margin-top:18px;line-height:15px">'
               'a swipe right, or the chevron, puts the ship page back</div>'))
-    board("Buy.dc.html", 390, 880, drawer2(page), seed=42)
+    board("Buy.dc.html", 390, 880,
+          scene_svg(390, 880, 62) + drawer2(page), seed=42)
 
 
 def owned_board():
@@ -834,7 +840,8 @@ def owned_board():
         foot=('<div class="lbl" style="margin-top:22px;line-height:15px">'
               'nothing to buy here: the arena deals every rung of this'
               '</div>'))
-    board("Owned.dc.html", 390, 880, drawer2(page), seed=46)
+    board("Owned.dc.html", 390, 880,
+          scene_svg(390, 880, 63) + drawer2(page), seed=46)
 
 
 # --- the builds list, behind the name ----------------------------------------
@@ -863,7 +870,8 @@ def builds_board():
     page = (back_row()
             + '<div class="lbl" style="margin:18px 0 8px">builds</div>'
             + ''.join(rows) + keys)
-    board("Builds.dc.html", 390, 880, drawer2(page), seed=45)
+    board("Builds.dc.html", 390, 880,
+          scene_svg(390, 880, 64) + drawer2(page), seed=45)
 
 
 # --- the new screen, behind NEW ----------------------------------------------
@@ -895,7 +903,8 @@ def new_board():
             + '<div class="lbl" style="margin-top:18px;line-height:15px">'
               'create slides back to the list with the new build lit'
               '</div>')
-    board("NewBuild.dc.html", 390, 880, drawer2(page), seed=48)
+    board("NewBuild.dc.html", 390, 880,
+          scene_svg(390, 880, 65) + drawer2(page), seed=48)
 
 
 # --- the points panel, behind the meter --------------------------------------
@@ -933,7 +942,8 @@ def points_board():
             + legend("ring", FRIEND, "owned, waiting for a point")
             + legend("dim", "", "not yours yet: its price sits on the row")
             )
-    board("Points.dc.html", 390, 880, drawer2(page), seed=47)
+    board("Points.dc.html", 390, 880,
+          scene_svg(390, 880, 66) + drawer2(page), seed=47)
 
 
 # --- board: fit and buy ------------------------------------------------------

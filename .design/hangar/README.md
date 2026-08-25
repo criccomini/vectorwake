@@ -40,6 +40,11 @@ retrofitted into a one-column drawer. One row grammar deletes most of it.
 
 ## The hangar, as revised
 
+**A wash, never a curtain.** The drawer keeps the client's semi-opaque
+ground on every board, so the room behind it reads through: a ship
+crossing under the panel is faintly there, which is the shipped rule that
+nothing hides the fight you are still in.
+
 **No head.** The ship screen spends nothing on the logo and the account:
 its top row is the drawer's x, the build's name, and the points meter, and
 the ladders start directly under it. The screens that slide in open with
