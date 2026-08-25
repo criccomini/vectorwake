@@ -3327,14 +3327,21 @@ local function debug_hud(o, top)
     if not F.menu_up then hit(x, y, w, h, "debug", nil, nil, -1) end
 end
 
--- No POS readout over the dial.
+-- Where you are, over the dial's other top corner from the link readout.
 --
--- Where you are, in tiles, sat over the radar's other top corner from the link
--- bars. It was there to be said out loud, which is a thing players did in the
--- original when a zone was one room and a coordinate was how you called for
--- help. This game's rooms hold eight, the radar shows the whole of one, and
--- nobody has ever needed to read their own tile off the glass. Removed at
--- Chris's request.
+-- In tiles, because that is the unit the map is laid out in and the unit a
+-- player says out loud. Pixels would be the same place in numbers six digits
+-- long that nobody can hold in their head or call across a room.
+local function coords(me)
+    if not me then return end
+    local pad = (M.compact and 8 or PAD) * F.scale
+    local x = dial()
+    local base = F.safe_t + pad + 13 * F.scale
+    txt("POS", x, base - 4 * F.scale, (FONT - 3) * F.scale, pal.a(pal.DIM, 0.8))
+    txt(string.format("%d,%d", math.floor(sim.ship_x(me) / 16),
+                      math.floor(sim.ship_y(me) / 16)),
+        x + 26 * F.scale, base - 4 * F.scale, (FONT - 3) * F.scale, pal.a(pal.INK, 0.85))
+end
 
 -- The flags, as flags.
 --
@@ -4099,8 +4106,8 @@ end
 -- place, and the same MENU in the same corner, so when the stands arrive the
 -- only thing that happens is that the room and the key appear. Nothing already
 -- on screen moves. The instruments a watcher gets are all about a room this
--- client has not found yet, so the radar, the link bars and the roster are
--- simply absent rather than drawn empty.
+-- client has not found yet, so the radar, the coordinates, the link bars and
+-- the roster are simply absent rather than drawn empty.
 --
 -- What used to be here was a lockup centered in the window, which was the
 -- loading screen held one beat longer and read as a third screen between the
@@ -4195,6 +4202,7 @@ function M.hud(o)
     -- somewhere else with the radar still lit beside it.
     if M.map then overview(me) else radar(o.cam_x, o.cam_y, me) end
     link(o.link_bars or 4)
+    coords(me)
     -- Under the dial, wherever the dial now ends: it lost its panel and its
     -- padding, so a constant here would have left a gap or an overlap. Not on
     -- a touchscreen: the lines land where a thumb flies the ship, and a

@@ -335,8 +335,8 @@ A directory lookup and a handshake stand between the engine's first frame and
 the first snapshot. What is on screen for them is this same page with
 everything that needs a room taken off it: the starfield, the name, and MENU.
 No key, because there is nothing to join yet, and none of the instruments,
-because the radar, the link bars and the roster are all about a room this
-client has not found. They are absent rather than drawn empty.
+because the radar, the coordinates, the link bars and the roster are all about
+a room this client has not found. They are absent rather than drawn empty.
 
 **The name does not move.** It sits exactly where it sits once the room is
 there, with the key appearing underneath it, so arriving is two things fading
