@@ -302,33 +302,41 @@ check("and no name over the fight they are already in",
 -- --- before a room answers ---------------------------------------------------
 --
 -- The gap between the engine's first frame and the first snapshot is a
--- directory lookup plus a handshake, and what used to fill it was the menu:
--- a panel nobody asked for, standing between a player and the game for as
--- long as the network took. What fills it now is the loader's own picture,
--- so nothing visible changes at the hand-off.
+-- directory lookup plus a handshake. What goes there is this same screen with
+-- everything that needs a room taken off it, so when the stands arrive the
+-- only thing that happens is that the room and the key appear.
+--
+-- The name is the thing to hold still. It was drawn centered for a while,
+-- which made the logo jump to the foot of the screen the moment a room
+-- answered: the one move a hand-off should never make.
 do
     for _, s in ipairs(SHAPES) do
         local w, h, shape = s[1], s[2], s[3]
+
+        -- Where the name sits with a room, and then without one.
+        frame(w, h)
+        local landed = word("vectorwake")
+
         boxes, rects = {}, {}
         state.n = 0
         H = h
         ui.begin(layer, w, h, 1, false, 0)
-        ui.waiting("finding a game")
+        ui.waiting(nil)
         ui.finish()
+        local waiting = word("vectorwake")
 
-        check(shape .. " waiting says what this is", word("vectorwake") ~= nil)
-        check(shape .. " waiting says where the wait is",
-              word("finding a game") ~= nil)
-        -- The loader centers the lockup, so this has to as well or the
-        -- hand-off jumps.
-        local name = word("vectorwake")
-        if name then
-            check(shape .. " waiting centers the lockup vertically",
-                  math.abs(name.y - h / 2) < 2,
-                  string.format("%.0f against %d", name.y, h / 2))
+        check(shape .. " waiting says what this is", waiting ~= nil)
+        if landed and waiting then
+            check(shape .. " waiting puts the name where the room will put it",
+                  math.abs(landed.x - waiting.x) < 0.5
+                  and math.abs(landed.y - waiting.y) < 0.5
+                  and math.abs(landed.px - waiting.px) < 0.5,
+                  string.format("%.1f,%.1f at %.1f against %.1f,%.1f at %.1f",
+                                waiting.x, waiting.y, waiting.px,
+                                landed.x, landed.y, landed.px))
         end
-        -- And a way in, because a directory that never answers must not leave
-        -- a wordmark and no exit.
+        -- A way into the menu, because a directory that never answers must
+        -- not leave a wordmark and no exit.
         local menu_key = box("open")
         check(shape .. " waiting keeps a way into the menu", menu_key ~= nil)
         if menu_key then
@@ -336,9 +344,37 @@ do
                   menu_key.x < w / 2 and menu_key.y < h / 2,
                   string.format("%.0f,%.0f", menu_key.x, menu_key.y))
         end
-        -- Nothing to deploy into yet.
+        -- And nothing that needs a room: no key into one, and none of the
+        -- instruments that describe one.
         check(shape .. " waiting offers no key to a room it has not found",
               box("play_now") == nil)
+        check(shape .. " waiting draws no roster key", box("details") == nil)
+        check(shape .. " waiting draws no radar", box("map") == nil)
+        check(shape .. " waiting says nothing about a channel",
+              word("CHANNEL") == nil)
+        check(shape .. " waiting says nothing while it is only waiting",
+              #words() == 2,
+              #words() .. " words on screen")
+    end
+
+    -- A fleet that is down does say so, in the slot the key will take. A
+    -- client that has finished looking and found nothing must not look like
+    -- one that is still trying.
+    frame(1440, 810)
+    local key = box("play_now")
+    boxes, rects = {}, {}
+    state.n = 0
+    H = 810
+    ui.begin(layer, 1440, 810, 1, false, 0)
+    ui.waiting("no games are running")
+    ui.finish()
+    local said = word("no games are running")
+    check("a failure is said", said ~= nil)
+    if said and key then
+        check("and said where the key would be",
+              said.y > key.y and said.y < key.y + key.h,
+              string.format("%.0f against %.0f..%.0f",
+                            said.y, key.y, key.y + key.h))
     end
 end
 

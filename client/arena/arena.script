@@ -2192,18 +2192,16 @@ function update(self, dt)
     -- a directory and a handshake happens behind a wordmark rather than
     -- behind a menu.
     if not live then
-        -- What the wait is, in the words of whoever knows. A note from a join
-        -- that failed says the most and goes first. Then the two phases this
-        -- screen actually covers: asking a directory which games are running,
-        -- and shaking hands with the room it named. `directory.note` is the
-        -- short headline for the first ("looking for games", "no games are
-        -- running"); `why` is a sentence written for a menu's empty state and
-        -- is too long to sit under a wordmark.
+        -- Only what has gone wrong. A normal wait is a directory lookup and a
+        -- handshake, two seconds of it, and a caption narrating that is a
+        -- label on the one screen that should look like the game. What earns
+        -- the line is a join that failed, or a directory that has answered and
+        -- named no games: silence there is a client that looks like it is
+        -- still trying when it has already finished and found nothing.
         local why = menu.note
-        if not why or why == "" then
-            why = self.joining and "joining" or directory.note
+        if (not why or why == "") and directory.answered then
+            why = directory.note
         end
-        if not why or why == "" then why = "finding a game" end
         ui.waiting(why)
     end
     if menu.open then ui.menu(menu.view()) end

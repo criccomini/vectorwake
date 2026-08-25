@@ -2707,12 +2707,13 @@ thing at the foot of the screen, so the name has to be where that look lands.
 
 Nothing opens the menu but a player. Between the engine's first frame and the
 first snapshot there is a directory lookup and a handshake, and what fills that
-gap is the loading screen's own picture held a little longer: the lockup
-centered on the starfield with one line under it and MENU in the corner. The
-menu standing itself up there was the first version of this and it was the same
-mistake in miniature, a panel nobody asked for between a player and the game.
-That is also what lets the menu always close, since whatever is behind it, the
-stands or the waiting screen, carries a way back in.
+gap is this same screen with everything that needs a room taken off it: the
+starfield, the name where the room will leave it, and MENU. The menu standing
+itself up there was the first version and it was the same mistake in miniature,
+a panel nobody asked for between a player and the game; a lockup centered in
+the window was the second, and it made the name jump to the foot of the screen
+the moment a game answered. That is also what lets the menu always close, since
+whatever is behind it carries a way back in.
 
 **Cost:** the same as decision 56's, and more of it: every page load holds a
 watcher slot, so `max_watchers` is now the front door's capacity rather than a
