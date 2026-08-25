@@ -11,20 +11,28 @@ all visible from a phone or a desk:
   screen ("RUNG 3 CLEARED. NEXT RUNG 4, STREAK 3"), the largest and least
   designed thing on the glass.
 
-Four directions were mocked; Chris picked **D, the clock key**. It leads the
-canvas, and the other three stay on a second page for the record. Drawings
-of a proposal, not a plan of record. Nothing here is built.
+Four directions were mocked; Chris picked **D** and then pushed it further:
+a clock-key first draft put the scoreboard in the corner row wearing a
+key's box, and that conflated an instrument with a control. The board now
+leads the canvas as **the expanding band**, and the other three directions
+stay on a second page for the record. Drawings of a proposal, not a plan
+of record. Nothing here is built.
 
-## D · the clock key
+## D · the expanding band
 
-The scoreboard behaves like the PLAYERS key did, and PLAYERS itself is gone,
-because the readout carries the roster. One key rides the corner row beside
-MENU. In Melee it wears the score around the clock, since a team game's
-score is the fact you always want; in the duel it is the clock alone, since
-a first-to-one score says nothing until the readout says why. Events dock
-under the key in the scoring side's color for a few seconds, instead of as
-24pt white across the middle; DESTROYED and SUDDEN DEATH are the same kind
-of tenant.
+The scoreboard is an instrument, so it wears no key box and sits nowhere
+near MENU. Shut, it is a bare readout at top center: the score in the side
+colors around the clock in Melee, the clock alone in the duel, since a
+first-to-one score says nothing until the readout says why. The expand
+affordance comes from the instrument grammar rather than the key grammar:
+the faint corner brackets the radar already wears, brightened while open.
+Pressed, the readout grows out of the band, so shut and open are one
+object at two depths. PLAYERS is gone, because the readout carries the
+roster; MENU stands alone in its corner doing the one static thing.
+
+Events print under the band in the scoring side's color for a few seconds,
+instead of as 24pt white across the middle; DESTROYED and SUDDEN DEATH are
+the same kind of tenant.
 
 The open readout is the shipped players panel's own grammar: a section head
 in dim capitals with its column labels on the same line, rows under it, a

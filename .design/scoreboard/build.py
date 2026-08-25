@@ -545,13 +545,16 @@ def strip_board(form, mode):
     return strip + tab, sh
 
 
-# --- direction D: the clock key ----------------------------------------------
-# The scoreboard behaves like PLAYERS did: a key in the corner row, the
-# readout a panel behind a press, and PLAYERS itself is gone, because the
-# readout carries the roster. In Melee the key wears the score around the
-# clock, since a team game's score is the fact you always want; in the duel
-# it is the clock alone, since a first-to-one score says almost nothing
-# until the readout says why.
+# --- direction D: the expanding band -----------------------------------------
+# The scoreboard is an instrument, not a control, so it does not wear a
+# key's box or sit in the key row. Shut, it is a bare readout at top
+# center: the score in the side colors around the clock, nothing else, and
+# in the duel the clock alone. The expand affordance comes from the
+# instrument grammar rather than the key grammar: the faint corner
+# brackets the radar already wears, brightened while open. Pressed, the
+# readout grows out of the band, so shut and open are one object at two
+# depths. PLAYERS is gone, because the readout carries the roster; MENU
+# stands alone in its corner doing the one static thing.
 #
 # The open panel is the shipped players panel's own grammar: a section head
 # in dim capitals with its column labels on the same line, rows under it,
@@ -601,21 +604,38 @@ DUEL_CARD = [
 D_COLS = [("k", 22), ("d", 22), ("a", 22), ("pts", 30), ("bty", 30)]
 
 
-def clock_key(compact, mode, melee, lit):
-    kh = 22 if compact else 26
-    px = 11 if compact else 13
-    sc = 10 if compact else 12
-    wash = ("background:rgba(79,214,255,.13);"
-            "border-color:rgba(79,214,255,.65);color:var(--ink)" if lit else "")
-    inside = f'<span class="num" style="font-size:{px}px">{mode["clock"]}</span>'
+def score_band(form, mode, melee, open_):
+    """The shut scoreboard: bare numerals and the clock at top center, no
+    box, no ground. The brackets are the radar's own corner marks, faint at
+    rest and brightened while the readout under them is open."""
+    compact = FORMS[form][2]
+    clock_px = 22 if compact else 34
+    score_px = 17 if compact else 26
+    gap = 12 if compact else 18
+    pad = "4px 12px" if compact else "6px 16px"
+    bcol = "rgba(79,214,255,.55)" if open_ else "rgba(63,88,120,.55)"
+    inside = (f'<span class="num" style="font-size:{clock_px}px;'
+              f'letter-spacing:.02em">{mode["clock"]}</span>')
     if melee:
         (ln, ls, lc, lr), (rn, rs, rc, rr) = mode["sides"]
-        inside = (f'<span class="num" style="font-size:{sc}px;color:{lc}">'
-                  f'{ls}</span>{inside}'
-                  f'<span class="num" style="font-size:{sc}px;color:{rc}">'
-                  f'{rs}</span>')
-    return (f'<div class="key" style="height:{kh}px;padding:0 9px;gap:7px;'
-            f'{wash}">{inside}</div>')
+        inside = (f'<span class="num" style="font-size:{score_px}px;'
+                  f'color:{lc}">{ls}</span>{inside}'
+                  f'<span class="num" style="font-size:{score_px}px;'
+                  f'color:{rc}">{rs}</span>')
+    return (f'<div class="row" style="position:absolute;left:50%;'
+            f'top:{12 if compact else 14}px;transform:translateX(-50%);'
+            f'gap:{gap}px;padding:{pad}">{bracket(bcol)}{inside}</div>')
+
+
+def band_event_line(mode, form):
+    """A shut band still says what just happened: the event prints under it
+    in the scoring side's color, where the readout would open."""
+    compact = FORMS[form][2]
+    line, col = mode["event"]
+    return (f'<div class="hud" style="position:absolute;left:50%;'
+            f'top:{50 if compact else 66}px;transform:translateX(-50%);'
+            f'white-space:nowrap;font-size:{9 if compact else 11}px;'
+            f'letter-spacing:.12em;color:{col}">{line}</div>')
 
 
 def d_cells(vals, px, col="var(--ink)", bty=True):
@@ -684,9 +704,10 @@ def melee_readout(compact):
                                      px, mark))
         parts.append(d_rule())
     parts.append(d_watch_row(DUEL_WATCHER, px, mark))
-    return (f'<div class="panel" style="position:absolute;left:14px;top:50px;'
-            f'width:330px;padding:10px 12px;display:flex;'
-            f'flex-direction:column;gap:5px">{"".join(parts)}</div>')
+    return (f'<div class="panel" style="position:absolute;left:50%;top:72px;'
+            f'transform:translateX(-50%);width:340px;padding:10px 12px;'
+            f'display:flex;flex-direction:column;gap:5px">'
+            f'{"".join(parts)}</div>')
 
 
 def ladder_readout(compact):
@@ -716,7 +737,7 @@ def ladder_readout(compact):
             f'<span class="num dim" style="width:40px;text-align:right;'
             f'font-size:{px}px">{time}</span></div>')
     panel = (f'<div class="panel" style="position:absolute;left:14px;'
-             f'right:14px;top:46px;padding:10px 12px;display:flex;'
+             f'right:14px;top:54px;padding:10px 12px;display:flex;'
              f'flex-direction:column;gap:5px">{"".join(parts)}</div>')
 
     # The card the washed row is holding open, a block of its own under the
@@ -735,17 +756,9 @@ def ladder_readout(compact):
                     f'<span class="num" style="font-size:{px}px;'
                     f'color:{vcol}">{value}</span></div>')
     card = (f'<div class="panel" style="position:absolute;left:14px;'
-            f'right:14px;top:272px;padding:10px 12px;display:flex;'
+            f'right:14px;top:280px;padding:10px 12px;display:flex;'
             f'flex-direction:column;gap:5px">{"".join(rows)}</div>')
     return panel + card
-
-
-def key_event_line(mode, top):
-    """A shut key still has to say what just happened: the event docks under
-    the corner row in the scoring side's color, where the readout will open."""
-    line, col = mode["event"]
-    return (f'<div class="hud" style="position:absolute;left:14px;top:{top}px;'
-            f'font-size:9px;letter-spacing:.12em;color:{col}">{line}</div>')
 
 
 # --- one window, one direction -----------------------------------------------
@@ -775,15 +788,15 @@ def screen(form, variant):
         if form == "Portrait" and (mode["zone"] or mode["event"]):
             chrome_top = sh + 34
     else:
-        # The key is drawn open where the board is about the readout, shut
+        # The band is drawn open where the board is about the readout, shut
         # where it is about the quiet state and the event docking to it.
         open_panel = form != "Landscape"
-        extra = clock_key(compact, mode, melee, lit=open_panel)
+        body.append(score_band(form, mode, melee, open_panel))
         if open_panel:
             body.append(melee_readout(compact) if melee
                         else ladder_readout(compact))
         elif mode["event"]:
-            body.append(key_event_line(mode, top=14 + 22 + 8))
+            body.append(band_event_line(mode, form))
 
     body.append(corner_row(compact, mode["humans"], mode["bots"],
                            top=chrome_top, extra=extra,
