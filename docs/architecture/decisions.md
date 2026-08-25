@@ -2905,6 +2905,20 @@ which the sparse shelf keeps rare in practice but does not remove. And one
 grammar for every row means the add-ons lose the chip they were drawn as, which
 was a better picture of a switch than a one-circle ladder is.
 
+**Since it was built,** the three starter builds stopped being special. They
+were prepended to every read of a pilot's list and never stored, so they could
+not be saved over or dropped and the client had to draw them differently and
+explain why. They are ordinary rows now, dealt at account creation and
+backfilled once for accounts that predate the change, and the save key, the
+delete key and the name check treat them like anything else. A pilot who drops
+all three keeps flying: the kit in hand is untouched by a delete, and a hull
+with no saved kit falls back to the core's own starter.
+
+The save key also stopped following whether the kit matches some build and
+started following whether anything has moved since the page opened. Drawn
+against the match, it stood there on a pilot whose saved kit happened to match
+none of their builds, offering to keep what was already kept.
+
 **Reconsider if:** the shelf grows enough that eight prices becomes eighty, at
 which point browsing what is for sale is its own activity again and wants its
 own page; or if the gold on the fitting page proves noisy, in which case

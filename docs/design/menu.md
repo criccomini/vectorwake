@@ -101,9 +101,11 @@ are what walk back through the tree.
 
 ## A tab row, and a page under it
 
-Six tabs at the front end and three in a match, with one page under whichever
-is lit. Left and right walk the row, down enters the page, up from its first
-row comes back to the row, and left and right on a row set that row's value.
+Five tabs at the front end and three in a match, with one page under whichever
+is lit. Left and right walk the row; down or up enters the page, and up from
+its first row or down off its last comes back to the row, which makes the
+column a ring a thumb can walk either way. Left and right on a row set that
+row's value.
 The exception is a row drawn as a chip rather than as a ladder: the ship
 page's add-ons are a line of boxes across the page, so left and right go to
 the box beside this one and enter throws the one you are on. An arrow points
@@ -317,6 +319,12 @@ volume or ten minutes into a fight. Stopping is also what makes the next look
 start with a fresh ask: without that, coming back to the list after a match
 would show the fleet as it stood before the match began, and the interval would
 have to elapse before that corrected itself.
+
+What a row is called is the zone's label, and what a press on it names is the
+zone's own key. They were one string, so the game a player reads and the game a
+join, a rating and a kit ceiling are filed under could not differ: renaming
+Melee to Team Battle would have moved all of them. A zone that sets no label
+reads as its key, which is what every zone did before labels existed.
 
 A row is a mode, not a machine. The reply lists the instances running each zone
 underneath it, already ordered so the head is the fullest one that still has

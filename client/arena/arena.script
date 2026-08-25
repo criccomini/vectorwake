@@ -2436,6 +2436,9 @@ function apply_menu(self, act)
             function(ok, why, profile)
                 if ok then
                     menu.note = "saved " .. (profile.name or "profile")
+                    -- What is on screen is what that build now holds, so the
+                    -- save key has nothing left to offer until the next edit.
+                    menu.mark_saved()
                     -- The saved build is now a profile the page can light,
                     -- and the one the next save offers a name from.
                     for i, item in ipairs(account.profiles or {}) do

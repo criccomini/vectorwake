@@ -19,6 +19,13 @@ use std::path::{Path, PathBuf};
 #[derive(Deserialize, Clone, Debug)]
 #[serde(default, deny_unknown_fields)]
 pub struct ZoneDef {
+    /// What players read this game as. The zone's own name is its key: it is
+    /// what a join names, what a rating is filed under and what a kit ceiling
+    /// is looked up by, so renaming the game a pilot sees cannot move it.
+    /// Absent, the key is the label, which is what every zone did before this
+    /// existed.
+    #[serde(default)]
+    pub label: Option<String>,
     pub description: String,
     /// arena | warzone | melee | duel. Read, unlike before.
     pub mode: String,
@@ -76,6 +83,7 @@ pub struct ZoneDef {
 impl Default for ZoneDef {
     fn default() -> Self {
         ZoneDef {
+            label: None,
             description: String::new(),
             mode: "arena".into(),
             maps: Vec::new(),
@@ -103,6 +111,14 @@ pub const DEFAULT_FILL_TARGET: usize = 15;
 pub const DEFAULT_BOT_FILL: f32 = 0.8;
 
 impl ZoneDef {
+    /// What to call this game, which is its label where it has one and its own
+    /// key where it does not.
+    pub fn label<'a>(&'a self, name: &'a str) -> &'a str {
+        match self.label.as_deref() {
+            Some(label) if !label.is_empty() => label,
+            _ => name,
+        }
+    }
     /// Fifteen, which is `General:DesiredPlaying`'s default in ASSS and the
     /// number thirty years of the original settled on for a public room. It also
     /// has to sit under the default `max_players`, or a zone that sets neither

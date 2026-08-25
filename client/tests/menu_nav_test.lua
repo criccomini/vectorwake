@@ -115,6 +115,9 @@ package.loaded["arena.directory"] = {
     -- Where an instance answers, by its id. The friends page turns a friend's
     -- whereabouts into a press with it.
     instances = {},
+    -- What a game is called, by its key. The list is where the labels arrive,
+    -- so it is what everything else asks.
+    label_of = function(zone) return zone end,
 }
 do
     local dir = package.loaded["arena.directory"]
@@ -2156,19 +2159,30 @@ do
         if r.ship then hull_at2 = i end
         if r.group == "flair" and not r.ship then wake_at2 = i end
     end
-    -- The band, then every slot this arena has, then flair, and the key that
-    -- keeps the build where the kit has drifted from its name. Every slot the
+    -- The band, then every slot this arena has, then flair. Every slot the
     -- arena takes, not every slot the account owns: what the page could not
     -- say before is that there is more of a thing and it is not yours yet.
-    check("the band, the arena's slots, the flair and the save key",
-          #v.rows == 8, table.concat(labels, ", "))
-    check("with the hull and the wake in the flair above it",
-          hull_at2 == #v.rows - 2 and wake_at2 == #v.rows - 1
+    -- No save key on a kit nobody has touched yet.
+    check("the band, the arena's slots and the flair",
+          #v.rows == 7, table.concat(labels, ", "))
+    check("with the hull and the wake in the flair at the foot",
+          hull_at2 == #v.rows - 1 and wake_at2 == #v.rows
               and v.rows[hull_at2].detail == "Apex",
           table.concat(labels, ", "))
-    check("and the save key at the foot, because this kit has no name",
-          v.rows[#v.rows].group == "save",
+    check("and no save key until something moves",
+          v.rows[#v.rows].group == "flair",
           tostring(v.rows[#v.rows].group))
+    -- One point spent, and the key that keeps it appears.
+    menu.kit_step(0, 1)
+    local moved_rows = menu.view().rows
+    check("a point spent puts the save key at the foot",
+          moved_rows[#moved_rows].group == "save",
+          tostring(moved_rows[#moved_rows].group))
+    menu.kit_step(0, -1)
+    local back_rows = menu.view().rows
+    check("and taking it back takes the key away again",
+          back_rows[#back_rows].group == "flair",
+          tostring(back_rows[#back_rows].group))
     check("and the budget riding the view rather than a row",
           v.kit_spent ~= nil and v.kit_total == 6,
           tostring(v.kit_spent) .. "/" .. tostring(v.kit_total))
@@ -2251,10 +2265,21 @@ do
     end
     check("down stops only on rows the arrows can work", dead == 0,
           dead .. " stops on a readout or a repeat")
-    check("and covers the page before it wraps", #order == want
-          and menu.sel.hangar == order[1],
-          #order .. " of " .. want .. ", back at "
+    check("and covers every one of them", #order == want,
+          #order .. " of " .. want)
+    -- And the press after the last row leaves the page for the stops drawn
+    -- under it. The list used to wrap from its foot back to its head, which
+    -- made the page a ring a hand could not get out of downward.
+    check("then down off the last row goes to the tabs",
+          menu.at() == "root", table.concat(menu.stack, "/"))
+    -- Up from there comes back in, to the row it left.
+    menu.step({up = true})
+    check("and up from the tabs goes back into the page",
+          menu.at() == "hangar" and menu.sel.hangar == order[#order],
+          table.concat(menu.stack, "/") .. " row "
               .. tostring(menu.sel.hangar))
+    menu.stack = {"root", "hangar"}
+    menu.sel.hangar = 1
 
     -- Turning the carousel loads that hull's own saved kit rather than
     -- carrying this one onto it. The page re-reads only where the class it
@@ -2360,27 +2385,17 @@ do
           menu.view().rows[listed[1]].choice == 1
           and menu.view().rows[listed[2]].choice == 0,
           tostring(menu.view().rows[listed[2]].choice))
-    check("a starter says so on its own row",
-          menu.view().rows[listed[1]].starter == true,
-          tostring(menu.view().rows[listed[1]].starter))
-    -- Nothing renames a build. It is named when it is made, and a name that
-    -- wants changing is a new build and a delete; what is left on this page
-    -- is the list, one key that makes one, and one that takes one away.
-    check("and nothing here renames one",
+    -- Nothing marks one of them out. The three a pilot is dealt are rows of
+    -- their own list, so nothing here says otherwise and both keys act on
+    -- them like they act on anything else.
+    check("and nothing renames one, or calls one the game's",
           menu.view().rows[keys.delete].label == "delete"
-          and #menu.view().rows == 4,
+          and #menu.view().rows == 4
+          and menu.view().rows[listed[1]].starter == nil,
           tostring(#menu.view().rows) .. " rows")
-    check("delete is dim while the build in hand is a starter",
-          menu.view().rows[keys.delete].dim == true,
+    check("delete is a live key on a build you were dealt",
+          menu.view().rows[keys.delete].dim ~= true,
           tostring(menu.view().rows[keys.delete].dim))
-    menu.sel.builds = keys.delete
-    menu.note = nil
-    check("and pressing it explains instead of opening a card",
-          menu.step({go = true}) == nil and menu.ask == nil
-          and menu.note ~= nil
-          and string.find(menu.note, "starter", 1, true) ~= nil,
-          tostring(menu.note))
-    menu.note = nil
     menu.sel.builds = listed[2]
     local selected_profile = menu.step({go = true})
     check("pressing a row loads that whole build",
@@ -2413,11 +2428,13 @@ do
             if row.act == "save_kit" then return i end
         end
     end
-    check("a build that is exactly its own name offers no save",
+    check("a build nobody has touched offers no save",
           save_key() == nil, tostring(save_key() or "none"))
     menu.kit_step(0, -1)
     check("editing it turns it into a custom build",
           menu.profile_at == nil, tostring(menu.profile_at))
+    check("and the page says the kit has moved since it opened",
+          menu.kit_changed() == true, tostring(menu.kit_changed()))
     check("and the band still says which build it came from",
           menu.profile_band().name == "Bomber"
           and menu.profile_band().state == "edited",
@@ -2427,17 +2444,27 @@ do
           save_key() ~= nil and menu.view().rows[save_key()].group == "save",
           tostring(save_key()))
 
-    -- Saving a build tuned from a starter cannot write over it: the three the
-    -- game ships keep their names and the meta-layer refuses. So the key goes
+    -- Save writes over the build these thirty points came from, whichever it
+    -- is: the three a pilot is dealt are rows of their own list and there is
+    -- nothing left that refuses one.
+    menu.sel.hangar = save_key()
+    local over = menu.step({go = true})
+    check("saving writes over the build it came from",
+          over == "save_profile" and menu.pending_profile == "Bomber"
+          and menu.at() == "hangar",
+          tostring(over) .. "/" .. tostring(menu.pending_profile))
+
+    -- A kit that came from nowhere has no name to write to, so the key goes
     -- to the page that gives it one, which is where the library's NEW key
     -- goes too.
-    menu.sel.hangar = save_key()
+    menu.profile_from, menu.profile_at = nil, nil
     menu.new_name, menu.new_on = "", false
+    menu.sel.hangar = save_key()
     menu.step({go = true})
-    check("saving a build tuned from a starter goes to the naming page",
+    check("a kit from nowhere goes to the naming page instead",
           menu.at() == "newbuild" and menu.new_on == true,
           table.concat(menu.stack, "/") .. "/" .. tostring(menu.new_on))
-    check("with nothing offered back, since a starter's name is not yours",
+    check("with nothing offered back, since it answers to no name",
           menu.view().new.name == "", tostring(menu.view().new.name))
     check("and one row on it, the key that makes the build",
           #menu.view().rows == 1
@@ -2475,14 +2502,12 @@ do
           and menu.at() == "hangar",
           tostring(saved) .. "/" .. tostring(menu.pending_profile))
 
-    -- And a build of the pilot's own can be dropped, from the library, which
-    -- asks first: it is the one thing here that takes something away for good.
+    -- And a build can be dropped, from the library, which asks first: it is
+    -- the one thing here that takes something away for good.
+    menu.profile_from, menu.profile_at = 3, nil
     menu.stack = {"root", "builds"}
     menu.sel = {}
     local _, own_keys = library()
-    check("delete is a live key on one of yours",
-          menu.view().rows[own_keys.delete].dim ~= true,
-          tostring(menu.view().rows[own_keys.delete].dim))
     menu.sel.builds = own_keys.delete
     menu.step({go = true})
     check("delete asks first, and the answer that changes nothing is the one lit",
@@ -2658,11 +2683,10 @@ do
     menu.open_kit(0)
     local owned = {}
     for _, r in ipairs(menu.view().rows) do owned[#owned + 1] = r.label end
-    -- Eleven: the band's two, the six slots this zone allows, the hull, the
-    -- wake, and the save key, since this pilot has kept no builds and so the
-    -- kit in hand answers to no name.
+    -- Ten: the band's two, the six slots this zone allows, the hull and the
+    -- wake. Nothing has moved since the page opened, so no save key.
     check("every slot the arena takes is on the page",
-          #owned == 11, table.concat(owned, ", "))
+          #owned == 10, table.concat(owned, ", "))
 
     -- Now the account owns none of the gun's ladder and one of three repels.
     -- The rows stay: what changes is how much of each ladder is lit.
@@ -2676,7 +2700,7 @@ do
         if r.label == "gun level" then gun = r end
     end
     check("a slot the account owns none of is still on the page",
-          #mine == 11 and gun ~= nil, table.concat(mine, ", "))
+          #mine == 10 and gun ~= nil, table.concat(mine, ", "))
     check("drawn with nothing of it owned, and the arena's ladder behind it",
           gun.choices == 0 and gun.arena_max == 2,
           tostring(gun.choices) .. "/" .. tostring(gun.arena_max))

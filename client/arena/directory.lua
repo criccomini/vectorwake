@@ -158,6 +158,18 @@ end
 -- the room whose clock the play page counts down, so it has to be the same
 -- pick the join makes; a clock read off one room and a whistle heard in
 -- another is worse than no clock.
+-- What to call a zone, by its key. The games list is where the labels arrive,
+-- so it is where everything else asks: the play tab's own detail, the card
+-- that asks about leaving one game for another, and the chip in the corner
+-- of a room all name a game a player chose off this list.
+function M.label_of(zone)
+    if zone == nil or zone == "" then return "" end
+    for _, r in ipairs(M.rows or {}) do
+        if r.zone == zone then return r.name or zone end
+    end
+    return zone
+end
+
 local function join_room(z)
     local up = z.instances and z.instances[1] or nil
     if not up or type(up.rooms) ~= "table" then return nil end
@@ -200,7 +212,12 @@ local function on_message(s)
             -- join prefers it and keeps `address` as the fallback; a build
             -- with no extension never reads it.
             wt = up and up.wt or "",
-            name = z.name,
+            -- What the row says, which is the zone's label where it has one
+            -- and its own key where it does not. The key is what a join
+            -- names and what a rating is filed under, so renaming the game a
+            -- player reads cannot move either.
+            name = (type(z.label) == "string" and z.label ~= "") and z.label
+                or z.name,
             detail = z.description or "",
             -- A zone with nobody running it is a row, not a gap: a player is
             -- better off seeing that Chaos exists and is down than wondering
