@@ -1,5 +1,12 @@
 # Landing, and the menu
 
+> **The standings are gone.** The week's table came out of the client: the
+> tab, the page, the column heads it sorted by, the box you typed into to
+> narrow it, the arrows that stepped a week back, and the `/v1/week` call that
+> filled all of it. Four stops, not five. The site still publishes the ladder
+> at `/pilots`, which is where a pilot reads where they stand. See
+> [decision 65](../architecture/decisions.md).
+
 > **The ship page is the shelf.** The upgrades tab is gone: every slot the arena
 > has is a row of the ship page, drawn as circles (solid equipped, a ring owned,
 > a dim grey ring not yours) with the price of the next rung on the rows that
@@ -86,10 +93,11 @@ once.
 
 ## The only difference between the two
 
-Whether you are in a hull. That is `menu.home`, and the tab row follows it: six
-stops with no hull, the short row with one. A pilot the room benched is in the
-stands too, same empty cockpit and same time to read, so they get the six back
-with `leave` added, which is the one stop that needs a zone to mean anything.
+Whether you are in a hull. That is `menu.home`, and the tab row follows it:
+four stops with no hull, the short row with one. A pilot the room benched is in
+the stands too, same empty cockpit and same time to read, so they get the four
+back with `leave` added, which is the one stop that needs a zone to mean
+anything.
 
 Whether the menu can be *closed* is a different question, and it used to be the
 same one. Closing a menu with nothing behind it would leave a player on an
@@ -101,7 +109,7 @@ are what walk back through the tree.
 
 ## A tab row, and a page under it
 
-Six tabs at the front end and three in a match, with one page under whichever
+Four tabs at the front end and three in a match, with one page under whichever
 is lit. Left and right walk the row, down enters the page, up from its first
 row comes back to the row, and left and right on a row set that row's value.
 The exception is a row drawn as a chip rather than as a ladder: the ship
@@ -120,12 +128,11 @@ vectorwake
 ├ friends     a field you type a call sign into, who is waiting on you, who
 │             is on, the room you are in, and everybody who ever added you.
 │             See friends.md
-├ standings   the week, resetting Monday
 └ settings    sound · music · frames · fullscreen · bindings · about
 
               your call sign sits at the far end of the row and is the way
               into your account and career: a page reached from the one
-              place already naming it, rather than a seventh stop. Beside it,
+              place already naming it, rather than a fifth stop. Beside it,
               Discord, which opens a page about the room rather than the
               room: why there is one, one button that opens it, the address
               in words under that for when a popup blocker eats the button,

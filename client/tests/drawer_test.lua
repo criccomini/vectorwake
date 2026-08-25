@@ -33,7 +33,7 @@ local ui = harness.install({sim = setmetatable({
 }, {__index = function() return function() return 0 end end})})
 
 local RAIL = {}
-for i, n in ipairs({"play", "ship", "upgrades", "friends", "standings",
+for i, n in ipairs({"play", "ship", "upgrades", "friends",
                     "settings"}) do
     RAIL[i] = {label = n, icon = n == "play" and "zones" or n, index = i}
 end

@@ -2910,3 +2910,35 @@ which point browsing what is for sale is its own activity again and wants its
 own page; or if the gold on the fitting page proves noisy, in which case
 `.design/hangar` holds a drawn fallback, a FIT | BUY toggle over the same rows,
 that shares nearly all of this drawing.
+
+## 65. The standings are gone
+
+**Status:** accepted, superseding the week's table
+
+**Decision:** the standings tab comes off the menu and the page under it goes
+with it: the week's table, the column heads that ordered it, the box you typed
+into to narrow it, the arrows that stepped back a week, and the `/v1/week`
+request the client made to fill any of it. The front end carries four stops
+now, play, ship, friends and settings, and a match still carries three.
+
+The route itself stays. The site's weekly page is drawn from `/v1/week`, and
+`/pilots` is untouched, so the ladder is still published. It is no longer
+inside the game.
+
+**Why:** asked for. What comes out with it is the heaviest page the menu had.
+It was the only one drawn as a table rather than a list, it kept sort state, a
+text field, a week cursor and a request of its own, and it was the one page
+that took left and right away from walking back out of itself, which is why the
+goldens walk had to photograph it last. The glyph pool sits at 1024 because of
+this page: it drew ten pilots of twenty-two at a pool of 128 and gave no sign
+it had stopped.
+
+**Cost:** gripe 5 from [match-game.md](../design/match-game.md) is answered
+outside the game again. Nothing in the client now says where a pilot stands
+over a week; the scoreboard says who is winning the three minutes you are in
+and a tier on a nameplate says roughly what somebody is worth, and that is the
+whole of it. A player who wants the ladder opens the site.
+
+**Reconsider if:** the week turns out to be what brings players back on a
+Monday, in which case the thing to build is a smaller answer than a sortable
+table of everybody: where you placed, what moved, and who is above you.

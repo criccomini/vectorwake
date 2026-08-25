@@ -1226,10 +1226,9 @@ local function typed(text)
     local moved = false
     for ch in string.gmatch(text, ".") do
         if menu.type_field(ch) then moved = true
-        -- Nothing is asking, so a letter is for whatever page is up. Two
-        -- pages read them: the week's table narrows as you type, and the
-        -- friends page collects a call sign to send.
-        elseif menu.type_filter(ch) then moved = true
+        -- Nothing is asking, so a letter is for whatever page is up: the
+        -- friends page collects a call sign to send, and the naming page
+        -- collects a name for a build.
         elseif menu.type_add(ch) then moved = true
         elseif menu.type_new(ch) then moved = true end
     end
@@ -1510,12 +1509,12 @@ function update(self, dt)
         -- sent "Vesper". Enter alone sends while anything is taking type, and
         -- the space goes where it was aimed.
         --
-        -- Three of them now. It was cards with fields; the week's filter box
-        -- and the friends page's add field are the same line without a card
-        -- around it, and the add field sends, so it hit the same bug the same
-        -- way the first time somebody typed a call sign into it.
+        -- Three of them now. It was cards with fields; the friends page's add
+        -- field and the naming page's are the same line without a card around
+        -- it, and the add field sends, so it hit the same bug the same way the
+        -- first time somebody typed a call sign into it.
         local asking = (menu.ask and menu.ask.fields) or menu.add_on
-                       or menu.filter_on or menu.new_on
+                       or menu.new_on
         -- The arrows themselves, not whatever is flying the ship. They were
         -- the same thing while the keys were fixed, and the moment a pilot
         -- moves thrust to W the menu would have followed it there: a page
@@ -2990,15 +2989,12 @@ function on_input(self, action_id, action)
             -- fire into a wall.
             if r.action == "scores" or r.action == "run_log" then return true end
             if not menu.open then return false end
-            -- A press anywhere but the filter box lets go of it, which is
-            -- what a caret does everywhere else. Before the branches
-            -- below, so a press that also does something loses the caret
-            -- as well as doing it.
-            if r.action ~= "filter_box" then menu.blur_filter() end
-            -- And the same for the friends page's add field. The button
-            -- beside it is the exception as well as the box: a press on
-            -- "add" that dropped the caret first would send and then look
-            -- like nothing had focus.
+            -- A press anywhere but the friends page's add field lets go of
+            -- it, which is what a caret does everywhere else. Before the
+            -- branches below, so a press that also does something loses the
+            -- caret as well as doing it. The button beside the field is an
+            -- exception as well as the box: a press on "add" that dropped the
+            -- caret first would send and then look like nothing had focus.
             if r.action ~= "add_box" and r.action ~= "add_go"
                and r.action ~= "found" then
                 menu.blur_add()
@@ -3040,22 +3036,6 @@ function on_input(self, action_id, action)
                 -- The box beside a charge's pips. The two charges trade
                 -- keys; nothing about the ship changes.
                 act, moved = menu.swap_charges()
-            elseif r.action == "sort" then
-                -- A column head on the week's table. The same one again
-                -- turns the order over.
-                act, moved = menu.click_sort(r.value)
-            elseif r.action == "sort_step" then
-                -- The arrows either side of it, where the table is too
-                -- narrow to draw the heads as a row.
-                act, moved = menu.step_sort(r.value)
-            elseif r.action == "week" then
-                act, moved = menu.step_week(r.value)
-            elseif r.action == "filter_box" then
-                -- The box over the week's table. A caret where there is a
-                -- keyboard, a card where there is not.
-                act, moved = menu.click_filter()
-            elseif r.action == "filter_wipe" then
-                act, moved = menu.wipe_filter()
             elseif r.action == "add_box" then
                 -- The box on the friends page. A caret where there is a
                 -- keyboard, a card where there is not.
