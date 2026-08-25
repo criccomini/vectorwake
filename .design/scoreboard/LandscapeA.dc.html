@@ -30,6 +30,10 @@ a{color:var(--friend)}a:hover{color:#8ee6ff}
 .panel::before{content:"";position:absolute;left:0;top:0;bottom:0;width:1.4px;
   background:rgba(63,88,120,.7)}
 
+/* A selection: bright where it meets its rule and gone across the row. */
+.wash{background:linear-gradient(90deg,rgba(79,214,255,.14),
+  rgba(79,214,255,0) 70%)}
+
 /* One shape for a thing to press. ui.lua key_cap(). */
 .key{display:inline-flex;align-items:center;justify-content:center;gap:7px;
   border:1px solid rgba(63,88,120,.75);background:rgba(10,15,24,.6);
@@ -48,9 +52,7 @@ a{color:var(--friend)}a:hover{color:#8ee6ff}
     </div><div class="hud" style="border-top:1px solid rgba(63,88,120,.5);margin-top:5px;padding-top:4px;font-size:9px;letter-spacing:.12em;color:#4fd6ff;text-align:center">RUNG 3 CLEARED · NEXT RUNG 4 · STREAK 3</div></div>
   <div class="row" style="position:absolute;left:14px;top:14px;gap:8px">
     <div class="key" style="width:22px;height:22px"><svg width="12" height="12" viewBox="0 0 14 14" fill="none" style="flex:none"><path d="M2 3.5 H12 M2 7 H12 M2 10.5 H12" stroke="#9fb6d4" stroke-width="1.4" stroke-linecap="square"/></svg></div>
-    <div class="key" style="height:22px;padding:0 9px;font-size:9px">PLAYERS
-      <svg width="10" height="10" viewBox="0 0 14 14" fill="none" style="flex:none"><path d="M2 8.2 A5 5 0 0 1 12 8.2" stroke="#9fb6d4" stroke-width="1.1"/><path d="M3.6 7.4 A3.4 3.4 0 0 1 10.4 7.4" stroke="#9fb6d4" stroke-width="1" opacity=".65"/><path d="M1.2 9.4 H12.8" stroke="#9fb6d4" stroke-width="1.1"/></svg><span style="margin-left:-4px">1</span>
-      <svg width="10" height="10" viewBox="0 0 14 14" fill="none" style="flex:none"><path d="M7 .8 V3" stroke="#9fb6d4" stroke-width="1"/><rect x="2.4" y="3.2" width="9.2" height="5.6" stroke="#9fb6d4" stroke-width="1.1"/><circle cx="5" cy="6" r=".9" fill="#9fb6d4"/><circle cx="9" cy="6" r=".9" fill="#9fb6d4"/><path d="M1.2 9.4 H12.8" stroke="#9fb6d4" stroke-width="1.1"/></svg><span style="margin-left:-4px">1</span></div>
+    <div class="key" style="height:22px;padding:0 9px;font-size:9px">PLAYERS <svg width="10" height="10" viewBox="0 0 14 14" fill="none" style="flex:none"><path d="M2 8.2 A5 5 0 0 1 12 8.2" stroke="#9fb6d4" stroke-width="1.1"/><path d="M3.6 7.4 A3.4 3.4 0 0 1 10.4 7.4" stroke="#9fb6d4" stroke-width="1" opacity=".65"/><path d="M1.2 9.4 H12.8" stroke="#9fb6d4" stroke-width="1.1"/></svg><span style="margin-left:-4px">1</span> <svg width="10" height="10" viewBox="0 0 14 14" fill="none" style="flex:none"><path d="M7 .8 V3" stroke="#9fb6d4" stroke-width="1"/><rect x="2.4" y="3.2" width="9.2" height="5.6" stroke="#9fb6d4" stroke-width="1.1"/><circle cx="5" cy="6" r=".9" fill="#9fb6d4"/><circle cx="9" cy="6" r=".9" fill="#9fb6d4"/><path d="M1.2 9.4 H12.8" stroke="#9fb6d4" stroke-width="1.1"/></svg><span style="margin-left:-4px">1</span></div>
     
   </div>
   <div style="position:absolute;right:14px;top:14px;display:flex;

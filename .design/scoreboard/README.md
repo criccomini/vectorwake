@@ -1,9 +1,8 @@
 # Scoreboard rethink
 
-Twelve boards for the question of where the scoreboard lives. The shipped one is
-a centered band that grows outward from the clock with side names, ratings and
-the ladder readout, and it has four problems, all visible from a phone or a
-desk:
+The shipped scoreboard is a centered band that grows outward from the clock
+with side names, ratings and the ladder readout, and it has four problems,
+all visible from a phone or a desk:
 
 - It overruns an upright phone, because nothing bounds its growth.
 - Ladder and Melee fill it differently, so the two zones look like two games.
@@ -12,52 +11,53 @@ desk:
   screen ("RUNG 3 CLEARED. NEXT RUNG 4, STREAK 3"), the largest and least
   designed thing on the glass.
 
-Drawings of a proposal, not a plan of record. Nothing here is built.
+Four directions were mocked; Chris picked **D, the clock key**. It leads the
+canvas, and the other three stay on a second page for the record. Drawings
+of a proposal, not a plan of record. Nothing here is built.
 
-## The chassis
+## D · the clock key
 
-All three directions share one idea: a chassis common to every zone, with one
-slot the zone owns.
+The scoreboard behaves like the PLAYERS key did, and PLAYERS itself is gone,
+because the readout carries the roster. One key rides the corner row beside
+MENU. In Melee it wears the score around the clock, since a team game's
+score is the fact you always want; in the duel it is the clock alone, since
+a first-to-one score says nothing until the readout says why. Events dock
+under the key in the scoring side's color for a few seconds, instead of as
+24pt white across the middle; DESTROYED and SUDDEN DEATH are the same kind
+of tenant.
 
-- **Common**: the score and the clock, in the viewer's own colors, yours
-  first. Same drawing in every zone.
-- **The zone's slot**: one line the mode fills. Ladder writes its rung and
-  streak there; Melee writes nothing during play and the intermission clock
-  between matches; a flag game would write its pennant tally. A zone with
-  nothing to say has no slot, and the chassis alone is the whole scoreboard.
-- **Events land in the slot**, in the scoring side's color, for a few
-  seconds, instead of as a giant line over the fight. DESTROYED and SUDDEN
-  DEATH are the same kind of tenant.
-- **Type rides the window**: the desktop boards draw the scoreboard about a
-  third larger than the shipped sizes, portrait draws it tighter, and the
-  cap is the direction's own geometry rather than a formula that can
-  overrun.
+The open readout is the shipped players panel's own grammar: a section head
+in dim capitals with its column labels on the same line, rows under it, a
+dashed rule between sections. Sections are the modularity:
 
-## The four directions
+- **The pilot list** is shared by every zone: name in the side's color, the
+  seat's mark, k / d / a / pts / bty, watchers at the foot.
+- **The zone's own sections** stack under it. The duel adds its run of
+  fights (rung, verdict, score, time). A team game adds nothing new: its
+  scores ride the pilot list's section heads.
+- **The pilot card** a pressed row opens is the same card everywhere: team,
+  seat, tier, rating, and the match's numbers.
 
-- **A · the scorebug**: one contained box top center, broadcast style. Side
-  chips, scores, clock, slot on its foot. Bounded, so portrait cannot
-  overrun. Cost: furniture over the fight's top edge.
-- **B · the corner tile**: an instrument docked under MENU, where chrome
-  already lives. Clock at the head, a row per side, the slot at the foot,
-  events appending as a colored row. The center of the glass stays empty.
-  Cost: the score stops being the first thing a stranger sees.
-- **C · the edge strip**: the window's top edge is the scoreboard, a slim
-  bar filled from each end in the sides' colors in proportion, numbers at
-  the ends, clock dead center, slot hanging in a tab beneath it. Adapts to
-  any width by construction. Cost: the fill jumps rather than creeps in a
-  legs game, and the strip's height caps the type.
-- **D · the clock key**: the scoreboard behaves like PLAYERS, a key in the
-  corner row with the full zone readout a panel behind a press. In Melee
-  the key carries the score around the clock, because a team game's score
-  is the fact you always want; in the duel it is the clock alone. Events
-  dock under the key in the scorer's color. Quietest glass of the four and
-  nothing to overrun. Cost: the readout is behind a press.
+Desktop shows Melee open; portrait shows the duel open with a pressed row's
+card, mirroring a screenshot of the shipped players panel line for line;
+landscape shows the key shut at the moment a rung clears, with the event
+docked under it.
 
-Three window shapes each. Desktop shows Melee mid-match; landscape shows
-Ladder at the moment a rung clears, which is where the mid-screen banner
-lives today; portrait shows Ladder mid-life, the exact shape that overruns
-today.
+## The first directions (page two)
+
+- **A · the scorebug**: one contained box top center, broadcast style, the
+  zone's slot on its foot. Bounded, so portrait cannot overrun. Cost:
+  furniture over the fight's top edge.
+- **B · the corner tile**: an instrument docked under MENU. Clock at the
+  head, a row per side, the zone line at the foot. Cost: the score stops
+  being the first thing a stranger sees.
+- **C · the edge strip**: the window's top edge is the scoreboard, filled
+  from each end in the sides' colors in proportion. Cost: the fill jumps
+  rather than creeps in a legs game, and the strip's height caps the type.
+
+All four share the chassis idea: score and clock common to every zone, a
+zone-owned place for what the zone knows, events in the scoring side's
+color instead of the mid-screen banner.
 
 ## What is here
 
@@ -65,8 +65,9 @@ today.
 whose design system it borrows: hues from `client/arena/palette.lua`, panel
 geometry from `client/arena/ui.lua`, hull outlines to the extents in
 `docs/design/ships.md`, sides from `catalog/zones/*/zone.toml` (Pylon and
-Caisson; Pilot and Rival). The chrome is the shipped client's: hamburger
-MENU, PLAYERS with the two seat marks, LINK and the radar in the far corner.
+Caisson; Pilot and Rival). The duel readout's data is lifted from a
+screenshot of the shipped players panel so the two drawings compare line
+for line.
 
-Rebuild with `python3 build.py`; the nine `.dc.html` files and `canvas.json`
-beside it are what a design canvas is seeded from.
+Rebuild with `python3 build.py`; the twelve `.dc.html` files and
+`canvas.json` beside it are what a design canvas is seeded from.

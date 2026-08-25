@@ -120,6 +120,10 @@ a{color:var(--friend)}a:hover{color:#8ee6ff}
 .panel::before{content:"";position:absolute;left:0;top:0;bottom:0;width:1.4px;
   background:rgba(63,88,120,.7)}
 
+/* A selection: bright where it meets its rule and gone across the row. */
+.wash{background:linear-gradient(90deg,rgba(79,214,255,.14),
+  rgba(79,214,255,0) 70%)}
+
 /* One shape for a thing to press. ui.lua key_cap(). */
 .key{display:inline-flex;align-items:center;justify-content:center;gap:7px;
   border:1px solid rgba(63,88,120,.75);background:rgba(10,15,24,.6);
@@ -236,12 +240,12 @@ MELEE_SHIPS = [
 # The climber's own hull is unlabeled, the way your own always is. The rival
 # sits where the window has room: clear of the top-center scoreboard in a
 # sideways window, up the long axis in an upright one.
-DUEL_RIVAL = {"Landscape": (220, -60), "Portrait": (120, -200)}
+DUEL_RIVAL = {"Landscape": (220, -60), "Portrait": (110, 120)}
 
 
 def duel_ships(form):
     return [("", "Wedge", FRIEND, (0, 30), 12, None),
-            ("VESTIGE 4", "Apex", ENEMY, DUEL_RIVAL[form], 200, 3)]
+            ("Vantage 0001", "Apex", ENEMY, DUEL_RIVAL[form], 200, 1)]
 
 
 def scene(w, h, compact, seed, ships, dead_rival=False):
@@ -293,10 +297,11 @@ def burger(col, k):
             f'stroke-width="1.4" stroke-linecap="square"/></svg>')
 
 
-def corner_row(compact, humans, bots, top=14, extra=""):
+def corner_row(compact, humans, bots, top=14, extra="", players=True):
     """Hamburger MENU and PLAYERS, as shipped: bars plus the word on a
     desktop, bars alone in a square key on a phone. `extra` is direction D's
-    clock key, riding the same row."""
+    clock key, riding the same row; D also drops PLAYERS, because the
+    readout behind the clock is that panel now."""
     kh, px = (22, 9) if compact else (26, 11)
     mk = 10 if compact else 12
     if compact:
@@ -305,12 +310,18 @@ def corner_row(compact, humans, bots, top=14, extra=""):
     else:
         menu = (f'<div class="key" style="height:{kh}px;padding:0 9px;'
                 f'font-size:{px}px">{burger("#9fb6d4", 13)}MENU</div>')
+    players_key = ""
+    if players:
+        players_key = (
+            f'<div class="key" style="height:{kh}px;padding:0 9px;'
+            f'font-size:{px}px">PLAYERS '
+            f'{helm("#9fb6d4", mk)}<span style="margin-left:-4px">{humans}'
+            f'</span> {bot("#9fb6d4", mk)}'
+            f'<span style="margin-left:-4px">{bots}</span></div>')
     return f"""
   <div class="row" style="position:absolute;left:14px;top:{top}px;gap:8px">
     {menu}
-    <div class="key" style="height:{kh}px;padding:0 9px;font-size:{px}px">PLAYERS
-      {helm('#9fb6d4', mk)}<span style="margin-left:-4px">{humans}</span>
-      {bot('#9fb6d4', mk)}<span style="margin-left:-4px">{bots}</span></div>
+    {players_key}
     {extra}
   </div>"""
 
@@ -535,27 +546,59 @@ def strip_board(form, mode):
 
 
 # --- direction D: the clock key ----------------------------------------------
-# The scoreboard behaves like PLAYERS: a key in the corner row, the readout a
-# panel behind a press. In Melee the key carries the score around the clock,
-# because a team game's score is the fact you always want; in the duel the
-# key is the clock alone, since a first-to-one score says almost nothing
+# The scoreboard behaves like PLAYERS did: a key in the corner row, the
+# readout a panel behind a press, and PLAYERS itself is gone, because the
+# readout carries the roster. In Melee the key wears the score around the
+# clock, since a team game's score is the fact you always want; in the duel
+# it is the clock alone, since a first-to-one score says almost nothing
 # until the readout says why.
+#
+# The open panel is the shipped players panel's own grammar: a section head
+# in dim capitals with its column labels on the same line, rows under it,
+# a dashed rule between sections. Sections are the modularity: every zone
+# stacks the pilot list; the duel adds its run of fights, a team game adds
+# nothing because its scores live on the pilot list's own section heads; a
+# pressed row opens the same pilot card everywhere.
 
-# Melee's full readout, per pilot. Humans wear the helm, bots the antenna.
+# Melee's roster, per pilot: human?, kills, deaths, assists, points, bounty.
 MELEE_BOARD = [
-    ("PYLON", FRIEND, [
-        ("KRAIT 4",   True,  5, 2, 21),
-        ("VIREO 9",   True,  4, 3, 12),
-        ("SABER 3",   False, 3, 4, 9),
-        ("PLINTH 41", False, 3, 2, 8),
+    ("PYLON", 15, FRIEND, [
+        ("KRAIT 4",   True,  5, 2, 3, 21, 7),
+        ("VIREO 9",   True,  4, 3, 1, 12, 2),
+        ("SABER 3",   False, 3, 4, 2, 9,  4),
+        ("PLINTH 41", False, 3, 2, 0, 8,  1),
     ]),
-    ("CAISSON", ENEMY, [
-        ("MANTIS 7",  True,  6, 3, 19),
-        ("HALCYON 2", False, 5, 4, 15),
-        ("ORRERY 3",  False, 4, 2, 13),
-        ("SABLE 09",  False, 4, 6, 7),
+    ("CAISSON", 19, ENEMY, [
+        ("MANTIS 7",  True,  6, 3, 2, 19, 5),
+        ("HALCYON 2", False, 5, 4, 1, 15, 9),
+        ("ORRERY 3",  False, 4, 2, 3, 13, 3),
+        ("SABLE 09",  False, 4, 6, 0, 7,  1),
     ]),
 ]
+
+# The duel's board, lifted from a screenshot of the shipped players panel so
+# the two drawings compare line for line.
+DUEL_PILOTS = [
+    ("Aperture",     True,  FRIEND, (1, 0, 0, 1, 2)),
+    ("Vantage 0001", False, ENEMY,  (0, 0, 0, 0, 1)),
+]
+DUEL_WATCHER = "DRiFT"
+DUEL_RUN = [
+    ("RUNG 4", True,  "1-0", "0:26"),
+    ("RUNG 3", True,  "1-0", "0:13"),
+    ("RUNG 2", True,  "1-0", "0:23"),
+    ("RUNG 1", True,  "1-0", "0:45"),
+    ("RUNG 2", False, "0-1", "1:29"),
+    ("RUNG 1", True,  "1-0", "0:25"),
+]
+DUEL_CARD = [
+    ("team", "Rival", ENEMY), ("seat", "BOT", None), ("tier", "LEAD", None),
+    ("rating", "1249", None), ("kills", "0", None), ("deaths", "0", None),
+    ("points", "0", None), ("bounty", "0", "var(--bounty)"),
+]
+
+# The five columns every pilot list shares, and their widths.
+D_COLS = [("k", 22), ("d", 22), ("a", 22), ("pts", 30), ("bty", 30)]
 
 
 def clock_key(compact, mode, melee, lit):
@@ -575,91 +618,126 @@ def clock_key(compact, mode, melee, lit):
             f'{wash}">{inside}</div>')
 
 
-def readout_head(mode, name_px, score_px, clock_px, gap):
-    (ln, ls, lc, lr), (rn, rs, rc, rr) = mode["sides"]
-
-    def side(name, col, rating, score, right):
-        rate = ("" if rating is None else
-                f'<span class="num" style="font-size:{name_px - 1}px;'
-                f'color:{col};opacity:.55;margin:0 5px">{rating}</span>')
-        label = (f'<span class="hud num" style="font-size:{name_px}px;'
-                 f'color:{col}">{name}</span>')
-        num = (f'<span class="num" style="font-size:{score_px}px;color:{col};'
-               f'margin:0 {gap // 2}px">{score}</span>')
-        return (label + rate + num) if not right else (num + rate + label)
-
-    return (f'<div class="row" style="justify-content:center;gap:{gap}px">'
-            f'<div class="row">{side(ln, lc, lr, ls, False)}</div>'
-            f'<span class="num" style="font-size:{clock_px}px;'
-            f'letter-spacing:.02em">{mode["clock"]}</span>'
-            f'<div class="row">{side(rn, rc, rr, rs, True)}</div></div>')
+def d_cells(vals, px, col="var(--ink)", bty=True):
+    """One pilot's numbers, right-aligned under the shared column heads."""
+    out = []
+    for (label, w), v in zip(D_COLS, vals):
+        c = "var(--bounty)" if (bty and label == "bty") else col
+        dim = ";opacity:.55" if label in ("d", "a") else ""
+        out.append(f'<span class="num" style="width:{w}px;text-align:right;'
+                   f'font-size:{px}px;color:{c}{dim}">{v}</span>')
+    return "".join(out)
 
 
-def melee_readout(mode):
-    """The whole match behind the key: score band at the head, both rosters
-    under it, kills, deaths and what the match paid, the numbers the
-    scoreboard panel already carries."""
-    cols = []
-    for side_name, col, pilots in MELEE_BOARD:
-        rows = [(f'<div class="row" style="gap:8px;justify-content:flex-end">'
-                 f'<div style="flex:1"></div>'
-                 f'<span class="lbl" style="width:26px;text-align:right">k</span>'
-                 f'<span class="lbl" style="width:26px;text-align:right">d</span>'
-                 f'<span class="lbl" style="width:34px;text-align:right">pts'
-                 f'</span></div>')]
-        for name, human, k, d, pts in pilots:
-            mark = helm(col, 11) if human else bot(col, 11)
-            rows.append(
-                f'<div class="row" style="gap:8px">'
-                f'{mark}<span class="num" style="font-size:11px;color:{col}">'
-                f'{name}</span><div style="flex:1"></div>'
-                f'<span class="num" style="width:26px;text-align:right;'
-                f'font-size:11px">{k}</span>'
-                f'<span class="num dim" style="width:26px;text-align:right;'
-                f'font-size:11px">{d}</span>'
-                f'<span class="num" style="width:34px;text-align:right;'
-                f'font-size:11px;color:var(--bounty)">{pts}</span></div>')
-        cols.append(f'<div style="display:flex;flex-direction:column;gap:6px">'
-                    f'{"".join(rows)}</div>')
-    head = readout_head(mode, 12, 20, 24, 20)
-    return (f'<div class="panel" style="position:absolute;left:14px;top:50px;'
-            f'width:470px;padding:12px 14px;display:flex;'
-            f'flex-direction:column;gap:10px">{head}'
-            f'<div style="border-top:1px solid rgba(63,88,120,.5)"></div>'
-            f'<div style="display:grid;'
-            f'grid-template-columns:repeat(2, minmax(0, 1fr));gap:18px">'
-            f'{"".join(cols)}</div></div>')
+def d_sec_head(label, px, col="var(--dim)", cols=None, score=None,
+               score_col=None):
+    """A section head the shipped panel's way: the label in capitals, its
+    column labels on the same line, right-aligned over their columns."""
+    left = (f'<span class="hud" style="font-size:{px}px;letter-spacing:.1em;'
+            f'color:{col}">{label}</span>')
+    if score is not None:
+        left += (f'<span class="num" style="font-size:{px + 2}px;'
+                 f'color:{score_col};margin-left:8px">{score}</span>')
+    heads = ""
+    if cols:
+        heads = "".join(f'<span class="lbl" style="width:{w}px;'
+                        f'text-align:right">{c}</span>' for c, w in cols)
+    return (f'<div class="row" style="gap:6px">{left}'
+            f'<div style="flex:1"></div>{heads}</div>')
 
 
-def ladder_readout(mode):
-    """The run behind the key: where it stands, what it rides on, and who is
-    across the arena. No score band, because first-to-one has nothing to
-    band; the head is both seats and the clock."""
-    def fact(label, value):
-        return (f'<div class="row"><span class="lbl">{label}</span>'
-                f'<div style="flex:1"></div>'
-                f'<span class="num" style="font-size:12px">{value}</span>'
-                f'</div>')
+def d_rule():
+    return ('<div style="border-top:1px dashed rgba(63,88,120,.55);'
+            'margin:2px 0"></div>')
 
-    (ln, _, lc, lr), (rn, _, rc, rr) = mode["sides"]
-    head = (f'<div class="row" style="justify-content:center;gap:16px">'
-            f'<span class="hud num" style="font-size:11px;color:{lc}">{ln}'
-            f'<span style="opacity:.55;margin-left:5px">{lr}</span></span>'
-            f'<span class="num" style="font-size:20px;letter-spacing:.02em">'
-            f'{mode["clock"]}</span>'
-            f'<span class="hud num" style="font-size:11px;color:{rc}">{rn}'
-            f'<span style="opacity:.55;margin-left:5px">{rr}</span></span>'
+
+def d_pilot_row(name, human, col, vals, px, mark_px, washed=False):
+    mark = helm(col, mark_px) if human else bot(col, mark_px)
+    return (f'<div class="row{" wash" if washed else ""}" style="gap:7px;'
+            f'padding:1px 2px">'
+            f'<span class="num" style="font-size:{px}px;color:{col}">{name}'
+            f'</span>{mark}<div style="flex:1"></div>{d_cells(vals, px)}'
             f'</div>')
-    rival = (f'<div class="row"><span class="lbl">rival</span>'
-             f'<div style="flex:1"></div>{bot(ENEMY, 11)}'
-             f'<span class="num" style="font-size:12px;color:{ENEMY};'
-             f'margin-left:6px">VESTIGE 4</span></div>')
-    return (f'<div class="panel" style="position:absolute;left:14px;'
-            f'right:14px;top:46px;padding:12px 14px;display:flex;'
-            f'flex-direction:column;gap:9px">{head}'
-            f'<div style="border-top:1px solid rgba(63,88,120,.5)"></div>'
-            f'{fact("rung", 4)}{fact("streak", 3)}{fact("floor", 1)}'
-            f'{rival}</div>')
+
+
+def d_watch_row(name, px, mark_px):
+    return (f'<div class="row" style="gap:7px;padding:1px 2px">'
+            f'<span class="num" style="font-size:{px}px;color:var(--ink)">'
+            f'{name}</span>{helm("#9fb6d4", mark_px)}<div style="flex:1">'
+            f'</div><span class="hud dim" style="font-size:{px - 1}px;'
+            f'opacity:.7">WATCHING</span></div>')
+
+
+def melee_readout(compact):
+    """Melee's readout: the pilot list section twice, once per side, the
+    team's score on its own section head. That head is the whole of what
+    the team game adds to the shared chassis."""
+    px = 10 if compact else 11
+    mark = 10 if compact else 11
+    parts = []
+    for i, (team, score, col, pilots) in enumerate(MELEE_BOARD):
+        parts.append(d_sec_head(team, px - 1, col=col,
+                                cols=D_COLS if i == 0 else None,
+                                score=score, score_col=col))
+        for name, human, k, d, a, pts, bty in pilots:
+            parts.append(d_pilot_row(name, human, col, (k, d, a, pts, bty),
+                                     px, mark))
+        parts.append(d_rule())
+    parts.append(d_watch_row(DUEL_WATCHER, px, mark))
+    return (f'<div class="panel" style="position:absolute;left:14px;top:50px;'
+            f'width:330px;padding:10px 12px;display:flex;'
+            f'flex-direction:column;gap:5px">{"".join(parts)}</div>')
+
+
+def ladder_readout(compact):
+    """The duel's readout: the same pilot list section, then the run's
+    fights, then the card a pressed row opens. Two of the three are shared
+    with every other zone; only the run is the duel's own."""
+    px = 10 if compact else 11
+    mark = 10 if compact else 11
+    parts = [d_sec_head("PILOTS", px - 1, cols=D_COLS)]
+    for name, human, col, vals in DUEL_PILOTS:
+        parts.append(d_pilot_row(name, human, col, vals, px, mark,
+                                 washed=(name == "Vantage 0001")))
+    parts.append(d_watch_row(DUEL_WATCHER, px, mark))
+    parts.append(d_rule())
+    parts.append(d_sec_head(f"RUN: {len(DUEL_RUN)} FIGHTS", px - 1,
+                            cols=[("score", 40), ("time", 40)]))
+    for rung, won, score, time in DUEL_RUN:
+        verdict = ("WON", FRIEND) if won else ("LOST", ENEMY)
+        parts.append(
+            f'<div class="row" style="gap:7px;padding:1px 2px">'
+            f'<span class="num" style="font-size:{px}px;opacity:.85">{rung}'
+            f'</span><div style="flex:1"></div>'
+            f'<span class="hud" style="font-size:{px - 1}px;'
+            f'color:{verdict[1]}">{verdict[0]}</span>'
+            f'<span class="num" style="width:40px;text-align:right;'
+            f'font-size:{px}px">{score}</span>'
+            f'<span class="num dim" style="width:40px;text-align:right;'
+            f'font-size:{px}px">{time}</span></div>')
+    panel = (f'<div class="panel" style="position:absolute;left:14px;'
+             f'right:14px;top:46px;padding:10px 12px;display:flex;'
+             f'flex-direction:column;gap:5px">{"".join(parts)}</div>')
+
+    # The card the washed row is holding open, a block of its own under the
+    # panel: who this seat is, in full.
+    cross = ('<svg width="9" height="9" viewBox="0 0 10 10">'
+             '<path d="M1 1 L9 9 M9 1 L1 9" stroke="#6c7a90" '
+             'stroke-width="1.3" stroke-linecap="square"/></svg>')
+    rows = [f'<div class="row" style="gap:7px">'
+            f'<span class="num" style="font-size:{px}px;color:{ENEMY}">'
+            f'Vantage 0001</span>{bot(ENEMY, mark)}'
+            f'<div style="flex:1"></div>{cross}</div>']
+    for label, value, col in DUEL_CARD:
+        vcol = col or "var(--ink)"
+        rows.append(f'<div class="row"><span class="lbl">{label}</span>'
+                    f'<div style="flex:1"></div>'
+                    f'<span class="num" style="font-size:{px}px;'
+                    f'color:{vcol}">{value}</span></div>')
+    card = (f'<div class="panel" style="position:absolute;left:14px;'
+            f'right:14px;top:272px;padding:10px 12px;display:flex;'
+            f'flex-direction:column;gap:5px">{"".join(rows)}</div>')
+    return panel + card
 
 
 def key_event_line(mode, top):
@@ -702,12 +780,14 @@ def screen(form, variant):
         open_panel = form != "Landscape"
         extra = clock_key(compact, mode, melee, lit=open_panel)
         if open_panel:
-            body.append(melee_readout(mode) if melee else ladder_readout(mode))
+            body.append(melee_readout(compact) if melee
+                        else ladder_readout(compact))
         elif mode["event"]:
             body.append(key_event_line(mode, top=14 + 22 + 8))
 
     body.append(corner_row(compact, mode["humans"], mode["bots"],
-                           top=chrome_top, extra=extra))
+                           top=chrome_top, extra=extra,
+                           players=variant != "D"))
     body.append(dial_corner(form, top=chrome_top))
 
     stars = starfield(w, h, *(dict(Desktop=(46, 30, 12), Landscape=(30, 20, 8),
@@ -742,7 +822,8 @@ def page(name, body):
 def main():
     for form in FORMS:
         for v in VARIANTS:
-            name = "Main" if (form, v) == ("Desktop", "A") else f"{form}{v}"
+            # Main is the leading candidate: D, since Chris picked it.
+            name = "Main" if (form, v) == ("Desktop", "D") else f"{form}{v}"
             page(name, screen(form, v))
     print(f"{len(FORMS) * len(VARIANTS)} artboards written")
 

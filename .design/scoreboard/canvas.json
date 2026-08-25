@@ -1,44 +1,53 @@
 {
+  "pages": [
+    { "id": "page-1", "name": "Clock key" },
+    { "id": "page-2", "name": "First directions" }
+  ],
   "artboards": [
-    { "file": "Main.dc.html", "title": "Desktop · A", "x": 0, "y": 0, "w": 1440, "h": 810 },
-    { "file": "DesktopB.dc.html", "title": "Desktop · B", "x": 1720, "y": 0, "w": 1440, "h": 810 },
-    { "file": "DesktopC.dc.html", "title": "Desktop · C", "x": 3440, "y": 0, "w": 1440, "h": 810 },
-    { "file": "DesktopD.dc.html", "title": "Desktop · D", "x": 5160, "y": 0, "w": 1440, "h": 810 },
-    { "file": "LandscapeA.dc.html", "title": "Landscape · A", "x": 298, "y": 950, "w": 844, "h": 390 },
-    { "file": "LandscapeB.dc.html", "title": "Landscape · B", "x": 2018, "y": 950, "w": 844, "h": 390 },
-    { "file": "LandscapeC.dc.html", "title": "Landscape · C", "x": 3738, "y": 950, "w": 844, "h": 390 },
-    { "file": "LandscapeD.dc.html", "title": "Landscape · D", "x": 5458, "y": 950, "w": 844, "h": 390 },
-    { "file": "PortraitA.dc.html", "title": "Portrait · A", "x": 525, "y": 1480, "w": 390, "h": 844 },
-    { "file": "PortraitB.dc.html", "title": "Portrait · B", "x": 2245, "y": 1480, "w": 390, "h": 844 },
-    { "file": "PortraitC.dc.html", "title": "Portrait · C", "x": 3965, "y": 1480, "w": 390, "h": 844 },
-    { "file": "PortraitD.dc.html", "title": "Portrait · D", "x": 5685, "y": 1480, "w": 390, "h": 844 }
+    { "file": "Main.dc.html", "title": "Desktop · D", "x": 0, "y": 0, "w": 1440, "h": 810, "page": "page-1" },
+    { "file": "LandscapeD.dc.html", "title": "Landscape · D", "x": 298, "y": 950, "w": 844, "h": 390, "page": "page-1" },
+    { "file": "PortraitD.dc.html", "title": "Portrait · D", "x": 1300, "y": 950, "w": 390, "h": 844, "page": "page-1" },
+    { "file": "DesktopA.dc.html", "title": "Desktop · A", "x": 0, "y": 0, "w": 1440, "h": 810, "page": "page-2" },
+    { "file": "DesktopB.dc.html", "title": "Desktop · B", "x": 1720, "y": 0, "w": 1440, "h": 810, "page": "page-2" },
+    { "file": "DesktopC.dc.html", "title": "Desktop · C", "x": 3440, "y": 0, "w": 1440, "h": 810, "page": "page-2" },
+    { "file": "LandscapeA.dc.html", "title": "Landscape · A", "x": 298, "y": 950, "w": 844, "h": 390, "page": "page-2" },
+    { "file": "LandscapeB.dc.html", "title": "Landscape · B", "x": 2018, "y": 950, "w": 844, "h": 390, "page": "page-2" },
+    { "file": "LandscapeC.dc.html", "title": "Landscape · C", "x": 3738, "y": 950, "w": 844, "h": 390, "page": "page-2" },
+    { "file": "PortraitA.dc.html", "title": "Portrait · A", "x": 525, "y": 1480, "w": 390, "h": 844, "page": "page-2" },
+    { "file": "PortraitB.dc.html", "title": "Portrait · B", "x": 2245, "y": 1480, "w": 390, "h": 844, "page": "page-2" },
+    { "file": "PortraitC.dc.html", "title": "Portrait · C", "x": 3965, "y": 1480, "w": 390, "h": 844, "page": "page-2" }
   ],
   "annotations": [
     {
+      "id": "note-d",
+      "x": 0, "y": -230, "w": 400, "page": "page-1",
+      "text": "D · the clock key\n\nThe scoreboard behaves like PLAYERS did, and PLAYERS itself is gone: one key in the corner row, the full readout a panel behind a press. In Melee the key wears the score around the clock; in the duel it is the clock alone, since first-to-one says nothing until the readout says why.\n\nThe open panel is the shipped players panel's own grammar: a section head in dim capitals with its column labels on the line, rows under it, a dashed rule between sections. Sections are the modularity. Every zone stacks the pilot list; the duel adds its run of fights; a team game adds nothing new, because its scores ride the pilot list's section heads. A pressed row opens the same pilot card in every zone.\n\nDesktop shows Melee open. Portrait shows the duel open with a pressed row's card, mirroring the shipped panel's screenshot line for line. Landscape shows the key shut with the rung-cleared event docked under it in the scorer's color."
+    },
+    {
+      "id": "note-constants",
+      "x": -460, "y": 0, "w": 400, "page": "page-1",
+      "text": "Held constant: the shipped chrome (hamburger MENU, LINK, the radar) and the fight behind the glass. Desktop shows Melee mid-match, Pylon 15 to Caisson 19; landscape shows the ladder at the moment a rung clears, where the giant mid-screen banner lives today; portrait shows the ladder mid-life, the shape that overruns today.\n\nEvents land beside the chassis in the scoring side's color for a few seconds instead of as 24pt white across the middle. DESTROYED and SUDDEN DEATH are the same kind of tenant."
+    },
+    {
       "id": "note-a",
-      "x": 0, "y": -210, "w": 360,
+      "x": 0, "y": -210, "w": 360, "page": "page-2",
       "text": "A · the scorebug\n\nOne contained box top center, broadcast style: side chips, scores, clock, and the zone's slot on its foot. The box has a hard cap, so portrait cannot overrun; its type rides the window, so a desktop reads it across the room. Cost: it is furniture over the fight's top edge, and on short windows it crowds the glass."
     },
     {
       "id": "note-b",
-      "x": 1720, "y": -210, "w": 360,
+      "x": 1720, "y": -210, "w": 360, "page": "page-2",
       "text": "B · the corner tile\n\nThe scoreboard as an instrument, docked under MENU where chrome already lives. Clock at the head, a row per side, the zone line at the foot; an event appends a colored row that fades. The center of the glass stays empty, which portrait loves. Cost: the score stops being the first thing a stranger sees, and anyone raised on broadcast sport expects it centered."
     },
     {
       "id": "note-c",
-      "x": 3440, "y": -210, "w": 360,
+      "x": 3440, "y": -210, "w": 360, "page": "page-2",
       "text": "C · the edge strip\n\nThe window's top edge is the scoreboard: a slim bar filled from each end in the sides' colors, in proportion, numbers at the ends, clock dead center. The zone line hangs in a tab under the clock; an event flashes the bar in the scoring side's color and prints in the tab. Adapts to any width by construction. Cost: the fill says the score a second way, it jumps rather than creeps in a legs game like Ladder, and the strip's own height caps how big the numbers can get."
     },
     {
-      "id": "note-d",
-      "x": 5160, "y": -210, "w": 360,
-      "text": "D · the clock key\n\nThe scoreboard behaves like PLAYERS: a key in the corner row, the full zone readout a panel behind a press. In Melee the key carries the score around the clock, since a team game's score is the fact you always want; in the duel it is the clock alone. The desktop board shows Melee's readout open (score band, both rosters, kills, deaths, pay); portrait shows the duel's (rung, streak, floor, the rival). Landscape shows it shut, with the rung-cleared event docking under the key in the scorer's color. Quietest glass of the four and nothing to overrun. Cost: the readout is behind a press, and a watcher who never presses only ever has the key."
-    },
-    {
-      "id": "note-constants",
-      "x": -440, "y": 0, "w": 380,
-      "text": "Held constant on every board: the shipped chrome (hamburger MENU, PLAYERS, LINK and the radar) and the fight behind the glass.\n\nDesktop shows Melee mid-match, Pylon 15 to Caisson 19. Landscape shows Ladder at the moment a rung clears, which is where the giant mid-screen banner lives today. Portrait shows Ladder mid-life, the exact shape that overruns today.\n\nAll three directions are one chassis: score and clock, common to every zone; one slot the zone fills (Ladder's rung and streak, Melee's intermission clock, a flag game's pennant tally); events land in that slot in the scoring side's color for a few seconds instead of as 24pt white across the middle. DESTROYED and SUDDEN DEATH belong to the same slot. A zone with nothing to say has no slot, and the chassis alone is the whole scoreboard, which is what keeps Melee and Ladder looking like one game."
+      "id": "note-early",
+      "x": -440, "y": 0, "w": 360, "page": "page-2",
+      "text": "The first three directions, kept for the record. Chris picked D, on the Clock key page. All four share the chassis idea: score and clock common to every zone, a zone-owned place for what the zone knows, events in the scoring side's color instead of the mid-screen banner."
     }
   ],
-  "launch": { "view": "canvas" }
+  "launch": { "view": "canvas", "page": "page-1" }
 }
