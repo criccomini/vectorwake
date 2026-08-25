@@ -7489,6 +7489,64 @@ end
 -- already. See .design/menu-unify.
 local DOCK_W = 390
 
+-- How long the drawer takes to come in or go out, in seconds, and the state
+-- of that slide between frames.
+--
+-- The panel is a drawer: it comes in from the edge it lives on and leaves the
+-- same way. That is worth the machinery because the column covers the corner
+-- keys it is docked over, so without the slide a press on MENU swaps one
+-- screen for another with nothing saying where the new one came from.
+--
+-- `M.drawer` is published because the arena has to keep handing this a view
+-- for as long as the panel is still on screen, which is past the point the
+-- menu itself calls closed. See `M.drawer_up`.
+local DRAWER_SPAN = 0.16
+M.drawer = 0            -- 0 shut, 1 fully in
+-- Points of drawable pixel a finger has pulled the drawer left by, negative,
+-- and nil while nobody is holding it. The arena sets it: a drawer that does
+-- not follow the thumb dragging it is a drawer nobody believes they are
+-- dragging.
+M.drawer_grab = nil
+local drawer_from, drawer_to, drawer_at = 0, 0, 0
+-- Where the drawer stands and how wide it is, for the arena's own reading of
+-- a gesture that starts on it.
+local drawer_x, drawer_w = 0, 0
+
+-- Whether the panel is on screen at all, open or still leaving. The arena
+-- draws the menu while this is true and stops when it goes false.
+function M.drawer_up()
+    return M.drawer > 0.001 or M.drawer_grab ~= nil
+end
+
+-- The box the drawer covers, in the space hit boxes are published in.
+function M.drawer_span()
+    return drawer_x, 0, drawer_w, F.h
+end
+
+-- Ease so it leaves fast and settles slow, which is what a drawer with weight
+-- does and what stops a 160ms slide reading as a jump.
+local function drawer_ease(t)
+    return 1 - (1 - t) * (1 - t) * (1 - t)
+end
+
+-- Where a finger has the drawer, as a fraction of it being in.
+local function drawer_held()
+    if not M.drawer_grab then return M.drawer end
+    return math.max(0, math.min(1,
+        1 + M.drawer_grab / math.max(drawer_w, 1)))
+end
+
+-- The thumb has let go. `shut` says the pull was far enough to count as a
+-- dismissal; either way the slide picks the drawer up from wherever the finger
+-- left it rather than snapping, which is the whole difference between a drawer
+-- somebody is pushing and a panel that blinks.
+function M.drawer_release(shut)
+    local slide = drawer_held()
+    M.drawer_grab = nil
+    M.drawer = slide
+    drawer_from, drawer_to, drawer_at = slide, shut and 0 or 1, F.now
+end
+
 function M.menu(v)
     F.case = "sentence"
     local was_scale = F.scale
@@ -7513,8 +7571,38 @@ function M.menu(v)
     -- where the tabs went, what the type was set in, and whether there was a
     -- second column. One drawing stood in one place is what replaces them.
     -- See .design/menu-unify.
-    local dx = F.safe_l
     local dock = math.min(DOCK_W * F.scale, F.w - F.safe_l - F.safe_r)
+    -- How far in the drawer is, and which way it is heading.
+    --
+    -- A clock that has not moved has nothing to animate over, so with `F.now`
+    -- at zero the drawer is drawn settled where it is heading. That is the
+    -- test harness, which never advances it; a client reaches its first menu
+    -- long after its first frame, since nothing opens the menu but a player.
+    local want = v.open == false and 0 or 1
+    if want ~= drawer_to then
+        drawer_from, drawer_to, drawer_at = M.drawer, want, F.now
+    end
+    if F.now <= 0 then
+        M.drawer = want
+    else
+        local step = math.min(1, (F.now - drawer_at) / DRAWER_SPAN)
+        M.drawer = drawer_from
+            + (drawer_to - drawer_from) * drawer_ease(step)
+    end
+    -- A finger holding the drawer overrides the clock: it is where the thumb
+    -- has put it until the thumb lets go.
+    drawer_w = dock
+    local slide = drawer_held()
+    -- Off the left edge by whatever is left of the slide.
+    local dx = F.safe_l - (1 - slide) * dock
+    drawer_x = dx
+    -- A drawer on its way out answers nothing. It is drawn, because that is
+    -- the whole point of drawing it, but the menu is shut and the game under
+    -- it is live: every box below this line is taken back at the end so a
+    -- press during the slide reaches the arena rather than a panel that has
+    -- already gone.
+    local shutting = v.open == false
+    local hits_before = #M.hits
     -- Whether the column is the window. The one thing still worth asking about
     -- shape: what it decides is whether there is a fight beside the column for
     -- the wash to stay off, and whether the column's right edge needs a rule
@@ -7545,13 +7633,16 @@ function M.menu(v)
     -- Boxes the column covers outright, which is the honest reading of what a
     -- panel over something does. One that runs past the column's edge keeps
     -- the part of itself that is still showing, and answers there.
-    local kept = {}
-    for _, r in ipairs(M.hits) do
-        if r.x < dx - F.scale or r.x + r.w > dx + dock + F.scale then
-            kept[#kept + 1] = r
+    if not shutting then
+        local kept = {}
+        for _, r in ipairs(M.hits) do
+            if r.x < dx - F.scale or r.x + r.w > dx + dock + F.scale then
+                kept[#kept + 1] = r
+            end
         end
+        M.hits = kept
+        hits_before = #M.hits
     end
-    M.hits = kept
 
     -- Not a curtain. Over an arena you can see the fight you left, and that
     -- you are still in it. There is always one behind this now: the stands
@@ -8225,6 +8316,11 @@ function M.menu(v)
     -- It takes the screen, boxes included: a question is answered, not
     -- clicked past.
     if v.ask then ask_card(sx, sy, GUTTER * F.scale + lw, sh, v.ask) end
+    -- Everything this drew answers a press only while the menu is open. See
+    -- `shutting`.
+    if shutting then
+        for i = #M.hits, hits_before + 1, -1 do M.hits[i] = nil end
+    end
     F.case = "upper"
     F.scale = was_scale
 end
