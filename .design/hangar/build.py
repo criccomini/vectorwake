@@ -697,9 +697,9 @@ def hangar2_page(hot=None):
 
 
 def hangar2_board():
-    body = scene_svg(390, 880, 61) + drawer2(
-        hangar2_page(hot="shrapnel"), save=True)
-    board("Main.dc.html", 390, 880, body, seed=41)
+    body = scene_svg(390, 844, 61) + drawer2(
+        hangar2_page(hot="shrapnel"), save=True, portrait=True)
+    board("Main.dc.html", 390, 844, body, seed=41)
 
 
 # --- the same screens at the phone's own window ------------------------------
@@ -707,22 +707,6 @@ def hangar2_board():
 # 390 by 844, the drawer as the whole screen. What these two boards prove is
 # the fit: the merged page, save key and all, holds an upright phone with no
 # scroll on melee's slot set.
-
-
-def portrait_boards():
-    body = scene_svg(390, 844, 67) + drawer2(
-        hangar2_page(hot="shrapnel"), save=True, portrait=True)
-    board("PortraitShip.dc.html", 390, 844, body, seed=49)
-    page = detail_page(
-        "bomb add-on", "shrapnel",
-        circle_cells(BOMBC, 3, 1, 1, k=13, r=5.5, step=17),
-        "1 dealt to everybody &#183; 2 to climb",
-        TEACH_SHRAPNEL, price=20,
-        foot=('<div class="lbl" style="margin-top:18px;line-height:15px">'
-              'a swipe right, or the chevron, puts the ship page back</div>'))
-    board("PortraitBuy.dc.html", 390, 844,
-          scene_svg(390, 844, 68) + drawer2(page, portrait=True),
-          seed=50)
 
 
 # --- the phone on its side: the drawer docked, the fight beside it -----------
@@ -827,8 +811,9 @@ def buy2_board():
         TEACH_SHRAPNEL, price=20,
         foot=('<div class="lbl" style="margin-top:18px;line-height:15px">'
               'a swipe right, or the chevron, puts the ship page back</div>'))
-    board("Buy.dc.html", 390, 880,
-          scene_svg(390, 880, 62) + drawer2(page), seed=42)
+    board("Buy.dc.html", 390, 844,
+          scene_svg(390, 844, 62) + drawer2(page, portrait=True),
+          seed=42)
 
 
 def owned_board():
@@ -840,8 +825,9 @@ def owned_board():
         foot=('<div class="lbl" style="margin-top:22px;line-height:15px">'
               'nothing to buy here: the arena deals every rung of this'
               '</div>'))
-    board("Owned.dc.html", 390, 880,
-          scene_svg(390, 880, 63) + drawer2(page), seed=46)
+    board("Owned.dc.html", 390, 844,
+          scene_svg(390, 844, 63) + drawer2(page, portrait=True),
+          seed=46)
 
 
 # --- the builds list, behind the name ----------------------------------------
@@ -870,8 +856,9 @@ def builds_board():
     page = (back_row()
             + '<div class="lbl" style="margin:18px 0 8px">builds</div>'
             + ''.join(rows) + keys)
-    board("Builds.dc.html", 390, 880,
-          scene_svg(390, 880, 64) + drawer2(page), seed=45)
+    board("Builds.dc.html", 390, 844,
+          scene_svg(390, 844, 64) + drawer2(page, portrait=True),
+          seed=45)
 
 
 # --- the new screen, behind NEW ----------------------------------------------
@@ -903,8 +890,9 @@ def new_board():
             + '<div class="lbl" style="margin-top:18px;line-height:15px">'
               'create slides back to the list with the new build lit'
               '</div>')
-    board("NewBuild.dc.html", 390, 880,
-          scene_svg(390, 880, 65) + drawer2(page), seed=48)
+    board("NewBuild.dc.html", 390, 844,
+          scene_svg(390, 844, 65) + drawer2(page, portrait=True),
+          seed=48)
 
 
 # --- the points panel, behind the meter --------------------------------------
@@ -942,8 +930,9 @@ def points_board():
             + legend("ring", FRIEND, "owned, waiting for a point")
             + legend("dim", "", "not yours yet: its price sits on the row")
             )
-    board("Points.dc.html", 390, 880,
-          scene_svg(390, 880, 66) + drawer2(page), seed=47)
+    board("Points.dc.html", 390, 844,
+          scene_svg(390, 844, 66) + drawer2(page, portrait=True),
+          seed=47)
 
 
 # --- board: fit and buy ------------------------------------------------------
@@ -1241,7 +1230,6 @@ def current_board():
 
 
 hangar2_board()
-portrait_boards()
 landscape_boards()
 buy2_board()
 owned_board()

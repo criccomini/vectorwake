@@ -79,13 +79,14 @@ Picking a row loads it and slides back. Saving is not in the list: SAVE is
 a key at the foot of the ship screen, standing over the stops only while
 the kit differs from its name.
 
-**The phone, both ways round, is the same drawing.** Upright, 390 by 844,
-the drawer is the whole screen: the right-edge rule goes, the foot deepens
-to clear the home indicator, and the merged page fits with no scroll on
-melee's slot set, save key included. On its side, 844 by 390, the drawer
-keeps its 390 and the fight keeps the rest, radar and all; height is the
-scarce edge, so this is the one shape where the page scrolls, the save key
-drops a size, and the reading tightens its margins to fit whole.
+**Two shapes, one drawing.** The main boards are the portrait phone, 390
+by 844, where the drawer is the whole screen: the merged page fits it with
+no scroll on melee's slot set, save key included. Two more boards show the
+phone on its side, 844 by 390, where the drawer keeps its 390 and the
+fight keeps the rest, radar and all; height is the scarce edge there, so
+that is the one shape where the page scrolls, the save key drops a size,
+and the reading tightens its margins to fit whole. A desktop is the
+landscape layout with more room.
 
 **Points are a meter and a remainder.** The top row's other end shows a
 thin bar and the number that matters mid-edit: how many points are left.
@@ -104,7 +105,7 @@ drawing mostly the same list.
 
 ## What is here
 
-`build.py` is the source. It writes the thirteen `.dc.html` artboards from
+`build.py` is the source. It writes the eleven `.dc.html` artboards from
 the same design system the earlier mocks lift from the client: hues from
 `client/arena/palette.lua`, panel grammar from `client/arena/ui.lua`, the
 lockup from `docs/banner.svg`. The account shown is real to the melee
