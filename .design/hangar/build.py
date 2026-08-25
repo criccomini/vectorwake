@@ -185,6 +185,74 @@ def tri(direction, col, k=9):
             f'style="flex:none"><path d="{p}" fill="{col}"/></svg>')
 
 
+# --- the fight beside the drawer, for the landscape boards -------------------
+#
+# Hull outlines to the extents in docs/design/ships.md, same paths as
+# ../menu-unify/build.py, and the radar the sideways phone keeps while the
+# drawer covers the clock band.
+
+HULLS = {
+    "Wedge":   "M0,-13 L15,9 L7,12 L0,8 L-7,12 L-15,9 Z",
+    "Cipher":  "M0,-22 L3,-6 L6,8 L2,12 L-2,12 L-6,8 L-3,-6 Z",
+    "Anvil":   "M-8,-15 L8,-15 L13,-5 L13,6 L8,11 L-8,11 L-13,6 L-13,-5 Z",
+    "Apex":    "M0,-20 L6,-3 L10,7 L4,5 L2,11 L-2,11 L-4,5 L-10,7 L-6,-3 Z",
+}
+
+ENEMY = "#ffa552"
+
+
+def ship_at(name, x, y, rot, col):
+    return (f'<g transform="translate({x},{y}) rotate({rot})">'
+            f'<path d="M-4,10 L-2,52 L2,52 L4,10 Z" fill="{col}" '
+            f'opacity=".16"/>'
+            f'<path d="{HULLS[name]}" fill="#0b1220" stroke="{col}" '
+            f'stroke-width="1.5" stroke-linejoin="round"/></g>')
+
+
+def nameplate(x, y, name, col, px=9):
+    return (f'<text x="{x + 14}" y="{y + 24}" font-family="Noto Sans Mono,'
+            f'monospace" font-size="{px}" fill="{col}" opacity=".9">'
+            f'{name}</text>')
+
+
+def scene_svg(w, h, seed):
+    rnd = random.Random(seed)
+    parts = []
+    for _ in range(7):
+        bw, bh = rnd.choice([(96, 32), (32, 108), (64, 64), (140, 30)])
+        x, y = rnd.randint(-20, w - 60), rnd.randint(-20, h - 40)
+        parts.append(
+            f'<rect x="{x}" y="{y}" width="{bw}" height="{bh}" '
+            f'fill="#080d16" stroke="#22344f" stroke-width="1"/>'
+            f'<path d="M{x} {y} H{x + bw}" stroke="#5b82b8" '
+            f'stroke-width="1.4" opacity=".55"/>')
+    for name, hull, col, (ox, oy), rot in (
+            ("KRAIT 4", "Wedge", FRIEND, (0.62, 0.62), 24),
+            ("MANTIS 7", "Cipher", ENEMY, (0.7, 0.3), 205),
+            ("HALCYON 2", "Anvil", ENEMY, (0.87, 0.55), 160)):
+        x, y = w * ox, h * oy
+        parts.append(ship_at(hull, x, y, rot, col))
+        parts.append(nameplate(x, y, name, col))
+    return (f'<svg width="{w}" height="{h}" '
+            f'style="position:absolute;inset:0">{"".join(parts)}</svg>')
+
+
+def minimap(side, seed):
+    rnd = random.Random(seed)
+    blips = []
+    for _ in range(20):
+        bx, by = rnd.randint(6, 94), rnd.randint(6, 94)
+        bw, bh = rnd.choice([(6, 3), (3, 7), (5, 5), (9, 3)])
+        blips.append(f'<rect x="{bx}" y="{by}" width="{bw}" height="{bh}" '
+                     f'fill="#3f5878" opacity=".85"/>')
+    ships = ('<circle cx="47" cy="52" r="2" fill="#4fd6ff"/>'
+             '<circle cx="66" cy="38" r="2" fill="#ffa552"/>'
+             '<circle cx="30" cy="30" r="2" fill="#ffa552"/>')
+    return (f'<svg width="{side}" height="{side}" viewBox="0 0 100 100" '
+            f'style="background:rgba(6,10,16,.55);outline:1px solid '
+            f'rgba(63,88,120,.5)">{"".join(blips)}{ships}</svg>')
+
+
 # --- the drawer chrome -------------------------------------------------------
 
 ICONS = {
@@ -590,13 +658,14 @@ def band2():
 # right-edge rule goes, because a rule against nothing marks nothing, and
 # the foot deepens so the stop labels clear the home indicator. Nothing else
 # changes; the menu is one drawing at 390 wherever it stands.
-def drawer2(page, save=False, lit="ship", portrait=False):
+def drawer2(page, save=False, lit="ship", portrait=False, short=False):
     foot = 78 if portrait else 64
-    bottom = foot + (54 if save else 0)
+    save_h = 32 if short else 40
+    bottom = foot + ((save_h + 14) if save else 0)
     savekey = ""
     if save:
         savekey = (f'<div class="key" style="position:absolute;left:14px;'
-                   f'right:14px;bottom:{foot + 10}px;height:40px;'
+                   f'right:14px;bottom:{foot + 8}px;height:{save_h}px;'
                    f'font-size:12px;'
                    f'color:{INK};border-color:rgba(79,214,255,.85);'
                    f'background:rgba(79,214,255,.10)">SAVE</div>')
@@ -649,6 +718,63 @@ def portrait_boards():
               'a swipe right, or the chevron, puts the ship page back</div>'))
     board("PortraitBuy.dc.html", 390, 844, drawer2(page, portrait=True),
           seed=50)
+
+
+# --- the phone on its side: the drawer docked, the fight beside it -----------
+#
+# 844 by 390. The drawer keeps its 390 and the fight keeps the rest, so
+# height is the scarce edge: the ship page scrolls where portrait held it
+# whole, the save key drops a size, and the reading tightens its margins.
+# The radar stays in the fight's corner; the clock band the drawer covers
+# is down while it is over it.
+
+
+def compact_detail(kind, name, cells, caption, teach, price):
+    price_row = (f'<div class="row" style="gap:8px;margin-top:12px">'
+                 f'{rivet(12, GOLD)}'
+                 f'<span class="num" style="font-size:13px;color:{GOLD}">'
+                 f'{price}</span>'
+                 f'<span class="lbl">buys the next rung</span>'
+                 f'<div style="flex:1"></div>'
+                 f'<span class="lbl">wallet</span>{rivet(10, GOLD)}'
+                 f'<span class="num" style="font-size:11px;color:{GOLD}">'
+                 f'{WALLET}</span></div>')
+    buy = (f'<div class="key" style="width:100%;height:34px;'
+           f'font-size:12px;color:{INK};'
+           f'border-color:rgba(255,209,102,.9);'
+           f'background:rgba(255,209,102,.10);margin-top:12px">BUY</div>')
+    return (back_row()
+            + f'<div class="lbl" style="margin:10px 0 4px">{kind}</div>'
+            + f'<div style="font-size:19px;margin-bottom:8px">{name}</div>'
+            + f'<div style="font-size:11.5px;line-height:16px;'
+              f'color:rgba(223,233,245,.85)">{teach}</div>'
+            + f'<div class="row" style="margin:12px 0 4px">{cells}</div>'
+            + f'<div class="lbl">{caption}</div>'
+            + price_row + buy)
+
+
+def landscape_body(page, save=False):
+    thumb = ('<div style="position:absolute;left:385px;top:64px;width:3px;'
+             'height:70px;background:rgba(63,88,120,.9)"></div>'
+             '<div style="position:absolute;left:385px;top:52px;width:3px;'
+             'height:260px;background:rgba(63,88,120,.25)"></div>')
+    return (scene_svg(844, 390, 51)
+            + f'<div style="position:absolute;left:0;top:0;width:390px;'
+              f'height:390px">{drawer2(page, save=save, short=True)}</div>'
+            + (thumb if save else "")
+            + f'<div style="position:absolute;right:14px;top:14px">'
+              f'{minimap(96, 52)}</div>')
+
+
+def landscape_boards():
+    board("LandscapeShip.dc.html", 844, 390,
+          landscape_body(hangar2_page(), save=True), seed=53)
+    page = compact_detail(
+        "bomb add-on", "shrapnel",
+        circle_cells(BOMBC, 3, 1, 1, k=13, r=5.5, step=17),
+        "1 dealt to everybody &#183; 2 to climb",
+        TEACH_SHRAPNEL, 20)
+    board("LandscapeBuy.dc.html", 844, 390, landscape_body(page), seed=54)
 
 
 # --- the reading, slid in from the right -------------------------------------
@@ -1106,6 +1232,7 @@ def current_board():
 
 hangar2_board()
 portrait_boards()
+landscape_boards()
 buy2_board()
 owned_board()
 builds_board()
