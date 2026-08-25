@@ -24,7 +24,13 @@ local function check(name, ok, detail)
 end
 
 local harness = require("tests.ui_harness")
-local ui = harness.install()
+-- A room with somebody in it, because the checks at the foot of this file draw
+-- the arena's own instruments and the stub harness reports an empty world.
+local ui = harness.install({sim = setmetatable({
+    ship_count = function() return 4 end,
+    ship_active = function() return 1 end,
+    ship_alive = function() return 1 end,
+}, {__index = function() return function() return 0 end end})})
 
 local RAIL = {}
 for i, n in ipairs({"play", "ship", "upgrades", "friends", "standings",
@@ -177,6 +183,89 @@ do
     ui.drawer_release(true)
     frame(7.40, false)
     ui.drawer_grab = nil
+end
+
+-- --- what the drawer covers stands down --------------------------------------
+--
+-- The clock band and the dial's corner are the two instruments the menu does
+-- not otherwise stand down for, on the argument that a player reading a panel
+-- still wants to know the time and the state of the line. On a phone the
+-- drawer is the whole window and both were drawn straight through it.
+--
+-- The question each asks is the overlap, not whether a menu is open, so the
+-- answer differs by window: a phone held sideways has the drawer over the
+-- clock band and nowhere near the dial.
+
+do
+    local SEATS = {}
+    for i = 0, 3 do
+        SEATS[i] = {name = "p" .. i, label = i == 0 and "human" or "bot",
+                    ai = i > 0}
+    end
+    local state = package.loaded["arena.state"]
+
+    local function hud_frame(w, h, now, open)
+        state.n = 0
+        ui.begin(harness.layer(), w, h, 1, false, now)
+        ui.hud({me = 0, watch = {subject = 0}, side = 0, viewer_name = "p0",
+                menu_open = open, pilots = SEATS, watchers = {}, teams = {},
+                match = {playing = true, left = 169, score = {[0] = 0, [1] = 0},
+                         ladder = {rung = 3, streak = 1}},
+                side_names = {[0] = "Pylon", [1] = "Caisson"},
+                feed = {}, hurt = 0, charges = {}, cam_x = 3000, cam_y = 3000,
+                half_w = w / 2, half_h = h / 2, banner = "", link_bars = 4,
+                zone = "ladder"})
+        if open or ui.drawer_up() then
+            local mv = view(open)
+            mv.rows = {}
+            ui.menu(mv)
+        end
+        ui.finish()
+        local said = {}
+        for i = 1, state.n do said[#said + 1] = state.text[i].s end
+        return table.concat(said, "|")
+    end
+    local function has(s, word) return s:find(word, 1, true) ~= nil end
+
+    -- Shut, open and settled, then shut and settled again.
+    local function sweep(w, h)
+        hud_frame(w, h, 1.0, false)
+        hud_frame(w, h, 1.1, false)
+        local before = hud_frame(w, h, 2.0, false)
+        for _, at in ipairs({2.01, 2.05, 2.10, 2.40}) do
+            hud_frame(w, h, at, true)
+        end
+        local during = hud_frame(w, h, 2.60, true)
+        for _, at in ipairs({2.61, 2.70, 2.90, 3.20}) do
+            hud_frame(w, h, at, false)
+        end
+        return before, during, hud_frame(w, h, 3.50, false)
+    end
+
+    -- A phone held upright: the drawer is the window, so both go.
+    local before, during, after = sweep(390, 844)
+    check("upright, the clock band is there before the drawer",
+          has(before, "2:49"), before)
+    check("and gone under it", not has(during, "2:49"), during)
+    check("and back once it has left", has(after, "2:49"), after)
+    check("upright, the dial's corner goes with it",
+          has(before, "LINK") and not has(during, "LINK")
+              and has(after, "LINK"), during)
+
+    -- Sideways: the drawer is 390 of 844. It reaches the band, which grows
+    -- outward from the middle with the scores and the ratings, and it does not
+    -- reach the dial in the far corner.
+    before, during, after = sweep(844, 390)
+    check("sideways, the drawer covers the clock band",
+          has(before, "2:49") and not has(during, "2:49")
+              and has(after, "2:49"), during)
+    check("and leaves the dial's corner alone",
+          has(during, "LINK"), "the dial went with it")
+
+    -- A monitor: the drawer is 390 of 1440 and reaches neither.
+    during = select(2, sweep(1440, 810))
+    check("a monitor keeps both, the drawer being nowhere near them",
+          has(during, "2:49") and has(during, "LINK"), during)
 end
 
 print(fails == 0 and "all drawer checks passed"

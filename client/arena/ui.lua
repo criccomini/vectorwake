@@ -946,6 +946,13 @@ function M.begin(layer, w, h, density, touching, now)
     -- The marks draw into the same layer, and the pads reach for them after
     -- this returns, so they are handed it here rather than by each caller.
     marks.begin(layer, density)
+    -- A frame that drew no menu has no drawer. The slide is state kept between
+    -- frames, and without this it would keep whatever it was last left at
+    -- forever: the arena calls `M.menu` for as long as the panel is on screen
+    -- and then stops, so the frame after it stops is the frame that says so.
+    -- Read by the instruments the drawer covers, which are drawn before it.
+    if not M.menu_drawn then M.drawer_shut() end
+    M.menu_drawn = false
     M.touching = touching or false
     M.hits = {}
     -- The lines the page is asked to hold, if any card raised this frame
@@ -3467,8 +3474,23 @@ local function rating_line(o, team)
     return string.format("%d", math.floor(score + 0.5)), placing
 end
 
+-- How far the clock band reached last frame, so the drawer can ask whether it
+-- is standing over it. Measured rather than guessed: the band is centered but
+-- grows outward with the scores, the side names and their ratings, and a
+-- half-width written down here would be a second copy of that arithmetic to
+-- keep in step.
+local band_l, band_r = 0, 0
+
 local function match_clock(o, m, names, alone)
     if not m then return end
+    -- Not under the drawer. The band is the one instrument the menu does not
+    -- stand down for -- a player reading a panel still wants the clock -- and
+    -- on a phone the drawer is the whole window, so it was drawn straight
+    -- through the panel over it. It goes when the drawer's edge reaches it and
+    -- is back when that edge has passed. See `M.drawer_over`.
+    if band_r > band_l and M.drawer_over(band_l, band_r - band_l) then
+        return
+    end
     local left = m.left or 0
     local clock = ladder_waiting(m) and "--:--"
         or string.format("%d:%02d", math.floor(left / 60), left % 60)
@@ -3490,6 +3512,14 @@ local function match_clock(o, m, names, alone)
     -- The middle first, because everything else is placed off it.
     local dim = m.playing and 1 or 0.55
     txt(clock, F.w / 2, y, big, pal.a(pal.INK, 0.95 * dim), "center")
+    -- What the band came to, walked outward from the clock as each piece is
+    -- laid down and read next frame by the question above.
+    band_l = F.w / 2 - text_w(clock, big) / 2
+    band_r = F.w / 2 + text_w(clock, big) / 2
+    local function reach(x)
+        if x < band_l then band_l = x end
+        if x > band_r then band_r = x end
+    end
     -- Where the run is, under the clock, and only the parts of it that have
     -- happened. "RUNG 5 STREAK 4 FLOOR 1" was three labeled numbers all match,
     -- two of which say nothing until they move: a streak of none is not a
@@ -3508,8 +3538,11 @@ local function match_clock(o, m, names, alone)
         if ladder_waiting(m) then
             progress = progress .. "  FINDING RIVAL"
         end
+        local pw = text_w(progress, small - 1 * F.scale)
         txt(progress, F.w / 2, y + 20 * F.scale, small - 1 * F.scale,
             pal.a(pal.DIM, 0.88), "center")
+        reach(F.w / 2 - pw / 2)
+        reach(F.w / 2 + pw / 2)
     end
     -- Nothing under it while a match is being played: the clock is counting
     -- down and a word saying "match" beneath it is the interface reading its
@@ -3582,13 +3615,21 @@ local function match_clock(o, m, names, alone)
                 txt(rated, at, ny, rpx, rcol, "right")
                 at = at - text_w(rated, rpx) - 7 * F.scale
             end
-            if nm ~= "" then txt(nm, at, ny, small, pal.a(col, 0.85 * dim), "right") end
+            if nm ~= "" then
+                txt(nm, at, ny, small, pal.a(col, 0.85 * dim), "right")
+                at = at - text_w(nm, small)
+            end
+            reach(at)
         else
             if nm ~= "" then
                 txt(nm, at, ny, small, pal.a(col, 0.85 * dim))
                 at = at + text_w(nm, small) + 7 * F.scale
             end
-            if rated then txt(rated, at, ny, rpx, rcol) end
+            if rated then
+                txt(rated, at, ny, rpx, rcol)
+                at = at + text_w(rated, rpx)
+            end
+            reach(at)
         end
     end
 end
@@ -4246,9 +4287,18 @@ function M.hud(o)
     -- One corner, one instrument. The map is the radar pulled back to the
     -- whole thousand tiles, so it stands where the radar stands rather than
     -- somewhere else with the radar still lit beside it.
-    if M.map then overview(me) else radar(o.cam_x, o.cam_y, me) end
-    link(o.link_bars or 4)
-    coords(me)
+    -- The dial's corner, and nothing in it while the drawer is over it. On a
+    -- phone the drawer is the whole window, so the radar, the link bars and
+    -- the coordinates were all drawn through the panel standing on top of
+    -- them. On a monitor the drawer is 390 points of 1440 and never reaches
+    -- this corner, so nothing there changes: the question is the overlap
+    -- rather than whether a menu is open. See `M.drawer_over`.
+    local dial_x = dial()
+    if not M.drawer_over(dial_x, F.w - dial_x) then
+        if M.map then overview(me) else radar(o.cam_x, o.cam_y, me) end
+        link(o.link_bars or 4)
+        coords(me)
+    end
     -- Under the dial, wherever the dial now ends: it lost its panel and its
     -- padding, so a constant here would have left a gap or an overlap. Not on
     -- a touchscreen: the lines land where a thumb flies the ship, and a
@@ -7518,9 +7568,38 @@ function M.drawer_up()
     return M.drawer > 0.001 or M.drawer_grab ~= nil
 end
 
+-- Nothing is drawing the menu, so there is no drawer. Called by `M.begin` off
+-- a frame that drew none.
+function M.drawer_shut()
+    M.drawer, M.drawer_grab = 0, nil
+    drawer_from, drawer_to = 0, 0
+    drawer_w = 0
+end
+
 -- The box the drawer covers, in the space hit boxes are published in.
 function M.drawer_span()
     return drawer_x, 0, drawer_w, F.h
+end
+
+-- Whether the drawer is standing over this span of the screen.
+--
+-- The left column asks before it draws. The drawer is docked to the same edge
+-- the scoreboard is pinned to, so the two are always over each other once it
+-- is in, and a roster showing through a panel that has arrived on top of it
+-- reads as a fault rather than as depth.
+--
+-- Asked as a real overlap rather than as "is the menu open", so the answer
+-- follows the slide: the roster goes when the drawer's leading edge reaches
+-- it and is back the moment that edge has passed it again. That is also what
+-- makes it self-correcting if either of them ever moves.
+--
+-- One frame behind, because the arena draws its instruments before the panel
+-- over them and this reads where the panel was last put. Sixteen milliseconds
+-- of a roster during a slide is not a thing anybody sees.
+function M.drawer_over(x, w)
+    if M.drawer <= 0 and not M.drawer_grab then return false end
+    if drawer_w <= 0 then return false end
+    return drawer_x + drawer_w > x and drawer_x < x + w
 end
 
 -- Ease so it leaves fast and settles slow, which is what a drawer with weight
@@ -7548,6 +7627,7 @@ function M.drawer_release(shut)
 end
 
 function M.menu(v)
+    M.menu_drawn = true
     F.case = "sentence"
     local was_scale = F.scale
 
