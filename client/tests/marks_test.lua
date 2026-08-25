@@ -214,8 +214,7 @@ end
 -- file counts helmets, so the one stop that brings its own pair stays off the
 -- row. Nothing else on it wears one.
 local RAIL = {}
-for i, n in ipairs({"zones", "ship", "upgrades", "standings",
-                    "settings"}) do
+for i, n in ipairs({"zones", "ship", "upgrades", "settings"}) do
     RAIL[i] = {label = n, icon = n, index = i}
 end
 

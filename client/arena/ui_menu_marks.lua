@@ -249,20 +249,7 @@ function M.new(context)
     -- money and nothing is carried out of a shop: what changes hands is which
     -- slots a pilot may fill, and rivets are what pays for it.
     --
-    -- The week's table, as three columns of different heights. The tallest is not
-    -- in the middle: a symmetric podium reads as a logo, and three bars that step
-    -- read as a ranking.
-    local function mark_standings(cx, cy, r, col)
-        local w = r * 0.42
-        for i, k in ipairs({0.5, 1.0, 0.72}) do
-            local h = r * 1.5 * k
-            local x = cx + (i - 2) * (w + r * 0.22) - w / 2
-            rect(x, cy + r * 0.85 - h, w, h,
-                 pal.a(col, i == 2 and 1 or 0.6))
-        end
-    end
-
-    -- What rivets buy, as the rivet itself: a ring with a bar under it, the same
+    -- So the mark is the rivet itself: a ring with a bar under it, the same
     -- mark that stands in front of every price on the page it leads to.
     local function mark_upgrades(cx, cy, r, col)
         rivet_mark(cx, cy, r * 0.86, col)
@@ -271,8 +258,7 @@ function M.new(context)
     local MARKS = {zones = mark_zones, pilot = mark_pilot, team = mark_team,
                    settings = mark_settings, controls = mark_controls,
                    about = mark_about, discord = mark_discord, leave = mark_leave,
-                   friends = mark_friends, standings = mark_standings,
-                   upgrades = mark_upgrades}
+                   friends = mark_friends, upgrades = mark_upgrades}
 
     local function draw_mark(kind, cx, cy, r, col, cls)
         if kind == "ship" then return mark_ship(cx, cy, r, col, cls) end

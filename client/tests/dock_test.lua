@@ -59,8 +59,7 @@ local ui = harness.install({sim = SIM})
 
 local RAIL = {}
 for i, e in ipairs({{"play", "zones"}, {"ship", "ship"},
-                    {"friends", "friends"}, {"standings", "standings"},
-                    {"settings", "settings"}}) do
+                    {"friends", "friends"}, {"settings", "settings"}}) do
     RAIL[i] = {label = e[1], icon = e[2], index = i}
 end
 

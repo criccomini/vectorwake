@@ -42,9 +42,6 @@ local account = {
     friend_note = "", friend_bad = false,
     found = {}, found_for = "", asked_for = nil,
 }
-function account.refresh_week(back)
-    account.asked_week = back or 0
-end
 function account.refresh_friends()
     account.asked_friends = account.asked_friends + 1
 end
@@ -162,41 +159,11 @@ local ship_at = top_index("ship")
 local settings_at = top_index("settings")
 local tabs = {}
 for _, r in ipairs(menu.view().rail) do tabs[#tabs + 1] = r.label end
-check("the tab row is play, ship, friends, standings, settings",
-      table.concat(tabs, "/")
-      == "play/ship/friends/standings/settings",
+check("the tab row is play, ship, friends, settings",
+      table.concat(tabs, "/") == "play/ship/friends/settings",
       table.concat(tabs, "/"))
 check("the rail carries the destinations", ship_at and settings_at,
       "ship " .. tostring(ship_at) .. ", settings " .. tostring(settings_at))
-
--- The week's filter is the same field the friends page takes a call sign in,
--- and it answers the same arrows: down off the tabs lands in it, down again is
--- the table, up comes back, up again is the tabs.
-do
-    local kept_stack, kept_sel = menu.stack, menu.sel
-    menu.open, menu.home = true, true
-    menu.stack = {"root"}
-    menu.sel = {root = top_index("standings")}
-    menu.filter_on = false
-    menu.step({down = true})
-    check("down off the tabs opens standings with the cursor in its filter",
-          menu.at() == "standings" and menu.filter_on == true,
-          menu.at() .. "/" .. tostring(menu.filter_on))
-    check("and the page says so", menu.view().week.filter_on == true,
-          tostring(menu.view().week.filter_on))
-    menu.step({down = true})
-    check("and down again goes to the table", menu.filter_on == false,
-          tostring(menu.filter_on))
-    menu.sel.standings = 1
-    menu.step({up = true})
-    check("up off the first row comes back to it", menu.filter_on == true,
-          tostring(menu.filter_on))
-    menu.step({up = true})
-    check("and up out of it goes back to the tabs",
-          menu.at() == "root" and menu.filter_on == false,
-          menu.at() .. "/" .. tostring(menu.filter_on))
-    menu.stack, menu.sel = kept_stack, kept_sel
-end
 
 -- Right is enter on a list of places and nothing on a list of games. An arrow
 -- is how a list is read, and reading the third game on it should not put you
@@ -2005,7 +1972,7 @@ do
     -- And the field is the page's, not the rail's preview of it. A letter
     -- typed at the top of the menu would land in a box nobody can see.
     menu.stack = {"root"}
-    menu.sel = {root = top_index("standings")}
+    menu.sel = {root = top_index("play")}
     check("nothing types into a page you are only looking at",
           menu.type_add("x") == false, menu.add_name)
 
@@ -2792,134 +2759,6 @@ do
     _G.sim = nil
 end
 
--- --- the week's table is read four ways ------------------------------------
---
--- One reply, and a page that orders it, narrows it, and asks for another week.
--- All four belong to the page: the fleet sends a week and has no opinion about
--- how somebody wants to look at it.
-do
-    account.week = {
-        {name = "Sable", kills = 14, deaths = 6, banked = 210, run = 42,
-         rating = 1310, swing = 38, seconds = 720},
-        {name = "Ozone", kills = 9, deaths = 9, banked = 130, run = 12,
-         rating = 1204, swing = -4, seconds = 900},
-        {name = "Kestrel", kills = 2, deaths = 11, banked = 30, run = 4,
-         rating = 1118, swing = -22, seconds = 640},
-    }
-    account.week_since = "Aug 17"
-    account.asked_week = 0
-    menu.home = true
-    menu.stack = {"root", "standings"}
-    menu.sel = {}
-    menu.sort, menu.sort_up, menu.filter, menu.week_back = "kills", false, "", 0
-
-    local function names()
-        local out = {}
-        for _, r in ipairs(menu.view().rows) do out[#out + 1] = r.label end
-        return table.concat(out, "/")
-    end
-    check("the table opens ordered by kills", names() == "Sable/Ozone/Kestrel",
-          names())
-    check("and carries what a week came to",
-          menu.view().rows[1].banked == 210 and menu.view().rows[1].run == 42,
-          tostring(menu.view().rows[1].banked))
-    -- Two rating numbers, and they are not the same fact: what a pilot is
-    -- rated at, and what this week did to it.
-    check("with a rating and the week's swing kept apart",
-          menu.view().rows[1].rating == 1310
-          and menu.view().rows[1].swing == 38,
-          tostring(menu.view().rows[1].rating))
-    -- The ratio the old card worked out, worked out here instead, where the
-    -- table can order on it.
-    check("and a ratio the column can sort by",
-          math.abs(menu.view().rows[1].kd - 14 / 6) < 1e-9,
-          tostring(menu.view().rows[1].kd))
-
-    menu.click_sort("kd")
-    check("the ratio orders the table",
-          names() == "Sable/Ozone/Kestrel", names())
-    menu.click_sort("rating")
-    check("and so does the rating itself",
-          names() == "Sable/Ozone/Kestrel", names())
-    menu.sort, menu.sort_up = "kills", false
-
-    menu.click_sort("deaths")
-    check("a column head orders by it", names() == "Kestrel/Ozone/Sable",
-          names())
-    menu.click_sort("deaths")
-    check("and the same one again turns it over",
-          names() == "Sable/Ozone/Kestrel", names())
-    menu.click_sort("pilot")
-    check("a name column sorts as names", names() == "Kestrel/Ozone/Sable",
-          names())
-    menu.sort, menu.sort_up = "kills", false
-
-    -- Typing narrows it, and a rank stays the rank it had in the week: a
-    -- pilot who is third does not become first because two rows were hidden.
-    for ch in string.gmatch("kes", ".") do menu.type_filter(ch) end
-    check("typing narrows the table", names() == "Kestrel", names())
-    check("and a rank is a place in the week, not in the filter",
-          menu.view().rows[1].rank == 3, tostring(menu.view().rows[1].rank))
-    menu.rub_filter()
-    menu.rub_filter()
-    menu.rub_filter()
-    check("and backspace widens it again", names() == "Sable/Ozone/Kestrel",
-          names())
-
-    for ch in string.gmatch("zzz", ".") do menu.type_filter(ch) end
-    local card = menu.view().empty
-    check("a filter matching nobody is not an empty week",
-          card ~= nil and string.find(card.head, "name", 1, true),
-          card and card.head or "no card")
-    menu.filter = ""
-
-    -- And the week itself steps back, which is a fresh request rather than a
-    -- different reading of the one in hand.
-    menu.step_week(1)
-    check("a week back is asked for", menu.week_back == 1
-          and account.asked_week == 1, tostring(account.asked_week))
-    check("and there is no forward from the week that is running",
-          select(2, menu.step_week(-1)) == true and menu.week_back == 0
-          and select(2, menu.step_week(-1)) == false,
-          tostring(menu.week_back))
-    -- The box the letters land in. Typing lights it without a click, a press
-    -- lights it on its own, and a press anywhere else lets it go.
-    menu.filter_on = false
-    menu.type_filter("k")
-    check("typing lights the box", menu.filter_on == true,
-          tostring(menu.filter_on))
-    menu.wipe_filter()
-    check("and the mark on its end empties it", menu.filter == "",
-          "'" .. tostring(menu.filter) .. "'")
-    menu.filter_on = false
-    menu.click_filter()
-    check("pressing it puts a caret in it", menu.filter_on == true,
-          tostring(menu.filter_on))
-    check("and letting go says so once",
-          menu.blur_filter() == true and menu.blur_filter() == false,
-          tostring(menu.filter_on))
-
-    -- On glass there are no keys, so the press raises the card instead: a
-    -- card's line is a real input element on the web, which is the only thing
-    -- that raises a phone's keyboard.
-    menu.touching = true
-    menu.ask = nil
-    menu.click_filter()
-    check("a thumb gets a card it can type into",
-          menu.ask ~= nil and menu.ask.fields ~= nil,
-          menu.ask and menu.ask.head or "no card")
-    if menu.ask then menu.ask.fields[1].value = "ozo" end
-    menu.click_answer(1)
-    check("and what it answers is the filter",
-          menu.filter == "ozo" and names() == "Ozone",
-          "'" .. tostring(menu.filter) .. "' " .. names())
-    menu.touching = false
-    menu.filter = ""
-
-    account.week = nil
-    account.week_since = ""
-end
-
 -- --- a tab with nothing under it yet does not take the cursor --------------
 --
 -- The catalog and the games list arrive over the wire. Until they do, those
@@ -2938,7 +2777,6 @@ do
     menu.stack = {"root"}
     menu.sel = {}
     menu.corner_sel = nil
-    menu.filter_on = false
     menu.add_on = false
 
     local kept_rows = account.rows
@@ -2998,77 +2836,6 @@ do
     menu.sel = {}
 end
 
--- --- and across the week's table is time -----------------------------------
---
--- Down the page is the ladder; there is nothing to the side of a pilot's row.
--- So left and right are the pair of arrows already drawn over the table, and
--- the week is walked from wherever the cursor is standing rather than only by
--- pointing at them.
-
-do
-    menu.home = true
-    menu.stack = {"root", "standings"}
-    menu.sel = {}
-    menu.filter = ""
-    menu.filter_on = false
-    menu.week_back = 0
-    account.week = {
-        {name = "Ozone", kills = 9, deaths = 2, seconds = 600},
-        {name = "Quarry", kills = 4, deaths = 5, seconds = 300},
-    }
-    account.week_since = "Aug 17"
-
-    local asked = nil
-    local kept_refresh = account.refresh_week
-    account.refresh_week = function(back) asked = back end
-
-    local _, moved = menu.step({left = true})
-    check("left on a row goes back a week", menu.week_back == 1,
-          tostring(menu.week_back))
-    check("and says so, so the menu ticks", moved == true, tostring(moved))
-    check("and the table is asked for that week", asked == 1, tostring(asked))
-    check("and the cursor has not left the table", menu.at() == "standings",
-          table.concat(menu.stack, "/"))
-
-    menu.step({right = true})
-    check("right comes forward again", menu.week_back == 0,
-          tostring(menu.week_back))
-
-    asked = nil
-    local _, again = menu.step({right = true})
-    check("and there is no forward from the week that is running",
-          menu.week_back == 0 and again == false,
-          menu.week_back .. " " .. tostring(again))
-    check("so nothing is asked for", asked == nil, tostring(asked))
-
-    -- The way back up is up, which is what took over from left: out of the
-    -- first row into the box, and out of the box to the tabs.
-    menu.sel.standings = 1
-    menu.step({up = true})
-    check("up out of the first row lights the filter box",
-          menu.filter_on == true, tostring(menu.filter_on))
-    menu.step({up = true})
-    check("and up out of the box is the way back to the tabs",
-          menu.at() == "root", table.concat(menu.stack, "/"))
-
-    -- In the box, left is still the way out of the box rather than a week.
-    menu.stack = {"root", "standings"}
-    menu.filter_on = true
-    menu.week_back = 0
-    menu.step({left = true})
-    check("left in the box leaves the box rather than the week",
-          menu.filter_on == false and menu.week_back == 0,
-          tostring(menu.filter_on) .. " " .. tostring(menu.week_back))
-
-    account.refresh_week = kept_refresh
-    account.week = nil
-    account.week_since = ""
-    menu.week_back = 0
-    menu.filter_on = false
-    menu.stack = {"root"}
-    menu.sel = {}
-end
-
 -- --- the menu is a panel over the stands ----------------------------------
 --
 -- The front end is a room now: opening the client seats you in the stands of
@@ -3100,7 +2867,7 @@ do
         return menu.view().closable == true
     end)())
 
-    -- The tab set follows the cockpit, not the zone. Five stops with no hull,
+    -- The tab set follows the cockpit, not the zone. Four stops with no hull,
     -- wherever you are standing; the short row only once you are flying one.
     local function labels()
         local out = {}
@@ -3111,7 +2878,7 @@ do
     menu.home, menu.scenery, menu.watching = true, true, false
     menu.open, menu.stack, menu.sel = true, {"root"}, {}
     check("the stands carry the whole row",
-          labels() == "play ship friends standings settings",
+          labels() == "play ship friends settings",
           labels())
 
     menu.home, menu.watching = false, false
@@ -3120,12 +2887,12 @@ do
           labels())
 
     -- A pilot the room benched is in the stands too: same empty cockpit, same
-    -- time to read, so the same five stops. What they keep that the landing
+    -- time to read, so the same four stops. What they keep that the landing
     -- does not is `leave`, because they are in a zone there is something to
     -- leave.
     menu.home, menu.watching = false, true
     check("a benched pilot gets the whole row back",
-          labels() == "play ship friends standings settings leave",
+          labels() == "play ship friends settings leave",
           labels())
 
     menu.home, menu.scenery, menu.watching = kept.home, kept.scenery,
