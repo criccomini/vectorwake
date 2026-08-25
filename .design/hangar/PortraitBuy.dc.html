@@ -1,0 +1,45 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600&amp;family=Noto+Sans+Mono:wght@400;500;700&amp;display=swap">
+  <style>
+
+:root{
+  --ink:#dfe9f5; --dim:#6c7a90; --friend:#4fd6ff; --gold:#ffd166;
+  --mono:"DejaVu Sans Mono","Noto Sans Mono",ui-monospace,monospace;
+  --menu:"Chakra Petch","Segoe UI",system-ui,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:#05070c;color:var(--ink);font-family:var(--menu)}
+a{color:var(--friend)}a:hover{color:#8ee6ff}
+.lbl{font-family:var(--mono);font-size:9px;text-transform:uppercase;
+  letter-spacing:.13em;color:var(--dim)}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.hud{font-family:var(--mono);text-transform:uppercase;letter-spacing:.06em}
+.row{display:flex;align-items:center}
+.col{display:flex;flex-direction:column}
+.key{display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  border:1px solid rgba(63,88,120,.75);background:rgba(10,15,24,.6);
+  font-family:var(--mono);text-transform:uppercase;letter-spacing:.06em;
+  color:#9fb6d4}
+.wash{background:linear-gradient(90deg,rgba(79,214,255,.14),
+  rgba(79,214,255,0) 85%)}
+
+  .screen{position:relative;width:390px;height:844px;overflow:hidden;
+    background-color:#05070c;background-image:radial-gradient(620px 420px at 280px 253px,rgba(39,197,237,.05),transparent 70%),radial-gradient(520px 380px at 78px 658px,rgba(255,157,34,.04),transparent 70%),radial-gradient(circle 0.9px at 254px 272px,#2a3a58 0 0.9px,transparent 0.9px),radial-gradient(circle 0.9px at 186px 652px,#2a3a58 0 0.9px,transparent 0.9px),radial-gradient(circle 0.9px at 124px 709px,#2a3a58 0 0.9px,transparent 0.9px),radial-gradient(circle 0.9px at 242px 785px,#2a3a58 0 0.9px,transparent 0.9px),radial-gradient(circle 0.9px at 168px 87px,#2a3a58 0 0.9px,transparent 0.9px),radial-gradient(circle 0.9px at 275px 324px,#2a3a58 0 0.9px,transparent 0.9px),radial-gradient(circle 0.9px at 114px 692px,#2a3a58 0 0.9px,transparent 0.9px),radial-gradient(circle 0.9px at 285px 87px,#2a3a58 0 0.9px,transparent 0.9px),radial-gradient(circle 0.9px at 78px 355px,#2a3a58 0 0.9px,transparent 0.9px),radial-gradient(circle 0.9px at 50px 355px,#2a3a58 0 0.9px,transparent 0.9px),radial-gradient(circle 0.9px at 163px 227px,#2a3a58 0 0.9px,transparent 0.9px),radial-gradient(circle 0.9px at 96px 70px,#2a3a58 0 0.9px,transparent 0.9px),radial-gradient(circle 1.0px at 168px 618px,#4a6089 0 1.0px,transparent 1.0px),radial-gradient(circle 1.0px at 311px 439px,#4a6089 0 1.0px,transparent 1.0px),radial-gradient(circle 1.0px at 325px 91px,#4a6089 0 1.0px,transparent 1.0px),radial-gradient(circle 1.0px at 32px 709px,#4a6089 0 1.0px,transparent 1.0px),radial-gradient(circle 1.0px at 309px 844px,#4a6089 0 1.0px,transparent 1.0px),radial-gradient(circle 1.0px at 171px 812px,#4a6089 0 1.0px,transparent 1.0px),radial-gradient(circle 1.0px at 353px 658px,#4a6089 0 1.0px,transparent 1.0px),radial-gradient(circle 1.0px at 220px 5px,#4a6089 0 1.0px,transparent 1.0px),radial-gradient(circle 1.3px at 116px 345px,#93a9c8 0 1.3px,transparent 1.3px),radial-gradient(circle 1.3px at 136px 817px,#93a9c8 0 1.3px,transparent 1.3px),radial-gradient(circle 1.3px at 222px 716px,#93a9c8 0 1.3px,transparent 1.3px),radial-gradient(circle 1.3px at 54px 205px,#93a9c8 0 1.3px,transparent 1.3px)}
+  </style>
+</helmet>
+
+<div class="screen">
+<div style="position:absolute;inset:0;background:rgba(3,5,10,.86)"></div><div style="position:absolute;left:0;right:0;top:0;bottom:78px;padding:0 14px;overflow:hidden"><div class="row" style="height:48px;gap:8px;border-bottom:1px solid rgba(63,88,120,.45);margin:0 -14px;padding:0 14px"><svg width="9" height="9" viewBox="0 0 10 14" style="flex:none"><path d="M8 1.5 L2.5 7 L8 12.5 Z" fill="rgba(108,122,144,.9)"/></svg><span class="lbl">ship</span></div><div class="lbl" style="margin:18px 0 6px">bomb add-on</div><div style="font-size:24px;margin-bottom:14px">shrapnel</div><div style="font-size:12.5px;line-height:18px;color:rgba(223,233,245,.85)">the round&#39;s ending is itself an attack: it splits into fragments of your own gun. higher rungs throw more.</div><div class="row" style="margin:20px 0 6px"><svg width="53" height="16" viewBox="0 0 53 16" style="flex:none"><circle cx="6" cy="7" r="5.5" fill="#ff5ea8"/><circle cx="23" cy="7" r="5.0" fill="none" stroke="#6c7a90" stroke-width="1" opacity=".5"/><circle cx="40" cy="7" r="5.0" fill="none" stroke="#6c7a90" stroke-width="1" opacity=".5"/></svg></div><div class="lbl" style="margin-bottom:4px">1 dealt to everybody &#183; 2 to climb</div><div class="row" style="gap:8px;margin-top:22px"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" style="flex:none"><path d="M2.3 2.6 H13.7 M8 2.6 V14 M4.3 7.7 H11.7 M4.3 10.5 H11.7" stroke="#ffd166" stroke-width="1.5" stroke-linecap="square"/></svg><span class="num" style="font-size:15px;color:#ffd166">20</span><span class="lbl">buys the next rung</span><div style="flex:1"></div><span class="lbl">wallet</span><svg width="11" height="11" viewBox="0 0 16 16" fill="none" style="flex:none"><path d="M2.3 2.6 H13.7 M8 2.6 V14 M4.3 7.7 H11.7 M4.3 10.5 H11.7" stroke="#ffd166" stroke-width="1.5" stroke-linecap="square"/></svg><span class="num" style="font-size:12px;color:#ffd166">130</span></div><div class="key" style="width:100%;height:44px;font-size:13px;color:#dfe9f5;border-color:rgba(255,209,102,.9);background:rgba(255,209,102,.10);margin-top:18px">BUY</div><div class="lbl" style="margin-top:18px;line-height:15px">a swipe right, or the chevron, puts the ship page back</div></div><div style="position:absolute;left:0;right:0;bottom:0;height:78px;border-top:1px solid rgba(63,88,120,.6);display:flex"><div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;height:100%;padding-bottom:14px;"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#6c7a90" stroke-width="1.3" style="flex:none"><path d="M4.5 2.5 L13 8 L4.5 13.5 Z"/></svg><span style="font-size:9px;color:var(--dim)">play</span></div><div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;height:100%;padding-bottom:14px;background:linear-gradient(0deg,rgba(79,214,255,.14),rgba(79,214,255,0) 80%);"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#4fd6ff" stroke-width="1.3" style="flex:none"><g transform="translate(8,8.6) scale(.5)"><path d="M0,-13 L15,9 L7,12 L0,8 L-7,12 L-15,9 Z"/></g></svg><span style="font-size:9px;color:var(--ink)">ship</span></div><div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;height:100%;padding-bottom:14px;"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#6c7a90" stroke-width="1.3" style="flex:none"><path d="M2.6 9.8 A5.5 5.5 0 0 1 13.4 9.8"/><path d="M1.6 11.6 H14.4"/></svg><span style="font-size:9px;color:var(--dim)">friends</span></div><div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;height:100%;padding-bottom:14px;"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#6c7a90" stroke-width="1.3" style="flex:none"><path d="M3 13.5 V8.5 M8 13.5 V2.5 M13 13.5 V6"/></svg><span style="font-size:9px;color:var(--dim)">standings</span></div><div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;height:100%;padding-bottom:14px;"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#6c7a90" stroke-width="1.3" style="flex:none"><path d="M2 4.5 H14 M2 8 H14 M2 11.5 H14"/><circle cx="10.5" cy="4.5" r="1.8" fill="#0a0f18"/><circle cx="5.5" cy="8" r="1.8" fill="#0a0f18"/><circle cx="9.5" cy="11.5" r="1.8" fill="#0a0f18"/></svg><span style="font-size:9px;color:var(--dim)">settings</span></div></div>
+</div>
+</x-dc>
+
+</body>
+</html>

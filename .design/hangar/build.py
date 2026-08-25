@@ -585,21 +585,35 @@ def band2():
 
 # The drawer without its head, and with the save key the edited kit earns:
 # full width over the stops, gone the moment the kit matches its name again.
-def drawer2(page, save=False, lit="ship"):
-    bottom = 64 + (54 if save else 0)
+#
+# `portrait` is the phone held upright, where the drawer is the window: the
+# right-edge rule goes, because a rule against nothing marks nothing, and
+# the foot deepens so the stop labels clear the home indicator. Nothing else
+# changes; the menu is one drawing at 390 wherever it stands.
+def drawer2(page, save=False, lit="ship", portrait=False):
+    foot = 78 if portrait else 64
+    bottom = foot + (54 if save else 0)
     savekey = ""
     if save:
         savekey = (f'<div class="key" style="position:absolute;left:14px;'
-                   f'right:14px;bottom:74px;height:40px;font-size:12px;'
+                   f'right:14px;bottom:{foot + 10}px;height:40px;'
+                   f'font-size:12px;'
                    f'color:{INK};border-color:rgba(79,214,255,.85);'
                    f'background:rgba(79,214,255,.10)">SAVE</div>')
+    stops = stops_bar(TABS2, lit)
+    if portrait:
+        stops = stops.replace('height:64px', 'height:78px').replace(
+            'justify-content:center;gap:4px;height:100%',
+            'justify-content:center;gap:4px;height:100%;'
+            'padding-bottom:14px')
+    edge = ("" if portrait else
+            f'<div style="position:absolute;right:0;top:0;bottom:0;'
+            f'width:1px;background:{RULE}"></div>')
     return (f'<div style="position:absolute;inset:0;'
             f'background:rgba(3,5,10,.86)"></div>'
             f'<div style="position:absolute;left:0;right:0;top:0;'
             f'bottom:{bottom}px;padding:0 14px;overflow:hidden">{page}</div>'
-            + savekey + stops_bar(TABS2, lit)
-            + f'<div style="position:absolute;right:0;top:0;bottom:0;'
-              f'width:1px;background:{RULE}"></div>')
+            + savekey + stops + edge)
 
 
 def hangar2_page(hot=None):
@@ -614,6 +628,27 @@ def hangar2_page(hot=None):
 def hangar2_board():
     body = drawer2(hangar2_page(hot="shrapnel"), save=True)
     board("Main.dc.html", 390, 880, body, seed=41)
+
+
+# --- the same screens at the phone's own window ------------------------------
+#
+# 390 by 844, the drawer as the whole screen. What these two boards prove is
+# the fit: the merged page, save key and all, holds an upright phone with no
+# scroll on melee's slot set.
+
+
+def portrait_boards():
+    body = drawer2(hangar2_page(hot="shrapnel"), save=True, portrait=True)
+    board("PortraitShip.dc.html", 390, 844, body, seed=49)
+    page = detail_page(
+        "bomb add-on", "shrapnel",
+        circle_cells(BOMBC, 3, 1, 1, k=13, r=5.5, step=17),
+        "1 dealt to everybody &#183; 2 to climb",
+        TEACH_SHRAPNEL, price=20,
+        foot=('<div class="lbl" style="margin-top:18px;line-height:15px">'
+              'a swipe right, or the chevron, puts the ship page back</div>'))
+    board("PortraitBuy.dc.html", 390, 844, drawer2(page, portrait=True),
+          seed=50)
 
 
 # --- the reading, slid in from the right -------------------------------------
@@ -1070,6 +1105,7 @@ def current_board():
 
 
 hangar2_board()
+portrait_boards()
 buy2_board()
 owned_board()
 builds_board()

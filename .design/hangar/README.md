@@ -74,6 +74,12 @@ Picking a row loads it and slides back. Saving is not in the list: SAVE is
 a key at the foot of the ship screen, standing over the stops only while
 the kit differs from its name.
 
+**Portrait is the same drawing.** Two boards show the ship screen and the
+reading at the phone's own window, 390 by 844, where the drawer is the
+whole screen: the right-edge rule goes and the foot deepens so the stop
+labels clear the home indicator. The merged page holds an upright phone
+with no scroll on melee's slot set, save key included.
+
 **Points are a meter and a remainder.** The top row's other end shows a
 thin bar and the number that matters mid-edit: how many points are left.
 The word kit is gone. Pressing the meter slides in a points page that says
@@ -91,7 +97,7 @@ drawing mostly the same list.
 
 ## What is here
 
-`build.py` is the source. It writes the nine `.dc.html` artboards from
+`build.py` is the source. It writes the eleven `.dc.html` artboards from
 the same design system the earlier mocks lift from the client: hues from
 `client/arena/palette.lua`, panel grammar from `client/arena/ui.lua`, the
 lockup from `docs/banner.svg`. The account shown is real to the melee
