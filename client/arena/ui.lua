@@ -4888,18 +4888,21 @@ local function thumb(cx, cy, cls, col, scale, turn, detail)
     if h.canopy then trace(h.canopy, 1.0 * F.scale, pal.a(col, 0.55)) end
 end
 
--- What the page carries under its rows: the room the column is standing over,
--- or what the call sign on this page means.
+-- What the page carries under its rows: what the call sign on this page
+-- means, or what a setting the cursor is on changes.
 --
 -- It was a second column beside the list, on the argument that a list of two
 -- modes across a nine hundred point panel is a page with a hole in it. There
 -- is no nine hundred point panel now, and no second column: this follows the
 -- rows down the one column there is.
 --
+-- It carried the room's roster too, until the play page stopped wanting one:
+-- a second scoreboard on the page about leaving for somewhere else, and the
+-- room it described is on screen the moment the panel goes.
+--
 -- The rule down its left edge is drawn last and only as deep as the content
--- came to. Given the room it was handed, an "in this match" with four names
--- in it hung a rule to the foot of the panel and read as a section that had
--- failed to draw.
+-- came to. Given the room it was handed, a short section hung a rule to the
+-- foot of the panel and read as a section that had failed to draw.
 function pages.aside(a, x, y, w, h)
     if not a then return end
     local function edge(used)
@@ -4908,57 +4911,6 @@ function pages.aside(a, x, y, w, h)
               pal.a(pal.RADAR_TILE, 0.45), 18 * F.scale)
     end
     lbl(a.head or "", x, y + 16 * F.scale)
-    -- The match, where there is one. Read off the same roster the scoreboard
-    -- draws from rather than out of a message of its own, which is what the
-    -- ending does and for the same reason: the numbers are already here.
-    if a.match then
-        local sides, seen = {}, {}
-        for _, r in ipairs(rows) do
-            if not r.watch and r.team then
-                if not seen[r.team] then
-                    seen[r.team] = {}
-                    sides[#sides + 1] = r.team
-                end
-                local list = seen[r.team]
-                list[#list + 1] = r
-            end
-        end
-        table.sort(sides, function(p1, p2)
-            if (p1 == view_team) ~= (p2 == view_team) then
-                return p1 == view_team
-            end
-            return p1 < p2
-        end)
-        for _, list in pairs(seen) do
-            table.sort(list, function(p1, p2)
-                if p1.k ~= p2.k then return p1.k > p2.k end
-                return p1.d < p2.d
-            end)
-        end
-        local ly = y + 40 * F.scale
-        for _, team in ipairs(sides) do
-            local col = (team == view_team) and pal.FRIEND or pal.ENEMY
-            lbl(M.side_names and M.side_names[team] or "side", x, ly,
-                pal.a(col, 0.9))
-            local rx2 = x + w - 24 * F.scale
-            lbl("k  d  a", rx2, ly, pal.a(pal.DIM, 0.75), "right")
-            ly = ly + 8 * F.scale
-            hrule(x, ly, w - 24 * F.scale)
-            ly = ly + 16 * F.scale
-            for _, r in ipairs(seen[team]) do
-                txt(r.name, x, ly, 12.5 * F.scale,
-                    pal.a(r.self and pal.FRIEND or pal.INK, r.self and 1 or 0.8),
-                    nil, nil, true)
-                txt(r.k .. "  " .. r.d .. "  " .. r.a,
-                    x + w - 24 * F.scale, ly, 11 * F.scale,
-                    pal.a(pal.DIM, 0.95), "right")
-                ly = ly + 17 * F.scale
-            end
-            ly = ly + 12 * F.scale
-        end
-        edge(ly - y)
-        return
-    end
     txt(a.label or "", x, y + 44 * F.scale, 21 * F.scale,
         pal.a(pal.INK, 0.95), nil, MENU_FONT)
     lbl(a.sub or "", x, y + 64 * F.scale, pal.a(pal.DIM, 0.85))

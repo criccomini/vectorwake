@@ -2790,11 +2790,11 @@ exceptions above.
 
 **Decision:** the menu is drawn once, at 390 points wide, and stood against the
 left edge of the window. A head carries the wordmark and the call sign, the page
-sits under it, and a DEPLOY key sits over the six stops at its foot. A window
-narrower than 390 points gives the column everything it has, which is what a
-phone held upright already got. A window wider keeps the fight beside it: the
-wash covers the column and stops at its edge, and a press on the game beside it
-closes the menu the way escape does.
+sits under it, and the six stops sit at its foot. A window narrower than 390
+points gives the column everything it has, which is what a phone held upright
+already got. A window wider keeps the fight beside it: the wash covers the
+column and stops at its edge, and a press on the game beside it closes the menu
+the way escape does.
 
 Three consequences follow from the width rather than from taste. The picture of
 a keyboard on the controls page is deleted, because a board drawn across 362
@@ -2803,6 +2803,17 @@ at the end, which is what a phone always had. The reading pane beside the
 upgrades shelf is gone the same way, so a row opens the item as a page on every
 device rather than only on a phone. And the column that used to stand beside a
 list, carrying the room's roster, follows the rows down the one column there is.
+
+**Since it was built,** three things this decision described have changed, none
+of them touching the argument for docking. The column opens as a drawer: a
+hamburger key raises it, it slides in from the left over 160ms and back out the
+same way, a thumb can push it off, and the two instruments it comes to cover
+stand down for the overlap and come back after it. The way out moved into the
+square the key occupies, at the head's left, with the wordmark shifted right.
+And the play page lost the DEPLOY key described above along with the roster
+under its rows: a row is the way into a game, by a tap or by enter, so the key
+was one control for an act the page already had, and a roster there is a second
+scoreboard on the page about leaving for somewhere else.
 
 **Why:** the menu was two layouts. Below 620 points it was a tab bar under a
 thumb; above it, a row of words across the top with the page and sometimes a

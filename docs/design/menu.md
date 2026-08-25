@@ -2,17 +2,37 @@
 
 > **One column, docked to the left edge.** The menu is drawn once at 390 points
 > wide and stood against the left edge of whatever window it is in: a head with
-> the wordmark and the call sign, the page under it, a DEPLOY key over the six
-> stops at its foot. A phone held upright gives it the whole screen, which is
-> what that phone already got; anything wider keeps the fight beside it, so a
-> ship or a zone can be changed without leaving the stands. The two layouts this
-> file describes below, a tab bar under a thumb and a row of words across the
-> top, are one layout now. See [decision 63](../architecture/decisions.md) and
-> the mocks in `.design/menu-unify`. Three things went with the width: the
-> picture of a keyboard on the controls page, the reading pane beside the
-> upgrades shelf, and the second column that carried the room's roster beside a
-> list. The first two are pages you read a row at a time now; the third follows
-> the rows down the one column there is.
+> the wordmark and the call sign, the page under it, the six stops at its foot.
+> A phone held upright gives it the whole screen, which is what that phone
+> already got; anything wider keeps the fight beside it, so a ship or a zone can
+> be changed without leaving the stands. The two layouts this file describes
+> below, a tab bar under a thumb and a row of words across the top, are one
+> layout now. See [decision 63](../architecture/decisions.md) and the mocks in
+> `.design/menu-unify`. Three things went with the width: the picture of a
+> keyboard on the controls page, the reading pane beside the upgrades shelf, and
+> the second column that carried the room's roster beside a list. The first two
+> are pages you read a row at a time now. The roster went altogether: it was a
+> second scoreboard on the page that is about leaving for somewhere else, and
+> the room it described is on screen the moment the panel goes.
+
+> **It opens as a drawer.** The key that opens it is a hamburger, three bars in
+> a square box with the word MENU beside them on a desktop and the bars alone on
+> a phone in either orientation. The column slides in from the left over 160ms
+> and back out the same way, and a thumb can drag it off: a third of its width
+> is far enough to count as gone, anything less springs back rather than sitting
+> ajar. What the column comes to cover stands down while it is over them and
+> comes back when it leaves. That is the match clock band and the dial's corner,
+> asked as a real overlap rather than as "is a menu open", so a phone held
+> sideways loses the band and keeps the dial. The way out is an x in the square
+> the key occupies, at the same inset on the same line, with the wordmark moved
+> right to make the room: pressing the key and pressing the x are one control
+> seen from either side.
+
+> **The play page is the games and nothing else.** No heading over the only list
+> on it, no player and robot counts beside each name, no roster under the rows,
+> and no DEPLOY key at the foot. A row is the way in, by a tap or by enter, and
+> its lit field and its press run edge to edge of the panel rather than stopping
+> at the row's own measure.
 
 > **The landing is the game now.** Opening the client seats you in the stands
 > of a real melee room and draws the watcher's HUD; the front end is that
@@ -78,7 +98,8 @@ at what is next to a thing; on a chip that is another chip.
 
 ```
 vectorwake
-├ play        the zones a directory is running and how busy each one is
+├ play        the zones a directory is running, each with a sentence saying
+│             what its game is
 ├ ship        one hull on a carousel, and the thirty points you spend on it.
 │             Only slots this account owns: what it does not is the tab below
 ├ upgrades    every slot the game has, how far you own it, and what the next
@@ -258,12 +279,13 @@ opens on the tab row.
 
 ## The play tab
 
-The zones, under a heading, and on a phone the way out to Discord under a
-second one. They were three sections at one point, zones and friends and
-community, because run together in one column they read as one list where
-Discord is a game you could join and friends is a room with nobody in it.
+The zones, and nothing else. They were three sections at one point, zones and
+friends and community, because run together in one column they read as one list
+where Discord is a game you could join and friends is a room with nobody in it.
 Friends is a tab of its own now, and Discord is a corner button wherever there
-is a corner to put it in.
+is a corner to put it in. The heading that survived those two went as well:
+with one list left, a label reading "zones" over it was the interface naming
+what the reader could already see.
 
 Where Discord is drawn it is a button rather than a row, with its own mark on
 it and its name spelled the way Discord spells it. It is the one thing here
@@ -272,10 +294,11 @@ inside the game.
 
 `client/arena/directory.lua` asks a directory what is running. Opening the list
 asks at once, and it re-asks every three seconds for as long as the list is the
-thing on screen, so the counts move under a player reading them rather than
-sitting at whatever they were when the page loaded.
+thing on screen, so a zone that comes up or goes down while somebody is reading
+the page changes under them rather than sitting at whatever it was when the
+page loaded.
 
-It polls nowhere else. How busy a game is matters while somebody is deciding
+It polls nowhere else. What is running matters while somebody is deciding
 which one to join, and not at all while they are three levels away setting the
 volume or ten minutes into a fight. Stopping is also what makes the next look
 start with a fresh ask: without that, coming back to the list after a match
@@ -288,11 +311,16 @@ room, and joining takes that head. The address is never shown. The zone's name
 travels with the join, so arriving at an instance that has since changed game is
 a refusal rather than a surprise.
 
-Two columns: the name, and how busy it is. What the game actually is goes under
-the list, as a line about whichever row is selected. Both on the row was tried
-and does not fit: "everybody against everybody" beside "5 playing, 3 AI" is 45
-characters against the 40 a phone has room for, and of the two the count is what
-decides while the description is what explains.
+One column: the name, with the sentence saying what the game is set under it on
+the same row. It went three ways before that. Both on one line does not fit,
+because "everybody against everybody" beside "5 playing, 3 AI" is 45 characters
+against the 40 a phone has room for. The description then moved under the list,
+as a line about whichever row was selected, which is not reading three
+sentences: it is reading one at a time, a long way from the name it belongs to.
+What settled it was dropping the count. How many people and how many machines
+are in a room is a fact about the next thirty seconds rather than about which
+game to pick, and taking it out left the row wide enough for the sentence that
+explains.
 
 The game you played last is marked and the cursor opens on it, so coming back is
 one press. A zone nobody is running is still a row, because a player is better

@@ -25,11 +25,12 @@ stronger answer in the stands and the wrong one over a match, where a permanent
 strip of chrome forks the same behavior into two; it stays open as a later step,
 since that bar is the dock's own foot row promoted onto the glass.
 
-Two things the boards drew that the built column does not. The DEPLOY key is
-there only from the stands, because a key offering to join the fight you are
-already in means nothing. And the "watching" card is the room's real roster,
-which is what the menu already had beside a list on a wide window and now draws
-under the rows.
+Two things the boards drew that the built column does not have at all. The
+DEPLOY key went: the walk it saved ended on the games list, at a row that
+already joins on a tap or on enter, so it was one control for an act the page
+already had. The "watching" card went with it, because a roster under the rows
+is a second scoreboard on the page that is about leaving for somewhere else,
+and the room it describes is on screen the moment the panel goes.
 
 `build.py` is the source, in the manner of `../spectator-landing/build.py`,
 whose design system it borrows: hues from `client/arena/palette.lua`, panel
