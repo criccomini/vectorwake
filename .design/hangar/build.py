@@ -561,18 +561,49 @@ def points_meter():
             f'color:rgba(223,233,245,.9)">{LEFT2} left</span></div></div>')
 
 
-def build_selector2():
-    # The name is a value in the flair grammar, cyan between its arrows, and
-    # the press on the name itself opens the builds panel.
-    return (f'<div class="row" style="gap:9px">'
-            f'{tri(-1, "rgba(79,214,255,.55)")}'
-            f'<span style="font-size:15px;color:{FRIEND}">striker</span>'
+def x_key():
+    return ('<div class="key" style="width:26px;height:26px;flex:none">'
+            '<svg width="11" height="11" viewBox="0 0 12 12">'
+            '<path d="M1.5 1.5 L10.5 10.5 M10.5 1.5 L1.5 10.5" '
+            'stroke="#9fb6d4" stroke-width="1.4" '
+            'stroke-linecap="square"/></svg></div>')
+
+
+# The ship screen keeps no head: the row that was the logo and the account
+# is the profile and the points, with the drawer's own x at its left. The
+# name is a button, the one stroked box the interface presses, and the
+# press on it opens the builds list.
+def band2():
+    name_key = (f'<div class="key" style="height:26px;padding:0 13px;'
+                f'font-size:11px;color:{INK}">STRIKER</div>')
+    return (f'<div class="row" style="height:48px;gap:10px;'
+            f'border-bottom:1px solid rgba(63,88,120,.45);margin:0 -14px;'
+            f'padding:0 14px">{x_key()}{name_key}'
             f'<span class="lbl">edited</span>'
-            f'{tri(1, "rgba(79,214,255,.55)")}</div>')
+            f'<div style="flex:1"></div>{points_meter()}</div>')
+
+
+# The drawer without its head, and with the save key the edited kit earns:
+# full width over the stops, gone the moment the kit matches its name again.
+def drawer2(page, save=False, lit="ship"):
+    bottom = 64 + (54 if save else 0)
+    savekey = ""
+    if save:
+        savekey = (f'<div class="key" style="position:absolute;left:14px;'
+                   f'right:14px;bottom:74px;height:40px;font-size:12px;'
+                   f'color:{INK};border-color:rgba(79,214,255,.85);'
+                   f'background:rgba(79,214,255,.10)">SAVE</div>')
+    return (f'<div style="position:absolute;inset:0;'
+            f'background:rgba(3,5,10,.86)"></div>'
+            f'<div style="position:absolute;left:0;right:0;top:0;'
+            f'bottom:{bottom}px;padding:0 14px;overflow:hidden">{page}</div>'
+            + savekey + stops_bar(TABS2, lit)
+            + f'<div style="position:absolute;right:0;top:0;bottom:0;'
+              f'width:1px;background:{RULE}"></div>')
 
 
 def hangar2_page(hot=None):
-    return (band_row(build_selector2(), points_meter())
+    return (band2()
             + circle_group("flight", FLIGHT2)
             + circle_group("gun", GUN, hot_name=hot)
             + circle_group("bomb", BOMB, hot_name=hot)
@@ -581,19 +612,19 @@ def hangar2_page(hot=None):
 
 
 def hangar2_board():
-    body = drawer(hangar2_page(hot="shrapnel"), TABS2, "ship")
+    body = drawer2(hangar2_page(hot="shrapnel"), save=True)
     board("Main.dc.html", 390, 880, body, seed=41)
 
 
 # --- the reading, slid in from the right -------------------------------------
 
 
-def back_row():
-    return (f'<div class="row" style="height:40px;gap:8px;'
+def back_row(place="ship"):
+    return (f'<div class="row" style="height:48px;gap:8px;'
             f'border-bottom:1px solid rgba(63,88,120,.45);'
             f'margin:0 -14px;padding:0 14px">'
             + tri(-1, "rgba(108,122,144,.9)")
-            + '<span class="lbl">ship</span></div>')
+            + f'<span class="lbl">{place}</span></div>')
 
 
 def detail_page(kind, name, cells, caption, teach, price=None, foot=None):
@@ -630,7 +661,7 @@ def buy2_board():
         TEACH_SHRAPNEL, price=20,
         foot=('<div class="lbl" style="margin-top:18px;line-height:15px">'
               'a swipe right, or the chevron, puts the ship page back</div>'))
-    board("Buy.dc.html", 390, 880, drawer(page, TABS2, "ship"), seed=42)
+    board("Buy.dc.html", 390, 880, drawer2(page), seed=42)
 
 
 def owned_board():
@@ -642,10 +673,10 @@ def owned_board():
         foot=('<div class="lbl" style="margin-top:22px;line-height:15px">'
               'nothing to buy here: the arena deals every rung of this'
               '</div>'))
-    board("Owned.dc.html", 390, 880, drawer(page, TABS2, "ship"), seed=46)
+    board("Owned.dc.html", 390, 880, drawer2(page), seed=46)
 
 
-# --- the builds panel, behind the name ---------------------------------------
+# --- the builds list, behind the name ----------------------------------------
 
 
 def builds_board():
@@ -655,32 +686,55 @@ def builds_board():
                                    ("control", True, False),
                                    ("striker", False, True)):
         mark = ('<span class="lbl" style="margin-left:auto">starter</span>'
-                if starter else
-                ('<span class="lbl" style="margin-left:auto">edited</span>'
-                 if current else ''))
+                if starter else '')
         wash = ' wash' if current else ''
         col = FRIEND if current else INK
         rows.append(
             f'<div class="row{wash}" style="height:30px;margin:0 -14px;'
             f'padding:0 14px"><span style="font-size:13px;color:{col}">'
             f'{name}</span>{mark}</div>')
-    keys = ('<div class="row" style="gap:8px;margin-top:14px">'
-            + ''.join(
-                f'<div class="key" style="flex:1;height:28px;font-size:9px'
-                + (';color:#dfe9f5;border-color:rgba(79,214,255,.7);'
-                   'background:rgba(79,214,255,.08)' if k == "save" else '')
-                + f'">{k.upper()}</div>'
-                for k in ("save", "rename", "delete"))
-            + '</div>')
-    newkey = ('<div class="key" style="width:100%;height:32px;font-size:10px;'
-              'margin-top:10px">SAVE AS NEW BUILD</div>')
-    note = ('<div class="lbl" style="margin-top:16px;line-height:15px">'
-            'the three starters are not yours to change: save on an edited '
-            'one makes a copy under a new name</div>')
+    keys = ('<div class="row" style="gap:10px;margin-top:16px">'
+            '<div class="key" style="flex:1;height:32px;font-size:10px;'
+            'color:#dfe9f5;border-color:rgba(79,214,255,.7);'
+            'background:rgba(79,214,255,.08)">NEW</div>'
+            '<div class="key" style="flex:1;height:32px;font-size:10px">'
+            'DELETE</div></div>')
     page = (back_row()
             + '<div class="lbl" style="margin:18px 0 8px">builds</div>'
-            + ''.join(rows) + keys + newkey + note)
-    board("Builds.dc.html", 390, 880, drawer(page, TABS2, "ship"), seed=45)
+            + ''.join(rows) + keys)
+    board("Builds.dc.html", 390, 880, drawer2(page), seed=45)
+
+
+# --- the new screen, behind NEW ----------------------------------------------
+
+
+def new_board():
+    field = (f'<div class="row" style="height:38px;border:1px solid '
+             f'rgba(63,88,120,.75);background:rgba(10,15,24,.6);'
+             f'padding:0 12px;margin:20px 0 6px">'
+             f'<span style="font-family:var(--mono);font-size:13.5px">'
+             f'striker 2</span>'
+             f'<div style="width:1.5px;height:17px;background:{FRIEND};'
+             f'margin-left:3px"></div></div>')
+    create = (f'<div class="key" style="width:100%;height:40px;'
+              f'font-size:12px;color:{INK};'
+              f'border-color:rgba(79,214,255,.85);'
+              f'background:rgba(79,214,255,.10);margin-top:20px">CREATE'
+              f'</div>')
+    page = (back_row("builds")
+            + '<div class="lbl" style="margin:18px 0 6px">builds</div>'
+            + '<div style="font-size:24px;margin-bottom:14px">new build'
+              '</div>'
+            + '<div style="font-size:12.5px;line-height:18px;'
+              'color:rgba(223,233,245,.85)">keeps the thirty points in '
+              'hand under a name of yours.</div>'
+            + field
+            + '<div class="lbl">a name for this build</div>'
+            + create
+            + '<div class="lbl" style="margin-top:18px;line-height:15px">'
+              'create slides back to the list with the new build lit'
+              '</div>')
+    board("NewBuild.dc.html", 390, 880, drawer2(page), seed=48)
 
 
 # --- the points panel, behind the meter --------------------------------------
@@ -718,7 +772,7 @@ def points_board():
             + legend("ring", FRIEND, "owned, waiting for a point")
             + legend("dim", "", "not yours yet: its price sits on the row")
             )
-    board("Points.dc.html", 390, 880, drawer(page, TABS2, "ship"), seed=47)
+    board("Points.dc.html", 390, 880, drawer2(page), seed=47)
 
 
 # --- board: fit and buy ------------------------------------------------------
@@ -1019,6 +1073,7 @@ hangar2_board()
 buy2_board()
 owned_board()
 builds_board()
+new_board()
 points_board()
 current_board()
 lenses_board()

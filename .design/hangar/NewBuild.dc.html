@@ -1,0 +1,45 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600&amp;family=Noto+Sans+Mono:wght@400;500;700&amp;display=swap">
+  <style>
+
+:root{
+  --ink:#dfe9f5; --dim:#6c7a90; --friend:#4fd6ff; --gold:#ffd166;
+  --mono:"DejaVu Sans Mono","Noto Sans Mono",ui-monospace,monospace;
+  --menu:"Chakra Petch","Segoe UI",system-ui,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:#05070c;color:var(--ink);font-family:var(--menu)}
+a{color:var(--friend)}a:hover{color:#8ee6ff}
+.lbl{font-family:var(--mono);font-size:9px;text-transform:uppercase;
+  letter-spacing:.13em;color:var(--dim)}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.hud{font-family:var(--mono);text-transform:uppercase;letter-spacing:.06em}
+.row{display:flex;align-items:center}
+.col{display:flex;flex-direction:column}
+.key{display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  border:1px solid rgba(63,88,120,.75);background:rgba(10,15,24,.6);
+  font-family:var(--mono);text-transform:uppercase;letter-spacing:.06em;
+  color:#9fb6d4}
+.wash{background:linear-gradient(90deg,rgba(79,214,255,.14),
+  rgba(79,214,255,0) 85%)}
+
+  .screen{position:relative;width:390px;height:880px;overflow:hidden;
+    background-color:#05070c;background-image:radial-gradient(620px 420px at 280px 264px,rgba(39,197,237,.05),transparent 70%),radial-gradient(520px 380px at 78px 686px,rgba(255,157,34,.04),transparent 70%),radial-gradient(circle 0.9px at 280px 323px,#2a3a58 0 0.9px,transparent 0.9px),radial-gradient(circle 0.9px at 67px 570px,#2a3a58 0 0.9px,transparent 0.9px),radial-gradient(circle 0.9px at 364px 547px,#2a3a58 0 0.9px,transparent 0.9px),radial-gradient(circle 0.9px at 154px 812px,#2a3a58 0 0.9px,transparent 0.9px),radial-gradient(circle 0.9px at 258px 197px,#2a3a58 0 0.9px,transparent 0.9px),radial-gradient(circle 0.9px at 365px 780px,#2a3a58 0 0.9px,transparent 0.9px),radial-gradient(circle 0.9px at 223px 169px,#2a3a58 0 0.9px,transparent 0.9px),radial-gradient(circle 0.9px at 79px 826px,#2a3a58 0 0.9px,transparent 0.9px),radial-gradient(circle 0.9px at 336px 110px,#2a3a58 0 0.9px,transparent 0.9px),radial-gradient(circle 0.9px at 252px 664px,#2a3a58 0 0.9px,transparent 0.9px),radial-gradient(circle 0.9px at 112px 223px,#2a3a58 0 0.9px,transparent 0.9px),radial-gradient(circle 0.9px at 390px 523px,#2a3a58 0 0.9px,transparent 0.9px),radial-gradient(circle 0.9px at 284px 870px,#2a3a58 0 0.9px,transparent 0.9px),radial-gradient(circle 1.0px at 260px 158px,#4a6089 0 1.0px,transparent 1.0px),radial-gradient(circle 1.0px at 241px 222px,#4a6089 0 1.0px,transparent 1.0px),radial-gradient(circle 1.0px at 14px 75px,#4a6089 0 1.0px,transparent 1.0px),radial-gradient(circle 1.0px at 216px 65px,#4a6089 0 1.0px,transparent 1.0px),radial-gradient(circle 1.0px at 67px 510px,#4a6089 0 1.0px,transparent 1.0px),radial-gradient(circle 1.0px at 344px 166px,#4a6089 0 1.0px,transparent 1.0px),radial-gradient(circle 1.0px at 65px 57px,#4a6089 0 1.0px,transparent 1.0px),radial-gradient(circle 1.0px at 357px 561px,#4a6089 0 1.0px,transparent 1.0px),radial-gradient(circle 1.3px at 149px 347px,#93a9c8 0 1.3px,transparent 1.3px),radial-gradient(circle 1.3px at 357px 345px,#93a9c8 0 1.3px,transparent 1.3px),radial-gradient(circle 1.3px at 48px 861px,#93a9c8 0 1.3px,transparent 1.3px),radial-gradient(circle 1.3px at 122px 278px,#93a9c8 0 1.3px,transparent 1.3px)}
+  </style>
+</helmet>
+
+<div class="screen">
+<div style="position:absolute;inset:0;background:rgba(3,5,10,.86)"></div><div style="position:absolute;left:0;right:0;top:0;bottom:64px;padding:0 14px;overflow:hidden"><div class="row" style="height:48px;gap:8px;border-bottom:1px solid rgba(63,88,120,.45);margin:0 -14px;padding:0 14px"><svg width="9" height="9" viewBox="0 0 10 14" style="flex:none"><path d="M8 1.5 L2.5 7 L8 12.5 Z" fill="rgba(108,122,144,.9)"/></svg><span class="lbl">builds</span></div><div class="lbl" style="margin:18px 0 6px">builds</div><div style="font-size:24px;margin-bottom:14px">new build</div><div style="font-size:12.5px;line-height:18px;color:rgba(223,233,245,.85)">keeps the thirty points in hand under a name of yours.</div><div class="row" style="height:38px;border:1px solid rgba(63,88,120,.75);background:rgba(10,15,24,.6);padding:0 12px;margin:20px 0 6px"><span style="font-family:var(--mono);font-size:13.5px">striker 2</span><div style="width:1.5px;height:17px;background:#4fd6ff;margin-left:3px"></div></div><div class="lbl">a name for this build</div><div class="key" style="width:100%;height:40px;font-size:12px;color:#dfe9f5;border-color:rgba(79,214,255,.85);background:rgba(79,214,255,.10);margin-top:20px">CREATE</div><div class="lbl" style="margin-top:18px;line-height:15px">create slides back to the list with the new build lit</div></div><div style="position:absolute;left:0;right:0;bottom:0;height:64px;border-top:1px solid rgba(63,88,120,.6);display:flex"><div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;height:100%;"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#6c7a90" stroke-width="1.3" style="flex:none"><path d="M4.5 2.5 L13 8 L4.5 13.5 Z"/></svg><span style="font-size:9px;color:var(--dim)">play</span></div><div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;height:100%;background:linear-gradient(0deg,rgba(79,214,255,.14),rgba(79,214,255,0) 80%);"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#4fd6ff" stroke-width="1.3" style="flex:none"><g transform="translate(8,8.6) scale(.5)"><path d="M0,-13 L15,9 L7,12 L0,8 L-7,12 L-15,9 Z"/></g></svg><span style="font-size:9px;color:var(--ink)">ship</span></div><div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;height:100%;"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#6c7a90" stroke-width="1.3" style="flex:none"><path d="M2.6 9.8 A5.5 5.5 0 0 1 13.4 9.8"/><path d="M1.6 11.6 H14.4"/></svg><span style="font-size:9px;color:var(--dim)">friends</span></div><div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;height:100%;"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#6c7a90" stroke-width="1.3" style="flex:none"><path d="M3 13.5 V8.5 M8 13.5 V2.5 M13 13.5 V6"/></svg><span style="font-size:9px;color:var(--dim)">standings</span></div><div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;height:100%;"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#6c7a90" stroke-width="1.3" style="flex:none"><path d="M2 4.5 H14 M2 8 H14 M2 11.5 H14"/><circle cx="10.5" cy="4.5" r="1.8" fill="#0a0f18"/><circle cx="5.5" cy="8" r="1.8" fill="#0a0f18"/><circle cx="9.5" cy="11.5" r="1.8" fill="#0a0f18"/></svg><span style="font-size:9px;color:var(--dim)">settings</span></div></div><div style="position:absolute;right:0;top:0;bottom:0;width:1px;background:rgba(63,88,120,.6)"></div>
+</div>
+</x-dc>
+
+</body>
+</html>

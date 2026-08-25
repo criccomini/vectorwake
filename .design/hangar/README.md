@@ -40,6 +40,11 @@ retrofitted into a one-column drawer. One row grammar deletes most of it.
 
 ## The hangar, as revised
 
+**No head.** The ship screen spends nothing on the logo and the account:
+its top row is the drawer's x, the build's name, and the points meter, and
+the ladders start directly under it. The screens that slide in open with
+their back row at the same height.
+
 **Circles all the way down.** One mark with three states: a solid circle
 is a point equipped, a ring in the slot's color is a step owned and not
 equipped, a dim grey ring is a rung the arena has that the account does
@@ -60,17 +65,18 @@ The wallet appearing only on the reading is what answers the objection
 that split the pages: spend on the main page always means points, and gold
 is always a price wearing the rivet mark.
 
-**Builds live behind the name.** The head's selector row is the library's
-whole footprint: arrows cycle the builds, the edited tag says the kit has
-drifted from its name, and pressing the name slides in the builds panel.
-That panel carries the list with the current build lit, save, rename and
-delete acting on the build the list stands on (dim on the three starters),
-and a save-as-new key for keeping the kit in hand under a fresh name.
-Save on an edited starter makes a copy, which the panel says in one line.
+**Builds live behind the name.** The name is a button, the one stroked box
+this interface presses, with the edited tag beside it when the kit has
+drifted. Its press slides in the builds list, which holds two keys and
+nothing else: NEW slides on to a naming screen, a field and CREATE, and
+DELETE takes the build the list stands on, dim on the three starters.
+Picking a row loads it and slides back. Saving is not in the list: SAVE is
+a key at the foot of the ship screen, standing over the stops only while
+the kit differs from its name.
 
-**Points are a meter and a remainder.** The head's other end shows a thin
-bar and the number that matters mid-edit: how many points are left. The
-word kit is gone. Pressing the meter slides in a points page that says
+**Points are a meter and a remainder.** The top row's other end shows a
+thin bar and the number that matters mid-edit: how many points are left.
+The word kit is gone. Pressing the meter slides in a points page that says
 what the thirty are and teaches the circle grammar, so the one gesture the
 page has, press a thing to read about it, also covers the budget.
 
@@ -85,7 +91,7 @@ drawing mostly the same list.
 
 ## What is here
 
-`build.py` is the source. It writes the eight `.dc.html` artboards from
+`build.py` is the source. It writes the nine `.dc.html` artboards from
 the same design system the earlier mocks lift from the client: hues from
 `client/arena/palette.lua`, panel grammar from `client/arena/ui.lua`, the
 lockup from `docs/banner.svg`. The account shown is real to the melee
