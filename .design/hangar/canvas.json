@@ -1,27 +1,41 @@
 {
+  "pages": [
+    { "id": "page-1", "name": "The hangar" },
+    { "id": "page-2", "name": "First pass" }
+  ],
   "artboards": [
+    { "file": "Main.dc.html", "x": 0, "y": 0, "w": 390, "h": 880,
+      "title": "One hangar", "page": "page-1" },
+    { "file": "Buy.dc.html", "x": 480, "y": 0, "w": 390, "h": 880,
+      "title": "The reading, buying", "page": "page-1" },
+    { "file": "Owned.dc.html", "x": 960, "y": 0, "w": 390, "h": 880,
+      "title": "The reading, owned", "page": "page-1" },
+    { "file": "Builds.dc.html", "x": 1440, "y": 0, "w": 390, "h": 880,
+      "title": "Builds", "page": "page-1" },
+    { "file": "Points.dc.html", "x": 1920, "y": 0, "w": 390, "h": 880,
+      "title": "Points", "page": "page-1" },
     { "file": "Current.dc.html", "x": 0, "y": 0, "w": 830, "h": 880,
-      "title": "As shipped" },
-    { "file": "Main.dc.html", "x": 950, "y": 0, "w": 390, "h": 880,
-      "title": "One hangar" },
-    { "file": "BuyCard.dc.html", "x": 1430, "y": 0, "w": 390, "h": 880,
-      "title": "One hangar, buying" },
-    { "file": "Lenses.dc.html", "x": 0, "y": 1090, "w": 830, "h": 880,
-      "title": "Fit and buy" },
-    { "file": "Linked.dc.html", "x": 950, "y": 1090, "w": 830, "h": 880,
-      "title": "Two stops, linked" }
+      "title": "As shipped", "page": "page-2" },
+    { "file": "Lenses.dc.html", "x": 950, "y": 0, "w": 830, "h": 880,
+      "title": "Fit and buy", "page": "page-2" },
+    { "file": "Linked.dc.html", "x": 1900, "y": 0, "w": 830, "h": 880,
+      "title": "Two stops, linked", "page": "page-2" }
   ],
   "annotations": [
-    { "id": "diagnosis", "x": -330, "y": 0, "w": 300,
-      "text": "As shipped: five activities in one column, three control grammars, and no teaching. A slot you own none of is simply absent from the ship page, so it cannot say there is more of this and here is its price.\n\nThe shelf is smaller than its page suggests: stats are never sold and most rungs are dealt, so melee sells a new account eight purchases in all. Two stops for eight prices, both drawing the same twenty-three slots." },
-    { "id": "cleanup", "x": -330, "y": 430, "w": 300,
-      "text": "Every direction bakes in one cleanup: everything is a ladder (the chips go), the build library folds into a selector row at the head, each trigger's level moves into its group, and a teach band pinned over the stops explains whatever row the cursor is on. That alone deletes most of the bug surface: one row grammar is one hit-test path." },
-    { "id": "hangar", "x": 1910, "y": 0, "w": 290,
-      "text": "One hangar, the leading direction. The tabs merge and the drawer drops to five stops. Three kinds of step on one ladder: filled is slotted, hollow is owned, a dim square is not yours, and the next rung for sale wears the gold diamond with the price at the row's end.\n\nThe wallet never sits on the page. Pressing into the dim region opens the buy card, which is the one place gold is spent. Spend on the page always means points, so the confusion that split the pages stays answered." },
-    { "id": "lenses", "x": -330, "y": 1090, "w": 300,
-      "text": "Fit and buy: one geography, two lenses. FIT spends the thirty points and shows no prices; BUY relights the same rows in shop terms with the wallet in the band. The two questions stay two moments, and what you learn once is where a slot lives.\n\nTradeoff: the price is a toggle away rather than on the refusal itself." },
-    { "id": "linked", "x": 1870, "y": 1090, "w": 290,
-      "text": "Two stops, linked: the smallest change. The ship page draws the rungs it hides today, dim, with the bare rivet mark on rows that have something for sale; pressing one lands on that slot's card in upgrades, and buying puts the rung on the ship page at once.\n\nTradeoff: a context switch in the middle of building, and two stops that still draw mostly the same list." }
+    { "id": "chosen", "x": -330, "y": 0, "w": 300, "page": "page-1",
+      "text": "One hangar, as revised. Circles all the way down: solid is equipped, a ring is owned and waiting for a point, a dim grey ring is not yours, and a row with something for sale ends in its price. The info band is gone; pressing a row's word, or anywhere in its dim region, slides the reading in from the right. Pips you own still answer a press directly: tapping one sets the slot to that step." },
+    { "id": "reading", "x": 480, "y": -170, "w": 320, "page": "page-1",
+      "text": "The reading is a slide, not a modal: the page moves off left, the panel arrives from the right, and the chevron or a swipe right puts the page back. One panel for every slot: the lesson, the ladder at reading size, and, only where a next rung is for sale, the price, the wallet and BUY. An owned slot is the same panel with the commerce absent." },
+    { "id": "builds", "x": 1440, "y": -170, "w": 300, "page": "page-1",
+      "text": "The build's name in the head is cyan between its arrows, like every value: arrows cycle the library, the press on the name slides this panel in. Save, rename and delete act on the build the list is standing on, dim on the three starters; save-as-new keeps the kit in hand under a fresh name. The main page pays one row for all of it." },
+    { "id": "points", "x": 1920, "y": -170, "w": 300, "page": "page-1",
+      "text": "The budget is a meter and a remainder: what a builder needs mid-edit is how many points are left, not a ratio to decode. Pressing the meter slides in this page, which is where the thirty are explained and the circle grammar is taught. The same slide-in answers every what-is-this on the page, so learning has one gesture." },
+    { "id": "diagnosis", "x": -330, "y": 0, "w": 300, "page": "page-2",
+      "text": "The first pass, kept as the record. As shipped: five activities in one column, three control grammars, no teaching, and a slot you own none of simply absent, so the page cannot say there is more of this and here is its price. The shelf is smaller than its page suggests: melee sells a new account eight purchases in all, on two stops that both draw the same twenty-three slots." },
+    { "id": "lenses", "x": 950, "y": -170, "w": 300, "page": "page-2",
+      "text": "Fit and buy: one geography, two lenses under a FIT | BUY toggle. It kept the two questions in two moments, and lost to the merge because the price sat a toggle away from the refusal." },
+    { "id": "linked", "x": 1900, "y": -170, "w": 300, "page": "page-2",
+      "text": "Two stops, linked: the smallest change, both tabs kept with a jump between them. It lost because the jump is a context switch mid-build and the two stops keep drawing mostly the same list." }
   ],
-  "launch": { "view": "canvas" }
+  "launch": { "view": "canvas", "page": "page-1" }
 }

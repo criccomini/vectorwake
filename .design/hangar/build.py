@@ -1,29 +1,27 @@
 #!/usr/bin/env python3
 """Assemble the artboards for the ship and upgrades rethink.
 
-The brief: the ship page is busy and hard to learn, and the upgrades tab
-feels like it belongs inside it. A pilot who cannot turn something on should
-see what it costs where the refusal happens, not on another stop.
+One hangar won: the tabs merge, and every slot the arena has lives on the
+ship page. The first page of the canvas is that direction as revised with
+Chris, and the second keeps the first pass, the pages as shipped beside the
+two directions that lost, as the record of how it was chosen.
 
-Five boards. One shows the two pages as shipped, at the drawer's own 390
-point measure, so the directions can be compared against the thing that
-exists. Three directions follow:
+The revised hangar, on page one:
 
-  One hangar    the tabs merge. Every slot the arena has is on the ship
-                page; a rung you do not own is drawn dim with its price on
-                the row, and pressing into it opens a buy card. The wallet
-                lives on the card alone.
-  Fit and buy   one geography, two lenses. The same page under a FIT | BUY
-                toggle: FIT spends the thirty points and shows no prices,
-                BUY relights the same rows in shop terms.
-  Two stops,    the smallest change. Both tabs stay; the ship page draws
-  linked        the rungs it is not showing today with a shelf mark, and
-                pressing one lands on that slot's card in upgrades.
-
-Every direction bakes in one shared cleanup, argued in README.md: one row
-grammar (the chips become ladders), the build library folded into a selector
-row, and a teach line pinned over the stops for whatever row the cursor is
-on.
+  Main      the page. Circles only: solid is equipped, a ring is owned and
+            not equipped, a dim grey ring is not yours, with the price at
+            the row's end where a next rung is for sale. No info band; the
+            head carries the build selector and the points meter.
+  Buy       the reading, slid in from the right over the page. Pressing a
+            row's word or its dim region opens it: the lesson, the ladder
+            at reading size, the price, the wallet, BUY. Back is the
+            chevron or a swipe right.
+  Owned     the same reading for a slot with nothing left to sell: no
+            price, no wallet, no BUY.
+  Builds    what pressing the build's name opens: the library, with save,
+            rename, delete and save-as-new in the one place they act.
+  Points    what pressing the meter opens: what the thirty are, and the
+            circle grammar taught where it is asked about.
 
 The design system is the client's, same sources as ../menu-unify/build.py:
 client/arena/palette.lua for hues, client/arena/ui.lua for panel grammar,
@@ -278,31 +276,37 @@ def rule(label, mt=12, mb=8):
             f'background:rgba(63,88,120,.45)"></div></div>')
 
 
-def pip_svg(cells, k=11):
-    """A run of ladder steps. Each cell is (kind, color): `on` a filled
-    disc, `own` a hollow disc (owned, not slotted), `lock` a dim square
-    (the arena has it, the account does not), `next` the gold diamond the
-    next purchase would light."""
-    step = 13
+def pip_svg(cells, k=11, r=4.4, step=13):
+    """A run of ladder steps. Each cell is (kind, color). The revised
+    grammar is circles all the way down: `on` a solid disc (equipped),
+    `ring` a hollow disc in the slot's color (owned, not equipped), `dim` a
+    grey hollow disc (the arena has it, the account does not). The first
+    pass's `own`, `lock` and `next` kinds survive for the boards on the
+    record page, which drew the shelf the way the shipped client does."""
     w = step * len(cells) + 2
+    cy = k // 2 + 1
     out = []
     for i, (kind, col) in enumerate(cells):
         cx = i * step + 6
         if kind == "on":
-            out.append(f'<circle cx="{cx}" cy="{k // 2 + 1}" r="4.4" '
+            out.append(f'<circle cx="{cx}" cy="{cy}" r="{r}" '
                        f'fill="{col}"/>')
-        elif kind == "own":
-            out.append(f'<circle cx="{cx}" cy="{k // 2 + 1}" r="3.9" '
+        elif kind in ("own", "ring"):
+            out.append(f'<circle cx="{cx}" cy="{cy}" r="{r - 0.5}" '
                        f'fill="none" stroke="{col}" stroke-width="1.1" '
                        f'opacity=".8"/>')
+        elif kind == "dim":
+            out.append(f'<circle cx="{cx}" cy="{cy}" r="{r - 0.5}" '
+                       f'fill="none" stroke="{DIM}" stroke-width="1" '
+                       f'opacity=".5"/>')
         elif kind == "lock":
-            out.append(f'<rect x="{cx - 3}" y="{k // 2 - 2}" width="6" '
+            out.append(f'<rect x="{cx - 3}" y="{cy - 3}" width="6" '
                        f'height="6" fill="none" stroke="{DIM}" '
                        f'stroke-width="1" opacity=".55"/>')
         elif kind == "next":
-            out.append(f'<path d="M{cx} {k // 2 - 4.5} L{cx + 4.5} '
-                       f'{k // 2 + 1} L{cx} {k // 2 + 6.5} L{cx - 4.5} '
-                       f'{k // 2 + 1} Z" fill="none" stroke="{GOLD}" '
+            out.append(f'<path d="M{cx} {cy - 5.5} L{cx + 4.5} '
+                       f'{cy} L{cx} {cy + 5.5} L{cx - 4.5} '
+                       f'{cy} Z" fill="none" stroke="{GOLD}" '
                        f'stroke-width="1.2" opacity=".95"/>')
     return (f'<svg width="{w}" height="{k + 3}" viewBox="0 0 {w} {k + 3}" '
             f'style="flex:none">{"".join(out)}</svg>')
@@ -493,70 +497,228 @@ def charges_with_boxes(hot_name=None, priced=True):
     return "".join(out)
 
 
-def hangar_body(hot="shrapnel", priced=True):
-    return (band_row(build_selector(), kit_figure())
-            + hangar_group("flight", FLIGHT, priced=priced)
-            + hangar_group("gun", GUN, hot_name=hot, priced=priced)
-            + hangar_group("bomb", BOMB, hot_name=hot, priced=priced)
-            + charges_with_boxes(priced=priced)
+# --- the revised hangar: circles only, and a reading that slides in ----------
+
+TEACH_BOUNCE = ("walls stop eating your rounds and reflect them instead. "
+                "each rung is another bounce before the round ends.")
+
+# The same account with a point taken off speed, so the meter has something
+# to say and the stats show a ring beside their solids.
+FLIGHT2 = [(n, c, 8, 8, 8, s, None)
+           for (n, c), s in zip(STATS, (5, 4, 4, 2, 2))]
+SPENT2, LEFT2 = 28, 2
+
+TABS2 = ["play", "ship", "friends", "standings", "settings"]
+
+
+def circle_cells(tint, arena, owned, slotted, k=11, r=4.4, step=13):
+    cells = ([("on", tint)] * slotted
+             + [("ring", tint)] * (owned - slotted)
+             + [("dim", "")] * (arena - owned))
+    return pip_svg(cells, k=k, r=r, step=step)
+
+
+def circle_group(label, slots, hot_name=None, level_price=30):
+    out = [rule(label)]
+    for name, tint, arena, base, owned, slotted, kind in slots:
+        price = next_price(base, owned, arena)
+        if price is not None and kind == "lvl":
+            price = level_price
+        tail = price_tag(price) if price is not None else ""
+        out.append(ladder_row(
+            name, circle_cells(tint, arena, owned, slotted),
+            readout=readout_of(kind, slotted), tail=tail,
+            hot=(name == hot_name)))
+    return "".join(out)
+
+
+def circle_charges():
+    out = [rule("charges")]
+    for i, (name, tint, arena, base, owned, slotted, kind) in \
+            enumerate(CHARGES):
+        price = next_price(base, owned, arena)
+        tail = ""
+        if slotted > 0:
+            key = "shift" if i == 0 else "x"
+            tail += charge_box(f"charge {i + 1} &#183; {key}")
+        if price is not None:
+            tail += price_tag(price)
+        out.append(ladder_row(
+            name, circle_cells(tint, arena, owned, slotted), tail=tail))
+    return "".join(out)
+
+
+def points_meter():
+    fill = SPENT2 / 30 * 100
+    bar = (f'<div style="position:relative;width:52px;height:4px;'
+           f'background:rgba(108,122,144,.25)">'
+           f'<div style="position:absolute;left:0;top:0;bottom:0;'
+           f'width:{fill:.0f}%;background:rgba(79,214,255,.85)"></div></div>')
+    return (f'<div class="col" style="align-items:flex-end;gap:4px">'
+            f'<span class="lbl">points</span>'
+            f'<div class="row" style="gap:8px">{bar}'
+            f'<span class="num" style="font-size:11px;'
+            f'color:rgba(223,233,245,.9)">{LEFT2} left</span></div></div>')
+
+
+def build_selector2():
+    # The name is a value in the flair grammar, cyan between its arrows, and
+    # the press on the name itself opens the builds panel.
+    return (f'<div class="row" style="gap:9px">'
+            f'{tri(-1, "rgba(79,214,255,.55)")}'
+            f'<span style="font-size:15px;color:{FRIEND}">striker</span>'
+            f'<span class="lbl">edited</span>'
+            f'{tri(1, "rgba(79,214,255,.55)")}</div>')
+
+
+def hangar2_page(hot=None):
+    return (band_row(build_selector2(), points_meter())
+            + circle_group("flight", FLIGHT2)
+            + circle_group("gun", GUN, hot_name=hot)
+            + circle_group("bomb", BOMB, hot_name=hot)
+            + circle_charges()
             + flair_rows())
 
 
-def hangar_board():
-    teach = teach_band(
-        "bomb &#183; shrapnel",
-        TEACH_SHRAPNEL,
-        price_line=(f'{rivet(11, GOLD)}<span class="num" style="font-size:'
-                    f'11px;color:{GOLD}">20</span>'
-                    f'<span class="lbl">buys the next rung &#183; press it'
-                    f'</span>'))
-    page = hangar_body()
-    body = drawer(page, ["play", "ship", "friends", "standings", "settings"],
-                  "ship", teach=teach)
+def hangar2_board():
+    body = drawer(hangar2_page(hot="shrapnel"), TABS2, "ship")
     board("Main.dc.html", 390, 880, body, seed=41)
 
 
-# --- board: the buy card -----------------------------------------------------
+# --- the reading, slid in from the right -------------------------------------
 
 
-def buy_card():
-    cells = pip_svg([("on", BOMBC), ("next", ""), ("lock", "")], k=13)
-    return f"""
-  <div style="position:absolute;inset:0;background:rgba(3,5,10,.72)"></div>
-  <div style="position:absolute;left:22px;right:22px;top:190px;
-       border:1px solid rgba(63,88,120,.9);background:rgba(5,8,14,.97);
-       padding:18px 18px 16px">
-    <div class="lbl">bomb add-on</div>
-    <div style="font-size:22px;margin:8px 0 12px">shrapnel</div>
-    <div style="font-size:12px;line-height:17px;color:rgba(223,233,245,.85)">
-      {TEACH_SHRAPNEL}</div>
-    <div class="row" style="gap:10px;margin:16px 0 4px">{dealt_bar()}{cells}
-    </div>
-    <div class="lbl" style="margin:6px 0 14px">1 dealt to everybody,
-      2 to climb</div>
-    <div class="row" style="gap:8px">
-      {rivet(13, GOLD)}
-      <span class="num" style="font-size:15px;color:{GOLD}">20</span>
-      <span class="lbl">buys the next rung</span>
-      <div style="flex:1"></div>
-      <span class="lbl">wallet</span>
-      {rivet(11, GOLD)}
-      <span class="num" style="font-size:12px;color:{GOLD}">{WALLET}</span>
-    </div>
-    <div class="row" style="gap:10px;margin-top:16px">
-      <div class="key" style="flex:1;height:40px;font-size:13px;
-           color:{INK};border-color:rgba(255,209,102,.9);
-           background:rgba(255,209,102,.10)">BUY</div>
-      <div class="key" style="width:90px;height:40px;font-size:11px">BACK</div>
-    </div>
-  </div>"""
+def back_row():
+    return (f'<div class="row" style="height:40px;gap:8px;'
+            f'border-bottom:1px solid rgba(63,88,120,.45);'
+            f'margin:0 -14px;padding:0 14px">'
+            + tri(-1, "rgba(108,122,144,.9)")
+            + '<span class="lbl">ship</span></div>')
 
 
-def buy_board():
-    page = hangar_body()
-    body = drawer(page, ["play", "ship", "friends", "standings", "settings"],
-                  "ship", overlay=buy_card())
-    board("BuyCard.dc.html", 390, 880, body, seed=42)
+def detail_page(kind, name, cells, caption, teach, price=None, foot=None):
+    price_row, buy = "", ""
+    if price is not None:
+        price_row = (f'<div class="row" style="gap:8px;margin-top:22px">'
+                     f'{rivet(13, GOLD)}'
+                     f'<span class="num" style="font-size:15px;color:{GOLD}">'
+                     f'{price}</span>'
+                     f'<span class="lbl">buys the next rung</span>'
+                     f'<div style="flex:1"></div>'
+                     f'<span class="lbl">wallet</span>{rivet(11, GOLD)}'
+                     f'<span class="num" style="font-size:12px;color:{GOLD}">'
+                     f'{WALLET}</span></div>')
+        buy = (f'<div class="key" style="width:100%;height:44px;'
+               f'font-size:13px;color:{INK};'
+               f'border-color:rgba(255,209,102,.9);'
+               f'background:rgba(255,209,102,.10);margin-top:18px">BUY</div>')
+    return (back_row()
+            + f'<div class="lbl" style="margin:18px 0 6px">{kind}</div>'
+            + f'<div style="font-size:24px;margin-bottom:14px">{name}</div>'
+            + f'<div style="font-size:12.5px;line-height:18px;'
+              f'color:rgba(223,233,245,.85)">{teach}</div>'
+            + f'<div class="row" style="margin:20px 0 6px">{cells}</div>'
+            + f'<div class="lbl" style="margin-bottom:4px">{caption}</div>'
+            + price_row + buy + (foot or ""))
+
+
+def buy2_board():
+    page = detail_page(
+        "bomb add-on", "shrapnel",
+        circle_cells(BOMBC, 3, 1, 1, k=13, r=5.5, step=17),
+        "1 dealt to everybody &#183; 2 to climb",
+        TEACH_SHRAPNEL, price=20,
+        foot=('<div class="lbl" style="margin-top:18px;line-height:15px">'
+              'a swipe right, or the chevron, puts the ship page back</div>'))
+    board("Buy.dc.html", 390, 880, drawer(page, TABS2, "ship"), seed=42)
+
+
+def owned_board():
+    page = detail_page(
+        "gun add-on", "bounce",
+        circle_cells(GOLD, 1, 1, 1, k=13, r=5.5, step=17),
+        "dealt to everybody &#183; equipped",
+        TEACH_BOUNCE,
+        foot=('<div class="lbl" style="margin-top:22px;line-height:15px">'
+              'nothing to buy here: the arena deals every rung of this'
+              '</div>'))
+    board("Owned.dc.html", 390, 880, drawer(page, TABS2, "ship"), seed=46)
+
+
+# --- the builds panel, behind the name ---------------------------------------
+
+
+def builds_board():
+    rows = []
+    for name, starter, current in (("gunner", True, False),
+                                   ("bomber", True, False),
+                                   ("control", True, False),
+                                   ("striker", False, True)):
+        mark = ('<span class="lbl" style="margin-left:auto">starter</span>'
+                if starter else
+                ('<span class="lbl" style="margin-left:auto">edited</span>'
+                 if current else ''))
+        wash = ' wash' if current else ''
+        col = FRIEND if current else INK
+        rows.append(
+            f'<div class="row{wash}" style="height:30px;margin:0 -14px;'
+            f'padding:0 14px"><span style="font-size:13px;color:{col}">'
+            f'{name}</span>{mark}</div>')
+    keys = ('<div class="row" style="gap:8px;margin-top:14px">'
+            + ''.join(
+                f'<div class="key" style="flex:1;height:28px;font-size:9px'
+                + (';color:#dfe9f5;border-color:rgba(79,214,255,.7);'
+                   'background:rgba(79,214,255,.08)' if k == "save" else '')
+                + f'">{k.upper()}</div>'
+                for k in ("save", "rename", "delete"))
+            + '</div>')
+    newkey = ('<div class="key" style="width:100%;height:32px;font-size:10px;'
+              'margin-top:10px">SAVE AS NEW BUILD</div>')
+    note = ('<div class="lbl" style="margin-top:16px;line-height:15px">'
+            'the three starters are not yours to change: save on an edited '
+            'one makes a copy under a new name</div>')
+    page = (back_row()
+            + '<div class="lbl" style="margin:18px 0 8px">builds</div>'
+            + ''.join(rows) + keys + newkey + note)
+    board("Builds.dc.html", 390, 880, drawer(page, TABS2, "ship"), seed=45)
+
+
+# --- the points panel, behind the meter --------------------------------------
+
+
+def points_board():
+    def legend(kind, col, words):
+        return (f'<div class="row" style="gap:10px;height:26px">'
+                + pip_svg([(kind, col)], k=13, r=5.5, step=17)
+                + f'<span style="font-size:12px;'
+                  f'color:rgba(223,233,245,.85)">{words}</span></div>')
+    fill = SPENT2 / 30 * 100
+    meter = (f'<div class="row" style="gap:12px;margin:22px 0 6px">'
+             f'<div style="position:relative;flex:1;height:6px;'
+             f'background:rgba(108,122,144,.25)">'
+             f'<div style="position:absolute;left:0;top:0;bottom:0;'
+             f'width:{fill:.0f}%;background:rgba(79,214,255,.85)"></div>'
+             f'</div>'
+             f'<span class="num" style="font-size:12px">{SPENT2} spent '
+             f'&#183; {LEFT2} left</span></div>')
+    page = (back_row()
+            + '<div class="lbl" style="margin:18px 0 6px">points</div>'
+            + '<div style="font-size:24px;margin-bottom:14px">thirty points'
+              '</div>'
+            + '<div style="font-size:12.5px;line-height:18px;'
+              'color:rgba(223,233,245,.85)">every ship is a spend of the '
+              'same thirty points, whoever flies it and whatever the '
+              'account owns. press a circle to spend a point there; press '
+              'it again to take the point back and put it somewhere else.'
+              '</div>'
+            + meter
+            + '<div class="lbl" style="margin:20px 0 8px">what a circle '
+              'says</div>'
+            + legend("on", FRIEND, "equipped: one of your thirty")
+            + legend("ring", FRIEND, "owned, waiting for a point")
+            + legend("dim", "", "not yours yet: its price sits on the row")
+            )
+    board("Points.dc.html", 390, 880, drawer(page, TABS2, "ship"), seed=47)
 
 
 # --- board: fit and buy ------------------------------------------------------
@@ -853,8 +1015,11 @@ def current_board():
     board("Current.dc.html", 830, 880, body, seed=40)
 
 
+hangar2_board()
+buy2_board()
+owned_board()
+builds_board()
+points_board()
 current_board()
-hangar_board()
-buy_board()
 lenses_board()
 linked_board()
