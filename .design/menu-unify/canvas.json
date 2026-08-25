@@ -1,0 +1,36 @@
+{
+  "artboards": [
+    { "file": "Main.dc.html", "title": "Dock · Desktop", "x": 0, "y": 0, "w": 1440, "h": 810 },
+    { "file": "DesktopCard.dc.html", "title": "Card · Desktop", "x": 1720, "y": 0, "w": 1440, "h": 810 },
+    { "file": "DesktopConsole.dc.html", "title": "Console · Desktop", "x": 3440, "y": 0, "w": 1440, "h": 810 },
+    { "file": "LandscapeDock.dc.html", "title": "Dock · Landscape", "x": 298, "y": 950, "w": 844, "h": 390 },
+    { "file": "LandscapeCard.dc.html", "title": "Card · Landscape", "x": 2018, "y": 950, "w": 844, "h": 390 },
+    { "file": "LandscapeConsole.dc.html", "title": "Console · Landscape", "x": 3738, "y": 950, "w": 844, "h": 390 },
+    { "file": "PortraitDock.dc.html", "title": "Dock · Portrait", "x": 525, "y": 1480, "w": 390, "h": 844 },
+    { "file": "PortraitCard.dc.html", "title": "Card · Portrait", "x": 2245, "y": 1480, "w": 390, "h": 844 },
+    { "file": "PortraitConsole.dc.html", "title": "Console · Portrait", "x": 3965, "y": 1480, "w": 390, "h": 844 }
+  ],
+  "annotations": [
+    {
+      "id": "note-dock",
+      "x": 0, "y": -250, "w": 340,
+      "text": "Dock\n\nThe column stands on the left edge at full height. Upright it takes the whole window, which is the shipped narrow layout, so a phone learns nothing new. Sideways and on a desktop the fight keeps the rest of the glass, the score band recenters on it, and the camera leans right so the panel is not standing on its subject.\n\nCosts: the dock covers the corner row that opened it, and on a sideways phone it takes almost half the fight."
+    },
+    {
+      "id": "note-card",
+      "x": 1720, "y": -250, "w": 340,
+      "text": "Card\n\nThe same column floats in the middle, clamped to 390 by 560, and the glass dims a step around it. The most modal of the three, and the only one that is the same picture on all three windows.\n\nCosts: a sideways phone leaves the card 366 points tall, so pages scroll sooner, and a centered box sits exactly where the fight is."
+    },
+    {
+      "id": "note-console",
+      "x": 3440, "y": -250, "w": 340,
+      "text": "Console\n\nThe six stops and PLAY NOW live on a bar that never leaves the glass, and a tab raises a sheet rather than a screen. There is nothing to open first: ship, zone and settings are one press from watching, and the way in breathes beside them the whole time. Upright with the sheet down, this is the shipped landing plus the bar.\n\nCosts: the bar spends 64 points of every window all the time, and a sheet on a sideways phone is a short read."
+    },
+    {
+      "id": "note-constants",
+      "x": -420, "y": 0, "w": 360,
+      "text": "Held constant on every board: the column itself. The name and the call sign at its head, the play page in the middle, DEPLOY and the six stops at its foot, all at the phone's own measure of 390 points. The three directions disagree only about where that column stands.\n\nEvery board is the menu open over a live melee. The stands are the front end (decision 61), so the fight never stops for a menu: ship, upgrades, friends, standings and settings are each one press away on the foot row, and a window too short for the watching card scrolls the page instead."
+    }
+  ],
+  "launch": { "view": "canvas" }
+}
