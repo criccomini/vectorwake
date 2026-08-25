@@ -871,6 +871,26 @@ mod tests {
     }
 
     #[test]
+    fn the_shipped_zones_read_as_their_labels() {
+        // The key is what a join, a rating and a kit ceiling are filed under;
+        // the label is what a player reads. The two differ on both zones this
+        // deployment ships, which is the whole reason a label exists.
+        // Read off the zone files themselves rather than through `load`,
+        // which resolves the head's secrets and wants a deployment's
+        // environment around it.
+        let read = |name: &str| -> ZoneDef {
+            let path = format!("../catalog/zones/{name}/zone.toml");
+            let text = std::fs::read_to_string(&path).expect(&path);
+            toml::from_str(&text).expect(&path)
+        };
+        assert_eq!(read("melee").label("melee"), "Team Battle");
+        assert_eq!(read("ladder").label("ladder"), "Duel");
+        // And a zone that sets none reads as its own key, which is what every
+        // zone did before labels existed.
+        assert_eq!(ZoneDef::default().label("chaos"), "chaos");
+    }
+
+    #[test]
     fn ladder_rejects_every_shape_that_breaks_a_two_role_fight() {
         let d = tmp("ladder-shape");
         write(&d, "duel.vwmap", "map");

@@ -2431,6 +2431,13 @@ function apply_menu(self, act)
         end
         return
     end
+    -- None of the three below makes a sound on the way in. The press that
+    -- started them already made one: this menu has two sounds, `ui_move` for
+    -- a cursor and `ui_go` for an act, and the act is the press rather than
+    -- the reply to it. A reply that agreed made a second `ui_go` a few
+    -- milliseconds later, which against a meta-layer on the same box is one
+    -- press heard twice. A refusal still speaks, because there the press's
+    -- own sound was a lie.
     if act == "save_profile" then
         account.save_profile(menu.pending_profile or "", menu.kit,
             function(ok, why, profile)
@@ -2447,7 +2454,6 @@ function apply_menu(self, act)
                             break
                         end
                     end
-                    sfx.ui("ui_go")
                 else
                     menu.note = why or "cannot save that profile"
                     sfx.ui("ui_move")
@@ -2468,7 +2474,7 @@ function apply_menu(self, act)
             function(ok, why)
                 menu.note = ok and nil or (why or "cannot delete that build")
                 menu.reread_profile()
-                sfx.ui(ok and "ui_go" or "ui_move")
+                if not ok then sfx.ui("ui_move") end
             end)
         return
     end
@@ -2482,7 +2488,6 @@ function apply_menu(self, act)
             if ok then
                 menu.note = nil
                 account.refresh_upgrades(menu.zone)
-                sfx.ui("ui_go")
             else
                 menu.note = why or "cannot buy that"
                 sfx.ui("ui_move")

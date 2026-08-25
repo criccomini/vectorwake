@@ -1466,6 +1466,18 @@ function M.click_create()
         return nil, true
     end
     M.pending_profile = name
+    -- And back to whatever opened this page, which is the library where NEW
+    -- opened it and the ship page where the save key did. The page stayed up
+    -- behind the build it had just made: a page for naming one thing has
+    -- nothing left to say once it is named, and the answer to "did that
+    -- work" is the name on the page underneath.
+    --
+    -- Now rather than when the meta-layer answers. A reply that has to arrive
+    -- before the panel moves is a panel that hangs on the network; a refusal
+    -- lands as a line on the page behind, which is where every other refusal
+    -- in this menu lands.
+    M.new_on, M.new_name = false, ""
+    if #M.stack > 1 then table.remove(M.stack) end
     return "save_profile", true
 end
 

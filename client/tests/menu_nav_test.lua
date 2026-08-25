@@ -2488,6 +2488,12 @@ do
     check("creating hands the named build to the arena",
           named == "save_profile" and menu.pending_profile == "Screen",
           tostring(named) .. "/" .. tostring(menu.pending_profile))
+    -- And the page goes with it. A page for naming one thing has nothing left
+    -- to say once it is named, and it stayed up behind the build it had just
+    -- made.
+    check("and the naming page slides back off",
+          menu.at() ~= "newbuild" and menu.new_on == false,
+          table.concat(menu.stack, "/") .. "/" .. tostring(menu.new_on))
 
     -- Over one of your own the key writes to it rather than asking for a
     -- name: that is what save means on a thing that already has one.
