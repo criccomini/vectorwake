@@ -528,33 +528,55 @@ E_ROWS = {
 }
 
 
+# The sides in the order the ending reads them: whoever took it first, which
+# is not always yours. Mid-match the band puts your own side on the left, so
+# the reading is positional and never has to be worked out from a color. A
+# finished match has a better answer to "which of these is first", and it is
+# the one thing the ending is about.
+SIDES = sorted(
+    [("Pylon", SCORE_L, FRIEND, PYLON), ("Caisson", SCORE_R, ENEMY, CAISSON)],
+    key=lambda s: -s[1])
+
+
 def bar_head(px, bar_h, name_px):
     """The scoreline as a bar with each side's points on the ends of it. The
     proportion is the fight, the numbers are the score, and the two colors are
     the ones every other instrument uses for these sides."""
-    total = SCORE_L + SCORE_R
-    share = SCORE_L / total * 100
+    (ln, ls, lc, _), (rn, rs, rc, _) = SIDES
+    share = ls / (ls + rs) * 100
+
+    def label(name, col, right):
+        # Two lines rather than one: the word that says what this is over the
+        # name of the thing, which keeps the label as tall as the number it
+        # stands beside and stops a long side name from pushing the bar over.
+        return (f'<div style="display:flex;flex-direction:column;'
+                f'align-items:{"flex-start" if right else "flex-end"};'
+                f'gap:2px;line-height:1">'
+                f'<span class="lbl" style="font-size:{name_px - 2}px">team'
+                f'</span>'
+                f'<span class="hud" style="font-size:{name_px}px;color:{col}">'
+                f'{name}</span></div>')
+
     return f"""
     <div class="row" style="gap:{px}px">
-      <span class="hud" style="font-size:{name_px}px;color:var(--friend)">
-        Pylon</span>
-      <span class="num" style="font-size:{px * 1.9:.0f}px;color:var(--friend);
-            line-height:1">{SCORE_L}</span>
+      {label(ln, lc, False)}
+      <span class="num" style="font-size:{px * 1.9:.0f}px;color:{lc};
+            line-height:1">{ls}</span>
       <div style="flex:1;height:{bar_h}px;display:flex;overflow:hidden">
-        <div style="width:{share:.1f}%;background:var(--friend)"></div>
-        <div style="flex:1;background:var(--enemy)"></div>
+        <div style="width:{share:.1f}%;background:{lc}"></div>
+        <div style="flex:1;background:{rc}"></div>
       </div>
-      <span class="num" style="font-size:{px * 1.9:.0f}px;color:var(--enemy);
-            line-height:1">{SCORE_R}</span>
-      <span class="hud" style="font-size:{name_px}px;color:var(--enemy)">
-        Caisson</span>
+      <span class="num" style="font-size:{px * 1.9:.0f}px;color:{rc};
+            line-height:1">{rs}</span>
+      {label(rn, rc, True)}
     </div>"""
 
 
 def took_it(px):
+    name, _, col, _ = SIDES[0]
     return (f'<div class="row" style="gap:8px;justify-content:center">'
-            f'<span class="hud" style="font-size:{px}px;color:var(--enemy)">'
-            f'Caisson</span>'
+            f'<span class="hud" style="font-size:{px}px;color:{col}">{name}'
+            f'</span>'
             f'<span class="hud" style="font-size:{px}px">takes it</span></div>')
 
 
@@ -575,11 +597,11 @@ def board_foot(px, key_h):
 def board_rows(order, px):
     """The pilot list, in whichever order this board is arguing for. Your own
     row is washed and keeps its side's color, exactly as it does in the board
-    the band opens mid-match."""
+    the band opens mid-match. The sides run winner first, so the list agrees
+    with the bar above it and with the line above that."""
     if order == "Split":
         out = []
-        for team, col, pilots, score in (("Pylon", FRIEND, PYLON, SCORE_L),
-                                         ("Caisson", ENEMY, CAISSON, SCORE_R)):
+        for team, score, col, pilots in SIDES:
             out.append(f'''<div class="row" style="gap:8px;padding:6px 4px 2px">
               <span class="hud" style="font-size:{px}px;color:{col}">{team}
               </span>
@@ -589,13 +611,16 @@ def board_rows(order, px):
                                mvp=(p is PYLON[0])) for p in pilots]
         return out
     if order == "Ranked":
-        everyone = [(p, FRIEND) for p in PYLON] + [(p, ENEMY) for p in CAISSON]
+        everyone = []
+        for _, _, col, pilots in SIDES:
+            everyone += [(p, col) for p in pilots]
         everyone.sort(key=lambda pc: (-pc[0][2], pc[0][3]))
         return [roster_row(p, col, px, px, washed=(p is ME),
                            mvp=(p is PYLON[0])) for p, col in everyone]
-    rows = [roster_row(p, FRIEND, px, px, washed=(p is ME),
-                       mvp=(p is PYLON[0])) for p in PYLON]
-    rows += [roster_row(p, ENEMY, px, px) for p in CAISSON]
+    rows = []
+    for _, _, col, pilots in SIDES:
+        rows += [roster_row(p, col, px, px, washed=(p is ME),
+                            mvp=(p is PYLON[0])) for p in pilots]
     return rows
 
 
@@ -612,8 +637,8 @@ def board_ending(order, form):
     return f"""
     <div style="display:flex;flex-direction:column;
          gap:{16 if not compact else 10}px">
-      {bar_head(px, bar_h, name_px)}
       {took_it(lbl_px + 3)}
+      {bar_head(px, bar_h, name_px)}
       <div style="display:flex;flex-direction:column;gap:2px">
         {hrule()}
         {col_heads(px)}
