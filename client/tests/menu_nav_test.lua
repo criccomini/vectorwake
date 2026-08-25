@@ -159,9 +159,9 @@ local ship_at = top_index("ship")
 local settings_at = top_index("settings")
 local tabs = {}
 for _, r in ipairs(menu.view().rail) do tabs[#tabs + 1] = r.label end
-check("the tab row is play, ship, upgrades, friends, standings, settings",
+check("the tab row is play, ship, friends, standings, settings",
       table.concat(tabs, "/")
-      == "play/ship/upgrades/friends/standings/settings",
+      == "play/ship/friends/standings/settings",
       table.concat(tabs, "/"))
 check("the rail carries the destinations", ship_at and settings_at,
       "ship " .. tostring(ship_at) .. ", settings " .. tostring(settings_at))
@@ -495,10 +495,15 @@ menu.stack = {"root"}
 menu.sel = {}
 menu.click_rail(ship_at)
 local ship_page = menu.view()
-local CELLS = #ship_page.hulls
+-- The hull rides the flair row's own range now rather than a list beside the
+-- page: `choice` is the cell it is showing and `choices` is how many there
+-- are, which is what the arrows either side of it turn.
+local hull_cells = 0
+for _, r in ipairs(ship_page.rows) do
+    if r.ship then hull_cells = r.choices or 0 end
+end
 check("every hull rides the carousel, and sitting out with them",
-      CELLS > 1 and ship_page.hull_sel == 1,
-      CELLS .. " cells, showing " .. tostring(ship_page.hull_sel))
+      hull_cells > 1, hull_cells .. " cells")
 -- The hull is a flair row near the foot of the page now, with the wake
 -- beside it: choosing a shape and choosing a wake are the same kind of
 -- choice. No budget row anywhere: the figure rides the view, so the cursor
@@ -516,10 +521,16 @@ check("and the kit budget rides the view, not a row",
       tostring(ship_page.kit_spent))
 check("live, because there is no level above it left to preview from",
       ship_page.kit_preview == nil, tostring(ship_page.kit_preview))
-check("with the cursor on the first thing a press can change",
-      ship_page.sel == 1 and ship_page.rows[1].pick == true,
+-- The band is the page's own head: the build's name, which opens the
+-- library, and the points, which open what they are. Both are rows so the
+-- arrows reach them, and the cursor opens on the first of them.
+check("with the cursor on the band the page carries instead of a head",
+      ship_page.sel == 1 and ship_page.rows[1].group == "band"
+      and ship_page.rows[2].group == "band",
       "cursor " .. tostring(ship_page.sel) .. " on "
       .. tostring(ship_page.rows[1].group))
+check("and the page spends nothing on the wordmark over it",
+      ship_page.headless == true, tostring(ship_page.headless))
 
 -- Left and right turn the carousel while the cursor stands on the hull row.
 -- At home that is the choice itself: what a hull means with no game on is
@@ -528,8 +539,15 @@ check("with the cursor on the first thing a press can change",
 menu.sel.hangar = hull_row
 menu.pending = nil
 local turned = menu.step({right = true})
+-- What the flair row is showing, which is the whole of what the page says
+-- about the roster now: one cell, its place in the ring, and the arrows.
+local function showing()
+    for _, r in ipairs(menu.view().rows) do
+        if r.ship then return r.choice end
+    end
+end
 check("right turns the carousel",
-      menu.hull_index() == 2 and menu.view().hull_sel == 2,
+      menu.hull_index() == 2 and showing() == 2,
       "showing " .. tostring(menu.hull_index()))
 check("and at home turning it is choosing",
       turned == "ship" and menu.pending == 1,
@@ -541,17 +559,11 @@ check("left turns it back", menu.hull_index() == 1,
 -- It wraps, so nothing on the roster is more than a few presses away and an
 -- arrow never does nothing.
 local out_act = menu.step({left = true})
-check("and it wraps round to the last cell", menu.hull_index() == CELLS,
+check("and it wraps round to the last cell",
+      menu.hull_index() == hull_cells,
       "showing " .. tostring(menu.hull_index()))
 check("which is sitting out rather than a hull",
-      out_act == "spectate" and menu.view().hulls[CELLS].hull == nil,
-      tostring(out_act))
--- A cell with no hull and no figure falls back to hull zero and draws an
--- Apex, which is what this one did until `figure` was carried through the
--- view. The drawing reads this field; nothing else can say what it gets.
-check("so it says what to draw instead",
-      menu.view().hulls[CELLS].figure == "pilot",
-      tostring(menu.view().hulls[CELLS].figure))
+      out_act == "spectate", tostring(out_act))
 menu.step({right = true})
 check("and back onto the first hull", menu.hull_index() == 1,
       "showing " .. tostring(menu.hull_index()))
@@ -594,25 +606,27 @@ check("the triangles step it too", menu.wake == 0, tostring(menu.wake))
 menu.stack = {"root"}
 menu.sel = {}
 
--- The same cell, seen from the rail. The stage previews the page a rail stop
+-- The same page, seen from the rail. The stage previews the page a rail stop
 -- leads to before you go in, and that preview flattens rows down its own
--- path, so a field the carousel reads has to survive both. `figure` survived
--- only one: escape into the menu and arrow left onto the rail, and the last
--- cell was an Apex; step into the page and it was the helmet again.
+-- path, so what the page draws has to survive both. It is the ship page
+-- either way: a preview of a page is that page, not a second drawing of it.
 local was_stack, was_sel, was_home = menu.stack, menu.sel, menu.home
 menu.home = true
 menu.stack = {"root"}
 menu.sel = {root = ship_at}
 local peek = menu.view()
 check("the rail previews the page it points at",
-      #peek.hulls == CELLS and peek.sel == 0,
-      #(peek.hulls or {}) .. " hulls, cursor " .. tostring(peek.sel))
+      peek.kit == true and peek.sel == 0,
+      tostring(peek.kit) .. ", cursor " .. tostring(peek.sel))
 check("flattened, not handed over as it was written",
-      type(peek.hulls[CELLS].mark) ~= "function")
-check("and the last cell is a pilot there too",
-      peek.hulls[CELLS].figure == "pilot", tostring(peek.hulls[CELLS].figure))
+      type(peek.rows[1].label) ~= "function")
 check("and nothing in a preview takes a press",
       peek.kit_preview == true, tostring(peek.kit_preview))
+-- The head stays over a preview: at the root the cursor is on the tab row,
+-- and a wordmark that came and went as it crossed `ship` would take the call
+-- sign with it. The page earns the whole column by being entered.
+check("and the wordmark stays while it is only a preview",
+      peek.headless == nil, tostring(peek.headless))
 menu.stack, menu.sel, menu.home = was_stack, was_sel, was_home
 
 -- On the home screen the same page answers a different tense: not what you
@@ -625,11 +639,21 @@ menu.sel = {}
 menu.watching = false
 menu.class = 2
 menu.spectate = false
+-- The mark rides the cell the carousel is showing, since that is the only
+-- cell the page draws: turn to the hull you are in and the row says so, turn
+-- off it and nothing claims to be where you are.
+local function mark_at(cell)
+    menu.hull_at = cell
+    for _, r in ipairs(menu.view().rows) do
+        if r.ship then return r.mark == true end
+    end
+    return false
+end
 check("at home, no choice made yet marks the hull you will arrive in",
-      menu.view().hulls[3].mark and not menu.view().hulls[CELLS].mark)
+      mark_at(3) and not mark_at(hull_cells))
 menu.spectate = true
 check("and choosing to watch moves the wash to the last cell",
-      menu.view().hulls[CELLS].mark and not menu.view().hulls[3].mark)
+      mark_at(hull_cells) and not mark_at(3))
 check("which is what the root row says too",
       menu.view().rail[2].detail == "spectating",
       tostring(menu.view().rail[2].detail))
@@ -637,27 +661,21 @@ check("which is what the root row says too",
 -- can refuse a hull and the page must not claim you got it.
 menu.home = false
 check("in a game the connection wins over what was remembered",
-      menu.view().hulls[3].mark and not menu.view().hulls[CELLS].mark,
+      mark_at(3) and not mark_at(hull_cells),
       "spectate remembered but watching is false")
 menu.spectate = false
 menu.home = true
 
 -- Which cell wears the "you are here" wash follows the connection, not the
 -- last hull picked: a watcher is in no hull, so no hull is marked at all.
--- Read off a fresh view each time, since that is where a mark stops being a
--- question and becomes an answer.
 menu.home = false
 menu.class = 2
 menu.watching = false
-local flying_view = menu.view().hulls
 check("flying marks the hull you are in",
-      flying_view[3].mark and not flying_view[CELLS].mark,
-      tostring(flying_view[3].mark) .. "/" .. tostring(flying_view[CELLS].mark))
+      mark_at(3) and not mark_at(hull_cells))
 menu.watching = true
-local watching_view = menu.view().hulls
 check("watching marks the last cell instead, and no hull",
-      watching_view[CELLS].mark and not watching_view[3].mark,
-      tostring(watching_view[3].mark) .. "/" .. tostring(watching_view[CELLS].mark))
+      mark_at(hull_cells) and not mark_at(3))
 menu.watching = false
 menu.home = true
 menu.class = 0
@@ -1897,7 +1915,7 @@ do
     account.found, account.found_for = {}, ""
     menu.add_name, menu.add_on, menu.found_sel = "", false, nil
     menu.stack = {"root"}
-    menu.sel = {root = 4}
+    menu.sel = {root = top_index("friends")}
     menu.step({down = true})
     check("down off the tabs opens friends with the cursor in the field",
           menu.at() == "friends" and menu.add_on == true,
@@ -1984,7 +2002,7 @@ do
     -- And the field is the page's, not the rail's preview of it. A letter
     -- typed at the top of the menu would land in a box nobody can see.
     menu.stack = {"root"}
-    menu.sel = {root = 3}
+    menu.sel = {root = top_index("standings")}
     check("nothing types into a page you are only looking at",
           menu.type_add("x") == false, menu.add_name)
 
@@ -2093,9 +2111,9 @@ do
         menu.swap_charges()
         check("and swapping again puts them back",
               charges()[1] == first[1], tostring(charges()[1]))
-        -- And enter on a charge row is that press. On a ladder enter only
-        -- ever repeated what right does, so the row spends it on the other
-        -- question it answers.
+        -- And a keyboard reaches the swap through the reading, which is
+        -- where enter on a slot row goes: the box on the row is a pointer's
+        -- control, and the reading is where the same act is a key.
         local at = nil
         for i, r in ipairs(menu.view().rows) do
             if r.charge_slot == 1 then at = i end
@@ -2103,7 +2121,18 @@ do
         check("a charge row is on the page", at ~= nil, "none")
         menu.sel.hangar = at
         menu.step({go = true})
-        check("and enter on it swaps the two",
+        check("enter on it opens the reading", menu.at() == "slot",
+              table.concat(menu.stack, "/"))
+        local swap_at = nil
+        for i, r in ipairs(menu.view().rows) do
+            if r.act == "swap_charges" then swap_at = i end
+        end
+        check("which carries the swap as a key of its own",
+              swap_at ~= nil, "none")
+        menu.sel.slot = swap_at
+        menu.step({go = true})
+        menu.stack = {"root", "hangar"}
+        check("and pressing it trades the two",
               charges()[1] == first[2], tostring(charges()[1]))
         menu.swap_charges()
         CEIL[21] = 0
@@ -2127,18 +2156,19 @@ do
         if r.ship then hull_at2 = i end
         if r.group == "flair" and not r.ship then wake_at2 = i end
     end
-    check("the arena's slots and the add key are on the page",
-          #v.rows == 6, table.concat(labels, ", "))
-    -- The library first, then the slots, then flair: the hull with the wake
-    -- beside it at the foot, since choosing a shape and choosing a wake are
-    -- the same kind of choice. This account has no profiles, so the head of
-    -- the page is the one chip that does not need any. No budget row
-    -- anywhere: the figure rides the view, so the cursor never opens on a
-    -- readout.
-    check("with the hull and the wake in the flair at the foot",
-          hull_at2 == #v.rows - 1 and wake_at2 == #v.rows
+    -- The band, then every slot this arena has, then flair, and the key that
+    -- keeps the build where the kit has drifted from its name. Every slot the
+    -- arena takes, not every slot the account owns: what the page could not
+    -- say before is that there is more of a thing and it is not yours yet.
+    check("the band, the arena's slots, the flair and the save key",
+          #v.rows == 8, table.concat(labels, ", "))
+    check("with the hull and the wake in the flair above it",
+          hull_at2 == #v.rows - 2 and wake_at2 == #v.rows - 1
               and v.rows[hull_at2].detail == "Apex",
           table.concat(labels, ", "))
+    check("and the save key at the foot, because this kit has no name",
+          v.rows[#v.rows].group == "save",
+          tostring(v.rows[#v.rows].group))
     check("and the budget riding the view rather than a row",
           v.kit_spent ~= nil and v.kit_total == 6,
           tostring(v.kit_spent) .. "/" .. tostring(v.kit_total))
@@ -2294,143 +2324,166 @@ do
     menu.open_kit(0)
     check("a saved hull build recognizes its matching profile",
           menu.profile_at == 1, tostring(menu.profile_at))
-    local function library()
-        local add_row, rows_at, keys = nil, {}, {}
+    -- The library is a page behind the band's name key rather than a column
+    -- on the ship page: a list of builds and a kit are two activities, and
+    -- the one that happens once a session does not deserve a third of the
+    -- longest page in the menu.
+    local function band_key(which)
         for i, row in ipairs(menu.view().rows) do
-            if row.act == "save_profile" then add_row = i end
-            if row.act == "profile" then rows_at[#rows_at + 1] = i end
-            if row.act == "rename_profile" then keys.rename = i end
+            if row.group == "band" and row.act == which then return i end
+        end
+    end
+    check("the band opens the library and the points",
+          band_key("builds") == 1 and band_key("points") == 2,
+          tostring(band_key("builds")) .. "/" .. tostring(band_key("points")))
+    menu.sel.hangar = band_key("builds")
+    menu.step({go = true})
+    check("pressing the build's name opens the library",
+          menu.at() == "builds", table.concat(menu.stack, "/"))
+
+    local function library()
+        local listed, keys = {}, {}
+        for i, row in ipairs(menu.view().rows) do
+            if row.act == "profile" then listed[#listed + 1] = i end
+            if row.act == "new_build" then keys.new = i end
             if row.act == "delete_profile" then keys.delete = i end
         end
-        return add_row, rows_at, keys
+        return listed, keys
     end
-    local add_row, listed, keys = library()
-    check("every build is a row, with the key that adds one under them",
-          add_row == 3 and #listed == 2 and listed[1] == 1 and listed[2] == 2,
-          tostring(add_row) .. "/" .. #listed)
+    local listed, keys = library()
+    check("every build is a row, with the two keys under them",
+          #listed == 2 and listed[1] == 1 and listed[2] == 2
+          and keys.new == 3 and keys.delete == 4,
+          #listed .. " builds, keys " .. tostring(keys.new) .. "/"
+              .. tostring(keys.delete))
     check("and the one the kit matches carries the mark",
           menu.view().rows[listed[1]].choice == 1
           and menu.view().rows[listed[2]].choice == 0,
           tostring(menu.view().rows[listed[2]].choice))
-    check("a starter offers both keys, dim",
-          keys.rename ~= nil and keys.delete ~= nil
-          and menu.view().rows[keys.rename].dim == true
-          and menu.view().rows[keys.delete].dim == true,
-          tostring(keys.rename) .. "/" .. tostring(keys.delete))
-    menu.sel.hangar = keys.rename
+    check("a starter says so on its own row",
+          menu.view().rows[listed[1]].starter == true,
+          tostring(menu.view().rows[listed[1]].starter))
+    -- Nothing renames a build. It is named when it is made, and a name that
+    -- wants changing is a new build and a delete; what is left on this page
+    -- is the list, one key that makes one, and one that takes one away.
+    check("and nothing here renames one",
+          menu.view().rows[keys.delete].label == "delete"
+          and #menu.view().rows == 4,
+          tostring(#menu.view().rows) .. " rows")
+    check("delete is dim while the build in hand is a starter",
+          menu.view().rows[keys.delete].dim == true,
+          tostring(menu.view().rows[keys.delete].dim))
+    menu.sel.builds = keys.delete
     menu.note = nil
-    check("and pressing one explains instead of opening a card",
+    check("and pressing it explains instead of opening a card",
           menu.step({go = true}) == nil and menu.ask == nil
           and menu.note ~= nil
           and string.find(menu.note, "starter", 1, true) ~= nil,
           tostring(menu.note))
     menu.note = nil
-    menu.sel.hangar = listed[2]
+    menu.sel.builds = listed[2]
     local selected_profile = menu.step({go = true})
     check("pressing a row loads that whole build",
           selected_profile == "kit" and menu.profile_at == 2
           and menu.kit[1] == 4 and menu.kit[6] == 2,
           tostring(selected_profile) .. "/" .. tostring(menu.profile_at))
-    check("and the head of the pane names it",
+    check("and the band names it",
           menu.profile_band().name == "Bomber"
           and menu.profile_band().state == nil,
           menu.profile_band().name .. "/"
               .. tostring(menu.profile_band().state))
 
-    -- The list is a selector: an arrow landing on a build loads it, so the
-    -- pane beside the list is always about the row the cursor is on. Enter
-    -- commits the same load, for a pointer.
-    menu.sel.hangar = listed[1]
-    local walked = menu.step({up = true, down = false})
-    check("up onto a build is back off the page",
-          walked == nil and menu.at() ~= "hangar",
-          table.concat(menu.stack, "/"))
-    menu.stack = {"root", "hangar"}
-    menu.sel.hangar = listed[1]
-    walked = menu.step({down = true})
-    check("down onto a build loads it",
-          walked == "kit" and menu.profile_at == 2
-          and menu.kit[1] == 4 and menu.kit[6] == 2,
-          tostring(walked) .. "/" .. tostring(menu.profile_at))
-    walked = menu.step({up = true})
-    check("and up onto the one above loads that one",
-          walked == "kit" and menu.profile_at == 1
-          and menu.kit[1] == 2 and menu.kit[6] == 0,
-          tostring(walked) .. "/" .. tostring(menu.profile_at))
-
-    -- Entering the page lands the cursor on the build the kit in hand is,
-    -- so the washed row and the name in the head agree from the first
-    -- frame. It opened on row one, which washed the first starter while the
-    -- head named whichever build the kit actually was.
-    menu.sel.hangar = add_row
+    -- Entering the ship page lands the cursor on the band, which is the first
+    -- thing on it and the one row a hand coming down off the tabs meets.
     menu.stack = {"root"}
     menu.sel.root = ship_at
     menu.step({go = true})
-    check("entering the hangar lands on the matching build",
-          menu.at() == "hangar" and menu.sel.hangar == 1,
+    check("entering the hangar lands on the band",
+          menu.at() == "hangar" and (menu.sel.hangar or 1) == 1,
           table.concat(menu.stack, "/") .. " row "
-              .. tostring(menu.sel.hangar))
+              .. tostring(menu.sel.hangar or 1))
 
-    -- Back onto the second build for the edits below.
-    menu.sel.hangar = listed[2]
-    menu.step({go = true})
+    -- --- keeping a build ----------------------------------------------------
+    --
+    -- The save key is at the foot of the ship page and is there only while
+    -- the thirty points in hand differ from the build they came from. Its
+    -- absence is the answer to "is there anything to keep here".
+    local function save_key()
+        for i, row in ipairs(menu.view().rows) do
+            if row.act == "save_kit" then return i end
+        end
+    end
+    check("a build that is exactly its own name offers no save",
+          save_key() == nil, tostring(save_key() or "none"))
     menu.kit_step(0, -1)
-    check("editing a profile turns it into a custom build",
+    check("editing it turns it into a custom build",
           menu.profile_at == nil, tostring(menu.profile_at))
-    check("and the head still says which build it came from",
+    check("and the band still says which build it came from",
           menu.profile_band().name == "Bomber"
           and menu.profile_band().state == "edited",
           menu.profile_band().name .. "/"
               .. tostring(menu.profile_band().state))
-    menu.sel.hangar = add_row
-    menu.step({go = true})
-    check("a custom build can be named",
-          menu.ask ~= nil and menu.ask.fields[1].label == "profile name",
-          menu.ask and menu.ask.head or "no card")
-    -- Nothing offered, because this build was edited from a starter and the
-    -- meta-layer keeps those three names for itself.
-    check("and a starter's name is not offered back",
-          menu.ask.fields[1].value == "", menu.ask.fields[1].value)
-    menu.ask.fields[1].value = "Screen"
-    local save_action = menu.click_answer(1)
-    check("saving hands the named profile to the arena",
-          save_action == "save_profile" and menu.pending_profile == "Screen",
-          tostring(save_action) .. "/" .. tostring(menu.pending_profile))
+    check("and the save key is on the page now",
+          save_key() ~= nil and menu.view().rows[save_key()].group == "save",
+          tostring(save_key()))
 
-    -- Saving over one of your own is the same two presses as naming a new
-    -- one: the card opens with the name the build already answers to.
+    -- Saving a build tuned from a starter cannot write over it: the three the
+    -- game ships keep their names and the meta-layer refuses. So the key goes
+    -- to the page that gives it one, which is where the library's NEW key
+    -- goes too.
+    menu.sel.hangar = save_key()
+    menu.new_name, menu.new_on = "", false
+    menu.step({go = true})
+    check("saving a build tuned from a starter goes to the naming page",
+          menu.at() == "newbuild" and menu.new_on == true,
+          table.concat(menu.stack, "/") .. "/" .. tostring(menu.new_on))
+    check("with nothing offered back, since a starter's name is not yours",
+          menu.view().new.name == "", tostring(menu.view().new.name))
+    check("and one row on it, the key that makes the build",
+          #menu.view().rows == 1
+          and menu.view().rows[1].act == "create_build"
+          and menu.view().newbuild == true,
+          tostring(#menu.view().rows))
+
+    -- The box takes type, and an empty one is a build with no name.
+    menu.note = nil
+    local named = menu.click_create()
+    check("creating with an empty box says so rather than sending it",
+          named == nil and menu.note ~= nil
+          and string.find(menu.note, "name", 1, true) ~= nil,
+          tostring(menu.note))
+    for ch in string.gmatch("Screen", ".") do menu.type_new(ch) end
+    check("the box takes letters", menu.new_name == "Screen", menu.new_name)
+    menu.rub_new()
+    check("and gives them back", menu.new_name == "Scree", menu.new_name)
+    menu.type_new("n")
+    named = menu.click_create()
+    check("creating hands the named build to the arena",
+          named == "save_profile" and menu.pending_profile == "Screen",
+          tostring(named) .. "/" .. tostring(menu.pending_profile))
+
+    -- Over one of your own the key writes to it rather than asking for a
+    -- name: that is what save means on a thing that already has one.
     account.profiles[3] = {name = "Screen", builtin = false,
                            kit = second_profile}
     menu.profile_from, menu.profile_at = 3, nil
-    menu.ask = nil
-    menu.sel.hangar = (library())
-    menu.step({go = true})
-    check("a build tuned from one of yours offers its name back",
-          menu.ask ~= nil and menu.ask.fields[1].value == "Screen",
-          menu.ask and menu.ask.fields[1].value or "no card")
-    menu.ask = nil
+    menu.stack = {"root", "hangar"}
+    menu.sel.hangar = save_key()
+    local saved = menu.step({go = true})
+    check("saving over one of yours needs no name",
+          saved == "save_profile" and menu.pending_profile == "Screen"
+          and menu.at() == "hangar",
+          tostring(saved) .. "/" .. tostring(menu.pending_profile))
 
-    -- A build of the pilot's own can be renamed and dropped, and both are the
-    -- pane's own keys rather than rows in the list: they are about the one
-    -- build the pane is showing.
-    local _, _, own_keys = library()
-    check("one of yours offers both",
-          own_keys.rename ~= nil and own_keys.delete ~= nil,
-          tostring(own_keys.rename) .. "/" .. tostring(own_keys.delete))
-    menu.sel.hangar = own_keys.rename
-    menu.step({go = true})
-    check("rename opens a card carrying the name it would change",
-          menu.ask ~= nil and menu.ask.fields[1].value == "Screen"
-          and menu.pending_profile == "Screen",
-          menu.ask and menu.ask.fields[1].value or "no card")
-    menu.ask.fields[1].value = "Bomb run"
-    local renamed = menu.click_answer(1)
-    check("and answering it hands both names to the arena",
-          renamed == "rename_profile" and menu.pending_profile == "Screen"
-          and menu.pending_rename == "Bomb run",
-          tostring(renamed) .. "/" .. tostring(menu.pending_rename))
-    menu.ask = nil
-    menu.sel.hangar = own_keys.delete
+    -- And a build of the pilot's own can be dropped, from the library, which
+    -- asks first: it is the one thing here that takes something away for good.
+    menu.stack = {"root", "builds"}
+    menu.sel = {}
+    local _, own_keys = library()
+    check("delete is a live key on one of yours",
+          menu.view().rows[own_keys.delete].dim ~= true,
+          tostring(menu.view().rows[own_keys.delete].dim))
+    menu.sel.builds = own_keys.delete
     menu.step({go = true})
     check("delete asks first, and the answer that changes nothing is the one lit",
           menu.ask ~= nil and menu.ask.sel == 2
@@ -2443,14 +2496,19 @@ do
     menu.ask = nil
     menu.profile_from = nil
     account.profiles = {}
+    menu.stack = {"root", "hangar"}
+    menu.sel = {}
 
-    -- Nothing on this page is for sale. The prices rode these rows for a
-    -- while and buying is the upgrades tab again: a panel with a wallet and a
-    -- budget on it has the word "spend" meaning two things at once.
+    -- --- the price rides the row it belongs to -------------------------------
+    --
+    -- The shelf was a tab of its own drawing the same slots in the same order
+    -- for the other question. It is the same page now: a rung the account
+    -- does not own is a dim circle, and where it is for sale the row ends in
+    -- what it costs. See docs/design/match-game.md and .design/hangar.
     account.entitlements = {[1] = 1}
     account.rivets = 500
     account.catalog = {{slot = 0, label = "energy depth", price = 40,
-                        owned = 1, ceiling = 2, base = 0,
+                        owned = 1, ceiling = 4, base = 0,
                         note = "a 7th step, on this stat alone"}}
     menu.kit = nil
     menu.open_kit(0)
@@ -2458,134 +2516,94 @@ do
     for _, r in ipairs(menu.view().rows) do
         if r.label == "energy" then priced = r end
     end
-    check("the ship page carries no price",
-          priced ~= nil and priced.price == nil,
+    check("the ship page carries the price of the next rung",
+          priced ~= nil and priced.price == 40 and priced.afford == true,
           priced and tostring(priced.price) or "no energy row")
+    check("with what is owned against how far the arena's own ladder runs",
+          priced.choices == 1 and priced.arena_max == 4,
+          tostring(priced.choices) .. "/" .. tostring(priced.arena_max))
 
-    -- And a press that cannot spend says which of the two refusals it is,
-    -- rather than offering to sell the way out of one of them.
+    -- An arrow that runs out of ladder says so. It is a control for setting a
+    -- value, so it does not open a page nobody asked for; the price it is
+    -- refusing over is already drawn on the end of the row.
     menu.sel.hangar = first_slot()
     menu.ask = nil
+    menu.note = nil
     for _ = 1, 4 do menu.step({right = true}) end
     check("the ladder stops at what the account owns", menu.kit[1] == 1,
           tostring(menu.kit[1]))
     check("and an arrow at the top of it raises no card", menu.ask == nil,
           menu.ask and menu.ask.head or "quiet")
-    menu.step({go = true})
-    check("and the next press points at the page that sells it",
-          menu.ask == nil and menu.note ~= nil
-          and string.find(menu.note, "upgrades", 1, true) ~= nil,
+    check("but says the rung above is not yours yet",
+          menu.note ~= nil
+          and string.find(menu.note, "not yours yet", 1, true) ~= nil,
           tostring(menu.note))
 
-    -- A rung nobody owns, pressed directly. Same answer: the pip has been
-    -- advertising something this page does not sell.
-    menu.ask = nil
-    menu.click_kit_at(1, 2)
-    check("a rung nobody owns says where it is sold",
-          menu.ask == nil and menu.note ~= nil
-          and string.find(menu.note, "upgrades", 1, true) ~= nil,
-          tostring(menu.note))
-    menu.click_kit_at(1, 1)
-    check("and a rung you own is still just a rung",
-          menu.ask == nil and menu.kit[1] == 1,
-          tostring(menu.kit[1]))
-
-    -- --- the page that does sell it
+    -- --- the reading, which is where anything is bought ----------------------
     --
-    -- Every slot the game has, owned marked, with the price of the next rung
-    -- on the ones that have one. It listed only what was left to buy once,
-    -- which is a page that shrinks as a pilot gets stronger and loses the
-    -- whole ladder on the last purchase in it.
-    account.rivets = 500
-    account.catalog = {
-        {slot = 0, label = "energy depth", owned = 1, ceiling = 2, base = 0,
-         price = 40, note = "a 7th step, on this stat alone"},
-        {slot = 1, label = "recharge depth", owned = 2, ceiling = 2, base = 0},
-    }
-    menu.stack = {"root", "upgrades"}
-    menu.sel = {}
-    local shop = menu.view()
-    check("the catalog is drawn as its own page", shop.shop == true,
-          tostring(shop.shop))
-    check("and lists what is owned as well as what is for sale",
-          #shop.rows == 2, tostring(#shop.rows))
-    check("a slot with a rung left carries its price",
-          shop.rows[1].price == 40 and shop.rows[1].afford == true
-          and shop.rows[1].owned == 1 and shop.rows[1].arena_max == 2,
-          tostring(shop.rows[1].price))
-    check("and one taken to the top of its ladder carries none",
-          shop.rows[2].price == nil and shop.rows[2].owned == 2,
-          tostring(shop.rows[2].price))
-
-    -- A priced row opens as a page of its own first. There is no reading
-    -- pane beside the shelf any more, on any window, so the pane is a page
-    -- you step into and its own buy is what raises the card.
-    menu.sel.upgrades = 1
-    menu.ask = nil
+    -- Enter on a slot row, a press on its name, or a press on the part of its
+    -- ladder nobody owns: all three are the same question, and this page is
+    -- the answer.
+    menu.ask, menu.note = nil, nil
+    menu.sel.hangar = first_slot()
     menu.step({go = true})
-    check("pressing a priced row opens it as a page",
-          menu.stack[#menu.stack] == "shop_item" and menu.ask == nil,
-          menu.stack[#menu.stack])
+    check("enter on a slot opens its reading", menu.at() == "slot",
+          table.concat(menu.stack, "/"))
+    local reading = menu.view()
+    check("which is about that slot", reading.item ~= nil
+          and reading.item.label == "energy" and reading.item.price == 40,
+          reading.item and reading.item.label or "nothing")
+    check("and carries the lesson and the wallet, which no other page does",
+          reading.item.teach ~= nil and reading.wallet == 500,
+          tostring(reading.wallet))
+    check("with the buy as its one key",
+          #reading.rows == 1 and reading.rows[1].act == "buy",
+          tostring(#reading.rows))
     menu.step({go = true})
-    check("and the page's own buy asks before it spends",
+    check("and the key asks before it spends",
           menu.ask ~= nil and string.find(menu.ask.head, "40", 1, true),
           menu.ask and menu.ask.head or "no card")
     check("with the answer that changes nothing under the cursor",
-          menu.ask.keys[menu.ask.sel].act == nil,
-          tostring(menu.ask.sel))
+          menu.ask.keys[menu.ask.sel].act == nil, tostring(menu.ask.sel))
     menu.pending = nil
     local bought = menu.click_answer(1)
     check("and answering it buys that slot",
           bought == "buy" and menu.pending == 0,
           tostring(bought) .. "/" .. tostring(menu.pending))
-
-    -- And the two hands do different things here, which is the one page
-    -- where they should. A press of the key acts on the cursor, and the
-    -- thing it acts on is the button beside the pane. A pointer landing on a
-    -- row is reading: it moves the cursor there and spends nothing, because
-    -- what the pane fills up with is the answer to why you clicked.
-    -- Back out to the shelf, since the buy above was made from the item's
-    -- own page and the two hands are a question about the shelf's rows.
-    menu.stack = {"root", "upgrades"}
-    menu.sel.upgrades = 2
     menu.ask = nil
-    account.rivets = 500
-    local act = menu.click(1)
-    check("a pointer on a row moves the cursor to it",
-          menu.sel.upgrades == 1, tostring(menu.sel.upgrades))
-    check("and spends nothing",
-          menu.ask == nil and act == nil,
-          menu.ask and menu.ask.head or tostring(act))
 
-    -- The button does. It names its own row rather than reading the cursor,
-    -- since the pane it sits under follows the pointer.
-    menu.stack = {"root", "upgrades"}
-    menu.sel.upgrades = 2
-    menu.ask = nil
-    menu.click_buy(1)
-    check("the buy button asks about the row it was drawn for",
-          menu.ask ~= nil and string.find(menu.ask.head, "40", 1, true),
-          menu.ask and menu.ask.head or "no card")
-    check("and takes the cursor there, so the pane agrees with the card",
-          menu.sel.upgrades == 1, tostring(menu.sel.upgrades))
-    menu.ask = nil
-    check("a row with nothing to sell has no buy in it",
-          select(2, menu.click_buy(2)) == false, "bought a topped-out slot")
+    -- The chevron and the swipe both come back out of it.
+    check("there is a level to come back out of", menu.can_back() == true,
+          tostring(menu.can_back()))
+    menu.click_back()
+    check("and coming back lands on the ship page", menu.at() == "hangar",
+          table.concat(menu.stack, "/"))
 
-    -- A row with nothing left to sell is not a control.
-    menu.stack = {"root", "upgrades"}
-    menu.sel.upgrades = 2
-    menu.ask = nil
-    menu.step({go = true})
-    check("a slot you have taken to the top presses nothing",
-          menu.ask == nil, menu.ask and menu.ask.head or "quiet")
+    -- A rung nobody owns, pressed directly. Same question, same answer.
+    menu.ask, menu.note = nil, nil
+    menu.click_kit_at(first_slot(), 3)
+    check("a press on a rung nobody owns opens the reading",
+          menu.at() == "slot" and menu.ask == nil,
+          table.concat(menu.stack, "/"))
+    menu.click_back()
+    -- The circle a slot is already on takes the point back, which is the only
+    -- way a pointer can walk a ladder down: every other circle means "this
+    -- many of these", and the lit one already means the level it is at.
+    menu.click_kit_at(first_slot(), 1)
+    check("pressing the one it is on takes the point back",
+          menu.at() == "hangar" and menu.kit[1] == 0,
+          tostring(menu.kit[1]))
+    menu.click_kit_at(first_slot(), 1)
+    check("and a rung you own is still just a rung",
+          menu.at() == "hangar" and menu.kit[1] == 1,
+          tostring(menu.kit[1]))
 
-    -- A wallet too light is told so instead of being asked a question whose
-    -- only answer is a refusal.
-    -- The refusal comes from the item's own page, which is where the buy is.
-    menu.stack = {"root", "upgrades"}
-    menu.sel.upgrades = 1
+    -- A wallet too light is told the price rather than asked to pay it.
     account.rivets = 10
+    menu.kit = nil
+    menu.open_kit(0)
+    menu.stack = {"root", "hangar"}
+    menu.sel.hangar = first_slot()
     menu.ask = nil
     menu.step({go = true})
     menu.step({go = true})
@@ -2595,7 +2613,8 @@ do
           menu.ask and (menu.ask.head .. "/" .. tostring(menu.ask.note))
               or "no card")
     menu.ask = nil
-    account.shelf = nil
+    menu.stack = {"root", "hangar"}
+    account.catalog = nil
     account.rivets = 0
     account.entitlements = {}
 
@@ -2617,16 +2636,13 @@ do
     account.entitlements = {}
     account.kits = {}
 
-    -- --- what is on the page is what you can fly
+    -- --- what is on the page is every slot the arena has ---------------------
     --
-    -- A slot the arena has and the account does not own used to be drawn here
-    -- anyway, backed off, so the page could say "this exists and is not
-    -- yours". The upgrades tab says that now, with the price attached, and
-    -- here it left unreachable rows and chips too dim to read taking the room
-    -- a legible one would have.
-    -- An arena with one stat, the gun's ladder, two of the gun's add-ons and
-    -- one charge. The walk test above filled every slot; this is a shape small
-    -- enough to name every row it should produce.
+    -- A slot the account owns none of used to be off the page altogether, on
+    -- the argument that this page is what you fly. What that cost was the one
+    -- thing a pilot asks it: why does this stop here, and what would it take.
+    -- Every slot the arena takes is a row now, and the ones nobody owns are
+    -- dim circles with a price on the end.
     for i = 1, 23 do CEIL[i] = 0 end
     CEIL[1] = 4          -- the first stat
     CEIL[6] = 2          -- the gun's ladder
@@ -2634,7 +2650,6 @@ do
     CEIL[9] = 2          -- gun bounce, two rungs
     CEIL[12] = 1         -- gun freeze, one
     CEIL[20] = 3         -- the first charge
-    -- Back on the ship page, which the upgrades block above left.
     account.catalog = nil
     account.entitlements = {}
     menu.stack = {"root", "hangar"}
@@ -2643,40 +2658,43 @@ do
     menu.open_kit(0)
     local owned = {}
     for _, r in ipairs(menu.view().rows) do owned[#owned + 1] = r.label end
-    -- Nine: the six slots this zone allows, the hull and the wake, and the
-    -- key that adds a build. This account has kept none, so the column down
-    -- the left is that key alone.
-    check("every slot the arena takes is on the page while the account owns it",
-          #owned == 9, table.concat(owned, ", "))
+    -- Eleven: the band's two, the six slots this zone allows, the hull, the
+    -- wake, and the save key, since this pilot has kept no builds and so the
+    -- kit in hand answers to no name.
+    check("every slot the arena takes is on the page",
+          #owned == 11, table.concat(owned, ", "))
 
     -- Now the account owns none of the gun's ladder and one of three repels.
+    -- The rows stay: what changes is how much of each ladder is lit.
     account.entitlements = {[6] = 0, [20] = 1}
     menu.kit = nil
     menu.open_kit(0)
-    local mine, charge = {}, nil
+    local mine, charge, gun = {}, nil, nil
     for _, r in ipairs(menu.view().rows) do
         mine[#mine + 1] = r.label
         if r.label == "repel" then charge = r end
+        if r.label == "gun level" then gun = r end
     end
-    check("a slot the account owns none of is off the page altogether",
-          #mine == 8 and not string.find(table.concat(mine, ","),
-                                         "gun level", 1, true),
-          table.concat(mine, ", "))
-    check("and a ladder stops at what the account owns, not at the arena's",
-          charge ~= nil and charge.owned == 1 and charge.choices == 1,
-          charge and (tostring(charge.owned) .. "/" .. tostring(charge.choices))
-              or "no repel row")
+    check("a slot the account owns none of is still on the page",
+          #mine == 11 and gun ~= nil, table.concat(mine, ", "))
+    check("drawn with nothing of it owned, and the arena's ladder behind it",
+          gun.choices == 0 and gun.arena_max == 2,
+          tostring(gun.choices) .. "/" .. tostring(gun.arena_max))
+    check("and a ladder lights what the account owns, against the arena's",
+          charge ~= nil and charge.choices == 1 and charge.arena_max == 3,
+          charge and (tostring(charge.choices) .. "/"
+                      .. tostring(charge.arena_max)) or "no repel row")
 
-    -- --- an add-on is a switch, and the arrows walk them
+    -- --- every slot is a ladder, and the arrows walk it ---------------------
     --
-    -- The chips are drawn as a row of boxes across the page, so left and right
-    -- go to the chip beside this one. They set the value before, which is a
-    -- ladder's control: the arrow pointing at the next chip turned the one it
-    -- was on off, and walking the group meant pressing up and down through a
-    -- row that reads left to right.
+    -- The add-ons were chips: a row of boxes across the page, where left and
+    -- right went to the box beside this one and enter threw the one you were
+    -- on. That was a second control grammar on a page that already had
+    -- ladders, and a third for the count spray keeps. Every slot is a ladder
+    -- now, so there is one control here and both directions of it work.
     account.entitlements = {}
     -- A build with a point already on it, so `open_kit` does not fall back to
-    -- the starter kit and hand this test a chip that is already switched on.
+    -- the starter kit and hand this test a row that is already spent on.
     account.kits = {Apex = {[1] = 1}}
     menu.kit = nil
     menu.open_kit(0)
@@ -2687,35 +2705,25 @@ do
         if r.label == "gun bounce" then bounce = i end
         if r.label == "gun freeze" then freeze = i end
     end
-    check("the add-ons are on the page as chips",
+    check("the add-ons are rows of the gun's own section",
           bounce ~= nil and freeze == bounce + 1,
           tostring(bounce) .. "/" .. tostring(freeze))
     menu.sel.hangar = bounce
     menu.step({right = true})
-    check("right goes to the chip beside it", menu.sel.hangar == freeze,
+    check("right spends a point on it", (menu.kit[9] or 0) == 1,
+          tostring(menu.kit[9]))
+    check("without the cursor leaving the row", menu.sel.hangar == bounce,
           "cursor " .. tostring(menu.sel.hangar))
-    check("and nothing was switched on the way", (menu.kit[9] or 0) == 0,
+    menu.step({right = true})
+    check("and again, up the rungs it has", (menu.kit[9] or 0) == 2,
           tostring(menu.kit[9]))
     menu.step({left = true})
-    check("and left comes back", menu.sel.hangar == bounce,
-          "cursor " .. tostring(menu.sel.hangar))
-
-    -- Enter throws it, and the trigger is enter here: a switch wants one
-    -- press, and at the top the next press takes it off again.
-    menu.step({go = true})
-    check("enter switches the chip on", (menu.kit[9] or 0) == 1,
-          tostring(menu.kit[9]))
-    menu.step({go = true})
-    check("and enter walks it up the rungs it has", (menu.kit[9] or 0) == 2,
-          tostring(menu.kit[9]))
-    menu.step({go = true})
-    check("and off again at the top", (menu.kit[9] or 0) == 0,
+    menu.step({left = true})
+    check("and left gives them back", (menu.kit[9] or 0) == 0,
           tostring(menu.kit[9]))
 
-    -- Spray is the exception in that group, because it is a count of rounds
-    -- rather than a switch with rungs behind it: it takes the arrows the way
-    -- a stat does. It used to be a chip beside a second chip called "double
-    -- barrel", and both of them meant more bullets.
+    -- Spray reads as a count of rounds rather than a position on a ladder,
+    -- which is a difference in what the row says and not in how it works.
     check("spray is on the page", spray ~= nil, tostring(spray))
     menu.sel.hangar = spray
     menu.step({right = true})
@@ -2729,6 +2737,15 @@ do
     menu.step({left = true})
     check("and gives them back", (menu.kit[8] or 0) == 0,
           tostring(menu.kit[8]))
+
+    -- And enter goes to the reading, on every one of them, which is the one
+    -- press left over once the arrows do both directions.
+    menu.sel.hangar = bounce
+    menu.step({go = true})
+    check("enter on an add-on opens its reading rather than throwing it",
+          menu.at() == "slot" and (menu.kit[9] or 0) == 0,
+          table.concat(menu.stack, "/"))
+    menu.click_back()
 
     -- A stat is still a ladder, because that is what it is: left and right
     -- spend and unspend along it.
@@ -2897,10 +2914,14 @@ do
     local kept_rows = account.rows
     local kept_here, kept_friends = account.here, account.friends
 
-    -- Upgrades, with the catalog still on its way.
-    local kept_catalog = account.catalog
-    account.catalog = nil
-    local up_at = top_index("upgrades")
+    -- The games, with the directory still on its way. It used to be the
+    -- upgrades tab that could stand empty; the shelf is the ship page now and
+    -- the ship page always has a band to stand on, so the list of games is
+    -- the page this guard is about.
+    local dir = package.loaded["arena.directory"]
+    local kept_dir = dir.rows
+    dir.rows = {}
+    local up_at = top_index("play")
     menu.sel.root = up_at
     local _, moved = menu.step({down = true})
     check("down on a tab still asking for its page stays on the tab",
@@ -2921,13 +2942,12 @@ do
 
     -- And the moment it lands, the same press works, which is the half of
     -- this that says the guard is about the page and not about the tab.
-    account.catalog = {{slot = 0, level = 1, price = 40, label = "speed"}}
+    dir.rows = kept_dir
     menu.stack = {"root"}
     menu.sel.root = up_at
     menu.step({down = true})
-    check("once the catalog is there the same press goes in",
-          menu.at() == "upgrades", table.concat(menu.stack, "/"))
-    account.catalog = kept_catalog
+    check("once the list is there the same press goes in",
+          menu.at() == "play", table.concat(menu.stack, "/"))
 
     -- Friends with nobody on it is still somewhere to be.
     menu.stack = {"root"}
@@ -3050,7 +3070,7 @@ do
         return menu.view().closable == true
     end)())
 
-    -- The tab set follows the cockpit, not the zone. Six stops with no hull,
+    -- The tab set follows the cockpit, not the zone. Five stops with no hull,
     -- wherever you are standing; the short row only once you are flying one.
     local function labels()
         local out = {}
@@ -3061,7 +3081,7 @@ do
     menu.home, menu.scenery, menu.watching = true, true, false
     menu.open, menu.stack, menu.sel = true, {"root"}, {}
     check("the stands carry the whole row",
-          labels() == "play ship upgrades friends standings settings",
+          labels() == "play ship friends standings settings",
           labels())
 
     menu.home, menu.watching = false, false
@@ -3070,12 +3090,12 @@ do
           labels())
 
     -- A pilot the room benched is in the stands too: same empty cockpit, same
-    -- time to read, so the same six stops. What they keep that the landing
+    -- time to read, so the same five stops. What they keep that the landing
     -- does not is `leave`, because they are in a zone there is something to
     -- leave.
     menu.home, menu.watching = false, true
     check("a benched pilot gets the whole row back",
-          labels() == "play ship upgrades friends standings settings leave",
+          labels() == "play ship friends standings settings leave",
           labels())
 
     menu.home, menu.scenery, menu.watching = kept.home, kept.scenery,

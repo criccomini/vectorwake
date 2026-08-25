@@ -4967,536 +4967,245 @@ function pages.pip(cx, cy, k, lit, col)
     end
 end
 
--- A chip: the mocks' box for a thing you either have or do not, with its name
--- and, where the name is jargon, a line about what it does. Rungs and add-ons
--- are chips because they are not ladders you climb but switches you throw.
-function pages.chip(x, y, w, h, r, hot, focused)
-    local held = (r.choice or 0) > 0
-    -- Every chip on this page is one this account owns and can put on the
-    -- ship, so there are two states rather than three: on, and off.
-    --
-    -- There was a third. A slot the arena had and the account did not own was
-    -- drawn back at 0.4 of a dim grey, to say the thing existed and was not
-    -- yours. On a dark ground that is a word you cannot read, four of them to
-    -- a group, taking the room a legible chip would have; and the page that
-    -- sells them says it properly now. Off is written in the same ink the
-    -- rest of the page is, because a chip you can throw is a control.
-    if held then
-        rect(x, y, w, h, pal.a(pal.FRIEND, 0.2))
-    elseif hot then
-        rect(x, y, w, h, pal.a(pal.FRIEND, 0.1))
-    end
-    if hot then
-        F.layer:frame(x, ry(y, h), w, h, 1.2 * F.scale,
-                      pal.a(pal.FRIEND, focused and 1 or 0.5))
+-- One circle, in the three states a slot's ladder has.
+--
+-- Everything on this page is a circle and the fill says what it is: solid is
+-- a point equipped, a ring in the slot's own color is a step this account
+-- owns and has not spent a point on, and a dim grey ring is a rung the arena
+-- has that the account does not. One mark with three fills is a grammar a
+-- pilot learns once; the page used to carry pips, chips, squares and a
+-- diamond, which is four marks for one idea. See .design/hangar.
+function pages.dot(cx, cy, r, kind, col)
+    local sides = 14
+    if kind == "on" then
+        F.layer:disc(cx, ry(cy), r, sides, col)
+    elseif kind == "ring" then
+        F.layer:ring(cx, ry(cy), r - 0.5 * F.scale, 1.1 * F.scale, sides,
+                     pal.a(col, 0.8))
     else
-        -- A whole pixel. At 0.9 on a density-1 screen a hard-edged stroke
-        -- covers a pixel center or misses it on where the chip happens to
-        -- sit; the layer floors it now, and the authored width should not
-        -- pretend to a weight the screen cannot draw.
-        F.layer:frame(x, ry(y, h), w, h, 1.0 * F.scale,
-                      pal.a(held and pal.FRIEND or pal.RADAR_TILE,
-                            held and 0.55 or 0.6))
-    end
-    -- How many of it you hold, out of how many the account may, since a rung
-    -- is a ladder in a chip's clothing and two of them is level two. A chip
-    -- nobody owns says nothing, because zero of zero is a sum rather than a
-    -- fact.
-    --
-    -- A price used to sit here too, on the argument that a chip is a control
-    -- and the press on one you do not own should buy it. That put a wallet
-    -- and a budget on one screen with the word "spend" meaning both, and
-    -- buying is the upgrades tab again.
-    local count = (r.owned or 0) > 1
-    -- The word sits in the middle of the chip, and moves up only to make room
-    -- for a count. Every chip used to hold its word at four tenths whether or
-    -- not anything came after it, so a group where two chips had counts and
-    -- two did not was four words at two heights and a run of empty space
-    -- along the bottom.
-    local ly = count and (y + h * 0.38) or (y + h / 2)
-    lbl(r.short or r.label, x + w / 2, ly,
-        pal.a(held and pal.FRIEND or pal.INK, held and 1 or 0.8),
-        "center", LBL_PX * F.scale)
-    if count then
-        -- As pips, the way every ladder on this page is read: a rung is a
-        -- ladder in a chip's clothing, and the chip wears the ladder rather
-        -- than a figure that has to be read as one. Small, because the word
-        -- above them is the label and this is the reading.
-        local n = r.owned or 0
-        local step = 10 * F.scale
-        local px = x + w / 2 - (n - 1) * step / 2
-        local py = y + h * 0.72
-        for k = 1, n do
-            pages.pip(px, py, 3.2 * F.scale,
-                      (r.choice or 0) >= k and "on" or "off",
-                      (r.choice or 0) >= k and pal.a(pal.FRIEND, 0.95)
-                      or pal.DIM)
-            px = px + step
-        end
+        F.layer:ring(cx, ry(cy), r - 0.5 * F.scale, 1.0 * F.scale, sides,
+                     pal.a(pal.DIM, 0.5))
     end
 end
 
--- The ship page: which ship, and what thirty points buy on it.
---
--- Picking a ship and spending its thirty are the same act seen twice, so they
--- are one page rather than two levels of a stack. A page that showed one at a
--- time made a player memorise the ship they had just left.
-function pages.kit(v, x, y, w, h, focused)
-    -- The builds you can fly, and the thirty points of the one you are on.
-    --
-    -- The page has been a column of hulls, then a carousel in a column of its
-    -- own, then one column of kit under a band that named the ship. All three
-    -- spent most of a monitor on the hull, which is a thing you choose once,
-    -- and the hull is chosen in flair now.
-    --
-    -- Two columns: the builds you have kept down the left, and the thirty
-    -- points of whichever one the pane is about on the right. It is the shape
-    -- the shelf uses, and for the same reason: browsing a list and working on
-    -- one thing are two activities taking turns, and a page that gives the
-    -- first no room makes you open and shut something to do the second.
-    --
-    -- One column where there is no width for two. The list goes above the kit
-    -- there rather than beside it, and the kit starts under it.
-    local stacked = w < 620 * F.scale
-    local listw = stacked and 0 or math.min(210 * F.scale, w * 0.28)
-    local gap = stacked and 0 or 26 * F.scale
-    local panex = x + listw + gap
-    -- Everything past the list. The ship was drawn out here, turning, and it
-    -- is gone: what a page about thirty points owes the eye is the thirty
-    -- points, and the flair section names the hull for anyone asking which
-    -- one they are spending them on.
-    local kwidth = w - listw - gap
-    -- The head of the pane: what this build is called, what it is spending,
-    -- and the two things that can be done to a name. One line where there is
-    -- width for it, two where there is not.
-    local BAND = (stacked and 60 or 42) * F.scale
+-- A slot's ladder, at whatever size it is handed: filled to what is equipped,
+-- ringed to what is owned, dim to where the arena's own ladder stops.
+function pages.ladder(r, x, cy, step, rad)
+    local held, owned = r.choice or 0, r.choices or 0
+    local top = math.max(r.arena_max or owned, owned)
+    local col = r.tint_col or pal.FRIEND
+    for k = 1, top do
+        local kind = (k <= held and "on") or (k <= owned and "ring") or "dim"
+        pages.dot(x + (k - 1) * step, cy, rad, kind, col)
+    end
+    return x + math.max(top, 1) * step
+end
 
-    local list, pane, profiles, stats, levels, guns, bombs, charges, flair =
-        {}, {}, {}, {}, {}, {}, {}, {}, {}
+-- The ship page: every slot this arena has, and the thirty points on it.
+--
+-- One page, where there were two. The shelf was a tab of its own drawing the
+-- same slots in the same order for the other question, and a pilot who could
+-- not turn something on had to leave to find out why. The row says why: a
+-- dim circle is a rung that is not yours, and where it is for sale the row
+-- ends in its price. Pressing the name, or the dim part of the ladder, slides
+-- the reading in over the page.
+--
+-- It carries no head. The wordmark and the call sign come off the top of the
+-- column here, because this is the longest page in the menu and the band it
+-- puts on that line, the build's name and the points, is what a builder needs
+-- on screen. See .design/hangar and docs/design/match-game.md.
+function pages.kit(v, x, y, w, h, focused)
+    local band, slots, flair, save = {}, {}, {}, nil
     for _, r in ipairs(v.rows or {}) do
-        -- Named first, because everything below this line falls through to
-        -- the gun. That is where the two profile controls used to land: they
-        -- carried no group, so a page about bullets offered SAVE AS PROFILE
-        -- between BOUNCE and FREEZE.
-        if r.group == "list" then list[#list + 1] = r
-        elseif r.group == "pane" then pane[#pane + 1] = r
-        elseif r.group == "profiles" then profiles[#profiles + 1] = r
+        if r.group == "band" then band[#band + 1] = r
+        elseif r.group == "save" then save = r
         elseif r.group == "flair" then flair[#flair + 1] = r
-        elseif r.group == "flight" then stats[#stats + 1] = r
-        elseif r.group == "levels" then levels[#levels + 1] = r
-        elseif r.group == "charges" then charges[#charges + 1] = r
-        elseif r.trigger == 1 then bombs[#bombs + 1] = r
-        else guns[#guns + 1] = r end
+        else slots[#slots + 1] = r end
     end
     local live = not v.kit_preview
     local function cursor(r) return live and r.index == v.sel end
 
-    -- --- the pane's head
+    -- --- the band
     --
-    -- What this build is called, and the budget it is being spent against.
-    -- The ship stood here once, with an arrow either side, which was the
-    -- second hull selector on a page whose flair section already picks one.
-    --
-    -- Beside the name, the two things that can be done to it. They are here
-    -- rather than in the list because they are about the one build the pane
-    -- is showing, and a key on every row of a list is a list you cannot read.
-    local mid = y + BAND * 0.46
-    local key_h = 22 * F.scale
-    local function pane_key(r, kx0, label)
-        local kw0 = text_w(label, LBL_PX * F.scale) + 24 * F.scale
+    -- The build's name as a key, and the points as a meter. Both open a page
+    -- of their own, which is the one gesture this screen has: press a thing
+    -- to read about it.
+    local BAND = 48 * F.scale
+    local mid = y + BAND / 2
+    -- Clear of the x, which the column draws on this same line where a page
+    -- carries no head of its own.
+    local bx = math.max(x, (M.close_right or 0) + 12 * F.scale)
+    if band[1] then
+        local r = band[1]
+        local px = 12 * F.scale
+        local label = cased(r.label or "custom")
+        local kw = text_w(label, px, MENU_FONT) + 26 * F.scale
+        local kh = 26 * F.scale
         local hot = cursor(r)
-        -- Dim on a starter, whose name is not the pilot's to change. The
-        -- key is still there and still a target: the press is what carries
-        -- the sentence saying why nothing happened.
-        if r.dim then
-            key_box(kx0, mid - key_h / 2, kw0, key_h, nil,
-                    pal.a(pal.FRIEND, hot and 0.35 or 0.18))
-            lbl(label, kx0 + kw0 / 2, mid,
-                pal.a(pal.INK, hot and 0.6 or 0.4), "center")
-        else
-            key_box(kx0, mid - key_h / 2, kw0, key_h,
-                    hot and pal.a(pal.FRIEND, 0.2) or nil,
-                    pal.a(pal.FRIEND, hot and (focused and 1 or 0.55) or 0.4))
-            lbl(label, kx0 + kw0 / 2, mid,
-                pal.a(pal.INK, hot and 1 or 0.75), "center")
-        end
-        if live then hit(kx0, mid - key_h / 2, kw0, key_h, "stage", r.index) end
-        return kx0 + kw0 + 8 * F.scale
-    end
-    do
-        local p = v.profile or {}
-        local name = p.name or "custom"
-        local size = 17 * F.scale
-        txt(name, panex, mid, size, pal.a(pal.INK, 0.95), nil, MENU_FONT)
-        local at = panex + text_w(name, size, MENU_FONT) + 12 * F.scale
-        -- Whether the build still is what that name says, in the register a
-        -- label is said in. Nothing at all while the two agree, which is the
-        -- ordinary case and needs no word for it.
-        if p.state then
-            lbl(p.state, at, mid, pal.a(pal.DIM, 0.75))
-            at = at + text_w(p.state, LBL_PX * F.scale) + 16 * F.scale
-        end
-        for _, r in ipairs(pane) do
-            at = pane_key(r, at, r.label or "")
+        key_box(bx, mid - kh / 2, kw, kh,
+                hot and pal.a(pal.FRIEND, 0.18) or nil,
+                pal.a(pal.FRIEND, hot and (focused and 1 or 0.55) or 0.5))
+        txt(label, bx + kw / 2, mid, px, pal.a(pal.INK, hot and 1 or 0.9),
+            "center", MENU_FONT)
+        if live then hit(bx, mid - kh / 2, kw, kh, "stage", r.index) end
+        -- Whether the thirty points in hand are still what that name says.
+        -- Nothing at all while the two agree, which is the ordinary case and
+        -- needs no word for it.
+        if v.profile and v.profile.state then
+            lbl(v.profile.state, bx + kw + 10 * F.scale, mid,
+                pal.a(pal.DIM, 0.8))
         end
     end
-    -- What the budget is, at the other end of the head's own line. It is the
-    -- one figure the whole pane is spending against.
-    if v.kit_spent then
-        local spent, total = v.kit_spent, v.kit_total or 30
-        local by = stacked and (y + BAND - 10 * F.scale) or mid
-        local bx = panex + kwidth - 4 * F.scale
-        txt("/ " .. total, bx, by + 1 * F.scale, 12 * F.scale,
-            pal.a(pal.DIM, 0.9), "right")
-        txt(tostring(spent),
-            bx - text_w("/ " .. total, 12 * F.scale) - 6 * F.scale, by,
-            17 * F.scale, pal.a(pal.INK, 0.95), "right")
-        lbl("kit", bx - 92 * F.scale, by)
+    if band[2] and v.kit_spent then
+        local r = band[2]
+        local total = v.kit_total or 30
+        local left = math.max(0, total - v.kit_spent)
+        local hot = cursor(r)
+        local right = x + w
+        -- What is left, which is the figure a builder mid-edit is actually
+        -- after: "28 / 30" is a ratio to subtract before it says anything.
+        local fig = tostring(left) .. " left"
+        local fw = text_w(fig, 11 * F.scale)
+        local bw = 52 * F.scale
+        local by = mid + 5 * F.scale
+        txt(fig, right, by, 11 * F.scale,
+            pal.a(pal.INK, hot and 1 or 0.9), "right")
+        lbl("points", right, mid - 9 * F.scale, pal.a(pal.DIM, hot and 1 or 0.8),
+            "right")
+        local mx = right - fw - 8 * F.scale - bw
+        rect(mx, by - 2 * F.scale, bw, 4 * F.scale, pal.a(pal.DIM, 0.25))
+        rect(mx, by - 2 * F.scale, bw * (v.kit_spent / math.max(total, 1)),
+             4 * F.scale, pal.a(pal.FRIEND, 0.85))
+        if hot then
+            wash(mx - 8 * F.scale, mid - 18 * F.scale,
+                 right - mx + 16 * F.scale, 34 * F.scale,
+                 pal.a(pal.FRIEND, focused and 0.16 or 0.08))
+        end
+        if live then
+            hit(mx - 8 * F.scale, y, right - mx + 12 * F.scale, BAND,
+                "stage", r.index)
+        end
     end
+    hrule(x - GUTTER * F.scale, y + BAND, w + (GUTTER + 14) * F.scale)
 
-    -- --- the list, down the left
-    --
-    -- Every build this pilot can fly: the three the game ships and whatever
-    -- they have kept, with the one the kit in hand actually is written in the
-    -- color everything else on this page uses for "yours". It carried a pip
-    -- as well, which is the mark a ladder is read in and one more thing in a
-    -- column whose whole job is names.
-    --
-    -- The key that adds one is directly under the last name, the width of
-    -- the column. It stood at the foot of the page for a while, pinned a
-    -- screen's height below a three-row list, and read as furniture of the
-    -- page rather than of the list it adds to.
-    --
-    -- Pinned rather than scrolled with the kit: it is the page's other
-    -- column, not the top of this one. Where the window is too narrow to hold
-    -- two columns it goes above the kit instead, and the kit starts below it.
-    local LIST_ROW = 26 * F.scale
-    local list_h = 0
-    do
-        local lx = x
-        local lw = stacked and math.min(kwidth, 260 * F.scale) or listw
-        local ly = stacked and (y + BAND + 4 * F.scale) or (y + 6 * F.scale)
-        local at = ly
-        -- What the key at the foot costs the rows above it.
-        local foot = (#list > 0) and (key_h + 12 * F.scale) or 0
-        -- As many as the column can hold whole, wound to keep the cursor's
-        -- own row in view. A pilot may keep two dozen builds and a list
-        -- taller than the window is a list with rows nobody can reach.
-        local n = #profiles
-        if n > 0 then
-            local room = stacked and (h * 0.30)
-                or (y + h - at - foot - 8 * F.scale)
-            local fit = math.max(3, math.floor(room / LIST_ROW))
-            local shown = math.min(n, fit)
-            local on_at = 1
-            for i, r in ipairs(profiles) do
-                if cursor(r) then on_at = i end
-            end
-            local first = math.max(1, math.min(on_at - math.floor(shown / 2),
-                                               n - shown + 1))
-            for i = first, first + shown - 1 do
-                local r = profiles[i]
-                local ry0 = at + (i - first) * LIST_ROW
-                local rmid = ry0 + LIST_ROW / 2
-                local hot = cursor(r)
-                if hot then
-                    wash(lx, ry0, lw, LIST_ROW,
-                         pal.a(pal.FRIEND, focused and 0.2 or 0.1))
-                end
-                txt(r.label or "", lx + 10 * F.scale, rmid, 13 * F.scale,
-                    pal.a((r.choice or 0) > 0 and pal.FRIEND or pal.INK,
-                          hot and 1 or 0.82),
-                    nil, MENU_FONT, true)
-                if live and r.pick then
-                    hit(lx, ry0, lw, LIST_ROW, "stage", r.index)
-                end
-            end
-            -- Only where some of it is out of sight, said the way every other
-            -- overflowing list here says it.
-            if n > shown then
-                local track = shown * LIST_ROW
-                local bar = math.max(20 * F.scale, track * (shown / n))
-                local slid = ((first - 1) / math.max(1, n - shown))
-                             * (track - bar)
-                F.layer:seg(lx + lw - 3 * F.scale, ry(at + slid),
-                            lx + lw - 3 * F.scale, ry(at + slid + bar),
-                            2 * F.scale, pal.a(pal.RADAR_TILE, 0.8))
-            end
-            at = at + shown * LIST_ROW
-        end
-        -- The key, under the last name and as wide as the column, in both
-        -- layouts.
-        for _, r in ipairs(list) do
-            local ky = at + 10 * F.scale
-            local hot = cursor(r)
-            key_box(lx, ky, lw, key_h,
-                    hot and pal.a(pal.FRIEND, 0.2) or nil,
-                    pal.a(pal.FRIEND, hot and (focused and 1 or 0.55) or 0.4))
-            lbl(r.label or "", lx + lw / 2, ky + key_h / 2,
-                pal.a(pal.INK, hot and 1 or 0.75), "center")
-            if live then hit(lx, ky, lw, key_h, "stage", r.index) end
-            at = ky + key_h
-        end
-        -- Only the stacked page pays for it in height. Beside the kit it is
-        -- its own column and costs the pane nothing.
-        if stacked then list_h = at - (y + BAND) + 8 * F.scale end
-    end
-    -- A rule between the two columns, which is what every other pair of
-    -- columns in this menu hangs off.
-    if not stacked then
-        vrule(panex - gap / 2, y + 4 * F.scale, h - 8 * F.scale,
-              pal.a(pal.RADAR_TILE, 0.45), 14 * F.scale)
-    end
-    local head = BAND + list_h
-
-    -- --- the kit, under the head
-    --
-    -- `kx`, `kw` and `cy` are where the next group goes: one column, at
-    -- the pane's own width, whatever the window offers past it.
-    local kx, kw = panex, kwidth
-    -- The head stays where it is and the kit slides under it. What the head
-    -- carries is the budget every row below it is spent against, so it is the
-    -- one thing on this page that should still be there when you have scrolled
-    -- to the charges.
-    local kit_top = y + head + 4 * F.scale
+    -- --- the ladders, under it
+    local kit_top = y + BAND + 6 * F.scale
+    -- The save key, where there is one, is furniture rather than a row of the
+    -- list: it stands over the stops and the ladders scroll under it.
+    local foot = save and 54 * F.scale or 0
+    local room = h - BAND - 6 * F.scale - foot
     local cy = kit_top - M.page_scroll
-    -- Whether a row at `cy` is inside the window the kit is drawn in. Rows
-    -- outside it are stepped over rather than drawn: a glyph queued off the
-    -- top of the page is still a glyph the gui draws, over the band, and the
-    -- hit box under it is still a target.
     local srow = 26 * F.scale
-    -- Whether a band from `top` to `bot` is inside the window the kit is
-    -- drawn in.
-    --
-    -- Strictly inside, not overlapping. There is no scissor to clip against,
-    -- and there could not be one that helped: type comes from the gui, which
-    -- draws over every mesh this file lays down, so no rectangle behind the
-    -- header can cover a row that has slid under it. What a row does at the
-    -- edge is therefore appear whole or not at all, which costs a row's worth
-    -- of pop at each end and buys a header that stays readable.
-    local function seen(top, bot)
-        return top >= kit_top and bot <= y + h
-    end
-
-    -- A label and nothing beside it. Each of these heads carried a sentence
-    -- about its group: what a stat ladder costs, what a dim step means, that
-    -- spent charges do not come back. They were rules of the game printed on
-    -- the furniture, read once and then in the way of the thing they
-    -- introduced, and the page says most of it now by drawing it: a dim step
-    -- has a price at the end of its row.
-    local function rule(label)
-        cy = cy + 6 * F.scale
-        if seen(cy - 2 * F.scale, cy + 2 * F.scale) then
-            hrule(kx, cy, kw)
-        end
-        cy = cy + 16 * F.scale
-        if label then
-            if seen(cy - 8 * F.scale, cy + 4 * F.scale) then
-                lbl(label, kx, cy)
-            end
-            -- Enough for the field behind the first row to clear the word
-            -- above it. At fourteen the two touched: a row is twenty-six
-            -- tall and its field is drawn from its middle out, so half of
-            -- that came straight back up into the label's descenders and the
-            -- head read as part of the row rather than as the name of the
-            -- group under it.
-            cy = cy + 24 * F.scale
-        end
-    end
-
-    -- A ladder: what it is, its steps, and what it is set to, in that order.
-    -- The steps are the control, and each one takes a press of its own, so
-    -- clicking the fourth pip asks for four rather than adding one to whatever
-    -- is there. See `menu.click_kit_at`.
-    --
-    -- One name, said once. The row used to open with a three letter mark and
-    -- close with the same word spelled out, with the pips and the count
-    -- between them: "SPD [pips] 4 Speed" is two labels for one thing at
-    -- opposite ends of a row, and the eye reads the second one as a new fact.
-    -- The mark sits against its own word now, which is where an abbreviation
-    -- is taught rather than merely used. This is the only place it is taught:
-    -- the arena drew NRG and SPD over pips of its own until the hull panel
-    -- that carried them came out.
-    -- Where the pips begin, which is the same on every row of the page so the
-    -- ladders line up under each other whatever their names are worth.
-    local NAMEW = 118 * F.scale
-    -- Where the cursor's row sits in the kit's own content, recorded as the
-    -- rows walk so the page can follow the arrows next frame: one column
-    -- overflows every window the two-column page never did.
+    local function seen(a, b) return a >= kit_top and b <= kit_top + room end
     local cur_at = nil
     local function note_cursor(r)
         if cursor(r) then cur_at = cy - kit_top + M.page_scroll end
     end
-    local function ladder(r, readout)
+
+    local function rule(label)
+        cy = cy + 6 * F.scale
+        if seen(cy - 2 * F.scale, cy + 2 * F.scale) then hrule(x, cy, w) end
+        cy = cy + 16 * F.scale
+        if label then
+            if seen(cy - 8 * F.scale, cy + 4 * F.scale) then lbl(label, x, cy) end
+            cy = cy + 24 * F.scale
+        end
+    end
+
+    -- Where the circles begin, the same on every row of the page so the
+    -- ladders line up under each other whatever their names are worth.
+    local NAMEW = 112 * F.scale
+    local STEP = 13 * F.scale
+    local RAD = 4.4 * F.scale
+
+    local function slot_row(r)
         note_cursor(r)
-        -- Stepped over rather than drawn where the scroll has carried it off
-        -- the page. `cy` still moves, because what this row is worth is the
-        -- room it takes whether or not anybody can see it.
         if not seen(cy - srow / 2, cy + srow / 2) then
             cy = cy + srow
             return
         end
         local hot = cursor(r)
-        if hot then wash(kx - 14 * F.scale, cy - srow / 2 + 2 * F.scale,
-                         kw + 14 * F.scale, srow - 2 * F.scale,
-                         pal.a(pal.FRIEND, focused and 0.2 or 0.1)) end
-        local col = r.tint_col or pal.FRIEND
-        -- The name, in words. Every row opened with its three letter code as
-        -- well, on the argument that the corner stack in flight is written in
-        -- those codes and this is where they would be taught. Two names for
-        -- one row is what it actually read as, and the row has a price on its
-        -- other end now, which is the thing that wants the room.
-        txt(r.label, kx, cy, 12.5 * F.scale,
+        if hot then
+            wash(x - 14 * F.scale, cy - srow / 2 + 2 * F.scale,
+                 w + 14 * F.scale, srow - 2 * F.scale,
+                 pal.a(pal.FRIEND, focused and 0.2 or 0.1))
+        end
+        txt(r.label, x, cy, 12.5 * F.scale,
             pal.a(pal.INK, hot and 0.95 or 0.8), nil, MENU_FONT)
-        local px = kx + NAMEW
-        local step = 13 * F.scale
-        -- The pips first, so a press on one beats the row behind it: hit boxes
-        -- are tested in the order they were published.
-        local function pip_at(k)
-            pages.pip(px, cy, 4.4 * F.scale,
-                      (r.choice or 0) >= k and "on" or "off", col)
-            if live and r.pick then
-                hit(px - step / 2, cy - srow / 2, step, srow,
+        -- The ladder. Every circle this account owns takes a press of its
+        -- own, so a tap on the fourth asks for four; the one it is already on
+        -- takes the point back. The dim ones are not controls: a press there
+        -- is the same question the name asks, and it opens the reading.
+        local px = x + NAMEW
+        local held, owned = r.choice or 0, r.choices or 0
+        local col = r.tint_col or pal.FRIEND
+        local top = math.max(r.arena_max or owned, owned)
+        for k = 1, top do
+            local cx = px + (k - 1) * STEP
+            local kind = (k <= held and "on") or (k <= owned and "ring")
+                         or "dim"
+            pages.dot(cx, cy, RAD, kind, col)
+            if live and k <= owned then
+                hit(cx - STEP / 2, cy - srow / 2, STEP, srow,
                     "kit_at", r.index, k)
             end
-            px = px + step
         end
-        -- As far as this account owns, and no further. There used to be a
-        -- divider here with the arena's remaining rungs drawn past it, locked,
-        -- so the page could say "there is more of this and it is not yours".
-        -- The upgrades tab says that now, with the price attached and the
-        -- ladder drawn the same way, so the two pages are the same object read
-        -- for two questions: what may I own, and what am I flying. Here every
-        -- pip is a point you can actually spend.
-        for k = 1, (r.owned or 0) do pip_at(k) end
-        -- Zero is a step too: a ladder you can climb has to be one you can
-        -- come back down, and dragging back to nothing needs somewhere to
-        -- land. It sits under the mark, where there are no pips.
-        if live and r.pick then
-            hit(kx - 14 * F.scale, cy - srow / 2, NAMEW - 6 * F.scale, srow,
-                "kit_at", r.index, 0)
-        end
+        px = px + math.max(top, 1) * STEP
         -- What it is set to, where the count is a word rather than a number:
         -- a rung reads L1, L2, L3, because that is what a level is called
-        -- everywhere else. The plain count went. Six pips with a 6 after them
-        -- is the same fact said twice, and the second saying was sitting
-        -- where the price is now.
-        if readout then
-            txt(readout(r.choice or 0), px + 10 * F.scale, cy, 11 * F.scale,
+        -- everywhere else, and a spray of two is two rounds.
+        if r.group == "levels" then
+            txt("L" .. (held + 1), px + 10 * F.scale, cy, 11 * F.scale,
+                pal.a(pal.INK, hot and 0.95 or 0.7))
+        elseif r.ladder then
+            txt(tostring(held + 1), px + 10 * F.scale, cy, 11 * F.scale,
                 pal.a(pal.INK, hot and 0.95 or 0.7))
         end
-        -- Which of the two slots this charge sits in, and the key that
-        -- throws it, in a box beside the pips.
-        --
-        -- The key used to be one letter alone at the far right edge of the
-        -- page, a hundred and fifty points from the row it belonged to with
-        -- nothing in between: a Q floating beside a column of pips answers a
-        -- question nobody asked in those terms. The slot is the fact, the key
-        -- is how it is spent, and the two belong in one mark next to the
-        -- thing they are about.
-        --
-        -- Pressing it swaps the two, which is the only thing there is to
-        -- decide once a kit carries two: the same charges, the other way
-        -- round on the keyboard.
+        -- Which of the two keys throws a carried charge, in a box beside it.
         if r.charge_slot then
+            -- In a column of its own rather than after however many circles
+            -- this charge happens to hold, so two of them read as one control
+            -- at one indent, and never closer than a gap to a ladder a zone
+            -- has made longer than six.
+            local bx2 = math.max(px + 12 * F.scale,
+                                 x + NAMEW + 6 * STEP + 16 * F.scale)
+            local bh = 18 * F.scale
+            -- What is left before the price at the end of the row. The key it
+            -- is thrown with is the part that gives: which of the two slots
+            -- this is is the fact, and the key is how it is spent.
+            local box_room = x + w - (r.price and 52 * F.scale or 0) - bx2
             local word = "charge " .. r.charge_slot
                 .. (r.on_key and (" (" .. r.on_key .. ")") or "")
-            -- In a column of its own rather than after however many pips
-            -- this charge happens to hold: two boxes at two indents read as
-            -- two different controls. Six pips of room, which is the most a
-            -- charge ladder holds in any zone that ships, and never closer
-            -- than a gap to the pips where a zone hands out more.
-            local bx = math.max(px + 12 * F.scale,
-                                kx + NAMEW + 6 * step + 16 * F.scale)
-            local bh = 18 * F.scale
-            -- Measured at the size it is drawn. It was measured a point
-            -- smaller than the label register, so the word sat long in its
-            -- box and low on the row.
+            if text_w(word, LBL_PX * F.scale) + 18 * F.scale > box_room then
+                word = "charge " .. r.charge_slot
+            end
             local bw = text_w(word, LBL_PX * F.scale) + 18 * F.scale
-            key_box(bx, cy - bh / 2, bw, bh,
+            key_box(bx2, cy - bh / 2, bw, bh,
                     pal.a(pal.CHARGE_COL, hot and 0.16 or 0.07),
                     pal.a(pal.CHARGE_COL, hot and 0.9 or 0.5))
-            lbl(word, bx + bw / 2, cy,
+            lbl(word, bx2 + bw / 2, cy,
                 pal.a(pal.CHARGE_COL, hot and 1 or 0.8), "center")
-            if live and r.pick then
-                hit(bx, cy - bh / 2, bw, bh, "charge_swap")
-            end
+            if live then hit(bx2, cy - bh / 2, bw, bh, "charge_swap") end
         end
-        -- And what the next rung costs, on the end of the ladder rather than
-        -- in a control of its own.
-        --
-        -- Every upgradable row wore a framed button, which on a full page is
-        -- fourteen of them: the heaviest mark this interface has, in a column,
-        -- most of them asking for money nobody had. A price is the whole of
-        if live and r.pick then hit(kx - 14 * F.scale, cy - srow / 2, kw, srow,
-                           "stage", r.index) end
+        -- And what the next rung costs, on the end of the row. The only
+        -- commerce on this page: a price always wears the rivet mark and the
+        -- shop's gold, and the wallet it comes out of is on the reading.
+        if r.price then
+            local can = r.afford ~= false
+            pages.priced(r.price, x + w, cy, 11.5 * F.scale,
+                         pal.a(can and pal.CHARGE_COL or pal.DIM,
+                               can and 0.95 or 0.55), "right")
+        end
+        -- The name and everything past the ladder ask the same question,
+        -- and it is the one the row cannot answer itself. Published last, so
+        -- the circles this account owns keep the presses that land on them.
+        if live then
+            hit(x - 14 * F.scale, cy - srow / 2, w + 14 * F.scale, srow,
+                "read_row", r.index)
+        end
         cy = cy + srow
     end
 
-    -- The stats: five eight-step ladders behind a divider, each pip a real
-    -- point the pilot already owns and may put into this build. Then the two
-    -- weapons, on the same ladders. Those were
-    -- chips, both wearing the word "rung": one word for two different weapons,
-    -- and no way to see which rung you were on or to climb one. What a level
-    -- is is a position on a ladder, so it is drawn as one and reads as L1,
-    -- L2, L3.
-    local function ladders()
-        rule("stats")
-        for _, r in ipairs(stats) do ladder(r) end
-        if #levels > 0 then
-            rule("weapon level")
-            for _, r in ipairs(levels) do
-                ladder(r, function(n) return "L" .. (n + 1) end)
-            end
-        end
-    end
-
-    -- The triggers. A rung and its add-ons, per trigger, as chips.
-    --
-    -- Each as wide as its own word rather than all of them at one width. A
-    -- fixed 62 points fit "PROX" and clipped anything longer, which is what
-    -- kept these labelled with three letter codes nobody could read.
-    local ch = 36 * F.scale
-    local function chips_for(group, label)
-        if #group == 0 then return end
-        rule(label)
-        -- Spray first, on a ladder. It is a count of rounds rather than a
-        -- switch with rungs behind it, so a chip is the wrong control for it:
-        -- what a pilot is setting is how many leave the gun, and the readout
-        -- says exactly that. Every other add-on in the group is a chip.
-        local chips = {}
-        for _, r in ipairs(group) do
-            if r.ladder then
-                ladder(r, function(n) return tostring(n + 1) end)
-            else
-                chips[#chips + 1] = r
-            end
-        end
-        if #chips == 0 then return end
-        local px = kx
-        for _, r in ipairs(chips) do
-            note_cursor(r)
-            -- Wide enough for the name and whatever count sits under it.
-            local cw = math.max(62 * F.scale,
-                                text_w(r.short or r.label or "",
-                                       LBL_PX * F.scale) + 24 * F.scale)
-            if px + cw > kx + kw then px = kx cy = cy + ch + 6 * F.scale end
-            -- Nothing drawn and nothing published where the scroll has
-            -- carried this line off the page. The walk still happens, because
-            -- where the next chip goes depends on how wide this one was.
-            if seen(cy - 2 * F.scale, cy - 2 * F.scale + ch) then
-                pages.chip(px, cy - 2 * F.scale, cw, ch, r, cursor(r), focused)
-                if live and r.pick then
-                    hit(px, cy - 2 * F.scale, cw, ch, "stage", r.index)
-                end
-            end
-            px = px + cw + 8 * F.scale
-        end
-        cy = cy + ch + 8 * F.scale
-    end
-    -- A flair row: what the ship looks like, read as label, value, and the
-    -- carousel triangles that turn it. The value is a word rather than a
-    -- ladder because these are choices between kinds, not amounts of one.
     local function flair_row(r)
         note_cursor(r)
         if not seen(cy - srow / 2, cy + srow / 2) then
@@ -5504,25 +5213,21 @@ function pages.kit(v, x, y, w, h, focused)
             return
         end
         local hot = cursor(r)
-        if hot then wash(kx - 14 * F.scale, cy - srow / 2 + 2 * F.scale,
-                         kw + 14 * F.scale, srow - 2 * F.scale,
-                         pal.a(pal.FRIEND, focused and 0.2 or 0.1)) end
-        txt(r.label, kx, cy, 12.5 * F.scale,
+        if hot then
+            wash(x - 14 * F.scale, cy - srow / 2 + 2 * F.scale,
+                 w + 14 * F.scale, srow - 2 * F.scale,
+                 pal.a(pal.FRIEND, focused and 0.2 or 0.1))
+        end
+        txt(r.label, x, cy, 12.5 * F.scale,
             pal.a(pal.INK, hot and 0.95 or 0.8), nil, MENU_FONT)
-        local vx = kx + NAMEW + 14 * F.scale
+        local vx = x + NAMEW + 14 * F.scale
         local vw = text_w(r.detail or "", 12.5 * F.scale, MENU_FONT)
         txt(r.detail or "", vx, cy, 12.5 * F.scale,
             pal.a(pal.FRIEND, hot and 1 or 0.85), nil, MENU_FONT)
-        -- The triangles, published before the row so a press on one beats
-        -- the press behind it. The hull's pair turn the same carousel the
-        -- head's arrows once did; the wake's step its own choice.
         local dirs = {{-1, vx - 16 * F.scale}, {1, vx + vw + 14 * F.scale}}
         local action = r.ship and "carousel" or "wake"
         for _, d in ipairs(dirs) do
             local dir, px2 = d[1], d[2]
-            -- Lit under the pointer as well as under the cursor. These are
-            -- the only hull arrows the page has, and the pair that used to
-            -- stand in the head were the ones that answered a hovering mouse.
             local warm = hot or (r.ship and v.carousel_hot == dir)
             F.layer:tri(px2 + dir * 4 * F.scale, ry(cy),
                         px2 - dir * 3.5 * F.scale, ry(cy - 5 * F.scale),
@@ -5533,77 +5238,336 @@ function pages.kit(v, x, y, w, h, focused)
                     action, dir)
             end
         end
-        -- Which of them this is, where there is more than one.
         if r.choices and r.choices > 1 then
-            lbl((r.choice or 1) .. " of " .. r.choices, kx + kw, cy,
+            lbl((r.choice or 1) .. " of " .. r.choices, x + w, cy,
                 pal.a(pal.DIM, 0.7), "right")
         end
-        if live and r.pick then
-            hit(kx - 14 * F.scale, cy - srow / 2, kw, srow,
+        if live then
+            hit(x - 14 * F.scale, cy - srow / 2, w + 14 * F.scale, srow,
                 "stage", r.index)
         end
         cy = cy + srow
     end
 
-    local function triggers()
-        chips_for(guns, "gun")
-        chips_for(bombs, "bomb")
-        if #charges > 0 then
-            rule("charges")
-            -- On the same ladder as everything else. These were the one group
-            -- with a row shape of their own: the name on the left, the pips
-            -- at an offset of their own, and no count at the end, so a page
-            -- that is one kind of control all the way down had two.
-            for _, r in ipairs(charges) do ladder(r) end
-        end
+    -- The slots, in the sections the rows name: flight, then each trigger
+    -- with its own level at the head of it, then the charges. A section is
+    -- the whole story of one weapon, which is what put the levels in with the
+    -- add-ons that ride them.
+    local was = nil
+    for _, r in ipairs(slots) do
+        if r.sect ~= was then rule(r.sect) was = r.sect end
+        slot_row(r)
     end
-
-    local top = cy
-    -- The groups stack from the top, each taking the room it needs and no
-    -- more. The spare room used to be shared out between the heads, up to
-    -- fifty points a rule, which read as one enormous gap after another on
-    -- any monitor tall enough to have spare room at all.
-    --
-    -- How far down the page came, so the next frame knows what there is to
-    -- scroll to. Measured from the top of the kit rather than from the top
-    -- of the page, because the band above it does not move.
-    kx, kw = panex, kwidth
-    ladders()
-    triggers()
     if #flair > 0 then
         rule("flair")
         for _, r in ipairs(flair) do flair_row(r) end
     end
-    local low = cy
-    -- Follow the arrows. A frame late, since the offsets only exist once
-    -- the rows have walked; the page settles on the very next draw.
-    -- A cursor outside the kit is at the top of it by definition: the list,
-    -- the add key and the two keys in the head are all drawn where the kit's
-    -- scroll cannot reach them, so what the page owes them is the top of the
-    -- column rather than nothing.
-    for _, group in ipairs({list, pane, profiles}) do
-        for _, r in ipairs(group) do
-            if cursor(r) then cur_at = 0 end
-        end
+
+    -- Follow the arrows. A frame late, since the offsets only exist once the
+    -- rows have walked; the page settles on the very next draw. A cursor in
+    -- the band is at the top of the column by definition: the band does not
+    -- scroll.
+    for _, r in ipairs(band) do
+        if cursor(r) then cur_at = 0 end
     end
+    if save and cursor(save) then cur_at = nil end
     if live then
-        follow_cursor(cur_at and (cur_at - srow / 2) or nil, srow + 8 * F.scale,
-                      h - head, focused)
+        follow_cursor(cur_at and (cur_at - srow / 2) or nil,
+                      srow + 8 * F.scale, room, focused)
+    end
+    M.page_extent = (cy + M.page_scroll - kit_top) + BAND + 16 * F.scale
+    M.page_room = h - foot
+
+    -- --- the key at the foot
+    --
+    -- There only while the thirty points in hand differ from the build they
+    -- came from, which is what makes its presence the answer to "is there
+    -- anything to keep here".
+    if save then
+        local kh = 40 * F.scale
+        local ky = y + h - kh
+        local hot = cursor(save)
+        key_box(x, ky, w, kh,
+                pal.a(pal.FRIEND, hot and 0.18 or 0.10),
+                pal.a(pal.FRIEND, hot and (focused and 1 or 0.7) or 0.85))
+        txt("save", x + w / 2, ky + kh / 2, 13 * F.scale,
+            pal.a(pal.INK, 1), "center", MENU_FONT)
+        if live then hit(x, ky, w, kh, "stage", save.index) end
     end
 
-    M.page_extent = (low - top) + head + 16 * F.scale
-    M.page_room = h
-    -- And a thumb down the edge where there is more than fits, which is the
-    -- only thing on the page that says a page can be moved at all.
-    if M.page_extent > h then
-        local track = h - head
+    -- A thumb down the edge where there is more than fits.
+    if M.page_extent > h - foot then
+        local track = room
         local bar = math.max(30 * F.scale, track * track / M.page_extent)
-        local at = (M.page_scroll / math.max(1, M.page_extent - h))
+        local at = (M.page_scroll / math.max(1, M.page_extent - (h - foot)))
                    * (track - bar)
-        local sx = panex + kwidth - 3 * F.scale
-        rect(sx, y + head, 3 * F.scale, track, pal.a(pal.DIM, 0.12))
-        rect(sx, y + head + at, 3 * F.scale, bar, pal.a(pal.RADAR_TILE, 0.8))
+        local sx2 = x + w - 3 * F.scale
+        rect(sx2, kit_top, 3 * F.scale, track, pal.a(pal.DIM, 0.12))
+        rect(sx2, kit_top + at, 3 * F.scale, bar, pal.a(pal.RADAR_TILE, 0.8))
     end
+end
+
+-- The way back out of a page that slid in over another: a chevron and the
+-- name of what is behind it, on the line the band stands on.
+--
+-- The same square the x occupies on the page behind, at the same inset, so a
+-- hand that learned where one of them was has learned the other. A swipe
+-- right does it too; see `M.drawer`.
+function pages.back_row(v, x, y, w, place)
+    local mid = y + 24 * F.scale
+    local bx = math.max(x, (M.close_right or 0) + 12 * F.scale)
+    F.layer:tri(bx, ry(mid), bx + 7 * F.scale, ry(mid - 5.5 * F.scale),
+                bx + 7 * F.scale, ry(mid + 5.5 * F.scale),
+                pal.a(pal.DIM, 0.9))
+    lbl(place, bx + 15 * F.scale, mid, pal.a(pal.DIM, 0.9))
+    hit(bx - 10 * F.scale, y, 130 * F.scale, 48 * F.scale, "back")
+    hrule(x - GUTTER * F.scale, y + 48 * F.scale, w + (GUTTER + 14) * F.scale)
+    return y + 48 * F.scale + 8 * F.scale
+end
+
+-- One slot, read: what it is, what it does in a fight, how far its ladder
+-- runs, and where a rung is still for sale, what it costs and what the wallet
+-- holds.
+--
+-- This is the shelf's own reading pane, at page size, reached from the row
+-- that raised the question instead of from a tab of its own. Everything a
+-- pilot could not learn on the ship page is here, and nothing else in the
+-- menu spends rivets.
+function pages.slot(v, x, y, w, h, focused)
+    local r = v.item
+    if not r then return end
+    local at = pages.back_row(v, x, y, w, "ship")
+    local kind
+    if r.group == "flight" then kind = "flight stat"
+    elseif r.group == "levels" then
+        kind = (r.trigger == 0 and "gun" or "bomb") .. " ladder"
+    elseif r.group == "weapons" then
+        kind = (r.trigger == 0 and "gun" or "bomb") .. " add-on"
+    else kind = "charge" end
+    lbl(kind, x, at + 16 * F.scale)
+    txt(r.label or r.sold or "", x, at + 44 * F.scale, 24 * F.scale,
+        pal.a(pal.INK, 1), nil, MENU_FONT)
+    -- The thing working, at toy scale. A page can name a fuse and price a
+    -- fuse, and neither tells a browsing pilot what a fuse is for.
+    local by = at + 64 * F.scale
+    local bh = 118 * F.scale
+    bracket(x, by, w, bh, pal.a(pal.RADAR_TILE, 0.8))
+    pages.range(r, x, by, w, bh)
+    local ly = by + bh + 26 * F.scale
+    -- What it does, in the client's own words.
+    if r.teach then
+        for _, line in ipairs(wrapped(r.teach, 13 * F.scale, w)) do
+            txt(line, x, ly, 13 * F.scale, pal.a(pal.PANEL_INK, 0.92),
+                nil, nil, true)
+            ly = ly + 18 * F.scale
+        end
+        ly = ly + 12 * F.scale
+    end
+    -- The ladder again, at reading size, and what each part of it is.
+    local held, owned = r.choice or 0, r.choices or 0
+    local top = math.max(r.arena_max or owned, owned)
+    if top > 0 then
+        pages.ladder({choice = held, choices = owned, arena_max = top,
+                      tint_col = r.tint_col}, x + 6 * F.scale, ly,
+                     17 * F.scale, 5.5 * F.scale)
+        local said = {}
+        local base = r.base or 0
+        if base > 0 then said[#said + 1] = base .. " dealt to everybody" end
+        if owned > base then said[#said + 1] = (owned - base) .. " bought" end
+        if held > 0 then said[#said + 1] = held .. " equipped" end
+        if top > owned then said[#said + 1] = (top - owned) .. " to climb" end
+        lbl(table.concat(said, " \194\183 "), x, ly + 24 * F.scale,
+            pal.a(pal.DIM, 0.85))
+        ly = ly + 48 * F.scale
+    end
+    -- The deal, and the wallet it comes out of. This is the one page in the
+    -- menu that names either.
+    if r.price then
+        local can = r.afford ~= false
+        local used = pages.priced(r.price, x, ly, 15 * F.scale,
+                                  pal.a(can and pal.CHARGE_COL or pal.DIM,
+                                        can and 0.95 or 0.55))
+        lbl("buys the next rung", x + used + 14 * F.scale, ly,
+            pal.a(pal.DIM, 0.85))
+        -- The wallet at the far end of the same line, its word measured off
+        -- the figure rather than guessed at: a four-figure balance is wider
+        -- than a two-figure one and the label has to start clear of it.
+        local purse = pages.priced(v.wallet or 0, x + w, ly, 12 * F.scale,
+                                   pal.a(pal.CHARGE_COL, 0.9), "right")
+        lbl("wallet", x + w - purse - 8 * F.scale, ly, pal.a(pal.DIM, 0.8),
+            "right")
+        ly = ly + 26 * F.scale
+    elseif top > 0 then
+        lbl(owned > (r.base or 0) and "yours, all the way up"
+            or "dealt to everybody", x, ly, pal.a(pal.DIM, 0.7))
+        ly = ly + 26 * F.scale
+    end
+    M.page_extent = (ly - y) + 90 * F.scale
+    M.page_room = h
+    -- The keys: the buy where there is something to buy, and the charge
+    -- swap where there are two kinds to trade. Each is a row, so the arrows
+    -- reach them and the page's own enter presses the first.
+    local ky = y + h - 46 * F.scale
+    for i = #(v.rows or {}), 1, -1 do
+        local row = v.rows[i]
+        local kh = 44 * F.scale
+        local hot = focused and row.index == v.sel
+        local buy = row.act == "buy"
+        local can = (not buy) or (r.afford ~= false)
+        local col = buy and pal.CHARGE_COL or pal.FRIEND
+        key_box(x, ky, w, kh,
+                pal.a(col, (hot and 0.18) or (can and 0.10 or 0.04)),
+                pal.a(can and col or pal.DIM, hot and 1 or (can and 0.9 or 0.5)))
+        txt(buy and "buy" or (row.label or ""), x + w / 2, ky + kh / 2,
+            13 * F.scale, pal.a(can and pal.INK or pal.DIM, 1), "center",
+            MENU_FONT)
+        hit(x, ky, w, kh, buy and "buy_go" or "stage",
+            buy and nil or row.index)
+        ky = ky - kh - 10 * F.scale
+    end
+end
+
+-- The library, behind the name in the band: every build this pilot can fly,
+-- with the one the kit in hand actually is lit, and the two things there are
+-- to do to the list.
+--
+-- Two keys and no more. Saving is at the foot of the ship page, where the kit
+-- that earned it is, and renaming went with it: a build is named when it is
+-- made, and a name that wants changing is a new build and a delete.
+function pages.builds(v, x, y, w, h, focused)
+    local at = pages.back_row(v, x, y, w, "ship")
+    lbl("builds", x, at + 16 * F.scale)
+    local list, keys = {}, {}
+    for _, r in ipairs(v.rows or {}) do
+        if r.group == "keys" then keys[#keys + 1] = r else list[#list + 1] = r end
+    end
+    local ry0 = at + 34 * F.scale
+    local ROW = 30 * F.scale
+    for _, r in ipairs(list) do
+        local hot = focused and r.index == v.sel
+        if hot then
+            wash(x - 14 * F.scale, ry0, w + 28 * F.scale, ROW,
+                 pal.a(pal.FRIEND, 0.2))
+        end
+        -- The one the kit in hand actually is, in the color this menu uses
+        -- for yours.
+        txt(r.label or "", x, ry0 + ROW / 2, 13 * F.scale,
+            pal.a((r.choice or 0) > 0 and pal.FRIEND or pal.INK,
+                  hot and 1 or 0.85), nil, MENU_FONT, true)
+        if r.starter then
+            lbl("starter", x + w, ry0 + ROW / 2, pal.a(pal.DIM, 0.7), "right")
+        end
+        hit(x - 14 * F.scale, ry0, w + 28 * F.scale, ROW, "stage", r.index)
+        ry0 = ry0 + ROW
+    end
+    -- The two keys, side by side under the last name.
+    local ky = ry0 + 16 * F.scale
+    local kh = 32 * F.scale
+    local kw = (w - 10 * F.scale) / 2
+    for i, r in ipairs(keys) do
+        local kx = x + (i - 1) * (kw + 10 * F.scale)
+        local hot = focused and r.index == v.sel
+        local dim = r.dim
+        key_box(kx, ky, kw, kh,
+                (not dim) and (hot and pal.a(pal.FRIEND, 0.2)
+                               or (i == 1 and pal.a(pal.FRIEND, 0.08) or nil))
+                or nil,
+                pal.a(pal.FRIEND, dim and 0.2 or (hot and 1 or 0.55)))
+        txt(r.label or "", kx + kw / 2, ky + kh / 2, 11 * F.scale,
+            pal.a(pal.INK, dim and 0.4 or (hot and 1 or 0.8)), "center",
+            MENU_FONT)
+        hit(kx, ky, kw, kh, "stage", r.index)
+    end
+    M.page_extent = (ky + kh - y) + 20 * F.scale
+    M.page_room = h
+end
+
+-- Naming one, a slide further right: the thirty points in hand under a name
+-- of the pilot's own.
+function pages.newbuild(v, x, y, w, h, focused)
+    local at = pages.back_row(v, x, y, w, "builds")
+    local nb = v.new or {}
+    lbl("builds", x, at + 16 * F.scale)
+    txt("new build", x, at + 44 * F.scale, 24 * F.scale,
+        pal.a(pal.INK, 1), nil, MENU_FONT)
+    local ly = at + 64 * F.scale
+    for _, line in ipairs(wrapped(
+            "keeps the thirty points in hand under a name of yours.",
+            13 * F.scale, w)) do
+        txt(line, x, ly, 13 * F.scale, pal.a(pal.PANEL_INK, 0.92), nil, nil,
+            true)
+        ly = ly + 18 * F.scale
+    end
+    ly = ly + 16 * F.scale
+    pages.field(x, ly, w, nb.name or "", "a name for this build", nb.on,
+                "new_field")
+    ly = ly + pages.FIELD_TALL * F.scale + 8 * F.scale
+    lbl("a name for this build", x, ly + 4 * F.scale)
+    -- The key, which is what a page for making one thing ends in.
+    local kh = 44 * F.scale
+    local ky = ly + 28 * F.scale
+    local can = (nb.name or "") ~= ""
+    local row = (v.rows or {})[1]
+    local hot = focused and row ~= nil and row.index == v.sel
+    key_box(x, ky, w, kh,
+            pal.a(pal.FRIEND, can and (hot and 0.18 or 0.10) or 0.04),
+            pal.a(can and pal.FRIEND or pal.DIM, can and 0.9 or 0.5))
+    txt("create", x + w / 2, ky + kh / 2, 13 * F.scale,
+        pal.a(can and pal.INK or pal.DIM, 1), "center", MENU_FONT)
+    hit(x, ky, w, kh, "create_build")
+    if hot then
+        key_box(x, ky, w, kh, nil, pal.a(pal.FRIEND, 1))
+    end
+    M.page_extent = (ky + kh - y) + 20 * F.scale
+    M.page_room = h
+end
+
+-- What the thirty points are, behind the meter, and what a circle says.
+--
+-- The page teaches its own grammar where the grammar is asked about, which is
+-- the same gesture every other reading here answers: press the thing, read
+-- about the thing.
+function pages.points(v, x, y, w, h)
+    local at = pages.back_row(v, x, y, w, "ship")
+    lbl("points", x, at + 16 * F.scale)
+    txt("thirty points", x, at + 44 * F.scale, 24 * F.scale,
+        pal.a(pal.INK, 1), nil, MENU_FONT)
+    local ly = at + 64 * F.scale
+    for _, line in ipairs(wrapped(
+            "every ship is a spend of the same thirty points, whoever flies "
+            .. "it and whatever the account owns. press a circle to spend a "
+            .. "point there; press the one it is on to take the point back.",
+            13 * F.scale, w)) do
+        txt(line, x, ly, 13 * F.scale, pal.a(pal.PANEL_INK, 0.92), nil, nil,
+            true)
+        ly = ly + 18 * F.scale
+    end
+    ly = ly + 22 * F.scale
+    -- The meter again, at reading size, with both figures spelled out.
+    local total = v.kit_total or 30
+    local spent = v.kit_spent or 0
+    local fig = spent .. " spent \194\183 " .. math.max(0, total - spent)
+                .. " left"
+    local fw = text_w(fig, 12 * F.scale)
+    local bw = w - fw - 14 * F.scale
+    rect(x, ly - 3 * F.scale, bw, 6 * F.scale, pal.a(pal.DIM, 0.25))
+    rect(x, ly - 3 * F.scale, bw * (spent / math.max(total, 1)), 6 * F.scale,
+         pal.a(pal.FRIEND, 0.85))
+    txt(fig, x + w, ly, 12 * F.scale, pal.a(pal.INK, 0.9), "right")
+    ly = ly + 30 * F.scale
+    lbl("what a circle says", x, ly)
+    ly = ly + 22 * F.scale
+    for _, s in ipairs({
+            {"on", pal.FRIEND, "equipped: one of your thirty"},
+            {"ring", pal.FRIEND, "owned, waiting for a point"},
+            {"dim", pal.DIM, "not yours yet: its price sits on the row"}}) do
+        pages.dot(x + 6 * F.scale, ly, 5.5 * F.scale, s[1], s[2])
+        txt(s[3], x + 24 * F.scale, ly, 12 * F.scale,
+            pal.a(pal.PANEL_INK, 0.9), nil, nil, true)
+        ly = ly + 26 * F.scale
+    end
+    M.page_extent = (ly - y) + 20 * F.scale
+    M.page_room = h
 end
 
 -- The friends page: a field you type a call sign into, over sections whose
@@ -5830,56 +5794,6 @@ function pages.friends(v, x, y, w, h, focused)
         local bx = x + w - 3 * F.scale
         rect(bx, top, 3 * F.scale, track, pal.a(pal.DIM, 0.12))
         rect(bx, top + pos, 3 * F.scale, bar, pal.a(pal.RADAR_TILE, 0.8))
-    end
-end
-
--- The upgrades page: every slot the game has, what this account owns of it,
--- and what the next rung costs.
---
--- Two things a row has to say at once, which is why it is a page rather than
--- a list of names and prices. What you own is a ladder, drawn as the same
--- pips the ship page spends points on, so the two pages read as the same
--- object seen twice: filled is yours, hollow is for sale, and buying is
--- watching one turn into the other. What it costs sits at the end, amber
--- where the wallet covers it and the same grey as a locked rung where it does
--- not, because a page that shouts on the evening you have twelve rivets is a
--- page that shouts at nothing.
---
--- Rungs everybody is dealt are drawn as a run rather than as pips. Nobody
--- bought them and nobody can, so pips would be a ladder with its bottom half
--- permanently lit and no way to read where the buying starts.
---
--- See docs/design/match-game.md.
--- What a shelf row is selling, drawn as the thing itself. The rows that are
--- rounds draw the round: a level as the round at the rung the next point
--- buys, in that rung's color, so the price is a color on the one ramp
--- everybody knows before it is a number; an add-on as the round wearing the
--- rung on offer, which is the same statement the corner stack makes about a
--- round you already fire. A charge draws the mark it goes off as, in the
--- color it goes off in. The stats draw nothing: a stat has no object to draw,
--- and a
--- symbol invented for a shelf would be the one mark in the game that is not
--- a picture of its thing.
-function pages.shelf_mark(r, cx, cy)
-    local k = 8.5 * F.scale
-    if r.group == "levels" then
-        local sell = math.min((r.owned or 0) + 1,
-                              math.max(r.arena_max or 0, 1))
-        marks.round(cx, ry(cy), k, r.trigger == 0, sell)
-    elseif r.group == "weapons" then
-        local modn = {}
-        modn[(r.mod or 0) + 1] = math.min((r.owned or 0) + 1,
-                                          math.max(r.arena_max or 0, 1))
-        marks.round(cx, ry(cy), k, r.trigger == 0, r.lvl or 0, modn)
-    elseif r.group == "charges" then
-        local name = string.lower(r.label or "")
-        if string.find(name, "repel", 1, true) then
-            marks.charge(0, cx, ry(cy), k, pal.a(pal.CHARGE_COL, 0.9))
-        elseif string.find(name, "burst", 1, true) then
-            marks.charge(1, cx, ry(cy), k, pal.a(pal.BURST, 0.9))
-        else
-            marks.charge(2, cx, ry(cy), k, pal.a(pal.CHARGE_COL, 0.9))
-        end
     end
 end
 
@@ -6131,399 +6045,6 @@ function pages.range(r, bx, by, bw, bh)
     end
 end
 
--- The reading side of the shop: everything there is to know about the row
--- under the cursor, at reading size. The list keeps the comparing (every
--- ladder in one column, every price in another) and this pane keeps the
--- learning, which is the half a row thirteen points tall could never hold.
-function pages.shop_pane(r, x, y, w, h, standalone, index, buy_hot)
-    -- Beside the list the pane hangs off a lit rule like every column; as a
-    -- page of its own it is the page, and a rule down its left edge would
-    -- mark nothing.
-    if not standalone then
-        vrule(x - 18 * F.scale, y + 6 * F.scale, h - 12 * F.scale,
-              pal.a(pal.RADAR_TILE, 0.45), 18 * F.scale)
-    end
-    -- Beside the list the content stands back from the panel edge; as a
-    -- page it runs to the width it was given, whose caller has already
-    -- made the margins match.
-    local rw = w - (standalone and 0 or 24) * F.scale
-    local kind
-    if r.group == "flight" then kind = "flight stat"
-    elseif r.group == "levels" then
-        kind = (r.trigger == 0 and "gun" or "bomb") .. " ladder"
-    elseif r.group == "weapons" then
-        kind = (r.trigger == 0 and "gun" or "bomb") .. " add-on"
-    else kind = "charge" end
-    lbl(kind, x, y + 16 * F.scale)
-    -- The row's own name, not the catalog's card phrase: the card says
-    -- "thrust depth" because it is building a sentence about a purchase,
-    -- and a headline is not one.
-    txt(r.label or r.sold or "", x, y + 44 * F.scale, 24 * F.scale,
-        pal.a(pal.INK, 1), nil, MENU_FONT)
-    -- The range, held in the brackets a picture sits in.
-    local bx, by = x, y + 64 * F.scale
-    local bh = 128 * F.scale
-    bracket(bx, by, rw, bh, pal.a(pal.RADAR_TILE, 0.8))
-    pages.range(r, bx, by, rw, bh)
-    local ly = by + bh + 26 * F.scale
-    -- What it does, in the client's own words; the catalog's note only
-    -- names the thing.
-    if r.teach then
-        for _, line in ipairs(wrapped(r.teach, 13 * F.scale, rw)) do
-            txt(line, x, ly, 13 * F.scale, pal.a(pal.PANEL_INK, 0.92),
-                nil, nil, true)
-            ly = ly + 18 * F.scale
-        end
-        ly = ly + 10 * F.scale
-    end
-    -- The ladder again, at a size with room for words: how much of it came
-    -- dealt, how much is bought, what is left to climb.
-    local owned = r.owned or 0
-    local base = r.base or 0
-    local top = r.arena_max or 0
-    if top > 0 then
-        local col = r.tint_col or pal.INK
-        local px2 = x
-        if base > 0 then
-            rect(px2, ly - 1.5 * F.scale, 24 * F.scale, 3 * F.scale,
-                 pal.a(pal.DIM, 0.45))
-            px2 = px2 + 34 * F.scale
-        end
-        for k = base + 1, top do
-            if k == owned + 1 and r.price and r.afford then
-                local d = 6.5 * F.scale
-                F.layer:outline({px2, ry(ly - d), px2 + d, ry(ly),
-                                 px2, ry(ly + d), px2 - d, ry(ly)},
-                                1.1 * F.scale, pal.a(pal.CHARGE_COL, 0.95),
-                                true)
-            else
-                pages.pip(px2, ly, 5.5 * F.scale,
-                          k <= owned and "on" or "off",
-                          k <= owned and pal.a(col, 0.95) or pal.DIM)
-            end
-            px2 = px2 + 17 * F.scale
-        end
-        local said = {}
-        if base > 0 then said[#said + 1] = base .. " dealt to everybody" end
-        if owned > base then said[#said + 1] = (owned - base) .. " bought" end
-        if top > owned then
-            said[#said + 1] = (top - owned) .. " to climb"
-        else
-            said[#said + 1] = "topped out"
-        end
-        lbl(table.concat(said, ", "), x, ly + 22 * F.scale,
-            pal.a(pal.DIM, 0.8))
-        ly = ly + 46 * F.scale
-    end
-    -- The deal. A price on the shelf says a number; here there is room to
-    -- say what pressing the row does about it.
-    if r.price then
-        local can = r.afford ~= false
-        local used = pages.priced(r.price, x, ly, 15 * F.scale,
-                                  pal.a(can and pal.CHARGE_COL or pal.DIM,
-                                        can and 0.95 or 0.55))
-        lbl(can and "buys the next rung" or "more than the wallet holds",
-            x + used + 14 * F.scale, ly, pal.a(pal.DIM, 0.85))
-        -- And the thing that spends it, said in a word on a shape you press.
-        --
-        -- Buying used to be the row: standing on one and pressing again
-        -- bought it, and the only place that said so was this line, which
-        -- read "press the row". A control whose name is a sentence in the
-        -- margin is a control nobody finds. So the row selects, this buys,
-        -- and the page has one button on it that says what it does.
-        --
-        -- Not on the page version, which already ends in a full-width BUY of
-        -- its own: that is the phone's shape for the same act.
-        if not standalone then
-            row_button(x + row_button_w("buy"), ly + 34 * F.scale,
-                       30 * F.scale, "buy", can, buy_hot,
-                       index and "buy_go" or nil, index)
-        end
-    elseif top > 0 then
-        lbl(owned > base and "yours, all the way up" or "dealt to everybody",
-            x, ly, pal.a(pal.DIM, 0.7))
-    end
-end
-
--- One thing off the shelf as a whole page, which is how a phone reads the
--- shop: the list to scan, a tap to step into the thing, a key to buy it,
--- a chevron to step out. The reading is the same pane the desktop hangs
--- beside the list; only the navigation around it is phone-shaped.
-function pages.shop_item(v, x, y, w, h)
-    local r = v.item
-    if not r then return end
-    -- The stage keeps a column for a scrollbar this page never draws, and
-    -- the pane keeps its distance from a list that is not beside it; both
-    -- hand their width back here, so the page's right margin matches its
-    -- left instead of running half again as wide.
-    w = w + 14 * F.scale
-    -- The way back, above everything, where every pocket catalog puts it.
-    -- The caret is a drawn triangle, the same one the carousel points with:
-    -- a "<" set in type is a picture of a mathematical symbol, and this
-    -- interface draws its pictures.
-    local by2 = y + 14 * F.scale
-    F.layer:tri(x, ry(by2), x + 7 * F.scale, ry(by2 - 5.5 * F.scale),
-                x + 7 * F.scale, ry(by2 + 5.5 * F.scale),
-                pal.a(pal.DIM, 0.9))
-    lbl("upgrades", x + 15 * F.scale, by2, pal.a(pal.DIM, 0.9))
-    hit(x - 10 * F.scale, y, 110 * F.scale, 30 * F.scale, "back")
-    pages.shop_pane(r, x, y + 34 * F.scale, w, h - 34 * F.scale, true)
-    -- The buy, as the page's one key, the size the deploy key taught. The
-    -- card still asks before anything is spent, and a row with nothing to
-    -- sell has no key: the pane's own line already says yours or dealt.
-    if r.price then
-        local rw = w
-        local kh = 46 * F.scale
-        local ky = y + h - kh - 10 * F.scale
-        local can = r.afford ~= false
-        key_box(x, ky, rw, kh,
-                pal.a(pal.CHARGE_COL, can and 0.10 or 0.04),
-                pal.a(can and pal.CHARGE_COL or pal.DIM, can and 0.9 or 0.5))
-        txt("BUY", x + rw / 2, ky + kh / 2, 17 * F.scale,
-            pal.a(can and pal.INK or pal.DIM, can and 1 or 0.8), "center")
-        -- The same action the pane's button publishes, with no row named:
-        -- this page is one thing, so there is nothing to pick out of a list.
-        -- It used to press the page's own row through the stage, which meant
-        -- the key and the row it stood for could come apart.
-        hit(x - 6 * F.scale, ky - 6 * F.scale, rw + 12 * F.scale,
-            kh + 12 * F.scale, "buy_go")
-    end
-end
-
-function pages.shop(v, x, y, w, h, focused)
-    -- The reading pane, where the page is wide enough to hold one beside
-    -- the list. Browsing is two activities taking turns: running the eye
-    -- down the shelf, and stopping on one thing to learn it. The list
-    -- serves the first and served the second badly, one 11-point note at a
-    -- time, so the second gets its own column: the row under the cursor,
-    -- drawn working and explained in full sentences.
-    local pane = 0
-    if w >= 760 * F.scale then pane = math.min(390 * F.scale, w * 0.46) end
-    -- With no pane, the list takes back the column the stage keeps for a
-    -- scrollbar: this page draws its own inside the list, and leaving both
-    -- made the right margin half again the left one on a phone.
-    local lw = pane > 0 and (w - pane - 30 * F.scale) or (w + 14 * F.scale)
-    -- Whether a name, its ladder and its price fit across one row. Under
-    -- about 430 points they do not, and the ladder moves under the name with
-    -- the price beside it.
-    local packed = lw < 430 * F.scale
-    local rowh = (packed and 50 or 40) * F.scale
-    local SECT = 24 * F.scale
-    -- The wallet, pinned over the shelf, where the rows scroll under it the
-    -- way the kit slides under the ship band. The one page that sells
-    -- things never said what you hold: the number lived on the ship page
-    -- and the refusal card, so a pilot priced a row by pressing it.
-    local BAND = 34 * F.scale
-    -- Over the shelf, and only as wide as the shelf. Everything on this page
-    -- that belongs to the list is measured against `lw`: the rows, the wash
-    -- under the cursor, the price column, the scrollbar. The wallet and the
-    -- section rules were measured against `w`, which is the whole page, so
-    -- both ran out over the reading pane and the rules crossed it end to end.
-    -- One column, one right edge.
-    lbl("rivets", x, y + 12 * F.scale)
-    txt(tostring((v.pilot and v.pilot.rivets) or 0),
-        x + lw - 8 * F.scale, y + 12 * F.scale, 15 * F.scale,
-        pal.a(pal.CHARGE_COL, 0.95), "right", nil, true)
-    local top = y + BAND
-    local at = top
-
-    -- How wide the widest ladder is, so every price lands in one column. A
-    -- price that moved left and right down the page is a column nobody can
-    -- add up.
-    local pitch = 13 * F.scale
-    -- The dealt run is a bar and the rungs for sale are pips, so the widest
-    -- ladder is the most rungs anybody could buy rather than the tallest slot.
-    -- The bar's width is reserved on every row whether or not the row has one,
-    -- which is what puts the first buyable rung in the same column all the way
-    -- down: a stat is fully dealt while a charge kind can start at nothing,
-    -- and pips that started where each row's own dealt part ended made a
-    -- ragged edge out of the one column worth comparing.
-    local DEALT = 28 * F.scale
-    local most = 1
-    for _, r in ipairs(v.rows or {}) do
-        most = math.max(most, (r.arena_max or 0) - (r.base or 0))
-    end
-    -- A column for the mark, ahead of every name, so the rows that carry a
-    -- drawing and the stats that do not still hang their labels off one
-    -- edge.
-    local MARKW = 42 * F.scale
-    local NAMEW = math.min(packed and (lw - MARKW) or lw * 0.42, 210 * F.scale)
-    local ladx = x + MARKW + NAMEW
-    local pricex = math.min(ladx + DEALT + most * pitch + 26 * F.scale,
-                            x + lw - 8 * F.scale)
-
-    -- Where the cursor is, from one walk of the same arithmetic the drawing
-    -- below does. Before the drawing rather than during it, because a page
-    -- that followed its cursor afterwards would draw a frame at the old
-    -- offset every time the arrows reached the bottom.
-    do
-        local walk, cur = 0, nil
-        for i, r in ipairs(v.rows or {}) do
-            if r.sect then walk = walk + SECT end
-            if i == v.sel then cur = walk end
-            walk = walk + rowh
-        end
-        -- Against the window under the wallet band, which does not move.
-        follow_cursor(cur, rowh, h - BAND, focused)
-    end
-    local dy = M.page_scroll
-
-    for i, r in ipairs(v.rows or {}) do
-        if r.sect then
-            local hy = at - dy
-            if hy >= top and hy + SECT <= y + h then
-                hrule(x, hy + SECT * 0.42, lw - 10 * F.scale)
-                lbl(r.sect, x, hy + SECT * 0.82)
-            end
-            at = at + SECT
-        end
-        local ry0 = at - dy
-        at = at + rowh
-        -- Whole rows only. There is no scissor to clip against and type comes
-        -- from the gui, which draws over every mesh laid down here.
-        if ry0 >= top and ry0 + rowh <= y + h then
-            local hot = (focused and i == v.sel) or i == v.hover
-            if hot then
-                wash(x - ROW_PAD * F.scale, ry0, lw + 2 * ROW_PAD * F.scale,
-                     rowh, pal.a(pal.FRIEND, 0.16))
-            end
-            local cy = ry0 + rowh / 2
-            local ny = packed and (ry0 + rowh * 0.3) or cy
-            local col = r.tint_col or pal.INK
-            pages.shelf_mark(r, x + 18 * F.scale, cy)
-            txt(r.label or "", x + MARKW, ny, (packed and 14 or 15) * F.scale,
-                pal.a(col, hot and 1 or 0.88), nil, MENU_FONT)
-            -- The ladder. Where the whole of it was dealt there is nothing to
-            -- sell and nothing to draw: the price column says so instead.
-            local lx = packed and (x + MARKW) or ladx
-            local ly = packed and (ry0 + rowh * 0.72) or cy
-            local owned = r.owned or 0
-            local base = r.base or 0
-            local ceil = r.arena_max or 0
-            if base > 0 then
-                -- What everybody is dealt, as one bar. Pips would be a ladder
-                -- with its bottom half permanently lit and nothing to say
-                -- where the buying starts, especially on a stat whose full
-                -- eight-step ladder is universal.
-                rect(lx, ly - 1.5 * F.scale, DEALT - 10 * F.scale,
-                     3 * F.scale, pal.a(pal.DIM, 0.45))
-            end
-            for k = base + 1, ceil do
-                local cx = lx + DEALT + (k - base - 1) * pitch
-                if k == owned + 1 and r.price and r.afford then
-                    -- The pip the price buys, in the price's own gold while
-                    -- the wallet covers it. Buying is watching a row fill
-                    -- up, and this is the diamond that would: the page said
-                    -- so in the price column and made the eye find the rung
-                    -- itself.
-                    local d = 5.4 * F.scale
-                    F.layer:outline({cx, ry(ly - d), cx + d, ry(ly),
-                                     cx, ry(ly + d), cx - d, ry(ly)},
-                                    1.1 * F.scale,
-                                    pal.a(pal.CHARGE_COL, 0.95), true)
-                else
-                    pages.pip(cx, ly, 4.5 * F.scale,
-                              k <= owned and "on" or "off",
-                              k <= owned and pal.a(col, 0.95) or pal.DIM)
-                end
-            end
-            -- And what the next one costs, or that there is no next one.
-            local px = packed and (x + lw - 8 * F.scale) or pricex
-            local py = packed and ly or cy
-            if r.price then
-                local can = r.afford ~= false
-                pages.priced(r.price, px, py, 11.5 * F.scale,
-                             pal.a(can and pal.CHARGE_COL or pal.DIM,
-                                   can and (hot and 1 or 0.9) or 0.5),
-                             packed and "right" or nil)
-            else
-                lbl(owned > base and "yours" or "dealt", px, py,
-                    pal.a(pal.DIM, 0.55), packed and "right" or nil)
-            end
-            -- The note, where there is no pane to say it better: on a page
-            -- too narrow for the reading column, the row keeps its own
-            -- one-line answer to what the thing does.
-            if r.note and pane == 0 and not packed
-               and rowh >= 40 * F.scale then
-                local nx = pricex + 60 * F.scale
-                if nx < x + lw - 80 * F.scale then
-                    txt(r.note, nx, cy, 11 * F.scale, pal.a(pal.DIM, 0.8))
-                end
-            end
-            if r.pick then
-                hit(x - GUTTER * F.scale, ry0, lw + GUTTER * F.scale, rowh,
-                    "stage", i)
-            end
-        end
-    end
-
-    if #(v.rows or {}) == 0 and v.empty then
-        empty_state(x, top, lw, h, v.empty)
-    end
-    M.page_extent = (at - top) + 16 * F.scale
-    -- The window is what is under the band, since the band does not move.
-    local room = h - BAND
-    M.page_room = room
-    if M.page_extent > room then
-        local bar = math.max(30 * F.scale, room * room / M.page_extent)
-        local pos = (M.page_scroll / math.max(1, M.page_extent - room))
-                    * (room - bar)
-        local bx = x + lw - 3 * F.scale
-        rect(bx, top, 3 * F.scale, room, pal.a(pal.DIM, 0.12))
-        rect(bx, top + pos, 3 * F.scale, bar, pal.a(pal.RADAR_TILE, 0.8))
-    end
-    -- The pane reads whatever the cursor is on, and the first row before
-    -- the cursor has been anywhere: a page that opens empty-handed is a
-    -- page that opens saying nothing.
-    if pane > 0 then
-        local rows2 = v.rows or {}
-        -- Which row, and not only which row's contents: the button under
-        -- the pane spends money on it, so it has to be the row the pane is
-        -- describing and not one worked out a second time. The pane reads
-        -- the cursor, or the pointer where there is no cursor yet, or the
-        -- first row on a page nothing has touched; a button that read any
-        -- other of those three would buy something the reader was not
-        -- looking at.
-        local at2 = (rows2[v.sel or 0] and v.sel)
-                    or (rows2[v.hover or 0] and v.hover)
-                    or (rows2[1] and 1)
-        if at2 then
-            pages.shop_pane(rows2[at2], x + lw + 30 * F.scale, y + BAND,
-                            pane, h - BAND, false, at2, v.buy_hot)
-        end
-    end
-end
-
-
--- The menu. One list, whatever level it is.
---
--- A title, a breadcrumb's worth of depth, rows, and a line at the bottom. The
--- same routine draws the hull list, the games and the settings, which is the
--- point of having a tree rather than a screen: adding a level costs a table in
--- menu.lua and nothing here.
---
--- It is both the home screen and the panel you open mid-fight, so the backdrop
--- is translucent rather than opaque. Over an arena you can see the fight you
--- left, and that you are still in it; on the way in there is a starfield
--- behind it and the same wash makes the type readable against the stars.
-
--- No picture of a keyboard here any more.
---
--- The controls page drew one: the board itself, unbound keys as faint outlines
--- and the bound ones lit in the color of what they do, with every control a
--- chip under it carrying its key. It wanted width, and on a desktop window
--- there was a thousand points of it going spare, so the page took 460 more
--- than any other and drew the picture across them.
---
--- The menu is one column at a phone's measure now, and a board drawn across
--- 362 points comes out with 15-point keys: a picture of a keyboard nobody can
--- read is worse than no picture. What the page carries instead is what a phone
--- has always had and what the chips were saying anyway, a row per control with
--- the key it is on at the end of it, drawn by the same list every other page
--- in this menu is drawn by. See .design/menu-unify.
-
--- --- the menu -------------------------------------------------------------
---
 -- A rail of destinations and a stage showing what the one you are on holds.
 --
 -- The old menu was one column of words: a title, `label ....... value` rows,
@@ -6630,8 +6151,8 @@ end
 
 -- The door: one page about the room the game points at.
 --
--- Everything here is docs/design/community.md. The page leads with the job the
--- room does for a player, then gives that player one clear way in.
+-- Everything here is docs/design/community.md. The page leads with the job
+-- the room does for a player, then gives that player one clear way in.
 --
 -- One control, drawn as a control. The action is a stroked box, and nothing
 -- else on the page wears a shape that answers.
@@ -7575,6 +7096,36 @@ function M.drawer_release(shut)
     drawer_from, drawer_to, drawer_at = slide, shut and 0 or 1, F.now
 end
 
+-- How deep the stack was last frame, and when it last changed, so a page
+-- that has just been stepped into can arrive from the side rather than
+-- appearing where the last one was.
+--
+-- The reading slides in over the page from the right, and stepping back sends
+-- it the other way; that is the whole of what makes the two feel like one
+-- surface being moved rather than two screens being swapped. Same span and
+-- the same ease as the drawer, since it is the same gesture at a smaller
+-- scale: a swipe right does it by hand.
+--
+-- At a still clock the page draws settled, which is what keeps the layout
+-- tests still: `F.now` never advances under the harness, and a client reaches
+-- its first menu long after its first frame.
+local page_depth, page_at, page_dir = 1, 0, 0
+
+local function page_slide(depth)
+    if depth ~= page_depth then
+        page_dir = depth > page_depth and 1 or -1
+        page_depth, page_at = depth, F.now
+    end
+    if F.now <= 0 or page_dir == 0 then return 0 end
+    local t = math.min(1, (F.now - page_at) / DRAWER_SPAN)
+    if t >= 1 then
+        page_dir = 0
+        return 0
+    end
+    -- In from the right on the way down, in from the left on the way back.
+    return page_dir * (1 - drawer_ease(t))
+end
+
 function M.menu(v)
     M.menu_drawn = true
     F.case = "sentence"
@@ -7678,8 +7229,8 @@ function M.menu(v)
     -- are the front end, so a menu opened there is a panel over a room like
     -- any other, and the wash that used to be lighter over a starfield has
     -- one weight because there is one thing it is ever drawn over.
-    local reading = v.door or v.table or v.social or v.shop or v.item
-        or v.settings or v.at == "controls" or v.at == "about"
+    local reading = v.door or v.table or v.social or v.item or v.points
+        or v.newbuild or v.settings or v.at == "controls" or v.at == "about"
         or v.at == "pilot"
     -- The ground under the column, and nothing outside it. The wash used to
     -- take the window, which is what a panel that is the window wants and the
@@ -7784,15 +7335,24 @@ function M.menu(v)
     -- page already had.
 
     -- The head, and the page between the two.
+    --
+    -- Some pages carry none. The ship page and the four screens it opens put
+    -- their own band on that line, the build's name and the points, or the
+    -- way back out of a reading, and the wordmark and the call sign come off:
+    -- this is the longest page in the menu and what a builder needs on screen
+    -- is the build. The x stays where it always is, on the same line at the
+    -- same inset, and the page starts to the right of it. See .design/hangar.
     local hy = F.safe_t
-    logo_y = hy + head / 2
+    local bare = v.headless == true
+    logo_y = hy + (bare and 24 or head / 2) * (bare and F.scale or 1)
     sx, sw = dx + margin, dock - 2 * margin
-    sy = hy + head + 8 * F.scale
+    sy = bare and hy or (hy + head + 8 * F.scale)
     sh = ry_ - 14 * F.scale - sy
     -- A rule under the head, so the name and the call sign read as a bar over
     -- the page rather than as the page's own first line. Edge to edge, since
-    -- it is the underside of a head rather than the top of a list.
-    hrule(dx, hy + head, dock)
+    -- it is the underside of a head rather than the top of a list. A page
+    -- that carries its own band draws its own.
+    if not bare then hrule(dx, hy + head, dock) end
     px0, py0, px1, py1 = dx, 0, dx + dock, F.h
 
     -- The pair at the far end of the head first, so the name knows what room
@@ -7807,7 +7367,8 @@ function M.menu(v)
     -- either can be and it carries them whatever is behind the panel.
     --
     local logo_px = (short and 24 or 28) * F.scale
-    corner_left = pages.corner(v, dx + dock - margin, logo_y, true)
+    corner_left = bare and (dx + dock - margin)
+        or pages.corner(v, dx + dock - margin, logo_y, true)
     -- The way out stands where the way in stood: the same square, at the same
     -- inset, on the same line. Pressing the menu key and pressing the x are one
     -- control seen from either side, so a hand that learned where one of them
@@ -7815,6 +7376,10 @@ function M.menu(v)
     local shut = KEY_H * F.scale
     local logo_x = dx + margin
     if v.closable then logo_x = logo_x + shut + 12 * F.scale end
+    -- Where the x's square ends, so a page carrying its own top line knows
+    -- what room is already spoken for. Published rather than worked out
+    -- twice: the key is drawn from here and the band is laid out from there.
+    M.close_right = v.closable and (dx + margin + shut) or (dx + margin)
     -- The wordmark gives, because it is a picture of a name everybody
     -- reading this screen has already read, and a call sign in a pill is
     -- not. Down two points at a time to a floor rather than squeezed to
@@ -7823,7 +7388,7 @@ function M.menu(v)
           and logo_x + M.wordmark_w(logo_px) > corner_left - 12 * F.scale do
         logo_px = logo_px - 2 * F.scale
     end
-    M.wordmark(logo_x, logo_y, logo_px)
+    if not bare then M.wordmark(logo_x, logo_y, logo_px) end
 
     -- Which half the arrows are in. The two halves share one cursor and mark
     -- it with the same blue field, so the half wearing the brighter one is the
@@ -7969,7 +7534,7 @@ function M.menu(v)
     -- reads as one line.
     --
     -- Lists only. The hull grid is a drawing, and it takes everything there is.
-    local listy = not v.hulls and not v.table
+    local listy = not v.kit and not v.table
         and not (v.rows and v.rows[1] and v.rows[1].hull)
     -- A page is a panel: a translucent ground hung off a lit rule down its left
     -- edge, with the light spilling across it. It is the shape every
@@ -7988,6 +7553,11 @@ function M.menu(v)
     -- The column is 390 points on every window now, so what the aside held is
     -- drawn under the rows instead, where there is room for it. See `asidey`.
     local panel_x, panel_w = sx, avail
+    -- Where in its slide this page is, if it has just arrived. Everything the
+    -- page draws and every box it publishes moves with it, which is what
+    -- makes a press during the slide land on what the finger is over.
+    local slid = page_slide(v.depth or 1) * dock
+    panel_x, tx = panel_x + slid, tx + slid
     if listy then lw = math.min(lw, 560 * F.scale) end
     -- No title over the stage. The rail is lit at the stop you are inside and
     -- says its name there, so a heading repeating it is the same answer
@@ -8021,7 +7591,8 @@ function M.menu(v)
     -- starts its first row, near enough: the air over the list is what the
     -- heading is standing in. Taking the full band and then the heading on
     -- top of it cost the kit page its last row.
-    local top = sy + ((v.head and not v.hulls) and 10 or STAGE_TOP) * F.scale
+    local top = bare and sy
+        or (sy + ((v.head and not v.kit) and 10 or STAGE_TOP) * F.scale)
     local room = sh - (top - sy) - 26 * F.scale
     -- A heading, on the one page that has one. The lit stop on the tab row is
     -- the title everywhere else, and it stops being one as soon as a page is
@@ -8032,7 +7603,7 @@ function M.menu(v)
     -- grid you picked it from: eight names is a list to read and eight
     -- outlines is a shape to recognise, and the page you land on should be
     -- wearing the one you just pressed.
-    if v.head and not v.hulls then
+    if v.head and not v.kit then
         -- One line of it. Stacked, the name and the trade cost a row off the
         -- list below, and a kit page that has to scroll to reach the last
         -- charge is a page that cannot be read in one look.
@@ -8089,13 +7660,12 @@ function M.menu(v)
     -- one the map border is made of, introducing a list that needs no
     -- introducing: the rail says what the page is and the rows say what they
     -- are, and the rule was a third line of furniture between them.
-    if v.hulls then
-        -- The hangar, which is the one page drawn as a layout rather than as
-        -- a list: a roster beside the kit of the hull it is standing on.
-        -- The same left edge every other page has. It began at the panel's
-        -- own rule while the others began a gutter in from it, which is a
-        -- quarter inch of difference nobody can name and everybody can see
-        -- when they walk the tab row.
+    if v.kit then
+        -- The ship page: every slot this arena has, and the thirty points on
+        -- it. The same left edge every other page has. It began at the
+        -- panel's own rule while the others began a gutter in from it, which
+        -- is a quarter inch of difference nobody can name and everybody can
+        -- see when they walk the tab row.
         pages.kit(v, panel_x + GUTTER * F.scale, top,
                   panel_w - 14 * F.scale - GUTTER * F.scale, room, focused)
     elseif v.table then
@@ -8107,19 +7677,27 @@ function M.menu(v)
         pages.friends(v, panel_x + GUTTER * F.scale, top,
                       panel_w - 14 * F.scale - GUTTER * F.scale, room,
                       focused)
-    elseif v.shop then
-        -- The catalog, as a ladder and a price a row.
-        pages.shop(v, panel_x + GUTTER * F.scale, top,
-                   panel_w - 14 * F.scale - GUTTER * F.scale, room, focused)
+    elseif v.builds then
+        -- The library, behind the band's name key.
+        pages.builds(v, panel_x + GUTTER * F.scale, top,
+                     panel_w - 14 * F.scale - GUTTER * F.scale, room, focused)
+    elseif v.newbuild then
+        -- Naming one, a slide further right.
+        pages.newbuild(v, panel_x + GUTTER * F.scale, top,
+                       panel_w - 14 * F.scale - GUTTER * F.scale, room,
+                       focused)
+    elseif v.points then
+        -- What the thirty are, behind the band's meter.
+        pages.points(v, panel_x + GUTTER * F.scale, top,
+                     panel_w - 14 * F.scale - GUTTER * F.scale, room)
     elseif v.door then
         -- The room the game points at, as a page with one thing to press.
         pages.door(v, panel_x + GUTTER * F.scale, top,
                    panel_w - 14 * F.scale - GUTTER * F.scale, room, focused)
     elseif v.item then
-        -- One thing off that catalog, as a page: where a phone's tap on a
-        -- row lands.
-        pages.shop_item(v, panel_x + GUTTER * F.scale, top,
-                        panel_w - 14 * F.scale - GUTTER * F.scale, room)
+        -- One slot, read: where a press on a row's name lands.
+        pages.slot(v, panel_x + GUTTER * F.scale, top,
+                   panel_w - 14 * F.scale - GUTTER * F.scale, room, focused)
     elseif v.rows and #v.rows > 0 and v.rows[1].hull then
         ship_grid(tx, top, avail, room, v, focused)
     else

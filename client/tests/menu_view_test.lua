@@ -1163,103 +1163,138 @@ end
 -- second hull selector on one page, and the head of a page about thirty
 -- points is where the build's own name belongs.
 do
+    local ROWS = {
+        {label = "Screen", group = "band", act = "builds", verbatim = true,
+         state = "edited", index = 1},
+        {label = "points", group = "band", act = "points", index = 2},
+        {label = "energy", group = "flight", sect = "flight", short = "en",
+         choice = 2, choices = 6, owned = 6, arena_max = 8, index = 3},
+        {label = "gun spray", group = "weapons", sect = "gun", trigger = 0,
+         mod = 0, ladder = true, choice = 1, choices = 2, owned = 2,
+         arena_max = 5, price = 40, afford = true, index = 4},
+        {label = "hull", group = "flair", sect = "flair", ship = true,
+         verbatim = true, detail = "Cipher", choice = 1, choices = 2,
+         index = 5},
+        {label = "save", group = "save", act = "save_kit", index = 6},
+    }
     local hangar = draw({
-        depth = 2, sel = 2, rail = RAIL, rail_sel = 1, focus = "stage",
-        home = true, closable = false, page = "kit",
-        head = {label = "Cipher", hull = 4},
-        profile = {name = "Screen", state = "edited"},
-        -- Two, so the carousel has somewhere to go: the count beside the
-        -- hull row only draws where there is more than one ship.
-        hulls = {{label = "Cipher", role = "knife", index = 1, hull = 4,
-                  detail = "the longest and narrowest hull",
-                  extent = {fore = 21, aft = 18.0625, beam = 16}},
-                 {label = "Apex", role = "dart", index = 2, hull = 0}},
-        hull_sel = 1,
-        rows = {
-            {label = "budget", bar = true, choice = 4, choices = 30, index = 1},
-            {label = "energy", group = "flight", short = "en", choice = 2,
-             choices = 6, owned = 6, arena_max = 8, index = 2},
-            {label = "hull", group = "flair", ship = true, verbatim = true,
-             detail = "Cipher", choice = 1, choices = 2, index = 3},
-        },
+        depth = 2, sel = 3, rail = RAIL, rail_sel = 1, focus = "stage",
+        home = true, closable = true, page = "kit", headless = true,
+        kit = true, profile = {name = "Screen", state = "edited"},
+        kit_spent = 28, kit_total = 30,
+        rows = ROWS,
     })
-    check("the head of the page names the build", has(hangar, "screen"),
+    check("the band names the build", has(hangar, "screen"),
           table.concat(texts(hangar), " "))
     check("and says it has been tuned away from it", has(hangar, "edited"),
+          table.concat(texts(hangar), " "))
+    -- The figure a builder mid-edit is after is what is left, not a ratio to
+    -- subtract before it says anything.
+    check("the points are a meter and what is left of them",
+          says(hangar, "2 left") and has(hangar, "points"),
+          table.concat(texts(hangar), " "))
+    check("with no head over any of it, and no wordmark",
+          not has(hangar, "vectorwake"), table.concat(texts(hangar), " "))
+    check("the sections name themselves", has(hangar, "flight")
+          and has(hangar, "gun") and has(hangar, "flair"),
           table.concat(texts(hangar), " "))
     check("the page names the ship", has(hangar, "cipher"),
           table.concat(texts(hangar), " "))
     check("and says which of them it is", has(hangar, "1 of 2"),
           table.concat(texts(hangar), " "))
-    local said_px = false
-    for _, t in ipairs(texts(hangar)) do
-        if string.find(t, " PX", 1, true) then said_px = true end
-    end
-    check("with no footprint numbers on it", not said_px,
-          table.concat(texts(hangar), " "))
-    check("nor the role and the sentence under it",
-          not has(hangar, "knife") and not has(hangar, "longest"),
-          table.concat(texts(hangar), " "))
-    check("and nothing about a hull's limits", not has(hangar, "hull limits"),
-          table.concat(texts(hangar), " "))
+    -- The one price on the page, on the row it belongs to. It is the whole
+    -- of what the shelf's own tab used to be for.
+    check("a row with a rung left to sell carries its price",
+          says(hangar, "40"), table.concat(texts(hangar), " "))
+    check("and the key that keeps the build stands at the foot",
+          has(hangar, "save"), table.concat(texts(hangar), " "))
+    -- Pressing the name, or the part of the ladder nobody owns, is the same
+    -- question; the circles this account owns keep their own presses.
+    check("the name and the row past the ladder open the reading",
+          hit_named("read_row") ~= nil, "no reading")
+    check("and the circles it owns spend a point where they are pressed",
+          hit_named("kit_at") ~= nil, "no ladder")
+
+    -- The kit a build is exactly is a kit with nothing to keep, so no key.
+    local kept = draw({
+        depth = 2, sel = 3, rail = RAIL, rail_sel = 1, focus = "stage",
+        home = true, closable = true, page = "kit", headless = true,
+        kit = true, profile = {name = "Screen"},
+        kit_spent = 30, kit_total = 30,
+        rows = {ROWS[1], ROWS[2], ROWS[3], ROWS[5]},
+    })
+    check("a build that is exactly its own name offers no save key",
+          not has(kept, "save"), table.concat(texts(kept), " "))
+    check("and says nothing about being edited",
+          not has(kept, "edited"), table.concat(texts(kept), " "))
 end
 
--- --- the builds down the left, the one you are on in the pane -------------
+-- --- the library, behind the band's name ----------------------------------
 --
--- Two columns: the list of builds this pilot can fly, and the thirty points
--- of whichever one the pane is about. The keys that rename and drop a build
--- are in the pane, because they are about that one build; the key that adds
--- one is over the list, because what it does is put a row in it.
+-- Every build this pilot can fly, with two keys under it and nothing else.
+-- Saving is at the foot of the ship page where the kit that earned it is,
+-- and renaming went with it.
 do
-    local LEFT = {
-        {label = "Gunner", group = "profiles", verbatim = true,
-         choice = 0, choices = 1, index = 1},
-        {label = "Screen", group = "profiles", verbatim = true,
-         choice = 1, choices = 1, index = 2},
-        {label = "add", group = "list", act = "save_profile", index = 3},
-    }
-    local starter = draw({
-        depth = 2, sel = 1, rail = RAIL, rail_sel = 1, focus = "stage",
-        home = true, closable = false, page = "kit",
-        profile = {name = "Gunner"}, kit_spent = 30, kit_total = 30,
-        hulls = {{label = "Cipher", index = 1, hull = 4}}, hull_sel = 1,
-        rows = {LEFT[1], LEFT[2], LEFT[3],
-                {label = "energy", group = "flight", short = "en", choice = 2,
-                 choices = 6, owned = 6, index = 4}},
+    local builds = draw({
+        depth = 3, sel = 2, rail = RAIL, rail_sel = 1, focus = "stage",
+        home = true, closable = true, page = "builds", headless = true,
+        builds = true,
+        rows = {
+            {label = "Gunner", group = "builds", verbatim = true,
+             starter = true, choice = 0, choices = 1, index = 1},
+            {label = "Screen", group = "builds", verbatim = true,
+             choice = 1, choices = 1, index = 2},
+            {label = "new", group = "keys", act = "new_build", index = 3},
+            {label = "delete", group = "keys", act = "delete_profile",
+             index = 4},
+        },
     })
-    check("the list carries every build and the key that adds one",
-          has(starter, "add") and has(starter, "gunner")
-          and has(starter, "screen"),
-          table.concat(texts(starter), " "))
-    check("the pane names the one it is about, beside its kit",
-          has(starter, "energy") and has(starter, "kit"),
-          table.concat(texts(starter), " "))
-    check("and a starter offers nothing to rename or drop",
-          not has(starter, "rename") and not has(starter, "delete"),
-          table.concat(texts(starter), " "))
-    check("every row of the list takes a press",
-          hit_named("stage") ~= nil, "no rows")
+    check("the library carries every build", has(builds, "gunner")
+          and has(builds, "screen"), table.concat(texts(builds), " "))
+    check("with the three the game ships marked as its own",
+          has(builds, "starter"), table.concat(texts(builds), " "))
+    check("and two keys under them, and nothing that renames one",
+          has(builds, "new") and has(builds, "delete")
+          and not has(builds, "rename"),
+          table.concat(texts(builds), " "))
+    check("every row of it takes a press", hit_named("stage") ~= nil,
+          "no rows")
+    check("and the way back is on the line the x is on",
+          hit_named("back") ~= nil, "no way back")
+end
 
-    local own = draw({
-        depth = 2, sel = 3, rail = RAIL, rail_sel = 1, focus = "stage",
-        home = true, closable = false, page = "kit",
-        profile = {name = "Screen", state = "edited"},
-        kit_spent = 29, kit_total = 30,
-        hulls = {{label = "Cipher", index = 1, hull = 4}}, hull_sel = 1,
-        rows = {LEFT[1], LEFT[2], LEFT[3],
-                {label = "rename", group = "pane", act = "rename_profile",
-                 index = 4},
-                {label = "delete", group = "pane", act = "delete_profile",
-                 index = 5},
-                {label = "energy", group = "flight", short = "en", choice = 2,
-                 choices = 6, owned = 6, index = 6}},
+-- --- naming a new build ---------------------------------------------------
+do
+    local naming = draw({
+        depth = 4, sel = 1, rail = RAIL, rail_sel = 1, focus = "stage",
+        home = true, closable = true, page = "newbuild", headless = true,
+        newbuild = true, new = {name = "Screen 2", on = true}, rows = {},
     })
-    check("one of your own offers both, in the pane",
-          has(own, "rename") and has(own, "delete"),
-          table.concat(texts(own), " "))
-    check("and the pane says the build has been tuned away from its name",
-          has(own, "screen") and has(own, "edited"),
-          table.concat(texts(own), " "))
+    check("the naming page says what it is for",
+          has(naming, "new build"), table.concat(texts(naming), " "))
+    check("with the name in a box that takes type",
+          says(naming, "Screen 2") and hit_named("new_field") ~= nil,
+          table.concat(texts(naming), " "))
+    check("and one key, which makes it", has(naming, "create")
+          and hit_named("create_build") ~= nil,
+          table.concat(texts(naming), " "))
+end
+
+-- --- what the thirty points are -------------------------------------------
+do
+    local points = draw({
+        depth = 3, sel = 1, rail = RAIL, rail_sel = 1, focus = "stage",
+        home = true, closable = true, page = "points", headless = true,
+        points = true, kit_spent = 28, kit_total = 30, rows = {},
+    })
+    check("the points page says what the thirty are",
+          has(points, "thirty points"), table.concat(texts(points), " "))
+    check("and spells the meter out", says(points, "28 spent"),
+          table.concat(texts(points), " "))
+    check("and teaches the circle a slot's ladder is drawn in",
+          says(points, "equipped") and says(points, "owned")
+          and says(points, "not yours yet"),
+          table.concat(texts(points), " "))
 end
 
 -- --- a page that overflows can be scrolled to the end of itself ------------

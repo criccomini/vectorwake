@@ -1,5 +1,18 @@
 # Landing, and the menu
 
+> **The ship page is the shelf.** The upgrades tab is gone: every slot the arena
+> has is a row of the ship page, drawn as circles (solid equipped, a ring owned,
+> a dim grey ring not yours) with the price of the next rung on the rows that
+> still have one to sell. Pressing a row's name, or the part of its ladder
+> nobody owns, slides a reading in from the right, which is the one place in
+> this menu anything is bought. The build library sits behind the band's name
+> key with a key that makes one and a key that drops one, nothing renames a
+> build any more, and the save key stands at the foot of the ship page only
+> while the kit differs from the build it came from. That page carries no head:
+> the wordmark and the call sign come off its line and the band stands there
+> instead. Five stops, not six. See [decision
+> 64](../architecture/decisions.md) and the mocks in `.design/hangar`.
+
 > **One column, docked to the left edge.** The menu is drawn once at 390 points
 > wide and stood against the left edge of whatever window it is in: a head with
 > the wordmark and the call sign, the page under it, the six stops at its foot.
@@ -100,10 +113,10 @@ at what is next to a thing; on a chip that is another chip.
 vectorwake
 ├ play        the zones a directory is running, each with a sentence saying
 │             what its game is
-├ ship        one hull on a carousel, and the thirty points you spend on it.
-│             Only slots this account owns: what it does not is the tab below
-├ upgrades    every slot the game has, how far you own it, and what the next
-│             rung costs. Slots, never strength: see match-game.md
+├ ship        every slot the arena has, as circles, and the thirty points you
+│             spend on them. A rung you do not own is dim with its price on
+│             the end of the row; pressing the row reads it and buys it.
+│             Slots, never strength: see match-game.md
 ├ friends     a field you type a call sign into, who is waiting on you, who
 │             is on, the room you are in, and everybody who ever added you.
 │             See friends.md

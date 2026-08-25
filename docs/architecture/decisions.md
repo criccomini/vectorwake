@@ -2853,3 +2853,60 @@ beat it.
 and cannot be split, or the stands stop being where players spend their time
 between matches, which is the whole argument for keeping the fight visible.
 
+## 64. The ship page is the shelf
+
+**Status:** accepted, superseding the split between ship and upgrades
+
+**Decision:** the upgrades tab is gone and every slot the arena has is a row of
+the ship page. A slot's ladder is circles: solid is a point equipped, a ring in
+the slot's own color is a step this account owns and has not spent a point on,
+and a dim grey ring is a rung the arena has that the account does not. A row
+with a rung still for sale ends in what the next one costs, behind the rivet
+mark. Pressing a row's name, or the part of its ladder nobody owns, slides a
+reading in from the right: what the thing is, what it does in a fight, how far
+it goes, the price, the wallet, and one key that spends it. The chevron or a
+swipe right puts the page back. The drawer carries five stops now rather than
+six.
+
+Three things move with it. The build library comes off the page into a screen
+behind the band's name key, carrying the list, a key that makes a new build and
+a key that drops one; rename is deleted, because a build is named when it is
+made and a name that wants changing is a new build and a delete. The save key
+moves to the foot of the ship page and is drawn only while the thirty points in
+hand differ from the build they came from, so its absence is the answer to "is
+there anything to keep here". And the ship page carries no head at all: the
+wordmark and the call sign come off that line and the page's own band, the
+build's name and a points meter, stands there instead, with the x where it
+always was.
+
+**Why:** decision 63's split was right about the confusion it fixed and wrong
+about what it cost. Two stops drew the same twenty-three slots in the same order
+for two questions, and the page a pilot was actually on could not answer the one
+they were asking it: why does this ladder stop here, and what would it take. The
+answer lived on the other tab, which is a walk rather than an answer.
+
+The shelf is also much smaller than its page suggested. Stats are never sold,
+the gun's ladder and most add-on rungs are dealt whole, and what melee actually
+sells a new account is eight purchases. Eight prices do not need a stop of their
+own, and the stop they had cost a duplicate drawing of the whole slot space.
+
+The old objection, that a wallet and a budget on one screen make the word
+"spend" mean two things, is answered by shape rather than by keeping them apart,
+and the vocabulary that answers it is the split's own work: points are circles
+in the slot's color and their figure is the meter in the band; a price always
+wears the rivet mark and the shop's gold; and the wallet is never on the ship
+page at all. It is on the reading, which is the one place in the menu anything
+is bought.
+
+**Cost:** the ship page is the longest in the menu and now carries rows for
+slots the account owns none of, so a phone held sideways scrolls it where it
+used to fit. Gold is on the page while a pilot is fitting rather than buying,
+which the sparse shelf keeps rare in practice but does not remove. And one
+grammar for every row means the add-ons lose the chip they were drawn as, which
+was a better picture of a switch than a one-circle ladder is.
+
+**Reconsider if:** the shelf grows enough that eight prices becomes eighty, at
+which point browsing what is for sale is its own activity again and wants its
+own page; or if the gold on the fitting page proves noisy, in which case
+`.design/hangar` holds a drawn fallback, a FIT | BUY toggle over the same rows,
+that shares nearly all of this drawing.

@@ -619,13 +619,16 @@ panes and grids, and the menu tree was deliberately one narrow column that
 [menu.md](menu.md) says "falls apart at 390 points wide". So there are two
 surfaces now rather than one:
 
-- **Six tabs** at the front end, which is where you are between matches and
-  where there is time to read: play, ship, upgrades, friends, standings,
-  settings. Your call sign at the far end of the row is the way into your
-  account. Upgrades and the ship page were one panel for a while, with the
-  price of each rung written on the row that spends it, and what that produced
-  was a wallet and a budget on one screen with the word "spend" meaning both.
-  They are two questions asked at different times. See [menu.md](menu.md).
+- **Five tabs** at the front end, which is where you are between matches and
+  where there is time to read: play, ship, friends, standings, settings. Your
+  call sign at the far end of the row is the way into your account. Upgrades
+  was a sixth for a while, drawing the same slots in the same order for the
+  other question; the ship page is the shelf now, with the price of the next
+  rung on the row that spends the point and the wallet on the reading that
+  row opens. The old worry, a wallet and a budget on one screen with "spend"
+  meaning both, is answered by shape: points are circles, prices wear the
+  rivet mark, and nothing is bought except on the reading. See
+  [menu.md](menu.md) and [decision 64](../architecture/decisions.md).
 - **Two tabs in a match**: settings and leave. Same row in the same place,
   carrying what you can act on from a cockpit.
 
@@ -672,8 +675,8 @@ which is the same reason the interface stays up today.
 
 None of this needs a new mechanism. `menu.home` already builds rows from the
 moment rather than declaring them, which is how the `leave` row appears only
-when there is something to leave. Ship, upgrades and standings are the same
-conditional in the other direction.
+when there is something to leave. Ship and standings are the same conditional
+in the other direction.
 
 ### It stays navigable from a keyboard, a d-pad and a thumb
 

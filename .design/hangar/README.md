@@ -11,7 +11,13 @@ won**: the tabs merge, the drawer drops to five stops, and every slot the
 arena has lives on the ship page. The canvas's first page is that direction
 as revised with Chris; the second page keeps the first pass, the shipped
 pages beside the two directions that lost, as the record of how it was
-chosen. Nothing here has landed; these are drawings of a proposal.
+chosen.
+
+**This landed.** `pages.kit` and the four screens beside it in
+`client/arena/ui.lua` draw what these boards draw, `client/arena/menu.lua`
+carries the model, and the reasoning is [decision
+64](../../docs/architecture/decisions.md). The boards stay as the drawing the
+layout was settled against.
 
 ## The diagnosis, kept short
 

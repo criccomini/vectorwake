@@ -1,21 +1,18 @@
--- The upgrades page: where its column ends, and what buys a rung.
+-- The reading a slot opens: what it says, and what buys a rung.
 --
---     lua5.1 client/tests/shop_test.lua
+--     lua5.1 client/tests/reading_test.lua
 --
--- Wide enough, this page is two columns: the shelf on the left and a reading
--- pane on the right that fills with whatever the cursor is on. Everything
--- belonging to the shelf is measured against the shelf's width. Two things
--- were measured against the page's instead, so the wallet's number sat out
--- over the pane and every section rule ran the whole way across it, through
--- the divider and under the words. That is invisible in the source, where
--- both are a variable called something reasonable, and obvious in a
--- screenshot, which is where it was found. It is measured here.
+-- The shelf used to be a tab of its own, a list of every slot with a reading
+-- pane beside it on a wide enough window. It is the ship page now, and the
+-- pane is the page a row opens: press a slot's name, or the part of its
+-- ladder nobody owns, and this slides in from the right.
 --
--- The other half is the buy. It used to be the row: stand on one, press
--- again, and a card asked whether to spend. Nothing on screen said so except
--- a line of grey type reading "press the row". There is a button now, and
--- these checks are that it exists, that it says which row it would spend on,
--- and that it is the only thing on the page that spends.
+-- What is checked here is that the reading carries the four things no other
+-- page in the menu does. What kind of thing this is and what it is called;
+-- the lesson, in the client's own words; the price of the next rung against
+-- the wallet it comes out of, which is on this page and no other; and one
+-- key that spends it. Plus the way back, since a page that slid in over
+-- another needs one.
 
 package.path = "client/?.lua;" .. package.path
 
@@ -87,17 +84,7 @@ local function box(action)
     end
 end
 
--- --- the shelf has the column to itself -----------------------------------
---
--- There was a reading pane down the right hand side of this page, on any
--- window with 760 points to give it. The menu is one column at a phone's
--- measure now, so the shelf takes the whole of it and the pane is a page you
--- step into: `shop_item`, which is the route a phone always took and the only
--- route there is.
-
-local v = {shop = true, rows = rows(), sel = 3, rail = {},
-           pilot = {rivets = 310}}
-local st = draw(v)
+-- --- the reading is about one slot ---------------------------------------
 
 local function said(st2, s)
     for _, t2 in ipairs(texts(st2)) do
@@ -105,42 +92,35 @@ local function said(st2, s)
     end
 end
 
-check("the shelf draws no reading pane beside itself",
-      said(st, "gun add-on") == nil, "a pane is still drawn")
-
-local rules = {}
-for _, s in ipairs(segs) do
-    if math.abs(s.y0 - s.y1) < 0.5 and s.x1 - s.x0 > 200
-       and s.x0 > 10 and s.y0 > 80 and s.y0 < H - 120 then
-        rules[#rules + 1] = s
+local function says(st2, s)
+    for _, t2 in ipairs(texts(st2)) do
+        if string.find(string.lower(t2.s or ""), string.lower(s), 1, true) then
+            return t2
+        end
     end
 end
-check("the shelf draws a rule over each of its sections", #rules == 2,
-      tostring(#rules))
 
--- The currency is named beside the shelf's balance. The glyph alone asked a
--- new player to recognize a unit the menu had not taught yet.
-check("the shelf names the currency and its balance",
-      said(st, "310") ~= nil and said(st, "rivets") ~= nil,
-      "missing rivets or balance")
-
--- --- the buy is on the item's own page ------------------------------------
---
--- One thing off the shelf, as a page you step into. It was a phone's route
--- alone while a wider window carried the pane beside the list; there is no
--- window wide enough now, so this is the route.
-
-local ist = draw({item = rows()[3], rows = {}, rail = {},
-                  pilot = {rivets = 310}})
-check("the item page says what kind of thing this is",
+local ist = draw({item = rows()[3], rows = {rows()[3]}, rail = {},
+                  headless = true, closable = true, wallet = 310, sel = 1,
+                  focus = "stage"})
+check("the reading says what kind of thing this is",
       said(ist, "gun add-on") ~= nil, "no kind line")
 check("and names it", said(ist, "Gun spray") ~= nil, "no headline")
+check("and teaches it in the client's own words",
+      says(ist, "rounds a pull") ~= nil, "no lesson")
+-- The one page in the menu that names a wallet. Points are spent everywhere
+-- else here and rivets only here, which is what keeps the word "spend"
+-- meaning one thing on the page this came off.
+check("the reading names the price and the wallet it comes out of",
+      says(ist, "70") ~= nil and said(ist, "310") ~= nil,
+      "missing price or wallet")
 -- The way back, because a page you step into needs one and the tab row goes
 -- to a different page rather than up a level.
-check("and carries the way back to the shelf", box("back") ~= nil, "no back")
+check("and carries the way back to the ship page", box("back") ~= nil,
+      "no back")
 
 local key = box("buy_go")
-check("the item page buys with the shelf's own action", key ~= nil,
+check("the reading buys with the shelf's own action", key ~= nil,
       "no buy key")
 check("and names no row, being about one thing",
       key and key.value == nil, key and tostring(key.value) or "none")
@@ -148,14 +128,19 @@ check("and names no row, being about one thing",
 -- A wallet too light does not take the button away. A page that published no
 -- box at all was one where the mouse did nothing and said nothing; the price
 -- is the answer, and it is the card that gives it.
-draw({item = rows()[4], rows = {}, rail = {}, pilot = {rivets = 10}})
+draw({item = rows()[4], rows = {rows()[4]}, rail = {}, headless = true,
+      closable = true, wallet = 10, sel = 1, focus = "stage"})
 check("a price above the wallet keeps its button", box("buy_go") ~= nil,
       "no buy key on a row nobody can afford")
 
 -- Nothing to sell, nothing to press. The page says yours or dealt instead.
-draw({item = rows()[2], rows = {}, rail = {}, pilot = {rivets = 310}})
+local topped = draw({item = rows()[2], rows = {}, rail = {}, headless = true,
+                     closable = true, wallet = 310})
 check("a row taken to the top of its ladder has no button",
       box("buy_go") == nil, "a topped-out row offered a buy")
+check("and says so rather than leaving the question open",
+      says(topped, "dealt") ~= nil or says(topped, "yours") ~= nil,
+      "nothing said about a topped-out slot")
 
 if fails > 0 then
     print(("\n%d check(s) failed"):format(fails))

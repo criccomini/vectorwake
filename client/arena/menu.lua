@@ -67,26 +67,6 @@ M.screen = nil          -- the drawable and its insets, for the about page
 -- glass there is no board to draw and no key column to fill in, so the same
 -- list comes out as gestures instead.
 M.touching = false
--- No `compact` here. It said whether the page was a phone's, and the shop was
--- the one page that read it: there, a row opened the item as a page of its own
--- rather than leaning on a reading pane there was no room to draw. The menu is
--- one column at a phone's measure on every window now, so the answer is always
--- yes and the question is gone. See .design/menu-unify.
---
--- The slot the item page is about. The slot number rather than a row index,
--- so the catalog refreshing under it cannot swap the subject.
-M.item_slot = nil
--- Whether the activation running right now came from a pointer landing on a
--- row rather than from the key that acts on the cursor.
---
--- The shop is the one page where those two want different answers. Buying
--- used to be the row itself: press one and a card asked whether to spend, so
--- reading a thing and buying it were the same gesture and the only place that
--- said so was a line of grey type in the pane. There is a button now, and a
--- click on a row does what a click on a row does everywhere else on this
--- page, which is move the cursor to it. The key still acts, because a key
--- press is already aimed at the cursor and the button is what it is aimed at.
-local from_row = false
 
 -- Which control is waiting for a key, and nothing while none is. It is the
 -- whole of the binding mode: the page draws the board dark around it and the
@@ -457,7 +437,7 @@ local function kit_slots()
         local s = pal.UPGRADES[u + 1]
         out[#out + 1] = {slot = u, label = s and s.name or ("stat " .. u),
                          short = s and s.short or "?", tint = s and s.col,
-                         group = "flight"}
+                         group = "flight", sect = "flight"}
     end
     -- A trigger's ladder is a ladder, not a switch. Both of these used to be
     -- chips wearing the word "rung", which is one word for two different
@@ -469,7 +449,12 @@ local function kit_slots()
                          label = (t == 0 and "gun" or "bomb") .. " level",
                          short = t == 0 and "gun" or "bmb",
                          tint = t == 0 and pal.CHARGE_COL or pal.BOMB,
-                         trigger = t, group = "levels"}
+                         trigger = t, group = "levels",
+                         -- A trigger's level belongs with the add-ons that
+                         -- ride it rather than in a group of its own with
+                         -- the other trigger's: what a section says is the
+                         -- whole story of one weapon.
+                         sect = t == 0 and "gun" or "bomb"}
     end
     for t = 0, trig - 1 do
         for m = 0, mods - 1 do
@@ -489,6 +474,7 @@ local function kit_slots()
                 -- puts the add-on on a round rather than a word on a row.
                 mod = m,
                 trigger = t, group = "weapons",
+                sect = t == 0 and "gun" or "bomb",
             }
         end
     end
@@ -500,7 +486,8 @@ local function kit_slots()
                          -- The color they go off in, which the page used to
                          -- hardcode where it drew them and now travels with
                          -- the slot like every other row's does.
-                         tint = pal.CHARGE_COL, group = "charges"}
+                         tint = pal.CHARGE_COL, group = "charges",
+                         sect = "charges"}
     end
     return out
 end
@@ -553,6 +540,11 @@ M.kit_class = nil
 -- how they spelled it.
 M.profile_at = nil
 M.profile_from = nil
+
+-- Which slot the reading that slides in over the page is about. A slot
+-- number rather than a row index: the page is rebuilt every frame and a
+-- catalog arriving underneath would renumber the rows out from under it.
+M.slot_at = nil
 
 local function same_kit(a, b)
     if type(a) ~= "table" or type(b) ~= "table" then return false end
@@ -637,7 +629,7 @@ function M.open_kit(class)
         kit[i] = want
     end
     if trimmed then
-        M.note = "some of this build is not yours yet: see the upgrades tab"
+        M.note = "some of this build is not yours yet"
     end
     -- And down to the two kinds of charge a kit may carry, keeping the first
     -- two in kind order. A build saved before that rule existed names three,
@@ -871,148 +863,276 @@ function M.swap_charges()
     return nil, true
 end
 
+-- What each thing actually does, in a sentence a browsing pilot can act on.
+-- The meta-layer's catalog notes name the slot ("proximity detonation") and
+-- stop; what a fuse buys you in a fight is knowledge the client already
+-- holds, the same way controls.lua holds the sentence for each key.
+-- Everything here is read off the core: the mod comments in sim.h and the
+-- steps sim.c applies per rung. It is the body of the reading a slot opens.
+local TEACH = {
+    flight = {
+        [0] = "the depth of the tank. every round you fire and every hit"
+            .. " you take spends it, and an empty tank is the kill.",
+        [1] = "how fast the tank refills. depth survives one exchange;"
+            .. " recharge wins the long one.",
+        [2] = "the ceiling on how fast you fly. thrust gets you there,"
+            .. " this is where it stops.",
+        [3] = "how hard the engine pushes. chases and escapes are won on"
+            .. " acceleration before they are won on the ceiling.",
+        [4] = "how fast the nose comes around. the guns point where the"
+            .. " nose points.",
+    },
+    levels = {
+        [0] = "each rung is a hotter round: more damage a hit, wearing the"
+            .. " next color up. every gun add-on rides the rung you fire.",
+        [1] = "each rung widens the bomb's blast without raising its center"
+            .. " damage. the blast is team blind, so mind your own.",
+    },
+    weapons = {
+        [0] = "more rounds in one pull, opening from a pair into a fan."
+            .. " each rung is another round, paid for in energy and a"
+            .. " slower trigger.",
+        [1] = "walls stop eating your rounds and reflect them instead."
+            .. " each rung is another bounce before the round ends.",
+        [2] = "a fuse: the round goes off near a ship instead of on it,"
+            .. " so a near miss stops being a miss. each rung reaches"
+            .. " further.",
+        [3] = "the round's ending is itself an attack: it splits into"
+            .. " fragments of your own gun. higher rungs throw more.",
+        [4] = "a hit stalls the recharge of whoever it reaches, on top of"
+            .. " the damage. each rung lengthens the stall.",
+        [5] = "a shove welded on: whatever the blast reaches is thrown."
+            .. " each rung throws harder.",
+    },
+    charges = {
+        repel = "throws every ship and round near you away. the answer to"
+            .. " a corner you should not have flown into.",
+        burst = "a ring of rounds off your own hull, every direction at"
+            .. " once. the close-quarters answer.",
+    },
+}
+
+-- The sentence for one slot, off the tables above. Keyed by what the slot is
+-- rather than by its number, so a re-ordered catalog cannot misfile a lesson.
+local function teach_line(sl)
+    local t = TEACH[sl.group]
+    if not t then return nil end
+    if sl.group == "flight" then return t[sl.slot] end
+    if sl.group == "levels" then return t[sl.trigger or 0] end
+    if sl.group == "weapons" then return t[sl.mod or -1] end
+    return t[sl.label]
+end
+
+-- The shelf, by slot: what the meta-layer says this account owns of each and
+-- what the next rung of it costs. Absent on a deployment that keeps no
+-- accounts, and the page simply carries no prices then.
+local function shelf_of()
+    local have = {}
+    for _, it in ipairs(account.catalog or {}) do
+        if it.slot then have[it.slot + 1] = it end
+    end
+    return have
+end
+
+-- Every slot this arena has, as one ladder a row, with the price of the next
+-- rung on the rows that still have one to sell.
+--
+-- The shelf was a tab of its own, drawing the same twenty-three slots in the
+-- same order for the other question: what may I own, against what am I
+-- flying. Two stops for eight purchases, and a page that could not answer the
+-- one thing a pilot asks it, which is why a row stops where it stops. So the
+-- pages are one page, and the answer rides the row: a rung the account does
+-- not own is a dim circle, and where it is for sale the row ends in what it
+-- costs. See docs/design/match-game.md and .design/hangar.
+--
+-- The old objection to a merge, that a wallet and a budget on one screen make
+-- the word "spend" mean two things, is answered by shape rather than by
+-- keeping them apart. Points are circles in the slot's own color and their
+-- figure is the meter in the band; a price is always the rivet mark in gold,
+-- and the wallet is never on this page at all. It is on the reading, which is
+-- the one place anything is bought.
 local function kit_rows(class)
     class = class or M.kit_class or M.class
     if not M.kit or M.kit_class ~= class then M.open_kit(class) end
+    -- What may be equipped: the arena's ladder and this account's
+    -- entitlements together, smaller wins.
     local ceiling = kit_ceiling()
-    -- What the arena alone would allow, which is a longer ladder than the
-    -- account's wherever the shelf still holds a step. Drawn behind what you
-    -- own, so a page says "there is more of this and it is not yours" without
-    -- a word about it.
+    -- And what the arena alone would take, which is a longer ladder wherever
+    -- the shelf still holds a step. The difference is what is for sale.
     local core = _G.sim
     local arena_ceiling = (core and core.kit_ceilings
                            and core.kit_ceilings()) or ceiling
-    -- The ship, once first, because it is what the rest of the page is spending
-    -- on. It is a row like any other so that the arrows reach it: left and
-    -- right turn the carousel, enter asks for the hull under it, and up off
-    -- it goes back to the tab row.
-    --
-    -- This page and the roster used to be two levels of the stack, and the
-    -- kit drawn beside the roster was a preview: nothing in it was the cursor
-    -- and nothing in it took a press. With the roster down to one ship on a
-    -- carousel there is no level above this one left to stand on, so the
-    -- preview became a page that looked exactly like the editor and answered
-    -- nothing. See docs/design/ships.md.
-    -- No prices on this page. They rode the rows for a while, on the argument
-    -- that picking a slot and paying for it are one act; what that produced
-    -- was a panel doing two jobs at once, a wallet and a budget side by side,
-    -- and two different meanings for the word "spend" on one screen. Buying
-    -- is the upgrades tab again. This page is the thirty points and nothing
-    -- else. See docs/design/match-game.md.
-    local hulls = hull_rows()
-    local at = M.hull_index()
-    local cell = hulls[at]
-    -- No budget row. The figure rides the view instead (see M.view), so
-    -- the cursor never has to stand on a readout: the page opens on the
-    -- first thing a press can change.
+    local shelf = shelf_of()
     local rows = {}
-    -- The library, down the left of the page, with the build it names in the
-    -- pane beside it. Two columns, and the cursor walks the first of them and
-    -- then the second: a page about picking a build and then spending thirty
-    -- points on it is two activities taking turns, which is the shape the
-    -- shelf already uses for the same reason.
+    -- The band, which is the whole of the page's head: no wordmark and no
+    -- call sign over a page this long. The build's name is a key that opens
+    -- the library, and the points are a meter that opens what they are.
     --
-    -- It was two rows at the foot of the kit carrying no group of their own,
-    -- which put them in the gun's chip run, and then a box that dropped a
-    -- list out of itself. What a list of your own builds wants is to be
-    -- looked at while you work, not opened and shut.
-    --
-    for i, p in ipairs(account.profiles or {}) do
-        rows[#rows + 1] = {
-            label = p.name or "profile", group = "profiles",
-            verbatim = true,
-            -- Which one the kit in hand actually is, for the mark on the
-            -- row. Nothing else: a name is what a pilot is reading for here.
-            choice = function() return (M.profile_at == i) and 1 or 0, 1 end,
-            act = "profile", value = i,
-        }
-    end
-    -- The key that adds one, after them, because that is where it is drawn:
-    -- directly under the last name, the width of the column. It sat at the
-    -- foot of the page for a while, a screen's height from the list it adds
-    -- to.
-    rows[#rows + 1] = {label = "new", group = "list", act = "save_profile"}
-    -- And what can be done to the one the pane is about, in the pane. On a
-    -- starter the pair is drawn dim and a press explains: the three the game
-    -- ships are not yours to rename or drop, and the meta-layer refuses
-    -- both. They were left off starters entirely for that reason, and what
-    -- that taught anybody with only the starters was that the controls did
-    -- not exist.
-    local about = M.selected_profile()
-    if about then
-        local starter = about.builtin == true
-        rows[#rows + 1] = {label = "rename", group = "pane",
-                           act = "rename_profile", dim = starter}
-        rows[#rows + 1] = {label = "delete", group = "pane",
-                           act = "delete_profile", dim = starter}
-    end
+    -- They are rows so the arrows reach them: down off the tab row lands on
+    -- the name, and everything a pointer can press here a keyboard can too.
+    local band = M.profile_band()
+    rows[#rows + 1] = {label = band.name, verbatim = true, group = "band",
+                       state = band.state, go = "builds", act = "builds"}
+    rows[#rows + 1] = {label = "points", group = "band", go = "points",
+                       act = "points"}
     for _, s in ipairs(kit_slots()) do
-        local max = ceiling[s.slot + 1] or 0
-        -- On the page if this account can actually fly it, not if the arena
-        -- merely has it.
-        --
-        -- It was the arena's row for a while, so the page could say "this
-        -- exists and is not yours" and a pilot would know there was something
-        -- to buy. That is the upgrades tab's whole job now, and it does it
-        -- with the price attached; here it left four unreachable chips in
-        -- every group, drawn back far enough to be unreadable and still taking
-        -- the room a legible one would have. This page is what you fly.
-        if max > 0 then
+        -- Every slot the arena has, whether or not this account owns any of
+        -- it. That is the change: the page used to carry what you could fly
+        -- and nothing else, so a slot you owned none of was not on it, and
+        -- the page could not say there was more of this or what it cost.
+        local top = arena_ceiling[s.slot + 1] or 0
+        if top > 0 then
+            local owned = ceiling[s.slot + 1] or 0
             local held = M.kit[s.slot + 1] or 0
+            local it = shelf[s.slot + 1]
+            local price = it and tonumber(it.price) or nil
             rows[#rows + 1] = {
                 label = s.label,
                 detail = tostring(held),
-                -- The range as steps with the one it is on lit, which is what
-                -- every other setting in this menu draws and says "four of
-                -- six" in the shape of the thing rather than in a number that
-                -- has to be compared against the number on the row above.
-                choice = function() return held, max end,
+                choice = function() return held, owned end,
                 act = "kit_step", value = s.slot,
-                -- What the page needs to draw this slot as the thing it is
-                -- rather than as another row: which group it belongs to, its
-                -- own short mark, its color, and which trigger it hangs off.
-                group = s.group, short = s.short, tint_col = s.tint,
-                trigger = s.trigger, note = s.note, ladder = s.ladder,
-                -- What the account owns here, against what the arena would
-                -- take. The difference is the part of the ladder that is
-                -- still for sale, and the page draws it as a step that is
-                -- there and not yours.
-                owned = max, arena_max = arena_ceiling[s.slot + 1] or max,
+                -- What the row is, for the drawing and for the reading: its
+                -- group, its section, its mark, its color, and which trigger
+                -- it hangs off.
+                group = s.group, sect = s.sect, short = s.short,
+                tint_col = s.tint, trigger = s.trigger, mod = s.mod,
+                note = s.note, ladder = s.ladder, teach = teach_line(s),
+                -- For the drawing that puts an add-on on a round: the rung
+                -- that round is fired at, which is the one this kit equips
+                -- rather than the deepest one the account owns.
+                lvl = s.group == "weapons"
+                    and (M.kit[simn("SLOT_LEVEL0", simn("UP_COUNT", 5))
+                               + (s.trigger or 0) + 1] or 0)
+                    or nil,
+                -- The three states of one circle: filled to `held`, ringed to
+                -- `owned`, dim to `arena_max`.
+                held = held, owned = owned, arena_max = top,
+                -- What the shelf says about it. `base` is how much of it
+                -- everybody is dealt, which is what lets the reading tell a
+                -- rung nobody paid for from one somebody did.
+                price = price, base = it and tonumber(it.base) or 0,
+                sold = it and it.sold or nil,
+                shelf_note = type(it) == "table" and type(it.note) == "string"
+                    and it.note or nil,
+                -- Back a shade where the wallet is short, and still drawn: a
+                -- page that shows only what you can afford never says what
+                -- you are saving for.
+                afford = price ~= nil and (account.rivets or 0) >= price,
                 -- Which key spends this one, for the two charges a kit
-                -- carries. The keys are positions and what sits in each is
-                -- this choice, so the page that makes the choice is where it
-                -- has to be said.
+                -- carries, and which of the two it is.
                 on_key = s.group == "charges" and held > 0
                     and charge_key(s.slot) or nil,
-                -- And which of the two it is, so the row can say "charge 1"
-                -- rather than leaving a lone letter on the far side of the
-                -- page to be worked out.
                 charge_slot = s.group == "charges" and held > 0
                     and charge_slot(s.slot) or nil,
             }
         end
     end
-    -- Flair: what the ship looks like, apart from what it can do. The hull
-    -- is here now rather than standing as its own stop at the head of the
-    -- page: choosing a shape and choosing a wake are the same kind of
-    -- choice, and one section holds them. The band above still wears the
-    -- hull; this is where it is picked. Left and right turn it, the way
-    -- they always did; enter still asks to fly it, at a hull change's
-    -- usual price.
+    -- Flair: what the ship looks like, apart from what it can do. The hull is
+    -- here rather than at the head of the page, because choosing a shape and
+    -- choosing a wake are the same kind of choice and one section holds them.
+    local hulls = hull_rows()
+    local at = M.hull_index()
+    local cell = hulls[at]
     rows[#rows + 1] = {
         label = "hull", verbatim = true, ship = true, group = "flair",
+        sect = "flair",
         detail = cell and cell.label or "ship",
         act = "hull", value = cell and cell.value or nil,
         choice = function() return at, #hulls end,
         mark = cell and cell.mark or nil,
     }
     rows[#rows + 1] = {
-        label = "wake", verbatim = true, group = "flair",
+        label = "wake", verbatim = true, group = "flair", sect = "flair",
         detail = M.WAKES[M.wake + 1],
         act = "wake",
         choice = function() return M.wake + 1, #M.WAKES end,
     }
+    -- And the one key this page has, at its foot, while the thirty points in
+    -- hand are not the build they came from. A save key standing there on a
+    -- kit that is already what its name says would be a control that does
+    -- nothing, and the honest reading of its absence is "nothing to keep".
+    --
+    -- A row rather than furniture, so the arrows reach it: everything a
+    -- pointer can press on this page a keyboard can walk to.
+    if M.profile_at == nil then
+        rows[#rows + 1] = {label = "save", group = "save", act = "save_kit"}
+    end
     return rows
+end
+
+-- One slot, as the reading that slides in over the page: what it is, what it
+-- does in a fight, how far it goes, and where there is a rung left to sell,
+-- what it costs.
+--
+-- One row, and only where something is for sale, so enter on the page is the
+-- buy and a slot with nothing left to sell is a page with no key on it. The
+-- row is looked up by slot rather than by index, so a catalog refreshing
+-- underneath cannot swap the subject.
+local function slot_rows()
+    for _, r in ipairs(kit_rows()) do
+        if r.act == "kit_step" and r.value == M.slot_at then
+            local rows = {}
+            if r.price then
+                r.act = "buy"
+                rows[#rows + 1] = r
+            end
+            -- And, for a charge the kit is carrying beside another, the one
+            -- other thing there is to decide about it: which of the two keys
+            -- throws it. The box on the ship page's row does this for a
+            -- pointer; the reading is where a keyboard reaches it, since
+            -- enter on that row is what opened this page.
+            if r.group == "charges" and #charge_order() > 1
+               and charge_slot(r.value) then
+                rows[#rows + 1] = {label = "swap keys", group = "keys",
+                                   act = "swap_charges"}
+            end
+            return rows
+        end
+    end
+    return {}
+end
+
+-- What the reading is about, for the page that has no rows to carry it.
+local function slot_head()
+    for _, r in ipairs(kit_rows()) do
+        if r.act == "kit_step" and r.value == M.slot_at then return r end
+    end
+    return nil
+end
+
+-- The library: every build this pilot can fly, with the one the kit in hand
+-- actually is lit, and the two things there are to do to the list.
+--
+-- Two keys and no more. Save moved to the foot of the ship page, where the
+-- kit that earned it is, and rename went with it: a build is named when it is
+-- made, and a name that wants changing is a new build and a delete. What is
+-- left here is the list, one key that makes one, and one that takes one away.
+local function builds_rows()
+    local rows = {}
+    for i, p in ipairs(account.profiles or {}) do
+        rows[#rows + 1] = {
+            label = p.name or "profile", group = "builds", verbatim = true,
+            starter = p.builtin == true,
+            choice = function() return (M.profile_at == i) and 1 or 0, 1 end,
+            act = "profile", value = i,
+        }
+    end
+    rows[#rows + 1] = {label = "new", group = "keys", act = "new_build",
+                       go = "newbuild"}
+    -- Dim on a starter, and still a key: the three the game ships are not the
+    -- pilot's to drop, and a control that vanished would teach that deleting
+    -- a build is not a thing this page does.
+    rows[#rows + 1] = {label = "delete", group = "keys",
+                       act = "delete_profile", dim = M.own_profile() == nil}
+    return rows
+end
+
+local function builds_empty()
+    if account.base == "" then
+        return {head = "no builds here",
+                line = "this deployment keeps no accounts"}
+    end
+    return nil
 end
 
 -- The week. Read off the standings the meta-layer publishes, which is the
@@ -1265,6 +1385,65 @@ end
 -- "Cobalt" with "no pilot called that" under it is a field saying no to a
 -- name nobody has asked about yet, which is how the completion came to be
 -- reported as broken.
+-- The name a new build is being given, and whether the box is taking type.
+--
+-- A page with a field rather than a card over one. Naming a build is the
+-- whole of what that page is for, so a card raised over it would be a box
+-- over a box; the two fields the menu already has, the week's filter and the
+-- friends page's add, work the same way and take the same keys.
+M.new_name = ""
+M.new_on = false
+
+-- What the box offers when it opens: a name near the one in hand, so a pilot
+-- who means "keep this as it is, under a name of its own" has less to type.
+-- Never a starter's own name, which the meta-layer keeps for itself and would
+-- refuse.
+function M.new_suggestion()
+    local from = (account.profiles or {})[M.profile_from or M.profile_at or 0]
+    if from and from.builtin ~= true then return from.name or "" end
+    return ""
+end
+
+function M.type_new(ch)
+    if not M.new_on then return false end
+    if type(ch) ~= "string" or #ch ~= 1 then return false end
+    local b = string.byte(ch)
+    if b < 32 or b > 126 then return false end
+    if #M.new_name >= NAME_MAX then return false end
+    M.new_name = M.new_name .. ch
+    return true
+end
+
+function M.rub_new()
+    if not M.new_on or M.new_name == "" then return false end
+    M.new_name = string.sub(M.new_name, 1, #M.new_name - 1)
+    return true
+end
+
+function M.click_new_field()
+    M.new_on = true
+    return nil, true
+end
+
+-- The key on the naming page, pressed. The same act the page's own row would
+-- carry if it had one; it has a field and a key rather than a list, so the
+-- key is a box a pointer presses and the arena hands the answer on.
+function M.click_create()
+    local name = (M.new_name or ""):gsub("^%s+", ""):gsub("%s+$", "")
+    if name == "" then
+        M.note = "give the build a name"
+        return nil, true
+    end
+    M.pending_profile = name
+    return "save_profile", true
+end
+
+function M.blur_new()
+    if not M.new_on then return false end
+    M.new_on = false
+    return true
+end
+
 local function forget_add_note()
     account.friend_note = ""
     account.friend_bad = false
@@ -1395,168 +1574,6 @@ local function name_rows(rows, head, list, fill)
         if i == 1 then r.sect = head end
         rows[#rows + 1] = r
     end
-end
-
--- The upgrades page: every slot the game has, with what this account owns of
--- it and what the next rung costs.
---
--- It lists the whole catalog rather than what is left to buy. A shelf that
--- only carried what was for sale shrank as a pilot got stronger, and the last
--- purchase in a ladder made the whole ladder disappear from the page that had
--- been selling it. Owned rungs are marked instead, so the page is a stable
--- thing to read and buying is watching a row fill up.
---
--- Grouped the way the ship page groups the same slots, and in the same order,
--- because they are the same list read for two different reasons: what may I
--- own, and what am I flying. See docs/design/match-game.md.
--- What each thing on the shelf actually does, in a sentence a browsing pilot
--- can act on. The meta-layer's catalog notes name the slot ("proximity
--- detonation") and stop; what a fuse buys you in a fight is knowledge the
--- client already holds, the same way controls.lua holds the sentence for each
--- key. Everything here is read off the core: the mod comments in sim.h and
--- the steps sim.c applies per rung.
-local TEACH = {
-    flight = {
-        [0] = "the depth of the tank. every round you fire and every hit"
-            .. " you take spends it, and an empty tank is the kill.",
-        [1] = "how fast the tank refills. depth survives one exchange;"
-            .. " recharge wins the long one.",
-        [2] = "the ceiling on how fast you fly. thrust gets you there,"
-            .. " this is where it stops.",
-        [3] = "how hard the engine pushes. chases and escapes are won on"
-            .. " acceleration before they are won on the ceiling.",
-        [4] = "how fast the nose comes around. the guns point where the"
-            .. " nose points.",
-    },
-    levels = {
-        [0] = "each rung is a hotter round: more damage a hit, wearing the"
-            .. " next color up. every gun add-on rides the rung you fire.",
-        [1] = "each rung widens the bomb's blast without raising its center"
-            .. " damage. the blast is team blind, so mind your own.",
-    },
-    weapons = {
-        [0] = "more rounds in one pull, opening from a pair into a fan."
-            .. " each rung is another round, paid for in energy and a"
-            .. " slower trigger.",
-        [1] = "walls stop eating your rounds and reflect them instead."
-            .. " each rung is another bounce before the round ends.",
-        [2] = "a fuse: the round goes off near a ship instead of on it,"
-            .. " so a near miss stops being a miss. each rung reaches"
-            .. " further.",
-        [3] = "the round's ending is itself an attack: it splits into"
-            .. " fragments of your own gun. higher rungs throw more.",
-        [4] = "a hit stalls the recharge of whoever it reaches, on top of"
-            .. " the damage. each rung lengthens the stall.",
-        [5] = "a shove welded on: whatever the blast reaches is thrown."
-            .. " each rung throws harder.",
-    },
-    charges = {
-        repel = "throws every ship and round near you away. the answer to"
-            .. " a corner you should not have flown into.",
-        burst = "a ring of rounds off your own hull, every direction at"
-            .. " once. the close-quarters answer.",
-    },
-}
-
--- The sentence for one slot, off the tables above. Keyed by what the slot is
--- rather than by its number, so a re-ordered catalog cannot misfile a lesson.
-local function teach_line(sl)
-    local t = TEACH[sl.group]
-    if not t then return nil end
-    if sl.group == "flight" then return t[sl.slot] end
-    if sl.group == "levels" then return t[sl.trigger or 0] end
-    if sl.group == "weapons" then return t[sl.mod or -1] end
-    return t[sl.label]
-end
-
-local function upgrade_rows()
-    local have = {}
-    for _, it in ipairs(account.catalog or {}) do
-        if it.slot then have[it.slot + 1] = it end
-    end
-    local heads = {flight = "stats", levels = "weapon level",
-                   charges = "charges"}
-    local rows = {}
-    local was = nil
-    for _, sl in ipairs(kit_slots()) do
-        local it = have[sl.slot + 1]
-        if it then
-            -- The add-ons split by trigger, because twelve of them under one
-            -- heading is a list nobody can find a bomb in.
-            local key = sl.group
-            local head = heads[key]
-            if key == "weapons" then
-                key = "weapons" .. tostring(sl.trigger or 0)
-                head = (sl.trigger == 0 and "gun" or "bomb") .. " add-ons"
-            end
-            local sect = (key ~= was) and head or nil
-            was = key
-            local price = tonumber(it.price)
-            rows[#rows + 1] = {
-                -- A string or nothing. The meta-layer sends null where a slot
-                -- has no sentence to its name, and a decoder's null is not a
-                -- Lua nil: drawn, it is a userdata where a word should be.
-                sect = sect, label = sl.label,
-                -- Two names for one slot, and the page wants the short one.
-                -- "Energy" reads down a column beside "Recharge" and
-                -- "Speed"; "energy depth" is what the card asking you to buy
-                -- it should say, because a card is one sentence with no
-                -- column to be read against.
-                sold = it.label,
-                note = type(it.note) == "string" and it.note or nil,
-                -- The sentence the detail pane teaches with, which is the
-                -- client's own; the catalog note above names the slot and
-                -- this says what it buys in a fight.
-                teach = teach_line(sl),
-                group = sl.group, short = sl.short, tint_col = sl.tint,
-                trigger = sl.trigger, mod = sl.mod,
-                -- The trigger's own level, for the rows that draw a round:
-                -- an add-on is sold as the round wearing it, and the round's
-                -- color is the rung the account actually fires at.
-                lvl = sl.group == "weapons"
-                    and (tonumber((have[simn("SLOT_LEVEL0", 5)
-                                        + (sl.trigger or 0) + 1]
-                                   or {}).owned) or 0)
-                    or nil,
-                -- What is owned, how far the ladder runs, and how much of it
-                -- was dealt rather than bought. The last one is what lets the
-                -- page draw a rung everybody starts with differently from one
-                -- somebody paid for.
-                owned = tonumber(it.owned) or 0,
-                arena_max = tonumber(it.ceiling) or 0,
-                base = tonumber(it.base) or 0,
-                price = price,
-                -- Back a shade when the wallet is short, and still on the
-                -- page: one that shows only what you can afford never says
-                -- what you are saving for.
-                afford = price ~= nil and (account.rivets or 0) >= price,
-                -- Pressable whatever the wallet says. A row with no action
-                -- publishes no hit box, so a pilot with no rivets met a page
-                -- where the mouse did nothing at all: no hover, no click, no
-                -- reason given. The refusal is the meta-layer's and it
-                -- already exists.
-                act = price and "buy" or nil, value = sl.slot,
-            }
-        end
-    end
-    return rows
-end
-
-local function upgrades_empty()
-    if account.catalog and #account.catalog > 0 then return nil end
-    if account.base == "" then
-        return {head = "nothing to upgrade here",
-                line = "this deployment keeps no accounts"}
-    end
-    -- Asked and not yet answered. It used to say the catalog was empty, which
-    -- is a sentence about the account rather than about the request still
-    -- being out.
-    if not account.catalog then
-        return {head = "asking for the catalog",
-                line = "what rivets buy is coming"}
-    end
-    return {head = "nothing to buy",
-            line = "this arena sells no slots at all"}
 end
 
 -- Seconds, as somebody says them.
@@ -1899,15 +1916,15 @@ local NODES = {
     -- The tab row, and the whole of the front end's shape.
     --
     -- Which of the two you get is decided by whether you are in a hull, not by
-    -- whether you are in a zone. Six with no hull: play, ship, upgrades,
-    -- friends, standings, settings. Three with one: settings, friends, leave.
+    -- whether you are in a zone. Five with no hull: play, ship, friends,
+    -- standings, settings. Three with one: settings, friends, leave.
     -- Friends stays out when the account service is absent. The row keeps the
     -- same place and chrome in both contexts.
     --
     -- The question used to be `M.home`, which was the same answer while the
     -- front end was a place of its own. It is the stands now, and a pilot who
     -- sat out mid-match is in the stands too: same empty cockpit, same time to
-    -- read, so the same six stops. What separates the two is `leave`, which
+    -- read, so the same five stops. What separates the two is `leave`, which
     -- only means anything where there is a zone to leave.
     --
     -- Nothing you cannot act on right now is on that row while you are
@@ -1973,15 +1990,6 @@ local NODES = {
                  return HULLS[M.class + 1][1]
              end,
              go = "hangar"},
-            -- And what rivets buy, beside it. The two were one page for a
-            -- while, with the price of each rung written on the row that
-            -- spends it. What that produced was a panel doing two jobs at
-            -- once: a wallet and a budget on one screen, and the word "spend"
-            -- meaning both. They are two questions asked at different times,
-            -- so they are two stops again. See docs/design/match-game.md.
-            {label = "upgrades", icon = "upgrades",
-             detail = function() return (account.rivets or 0) .. " rivets" end,
-             go = "upgrades"},
             -- Who is on, next to where you would go with them. It was a
             -- section of the play page, which is a stop on the way to
             -- somewhere else; this is a question a player asks from wherever
@@ -2013,32 +2021,29 @@ local NODES = {
     -- hull and building it stay on one level.
     hangar = {rows = kit_rows},
 
-    -- What rivets buy: which slots a pilot may put on a ship. Never how many
-    -- points they have to spend on them, and never strength: everything in a
-    -- kit trades against the same thirty points, so this sells the right to
-    -- concentrate rather than more to concentrate with. See
-    -- docs/design/match-game.md.
+    -- The reading one slot opens, slid in over the page from the right.
+    -- What the thing is, what it does in a fight, how far its ladder runs,
+    -- and, where a rung is still for sale, what the next one costs and the
+    -- wallet it comes out of. The one place in this menu anything is bought.
     --
-    -- The prices are the meta-layer's and are not written down here: a client
-    -- that knew them would be a second copy to keep in step, and the reply to
-    -- a purchase says what the slot now holds and what is left in the wallet.
-    upgrades = {rows = upgrade_rows, empty = upgrades_empty},
-    -- One thing off the shelf, as a page of its own. Only a phone ever
-    -- stands here: a row of the shop pushes it where there is no room for
-    -- the reading pane, and its single row is the buy, so enter on a page
-    -- about a thing does the thing. The row is looked up fresh by slot so
-    -- the catalog refreshing underneath cannot swap the subject, and a slot
-    -- the catalog stopped listing leaves an empty page rather than a stale
-    -- one.
-    shop_item = {rows = function()
-        for _, r in ipairs(upgrade_rows()) do
-            if r.value == M.item_slot then
-                r.sect = nil
-                return {r}
-            end
-        end
-        return {}
+    -- It is what the shelf's own reading pane always was, at page size. A
+    -- pilot met it by walking to another tab and finding the row again;
+    -- pressing the row's name is what opens it now, which is the question
+    -- they were already asking when they pressed.
+    slot = {rows = slot_rows, head = slot_head},
+
+    -- Every build this pilot can fly, behind the name in the band.
+    builds = {rows = builds_rows, empty = builds_empty},
+
+    -- Naming a new one, one slide further right: the thirty points in hand
+    -- under a name of the pilot's own.
+    newbuild = {reading = true, rows = function()
+        return {{label = "create", group = "keys", act = "create_build"}}
     end},
+
+    -- What the thirty points are, and what a circle says, behind the meter.
+    -- A page with nothing to press: the whole of it is the answer.
+    points = {reading = true, rows = function() return {} end},
 
     play = {rows = play_rows, empty = zone_empty},
 
@@ -2047,12 +2052,6 @@ local NODES = {
     -- because those are the two places the question comes up. See
     -- docs/design/friends.md.
     friends = {rows = friend_rows, empty = friends_empty},
-
-    -- No upgrades page. What rivets buy is a rung of a slot, and every slot
-    -- is already a row of the ship page: the shelf was that page's own list,
-    -- copied onto a tab of its own and priced, and buying on one page to
-    -- spend the point on another is two screens for one act. The price sits
-    -- at the end of the row it belongs to now. See docs/design/match-game.md.
 
     -- The week: matches won, kills, and the best run, resetting Monday. The
     -- short ladder beside the rating, which answers "how good am I" on a
@@ -2412,6 +2411,12 @@ local NODES = {
 -- different row in a match than it is at the front end, so a stack left
 -- pointing at the hangar when a match starts names a page that is no longer
 -- reachable, and every caller of this was written assuming a page.
+-- The pages that stand on the head's own line rather than under it. The ship
+-- page and the four screens it opens: each carries its own top row, so the
+-- column spends nothing above them.
+local HEADLESS = {hangar = true, slot = true, builds = true,
+                  newbuild = true, points = true}
+
 local function node()
     return NODES[M.stack[#M.stack]] or NODES.root
 end
@@ -2527,6 +2532,9 @@ local function view_row(r, i)
         control = r.control, fixed = r.fixed,
         arming = r.arming, reset = r.reset,
         pick = (r.go or r.act) ~= nil, act = r.act,
+        -- Whether a build is one of the three the game ships, which the
+        -- library says beside the name and the delete key reads as a rule.
+        starter = r.starter,
         mark = r.mark and r.mark() or false,
         -- A row that leaves the game gets a real anchor laid over it by the
         -- page. Nothing the client does from its own loop is inside the tap
@@ -2713,10 +2721,6 @@ local function settle(act, asked, by)
         local f = asked and asked.fields and asked.fields[1]
         M.add_name = f and f.value or M.add_name
         M.send_add()
-    elseif act == "do_rename_profile" then
-        local field = asked and asked.fields and asked.fields[1]
-        M.pending_rename = field and field.value or ""
-        return "rename_profile"
     elseif act == "do_delete_profile" then
         return "delete_profile"
     elseif act == "do_save_profile" then
@@ -2995,12 +2999,6 @@ end
 function M.show(...)
     M.stack = {"root"}
     for _, id in ipairs({...}) do M.stack[#M.stack + 1] = id end
-    -- The same landing the tab gives the ship page: the cursor on the build
-    -- the kit in hand is, so the row and the pane's head agree. The
-    -- intermission comes in through here rather than through the tab.
-    if M.at() == "hangar" and M.profile_at then
-        M.sel.hangar = M.profile_at
-    end
     M.open = true
     M.hover = nil
     M.rail_hover = nil
@@ -3116,18 +3114,17 @@ function M.tick(dt)
     -- the fleet nothing.
     --
     -- "On screen" rather than "entered". At the root the stage previews the
-    -- tab under the cursor, so a player who arrows onto upgrades reads the
+    -- tab under the cursor, so a player who arrows onto the ship reads the
     -- whole page without the stack ever naming it. It said the catalog was
     -- empty, which is a sentence about the account rather than about the
     -- request that was never sent.
     local at = M.showing()
     local arrived = at ~= was_at
     if arrived then
-        -- The ship page asks too, and does not draw a price anywhere. It is
-        -- the wallet it is after: a purchase made here has to be visible on
-        -- the tab beside it without a reload, and the ladders the ship page
-        -- draws are bounded by what this reply says the account owns.
-        if at == "upgrades" or at == "hangar" then
+        -- The ship page is the shelf now, so this is the reply it draws
+        -- from: what the account owns of each slot, and what the next rung
+        -- of it costs. The reading a row opens reads the same row.
+        if at == "hangar" or at == "slot" then
             account.refresh_upgrades(M.zone)
         end
         if at == "standings" then account.refresh_week(M.week_back) end
@@ -3296,7 +3293,6 @@ function M.view()
                  found_hot = M.found_hot,
                  friend_hot = M.friend_hot,
                  friend_hot_act = M.friend_hot_act,
-                 buy_hot = M.buy_hot,
                  -- Whether there is a game behind the panel, which is what
                  -- decides where the block sits: clear of the corner stack
                  -- over an arena, centered over the starfield. Not whether you
@@ -3350,9 +3346,12 @@ function M.view()
     -- And the friends page: an add field over sections whose rows carry their
     -- own buttons.
     if page == "friends" then out.social = true end
-    -- And the catalog is a ladder and a price a row rather than a list of
-    -- names. Same reason: the page is two facts about each slot at once.
-    if page == "upgrades" then out.shop = true end
+    -- The library behind the band's name key, and the two readings the page
+    -- opens: one slot, and what the thirty points are. Each is a drawing
+    -- rather than a list of rows, and each says so here.
+    if page == "builds" then out.builds = true end
+    if page == "points" then out.points = true end
+    if page == "newbuild" then out.newbuild = true end
     -- The Discord page has one job: explain why to go and provide the way in.
     -- The renderer gives these few lines the page rather than turning them into
     -- a list of separate claims.
@@ -3369,13 +3368,21 @@ function M.view()
         -- goes stale. The scheme comes off because nobody types it.
         out.door_addr = (DISCORD:gsub("^https?://", ""))
     end
-    -- One item as a page: the row travels as `item` and the generic list
-    -- stands down, so the drawing is the reading pane at page size with the
-    -- buy as its key. The row list stays a row long for the arrows: enter
-    -- on it is the buy.
-    if page == "shop_item" then
-        out.item = out.rows[1]
-        out.rows = {}
+    -- One slot as a page: the row travels as `item` and the generic list
+    -- stands down, so the drawing is the reading at page size with the buy as
+    -- its key. The row list stays a row long for the arrows where there is
+    -- something to buy, so enter on the page is the buy; on a slot with
+    -- nothing left to sell the page has no rows and no key.
+    if page == "slot" then
+        -- The slot itself travels as `item`, flattened the way every row on
+        -- every page is: the node hands over the row it found and the ranges
+        -- on it are still functions until they come through here.
+        out.item = out.head and view_row(out.head, 0) or nil
+        out.head = nil
+        -- What the wallet holds, which is on this page and on no other: the
+        -- reading is the one place in the menu anything is bought, so it is
+        -- the one place a price is answered by a balance.
+        out.wallet = account.rivets or 0
     end
     -- What the stage previews at the root: the corner stop the cursor is on,
     -- else the tab it is on. One name, because the two halves of the row are
@@ -3412,20 +3419,29 @@ function M.view()
     -- head is a carousel through every hull, and `rows` is what thirty points
     -- buy on the one it is showing.
     if M.at() == "hangar" then
-        -- The budget, as two figures for the band: what the kit spends and
-        -- what a kit may. It was a row, and a cursor kept opening on it.
+        -- The budget, as the band's meter: what the kit spends, what a kit
+        -- may, and the figure a builder mid-edit actually wants, which is how
+        -- many points are left. It was a row, and a cursor kept opening on it.
+        out.kit = true
         out.kit_spent = M.kit_spent()
         out.kit_total = simn("KIT_BUDGET", 30)
-        -- What the build is called, for the head of the page. The hull used
-        -- to stand there with a carousel through it; it is picked down in
-        -- flair with the rest of what a ship looks like, and what belongs at
-        -- the head of a page about thirty points is which thirty these are.
+        -- What the build is called, for the band's own key.
         out.profile = M.profile_band()
-        out.hulls = {}
-        for i, r in ipairs(hull_rows()) do
-            out.hulls[i] = view_row(r, i)
-        end
-        out.hull_sel = M.hull_index()
+    end
+    -- The ship page and everything it opens spend nothing on a head: no
+    -- wordmark and no call sign over the longest page in the menu. What
+    -- stands on that line instead is the page's own band, or the way back
+    -- out of a reading, with the x where it always was. See .design/hangar.
+    --
+    -- Where you are, not what is being previewed. At the root the stage shows
+    -- the tab under the cursor, and a head that came and went as the cursor
+    -- crossed `ship` would take the wordmark and the call sign with it: the
+    -- page earns the whole column by being entered.
+    if HEADLESS[M.at()] then out.headless = true end
+    -- The naming page's box: what is in it, and whether it is taking type.
+    if page == "newbuild" then
+        out.new = {name = M.new_name, on = M.new_on,
+                   suggest = M.new_suggestion()}
     end
     -- The destinations, always, whatever level the stack is at: the interface
     -- draws them as a rail of icons and the rail is the one thing on screen
@@ -3479,11 +3495,7 @@ function M.view()
             -- upgrades as its shelf, because what the tab under the cursor
             -- leads to is the thing worth showing.
             if go == "hangar" then
-                out.hulls = {}
-                for i, r in ipairs(hull_rows()) do
-                    out.hulls[i] = view_row(r, i)
-                end
-                out.hull_sel = M.hull_index()
+                out.kit = true
                 out.kit_preview = true
                 -- The head of the pane, same as inside the page. Left out,
                 -- the preview named every build "custom" until the cursor
@@ -3550,7 +3562,8 @@ end
 -- and the flag each one keeps that in. Named here because two things ask the
 -- same question about them: `activate`, which turns the field on as it goes
 -- in, and `enterable`, which counts a field as somewhere to stand.
-local FIELD_PAGE = {friends = "add_on", standings = "filter_on"}
+local FIELD_PAGE = {friends = "add_on", standings = "filter_on",
+                    newbuild = "new_on"}
 
 -- Is there anywhere to be on that page yet?
 --
@@ -3568,6 +3581,10 @@ local function enterable(id)
     if FIELD_PAGE[id] then return true end
     local nd = NODES[id]
     if not nd then return false end
+    -- A page whose whole content is a reading has nothing to stand on and is
+    -- still worth entering: what a slot does in a fight, and what the thirty
+    -- points are, are pages you go to read rather than lists you walk.
+    if nd.reading then return true end
     return #rows_of(nd) > 0
 end
 
@@ -3585,14 +3602,6 @@ local function activate(by)
     if r.go then
         if not enterable(r.go) then return nil end
         M.stack[#M.stack + 1] = r.go
-        -- The ship page opens with the cursor on the build the kit in hand
-        -- is, where it is one, so the row the wash lands on and the name in
-        -- the pane's head agree from the first frame. Opening on row one put
-        -- the cursor on the first starter while the head named a different
-        -- build.
-        if r.go == "hangar" and M.profile_at then
-            M.sel.hangar = M.profile_at
-        end
         M.note = nil
         -- A page whose first control is a field opens with the cursor in it.
         -- A hand coming down off the tabs lands in the box and can type;
@@ -3601,39 +3610,33 @@ local function activate(by)
         -- take them at the same moment.
         local field = FIELD_PAGE[r.go]
         if field then M[field] = true end
+        -- The naming page opens with a name near the one in hand, so keeping
+        -- a tuned build under its own name is a press rather than typing the
+        -- whole thing again.
+        if r.go == "newbuild" then M.new_name = M.new_suggestion() end
         return nil
     end
     if not r.act then return nil end
 
     -- The ones this file can settle itself.
     --
-    -- Enter on a charge that sits in a slot swaps the two. On a ladder enter
-    -- is the one press that says nothing the arrows do not: left and right
-    -- set the pips and enter adds one more, which right already did. So the
-    -- row spends it on the other question a charge row answers, which is
-    -- which key throws it.
-    if r.act == "kit_step" and not by and r.charge_slot then
-        M.swap_charges()
+    -- Enter on a slot row opens its reading. On a ladder it is the one press
+    -- that says nothing the arrows do not, since left and right already set
+    -- the pips, so it is spent on the question the row cannot answer itself:
+    -- what is this, how far does it go, and what would the next rung cost.
+    -- That is the same press a pointer makes on the row's name.
+    if r.act == "kit_step" and not by then
+        M.slot_at = r.value
+        M.stack[#M.stack + 1] = "slot"
+        M.note = nil
         return nil
     end
     if r.act == "kit_step" then
-        -- One point spent or taken back. Enter spends, because a hand walking
-        -- the list with enter is adding to a ship; the arrows do both.
-        --
-        -- An add-on wraps. It is drawn as a chip rather than a ladder, so
-        -- there are no lower rungs to press and a chip already at its ceiling
-        -- answered nothing: an add-on could be put on with a pointer and only
-        -- taken off with the arrow keys, which is a control with one
-        -- direction. At the top, the next press takes it off.
+        -- One point spent or taken back, by the arrows. Every slot is a
+        -- ladder now, including the add-ons that used to be chips, so there
+        -- is one control on this page and both directions of it work.
         local at = (M.kit and M.kit[r.value + 1]) or 0
         local top = kit_ceiling()[r.value + 1] or 0
-        if not by and r.group == "weapons" and at > 0 and at >= top then
-            if M.kit_set(r.value, 0) then
-                M.note = nil
-                return "kit"
-            end
-            return nil
-        end
         if M.kit_step(r.value, by or 1) then
             M.note = nil
             return "kit"
@@ -3644,12 +3647,18 @@ local function activate(by)
         -- not to sell anything, so this says which happened rather than
         -- offering to fix it.
         --
-        -- It used to raise a purchase card here, from the days when the price
-        -- rode the row. Buying is the upgrades tab again, and a page that
-        -- interrupts a build to sell is the reason the two came apart.
+        -- It used to raise a purchase card here, from the days when the
+        -- price rode the row. A build interrupted to sell is what the reading
+        -- exists to avoid: the price is drawn on the row and the page that
+        -- spends is one press away, rather than a card over the ladder.
         if (by or 1) > 0 then
             if at >= top and (r.arena_max or 0) > top then
-                M.note = "not yours yet: it is on the upgrades page"
+                -- The rung above what the account owns, which the row is
+                -- already drawing dim with its price on the end. An arrow is
+                -- for setting a value, so it says what happened rather than
+                -- opening a page nobody asked for; enter, or a press on the
+                -- dim part of the ladder, is what opens the reading.
+                M.note = "not yours yet: press the row for the price"
             elseif at >= top then
                 M.note = "that is as far as this one goes"
             else
@@ -3657,6 +3666,38 @@ local function activate(by)
             end
         end
         return nil
+    elseif r.act == "swap_charges" then
+        M.swap_charges()
+        return nil
+    elseif r.act == "read_slot" then
+        -- The reading, slid in from the right. Pressing a row's name, or
+        -- anywhere in the part of its ladder this account does not own, is a
+        -- pilot asking what this is and what it would cost; both land here.
+        M.slot_at = r.value
+        M.stack[#M.stack + 1] = "slot"
+        M.note = nil
+        return nil
+    elseif r.act == "save_kit" then
+        -- The key at the foot of the ship page, which is there only while the
+        -- kit differs from the build it came from.
+        --
+        -- Over the build in hand where it is the pilot's own, since that is
+        -- what "save" means on a thing with a name. A starter cannot be
+        -- written over and a kit tuned from nowhere has no name to write to,
+        -- so both go to the page that gives it one, which is the same page
+        -- the library's NEW key opens.
+        local p = M.own_profile()
+        if not p then
+            M.new_name = M.new_suggestion()
+            M.new_on = true
+            M.stack[#M.stack + 1] = "newbuild"
+            M.note = nil
+            return nil
+        end
+        M.pending_profile = p.name
+        return "save_profile"
+    elseif r.act == "create_build" then
+        return (M.click_create())
     elseif r.act == "profile" then
         -- Enter, and right, which is enter on any row that is a place rather
         -- than a range. Left never arrives: while the list is down it is what
@@ -3677,26 +3718,6 @@ local function activate(by)
                     {label = "cancel"}},
             sel = 1, field = 1,
             fields = {{label = "profile name", value = named, max = 24}},
-        }
-        return nil
-    elseif r.act == "rename_profile" then
-        local p = M.own_profile()
-        if not p then
-            -- The dim key on a starter, pressed anyway. The refusal is the
-            -- meta-layer's; the sentence is so the dimness reads as a rule
-            -- rather than as a control that broke.
-            if M.selected_profile() then
-                M.note = "the starter builds keep their names"
-            end
-            return nil
-        end
-        M.pending_profile = p.name
-        M.ask = {
-            head = "Rename " .. (p.name or "this build") .. ".",
-            keys = {{label = "rename", act = "do_rename_profile"},
-                    {label = "cancel"}},
-            sel = 1, field = 1,
-            fields = {{label = "profile name", value = p.name or "", max = 24}},
         }
         return nil
     elseif r.act == "delete_profile" then
@@ -3762,24 +3783,10 @@ local function activate(by)
         M.ask_friend(r.value, r.label, r.acts)
         return nil
     elseif r.act == "buy" then
-        -- The row opens the item first: there is no reading pane beside the
-        -- list, so the pane is a page you step into, and its own buy key is
-        -- what raises the card. It used to be a phone's route alone, on the
-        -- argument that a wider window had the pane on screen already. The
-        -- menu is one column at a phone's measure on every window now, so
-        -- there is no window where that pane fits and no second route.
-        if M.stack[#M.stack] == "upgrades" then
-            M.item_slot = r.value
-            M.stack[#M.stack + 1] = "shop_item"
-            M.note = nil
-            return nil
-        end
-        -- A pointer on the row moves the cursor and stops. What spends is the
-        -- button, which says so. See `from_row`.
-        if from_row then
-            M.note = nil
-            return nil
-        end
+        -- The reading's one key. There is no shelf to step through any more:
+        -- the row on the ship page is what opens this page, and the page is
+        -- about one slot, so its key spends on that slot.
+        --
         -- A card first, naming what is being bought and what it costs. Rivets
         -- are slow to earn, and the card is also where a wallet too light for
         -- the price gets said in a sentence rather than as a button that does
@@ -3790,7 +3797,7 @@ local function activate(by)
         -- ceiling in one call, and its refusal is the answer. See
         -- `M.ask_upgrade` and the `do_buy` answer.
         M.ask_upgrade(r.value, {label = r.sold or r.label,
-                                price = r.price, note = r.note})
+                                price = r.price, note = r.shelf_note})
         return nil
     elseif r.act == "leave" then
         local place = M.zone ~= "" and M.zone or "this game"
@@ -3933,6 +3940,7 @@ function M.step(keys)
     if not M.ask and keys.rub and M.rub_filter() then return nil, true end
     -- And on the friends page it takes a letter back off the add field.
     if not M.ask and keys.rub and M.rub_add() then return nil, true end
+    if not M.ask and keys.rub and M.rub_new() then return nil, true end
     -- Enter sends what is in that field rather than pressing the row the
     -- cursor is on, while the field is the thing taking type. It is what
     -- enter means in a box everywhere, and the button beside it is still
@@ -4239,33 +4247,17 @@ function M.step(keys)
     -- right set it. Everywhere else left is the way back and right is enter,
     -- which is what a one-column list of places wants.
     local here = rows[row_index(rows)]
-    -- An add-on is not a range. It is drawn as a chip, in a row of chips
-    -- across the page, and left and right walk them the way that drawing
-    -- reads: what is beside a chip is another chip, so the arrow that points
-    -- at it should go there. Enter throws the one you are on, and so does the
-    -- trigger, which is what a switch wants from five inputs.
-    --
-    -- They answered left and right as a range before, which is the control a
-    -- ladder wants: a hand walking the group had to press up and down through
-    -- a row that reads left to right, and the arrow pointing at the next chip
-    -- turned the one it was already on off.
-    local chip = here ~= nil and here.group == "weapons" and not here.ladder
+    -- Every slot is a ladder, including the add-ons that used to be chips in
+    -- a row of boxes across the page. Left and right walked those boxes,
+    -- because that is how the drawing read; one row grammar means one answer
+    -- to what an arrow does, and it is the one a range wants.
     local ranged = here ~= nil and here.choice ~= nil and here.act ~= nil
-        and not chip
     if keys.left then
         if ranged then return activate(-1), true end
-        if chip and row_index(rows) > 1 then
-            M.sel[id] = next_stop(rows, row_index(rows), -1)
-            return nil, true
-        end
         return back()
     end
     if keys.right then
         if ranged then return activate(1), true end
-        if chip then
-            M.sel[id] = next_stop(rows, row_index(rows), 1)
-            return nil, true
-        end
         -- Right is enter on a list of places, which is what a one-column list
         -- of them wants. Not on a row that takes you out of the menu and into
         -- a game: an arrow is how somebody reads a list, and reading the third
@@ -4354,18 +4346,44 @@ function M.click_kit_at(index, level)
     local r = rows[index]
     if not r or r.act ~= "kit_step" then return nil, false end
     M.sel[M.at()] = index
-    -- A rung above what the account owns is what the upgrades page sells, and
-    -- a press on it means "I want this many of these". It cannot be had here,
-    -- and the dim pip that has been advertising it says where it can.
+    -- A rung above what the account owns means "I want this many of these",
+    -- and what answers that is the reading, where the price and the wallet
+    -- are. It used to name another tab and leave the walk to the pilot.
     local top = kit_ceiling()[r.value + 1] or 0
     if level > top then
-        M.note = "not yours yet: it is on the upgrades page"
+        M.slot_at = r.value
+        M.stack[#M.stack + 1] = "slot"
+        M.note = nil
         return nil, true
+    end
+    -- The pip you are already on takes the point back, which is the only way
+    -- a pointer can walk a ladder down: every other pip means "this many of
+    -- these", and the lit one already means the level it is at.
+    if level > 0 and level == (M.kit[r.value + 1] or 0) then
+        level = level - 1
     end
     if M.kit_set(r.value, level) then
         M.note = nil
         return "kit", true
     end
+    return nil, true
+end
+
+-- A row's name, pressed, or the dim part of its ladder: both are a pilot
+-- asking what this thing is. The row takes the cursor and the reading slides
+-- in over the page.
+--
+-- The ladder's own pips still answer a press directly, so building never
+-- costs a navigation: what opens the reading is the half of the row that was
+-- never a control. See `M.click_kit_at`.
+function M.click_read(index)
+    local rows = rows_of(node())
+    local r = rows[index]
+    if not r or r.act ~= "kit_step" then return nil, false end
+    M.sel[M.at()] = index
+    M.slot_at = r.value
+    M.stack[#M.stack + 1] = "slot"
+    M.note = nil
     return nil, true
 end
 
@@ -4424,7 +4442,6 @@ M.add_hot = false
 M.found_hot = nil
 M.friend_hot = nil
 M.friend_hot_act = nil
-M.buy_hot = false
 
 -- A pointer landed on the rail, which names a destination whatever level the
 -- stack is at. That is the whole difference between it and a row: the rail
@@ -4543,19 +4560,15 @@ function M.click_stage(index)
     local id = M.stack[#M.stack]
     if not row_at(index) then return nil, false end
     M.sel[id] = index
-    from_row = true
-    local act = activate()
-    from_row = false
-    return act, true
+    return activate(), true
 end
 
--- The BUY button, beside the reading pane or under the item page.
+-- The BUY key at the foot of the reading.
 --
--- `index` is the row the pane is reading, which is not always the row the
--- arrows are standing on: the pane follows the pointer, so a button that
--- bought the cursor's row would buy the wrong rung every time the mouse
--- moved. With no index this is the item page, which is about one thing and
--- keeps which one in `M.item_slot`.
+-- It names no row, because the page is about one slot: `M.slot_at` is the
+-- subject and the page's own rows are its keys. It used to sit beside a
+-- shelf and take the row the pane was reading, which is not always the row
+-- the arrows were on.
 function M.click_buy(index)
     if not M.open then return nil, false end
     local r
@@ -4579,10 +4592,7 @@ function M.click(index)
     if not M.open then return nil, false end
     if not row_at(index) then return nil, false end
     M.sel[M.stack[#M.stack]] = index
-    from_row = true
-    local act = activate()
-    from_row = false
-    return act, true
+    return activate(), true
 end
 
 -- The x on the panel. It shuts the menu rather than stepping back a level,
@@ -4611,6 +4621,13 @@ end
 function M.click_close()
     if not M.open then return nil, false end
     return nil, M.close()
+end
+
+-- Whether there is a level to come back out of, which is what a swipe right
+-- asks before it takes the gesture off the page under it. A page one level in
+-- came in from the right; the root came from nowhere.
+function M.can_back()
+    return M.open and #M.stack > 1
 end
 
 -- The chevron a drilled-into page wears on a phone. One level up, which is

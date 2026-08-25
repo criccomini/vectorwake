@@ -666,17 +666,18 @@ local function hover_menu(x, y, vh)
             menu.pilot_hot = r.action == "pilot_page"
             menu.discord_hot = r.action == "discord_link"
             menu.add_hot = r.action == "add_go"
-            menu.buy_hot = r.action == "buy_go"
             if r.action == "found" then menu.found_hot = r.value end
             if r.action == "carousel" then menu.carousel_hot = r.value end
             if r.action == "friend_act" then
                 menu.friend_hot, menu.friend_hot_act = r.value, r.level
             end
             -- A pip lights the row it belongs to, so the cursor follows the
-            -- pointer across a ladder the way it does down a list.
+            -- pointer across a ladder the way it does down a list. So does
+            -- the half of a slot row that opens its reading, which is the
+            -- name and everything past the circles.
             return hovering(
                 ((r.action == "stage" or r.action == "kit_at"
-                  or r.action == "friend_act")
+                  or r.action == "read_row" or r.action == "friend_act")
                  and r.value)
                     or nil,
                 r.action == "rail" and r.value or nil)
@@ -1229,7 +1230,8 @@ local function typed(text)
         -- pages read them: the week's table narrows as you type, and the
         -- friends page collects a call sign to send.
         elseif menu.type_filter(ch) then moved = true
-        elseif menu.type_add(ch) then moved = true end
+        elseif menu.type_add(ch) then moved = true
+        elseif menu.type_new(ch) then moved = true end
     end
     return moved
 end
@@ -1513,7 +1515,7 @@ function update(self, dt)
         -- around it, and the add field sends, so it hit the same bug the same
         -- way the first time somebody typed a call sign into it.
         local asking = (menu.ask and menu.ask.fields) or menu.add_on
-                       or menu.filter_on
+                       or menu.filter_on or menu.new_on
         -- The arrows themselves, not whatever is flying the ship. They were
         -- the same thing while the keys were fixed, and the moment a pilot
         -- moves thrust to W the menu would have followed it there: a page
@@ -2450,24 +2452,14 @@ function apply_menu(self, act)
             end)
         return
     end
-    -- A saved build under a different name, and a saved build dropped. Both
-    -- answer with the whole list, so what the page draws next is the
-    -- meta-layer's own answer rather than this client's guess at it.
+    -- A saved build dropped. It answers with the whole list, so what the page
+    -- draws next is the meta-layer's own answer rather than this client's
+    -- guess at it.
     --
-    -- The kit in hand is not touched by either. A rename moves a name and a
-    -- delete takes one away; what the pilot is flying is the thirty points in
-    -- the editor, which are the same thirty points afterwards. What does move
-    -- is which row of the list those points match, so both re-read it.
-    if act == "rename_profile" then
-        account.rename_profile(menu.pending_profile or "",
-                               menu.pending_rename or "",
-            function(ok, why)
-                menu.note = ok and nil or (why or "cannot rename that build")
-                menu.reread_profile()
-                sfx.ui(ok and "ui_go" or "ui_move")
-            end)
-        return
-    end
+    -- The kit in hand is not touched. A delete takes a name away; what the
+    -- pilot is flying is the thirty points in the editor, which are the same
+    -- thirty points afterwards. What does move is which row of the list those
+    -- points match, so it re-reads it.
     if act == "delete_profile" then
         account.delete_profile(menu.pending_profile or "",
             function(ok, why)
@@ -3032,6 +3024,18 @@ function on_input(self, action_id, action)
                 -- slot goes to that step, which is what a press on the
                 -- fourth dot of a five-dot row means.
                 act, moved = menu.click_kit_at(r.value, r.level)
+            elseif r.action == "read_row" then
+                -- A row's name, or the part of its ladder this account does
+                -- not own. Both are the same question, and the reading is
+                -- the answer: it slides in over the page from the right.
+                act, moved = menu.click_read(r.value)
+            elseif r.action == "new_field" then
+                -- The box on the naming page.
+                act, moved = menu.click_new_field()
+            elseif r.action == "create_build" then
+                -- And its one key, which keeps the thirty points in hand
+                -- under the name in the box.
+                act, moved = menu.click_create()
             elseif r.action == "charge_swap" then
                 -- The box beside a charge's pips. The two charges trade
                 -- keys; nothing about the ship changes.
@@ -3201,6 +3205,12 @@ function on_input(self, action_id, action)
                     if not list_drag.axis then
                         if dx < -10 and math.abs(dx) > math.abs(dy) then
                             list_drag.axis = "side"
+                        elseif dx > 10 and math.abs(dx) > math.abs(dy)
+                               and menu.can_back() then
+                            -- Right, on a page that slid in from there. It is
+                            -- the chevron's gesture: the reading came in over
+                            -- the page and a thumb pushes it back off.
+                            list_drag.axis = "back"
                         elseif list_drag.page and math.abs(dy) > 10 then
                             list_drag.axis = "up"
                         end
@@ -3214,7 +3224,17 @@ function on_input(self, action_id, action)
                         ui.page_scroll = list_drag.at + dy
                     end
                     if t.released then
-                        if list_drag.axis == "side" then
+                        if list_drag.axis == "back" then
+                            -- A third of the panel's width, the same distance
+                            -- that counts as a dismissal the other way, so one
+                            -- gesture is learned once.
+                            local _, _, dw = ui.drawer_span()
+                            if dx > math.max(dw, 1) * 0.33 then
+                                local act, moved = menu.click_back()
+                                if moved then sfx.ui("ui_move") end
+                                if act then apply_menu(self, act) end
+                            end
+                        elseif list_drag.axis == "side" then
                             -- A third of the way off counts as gone. Less than
                             -- that is a thumb that thought better of it, and
                             -- the drawer goes back rather than being left ajar.

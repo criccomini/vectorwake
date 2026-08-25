@@ -407,15 +407,6 @@ function M.delete_profile(name, cb)
          function(r, err) relist(r, cb, err or "cannot drop that build") end)
 end
 
-function M.rename_profile(name, to, cb)
-    if M.base == "" then
-        if cb then cb(false, "no meta-layer") end
-        return
-    end
-    post("/v1/profile/rename", {secret = secret, name = name, to = to},
-         function(r, err) relist(r, cb, err or "cannot rename that build") end)
-end
-
 -- One step in one slot, bought. The price and what is left to buy are the
 -- meta-layer's to decide: this asks, and the reply says what the slot now
 -- holds and what is left in the wallet.
