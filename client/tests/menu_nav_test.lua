@@ -211,6 +211,13 @@ do
     -- check above about right rather than about an empty list.
     check("and enter on the same row still does",
           menu.step({go = true}) == "join", "nothing joined")
+    -- A thumb is the same act. There is no key at the foot of the column any
+    -- more, so the row is the only way into a game, and a tap has to land
+    -- where enter lands rather than only moving the cursor onto it.
+    menu.stack, menu.sel = {"root", "play"}, {play = 1}
+    local tapped, took = menu.click_stage(1)
+    check("and a tap on a game joins it", tapped == "join" and took,
+          tostring(tapped) .. "/" .. tostring(took))
     menu.stack, menu.sel = kept_stack, kept_sel
 end
 
@@ -747,8 +754,11 @@ local heads = {}
 for _, r in ipairs(zones.rows) do
     if r.sect then heads[#heads + 1] = r.sect end
 end
+-- And no heading over them either. The page is the games, so a label reading
+-- "zones" over the only list on it was the interface naming what the reader
+-- can already see.
 check("the play page is the zones and nothing else",
-      table.concat(heads, "/") == "zones", table.concat(heads, "/"))
+      #heads == 0, table.concat(heads, "/"))
 -- Discord left this page for the same reason friends did: a row on a page is
 -- a place you find by going somewhere else first. It is a button in the
 -- corner of the top line now, on every page and both layouts, and the view

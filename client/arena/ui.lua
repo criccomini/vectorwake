@@ -6813,9 +6813,13 @@ local function stage_row(x, y, w, h, r, hot)
     -- field, and a flat field on a page that has a lit edge reads as a second
     -- panel laid over the first.
     if hot then
-        wash(x + GUTTER * F.scale - ROW_PAD * F.scale, y,
-             w - 2 * GUTTER * F.scale + 2 * ROW_PAD * F.scale, h,
-             pal.a(pal.FRIEND, 0.18))
+        -- Edge to edge of the panel rather than inset to the row's own
+        -- measure. A field that stops short of both sides reads as a box
+        -- floating on the page; the row is the thing you are on, and the
+        -- panel is how wide that is. It follows the drawer, so a selection
+        -- lit while the panel is sliding travels with it.
+        local wx, _, ww = M.drawer_span()
+        wash(wx, y, ww, h, pal.a(pal.FRIEND, 0.18))
     end
     -- One text column, whatever the row is, and it is the column the title
     -- above the list is set in. The wedge that says "this is the one you are
@@ -7826,32 +7830,20 @@ function M.menu(v)
     -- from the page over it.
     hrule(dx, ry_, dock)
 
-    -- The way in, on the line above the stops.
-    --
-    -- Only from the stands, which is the one place there is a room to be got
-    -- into: in a match this column's own row ends in `leave`, and a key
-    -- offering to deploy into the fight you are already in is a key that
-    -- means nothing. `deploy_y` stays nil otherwise and the page takes the
-    -- height back.
-    --
-    -- It exists because the column covers PLAY NOW. The landing draws the
-    -- name and that key over the foot of the glass, and `M.hud` stands the
-    -- whole block down while the menu is up; without a key here, a player who
-    -- opened this to change a ship would have to walk back to the games list
-    -- to get into the game already playing behind it. Same act, same word the
-    -- deck used, and it presses the same `play_now` the landing's key does.
-    local deploy_h, deploy_y
-    if v.scenery then
-        deploy_h = 44 * F.scale
-        deploy_y = ry_ - 14 * F.scale - deploy_h
-    end
+    -- No key at the foot. A DEPLOY stood on the line above the stops, because
+    -- the column covers the landing's PLAY NOW and a player who opened this to
+    -- change a ship would otherwise have to walk back to the games list to get
+    -- into the game already playing behind it. The games list is where that
+    -- walk ended, and pressing the game is what it ended in: the row is the
+    -- way in, by a tap or by enter, so the key was one control for an act the
+    -- page already had.
 
     -- The head, and the page between the two.
     local hy = F.safe_t
     logo_y = hy + head / 2
     sx, sw = dx + margin, dock - 2 * margin
     sy = hy + head + 8 * F.scale
-    sh = (deploy_y or ry_) - 14 * F.scale - sy
+    sh = ry_ - 14 * F.scale - sy
     -- A rule under the head, so the name and the call sign read as a bar over
     -- the page rather than as the page's own first line. Edge to edge, since
     -- it is the underside of a head rather than the top of a list.
@@ -7869,21 +7861,24 @@ function M.menu(v)
     -- the column covers the corner stack now, so this head is the only place
     -- either can be and it carries them whatever is behind the panel.
     --
-    -- Clear of the x, which sits at the very end of the same line.
     local logo_px = (short and 24 or 28) * F.scale
-    corner_left = pages.corner(
-        v, dx + dock - margin - (v.closable and 30 * F.scale or 0),
-        logo_y, true)
+    corner_left = pages.corner(v, dx + dock - margin, logo_y, true)
+    -- The way out stands where the way in stood: the same square, at the same
+    -- inset, on the same line. Pressing the menu key and pressing the x are one
+    -- control seen from either side, so a hand that learned where one of them
+    -- was has learned the other, and the name moves right to make the room.
+    local shut = KEY_H * F.scale
+    local logo_x = dx + margin
+    if v.closable then logo_x = logo_x + shut + 12 * F.scale end
     -- The wordmark gives, because it is a picture of a name everybody
     -- reading this screen has already read, and a call sign in a pill is
     -- not. Down two points at a time to a floor rather than squeezed to
     -- fit: below about twenty the mark beside it stops being a mark.
     while logo_px > 21 * F.scale
-          and dx + margin + M.wordmark_w(logo_px)
-              > corner_left - 12 * F.scale do
+          and logo_x + M.wordmark_w(logo_px) > corner_left - 12 * F.scale do
         logo_px = logo_px - 2 * F.scale
     end
-    M.wordmark(dx + margin, logo_y, logo_px)
+    M.wordmark(logo_x, logo_y, logo_px)
 
     -- Which half the arrows are in. The two halves share one cursor and mark
     -- it with the same blue field, so the half wearing the brighter one is the
@@ -8002,30 +7997,6 @@ function M.menu(v)
             "rail", i)
     end
 
-    -- The way in, drawn last of the column's furniture so nothing is over it.
-    --
-    -- It breathes on the clock the on-air tally swells at, which is the same
-    -- clock the landing's own key keeps, and the edge is floored well above
-    -- dark so the trough never reads as a key that has stopped working.
-    -- `F.now` is zero under the test harness, which is what keeps the layout
-    -- tests still.
-    if deploy_y then
-        local breath = 0.5 + 0.5 * math.sin(F.now * 2.6)
-        local kx = dx + margin
-        local kw = dock - 2 * margin
-        key_box(kx, deploy_y, kw, deploy_h,
-                pal.a(pal.FRIEND, 0.06 + 0.12 * breath),
-                pal.a(pal.FRIEND, 0.62 + 0.38 * breath))
-        -- In capitals and in the face the numbers are set in, which is what a
-        -- key wears everywhere else in this interface. Drawn raw, because the
-        -- menu is otherwise set in a sentence's case and this is already in
-        -- the case it wants.
-        txt("DEPLOY", kx + kw / 2, deploy_y + deploy_h / 2,
-            (short and 14 or 16) * F.scale, pal.a(pal.INK, 1), "center",
-            nil, true)
-        hit(kx, deploy_y, kw, deploy_h, "play_now")
-    end
-
     -- --- the stage
     -- Everything with type in it hangs off `tx`, a gutter in from the stage's
     -- own left edge: the rule at the head of it, and every row's label. A
@@ -8096,8 +8067,10 @@ function M.menu(v)
     -- of it, which was the right place under a heading and is a mark adrift
     -- in the middle of a title.
     if v.closable then
-        close_mark(sx + sw - 8 * F.scale, logo_y, pal.a(pal.DIM, 0.9), 11 * F.scale)
-        hit(sx + sw - 30 * F.scale, logo_y - 12 * F.scale, 40 * F.scale, 24 * F.scale, "close")
+        local box = KEY_H * F.scale
+        close_mark(dx + margin + box / 2, logo_y, pal.a(pal.DIM, 0.9),
+                   11 * F.scale)
+        hit(dx + margin, logo_y - box / 2, box, box, "close")
     end
     -- A page with a heading starts its heading where a page without one
     -- starts its first row, near enough: the air over the list is what the
@@ -8300,7 +8273,12 @@ function M.menu(v)
                 local own = stage_row(sx, y, GUTTER * F.scale + lw, rowh, r,
                                       (focused and i == v.sel) or i == v.hover)
                 if r.pick and not own then
-                    hit(sx, y, GUTTER * F.scale + lw, rowh, "stage", i)
+                    -- The whole width of the panel, which is what the lit
+                    -- field covers: a press that missed by a margin the eye
+                    -- was told is part of the row is a press that missed
+                    -- nothing.
+                    local hx, _, hw = M.drawer_span()
+                    hit(hx, y, hw, rowh, "stage", i)
                 end
                 -- A row that leaves the game gets a real anchor laid over it
                 -- by the page, because nothing this client does from its own

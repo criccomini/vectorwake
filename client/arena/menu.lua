@@ -1840,12 +1840,10 @@ local function play_rows()
     local rows = {}
     for i, r in ipairs(directory.rows) do
         rows[i] = {
-            -- The games under a heading of their own. This page is three
-            -- different questions in a column: which game, who is on, and
-            -- where the talking happens. Run together they read as one list
-            -- where Discord is a zone you could join.
-            sect = (i == 1) and "zones" or nil,
-            label = r.name, detail = r.count,
+            -- No heading over them. The page is the games and nothing else
+            -- now, and a label reading "zones" over the only list on it is the
+            -- interface naming what the reader can already see.
+            label = r.name,
             -- A zone the directory lists with no arena behind it. The row
             -- keeps its place, because a player is better off seeing that
             -- Chaos exists and is down than wondering whether they misread
@@ -1857,9 +1855,11 @@ local function play_rows()
             -- sentences; one at a time, a long way from the name it belongs
             -- to, is not reading them.
             note = r.detail,
-            -- What the meter draws, when the interface would rather show a
-            -- room's population than spell it.
-            players = r.players, bots = r.bots, live = r.live,
+            -- No count and no meter. How many people and how many machines
+            -- are in a room is a fact about the next thirty seconds rather
+            -- than about which game to pick, and the row is a name and the
+            -- sentence that says what the game is.
+            live = r.live,
             act = "join", value = i,
         }
     end
@@ -3400,13 +3400,13 @@ function M.view()
                 or "a password brings this pilot back on any machine; without "
                    .. "one it lives on this one",
         }
-    elseif not M.home or M.scenery then
-        -- The room the menu is standing over: who is in it and what they have
-        -- done. The same column whether the seat is yours or you are watching
-        -- from the stands, because it is about the room rather than about you,
-        -- and there is always a room behind this panel now.
-        out.aside = {match = true, head = "in this match"}
     end
+    -- No roster under the games. The room the menu stands over used to draw
+    -- itself here, first as a column beside the list and then under it, on the
+    -- argument that a player choosing where to go wants to know who is where.
+    -- What it actually did was put a second scoreboard on the one page that is
+    -- about leaving for somewhere else, and the room behind the panel is on
+    -- screen the moment the panel goes.
     -- The ship page carries the roster as well as the kit: the drawing at its
     -- head is a carousel through every hull, and `rows` is what thirty points
     -- buy on the one it is showing.

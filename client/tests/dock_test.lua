@@ -213,45 +213,64 @@ check("and a press on the column's own ground is not",
 -- --- the way in ------------------------------------------------------------
 --
 -- The column covers PLAY NOW: `M.hud` stands the landing block down while the
--- menu is up. Without a key here a player who opened this to change a ship
--- would have to walk back to the games list to get into the game already
--- playing behind it.
+-- menu is up. A DEPLOY key stood at the foot of the column for that, and it is
+-- gone: the games list is the page that key sent you to and the row is what
+-- the walk ended in, so pressing a game is the way in and one control for the
+-- act is enough.
 
 for _, s in ipairs(SHAPES) do
     local name, w, h = s[1], s[2], s[3]
     frame(w, h)
-    local key = box("play_now")
-    check(name .. " offers the way in from the stands", key ~= nil, "no key")
-    if key then
-        check(name .. " gives that key a thumb to land on",
-              key.h >= 40, string.format("%.0f tall", key.h))
-        check(name .. " keeps it inside the column",
-              key.x >= -1 and key.x + key.w <= math.min(DOCK, w) + 1,
-              string.format("%.0f..%.0f", key.x, key.x + key.w))
-        check(name .. " presses it where it is drawn",
-              press(key.x + key.w / 2, key.y + key.h / 2) == "play_now",
-              tostring(press(key.x + key.w / 2, key.y + key.h / 2)))
+    check(name .. " carries no key of its own at the foot",
+          box("play_now") == nil, "a deploy key came back")
+    -- The rows are the way in. Every one of them answers a press, and the
+    -- press covers the whole width of the panel rather than the row's own
+    -- measure, because that is what the lit field covers.
+    local row
+    for _, b in ipairs(ui.hits) do
+        if b.action == "stage" and b.value == 1 then row = b end
+    end
+    check(name .. " makes the game a thing to press", row ~= nil, "no row")
+    if row then
+        local dx, _, dw = ui.drawer_span()
+        check(name .. " gives the row the panel's whole width",
+              math.abs(row.x - dx) < 1.5 and math.abs(row.w - dw) < 1.5,
+              string.format("%.0f..%.0f against %.0f..%.0f", row.x,
+                            row.x + row.w, dx, dx + dw))
+        check(name .. " presses that row where it is drawn",
+              press(row.x + row.w / 2, row.y + row.h / 2) == "stage",
+              tostring(press(row.x + row.w / 2, row.y + row.h / 2)))
     end
 end
 
--- A pilot in a seat has nothing to deploy into: the row that ends this
--- column's tab list is `leave`, and a key offering to join the fight you are
--- already in is a key that means nothing.
-frame(1440, 810, {scenery = false})
-check("and none at all from a seat", box("play_now") == nil,
-      "a deploy key over a match")
--- The page takes the height back rather than leaving a hole where it was.
-local tabs = rail_boxes()
-local rows_reach = 0
-for _, b in ipairs(ui.hits) do
-    if b.action == "stage" then
-        rows_reach = math.max(rows_reach, b.y + b.h)
+-- --- the way out stands where the way in stood ------------------------------
+--
+-- The x sits in the square the menu key had, at the same inset on the same
+-- line. Pressing the menu key and pressing the x are one control seen from
+-- either side, so a hand that learned where one was has learned the other.
+
+do
+    local st = frame(1440, 810)
+    local x = box("close")
+    check("the way out is on the left of the head", x ~= nil and x.x < 60,
+          x and string.format("%.0f", x.x) or "none")
+    if x then
+        check("and square, the size the menu key is",
+              math.abs(x.w - x.h) < 1.5,
+              string.format("%.0fx%.0f", x.w, x.h))
+        -- The name has moved out of its way rather than sitting under it.
+        local name
+        for i = 1, st.n do
+            if string.lower(st.text[i].s) == "vectorwake" then
+                name = st.text[i]
+            end
+        end
+        check("and the name starts to the right of it",
+              name ~= nil and name.x > x.x + x.w,
+              name and string.format("name at %.0f, x ends %.0f",
+                                     name.x, x.x + x.w) or "no name")
     end
 end
-check("and the page has the room the key was taking",
-      #tabs > 0 and rows_reach < tabs[1].y + 1,
-      string.format("rows reach %.0f, stops start %.0f", rows_reach,
-                    #tabs > 0 and tabs[1].y or -1))
 
 print(fails == 0 and "all dock checks passed"
       or (fails .. " dock checks failed"))
