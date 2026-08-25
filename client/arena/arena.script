@@ -987,8 +987,8 @@ end
 local function drain_streaks()
     for _, k in ipairs(net.streaks) do
         local mine = not watching and k.ship == me
-        notify({pilot_named(k.ship, true),
-                " is on a streak of " .. k.kills}, nil, mine, true)
+        notify({pilot_named(k.ship, true), " is on a streak"},
+               nil, mine, true)
         sfx.ui("streak")
     end
     if #net.streaks > 0 then net.streaks = {} end
