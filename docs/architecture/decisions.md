@@ -2727,3 +2727,61 @@ second kind of watcher.
 room (give the landing a lighter feed, or seat visitors only where a room has
 spare egress), or the roster noise makes the on-air tally something pilots stop
 reading.
+
+## 62. The menu is one column docked to the left edge
+
+**Status:** accepted, superseding the two-layout menu
+
+**Decision:** the menu is drawn once, at 390 points wide, and stood against the
+left edge of the window. A head carries the wordmark and the call sign, the page
+sits under it, and a DEPLOY key sits over the six stops at its foot. A window
+narrower than 390 points gives the column everything it has, which is what a
+phone held upright already got. A window wider keeps the fight beside it: the
+wash covers the column and stops at its edge, and a press on the game beside it
+closes the menu the way escape does.
+
+Three consequences follow from the width rather than from taste. The picture of
+a keyboard on the controls page is deleted, because a board drawn across 362
+points comes out with 15-point keys; that page is a row per control with its key
+at the end, which is what a phone always had. The reading pane beside the
+upgrades shelf is gone the same way, so a row opens the item as a page on every
+device rather than only on a phone. And the column that used to stand beside a
+list, carrying the room's roster, follows the rows down the one column there is.
+
+**Why:** the menu was two layouts. Below 620 points it was a tab bar under a
+thumb; above it, a row of words across the top with the page and sometimes a
+second column beneath. Two layouts is two things for a player to learn, two sets
+of measurements to keep in step, and in practice one of them was always the one
+nobody was looking at. Every page in the tree was already laid out to survive
+390 points, because a phone held upright is 390 points and the menu had to fit
+one; what the wider windows were doing with the rest of the screen was a second
+design living off that fact.
+
+Docking rather than centering is what makes the menu work from the stands.
+Decision 61 put every player in a live room the moment the client opens, so the
+menu is nearly always a panel over a fight. A panel in the middle of the screen
+sits exactly where the ship is. Against an edge, the match keeps playing beside
+the column, which is what makes changing a ship or a zone from the stands a
+thing you can do while watching rather than a thing you leave to do.
+
+Three directions were drawn before this one was picked, and the mocks are in
+`.design/menu-unify`: this column docked to the edge, the same column floating
+as a centered card, and a persistent bar carrying the six stops with a sheet
+rising from it. The card loses the fight behind it. The bar is the stronger
+answer in the stands and the wrong one over a match, where a permanent strip of
+chrome is a fork in the same behavior this decision exists to remove; it stays
+available later, because the bar is this column's foot row promoted onto the
+glass and nothing here forecloses it.
+
+**Cost:** a desktop window spends 390 points on a menu that used to fill it, so
+every page is a phone's page, and the pages that were richer for the room are
+poorer: the week's table is the packed two-line row on every window now rather
+than a line of columns. The column also covers the corner keys it is docked
+over, so MENU and PLAYERS are not drawn or published while it is open, and the
+boxes any other furniture published under it are dropped: `M.pick` breaks a tie
+on publish order and the HUD publishes first, so covering a box is not enough to
+beat it.
+
+**Reconsider if:** a page turns up that genuinely cannot be read at 390 points
+and cannot be split, or the stands stop being where players spend their time
+between matches, which is the whole argument for keeping the fight visible.

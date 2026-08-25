@@ -67,13 +67,13 @@ M.screen = nil          -- the drawable and its insets, for the about page
 -- glass there is no board to draw and no key column to fill in, so the same
 -- list comes out as gestures instead.
 M.touching = false
--- Whether the page is a phone's, set by the arena each frame off the same
--- layout the interface draws with. The shop is the page that reads it: on a
--- phone a row opens the item as a page of its own, the way every pocket
--- catalog navigates, instead of leaning on a reading pane there is no room
--- to draw.
-M.compact = false
--- The slot that item page is about. The slot number rather than a row index,
+-- No `compact` here. It said whether the page was a phone's, and the shop was
+-- the one page that read it: there, a row opened the item as a page of its own
+-- rather than leaning on a reading pane there was no room to draw. The menu is
+-- one column at a phone's measure on every window now, so the answer is always
+-- yes and the question is gone. See .design/menu-unify.
+--
+-- The slot the item page is about. The slot number rather than a row index,
 -- so the catalog refreshing under it cannot swap the subject.
 M.item_slot = nil
 -- Whether the activation running right now came from a pointer landing on a
@@ -2196,28 +2196,23 @@ local NODES = {
     -- on a phone they were laid over the thumbs, naming keys the device does
     -- not have while the controls it does have sat unexplained. A thing you
     -- consult belongs somewhere you go to consult it.
-    -- On a keyboard the page draws the keyboard: ui.lua renders the board
-    -- with the bound keys lit by function when `board` is set, and these
-    -- rows are only ever read on a touchscreen, where the thumbs are the
-    -- controls and the board would be a picture of keys the device has not
-    -- got. The layout itself is decision 33: the original's keys where the
-    -- browser permits them, the nearest safe key where it does not.
+    -- One row per control, with the key it is on at the end of it, drawn by
+    -- the same list every other page here is drawn by. The layout itself is
+    -- decision 33: the original's keys where the browser permits them, the
+    -- nearest safe key where it does not.
+    --
     -- Built from arena/controls.lua rather than written out here, which is
     -- what these rows used to be. Two hand-kept lists of the same facts drift,
     -- and these did: they were describing a game with no map on the dial and
     -- nobody riding anybody, months after both landed. A row with no `pad` is
     -- a control a thumb cannot work and is left out rather than named.
-    -- On a keyboard the page draws the keyboard, and every control on it is a
-    -- chip under the picture carrying the key it is on. The chips are rows
-    -- like any other page's, so the cursor, the pointer and the hit boxes are
-    -- the ones every list here already has; what is different is that they are
-    -- laid out three across, which is what `grid` and `cols` say.
     --
-    -- The full list down one column would scroll, and a list that scrolls under
-    -- a picture stops being the same page as the picture: you would be moving
-    -- the answers past a diagram that stayed still.
-    controls = {board = true, chips = true, grid = true, cols = 3,
-                rows = function()
+    -- The page used to draw a picture of a keyboard on any window wide enough
+    -- for one, with every control a chip under it three across. The menu is
+    -- one column at a phone's measure now, and a board drawn across it comes
+    -- out with 15-point keys, so what a phone always had is what every device
+    -- gets. See .design/menu-unify.
+    controls = {rows = function()
         local rows = {}
         for i, c in ipairs(binds.rows()) do
             if M.touching then
@@ -3323,15 +3318,8 @@ function M.view()
                      pilots = M.live_pilots, watchers = M.live_watchers,
                      side = M.live_side, names = M.live_sides,
                  } or nil,
-                 -- The help page asks for the drawn keyboard; whether the
-                 -- device gets one is ui.lua's call, since only it knows
-                 -- whether there is a keyboard to draw a picture of.
-                 board = nd.board or false,
-                 -- And for its rows to be laid out under that keyboard as
-                 -- chips rather than down a column.
-                 chips = nd.chips or false,
-                 -- Whether one of them is waiting for a key, which the board
-                 -- reads to go dark around it.
+                 -- Whether a control is waiting for a key, which the controls
+                 -- page reads to say so on the row that asked.
                  arming = M.arming ~= nil,
                  foot = M.foot,
                  rows = {}}
@@ -3480,8 +3468,6 @@ function M.view()
         local go = corner or (pick and pick.go)
         if go and NODES[go] then
             local nd2 = NODES[go]
-            out.board = nd2.board or false
-            out.chips = nd2.chips or false
             out.empty = nd2.empty and nd2.empty() or nil
             out.head = nd2.head and nd2.head() or nil
             out.lede = nd2.lede and nd2.lede() or nil
@@ -3777,11 +3763,13 @@ local function activate(by)
         M.ask_friend(r.value, r.label, r.acts)
         return nil
     elseif r.act == "buy" then
-        -- On a phone the row opens the item first: there is no reading pane
-        -- beside the list there, so the pane is a page you step into, and
-        -- its own buy key is what raises the card. On anything wider the
-        -- pane is already on screen and the row goes straight to the card.
-        if M.compact and M.stack[#M.stack] == "upgrades" then
+        -- The row opens the item first: there is no reading pane beside the
+        -- list, so the pane is a page you step into, and its own buy key is
+        -- what raises the card. It used to be a phone's route alone, on the
+        -- argument that a wider window had the pane on screen already. The
+        -- menu is one column at a phone's measure on every window now, so
+        -- there is no window where that pane fits and no second route.
+        if M.stack[#M.stack] == "upgrades" then
             M.item_slot = r.value
             M.stack[#M.stack + 1] = "shop_item"
             M.note = nil
@@ -4200,10 +4188,10 @@ function M.step(keys)
     -- instead, and down, which should have gone to the row below, went one
     -- ship to the right. Enter is still the only thing that picks.
     if nd.grid and #M.stack > 1 and n > 0 then
-        -- The hull page is as wide as the window lets it be and says so every
-        -- frame; the controls page is three across whatever the window does,
-        -- because a chip is a name and a key rather than a drawing and four of
-        -- them across a narrow panel would put the key back under the name.
+        -- The hull page is as wide as the column lets it be and says so every
+        -- frame. It is the only page laid out in two dimensions now: the
+        -- controls were the other, three chips across under a picture of a
+        -- keyboard, and both went when the menu became one column.
         local cols = math.max(1, math.min(nd.cols or M.cols, n))
         local i = row_index(rows)
         if keys.back then return escape() end

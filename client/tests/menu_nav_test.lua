@@ -2510,10 +2510,17 @@ do
           shop.rows[2].price == nil and shop.rows[2].owned == 2,
           tostring(shop.rows[2].price))
 
+    -- A priced row opens as a page of its own first. There is no reading
+    -- pane beside the shelf any more, on any window, so the pane is a page
+    -- you step into and its own buy is what raises the card.
     menu.sel.upgrades = 1
     menu.ask = nil
     menu.step({go = true})
-    check("pressing a priced row asks before it spends",
+    check("pressing a priced row opens it as a page",
+          menu.stack[#menu.stack] == "shop_item" and menu.ask == nil,
+          menu.stack[#menu.stack])
+    menu.step({go = true})
+    check("and the page's own buy asks before it spends",
           menu.ask ~= nil and string.find(menu.ask.head, "40", 1, true),
           menu.ask and menu.ask.head or "no card")
     check("with the answer that changes nothing under the cursor",
@@ -2530,6 +2537,9 @@ do
     -- thing it acts on is the button beside the pane. A pointer landing on a
     -- row is reading: it moves the cursor there and spends nothing, because
     -- what the pane fills up with is the answer to why you clicked.
+    -- Back out to the shelf, since the buy above was made from the item's
+    -- own page and the two hands are a question about the shelf's rows.
+    menu.stack = {"root", "upgrades"}
     menu.sel.upgrades = 2
     menu.ask = nil
     account.rivets = 500
@@ -2542,6 +2552,7 @@ do
 
     -- The button does. It names its own row rather than reading the cursor,
     -- since the pane it sits under follows the pointer.
+    menu.stack = {"root", "upgrades"}
     menu.sel.upgrades = 2
     menu.ask = nil
     menu.click_buy(1)
@@ -2555,6 +2566,7 @@ do
           select(2, menu.click_buy(2)) == false, "bought a topped-out slot")
 
     -- A row with nothing left to sell is not a control.
+    menu.stack = {"root", "upgrades"}
     menu.sel.upgrades = 2
     menu.ask = nil
     menu.step({go = true})
@@ -2563,9 +2575,12 @@ do
 
     -- A wallet too light is told so instead of being asked a question whose
     -- only answer is a refusal.
+    -- The refusal comes from the item's own page, which is where the buy is.
+    menu.stack = {"root", "upgrades"}
     menu.sel.upgrades = 1
     account.rivets = 10
     menu.ask = nil
+    menu.step({go = true})
     menu.step({go = true})
     check("a short wallet is told the price rather than asked to pay it",
           menu.ask ~= nil and #menu.ask.keys == 1

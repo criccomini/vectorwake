@@ -1,5 +1,19 @@
 # Landing, and the menu
 
+> **One column, docked to the left edge.** The menu is drawn once at 390 points
+> wide and stood against the left edge of whatever window it is in: a head with
+> the wordmark and the call sign, the page under it, a DEPLOY key over the six
+> stops at its foot. A phone held upright gives it the whole screen, which is
+> what that phone already got; anything wider keeps the fight beside it, so a
+> ship or a zone can be changed without leaving the stands. The two layouts this
+> file describes below, a tab bar under a thumb and a row of words across the
+> top, are one layout now. See [decision 62](../architecture/decisions.md) and
+> the mocks in `.design/menu-unify`. Three things went with the width: the
+> picture of a keyboard on the controls page, the reading pane beside the
+> upgrades shelf, and the second column that carried the room's roster beside a
+> list. The first two are pages you read a row at a time now; the third follows
+> the rows down the one column there is.
+
 > **The landing is the game now.** Opening the client seats you in the stands
 > of a real melee room and draws the watcher's HUD; the front end is that
 > screen with the wordmark and a pulsing PLAY NOW key over its foot. The deck

@@ -18,7 +18,18 @@ Every board shows the play page open over a live melee, because the stands are
 the front end now (decision 61) and changing a ship or a zone should not mean
 leaving them.
 
-Drawings of a proposal, not a plan of record. Nothing here is built.
+**Dock was chosen and is built.** See
+[decision 62](../../docs/architecture/decisions.md). Card loses the fight it is
+drawn over, which is the one thing docking exists to keep. Console is the
+stronger answer in the stands and the wrong one over a match, where a permanent
+strip of chrome forks the same behavior into two; it stays open as a later step,
+since that bar is the dock's own foot row promoted onto the glass.
+
+Two things the boards drew that the built column does not. The DEPLOY key is
+there only from the stands, because a key offering to join the fight you are
+already in means nothing. And the "watching" card is the room's real roster,
+which is what the menu already had beside a list on a wide window and now draws
+under the rows.
 
 `build.py` is the source, in the manner of `../spectator-landing/build.py`,
 whose design system it borrows: hues from `client/arena/palette.lua`, panel

@@ -106,6 +106,16 @@ local function has(st, s)
     return false
 end
 
+-- Whether any line the page drew carries this inside it. `has` asks for a
+-- whole string, which is the right question about a heading and the wrong one
+-- about a figure and its word set as one piece of type.
+local function says(st, s)
+    for _, t in ipairs(texts(st)) do
+        if t:find(string.upper(s), 1, true) then return true end
+    end
+    return false
+end
+
 -- What the last draw published, by action. `ui.hits` is rebuilt every draw,
 -- so these read whichever one just ran.
 local function hit_named(action)
@@ -183,8 +193,11 @@ check("the corner says who is reading", has(corner, "Tiller 963"))
 local named, clashed = nil, false
 for _, h in ipairs(ui.hits) do
     if h.action == "pilot" then clashed = true end
-    -- Small, near the top, at the right-hand end: the name and its mark.
-    if h.w < 400 and h.h < 60 and h.y < 120 and h.x + h.w / 2 > W * 0.7 then
+    -- Small, on the column's head line, at the right-hand end of it. Of the
+    -- column rather than of the window: the menu is one column docked to the
+    -- left edge, so the far end of the head is a few hundred points in and
+    -- not three quarters of the way across a monitor.
+    if h.w < 200 and h.h < 60 and h.y < 120 and h.x > 150 and h.x < 390 then
         named = h.action
     end
 end
@@ -290,10 +303,10 @@ local function rail_wash()
     local a = 0
     for _, r in ipairs(rects) do
         local c = r.col
-        -- The tab row's own band, which is the only blue field in the top of
-        -- the panel: a stage row's cursor is further down the screen.
+        -- The tab row's own band, which is the only blue field at the foot of
+        -- the column: a stage row's cursor is further up the screen.
         if c and c[1] == pal.FRIEND[1] and c[2] == pal.FRIEND[2]
-           and r.y < 120 and (c[4] or 1) > a then
+           and r.y > H - 120 and (c[4] or 1) > a then
             a = c[4] or 1
         end
     end
@@ -453,7 +466,12 @@ check("the way out is on the name's line", logo_y and xbox
 check("a press off the panel is the way out", press(W - 8, H - 8) == "close",
       tostring(press(W - 8, H - 8)))
 check("a press on the panel's own ground is not",
-      press(W / 2, H / 2) ~= "close", tostring(press(W / 2, H / 2)))
+      press(120, H / 2) ~= "close", tostring(press(120, H / 2)))
+-- And the fight beside the column is off the panel, which is the whole point
+-- of docking it: the game is showing there, and a press on a game means put
+-- me back in it.
+check("the fight beside the column is a way out too",
+      press(W / 2, H / 2) == "close", tostring(press(W / 2, H / 2)))
 
 shut.closable = false
 draw(shut)
@@ -525,41 +543,29 @@ check("with the count still on the name's line",
       string.format("count at %s, name at %s", tostring(count_y),
                     tostring(name_y)))
 
--- --- a tab's field is centered on its word --------------------------------
+-- --- a tab's field is centered on its stop --------------------------------
 --
--- The row is measured in the face it is drawn in. With the mono's advance,
--- which runs about a fifth wide of the menu's lower case, every word sat left
--- of the middle of its own field and the padding read visibly bigger on the
--- right of a tab than on its left.
---
--- Measured here off the same table the drawing reads, but summed separately:
--- what this checks is that the field and the word agree, and a check that
--- called the same function for both could agree with itself while both were
--- wrong.
-local face = require("arena.menu_face")
-local function menu_w(str, px)
-    local w = 0
-    for i = 1, #str do
-        w = w + (face.adv[string.byte(str, i)] or face.widest)
-    end
-    return w * px
-end
+-- The row is marks with a word under each, laid out on an even pitch, and the
+-- lit field is the stop's own share of that pitch. It used to be a row of
+-- words on a desktop with the field measured off the word's width in a face
+-- that was not the one it was drawn in, so every word sat left of the middle
+-- of its own field.
 do
     local tabs = draw({depth = 1, sel = 1, rail = RAIL, rail_sel = 4,
                        focus = "rail", home = true, rows = {}}, 1280, 800)
     local word
     for i = 1, tabs.n do
         local t = tabs.text[i]
-        if string.lower(t.s) == "team" and t.pivot == "left" then word = t end
+        if string.lower(t.s) == "team" and t.pivot == "center" then word = t end
     end
-    -- The field behind it: team blue, and as tall as a tab's field rather
-    -- than as tall as a row.
+    -- The field behind it: team blue, running the height of the tab row
+    -- rather than the height of a list row.
     local field
     for _, r in ipairs(rects) do
         local c = r.col
         if c and c[1] == pal.FRIEND[1] and c[2] == pal.FRIEND[2]
            and word and r.x < word.x and r.x + r.w > word.x
-           and r.h > 28 and r.h < 42 then
+           and r.h > 50 then
             field = r
         end
     end
@@ -567,11 +573,12 @@ do
           word ~= nil and field ~= nil,
           tostring(word and word.s) .. "/" .. tostring(field and field.w))
     if word and field then
-        local left = word.x - field.x
-        local right = (field.x + field.w) - (word.x + menu_w(word.s, word.px))
-        check("and the same room either side of the word",
-              math.abs(left - right) < 1.5,
-              string.format("%.1f left, %.1f right", left, right))
+        -- A centered word reports its own middle, so this is one subtraction
+        -- rather than a width measured in a face nothing here draws in.
+        check("and the word sits on the middle of it",
+              math.abs(word.x - (field.x + field.w / 2)) < 1.5,
+              string.format("word at %.1f, field middle %.1f",
+                            word.x, field.x + field.w / 2))
     end
 end
 
@@ -811,7 +818,7 @@ local function rail_fields()
     for _, r in ipairs(rects) do
         local c = r.col
         if c and c[1] == pal.FRIEND[1] and c[2] == pal.FRIEND[2]
-           and r.y < 120 and r.w > 20 and r.w < 200 then
+           and r.y > H - 120 and r.w > 20 and r.w < 200 then
             n = n + 1
         end
     end
@@ -965,33 +972,42 @@ do
     })
     check("the table says nothing about matches won", not has(week, "won"),
           table.concat(texts(week), " "))
+    -- Each figure and the word for it are one string in the packed row, which
+    -- is the only row this table has now: the menu is one column at a phone's
+    -- measure, so the wide table of separate columns has no window to be
+    -- drawn on. `says` is what asks for a piece of one.
     check("and carries deaths and time instead",
-          has(week, "deaths") and has(week, "time"),
+          says(week, "3 deaths") and says(week, "22m time"),
           table.concat(texts(week), " "))
-    -- Every line the card used to hold, as a column of the table beside it.
-    check("the ratio is a column now", has(week, "k/d") and has(week, "3.00"),
+    -- Every line the card used to hold, as a figure on the row beside it.
+    check("the ratio is a column now", says(week, "3.00 k/d"),
           table.concat(texts(week), " "))
-    check("and so is the best run", has(week, "streak"),
+    check("and so is the best run", says(week, "4 streak"),
           table.concat(texts(week), " "))
     -- Kills a pilot was part of and did not finish. A hull rarely comes apart
     -- to one pilot's fire, and two columns told whoever did four fifths of
     -- the work and lost the last shot that they had done nothing.
     check("assists are a column beside the two they belong with",
-          has(week, "assists") and has(week, "6"),
+          says(week, "6 assists"),
           table.concat(texts(week), " "))
     -- Two different facts, and the table wants both: what somebody is rated
     -- at, and what this week did to it.
     check("a rating is what a pilot is rated at",
-          has(week, "rating") and has(week, "1240"),
+          says(week, "1240 rating"),
           table.concat(texts(week), " "))
     check("and the rating change says what the week did to it",
-          has(week, "rating change") and has(week, "+29")
-              and has(week, "-12"),
+          says(week, "+29 rating change") and says(week, "-12 rating change"),
           table.concat(texts(week), " "))
     -- The week's earnings, and the word for them. "Earned" keeps this separate
     -- from the balance left after purchases.
     check("what the week paid is earned",
-          has(week, "earned") and has(week, "180"),
+          says(week, "180 earned"),
+          table.concat(texts(week), " "))
+    -- Nothing falls off the end of the row. It used to stop at the end of the
+    -- first line, which lost the last four figures in a column this narrow.
+    check("and nothing a pilot could sort by is missing from the row",
+          says(week, "180 earned") and says(week, "22m time")
+              and says(week, "1240 rating"),
           table.concat(texts(week), " "))
     check("and there is no card beside any of it",
           not has(week, "your week") and not has(week, "kills per death"),
@@ -1026,7 +1042,7 @@ do
         },
     })
     check("an unrated pilot is drawn as nothing, not as zero",
-          has(guest, "-") and not has(guest, "0"),
+          says(guest, "- rating") and not says(guest, "0 rating"),
           table.concat(texts(guest), " "))
 end
 
@@ -1338,15 +1354,15 @@ do
         table.sort(out, function(a, b) return a.x < b.x end)
         return out
     end
-    -- The lit fields, by the color and the height only they wear: team blue
-    -- at the weights a tab uses, in a band 34 points tall.
-    local function lit_fields(scale)
+    -- The lit fields, by the color and the place only they wear: team blue,
+    -- at the foot of the column, narrower than the column itself.
+    local function lit_fields()
         local out = {}
         for _, r in ipairs(rects) do
             local c = r.col
             if c and c[1] == pal.FRIEND[1] and c[2] == pal.FRIEND[2]
                and c[3] == pal.FRIEND[3]
-               and math.abs(r.h - 34 * scale) < 1.5 and r.w < 300 then
+               and r.y > H - 120 and r.w < 300 then
                 out[#out + 1] = r
             end
         end
@@ -1381,7 +1397,7 @@ do
         check("and nothing between two tabs is dead at " .. wide,
               hole <= 0.01, string.format("%.1f points of hole", hole))
 
-        local fields = lit_fields(1.18)
+        local fields = lit_fields()
         local lap = 0
         for i = 1, #fields - 1 do
             lap = math.max(lap, (fields[i].x + fields[i].w) - fields[i + 1].x)

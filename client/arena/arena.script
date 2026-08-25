@@ -1482,11 +1482,6 @@ function update(self, dt)
     -- two lives this is, so the menu is told every frame, like the class.
     -- From the connection rather than the local, which syncs further down.
     menu.watching = net.watching
-    -- Whether the page is a phone's, so the menu can choose phone-shaped
-    -- navigation: the shop opens an item as a page there rather than beside
-    -- the list. Layout is the interface's business; which press means what
-    -- is the menu's, and this is the one fact it needs to decide.
-    menu.compact = ui.compact
     -- Whether the client is in the stands: watching a room it never took a
     -- seat in. It is what says a menu opened here has a game behind it to be
     -- closed onto, which is the difference between this and a client that has

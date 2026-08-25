@@ -117,17 +117,23 @@ check("with no scheme in front of it for somebody to type",
 
 -- --- the poster hierarchy -------------------------------------------------
 
-local hero = said(st, "Rally for the next match.")
+-- The hero wraps: the column is 390 points wide wherever it stands, and a
+-- 32-point line does not carry a whole sentence across it. So this asks for
+-- the line it starts on rather than the whole of it.
+local hero = containing(st, "Rally for the")
 local body = containing(st, "Meet pilots")
 local action = said(st, "Join discord")
 check("the reason to go is the largest line", hero and body and hero.px > body.px * 2,
       hero and body and (hero.px .. " over " .. body.px) or "missing copy")
 check("the action says where it goes", action ~= nil, "no Join discord")
 
+-- The page's own rules, which means neither of the column's: one under the
+-- head carrying the name and the call sign, one across the top of the stops
+-- at the foot. Both are furniture the menu draws around whatever page is up.
 local rules = 0
 for _, s in ipairs(segs) do
     if math.abs(s.y0 - s.y1) < 0.5 and math.abs(s.x1 - s.x0) > 100
-       and s.y0 > 150 then
+       and s.y0 > 150 and s.y0 < H - 120 then
         rules = rules + 1
     end
 end

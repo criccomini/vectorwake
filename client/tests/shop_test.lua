@@ -87,118 +87,75 @@ local function box(action)
     end
 end
 
--- --- where the shelf ends -------------------------------------------------
+-- --- the shelf has the column to itself -----------------------------------
+--
+-- There was a reading pane down the right hand side of this page, on any
+-- window with 760 points to give it. The menu is one column at a phone's
+-- measure now, so the shelf takes the whole of it and the pane is a page you
+-- step into: `shop_item`, which is the route a phone always took and the only
+-- route there is.
 
 local v = {shop = true, rows = rows(), sel = 3, rail = {},
            pilot = {rivets = 310}}
 local st = draw(v)
 
--- The pane's left edge, read off the one thing only it draws: the kind line
--- over the headline. Everything the shelf draws has to stop short of it.
-local pane_x
-for _, t in ipairs(texts(st)) do
-    if string.lower(t.s or "") == "gun add-on" then pane_x = t.x end
+local function said(st2, s)
+    for _, t2 in ipairs(texts(st2)) do
+        if string.lower(t2.s or "") == string.lower(s) then return t2 end
+    end
 end
-check("the reading pane is on screen to be crossed", pane_x ~= nil,
-      "no pane")
+
+check("the shelf draws no reading pane beside itself",
+      said(st, "gun add-on") == nil, "a pane is still drawn")
 
 local rules = {}
 for _, s in ipairs(segs) do
     if math.abs(s.y0 - s.y1) < 0.5 and s.x1 - s.x0 > 200
-       and s.x0 > 100 and s.y0 > 150 then
+       and s.x0 > 10 and s.y0 > 80 and s.y0 < H - 120 then
         rules[#rules + 1] = s
     end
 end
 check("the shelf draws a rule over each of its sections", #rules == 2,
       tostring(#rules))
-local worst = 0
-for _, s in ipairs(rules) do worst = math.max(worst, s.x1) end
-check("and no rule reaches the pane it would otherwise cross",
-      pane_x and worst < pane_x, ("rule ends at %.1f, pane at %.1f")
-          :format(worst, pane_x or -1))
 
 -- The currency is named beside the shelf's balance. The glyph alone asked a
 -- new player to recognize a unit the menu had not taught yet.
-local wallet
-local currency
-for _, t in ipairs(texts(st)) do
-    if t.s == "310" then wallet = t.x end
-    if t.s == "RIVETS" then currency = t.x end
-end
 check("the shelf names the currency and its balance",
-      wallet ~= nil and currency ~= nil, "missing rivets or balance")
-check("and says it over the shelf rather than over the pane",
-      wallet and pane_x and wallet < pane_x,
-      ("wallet at %.1f, pane at %.1f"):format(wallet or -1, pane_x or -1))
+      said(st, "310") ~= nil and said(st, "rivets") ~= nil,
+      "missing rivets or balance")
 
--- --- the buy --------------------------------------------------------------
+-- --- the buy is on the item's own page ------------------------------------
+--
+-- One thing off the shelf, as a page you step into. It was a phone's route
+-- alone while a wider window carried the pane beside the list; there is no
+-- window wide enough now, so this is the route.
 
-local buy = box("buy_go")
-check("the pane carries a button that buys", buy ~= nil, "no buy box")
-check("and it stands in the pane rather than over the shelf",
-      buy and pane_x and buy.x >= pane_x - 1,
-      buy and ("button at %.1f, pane at %.1f"):format(buy.x, pane_x or -1)
-          or "none")
-check("and it names the row the pane is reading",
-      buy and buy.value == 3, buy and tostring(buy.value) or "none")
+local ist = draw({item = rows()[3], rows = {}, rail = {},
+                  pilot = {rivets = 310}})
+check("the item page says what kind of thing this is",
+      said(ist, "gun add-on") ~= nil, "no kind line")
+check("and names it", said(ist, "Gun spray") ~= nil, "no headline")
+-- The way back, because a page you step into needs one and the tab row goes
+-- to a different page rather than up a level.
+check("and carries the way back to the shelf", box("back") ~= nil, "no back")
 
--- Whatever the pane came to be reading, the button spends on that and not on
--- something worked out a second time. The pane takes the cursor first and the
--- pointer where there is none, so the check is that the two agree rather than
--- which of the two won: reading the headline back out is what settles it.
-local function pane_reads(st2)
-    -- The headline is set in the page's largest type, and it is the row's
-    -- own name.
-    local big, at = 0, nil
-    for _, t in ipairs(texts(st2)) do
-        if (t.px or 0) > big and t.x and pane_x and t.x >= pane_x - 1 then
-            big, at = t.px, t.s
-        end
-    end
-    return at
-end
-
-local function agree(label, v2)
-    local st2 = draw(v2)
-    local b = box("buy_go")
-    local said = pane_reads(st2)
-    local named = b and (v2.rows[b.value] or {}).label
-    check(label, said ~= nil and named ~= nil
-          and string.lower(said) == string.lower(named),
-          tostring(said) .. " read, " .. tostring(named) .. " on the button")
-end
-
-agree("the button spends on the row the pane is reading",
-      {shop = true, rows = rows(), sel = 3, rail = {}, pilot = {rivets = 310}})
-agree("and follows the pointer where nothing has the cursor",
-      {shop = true, rows = rows(), hover = 1, rail = {},
-       pilot = {rivets = 310}})
-
--- A wallet too light does not take the button away. A row that published no
--- box at all was a page where the mouse did nothing and said nothing; the
--- price is the answer, and it is the card that gives it.
-agree("a price above the wallet keeps its button",
-      {shop = true, rows = rows(), sel = 4, rail = {}, pilot = {rivets = 10}})
-
--- Nothing to sell, nothing to press. The pane says yours or dealt instead.
-v.hover = nil
-v.sel = 2
-draw(v)
-check("a row taken to the top of its ladder has no button",
-      box("buy_go") == nil, "a topped-out row offered a buy")
-
--- --- and the same act on a phone -----------------------------------------
-
--- Too narrow for a pane, so the shelf is the page and one thing off it is a
--- page you step into. That page ends in a BUY of its own, and it publishes
--- the same action so the two cannot come apart.
-local item = {item = rows()[3], rail = {}, pilot = {rivets = 310}}
-draw(item, 420, 780)
 local key = box("buy_go")
-check("the page a phone steps into buys with the same action", key ~= nil,
+check("the item page buys with the shelf's own action", key ~= nil,
       "no buy key")
 check("and names no row, being about one thing",
       key and key.value == nil, key and tostring(key.value) or "none")
+
+-- A wallet too light does not take the button away. A page that published no
+-- box at all was one where the mouse did nothing and said nothing; the price
+-- is the answer, and it is the card that gives it.
+draw({item = rows()[4], rows = {}, rail = {}, pilot = {rivets = 10}})
+check("a price above the wallet keeps its button", box("buy_go") ~= nil,
+      "no buy key on a row nobody can afford")
+
+-- Nothing to sell, nothing to press. The page says yours or dealt instead.
+draw({item = rows()[2], rows = {}, rail = {}, pilot = {rivets = 310}})
+check("a row taken to the top of its ladder has no button",
+      box("buy_go") == nil, "a topped-out row offered a buy")
 
 if fails > 0 then
     print(("\n%d check(s) failed"):format(fails))

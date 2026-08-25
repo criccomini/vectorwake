@@ -209,8 +209,12 @@ local function near(list, cx, cy, r)
     return out
 end
 
+-- The shipped row, less friends. Every stop draws its mark at the foot of the
+-- column now, and the friends mark is two helmets one behind the other: this
+-- file counts helmets, so the one stop that brings its own pair stays off the
+-- row. Nothing else on it wears one.
 local RAIL = {}
-for i, n in ipairs({"play", "ship", "standings", "pilot",
+for i, n in ipairs({"zones", "ship", "upgrades", "standings",
                     "settings"}) do
     RAIL[i] = {label = n, icon = n, index = i}
 end
@@ -219,11 +223,11 @@ local function menu(rows)
     return frame(function()
         ui.menu({depth = 1, sel = 0, rail = RAIL, rail_sel = 3,
                  focus = "rail", home = true, closable = false,
-                 -- Nothing wears the person's helmet in the furniture:
-                 -- the desktop's tabs are words with a rule under the lit
-                 -- one, and the far end of that row is two buttons. Where the
-                 -- mark still appears is where it counts people, which is a
-                 -- games row and a nameplate.
+                 -- Nothing in the furniture wears the person's helmet: the
+                 -- stops on this row are zones, ship, upgrades, standings and
+                 -- settings, and the far end of the head is two buttons with
+                 -- no mark on either. Where the mark still appears is where it
+                 -- counts people, which is a games row and a nameplate.
                  pilot = {name = "Quarrel", rivets = 342},
                  rows = rows or {}})
     end)

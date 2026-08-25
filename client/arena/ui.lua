@@ -18,7 +18,6 @@
 -- at the point of drawing.
 
 local pal = require("arena.palette")
-local keyset = require("arena.keys")
 local marks = require("arena.marks")
 -- How wide each letter of the menu's face draws, generated from the file it
 -- draws with. See `text_w`.
@@ -4231,8 +4230,14 @@ function M.hud(o)
     -- which is the one place that decision is made; this reads it rather than
     -- making it again from a number.
     local several = o.rooms and #o.rooms > 1
-    menu_button(o.on_air and not o.watch, o.watch, several and o.room or nil,
-                o.pilots, o.watchers, o.landing)
+    -- Not under an open menu. The column is docked to this corner and covers
+    -- the row outright, so drawing it puts a ghost of MENU under the panel's
+    -- own head: the way back in is the lit stop on the column's foot row, and
+    -- the way out is the x on its head.
+    if not o.menu_open then
+        menu_button(o.on_air and not o.watch, o.watch, several and o.room or nil,
+                    o.pilots, o.watchers, o.landing)
+    end
     vignette(o.hurt or 0)
     -- After the stack, because it is hung off the rows the stack published,
     -- and after the tint so a hurt frame does not wash out the words.
@@ -4399,7 +4404,33 @@ function pages.week(v, x, y, w, h, focused)
     for _, c in ipairs(want) do
         if (c[5] or c[1]) == (v.week or {}).sort then sorted_col = c end
     end
-    local rowh = packed and 46 * F.scale or 26 * F.scale
+    -- How far under the name the packed row's figures start, and what one
+    -- more line of them costs.
+    local PACK_LINE = 20 * F.scale
+    local PACK_STEP = 13 * F.scale
+    -- How many lines that second half comes to. The pieces are the same
+    -- columns on every row and only the figures differ, so the count is taken
+    -- over the whole table and every row is drawn to it: a table whose rows
+    -- changed height as their numbers did would move under the eye while it
+    -- was being read.
+    local pack_lines = 1
+    if packed then
+        local limit = tw - 50 * F.scale
+        for _, r in ipairs(v.rows or {}) do
+            local ux, lines = 0, 1
+            for _, o in ipairs(want) do
+                if o ~= sorted_col then
+                    local pw2 = text_w(o[3](r) .. " " .. o[1], 10 * F.scale)
+                    if ux > 0 and ux + pw2 > limit then
+                        ux, lines = 0, lines + 1
+                    end
+                    ux = ux + pw2 + 12 * F.scale
+                end
+            end
+            pack_lines = math.max(pack_lines, lines)
+        end
+    end
+    local rowh = packed and (33 + 13 * pack_lines) * F.scale or 26 * F.scale
     local ty = y + 14 * F.scale
 
     -- Which week, and what has been typed to narrow it. One line above the
@@ -4579,7 +4610,10 @@ function pages.week(v, x, y, w, h, focused)
     -- back from a week and a phone draws six of them: without this the other
     -- hundred and ninety-four were a table that quietly stopped being the
     -- table.
-    local first_y = ty
+    -- Half a row below the rule, because `ry0` is a row's middle and this is
+    -- the first of them: as the row band's own top it put a two-line row's
+    -- name back through the heading over it.
+    local first_y = ty + rowh / 2
     for i, r in ipairs(v.rows or {}) do
         local ry0 = first_y + (i - 1) * rowh - M.page_scroll
         -- Whole rows only, top and bottom. There is no scissor to clip
@@ -4608,7 +4642,10 @@ function pages.week(v, x, y, w, h, focused)
         -- the one number the table is ordered on, and everything else in the
         -- small face under the name. The rank and the name sit a little above
         -- the middle to make room for it.
-        local namey = packed and (ry0 - 9 * F.scale) or ry0
+        -- Measured off the top of the row rather than its middle, so a row
+        -- carrying two lines of figures under the name grows downward from
+        -- where the name already was instead of sliding the name down.
+        local namey = packed and (ry0 - rowh / 2 + 14 * F.scale) or ry0
         txt(tostring(r.rank or i), x + 6 * F.scale, namey, 11 * F.scale,
             pal.a(pal.DIM, 0.9))
         txt(r.label or "", x + 34 * F.scale, namey, 14 * F.scale,
@@ -4623,19 +4660,30 @@ function pages.week(v, x, y, w, h, focused)
             end
             txt(c[3](r), x + tw - 16 * F.scale, namey, 15 * F.scale,
                 pal.a(shade, 0.95), "right")
-            -- And the rest, left to right under the name, until the line runs
-            -- out. Every column the table has except the one written above,
-            -- so nothing a pilot could sort by is a number they cannot also
-            -- read without sorting by it.
+            -- And the rest under the name, left to right and wrapping when
+            -- the line runs out. Every column the table has except the one
+            -- written above, so nothing a pilot could sort by is a number
+            -- they cannot also read without sorting by it.
+            --
+            -- It stopped at the end of the first line, which was the right
+            -- answer while this row was a phone's reading of a table a
+            -- desktop drew in full: whatever fell off the end was still a
+            -- column somewhere. There is no wide table any more, so falling
+            -- off the end is the number leaving the game. Nine pieces do not
+            -- fit on two lines of 270 points, which is why this wraps as far
+            -- as it needs to rather than to a second line.
             local ux = x + 34 * F.scale
+            local uy = namey + PACK_LINE
             local limit = x + tw - 16 * F.scale
             for _, o in ipairs(want) do
                 if o ~= c then
                     local piece = o[3](r) .. " " .. o[1]
                     local pw2 = text_w(piece, 10 * F.scale)
-                    if ux + pw2 > limit then break end
-                    txt(piece, ux, ry0 + 11 * F.scale, 10 * F.scale,
-                        pal.a(pal.DIM, 0.9))
+                    if ux > x + 34 * F.scale and ux + pw2 > limit then
+                        ux = x + 34 * F.scale
+                        uy = uy + PACK_STEP
+                    end
+                    txt(piece, ux, uy, 10 * F.scale, pal.a(pal.DIM, 0.9))
                     ux = ux + pw2 + 12 * F.scale
                 end
             end
@@ -4734,14 +4782,25 @@ local function thumb(cx, cy, cls, col, scale, turn, detail)
     if h.canopy then trace(h.canopy, 1.0 * F.scale, pal.a(col, 0.55)) end
 end
 
--- The column beside a list: what the row under the cursor would do if you
--- pressed it. The play page is the one that has it, and it is there because a
--- list of two modes across a nine hundred point panel is a page with a hole
--- in it and a question it has not answered.
+-- What the page carries under its rows: the room the column is standing over,
+-- or what the call sign on this page means.
+--
+-- It was a second column beside the list, on the argument that a list of two
+-- modes across a nine hundred point panel is a page with a hole in it. There
+-- is no nine hundred point panel now, and no second column: this follows the
+-- rows down the one column there is.
+--
+-- The rule down its left edge is drawn last and only as deep as the content
+-- came to. Given the room it was handed, an "in this match" with four names
+-- in it hung a rule to the foot of the panel and read as a section that had
+-- failed to draw.
 function pages.aside(a, x, y, w, h)
     if not a then return end
-    vrule(x - 18 * F.scale, y + 6 * F.scale, h - 12 * F.scale,
-          pal.a(pal.RADAR_TILE, 0.45), 18 * F.scale)
+    local function edge(used)
+        vrule(x - 18 * F.scale, y + 6 * F.scale,
+              math.min(used, h) - 12 * F.scale,
+              pal.a(pal.RADAR_TILE, 0.45), 18 * F.scale)
+    end
     lbl(a.head or "", x, y + 16 * F.scale)
     -- The match, where there is one. Read off the same roster the scoreboard
     -- draws from rather than out of a message of its own, which is what the
@@ -4791,6 +4850,7 @@ function pages.aside(a, x, y, w, h)
             end
             ly = ly + 12 * F.scale
         end
+        edge(ly - y)
         return
     end
     txt(a.label or "", x, y + 44 * F.scale, 21 * F.scale,
@@ -4813,6 +4873,8 @@ function pages.aside(a, x, y, w, h)
             ly = ly + 16 * F.scale
         end
     end
+    -- The last word, held to the foot of the room this was given rather than
+    -- run on under the note: it is the sentence about the whole section.
     if a.foot and a.foot ~= "" then
         local ny = y + h - 52 * F.scale
         hrule(x, ny, w - 24 * F.scale)
@@ -4822,7 +4884,9 @@ function pages.aside(a, x, y, w, h)
             txt(line, x, ny, 11 * F.scale, pal.a(pal.DIM, 0.7), nil, nil, true)
             ny = ny + 15 * F.scale
         end
+        ly = math.max(ly, ny)
     end
+    edge(ly - y)
 end
 
 -- --- the hangar ------------------------------------------------------------
@@ -6397,410 +6461,20 @@ end
 -- left, and that you are still in it; on the way in there is a starfield
 -- behind it and the same wash makes the type readable against the stars.
 
--- The help page's keyboard, drawn as a keyboard.
+-- No picture of a keyboard here any more.
 --
--- The controls were a column of sentences, which is a wall of text about a
--- thing everybody already has a picture of under their hands. So the picture
--- is what gets drawn: the board itself, unbound keys as faint outlines and
--- the bound ones lit in the color of what they do, with a legend saying what
--- each color is. A key does not need a caption when the board it sits on
--- says where it is.
+-- The controls page drew one: the board itself, unbound keys as faint outlines
+-- and the bound ones lit in the color of what they do, with every control a
+-- chip under it carrying its key. It wanted width, and on a desktop window
+-- there was a thousand points of it going spare, so the page took 460 more
+-- than any other and drew the picture across them.
 --
--- Widths are in key units so the board scales with the panel. The rows are
--- the standard board's, minus the function row nothing binds.
--- The keys and how wide each one is, and nothing about what any of them
--- does. What a key does is the view's to say now, since it is a pilot's to
--- change; this is the shape of a keyboard, which is not.
-local BOARD = {
-    {{"esc", 1.0}, {"`"}, {"1"}, {"2"}, {"3"}, {"4"}, {"5"}, {"6"}, {"7"},
-     {"8"}, {"9"}, {"0"}, {"-"}, {"="}, {"bksp", 1.0}},
-    {{"tab", 1.5}, {"Q"}, {"W"}, {"E"}, {"R"}, {"T"}, {"Y"}, {"U"}, {"I"},
-     {"O"}, {"P"}, {"["}, {"]"}, {"\\", 1.5}},
-    {{"caps", 1.75}, {"A"}, {"S"}, {"D"}, {"F"}, {"G"}, {"H"}, {"J"}, {"K"},
-     {"L"}, {";"}, {"'"}, {"enter", 2.25}},
-    {{"shift", 2.25}, {"Z"}, {"X"}, {"C"}, {"V"}, {"B"}, {"N"}, {"M"},
-     {","}, {"."}, {"/"}, {"shift", 2.75}},
-    {{"ctrl", 1.6}, {"space", 13.4}},
-}
-
--- Which row of the page sits on which key of the picture, built once per draw.
--- The chips and the board are the same list read two ways, and this is where
--- the second reading happens: one table, so they cannot disagree about where
--- a control is.
---
--- Keyed by what the board writes on a key rather than by the key's own name,
--- because that is what the drawing loop below has in its hand.
---
--- A binding may be a chord, so a key can belong to more than one control:
--- Shift is half of the mine and Tab is the whole of the bomb and half of the
--- mine as well. The shortest chord wins the color, which is the binding a hand
--- falls back to and the one the key would fire on its own; every chord the key
--- is in still counts for the cursor, so resting on the mine brackets both of
--- its keys rather than one.
-local function bind_map(v)
-    local out = {}
-    for i, r in ipairs(v.rows or {}) do
-        for _, id in ipairs(r.keys or {}) do
-            local k = keyset.by_id[id]
-            local at = k and (k.label or k.id)
-            if at then
-                local e = out[at]
-                if not e then
-                    e = {on = {}, n = math.huge}
-                    out[at] = e
-                end
-                -- The shortest chord owns the color: it is the binding the
-                -- key would fire on its own, and the one a hand falls back to.
-                if #r.keys < e.n then e.row, e.n = r, #r.keys end
-                e.on[i] = true
-                -- And whichever chord is asking owns the whole key while it
-                -- is, however long it is. Mines are Shift and Tab, and Tab is
-                -- also the bomb: reading the shortest chord for this left the
-                -- board lighting half the chord it was waiting to be told.
-                if r.arming then e.asking = r end
-            end
-        end
-    end
-    return out
-end
--- Fifteen units of main block, then the navigation cluster beside it, where it
--- is on the keyboard this is a picture of. It used to hang off the right of
--- the two bottom rows, in the space a board that stopped at M left empty; the
--- board runs to the punctuation now and that space is a row of keys.
-local BOARD_MAIN = 15
-local BOARD_GAP = 0.4
-local BOARD_UNITS = BOARD_MAIN + BOARD_GAP + 3
--- How wide the page that draws it may go, against the 460 every other page
--- takes. A menu of six words does not want the room; a picture of a keyboard
--- does, and on a desktop window there is a thousand points of it going spare.
--- The column keeps its left edge and grows to the right, so nothing jumps when
--- the page changes.
--- Everything on the board is sized off the key, so the whole picture scales
--- with the panel rather than a drawing growing around type that does not.
-local KEY_LETTER = 0.40   -- a single character, against key height
-local KEY_WORD = 0.30     -- "shift", "space": the ones that have to fit across
-
--- Hues nothing else in the legend is wearing, which is what a legend needs
--- and all it needs. Multifire takes the add-on color, so the one key that is a
--- gun in a different mode reads as a relative of the guns rather than as a
--- separate weapon.
---
--- Menu had the gray every unbound key is drawn in, brighter. That is not a
--- color, it is the absence of one, and against a board of dead keys in the
--- same hue the lit one did not read as lit at all: the swatch, the word
--- under it and the key itself all looked switched off. Amber instead, which
--- nothing else on this page is wearing.
-local function board_col(cat)
-    if cat == "gun" then return pal.FRIEND end
-    if cat == "multi" then return pal.MOD_COL end
-    if cat == "bomb" then return pal.BOMB end
-    if cat == "charge" then return pal.CHARGE_COL end
-    if cat == "fly" then return pal.INK end
-    if cat == "players" then return pal.DOOR end
-    if cat == "map" then return pal.HOLE end
-    if cat == "menu" then return pal.ENEMY end
-    -- The one key that explains the rest of them, in the ink the interface
-    -- names things with. It opens a slab of words rather than a panel.
-    if cat == "help" then return pal.PANEL_INK end
-    return nil
-end
-
--- One key: an outline in its function's color with a hint of fill, or a
--- faint outline for a key the game does not use. `cy` is the row's top.
---
--- `dimmed` is Ctrl and nothing else: a gun the browser only surrenders in
--- fullscreen, drawn at half light so the board says "sometimes" without a
--- footnote on it. It is not in the list of controls because it cannot be
--- moved, so the picture is the only thing that knows about it.
-local function board_key(bx, cy, kw, kh, label, cat, dimmed)
-    local col = board_col(cat)
-    if col and not dimmed then
-        rect(bx, cy, kw, kh, pal.a(col, 0.10))
-        F.layer:frame(bx, ry(cy, kh), kw, kh, 1.1 * F.scale, pal.a(col, 0.85))
-    elseif col then
-        -- Ctrl: a gun the browser only surrenders in fullscreen, drawn at
-        -- half light so the board says "sometimes" without a footnote on it.
-        F.layer:frame(bx, ry(cy, kh), kw, kh, 1.1 * F.scale, pal.a(col, 0.35))
-    else
-        F.layer:frame(bx, ry(cy, kh), kw, kh, 0.8 * F.scale, pal.a(pal.DIM, 0.22))
-    end
-    if label then
-        local size = kh * (#label > 1 and KEY_WORD or KEY_LETTER)
-        -- A word on a one-unit key would run over both its edges, so it takes
-        -- whichever is smaller: the key's height or the room across it.
-        local across = (kw - 6 * F.scale) / (#label * ADVANCE)
-        if size > across then size = across end
-        local ink = col and pal.a(col, dimmed and 0.5 or 0.95)
-            or pal.a(pal.DIM, 0.4)
-        txt(label, bx + kw / 2, cy + kh / 2, size, ink, "center")
-    end
-end
-
--- A direction, as a triangle, because the gui font's charset is picked over
--- and an arrow glyph it does not carry would draw as nothing.
-local function board_arrow(cx, cy, dx, dy, col)
-    local r = 3.6 * F.scale
-    F.layer:tri(cx + dx * r, ry(cy + dy * r),
-          cx - dx * r + dy * r, ry(cy - dy * r - dx * r),
-          cx - dx * r - dy * r, ry(cy - dy * r + dx * r), col)
-end
-
--- The whole board, drawn into the panel at `x, top`, `w` wide. Returns its
--- height so the caller can size the panel around it.
-local function board(x, top, w, v)
-    v = v or {}
-    local on = bind_map(v)
-    -- While a control is waiting for a key, every other key is a place it
-    -- could land, so the board stops saying what it holds and starts saying
-    -- what is free: everything drops to the outline an unbound key wears and
-    -- the only lit thing left is the one that is asking.
-    local arming = v.arming
-    local unit = w / BOARD_UNITS
-    local kh = unit * 0.82
-    local pitch = kh + 3 * F.scale
-    -- Which key the picture puts a bracket round, and which one stays lit
-    -- while everything else goes dark. Resting, both are the cursor. Asking,
-    -- both are the control that is asking, which is the row's own flag rather
-    -- than the cursor: they are the same row in the game, and reading the
-    -- cursor for it would let the page light one key while the chip with the
-    -- empty slot in it was somewhere else.
-    local function state_of(hit_row)
-        if not hit_row then return false, false end
-        if arming then
-            local asking = hit_row.asking ~= nil
-            return asking, asking
-        end
-        -- `on` is every row this key is part of, so a key that is a modifier
-        -- for one control and the whole of another lights under the cursor of
-        -- either. The color still comes from the shortest of them.
-        return hit_row.on[v.sel] == true, false
-    end
-
-    -- Whether the cursor is on this key, and which control's color it wears.
-    -- A nil color is a key drawn dark. `force` is for the one key whose color
-    -- does not come from the list; it still goes out with the rest of them
-    -- while a binding is being asked for.
-    --
-    -- Both halves of the board ask this: the main block below and the arrow
-    -- cluster under it, which drew its keys differently and worked out their
-    -- state identically. Chords had to be taught to both, one line each, and
-    -- the arrows would have been the copy somebody missed.
-    local function key_look(label, force)
-        local hit_row = on[label]
-        local sel, keep = state_of(hit_row)
-        local cat = hit_row and hit_row.row.cat
-        if keep and hit_row.asking then cat = hit_row.asking.cat end
-        if force then cat = force end
-        if arming and not keep then cat = nil end
-        return sel, cat
-    end
-
-    -- The cursor: the same chamfered bracket that holds a cluster together
-    -- everywhere else, round the key whose chip the cursor is on. Not a
-    -- second color, so the key goes on saying what it does.
-    local function key_cursor(bx, cy, kw)
-        bracket(bx - 3 * F.scale, cy - 3 * F.scale, kw + 6 * F.scale, kh + 6 * F.scale,
-                pal.a(pal.INK, arming and 0.95 or 0.7), 9 * F.scale, 3 * F.scale)
-    end
-
-    local function draw(bx, cy, kw, label)
-        -- Ctrl is the one key on the board whose control is not in the list:
-        -- it fires guns, it cannot be moved, and the browser only surrenders
-        -- it in fullscreen. So the picture carries it on its own, at half
-        -- light, which is the board saying "sometimes" without a footnote.
-        local sel, cat = key_look(label, label == "ctrl" and "gun" or nil)
-        board_key(bx, cy, kw, kh, label, cat, label == "ctrl")
-        if sel then key_cursor(bx, cy, kw) end
-        -- And the key itself is the control. A picture of a keyboard with a
-        -- list of keys under it, where only the list answers a click, is a
-        -- diagram somebody has to be told is not the thing.
-        local k = keyset.by_label[label]
-        if k and keyset.bindable(k.id) then
-            hit(bx, cy, kw, kh, "key", k.id)
-        end
-    end
-    for r, row in ipairs(BOARD) do
-        local bx = x
-        local cy = top + (r - 1) * pitch
-        for _, k in ipairs(row) do
-            local kw = (k[2] or 1) * unit - 3 * F.scale
-            draw(bx, cy, kw, k[1])
-            bx = bx + (k[2] or 1) * unit
-        end
-    end
-    -- Page Up and Page Down, in the right column above the arrows. The other
-    -- navigation keys do nothing in this game, so drawing their empty caps
-    -- would spend room on a diagram nobody can use.
-    local aw = unit
-    local ax = x + (BOARD_MAIN + BOARD_GAP) * unit
-    local navw = aw - 3 * F.scale
-    draw(ax + 2 * aw, top, navw, "pgup")
-    draw(ax + 2 * aw, top + pitch, navw, "pgdn")
-    -- The arrows, as the inverted T they are on the board: up over down, in
-    -- the corner the two bottom rows leave empty. Each entry is a column, a
-    -- row off the shift row, and the direction its triangle points.
-    for _, d in ipairs({{1, 0, 0, -1, "up"}, {0, 1, -1, 0, "left"},
-                        {1, 1, 0, 1, "down"}, {2, 1, 1, 0, "right"}}) do
-        local kx = ax + d[1] * aw
-        local cy = top + (3 + d[2]) * pitch
-        local kw = aw - 3 * F.scale
-        local sel, cat = key_look(d[5])
-        local col = board_col(cat)
-        if col then
-            rect(kx, cy, kw, kh, pal.a(col, 0.08))
-            F.layer:frame(kx, ry(cy, kh), kw, kh, 1.1 * F.scale, pal.a(col, 0.75))
-            board_arrow(kx + kw / 2, cy + kh / 2, d[3], d[4], pal.a(col, 0.95))
-        else
-            F.layer:frame(kx, ry(cy, kh), kw, kh, 0.8 * F.scale, pal.a(pal.DIM, 0.22))
-            board_arrow(kx + kw / 2, cy + kh / 2, d[3], d[4],
-                        pal.a(pal.DIM, 0.4))
-        end
-        if sel then key_cursor(kx, cy, kw) end
-        hit(kx, cy, kw, kh, "key", d[5])
-    end
-
-    return 5 * pitch + 2 * F.scale
-end
-
--- What the board will ask for, so the panel can be sized before drawing it.
--- Five rows of keys and the gap under them, which is every term the drawing
--- uses, in the order it uses them.
-local function board_height(w)
-    local kh = (w / BOARD_UNITS) * 0.82
-    return 5 * (kh + 3 * F.scale) + 2 * F.scale
-end
-
--- Every control, with the key it is on, under the picture of the board.
---
--- The board alone cannot answer "where is my second charge": two charge keys
--- share one color on it, and a key is under thirty points across at the widest
--- this page ever draws it, which has no room for a word under the letter. So
--- the page keeps both, and they are the same list drawn twice on purpose. The
--- board says where the hand goes; the chips say what each key is for and are
--- where one is changed.
---
--- Three columns, because the full list down one column is a list that scrolls,
--- and a list scrolling under a picture is no longer the same page as the
--- picture: you would be moving the answers past a diagram that stayed still.
--- The chip grid's numbers and the arithmetic over them, on one table.
---
--- This chunk sits at the two hundred local ceiling a Lua function has, and
--- the house answer is to gather a coherent group onto one name, since a table
--- is one local however much it holds. See client/tests/upvalues_test.lua.
-local CHIP = {
-    cols = 3,
-    row = 26,            -- * S
-    -- Between the last row of keys and the first row of chips.
-    gap = 18,            -- * S
-}
-
--- How many columns a width will carry. Three where there is room, and fewer
--- where there is not: a phone's stage is about 340 points across, and
--- "Previous player" with the key it is bound to beside it is 150 of them, so
--- three columns there was three chips written over each other and the reset
--- button drawn on top of the one before it.
-function CHIP.of(w)
-    return math.max(1, math.min(CHIP.cols,
-                                math.floor(w / (172 * F.scale))))
-end
-
-function CHIP.lines(n, w)
-    return math.ceil(n / CHIP.of(w))
-end
-
--- `rh` is a row's height, which the caller works out rather than this: what
--- the board can give up and what the chips need are one sum, and it is done
--- once where the page is measured.
-function CHIP.draw(x, top, w, v, rh)
-    local cols = CHIP.of(w)
-    local cw = w / cols
-    -- Type off the row, the same way the board sizes a letter off its key, so
-    -- a page squeezed into a short window comes out smaller rather than
-    -- overlapping itself.
-    local fs = math.min(12.5 * F.scale, rh * 0.48)
-    -- And off the column as well. The key beside a name was already set down
-    -- until the pair fitted, but the name itself never was, so a long one ran
-    -- under the chip in the next column rather than into the gap. Measured
-    -- against the longest label on the page, so the grid stays one size.
-    local longest = 0
-    for _, r in ipairs(v.rows) do
-        if not r.reset then
-            longest = math.max(longest, glyph_w(r.label or "", fs))
-        end
-    end
-    local budget = cw - 15 * F.scale - 34 * F.scale - 10 * F.scale
-    while fs > 8 * F.scale and longest > budget do
-        fs = fs * 0.94
-        longest = longest * 0.94
-    end
-    for i, r in ipairs(v.rows) do
-        local cx = x + ((i - 1) % cols) * cw
-        local cy = top + math.floor((i - 1) / cols) * rh
-        local hot = i == v.sel
-        if hot then
-            rect(cx - 6 * F.scale, cy, cw - 4 * F.scale, rh,
-                 pal.a(pal.FRIEND, r.arming and 0.22 or 0.16))
-        end
-        local hue = board_col(r.cat) or pal.DIM
-        -- The row that puts everything back is not a control. It wore no
-        -- swatch and was otherwise a row like the twenty above it, at the end
-        -- of a grid of them, which is a button nobody could find: it is drawn
-        -- as one now, framed and centered and saying the word somebody would
-        -- be looking for.
-        if r.reset then
-            local bh = math.min(rh - 6 * F.scale, 30 * F.scale)
-            local by = cy + (rh - bh) / 2
-            local bw = cw - 16 * F.scale
-            rect(cx, by, bw, bh, pal.a(pal.DIM, hot and 0.16 or 0.07))
-            -- The one button that keeps the chamfered bracket, against the
-            -- rule the rest of them follow: this page draws a keyboard, and a
-            -- stroked box on it is a key. See `key_box`.
-            bracket(cx, by, bw, bh, pal.a(pal.DIM, hot and 0.9 or 0.45),
-                    11 * F.scale)
-            lbl(r.label or "", cx + bw / 2, by + bh / 2 + 3 * F.scale,
-                pal.a(pal.INK, hot and 1 or 0.75), "center", fs * 0.8)
-            if r.pick then hit(cx, by, bw, bh, "stage", i) end
-            hue = nil
-        end
-        if hue then
-        rect(cx, cy + rh / 2 - 3.5 * F.scale, 7 * F.scale, 7 * F.scale,
-             pal.a(hue, hot and 1 or 0.8))
-        txt(r.label or "", cx + 15 * F.scale, cy + rh / 2, fs,
-            pal.a(pal.INK, hot and 1 or 0.8), nil, MENU_FONT)
-        -- The key, in the face the numbers in flight are set in, because it is
-        -- a reading off the machine rather than a word anybody chose. Verbatim
-        -- for the same reason: "Esc" is what is written on the key.
-        --
-        -- While this one is asking, the column is empty and lit. The row that
-        -- wants a key is the row with no key in it, and the sentence saying so
-        -- is at the foot of the page rather than in a column too narrow to
-        -- hold it.
-        if r.arming then
-            local slot = 18 * F.scale
-            rect(cx + cw - 26 * F.scale - slot, cy + rh / 2 - 1 * F.scale, slot, 2 * F.scale,
-                 pal.a(hue, 0.55 + 0.45 * math.sin(F.now * 6)))
-        elseif r.detail then
-            -- A control that cannot move is written in the shade every
-            -- unpressable thing here is written in, which says so without a
-            -- word for it.
-            local ink = r.fixed and pal.DIM or hue
-            -- A chord is three or four times as wide as a key, and the name
-            -- it has to sit beside does not get any shorter for it. Set down
-            -- until the pair fits rather than letting one run under the other,
-            -- which is what the board does to a word on a one-unit key.
-            local ks = fs
-            local room = cw - 26 * F.scale - 15 * F.scale - glyph_w(r.label or "", fs)
-                - 10 * F.scale
-            while ks > fs * 0.6 and glyph_w(r.detail, ks) > room do
-                ks = ks * 0.94
-            end
-            txt(r.detail, cx + cw - 26 * F.scale, cy + rh / 2, ks,
-                pal.a(ink, hot and 1 or 0.75), "right", nil, true)
-        end
-        if r.pick then hit(cx - 6 * F.scale, cy, cw - 4 * F.scale, rh, "stage", i) end
-        end
-    end
-end
+-- The menu is one column at a phone's measure now, and a board drawn across
+-- 362 points comes out with 15-point keys: a picture of a keyboard nobody can
+-- read is worse than no picture. What the page carries instead is what a phone
+-- has always had and what the chips were saying anyway, a row per control with
+-- the key it is on at the end of it, drawn by the same list every other page
+-- in this menu is drawn by. See .design/menu-unify.
 
 -- --- the menu -------------------------------------------------------------
 --
@@ -7756,15 +7430,20 @@ end
 
 -- --- the whole thing -------------------------------------------------------
 
--- How much larger the menu sets its type than the arena does.
+-- How wide the menu is, in points, wherever it is drawn.
 --
--- One number rather than a hundred edited literals, and it works because every
--- size in this file is written in points times `F.scale`: raising the scale
--- for the duration of the menu grows the type and the rows and the gaps
--- together, so nothing drifts out of alignment the way a text-only multiplier
--- would. The arena keeps its own scale, because a HUD read at a glance mid
--- fight wants a different size from a page read while parked.
-local MENU_ZOOM = 1.18
+-- A phone's own measure, which is what makes one drawing serve three windows:
+-- every page in here was already laid out to survive 390 points, because a
+-- phone held upright is 390 points and the menu had to fit one. What the wider
+-- windows were doing with the rest of the screen was a second layout nobody
+-- was looking at, since the fight is what a player watching wants the glass
+-- for. A window narrower than this gives the column everything it has.
+--
+-- The menu used to set its type 1.18 times the arena's on a window with room
+-- for it, which is what a panel that is the whole window wants and the wrong
+-- answer for a column at a phone's width: the sizes in here are a phone's
+-- already. See .design/menu-unify.
+local DOCK_W = 390
 
 function M.menu(v)
     F.case = "sentence"
@@ -7776,34 +7455,33 @@ function M.menu(v)
     -- every mesh whatever is laid on top afterwards.
     F.text_dim = v.ask and 0.1 or 1
     local pts_w, pts_h = F.w / F.scale, F.h / F.scale
-    -- Two questions about the window rather than one, because a window has
-    -- two dimensions and this asked about width alone.
+    -- Where the column stands, which is the whole of the menu's layout.
     --
-    -- `narrow` is where the tabs go: a bar along the bottom under a thumb, or
-    -- a row across the top. That is a question about width, since what it
-    -- decides is whether five words fit beside a wordmark. 620 points is
-    -- where they stop.
+    -- It is drawn at a phone's own measure wherever it stands: a head carrying
+    -- the name and the call sign, the page under it, and the way in over the
+    -- six stops at its foot. A window narrower than that measure gives it
+    -- everything, which is what a phone held upright already did. A window
+    -- wider docks it against the left edge and keeps the fight beside it, so
+    -- a ship or a zone can be changed without leaving the stands.
     --
-    -- `short` is whether there is height to spend, and it is the one that was
-    -- missing. A phone held sideways is 844 points wide and 390 tall, which
-    -- is how anybody plays a game like this: it passes the width test, takes
-    -- the desktop, and a desktop page set in desktop type does not fit in 390
-    -- points. Every page lost its bottom half.
-    local narrow = pts_w < 620
+    -- There were two layouts here, a tab bar under a thumb below 620 points
+    -- and a row of words across the top above it, and they disagreed about
+    -- where the tabs went, what the type was set in, and whether there was a
+    -- second column. One drawing stood in one place is what replaces them.
+    -- See .design/menu-unify.
+    local dx = F.safe_l
+    local dock = math.min(DOCK_W * F.scale, F.w - F.safe_l - F.safe_r)
+    -- Whether the column is the window. The one thing still worth asking about
+    -- shape: what it decides is whether there is a fight beside the column for
+    -- the wash to stay off, and whether the column's right edge needs a rule
+    -- to say where it ends.
+    local covers = dock >= F.w - F.safe_l - F.safe_r - F.scale
+    -- Whether there is height to spend. A phone held sideways is 390 points
+    -- tall, and the head and the foot take a third of that before a page is
+    -- drawn, so what is left over decides whether anything but the page fits.
     local short = pts_h < 500
-    local tall = pts_h >= 430
-    -- Only where there is room for it. A phone is already showing as much as
-    -- it can and zooming would fit less; a desktop has the whole window and
-    -- was setting a page in type meant for a HUD. A phone on its side is
-    -- neither, and it was being zoomed.
-    if not narrow and not short then F.scale = F.scale * MENU_ZOOM end
     local rail = v.rail or {}
     local n = #rail
-    -- Is there a game behind this, or the starfield. Every measurement below
-    -- that depends on the window depends on this and on nothing else, so the
-    -- rail and the stage are in the same place on every screen of the menu:
-    -- what changes as you move around is what is written in them.
-    local home = v.home
     -- The roster of the room the menu is standing over, for the column beside
     -- the page. The scoreboard fills this list while a client is in a game
     -- and the arena draws no instruments of its own behind a menu opened from
@@ -7813,227 +7491,184 @@ function M.menu(v)
                         v.arena.side, v.pilot and v.pilot.name)
     end
 
+    -- The column stands over whatever the interface drew under it, so the
+    -- boxes that furniture published have to go with the pixels. `M.pick`
+    -- breaks a tie on publish order and the HUD publishes first, so a box
+    -- covered by the column still wins the press that landed on the column:
+    -- a hand reaching for the head of this panel would have found the MENU
+    -- key underneath it and shut the thing it was aiming at.
+    --
+    -- Boxes the column covers outright, which is the honest reading of what a
+    -- panel over something does. One that runs past the column's edge keeps
+    -- the part of itself that is still showing, and answers there.
+    local kept = {}
+    for _, r in ipairs(M.hits) do
+        if r.x < dx - F.scale or r.x + r.w > dx + dock + F.scale then
+            kept[#kept + 1] = r
+        end
+    end
+    M.hits = kept
+
     -- Not a curtain. Over an arena you can see the fight you left, and that
     -- you are still in it. There is always one behind this now: the stands
     -- are the front end, so a menu opened there is a panel over a room like
     -- any other, and the wash that used to be lighter over a starfield has
     -- one weight because there is one thing it is ever drawn over.
     local reading = v.door or v.table or v.social or v.shop or v.item
-        or v.settings or v.board or v.at == "about" or v.at == "pilot"
-    local base = reading and 0.84 or 0.78
-    rect(0, 0, F.w, F.h,
-         pal.rgb(0x03050a, math.min(narrow and (base + 0.06) or base, 0.92)))
+        or v.settings or v.at == "controls" or v.at == "about"
+        or v.at == "pilot"
+    -- The ground under the column, and nothing outside it. The wash used to
+    -- take the window, which is what a panel that is the window wants and the
+    -- wrong answer for one standing beside a fight: everything that is not
+    -- the column is the game, drawn at the weight the people in it see.
+    local base = reading and 0.9 or 0.86
+    rect(dx, 0, dock, F.h, pal.rgb(0x03050a, base))
+    -- Where the column stops, said out loud. Only where something else is
+    -- showing: a rule down the edge of a window is a rule against nothing.
+    if not covers then
+        F.layer:seg(dx + dock, ry(0), dx + dock, ry(F.h), F.scale,
+                    pal.a(pal.RADAR_TILE, 0.6), true)
+    end
 
-    -- Forty points of margin is a desktop's; on a phone on its side it is a
-    -- tenth of the height gone before anything is drawn.
-    local margin = ((narrow or short) and 18 or 40) * F.scale
-    -- Room over the block for the name, wherever the menu is. It was kept for
-    -- the home screen alone, so the same menu opened mid-fight opened without
-    -- the one thing on it that says what this is.
-    local head = (narrow and 54 or 76) * F.scale
+    -- What the column keeps off its own edges.
+    local margin = 14 * F.scale
+    -- The head: the name at one end of that line and the call sign at the
+    -- other. Inside the top inset rather than under it, because a notch over
+    -- a wordmark is a wordmark nobody can read.
+    local head = (short and 48 or 56) * F.scale
+    -- The foot: the six stops, on the bottom edge, with the surface running
+    -- under the home indicator and only the marks and words held clear of it.
+    -- The height a phone's tab bar already had, because that is what the
+    -- clearance under the labels is measured against and those numbers were
+    -- settled against real insets. See client/tests/safe_test.lua.
+    local foot = 78 * F.scale
 
     local rx, ry_, rw, rh          -- the rail
-    local icon_dy                  -- the icon's drop inside it, narrow only
-    -- Where the corner buttons begin, so the tab row knows where to stop.
+    local icon_dy                  -- the mark's drop inside it
+    -- Where the corner buttons begin, so the head knows where the name stops.
     local corner_left
     local sx, sy, sw, sh           -- the stage
-    local logo_y                   -- the middle of the name, both layouts
+    local logo_y                   -- the middle of the name
     -- What the panel covers, name included: everything a press may land on
     -- without meaning to leave. Published as one box at the end, so the
     -- gaps between rows are not a way out of the menu.
     local px0, py0, px1, py1
-    -- Two arrangements, and both put the tabs in a row.
-    --
-    -- On top where there is room to read a page under them, which is what
-    -- `match-game.md` asks for and what the in-match surface needs: the same
-    -- chrome in both places, so a player learns one screen and meets it twice.
-    -- On the bottom edge of a phone, where a thumb has to reach them.
+    -- One arrangement, and it puts the tabs in a row along the foot of the
+    -- column, where a thumb reaches them and where a desktop reads them as
+    -- the bottom of a panel rather than the top of a bar.
     --
     -- The rail was a column down the left for a long time, with the page
-    -- beside it. That was the right shape while the pages were lists of a few
-    -- rows each; the ship page and upgrades are grids, and a grid in the two
-    -- thirds of a window left over from a rail is a grid with no room in it.
-    -- `vertical` stays as a name because the drawing below still asks, and it
-    -- is false everywhere now.
-    local vertical = false
-    -- How far a lit tab's field reaches past its mark. Down to the edge of
-    -- the screen on a phone, so the lit stop is a tab reaching the bottom of
-    -- the glass rather than a panel floating over the indicator; down to the
-    -- rule under the row where the tabs are on top.
+    -- beside it, and then a row that changed ends depending on the window.
+    -- How far a lit tab's field reaches past its mark: down to the bottom
+    -- edge, so the lit stop is a tab reaching the end of the glass rather
+    -- than a panel floating over the indicator.
     local tab_h
 
-    if narrow then
-        rh = (home and 78 or 84) * F.scale
-        rw = F.w - F.safe_l - F.safe_r - 2 * margin
-        rx = F.safe_l + margin
-        -- A tab bar, sitting where one sits: on the bottom edge, with the
-        -- surface running under the home indicator and only the icons and
-        -- words held clear of it.
+    rh = foot
+    rw = dock
+    rx = dx
+    -- The tab bar sits on the bottom edge, with the surface running under the
+    -- home indicator and only the marks and words held clear of it.
+    --
+    -- The inset stands in for the padding the block already keeps rather than
+    -- stacking on top of it. Stepping the whole rail up by the whole inset put
+    -- the words 56 points off the bottom of a phone, which is the same
+    -- interface-come-loose-from-the-edge the page margin used to give, and is
+    -- what a hardware inset looks like when it is added to a gap that was
+    -- already there.
+    --
+    -- The full-height iPhone canvas puts the rail on the physical bottom edge,
+    -- so lift its furniture ten points in portrait and let the labels off the
+    -- glass. The rail surface and hit targets still run to the edge.
+    local portrait_lift = pts_h > pts_w and 10 * F.scale or 0
+    local base_icon_dy = 30 * F.scale
+    icon_dy = base_icon_dy - portrait_lift
+    local under = rh - base_icon_dy - 24 * F.scale
+    if F.installed then
+        -- Installed, the padding under the words is measured against the
+        -- indicator rather than against the rail, because the indicator is the
+        -- only thing down there and the rail's own idea of a bottom margin was
+        -- written for a row with a toolbar under it. Two thirds of the strip
+        -- is what the bar and its own margin take; the rest was the row
+        -- sitting higher than it had to, and it goes back. On a large phone
+        -- the rail's padding grows with the interface while the indicator
+        -- stays 34 points whatever the screen, so this gives back more the
+        -- bigger the phone, which is where the gap looked worst.
         --
-        -- The inset stands in for the padding the block already keeps rather
-        -- than stacking on top of it. Stepping the whole rail up by the whole
-        -- inset put the words 56 points off the bottom of a phone, which is
-        -- the same interface-come-loose-from-the-edge the page margin used to
-        -- give, and is what a hardware inset looks like when it is added to a
-        -- gap that was already there.
-        --
-        -- The full-height iPhone canvas puts the rail on the physical bottom
-        -- edge now. Lift its furniture ten points in portrait so the labels do
-        -- not sit against the glass. The rail surface and hit targets still run
-        -- to the edge, and landscape keeps its existing vertical rail.
-        local portrait_lift = pts_h > pts_w and 10 * F.scale or 0
-        local base_icon_dy = (home and 30 or 32) * F.scale
-        icon_dy = base_icon_dy - portrait_lift
-        local under = rh - base_icon_dy - 24 * F.scale
-        if F.installed then
-            -- Installed, the padding under the words is measured against the
-            -- indicator rather than against the rail, because the indicator
-            -- is the only thing down there and the rail's own idea of a
-            -- bottom margin was written for a row with a toolbar under it.
-            -- Two thirds of the strip is what the bar and its own margin
-            -- take; the rest was the row sitting higher than it had to, and
-            -- it goes back. On a large phone the rail's padding grows with
-            -- the interface while the indicator stays 34 points whatever the
-            -- screen, so this gives back more the bigger the phone, which is
-            -- where the gap looked worst.
-            --
-            -- Never more than the indicator itself, because the give-back is
-            -- measured against it and a device reporting no inset has nothing
-            -- to measure. Without that cap the arithmetic cancelled exactly at
-            -- SB = 0: the whole of the rail's padding went back, which put the
-            -- middle of the words on the bottom edge of the screen and cut
-            -- every label in half. An Android PWA with button navigation
-            -- reports no inset, and so does a phone with a home button.
-            ry_ = F.h - rh + math.max(0, math.min(F.safe_b, under - F.safe_b * 0.56))
-        else
-            ry_ = F.h - rh - math.max(0, F.safe_b - under)
-        end
-        sx, sw = F.safe_l + margin, rw
-        -- Under the chip row over a game: MENU and PLAYERS hold the top left
-        -- corner while the arena is live, and the name drawn into them is two
-        -- things in one place.
-        local chip = home and 0 or 34 * F.scale
-        sy = F.safe_t + margin + head + chip
-        sh = ry_ - 20 * F.scale - sy
-        -- Down to the bottom edge, rather than to the rail plus a margin
-        -- that is no longer there: the wash is what the panel sits on, and a
-        -- strip of bare arena under the rail reads as the panel having come
-        -- loose from the screen.
-        rect(0, sy - 16 * F.scale, F.w, F.h - (sy - 16 * F.scale),
-             pal.rgb(0x03050a, 0.5))
-        logo_y = F.safe_t + margin + chip + 22 * F.scale
-        -- The pair first, so the name knows what room is left.
-        --
-        -- A phone had neither of these anywhere. The account was reachable
-        -- only from a corner that a phone does not draw, so there was no way
-        -- to the pilot page at all, and Discord was a row on the play page,
-        -- which is a different answer on each layout for one question. The
-        -- line the wordmark sits on is 54 points tall and carried one word:
-        -- this is where they go.
-        --
-        -- Not over a game. The way out and the chip row hold that corner
-        -- while an arena is live, which is the same rule the desktop keeps.
-        local logo_px = 30 * F.scale
-        if not v.closable then
-            corner_left = pages.corner(v, rx + rw, logo_y, true)
-            -- The wordmark gives, because it is a picture of a name everybody
-            -- reading this screen has already read, and a call sign in a pill
-            -- is not. Down two points at a time to a floor rather than
-            -- squeezed to fit: below about twenty the mark beside it stops
-            -- being a mark.
-            while logo_px > 21 * F.scale
-                  and rx + M.wordmark_w(logo_px) > corner_left - 12 * F.scale do
-                logo_px = logo_px - 2 * F.scale
-            end
-        end
-        M.wordmark(rx, logo_y, logo_px)
-        -- The whole screen from the name down. A phone's menu is the screen,
-        -- so there is next to nothing outside it, which is the right answer
-        -- there: the way out is the x and the lit rail stop.
-        px0, py0 = 0, logo_y - 20 * F.scale
-        px1, py1 = F.w, F.h
-        F.layer:seg(rx, ry(ry_ - 12 * F.scale), F.w - F.safe_r - margin, ry(ry_ - 12 * F.scale),
-              1.0 * F.scale, pal.a(pal.RADAR_TILE, 0.6), true)
-
-        tab_h = F.h - ry_
+        -- Never more than the indicator itself, because the give-back is
+        -- measured against it and a device reporting no inset has nothing to
+        -- measure. Without that cap the arithmetic cancelled exactly at
+        -- SB = 0: the whole of the rail's padding went back, which put the
+        -- middle of the words on the bottom edge of the screen and cut every
+        -- label in half. An Android PWA with button navigation reports no
+        -- inset, and so does a phone with a home button.
+        ry_ = F.h - rh + math.max(0, math.min(F.safe_b, under - F.safe_b * 0.56))
     else
-        -- The whole window, less the margin. It was capped at 940 by 620 and
-        -- centred, which on a desktop is a small box in the middle of a large
-        -- screen: the panel is the page, and a page that leaves two thirds of
-        -- the monitor showing the starfield is a dialog pretending to be one.
-        --
-        -- Rows keep their own measure further down, so filling the block does
-        -- not put a name at one edge of a monitor and its value at the other.
-        -- What the extra room buys is the aside beside the list, the card grid
-        -- three or four across instead of two, and the hangar's ship drawn at
-        -- a size worth looking at.
-        local total = F.w - F.safe_l - F.safe_r - 2 * margin
-        local x0 = F.safe_l + margin
-        -- Clear of what the ship is carrying. Over a game the corner stack
-        -- holds the left edge, and a centered block lands right on it.
-        if not home then
-            x0 = math.max(x0, F.safe_l + 124 * F.scale)
-            total = math.min(total, F.w - F.safe_r - x0 - margin)
-        end
-        rx, rw = x0, total
-        -- One row across the top: the mark, the tabs, and at the far end the
-        -- pilot and what they have to spend. The name used to stand on a line
-        -- of its own above the block, which cost 76 points of height to say
-        -- something the mark already says, and left the right-hand end of the
-        -- row empty on every page.
-        rh = 56 * F.scale
-        icon_dy = 21 * F.scale
-        -- The row sits on the top edge of the window rather than a margin
-        -- down from it, and its ground and its rule run the whole width. A
-        -- bar is a bar: inset on three sides it was a floating strip with
-        -- arena showing above it and a rule that stopped short of both ends.
-        -- Only its type keeps the block's margin, which is what lines the
-        -- wordmark up with the page under it.
-        local top = F.safe_t
-        ry_ = top
-        sx, sw = x0, total
-        sy = top + rh + 10 * F.scale
-        sh = F.h - margin - sy
-        tab_h = rh
-        logo_y = top + rh / 2
-        -- Its own ground, under the rule and over the fight: enough that a
-        -- row of words reads across a starfield or a kill feed, and not so
-        -- much that the game stops showing through it.
-        rect(0, 0, F.w, sy - 6 * F.scale, pal.rgb(0x03050a, 0.55))
-        M.wordmark(x0, logo_y, (tall and 26 or 22) * F.scale)
-        -- What you are reading, laid over what you are not. A wash rather
-        -- than a panel: no border, no corners, just enough that the type sits
-        -- on something and the arena stays visible round the edges of it.
-        rect(x0 - 18 * F.scale, sy - 6 * F.scale, total + 36 * F.scale,
-             sh + 18 * F.scale, pal.rgb(0x03050a, 0.5))
-        px0, py0 = 0, 0
-        px1, py1 = F.w, sy + sh + 12 * F.scale
-        -- The rule the whole thing hangs off, under the tabs rather than
-        -- between a rail and a stage. The map border's own tick, which is
-        -- what every rule in this interface is made of. Edge to edge, since
-        -- it is the underside of a bar rather than the top of a panel.
-        hrule(F.safe_l, sy - 6 * F.scale, F.w - F.safe_l - F.safe_r)
-        -- The far end of the row. Who you are and what you have to spend, in
-        -- the slot a match fills with the score: whatever you are inside, the
-        -- right-hand end of this row says how you are doing in it.
-        -- Only where the corner is free. Over a game the way out lives there,
-        -- and the arena's own topbar is already carrying the score, so a name
-        -- and a wallet would be a third thing in a corner that has two.
-        if not v.closable then
-            -- No wallet here. It stood in this corner on every page, which is
-            -- five pages where it is a number with nothing to do and one where
-            -- it is the number you are spending. It is on the ship page's own
-            -- line now, beside the budget it trades against.
-            --
-            -- Two buttons instead, the same shape: where you are signed in as,
-            -- and the way out to where the talking happens. The name used to
-            -- be type with a mark beside it and a rule under it when the
-            -- pointer landed, which is three different ways of saying "this is
-            -- pressable" and none of them the way anything else in this corner
-            -- says it. The mark is gone with them.
-            corner_left = pages.corner(v, x0 + total, logo_y)
-        end
+        ry_ = F.h - rh - math.max(0, F.safe_b - under)
     end
+    tab_h = F.h - ry_
+    -- A rule across the top of the stops, which is what separates the row
+    -- from the page over it.
+    hrule(dx, ry_, dock)
+
+    -- The way in, on the line above the stops.
+    --
+    -- Only from the stands, which is the one place there is a room to be got
+    -- into: in a match this column's own row ends in `leave`, and a key
+    -- offering to deploy into the fight you are already in is a key that
+    -- means nothing. `deploy_y` stays nil otherwise and the page takes the
+    -- height back.
+    --
+    -- It exists because the column covers PLAY NOW. The landing draws the
+    -- name and that key over the foot of the glass, and `M.hud` stands the
+    -- whole block down while the menu is up; without a key here, a player who
+    -- opened this to change a ship would have to walk back to the games list
+    -- to get into the game already playing behind it. Same act, same word the
+    -- deck used, and it presses the same `play_now` the landing's key does.
+    local deploy_h, deploy_y
+    if v.scenery then
+        deploy_h = 44 * F.scale
+        deploy_y = ry_ - 14 * F.scale - deploy_h
+    end
+
+    -- The head, and the page between the two.
+    local hy = F.safe_t
+    logo_y = hy + head / 2
+    sx, sw = dx + margin, dock - 2 * margin
+    sy = hy + head + 8 * F.scale
+    sh = (deploy_y or ry_) - 14 * F.scale - sy
+    -- A rule under the head, so the name and the call sign read as a bar over
+    -- the page rather than as the page's own first line. Edge to edge, since
+    -- it is the underside of a head rather than the top of a list.
+    hrule(dx, hy + head, dock)
+    px0, py0, px1, py1 = dx, 0, dx + dock, F.h
+
+    -- The pair at the far end of the head first, so the name knows what room
+    -- is left. Who you are, and the way out to where the talking happens.
+    --
+    -- On every window and at every level, which is the point of one column.
+    -- The account used to be reachable only from a corner a phone does not
+    -- draw, and Discord was a row on the play page there, so one question had
+    -- two answers and the other had none. Then both were dropped from any
+    -- menu with a game behind it, because the corner stack held that corner:
+    -- the column covers the corner stack now, so this head is the only place
+    -- either can be and it carries them whatever is behind the panel.
+    --
+    -- Clear of the x, which sits at the very end of the same line.
+    local logo_px = (short and 24 or 28) * F.scale
+    corner_left = pages.corner(
+        v, dx + dock - margin - (v.closable and 30 * F.scale or 0),
+        logo_y, true)
+    -- The wordmark gives, because it is a picture of a name everybody
+    -- reading this screen has already read, and a call sign in a pill is
+    -- not. Down two points at a time to a floor rather than squeezed to
+    -- fit: below about twenty the mark beside it stops being a mark.
+    while logo_px > 21 * F.scale
+          and dx + margin + M.wordmark_w(logo_px)
+              > corner_left - 12 * F.scale do
+        logo_px = logo_px - 2 * F.scale
+    end
+    M.wordmark(dx + margin, logo_y, logo_px)
 
     -- Which half the arrows are in. The two halves share one cursor and mark
     -- it with the same blue field, so the half wearing the brighter one is the
@@ -8069,87 +7704,34 @@ function M.menu(v)
 
     -- --- the rail
     --
-    -- Two rows, and they are different objects. On a phone it is a tab bar:
-    -- marks with words under them, each in its own lit field, sized so a thumb
-    -- lands on one. On a desktop it is a line of words beside the mark, with a
-    -- rule under the one you are in, which is what the mocks draw and what a
-    -- row of six things that are read rather than aimed at wants to be.
-    local words = not narrow
-    local pitch = vertical and (rh / n) or (rw / n)
-    -- Where each word starts, for the row of words. Measured rather than
-    -- divided: "standings" and "upgrades" are not the same width and a row that
-    -- pretended otherwise would leave a hole beside the short ones.
-    local wx, ww = {}, {}
-    -- What the row of words is set in, worked out once here and read again
-    -- where they are drawn. It was written twice, which is how a row that
-    -- shrank to fit could still be drawn at the size it did not fit in.
-    local tab_px = 15 * F.scale
-    -- And what stands between them. Hoisted for the same reason `tab_px` is:
-    -- the field behind a lit tab is measured against this gap, and a number
-    -- the drawing had to guess at is a field that overlaps its neighbour.
-    local tab_gap = 21 * F.scale
-    if words then
-        local at0 = rx + M.wordmark_w((tall and 26 or 22) * F.scale)
-                    + 40 * F.scale
-        -- Where the row has to stop, which is where the corner buttons start.
-        -- Given the whole width, as it was, the last two tabs are drawn under
-        -- the pills on any window narrow enough to make them meet, and the
-        -- pills publish their hit boxes first: on a phone held sideways,
-        -- settings was drawn on screen and could not be tapped.
-        local room = (corner_left or (rx + rw)) - 12 * F.scale - at0
-        local function span(p, g)
-            local w = 0
-            for i, e in ipairs(rail) do
-                w = w + text_w(e.label or "", p, MENU_FONT) + (i > 1 and g or 0)
-            end
-            return w
-        end
-        -- The gaps go first and the type second, because a row of words set a
-        -- point smaller still reads and a row that overlaps does not. Both
-        -- stop at a floor: past it the answer is not a smaller row, and the
-        -- window is narrow enough for the bottom bar anyway.
-        while tab_gap > 9 * F.scale and span(tab_px, tab_gap) > room do
-            tab_gap = tab_gap - F.scale
-        end
-        while tab_px > 10.5 * F.scale and span(tab_px, tab_gap) > room do
-            tab_px = tab_px - 0.5 * F.scale
-        end
-        local at = at0
-        -- In the face they are drawn in. Measured with the mono's advance,
-        -- which runs about a fifth wide of this one, every word sat left of
-        -- the middle of its own slot and the field behind the tab you were on
-        -- had more room on its right than its left.
-        for i, e in ipairs(rail) do
-            ww[i] = text_w(e.label or "", tab_px, MENU_FONT)
-            wx[i] = at
-            at = at + ww[i] + tab_gap
-        end
-    elseif not vertical then
-        local cap = 170 * F.scale
-        if pitch > cap then
-            rx = rx + (rw - cap * n) / 2
-            pitch = cap
-        end
-    end
+    -- One row: marks with words under them, each in its own lit field, sized
+    -- so a thumb lands on one. It was two objects, this and a line of words
+    -- beside the mark on a desktop, which is a second thing to draw and a
+    -- second thing to learn for a row that says the same six words either way.
+    -- The column is a phone's measure on every window now, so the row a phone
+    -- wanted is the row.
+    -- A rail with nothing on it is not a thing the menu builds, and a division
+    -- by the count of it is not a thing to find out about in a released
+    -- client: an infinite pitch draws nothing and lays a hit box over the
+    -- whole foot of the column.
+    local pitch = n > 0 and (rw / n) or rw
     -- Along the bottom, every stop says its name, and the words are sized so
     -- the longest of them fits the room one stop has. Only the lit one used to
     -- carry a word, because "settings" and "about" at the desktop's size run
     -- into each other with eight of them across a phone; a row of marks you
     -- have to learn by tapping is worse than a row of small words.
     local label_px = 11 * F.scale
-    if not vertical then
-        -- The widest of them at one point, so the size that fits it in the
-        -- room one stop has is a division. Counting characters and calling
-        -- each one an advance was the same sum with the wrong face's number
-        -- in it, and it set the row a point smaller than it had to be.
-        local widest = 0
-        for _, e in ipairs(rail) do
-            widest = math.max(widest, text_w(e.label or "", 1, MENU_FONT))
-        end
-        if widest > 0 then
-            label_px = math.max(8 * F.scale, math.min(label_px,
-                                (pitch - 5 * F.scale) / widest))
-        end
+    -- The widest of them at one point, so the size that fits it in the room
+    -- one stop has is a division. Counting characters and calling each one an
+    -- advance was the same sum with the wrong face's number in it, and it set
+    -- the row a point smaller than it had to be.
+    local widest = 0
+    for _, e in ipairs(rail) do
+        widest = math.max(widest, text_w(e.label or "", 1, MENU_FONT))
+    end
+    if widest > 0 then
+        label_px = math.max(8 * F.scale, math.min(label_px,
+                            (pitch - 5 * F.scale) / widest))
     end
     for i, e in ipairs(rail) do
         local sel = (i == v.rail_sel)
@@ -8159,105 +7741,27 @@ function M.menu(v)
         -- screen was two panes; the rail is the other half of the same
         -- gesture and went without it.
         local hot = (i == v.rail_hover) and not sel
-        local cx, cy
-        if vertical then
-            cx = rx + 26 * F.scale
-            cy = ry_ + (i - 0.5) * pitch
-        elseif words then
-            cx = wx[i] + ww[i] / 2
-            cy = ry_ + rh / 2
-        else
-            cx = rx + (i - 0.5) * pitch
-            cy = ry_ + icon_dy
-        end
+        local cx = rx + (i - 0.5) * pitch
+        local cy = ry_ + icon_dy
         local col = (sel or hot) and pal.FRIEND or pal.a(pal.DIM, 0.9)
         local r = 13 * F.scale
-        -- A word with a rule under the one you are in, and nothing else: no
-        -- field, no mark. The words are the row.
-        if words then
-            local px = tab_px
-            -- A field behind the tab you are on, and a fainter one under the
-            -- pointer. The row used to be words and a rule and nothing else,
-            -- which put the whole of "which tab is this" into the weight of
-            -- six words a shade apart: on a bright monitor it read as one
-            -- word being slightly bolder than its neighbours. The rule stays,
-            -- because it is what ties the tab to the panel under it.
-            local fh = 34 * F.scale
-            -- Half the gap either side, so the fields meet exactly and the
-            -- row tiles. It was a flat eleven points, against a gap that
-            -- starts at twenty-one and shrinks to nine as the window narrows,
-            -- so two lit fields overlapped by a point on the widest window
-            -- and by thirteen on the narrowest. A tab you are on drawn under
-            -- the tab beside it is the one thing this row exists to say,
-            -- said wrong.
-            local pad = tab_gap / 2
-            if sel or hot then
-                -- Brighter while the arrows are in the row, down to the weight
-                -- it keeps for saying where you are once they have gone into
-                -- the page. Both halves of the menu mark their cursor the same
-                -- way, so the one wearing the brighter of the two is the whole
-                -- of the answer to what up and down will do.
-                local a = 0.1
-                if sel then a = focused and 0.14 or 0.26 end
-                rect(wx[i] - pad, cy - fh / 2, ww[i] + 2 * pad, fh,
-                     pal.a(pal.FRIEND, a))
-            end
-            txt(e.label, wx[i], cy, px,
-                pal.a(sel and pal.FRIEND or pal.INK, sel and 1
-                      or (hot and 0.9 or 0.55)), nil, MENU_FONT)
-            -- No rule under the lit word. There was one, from when the tabs
-            -- were words and nothing else and the rule was the whole of the
-            -- selection; the field behind them says it now, and a field with
-            -- a line under it is one mark too many.
-            if e.link then
-                M.link_dom = string.format("%.1f,%.1f,%.1f,%.1f,%s",
-                    (wx[i] - pad) / F.density,
-                    (cy - 14 * F.scale) / F.density,
-                    (ww[i] + 2 * pad) / F.density,
-                    (28 * F.scale) / F.density, e.link)
-            end
-            -- The same measure again, so what a press lands on is the field
-            -- it landed in. At a flat eight points the boxes overlapped once
-            -- the gap fell under sixteen, and the first box published wins:
-            -- the left-hand tab quietly took a few points of its neighbour.
-            hit(wx[i] - pad, ry_, ww[i] + 2 * pad, rh, "rail", i)
+        if hot then
+            -- The stage's own hover weight, and only the field: the lit stop
+            -- says which page the panel belongs to, and a pointer passing
+            -- over says nothing of the kind.
+            rect(cx - pitch / 2 + 3 * F.scale, ry_, pitch - 6 * F.scale,
+                 tab_h, pal.a(pal.FRIEND, 0.16))
         end
-        if not words and hot then
-            -- The stage's own hover weight, and only the field: the lit rule
-            -- beside a selected stop says which page the panel belongs to,
-            -- and a pointer passing over says nothing of the kind.
-            local warm = pal.a(pal.FRIEND, 0.16)
-            if vertical then
-                rect(rx - 6 * F.scale, cy - pitch / 2 + 3 * F.scale,
-                     rw + 6 * F.scale, pitch - 6 * F.scale, warm)
-            else
-                rect(cx - pitch / 2 + 3 * F.scale, ry_, pitch - 6 * F.scale, tab_h, warm)
-            end
-        end
-        if not words and sel then
-            -- The lit one, and a rule reaching from it toward the stage, so
-            -- the eye is told which mark the panel belongs to rather than
-            -- having to work it out from a highlight. Brighter while the
-            -- arrows are in the rail, down to the weight the stop keeps for
-            -- saying where you are once they have gone into the page.
-            local lit = pal.a(pal.FRIEND, focused and 0.06 or 0.22)
-            local bar = pal.a(pal.FRIEND, focused and 0.5 or 1)
-            if vertical then
-                rect(rx - 6 * F.scale, cy - pitch / 2 + 3 * F.scale,
-                     rw + 6 * F.scale, pitch - 6 * F.scale, lit)
-                F.layer:seg(rx - 6 * F.scale, ry(cy - pitch / 2 + 3 * F.scale), rx - 6 * F.scale,
-                      ry(cy + pitch / 2 - 3 * F.scale), 1.6 * F.scale, bar, true)
-            else
-                -- The field alone. It wore a lit bar along its top edge as
-                -- well, which is the vertical rail's own mark turned on its
-                -- side: there it points at the stage beside it, and here it
-                -- points at nothing and reads as a tab that has come loose.
-                --
-                -- Down to the edge of the screen rather than to the end of
-                -- the block, so the lit stop is a tab reaching the bottom of
-                -- the phone and not a panel floating above the indicator.
-                rect(cx - pitch / 2 + 3 * F.scale, ry_, pitch - 6 * F.scale, tab_h, lit)
-            end
+        if sel then
+            -- The lit one. Brighter while the arrows are in the rail, down to
+            -- the weight the stop keeps for saying where you are once they
+            -- have gone into the page.
+            --
+            -- Down to the edge of the screen rather than to the end of the
+            -- block, so the lit stop is a tab reaching the bottom of the glass
+            -- and not a panel floating above the indicator.
+            rect(cx - pitch / 2 + 3 * F.scale, ry_, pitch - 6 * F.scale,
+                 tab_h, pal.a(pal.FRIEND, focused and 0.06 or 0.22))
         end
         -- A stop that leaves the game gets a real link laid over it by the
         -- page. Nothing the client does from its own loop is inside the tap
@@ -8265,40 +7769,46 @@ function M.menu(v)
         -- else, so the finger has to land on an anchor rather than on the
         -- canvas. Published in CSS pixels, which is what the page lays out
         -- in; everything here is drawable ones.
-        if e.link and not words then
-            local lx, ly, lw, lh
-            if vertical then
-                lx, ly = rx - 6 * F.scale, cy - pitch / 2 + 3 * F.scale
-                lw, lh = rw + 6 * F.scale, pitch - 6 * F.scale
-            else
-                lx, ly = cx - pitch / 2 + 3 * F.scale, ry_
-                lw, lh = pitch - 6 * F.scale, tab_h
-            end
+        if e.link then
             M.link_dom = string.format("%.1f,%.1f,%.1f,%.1f,%s",
-                                       lx / F.density, ly / F.density,
-                                       lw / F.density, lh / F.density, e.link)
+                (cx - pitch / 2 + 3 * F.scale) / F.density,
+                ry_ / F.density,
+                (pitch - 6 * F.scale) / F.density,
+                tab_h / F.density, e.link)
         end
-        if not words then
         draw_mark(e.icon, cx, cy, r, col, v.class or 0)
-        end
-        if vertical then
-            txt(e.label, rx + 48 * F.scale, cy, 16 * F.scale,
-                pal.a((sel or hot) and pal.INK or pal.DIM,
-                      (sel or hot) and 1 or 0.85),
-                nil, MENU_FONT)
-        elseif not words then
-            txt(e.label, cx, cy + 24 * F.scale, label_px,
-                pal.a((sel or hot) and pal.FRIEND or pal.DIM,
-                      (sel or hot) and 1 or 0.8),
-                "center", MENU_FONT)
-        end
+        txt(e.label, cx, cy + 24 * F.scale, label_px,
+            pal.a((sel or hot) and pal.FRIEND or pal.DIM,
+                  (sel or hot) and 1 or 0.8),
+            "center", MENU_FONT)
         -- The rail's own action: it names a destination, not a row of
         -- whatever page is on the stage.
-        if vertical then
-            hit(rx - 6 * F.scale, cy - pitch / 2, rw + 10 * F.scale, pitch, "rail", i)
-        elseif not words then
-            hit(cx - pitch / 2, ry_ - 8 * F.scale, pitch, tab_h + 8 * F.scale, "rail", i)
-        end
+        hit(cx - pitch / 2, ry_ - 8 * F.scale, pitch, tab_h + 8 * F.scale,
+            "rail", i)
+    end
+
+    -- The way in, drawn last of the column's furniture so nothing is over it.
+    --
+    -- It breathes on the clock the on-air tally swells at, which is the same
+    -- clock the landing's own key keeps, and the edge is floored well above
+    -- dark so the trough never reads as a key that has stopped working.
+    -- `F.now` is zero under the test harness, which is what keeps the layout
+    -- tests still.
+    if deploy_y then
+        local breath = 0.5 + 0.5 * math.sin(F.now * 2.6)
+        local kx = dx + margin
+        local kw = dock - 2 * margin
+        key_box(kx, deploy_y, kw, deploy_h,
+                pal.a(pal.FRIEND, 0.06 + 0.12 * breath),
+                pal.a(pal.FRIEND, 0.62 + 0.38 * breath))
+        -- In capitals and in the face the numbers are set in, which is what a
+        -- key wears everywhere else in this interface. Drawn raw, because the
+        -- menu is otherwise set in a sentence's case and this is already in
+        -- the case it wants.
+        txt("DEPLOY", kx + kw / 2, deploy_y + deploy_h / 2,
+            (short and 14 or 16) * F.scale, pal.a(pal.INK, 1), "center",
+            nil, true)
+        hit(kx, deploy_y, kw, deploy_h, "play_now")
     end
 
     -- --- the stage
@@ -8327,10 +7837,8 @@ function M.menu(v)
     -- at one edge and its value at the other, which is two columns nobody
     -- reads as one line.
     --
-    -- Lists only. The hull grid and the keyboard are drawings, and they take
-    -- everything there is.
-    local listy = not (v.board and not M.touching) and not v.hulls
-        and not v.table
+    -- Lists only. The hull grid is a drawing, and it takes everything there is.
+    local listy = not v.hulls and not v.table
         and not (v.rows and v.rows[1] and v.rows[1].hull)
     -- A page is a panel: a translucent ground hung off a lit rule down its left
     -- edge, with the light spilling across it. It is the shape every
@@ -8340,32 +7848,16 @@ function M.menu(v)
     --
     -- It fills the block. The list inside it keeps a measure, because a row
     -- whose name sits at one edge and whose count sits at the other is two
-    -- columns nobody reads as one line, but the panel is the page and a page
-    -- narrower than the row of tabs over it reads as a page that failed to
-    -- fill.
+    -- columns nobody reads as one line, and in a column this wide the two are
+    -- the same number.
+    --
+    -- Nothing stands beside the list any more. The aside was a second column
+    -- carrying the room's roster, drawn only where the panel had 700 points
+    -- to spare, which is a thing that existed on a monitor and nowhere else.
+    -- The column is 390 points on every window now, so what the aside held is
+    -- drawn under the rows instead, where there is room for it. See `asidey`.
     local panel_x, panel_w = sx, avail
-    local asidew = 0
-    if listy then
-        lw = math.min(lw, 560 * F.scale)
-        if v.aside and not narrow and panel_w > 700 * F.scale then
-            -- A shade wider than it was: the column carries a drawn room and
-            -- a drawn hull now, and 300 points cramped the seat strip against
-            -- the sentence above it.
-            asidew = math.min(320 * F.scale, panel_w - lw - 60 * F.scale)
-        end
-    end
-    if not narrow then
-        local ph = sh - 6 * F.scale
-        -- The ground, and nothing down the side of it.
-        --
-        -- There was a lit rule at the left edge, on the argument that a page
-        -- is a panel and every instrument in the arena hangs off one. Over
-        -- there a rule is the edge of a thing that has an edge; here it ran
-        -- the height of the screen a gutter left of the first letter of every
-        -- row and marked nothing, which is furniture. Gone, along with the
-        -- overhang the rows had so they could reach it.
-        rect(panel_x, sy, panel_w, ph, pal.rgb(0x05070c, 0.5))
-    end
+    if listy then lw = math.min(lw, 560 * F.scale) end
     -- No title over the stage. The rail is lit at the stop you are inside and
     -- says its name there, so a heading repeating it is the same answer
     -- written twice, in the one place a list of games could have used the
@@ -8464,45 +7956,7 @@ function M.menu(v)
     -- one the map border is made of, introducing a list that needs no
     -- introducing: the rail says what the page is and the rows say what they
     -- are, and the rule was a third line of furniture between them.
-    if v.board and not M.touching then
-        -- The widest board the stage has the height for, backed off rather
-        -- than solved, the same way the page used to do it. What the chips
-        -- want comes off the room first, since they are the half of this page
-        -- that has to be readable: a board that has shrunk is still a picture
-        -- of a keyboard, and a chip that has shrunk is a key you cannot read.
-        local bw = avail
-        -- The chip's own row height, which is not the stage row height below:
-        -- one is a line in a grid of names and keys, the other is a row of a
-        -- list, and they are sized against different things.
-        local chip_h = CHIP.row * F.scale
-        if v.chips then
-            local lines = CHIP.lines(#v.rows, avail - 14 * F.scale)
-            -- The board gives way first, down to its floor, and then the
-            -- chips do. That order is the argument for the page: a keyboard
-            -- drawn smaller is still a picture of where your hand goes, and a
-            -- chip drawn smaller is a key you cannot read.
-            while bw > 240 * F.scale
-                  and board_height(bw) + lines * chip_h
-                      + CHIP.gap * F.scale > room do
-                bw = bw * 0.94
-            end
-            local left = room - board_height(bw) - CHIP.gap * F.scale
-            if lines * chip_h > left then
-                chip_h = math.max(left / lines, 0)
-            end
-        else
-            while bw > 240 * F.scale and board_height(bw) > room do bw = bw * 0.94 end
-        end
-        local used = board(tx, top, bw, v)
-        -- The chips take the stage's width rather than the board's. In a
-        -- column as narrow as a backed-off keyboard the key runs back under
-        -- the name it belongs to, and there is nothing above them to line up
-        -- with in any case.
-        if v.chips then
-            CHIP.draw(tx, top + used + CHIP.gap * F.scale,
-                      avail - 14 * F.scale, v, chip_h)
-        end
-    elseif v.hulls then
+    if v.hulls then
         -- The hangar, which is the one page drawn as a layout rather than as
         -- a list: a roster beside the kit of the hull it is standing on.
         -- The same left edge every other page has. It began at the panel's
@@ -8657,8 +8111,15 @@ function M.menu(v)
             rect(tx + lw + 8 * F.scale, ty + scrolled, bar, hgt,
                  pal.a(pal.RADAR_TILE, 0.85))
         end
-        if asidew > 0 then
-            pages.aside(v.aside, panel_x + panel_w - asidew, top, asidew, room)
+        -- What the page carries under its rows: the room this column is
+        -- standing over, or what the call sign on this page means. It was a
+        -- second column beside the list, drawn only where the panel had 700
+        -- points to spare, which is a thing that existed on a monitor and
+        -- nowhere else. It follows the rows now, and a page with nothing left
+        -- under them goes without rather than drawing across the foot.
+        local asidey = at + 18 * F.scale
+        if v.aside and top + room - asidey > 120 * F.scale then
+            pages.aside(v.aside, tx, asidey, lw, top + room - asidey)
         end
         -- Under whatever rows there are, which over a game is the one row
         -- that leaves it.
