@@ -21,28 +21,26 @@ of record. Nothing here is built.
 ## D · the expanding band
 
 The scoreboard is an instrument, so it wears no key box and sits nowhere
-near MENU. Shut, it is a bare readout at top center: the score in the side
-colors around the clock in Melee, the clock alone in the duel, since a
-first-to-one score says nothing until the readout says why. The expand
-affordance comes from the instrument grammar rather than the key grammar:
-the faint corner brackets the radar already wears, brightened while open.
-Pressed, the readout grows out of the band, so shut and open are one
-object at two depths. PLAYERS is gone, because the readout carries the
-roster; MENU stands alone in its corner doing the one static thing.
-
-Events print under the band in the scoring side's color for a few seconds,
-instead of as 24pt white across the middle; DESTROYED and SUDDEN DEATH are
-the same kind of tenant.
+near MENU. Shut, it is a bare readout at top center, each side a two-line
+stack in its color: in Melee the team's name over its score, in the duel
+the pilot's call sign over their rating, with no score and no rung line,
+since neither says anything the duel's readout doesn't say better. The
+expand affordance comes from the instrument grammar rather than the key
+grammar: the faint corner brackets the radar already wears, brightened
+while open. Pressed, the readout grows out of the band, so shut and open
+are one object at two depths. PLAYERS is gone, because the readout carries
+the roster; MENU stands alone in its corner doing the one static thing.
 
 The open readout is the shipped players panel's own grammar: a section head
 in dim capitals with its column labels on the same line, rows under it, a
 dashed rule between sections. Sections are the modularity:
 
-- **The pilot list** is shared by every zone: name in the side's color, the
-  seat's mark, k / d / a / pts / bty, watchers at the foot.
+- **The pilot list** is shared by every zone: one list, the sides told
+  apart by the color the names already wear, the seat's mark,
+  k / d / a / pts / bty, watchers at the foot. No team heads, because the
+  band above carries the team names and scores.
 - **The zone's own sections** stack under it. The duel adds its run of
-  fights (rung, verdict, score, time). A team game adds nothing new: its
-  scores ride the pilot list's section heads.
+  fights (rung, verdict, score, time). A team game adds nothing new.
 - **The pilot card** a pressed row opens is the same card everywhere: team,
   seat, tier, rating, and the match's numbers.
 

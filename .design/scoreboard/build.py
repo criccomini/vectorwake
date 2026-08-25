@@ -66,6 +66,7 @@ MODES = {
         "clock": "0:05",
         "zone": "RUNG 4 · STREAK 3",
         "event": ("RUNG 3 CLEARED · NEXT RUNG 4 · STREAK 3", FRIEND),
+        "dead_rival": True,
         "humans": 1, "bots": 1,
     },
     "Portrait": {
@@ -257,6 +258,9 @@ def scene(w, h, compact, seed, ships, dead_rival=False):
         y = rnd.randint(-40, h - 40)
         bw, bh = rnd.choice([(96, 32), (32, 108), (64, 64), (150, 30), (30, 150)])
         if abs(x + bw / 2 - cx) < 210 and abs(y + bh / 2 - cy) < 170:
+            continue
+        # And off the top center, where the band draws on bare sky.
+        if y < 80 and abs(x + bw / 2 - cx) < 230:
             continue
         parts.append(
             f'<rect x="{x}" y="{y}" width="{bw}" height="{bh}" fill="#080d16" '
@@ -603,39 +607,61 @@ DUEL_CARD = [
 # The five columns every pilot list shares, and their widths.
 D_COLS = [("k", 22), ("d", 22), ("a", 22), ("pts", 30), ("bty", 30)]
 
+# D's own reading of the duel: the band carries the pilots rather than the
+# sides, name over rating, so the sides here are the call signs the roster
+# and the card use, and the ratings agree with the card. The event line is
+# gone from the instrument; the run's story lives in the readout. Kept
+# apart from MODES so the first directions on page two stay as drawn.
+D_MODES = {
+    "Desktop": MODES["Desktop"],
+    "Landscape": {**MODES["Landscape"],
+                  "sides": [("Aperture", 1, FRIEND, 1206),
+                            ("Vantage 0001", 0, ENEMY, 1249)],
+                  "event": None},
+    "Portrait": {**MODES["Portrait"],
+                 "sides": [("Aperture", 0, FRIEND, 1206),
+                           ("Vantage 0001", 0, ENEMY, 1249)]},
+}
+
 
 def score_band(form, mode, melee, open_):
-    """The shut scoreboard: bare numerals and the clock at top center, no
-    box, no ground. The brackets are the radar's own corner marks, faint at
-    rest and brightened while the readout under them is open."""
+    """The shut scoreboard: a bare readout at top center, no box, no
+    ground. Each side is a two-line stack in its color: in Melee the team's
+    name over its score, in the duel the pilot's call sign over their
+    rating, since the duel's score is not worth a line and the rating is.
+    The brackets are the radar's own corner marks, faint at rest and
+    brightened while the readout under them is open."""
     compact = FORMS[form][2]
     clock_px = 22 if compact else 34
     score_px = 17 if compact else 26
-    gap = 12 if compact else 18
+    name_px = 9 if compact else 11
+    rate_px = 8 if compact else 10
+    gap = 14 if compact else 22
     pad = "4px 12px" if compact else "6px 16px"
     bcol = "rgba(79,214,255,.55)" if open_ else "rgba(63,88,120,.55)"
-    inside = (f'<span class="num" style="font-size:{clock_px}px;'
-              f'letter-spacing:.02em">{mode["clock"]}</span>')
+
+    def stack(name, col, under, under_px, under_dim):
+        dim = ";opacity:.6" if under_dim else ""
+        return (f'<div style="display:flex;flex-direction:column;'
+                f'align-items:center;gap:1px">'
+                f'<span class="hud num" style="font-size:{name_px}px;'
+                f'color:{col};white-space:nowrap">{name}</span>'
+                f'<span class="num" style="font-size:{under_px}px;'
+                f'color:{col}{dim}">{under}</span></div>')
+
+    (ln, ls, lc, lr), (rn, rs, rc, rr) = mode["sides"]
     if melee:
-        (ln, ls, lc, lr), (rn, rs, rc, rr) = mode["sides"]
-        inside = (f'<span class="num" style="font-size:{score_px}px;'
-                  f'color:{lc}">{ls}</span>{inside}'
-                  f'<span class="num" style="font-size:{score_px}px;'
-                  f'color:{rc}">{rs}</span>')
+        left = stack(ln, lc, ls, score_px, False)
+        right = stack(rn, rc, rs, score_px, False)
+    else:
+        left = stack(ln, lc, lr, rate_px, True)
+        right = stack(rn, rc, rr, rate_px, True)
+    clock = (f'<span class="num" style="font-size:{clock_px}px;'
+             f'letter-spacing:.02em">{mode["clock"]}</span>')
     return (f'<div class="row" style="position:absolute;left:50%;'
             f'top:{12 if compact else 14}px;transform:translateX(-50%);'
-            f'gap:{gap}px;padding:{pad}">{bracket(bcol)}{inside}</div>')
-
-
-def band_event_line(mode, form):
-    """A shut band still says what just happened: the event prints under it
-    in the scoring side's color, where the readout would open."""
-    compact = FORMS[form][2]
-    line, col = mode["event"]
-    return (f'<div class="hud" style="position:absolute;left:50%;'
-            f'top:{50 if compact else 66}px;transform:translateX(-50%);'
-            f'white-space:nowrap;font-size:{9 if compact else 11}px;'
-            f'letter-spacing:.12em;color:{col}">{line}</div>')
+            f'gap:{gap}px;padding:{pad}">{bracket(bcol)}'
+            f'{left}{clock}{right}</div>')
 
 
 def d_cells(vals, px, col="var(--ink)", bty=True):
@@ -689,22 +715,19 @@ def d_watch_row(name, px, mark_px):
 
 
 def melee_readout(compact):
-    """Melee's readout: the pilot list section twice, once per side, the
-    team's score on its own section head. That head is the whole of what
-    the team game adds to the shared chassis."""
+    """Melee's readout: one pilot list, the sides told apart by the color
+    their names already wear. The band above carries the team names and
+    scores, so a head repeating them here would say everything twice."""
     px = 10 if compact else 11
     mark = 10 if compact else 11
-    parts = []
-    for i, (team, score, col, pilots) in enumerate(MELEE_BOARD):
-        parts.append(d_sec_head(team, px - 1, col=col,
-                                cols=D_COLS if i == 0 else None,
-                                score=score, score_col=col))
+    parts = [d_sec_head("PILOTS", px - 1, cols=D_COLS)]
+    for team, score, col, pilots in MELEE_BOARD:
         for name, human, k, d, a, pts, bty in pilots:
             parts.append(d_pilot_row(name, human, col, (k, d, a, pts, bty),
                                      px, mark))
-        parts.append(d_rule())
+    parts.append(d_rule())
     parts.append(d_watch_row(DUEL_WATCHER, px, mark))
-    return (f'<div class="panel" style="position:absolute;left:50%;top:72px;'
+    return (f'<div class="panel" style="position:absolute;left:50%;top:78px;'
             f'transform:translateX(-50%);width:340px;padding:10px 12px;'
             f'display:flex;flex-direction:column;gap:5px">'
             f'{"".join(parts)}</div>')
@@ -737,7 +760,7 @@ def ladder_readout(compact):
             f'<span class="num dim" style="width:40px;text-align:right;'
             f'font-size:{px}px">{time}</span></div>')
     panel = (f'<div class="panel" style="position:absolute;left:14px;'
-             f'right:14px;top:54px;padding:10px 12px;display:flex;'
+             f'right:14px;top:58px;padding:10px 12px;display:flex;'
              f'flex-direction:column;gap:5px">{"".join(parts)}</div>')
 
     # The card the washed row is holding open, a block of its own under the
@@ -756,7 +779,7 @@ def ladder_readout(compact):
                     f'<span class="num" style="font-size:{px}px;'
                     f'color:{vcol}">{value}</span></div>')
     card = (f'<div class="panel" style="position:absolute;left:14px;'
-            f'right:14px;top:280px;padding:10px 12px;display:flex;'
+            f'right:14px;top:284px;padding:10px 12px;display:flex;'
             f'flex-direction:column;gap:5px">{"".join(rows)}</div>')
     return panel + card
 
@@ -766,10 +789,10 @@ def ladder_readout(compact):
 
 def screen(form, variant):
     w, h, compact = FORMS[form]
-    mode = MODES[form]
+    mode = D_MODES[form] if variant == "D" else MODES[form]
     melee = form == "Desktop"
     ships = MELEE_SHIPS if melee else duel_ships(form)
-    dead = mode["event"] is not None
+    dead = mode.get("dead_rival", False)
     seed = {"Desktop": 3, "Landscape": 3, "Portrait": 5}[form]
     body = [scene(w, h, compact, seed, ships, dead_rival=dead)]
 
@@ -788,15 +811,13 @@ def screen(form, variant):
         if form == "Portrait" and (mode["zone"] or mode["event"]):
             chrome_top = sh + 34
     else:
-        # The band is drawn open where the board is about the readout, shut
-        # where it is about the quiet state and the event docking to it.
+        # The band is drawn open where the board is about the readout, and
+        # shut where it is about the quiet state.
         open_panel = form != "Landscape"
         body.append(score_band(form, mode, melee, open_panel))
         if open_panel:
             body.append(melee_readout(compact) if melee
                         else ladder_readout(compact))
-        elif mode["event"]:
-            body.append(band_event_line(mode, form))
 
     body.append(corner_row(compact, mode["humans"], mode["bots"],
                            top=chrome_top, extra=extra,
