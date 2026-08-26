@@ -1296,6 +1296,7 @@ end
 
 function M.click_new_field()
     M.new_on = true
+    M.head_sel = nil
     return nil, true
 end
 
@@ -1377,6 +1378,8 @@ function M.click_add()
     end
     if M.add_on then return nil, false end
     M.add_on = true
+    -- A press in the box takes the cursor there, off whatever line it was on.
+    M.head_sel = nil
     return nil, true
 end
 
@@ -2288,12 +2291,6 @@ local NODES = {
 -- different row in a match than it is at the front end, so a stack left
 -- pointing at the hangar when a match starts names a page that is no longer
 -- reachable, and every caller of this was written assuming a page.
--- The pages that stand on the head's own line rather than under it. The ship
--- page and the four screens it opens: each carries its own top row, so the
--- column spends nothing above them.
-local HEADLESS = {hangar = true, slot = true, builds = true,
-                  newbuild = true, points = true}
-
 local function node()
     return NODES[M.stack[#M.stack]] or NODES.root
 end
@@ -2304,38 +2301,36 @@ local function rows_of(nd)
     return r
 end
 
--- The stops on the far right of the tab row, in the order the arrows meet
--- them left to right. One of them: the call sign. The community door stood
--- beside it until the game stopped carrying one at all, and what is left is
--- the pilot you are signed in as.
+-- The controls on the drawer's own top line, in the order the arrows meet
+-- them left to right: the x that shuts the panel, and the call sign that says
+-- who you are signed in as.
 --
--- The call sign was not a stop for a while, on the grounds that the rail
--- carries its page and a pointer can press it directly. Both are true and
--- neither helps a hand on the arrows: it is a button, it is lit like a
--- button, and there was no key that reached it. A control nobody can focus is
--- a control that is broken for whoever is not holding a mouse.
+-- A row of its own, rather than the far end of the rail. They were stops on
+-- the rail, reached by pressing right off the last tab, which is a row along
+-- the bottom of the column reaching a button at the top of it: the cursor
+-- crossed the whole height of the panel sideways and the row wrapped through
+-- a control nobody could see it arrive at. They are drawn as a head over the
+-- page, so they are a head over the page here as well, and up off the first
+-- row of a page is how a hand reaches them.
+--
+-- The call sign is a stop only where pressing it does something. An account is
+-- not a thing to edit from inside a room, so away from home the name is a
+-- label saying who you are and the x is the whole of this row. See
+-- `M.click_pilot`.
 --
 -- The list is here rather than in the drawing because the arrows walk it, and
--- a row a hand can walk has to be a list somewhere. ui.lua lays them out from
--- the right edge in the reverse of this order; both read this. Above
--- `M.showing` because a corner stop under the cursor is a page on screen the
--- same way a tab under the cursor is.
-local function corner_stops()
-    return {"pilot"}
+-- a row a hand can walk has to be a list somewhere. ui.lua draws the x at one
+-- end of that line and the name at the other; both read this.
+local function head_stops()
+    if M.home and (M.name or "") ~= "" then return {"close", "pilot"} end
+    return {"close"}
 end
 
 -- Which page's rows are on screen. One level in that is the page you are
 -- inside; at the root it is whichever tab the cursor is resting on, because
--- the stage there is a preview of what that tab holds. The corner stops are
--- stops on that row, so the cursor resting on one previews its page too:
--- while it only lit the button, walking the row read as five pages and then
--- two dead highlights.
+-- the stage there is a preview of what that tab holds.
 function M.showing()
     if #M.stack > 1 then return M.at() end
-    local stops = corner_stops()
-    if M.corner_sel and stops[M.corner_sel] then
-        return stops[M.corner_sel]
-    end
     local top = rows_of(NODES.root)
     local r = top[M.sel.root or 1]
     return (r and r.go) or "root"
@@ -2496,6 +2491,22 @@ local function next_stop(rows, at, dir)
         if r and (r.go or r.act) then return at end
     end
     return (at - 1 + dir) % n + 1
+end
+
+-- Where a walk into a page from the rail lands, coming down: the first row of
+-- the list.
+--
+-- The page's own head is not it. The hangar's build name and its points meter
+-- are drawn as a band over the ladders, and they are rows only so the arrows
+-- can reach them; a hand coming into the page is coming into the list, and the
+-- band stands over it the way the friends page's add field does. So down off
+-- the rail lands on the first ladder, and up from that ladder reaches the
+-- band, which is where the band is drawn.
+local function first_stop(rows)
+    for i, r in ipairs(rows) do
+        if (r.go or r.act) and r.group ~= "band" then return i end
+    end
+    return next_stop(rows, #rows, 1)
 end
 
 local function row_index(rows)
@@ -2871,6 +2882,7 @@ function M.show(...)
     M.open = true
     M.hover = nil
     M.rail_hover = nil
+    M.head_sel = nil
     M.ask = nil
     -- The games list works out where its cursor belongs the next time it is
     -- looked at, so opening on it has to let it ask again.
@@ -2894,6 +2906,7 @@ function M.close()
     M.await = nil
     M.hover = nil
     M.rail_hover = nil
+    M.head_sel = nil
     -- A question belongs to the panel it was asked in. Left standing, it would
     -- be waiting on the next thing to open the menu, which is a player pressing
     -- escape mid-fight and being asked something they have forgotten.
@@ -2914,6 +2927,7 @@ end
 local function back()
     if #M.stack > 1 then
         table.remove(M.stack)
+        M.head_sel = nil
         return nil, true
     end
     -- At the root with a game behind the panel, escape puts you back in it.
@@ -2977,6 +2991,9 @@ function M.tick(dt)
         if not reachable then
             M.stack = {"root"}
             M.sel = {}
+            -- And off the head, which stands over a page that is no longer
+            -- there: the cursor belongs to the rail again.
+            M.head_sel = nil
         end
     end
     if M.at() ~= "controls" then M.foot = nil end
@@ -3043,24 +3060,19 @@ function M.tick(dt)
     end
 end
 
--- Which of the corner stops wears the lit mark, which is the tab row's own
--- rule read across the whole row: what is lit is where you are, and the
--- button at the far end is a stop on that row like any other.
---
--- Which is nobody, once the arrows leave the row. Every stop left here has a
--- tab of its own, and the rail lights that tab: lighting the button as well
--- would put the "you are here" mark in two places on one row, and that is the
--- one mark in this interface that must never be in two places. So this
--- answers only while the cursor is standing on the row itself.
-local function corner_lit()
-    if #M.stack > 1 then return nil end
-    return M.corner_sel and corner_stops()[M.corner_sel] or nil
+-- Which of the head's controls the arrows are standing on, by name, and
+-- nobody while they are anywhere else. It is a cursor rather than a "you are
+-- here" mark: the rail keeps that one, and it says which page the panel is
+-- inside whatever line the arrows happen to be on.
+local function head_lit()
+    return M.head_sel and head_stops()[M.head_sel] or nil
 end
 
--- One of them, pressed. Enter and down both land here, the way they both act
--- on a tab. The call sign goes where a pointer on it goes, which is the same
--- page the pilot tab leads to: two doors onto one page, on purpose.
-local function press_corner(which)
+-- One of them, pressed. The x shuts the panel, which is what a cross means
+-- everywhere; the call sign goes where a pointer on it goes, which is the
+-- page the pilot stop leads to: two doors onto one page, on purpose.
+local function press_head(which)
+    if which == "close" then return M.click_close() end
     if which == "pilot" then return M.click_pilot() end
     return nil, false
 end
@@ -3109,18 +3121,11 @@ function M.view()
                  -- in the thing I am in".
                  pilot = {name = M.name, rivets = account.rivets or 0},
                  pilot_hot = M.pilot_hot,
-                 -- Which of the two the arrows are standing on, by name
-                 -- rather than by number: the drawing lays them out from the
-                 -- right edge and this file lists them from the left, and a
+                 -- Which of the head's controls the arrows are standing on,
+                 -- by name rather than by number: the drawing puts the x at
+                 -- one end of that line and the name at the other, and a
                  -- number would have to mean the same thing in both.
-                 --
-                 -- While the cursor is on the row they are part of, or
-                 -- while the page behind one of them is the page on screen.
-                 -- Anywhere else it is nobody: a page reached by a pointer
-                 -- leaves whatever the arrows were last on behind, and a lit
-                 -- button over a page nobody is at the top of would be a
-                 -- cursor in two places. See `corner_lit`.
-                 corner_sel = corner_lit(),
+                 head_sel = head_lit(),
                  carousel_hot = M.carousel_hot,
                  -- The question, if one is up. Everything else in the view is
                  -- still filled in: the panel is drawn and then stood down
@@ -3233,15 +3238,9 @@ function M.view()
         -- the one place a price is answered by a balance.
         out.wallet = account.rivets or 0
     end
-    -- What the stage previews at the root: the corner stop the cursor is on,
-    -- else the tab it is on. One name, because the two halves of the row are
-    -- one row.
-    local corner = (#M.stack == 1) and M.corner_sel
-                   and corner_stops()[M.corner_sel] or nil
-    local previewing = corner
-                       or ((#M.stack == 1) and rows_of(NODES.root)[sel]
-                           and rows_of(NODES.root)[sel].go)
-                       or nil
+    -- What the stage previews at the root: the tab the cursor is on.
+    local previewing = ((#M.stack == 1) and rows_of(NODES.root)[sel]
+                        and rows_of(NODES.root)[sel].go) or nil
     if M.at() == "pilot" or previewing == "pilot" then
         -- Everything the drawing needs, and no aside: the reading column
         -- that used to stand here said the call sign a third time and the
@@ -3273,16 +3272,6 @@ function M.view()
         -- What the build is called, for the band's own key.
         out.profile = M.profile_band()
     end
-    -- The ship page and everything it opens spend nothing on a head: no
-    -- wordmark and no call sign over the longest page in the menu. What
-    -- stands on that line instead is the page's own band, or the way back
-    -- out of a reading, with the x where it always was. See .design/hangar.
-    --
-    -- Where you are, not what is being previewed. At the root the stage shows
-    -- the tab under the cursor, and a head that came and went as the cursor
-    -- crossed `ship` would take the wordmark and the call sign with it: the
-    -- page earns the whole column by being entered.
-    if HEADLESS[M.at()] then out.headless = true end
     -- The naming page's box: what is in it, and whether it is taking type.
     if page == "newbuild" then
         out.new = {name = M.new_name, on = M.new_on,
@@ -3312,9 +3301,7 @@ function M.view()
                        detail = d, index = i}
     end
     if #M.stack == 1 then
-        -- No tab is lit while the cursor stands on a corner stop: the lit
-        -- mark is where you are, and it cannot be two places on one row.
-        out.rail_sel = corner and 0 or sel
+        out.rail_sel = sel
         out.focus = "rail"
         -- The row a pointer is resting on. Only here: one level in the stage
         -- has the cursor, and a hover moves that cursor rather than lighting
@@ -3326,11 +3313,8 @@ function M.view()
         -- beside the rail rather than after a keystroke. Moving down a rail
         -- that shows you what each stop contains is one gesture; moving down
         -- a list of words and pressing enter to find out is two.
-        -- The corner stop under the cursor previews the same way a tab
-        -- does. Its node shares the stop's name, which is what `corner_lit`
-        -- leans on too.
         local pick = top[sel]
-        local go = corner or (pick and pick.go)
+        local go = pick and pick.go
         if go and NODES[go] then
             local nd2 = NODES[go]
             out.empty = nd2.empty and nd2.empty() or nil
@@ -3377,22 +3361,15 @@ function M.view()
             if r.go == id then out.rail_sel = i end
         end
     end
-    -- Settings uses its spare desktop column to explain the selected control.
-    -- On a phone the renderer keeps the list full width and leaves this aside
-    -- out, so the compact surface stays compact.
-    if M.showing() == "settings" then
-        local at = (#M.stack > 1) and out.sel or (M.sel.settings or 1)
-        local setting = out.rows[at] or out.rows[1]
-        out.settings = true
-        if setting then
-            out.aside = {
-                head = "what this changes",
-                label = setting.label,
-                sub = setting.detail,
-                note = setting.help,
-            }
-        end
-    end
+    -- The head takes the cursor off whichever of the two had it, and neither
+    -- draws one while it is up there: one thing is lit on this panel at a
+    -- time. The rail's own stop stays lit at its standing weight, because
+    -- that mark says which page the panel is inside rather than where the
+    -- arrows are.
+    if M.head_sel then out.focus = "head" end
+    -- The wash a page of settings gets. It is a reading rather than a list of
+    -- rooms, and the ground under it is set for one.
+    if M.showing() == "settings" then out.settings = true end
     return out
 end
 
@@ -3777,6 +3754,57 @@ function M.step(keys)
     local rows = rows_of(nd)
     local n = #rows
 
+    -- The head owns the keys while the cursor is on it, the way the rail owns
+    -- them at the root: it is a row, so it reads its own axis. Left and right
+    -- walk the x and the call sign and loop between them, down goes back into
+    -- the page it stands over, and enter presses what it is on.
+    --
+    -- Up does nothing, because this is the top of the column and there is
+    -- nothing over it. The way back to the rail is down through the page, the
+    -- same walk that reached the head in the first place.
+    if M.head_sel then
+        local stops = head_stops()
+        local hn = #stops
+        -- The row is shorter in a match than it is at home, and the call sign
+        -- goes off it when a pilot leaves the front end with the cursor on it.
+        if M.head_sel > hn then M.head_sel = hn end
+        if keys.back then
+            M.head_sel = nil
+            return escape()
+        end
+        if keys.left then
+            M.head_sel = (M.head_sel - 2) % hn + 1
+            return nil, true
+        end
+        if keys.right then
+            M.head_sel = M.head_sel % hn + 1
+            return nil, true
+        end
+        if keys.down then
+            M.head_sel = nil
+            -- Back onto the page, at the top of it, which is where a step
+            -- down from the line over it lands. On a page whose first control
+            -- is a field that is the field: the friends page draws its add box
+            -- over the list, so the box is what is under this line.
+            local field = FIELD_PAGE[id]
+            if field then
+                M[field] = true
+            elseif n > 0 then
+                M.sel[id] = first_stop(rows)
+            end
+            return nil, true
+        end
+        if keys.go then
+            local act, moved = press_head(stops[M.head_sel])
+            -- Everything on this row either shuts the panel or opens a page,
+            -- and both leave the row. Left standing, the cursor would still be
+            -- up here when the next page drew.
+            if moved then M.head_sel = nil end
+            return act, moved
+        end
+        return nil, false
+    end
+
     -- The friends page's field is a stop above the first row.
     --
     -- It is not a row, because it is not in the list, but the arrows have to
@@ -3811,8 +3839,12 @@ function M.step(keys)
                         or nil
                     return nil, true
                 end
+                -- Out of the box and onto the head over it, the same step up
+                -- off the first row of any other page. It went back to the
+                -- tabs, which are along the foot of the column.
                 M.add_on = false
-                return back()
+                M.head_sel = #head_stops()
+                return nil, true
             end
             if keys.down then
                 if #found > 0 and (M.found_sel or 0) < #found then
@@ -3856,72 +3888,25 @@ function M.step(keys)
     end
 
     -- The tab row reads its own axis, which is the row's own: left and right
-    -- walk the tabs, down and enter go into the page under them, and up does
-    -- nothing because there is nothing above a tab row.
+    -- walk the tabs, and up and down walk into the page over them.
     --
     -- This was up and down while the tabs were a column down the left. The
     -- keys follow the drawing rather than the tree, which is what makes the
     -- same five inputs work on a keyboard, a d-pad and a thumb without a
     -- second layout: an arrow means the direction it points.
-    -- The two buttons at the far end of that row are on it, which took
-    -- saying. They are drawn beside the tabs, they do what a tab does, and a
-    -- hand on the arrows could not reach either: the way to an account was a
-    -- mouse or nothing.
     --
-    -- So the row is the tabs and then those, left to right, and it loops.
-    -- `M.corner_sel` is nil while the cursor is on a tab and an index into
-    -- `corner_stops` once it has walked past the last one.
+    -- The row is the tabs and nothing else, and it loops. The x and the call
+    -- sign were on the end of it for a while, so that right off the last tab
+    -- crossed the whole height of the column to a button drawn at the top of
+    -- it. They are their own row now, over the page rather than beside the
+    -- rail. See `head_stops`.
     if #M.stack == 1 then
-        local corner = corner_stops()
-        if keys.back then
-            M.corner_sel = nil
-            return escape()
-        end
-        if M.corner_sel ~= nil then
-            if keys.left then
-                if M.corner_sel > 1 then
-                    M.corner_sel = M.corner_sel - 1
-                else
-                    -- Back onto the row, at the end of it: these sit to the
-                    -- right of the last tab, so that is what is to their
-                    -- left however the cursor got here.
-                    M.corner_sel = nil
-                    M.sel[id] = n
-                end
-                return nil, true
-            end
-            if keys.right then
-                if M.corner_sel < #corner then
-                    M.corner_sel = M.corner_sel + 1
-                else
-                    -- Round to the first tab, the way this row has always
-                    -- wrapped.
-                    M.corner_sel = nil
-                    M.sel[id] = 1
-                end
-                return nil, true
-            end
-            -- Down is enter here, as it is on a tab: what is under one of
-            -- these is a page or the place the talking happens, and the arrow
-            -- pointing at it is the one that goes there.
-            if keys.go or keys.down then
-                return press_corner(corner[M.corner_sel])
-            end
-            return nil, false
-        end
+        if keys.back then return escape() end
         if keys.left then
-            if row_index(rows) == 1 and #corner > 0 then
-                M.corner_sel = #corner
-                return nil, true
-            end
             M.sel[id] = (row_index(rows) - 2) % n + 1
             return nil, true
         end
         if keys.right then
-            if row_index(rows) == n and #corner > 0 then
-                M.corner_sel = 1
-                return nil, true
-            end
             M.sel[id] = row_index(rows) % n + 1
             return nil, true
         end
@@ -3935,17 +3920,38 @@ function M.step(keys)
             local r = rows[row_index(rows)]
             if r and r.go and not enterable(r.go) then return nil, false end
             local act = activate()
-            -- Up walks in from underneath, so it lands on the row nearest the
-            -- tabs, which is the last one. It used to land wherever that page
-            -- was last left and on its first row if it had never been opened,
-            -- so a hand pressing up at the foot of the panel was thrown to the
-            -- top of the list: the one direction the arrow does not point.
-            -- Enter and down still land where the page was left, because
-            -- neither of them is a step in a direction.
-            if keys.up and #M.stack > 1 then
+            -- An arrow is a step in a direction, so where it lands is decided
+            -- by which end of the list it came in at: up walks in from
+            -- underneath and lands on the last row, down walks in from over
+            -- the top and lands on the first. Both used to land wherever the
+            -- page was last left, which is how pressing down on `ship` came to
+            -- light `wake`: the press before it had been an up.
+            --
+            -- Enter is the one press that is not a direction, so it is the one
+            -- that still lands where the page was left, and the one that opens
+            -- a page whose first control is a field with the cursor in it.
+            if (keys.up or keys.down) and #M.stack > 1 then
                 local into = M.stack[#M.stack]
                 local page = rows_of(node())
-                if #page > 0 then M.sel[into] = next_stop(page, 1, -1) end
+                -- And neither of them opens the field, where the page has a
+                -- list to land in. A page is walked into at one of its ends;
+                -- the field is drawn over the list, so it is where up off the
+                -- first row goes rather than where an arrow arrives. Pressing
+                -- up on `friends` opened the add box when what it was
+                -- reaching for was the last name on the page.
+                --
+                -- With no list there is nowhere else to be: friends with
+                -- nobody on it is the field and nothing else, and that is the
+                -- page a new player is looking at when they go to add their
+                -- first friend.
+                local field = FIELD_PAGE[into]
+                if #page > 0 then
+                    M.sel[into] = keys.up and next_stop(page, 1, -1)
+                        or first_stop(page)
+                    if field then M[field] = false end
+                elseif field then
+                    M[field] = true
+                end
             end
             return act, true
         end
@@ -4052,9 +4058,16 @@ function M.step(keys)
         return nil, true
     end
     if keys.up then
-        -- Off the first row and back to the tabs. A list that wrapped from
-        -- its head to its foot had no way back up to the row above the page.
-        if row_index(rows) == 1 then return back() end
+        -- Off the first row and onto the head, which is what is drawn over
+        -- the page: the x at one end of that line and the call sign at the
+        -- other. It went back to the tabs, which are along the foot, so the
+        -- one control a hand on the arrows could not reach was the one at the
+        -- top of the panel. A list that wrapped from its head to its foot had
+        -- the same fault a step earlier.
+        if row_index(rows) == 1 then
+            M.head_sel = #head_stops()
+            return nil, true
+        end
         M.sel[id] = next_stop(rows, row_index(rows), -1)
         return landed()
     end
@@ -4214,12 +4227,13 @@ function M.click_friend(index, which)
     return settle(a.act, {who = r.value}, nil), true
 end
 
--- The call sign in the corner of the tab row, pressed. It is a destination
--- like a tab stop, so it behaves like one: home first, then into the page.
--- The same page the rail's pilot stop opens; the name is the second door.
+-- The call sign at the far end of the head, pressed. It is a destination like
+-- a rail stop, so it behaves like one: home first, then into the page. The
+-- same page the rail's pilot stop opens; the name is the second door.
 function M.click_pilot()
     if not M.home then return nil, false end
     M.stack = {"root", "pilot"}
+    M.head_sel = nil
     M.note = nil
     return nil, true
 end
@@ -4227,9 +4241,11 @@ end
 -- Whether the pointer is on that button, so it can light the way a lit tab
 -- does. The arena sets it from the same hit list the press comes off.
 M.pilot_hot = false
--- And which of the two the arrows are on, as an index into `corner_stops`.
--- Nil is the usual answer: the cursor is on a tab, or somewhere in a page.
-M.corner_sel = nil
+-- And which of the head's controls the arrows are on, as an index into
+-- `head_stops`. Nil is the usual answer: the cursor is on a tab or somewhere
+-- in a page, and the head is a line the arrows visit rather than pass
+-- through.
+M.head_sel = nil
 -- And for the friends page: the add button, and one button on one row.
 M.add_hot = false
 M.found_hot = nil
@@ -4276,9 +4292,9 @@ function M.click_rail(index)
     if index == rail_inside() and M.close() then return nil, true end
     M.stack = {"root"}
     M.sel.root = index
-    -- A tap on a tab takes the cursor off the corner, so the two halves of
-    -- the row cannot both look like the place the arrows are.
-    M.corner_sel = nil
+    -- A tap on a tab takes the cursor off the head, so the panel never looks
+    -- like the arrows are in two places.
+    M.head_sel = nil
     M.note = nil
     return activate(), true
 end
@@ -4301,7 +4317,12 @@ function M.hover_stage(index)
     -- the cursor and this is that cursor.
     if index and M.open and #M.stack > 1 then
         local rows = rows_of(node())
-        if rows[index] then M.sel[M.stack[#M.stack]] = index end
+        if rows[index] then
+            M.sel[M.stack[#M.stack]] = index
+            -- The cursor is one cursor. A pointer resting on a row takes it
+            -- off the line over the page the same way an arrow would.
+            M.head_sel = nil
+        end
     end
     return index ~= nil
 end
@@ -4358,6 +4379,7 @@ function M.click_stage(index)
     local id = M.stack[#M.stack]
     if not row_at(index) then return nil, false end
     M.sel[id] = index
+    M.head_sel = nil
     return activate(), true
 end
 
@@ -4390,6 +4412,7 @@ function M.click(index)
     if not M.open then return nil, false end
     if not row_at(index) then return nil, false end
     M.sel[M.stack[#M.stack]] = index
+    M.head_sel = nil
     return activate(), true
 end
 
@@ -4413,6 +4436,7 @@ end
 function M.click_back()
     if not M.open or #M.stack < 2 then return nil, false end
     table.remove(M.stack)
+    M.head_sel = nil
     return nil, true
 end
 

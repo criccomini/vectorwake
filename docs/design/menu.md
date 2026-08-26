@@ -1,5 +1,19 @@
 # Landing, and the menu
 
+> **The x and the call sign are a row of their own.** The two controls on the
+> drawer's top line are the head, and the arrows reach them by pressing up off
+> the first row of a page: left and right walk between them and loop, down goes
+> back into the page at the top of it, enter presses what it is on, and up does
+> nothing because nothing is over that line. They were stops on the end of the
+> rail, so right off the last tab crossed the height of the panel to a button
+> at the top of it. An arrow off the rail is a step in a direction now: up
+> walks into the page from underneath and lands on its last row, down comes in
+> over the top and lands on its first, and neither opens a page's text field.
+> Enter is the press that is not a direction, so it is the one that still lands
+> where the page was left. The ship page carries the head every other page
+> carries, and the settings page carries no "what this changes" section under
+> its rows. See [decision 74](../architecture/decisions.md).
+
 > **The pilot page is the career and the way to keep it.** The name leads
 > with the reroll behind a NEW NAME key, because a press on your own call
 > sign used to reroll it on the spot. Under a ship-page section rule, the
@@ -50,10 +64,10 @@
 > this menu anything is bought. The build library sits behind the band's name
 > key with a key that makes one and a key that drops one, nothing renames a
 > build any more, and the save key stands at the foot of the ship page only
-> while the kit differs from the build it came from. That page carries no head:
-> the wordmark and the call sign come off its line and the band stands there
-> instead. Five stops, not six. See [decision
-> 64](../architecture/decisions.md) and the mocks in `.design/hangar`.
+> while the kit differs from the build it came from. Five stops, not six. See
+> [decision 64](../architecture/decisions.md) and the mocks in `.design/hangar`.
+> That page went without a head for a while, the band standing on the head's
+> own line; decision 74 put the head back on every page.
 
 > **One column, docked to the left edge.** The menu is drawn once at 390 points
 > wide and stood against the left edge of whatever window it is in: a head with
@@ -264,13 +278,11 @@ hover is still the cursor, because there is one cursor and it is the list you
 are reading; on the rail, crossing the row on the way to somewhere else can
 no longer take a page off the screen.
 
-The call sign at the far end of the row never lights for the page it opens.
-The rail carries the account page, and the rail's own stop is what says you
-are on it; a name lighting too would put "where you are" in two places on one
-row. So the name is a label with a press on it, brightening under a pointer
-that could take you somewhere and quiet once you are there. The arrows do
-reach it, because a button no key can focus is broken for whoever is not
-holding a mouse, but the lit mark stays on the rail.
+The call sign lights for the arrows standing on it, wherever the panel is,
+because that is a cursor and a cursor you cannot see is a cursor nobody can
+use. It does not light for a pointer crossing it while its own page is up: the
+rail carries that page and the rail's stop is what says you are on it, and a
+name lighting under a mouse there would put "where you are" in two places.
 
 ## What the window decides
 
@@ -299,17 +311,20 @@ was drawn under a button that took its taps.
 There were two buttons there until decision 73, the call sign and a way out
 to Discord, the second wearing its mark alone where the word would not fit.
 The community door is the site's now and the game carries none, so what is
-left is one label saying who is signed in.
+left is the call sign at one end of that line and the x at the other.
 
-The call sign is on the row the arrows walk, which took saying. Right off the
-last tab lands on it, left walks back, and the row loops from either end.
-Enter presses it, and so does down, which is what down means on a tab.
+Those two are their own row, walked with left and right, reached by pressing
+up off the first row of a page. They were the far end of the tab row for a
+while, on the argument that a button no key can focus is broken for whoever is
+not holding a mouse, which is true and was answered in the wrong place: the
+tabs are along the foot of the column and these are drawn at the top of it, so
+right off the last tab took the cursor the height of the panel sideways into a
+control nobody watched it arrive at. Up off a page is where a hand looks for
+the thing above the page.
 
-It does not light for its own page, and that is the rule the whole row is laid
-out under: this row's light means "where you are", which cannot be true of a
-tab and a name at the same time. The rail's stop is the one mark for the
-account page. The name brightens under a pointer or under the arrows resting
-on it, and goes quiet once you are there.
+Away from home the call sign is not a stop. An account is not a thing to edit
+from inside a room, so there the name is a label saying who you are signed in
+as and the x is the whole of that row.
 
 ## Behind it, the sky the game is played under
 
