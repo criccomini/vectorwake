@@ -25,15 +25,17 @@
 //!                    zone file asks for
 //!   VW_MELEE_PLAN    one build for everybody, to tell a pilot from its kit
 
-use crate::{ai, config, nav, pilots, shopper, sim};
+use crate::{ai, calibrate::spec_triggers, config, nav, pilots, shopper, sim};
 
 const HZ: u32 = 100;
 
 /// How long before a death still counts as part of the fight that ended it.
 const LAST_BREATH: u32 = 100;
 
-/// Where spray sits in the flat kit space.
+/// Where spray sits in the flat kit space, and the two weapon ladders.
 const SPRAY: usize = sim::slot_mod(sim::TRIG_GUN, sim::MOD_MULTI) as usize;
+const GUN_RUNG: usize = sim::slot_level(sim::TRIG_GUN) as usize;
+const BOMB_RUNG: usize = sim::slot_level(sim::TRIG_BOMB) as usize;
 
 /// The pilots a Team Battle room draws from. `bots::claim` walks the pool from
 /// the front, so the authored eight are the ones a live room actually seats.
@@ -68,11 +70,25 @@ struct Seat {
     name: String,
     skill: f32,
     plan: pilots::BuildPlan,
+    strategy: pilots::Strategy,
     multi: u8,
+    /// What the thirty points bought on each ladder. A rung of nothing is the
+    /// weapon the trigger already fires.
+    gun_rung: u8,
+    bomb_rung: u8,
     kills: u32,
     deaths: u32,
     shots: u32,
     hits: u32,
+    /// Rounds that actually left a barrel, split by which trigger threw them.
+    /// Counted off `EV_FIRE` rather than off the button word, because a gun is
+    /// held and a bomb is a press and the two press counts cannot be compared.
+    gun_rounds: u32,
+    bomb_rounds: u32,
+    /// Trigger presses, which is the brain's opinion rather than the core's.
+    /// A bomb nobody presses and a bomb nobody is allowed to throw are
+    /// different faults with the same symptom.
+    bomb_presses: u32,
     repels: u32,
     /// Ticks lived and lives completed, so a mean life is a mean life.
     life_ticks: u64,
@@ -164,6 +180,13 @@ fn play(
         })
         .collect();
 
+    // Which trigger a fire event came from. `EV_FIRE` carries the pattern's
+    // spec, so ask each hull's own table which trigger owns that spec.
+    let trig_of: Vec<std::collections::HashMap<u8, usize>> = playing
+        .iter()
+        .map(|&pilot| spec_triggers(&world.cfg, pilots::individual(pilot).hull))
+        .collect();
+
     // A ship number reaches the roster row that is flying it.
     let seat_of = |ship: u8| ships.iter().position(|&s| s == ship);
     let n = ships.len();
@@ -182,6 +205,9 @@ fn play(
             let look = bots[i].looks_due().then(|| ai::scan(&world, ships[i]));
             let buttons = bots[i].think(&own, &route, look);
             doing[i] = bots[i].doing();
+            if buttons & sim::BTN_BOMB != 0 {
+                roster[playing[i]].bomb_presses += 1;
+            }
             inputs.push(sim::sim_input {
                 ship: ships[i],
                 buttons,
@@ -197,7 +223,12 @@ fn play(
             match e.etype {
                 sim::EV_FIRE => {
                     if let Some(i) = seat_of(e.a) {
-                        roster[playing[i]].shots += 1;
+                        let s = &mut roster[playing[i]];
+                        s.shots += 1;
+                        match trig_of[i].get(&e.b) {
+                            Some(&sim::TRIG_BOMB) => s.bomb_rounds += 1,
+                            _ => s.gun_rounds += 1,
+                        }
                     }
                 }
                 sim::EV_HIT => {
@@ -361,11 +392,17 @@ pub fn run() {
                 skill: (spec.competence.aim + spec.competence.judgment) / 2.0,
                 name: spec.callsign,
                 plan,
+                strategy: spec.behavior.strategy,
                 multi: kit[SPRAY],
+                gun_rung: kit[GUN_RUNG],
+                bomb_rung: kit[BOMB_RUNG],
                 kills: 0,
                 deaths: 0,
                 shots: 0,
                 hits: 0,
+                gun_rounds: 0,
+                bomb_rounds: 0,
+                bomb_presses: 0,
                 repels: 0,
                 life_ticks: 0,
                 lives: 0,
@@ -444,6 +481,34 @@ multi_delay {}, spray ceiling {}",
         );
     }
 
+    println!();
+    println!(
+        "  {:<11} {:>12} {:>7} {:>4} {:>4} {:>10} {:>11} {:>9}",
+        "pilot", "strategy", "plan", "gun", "bmb", "gun rounds", "bomb rounds", "gun:bomb"
+    );
+    for s in &seats {
+        println!(
+            "  {:<11} {:>12} {:>7} {:>4} {:>4} {:>10} {:>11} {:>9}",
+            s.name,
+            format!("{:?}", s.strategy).to_lowercase(),
+            match s.plan {
+                pilots::BuildPlan::Gunner => "gunner",
+                pilots::BuildPlan::Bomber => "bomber",
+                pilots::BuildPlan::Runner => "runner",
+            },
+            s.gun_rung,
+            s.bomb_rung,
+            s.gun_rounds,
+            s.bomb_rounds,
+            if s.bomb_rounds == 0 {
+                "never".to_string()
+            } else {
+                format!("{:.0}:1", s.gun_rounds as f64 / s.bomb_rounds as f64)
+            },
+        );
+    }
+    println!();
+
     let deaths: u32 = seats.iter().map(|s| s.deaths).sum();
     let repels: u32 = seats.iter().map(|s| s.repels).sum();
     let guns: u32 = seats.iter().map(|s| s.guns_on_me).sum();
@@ -463,6 +528,17 @@ multi_delay {}, spray ceiling {}",
         "  {:.2} guns on a pilot when it dies, {:.0}% of deaths with no fight on",
         guns as f64 / deaths.max(1) as f64,
         100.0 * cold as f64 / deaths.max(1) as f64,
+    );
+    let gun_rounds: u32 = seats.iter().map(|s| s.gun_rounds).sum();
+    let bomb_rounds: u32 = seats.iter().map(|s| s.bomb_rounds).sum();
+    let bomb_presses: u32 = seats.iter().map(|s| s.bomb_presses).sum();
+    println!(
+        "  {gun_rounds} gun rounds against {bomb_rounds} bomb, which is {}, off {bomb_presses} presses of the bomb",
+        if bomb_rounds == 0 {
+            "a room that never bombs".to_string()
+        } else {
+            format!("{:.0} to one", gun_rounds as f64 / bomb_rounds as f64)
+        },
     );
     let nth = |k: usize| {
         let at: u64 = seats.iter().map(|s| s.spent_at[k]).sum();
