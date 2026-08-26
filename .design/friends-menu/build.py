@@ -251,9 +251,7 @@ def dot_row(name, zone=None, lit=False):
 
 picked = ('<div class="lbl" style="margin-top:14px">add friend</div>'
           + FIELD
-          + sect("received", 1,
-                 "They added you; accept and you are friends, ignore and"
-                 " the ask goes away", top=20)
+          + sect("received", 1, top=20)
           + cur_row("Gantry 4", "Added you 2h ago",
                     key("accept", go=True) + key("ignore"))
           + sect("friends")
