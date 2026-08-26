@@ -34,11 +34,25 @@ function M.link_pointer(self, html5)
     self.cursor_idle = 0
 end
 
+-- What a link spec would actually share: everything past the fourth comma,
+-- since the four before it are the rectangle and a URL has commas of its own.
+local function shared(spec)
+    return spec and string.match(spec, "^[^,]*,[^,]*,[^,]*,[^,]*,(.*)$")
+end
+
 local function publish_link(self, html5, ui)
     local link = ui.link_dom
     if link == self.link_dom then return end
+    -- The result belongs to the thing shared rather than to the rectangle it
+    -- was shared from. It used to be dropped whenever the spec moved at all,
+    -- and the key that says "link copied" is wider than the key that says
+    -- "invite", so the acknowledgement moved the box that erased it: the word
+    -- came up for one frame and went. A window resize did the same thing to
+    -- it. Now only a different target clears it, which is what it is for: a
+    -- fresh link has not been copied.
+    local was = shared(self.link_dom)
     self.link_dom = link
-    ui.share_result = nil
+    if shared(link) ~= was then ui.share_result = nil end
     pcall(html5.run, "window.vwLink && vwLink('" .. (link or "") .. "')")
 end
 

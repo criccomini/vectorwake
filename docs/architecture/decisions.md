@@ -3643,3 +3643,64 @@ rather than rare, at which point the timer is too short for the fight rather
 than the rule being wrong, and the answer is a longer clock. Or if the ladder
 starts wanting every rung settled, which would need a decider that measures
 something other than who dies first: damage dealt, or distance held.
+## 78. The friends page is who is on, and one way to reach who is not
+
+**Status:** accepted
+
+**Decision:** the page is four things down the screen: a field that takes a
+call sign, the adds waiting on an answer under RECEIVED, your friends, and a
+key at the foot that hands the game's address to whatever the device shares
+with.
+
+A friend is one line: a dot, a name, and the game they are in. The dot is
+solid green while they are flying and a hollow grey ring while they are not,
+and the game is named the way the games list names it, so a friend is in Team
+Battle rather than in melee. A friend who is off carries nothing beside their
+name. No key is drawn on those rows; join and unfriend are on the card the row
+raises, which is where five inputs always had to find them.
+
+Three sections are gone: the roster of the room you are flying in, the adds
+you had sent and nobody had answered, and the ledger of everybody who had ever
+added you. `/v1/friends` stops computing them as well as the page stopping
+drawing them.
+
+**Why:** the page answered its three questions and looked like none of them.
+Five headings deep before it said who was on, an identical row grammar for
+every one of them, a key or two on every row with unfriend drawn three times
+for each join, and the fact the page exists for reduced to a six-point square
+and a dim word. The one thing worth crossing the room for was the quietest
+thing on it.
+
+The sent list was a receipt for a press whose consequence is a row on somebody
+else's screen. The ledger was context under a heading nobody opened this page
+to read. The room roster is the one with a real job, and the cost of cutting
+it is below.
+
+**Cost:** adding somebody you have just flown with is now typing their call
+sign rather than pressing a key beside their name. The room roster was where
+most friends were made, and the in-match pilot box's key is a team invitation
+rather than an add, so nothing else in the client offers a name to add. The
+completions take most of the sting out of it, since a letter is enough to
+start and pressing a name adds that pilot by number, and a call sign is
+readable off the scoreboard the match just showed. It is still the press this
+decision spends, and the first thing to put back if adding falls off.
+
+Ignoring is final now. The ledger was where an ignored add could
+still be accepted, and with it gone the ignore is the end of that ask: nothing
+draws it and nothing can take it back. `friend_ignores` still holds the row,
+so the pilot who was ignored cannot ask again, which is what it is for.
+
+Joining a friend is two presses rather than one, since the row raises the card
+and the card carries the join. A one-press join needs a key on the row, and a
+key on the row is the grammar this decision is spending to be rid of.
+
+The invite key sends the site's front page rather than anything that knows who
+sent it, so a pilot who invites four people and gets one is told nothing about
+it, and the new player arrives with an empty friends page rather than with the
+person who invited them already on it.
+
+**Reconsider if:** the invite is worth closing the loop on, which is a token
+on the link and a signup that seeds the edge, and would turn the key at the
+foot into the thing that actually fills the page above it. Or if somebody
+reports being unable to undo an ignore, at which point the ledger comes back
+somewhere quieter than the page it used to close.

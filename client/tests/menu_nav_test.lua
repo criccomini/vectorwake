@@ -35,7 +35,7 @@ local account = {
     -- The friends page's lists and the one call the menu makes to fill them.
     -- Empty is a pilot with nobody yet, which is what most of this file is
     -- testing around.
-    friends = {}, asked = {}, waiting = {}, here = {}, everybody = {},
+    friends = {}, asked = {},
     have_friends = true,
     asked_friends = 0,
     friended = nil, ignored = nil,
@@ -115,9 +115,16 @@ package.loaded["arena.directory"] = {
     -- Where an instance answers, by its id. The friends page turns a friend's
     -- whereabouts into a press with it.
     instances = {},
-    -- What a game is called, by its key. The list is where the labels arrive,
-    -- so it is what everything else asks.
-    label_of = function(zone) return zone end,
+    -- What a game is called, by its key, looked up in the games list the way
+    -- the real one does: the label is the catalog's and the key is the wire's,
+    -- and a stub that handed the key back would let a page ship the word
+    -- "melee" to somebody who chose Team Battle off a list.
+    label_of = function(zone)
+        for _, r in ipairs(package.loaded["arena.directory"].rows or {}) do
+            if r.zone == zone then return r.name or zone end
+        end
+        return zone
+    end,
 }
 do
     local dir = package.loaded["arena.directory"]
@@ -1667,10 +1674,11 @@ end
 
 -- --- friends -----------------------------------------------------------------
 --
--- Five sections from one reply, a field to type a call sign into, and the
--- four things a row can carry: accept, ignore, join, unfriend. The buttons
--- are drawn off each row's own `acts`, and the card a press of the row raises
--- is built from the same list, so a d-pad is offered what a pointer is.
+-- Two sections from one reply, a field to type a call sign into, and the four
+-- things a row can carry: accept, ignore, join, unfriend. Accept and ignore
+-- are keys on the row that is asking; a friend's row carries none, and the
+-- card a press of it raises is built from the same `acts` list, so a d-pad
+-- and a pointer are offered the same answers. See decision 78.
 
 do
     -- Saved and put back, so this block leaves the menu where it found
@@ -1683,15 +1691,13 @@ do
         {account = 12, name = "Sable 4", zone = "", instance = ""},
     }
     account.asked = {{account = 13, name = "Kestrel 9", ago = 7200}}
-    account.here = {{account = 14, name = "Vantage 2"}}
-    account.waiting = {{account = 15, name = "Marl 30", ago = 90000}}
-    account.everybody = {
-        {account = 16, name = "Cirrus 55", ago = 345600, state = "ignored"},
-        {account = 13, name = "Kestrel 9", ago = 7200, state = "waiting"},
-        {account = 11, name = "Rill 121", ago = 900000, state = "friend"},
-    }
     account.have_friends = true
     dir.instances = {abc = {zone = "melee", address = "ws://a", wt = ""}}
+    -- The games list, since a friend's row and the card it raises both name
+    -- their game the way this list names it. Put back at the end of the block.
+    local kept_rows = dir.rows
+    dir.rows = {{zone = "melee", name = "Team Battle", detail = "four a side",
+                 count = "0 playing", players = 0, bots = 8, live = true}}
 
     menu.home = true
     menu.stack = {"root", "friends"}
@@ -1702,23 +1708,36 @@ do
         said[#said + 1] = r.label .. "/" .. tostring(r.detail)
             .. "/" .. tostring(r.sect)
     end
-    check("the page is every list in one", #v.rows == 8,
+    -- Two sections and nothing else. The room roster, the adds nobody had
+    -- answered and the ledger of everybody who ever added you were three
+    -- more, and the page they made was five headings deep before it said
+    -- who was on. See decision 78.
+    check("the page is the inbox and the friends", #v.rows == 3,
           table.concat(said, " "))
     -- The page it draws is its own, not the list renderer's: an add field
-    -- over sections whose rows carry buttons.
+    -- over sections whose rows carry their own grammar.
     check("and it is drawn as a page rather than a list", v.social == true,
           tostring(v.social))
+    for _, gone in ipairs({"sent", "in this game",
+                           "everybody who added you"}) do
+        local found = false
+        for _, r in ipairs(v.rows) do
+            if r.sect == gone then found = true end
+        end
+        check("no section headed " .. gone, not found,
+              table.concat(said, " "))
+    end
 
     -- Whoever is waiting on an answer is first, because it is the only
-    -- section asking anything of you.
+    -- section asking anything of you. It is headed for what arrived rather
+    -- than for what it wants from you.
     check("the inbox opens the page",
-          v.rows[1].sect == "waiting on you"
+          v.rows[1].sect == "received"
           and v.rows[1].label == "Kestrel 9"
           and v.rows[1].detail == "added you 2h ago",
           said[1])
-    check("and it says how many and what the two buttons do",
-          v.rows[1].sect_note == "1"
-          and string.find(v.rows[1].sect_line or "", "ignore", 1, true) ~= nil,
+    check("and it says how many, without a sentence explaining itself",
+          v.rows[1].sect_note == "1" and v.rows[1].sect_line == nil,
           tostring(v.rows[1].sect_note) .. "/"
           .. tostring(v.rows[1].sect_line))
     check("with accept and ignore on it",
@@ -1726,53 +1745,32 @@ do
           and v.rows[1].acts[2].act == "do_ignore",
           tostring(v.rows[1].acts[1].label))
 
-    check("a friend in a game says which one",
-          v.rows[2].label == "Rill 121" and v.rows[2].detail == "melee"
+    -- A friend in a game carries the game's name as the games list spells
+    -- it, rather than the key the wire carries it under: a pilot chose Team
+    -- Battle off a list and never saw the word melee.
+    check("a friend in a game says which one, as the list names it",
+          v.rows[2].label == "Rill 121"
+          and v.rows[2].detail == "Team Battle"
           and v.rows[2].sect == "friends", said[2])
-    check("and the head counts them and how many are on",
-          v.rows[2].sect_note == "2, 1 flying", tostring(v.rows[2].sect_note))
+    check("and the head carries no count", v.rows[2].sect_note == nil,
+          tostring(v.rows[2].sect_note))
     -- One head per run. The list renderer draws a head wherever it finds a
     -- `sect` and dedupes nothing, so a section label on every row is that
     -- label over every row.
     check("and the head belongs to the row that opens the run",
           v.rows[3].sect == nil, said[3])
-    check("and one who is not on says so", v.rows[3].detail == "not on",
+    -- Nothing beside a friend who is off. The hollow dot says it, and a word
+    -- saying it again is the page repeating itself.
+    check("and one who is not on says nothing", v.rows[3].detail == "",
           said[3])
-    -- Spelled out on every layout. It was a cross on a phone, which is the
-    -- mark for shutting a panel everywhere else in this interface.
+    -- The acts are what the card offers. No key is drawn on these rows.
     check("a friend can be joined and unfriended, in that order",
           v.rows[2].acts[1].act == "do_join_friend"
           and v.rows[2].acts[2].label == "unfriend",
           tostring(v.rows[2].acts[2] and v.rows[2].acts[2].label))
-    check("and one who is not on has only the one button",
+    check("and one who is not on has only the one answer",
           #v.rows[3].acts == 1 and v.rows[3].acts[1].label == "unfriend",
           tostring(#v.rows[3].acts))
-
-    -- Adds nobody has answered, straight under the friends they are trying to
-    -- join: they asked you, it closed, you asked them, in that order. It was
-    -- headed "you added", which names the press rather than what is sitting
-    -- there, and it sat below the room roster.
-    check("what you sent sits under the friends it is trying to join",
-          v.rows[4].sect == "sent" and v.rows[4].detail == "yesterday",
-          said[4])
-    check("the room you are in comes after it",
-          v.rows[5].sect == "in this game"
-          and v.rows[5].acts[1].act == "do_befriend", said[5])
-
-    -- And the list that makes an ignore reversible. The ignored are the only
-    -- rows on it anybody presses; the rest are what makes the heading true.
-    check("everybody who added you closes the page",
-          v.rows[6].sect == "everybody who added you"
-          and v.rows[6].label == "Cirrus 55"
-          and v.rows[6].detail == "ignored 4d ago", said[6])
-    check("an ignored pilot can still be accepted",
-          #v.rows[6].acts == 1
-          and v.rows[6].acts[1].act == "do_befriend", said[6])
-    check("and the ones it already came to something press nothing",
-          #v.rows[7].acts == 0 and #v.rows[8].acts == 0
-          and v.rows[7].detail == "waiting on you"
-          and v.rows[8].detail == "friend",
-          said[7] .. " " .. said[8])
 
     -- And the card that says there is nobody stays down while there is
     -- somebody: a page saying two things at once has one of them wrong.
@@ -1797,22 +1795,9 @@ do
     check("unfriending takes both directions", account.friended ~= nil
           and account.friended.who == 12 and account.friended.add == false,
           tostring(account.friended and account.friended.who))
-    -- And taking back an add you sent is the same call from the other end.
-    account.friended = nil
-    menu.click_friend(4, 1)
-    check("and cancelling what you sent takes it back",
-          account.friended ~= nil and account.friended.who == 15
-          and account.friended.add == false,
-          tostring(account.friended and account.friended.who))
-    account.friended = nil
-    menu.click_friend(6, 1)
-    check("and accepting an ignored pilot is the same add",
-          account.friended ~= nil and account.friended.who == 16
-          and account.friended.add == true,
-          tostring(account.friended and account.friended.who))
-    check("a row with no buttons answers nothing",
-          select(2, menu.click_friend(7, 1)) == false,
-          tostring(select(2, menu.click_friend(7, 1))))
+    check("and a row that is not there answers nothing",
+          select(2, menu.click_friend(9, 1)) == false,
+          tostring(select(2, menu.click_friend(9, 1))))
 
     -- --- five inputs get the same list as a card
     menu.sel.friends = 2
@@ -1820,8 +1805,8 @@ do
     menu.step({go = true})
     check("a friend asks rather than acting", menu.ask ~= nil,
           tostring(menu.ask))
-    check("and offers the game they are in first",
-          menu.ask.keys[1].label == "join melee"
+    check("and offers the game they are in first, by its name",
+          menu.ask.keys[1].label == "join Team Battle"
           and menu.ask.keys[1].act == "do_join_friend",
           menu.ask.keys[1] and menu.ask.keys[1].label or "no key")
     check("with the answer that changes nothing under the cursor",
@@ -2041,10 +2026,8 @@ do
     -- gives up on the arrows when it has no rows, and under that the box was
     -- reachable on every friends page except that one.
     do
-        local kept = {account.friends, account.asked, account.here,
-                      account.waiting, account.everybody}
-        account.friends, account.asked, account.here = {}, {}, {}
-        account.waiting, account.everybody = {}, {}
+        local kept = {account.friends, account.asked}
+        account.friends, account.asked = {}, {}
         menu.stack = {"root", "friends"}
         menu.sel = {}
         menu.add_name, menu.add_on, menu.found_sel = "", false, nil
@@ -2063,8 +2046,7 @@ do
               and menu.view().head_sel == "pilot",
               menu.at() .. "/" .. tostring(menu.view().head_sel))
         menu.head_sel = nil
-        account.friends, account.asked, account.here = kept[1], kept[2], kept[3]
-        account.waiting, account.everybody = kept[4], kept[5]
+        account.friends, account.asked = kept[1], kept[2]
     end
 
     -- And the field is the page's, not the rail's preview of it. A letter
@@ -2103,6 +2085,7 @@ do
     account.friends, account.asked, account.here = {}, {}, {}
     account.waiting, account.everybody = {}, {}
     menu.add_name, menu.add_on = "", false
+    dir.rows = kept_rows
     menu.home, menu.stack, menu.sel = kept_home, kept_stack, kept_sel
 end
 
