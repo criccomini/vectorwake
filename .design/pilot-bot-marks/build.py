@@ -215,12 +215,12 @@ def wing_pilot(cx, cy, k, col, line=None):
     out = [filled([p(0, -0.13), p(0.10, 0.01), p(0, 0.15), p(-0.10, 0.01)],
                   col)]
     for s in (1, -1):
-        out.append(seg(*p(s * 0.11, -0.04), *p(s * 0.54, -0.28),
-                       line, col, "round"))
-        out.append(seg(*p(s * 0.11, 0.05), *p(s * 0.50, -0.11),
-                       line, col, "round"))
-        out.append(seg(*p(s * 0.11, 0.14), *p(s * 0.42, 0.06),
-                       line, col, "round"))
+        out.append(seg(*p(s * 0.11, -0.06), *p(s * 0.54, -0.30),
+                       line * 0.85, col, "round"))
+        out.append(seg(*p(s * 0.11, 0.06), *p(s * 0.50, -0.10),
+                       line * 0.85, col, "round"))
+        out.append(seg(*p(s * 0.11, 0.18), *p(s * 0.42, 0.09),
+                       line * 0.85, col, "round"))
     return "".join(out)
 
 
@@ -425,6 +425,211 @@ def size_run(pfn, bfn):
             + "".join(cells) + '</div>')
 
 
+# ---- Round 2: the Badges direction, opened up ----
+#
+# Chris picked Badges. Two variant sheets, then the strongest pairings put
+# back into the game's contexts. The wings vary in how they are cut; the
+# machine varies in what it wears, including its own set of wings printed
+# as circuit traces, which keeps the pair one grammar the way the shared
+# collar did for the helmets.
+def wing_feathers(cx, cy, k, col, line=None):
+    return wing_pilot(cx, cy, k, col, line)
+
+
+def wing_solid(cx, cy, k, col, line=None):
+    line = line or pen(k)
+
+    def p(x, y):
+        return (cx + x * k, cy + y * k)
+
+    out = [filled([p(0, -0.16), p(0.11, 0), p(0, 0.18), p(-0.11, 0)], col)]
+    for s in (1, -1):
+        out.append(filled([p(s * 0.10, -0.05), p(s * 0.53, -0.27),
+                           p(s * 0.41, -0.11), p(s * 0.45, -0.05),
+                           p(s * 0.31, 0.01), p(s * 0.35, 0.07),
+                           p(s * 0.13, 0.12)], col))
+    return "".join(out)
+
+
+def wing_chevron(cx, cy, k, col, line=None):
+    line = line or pen(k)
+
+    def p(x, y):
+        return (cx + x * k, cy + y * k)
+
+    out = [filled([p(0, -0.12), p(0.09, 0.01), p(0, 0.14), p(-0.09, 0.01)],
+                  col)]
+    for s in (1, -1):
+        out.append(seg(*p(s * 0.10, 0.02), *p(s * 0.50, -0.20),
+                       line * 1.6, col, "round"))
+        out.append(seg(*p(s * 0.09, 0.13), *p(s * 0.36, -0.01),
+                       line * 1.6, col, "round"))
+    return "".join(out)
+
+
+def wing_hull(cx, cy, k, col, line=None):
+    line = line or pen(k)
+
+    def p(x, y):
+        return (cx + x * k, cy + y * k)
+
+    # The client's own hull thumb at the center of the spread: the wings
+    # are the badge, the ship is whose badge it is.
+    hull = [(0, -13), (15, 9), (7, 12), (0, 8), (-7, 12), (-15, 9)]
+    sc = 0.46 / 30
+    out = [poly([(cx + x * sc * k, cy + (y + 0.5) * sc * k)
+                 for x, y in hull], col, line)]
+    for s in (1, -1):
+        out.append(seg(*p(s * 0.30, 0.02), *p(s * 0.56, -0.20),
+                       line * 0.9, col, "round"))
+        out.append(seg(*p(s * 0.30, 0.12), *p(s * 0.50, -0.02),
+                       line * 0.9, col, "round"))
+    return "".join(out)
+
+
+def mach_chip(cx, cy, k, col, line=None):
+    return chip_bot(cx, cy, k, col, line)
+
+
+def mach_gear(cx, cy, k, col, line=None):
+    line = line or pen(k)
+    out = [ring(cx, cy, 0.19 * k, line, col), disc(cx, cy, 0.055 * k, col)]
+    for i in range(8):
+        a = i * math.pi / 4 + math.pi / 8
+        out.append(seg(cx + 0.19 * k * math.cos(a),
+                       cy + 0.19 * k * math.sin(a),
+                       cx + 0.30 * k * math.cos(a),
+                       cy + 0.30 * k * math.sin(a),
+                       line * 1.5, col, "butt"))
+    return "".join(out)
+
+
+def mach_circuit(cx, cy, k, col, line=None):
+    line = line or pen(k)
+
+    def p(x, y):
+        return (cx + x * k, cy + y * k)
+
+    out = [filled([p(-0.08, -0.08), p(0.08, -0.08), p(0.08, 0.10),
+                   p(-0.08, 0.10)], col)]
+    for s in (1, -1):
+        for a, b, c in (((0.10, -0.06), (0.24, -0.06), (0.52, -0.30)),
+                        ((0.10, 0.04), (0.30, 0.04), (0.49, -0.10)),
+                        ((0.10, 0.14), (0.26, 0.14), (0.41, 0.07))):
+            pts = [p(s * a[0], a[1]), p(s * b[0], b[1]), p(s * c[0], c[1])]
+            out.append(poly(pts, col, line * 0.8, closed=False,
+                            cap="round"))
+            out.append(disc(*p(s * c[0], c[1]), 0.055 * k, col))
+    return "".join(out)
+
+
+def mach_radio(cx, cy, k, col, line=None):
+    line = line or pen(k)
+
+    def p(x, y):
+        return (cx + x * k, cy + y * k)
+
+    out = [seg(*p(0, 0.36), *p(0, 0.02), line, col, "butt"),
+           disc(*p(0, -0.04), 0.06 * k, col)]
+    for r in (0.17, 0.30):
+        out.append(arc(cx, cy - 0.04 * k, r * k, math.radians(-45),
+                       math.radians(45), line, col))
+        out.append(arc(cx, cy - 0.04 * k, r * k, math.radians(135),
+                       math.radians(225), line, col))
+    return "".join(out)
+
+
+def mach_hex(cx, cy, k, col, line=None):
+    line = line or pen(k)
+    pts = []
+    for i in range(6):
+        a = math.pi / 6 + i * math.pi / 3
+        pts.append((cx + 0.27 * k * math.cos(a),
+                    cy + 0.27 * k * math.sin(a)))
+    return poly(pts, col, line) + disc(cx, cy, 0.06 * k, col)
+
+
+WINGS = [
+    ("Feathers", wing_feathers,
+     "Round 1's cut: three strokes fanning off a diamond. Lightest on "
+     "the screen; the feathers mush into one wing by 11."),
+    ("Solid", wing_solid,
+     "The wings as filled silhouettes with a notched trailing edge. "
+     "Reads as a worn badge, and the mass survives 11 best."),
+    ("Chevrons", wing_chevron,
+     "Two heavy strokes a side. The most minimal cut, and the one that "
+     "stays crisp smallest; large it is the plainest."),
+    ("Hull", wing_hull,
+     "The client's own hull thumb inside the spread: whose wings these "
+     "are. Costs the most detail, so the ship dies first at 11."),
+]
+
+MACHINES = [
+    ("Chip", mach_chip,
+     "Round 1's machine: silicon with legs. Instantly a machine, "
+     "reads at every size; also every second tech logo."),
+    ("Circuit wings", mach_circuit,
+     "The same wings the pilot wears, printed: traces that bend at "
+     "45 and end in pads. Both marks are wings, and the texture "
+     "answers the question, the way the shared collar used to."),
+    ("Gear", mach_gear,
+     "The oldest machine mark there is. Bold and unmistakable large; "
+     "at 11 the teeth blur into a fuzzy ring."),
+    ("Radio", mach_radio,
+     "A mast broadcasting: the seat is remote-controlled. The most "
+     "honest about what a bot is; the arcs thin out by 11."),
+    ("Hex", mach_hex,
+     "A nut with a bore: built, torqued down. The simplest shape "
+     "here and rock solid at 11; the least specific to a machine."),
+]
+
+
+def variant_sheet(name, title, intro, variants, h=640):
+    rows = []
+    for label, fn, note in variants:
+        cells = []
+        for kk in (36, 21, 11):
+            cells.append(
+                '<div class="col" style="align-items:center;gap:5px;'
+                'width:56px">' + mark_svg(fn, kk, INK)
+                + f'<span class="lbl">{kk}</span></div>')
+        rows.append(
+            '<div class="row" style="gap:18px;padding:12px 0;'
+            'border-top:1px solid rgba(63,88,120,.35);'
+            'align-items:center">'
+            '<div class="col" style="width:190px;flex:none">'
+            f'<span style="font-size:14px">{label}</span>'
+            f'<div class="note" style="margin-top:4px">{note}</div></div>'
+            '<div class="row" style="gap:14px;flex:1;'
+            'justify-content:center;align-items:flex-end">'
+            + "".join(cells) + '</div></div>')
+    body = (f'<div style="width:470px;height:{h}px;background:#05070c;'
+            'padding:24px 28px;overflow:hidden">'
+            f'<div class="lbl" style="font-size:10px;color:#9fb6d4">'
+            f'{title}</div>'
+            f'<div class="note" style="margin-top:6px">{intro}</div>'
+            '<div style="margin-top:14px">' + "".join(rows)
+            + '</div></div>')
+    write(name + ".dc.html", body)
+
+
+PAIRS = [
+    ("PairSolidCircuit", "Solid wings + circuit wings", wing_solid,
+     mach_circuit,
+     "The matched pair: everyone at the table wears wings, and what "
+     "they are cut from answers the question. Grown feathers against "
+     "printed traces, one badge grammar, no head in sight."),
+    ("PairSolidChip", "Solid wings + chip", wing_solid, mach_chip,
+     "The blunt pair: the strongest wing cut beside the most "
+     "unmistakable machine. No shared grammar between them, which is "
+     "also why nobody ever misreads it."),
+    ("PairChevronGear", "Chevrons + gear", wing_chevron, mach_gear,
+     "The minimal pair: two strokes against a toothed ring. The "
+     "quietest of the three in a row of numbers, and the gear is the "
+     "only piece here that suffers at 11."),
+]
+
+
 # ---- Boards ----
 def direction_board(key, title, pfn, bfn, note):
     body = ('<div style="width:470px;height:560px;background:#05070c;'
@@ -484,15 +689,24 @@ def main_board():
 
 def canvas():
     import json
-    arts = [{"file": "Main.dc.html", "title": "Six ways",
+    arts = [{"file": "Main.dc.html", "title": "Six ways", "page": "page-1",
              "x": 0, "y": 0, "w": 880, "h": 700}]
     names = ["Current", "Profiles", "Badges", "Blips", "Busts", "Signals"]
     for i, n in enumerate(names):
-        arts.append({"file": n + ".dc.html", "title": n,
+        arts.append({"file": n + ".dc.html", "title": n, "page": "page-1",
                      "x": (i % 3) * 570, "y": 830 + (i // 3) * 690,
                      "w": 470, "h": 560})
+    arts.append({"file": "Wings.dc.html", "title": "The wings",
+                 "page": "page-2", "x": 0, "y": 0, "w": 470, "h": 640})
+    arts.append({"file": "Machines.dc.html", "title": "The machine",
+                 "page": "page-2", "x": 570, "y": 0, "w": 470, "h": 760})
+    for i, (key, title, _, _, _) in enumerate(PAIRS):
+        arts.append({"file": key + ".dc.html", "title": title,
+                     "page": "page-2", "x": i * 570, "y": 900,
+                     "w": 470, "h": 560})
     notes = [
-        {"id": "note-brief", "x": 940, "y": 40, "w": 380, "text":
+        {"id": "note-brief", "page": "page-1", "x": 940, "y": 40, "w": 380,
+         "text":
          "The ask: alternatives to the current human and bot marks, whose "
          "style Chris doesn't like. Five directions, each moving on a "
          "different axis: turn the heads (Profiles), drop the heads for "
@@ -501,7 +715,8 @@ def canvas():
          "or draw the flying itself (Signals).\n\nEvery board shows the "
          "pair at the three sizes the client actually draws: 11 beside "
          "counts and names, 21 in the rail, large only for judging."},
-        {"id": "note-lean", "x": 940, "y": 420, "w": 380, "text":
+        {"id": "note-lean", "page": "page-1", "x": 940, "y": 420, "w": 380,
+         "text":
          "A read on each, honestly: Badges is the most distinctive and "
          "the wings make the Pilot stop literal, but a chip is every "
          "second tech logo. Profiles keeps today's grown-vs-built logic "
@@ -510,14 +725,36 @@ def canvas():
          "abstract; it needs the pair side by side once to learn. Busts "
          "is the safest read at 11 and the least interesting large. "
          "Signals is the boldest idea and the biggest gamble."},
+        {"id": "note-round2", "page": "page-2", "x": 1140, "y": 40,
+         "w": 380, "text":
+         "Round 2: Badges opened up. Left sheet cuts the wings four "
+         "ways, right sheet tries five things for the machine to wear. "
+         "Below, the three pairings worth arguing about, each back in "
+         "the games list, scoreboard and rail.\n\nThe lean: solid wings "
+         "with circuit wings. Matched badges keep the pair one grammar "
+         "the way the old shared collar did, and both carry mass, so "
+         "neither side goes thin at 11. Chip is the safe fallback if "
+         "the two wing shapes sit too close at list size; the "
+         "scoreboard board is the place to judge that."},
     ]
-    doc = {"artboards": arts, "annotations": notes,
-           "launch": {"view": "canvas"}}
+    pages = [{"id": "page-1", "name": "Directions"},
+             {"id": "page-2", "name": "Badges round 2"}]
+    doc = {"artboards": arts, "annotations": notes, "pages": pages,
+           "launch": {"view": "canvas", "page": "page-2"}}
     pathlib.Path(OUT, "canvas.json").write_text(
         json.dumps(doc, indent=2) + "\n")
 
 
 for key, title, pfn, bfn, note in DIRS:
+    direction_board(key, title, pfn, bfn, note)
+variant_sheet("Wings", "the wings, four cuts",
+              "What the pilot wears, varied in how it is cut. The "
+              "diamond stays; the wings change weight and count.", WINGS)
+variant_sheet("Machines", "the machine, five badges",
+              "What sits beside the wings. Two keep round 1's silicon, "
+              "one prints the pilot's own wings in traces, two reach "
+              "for older machine marks.", MACHINES, h=760)
+for key, title, pfn, bfn, note in PAIRS:
     direction_board(key, title, pfn, bfn, note)
 main_board()
 canvas()

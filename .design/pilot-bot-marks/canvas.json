@@ -3,6 +3,7 @@
     {
       "file": "Main.dc.html",
       "title": "Six ways",
+      "page": "page-1",
       "x": 0,
       "y": 0,
       "w": 880,
@@ -11,6 +12,7 @@
     {
       "file": "Current.dc.html",
       "title": "Current",
+      "page": "page-1",
       "x": 0,
       "y": 830,
       "w": 470,
@@ -19,6 +21,7 @@
     {
       "file": "Profiles.dc.html",
       "title": "Profiles",
+      "page": "page-1",
       "x": 570,
       "y": 830,
       "w": 470,
@@ -27,6 +30,7 @@
     {
       "file": "Badges.dc.html",
       "title": "Badges",
+      "page": "page-1",
       "x": 1140,
       "y": 830,
       "w": 470,
@@ -35,6 +39,7 @@
     {
       "file": "Blips.dc.html",
       "title": "Blips",
+      "page": "page-1",
       "x": 0,
       "y": 1520,
       "w": 470,
@@ -43,6 +48,7 @@
     {
       "file": "Busts.dc.html",
       "title": "Busts",
+      "page": "page-1",
       "x": 570,
       "y": 1520,
       "w": 470,
@@ -51,8 +57,54 @@
     {
       "file": "Signals.dc.html",
       "title": "Signals",
+      "page": "page-1",
       "x": 1140,
       "y": 1520,
+      "w": 470,
+      "h": 560
+    },
+    {
+      "file": "Wings.dc.html",
+      "title": "The wings",
+      "page": "page-2",
+      "x": 0,
+      "y": 0,
+      "w": 470,
+      "h": 640
+    },
+    {
+      "file": "Machines.dc.html",
+      "title": "The machine",
+      "page": "page-2",
+      "x": 570,
+      "y": 0,
+      "w": 470,
+      "h": 760
+    },
+    {
+      "file": "PairSolidCircuit.dc.html",
+      "title": "Solid wings + circuit wings",
+      "page": "page-2",
+      "x": 0,
+      "y": 900,
+      "w": 470,
+      "h": 560
+    },
+    {
+      "file": "PairSolidChip.dc.html",
+      "title": "Solid wings + chip",
+      "page": "page-2",
+      "x": 570,
+      "y": 900,
+      "w": 470,
+      "h": 560
+    },
+    {
+      "file": "PairChevronGear.dc.html",
+      "title": "Chevrons + gear",
+      "page": "page-2",
+      "x": 1140,
+      "y": 900,
       "w": 470,
       "h": 560
     }
@@ -60,6 +112,7 @@
   "annotations": [
     {
       "id": "note-brief",
+      "page": "page-1",
       "x": 940,
       "y": 40,
       "w": 380,
@@ -67,13 +120,33 @@
     },
     {
       "id": "note-lean",
+      "page": "page-1",
       "x": 940,
       "y": 420,
       "w": 380,
       "text": "A read on each, honestly: Badges is the most distinctive and the wings make the Pilot stop literal, but a chip is every second tech logo. Profiles keeps today's grown-vs-built logic with far more character at large sizes; it is the least legible at 11. Blips is the most native to a space game and the most abstract; it needs the pair side by side once to learn. Busts is the safest read at 11 and the least interesting large. Signals is the boldest idea and the biggest gamble."
+    },
+    {
+      "id": "note-round2",
+      "page": "page-2",
+      "x": 1140,
+      "y": 40,
+      "w": 380,
+      "text": "Round 2: Badges opened up. Left sheet cuts the wings four ways, right sheet tries five things for the machine to wear. Below, the three pairings worth arguing about, each back in the games list, scoreboard and rail.\n\nThe lean: solid wings with circuit wings. Matched badges keep the pair one grammar the way the old shared collar did, and both carry mass, so neither side goes thin at 11. Chip is the safe fallback if the two wing shapes sit too close at list size; the scoreboard board is the place to judge that."
+    }
+  ],
+  "pages": [
+    {
+      "id": "page-1",
+      "name": "Directions"
+    },
+    {
+      "id": "page-2",
+      "name": "Badges round 2"
     }
   ],
   "launch": {
-    "view": "canvas"
+    "view": "canvas",
+    "page": "page-2"
   }
 }
