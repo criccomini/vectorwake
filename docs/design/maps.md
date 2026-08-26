@@ -411,23 +411,42 @@ cargo run --manifest-path server/Cargo.toml -- \
 
 ### The generation pipeline
 
-A map starts as a `MapBrief`: mode, topology, theme, arena envelope, symmetry,
-route count, minimum opening, and contact-time window. The seed chooses small
-details inside that brief. It does not choose what sort of map is being made.
+A map starts as a brief: mode, theme, arena envelope, symmetry, route count,
+minimum opening, and contact-time window. The seed chooses small details
+inside that brief. It does not choose what sort of map is being made.
 
-The brief becomes a `LayoutGraph`. Homes, junctions, landmarks, and edges are
-named before a tile is placed. Geometry reserves every graph edge at the
-brief's opening width, draws the topology's deliberate wall skeleton, and
-shapes the perimeter. There is no connectivity repair. A layout that fails is
-rejected instead of having a random tunnel cut through it after the fact.
+The brief becomes a `LayoutGraph`. Homes, junctions, and edges are named
+before a tile is placed, and the junctions hug the home ends so each reserved
+lane crosses the field as one straight, clean channel. Geometry reserves
+every graph edge at the brief's opening width. There is no connectivity
+repair. A layout that fails is rejected instead of having a random tunnel cut
+through it after the fact.
 
-The theme pass uses the same reserved graph and contributes its own material
-language:
+**A theme owns its geometry.** The first version of this pipeline paired a
+topology with a theme that scattered materials over it, up to a hundred and
+ten placements at random coordinates, and every map came out as the same
+rubble in a different texture. Now the theme is the topology: every shape
+sits on a module grid, placement runs along lattices, bands, and rings, and
+the seed varies texture inside the pattern rather than the pattern itself.
+Each theme also declares which elements it uses and what cover fraction it is
+held to, which is how doors and wormholes reach generated maps and how a maze
+is allowed five times the wall of a nebula.
 
-- Dockyard uses gantries, stations, and under-floor service marks.
-- Asteroid reef uses small rocks and complete two-tile rock objects.
-- Derelict convoy uses station hulls, broken spars, and overhead debris.
-- Relay ring uses stations, signal marks, and paired slope runs.
+Thirteen themes ship: wide-open, nebula, gravity-wells, asteroid-belt,
+boulder-orchard, station-yard, maze, twin-fortresses, canyon, derelict,
+rings, crystal-lattice, and pinwheel. Doors belong to the yard, the maze, the
+fortresses, and the rings; wormholes to the nebula, the wells, and the rings;
+slope work to the canyon, the derelict, the crystal field, and the pinwheel.
+A wormhole here is a hazard and an ejector seat, not a gate: the core sends a
+ship that touches one back to its own team's spawn, so the travel-network
+theme became gravity wells, and making a wormhole lead anywhere else is a
+simulation decision no map brief can take.
+
+The scatter generator is frozen beside the new one, in
+`server/src/mapforge/legacy.rs`, because the shipped rotation's recipes pin
+hashes only it produces. It is the same arrangement `sim/tools/mapgen.c` has
+with the maps that preceded it: kept to reproduce, never the source of new
+maps.
 
 The client gives those materials one visual grammar without flattening them
 into one tileset. A bulkhead is deliberately plain: a dark solid body, a
@@ -445,10 +464,8 @@ A player reads collision first and fiction on the second look.
 The thick perimeter mass uses the same plain treatment. Its broad dark body
 distinguishes the arena boundary from an interior partition.
 
-This keeps theme and topology independent. Ring and spokes can be a relay or a
-dockyard without becoming the same room with a different seed. Large objects
-are stamped as objects, so a station's six-tile body cannot be mistaken for
-accidental wall thickness.
+Large objects are stamped as objects, so a station's six-tile body cannot be
+mistaken for accidental wall thickness.
 
 ### Gates and review scores
 
@@ -456,9 +473,10 @@ Every candidate first passes `sim_map_check`, the same hull-sized validator the
 server and editor use. Mapforge then requires exactly four starts per side,
 exact half-turn competitive symmetry, the brief's two or three separated
 routes at least seven tiles wide, two spawn exits, the requested home-flight
-time, and no mode-incompatible features. Generic wall in playable space must
-remain a centerline. Perimeter masses and complete rocks or stations are
-intentional solids and are measured separately.
+time, no elements the brief does not call for, and the theme's own cover
+band, with a slope counting as half a tile of wall. Generic wall in playable
+space must remain a centerline. Perimeter masses and complete rocks or
+stations are intentional solids and are measured separately.
 
 Passing is not the same as being good. The report also scores route balance,
 line-of-sight distribution, dead ends, cover balance by quadrant, landmark
@@ -466,12 +484,11 @@ count, material mix, theme fidelity, and spawn exits. A batch can add two short
 bot drills, recording travel, fighting, crawling, bounces, weapon use, and map
 coverage across seeds.
 
-The review command produces 48 candidates, one for every combination of four
-topologies, four themes, and three envelopes:
+The review command produces 26 candidates, two seeds of each theme:
 
 ```sh
 cargo run --manifest-path server/Cargo.toml -- \
-  mapforge batch /tmp/vectorwake-maps 20260823
+  mapforge batch /tmp/vectorwake-maps 20260826
 ```
 
 `index.html` is the contact sheet. Each card links through the files beside
