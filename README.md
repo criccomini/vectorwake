@@ -1,7 +1,7 @@
 <img src="docs/banner.svg" alt="vectorwake" width="100%">
 
 [![play in browser](https://img.shields.io/badge/play-in_browser-0e6d85?style=flat-square&labelColor=05070c)](https://play.vectorwake.net)
-[![discord](https://img.shields.io/discord/1536450325236687030?style=flat-square&labelColor=05070c&logo=discord&logoColor=white&label=discord&color=5865F2)](https://play.vectorwake.net/discord)
+[![discord](https://img.shields.io/discord/1536450325236687030?style=flat-square&labelColor=05070c&logo=discord&logoColor=white&label=discord&color=5865F2)](https://vectorwake.net/discord)
 [![ai: auto](https://img.shields.io/badge/ai-auto-33404d?style=flat-square&labelColor=05070c)](AI-DECLARATION.md)
 
 vectorwake is a top-down space MMO built around frictionless, inertial combat. Energy is both health and ammunition. Pilots fight over flags in rooms whose physics, weapons, and rules come from configuration.

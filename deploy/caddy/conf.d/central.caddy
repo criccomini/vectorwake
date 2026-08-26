@@ -33,11 +33,6 @@ handle_path /meta* {
 	reverse_proxy 127.0.0.1:9400
 }
 
-# The one address that reaches the community's Discord, per decision 39. The
-# raw invite lives here and nowhere else: rotating it after a leak or a raid
-# is editing this line, and nothing compiled or cached ever carries it.
-redir /discord https://discord.gg/jyb4YBcY5Z 302
-
 # What each process says it costs, one path per process, open to anyone. These
 # carried a password once; it came off because nobody reading a dashboard wants
 # to keep one, and what these expose is population, capacity and build stamps,

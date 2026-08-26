@@ -42,13 +42,6 @@ local function signature(kind)
     return table.concat(parts, ","), calls
 end
 
-local function repeated(name, argc, count)
-    local out = {}
-    for i = 1, count do out[i] = name .. "/" .. argc end
-    return table.concat(out, ",")
-end
-
-local discord = repeated("tri", 7, 66) .. "," .. repeated("outline", 4, 3)
 local expected = {
     zones = "outline/4,disc/5,ring/6",
     pilot = "pilot/5",
@@ -56,7 +49,6 @@ local expected = {
     settings = "seg/7,rect/5,seg/7,rect/5,seg/7,rect/5",
     controls = "rect/5,frame/6,rect/5,frame/6,rect/5,frame/6,rect/5,frame/6",
     about = "ring/6,disc/5,seg/7",
-    discord = discord,
     leave = "outline/4,seg/7,tri/7",
     friends = "pilot/5,pilot/5",
     upgrades = "rivet/4",
@@ -65,7 +57,7 @@ local expected = {
 
 local failures = 0
 for _, kind in ipairs({"zones", "pilot", "team", "settings", "controls",
-                        "about", "discord", "leave", "friends", "upgrades",
+                        "about", "leave", "friends", "upgrades",
                         "ship"}) do
     local got = signature(kind)
     if got == expected[kind] then

@@ -6009,17 +6009,6 @@ end
 
 -- The door: one page about the room the game points at.
 --
--- Everything here is docs/design/community.md. The page leads with the job
--- the room does for a player, then gives that player one clear way in.
---
--- One control, drawn as a control. The action is a stroked box, and nothing
--- else on the page wears a shape that answers.
---
--- And the address, set in the mono, because an address is a machine reading
--- and this interface quotes those verbatim. It is here rather than only
--- behind the button because a browser hands a popup blocker every tab a game
--- opens for you, and an address a player can read and retype is the floor
--- that always works. It is cut from the same constant the button carries.
 -- The pilot page: who you are, what you have flown, and the way to keep it.
 -- The name leads with NEW NAME as a key beside it, the career sits under a
 -- ship-page section rule as bare totals, and the account acts stand at the
@@ -6135,74 +6124,6 @@ function pages.pilot(v, x, y, w, h, focused)
     M.page_room = h
 end
 
-function pages.door(v, x, y, w, h, focused)
-    local col = math.min(w, 760 * F.scale)
-    local compact = col < 500 * F.scale
-    local at = y + 18 * F.scale
-
-    -- Brand first, then the reason to act. The large line carries the page and
-    -- the supporting sentence stays narrow enough to read at a glance.
-    draw_mark("discord", x + 10 * F.scale, at, 10 * F.scale,
-              pal.a(pal.FRIEND, 0.95))
-    lbl("vectorwake discord", x + 30 * F.scale, at + 2 * F.scale,
-        pal.a(pal.PANEL_INK, 0.95))
-    at = at + 42 * F.scale
-
-    local hero = (compact and 32 or 48) * F.scale
-    for _, line in ipairs(wrapped(v.door_head or "", hero, col)) do
-        txt(line, x, at, hero, pal.a(pal.INK, 1), nil, MENU_FONT, true)
-        at = at + hero * 0.9
-    end
-    at = at + 22 * F.scale
-
-    local body_w = math.min(col, 620 * F.scale)
-    local body_px = (compact and 13 or 15) * F.scale
-    for _, line in ipairs(wrapped(v.door_body or "", body_px, body_w)) do
-        txt(line, x, at, body_px, pal.a(pal.PANEL_INK, 0.92), nil, nil, true)
-        at = at + body_px * 1.45
-    end
-    at = at + 30 * F.scale
-
-    -- One large action, with the browser behavior close enough to read before
-    -- the press. The link is also published as a real anchor for mobile popup
-    -- rules, which require the navigation to happen inside the tap itself.
-    local hot = focused and (v.sel or 1) == 1
-    local bw = math.min(compact and col or 280 * F.scale, col)
-    local bh = 50 * F.scale
-    key_box(x, at, bw, bh, pal.a(pal.FRIEND, hot and LIT.CURSOR or 0.08),
-            pal.a(pal.FRIEND, hot and 1 or 0.72))
-    txt("join discord", x + bw / 2, at + bh / 2, 17 * F.scale,
-        pal.a(pal.INK, hot and 1 or 0.9), "center", MENU_FONT)
-    local row = (v.rows or {})[1]
-    if row then
-        hit(x, at, bw, bh, "stage", 1)
-        if row.link then
-            M.link_dom = string.format("%.1f,%.1f,%.1f,%.1f,%s",
-                x / F.density, at / F.density, bw / F.density,
-                bh / F.density, row.link)
-        end
-    end
-    at = at + bh + 15 * F.scale
-    for _, line in ipairs(wrapped(v.door_note or "", 11.5 * F.scale, col)) do
-        txt(line, x, at, 11.5 * F.scale, pal.a(pal.DIM, 0.9), nil, nil, true)
-        at = at + 16 * F.scale
-    end
-    at = at + 28 * F.scale
-
-    -- A readable fallback survives a blocked tab and is cut from the same URL
-    -- the button opens.
-    hrule(x, at, col)
-    at = at + 13 * F.scale
-    lbl("invite address", x, at)
-    at = at + 27 * F.scale
-    txt(v.door_addr or "", x, at, 15 * F.scale, pal.a(pal.INK, 0.95), nil,
-        nil, true)
-    at = at + 26 * F.scale
-
-    M.page_extent = (at - y) + 16 * F.scale
-    M.page_room = h
-end
-
 -- How tall a line of a row's sentence is, and how that sentence breaks.
 --
 -- The sentence used to be drawn as one line from the column's left edge with
@@ -6244,44 +6165,10 @@ end
 --
 -- `hot` is the cursor, from either hand: the row the arrows are on while the
 -- stage has them, or the row a pointer is resting on.
--- One row of a page. Returns true when it published its own hit box, which
--- only a button does: a button is a shape rather than a line, and a press
--- landing anywhere along the row it sits in would make it read as a line
--- again.
 --
 -- `idx` is the row's place in the page, which is what a press on it says, and
 -- `warm` is which of the row's own buttons a pointer is resting on, if any.
 local function stage_row(x, y, w, h, r, hot, idx, warm)
-    -- A row drawn as a button rather than as a line of a list.
-    --
-    -- For a row that is not a stop on the way anywhere. Discord was the one,
-    -- until it moved to the corner of the top line where the game's one
-    -- outbound link belongs; no page hands this a row today, and the branch
-    -- stays because the next one that is not a destination will want it.
-    -- See docs/design/community.md.
-    if r.button then
-        local bh = math.min(h - 6 * F.scale, 38 * F.scale)
-        local bw = math.min(w, text_w(r.label or "", 14 * F.scale)
-                               + 74 * F.scale)
-        local bx = x
-        local by = y + (h - bh) / 2
-        local edge = pal.a(hot and pal.FRIEND or pal.RADAR_TILE,
-                           hot and 0.95 or 0.6)
-        rect(bx, by, bw, bh, pal.rgb(0x070b12, hot and 0.85 or 0.6))
-        -- Lit the way every other selection in this menu is lit: a field, not
-        -- a brighter word inside the same dark box.
-        if hot then rect(bx, by, bw, bh, pal.a(pal.FRIEND, LIT.CURSOR)) end
-        -- The outline every button wears. See `key_box`.
-        key_box(bx, by, bw, bh, nil, edge)
-        draw_mark(r.button, bx + 22 * F.scale, by + bh / 2, 9.5 * F.scale,
-                  pal.a(hot and pal.FRIEND or pal.INK, hot and 1 or 0.9))
-        -- Quoted rather than said: it is the name of somewhere else, and the
-        -- interface's own capitalisation has no business on it.
-        txt(r.label or "", bx + 40 * F.scale, by + bh / 2, 14 * F.scale,
-            pal.a(pal.INK, hot and 1 or 0.85), nil, MENU_FONT, true)
-        if r.pick then hit(bx, by, bw, bh, "stage", r.index) end
-        return true
-    end
     local col = r.mark and pal.FRIEND or pal.INK
     -- A row that stands for a side is written in that side's color, which is
     -- what makes this list the key to every plate in the arena. It outranks
@@ -7012,13 +6899,10 @@ function M.wordmark(x, y, size)
         MENU_FONT, true)
 end
 
--- The two buttons at the far end of the top line: who you are signed in as,
--- and the way out to where the talking happens.
+-- The button at the far end of the top line: who you are signed in as.
 --
--- One function for both layouts, because they are the same pair. What changes
--- on a phone is that Discord wears its mark alone. The word costs fifty-five
--- points that a 390 point screen does not have, and the mark is the half of
--- that lockup anybody recognises anyway.
+-- It had the way out to the community beside it, on every layout, until the
+-- game stopped carrying one.
 --
 -- Returns the left edge it reached, which is where the tab row beside it has
 -- to stop. Laid out from opposite ends and never told about each other, the
@@ -7028,64 +6912,37 @@ end
 -- hundred local ceiling a Lua function has, and the house answer is to gather
 -- onto a table, since a table is one name however much it holds. See
 -- client/tests/upvalues_test.lua.
-function pages.corner(v, right, cy, wordless)
+function pages.corner(v, right, cy)
     local bh = 30 * F.scale
     local by = cy - bh / 2
     local rt = right
-    -- `quoted` is a label that keeps the case it was given, which is a call
-    -- sign and nothing else. Everything the interface says for itself is set
-    -- in a sentence's case, and "DISCORD" shouted in a row of quiet words was
-    -- one button claiming to be more important than the page it sits on.
-    local function button(label, on, act, mark, quoted)
-        local px = 12 * F.scale
-        local bare = mark and wordless
-        local lw = bare and 0 or text_w(label, px, MENU_FONT, quoted)
-        local bw = lw + (mark and (bare and 40 or 52) or 30) * F.scale
-        local bx = rt - bw
-        key_box(bx, by, bw, bh, pal.rgb(0x0a0f18, on and 0.95 or 0.7),
-                pal.a(on and pal.FRIEND or pal.RADAR_TILE, on and 0.95 or 0.7))
-        -- The weight a tab wears, mark and word alike: these are two more
-        -- stops on that row and were the two brightest things on it.
-        local ink = pal.a(on and pal.FRIEND or pal.INK, on and 1 or 0.55)
-        if mark then
-            draw_mark(mark, bx + (bare and bw / 2 or 21 * F.scale), cy,
-                      8.5 * F.scale, ink)
-        end
-        if not bare then
-            local tx = bx + (mark and 38 or 15) * F.scale
-            txt(label, tx, cy, px, ink, nil, MENU_FONT, quoted)
-        end
-        hit(bx, by, bw, bh, act)
-        rt = bx - 10 * F.scale
-        return bx, bw
+    if not (v.pilot and v.pilot.name and v.pilot.name ~= "") then
+        return rt
     end
-    -- Lit by a pointer resting on one or by the arrows standing on it, which
-    -- are the same fact. `corner_sel` names the button rather than numbering
-    -- it, because this lays them out from the right edge and the row the
-    -- arrows walk reads from the left.
-    if v.pilot and v.pilot.name and v.pilot.name ~= "" then
-        -- A name is quoted rather than said: it keeps the case its owner gave
-        -- it, where every other word on this row is in the interface's.
-        --
-        -- Lit by whichever hand is on it, and not while its own page is up.
-        -- The rail carries that page and lights the stop that leads to it, so
-        -- a name lighting as well would be the "you are here" mark in two
-        -- places at once, which is the one thing this row cannot say. What is
-        -- left is a label with a press on it: it says who you are signed in
-        -- as, brightens under a pointer or under the arrows standing on it,
-        -- and stays quiet once you are there.
-        button(v.pilot.name,
-               (v.pilot_hot or v.corner_sel == "pilot") and v.at ~= "pilot",
-               "pilot_page", nil, true)
-    end
-    if v.discord then
-        -- No anchor over this one. It opens the page about the server, which
-        -- is inside the game, and the row on that page that leaves for the
-        -- server is where the anchor goes: see `r.link` in the stage.
-        button("discord", v.discord_hot or v.corner_sel == "discord",
-               "discord_link", "discord")
-    end
-    return rt + 10 * F.scale
+    -- A name is quoted rather than said: it keeps the case its owner gave it,
+    -- where every other word on this row is in the interface's.
+    --
+    -- Lit by a pointer resting on it or by the arrows standing on it, which
+    -- are the same fact, and not while its own page is up. The rail carries
+    -- that page and lights the stop that leads to it, so a name lighting as
+    -- well would be the "you are here" mark in two places at once, which is
+    -- the one thing this row cannot say. So it is a label with a press on it:
+    -- it says who you are signed in as, brightens under whichever hand is on
+    -- it, and stays quiet once you are there.
+    local on = (v.pilot_hot or v.corner_sel == "pilot") and v.at ~= "pilot"
+    local px = 12 * F.scale
+    local bw = text_w(v.pilot.name, px, MENU_FONT, true) + 30 * F.scale
+    local bx = rt - bw
+    key_box(bx, by, bw, bh, pal.rgb(0x0a0f18, on and 0.95 or 0.7),
+            pal.a(on and pal.FRIEND or pal.RADAR_TILE, on and 0.95 or 0.7))
+    -- The weight a tab wears, because it is one more stop on that row. It was
+    -- set brighter than the tabs it sits beside, and read as the thing the
+    -- head was about.
+    txt(v.pilot.name, bx + 15 * F.scale, cy, px,
+        pal.a(on and pal.FRIEND or pal.INK, on and 1 or 0.55), nil,
+        MENU_FONT, true)
+    hit(bx, by, bw, bh, "pilot_page")
+    return bx
 end
 
 -- --- the whole thing -------------------------------------------------------
@@ -7336,7 +7193,7 @@ function M.menu(v)
     -- are the front end, so a menu opened there is a panel over a room like
     -- any other, and the wash that used to be lighter over a starfield has
     -- one weight because there is one thing it is ever drawn over.
-    local reading = v.door or v.social or v.item or v.points
+    local reading = v.social or v.item or v.points
         or v.newbuild or v.settings or v.at == "controls" or v.at == "about"
         or v.at == "pilot"
     -- The ground under the column, and nothing outside it. The wash used to
@@ -7478,18 +7335,16 @@ function M.menu(v)
     if not bare then hrule(dx, hy + head, dock) end
     px0, py0, px1, py1 = dx, 0, dx + dock, F.h
 
-    -- The pair at the far end of the head first, so the name knows what room
-    -- is left. Who you are, and the way out to where the talking happens.
+    -- The call sign at the far end of the head first, so the name knows what
+    -- room is left.
     --
     -- On every window and at every level, which is the point of one column.
     -- The account used to be reachable only from a corner a phone does not
-    -- draw, and Discord was a row on the play page there, so one question had
-    -- two answers and the other had none. Then both were dropped from any
-    -- menu with a game behind it, because the corner stack held that corner:
-    -- the column covers the corner stack now, so this head is the only place
-    -- either can be and it carries them whatever is behind the panel.
-    --
-    if not bare then pages.corner(v, dx + dock - margin, logo_y, true) end
+    -- draw, and then it was dropped from any menu with a game behind it,
+    -- because the corner stack held that corner. The column covers the corner
+    -- stack now, so this head is the only place it can be and it carries it
+    -- whatever is behind the panel.
+    if not bare then pages.corner(v, dx + dock - margin, logo_y) end
     -- The way out stands where the way in stood: the same square, at the same
     -- inset, on the same line. Pressing the menu key and pressing the x are one
     -- control seen from either side, so a hand that learned where one of them
@@ -7608,19 +7463,6 @@ function M.menu(v)
             -- and not a panel floating above the indicator.
             rect(cx - pitch / 2 + 3 * F.scale, ry_, pitch - 6 * F.scale,
                  tab_h, pal.a(pal.FRIEND, focused and 0.06 or 0.22))
-        end
-        -- A stop that leaves the game gets a real link laid over it by the
-        -- page. Nothing the client does from its own loop is inside the tap
-        -- that asked for it, and a browser will not open a tab for anything
-        -- else, so the finger has to land on an anchor rather than on the
-        -- canvas. Published in CSS pixels, which is what the page lays out
-        -- in; everything here is drawable ones.
-        if e.link then
-            M.link_dom = string.format("%.1f,%.1f,%.1f,%.1f,%s",
-                (cx - pitch / 2 + 3 * F.scale) / F.density,
-                ry_ / F.density,
-                (pitch - 6 * F.scale) / F.density,
-                tab_h / F.density, e.link)
         end
         draw_mark(e.icon, cx, cy, r, col, v.class or 0)
         -- The quiet half of the guest warning: a spark on the stop the
@@ -7822,9 +7664,6 @@ function M.menu(v)
     elseif v.points then
         -- What the thirty are, behind the band's meter.
         pages.points(v, panel_x, top, panel_w, room)
-    elseif v.door then
-        -- The room the game points at, as a page with one thing to press.
-        pages.door(v, panel_x, top, panel_w, room, focused)
     elseif v.item then
         -- One slot, read: where a press on a row's name lands.
         pages.slot(v, panel_x, top, panel_w, room, focused)
@@ -7946,27 +7785,16 @@ function M.menu(v)
                 -- lighting a second row, so `hover` only ever arrives on the
                 -- home screen, where the cursor belongs to the rail and the
                 -- stage is a preview of what the mark beside it holds.
-                local own = stage_row(tx, y, lw, rowh, r,
-                                      (focused and i == v.sel) or i == v.hover,
-                                      i, v.row_hot == i and v.row_hot_act)
-                if r.pick and not own then
+                stage_row(tx, y, lw, rowh, r,
+                          (focused and i == v.sel) or i == v.hover,
+                          i, v.row_hot == i and v.row_hot_act)
+                if r.pick then
                     -- The whole width of the panel, which is what the lit
                     -- field covers: a press that missed by a margin the eye
                     -- was told is part of the row is a press that missed
                     -- nothing.
                     local hx, _, hw = M.drawer_span()
                     hit(hx, y, hw, rowh, "stage", i)
-                end
-                -- A row that leaves the game gets a real anchor laid over it
-                -- by the page, because nothing this client does from its own
-                -- loop is inside the tap that asked for it. Published in CSS
-                -- pixels, which is what the page lays out in; everything here
-                -- is drawable ones.
-                if r.link then
-                    M.link_dom = string.format("%.1f,%.1f,%.1f,%.1f,%s",
-                        sx / F.density, y / F.density,
-                        lw / F.density,
-                        rowh / F.density, r.link)
                 end
             end
         end

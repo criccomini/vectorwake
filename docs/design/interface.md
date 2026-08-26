@@ -32,7 +32,7 @@ into the strings themselves: case is how a thing is set, not what it says.
 
 Three kinds of string opt out of both voices, and they are quoted rather than
 said. A name keeps the case its owner gave it, everywhere: a call sign on a
-nameplate, a side's name on the team list, "Discord" spelled the way Discord
+nameplate, a side's name on the team list, a hull spelled the way the shop
 spells it. A reading off a machine is verbatim: a key cap, a build number, a
 URL. And the feed sets its lines in lower case with names as the only
 capitals, because "OZONE KILLED KESTREL" is an announcement and the feed
@@ -324,8 +324,7 @@ as a thin slate thumb on the panel's right edge.
 The menu is a tab row over a page. The layout asks two questions about the
 window, not one. Width decides where the tabs go: under 620 points they are
 a bar along the bottom edge where a thumb reaches, above it a row across the
-top beside the wordmark, bounded at the far end by the account and Discord
-buttons. Height decides how much room there is to spend: under 500 points
+top beside the wordmark, bounded at the far end by the account button. Height decides how much room there is to spend: under 500 points
 the type zoom comes off and the margins pull in, which is what a phone held
 sideways needs. The HUD's own compact flag trips when the scarce axis drops
 under 480 points, and it drops panels rather than shrinking type, because
