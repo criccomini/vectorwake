@@ -153,15 +153,12 @@ check("an ordinary line holds still",
           and math.abs(plain_a.col[3] - plain_b.col[3]) < 1e-9)
 
 -- The phone's one line shimmers too. It is the same feed filtered to one
--- entry, and a streak that arrived in flat gold there would be the only place
--- in the game where the effect is missing.
-local mine = line(true, 0.05)
-mine.mine = true
-hud({mine}, true)
+-- entry, a streak line passes that filter by its gleam alone, and one that
+-- arrived in flat gold there would be the only place in the game where the
+-- effect is missing.
+hud({line(true, 0.05)}, true)
 local phone_a = drawn(" is on a streak")
-local mine2 = line(true, 0.36)
-mine2.mine = true
-hud({mine2}, true)
+hud({line(true, 0.36)}, true)
 local phone_b = drawn(" is on a streak")
 check("the phone's single line shimmers as well",
       phone_a and phone_b and math.abs(phone_a.col[1] - phone_b.col[1])

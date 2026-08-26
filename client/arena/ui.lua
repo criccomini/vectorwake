@@ -2525,12 +2525,16 @@ end
 -- player wants there. Which left a phone with no way at all to learn that
 -- somebody had just killed them.
 --
--- So the phone gets the same feed, filtered to one line. Only lines the arena
+-- So the phone gets the same feed, filtered to one line. Lines the arena
 -- marked as being about this pilot: their kills and their deaths. A stranger
 -- killing a stranger is news, and it is news a player in a fight cannot use.
--- And only the newest of those at once, because two
--- lines stacked over the middle of the screen is a panel, and a panel over
--- the fight is the thing the corner feed was moved out of the way to avoid.
+-- A streak line passes whoever it names, because it is the one piece of room
+-- news a fight runs on: it says who everybody goes after next, and a phone
+-- that only played the announcement sound left its player hearing that
+-- somebody was streaking with no way to learn who. And only the newest at
+-- once, because two lines stacked over the middle of the screen is a panel,
+-- and a panel over the fight is the thing the corner feed was moved out of
+-- the way to avoid.
 --
 -- Shorter-lived than a feed line, too. Nine seconds is right for a column
 -- that is read at a glance and scrolls; the same nine seconds in the middle
@@ -2563,7 +2567,7 @@ end
 local function toast(lines, reach)
     local f = nil
     for i = 1, #lines do
-        if lines[i].mine and lines[i].t < TOAST_LIFE then
+        if (lines[i].mine or lines[i].gleam) and lines[i].t < TOAST_LIFE then
             f = lines[i]
             break
         end

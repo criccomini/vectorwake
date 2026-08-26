@@ -4,8 +4,9 @@
 --
 -- A desktop reads the whole feed in the corner. A phone cannot: that corner
 -- is where a thumb flies the ship. So the phone gets the same feed filtered
--- to one line, the newest one that is about this pilot, over the middle of
--- the screen and away from the thumbs in whichever way the phone is held.
+-- to one line, the newest one that is about this pilot or announces a
+-- streak, over the middle of the screen and away from the thumbs in
+-- whichever way the phone is held.
 --
 -- Three rules, and each has a way of going quietly wrong that only shows up
 -- on somebody's phone mid-fight: a stranger's kill leaking through, two
@@ -172,6 +173,9 @@ local MY_DEATH = {text = {{"other"}, " killed ", {"you"}},
 local MY_ASSIST = {text = {{"someone"}, " killed ", {"other"}, "",
                            ", you assisted"},
                    col = pal.ASSIST, t = 0, mine = true}
+-- A streak line the way the arena builds one: gleaming, never marked mine,
+-- whoever it names. The gleam is what the toast admits it by.
+local STREAK = {text = {{"someone"}, " is on a streak"}, t = 0, gleam = true}
 
 -- --- only what is about you ------------------------------------------------
 
@@ -187,6 +191,16 @@ check("and so is a kill you made", shown("you killed other") ~= nil)
 frame(844, 390, {MY_ASSIST})
 check("and so is one you helped with",
       shown("someone killed other, you assisted") ~= nil)
+
+-- The one exception to "about you": a streak is room news a player in a
+-- fight steers by, so it passes whoever it names.
+frame(844, 390, {STREAK})
+check("a stranger's streak is shown on a phone",
+      shown("someone is on a streak") ~= nil)
+
+frame(844, 390, {{text = STREAK.text, t = 9, gleam = true}})
+check("and expires like any other line",
+      shown("someone is on a streak") == nil)
 
 -- --- one at a time ---------------------------------------------------------
 
