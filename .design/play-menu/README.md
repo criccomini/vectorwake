@@ -1,14 +1,19 @@
 # The play page, rethought
 
 Chris asked for ways to make the play page more interesting, with mocks of
-different ideas. The canvas (artifact fa3069ca) now holds two rounds. The
-first round drew three directions beside the page as shipped, all of them
-keeping the page as a list and enriching the rows; Chris called them
-derivative, which is fair. The second round, on the canvas's Wilder page,
-sketches five framings that change what the page is instead. The sticky
-notes over each board carry its case and its cost. Nothing here is chosen
-yet. Boards are built by `build.py` and seeded with the design skill's
-helper:
+different ideas. The canvas (artifact fa3069ca) holds three rounds, and
+the third is the live one. The first drew three directions beside the page
+as shipped, all keeping the page as a list and enriching the rows; Chris
+called them derivative, which is fair. The second sketched five framings
+that change what the page is; Chris passed on those too: the stands
+beside the drawer already show a game in flight, so the liveness ideas
+(tuner, channel wall, surf) buy what the client already has, and the feed
+did not land. His brief for round three is the one to build against: a
+structured description of each zone's format. Time, team count, scoring,
+as structure rather than a sentence. Four versions of that structure are
+on the canvas's Format page, where it opens. The sticky notes over each
+board carry its case and its cost. Boards are built by `build.py` and
+seeded with the design skill's helper:
 
     python3 build.py
     node seed-canvas.mjs --template payload.template.html \
@@ -18,7 +23,9 @@ helper:
       --artboard ChartRoom.dc.html --artboard Rooms.dc.html \
       --artboard BoardingCall.dc.html --artboard ChannelWall.dc.html \
       --artboard Surf.dc.html --artboard StarChart.dc.html \
-      --artboard Ticker.dc.html --canvas canvas.json
+      --artboard Ticker.dc.html --artboard SpecRows.dc.html \
+      --artboard FormatTable.dc.html --artboard FormatMarks.dc.html \
+      --artboard RuleCard.dc.html --canvas canvas.json
 
 ## One rule under all three: a row's figures are the landing room's
 
@@ -139,21 +146,59 @@ ink. You choose by story rather than by name, and the bare game rows
 sink to the foot. Costs: needs a new event feed on the directory wire,
 and at today's population the wire can go quiet.
 
+## Round three: the format, structured
+
+The same facts on all four boards, read off the catalog. Team Battle:
+two sides of four with AI holding empty seats, three-minute matches
+with fifteen seconds between, a kill scores its victim's bounty (one,
+plus one per kill on their run), six grounds in rotation. Duel: one
+against a measured house pilot, one life a round, a win climbs a rung
+and a loss drops two with a checkpoint every five, always on drydock.
+The versions differ only in the shape the facts wear. Whatever ships,
+the values belong on the wire the way `label` and `description` already
+travel, not hardcoded: the catalog states them per zone, so the client
+should read them, not know them.
+
+**I, spec stacks** (`SpecRows.dc.html`). Each fact is a label over a
+value with vrules between, the grammar the landing's room band wore for
+TIME and PLAYERS. The sentence stays under the name. The most house of
+the four and the cheapest. Cost: four stacks is the width; a fifth fact
+starts to squeeze.
+
+**J, the table** (`FormatTable.dc.html`). One labeled header, every
+game measured in the same columns, so reading the list is comparing
+games. The shape these facts want once there are more games than two.
+Costs: three columns is the ceiling on 390, and a header over two rows
+is a lot of chrome for a two-game fleet.
+
+**K, format marks** (`FormatMarks.dc.html`). The structure drawn: seat
+circles in two clusters facing across a gap for the sides, a dial for
+timed, a single ringed life for Duel, the crosshair for kills, the
+rungs for the climb, each mark over its word. Reads before it is read.
+Cost: a mark vocabulary nobody has been taught, so the captions can
+never come off.
+
+**L, rule card** (`RuleCard.dc.html`). Every row carries the one-line
+spec; the row under the cursor unfolds the whole format as labeled
+lines behind a left rule, the hangar's reading grammar. The deepest
+answer for the least standing ink. Costs: it hides the side-by-side
+comparison a table gives away free, and on a phone the unfold needs its
+own press.
+
 ## A recommendation
 
-From the first round, A is the one direction that is pure drawing, and
-it makes the page honest about what the press does; C's name line is the
-cheap second step once the directory carries the map's name, and B
-should be decided on its own because of its phone story.
+I with L behind it: the spec stacks as the standing answer, since they
+are the landing band's own grammar and they hold the sentence, and the
+rule card's unfold as where the whole format lives, the same
+press-to-read gesture the hangar teaches. J is the shape to move to if
+the fleet ever lists six games. K's marks are worth keeping for the
+sides cluster alone, which could sit inside I's SIDES stack as the
+value's mark.
 
-Across both rounds, the strongest pair is F and D, and they are really
-one design seen from two ends: the stands as the browser, with the
-boarding call as the words on top of it. F is where the spectator-first
-landing (decision 61) has been pointing, it needs no new wire, and it
-makes the two-game
-fleet feel bigger rather than smaller. E is the phone-native middle if
-F's one-at-a-time browsing feels blind. G and H are the ones to keep in
-a drawer until the fleet is big enough to need a map or a news page.
+The earlier rounds stand as the record. From round one, the landing
+room scoping rule (below) still governs anything live a row ever says;
+rounds one and two's boards stay on their pages as what was tried and
+why not.
 
 ## What is here
 

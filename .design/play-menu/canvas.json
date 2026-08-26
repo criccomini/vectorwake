@@ -1,7 +1,8 @@
 {
   "pages": [
     { "id": "page-1", "name": "First round" },
-    { "id": "page-2", "name": "Wilder" }
+    { "id": "page-2", "name": "Wilder" },
+    { "id": "page-3", "name": "Format" }
   ],
   "artboards": [
     { "file": "Current.dc.html", "title": "As shipped", "page": "page-1", "x": 0, "y": 0, "w": 390, "h": 844 },
@@ -14,7 +15,11 @@
     { "file": "ChannelWall.dc.html", "title": "E - Channel wall", "page": "page-2", "x": 490, "y": 0, "w": 390, "h": 844 },
     { "file": "Surf.dc.html", "title": "F - Surf the stands", "page": "page-2", "x": 980, "y": 0, "w": 390, "h": 844 },
     { "file": "StarChart.dc.html", "title": "G - Star chart", "page": "page-2", "x": 1470, "y": 0, "w": 390, "h": 844 },
-    { "file": "Ticker.dc.html", "title": "H - The wire", "page": "page-2", "x": 1960, "y": 0, "w": 390, "h": 844 }
+    { "file": "Ticker.dc.html", "title": "H - The wire", "page": "page-2", "x": 1960, "y": 0, "w": 390, "h": 844 },
+    { "file": "SpecRows.dc.html", "title": "I - Spec stacks", "page": "page-3", "x": 0, "y": 0, "w": 390, "h": 844 },
+    { "file": "FormatTable.dc.html", "title": "J - The table", "page": "page-3", "x": 490, "y": 0, "w": 390, "h": 844 },
+    { "file": "FormatMarks.dc.html", "title": "K - Format marks", "page": "page-3", "x": 980, "y": 0, "w": 390, "h": 844 },
+    { "file": "RuleCard.dc.html", "title": "L - Rule card", "page": "page-3", "x": 1470, "y": 0, "w": 390, "h": 844 }
   ],
   "annotations": [
     { "id": "note-current", "page": "page-1", "x": 0, "y": -300, "w": 390, "text": "As shipped: two names and two sentences, then 600 points of nothing. The counts and the deploy key were removed on purpose (decision 63), but the page kept none of what the wire still offers." },
@@ -26,7 +31,12 @@
     { "id": "note-e", "page": "page-2", "x": 490, "y": -300, "w": 390, "text": "E - Channel wall. No rows: the page is one live window per game and the previews are the controls, press the fight to be in it. Two games means the whole fleet fits on a phone with no scroll. Costs: two delayed feeds at once (bandwidth and battery), and it stops scaling past three or four games." },
     { "id": "note-f", "page": "page-2", "x": 980, "y": -300, "w": 390, "text": "F - Surf the stands. No page at all: the play stop drops the drawer and you are simply in some room's stands, chevrons flick between live rooms, PLAY seats you in the one you are watching. The endpoint of the spectator-first landing (decision 61): choosing and watching become the same act. Costs: the games are never seen side by side, and a game nobody is running has no channel to land on." },
     { "id": "note-g", "page": "page-2", "x": 1470, "y": -300, "w": 390, "text": "G - Star chart. A game is a beacon on one chart, your mark at the foot, a plotted route to the one under the cursor and its card beside it. Going somewhere is the register the whole game is named in, and the chart has room for whatever the fleet grows (events, private rooms, a hub). Costs: the most new drawing for the same two presses, and with two games the chart is mostly empty space." },
-    { "id": "note-h", "page": "page-2", "x": 1960, "y": -300, "w": 390, "text": "H - The wire. The page is what just happened across the fleet, each line pressable toward the room it happened in: streaks in the streak's gold, kills in the payout green, whistles in ink. You choose by story, not by name; the bare game rows sink to the foot. Costs: needs a new event feed on the directory wire, and at today's population the wire can go quiet." }
+    { "id": "note-h", "page": "page-2", "x": 1960, "y": -300, "w": 390, "text": "H - The wire. The page is what just happened across the fleet, each line pressable toward the room it happened in: streaks in the streak's gold, kills in the payout green, whistles in ink. You choose by story, not by name; the bare game rows sink to the foot. Costs: needs a new event feed on the directory wire, and at today's population the wire can go quiet." },
+    { "id": "note-round3", "page": "page-3", "x": -460, "y": 0, "w": 380, "text": "Round three, per Chris: the stands beside the drawer already show a game in flight, so the row's job is saying what the format is. Time, team count, scoring, as structure rather than a sentence. Four shapes for the same facts, all off the catalog: Team Battle is two sides of four, 3:00, kills score bounty, six grounds rotating; Duel is 1v1, one life, rungs up and down, drydock." },
+    { "id": "note-i", "page": "page-3", "x": 0, "y": -300, "w": 390, "text": "I - Spec stacks. Each fact is a label over a value with vrules between, the grammar the landing's room band wore for TIME and PLAYERS. The sentence stays under the name; the stacks answer what it glosses over. The most house of the four, and the cheapest. Cost: four stacks is the width; a format with a fifth fact starts to squeeze." },
+    { "id": "note-j", "page": "page-3", "x": 490, "y": -300, "w": 390, "text": "J - The table. One labeled header, every game measured in the same columns, so reading the list is comparing games. The shape these facts want once there are more games than two. Costs: tight on 390 (three columns is the ceiling), and a header over two rows is a lot of chrome for a two-game fleet." },
+    { "id": "note-k", "page": "page-3", "x": 980, "y": -300, "w": 390, "text": "K - Format marks. The structure drawn: seat circles actually facing each other for the sides, a dial for timed, a single ringed life for Duel, the crosshair for kills and the rungs for the climb, each mark keeping its word underneath. Reads before it is read, and it is the most vector answer. Cost: a mark vocabulary nobody has been taught, so the captions can never come off." },
+    { "id": "note-l", "page": "page-3", "x": 1470, "y": -300, "w": 390, "text": "L - Rule card. Every row carries the one-line spec; the row under the cursor unfolds the whole format as labeled lines behind a left rule, the hangar's reading grammar. The deepest answer for the least standing ink. Cost: it hides the side-by-side comparison a table gives away free, and on a phone the unfold needs its own press." }
   ],
-  "launch": { "view": "canvas", "page": "page-2" }
+  "launch": { "view": "canvas", "page": "page-3" }
 }

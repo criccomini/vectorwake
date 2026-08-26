@@ -630,4 +630,179 @@ def surf_board():
 
 write("Surf.dc.html", surf_board())
 
+# ==== Round three: the structured format. Chris's brief after rounds one ====
+# ==== and two: the stands beside the drawer already show a game in       ====
+# ==== flight, so the row's job is saying what the format is. Time, team  ====
+# ==== count, scoring, in a structure rather than a sentence. Four        ====
+# ==== versions of that structure, same facts on all four.                ====
+#
+# The facts are the catalog's. Team Battle: two sides of four with AI
+# holding empty seats, three-minute matches with fifteen seconds between,
+# kills score the victim's bounty (one, plus one per kill on their run),
+# six grounds in rotation. Duel: one against a measured house pilot, one
+# life a round, a win climbs a rung and a loss drops two with a checkpoint
+# every five, always on drydock.
+
+# ---- I: spec stacks. The landing band's label-over-value grammar ----
+#
+# Each fact is a small stack, label over value, vrules between, the way
+# the landing's room band wore TIME and PLAYERS. The sentence stays under
+# the name; the stacks answer the questions the sentence glosses over.
+def spec(label, value):
+    return ('<div class="col" style="align-items:flex-start;min-width:0">'
+            f'<span class="lbl">{label}</span>'
+            '<span class="mono" style="font-size:13px;color:var(--ink);'
+            f'margin-top:3px;white-space:nowrap">{value}</span></div>')
+
+def spec_strip(cells):
+    out = []
+    for i, (l, v) in enumerate(cells):
+        if i > 0:
+            out.append('<div style="width:1px;align-self:stretch;'
+                       'background:rgba(63,88,120,.45)"></div>')
+        out.append(spec(l, v))
+    return ('<div class="row" style="gap:14px;margin-top:11px;'
+            'align-items:stretch">' + "".join(out) + '</div>')
+
+DUEL_SPECS = [("sides", "1 v 1"), ("time", "one life"),
+              ("scoring", "rungs"), ("ground", "drydock")]
+TB_SPECS = [("sides", "4 v 4"), ("time", "3:00"),
+            ("scoring", "kills"), ("grounds", "6 rotate")]
+
+specs_page = ('<div style="margin-top:6px">'
+              + bare_row("Duel", DUEL_NOTE, extra=spec_strip(DUEL_SPECS))
+              + bare_row("Team Battle", TB_NOTE, lit=True,
+                         extra=spec_strip(TB_SPECS))
+              + '</div>')
+write("SpecRows.dc.html", board(specs_page))
+
+# ---- J: the table. One header, aligned columns, games as rows ----
+#
+# The structure the facts want once there are more games than two: one
+# labeled header and every game measured in the same columns, so reading
+# the list is comparing. The sentence rides under the name inside the
+# first column.
+def tcell(v, w, right=True, col="var(--ink)"):
+    a = "right" if right else "left"
+    return (f'<span class="mono" style="font-size:11.5px;color:{col};'
+            f'width:{w}px;flex:none;text-align:{a};white-space:nowrap">'
+            f'{v}</span>')
+
+def trow(name, note, sides, time, scoring, lit=False):
+    bg = ("background:linear-gradient(90deg,rgba(79,214,255,.14),"
+          "rgba(79,214,255,0) 85%);" if lit else "")
+    return (f'<div class="row" style="margin:0 -14px;padding:11px 14px;{bg};'
+            'align-items:flex-start;gap:14px">'
+            '<div class="col" style="flex:1;min-width:0">'
+            f'<span style="font-size:16px">{name}</span>'
+            f'<span class="note" style="margin-top:2px">{note}</span></div>'
+            + tcell(sides, 34) + tcell(time, 60) + tcell(scoring, 46)
+            + '</div>')
+
+thead = ('<div class="row" style="margin:14px -14px 0;padding:0 14px 6px;'
+         'border-bottom:1px solid rgba(63,88,120,.45);gap:14px">'
+         '<span class="lbl" style="flex:1">game</span>'
+         + tcell("sides", 34, col="var(--dim)")
+         + tcell("time", 60, col="var(--dim)")
+         + tcell("scoring", 46, col="var(--dim)") + '</div>')
+table_page = (thead
+              + trow("Duel", "the house ladder", "1v1", "one life", "rungs")
+              + trow("Team Battle", "melee", "4v4", "3:00", "kills",
+                     lit=True))
+write("FormatTable.dc.html", board(table_page))
+
+# ---- K: format marks. The structure drawn, then captioned ----
+#
+# The sides as seat circles actually facing each other, time as a dial,
+# scoring as the crosshair or the ladder, each mark over a one-word
+# caption. Reads before it is read; costs a vocabulary nobody has been
+# taught yet, so every mark keeps its word underneath.
+def mark_cell(svg, caption):
+    return ('<div class="col" style="align-items:center;gap:5px">'
+            f'<svg width="44" height="20" viewBox="0 0 44 20">{svg}</svg>'
+            f'<span class="lbl">{caption}</span></div>')
+
+# A side is a cluster of seats; two clusters facing across a gap say
+# "versus" without a letter doing it.
+def cluster(n, cx, solid):
+    spots = [(cx, 10)] if n == 1 else [(cx - 4, 6), (cx + 4, 6),
+                                       (cx - 4, 14), (cx + 4, 14)]
+    out = []
+    for x, y in spots:
+        if solid:
+            out.append(f'<circle cx="{x}" cy="{y}" r="2.6" fill="#dfe9f5"/>')
+        else:
+            out.append(f'<circle cx="{x}" cy="{y}" r="2.6" fill="none" '
+                       'stroke="#6c7a90" stroke-width="1.3"/>')
+    return "".join(out)
+
+SIDES_44 = cluster(4, 12, True) + cluster(4, 32, False)
+SIDES_11 = cluster(1, 14, True) + cluster(1, 30, False)
+DIAL = ('<circle cx="22" cy="10" r="8" fill="none" stroke="#dfe9f5" '
+        'stroke-width="1.3"/>'
+        '<path d="M22 10 L22 4.5 M22 10 L26 12" stroke="#dfe9f5" '
+        'stroke-width="1.3"/>')
+ONE_LIFE = ('<circle cx="22" cy="10" r="8" fill="none" stroke="#dfe9f5" '
+            'stroke-width="1.3"/>'
+            '<circle cx="22" cy="10" r="2.4" fill="#dfe9f5"/>')
+CROSS = ('<circle cx="22" cy="10" r="6.5" fill="none" stroke="#dfe9f5" '
+         'stroke-width="1.3"/>'
+         '<path d="M22 0.5 V5 M22 15 V19.5 M12.5 10 H17 M27 10 H31.5" '
+         'stroke="#dfe9f5" stroke-width="1.3"/>')
+RUNGS = ('<path d="M14 16 H30 M16 10 H32 M18 4 H34" stroke="#dfe9f5" '
+         'stroke-width="1.4"/>')
+
+def marks_strip(cells):
+    return ('<div class="row" style="gap:22px;margin-top:12px">'
+            + "".join(mark_cell(s, c) for s, c in cells) + '</div>')
+
+marks_page = ('<div style="margin-top:6px">'
+              + bare_row("Duel", DUEL_NOTE,
+                         extra=marks_strip([(SIDES_11, "1 v 1"),
+                                            (ONE_LIFE, "one life"),
+                                            (RUNGS, "rungs")]))
+              + bare_row("Team Battle", TB_NOTE, lit=True,
+                         extra=marks_strip([(SIDES_44, "4 v 4"),
+                                            (DIAL, "3:00"),
+                                            (CROSS, "kills")]))
+              + '</div>')
+write("FormatMarks.dc.html", board(marks_page))
+
+# ---- L: the rule card. Compact lines, the lit row unfolds its rules ----
+#
+# Every row carries the one-line spec; the row under the cursor opens the
+# whole format as labeled lines behind a left rule, the reading grammar
+# the hangar uses. The deepest answer for the least standing ink, at the
+# cost of hiding the comparison a table gives away free.
+def compact_row(name, line, lit=False, extra=""):
+    bg = ("background:linear-gradient(90deg,rgba(79,214,255,.14),"
+          "rgba(79,214,255,0) 85%);" if lit else "")
+    return (f'<div style="padding:12px 14px;margin:0 -14px;{bg}">'
+            f'<div class="name">{name}</div>'
+            '<div class="mono" style="font-size:11px;color:#9fb6d4;'
+            f'margin-top:3px">{line}</div>' + extra + '</div>')
+
+def rule(label, text):
+    return ('<div style="margin-top:9px">'
+            f'<span class="lbl">{label}</span>'
+            '<div class="note" style="text-transform:none;font-size:10.5px;'
+            f'line-height:1.5;margin-top:2px;color:#9fb6d4">{text}</div>'
+            '</div>')
+
+tb_rules = ('<div style="border-left:1px solid rgba(79,214,255,.35);'
+            'padding:2px 0 4px 14px;margin-top:11px">'
+            + rule("sides", "two of four; AI holds every empty seat and "
+                   "stands down when somebody arrives")
+            + rule("time", "three-minute matches, fifteen seconds between")
+            + rule("scoring", "a kill scores its victim's bounty: one, "
+                   "plus one for each kill on their run")
+            + rule("grounds", "six in rotation, a new one every match")
+            + '</div>')
+card_page = ('<div style="margin-top:6px">'
+             + compact_row("Duel", "1 v 1 · one life · rungs")
+             + compact_row("Team Battle", "4 v 4 · 3:00 · kills", lit=True,
+                           extra=tb_rules)
+             + '</div>')
+write("RuleCard.dc.html", board(card_page))
+
 print("boards written")
