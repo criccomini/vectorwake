@@ -211,6 +211,12 @@ def live_row(name, note, right, under="", lit=False):
             f'<div class="note" style="margin-top:2px">{note}</div></div>'
             + right + '</div>' + under + '</div>')
 
+# Every figure on a row is the landing room's: the room the fill ladder
+# would put this press in, which is the same pick the join makes and the
+# room whose clock the shipped page already counts down. The zone's own
+# totals are a different fact and never wear the seat grammar; a zone
+# running two arenas has twelve people and eight seats, and circles drawn
+# from both at once would be a lie.
 dep = ('<div style="margin-top:6px">'
        + live_row("Duel", DUEL_NOTE, clock("live", "2:04"),
                   under=seats("bb")
@@ -224,8 +230,48 @@ dep = ('<div style="margin-top:6px">'
        + '</div>')
 write("Main.dc.html", board(dep))
 
+# The same direction when a zone is actually holding more than one joinable
+# room. The zone head keeps the name and the sentence and stays the press
+# that means "wherever the fill ladder puts me"; the rooms unfold under it
+# as numbered lines, each with its own clock and its own seats, which is
+# the arena's ROOMS grammar moved onto the page. Sorted by the number the
+# server gave each room, a full one readable but dim, the one the ladder
+# would pick lit. Duel never unfolds: its twenty rooms are one climber
+# each, so no second line there is a room anybody could join.
+def room_line(n, clk_label, clk, kinds, dim=False, lit=False, under=""):
+    bg = ("background:linear-gradient(90deg,rgba(79,214,255,.14),"
+          "rgba(79,214,255,0) 85%);" if lit else "")
+    ink = "rgba(108,122,144,.75)" if dim else "var(--ink)"
+    return (f'<div style="padding:9px 14px 9px 26px;margin:0 -14px;{bg}">'
+            '<div class="row">'
+            f'<span class="mono" style="font-size:12px;color:{ink};'
+            f'letter-spacing:.08em">ROOM {n}</span>'
+            '<div style="flex:1"></div>'
+            f'<span class="lbl" style="margin-right:7px">{clk_label}</span>'
+            f'<span class="mono" style="font-size:14px;color:{ink}">{clk}'
+            '</span></div>' + seats(kinds) + under + '</div>')
+
+roomy = ('<div style="margin-top:6px">'
+         + live_row("Duel", DUEL_NOTE, clock("live", "2:04"),
+                    under=seats("bb")
+                    + '<div class="note" style="margin-top:7px">'
+                    'your climb is at rung 23</div>')
+         + '<div style="padding:13px 14px 4px;margin:0 -14px">'
+         '<div class="name">Team Battle</div>'
+         f'<div class="note" style="margin-top:2px">{TB_NOTE}</div></div>'
+         + room_line(1, "live", "1:28", "pppppppp", dim=True,
+                     under='<div class="mono" style="font-size:10px;'
+                     'color:var(--friend);margin-top:7px">Vex and Halcyon 9 '
+                     'are flying</div>')
+         + room_line(2, "next match", "0:42", "ppbbbbb-", lit=True)
+         + '</div>')
+write("Rooms.dc.html", board(roomy))
+
 # ---- B: the tuner. The row under the cursor is the room behind the wash ----
 
+# The feed and the score are the landing room's, the same room the row's
+# press would join: a zone holding several rooms has several scores, and
+# the one worth showing is the one this press is about.
 def scoreline():
     return ('<div class="row" style="margin-top:8px;gap:8px">'
             '<span class="mono" style="font-size:11px;color:var(--friend)">'
@@ -313,9 +359,10 @@ write("TunerWide.dc.html", wide_board())
 
 # ---- C: the chart room. A game is a place, drawn in the radar's grammar ----
 
-# A chart of the ground the room is on: walls in the radar's tile color on
-# the radar's ground, spawn tiles in the side colors. Shoal is loose rock;
-# drydock is the pair of arms with the slip between them.
+# A chart of the ground the landing room is on: walls in the radar's tile
+# color on the radar's ground, spawn tiles in the side colors. One room's
+# ground, since rooms of one zone cycle their rotations apart. Shoal is
+# loose rock; drydock is the pair of arms with the slip between them.
 def chart(kind, spawns):
     w, h = 362, 128
     if kind == "shoal":

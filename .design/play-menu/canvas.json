@@ -39,6 +39,14 @@
       "y": 990,
       "w": 844,
       "h": 390
+    },
+    {
+      "file": "Rooms.dc.html",
+      "title": "A - Departures, several rooms",
+      "x": 490,
+      "y": 990,
+      "w": 390,
+      "h": 844
     }
   ],
   "annotations": [
@@ -54,21 +62,21 @@
       "x": 490,
       "y": -300,
       "w": 390,
-      "text": "A - Departures. Each row answers \"if I press now, what do I land in?\": the landing room's clock, the seats in the hangar's circle grammar (solid a person, ring a bot, dim nobody), friends on the row of their game, your Duel rung. Every fact is already in the directory reply the page asks for every three seconds. Costs: the busiest page of the three, and it half reverses the decision that stripped the counts."
+      "text": "A - Departures. Each row answers \"if I press now, what do I land in?\": the landing room's clock, its seats in the hangar's circle grammar (solid a person, ring a bot, dim nobody), friends on the row of their game, your Duel rung. Every figure is the landing room's, the room the fill ladder would put this press in, never the zone's totals: a zone running two arenas has twelve people and eight seats, and circles drawn from both at once would lie. The board below shows the same rows when a zone holds several joinable rooms: they unfold as numbered lines, each with its own clock and seats. Every fact is already in the directory reply the page polls. Costs: the busiest page of the three, and it half reverses the decision that stripped the counts."
     },
     {
       "id": "note-b",
       "x": 980,
       "y": -300,
       "w": 390,
-      "text": "B - Tuner. The room bleeding through the wash is the game under the cursor: resting on a row tunes the stands to it, so choosing a game is watching it, and the row carries one thin score line. Uses the delayed spectator feed that already exists; the page itself stays almost as bare as shipped. Costs: a channel change per hover, and a phone has no hover, so there it is first press tunes, second press joins, which bends \"pressing a game means be in it\"."
+      "text": "B - Tuner. The room bleeding through the wash is the game under the cursor: resting on a row tunes the stands to it, so choosing a game is watching it, and the row carries one thin score line. Feed and score are the landing room's, the room the press would join. Uses the delayed spectator feed that already exists; the page itself stays almost as bare as shipped. Costs: a channel change per hover, and a phone has no hover, so there it is first press tunes, second press joins, which bends \"pressing a game means be in it\"."
     },
     {
       "id": "note-c",
       "x": 1470,
       "y": -300,
       "w": 390,
-      "text": "C - Chart room. A game is a place: each card carries a chart of the ground the room is on now, drawn in the radar's own grammar, with the rotation's next ground and the spawn tiles in the side colors. Costs: the directory reply does not carry the map yet, so this is a wire change, and two cards spend most of the phone."
+      "text": "C - Chart room. A game is a place: each card carries a chart of the ground the landing room is on now, drawn in the radar's own grammar, with the rotation's next ground and the spawn tiles in the side colors. One room's ground, since rooms of one zone cycle their rotations apart. Costs: the directory reply does not carry the map yet, so this is a wire change, and two cards spend most of the phone."
     }
   ],
   "launch": {
