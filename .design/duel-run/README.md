@@ -21,8 +21,9 @@ faults, all visible on the `As shipped` board:
 - The rival is nowhere in the run, even though a run is a list of fights
   against people. The roster above names whoever you just fought and forgets
   them at the next whistle.
-- The middle column is `1-0` on every row, because a duel is first to one and
-  catalog validation refuses any other value.
+- The middle column is `1-0` or `0-1` on every row, because a duel is first
+  to one and catalog validation refuses any other value, so all it ever says
+  is that somebody died.
 
 And the streak, the one number this rethink is about, is already in that head
 under a rule that hides it at zero, so it is absent exactly on the screen a
