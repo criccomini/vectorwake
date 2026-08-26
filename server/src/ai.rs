@@ -1814,12 +1814,13 @@ impl Bot {
         // outside the blast is not safe if the plan immediately carries the
         // hull back into it.
         let near = bomb.blast + o.radius + 160.0;
-        // How far out a bomb is still worth throwing. These were 700, 650,
-        // 560 and 520, which is inside the range a pilot acquires a target
-        // at: sight is sixty tiles, so a bot spends most of its approach
-        // beyond the window and the funnel's largest rejection on a built
-        // hull was "too far", 3126 of 7235 calls. A bomb is safest at range
-        // and the numbers forbade it exactly there.
+        // How far out a bomb is still worth throwing, as reach beyond the
+        // standoff rather than a fixed ring. These were 700, 650, 560 and 520,
+        // which is inside the range a pilot acquires a target at: sight is
+        // sixty tiles, so a bot spent most of its approach beyond the window
+        // and the funnel's largest rejection on a built hull was "too far",
+        // 3126 of 7235 calls. A bomb is safest at range and the numbers
+        // forbade it exactly there.
         //
         // Alpha, forty bots, ten minutes, a thirty-point kit: 303 bomb
         // rounds against 164, which is z 6.6, and the gun-to-bomb ratio goes
@@ -1827,12 +1828,26 @@ impl Bot {
         // suicide, so the wider window is not pilots blowing themselves up.
         // What binds now is cadence and the self-blast clearance, which are
         // the two things that should bind a bomb.
-        let far = (near + 180.0).max(match strategy {
-            Strategy::Bombardier => 900.0,
-            Strategy::Heavy => 850.0,
-            Strategy::Denier => 800.0,
-            _ => 800.0,
-        });
+        //
+        // Reach rather than a ring because `near` climbs with the blast and a
+        // ring does not, so the window used to be squeezed from below by
+        // exactly what a rung bought. A bomb rung buys blast and nothing else,
+        // the damage at the center being flat across the ladder, which made
+        // every point spent on the ladder a narrower permission to use it.
+        // Measured: putting the whole roster on the bomber build threw fewer
+        // bombs than leaving them on bare rungs, 1297 pulls against 1895.
+        //
+        // Each number is its old ring less what a rung-zero hull stands off
+        // by, which is an eighty-pixel blast and about twenty of hull on top
+        // of the fixed hundred and sixty, rounded to the nearest fifty. So a
+        // bare bomb keeps the window it had and every rung above it widens
+        // rather than narrows.
+        let far = near
+            + match strategy {
+                Strategy::Bombardier => 650.0,
+                Strategy::Heavy => 600.0,
+                _ => 550.0,
+            };
         if dist <= near || dist >= far {
             return approach;
         }
