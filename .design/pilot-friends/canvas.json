@@ -1,0 +1,24 @@
+{
+  "artboards": [
+    { "file": "CurrentPilot.dc.html",   "x": 0,    "y": 0,    "w": 390, "h": 844, "title": "Current - pilot" },
+    { "file": "CurrentFriends.dc.html", "x": 470,  "y": 0,    "w": 390, "h": 844, "title": "Current - friends" },
+    { "file": "Option1.dc.html",        "x": 0,    "y": 1160, "w": 390, "h": 844, "title": "Option 1 - drill-down" },
+    { "file": "Option1Friends.dc.html", "x": 470,  "y": 1160, "w": 390, "h": 844, "title": "Option 1 - one level in" },
+    { "file": "Main.dc.html",           "x": 0,    "y": 2320, "w": 390, "h": 844, "title": "Option 2 - one page" },
+    { "file": "Option2Rows.dc.html",    "x": 470,  "y": 2320, "w": 390, "h": 844, "title": "Option 2 - row section" },
+    { "file": "ClaimCard.dc.html",      "x": 940,  "y": 2320, "w": 390, "h": 844, "title": "The claim card" }
+  ],
+  "annotations": [
+    { "id": "brief", "x": 940, "y": 0, "w": 420,
+      "text": "Friends moves inside the pilot page, two ways, with the account chrome reconsidered in both.\n\nThe account today spends a whole page and a reading column on three rows, so in both options it shrinks to a head: the call sign large with the reroll mark on it, what the name is under it, and KEEP / LOG IN as keys (PASSWORD / LOG OUT once claimed). The claim and login flows were always cards over the page, drawn at the bottom right, so no page is lost.\n\nBoth options empty the friends tab, so the rail goes back to four stops and the friends badge (who is on, who is waiting) moves onto the pilot stop. One consequence to decide early: pilot then has to ride the match row, because who is on is a mid-match question; the account keys stand down there, the same home-only guard the page has now." },
+    { "id": "note-current", "x": 0, "y": 884, "w": 860,
+      "text": "CURRENT, for scale. The pilot page spends its whole column on three rows and an explainer that says everything twice. Friends is a rail stop of its own, one of five." },
+    { "id": "note-o1", "x": 0, "y": 2044, "w": 860,
+      "text": "OPTION 1 - DRILL-DOWN. The ship page's grammar: a friends row on the pilot page slides the full list in from the right, back chevron and swipe right to return, list layout untouched.\n\nFor: each surface does one job, and the pilot page has room to grow (career, stats).\nAgainst: join, the commonest act on friends, gains a press; and even with the shrunk head the top page is one band and one row, which is the emptiness complaint surviving the redesign." },
+    { "id": "note-o2", "x": 0, "y": 3204, "w": 860,
+      "text": "OPTION 2 - ONE PAGE. The friends sections are the body of the pilot page, straight under the head. Two treatments of the account:\n\nBand head (left, leading): the account is a 64pt band; the page opens on the add field and the live list. Cost: the explainer prose loses its home and lives in the cards; the band cannot take a third key.\n\nRow section (right): the account keeps a PILOT section of one row, the settings grammar, taller but more like the rest of the menu. Cost: the page opens on you when the live question is them.\n\nFor either: everything is one rail tap away, nothing new to learn.\nAgainst: one page doing two jobs, and in a match the account head rides along dimmed." },
+    { "id": "note-card", "x": 940, "y": 3204, "w": 390,
+      "text": "The claim card over option 2, unchanged from today. Login and claim never needed a page; the page was standing around the card." }
+  ],
+  "launch": { "view": "canvas" }
+}

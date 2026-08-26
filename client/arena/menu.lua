@@ -1800,11 +1800,11 @@ local NODES = {
     -- The tab row, and the whole of the front end's shape.
     --
     -- Which of the two you get is decided by whether you are in a hull, not by
-    -- whether you are in a zone. Four with no hull: play, ship, friends,
-    -- settings. Flying: play, friends, settings, and ship in the window
-    -- between matches where a hull is not locked. Friends stays out when the
-    -- account service is absent. The row keeps the same place and chrome in
-    -- both contexts.
+    -- whether you are in a zone. Five with no hull: play, ship, friends,
+    -- settings, and pilot at home. Flying: play, friends, settings, and ship
+    -- in the window between matches where a hull is not locked. Friends stays
+    -- out when the account service is absent. The row keeps the same place and
+    -- chrome in both contexts.
     --
     -- The question used to be `M.home`, which was the same answer while the
     -- front end was a place of its own. It is the stands now, and a pilot who
@@ -1893,15 +1893,27 @@ local NODES = {
             -- they are standing. See docs/design/friends.md.
             {label = "friends", icon = "friends", go = "friends",
              detail = friends_detail},
-            -- No pilot stop. The call sign is already written at the far end
-            -- of this row, and a tab whose whole detail is that same name says
-            -- it twice. Pressing the name is the way in; see `M.click_pilot`.
             -- Everything about the machine rather than about a match, in one
             -- column: audio, video, the bindings, and about. Help folded into
             -- it because the controls board and the rebinding screen were
             -- always the same list read two ways.
             {label = "settings", icon = "settings", go = "settings"},
         }
+        -- Who you are, as the last stop. The call sign at the far end of the
+        -- top line opens the same page and stays there, because it is the one
+        -- thing on screen saying who you are signed in as; what it never
+        -- looked like was a button, and the claim flow behind it is the thing
+        -- a new player most needs to find. Two doors onto one page, on
+        -- purpose. For a long time the name was the only way in, on the
+        -- argument that a tab repeating it said it twice; what that bought was
+        -- an account nobody knew they had.
+        --
+        -- Only at home, which is the guard the corner press already wears: an
+        -- account is not a thing to edit from inside a room. See
+        -- `M.click_pilot`.
+        if M.home then
+            rows[#rows + 1] = {label = "pilot", icon = "pilot", go = "pilot"}
+        end
         -- And the way out, for a pilot watching from a seat the room is still
         -- holding. Never at home: the stands there are where leaving goes.
         if not M.home then
@@ -1950,31 +1962,34 @@ local NODES = {
 
     teams = {rows = team_rows},
 
-    -- Not a stop on the tab row: the call sign in the corner is the way here,
-    -- because that is the one thing on screen already naming the pilot. So it
-    -- is marked as reached from off the row, or the guard below that shuts a
-    -- page the row has stopped carrying would put a pilot straight back out of
-    -- it, one frame after the corner let them in.
-    pilot = {off_rail = true, rows = function()
+    -- The last stop on the home row, and also where the call sign in the
+    -- corner lands: two doors onto one page, because the name says who you
+    -- are and the stop looks like a button. Away from home the row stops
+    -- carrying it, and the sweep in `M.tick` puts a pilot back out of it
+    -- then, the same as the hangar when the whistle goes.
+    -- Drawn by `pages.pilot` rather than as a list: the name large with a
+    -- NEW NAME key beside it, the career under a ship-page section rule, and
+    -- the account acts at the foot. These rows are the arrows' side of that
+    -- drawing, in the order the controls are met walking down.
+    --
+    -- The reroll is a key rather than a press on the name. It used to be the
+    -- row itself, and a curious player pressing their own call sign to see
+    -- what it did lost it on the spot.
+    pilot = {rows = function()
         local rows = {
-            {label = "call sign", detail = function() return M.name end,
-             -- A call sign is upper, lower and numeric as its owner has it.
-             verbatim = true, act = "reroll"},
+            {label = "new name", act = "reroll"},
         }
         -- A password is offered rather than demanded, and it is the whole
-        -- account model: set one and this name is yours anywhere, skip it
+        -- account model: sign up and this name is yours anywhere, skip it
         -- and the pilot lives on this device until a quiet week reclaims
-        -- it. No rows at all without a meta-layer, because then there is
-        -- nothing behind them to talk to.
+        -- it. No account rows at all without a meta-layer, because then
+        -- there is nothing behind them to talk to.
         if account.base ~= "" and not account.claimed then
-            rows[#rows + 1] = {label = "keep this pilot", act = "claim",
-                note = "a password brings this pilot back anywhere"}
-            rows[#rows + 1] = {label = "log in", act = "enter_login",
-                note = "call sign and password"}
+            rows[#rows + 1] = {label = "sign up", act = "claim"}
+            rows[#rows + 1] = {label = "log in", act = "enter_login"}
         elseif account.claimed then
             rows[#rows + 1] = {label = "change password", act = "claim"}
-            rows[#rows + 1] = {label = "log out", act = "logout",
-                note = "this device becomes a fresh guest"}
+            rows[#rows + 1] = {label = "log out", act = "logout"}
         end
         return rows
     end},
@@ -2318,10 +2333,17 @@ local function rows_of(nd)
 end
 
 -- The stops on the far right of the tab row, in the order the arrows meet
--- them left to right. Two of them today: the way out to where the talking
--- happens, and who you are signed in as. The account one is only there when
--- there is a call sign to put on it, which is every session that has reached
--- the meta layer.
+-- them left to right. One of them today: the way out to where the talking
+-- happens.
+--
+-- The call sign beside it is not one. It was, while it was the only way to an
+-- account and a hand on the arrows could not reach it otherwise; the rail
+-- carries that page now, so the name is back to being what it looks like,
+-- which is a label saying who you are signed in as with a press on it for a
+-- pointer. A control is a stop or a shortcut and cannot be half: a stop the
+-- arrows can rest on has to light to say the cursor is there, and a second
+-- lit thing on a row whose lit mark means "where you are" is the one mark in
+-- this interface that must never be in two places.
 --
 -- The list is here rather than in the drawing because the arrows walk it, and
 -- a row a hand can walk has to be a list somewhere. ui.lua lays them out from
@@ -2329,9 +2351,7 @@ end
 -- `M.showing` because a corner stop under the cursor is a page on screen the
 -- same way a tab under the cursor is.
 local function corner_stops()
-    local out = {"discord"}
-    if (M.name or "") ~= "" then out[#out + 1] = "pilot" end
-    return out
+    return {"discord"}
 end
 
 -- Which page's rows are on screen. One level in that is the page you are
@@ -2695,10 +2715,14 @@ end
 -- file a password under a user name, and this card has no line for one
 -- because the name is not in question here.
 function M.ask_password()
-    local head = account.claimed and "Choose a new password."
-        or ("Keep " .. M.name .. ". Choose a password.")
+    local head = account.claimed and "Choose a new password." or "Sign up."
     M.ask = {head = head,
-             keys = {{label = "keep", act = "do_claim"}, {label = "cancel"}},
+             -- The one line the old page said in three places, kept where
+             -- the act is: what signing up buys.
+             note = not account.claimed
+                 and "keep your points and log in on other devices" or nil,
+             keys = {{label = account.claimed and "change" or "sign up",
+                      act = "do_claim"}, {label = "cancel"}},
              sel = 1, field = 1, ghost = M.name,
              fields = {{label = "password", value = "", mask = true,
                         kind = "new-password", max = PASSWORD_MAX}}}
@@ -3008,6 +3032,9 @@ function M.tick(dt)
         if at == "hangar" or at == "slot" then
             account.refresh_upgrades(M.zone)
         end
+        -- The career, re-asked when its page comes up: the session already
+        -- fetched one, and this catches the matches flown since.
+        if at == "pilot" then account.refresh_career() end
         was_at = at
     end
     -- Friends is asked for on two pages rather than one, and again while
@@ -3050,13 +3077,17 @@ function M.tick(dt)
 end
 
 -- Which of the corner stops wears the lit mark, which is the tab row's own
--- rule read across the whole row: what is lit is where you are, and the two
--- buttons at the far end are stops on that row like any other.
+-- rule read across the whole row: what is lit is where you are, and the
+-- button at the far end is a stop on that row like any other.
 --
--- Inside one of their pages it is that page. The stop and the node share a
--- name, which is what lets this ask the question without a second table
--- mapping one onto the other. Otherwise it is wherever the arrows are, and
--- nobody while they are on a tab or down inside a page a tab leads to.
+-- Inside its page it is that page. The stop and the node share a name, which
+-- is what lets this ask the question without a second table mapping one onto
+-- the other. Otherwise it is wherever the arrows are, and nobody while they
+-- are on a tab or down inside a page a tab leads to.
+--
+-- Only Discord, whose page no tab carries. A stop the rail already lights is
+-- not lit again here: two lit things on one row, both meaning "you are here",
+-- is a cursor in two places.
 local function corner_lit()
     local stops = corner_stops()
     if #M.stack > 1 then
@@ -3069,11 +3100,29 @@ local function corner_lit()
 end
 
 -- One of them, pressed. Enter and down both land here, the way they both act
--- on a tab.
+-- on a tab. The call sign is not on this row: a pointer presses it and lands
+-- in `M.click_pilot` directly.
 local function press_corner(which)
-    if which == "pilot" then return M.click_pilot() end
     if which == "discord" then return M.open_discord() end
     return nil, false
+end
+
+-- Whether this guest has anything a lost account would cost: an upgrade
+-- bought past the baseline, a friend made, or a rated game flown. This is
+-- what arms the banner and the rail dot; before there is anything to lose
+-- they stay away, because a warning over an empty account is nagging.
+local function guest_stakes()
+    if account.base == "" or account.claimed then return false end
+    if #(account.friends or {}) > 0 then return true end
+    if ((account.career or {}).games or 0) > 0 then return true end
+    local own = account.entitlements or {}
+    local core = _G.sim
+    local base = (core and core.base_entitlements and core.base_entitlements())
+        or {}
+    for i = 1, simn("SLOT_COUNT", 23) do
+        if (tonumber(own[i]) or 0) > (base[i] or 0) then return true end
+    end
+    return false
 end
 
 -- What the drawing code needs, and nothing about how it is drawn. `detail` is
@@ -3260,19 +3309,15 @@ function M.view()
                            and rows_of(NODES.root)[sel].go)
                        or nil
     if M.at() == "pilot" or previewing == "pilot" then
-        -- Who you are, beside what you can do about it. The call sign is the
-        -- page, and the rows are three things you might do to it.
-        out.aside = {
-            head = "call sign",
-            label = M.name,
-            sub = account.claimed and "claimed" or "a guest on this device",
-            note = "dealt to you on arrival, and yours until you reroll it. "
-                   .. "A name of your own is something to buy once you have "
-                   .. "flown enough to want one.",
-            foot = account.claimed
-                and "this pilot comes back anywhere you sign in"
-                or "a password brings this pilot back on any machine; without "
-                   .. "one it lives on this one",
+        -- Everything the drawing needs, and no aside: the reading column
+        -- that used to stand here said the call sign a third time and the
+        -- password sentence a second, over an empty gap.
+        out.pilot_card = {
+            name = M.name,
+            claimed = account.claimed,
+            online = account.base ~= "",
+            career = account.career,
+            rivets = account.rivets or 0,
         }
     end
     -- No roster under the games. The room the menu stands over used to draw
@@ -3318,6 +3363,11 @@ function M.view()
     -- the root it is the cursor and says nothing new; one level in it is the
     -- only thing on screen that says what a click would land on, which is the
     -- job it does for the stage on the home screen.
+    -- The guest warning: a dot on the pilot stop whenever there is
+    -- something to lose, and a band over the rail on every page but the one
+    -- the band points at. Home only, which is where the pilot page is.
+    out.guest_dot = guest_stakes()
+    out.banner = out.guest_dot and M.home and M.showing() ~= "pilot"
     out.rail_hover = M.rail_hover
     local top = rows_of(NODES.root)
     out.rail = {}
@@ -4243,6 +4293,7 @@ end
 
 -- The call sign in the corner of the tab row, pressed. It is a destination
 -- like a tab stop, so it behaves like one: home first, then into the page.
+-- The same page the rail's pilot stop opens; the name is the second door.
 function M.click_pilot()
     if not M.home then return nil, false end
     M.stack = {"root", "pilot"}

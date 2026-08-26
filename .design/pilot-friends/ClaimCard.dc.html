@@ -1,0 +1,75 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600&amp;family=Noto+Sans+Mono:wght@400;500;700&amp;display=swap">
+  <style>
+:root{
+  --ink:#dfe9f5; --dim:#6c7a90; --friend:#4fd6ff; --gold:#ffd166;
+  --mono:"DejaVu Sans Mono","Noto Sans Mono",ui-monospace,monospace;
+  --menu:"Chakra Petch","Segoe UI",system-ui,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:#05070c;color:var(--ink);font-family:var(--menu)}
+a{color:var(--friend)}a:hover{color:#8ee6ff}
+.lbl{font-family:var(--mono);font-size:9px;text-transform:uppercase;
+  letter-spacing:.13em;color:var(--dim)}
+.row{display:flex;align-items:center}
+.col{display:flex;flex-direction:column}
+.key{display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  border:1px solid rgba(63,88,120,.75);background:rgba(10,15,24,.6);
+  font-family:var(--mono);text-transform:uppercase;letter-spacing:.06em;
+  color:#9fb6d4}
+.keylit{border-color:rgba(79,214,255,.5);background:rgba(79,214,255,.07);
+  color:#4fd6ff}
+.sect{display:flex;align-items:center;gap:10px;margin:14px 0 6px}
+.sect .rule{flex:1;height:1px;background:rgba(63,88,120,.45)}
+.sline{font-family:var(--mono);font-size:9.5px;color:var(--dim);
+  margin:-2px 0 6px}
+.name{font-size:15px;color:var(--ink)}
+.note{font-family:var(--mono);font-size:10px;color:var(--dim)}
+.screen{position:relative;width:390px;height:844px;overflow:hidden;
+  background-color:#05070c;
+  background-image:
+   radial-gradient(circle 1.3px at 244px 128px,#93a9c8 0 1.3px,transparent 1.3px),
+   radial-gradient(circle 1.3px at 44px 626px,#93a9c8 0 1.3px,transparent 1.3px),
+   radial-gradient(circle 1.0px at 300px 33px,#4a6089 0 1.0px,transparent 1.0px),
+   radial-gradient(circle 1.0px at 85px 263px,#4a6089 0 1.0px,transparent 1.0px),
+   radial-gradient(circle 1.0px at 335px 707px,#4a6089 0 1.0px,transparent 1.0px),
+   radial-gradient(circle 0.9px at 195px 340px,#2a3a58 0 0.9px,transparent 0.9px),
+   radial-gradient(circle 0.9px at 118px 170px,#2a3a58 0 0.9px,transparent 0.9px),
+   radial-gradient(circle 0.9px at 353px 290px,#2a3a58 0 0.9px,transparent 0.9px),
+   radial-gradient(circle 0.9px at 27px 449px,#2a3a58 0 0.9px,transparent 0.9px),
+   radial-gradient(circle 0.9px at 196px 749px,#2a3a58 0 0.9px,transparent 0.9px)}
+</style>
+</helmet>
+<div class="screen">
+<svg width="390" height="844" style="position:absolute;inset:0">
+<rect x="288" y="196" width="26" height="104" fill="#080d16" stroke="#22344f" stroke-width="1"/>
+<path d="M288 196 H314" stroke="#5b82b8" stroke-width="1.4" opacity=".55"/>
+<rect x="60" y="560" width="128" height="26" fill="#080d16" stroke="#22344f" stroke-width="1"/>
+<path d="M60 560 H188" stroke="#5b82b8" stroke-width="1.4" opacity=".55"/>
+<g transform="translate(150,330) rotate(36)">
+<path d="M-4,10 L-2,44 L2,44 L4,10 Z" fill="#4fd6ff" opacity=".16"/>
+<path d="M0,-13 L15,9 L7,12 L0,8 L-7,12 L-15,9 Z" fill="#0b1220" stroke="#4fd6ff" stroke-width="1.5" stroke-linejoin="round"/></g>
+<g transform="translate(300,660) rotate(205)">
+<path d="M-4,10 L-2,44 L2,44 L4,10 Z" fill="#ffa552" opacity=".16"/>
+<path d="M0,-22 L3,-6 L6,8 L2,12 L-2,12 L-6,8 L-3,-6 Z" fill="#0b1220" stroke="#ffa552" stroke-width="1.5" stroke-linejoin="round"/></g>
+</svg>
+<div style="position:absolute;inset:0;background:rgba(3,5,10,.86)"></div>
+<div style="position:absolute;left:0;right:0;top:0;bottom:78px;padding:0 14px;overflow:hidden">
+<div class="row" style="height:48px;gap:10px;border-bottom:1px solid rgba(63,88,120,.45);margin:0 -14px;padding:0 14px"><div class="key" style="width:26px;height:26px;flex:none"><svg width="11" height="11" viewBox="0 0 12 12"><path d="M1.5 1.5 L10.5 10.5 M10.5 1.5 L1.5 10.5" stroke="#9fb6d4" stroke-width="1.4" stroke-linecap="square"/></svg></div><div style="flex:1"></div><div class="key" style="width:34px;height:26px;flex:none"><svg width="15" height="12" viewBox="0 0 16 12" fill="none"><path d="M4.6 1.6 C5.7 1.2 6.8 1 8 1 C9.2 1 10.3 1.2 11.4 1.6 C12.9 2.3 14.2 4.5 14.4 7.8 C13.4 9.1 12 9.9 11 10.2 L10.2 8.9 C9.5 9.1 8.8 9.2 8 9.2 C7.2 9.2 6.5 9.1 5.8 8.9 L5 10.2 C4 9.9 2.6 9.1 1.6 7.8 C1.8 4.5 3.1 2.3 4.6 1.6 Z" stroke="#9fb6d4" stroke-width="1.1"/><circle cx="5.7" cy="5.9" r="1" fill="#9fb6d4"/><circle cx="10.3" cy="5.9" r="1" fill="#9fb6d4"/></svg></div><div class="key" style="height:26px;padding:0 13px;font-size:11px;color:#9fb6d4;letter-spacing:.02em;text-transform:none">Delta 154</div></div>
+<div class="row" style="height:64px;gap:12px;margin:0 -14px;padding:0 14px;border-bottom:1px solid rgba(63,88,120,.45)"><div class="col" style="gap:3px"><div class="row" style="gap:8px"><span style="font-size:20px">Delta 154</span><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#6c7a90" stroke-width="1.3"><path d="M13 8 A5 5 0 1 1 10.5 3.7 M10.5 1.4 V4 H13.1"/></svg></div><span class="lbl">a guest on this device</span></div><div style="flex:1"></div><div class="key keylit" style="height:20px;padding:0 9px;font-size:8.5px">keep</div><div class="key" style="height:20px;padding:0 9px;font-size:8.5px">log in</div></div><div class="row" style="gap:8px;margin:10px 0 2px"><div class="row" style="flex:1;height:30px;padding:0 10px;border:1px solid rgba(63,88,120,.75);background:rgba(10,15,24,.6)"><span class="note">type a call sign</span><span style="width:1px;height:14px;background:#4fd6ff;margin-left:3px"></span></div><div class="key" style="height:20px;padding:0 9px;font-size:8.5px">add</div></div><div class="sect"><span class="lbl">waiting on you</span><div class="rule"></div><span class="lbl">1</span></div><div class="sline">they added you; accept and you are friends, ignore and they go to everybody</div><div class="row" style="height:32px;margin:0 -14px;padding:0 14px;gap:8px;opacity:1"><span class="name">Vantage 22</span><span class="note" style="margin-left:10px">added you 2h ago</span><div style="flex:1"></div><div class="key keylit" style="height:20px;padding:0 9px;font-size:8.5px">accept</div><div class="key" style="height:20px;padding:0 9px;font-size:8.5px">ignore</div></div><div class="sect"><span class="lbl">friends</span><div class="rule"></div><span class="lbl">3, 1 flying</span></div><div class="row" style="height:32px;margin:0 -14px;padding:0 14px;gap:8px;opacity:1"><span class="name">Sable</span><span class="note" style="margin-left:10px">team battle</span><div style="flex:1"></div><div class="key keylit" style="height:20px;padding:0 9px;font-size:8.5px">join</div><div class="key" style="height:20px;padding:0 9px;font-size:8.5px">unfriend</div></div><div class="row" style="height:32px;margin:0 -14px;padding:0 14px;gap:8px;opacity:1"><span class="name">Kestrel 0001</span><span class="note" style="margin-left:10px">not on</span><div style="flex:1"></div><div class="key" style="height:20px;padding:0 9px;font-size:8.5px">unfriend</div></div><div class="row" style="height:32px;margin:0 -14px;padding:0 14px;gap:8px;opacity:1"><span class="name">Ridgeline 7</span><span class="note" style="margin-left:10px">not on</span><div style="flex:1"></div><div class="key" style="height:20px;padding:0 9px;font-size:8.5px">unfriend</div></div><div class="sect"><span class="lbl">sent</span><div class="rule"></div><span class="lbl">1</span></div><div class="row" style="height:32px;margin:0 -14px;padding:0 14px;gap:8px;opacity:1"><span class="name">Aperture</span><span class="note" style="margin-left:10px">3d ago</span><div style="flex:1"></div><div class="key" style="height:20px;padding:0 9px;font-size:8.5px">cancel</div></div><div class="sect"><span class="lbl">in this game</span><div class="rule"></div><span class="lbl">2</span></div><div class="row" style="height:32px;margin:0 -14px;padding:0 14px;gap:8px;opacity:1"><span class="name">Tessellate 0001</span><div style="flex:1"></div><div class="key keylit" style="height:20px;padding:0 9px;font-size:8.5px">add</div></div><div class="row" style="height:32px;margin:0 -14px;padding:0 14px;gap:8px;opacity:1"><span class="name">Halcyon 2</span><div style="flex:1"></div><div class="key keylit" style="height:20px;padding:0 9px;font-size:8.5px">add</div></div><div class="sect"><span class="lbl">everybody who added you</span><div class="rule"></div><span class="lbl">4</span></div><div class="sline">the ones you ignored, and the ones it came to something</div><div class="row" style="height:32px;margin:0 -14px;padding:0 14px;gap:8px;opacity:1"><span class="name">Mantis 7</span><span class="note" style="margin-left:10px">ignored 2w ago</span><div style="flex:1"></div><div class="key keylit" style="height:20px;padding:0 9px;font-size:8.5px">accept</div></div><div class="row" style="height:32px;margin:0 -14px;padding:0 14px;gap:8px;opacity:.55"><span class="name">Sable</span><span class="note" style="margin-left:10px">friend</span><div style="flex:1"></div></div>
+</div>
+<div style="position:absolute;left:0;right:0;bottom:0;height:78px;border-top:1px solid rgba(63,88,120,.6);display:flex"><div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;height:100%;padding-bottom:14px;"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#6c7a90" stroke-width="1.3"><circle cx="8" cy="8" r="3.4"/><ellipse cx="8" cy="8" rx="7" ry="2.6" transform="rotate(-18 8 8)"/></svg><span style="font-size:9px;color:var(--dim)">play</span></div><div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;height:100%;padding-bottom:14px;"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#6c7a90" stroke-width="1.3"><g transform="translate(8,8.6) scale(.5)"><path d="M0,-13 L15,9 L7,12 L0,8 L-7,12 L-15,9 Z"/></g></svg><span style="font-size:9px;color:var(--dim)">ship</span></div><div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;height:100%;padding-bottom:14px;background:linear-gradient(0deg,rgba(79,214,255,.14),rgba(79,214,255,0) 80%);"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#4fd6ff" stroke-width="1.3"><path d="M2.6 9.8 A5.5 5.5 0 0 1 13.4 9.8"/><path d="M1.6 11.6 H14.4"/></svg><span style="font-size:9px;color:var(--ink)">pilot</span></div><div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;height:100%;padding-bottom:14px;"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#6c7a90" stroke-width="1.3"><path d="M2 4.5 H14 M2 8 H14 M2 11.5 H14"/><circle cx="10.5" cy="4.5" r="1.8" fill="#0a0f18"/><circle cx="5.5" cy="8" r="1.8" fill="#0a0f18"/><circle cx="9.5" cy="11.5" r="1.8" fill="#0a0f18"/></svg><span style="font-size:9px;color:var(--dim)">settings</span></div></div>
+<div style="position:absolute;inset:0;background:rgba(3,5,10,.55)"></div><div style="position:absolute;left:30px;right:30px;top:270px;background:#080d16;border:1px solid rgba(63,88,120,.75);padding:18px 18px 16px"><div style="font-size:16px;margin-bottom:4px">Keep this pilot</div><div class="note" style="text-transform:none;line-height:1.5">a password brings Delta 154 back on any machine; without one it lives on this one until a quiet week reclaims it</div><div class="row" style="height:32px;margin-top:14px;padding:0 10px;border:1px solid rgba(63,88,120,.75);background:rgba(10,15,24,.6);gap:5px"><span style="width:6px;height:6px;border-radius:50%;background:#dfe9f5"></span><span style="width:6px;height:6px;border-radius:50%;background:#dfe9f5"></span><span style="width:6px;height:6px;border-radius:50%;background:#dfe9f5"></span><span style="width:6px;height:6px;border-radius:50%;background:#dfe9f5"></span><span style="width:6px;height:6px;border-radius:50%;background:#dfe9f5"></span><span style="width:6px;height:6px;border-radius:50%;background:#dfe9f5"></span><span style="width:1px;height:14px;background:#4fd6ff"></span></div><div class="row" style="gap:8px;margin-top:14px;justify-content:flex-end"><div class="key" style="height:20px;padding:0 9px;font-size:8.5px">cancel</div><div class="key keylit" style="height:20px;padding:0 9px;font-size:8.5px">set password</div></div></div>
+</div>
+</x-dc>
+
+</body>
+</html>

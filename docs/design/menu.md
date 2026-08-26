@@ -1,5 +1,30 @@
 # Landing, and the menu
 
+> **The pilot page is the career and the way to keep it.** The name leads
+> with the reroll behind a NEW NAME key, because a press on your own call
+> sign used to reroll it on the spot. Under a ship-page section rule, the
+> career as bare totals: the most-flown class's rating and tier, the record,
+> rated games, rivets, all served by the meta-layer's `/v1/career`. At the
+> foot, the one act each state has: a guest's lit SIGN UP under "Keep your
+> points and log in on other devices" and "Already have a pilot? log in", or
+> the password and log out as a pair. "Keep this pilot" and the reading
+> column that said everything twice are gone; sign up and log in are the
+> words everywhere, and the sign-up card carries the one explaining line. A
+> guest with something to lose gets a gold banner on every tab but this one:
+> "You are using a guest account. Press here to set your password." See
+> [decision 70](../architecture/decisions.md).
+
+> **The account page is a stop on the rail.** The home row is play, ship,
+> friends, settings and pilot: the account page as the fifth stop, wearing the
+> helmet mark the interface already uses for a person. The call sign pill at
+> the far end of the top line stays and opens the same page, because it is the
+> one thing on screen saying who you are signed in as; it used to be the only
+> way in, and a name in a pill does not look like a button. The stop stays
+> home, so the short row a match gets is unchanged. The name is a label with a
+> press on it rather than a stop the arrows walk, so it never lights for the
+> page: the rail stop is the one mark saying where you are. See
+> [decision 69](../architecture/decisions.md).
+
 > **A game row is one press, and leaving is a button on it.** Pressing a game
 > means be in that game, wherever this client happens to be: already there and
 > the panel goes, anywhere else and the stands dial it and keep dialing while a
@@ -104,10 +129,11 @@ once.
 ## The only difference between the two
 
 Whether you are in a hull. That is `menu.home`, and the tab row follows it:
-four stops with no hull, the short row with one. A pilot the room benched is in
-the stands too, same empty cockpit and same time to read, so they get the four
+five stops with no hull, the short row with one. A pilot the room benched is in
+the stands too, same empty cockpit and same time to read, so they get the row
 back with `leave` added, which is the one stop that needs a zone to mean
-anything.
+anything, and `pilot` withheld, which is the one that needs there not to be
+one: an account is not a thing to edit from inside a room.
 
 The short row keeps the games. It did not, and leaving was a stop of its own
 called `leave`, which filed the way out of a game beside the way to the sound
@@ -145,7 +171,7 @@ are what walk back through the tree.
 
 ## A tab row, and a page under it
 
-Four tabs at the front end and three in a match, with one page under whichever
+Five tabs at the front end and three in a match, with one page under whichever
 is lit. Left and right walk the row; down or up enters the page, and up from
 its first row or down off its last comes back to the row, which makes the
 column a ring a thumb can walk either way. Left and right on a row set that
@@ -166,20 +192,33 @@ vectorwake
 ├ friends     a field you type a call sign into, who is waiting on you, who
 │             is on, the room you are in, and everybody who ever added you.
 │             See friends.md
-└ settings    sound · music · frames · fullscreen · bindings · about
+├ settings    sound · music · frames · fullscreen · bindings · about
+└ pilot       who you are and the way to keep it: the name large with a NEW
+              NAME key beside it, the career as bare totals under a ship-page
+              section rule, and the account acts at the foot. A guest gets
+              one lit SIGN UP under "Keep your points and log in on other
+              devices"; signed in, the same foot holds the password and the
+              way out
 
-              your call sign sits at the far end of the row and is the way
-              into your account and career: a page reached from the one
-              place already naming it, rather than a fifth stop. Beside it,
+              your call sign still sits at the far end of the top line and
+              opens the same page. It was the only way in for a long time,
+              on the argument that a stop repeating the name beside it said
+              it twice; what that bought was an account nobody knew they
+              had, because a name in a pill does not look like a button.
+              The stop is the door a stranger finds and the name is the one
+              a returning player knows, and it stays because it is the one
+              thing on screen saying who you are signed in as. It is a
+              label with a press on it rather than a stop: the arrows walk
+              past it, and it never lights for the page, because the rail
+              stop already says you are there. Beside it,
               Discord, which opens a page about the room rather than the
               room: why there is one, one button that opens it, the address
               in words under that for when a popup blocker eats the button,
               and what actually happens in there. One thing on it answers a
               press, and it is drawn as a button rather than as a row, which
-              is what the four rows it replaced could not say. Both corner
-              stops are drawn as buttons, which on a phone there is no
-              corner for: there the play page carries the Discord one and the
-              top of the screen is the wordmark alone
+              is what the four rows it replaced could not say. Both it and
+              the call sign are drawn as buttons, though only Discord is a
+              stop the arrows walk
 
 in a match
 ├ play        the same list, because the way out of the game you are in is a
@@ -221,9 +260,16 @@ hover is still the cursor, because there is one cursor and it is the list you
 are reading; on the rail, crossing the row on the way to somewhere else can
 no longer take a page off the screen.
 
-The two buttons at the far end of the row are stops on it, so they are lit on
-the same rule: the account button while the account page is up, the Discord
-button while its page is.
+Discord at the far end of the row is a stop on it, so it is lit on the same
+rule: the button while its page is up.
+
+The call sign beside it is not a stop and never lights for the page it opens.
+The rail carries the account page, and the rail's own stop is what says you
+are on it; a name lighting too would put "where you are" in two places on one
+row. So the name is a label with a press on it, brightening under a pointer
+that could take you somewhere and quiet once you are there. It stopped being
+a stop the moment the rail took the page: a control the arrows can rest on
+has to light to show the cursor, which is the half a shortcut does not want.
 
 ## What the window decides
 
@@ -243,19 +289,26 @@ at desktop size in 390 points of screen. Every page lost its bottom half.
 Landscape therefore takes the top row, which is the right answer for it: 56
 points of height against the bottom bar's 84, at the size a phone reads.
 
-The far end of the top line carries two buttons on both layouts, the account
+The far end of the top line carries two buttons on both layouts, the call sign
 and the way out to Discord, with the wordmark giving up size to make room and
 Discord wearing its mark alone where the word will not fit. The tab row is
 bounded by them and gives up its gaps before its type. Laid out from opposite
 ends and never told about each other, the two ran into the middle of a
 landscape phone and the last tab was drawn under a button that took its taps.
 
-They are on that row, which took saying. Right off the last tab lands on
-Discord and right again on the account, left walks back, and the row loops
-from either end. Enter presses one, and so does down, which is what down means
-on a tab: what is under one of these is a page or the place the talking
-happens. Before that a hand on the arrows could not reach either, so the way
-to an account was a mouse or nothing.
+Discord is on that row, which took saying. Right off the last tab lands on it,
+left walks back, and the row loops from either end. Enter presses it, and so
+does down, which is what down means on a tab: what is under it is the page
+about the place the talking happens.
+
+The call sign is not, and that is the difference between a stop and a
+shortcut. It was one while it was the only route to an account and a hand on
+the arrows could not reach it; the rail carries that page now, so the arrows
+walk past the name. What that buys is the lit mark staying in one place: a
+stop the cursor can rest on has to light to say the cursor is there, and this
+row's light means "where you are", which cannot be true of a tab and a name at
+the same time. The name brightens under a pointer that could take it somewhere
+and goes quiet on its own page.
 
 ## Behind it, the sky the game is played under
 

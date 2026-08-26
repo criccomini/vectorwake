@@ -2196,6 +2196,59 @@ async fn route(
             }
         }
 
+        // The caller's own record, for the pilot page's career section: the
+        // rating of the class they have flown most, its tier, rated games
+        // across every class, and the durable kill and death totals. The same
+        // facts /pilots publishes about everybody, cut down to one account
+        // and reachable with a session secret, so a guest reads their own
+        // career too. A rating under the provisional floor is withheld the
+        // way the public page withholds it: the class comes back so the
+        // client can name the row, the number does not.
+        "/v1/career" => {
+            let account = match account_from_secret(&db, &s("secret")).await {
+                Ok(account) => account,
+                Err(reply) => return reply,
+            };
+            let row = db
+                .query_one(
+                    "with best as (
+                         select class, rating, games from ratings
+                         where account = $1
+                         order by games desc, rating desc, class limit 1
+                     )
+                     select b.class, b.rating, b.games,
+                            (select coalesce(sum(games), 0)::bigint
+                             from ratings where account = $1),
+                            coalesce(ps.kills, 0), coalesce(ps.deaths, 0)
+                     from (select 1) one
+                     left join best b on true
+                     left join pilot_stats ps on ps.account = $1",
+                    &[&account],
+                )
+                .await;
+            match row {
+                Ok(row) => {
+                    let class: Option<String> = row.get(0);
+                    let score: Option<f64> = row.get(1);
+                    let games: Option<i32> = row.get(2);
+                    let rated = matches!((score, games), (Some(_), Some(g))
+                        if g as u32 >= rating::PROVISIONAL_GAMES);
+                    (
+                        200,
+                        serde_json::json!({
+                            "class": class,
+                            "rating": if rated { score } else { None },
+                            "tier": if rated { score.map(rating::tier) } else { None },
+                            "games": row.get::<_, i64>(3),
+                            "kills": row.get::<_, i64>(4),
+                            "deaths": row.get::<_, i64>(5),
+                        }),
+                    )
+                }
+                Err(error) => (500, serde_json::json!({ "error": format!("{error}") })),
+            }
+        }
+
         // One edge, made or dropped. `add` is still the whole verb: adding
         // somebody who has already added you is what accepting is, and
         // dropping takes both directions so a removed pilot does not stay on
@@ -6477,6 +6530,32 @@ mod tests {
         db.batch_execute("alter table credentials_unavailable rename to credentials")
             .await
             .expect("restore credentials");
+
+        // The pilot page's career, read with the same secret. A rating past
+        // the provisional floor comes back with its tier and the most-flown
+        // class's name; the totals ride whatever the projection holds.
+        db.execute(
+            "insert into ratings (account, class, rating, games)
+             values ($1, $2, 1234.5, 12)
+             on conflict (account, class)
+             do update set rating = 1234.5, games = 12",
+            &[&victim, &DEFAULT_CLASS],
+        )
+        .await
+        .expect("career rating row");
+        let (code, body) = route(
+            &meta,
+            "/v1/career",
+            &serde_json::json!({ "secret": secret }),
+            "127.0.0.1",
+        )
+        .await;
+        assert_eq!(code, 200, "career: {body}");
+        assert_eq!(body["class"], DEFAULT_CLASS.to_string().as_str());
+        assert_eq!(body["rating"], 1234.5);
+        assert_eq!(body["tier"], "Lead");
+        assert_eq!(body["games"], 12);
+        assert!(body["kills"].is_i64() && body["deaths"].is_i64());
 
         db.execute(
             "insert into pilot_events (pilot, name, bot, kind, detail)
