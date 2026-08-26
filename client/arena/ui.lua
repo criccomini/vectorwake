@@ -4796,65 +4796,6 @@ local function thumb(cx, cy, cls, col, scale, turn, detail)
     if h.canopy then trace(h.canopy, 1.0 * F.scale, pal.a(col, 0.55)) end
 end
 
--- What the page carries under its rows: what the call sign on this page
--- means, or what a setting the cursor is on changes.
---
--- It was a second column beside the list, on the argument that a list of two
--- modes across a nine hundred point panel is a page with a hole in it. There
--- is no nine hundred point panel now, and no second column: this follows the
--- rows down the one column there is.
---
--- It carried the room's roster too, until the play page stopped wanting one:
--- a second scoreboard on the page about leaving for somewhere else, and the
--- room it described is on screen the moment the panel goes.
---
--- The rule down its left edge is drawn last and only as deep as the content
--- came to. Given the room it was handed, a short section hung a rule to the
--- foot of the panel and read as a section that had failed to draw.
-function pages.aside(a, x, y, w, h)
-    if not a then return end
-    local function edge(used)
-        vrule(x - 18 * F.scale, y + 6 * F.scale,
-              math.min(used, h) - 12 * F.scale,
-              pal.a(pal.RADAR_TILE, 0.45), 18 * F.scale)
-    end
-    lbl(a.head or "", x, y + 16 * F.scale)
-    txt(a.label or "", x, y + 44 * F.scale, 21 * F.scale,
-        pal.a(pal.INK, 0.95), nil, MENU_FONT)
-    lbl(a.sub or "", x, y + 64 * F.scale, pal.a(pal.DIM, 0.85))
-    local ly = y + 88 * F.scale
-    for _, e in ipairs(a.rows or {}) do
-        lbl(e[1], x, ly, pal.a(pal.DIM, 0.85))
-        txt(e[2], x + w - 24 * F.scale, ly, 12 * F.scale,
-            pal.a(pal.INK, 0.9), "right")
-        ly = ly + 20 * F.scale
-    end
-    if a.note and a.note ~= "" then
-        ly = ly + 10 * F.scale
-        local said = string.upper(string.sub(a.note, 1, 1))
-                     .. string.sub(a.note, 2)
-        for _, line in ipairs(wrapped(said, 12 * F.scale,
-                                      w - 24 * F.scale)) do
-            txt(line, x, ly, 12 * F.scale, pal.a(pal.DIM, 0.95), nil, nil, true)
-            ly = ly + 16 * F.scale
-        end
-    end
-    -- The last word, held to the foot of the room this was given rather than
-    -- run on under the note: it is the sentence about the whole section.
-    if a.foot and a.foot ~= "" then
-        local ny = y + h - 52 * F.scale
-        hrule(x, ny, w - 24 * F.scale)
-        ny = ny + 16 * F.scale
-        for _, line in ipairs(wrapped(a.foot, 11 * F.scale,
-                                      w - 24 * F.scale)) do
-            txt(line, x, ny, 11 * F.scale, pal.a(pal.DIM, 0.7), nil, nil, true)
-            ny = ny + 15 * F.scale
-        end
-        ly = math.max(ly, ny)
-    end
-    edge(ly - y)
-end
-
 -- --- the hangar ------------------------------------------------------------
 
 -- One diamond of a ladder. Filled where the kit spends there, outlined where
@@ -4940,9 +4881,10 @@ function pages.kit(v, x, y, w, h, focused)
     -- to read about it.
     local BAND = 48 * F.scale
     local mid = y + BAND / 2
-    -- Clear of the x, which the column draws on this same line where a page
-    -- carries no head of its own.
-    local bx = math.max(x, (M.close_right or 0) + 12 * F.scale)
+    -- At the column's own edge. It used to start clear of the x, which this
+    -- page drew on the band's line while it carried no head of its own; the
+    -- head is on every page now and the x is up there with it.
+    local bx = x
     if band[1] then
         local r = band[1]
         local px = 12 * F.scale
@@ -5214,12 +5156,12 @@ end
 -- The way back out of a page that slid in over another: a chevron and the
 -- name of what is behind it, on the line the band stands on.
 --
--- The same square the x occupies on the page behind, at the same inset, so a
--- hand that learned where one of them was has learned the other. A swipe
+-- Under the x rather than beside it: the head is on every page, so the way
+-- back out of a reading is the first thing on the page under it. A swipe
 -- right does it too; see `M.drawer`.
 function pages.back_row(v, x, y, w, place)
     local mid = y + 24 * F.scale
-    local bx = math.max(x, (M.close_right or 0) + 12 * F.scale)
+    local bx = x
     F.layer:tri(bx, ry(mid), bx + 7 * F.scale, ry(mid - 5.5 * F.scale),
                 bx + 7 * F.scale, ry(mid + 5.5 * F.scale),
                 pal.a(pal.DIM, 0.9))
@@ -6078,12 +6020,17 @@ function pages.pilot(v, x, y, w, h, focused)
     local kh = 26 * F.scale
     txt(c.name or "", x, at + kh / 2, 24 * F.scale, pal.a(pal.INK, 1),
         nil, MENU_FONT, true)
-    local kw = text_w("new name", 8.5 * F.scale, MENU_FONT) + 22 * F.scale
+    -- The size every other key in this menu is set at. It was eight and a half
+    -- points, which is under the ten this interface holds authored type to and
+    -- is eight and a half pixels on a monitor that is not a phone: a key
+    -- nobody with a desktop could read. See `lbl`.
+    local KEY_PX = 12 * F.scale
+    local kw = text_w("new name", KEY_PX, MENU_FONT) + 22 * F.scale
     local hot = sel == 1
     key_box(x + w - kw, at, kw, kh,
             pal.rgb(0x0a0f18, hot and 0.95 or 0.7),
             pal.a(hot and pal.FRIEND or pal.RADAR_TILE, hot and 0.95 or 0.7))
-    txt("new name", x + w - kw / 2, at + kh / 2, 8.5 * F.scale,
+    txt("new name", x + w - kw / 2, at + kh / 2, KEY_PX,
         pal.a(hot and pal.FRIEND or pal.INK, hot and 1 or 0.6), "center",
         MENU_FONT)
     hit(x + w - kw, at, kw, kh, "stage", 1)
@@ -6164,7 +6111,7 @@ function pages.pilot(v, x, y, w, h, focused)
                     pal.rgb(0x0a0f18, on and 0.95 or 0.7),
                     pal.a(on and pal.FRIEND or pal.RADAR_TILE,
                           on and 0.95 or 0.7))
-            txt(word, bx + half / 2, ky + fh / 2, 10.5 * F.scale,
+            txt(word, bx + half / 2, ky + fh / 2, KEY_PX,
                 pal.a(on and pal.FRIEND or pal.INK, on and 1 or 0.75),
                 "center", MENU_FONT)
             hit(bx, ky, half, fh, "stage", i + 1)
@@ -6974,14 +6921,13 @@ function pages.corner(v, right, cy)
     -- A name is quoted rather than said: it keeps the case its owner gave it,
     -- where every other word on this row is in the interface's.
     --
-    -- Lit by a pointer resting on it or by the arrows standing on it, which
-    -- are the same fact, and not while its own page is up. The rail carries
-    -- that page and lights the stop that leads to it, so a name lighting as
-    -- well would be the "you are here" mark in two places at once, which is
-    -- the one thing this row cannot say. So it is a label with a press on it:
-    -- it says who you are signed in as, brightens under whichever hand is on
-    -- it, and stays quiet once you are there.
-    local on = (v.pilot_hot or v.corner_sel == "pilot") and v.at ~= "pilot"
+    -- Lit by the arrows standing on it, wherever the panel is: that is a
+    -- cursor, and a cursor you cannot see is a cursor nobody can use. A
+    -- pointer resting on it lights it too, but not while its own page is up:
+    -- the rail already carries the "you are here" mark for that page, and a
+    -- mouse crossing the name is not a claim about where you are.
+    local on = v.head_sel == "pilot"
+        or (v.pilot_hot and v.at ~= "pilot")
     local px = 12 * F.scale
     local bw = text_w(v.pilot.name, px, MENU_FONT, true) + 30 * F.scale
     local bx = rt - bw
@@ -7348,19 +7294,20 @@ function M.menu(v)
     -- way in, by a tap or by enter, so the key was one control for an act the
     -- page already had.
 
-    -- The head, and the page between the two.
+    -- The head, and the page between it and the stops.
     --
-    -- Some pages carry none. The ship page and the four screens it opens put
-    -- their own band on that line, the build's name and the points, or the
-    -- way back out of a reading, and the wordmark and the call sign come off:
-    -- this is the longest page in the menu and what a builder needs on screen
-    -- is the build. The x stays where it always is, on the same line at the
-    -- same inset, and the page starts to the right of it. See .design/hangar.
+    -- Every page carries it. The ship page and the four screens it opens used
+    -- to put their own band on that line instead, taking the call sign and the
+    -- rule off, on the argument that the longest page in the menu should spend
+    -- nothing above the build. What that bought was a panel that jumped the
+    -- height of its own head the moment a hand walked into the ship page from
+    -- the rail, and one page where the x and the call sign were not where they
+    -- are everywhere else. The band draws under the head now, and the arrows
+    -- reach the account from the top of any page in the menu.
     local hy = F.safe_t
-    local bare = v.headless == true
-    logo_y = hy + (bare and 24 or head / 2) * (bare and F.scale or 1)
+    logo_y = hy + head / 2
     sx, sw = dx + margin, dock - 2 * margin
-    sy = bare and hy or (hy + head + 8 * F.scale)
+    sy = hy + head + 8 * F.scale
     sh = ry_ - 14 * F.scale - sy
     -- The guest banner: a band in the caution color standing on the rail,
     -- for a guest with something to lose, on every page but the one it
@@ -7380,11 +7327,10 @@ function M.menu(v)
             by + 33 * F.scale, 10 * F.scale, pal.a(pal.DIM, 1))
         hit(dx, by, dock, bh, "pilot_page")
     end
-    -- A rule under the head, so the name and the call sign read as a bar over
-    -- the page rather than as the page's own first line. Edge to edge, since
-    -- it is the underside of a head rather than the top of a list. A page
-    -- that carries its own band draws its own.
-    if not bare then hrule(dx, hy + head, dock) end
+    -- A rule under the head, so the x and the call sign read as a bar over the
+    -- page rather than as the page's own first line. Edge to edge, since it is
+    -- the underside of a head rather than the top of a list.
+    hrule(dx, hy + head, dock)
     px0, py0, px1, py1 = dx, 0, dx + dock, F.h
 
     -- The call sign at the far end of the head first, so the name knows what
@@ -7396,30 +7342,20 @@ function M.menu(v)
     -- because the corner stack held that corner. The column covers the corner
     -- stack now, so this head is the only place it can be and it carries it
     -- whatever is behind the panel.
-    if not bare then pages.corner(v, dx + dock - margin, logo_y) end
-    -- The way out stands where the way in stood: the same square, at the same
-    -- inset, on the same line. Pressing the menu key and pressing the x are one
-    -- control seen from either side, so a hand that learned where one of them
-    -- was has learned the other, and the name moves right to make the room.
-    local shut = KEY_H * F.scale
-    -- Where the x's square ends, so a page carrying its own top line knows
-    -- what room is already spoken for. Published rather than worked out
-    -- twice: the key is drawn from here and the band is laid out from there.
-    M.close_right = v.closable and (dx + margin + shut) or (dx + margin)
-    -- The wordmark gives, because it is a picture of a name everybody
-    -- reading this screen has already read, and a call sign in a pill is
-    -- not. Down two points at a time to a floor rather than squeezed to
-    -- fit: below about twenty the mark beside it stops being a mark.
-    -- No wordmark on this line. It sat between the x and the call sign on
-    -- every page of the menu, turning: a picture of a name everybody reading
-    -- this screen has already read, animating in the corner of a panel they
-    -- opened to do something else. The landing still wears it, over the key
-    -- it is a title for, which is the one place it says anything.
+    pages.corner(v, dx + dock - margin, logo_y)
+    -- The x is at the other end of it, drawn below with the page it belongs
+    -- to. Nothing between them: the wordmark sat there on every page of the
+    -- menu, turning, a picture of a name everybody reading this screen has
+    -- already read, animating in the corner of a panel they opened to do
+    -- something else. The landing still wears it, over the key it is a title
+    -- for, which is the one place it says anything.
 
-    -- Which half the arrows are in. The two halves share one cursor and mark
-    -- it with the same blue field, so the half wearing the brighter one is the
-    -- answer to "what does up do here" without a word spent on saying it.
+    -- Which of the three rows the arrows are in: the head over the page, the
+    -- page, or the rail under it. They share one cursor and mark it with the
+    -- same blue field, so the row wearing it is the answer to "what does up do
+    -- here" without a word spent on saying it.
     local focused = (v.focus == "stage")
+    local rail_focus = (v.focus == "rail")
 
     -- --- how far the page is scrolled
     --
@@ -7514,7 +7450,7 @@ function M.menu(v)
             -- block, so the lit stop is a tab reaching the bottom of the glass
             -- and not a panel floating above the indicator.
             rect(cx - pitch / 2 + 3 * F.scale, ry_, pitch - 6 * F.scale,
-                 tab_h, pal.a(pal.FRIEND, focused and 0.06 or 0.22))
+                 tab_h, pal.a(pal.FRIEND, rail_focus and 0.22 or 0.06))
         end
         draw_mark(e.icon, cx, cy, r, col, v.class or 0)
         -- The quiet half of the guest warning: a spark on the stop the
@@ -7607,27 +7543,41 @@ function M.menu(v)
     -- and a rail that navigates from every level had already taken the going
     -- back. What is left is shutting the panel, and everything shuts on an x.
     --
-    -- On the name's own line, at the far end of it. It sat at the top of the
-    -- stage, which on the desktop layout is a third of the way down the panel
-    -- and level with nothing: a dialog's x belongs on the dialog's title, and
-    -- here the title is the name. Same line in both layouts, since the name is
-    -- in both.
-    -- At the far end of that line, which is the block's own edge rather than
-    -- the list's: the list is capped at 520 points and the x hung off the end
-    -- of it, which was the right place under a heading and is a mark adrift
-    -- in the middle of a title.
+    -- On the head's own line, at the near end of it, in the square the menu
+    -- key had at the same inset: pressing the menu key and pressing the x are
+    -- one control seen from either side, so a hand that learned where one of
+    -- them was has learned the other. It sat at the top of the stage, which on
+    -- the desktop layout was a third of the way down the panel and level with
+    -- nothing.
+    --
+    -- Against the block's own edge rather than the list's: the list is capped
+    -- at 560 points and the x hung off the end of it, which was the right
+    -- place under a heading and is a mark adrift in the middle of a title.
     if v.closable then
         local box = KEY_H * F.scale
-        close_mark(dx + margin + box / 2, logo_y, pal.a(pal.DIM, 0.9),
-                   11 * F.scale)
+        -- Lit while the arrows are on it, the way the call sign at the other
+        -- end of this line is: the two are one row and they wear one cursor.
+        local shut_on = v.head_sel == "close"
+        if shut_on then
+            wash(dx + margin, logo_y - box / 2, box, box,
+                 pal.a(pal.FRIEND, LIT.CURSOR))
+        end
+        close_mark(dx + margin + box / 2, logo_y,
+                   pal.a(shut_on and pal.FRIEND or pal.DIM,
+                         shut_on and 1 or 0.9), 11 * F.scale)
         hit(dx + margin, logo_y - box / 2, box, box, "close")
     end
     -- A page with a heading starts its heading where a page without one
     -- starts its first row, near enough: the air over the list is what the
     -- heading is standing in. Taking the full band and then the heading on
     -- top of it cost the kit page its last row.
-    local top = bare and sy
-        or (sy + ((v.head and not v.kit) and 10 or STAGE_TOP) * F.scale)
+    --
+    -- The same for a page carrying its own band: the ship page's build name
+    -- and points, and the way back out that the four screens it opens wear.
+    -- A band is a heading, so it stands in the air a heading stands in rather
+    -- than under the whole of what a list gets.
+    local banded = v.kit or v.builds or v.newbuild or v.points or v.item
+    local top = sy + ((v.head or banded) and 10 or STAGE_TOP) * F.scale
     local room = sh - (top - sy) - 26 * F.scale
     -- A heading, on the one page that has one. The lit stop on the tab row is
     -- the title everywhere else, and it stops being one as soon as a page is
@@ -7864,16 +7814,6 @@ function M.menu(v)
             local bx = tx + lw + (MENU_PAD * F.scale - bar) / 2
             rect(bx, ty, bar, room, pal.a(pal.DIM, 0.14))
             rect(bx, ty + scrolled, bar, hgt, pal.a(pal.RADAR_TILE, 0.85))
-        end
-        -- What the page carries under its rows: the room this column is
-        -- standing over, or what the call sign on this page means. It was a
-        -- second column beside the list, drawn only where the panel had 700
-        -- points to spare, which is a thing that existed on a monitor and
-        -- nowhere else. It follows the rows now, and a page with nothing left
-        -- under them goes without rather than drawing across the foot.
-        local asidey = at + 18 * F.scale
-        if v.aside and top + room - asidey > 120 * F.scale then
-            pages.aside(v.aside, tx, asidey, lw, top + room - asidey)
         end
         -- Under whatever rows there are, which over a game is the one row
         -- that leaves it.

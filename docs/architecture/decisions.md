@@ -3410,6 +3410,9 @@ the list of answers already tried.
 at the server; `community.md`, `menu.md`, `interface.md`, `friends.md` and
 `match-game.md` are updated. Decision 28 is untouched: this removes a link,
 not a reason.
+
+---
+
 ## 74. The duel counts a streak, and names who it beat
 
 **What:** the Duel's board drops the rung and the floor, and the panel under
@@ -3473,3 +3476,76 @@ run deep enough cannot fall to the bottom. Either that stays an unstated
 mercy, or the streak becomes the mechanic outright, a win putting a harder
 rival across the arena and a loss putting back the first. The board draws the
 same either way, which is why this decision does not settle it.
+
+---
+
+## 75. The head is a row of its own, and every page carries it
+
+**Status:** accepted
+
+**Decision:** the two controls on the drawer's top line, the x that shuts the
+panel and the call sign that opens the account, are a row the arrows walk.
+Left and right step between them and loop; down goes back into the page under
+them, at the top of it; enter presses what it is on; up does nothing, because
+nothing is drawn over that line. A hand reaches the row by pressing up off the
+first row of a page. Away from home the call sign is not a stop, since an
+account is not a thing to edit from inside a room, and the x is the whole of
+the row.
+
+The rail is the tabs and nothing else. An arrow off it is a step in a
+direction: up walks into the page from underneath and lands on its last row,
+down comes in over the top and lands on its first, and neither of them opens a
+page whose first control is a text field. A page's own band is not the top of
+its list, so down into the ship page lands on the first ladder rather than on
+the build's name. Enter is the one press that is not a direction, so it is the
+one that still lands where the page was left and still opens a field page with
+the cursor in the box.
+
+Every page carries the head. The ship page and the four screens it opens draw
+their own band under it rather than on its line.
+
+And the settings page lost the block under its rows that explained whichever
+row the cursor was on.
+
+**Why:** Chris reported these in one message as separate bugs. The navigation
+ones are one bug: the panel is three rows stacked down a column, and only two
+of them were being walked as rows.
+
+The x and the call sign were the far end of the tab row
+([decision 73](#73-the-community-door-is-the-sites-not-the-games) records the
+last of the reasoning), which put a horizontal wrap between a row along the
+foot of the column and a button at the top of it. Pressing right off the last
+tab moved the cursor the height of the panel sideways, and the two lit
+highlights a hand met walking that row were nowhere near each other. Up off the
+first row of a page went to the tabs at the foot, so the one control the arrows
+could not reach was the one at the top of the panel, which is where somebody
+pressing up is looking.
+
+The rest follow from the same reading. Up and down off the rail both landed
+wherever the page had last been left, so pressing up on `ship` to read the foot
+of the kit and then pressing down on it again lit `wake` at the bottom of the
+page: the arrow pointed one way and the cursor went the other. Pressing up on
+`friends` opened the add box at the top of the page when what it was reaching
+for was the last name on it, because entering a field page always opened its
+field. And the ship page dropped the head when it was entered, so walking into
+it from the rail jumped the whole panel up by the height of its own head, and
+left one page where the account was unreachable by any key.
+
+The settings block is the separate one. It said the selected row's name, its
+value and its help line back to somebody who had just walked onto that row, and
+it moved every time the cursor did. Everything in it was already on the row.
+
+**Cost:** the ship page gives up about seventy points of height to the head it
+now carries, which on a phone held upright is two or three ladders' worth of
+list before it scrolls. The page has scrolled and carried a scroll thumb since
+it became one page, so this is a page that scrolls sooner rather than a page
+that scrolls where it did not.
+
+The head is reachable only from the top of a page. From the rail it is up into
+the page and then up through it, which is a walk; the account also has a rail
+stop of its own at home, so the walk is never the only route.
+
+**Reconsider if:** the ship page turns out to need the height more than it
+needs the head, at which point the answer is a shorter head rather than no
+head: the line is a 26 point square at one end and a pill at the other, and
+there is air around both.

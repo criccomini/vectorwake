@@ -886,7 +886,7 @@ do
     }
     local hangar = draw({
         depth = 2, sel = 3, rail = RAIL, rail_sel = 1, focus = "stage",
-        home = true, closable = true, page = "kit", headless = true,
+        home = true, closable = true, page = "kit",
         kit = true, profile = {name = "Screen", state = "edited"},
         kit_spent = 28, kit_total = 30,
         rows = ROWS,
@@ -925,7 +925,7 @@ do
     -- The kit a build is exactly is a kit with nothing to keep, so no key.
     local kept = draw({
         depth = 2, sel = 3, rail = RAIL, rail_sel = 1, focus = "stage",
-        home = true, closable = true, page = "kit", headless = true,
+        home = true, closable = true, page = "kit",
         kit = true, profile = {name = "Screen"},
         kit_spent = 30, kit_total = 30,
         rows = {ROWS[1], ROWS[2], ROWS[3], ROWS[5]},
@@ -944,7 +944,7 @@ end
 do
     local builds = draw({
         depth = 3, sel = 2, rail = RAIL, rail_sel = 1, focus = "stage",
-        home = true, closable = true, page = "builds", headless = true,
+        home = true, closable = true, page = "builds",
         builds = true,
         rows = {
             {label = "Gunner", group = "builds", verbatim = true,
@@ -974,7 +974,7 @@ end
 do
     local naming = draw({
         depth = 4, sel = 1, rail = RAIL, rail_sel = 1, focus = "stage",
-        home = true, closable = true, page = "newbuild", headless = true,
+        home = true, closable = true, page = "newbuild",
         newbuild = true, new = {name = "Screen 2", on = true}, rows = {},
     })
     check("the naming page says what it is for",
@@ -991,7 +991,7 @@ end
 do
     local points = draw({
         depth = 3, sel = 1, rail = RAIL, rail_sel = 1, focus = "stage",
-        home = true, closable = true, page = "points", headless = true,
+        home = true, closable = true, page = "points",
         points = true, kit_spent = 28, kit_total = 30, rows = {},
     })
     check("the points page says what the thirty are",

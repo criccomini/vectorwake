@@ -102,6 +102,17 @@ local function frame(w, h, over)
     return st
 end
 
+-- The panel alone, with no HUD behind it: a check about the menu's own type
+-- is not answered by a side name in the score band over the window.
+local function page(w, h, over)
+    local st = package.loaded["arena.state"]
+    st.n = 0
+    ui.begin(layer, w, h, 1, false, 0)
+    ui.menu(view(over))
+    ui.finish()
+    return st
+end
+
 local function box(action)
     for _, b in ipairs(ui.hits) do
         if b.action == action then return b end
@@ -317,6 +328,65 @@ do
         if string.lower(st.text[i].s) == "vectorwake" then named = true end
     end
     check("and the head carries no wordmark", not named, "the name is on it")
+end
+
+-- --- one head, on every page ------------------------------------------------
+--
+-- The ship page and the four screens it opens used to draw their own band on
+-- the head's line instead, taking the call sign and the rule off it: the
+-- longest page in the menu spending nothing above the build. What that bought
+-- was a panel that jumped the height of its own head the moment a hand walked
+-- into the ship page from the rail, and one page where the two controls at the
+-- top of the drawer were not where they are everywhere else. It is also the
+-- line the arrows reach by pressing up off the first row of a page, so a page
+-- without one is a page with no way to the account.
+
+do
+    frame(1440, 810)
+    local plain_x = box("close")
+    local plain_name = box("pilot_page")
+    frame(1440, 810, {at = "hangar", kit = true, kit_spent = 12,
+                      kit_total = 30, profile = {name = "custom"},
+                      rows = {{label = "custom", group = "band", index = 1},
+                              {label = "points", group = "band", index = 2}}})
+    local kit_x = box("close")
+    check("the ship page keeps the call sign the other pages carry",
+          box("pilot_page") ~= nil and plain_name ~= nil,
+          "no call sign over the kit")
+    check("and the x stays on the line it is on everywhere else",
+          kit_x ~= nil and plain_x ~= nil
+          and math.abs(kit_x.y - plain_x.y) < 1.5,
+          kit_x and plain_x
+          and string.format("%.1f against %.1f", kit_x.y, plain_x.y)
+          or "none")
+end
+
+-- --- nothing in the menu is set under ten points ----------------------------
+--
+-- The floor for authored type, which the account page's keys were under: NEW
+-- NAME at eight and a half points is eight and a half pixels on a monitor,
+-- since this column is drawn at a phone's measure on every window. It was
+-- reported as a key nobody could read.
+
+do
+    local st = page(1440, 810,
+                     {at = "pilot", depth = 2, focus = "stage", sel = 1,
+                      pilot_card = {name = "Krait 4", claimed = true,
+                                    online = true, rivets = 310,
+                                    career = {kills = 3, deaths = 4,
+                                              games = 7}},
+                      rows = {{label = "new name", index = 1, pick = true},
+                              {label = "change password", index = 2,
+                               pick = true},
+                              {label = "log out", index = 3, pick = true}}})
+    local small = nil
+    for i = 1, st.n do
+        local t = st.text[i]
+        if t.px < 9.99 then small = t end
+    end
+    check("the account page sets nothing under ten points",
+          small == nil,
+          small and string.format("%s at %.1f", small.s, small.px) or "")
 end
 
 print(fails == 0 and "all dock checks passed"

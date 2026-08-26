@@ -272,70 +272,102 @@ end
 -- --- the button at the end of that row is on the row -----------------------
 --
 -- The call sign sits beside the tabs and does what a tab does: the row is the
--- tabs and then it, left to right, and it loops. It was left off on the
--- grounds that the rail carries the account page and a pointer can press the
--- name directly, which is true and does nothing for a hand on the arrows. A
--- button that is drawn like a button and cannot be reached by any key is
--- broken for whoever is not holding a mouse, and it was reported that way.
+-- x and then it, left to right, and it loops between the two.
 --
--- What that argument was really protecting is kept: this row's lit mark means
--- "where you are" and cannot be true of two things at once, so a corner button
--- whose page a tab already carries never wears it. The rail's stop is the one
--- mark for the account page; the corner lights only for the arrows resting on
--- it at the root.
+-- They were stops on the end of the rail for a while, reached by pressing
+-- right off the last tab. That is a row along the foot of the column wrapping
+-- into a button drawn at the top of it: the cursor crossed the whole height of
+-- the panel sideways, and a hand walking the tabs met two highlights nowhere
+-- near the row it was walking. They are their own row now, over the page they
+-- are drawn over, and up off the first row of a page is what reaches them.
+--
+-- What the old arrangement was protecting is kept: the rail's lit stop means
+-- "where you are" and the head's cursor means "where the arrows are", so the
+-- two are never the same claim made twice.
 do
     local kept_name = menu.name
     menu.name = "Tester 1"
     menu.open, menu.home = true, true
     menu.stack = {"root"}
     menu.sel = {root = pilot_at}
-    menu.corner_sel = nil
+    menu.head_sel = nil
     menu.step({right = true})
-    check("right off the last tab reaches the call sign",
-          menu.view().corner_sel == "pilot",
-          tostring(menu.view().corner_sel))
-    -- Standing on a corner stop is standing on it: the tab the cursor left
-    -- goes dark, and the stage previews the stop's page the way it previews
-    -- a tab's. It kept the old tab lit and the old page up, which read as a
-    -- cursor in two places and a button that did nothing.
-    check("and the tab it left goes dark",
-          (menu.view().rail_sel or 0) == 0,
-          tostring(menu.view().rail_sel))
-    check("and the stage previews the pilot page",
-          menu.showing() == "pilot", menu.showing())
+    check("the rail row is the tabs alone, and it wraps",
+          menu.head_sel == nil and menu.sel.root == 1,
+          tostring(menu.head_sel) .. "/" .. tostring(menu.sel.root))
+    menu.step({left = true})
+    check("and back the other way", menu.sel.root == pilot_at,
+          tostring(menu.sel.root))
+
+    -- Up off the first row of a page is the way onto that line, and it lands
+    -- on the call sign: it is the far end of the row and the control somebody
+    -- pressing up at the top of a page is reaching for.
+    menu.stack = {"root", "play"}
+    menu.sel = {play = 1}
+    menu.head_sel = nil
+    menu.step({up = true})
+    check("up off the first row of a page lands on the call sign",
+          menu.view().head_sel == "pilot",
+          tostring(menu.view().head_sel))
+    menu.step({left = true})
+    check("left of it is the x", menu.view().head_sel == "close",
+          tostring(menu.view().head_sel))
+    menu.step({left = true})
+    check("and left again loops back round to the call sign",
+          menu.view().head_sel == "pilot",
+          tostring(menu.view().head_sel))
     menu.step({right = true})
-    check("and right off its end is the first tab, the way the row wraps",
-          menu.view().corner_sel == nil and menu.sel.root == 1,
-          tostring(menu.view().corner_sel) .. "/" .. tostring(menu.sel.root))
-    menu.step({left = true})
-    check("left off the first tab is the call sign",
-          menu.view().corner_sel == "pilot",
-          tostring(menu.view().corner_sel))
-    menu.step({left = true})
-    check("and off its end onto the last tab",
-          menu.view().corner_sel == nil and menu.sel.root == pilot_at,
-          tostring(menu.view().corner_sel) .. "/" .. tostring(menu.sel.root))
+    check("right off the call sign wraps to the x the same way",
+          menu.view().head_sel == "close",
+          tostring(menu.view().head_sel))
+    -- Nothing is over this line, so up on it does nothing rather than
+    -- inventing a place to go.
+    local _, moved = menu.step({up = true})
+    check("and up off the head does nothing",
+          moved == false and menu.view().head_sel == "close",
+          tostring(moved) .. "/" .. tostring(menu.view().head_sel))
+    -- The page keeps its cursor off the panel while the head has it, so the
+    -- panel never lights two rows at once.
+    check("the page draws unfocused while the head has the arrows",
+          menu.view().focus == "head", tostring(menu.view().focus))
+    menu.step({down = true})
+    check("down goes back into the page, at the top of it",
+          menu.head_sel == nil and menu.sel.play == 1,
+          tostring(menu.head_sel) .. "/" .. tostring(menu.sel.play))
 
     -- Enter on the call sign opens the page a press on it opens, which is the
     -- page the pilot tab leads to. Two doors onto one page, on purpose.
-    menu.stack = {"root"}
-    menu.sel = {root = 1}
-    menu.corner_sel = nil
-    menu.step({left = true})
+    menu.stack = {"root", "play"}
+    menu.sel = {play = 1}
+    menu.head_sel = nil
+    menu.step({up = true})
     menu.step({go = true})
     check("enter on the call sign opens the account page",
           menu.at() == "pilot", table.concat(menu.stack, "/"))
+    check("and the cursor comes off the head with it",
+          menu.head_sel == nil, tostring(menu.head_sel))
+
+    -- And the x shuts the panel, which is what a cross means everywhere.
+    menu.open = true
+    menu.stack = {"root", "play"}
+    menu.sel = {play = 1}
+    menu.head_sel = nil
+    menu.step({up = true})
+    menu.step({left = true})
+    menu.step({go = true})
+    check("enter on the x shuts the panel", not menu.open,
+          tostring(menu.open))
+    menu.open = true
 
     -- Reachable is not the same as lit for the page: the rail's own stop is
-    -- the one mark saying where you are, and both lit at once was the whole
-    -- complaint the call sign was taken off this row for.
+    -- the one mark saying where you are.
     menu.stack = {"root", "pilot"}
-    menu.corner_sel = nil
+    menu.head_sel = nil
     local on_pilot = menu.view()
     check("the rail lights the pilot stop while its page is up",
           on_pilot.rail_sel == pilot_at, tostring(on_pilot.rail_sel))
-    check("and the call sign in the corner does not light with it",
-          on_pilot.corner_sel == nil, tostring(on_pilot.corner_sel))
+    check("and the call sign does not light with it",
+          on_pilot.head_sel == nil, tostring(on_pilot.head_sel))
 
     -- A pointer still opens it, which is the whole of what the name is for
     -- besides saying who you are.
@@ -344,37 +376,32 @@ do
     menu.click_pilot()
     check("and a press on the name still opens the page",
           menu.at() == "pilot", table.concat(menu.stack, "/"))
-    -- Not from a page a tab leads to, though: there the lit tab is the
-    -- answer and a lit button beside it would be a cursor in two places.
-    menu.stack = {"root"}
-    menu.sel = {root = ship_at}
-    menu.corner_sel = nil
-    menu.step({down = true})
-    check("but nothing in the corner is lit from a page off the tabs",
-          menu.at() == "hangar" and menu.view().corner_sel == nil,
-          menu.at() .. "/" .. tostring(menu.view().corner_sel))
-    menu.stack = {"root"}
-    menu.sel = {}
 
-    -- Down is the same press, the way it is on a tab: what is under a corner
-    -- stop is a page.
-    menu.stack = {"root"}
-    menu.sel = {root = pilot_at}
-    menu.corner_sel = nil
-    menu.step({right = true})
-    menu.step({down = true})
-    check("down on the call sign opens its page", menu.at() == "pilot",
-          table.concat(menu.stack, "/"))
-    menu.stack = {"root"}
+    -- Away from home the account is not a thing to edit, so the name is a
+    -- label and the x is the whole of that row.
+    menu.home = false
+    menu.stack = {"root", "settings"}
+    menu.sel = {settings = 1}
+    menu.head_sel = nil
+    menu.step({up = true})
+    check("in a match the head is the x alone",
+          menu.view().head_sel == "close",
+          tostring(menu.view().head_sel))
+    menu.step({left = true})
+    check("and it has nowhere to wrap to",
+          menu.view().head_sel == "close",
+          tostring(menu.view().head_sel))
+    menu.home = true
 
-    -- A tap on a tab takes the cursor off them, so the row never looks like
-    -- the arrows are in two places.
-    menu.corner_sel = 1
+    -- A tap on a tab takes the cursor off the head, so the panel never looks
+    -- like the arrows are in two places.
+    menu.head_sel = 1
     menu.click_rail(ship_at)
-    check("and a tap on a tab clears them", menu.corner_sel == nil,
-          tostring(menu.corner_sel))
+    check("and a tap on a tab clears it", menu.head_sel == nil,
+          tostring(menu.head_sel))
     menu.stack = {"root"}
     menu.sel = {}
+    menu.head_sel = nil
     menu.name = kept_name
 end
 
@@ -437,11 +464,14 @@ menu.click_rail(match_settings)
 check("and settings is one of them",
       menu.stack[2] == "settings", table.concat(menu.stack, "/"))
 local setting_view = menu.view()
-check("with a selected setting explained in the spare column",
-      setting_view.settings and setting_view.aside
-          and setting_view.aside.label == "sound"
-          and string.find(setting_view.aside.note or "", "weapon audio", 1, true),
-      tostring(setting_view.aside and setting_view.aside.note))
+-- And it is a page of settings, which is what the ground under it is set for.
+-- It carried a "what this changes" section under the rows as well, saying the
+-- selected row's own name, its value and its help line back at whoever had
+-- just walked onto it: three things the row already says, in a block that
+-- moved every time the cursor did.
+check("and it draws as a reading",
+      setting_view.settings == true and setting_view.aside == nil,
+      tostring(setting_view.aside))
 menu.click_rail(match_settings)
 check("the lit stop over a game is the way back to it", not menu.open)
 
@@ -578,8 +608,11 @@ check("with the cursor on the band the page carries instead of a head",
       and ship_page.rows[2].group == "band",
       "cursor " .. tostring(ship_page.sel) .. " on "
       .. tostring(ship_page.rows[1].group))
-check("and the page spends nothing on the wordmark over it",
-      ship_page.headless == true, tostring(ship_page.headless))
+-- And it keeps the head every other page has. It used to put the band on that
+-- line instead and drop the call sign and the rule, so walking into this page
+-- from the rail shifted the whole panel up by the height of its own head.
+check("and the head over it is the one every page carries",
+      ship_page.headless == nil, tostring(ship_page.headless))
 
 -- Left and right turn the carousel while the cursor stands on the hull row.
 -- At home that is the choice itself: what a hull means with no game on is
@@ -631,13 +664,16 @@ check("and the press is what asks", picked == "ship" and menu.pending == 1,
 menu.home = true
 menu.hull_at = nil
 
--- Up off the first row goes back to the tab row, which is what up means
--- everywhere in this menu.
+-- Up off the first row goes onto the head over the page, which is what up
+-- means everywhere in this menu.
 menu.stack = {"root", "hangar"}
 menu.sel = {}
+menu.head_sel = nil
 menu.step({up = true})
-check("up from the first row goes back to the tabs", menu.stack[2] == nil,
-      table.concat(menu.stack, "/"))
+check("up from the first row goes onto the head",
+      menu.stack[2] == "hangar" and menu.view().head_sel == "pilot",
+      table.concat(menu.stack, "/") .. "/" .. tostring(menu.view().head_sel))
+menu.head_sel = nil
 
 -- The wake steps in a ring, from the keys and from its own act, and what is
 -- picked survives the trip through the saved identity's shape.
@@ -671,10 +707,10 @@ check("flattened, not handed over as it was written",
       type(peek.rows[1].label) ~= "function")
 check("and nothing in a preview takes a press",
       peek.kit_preview == true, tostring(peek.kit_preview))
--- The head stays over a preview: at the root the cursor is on the tab row,
--- and a wordmark that came and went as it crossed `ship` would take the call
--- sign with it. The page earns the whole column by being entered.
-check("and the wordmark stays while it is only a preview",
+-- The head stands over the preview and over the page alike, which is what
+-- makes walking into the ship page from the rail a step rather than a jump:
+-- the panel used to drop its own head the moment this page was entered.
+check("and the head stays while it is only a preview",
       peek.headless == nil, tostring(peek.headless))
 menu.stack, menu.sel, menu.home = was_stack, was_sel, was_home
 
@@ -1910,24 +1946,58 @@ do
     -- there: nothing on the page said so and no arrow went anywhere near it.
     account.found, account.found_for = {}, ""
     menu.add_name, menu.add_on, menu.found_sel = "", false, nil
+    menu.head_sel = nil
     menu.stack = {"root"}
     menu.sel = {root = top_index("friends")}
+    -- An arrow off the rail is a step in a direction, so it lands at the end
+    -- of the list it came in at rather than in the box over it. Down opened
+    -- the box, which meant pressing up on `friends` -- reaching for the last
+    -- name on the page -- landed in the add field at the top of it instead.
     menu.step({down = true})
-    check("down off the tabs opens friends with the cursor in the field",
-          menu.at() == "friends" and menu.add_on == true,
-          menu.at() .. "/" .. tostring(menu.add_on))
+    check("down off the tabs opens friends at the top of the list",
+          menu.at() == "friends" and menu.add_on == false
+          and menu.sel.friends == 1,
+          menu.at() .. "/" .. tostring(menu.add_on) .. "/"
+          .. tostring(menu.sel.friends))
+    menu.stack = {"root"}
+    menu.sel = {root = top_index("friends")}
+    menu.add_on = false
+    -- The last row a cursor may stand on, which is the last one carrying an
+    -- act: the readouts under it are not stops anywhere in this menu.
+    local last_name = nil
+    for i, r in ipairs(menu.view().rows) do
+        if r.pick then last_name = i end
+    end
+    menu.step({up = true})
+    check("and up off them opens it on the last name instead",
+          menu.at() == "friends" and menu.add_on == false
+          and last_name ~= nil and last_name > 1
+          and menu.sel.friends == last_name,
+          tostring(menu.sel.friends) .. " of " .. tostring(last_name)
+          .. "/" .. tostring(menu.add_on))
+    menu.sel.friends = 1
+    menu.step({up = true})
+    check("up off the first row comes to the field", menu.add_on == true,
+          tostring(menu.add_on))
     menu.step({down = true})
-    check("and down again goes on to the list",
+    check("and down again goes back to the list",
           menu.at() == "friends" and menu.add_on == false,
           tostring(menu.add_on))
     menu.sel.friends = 1
     menu.step({up = true})
-    check("up off the first row comes back to it", menu.add_on == true,
-          tostring(menu.add_on))
     menu.step({up = true})
-    check("and up out of it goes back to the tabs",
-          menu.at() == "root" and menu.add_on == false,
-          menu.at() .. "/" .. tostring(menu.add_on))
+    check("and up out of the field goes onto the head",
+          menu.at() == "friends" and menu.add_on == false
+          and menu.view().head_sel == "pilot",
+          menu.at() .. "/" .. tostring(menu.view().head_sel))
+    -- And back down into it, because the box is what is drawn under that
+    -- line on this page.
+    menu.step({down = true})
+    check("down off the head lands in the field again",
+          menu.head_sel == nil and menu.add_on == true,
+          tostring(menu.head_sel) .. "/" .. tostring(menu.add_on))
+    menu.add_on = false
+    menu.head_sel = nil
 
     -- With names under the box the arrows walk those first. The list is drawn
     -- over the sections, so a cursor stepping straight past it into the rows
@@ -1988,9 +2058,11 @@ do
         check("and stay in it, since there is nothing below to go to",
               menu.add_on == true, tostring(menu.add_on))
         menu.step({up = true})
-        check("and up out of it still goes back to the tabs",
-              menu.at() == "root" and menu.add_on == false,
-              menu.at() .. "/" .. tostring(menu.add_on))
+        check("and up out of it still goes onto the head",
+              menu.at() == "friends" and menu.add_on == false
+              and menu.view().head_sel == "pilot",
+              menu.at() .. "/" .. tostring(menu.view().head_sel))
+        menu.head_sel = nil
         account.friends, account.asked, account.here = kept[1], kept[2], kept[3]
         account.waiting, account.everybody = kept[4], kept[5]
     end
@@ -2959,27 +3031,32 @@ do
     menu.home, menu.stack, menu.sel = kept.home, kept.stack, kept.sel
 end
 
--- --- up out of the tabs walks into the page from underneath ----------------
+-- --- an arrow off the tabs walks into the page at the end it came in at -----
 --
 -- The tab row is at the foot of the drawer and the page is above it, so up is
 -- the direction the page is in and the row it reaches first is the last one.
--- It used to land wherever that page was last left, and on its first row if it
--- had never been opened, so a hand pressing up at the foot of the panel was
--- thrown to the top of the list: the one direction the arrow does not point.
+-- Down is the other way round the same fact: it comes in over the top of the
+-- list and lands on the first row.
 --
--- Enter and down are not steps in a direction, so they still land where the
--- page was left. That is what makes walking down off the foot of a list and
--- straight back up land you where you were.
+-- Both used to land wherever that page was last left. What that produced is
+-- the pair of presses this pins: press up on `ship` to read the foot of the
+-- kit, come back out, press down, and the cursor went to the wake at the
+-- bottom of the page rather than the first ladder at the top of it. Neither
+-- arrow was pointing anywhere.
+--
+-- Enter is not a step in a direction, so it still lands where the page was
+-- left. That is what makes walking down off the foot of a list and straight
+-- back in with enter land you where you were.
 
 do
     local kept = {home = menu.home, stack = menu.stack, sel = menu.sel,
-                  corner = menu.corner_sel}
+                  head = menu.head_sel}
     menu.open, menu.home = true, true
 
     for _, tab in ipairs({"ship", "settings", "pilot"}) do
         menu.stack = {"root"}
         menu.sel = {root = top_index(tab)}
-        menu.corner_sel = nil
+        menu.head_sel = nil
         local n = #menu.view().rows
         menu.step({up = true})
         local landed = menu.sel[menu.stack[#menu.stack]]
@@ -2988,12 +3065,42 @@ do
               tostring(landed) .. " of " .. tostring(n))
     end
 
-    -- Down off the foot of a list reaches the tabs, and up goes back to the
-    -- row it left rather than to the last one: the cursor was not stepping
-    -- into the page from underneath, it was returning to where it stood.
+    -- And down lands on the first row, whatever the page was left on. The
+    -- ship page's band is not it: the build's name and the points meter are
+    -- drawn over the ladders rather than in them, so the first row of the
+    -- list is the first ladder.
+    for _, tab in ipairs({"settings", "pilot"}) do
+        menu.stack = {"root"}
+        menu.sel = {root = top_index(tab)}
+        menu.head_sel = nil
+        menu.step({up = true})
+        local page = menu.stack[#menu.stack]
+        menu.step({down = true})
+        menu.sel = {root = top_index(tab)}
+        menu.step({down = true})
+        check("down into " .. tab .. " lands on its first row",
+              menu.sel[page] == 1, tostring(menu.sel[page]))
+    end
+
+    menu.stack = {"root"}
+    menu.sel = {root = top_index("ship")}
+    menu.head_sel = nil
+    menu.step({down = true})
+    local kit = menu.view()
+    local first = menu.sel.hangar
+    check("down into ship lands on the first ladder, not the band over it",
+          menu.at() == "hangar" and kit.rows[first] ~= nil
+          and kit.rows[first].group ~= "band"
+          and kit.rows[first - 1].group == "band",
+          tostring(first) .. "/"
+          .. tostring(kit.rows[first] and kit.rows[first].group))
+
+    -- Down off the foot of a list reaches the tabs, and enter goes back to the
+    -- row it left rather than to either end: enter is not a step in a
+    -- direction, it is a way in.
     menu.stack = {"root"}
     menu.sel = {root = top_index("settings")}
-    menu.corner_sel = nil
+    menu.head_sel = nil
     menu.step({up = true})
     local page = menu.stack[#menu.stack]
     menu.sel[page] = 2
@@ -3003,7 +3110,7 @@ do
           tostring(menu.sel[menu.stack[#menu.stack]]))
 
     menu.home, menu.stack, menu.sel = kept.home, kept.stack, kept.sel
-    menu.corner_sel = kept.corner
+    menu.head_sel = kept.head
 end
 
 print(fails == 0 and "all good" or (fails .. " failed"))
