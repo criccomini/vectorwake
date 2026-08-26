@@ -296,7 +296,9 @@ foot carries the clock.
 Top center is the band: the clock, with a side either side of it as a name
 over a number (a team over its score, a duel's pilot over their rating),
 the two lines of a side adding up to the clock's own height so the whole
-thing reads as one line. Under it, the flag pennants and whatever the room
+thing reads as one line. The clock is one key tall, the same at every window
+size, so the band and the way into the menu are the same height and the top
+row reads as a row. Under it, the flag pennants and whatever the room
 has to say. The band is also the control: a press opens the board under it,
 which is the roster, then whatever else the zone keeps (a run of fights, in
 the mode that is a run), then the pilot box a row was pressed on. While that

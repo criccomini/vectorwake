@@ -1515,12 +1515,18 @@ end
 -- Everything on the band is a fraction of the clock. A side is two lines,
 -- who they are over how they are doing, and those two plus the gap between
 -- them add up to exactly the clock's height, so the band reads as one line of
--- instrument however many words are in it. That is the whole rule; the sizes
--- below are what it comes to at each end of the range.
+-- instrument however many words are in it.
+--
+-- The clock is one key tall. It stood at 36 on a monitor, half again the key
+-- beside it, and a number that size in the middle of the top row is a
+-- headline rather than a reading: the row carries the way into the menu, the
+-- clock and the dial's readouts, and a row wants one height. KEY_H is the
+-- same at every window size, so the band is too, and the sizes here stopped
+-- needing a column for a phone and a column for a monitor.
 local function band_type()
-    local clock = (M.compact and 24 or 36) * F.scale
-    local name = (M.compact and 9 or 12) * F.scale
-    local gap = (M.compact and 2 or 4) * F.scale
+    local clock = KEY_H * F.scale
+    local name = 9 * F.scale
+    local gap = 3 * F.scale
     return clock, name, clock - name - gap
 end
 

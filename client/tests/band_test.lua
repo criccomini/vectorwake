@@ -221,11 +221,15 @@ if pylon and fifteen and caisson and nineteen and clock then
     check("a side is as tall as the clock",
           tall <= clock.px + 0.5 and tall > clock.px * 0.9,
           string.format("%.1f against %.1f", tall, clock.px))
-    -- And larger than the old band, which set the clock at 30 points on a
-    -- monitor and every label beside it at 13. The complaint that started
-    -- this was that a desktop could not read its own scoreboard.
-    check("a monitor draws the clock larger than the band it replaced",
-          clock.px > 30, string.format("%.0f", clock.px))
+    -- And one key tall. The band and the way into the menu are the two
+    -- things on the top row, so the row has one height and the clock is
+    -- measured against the key rather than against a number written down
+    -- here: `menu_button` publishes that box at exactly the key's own size.
+    local key = box("open")
+    check("the clock is as tall as the MENU key", key ~= nil
+              and math.abs(clock.px - key.h) < 0.5,
+          key and string.format("%.1f against %.1f", clock.px, key.h)
+              or "no menu key")
 end
 
 -- A phone is the same drawing at its own size, and the sides stay on it: the
@@ -238,7 +242,11 @@ check("a phone draws the same band, sides and all",
           and small_clock ~= nil,
       table.concat(words(), " | "))
 if small_clock and clock then
-    check("at a size of its own", small_clock.px < clock.px,
+    -- At the same size, since the key it matches is the same size on both.
+    -- The phone's band still drops off the corner row, which is where it
+    -- differs; how tall it is is not.
+    check("and at the same size a monitor draws it",
+          math.abs(small_clock.px - clock.px) < 0.5,
           string.format("%.0f against %.0f", small_clock.px, clock.px))
 end
 
