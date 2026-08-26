@@ -1,11 +1,32 @@
 # Weapon readout
 
-Boards proposing what the lower-left corner could be, against what it is: a
-stack of weapon marks and loose gold dots with nothing under them. Five
-directions, all keeping what earlier rounds settled about the marks (one
-drawing per weapon shared with the touch pads, the rung ramp on the round's
-own hue, no labels, no bounty) and changing the ground the rows stand on and
-what a count looks like:
+Boards proposing what the lower-left corner could be, against what it is.
+Two rounds so far, two pages of the canvas.
+
+## Round two: the marks (current)
+
+Chris passed on the ground round: the icons themselves are the primitive
+part, and the counts should use the ship page's circle grammar. So every
+board on the marks page counts charges with `pages.dot`'s three fills
+(solid a charge held, ringed the slot a spent one leaves) and proposes a
+vocabulary for the four drawings, each shown as an inspection strip plus
+the corner in situ at stack scale:
+
+- **F, tracer** (`Tracer`): the icon is the round the arena fires, frozen:
+  `world.weapons`' layered streak, hot head and halo.
+- **G, ordnance** (`Ordnance`): rounds built the way hulls are, outline
+  over darker fill, lit leading edge: a finned dart, a cased shell with
+  lugs, a shockwave, a ring of darts.
+- **H, ordnance lit** (`Lit`): G's bodies under F's light, a wake and a
+  halo on each.
+- `MarksCurrent` is the shipped vocabulary at the same sizes, for contrast.
+
+## Round one: the ground (kept as record)
+
+Five directions, all keeping the shipped marks (one drawing per weapon
+shared with the touch pads, the rung ramp on the round's own hue, no
+labels, no bounty) and changing the ground the rows stand on and what a
+count looks like:
 
 - **A, the rail** (`Main`, plus `RailBare` for a fresh spawn): one spine out
   of a chamfered foot, a nub per row, counts as chamfered magazine cells.

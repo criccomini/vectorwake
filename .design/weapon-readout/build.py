@@ -295,6 +295,12 @@ DEFS = f"""<defs>
   <feGaussianBlur stdDeviation="2.2" result="b"/>
   <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
 </filter>
+<filter id="soft" x="-120%" y="-120%" width="340%" height="340%">
+  <feGaussianBlur stdDeviation="1.6"/>
+</filter>
+<filter id="softer" x="-160%" y="-160%" width="420%" height="420%">
+  <feGaussianBlur stdDeviation="3.4"/>
+</filter>
 </defs>"""
 
 
@@ -531,7 +537,383 @@ def b_rail_bare():
         HEAD.format(style=STYLE) + body + FOOT)
 
 
+# ===========================================================================
+# Round two: the marks themselves. Chris: the icons should look cooler, and
+# the counts should be the ship page's circle grammar. So every board below
+# counts charges with pages.dot's three fills (solid held, ringed spent) and
+# proposes a vocabulary for the four drawings: gun, bomb, repel, burst.
+# ===========================================================================
+
+_uid = [0]
+
+
+def uid(stem):
+    _uid[0] += 1
+    return f"{stem}{_uid[0]}"
+
+
+# The ship page's circle, pages.dot at this scale: solid is a charge you
+# hold, a ring is the slot a spent one leaves. 14 sides in game; a circle
+# here.
+def hdot(cx, cy, r, kind, col):
+    if kind == "on":
+        return disc(cx, cy, r, rgba(col, 0.95))
+    return ring(cx, cy, r - 0.5, 1.1 * (r / 9), rgba(col, 0.45))
+
+
+def hdots(x, cy, n, filled, r, step, col=GOLD):
+    return [hdot(x + i * step, cy, r, "on" if i < filled else "ring", col)
+            for i in range(n)]
+
+
+# A streak that fades in along its length, the way seg_fade draws one:
+# a gradient-stroked line, optionally blurred. Local coordinates; callers
+# rotate the group it lands in.
+def fade_line(x1, y1, x2, y2, w, a0, a1, col, blur=None):
+    gid = uid("fade")
+    f = f' filter="url(#{blur})"' if blur else ""
+    return (f'<defs><linearGradient id="{gid}" '
+            f'gradientUnits="userSpaceOnUse" x1="{fmt(x1)}" y1="{fmt(y1)}" '
+            f'x2="{fmt(x2)}" y2="{fmt(y2)}">'
+            f'<stop offset="0" stop-color="{rgba(col, a0)}"/>'
+            f'<stop offset="1" stop-color="{rgba(col, a1)}"/>'
+            f'</linearGradient></defs>'
+            f'<path d="M{fmt(x1)} {fmt(y1)} L{fmt(x2)} {fmt(y2)}" '
+            f'stroke="url(#{gid})" stroke-width="{fmt(w)}" '
+            f'stroke-linecap="round" fill="none"{f}/>')
+
+
+def arc_path(cx, cy, r, d0, d1, w, col, extra=""):
+    a0, a1 = math.radians(d0), math.radians(d1)
+    x0, y0 = cx + r * math.cos(a0), cy - r * math.sin(a0)
+    x1, y1 = cx + r * math.cos(a1), cy - r * math.sin(a1)
+    large = 1 if abs(d1 - d0) > 180 else 0
+    sweep = 0 if d1 > d0 else 1
+    return (f'<path d="M{fmt(x0)} {fmt(y0)} A{fmt(r)} {fmt(r)} 0 {large} '
+            f'{sweep} {fmt(x1)} {fmt(y1)}" fill="none" stroke="{col}" '
+            f'stroke-width="{fmt(w)}"{extra}/>')
+
+
+# --- F, tracer: the mark is the round the arena fires, frozen ---------------
+# The layering is world.weapons() verbatim: a broad faint streak, a tighter
+# bright one over the last stretch, a hot core at the head, a halo. A bomb is
+# its hot core in a ring with the halo and a stub of trail.
+def tr_streak(k, hue):
+    L = 1.6 * k
+    return (fade_line(-L, 0, 0, 0, 0.25 * k, 0.0, 0.30, hue, "soft")
+            + fade_line(-1.05 * k, 0, 0, 0, 0.15 * k, 0.2, 0.9, hue)
+            + fade_line(-0.5 * k, 0, 0, 0, 0.10 * k, 0.4, 1.0, hot(hue, 0.9))
+            + f'<circle cx="0" cy="0" r="{fmt(0.26 * k)}" '
+            f'fill="{rgba(hue, 0.45)}" filter="url(#softer)"/>'
+            + f'<circle cx="0" cy="0" r="{fmt(0.13 * k)}" '
+            f'fill="{rgba(hot(hue, 0.9), 1)}"/>')
+
+
+def tr_gun(cx, cy, k, loaded):
+    hue = RUNG[GUN["lvl"]] if loaded else RUNG[0]
+    hx = cx + 0.5 * k
+    el = []
+    angs = (0, -20, 20) if loaded else (0,)
+    for a in angs:
+        el.append(f'<g transform="translate({fmt(hx)},{fmt(cy)}) '
+                  f'rotate({a},{fmt(-1.6 * k)},0)">{tr_streak(k, hue)}</g>')
+    if loaded and GUN["bounce"]:
+        for a in angs:
+            r = math.radians(a)
+            px = hx - 1.6 * k + math.cos(r) * 1.6 * k
+            py = cy + math.sin(r) * 1.6 * k
+            el.append(ring(px, py, 0.30 * k, pen(k, 0.045),
+                           rgba(hot(hue), 0.8)))
+    return el
+
+
+def tr_bomb(cx, cy, k, loaded):
+    hue = RUNG[BOMB["lvl"]] if loaded else RUNG[0]
+    el = []
+    if loaded and BOMB["prox"]:
+        r = k * (1.05 + 0.05 * (BOMB["prox"] - 1))
+        el.append(disc(cx, cy, r, rgba(hue, 0.16)))
+    el.append(fade_line(cx - 1.35 * k, cy, cx - 0.40 * k, cy, 0.26 * k,
+                        0.0, 0.45, hue, "soft"))
+    el.append(f'<circle cx="{fmt(cx)}" cy="{fmt(cy)}" r="{fmt(0.62 * k)}" '
+              f'fill="{rgba(hue, 0.32)}" filter="url(#softer)"/>')
+    el.append(ring(cx, cy, 0.36 * k, pen(k, 0.11), rgba(hue, 0.95)))
+    el.append(disc(cx, cy, 0.27 * k, rgba(hot(hue, 0.8), 0.9)))
+    if loaded and BOMB["shrap"]:
+        frag = rgba(hot(RUNG[BOMB["gun_lvl"]]), 0.95)
+        c = 2 ** BOMB["shrap"]
+        for i in range(c):
+            a = (i + 0.5) * 2 * math.pi / c
+            dx, dy = math.cos(a), math.sin(a)
+            el.append(line(cx + dx * 0.66 * k, cy + dy * 0.66 * k,
+                           cx + dx * 0.95 * k, cy + dy * 0.95 * k,
+                           pen(k, 0.07), frag))
+    return el
+
+
+def tr_repel(cx, cy, kc):
+    el = [f'<circle cx="{fmt(cx)}" cy="{fmt(cy)}" r="{fmt(0.5 * kc)}" '
+          f'fill="{rgba(GOLD, 0.4)}" filter="url(#softer)"/>',
+          disc(cx, cy, 0.14 * kc, rgba(hot(GOLD, 0.6), 0.95)),
+          ring(cx, cy, 0.36 * kc, pen(kc, 0.11), rgba(GOLD, 0.9)),
+          ring(cx, cy, 0.66 * kc, pen(kc, 0.09), rgba(GOLD, 0.6))]
+    return el
+
+
+def tr_burst(cx, cy, kc):
+    el = [f'<circle cx="{fmt(cx)}" cy="{fmt(cy)}" r="{fmt(0.45 * kc)}" '
+          f'fill="{rgba(BURST, 0.35)}" filter="url(#softer)"/>']
+    for i in range(8):
+        t = i * math.pi / 4
+        dx, dy = math.cos(t), math.sin(t)
+        el.append(fade_line(cx + dx * 0.22 * kc, cy + dy * 0.22 * kc,
+                            cx + dx * 0.62 * kc, cy + dy * 0.62 * kc,
+                            pen(kc, 0.09), 0.25, 0.95, BURST))
+        el.append(disc(cx + dx * 0.62 * kc, cy + dy * 0.62 * kc,
+                       0.10 * kc, rgba(hot(BURST, 0.5), 0.95)))
+    return el
+
+
+# --- G, ordnance: rounds built the way hulls are ----------------------------
+# Thin outline over a darker fill, lit at the leading edge. The gun round is
+# a finned dart, the bomb a cased shell with lugs.
+def ord_dart(k, hue, scale=1.0):
+    s = scale
+    body = (f"M{fmt(0.62 * k * s)} 0 "
+            f"L{fmt(0.02 * k * s)} {fmt(-0.17 * k * s)} "
+            f"L{fmt(-0.45 * k * s)} {fmt(-0.11 * k * s)} "
+            f"L{fmt(-0.32 * k * s)} 0 "
+            f"L{fmt(-0.45 * k * s)} {fmt(0.11 * k * s)} "
+            f"L{fmt(0.02 * k * s)} {fmt(0.17 * k * s)} Z")
+    el = [f'<path d="{body}" fill="#0b1220" stroke="{rgba(hue, 0.9)}" '
+          f'stroke-width="{fmt(pen(k, 0.055) * s)}" '
+          f'stroke-linejoin="round"/>']
+    for sgn in (-1, 1):
+        el.append(line(-0.30 * k * s, sgn * 0.09 * k * s,
+                       -0.70 * k * s, sgn * 0.27 * k * s,
+                       pen(k, 0.05) * s, rgba(hue, 0.85)))
+    el.append(line(0.04 * k * s, 0, 0.48 * k * s, 0, pen(k, 0.06) * s,
+                   rgba(hot(hue, 0.75), 0.95)))
+    return el
+
+
+def ord_gun(cx, cy, k, loaded):
+    hue = RUNG[GUN["lvl"]] if loaded else RUNG[0]
+    el = []
+    if loaded:
+        for a in (-29, 29):
+            el.append(f'<g transform="translate({fmt(cx)},{fmt(cy)}) '
+                      f'rotate({a},{fmt(-0.55 * k)},0)">'
+                      f'<g transform="scale(0.68) '
+                      f'translate({fmt(-0.55 * k * 0.47)},0)">'
+                      + "".join(ord_dart(k, hue)) + '</g></g>')
+    el.append(f'<g transform="translate({fmt(cx)},{fmt(cy)})">'
+              + "".join(ord_dart(k, hue)) + '</g>')
+    if loaded and GUN["bounce"]:
+        for a in (0, -29, 29):
+            # Where each dart's nose landed: the side darts' noses sit at
+            # 0.68 scale about the shared pivot behind the pack.
+            if a == 0:
+                nx, ny = cx + 0.62 * k, cy
+            else:
+                r = math.radians(a)
+                lx = 0.68 * (0.62 - 0.55 * 0.47) * k
+                v = lx + 0.55 * k
+                nx = cx - 0.55 * k + math.cos(r) * v
+                ny = cy + math.sin(r) * v
+            el.append(ring(nx, ny, 0.18 * k, pen(k, 0.045),
+                           rgba(hot(hue), 0.85)))
+    return el
+
+
+def ord_bomb(cx, cy, k, loaded):
+    hue = RUNG[BOMB["lvl"]] if loaded else RUNG[0]
+    el = []
+    if loaded and BOMB["prox"]:
+        r = k * (1.05 + 0.05 * (BOMB["prox"] - 1))
+        el.append(disc(cx, cy, r, rgba(hue, 0.20)))
+    el.append(f'<circle cx="{fmt(cx)}" cy="{fmt(cy)}" r="{fmt(0.48 * k)}" '
+              f'fill="#0b1220" stroke="{rgba(hue, 0.9)}" '
+              f'stroke-width="{fmt(pen(k, 0.075))}"/>')
+    for i in range(4):
+        a = math.pi / 4 + i * math.pi / 2
+        dx, dy = math.cos(a), math.sin(a)
+        el.append(line(cx + dx * 0.48 * k, cy + dy * 0.48 * k,
+                       cx + dx * 0.64 * k, cy + dy * 0.64 * k,
+                       pen(k, 0.075), rgba(hue, 0.9)))
+    el.append(arc_path(cx, cy, 0.48 * k, 105, 195, pen(k, 0.09),
+                       rgba(hot(hue, 0.75), 0.95)))
+    el.append(disc(cx, cy, 0.20 * k, rgba(hot(hue, 0.75), 0.95)))
+    if loaded and BOMB["shrap"]:
+        frag = rgba(hot(RUNG[BOMB["gun_lvl"]]), 0.95)
+        c = 2 ** BOMB["shrap"]
+        for i in range(c):
+            a = 2 * math.pi / 8 + (i + 0.5) * 2 * math.pi / c
+            dx, dy = math.cos(a), math.sin(a)
+            el.append(line(cx + dx * 0.78 * k, cy + dy * 0.78 * k,
+                           cx + dx * 1.02 * k, cy + dy * 1.02 * k,
+                           pen(k, 0.06), frag))
+    return el
+
+
+def ord_repel(cx, cy, kc):
+    el = [disc(cx, cy, 0.13 * kc, rgba(GOLD, 0.95))]
+    for sgn in (0, 180):
+        for i, r in enumerate((0.40 * kc, 0.68 * kc)):
+            el.append(arc_path(cx, cy, r, sgn - 52, sgn + 52,
+                               pen(kc, 0.10 - 0.02 * i),
+                               rgba(GOLD, 0.9 - 0.3 * i)))
+    return el
+
+
+def ord_burst(cx, cy, kc):
+    el = [disc(cx, cy, 0.10 * kc, rgba(BURST, 0.9))]
+    for i in range(8):
+        deg = i * 45
+        el.append(f'<g transform="translate({fmt(cx)},{fmt(cy)}) '
+                  f'rotate({-deg}) translate({fmt(0.52 * kc)},0)">'
+                  + "".join(ord_dart(kc, BURST, 0.42)) + '</g>')
+    return el
+
+
+# --- H, ordnance lit: the dart on its wake ----------------------------------
+# G's bodies under F's light: the built round riding a short fading wake,
+# a halo on the hot parts. What the arena does to everything else it cares
+# about, a body with light coming off it.
+def lit_gun(cx, cy, k, loaded):
+    hue = RUNG[GUN["lvl"]] if loaded else RUNG[0]
+    el = []
+    angs = ((0, 1.0), (-24, 0.8), (24, 0.8)) if loaded else ((0, 1.0),)
+    for a, s in angs:
+        el.append(f'<g transform="translate({fmt(cx)},{fmt(cy)}) '
+                  f'rotate({a},{fmt(-0.45 * k)},0)">'
+                  + fade_line(-1.15 * k * s, 0, -0.42 * k * s, 0,
+                              0.16 * k * s, 0.0, 0.55, hue, "soft")
+                  + '</g>')
+    el += ord_gun(cx, cy, k, loaded)
+    el.append(f'<circle cx="{fmt(cx + 0.62 * k)}" cy="{fmt(cy)}" '
+              f'r="{fmt(0.30 * k)}" fill="{rgba(hot(hue, 0.5), 0.5)}" '
+              f'filter="url(#softer)"/>')
+    return el
+
+
+def lit_bomb(cx, cy, k, loaded):
+    hue = RUNG[BOMB["lvl"]] if loaded else RUNG[0]
+    el = [f'<circle cx="{fmt(cx)}" cy="{fmt(cy)}" r="{fmt(0.60 * k)}" '
+          f'fill="{rgba(hue, 0.40)}" filter="url(#softer)"/>']
+    el.append(fade_line(cx - 1.30 * k, cy, cx - 0.55 * k, cy, 0.20 * k,
+                        0.0, 0.5, hue, "soft"))
+    el += ord_bomb(cx, cy, k, loaded)
+    return el
+
+
+def lit_repel(cx, cy, kc):
+    return [f'<circle cx="{fmt(cx)}" cy="{fmt(cy)}" r="{fmt(0.45 * kc)}" '
+            f'fill="{rgba(GOLD, 0.35)}" filter="url(#softer)"/>'] \
+        + ord_repel(cx, cy, kc)
+
+
+def lit_burst(cx, cy, kc):
+    return [f'<circle cx="{fmt(cx)}" cy="{fmt(cy)}" r="{fmt(0.45 * kc)}" '
+            f'fill="{rgba(BURST, 0.32)}" filter="url(#softer)"/>'] \
+        + ord_burst(cx, cy, kc)
+
+
+VOCABS = {
+    "tracer": dict(gun=tr_gun, bomb=tr_bomb, repel=tr_repel, burst=tr_burst),
+    "ordnance": dict(gun=ord_gun, bomb=ord_bomb, repel=ord_repel,
+                     burst=ord_burst),
+    "lit": dict(gun=lit_gun, bomb=lit_bomb, repel=lit_repel, burst=lit_burst),
+}
+
+
+# --- the specimen sheet + the corner in situ, shared by every marks board ---
+def marks_board(name, vocab):
+    v = VOCABS[vocab]
+    caps = ("gun", "gun, loaded", "bomb", "bomb, loaded", "repel", "burst")
+    strip = ['<div style="position:absolute;left:24px;top:26px;'
+             'display:flex;gap:8px">']
+    k, kc = 30, 24
+    for i, cap in enumerate(caps):
+        cell = ['<div style="display:flex;flex-direction:column;gap:8px;'
+                'align-items:center">',
+                f'<svg width="112" height="104" '
+                f'style="background:{BG}">{DEFS}']
+        cx, cy = 56, 52
+        if i == 0:
+            cell += v["gun"](cx, cy, k, False)
+        elif i == 1:
+            cell += v["gun"](cx, cy, k, True)
+        elif i == 2:
+            cell += v["bomb"](cx, cy, k, False)
+        elif i == 3:
+            cell += v["bomb"](cx, cy, k, True)
+        elif i == 4:
+            cell += v["repel"](cx, cy, kc)
+        else:
+            cell += v["burst"](cx, cy, kc)
+        cell.append(f'</svg><span class="lbl">{cap}</span></div>')
+        strip += cell
+    strip.append('</div>')
+    # The corner, in situ: the shipped layout, the new marks, and the ship
+    # page's circles counting the charges.
+    cys, _ = row_centers()
+    el = []
+    el += v["gun"](MID, cys[0], K * 0.9, True)
+    el += v["bomb"](MID, cys[1], K * 0.9, True)
+    el += v["repel"](MID, cys[2], KC)
+    el += hdots(VAL + 8, cys[2], REPEL[0], REPEL[1], 4.5 * Z * 0.9, 13 * Z)
+    el += v["burst"](MID, cys[3], KC)
+    el += hdots(VAL + 8, cys[3], BURSTN[0], BURSTN[1], 4.5 * Z * 0.9, 13 * Z)
+    board(name, "".join(el), "".join(strip))
+
+
+def b_marks_current():
+    caps = ("gun", "gun, loaded", "bomb", "bomb, loaded", "repel", "burst")
+    strip = ['<div style="position:absolute;left:24px;top:26px;'
+             'display:flex;gap:8px">']
+    k, kc = 30, 24
+    for i, cap in enumerate(caps):
+        cell = ['<div style="display:flex;flex-direction:column;gap:8px;'
+                'align-items:center">',
+                f'<svg width="112" height="104" '
+                f'style="background:{BG}">{DEFS}']
+        cx, cy = 56, 52
+        if i == 0:
+            cell += bolt(cx, cy, 0)
+        elif i == 1:
+            cell += [e for e in bolt(cx, cy, GUN["lvl"], GUN["spray"],
+                                     GUN["bounce"])]
+        elif i == 2:
+            cell += bomb(cx, cy, 0)
+        elif i == 3:
+            cell += bomb(cx, cy, BOMB["lvl"], BOMB["prox"], BOMB["shrap"],
+                         BOMB["gun_lvl"])
+        elif i == 4:
+            cell += repel_glyph(cx, cy)
+        else:
+            cell += burst_glyph(cx, cy)
+        cell.append(f'</svg><span class="lbl">{cap}</span></div>')
+        strip += cell
+    strip.append('</div>')
+    cys, _ = row_centers()
+    el = []
+    el += bolt(MID, cys[0], **GUN)
+    el += bomb(MID, cys[1], **BOMB)
+    el += repel_glyph(MID, cys[2])
+    el += pips(VAL + 3 * Z, cys[2], REPEL[0], REPEL[1])
+    el += burst_glyph(MID, cys[3])
+    el += pips(VAL + 3 * Z, cys[3], BURSTN[0], BURSTN[1])
+    board("MarksCurrent.dc.html", "".join(el), "".join(strip))
+
+
+# The specimen cells draw marks at k 30 against 22-point rows in the game, so
+# the boards say so: cells are inspection size, the corner strip is truth.
+
 for f in (b_current, b_rail, b_bays, b_hullplan, b_firearc, b_livefire,
-          b_rail_bare):
+          b_rail_bare, b_marks_current):
     f()
+for vv, fn in (("tracer", "Tracer.dc.html"), ("ordnance", "Ordnance.dc.html"),
+               ("lit", "Lit.dc.html")):
+    marks_board(fn, vv)
 print("boards built")
