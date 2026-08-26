@@ -559,6 +559,54 @@ do
               or "no key")
 end
 
+-- --- drawn zoomed ----------------------------------------------------------
+--
+-- The ending borrowed the board's own type, sized for a corner of a live
+-- fight, and at the whistle it read as a footnote: the one thing on screen,
+-- set in the smallest type on it. So the whole block draws larger than the
+-- instruments around it, held back only by the window's height, and a finger
+-- dragging its roster is measured against the rows as drawn.
+
+frame({match = {playing = false, left = 23, artifact = 1,
+                score = {[0] = 11, [1] = 14}},
+       side_names = NAMES, side = 0, w = 1280, h = 800})
+check("a roomy window draws the ending at full zoom",
+      math.abs(ui.podium_zoom - 1.45) < 0.001, tostring(ui.podium_zoom))
+local zoomed = nil
+for i = 1, state.n do
+    local t = state.text[i]
+    if t.s == "14" and t.px > 30 then zoomed = t end
+end
+check("and the score figures wear the zoom", zoomed ~= nil)
+check("as does the pitch a dragging finger is measured by",
+      ui.row_pitch() > 18 * 1.4, tostring(ui.row_pitch()))
+-- Two things stand outside the zoom at Chris's request: the countdown at the
+-- foot and the bar between the score figures both keep the interface's own
+-- size, so the readings stay readings while the block around them grows.
+local clock = nil
+for i = 1, state.n do
+    local t = state.text[i]
+    if t.s == "0:23" and math.abs(t.px - 21) < 0.01 then clock = t end
+end
+check("while the countdown keeps its size", clock ~= nil)
+local bar = nil
+for _, r in ipairs(rects) do
+    if math.abs(r.h - 26) < 0.01 then bar = r end
+end
+check("and so does the score bar", bar ~= nil)
+
+frame({match = {playing = false, left = 23, artifact = 1,
+                score = {[0] = 11, [1] = 14}},
+       side_names = NAMES, side = 0, w = 710, h = 300})
+check("a short window takes only the zoom it has room for",
+      ui.podium_zoom > 1 and ui.podium_zoom < 1.45,
+      tostring(ui.podium_zoom))
+
+frame({match = {playing = true, left = 96, score = {[0] = 4, [1] = 7}},
+       side_names = NAMES, side = 0})
+check("and play puts the pitch back", ui.row_pitch() == 18,
+      tostring(ui.row_pitch()))
+
 -- --- the foot --------------------------------------------------------------
 --
 -- The countdown as a reading rather than a draining bar, and one key beside
@@ -627,12 +675,14 @@ for _, phrase in ipairs(SAYS) do
     check("nor the words of " .. phrase, said(phrase) == nil)
 end
 
--- --- five columns, not one string ------------------------------------------
+-- --- four columns, not one string ------------------------------------------
 --
--- The roster is the board's, so its columns are the board's: five figures on
--- a row, each with its own edge, the same edge on every row and under its own
--- head. On the old card they were one right-aligned string per side, so a
--- pilot with a two-figure count pushed the two beside it left.
+-- The roster is the board's, so its columns are the board's: at the ending,
+-- four figures on a row, each with its own edge, the same edge on every row
+-- and under its own head. Bounty is not among them: it prices the next kill,
+-- and at the whistle there is no next kill. Points hold the outer edge under
+-- the rivet mark, which is drawn rather than written, so the heads this can
+-- read back are the three worded ones.
 
 local kept_k, kept_d, kept_a = room.kills, room.deaths, room.assists
 room.kills = {[0] = 4, 14, 1, 0}
@@ -641,6 +691,9 @@ room.assists = {[0] = 2, 2, 6, 11}
 frame({match = {playing = false, left = 12, artifact = 1,
                 score = {[0] = 5, [1] = 8}},
        side_names = NAMES, side = 0})
+check("the ending words neither PTS nor BTY",
+      said("PTS") == nil and said("BTY") == nil,
+      tostring(said("PTS") or said("BTY")))
 local lines = {}
 for i = 1, state.n do
     local t = state.text[i]
@@ -652,29 +705,34 @@ for i = 1, state.n do
 end
 local rows = {}
 for _, xs in pairs(lines) do
-    if #xs == 5 then
+    if #xs == 4 then
         table.sort(xs)
-        rows[#rows + 1] = table.concat(xs, ",")
+        rows[#rows + 1] = xs
     end
 end
-check("every pilot draws a line of five figures", #rows == 4, tostring(#rows))
+local function edges(xs, n)
+    local out = {}
+    for i = 1, (n or #xs) do out[i] = xs[i] end
+    return table.concat(out, ",")
+end
+check("every pilot draws a line of four figures", #rows == 4, tostring(#rows))
 local same = #rows == 4
-for i = 2, #rows do same = same and rows[i] == rows[1] end
-check("and every figure stands in one of five columns", same,
-      table.concat(rows, "  vs  "))
--- And the heads stand over them, at the edge the figures under them end at.
+for i = 2, #rows do same = same and edges(rows[i]) == edges(rows[1]) end
+check("and every figure stands in one of four columns", same,
+      tostring(#rows))
+-- And the worded heads stand over their columns, at the edge the figures
+-- under them end at; the fourth column's head is the mark.
 local heads = {}
 for i = 1, state.n do
     local t = state.text[i]
-    if t.pivot == "right" and (t.s == "K" or t.s == "D" or t.s == "A"
-                               or t.s == "PTS" or t.s == "BTY") then
+    if t.pivot == "right" and (t.s == "K" or t.s == "D" or t.s == "A") then
         heads[#heads + 1] = t.x
     end
 end
 table.sort(heads)
-check("with a head over each column",
-      #heads == 5 and #rows > 0 and table.concat(heads, ",") == rows[1],
-      table.concat(heads, ",") .. "  vs  " .. tostring(rows[1]))
+check("with a head over each worded column",
+      #heads == 3 and #rows > 0 and table.concat(heads, ",") == edges(rows[1], 3),
+      table.concat(heads, ",") .. "  vs  " .. tostring(rows[1] and edges(rows[1])))
 
 room.kills, room.deaths, room.assists = kept_k, kept_d, kept_a
 
@@ -694,6 +752,24 @@ check("the menu covers it", said("takes it") == nil,
 check("but the clock does not", said("0:23") ~= nil)
 check("and the topbar says what it is counting to",
       said("next match in") ~= nil)
+
+-- --- and the pads ask the same question ------------------------------------
+--
+-- The arena stops drawing the touch pads while the ending is up: the whistle
+-- benched every hull, so the pads have nothing to drive, and the board's foot
+-- keys land exactly where the gun pad draws. What the arena asks is
+-- M.match_ended, so the predicate has to agree with the board it stands down
+-- for: up at an intermission, down mid-match, down in a room with no clock,
+-- and down while a Ladder room is still looking for a rival, since that
+-- player is not benched.
+
+check("the arena can ask whether the ending is up",
+      ui.match_ended({playing = false, left = 23, score = {}}) == true
+      and ui.match_ended({playing = true, left = 96, score = {}}) == false
+      and ui.match_ended(nil) == false)
+check("and a Ladder room waiting for a rival keeps the pads",
+      ui.match_ended({playing = false, left = 180,
+                      ladder = {waiting = true}}) == false)
 
 -- --- the whole ending, against the text budget -----------------------------
 --
