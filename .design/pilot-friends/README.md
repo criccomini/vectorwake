@@ -1,33 +1,35 @@
 # Pilot and friends, one page
 
-Six boards for folding the friends page into the pilot page and shrinking
-the account chrome, which today spends a whole page and a reading column on
-three rows. Canvas artifact f6bd35e5; boards are built by `build.py` and
-seeded with the design skill's helper:
+Seven boards for moving the friends page inside the pilot page, the two
+ways Chris named, with the account chrome reconsidered in both. Canvas
+artifact f6bd35e5; boards are built by `build.py` and seeded with the
+design skill's helper:
 
     python3 build.py
     node seed-canvas.mjs --template payload.template.html \
       --out pilot-and-friends.html --title "Pilot and Friends" \
-      --artboard Main.dc.html --artboard Current.dc.html \
-      --artboard DirectionA.dc.html --artboard DirectionB.dc.html \
-      --artboard BFriends.dc.html --artboard CCard.dc.html \
-      --canvas canvas.json
+      --artboard Main.dc.html --artboard CurrentPilot.dc.html \
+      --artboard CurrentFriends.dc.html --artboard Option1.dc.html \
+      --artboard Option1Friends.dc.html --artboard Option2Rows.dc.html \
+      --artboard ClaimCard.dc.html --canvas canvas.json
 
-Three directions, each a grammar the menu already speaks:
+The account today spends a whole page and a reading column on three rows,
+so in both options it shrinks to a head band: the call sign large with the
+reroll mark on it, what the name is under it, KEEP and LOG IN as keys
+(PASSWORD and LOG OUT once claimed). The claim and login flows were always
+cards over the page (`ClaimCard`), so no page is lost.
 
-- **A, one page sectioned** (`DirectionA`): the settings grammar. A pilot
-  section of one row with two keys, then the friends sections inline.
-- **B, drill-down** (`DirectionB` + `BFriends`): the slot-reading grammar.
-  The pilot page stays an account page and a friends row slides the full
-  list in from the right. Honest cost drawn honestly: the top page stays
-  mostly empty, and join gains a press.
-- **C, band head** (`Main` + `CCard`): the ship-page grammar, and the
-  leading candidate. The account is a 64 point band over the page (name,
-  status, two small keys; name press rerolls) and the body is the friends
-  page from the add field down. `CCard` shows the claim card over it,
-  unchanged, which is the argument that login and claim never needed a
-  page.
+- **Option 1, drill-down** (`Option1` + `Option1Friends`): the ship page's
+  grammar. A friends row on the pilot page slides the full list in from
+  the right, back chevron and swipe right to return. Each surface does one
+  job and the pilot page has room to grow, but join gains a press and the
+  top page is one band and one row.
+- **Option 2, one page** (`Main` + `Option2Rows`): the friends sections
+  are the body of the pilot page, straight under the head. Two treatments
+  of the account: the band head (leading) and a row section in the
+  settings grammar. Everything is one rail tap away; the page does two
+  jobs.
 
-Every direction takes the rail back to four stops (play, ship, pilot,
-settings), moves the friends badge onto the pilot stop, and means pilot has
-to ride the match row, with the account controls standing down there.
+Both options empty the friends tab: the rail goes back to four stops, the
+friends badge moves onto the pilot stop, and pilot has to ride the match
+row, with the account keys standing down there.
