@@ -19,6 +19,7 @@ mod experiment;
 mod fleet;
 mod growth;
 mod mapforge;
+mod melee_probe;
 mod meta;
 mod metrics;
 mod modes;
@@ -915,6 +916,11 @@ async fn main() {
     // What the ladder cannot see: the roster on a real map, with walls in it.
     if std::env::args().nth(1).as_deref() == Some("drill") {
         drill::run_check();
+        return;
+    }
+    // What a team battle looks like from inside, per pilot.
+    if std::env::args().nth(1).as_deref() == Some("melee") {
+        melee_probe::run();
         return;
     }
     if std::env::args().nth(1).as_deref() == Some("mapforge") {
