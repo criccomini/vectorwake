@@ -284,6 +284,15 @@ instrument), with POS on the dial's other shoulder and the feed hanging under
 it. Bottom left: the corner stack, what your triggers do and what you carry,
 growing upward.
 
+The match ending is the board again rather than a page of its own: at the
+whistle it comes up whether or not anybody asked for it, in a column of its
+own up to 720 points wide, with a line saying who took the match, a bar under
+that carrying each side's name inside its own share of it, and a foot with the
+countdown and one key. The same arrangement at every window size; an upright
+phone hugs the foot of the screen with it, so the key lands under a thumb.
+The band stands down while it is up, since the head carries the score and the
+foot carries the clock.
+
 Top center is the band: the clock, with a side either side of it as a name
 over a number (a team over its score, a duel's pilot over their rating),
 the two lines of a side adding up to the clock's own height so the whole
@@ -327,8 +336,8 @@ at, answering; eight revolving is a screensaver), the logo turns at the same
 rate, the sweep dial sweeps where something is being looked for, the help
 prompt breathes once every three seconds, the on-air dot swells slowly
 because a blink held for minutes is a blink a player learns to stop seeing,
-an arming bind slot pulses, the podium's score bar arrives over a third of a
-second, eased, and it is the one movement on that card. Feed lines spend
+an arming bind slot pulses, the ending's score bar arrives over a third of a
+second, eased, and it is the one movement on that screen. Feed lines spend
 their last second and a half leaving; a payout drifts off the wreck that
 paid it, anchored in the world so it falls behind a moving player the way
 the wreck does.
@@ -352,13 +361,13 @@ clicked past.
 
 That gui-over-mesh constraint is load-bearing everywhere: the only way to
 quiet a label is to quiet the label (`text_dim`), a wash can never do it. It
-is why rows draw whole or not at all, and why the podium takes the
+is why rows draw whole or not at all, and why the ending takes the
 nameplates down while it is up.
 
 Text is also a budget. The gui draws `TEXT_POOL` strings a frame (declared in
 `state.lua`, where the side that writes them can be tested against it) and
 drops the rest, so the worst frame the interface composes, the ending with
-the scoreboard and pilot box open, is measured against the budget in
+its roster and the pilot box open, is measured against the budget in
 podium_test, and the debug readout shows the count beside the mesh layers'
 own. The pool was once a number only the gui knew, at 128, and the podium's
 phrase chips queued past it: their boxes drew and their words did not, and

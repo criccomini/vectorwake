@@ -4,8 +4,9 @@
 --
 -- Scenarios: after (a Ladder run five rungs in), fresh (its first life), deep
 -- (far enough to have a floor), before (with the banner the server used to
--- send), landing (the front end, watched from the stands), waiting (what the
--- loader hands off to before a room answers). Rasterize with any browser:
+-- send), ending and duel-ending (a room at the whistle), landing (the front end,
+-- watched from the stands), waiting (what the loader hands off to before a
+-- room answers). Rasterize with any browser:
 --
 --     chromium --headless --screenshot=out.png --window-size=1280,800 out.svg
 --
@@ -106,10 +107,18 @@ _G.sim = {
     ship_class = function() return 0 end,
     ship_energy = function() return 780 end,
     ship_max_energy = function() return 1000 end,
-    ship_kills = function(i) return i == 0 and 4 or 1 end,
-    ship_deaths = function(i) return i == 0 and 1 or 4 end,
-    ship_assists = function() return 0 end,
-    ship_points = function(i) return i == 0 and 12 or 3 end,
+    ship_kills = function(i)
+        return room.kills and room.kills[i] or (i == 0 and 4 or 1)
+    end,
+    ship_deaths = function(i)
+        return room.deaths and room.deaths[i] or (i == 0 and 1 or 4)
+    end,
+    ship_assists = function(i)
+        return room.assists and room.assists[i] or 0
+    end,
+    ship_points = function(i)
+        return room.points and room.points[i] or (i == 0 and 12 or 3)
+    end,
     ship_bounty = function(i) return i == 0 and 5 or 2 end,
     ship_up = function() return 2 end,
     ship_level = function() return 1 end,
@@ -208,6 +217,27 @@ end
 -- is the first screen anybody sees and it is the one made of two pieces laid
 -- out by different code, the watcher's HUD and the lockup over the key, so
 -- whether they collide is a question only a picture answers.
+-- The whistle: a full melee room with the result up. This is the frame the
+-- ending was redesigned against, and the one worth a picture, since it is the
+-- board drawn in a column of its own with a head and a foot around it.
+local ending = scenario == "ending" or scenario == "duel-ending"
+if scenario == "duel-ending" then
+    -- The same whistle in the mode that keeps a run: two rows and the fights
+    -- behind them, which is the section the board adds for this zone.
+    match = {playing = false, left = 8, artifact = 1,
+             score = {[0] = 1, [1] = 0}, ladder = ladder}
+end
+if scenario == "ending" then
+    room.count = 8
+    room.teams = {[0] = 0, 0, 0, 0, 1, 1, 1, 1}
+    room.kills = {[0] = 0, 8, 6, 3, 6, 5, 5, 4}
+    room.deaths = {[0] = 1, 4, 3, 7, 5, 5, 6, 4}
+    room.assists = {[0] = 6, 4, 5, 3, 3, 3, 7, 8}
+    room.points = {[0] = 112, 214, 168, 96, 191, 155, 173, 149}
+    match = {playing = false, left = 15, artifact = 1,
+             score = {[0] = 17, [1] = 20}}
+end
+
 local landing = scenario == "landing"
 if landing then
     room.count = 8
@@ -217,6 +247,10 @@ end
 
 ui.details = true
 state.n = 0
+-- The ending's bar arrives over a third of a second off the frame clock, so a
+-- single still frame at time zero draws it empty. Backdated, which is what a
+-- picture of the settled screen wants.
+if ending then ui.podium_at, ui.podium_artifact = -1, 1 end
 ui.begin(layer, W, H, 1, false, 0)
 
 -- Before a room answers. Not a HUD at all: the loader's picture, held by the
@@ -233,13 +267,16 @@ ui.hud({
     watch = landing and {subject = 0} or nil,
     landing = landing or nil,
     side = 0,
-    viewer_name = "Kestrel 8",
+    viewer_name = scenario == "ending" and "DRiFT" or "Kestrel 8",
     class_names = {"Apex", "Wedge", "Chord", "Anvil", "Facet", "Cipher", "Lattice"},
     menu_open = false,
-    pilots = landing and (function()
+    pilots = (landing or scenario == "ending") and (function()
         local out = {}
-        local names = {"Krait 4", "Vireo 9", "Saber 3", "Plinth 41",
-                       "Mantis 7", "Halcyon 2", "Sable 09", "Orrery 3"}
+        local names = ending
+            and {"DRiFT", "Gantry", "Bellwether", "Ozone",
+                 "Carrack", "Isobar", "Cirrus", "Jackstay"}
+            or {"Krait 4", "Vireo 9", "Saber 3", "Plinth 41",
+                "Mantis 7", "Halcyon 2", "Sable 09", "Orrery 3"}
         for i = 0, 7 do
             out[i] = {name = names[i + 1],
                       label = i % 2 == 0 and "unknown" or "bot",
@@ -250,11 +287,13 @@ ui.hud({
         [0] = {name = "Kestrel 8", label = "unknown", tier = "Wing", games = 41},
         [1] = {name = "Ozone 12", label = "bot", ai = true, tier = "Ace", games = 900},
     },
-    ratings = landing and {} or {[0] = 1183.4, [1] = 1346.6},
+    ratings = (landing or scenario == "ending") and {}
+              or {[0] = 1183.4, [1] = 1346.6},
     watchers = nil,
     teams = {},
     match = match,
-    side_names = landing and {[0] = "Pylon", [1] = "Caisson"}
+    side_names = (landing or scenario == "ending")
+                 and {[0] = "Pylon", [1] = "Caisson"}
                  or {[0] = "Pilot", [1] = "Rival"},
     feed = {},
     hurt = 0,
@@ -263,9 +302,10 @@ ui.hud({
     half_w = W / 2, half_h = H / 2,
     banner = banner,
     lag_notice = "",
+    match_url = ending and "https://vectorwake.net/m/42" or nil,
     rtt = 22,
     link_bars = 4,
-    zone = landing and "melee" or "ladder",
+    zone = (landing or scenario == "ending") and "melee" or "ladder",
     room = 1,
     fps = 60, frame_ms = 16.7, rx_rate = 31000, tx_rate = 700,
 })

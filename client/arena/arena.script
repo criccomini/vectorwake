@@ -639,21 +639,9 @@ local function hover_menu(x, y, vh)
     menu.friend_hot_act = nil
     menu.row_hot = nil
     menu.row_hot_act = nil
-    ui.hover_say = nil
-    -- The phrase chips are the one control outside the menu a pointer lights,
-    -- because they are on the card that is up while the menu is shut. Walked
-    -- before the early return below, and only ever for a chip: everything
-    -- else on screen with the menu down is an instrument.
-    if not touch.used and x then
-        local cx, cy = x, vh - y
-        for _, r in ipairs(ui.hits) do
-            if r.action == "say" and cx >= r.x and cx <= r.x + r.w
-               and cy >= r.y and cy <= r.y + r.h then
-                ui.hover_say = r.value
-                break
-            end
-        end
-    end
+    -- Nothing outside the menu lights under a pointer any more. The phrase
+    -- chips were the one thing that did, and the match ending stopped drawing
+    -- them: everything else on screen with the menu down is an instrument.
     if not menu.open or touch.used or not x then
         return hovering(nil, nil)
     end
@@ -3022,6 +3010,10 @@ function on_input(self, action_id, action)
             -- room refuses it while a match is running, so a press that
             -- lands late is a press that does nothing rather than one the
             -- client has to guard.
+            -- Nothing publishes this box any more: the phrase chips went
+            -- with the ending's card, and the key meant to replace them is
+            -- not here yet. The send stays wired so that key is a binding
+            -- rather than a rebuild. See `M.SAY_LIFE` in ui.lua.
             if r.action == "say" then
                 net.say(r.value)
                 sfx.ui("ui_go")

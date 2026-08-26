@@ -358,6 +358,25 @@ check("the verb follows it on the same line",
       and verb_t.x > who_t.x)
 check("and the name is in the winner's color rather than the verb's",
       who_t ~= nil and who_t.col ~= verb_t.col)
+-- With a space between them. The two are measured and placed rather than
+-- concatenated, so the air between them is a number this can check rather
+-- than a character in a string.
+--
+-- Measured against the menu's own face, which is what the interface set the
+-- name in. The mono advance every other figure on this card is measured with
+-- over-reads a proportional word by a tenth, which is enough to report a
+-- collision that is not there.
+if who_t and verb_t then
+    local face = dofile("client/arena/menu_face.lua")
+    local nw = 0
+    for i = 1, #who_t.s do
+        nw = nw + (face.adv[string.byte(who_t.s, i)] or face.widest)
+    end
+    nw = nw * who_t.px
+    check("with a word's worth of air between them",
+          verb_t.x - (who_t.x + nw) > who_t.px * 0.2,
+          string.format("%.1f", verb_t.x - (who_t.x + nw)))
+end
 check("and the room says when the next one starts",
       said("next match") ~= nil and said("0:23") ~= nil)
 -- Once, at the ending's foot. The topbar's own caption stands down for it.
@@ -411,137 +430,151 @@ check("level at the whistle is a draw rather than a winner",
 
 -- --- the scoreline ---------------------------------------------------------
 --
--- Two numbers set large either side of the score bar. The check that matters
--- is which figure is on which side: your own side is on the left however the
--- zone numbered the teams, the same rule the clock's own score follows. A card
--- that reversed them would tell everybody in the losing half that they won.
+-- One band: a figure at each end and, between them, each side's share of the
+-- bar with its name inside it. The check that matters is which figure is on
+-- which side, and at the ending that is the side which took the match rather
+-- than the reader's own. Mid-fight the band up top puts yours on the left,
+-- because a name is only worth reading once you know which end of the gun it
+-- is on; a finished match has a better answer, and it is what the ending is
+-- about.
 
-frame({match = {playing = false, left = 23, artifact = 1, score = {[0] = 11, [1] = 14}},
+frame({match = {playing = false, left = 23, artifact = 1,
+                score = {[0] = 11, [1] = 14}},
        side_names = NAMES, side = 0})
 local big = nil
 for i = 1, state.n do
     local t = state.text[i]
-    if t.px >= 40 and (t.s == "11" or t.s == "14") then
+    if t.px >= 20 and (t.s == "11" or t.s == "14") then
         big = big or {}
         big[#big + 1] = t
     end
 end
-check("the score is set large", big ~= nil and #big == 2,
+if big then table.sort(big, function(a, b) return a.x < b.x end) end
+check("both figures are set large", big ~= nil and #big == 2,
       tostring(big and #big))
-check("and the score stays in the instrument face",
+check("and stay in the instrument face",
       big ~= nil and big[1].font == nil and big[2].font == nil)
-check("and your own side is the left of the two",
-      big ~= nil and big[1].s == "11" and big[1].x < big[2].x,
+check("and the side that took it is the left of the two",
+      big ~= nil and big[1].s == "14",
       big and (big[1].s .. " at " .. math.floor(big[1].x)))
+-- Caisson took it, so Caisson leads the sentence over the bar as well.
+check("which is the side the line names", said("caisson") ~= nil
+      and said("takes it") ~= nil, table.concat(words(), " | "))
 
--- Every viewport uses one bounded measure. The only screen-wide rectangle is
--- the scrim, each roster half lands on three columns, and the score bar stays
--- in the two center columns without touching either figure.
-local ADVANCE = 1233 / 2048
-local function near(a, b)
-    return math.abs(a - b) < 0.01
-end
+-- --- one block, one column -------------------------------------------------
+--
+-- The ending is the board with a head and a foot, so what a window changes is
+-- the measure and where the block sits, never the arrangement. The only
+-- screen-wide rectangle is the scrim; everything else lands inside one column.
 
-local function seg_hits_box(s, b)
-    local r = (s.t or 0) / 2
-    local sx0 = math.min(s.x1, s.x2) - r
-    local sx1 = math.max(s.x1, s.x2) + r
-    local sy0 = math.min(s.y1, s.y2) - r
-    local sy1 = math.max(s.y1, s.y2) + r
-    return sx1 >= b.x0 and sx0 <= b.x1 and sy1 >= b.y0 and sy0 <= b.y1
-end
-
-local function result_geometry(width, height)
+local function block_geometry(width, height)
     frame({match = {playing = false, left = 23,
                     score = {[0] = 11, [1] = 14}},
-           side_names = NAMES, side = 0, w = width, h = height})
+           side_names = NAMES, side = 0, w = width, h = height,
+           match_url = "https://vectorwake.net/matches/42"})
 
+    local full = 0
+    local covers = false
+    for _, r in ipairs(rects) do
+        if math.abs(r.x) < 0.01 and math.abs(r.w - width) < 0.01 then
+            full = full + 1
+            if math.abs(r.y) < 0.01 and math.abs(r.h - height) < 0.01 then
+                covers = true
+            end
+        end
+    end
+    check(width .. " ending has one screen-wide field",
+          full == 1 and covers, tostring(full))
+
+    -- The roster is the board's own panel, so the ending publishes its
+    -- backdrop exactly as the mid-match board does, in one column rather than
+    -- two halves.
+    local panel = nil
+    for _, r in ipairs(ui.hits) do
+        if r.action == "scores" then panel = r end
+    end
+    check(width .. " draws the board as one column", panel ~= nil,
+          "no roster panel")
+    if panel then
+        check(width .. " keeps the column inside the window",
+              panel.x > 0 and panel.x + panel.w < width,
+              string.format("%.0f..%.0f of %d", panel.x,
+                            panel.x + panel.w, width))
+        -- Wider than the 340 the band opens mid-match, and capped, so a
+        -- monitor does not stretch eight rows across a thousand points.
+        check(width .. " spends more on it than the band does",
+              panel.w > 340 or panel.w >= width - 30,
+              string.format("%.0f", panel.w))
+    end
+
+    -- Both figures and the bar between them stand inside that same column.
     local scores = {}
     for i = 1, state.n do
         local t = state.text[i]
-        if t.px >= 40 and (t.s == "11" or t.s == "14") then
+        if t.px >= 20 and (t.s == "11" or t.s == "14") then
             scores[#scores + 1] = t
         end
     end
     table.sort(scores, function(a, b) return a.x < b.x end)
-
-    local gap = 6
-    local available = math.min(width - 36, 1040)
-    local cell = math.floor((available - 5 * gap) / 6)
-    local grid_w = 6 * cell + 5 * gap
-    local grid_x = (width - grid_w) / 2
-    local half = 3 * cell + 2 * gap
-    local bar_x = grid_x + 2 * (cell + gap)
-    local bar_w = 2 * cell + gap
-
-    local full, covers = 0, false
-    local bar = nil
-    for _, r in ipairs(rects) do
-        if near(r.x, 0) and near(r.w, width) then
-            full = full + 1
-            if near(r.y, 0) and near(r.h, height) then covers = true end
-        end
-        if near(r.x, bar_x) and near(r.w, bar_w) and near(r.h, 9) then
-            bar = r
-        end
-    end
-    check(width .. " result has one screen-wide field",
-          full == 1 and covers, tostring(full))
-
-    -- Wide enough to stand the two sides abreast, or not. Under seven
-    -- hundred points they stack at the full measure instead of halving it,
-    -- which is the one question this layout asks of a window.
-    local wide = grid_w >= 700
-    local roster_left, roster_right = false, false
-    local stacked = 0
-    for _, s in ipairs(segs) do
-        if near(s.y1, s.y2) and near(s.x2 - s.x1, half) then
-            if near(s.x1, grid_x) then roster_left = true end
-            if near(s.x1, grid_x + 3 * (cell + gap)) then roster_right = true end
-        end
-        if near(s.y1, s.y2) and near(s.x2 - s.x1, grid_w)
-           and near(s.x1, grid_x) then
-            stacked = stacked + 1
-        end
-    end
-    -- Stacked, a side rules the whole measure, and so does the head of every
-    -- group under it: one measure, one left edge, whatever is hanging off it.
-    check(width .. " rosters use the shared measure",
-          wide and (roster_left and roster_right) or (not wide and stacked >= 2),
-          wide and "abreast" or ("stacked " .. stacked))
-
-    check(width .. " score bar stays between the figures",
-          #scores == 2 and bar ~= nil
-          and bar.x > scores[1].x
-          and bar.x + bar.w < scores[2].x)
-
-    local crossed = false
-    for _, t in ipairs(scores) do
-        local tw = #t.s * t.px * ADVANCE
-        local x0 = t.pivot == "right" and t.x - tw or t.x
-        local x1 = t.pivot == "right" and t.x or t.x + tw
-        local box = {x0 = x0, x1 = x1,
-                     y0 = t.y - t.px * 0.55, y1 = t.y + t.px * 0.55}
-        for _, s in ipairs(segs) do
-            if seg_hits_box(s, box) then crossed = true end
-        end
-    end
-    check(width .. " score figures have no line through them", not crossed)
+    check(width .. " sets the scoreline on the column",
+          #scores == 2 and panel ~= nil
+          and math.abs(scores[1].x - panel.x) < 2
+          and math.abs(scores[2].x - (panel.x + panel.w)) < 2,
+          #scores == 2 and panel
+              and string.format("%.0f/%.0f against %.0f/%.0f", scores[1].x,
+                                scores[2].x, panel.x, panel.x + panel.w)
+              or "missing")
 end
 
-result_geometry(710, 378)
-result_geometry(1280, 720)
+block_geometry(710, 378)
+block_geometry(1280, 720)
 
--- A filed result turns the podium into the earned sharing moment. The share
--- press is a real browser overlay; claiming a pilot returns through the
--- ordinary action path.
+-- A phone held upright hugs the foot of the window with the whole block, so
+-- the one key on it lands under a thumb rather than in the middle of a tall
+-- screen.
+do
+    frame({match = {playing = false, left = 23, artifact = 1,
+                    score = {[0] = 11, [1] = 14}},
+           side_names = NAMES, side = 0, w = 390, h = 844,
+           match_url = "https://vectorwake.net/matches/42"})
+    local key = nil
+    for _, r in ipairs(ui.hits) do
+        if r.action == "share" then key = r end
+    end
+    check("an upright phone puts the key near the foot",
+          key ~= nil and key.y + key.h > 844 * 0.8,
+          key and string.format("%.0f of 844", key.y + key.h) or "no key")
+
+    frame({match = {playing = false, left = 23, artifact = 1,
+                    score = {[0] = 11, [1] = 14}},
+           side_names = NAMES, side = 0, w = 1280, h = 720,
+           match_url = "https://vectorwake.net/matches/42"})
+    local wide_key = nil
+    for _, r in ipairs(ui.hits) do
+        if r.action == "share" then wide_key = r end
+    end
+    check("and a window with room centers the block instead",
+          wide_key ~= nil and wide_key.y + wide_key.h < 720 * 0.8,
+          wide_key and string.format("%.0f of 720", wide_key.y + wide_key.h)
+              or "no key")
+end
+
+-- --- the foot --------------------------------------------------------------
+--
+-- The countdown as a reading rather than a draining bar, and one key beside
+-- it: the bar was a second clock next to the first, and a key the width of
+-- the measure was a banner. A guest keeps the key that claims their pilot,
+-- which is the moment they are most likely to want it.
+
 ui.hits = {}
-frame({match = {playing = false, left = 23, artifact = 1, score = {[0] = 11, [1] = 14}},
+frame({match = {playing = false, left = 23, artifact = 1,
+                score = {[0] = 11, [1] = 14}},
        side_names = NAMES, side = 0,
        match_url = "https://vectorwake.net/matches/42", keep_pilot = true})
-check("a filed match offers its share link", said("share match") ~= nil
+check("a filed match offers the invite", said("invite friend") ~= nil
       and ui.link_dom ~= nil
-      and string.find(ui.link_dom, "vwshare:https://vectorwake.net/matches/42", 1, true))
+      and string.find(ui.link_dom, "vwshare:https://vectorwake.net/matches/42",
+                      1, true))
 local actions = {}
 for _, hit in ipairs(ui.hits) do actions[hit.action] = true end
 -- And offers nothing beside it. Watching the film was a second key of equal
@@ -552,199 +585,62 @@ check("and no film beside it", said("watch replay") == nil
 check("an unclaimed winner can keep their pilot", said("keep you") ~= nil
       and actions.keep_pilot == true)
 
--- --- what there is to say --------------------------------------------------
---
--- The closed phrase list, drawn as chips at the foot of the card and as one
--- line on the sayer's own row. There is nothing else in this game a player
--- can send another player, so what this test is really guarding is that the
--- list on screen is the list the wire has and nothing else can get onto it.
-
-ui.hits = {}
-frame({match = {playing = false, left = 23, artifact = 1, score = {[0] = 11, [1] = 14}},
-       side_names = NAMES, side = 0, sayings = SAYS})
-for _, phrase in ipairs(SAYS) do
-    check("you can say " .. phrase, said(phrase) ~= nil)
+do
+    local keys = {}
+    for _, r in ipairs(ui.hits) do
+        if r.action == "share" or r.action == "keep_pilot" then
+            keys[#keys + 1] = r
+        end
+    end
+    table.sort(keys, function(a, b) return a.x < b.x end)
+    check("the keys share one row at the foot", #keys == 2
+          and math.abs(keys[1].y - keys[2].y) < 0.01,
+          tostring(#keys))
+    -- Sized to their own words rather than to the measure. The old key ran
+    -- the width of the page, which is a banner rather than a control.
+    local panel = nil
+    for _, r in ipairs(ui.hits) do
+        if r.action == "scores" then panel = r end
+    end
+    check("and each is a key rather than a banner",
+          #keys == 2 and panel ~= nil and keys[1].w < panel.w / 2
+          and keys[2].w < panel.w / 2,
+          #keys == 2 and panel
+              and string.format("%.0f and %.0f of %.0f", keys[1].w, keys[2].w,
+                                panel.w) or "missing")
 end
+
+-- Nothing on the ending sends a phrase. Six chips at the foot of the card
+-- were the widest thing on it, and they are going to be a key: this pins that
+-- the ending stopped drawing them, and there is nothing else on it to press
+-- but the two keys above.
+ui.hits = {}
+frame({match = {playing = false, left = 23, artifact = 1,
+                score = {[0] = 11, [1] = 14}},
+       side_names = NAMES, side = 0, sayings = SAYS})
 local chips = 0
 for _, r in ipairs(ui.hits) do
     if r.action == "say" then chips = chips + 1 end
 end
-check("every phrase is a press", chips == #SAYS, tostring(chips))
-check("and each one carries its number on the wire",
-      (function()
-          local seen_n = {}
-          for _, r in ipairs(ui.hits) do
-              if r.action == "say" then seen_n[r.value] = true end
-          end
-          for i = 0, #SAYS - 1 do if not seen_n[i] then return false end end
-          return true
-      end)())
-
--- The same six columns own quick chat, and a key spans all six of them. That
--- makes every outer edge, gap, and label center exact at both rendered sizes.
-local function whole(n)
-    return near(n, math.floor(n + 0.5))
+check("the ending draws no phrase chips", chips == 0, tostring(chips))
+for _, phrase in ipairs(SAYS) do
+    check("nor the words of " .. phrase, said(phrase) == nil)
 end
 
-local function control_geometry(width, height, keep)
-    frame({match = {playing = false, left = 23,
-                    score = {[0] = 11, [1] = 14}},
-           side_names = NAMES, side = 0, sayings = SAYS,
-           match_url = "https://vectorwake.net/matches/42",
-           keep_pilot = keep, w = width, h = height})
-
-    local control_chips, control_actions = {}, {}
-    for _, r in ipairs(ui.hits) do
-        if r.action == "say" then
-            control_chips[#control_chips + 1] = r
-        elseif r.action == "share" or r.action == "keep_pilot" then
-            control_actions[#control_actions + 1] = r
-        end
-    end
-    table.sort(control_chips, function(a, b) return a.x < b.x end)
-    table.sort(control_actions, function(a, b) return a.y < b.y end)
-
-    local exact = #control_chips == 6
-        and #control_actions == (keep and 2 or 1)
-    local integer = exact
-    for i, r in ipairs(control_chips) do
-        integer = integer and whole(r.x) and whole(r.y)
-            and whole(r.w) and whole(r.h)
-        if i > 1 then
-            exact = exact
-                and near(r.x - control_chips[i - 1].x
-                         - control_chips[i - 1].w, 6)
-                and near(r.w, control_chips[1].w)
-                and near(r.h, control_chips[1].h)
-        end
-    end
-    -- The keys stack rather than share a row, each one the width of the
-    -- measure. A key beside a key is two things of equal weight, and only one
-    -- of these is what the ending is offering.
-    for i, r in ipairs(control_actions) do
-        integer = integer and whole(r.x) and whole(r.y)
-            and whole(r.w) and whole(r.h)
-        exact = exact
-            and near(r.x, control_chips[1].x)
-            and near(r.x + r.w, control_chips[#control_chips].x
-                     + control_chips[#control_chips].w)
-        if i > 1 then
-            exact = exact
-                and near(r.y - control_actions[i - 1].y
-                         - control_actions[i - 1].h, 6)
-                and near(r.h, control_actions[1].h)
-        end
-    end
-
-    -- A chip's label is centered on it. The share key's is not: it carries a
-    -- mark, and the two are centered together, so the words sit left of the
-    -- middle by the room the mark takes and no more.
-    local centered = exact
-    local function found(s)
-        for i = 1, state.n do
-            if state.text[i].s == s then return state.text[i] end
-        end
-    end
-    local gg, chip = found("GG"), control_chips[1]
-    centered = centered and gg ~= nil
-        and near(gg.x, chip.x + chip.w / 2)
-        and near(gg.y, height - chip.y - chip.h / 2)
-    local share, skey = found("SHARE MATCH"), control_actions[1]
-    centered = centered and share ~= nil
-        and near(share.y, height - skey.y - skey.h / 2)
-        and share.x < skey.x + skey.w / 2
-        and share.x > skey.x + skey.w / 2 - skey.w / 4
-    if keep then
-        -- No mark on this one, so it is centered outright.
-        local kt, kkey = found("KEEP YOU"), control_actions[2]
-        centered = centered and kt ~= nil
-            and near(kt.x, kkey.x + kkey.w / 2)
-            and near(kt.y, height - kkey.y - kkey.h / 2)
-    end
-
-    local name = width .. (keep and " three-action" or " two-action")
-    check(name .. " controls use one grid", exact)
-    check(name .. " controls land on whole pixels", integer)
-    check(name .. " labels are centered", centered)
-end
-
-control_geometry(710, 378, false)
-control_geometry(710, 378, true)
-control_geometry(1280, 720, false)
-control_geometry(1280, 720, true)
-
--- Somebody said one. It lands on their row, in place of their name, with the
--- name kept small after it: a phrase in a column of its own would be a chat
--- window, and a row that lost its name for four seconds is a card you cannot
--- find yourself on.
-frame({match = {playing = false, left = 23, artifact = 1, score = {[0] = 11, [1] = 14}},
-       side_names = NAMES, side = 0, sayings = SAYS,
-       said = {[1] = {phrase = "nice shot", n = 1, t = 0.2}}})
-local line, name_after = nil, nil
-for i = 1, state.n - 1 do
-    if state.text[i].s == "NICE SHOT" and state.text[i].px > 11 then
-        line, name_after = state.text[i], state.text[i + 1]
-    end
-end
-check("what a pilot said is on their own row", line ~= nil,
-      table.concat(words(), " | "))
-check("and it is where their name was rather than over it",
-      counted("kestrel") == 1, tostring(counted("kestrel")))
-check("with the name kept, small, after the words",
-      name_after ~= nil and string.lower(name_after.s) == "kestrel"
-      and name_after.x > line.x
-      and math.abs(name_after.y - line.y) < 0.01,
-      name_after and name_after.s)
-
--- On a phone the column is half of three hundred and ninety points, and the
--- phrase and a call sign together ran through the kills and deaths at the
--- other end of it. The name is what goes.
-ui.compact = nil
-frame({match = {playing = false, left = 23, artifact = 1, score = {[0] = 11, [1] = 14}},
-       side_names = NAMES, side = 0, sayings = SAYS, w = 390, h = 844,
-       said = {[1] = {phrase = "nice shot", n = 1, t = 0.2}}})
-local narrow, beside = nil, nil
-for i = 1, state.n do
-    if state.text[i].s == "NICE SHOT" then narrow = state.text[i] end
-end
-for i = 1, state.n do
-    if narrow and string.lower(state.text[i].s) == "kestrel"
-       and math.abs(state.text[i].y - narrow.y) < 0.01 then
-        beside = state.text[i]
-    end
-end
-check("a narrow column keeps the phrase and drops the name",
-      narrow ~= nil and beside == nil,
-      table.concat(words(), " | "))
-
--- A phrase this build does not have is an arena talking about a list it does
--- not share. Nothing is drawn for it rather than a number or a blank chip.
-ui.hits = {}
-frame({match = {playing = false, left = 23, artifact = 1, score = {[0] = 11, [1] = 14}},
-       side_names = NAMES, side = 0})
-local none = 0
-for _, r in ipairs(ui.hits) do
-    if r.action == "say" then none = none + 1 end
-end
-check("a room with no phrase list draws no chips", none == 0, tostring(none))
-
--- --- three columns, not one string -----------------------------------------
+-- --- five columns, not one string ------------------------------------------
 --
--- The three figures on a row were one right-aligned string, so a pilot with a
--- two-figure count pushed the two beside it left: every row on the card lined
--- up differently from every other and none of them lined up with the heads.
--- Each column has its own edge now, the same edge on every row and on both
--- sides of the card.
+-- The roster is the board's, so its columns are the board's: five figures on
+-- a row, each with its own edge, the same edge on every row and under its own
+-- head. On the old card they were one right-aligned string per side, so a
+-- pilot with a two-figure count pushed the two beside it left.
 
 local kept_k, kept_d, kept_a = room.kills, room.deaths, room.assists
 room.kills = {[0] = 4, 14, 1, 0}
 room.deaths = {[0] = 3, 6, 6, 3}
 room.assists = {[0] = 2, 2, 6, 11}
-frame({match = {playing = false, left = 12, artifact = 1, score = {[0] = 5, [1] = 8}},
+frame({match = {playing = false, left = 12, artifact = 1,
+                score = {[0] = 5, [1] = 8}},
        side_names = NAMES, side = 0})
--- Every right-aligned figure on the card, gathered by the line it sits on.
--- Both sides draw a row at the same height, so a line carries six of them:
--- three columns twice, and the whole card is checked at once.
 local lines = {}
 for i = 1, state.n do
     local t = state.text[i]
@@ -756,28 +652,30 @@ for i = 1, state.n do
 end
 local rows = {}
 for _, xs in pairs(lines) do
-    if #xs == 6 then
+    if #xs == 5 then
         table.sort(xs)
         rows[#rows + 1] = table.concat(xs, ",")
     end
 end
-check("both sides draw a pilot line at each height", #rows == 2,
-      tostring(#rows))
-check("and every figure on the card stands in one of six columns",
-      #rows == 2 and rows[1] == rows[2], table.concat(rows, "  vs  "))
--- And the heads stand over them. One letter each, at the edge the figures
--- under it end at.
+check("every pilot draws a line of five figures", #rows == 4, tostring(#rows))
+local same = #rows == 4
+for i = 2, #rows do same = same and rows[i] == rows[1] end
+check("and every figure stands in one of five columns", same,
+      table.concat(rows, "  vs  "))
+-- And the heads stand over them, at the edge the figures under them end at.
 local heads = {}
 for i = 1, state.n do
     local t = state.text[i]
-    if t.pivot == "right" and (t.s == "K" or t.s == "D" or t.s == "A") then
+    if t.pivot == "right" and (t.s == "K" or t.s == "D" or t.s == "A"
+                               or t.s == "PTS" or t.s == "BTY") then
         heads[#heads + 1] = t.x
     end
 end
 table.sort(heads)
 check("with a head over each column",
-      #heads == 6 and table.concat(heads, ",") == rows[1],
+      #heads == 5 and #rows > 0 and table.concat(heads, ",") == rows[1],
       table.concat(heads, ",") .. "  vs  " .. tostring(rows[1]))
+
 room.kills, room.deaths, room.assists = kept_k, kept_d, kept_a
 
 -- --- and it stands down for the menu ---------------------------------------
@@ -851,14 +749,14 @@ check("the budget is a number both sides share",
 check("the whole ending fits the text budget",
       state.n <= state.TEXT_POOL,
       state.n .. " queued of " .. tostring(state.TEXT_POOL))
+-- The phrases are not on this frame at all now, which is most of what the
+-- worst frame used to spend its budget on.
 for _, phrase in ipairs(SAYS) do
     local at = nil
     for i = 1, state.n do
         if string.lower(state.text[i].s) == phrase then at = i break end
     end
-    check("the chip for " .. phrase .. " lands inside the pool",
-          at ~= nil and at <= state.TEXT_POOL,
-          tostring(at) .. " of " .. tostring(state.TEXT_POOL))
+    check("no chip is drawn for " .. phrase, at == nil, tostring(at))
 end
 check("no outline on the ending is thinner than a pixel",
       thinnest ~= nil and thinnest >= 1, tostring(thinnest))

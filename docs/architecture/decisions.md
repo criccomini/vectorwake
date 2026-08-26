@@ -3073,3 +3073,59 @@ the rest of this interface is discovered, by pressing it.
 mean publishing the box only while the pointer is already resting on it; or a
 zone turns up whose scoreboard is not a clock and two sides, at which point the
 chassis is a third thing rather than the shared one.
+
+## 68. The match ending is the board
+
+**Decision:** there is no ending page. At the whistle the board the band opens
+comes up whether or not anybody asked for it, in a column of its own, and
+grows a head and a foot: a line naming the side that took the match, a bar
+under it carrying each side's name inside its own share of it with the points
+on the ends, the roster with the reader's row washed, and a foot with the
+countdown and one key.
+
+The list is the board's list, re-ordered once: the side that took it runs
+first, whether or not it is the reader's, so the line, the bar and the rows
+all read the same way down the page. Inside a side it is the best gun first,
+and that pilot wears the MVP mark wherever they flew.
+
+One layout at every window size. The measure and the type change, and an
+upright phone hugs the foot of the window with the whole block so the key
+lands under a thumb; nothing else about the arrangement moves. INVITE FRIEND
+is the act the share key performed, named for what a player wants out of it
+and sized like a key rather than a banner.
+
+Gone with the page: the six phrase chips, the countdown's drain bar, and the
+two-column roster. The band stands down while the ending is up, because the
+head carries the score and the foot carries the clock.
+
+**Why:** the page had grown into a second scoreboard. It carried a title, a
+score bar, both rosters, six chips, a countdown with a bar beside it and a key
+the width of the measure, and once the band could open the board mid-match
+most of that was the same content twice. Read on a monitor it was small and
+busy, and none of it answered the question a player actually has at the
+whistle, which is how they did.
+
+Reusing the board answers that without adding anything: the roster is the one
+place this interface says what each pilot did, so the ending says it in the
+same rows, in the same columns, with the reader's own row lit the way it is
+lit mid-match. What the ending adds is only what the board cannot know: who
+won, by how much, and how long until the next one.
+
+The winner-first rule is the one thing the ending does not share with the
+band. Mid-fight the partition is "who is with me", because a name is only
+worth reading once you know which end of the gun it is on. A finished match
+has a better answer to which side comes first, and it is what the ending is
+about.
+
+**Cost:** nothing on this client can send a phrase any more. The chips were
+the only way to, and the key meant to replace them does not exist yet, so
+`SAY_LIFE`, the wire and the roster's own phrase line are kept as the spine of
+a feature currently unreachable. The screen a player reads after losing is
+also the one that reorders itself, which is the price of the winner leading.
+And the board is on screen for the whole intermission whether or not the
+reader wanted it, which is the point but is also one fewer thing they control.
+
+**Reconsider if:** the phrase key lands somewhere other than this screen, at
+which point the ending has room it does not need; or a zone turns up whose
+ending is not a roster and a score, which would make this a melee-and-duel
+answer rather than the shared one.

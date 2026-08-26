@@ -17,7 +17,10 @@ three window shapes out the same way. And then the question that reframed it:
 maybe there is no ending page at all, and the board the band opens just comes
 up when the match does.
 
-Drawings of a proposal, not a plan of record. Nothing here is built.
+This landed. `podium()` in `client/arena/ui.lua` draws what the leading page
+draws, `client/tests/podium_test.lua` holds the geometry to it, and decision
+68 records what it replaced. The boards stay as the drawing the layout was
+settled against.
 
 ## The board is the ending (page one)
 
