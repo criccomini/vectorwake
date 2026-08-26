@@ -3260,3 +3260,51 @@ mode scoring something that is not kills), at which point the fields
 belong in zone.toml as overrides rather than in a longer match arm; or the
 fleet grows enough games that the rows want the aligned table that was
 version J of the mocks.
+
+## 72. One field lights a row, at two weights
+
+**Status:** accepted
+
+**Decision:** a row of the menu is lit by one drawing, `LIT.field`: a wash
+in team blue across the full width of the drawer, at the row's full height,
+and the hit box every page publishes is the same span, so what lights up is
+what a press lands on. There are two weights and nothing between them.
+`LIT.CURSOR` at 0.18 is where a press would go, whether a pointer is
+resting there or the arrows are standing on it, and whether or not the page
+holds the arrows. `LIT.HERE` at 0.07 is where you already are: the game you
+are flying, the hull you fly, the build that is loaded. Both can be true of
+one row, and the cursor wins, because what a press does next is the more
+urgent of the two.
+
+The row you are already on also says so in the color and breathes, on the
+clock the landing key breathes on, its ink floored at 0.74 so the trough
+never reads as a row that has gone out. A row under the cursor is at full
+ink and still, so the one thing moving on the page is always the thing you
+left running somewhere else.
+
+The lit wedge that used to mark that row is gone. Two shapes that are not
+rows keep the two weights and light their own outline instead of the
+drawer: a hull cell in the ship grid, and a rail stop under a pointer. The
+lit rail stop keeps the tab gradient it had, which answers where you are
+rather than where the pointer is.
+
+**Why:** the menu answered "which row is this" eight different ways. The
+stage washed the drawer span at 0.18; the kit page bled left and stopped
+fourteen points short of the right edge, at 0.2 falling to 0.1 while the
+page was unfocused, with two points shaved off the row's top; the friends
+page floated a band inset sixteen points either side at 0.16; the builds
+page hung its field past the panel's right edge at 0.2; the hull grid, the
+rail and the call sign dropdown drew their own at 0.14 and 0.16. Each was
+defensible where it was written and none of them agreed, which is what a
+player sees walking from the games list into the hangar. The mocks are in
+`.design/menu-rows`.
+
+**Cost:** the kit page's rows light wider than their content, because the
+content on that page stops well short of the drawer's right edge and the
+field no longer does. The focused and unfocused weights on that page
+collapsed into one, so a kit page that has handed the arrows to the rail
+still shows its cursor at full strength.
+
+**Reconsider if:** a page turns up whose rows are genuinely not the width
+of the drawer, at which point the field wants to follow the page's own
+measure rather than the panel's, and `LIT.field` grows an argument for it.

@@ -1,5 +1,11 @@
 # One row grammar
 
+**Built.** See [decision 72](../../docs/architecture/decisions.md), and
+`client/tests/row_field_test.lua`, which holds every page to the rule. The
+standing row also breathes, which these boards do not show: the ink on it
+runs 0.74 to full on the clock the landing key breathes on.
+
+
 Six boards proposing a single way to draw a hovered or standing row in the
 menu, against the eight ways `client/arena/ui.lua` draws one today: the
 stage's full-bleed wash at 0.18, the kit rows' left-bleed at 0.2 (0.1
