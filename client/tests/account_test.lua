@@ -211,21 +211,23 @@ check("the saved profile is selectable without another session",
       and account.profiles[#account.profiles] == returned_profile,
       tostring(profile_saved and profile_saved.why))
 
--- Arriving in a room makes the last friends answer wrong: it was given for
--- wherever this client was before, and `here` is a fact about the room. The
--- page said "nobody yet" for the length of the round trip that followed,
--- which is a claim it could not make until it had asked from the new room.
+-- The page, in one reply: the friends and the adds waiting on an answer. It
+-- carried three more lists until decision 77, one of which was the roster of
+-- the room this client was in, which is why this module had to be told when
+-- the room changed. Nothing here is about the room now, so an answer survives
+-- a join and a leave, and a reply that still carries the old lists is ignored
+-- rather than stored.
 local at = #requests
 account.refresh_friends()
 answer(requests[at + 1], "friends",
-       {friends = {}, asked = {}, waiting = {},
-        here = {{account = 9, name = "Kestrel 9"}}})
+       {friends = {{account = 11, name = "Rill 121", zone = "melee"}},
+        asked = {{account = 9, name = "Kestrel 9", ago = 60}},
+        here = {{account = 8, name = "Vantage 2"}}})
 check("the friends page arrives whole", account.have_friends == true
-      and #account.here == 1, tostring(#account.here))
-account.room_changed()
-check("and a room change forgets who was beside you",
-      account.have_friends == false and #account.here == 0,
-      tostring(account.have_friends) .. "/" .. tostring(#account.here))
+      and #account.friends == 1 and #account.asked == 1,
+      #account.friends .. "/" .. #account.asked)
+check("and a list the page no longer draws is not kept",
+      account.here == nil, tostring(account.here))
 
 -- A call sign rather than an account number. It is the one way onto that page
 -- that does not begin with the two of you being in the same room, and it goes
@@ -242,22 +244,19 @@ check("a typed call sign goes out as a name",
 -- the one that did not look identical: `mutual` is the only thing that
 -- separates them and it comes back with the page.
 answer(requests[at + 1], "friend",
-       {friends = {}, asked = {}, waiting = {}, here = {},
-        everybody = {{account = 7, name = "Halcyon 1", state = "friend"}},
-        mutual = true})
+       {friends = {{account = 7, name = "Halcyon 1", zone = ""}},
+        asked = {}, mutual = true})
 check("and a pair that closed says so",
       account.friend_note ~= nil
       and string.find(account.friend_note, "friends", 1, true) == 1
       and account.friend_bad == false, tostring(account.friend_note))
-check("with everybody who added you alongside the rest",
-      #account.everybody == 1 and account.everybody[1].state == "friend",
-      tostring(#account.everybody))
+check("with the page it came back with", #account.friends == 1
+      and account.friends[1].name == "Halcyon 1",
+      tostring(#account.friends))
 
 at = #requests
 account.friend(5, true)
-answer(requests[at + 1], "friend",
-       {friends = {}, asked = {}, waiting = {}, here = {}, everybody = {},
-        mutual = false})
+answer(requests[at + 1], "friend", {friends = {}, asked = {}, mutual = false})
 check("and one that did not says what is still missing",
       string.find(account.friend_note, "add you back", 1, true) ~= nil,
       tostring(account.friend_note))

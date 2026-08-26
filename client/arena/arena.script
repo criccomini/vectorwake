@@ -636,6 +636,7 @@ local function hover_menu(x, y, vh)
     menu.found_hot = nil
     menu.friend_hot = nil
     menu.friend_hot_act = nil
+    menu.invite_hot = false
     menu.row_hot = nil
     menu.row_hot_act = nil
     -- Nothing outside the menu lights under a pointer any more. The phrase
@@ -654,6 +655,10 @@ local function hover_menu(x, y, vh)
         if r then
             menu.pilot_hot = r.action == "pilot_page"
             menu.add_hot = r.action == "add_go"
+            -- The invite key lights like any other, and does its work
+            -- through the anchor the browser lays over it rather than
+            -- through a press this file would hear.
+            menu.invite_hot = r.action == "invite"
             if r.action == "found" then menu.found_hot = r.value end
             if r.action == "carousel" then menu.carousel_hot = r.value end
             if r.action == "friend_act" then
@@ -844,9 +849,6 @@ function go_home(self, keep_menu)
     ui.room_scroll = 0
     ui.room_ask = nil
     menu.home = true
-    -- Who is beside you is a fact about the room you were in, and you are
-    -- not in it any more.
-    account.room_changed()
     -- And the menu goes with the room. Leaving lands in the stands, by way of
     -- the waiting screen while the next room is found: this used to open the
     -- games list, which is a page to pick from rather than a place to be, and
@@ -1605,9 +1607,6 @@ function update(self, dt)
             menu.note = nil
             ui.help_prompt = menu.needs_help_prompt()
             self.joining = nil
-            -- The friends page has an answer from the front end, where
-            -- nobody is beside you. Drop it: the next one comes from here.
-            account.room_changed()
             -- And the kit this pilot built, to the room that has just seated
             -- them. Nothing else sends it on arrival: the room deals a starter
             -- kit to any seat wearing nothing, and the stored kit is the
@@ -2624,7 +2623,6 @@ function apply_menu(self, act)
                 fly_kit(menu.class)
             end
             menu.close()
-            account.room_changed()
             return
         end
         self.attract = false

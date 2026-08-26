@@ -1564,28 +1564,20 @@ async fn one_sided(
 
 /// The friends page, whole.
 ///
-/// Five lists, defined against each other so the client never has to subtract
-/// one from another:
+/// Two lists, which is the whole page since decision 77:
 ///
 /// - `friends`, where both directions exist, with where each one is flying.
 /// - `asked`, where they have added you, you have not added back, and you
 ///   have not ignored them. This is the inbox, and it is the one list that
 ///   asks for a decision.
-/// - `waiting`, where you have added them and they have not added back. It is
-///   the other half of the same edge and it is here because a press with no
-///   visible consequence reads as a press that did nothing: adding somebody
-///   took their name off the room list and put it nowhere.
-/// - `here`, the pilots in the room you are in who are on none of the above,
-///   so the page you make a friend on is the one you are already reading.
-/// - `everybody`, every pilot who has ever added you, whatever came of it,
-///   each carrying `waiting`, `ignored` or `friend`. It is what makes an
-///   ignore reversible: the add is still there, on a list that is not asking
-///   anything of you, and accepting it is one press whenever you like.
 ///
-/// Every edge has exactly one home in the first four, which is what lets the
-/// client draw them without deciding anything. `everybody` is the exception
-/// and is meant to be: it is the same edges again, under a heading that says
-/// so.
+/// It answered with three more until that decision, and they went from here
+/// as well as from the page, because a list nobody draws is four queries a
+/// second of somebody else's database time: the pilots in your room, the adds
+/// you had made and nobody had answered, and every pilot who had ever added
+/// you with what came of it. The last of those was what made an ignore
+/// reversible, so an ignore is final now and `friend_ignores` is the row that
+/// keeps it that way.
 ///
 /// Presence is a join against `active_rated_sessions`, which an arena keeps
 /// honest because a rated seat is exclusive. Watchers hold no such row, and
@@ -1646,88 +1638,9 @@ async fn friends_page(db: &Client, account: i64) -> Result<serde_json::Value, St
     )
     .await?;
 
-    // And who you are waiting on, which is the same edge from the other end.
-    let waiting = one_sided(
-        db,
-        account,
-        "select f.friend, n.call_sign,
-                extract(epoch from now() - f.made)::bigint
-           from friends f
-           left join names n on n.account = f.friend
-          where f.account = $1
-            and not exists (select 1 from friends b
-                             where b.account = f.friend and b.friend = $1)
-          order by f.made
-          limit $2",
-        "cannot read who you are waiting on",
-    )
-    .await?;
-
-    // Everybody who has added you, with what came of it. Ignored first,
-    // because they are the only rows here anybody presses; then friends, then
-    // whoever is still in the inbox above. Newest inside each run.
-    let everybody = one_sided(
-        db,
-        account,
-        "select f.account, n.call_sign,
-                extract(epoch from now() - coalesce(g.at, f.made))::bigint,
-                case when b.account is not null then 'friend'
-                     when g.account is not null then 'ignored'
-                     else 'waiting' end
-           from friends f
-           left join names n on n.account = f.account
-           left join friends b
-                  on b.account = $1 and b.friend = f.account
-           left join friend_ignores g
-                  on g.account = $1 and g.ignored = f.account
-          where f.friend = $1
-          order by case when b.account is not null then 1
-                        when g.account is not null then 0
-                        else 2 end, f.made desc
-          limit $2",
-        "cannot read who has added you",
-    )
-    .await?;
-
-    // And whoever is in the room with you, which is only answerable while you
-    // are in one. This is the whole of how a name reaches this page: there is
-    // no directory of the fleet to ask and no way to search for anybody.
-    let mut here: Vec<serde_json::Value> = Vec::new();
-    let mine = db
-        .query_opt(
-            "select instance from active_rated_sessions
-              where account = $1 and touched > now() - interval '180 seconds'",
-            &[&account],
-        )
-        .await
-        .map_err(|e| format!("cannot read where you are: {e}"))?;
-    if let Some(row) = mine {
-        let instance: String = row.get(0);
-        let rows = db
-            .query(
-                "select s.account, n.call_sign
-                   from active_rated_sessions s
-                   left join names n on n.account = s.account
-                  where s.instance = $1
-                    and s.account <> $2
-                    and s.touched > now() - interval '180 seconds'
-                    and not exists (select 1 from friends f
-                                     where f.account = $2 and f.friend = s.account)
-                  order by n.call_sign
-                  limit 64",
-                &[&instance, &account],
-            )
-            .await
-            .map_err(|e| format!("cannot read the room: {e}"))?;
-        here = rows.iter().map(named_pilot).collect();
-    }
-
     Ok(serde_json::json!({
         "friends": friends,
         "asked": asked,
-        "waiting": waiting,
-        "here": here,
-        "everybody": everybody,
     }))
 }
 

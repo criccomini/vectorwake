@@ -5445,15 +5445,16 @@ function pages.points(v, x, y, w, h)
     M.page_room = h
 end
 
--- The friends page: a field you type a call sign into, over sections whose
--- rows carry their own buttons.
+-- The friends page: a field you type a call sign into, the adds waiting on an
+-- answer, your friends, and one key out to somebody who has never played.
 --
--- It was a plain list, and the buttons are why it is not one any more. Five
--- inputs give a row one press, so a row with two answers has to ask which,
--- and on a page where accept, ignore, join and unfriend all live that put a
--- card between every decision and the thing it decides. A pointer gets the
--- buttons; the row press still raises the card, off the same list, so a
--- d-pad loses nothing. See `menu.ask_friend`.
+-- Two rows and two grammars. A received add asks a question, so it carries
+-- its name over what it did and the two keys that answer it. A friend is not
+-- asking anything, so the row is a dot, a name, and the game they are in:
+-- solid where they are flying, hollow where they are not, which says on and
+-- off twice over and reads without color. What can be done with a friend is
+-- on the card the row raises, which is where five inputs always had to find
+-- it, and where a join names the game it would put you in.
 --
 -- The field is pinned and the sections scroll under it, the way the ship
 -- page's band stays over its kit. Whole rows only, and nothing is drawn over
@@ -5461,12 +5462,52 @@ end
 -- lays down, so a row that has slid under the field cannot be covered.
 --
 -- See docs/design/friends.md.
+
+-- How big the dot beside a friend is, and how much of the foot the invite key
+-- takes. Both hang off `pages` beside FIELD_TALL rather than standing as
+-- locals of their own: this file is at Lua's ceiling of two hundred locals in
+-- its main chunk, and a page's own measurements belong to the page anyway.
+pages.ON_R = 4
+pages.INVITE_H = 52
+
+-- The way out of a roster that can only hold people already here: a key that
+-- hands the game's own address to whatever the device shares with, which on a
+-- phone is the share sheet and on a desktop is the clipboard. It is the
+-- ending's INVITE FRIEND key in the menu's own furniture, and it is pinned at
+-- the foot rather than scrolled to, because a page with three friends on it
+-- has nothing else down there and a page with forty would bury it.
+--
+-- The line says what the press is for and never how it travels: the sheet
+-- decides that, and a key promising a text message on a machine that copies a
+-- link is a key that lied.
+function pages.invite_banner(v, x, y, w)
+    local kh = 26 * F.scale
+    local cy = y + pages.INVITE_H * F.scale / 2 + 4 * F.scale
+    hrule(x, y, w)
+    -- The word flips once the browser says the link went somewhere, which is
+    -- the only acknowledgement a copy gets: nothing else on screen moves.
+    local copied = M.share_result == "copied"
+    local label = copied and "link copied" or "invite"
+    local left = row_button(x + w, cy, kh, label, not copied,
+                            v.invite_hot == true, "invite")
+    txt("get somebody you know into the game", x, cy, 12.5 * F.scale,
+        pal.a(pal.INK, 0.8))
+    -- The browser lays a real anchor over the key: a share sheet and a
+    -- clipboard write both have to happen inside a gesture the page itself
+    -- saw, and a press routed through the engine is not one. The rectangle
+    -- travels in page points, which is what the shell lays out in.
+    M.link_dom = string.format("%.1f,%.1f,%.1f,%.1f,%s",
+        left / F.density, (cy - kh / 2) / F.density,
+        (x + w - left) / F.density, kh / F.density,
+        "vwshare:" .. v.invite)
+end
+
 function pages.friends(v, x, y, w, h, focused)
     local a = v.add or {}
     -- One question, asked of the room rather than of the device: whether a
-    -- name, its line and two buttons fit across one row. Around 470 points
-    -- they stop fitting, and the row goes to two lines with the buttons
-    -- sharing the second.
+    -- name, its line and two keys fit across one row. Around 470 points they
+    -- stop fitting, and a received add goes to two lines with the keys
+    -- sharing the second. A friend's row is one line at every width.
     local packed = w < 470 * F.scale
     local bh = pages.FIELD_TALL * F.scale
     local kh = 26 * F.scale
@@ -5474,7 +5515,7 @@ function pages.friends(v, x, y, w, h, focused)
     -- One button. Returns its left edge, so a row can lay them out from the
     -- right and stop where it stops.
     -- --- the field, pinned at the top
-    lbl("add a pilot", x, y + 8 * F.scale, pal.a(pal.DIM, 0.85))
+    lbl("add friend", x, y + 8 * F.scale, pal.a(pal.DIM, 0.85))
     local fy = y + 22 * F.scale + bh / 2
     local aw = text_w("add", 12 * F.scale) + 26 * F.scale
     local fw = math.min(300 * F.scale, w - aw - 12 * F.scale)
@@ -5536,9 +5577,22 @@ function pages.friends(v, x, y, w, h, focused)
         BAND = BAND + #hits * rh + 6 * F.scale
     end
 
-    -- --- the sections, scrolling under it
+    -- --- the sections, scrolling under it, and the key under them
     local top = y + BAND
-    local rowh = (packed and 52 or 44) * F.scale
+    -- The page's own floor: everything below it belongs to the invite key,
+    -- which is pinned there whatever the list does. No address to hand out
+    -- means no key and no floor: the page has the whole panel, rather than
+    -- fifty points of nothing under a key that could not do anything.
+    local foot = (v.invite and v.invite ~= "")
+        and pages.INVITE_H * F.scale or 0
+    local floor = y + h - foot
+    -- Two heights, because the two rows say different amounts. A received add
+    -- carries a line about when it arrived and two keys; a friend carries a
+    -- dot, a name and a game.
+    local function row_h(r)
+        if r.state == "asked" then return (packed and 52 or 44) * F.scale end
+        return 44 * F.scale
+    end
     local SECT = 24 * F.scale
     -- Laid out unscrolled and drawn shifted, so the height this page came to
     -- is a number and not that number minus wherever the finger left it.
@@ -5552,19 +5606,22 @@ function pages.friends(v, x, y, w, h, focused)
             or nil
         return SECT + (said and (#said * 15 * F.scale + 4 * F.scale) or 0)
     end
+    local tall = 0
     do
         local walk, cur = 0, nil
         for i, r in ipairs(v.rows or {}) do
             walk = walk + head_h(r)
             if i == v.sel and not a.on then cur = walk end
-            walk = walk + rowh
+            walk = walk + row_h(r)
+            tall = math.max(tall, row_h(r))
         end
-        follow_cursor(cur, rowh, y + h - top, focused)
+        follow_cursor(cur, tall, floor - top, focused)
     end
     local dy = M.page_scroll
-    local seen = function(t) return t >= top and t + rowh <= y + h end
+    local seen = function(t, rh) return t >= top and t + rh <= floor end
 
     for i, r in ipairs(v.rows or {}) do
+        local rowh = row_h(r)
         if r.sect then
             -- Wrapped to the room the panel has, and measured before the head
             -- is placed so a sentence that took two lines does not draw the
@@ -5575,7 +5632,7 @@ function pages.friends(v, x, y, w, h, focused)
                             w - 10 * F.scale) or nil
             local sh = head_h(r)
             local hy = at - dy
-            if hy >= top and hy + sh <= y + h then
+            if hy >= top and hy + sh <= floor then
                 hrule(x, hy + SECT * 0.42, w)
                 lbl(r.sect, x, hy + SECT * 0.82)
                 if r.sect_note then
@@ -5600,7 +5657,7 @@ function pages.friends(v, x, y, w, h, focused)
         end
         local ry0 = at - dy
         at = at + rowh
-        if seen(ry0) then
+        if seen(ry0, rowh) then
             -- Nothing in the list is the cursor while the field above has
             -- it. Two lit things on one page is a page that cannot say where
             -- a press would go.
@@ -5608,39 +5665,50 @@ function pages.friends(v, x, y, w, h, focused)
             if hot then LIT.field(ry0, rowh, LIT.CURSOR) end
             local cy = ry0 + rowh / 2
             local col = pal.a(pal.INK, r.dim and 0.6 or (hot and 1 or 0.9))
-            -- The buttons first, from the right, because the name is what
-            -- gives way when a row runs out of width.
-            local edge = x + w - 8 * F.scale
-            for k = #(r.acts or {}), 1, -1 do
-                local act = r.acts[k]
-                edge = row_button(edge, cy, kh, act.label, act.go,
-                              v.friend_hot == i and v.friend_hot_act == k,
-                              "friend_act", i, k) - 8 * F.scale
-            end
-            if packed then
-                txt(r.label or "?", x, ry0 + rowh * 0.28, 15 * F.scale, col,
-                    nil, MENU_FONT, true)
-                if r.detail and r.detail ~= "" then
-                    txt(r.detail, x, ry0 + rowh * 0.72, 11.5 * F.scale,
-                        pal.a(r.state == "flying" and pal.FRIEND or pal.DIM,
-                              0.95))
+            if r.state == "asked" then
+                -- An add that is asking something: the keys first, from the
+                -- right, because the name is what gives way when a row runs
+                -- out of width.
+                local edge = x + w - 8 * F.scale
+                for k = #(r.acts or {}), 1, -1 do
+                    local act = r.acts[k]
+                    edge = row_button(edge, cy, kh, act.label, act.go,
+                                  v.friend_hot == i and v.friend_hot_act == k,
+                                  "friend_act", i, k) - 8 * F.scale
+                end
+                if packed then
+                    txt(r.label or "?", x, ry0 + rowh * 0.28, 15 * F.scale,
+                        col, nil, MENU_FONT, true)
+                    txt(r.detail or "", x, ry0 + rowh * 0.72, 11.5 * F.scale,
+                        pal.a(pal.DIM, 0.95))
+                else
+                    txt(r.label or "?", x, cy - 8 * F.scale, 16 * F.scale, col,
+                        nil, MENU_FONT, true)
+                    txt(r.detail or "", x, cy + 10 * F.scale, 11.5 * F.scale,
+                        pal.a(pal.DIM, 0.95))
                 end
             else
-                txt(r.label or "?", x, cy, 16 * F.scale, col, nil, MENU_FONT,
-                    true)
+                -- A friend: the dot, the name, and the game. Solid where they
+                -- are flying and hollow where they are not, so the row says it
+                -- in a mark before it says it in a word, and says it at all on
+                -- a screen where the two greens are one grey.
+                local on = r.state == "flying"
+                local dx = x + pages.ON_R * F.scale
+                if on then
+                    F.layer:disc(dx, ry(cy), pages.ON_R * F.scale, 10,
+                                 pal.ONLINE)
+                else
+                    F.layer:ring(dx, ry(cy), pages.ON_R * F.scale,
+                                 1.3 * F.scale, 10, pal.a(pal.DIM, 0.7))
+                end
+                txt(r.label or "?", x + 19 * F.scale, cy, 16 * F.scale,
+                    pal.a(pal.INK, hot and 1 or (on and 0.95 or 0.75)),
+                    nil, MENU_FONT, true)
+                -- Against the far edge, where the eye is not reading names,
+                -- and raw: a game keeps the capitals the games list gave it.
                 if r.detail and r.detail ~= "" then
-                    -- A friend in a game gets the dot the mocks give them,
-                    -- which is the one mark on this page that says "now".
-                    local dx = x + math.min(190 * F.scale,
-                                            w * 0.34) + 4 * F.scale
-                    if r.state == "flying" then
-                        rect(dx, cy - 3 * F.scale, 6 * F.scale, 6 * F.scale,
-                             pal.FRIEND)
-                        dx = dx + 13 * F.scale
-                    end
-                    txt(r.detail, dx, cy, 11.5 * F.scale,
-                        pal.a(r.state == "flying" and pal.FRIEND or pal.DIM,
-                              0.95))
+                    txt(r.detail, x + w, cy, 11.5 * F.scale,
+                        pal.a(pal.DIM, 0.95), "right", nil, true)
                 end
             end
             -- The row itself, after its buttons, so a press on one of them
@@ -5655,17 +5723,30 @@ function pages.friends(v, x, y, w, h, focused)
 
     -- Nothing at all, which is a different page from a page with one empty
     -- section on it. Under the field rather than instead of it: the field is
-    -- how somebody with no friends gets their first one.
+    -- how somebody with no friends gets their first one, and the key at the
+    -- foot is how they get one who has never played.
     if #(v.rows or {}) == 0 and v.empty then
-        empty_state(x, top, w, h - BAND, v.empty)
+        empty_state(x, top, w, floor - top, v.empty)
     end
 
-    M.page_extent = (at - top) + BAND + 16 * F.scale
-    M.page_room = h
-    if M.page_extent > h then
-        local track = h - BAND
+    if foot > 0 then pages.invite_banner(v, x, floor, w) end
+
+    -- The room the list has is the room above the key, so a page that would
+    -- have just fitted scrolls rather than running its last row under it.
+    --
+    -- No breathing room past the last row: the key at the foot is the
+    -- breathing room now, and sixteen points of nothing under the list is
+    -- sixteen points the scroll has to travel and cannot show. On a window
+    -- short enough to hold one row that was the difference between reaching
+    -- the last name and stopping two points above it, since a row that does
+    -- not fit whole is not drawn at all.
+    local room = floor - y
+    M.page_extent = (at - top) + BAND
+    M.page_room = room
+    if M.page_extent > room then
+        local track = floor - top
         local bar = math.max(30 * F.scale, track * track / M.page_extent)
-        local pos = (M.page_scroll / math.max(1, M.page_extent - h))
+        local pos = (M.page_scroll / math.max(1, M.page_extent - room))
                     * (track - bar)
         local bx = x + w - 3 * F.scale
         rect(bx, top, 3 * F.scale, track, pal.a(pal.DIM, 0.12))

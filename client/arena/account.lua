@@ -54,23 +54,13 @@ M.profiles = {}
 -- Nothing yet, which is not the same as a catalog with nothing in it: this is
 -- the meta-layer's answer and a page that has not had one has to say so.
 M.catalog = nil
--- The friends page's lists: friends with where they are flying, whoever has
--- added this pilot and is waiting on an answer, whoever this pilot has added
--- and is waiting on, and whoever is in the room right now and is on none of
--- the others. Every edge has exactly one home among those four, so the page
--- draws them without deciding anything. `have_friends` separates "waiting for
--- an answer" from "nobody yet", which are the same empty table and different
--- sentences.
+-- The friends page's two lists: friends with where they are flying, and
+-- whoever has added this pilot and is waiting on an answer. `have_friends`
+-- separates "waiting for an answer" from "nobody yet", which are the same
+-- empty table and different sentences.
 M.friends = {}
 M.asked = {}
-M.waiting = {}
-M.here = {}
 M.have_friends = false
--- And everybody who has ever added this pilot, whatever came of it, each
--- carrying "waiting", "ignored" or "friend". The same edges again under a
--- heading that says so, which is what makes ignoring reversible: the add is
--- still there and accepting it later is one press.
-M.everybody = {}
 -- What the last press on this page came to, for the line under the add field.
 -- Held here rather than in the menu because the answer arrives with a reply
 -- and the menu is not the thing waiting for it.
@@ -469,35 +459,26 @@ function M.fetch_replay(id, cb)
     post("/v1/replay", {id = id}, cb)
 end
 
--- The friends page, whole: who you are friends with and where they are, who
--- has added you and is waiting, and who is in the room with you.
+-- The friends page, whole: who you are friends with and where they are, and
+-- who has added you and is waiting on an answer.
 --
--- One request for three lists because they are one screen and because the
+-- One request for both lists because they are one screen and because the
 -- lists are defined against each other. Asking separately would leave a frame
 -- where two replies disagree about which list somebody belongs in, and the
--- page would draw them twice. See docs/design/friends.md.
+-- page would draw them twice.
+--
+-- It carried three more lists until decision 77, and one of them is why this
+-- module used to be told when the room changed: `here` was the roster of the
+-- arena the meta-layer saw you in, so an answer given on the front end had
+-- nobody in it and had to be forgotten on arrival. Nothing here is about the
+-- room any more, so an answer stays true across a join and a leave. See
+-- docs/design/friends.md.
 local function take_friends(r)
     if type(r) ~= "table" then return false end
     M.friends = type(r.friends) == "table" and r.friends or {}
     M.asked = type(r.asked) == "table" and r.asked or {}
-    M.waiting = type(r.waiting) == "table" and r.waiting or {}
-    M.here = type(r.here) == "table" and r.here or {}
-    M.everybody = type(r.everybody) == "table" and r.everybody or {}
     M.have_friends = true
     return true
-end
-
--- Arriving in a room, or leaving one, makes the last answer wrong.
---
--- Presence is answered for the room you are in: `here` is the roster of the
--- arena the meta-layer sees you in, so an answer given on the front end has
--- nobody in it and stays that way until the next one lands. The page went on
--- drawing that answer for as long as the round trip took and said "nobody
--- yet", which is a claim this client cannot make until it has asked from
--- where it is now. Forget it instead, and the page says it is asking.
-function M.room_changed()
-    M.here = {}
-    M.have_friends = false
 end
 
 function M.refresh_friends()
@@ -608,9 +589,12 @@ function M.find_pilots(prefix)
     end)
 end
 
--- An add taken off the list that asks about it, and put on the list of
--- everybody who has ever added you. Nothing is sent to them. Passing `false`
--- puts it back.
+-- An add taken off the list that asks about it. Nothing is sent to them: the
+-- pilot who added you goes on seeing that they did, which is true.
+--
+-- Final, as of decision 77. It puts the add on a list the client no longer
+-- asks for, so nothing draws it and nothing can accept it later; the row and
+-- the route still take `false` for an operator putting one back.
 function M.ignore(other, on, cb)
     if M.base == "" then
         if cb then cb(false, "no meta-layer") end
@@ -637,9 +621,7 @@ function M.logout()
     M.token = ""
     M.account = 0
     M.claimed = false
-    M.friends, M.asked, M.here = {}, {}, {}
-    M.waiting, M.have_friends = {}, false
-    M.everybody = {}
+    M.friends, M.asked, M.have_friends = {}, {}, false
     M.found, M.found_for = {}, ""
     M.friend_note, M.friend_bad = "", false
     M.name = ""

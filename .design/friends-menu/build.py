@@ -295,8 +295,8 @@ invited = ('<div class="lbl" style="margin-top:14px">add friend</div>'
            + dot_row("Sable 09")
            + '<div style="position:absolute;left:20px;right:20px;'
            'bottom:14px">'
-           + banner("Get somebody you know into the game",
-                    "invite a friend") + '</div>')
+           + banner("Get somebody you know into the game", "invite")
+           + '</div>')
 write("Invite.dc.html", board(invited))
 
 def caption(label, text):
@@ -314,9 +314,12 @@ words = ('<div class="lbl" style="margin-top:14px">the same banner, four'
                    " ending's key. Quietest; the word friend carries both"
                    " meanings.")
          + banner("", "invite a friend", wide=True)
-         + caption("c", "An outcome line and the key. Names what the press"
-                   " is for without naming the channel.")
-         + banner("Get somebody you know into the game", "invite a friend")
+         + caption("c", "An outcome line and the key, on one line two ways:"
+                   " the full line beside a short key, or a short line"
+                   " beside the full key.")
+         + banner("Get somebody you know into the game", "invite")
+         + '<div style="height:10px"></div>'
+         + banner("Bring somebody you know", "invite a friend")
          + caption("d", "The mechanics-forward line. Needs the invite link"
                    " to carry your account so signup lands with the edge"
                    " already made; a real server feature, not just words.")

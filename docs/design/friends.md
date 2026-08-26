@@ -102,10 +102,11 @@ delete and it is not a block:
 - **Nothing is sent.** The pilot who added you goes on seeing "you added
   them", which is true. There is no notification in this game for anything,
   and this is not the place to introduce the first one.
-- **The add stays where it is.** It moves to a second list, headed *everybody
-  who added you*, which also carries the people you did accept. Accepting from
-  there is one press, so ignoring is never final and never has to be a
-  decision somebody agonizes over.
+- **It is the end of that ask.** The add stays in the table and stops being
+  drawn anywhere. It used to move to a second list headed *everybody who added
+  you*, where accepting it later was one press;
+  [decision 77](../architecture/decisions.md) took that list off the page and
+  out of the reply, so an ignore is now final from the client's side.
 - **It outlives the edge.** The ignore is its own row keyed on the pilot who
   pressed it, not a flag on the row it answers. A flag would have been
   cheaper and wrong: the row belongs to whoever pressed add, and they can
@@ -135,25 +136,55 @@ So presence is a join, not a subscription. It costs one column: the claim now
 carries the zone the arena is serving, because an instance id alone would tell
 a player their friend is somewhere without saying where.
 
-One consequence for the client: an answer is about the room the asker was in
-when they asked. Arriving in a room or leaving one makes the last one wrong,
-and a client that keeps drawing it says "nobody yet" to a pilot sitting in a
-room full of people. So the client forgets the answer at both edges and the
-page says it is asking until the next one lands.
+The answer used to be about the room the asker was in when they asked, since
+it carried that room's roster, and the client had to forget it on every join
+and leave or say "nobody yet" to a pilot sitting in a room full of people.
+Nothing in the reply is about the room any more, so an answer stands until the
+next one lands.
 
 Watchers are absent from it, and that is correct. A rated seat means flying,
 and "in a game" should mean the same thing.
 
+## What the page is
+
+Four things down the screen, and nothing else
+([decision 77](../architecture/decisions.md)):
+
+1. A field that takes a call sign, under ADD FRIEND.
+2. RECEIVED: the adds waiting on an answer, each with accept and ignore.
+3. FRIENDS: one line each. A dot, a name, and the game they are in.
+4. A key at the foot that invites somebody who has never played.
+
+The dot is the page. Solid green while they are flying, a hollow grey ring
+while they are not, so it says the same thing twice and survives a screen that
+renders both as one grey. A friend in a game carries the game's name as the
+games list spells it, Team Battle rather than melee, and a friend who is off
+carries nothing: the ring already said it.
+
+Nothing is drawn on a friend's row but those three things. Join and unfriend
+are on the card the row raises, which is the list every input has always been
+offered; a key on the row would be the fourth thing competing with the dot for
+the eye.
+
 ## Where the three things live
 
-**Adding** happens where you have just flown with somebody. The friends page
-lists the pilots in your room while you are in one, which is the same roster
-the scoreboard and the podium show, and it is reachable from the in-match tab
-row so it is one press from the card at the end of a match. That is the moment
-a friend is made: you played, it was good, and their name is in front of you.
+**Adding** is the field, and since decision 77 it is the only way to make an
+edge from nothing. The page listed the pilots in your room as a section of its
+own, with an add on each row; that was the moment a friend is made, and it is
+gone. What is left is reading a call sign off the scoreboard and typing it,
+which the completions make short: a letter is enough to start, and pressing a
+name adds that pilot by number. The cost is written down in decision 77.
 
-**Seeing and joining** happen on the friends page too, at the top. A friend in
-a game reads as their name, the game, and a press that puts you in it.
+**Seeing and joining** happen on the friends page, in the FRIENDS list. A
+friend in a game reads as a green dot, their name and the game; the press
+raises the card, and the card's first key joins them.
+
+**Inviting somebody who is not here at all** is the key at the foot. It hands
+the site's address to the phone's share sheet, or copies it on a desktop, and
+the word is the same word: a friend on this page is somebody you fly with, and
+a friend at the foot of it is somebody you know. Nothing about the invite
+knows who sent it, so the person who opens it arrives as any other new pilot
+does.
 
 **The page** is a tab of its own. It was a row on the play page first, for the
 reason [menu.md](menu.md) gave about the community section that used to sit
@@ -166,33 +197,29 @@ join a game, so a row on it answers "who is on" only for a player who was
 already on their way somewhere; the question is asked from wherever you happen
 to be standing. And a tab carries its own line under its name, so "two in a
 game" is legible from every page in the menu rather than from the one page you
-had to open to find out. The row was a good answer to where the *adding*
-happens, which is the roster in a match, and that half has not moved.
+had to open to find out.
 
-In a match the same page hangs off the in-match tab row, beside the hangar,
-because that is where the roster is.
+In a match the same page hangs off the in-match tab row, beside the hangar.
 
 ## What it costs a client
 
 One request. `/v1/friends` returns the whole page: your friends with their
-presence, whoever has added you and is waiting on an answer, whoever you are
-waiting on, whoever is in your room and is on none of those, and everybody who
-has ever added you with what came of it. Asked when the page is opened and
-while it is on screen, the way the shop and the week's table already work, and
+presence, and whoever has added you and is waiting on an answer. Asked when the
+page is opened and while it is on screen, the way the shop already works, and
 not otherwise: this is a page somebody is looking at rather than a fact a
 session needs.
+
+It answered with three more lists until decision 77, and they went from the
+reply as well as from the page, because a list nobody draws is still four
+queries every five seconds of somebody else's database time.
 
 Three routes change it or feed it. `/v1/friend` makes or drops an edge and
 takes either an account number off one of those lists or a call sign somebody
 typed; `/v1/friend/ignore` sets and clears an ignore; `/v1/friend/find`
 answers a prefix with call signs, which is what the add field draws under
-itself as you type. Both answer with the page,
-because a press has to redraw and the client should not be working out what an
-edge did to five lists it does not compute.
-
-The first four lists are defined against each other so that every edge has
-exactly one home in them. `everybody` is deliberately the exception: it is the
-same edges again, under a heading that says so.
+itself as you type. The first two answer with the page, because a press has to
+redraw and the client should not be working out what an edge did to lists it
+does not compute.
 
 Joining resolves an instance id to an address through the games list the client
 already holds, which is why the directory publishes the id alongside the
@@ -210,11 +237,11 @@ than playing with friends.
 minting. A pilot who adds two hundred people in a minute is farming a list of
 who is online, and the rate limit is what makes that cost something.
 
-**The roster of your room is only offered while you are in it**, and the field
-completes rather than searches. Neither is a directory of the fleet and there
-is no way to ask for one: eight names back, matched only from the start, and
-the pattern characters escaped so nobody can ask for everything. A pilot who has most of a call sign
-gets the rest of it; a pilot who has none of one gets nothing.
+**The field completes rather than searches.** It is not a directory of the
+fleet and there is no way to ask for one: eight names back, matched only from
+the start, and the pattern characters escaped so nobody can ask for
+everything. A pilot who has most of a call sign gets the rest of it; a pilot
+who has none of one gets nothing.
 
 ## What is deliberately out
 
