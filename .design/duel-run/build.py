@@ -4,25 +4,30 @@
 The shipped panel heads a duel's fight list with "RUNG 6  FLOOR 6" and gives
 every row under it a rung number. Chris's reading: the rung and floor words are
 weird, track streaks instead, name the rivals, say who won, and cap the list at
-about five. He picked A off the first pass, cut the MVP mark (in a first-to-one
-duel the winner is always the best gun, so the mark is the bar said again), and
-sent the streak reading back: it sat where the roster's column headings sit,
-heading columns it had nothing to do with.
+about five.
 
-So A's list is settled and what is open is where the streak goes. Three
-answers, all with the same five rows under them:
+Three rounds of his, and what each settled:
 
-  Main      on the list: the panel's own left rule lit over the streak's rows
-  Stack     as readings: label over value, the play page's own strip grammar
-  Headline  in the sentence: out of the panel and into the line over the bar
+  A picked over two others, so the list leads and every row is a rival and a
+    verdict.
+  The MVP mark cut: a duel is first to one, so the winner is the only pilot
+    with a kill and the best gun in the room is always whoever just won.
+  The readings picked over the two other places to put a streak, and moved
+    under the fights rather than over them. Above the list they sat where the
+    roster's column headings sit, heading columns they had nothing to do with.
+
+So the board is three sections down one column: the pilots, the fights, and
+the readings, with the countdown and the invite key under them. `Main` draws
+the readings as their own section and `Joined` as the fights list's own foot
+across a ticked rule, which is the only question the ask leaves open.
 
 Every board draws one evening, at two moments a fight apart. After eleven
 fights the run is three deep and climbing, which is where a streak is visible
 at all; the twelfth is the moment in Chris's screenshot, where Tessellate takes
-the life and the three ends. `Broken` draws the leading answer at the second
-moment, `Current` draws the shipped panel there, and the mid-fight board draws
-the fight between them. B and C, the two alternatives A was picked over, keep
-their own page as they were proposed.
+the life and the three ends. `Broken` draws the settled shape at that second
+moment and `Current` draws the shipped panel there. The passed-over drawings
+keep their own page: the readings above the list, the streak drawn on the
+list, and the two on what should lead the panel at all.
 
 Drawings of a proposal, not a plan of record. The design system is the
 client's, lifted from ../podium-rethink/build.py: hues from
@@ -513,6 +518,52 @@ def run_bare(s, shown=SHOWN, legs=LEGS):
     return panel(f'{rows}{foot_count(s, legs)}', 10 * s, 8 * s, s)
 
 
+# ---- Settled: the readings, and they sit under the fights rather than over
+# them. Below the list nothing can read them as headings for it, and they land
+# where a total lands. Two treatments, and the only question between them is
+# whether the readings are their own section or the list's own foot. ----
+
+def readings_strip(s, streak, best, legs):
+    """Label over value with a thin rule between the stacks. The grammar the
+    play page sets a zone's format in and the band sets TIME and PLAYERS in."""
+    def stack(label, value, col=None, first=False):
+        rule = ("" if first else
+                f'<div style="width:{1.0 * s:.1f}px;height:{22 * s:.0f}px;'
+                f'background:rgba(63,88,120,.45)"></div>')
+        return (f'{rule}<div class="col" style="gap:{3 * s:.0f}px">'
+                f'{lbl(label, s)}'
+                f'<span class="num" style="font-size:{13 * s:.1f}px;'
+                f'color:{col or INK};opacity:.9">{value}</span></div>')
+
+    return (f'<div class="row" style="gap:{15 * s:.0f}px;'
+            f'padding:0 {12 * s:.0f}px">'
+            f'{stack("streak", streak, FRIEND if streak else DIM, True)}'
+            f'{stack("best", best)}{stack("fights", legs)}</div>')
+
+
+def fights_panel(s, shown=SHOWN):
+    """The list on its own: five fights, no head, no foot. Everything that was
+    ever in that head is either gone or in the section under this one."""
+    rows = "".join(run_row(n, w, c, s) for n, w, c, _ in RECENT[:shown])
+    return panel(rows, 10 * s, 8 * s, s)
+
+
+def readings_panel(s, streak, best, legs):
+    """The readings as a section of their own, wearing the same wash and left
+    rule the two panels above it wear."""
+    return panel(readings_strip(s, streak, best, legs), 12 * s, 12 * s, s)
+
+
+def fights_with_readings(s, streak, best, legs, shown=SHOWN):
+    """The other treatment: one panel, the readings under the rows across a
+    ticked rule, the way a table carries its totals."""
+    rows = "".join(run_row(n, w, c, s) for n, w, c, _ in RECENT[:shown])
+    inner = (f'{rows}<div style="height:{8 * s:.0f}px"></div>{ticked(s)}'
+             f'<div style="height:{10 * s:.0f}px"></div>'
+             f'{readings_strip(s, streak, best, legs)}')
+    return panel(inner, 10 * s, 10 * s, s)
+
+
 def run_b(s, streak, shown=SHOWN, best=BEST_RUN, legs=LEGS):
     """B: the whole run drawn as one mark per fight, oldest at the left."""
     marks = "".join(pip(won, 10 * s) for _, won, _ in RUN)
@@ -676,27 +727,32 @@ def build_desktops():
     RECENT = recent_at(BROKEN)
     desktop("Current.dc.html", run_shipped(Z, BROKEN),
             "back to rung 6", ENEMY, None, 7, bar=("Rival", "Pilot"), mvp=True)
-    # And the two alternatives it was first proposed against, kept on their
-    # own page as they were drawn.
+    # And the three the readings were picked over, kept on their own page as
+    # they were drawn: two on what should lead the panel, one on the readings
+    # sitting above the list rather than under it.
     desktop("B.dc.html", run_b(Z, 0), RIVAL_NAME, ENEMY, "takes it", 7,
             mvp=True)
     desktop("C.dc.html", run_c(Z, 0), RIVAL_NAME, ENEMY, "takes it", 7,
             mvp=True)
-    # A at the same moment, to show what the answer does once a run breaks.
-    desktop("Broken.dc.html", run_spine(Z, 0, 3, legs=BROKEN),
+    desktop("Spine.dc.html", run_spine(Z, 0, 3, legs=BROKEN),
+            RIVAL_NAME, ENEMY, "takes it", 7)
+    desktop("Stack.dc.html", run_stack(Z, 0, BEST_RUN, legs=BROKEN),
+            RIVAL_NAME, ENEMY, "takes it", 7)
+    # The settled shape at the same moment, so the run breaking is drawn.
+    desktop("Broken.dc.html",
+            fights_panel(Z) + readings_panel(Z, 0, 3, BROKEN),
             RIVAL_NAME, ENEMY, "takes it", 7)
 
-    # A one fight earlier, three deep and climbing: the three answers to where
-    # the streak goes, each drawn where its own reading is visible.
+    # And one fight earlier, three deep and climbing, which is where a streak
+    # is visible at all.
     RECENT = recent_at(CLIMBING)
     won = ("Vantage 0001", FRIEND, "beaten")
     bar = (ME, "Vantage 0001")
-    desktop("Main.dc.html", run_spine(Z, 3, 3, legs=CLIMBING),
+    desktop("Main.dc.html",
+            fights_panel(Z) + readings_panel(Z, 3, 3, CLIMBING),
             *won, 7, bar=bar, flip=True)
-    desktop("Stack.dc.html", run_stack(Z, 3, 3, legs=CLIMBING),
+    desktop("Joined.dc.html", fights_with_readings(Z, 3, 3, CLIMBING),
             *won, 7, bar=bar, flip=True)
-    desktop("Headline.dc.html", run_bare(Z, legs=CLIMBING),
-            *won, 7, bar=bar, flip=True, under=("3 in a row", FRIEND))
     RECENT = keep
 
 
@@ -710,7 +766,8 @@ def build_portrait():
     global RECENT
     keep = RECENT
     RECENT = recent_at(CLIMBING)
-    panel_html = run_spine(s, 3, 3, legs=CLIMBING)
+    panel_html = (fights_panel(s)
+                  + readings_panel(s, 3, 3, CLIMBING))
     RECENT = keep
     block = (f'<div class="col" style="width:{inner:.0f}px;gap:{gap:.0f}px">'
              f'{result_line(s, "Vantage 0001", FRIEND, "beaten")}'
@@ -741,7 +798,8 @@ def build_live():
     global RECENT
     keep = RECENT
     RECENT = recent_at(CLIMBING)
-    panel_html = run_spine(s, 3, 3, legs=CLIMBING)
+    panel_html = (fights_panel(s)
+                  + readings_panel(s, 3, 3, CLIMBING))
     RECENT = keep
 
     clock = (f'<div class="row" style="height:26px;gap:12px;'
@@ -779,34 +837,35 @@ CANVAS = {
     ],
     "artboards": [
         {"file": "Current.dc.html", "title": "As shipped", "x": 0, "y": 0, "w": 1440, "h": 900, "page": "page-1"},
-        {"file": "Main.dc.html", "title": "On the list", "x": 1560, "y": 0, "w": 1440, "h": 900, "page": "page-1"},
-        {"file": "Stack.dc.html", "title": "As readings", "x": 3120, "y": 0, "w": 1440, "h": 900, "page": "page-1"},
-        {"file": "Headline.dc.html", "title": "In the sentence", "x": 4680, "y": 0, "w": 1440, "h": 900, "page": "page-1"},
-        {"file": "Broken.dc.html", "title": "On the list \u00b7 the run breaks", "x": 1560, "y": 1180, "w": 1440, "h": 900, "page": "page-1"},
-        {"file": "Live.dc.html", "title": "Mid-fight, 340 wide", "x": 3120, "y": 1180, "w": 420, "h": 300, "page": "page-1"},
-        {"file": "Portrait.dc.html", "title": "Phone", "x": 3660, "y": 1180, "w": 390, "h": 844, "page": "page-1"},
-        {"file": "B.dc.html", "title": "B \u00b7 the shape leads", "x": 0, "y": 0, "w": 1440, "h": 900, "page": "page-2"},
-        {"file": "C.dc.html", "title": "C \u00b7 the number leads", "x": 1560, "y": 0, "w": 1440, "h": 900, "page": "page-2"},
+        {"file": "Main.dc.html", "title": "Its own section", "x": 1560, "y": 0, "w": 1440, "h": 900, "page": "page-1"},
+        {"file": "Joined.dc.html", "title": "The list's own foot", "x": 3120, "y": 0, "w": 1440, "h": 900, "page": "page-1"},
+        {"file": "Broken.dc.html", "title": "Its own section \u00b7 the run breaks", "x": 4680, "y": 0, "w": 1440, "h": 900, "page": "page-1"},
+        {"file": "Live.dc.html", "title": "Mid-fight, 340 wide", "x": 1560, "y": 1180, "w": 420, "h": 340, "page": "page-1"},
+        {"file": "Portrait.dc.html", "title": "Phone", "x": 2100, "y": 1180, "w": 390, "h": 844, "page": "page-1"},
+        {"file": "Stack.dc.html", "title": "The readings above the list", "x": 0, "y": 0, "w": 1440, "h": 900, "page": "page-2"},
+        {"file": "Spine.dc.html", "title": "The streak on the list", "x": 1560, "y": 0, "w": 1440, "h": 900, "page": "page-2"},
+        {"file": "B.dc.html", "title": "B \u00b7 the shape leads", "x": 3120, "y": 0, "w": 1440, "h": 900, "page": "page-2"},
+        {"file": "C.dc.html", "title": "C \u00b7 the number leads", "x": 4680, "y": 0, "w": 1440, "h": 900, "page": "page-2"},
     ],
     "annotations": [
-        {"id": 'note-shipped', "x": 0, "y": -300, "w": 620, "page": 'page-1',
-         "text": "As shipped, at the moment in Chris's screenshot. Twelve fights in, Tessellate 0001 has just taken the life.\n\nThe head is RUNG 6  FLOOR 6 and every row under it is a rung number. Neither word is ever defined on screen: a floor is the checkpoint the mode will not let a loss push you below, and a rung is a roster slot. The rung is said a third time in the line over the bar. The rival is nowhere in the run, even though the run is a list of fights against people. The middle column is 1-0 or 0-1 on every row, because a duel is first to one, so all it ever says is that somebody died.\n\nThe MVP mark goes with them. In a first-to-one duel the winner is the only pilot with a kill, so the best gun in the room is always whoever just won and the mark is the bar above it said again. The rule that keeps it honest elsewhere: no mark unless three or more pilots scored."},
-        {"id": 'note-a', "x": 1560, "y": -440, "w": 1040, "page": 'page-1',
-         "text": "A, settled\n\nThe rung, the floor, the scoreline and the MVP mark are gone. Each row names the rival and says won or lost in that word's own color, and the list is the last five with a count of how much longer the evening was.\n\nWhat is still open is the streak. On the first pass it sat where PILOTS and K D A sit in the panel above: same place, same size, same ticked rule, heading columns it had nothing to do with. Three answers below, all with A's list under them. In two of the three the fights count moves to a footnote under the list, since it is about the list rather than a column of it."},
-        {"id": 'note-spine', "x": 1560, "y": -200, "w": 620, "page": 'page-1',
-         "text": "On the list\n\nThe panel already has a left rule. The streak lights the stretch of it that is the streak, and one phrase at the top says how long: 4 IN A ROW while it is running, BROKEN AFTER 3 once it is not. The number is drawn against the rows it counts, so it cannot be read as a heading for them.\n\nBoth states always draw, which is what the shipped head does not do. It hides the streak at zero, so the one number this is about goes missing exactly on the screen you read after losing.\n\nCost: a lit rule with a wash off it is how this interface marks a selected row. This is a lit rule without the wash, on the panel's edge rather than inside it, spanning several rows. Close enough to want checking on a real screen."},
-        {"id": 'note-stack', "x": 3120, "y": -180, "w": 620, "page": 'page-1',
-         "text": "As readings\n\nLabel over value with a thin rule between the stacks: the grammar the play page sets a zone's format in, and the band sets TIME and PLAYERS in. Instruments rather than headings, and the shape says so before the words do.\n\nIt is the only one of the three with room for BEST without it feeling bolted on, and the fights count belongs in the row rather than at the foot.\n\nCost: it is still a band above the list, so of the three it changes the least about what was wrong. And three readings is two more than the question asked for. BEST is my addition, not Chris's."},
-        {"id": 'note-headline', "x": 4680, "y": -180, "w": 620, "page": 'page-1',
-         "text": 'In the sentence\n\nThe streak leaves the panel. It joins the line over the bar, which is already the sentence about what just happened, and what just happened to a run is a streak event. The panel becomes what it says it is: five fights and a count.\n\nCleanest panel of the three, and the streak is read at the size the result is read at.\n\nCost: there is no sentence mid-fight. The band would have to carry the streak while you are flying, which is a second place to put it and a second thing to design. See the mid-fight board.'},
-        {"id": 'note-live', "x": 4120, "y": 1180, "w": 620, "page": 'page-1',
-         "text": 'Mid-fight, where the panel is asked for rather than raised at the whistle: no zoom, no head, no foot, and the board at its 340 point measure under the band.\n\nThis is where the sentence answer costs something. There is no result line here, so the streak would have to ride the band beside the clock or not show at all while you are flying. The other two draw the same either side of the whistle.'},
-        {"id": 'note-wire', "x": 4820, "y": 1180, "w": 620, "page": 'page-1',
-         "text": "What this costs to build\n\nThe leg the room files carries a rung, a result, a scoreline and a duration, and no name (modes::LadderLeg). The rival's call sign has to be captured when the leg is filed, since by the time the panel draws it the rival may have left the room. That is one field on the leg, the name reaching the mode through ModeCtx, and eleven bytes a leg on S2C_MATCH becoming eleven plus the name. Sending five legs rather than twelve nearly pays for it.\n\nThe scoreline drops off the wire with the column. The streak is already there; a best streak would be a max over it.\n\nThe word is not only in this panel. END.result says rung 6 cleared and back to rung 6 over the bar; the play page's format strip says scoring: rungs; the zone's hook line is every rung is a harder rival, a loss drops you two; and two Ladder::banner lines name a rung and a checkpoint."},
-        {"id": 'note-open', "x": 5520, "y": 1180, "w": 620, "page": 'page-1',
-         "text": 'The one question these boards do not answer\n\nThe floor is real whether or not it is named. A loss drops two rungs and cannot push you below the last checkpoint, so after twelve fights this run cannot fall below Tessellate however badly it goes. Take the word off the screen and the kindness is still there, unread.\n\nEither keep the mechanic and stop narrating it, which changes nothing on the server, or make the streak the mechanic: a win puts you against a harder rival, a loss puts you back at the start, and there is no floor to explain because there is not one. That is what "just track streaks" says most plainly, and it is a harsher game. The twelfth fight on these boards would have sent this run back to Kestrel.\n\nThe panel draws the same either way.'},
-        {"id": 'note-first', "x": -460, "y": 0, "w": 400, "page": 'page-2',
-         "text": 'The first two alternatives, kept for the record. Chris picked A over both. They still carry the MVP mark and the streak in the heading slot, since they are drawn as they were proposed.\n\nB put the whole run in the head as one mark per fight, filled for a win and hollow for a loss. C dropped the head entirely and stood the streak as a figure in a column beside the rows.'},
+        {"id": 'note-shipped', "x": 0, "y": -320, "w": 620, "page": 'page-1',
+         "text": "As shipped, at the moment in Chris's screenshot. Twelve fights in, Tessellate 0001 has just taken the life.\n\nThe head is RUNG 6  FLOOR 6 and every row under it is a rung number. Neither word is ever defined on screen: a floor is the checkpoint the mode will not let a loss push you below, and a rung is a roster slot. The rung is said a third time in the line over the bar. The rival is nowhere in the run, even though the run is a list of fights against people. The middle column is 1-0 or 0-1 on every row, because a duel is first to one, so all it ever says is that somebody died.\n\nThe MVP mark goes with them. In a first-to-one duel the winner is the only pilot with a kill, so the best gun in the room is always whoever just won and the mark is the bar above it said again. The rule that keeps it honest in a bigger room: no mark unless three or more pilots scored."},
+        {"id": 'note-settled', "x": 1560, "y": -400, "w": 1440, "page": 'page-1',
+         "text": "Settled\n\nThe board is three sections down one column, and the countdown and the invite key under them.\n\nPILOTS is unchanged. THE FIGHTS lose their head entirely: no rung, no floor, no scoreline, no count. Each row names the rival in the menu face because it is a name being read, and says won or lost in that word's own color, with how long the fight took. Five rows.\n\nTHE READINGS are label over value with a thin rule between the stacks, which is the grammar the play page sets a zone's format in and the band sets TIME and PLAYERS in. They sit under the fights, where nothing can read them as headings for the list and where a total lands. The fights count is one of them now, so the list needs no footnote either.\n\nBEST is a number the run does not keep yet. The wire carries a best rung; a best streak is a max over the streak and one more u32. It is also mine rather than Chris's, and the easiest of the three to drop."},
+        {"id": 'note-main', "x": 1560, "y": -160, "w": 620, "page": 'page-1',
+         "text": 'Its own section\n\nThe readings wear the same wash and left rule the two sections above them wear, and stand off the fights by the same gap the fights stand off the pilots. Three panels, evenly spaced, read top to bottom as who, what happened, and where the run stands.\n\nCost: a third panel for three numbers is the heaviest the board has been, and on a phone it is one more edge in a column that is already three deep.'},
+        {"id": 'note-joined', "x": 3120, "y": -160, "w": 620, "page": 'page-1',
+         "text": "The list's own foot\n\nThe same readings, inside the fights panel, under a ticked rule: a table carrying its own totals. Two panels rather than three, and the readings are visibly about the list they sit under rather than a section that happens to follow it.\n\nCost: it is not quite the separate section that was asked for, and the ticked rule is the drawing this interface uses under a head. Using it above a foot is a new job for it."},
+        {"id": 'note-broken', "x": 4680, "y": -160, "w": 620, "page": 'page-1',
+         "text": 'The run breaking\n\nOne fight later, which is the moment in the screenshot: Tessellate takes the life and the three ends. STREAK drops to 0 and dims, BEST holds at 3, FIGHTS goes to 12.\n\nWorth drawing because the shipped head does not survive this moment. It hides the streak at zero, so the one number this is all about goes missing exactly on the screen you read after losing. A reading that is always there can go to zero and still be read.'},
+        {"id": 'note-small', "x": 1560, "y": 2120, "w": 900, "page": 'page-1',
+         "text": 'The two small windows.\n\nMid-fight the board is asked for rather than raised at the whistle: no zoom, no result line, no foot, and 340 points wide. All three stacks fit that measure with room over, and the roster keeps its PTS and BTY columns there, which the ending swaps for points under the rivet.\n\nThe phone draws the same three sections at the same order, anchored to the foot so the invite key stays under a thumb.'},
+        {"id": 'note-wire', "x": 3120, "y": 1180, "w": 620, "page": 'page-1',
+         "text": "What this costs to build\n\nThe leg the room files carries a rung, a result, a scoreline and a duration, and no name (modes::LadderLeg). The rival's call sign has to be captured when the leg is filed, since by the time the panel draws it the rival may have left the room. That is one field on the leg, the name reaching the mode through ModeCtx, and eleven bytes a leg on S2C_MATCH becoming eleven plus the name. Sending five legs rather than twelve nearly pays for it.\n\nThe scoreline drops off the wire with the column. The streak is already there; a best streak would be a max over it.\n\nThe word is not only in this panel. END.result says rung 6 cleared and back to rung 6 over the bar; the play page's format strip says scoring: rungs; the zone's hook line is every rung is a harder rival, a loss drops you two; and two Ladder::banner lines name a rung and a checkpoint. The boards put the melee's own grammar over the bar instead: the rival's name and a verb."},
+        {"id": 'note-open', "x": 3820, "y": 1180, "w": 620, "page": 'page-1',
+         "text": 'The one question these boards do not answer\n\nThe floor is real whether or not it is named. A loss drops two rungs and cannot push you below the last checkpoint, so after twelve fights this run cannot fall below Tessellate however badly it goes. Take the word off the screen and the kindness is still there, unread.\n\nEither keep the mechanic and stop narrating it, which changes nothing on the server, or make the streak the mechanic: a win puts you against a harder rival, a loss puts you back at the start, and there is no floor to explain because there is not one. That is what "just track streaks" says most plainly, and it is a harsher game. The twelfth fight on these boards would have sent this run back to Kestrel.\n\nThe board draws the same either way.'},
+        {"id": 'note-passed', "x": -560, "y": 0, "w": 460, "page": 'page-2',
+         "text": "Passed over, kept for the record and drawn as they were proposed, MVP mark and all.\n\nThe readings above the list is the drawing this round replaced: same three stacks, sitting where the roster's column headings sit.\n\nThe streak on the list lit the panel's own left rule over the rows the streak was, with a phrase saying how long.\n\nB and C are the first round, on what should lead the panel at all: the run drawn as one mark per fight, and the streak as a figure in a column beside the rows."},
     ],
     "launch": {"view": "canvas", "page": "page-1"},
 }

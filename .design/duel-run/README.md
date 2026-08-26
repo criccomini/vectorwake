@@ -32,45 +32,54 @@ keeps it honest in a bigger room: no mark unless three or more pilots scored.
 
 ## Settled
 
-A. Each row names the rival and says won or lost in that word's own color, and
-the list is the last five with a count of how much longer the evening was. The
-name is set in the menu face because it is a name being read; the word and the
-clock beside it are mono because they are data, which is the rule in
-`docs/design/interface.md` and one the shipped panel breaks by putting the
-rival's slot number where the rival's name should be.
+The board is three sections down one column, with the countdown and the invite
+key under them.
 
-## Open: where the streak goes
+**The pilots** are unchanged.
 
-On the first pass the streak sat where `PILOTS` and `K D A` sit in the panel
-above: same place, same size, same ticked rule, heading columns it had nothing
-to do with. Three answers, all with A's list under them.
+**The fights** lose their head entirely: no rung, no floor, no scoreline, no
+count. Each row names the rival, says won or lost in that word's own color,
+and keeps how long the fight took. Five rows. The name is set in the menu face
+because it is a name being read; the word and the clock beside it are mono
+because they are data, which is the rule in `docs/design/interface.md` and one
+the shipped panel breaks by putting the rival's slot number where the rival's
+name should be.
 
-- **On the list.** The panel already has a left rule; the streak lights the
-  stretch of it that is the streak, over one phrase saying how long. `3 IN A
-  ROW` while it runs, `BROKEN AFTER 3` once it does not, so both states draw
-  and the number is against the rows it counts. Cost: a lit rule with a wash
-  off it is how this interface marks a selected row, and this is the same rule
-  without the wash. Worth checking on a real screen.
-- **As readings.** Label over value with a thin rule between the stacks, the
-  grammar the play page sets a zone's format in. Instruments, not headings,
-  and the shape says so before the words do. Cost: still a band above the
-  list, so of the three it changes the least about what was wrong.
-- **In the sentence.** The streak leaves the panel for the line over the bar,
-  which is already the sentence about what just happened, and the panel
-  becomes five fights and a count. Cost: there is no sentence mid-fight, so
-  the band would have to carry the streak while you are flying.
+**The readings** are label over value with a thin rule between the stacks, the
+grammar the play page sets a zone's format in and the band sets TIME and
+PLAYERS in. They sit under the fights. Above them they sat where the roster's
+column headings sit, heading columns they had nothing to do with; below, they
+land where a total lands and nothing can read them as headings. The fights
+count is one of them now, so the list needs no footnote either.
 
-`Main` leads with the first, and the phone and mid-fight boards draw it.
+`BEST` is a number the run does not keep yet: the wire carries a best rung, and
+a best streak is a max over the streak. It is also my addition rather than
+Chris's, and the easiest of the three to drop.
+
+One question the ask leaves open, and the two boards that answer it: `Main`
+gives the readings their own section, wearing the same wash and left rule the
+two above them wear; `Joined` puts them inside the fights panel under a ticked
+rule, the way a table carries its own totals.
+
+## The boards
 
 Every board is one evening at two moments a fight apart: eleven fights in the
 run is three deep and climbing, and the twelfth is the screenshot, where
-Tessellate takes the life and the three ends. `Broken` is the leading answer at
-that second moment; the mid-fight board is the fight between them. The names
-are the ones a real evening deals, since the rival order is
-`pilots::CALIBRATED` sorted by its ordering prior.
+Tessellate takes the life and the three ends. `Broken` is the settled shape at
+that second moment, which is worth drawing because the shipped head does not
+survive it: the streak hides at zero, so the one number this is about goes
+missing exactly on the screen you read after losing. The names are the ones a
+real evening deals, since the rival order is `pilots::CALIBRATED` sorted by its
+ordering prior.
 
-The two alternatives A was picked over keep the second page, drawn as they were
-proposed, MVP mark and heading-slot streak included.
+The mid-fight board is the fight between the two moments, at the 340 point
+measure the board takes when it is asked for rather than raised at the whistle.
+The phone draws the same three sections anchored to the foot.
+
+The second page keeps what was passed over, drawn as proposed: the readings
+above the list, the streak lighting the panel's own left rule over the rows it
+counted, and the first round's two answers to what should lead the panel at
+all.
 
 ## What it costs to build
 
@@ -97,8 +106,8 @@ at the last checkpoint. Take the word off the screen and the kindness is still
 there, unread. Either keep the mechanic and stop narrating it, which changes
 nothing on the server, or make the streak the mechanic, which is what "just
 track streaks" says most plainly and is a harsher game: the twelfth fight on
-these boards would have sent that run back to Kestrel. The panel draws the
-same either way, which is why it is a question rather than a fourth answer.
+these boards would have sent that run back to Kestrel. The board draws the
+same either way.
 
 ## What is here
 
