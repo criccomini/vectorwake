@@ -695,6 +695,24 @@ check("but the clock does not", said("0:23") ~= nil)
 check("and the topbar says what it is counting to",
       said("next match in") ~= nil)
 
+-- --- and the pads ask the same question ------------------------------------
+--
+-- The arena stops drawing the touch pads while the ending is up: the whistle
+-- benched every hull, so the pads have nothing to drive, and the board's foot
+-- keys land exactly where the gun pad draws. What the arena asks is
+-- M.match_ended, so the predicate has to agree with the board it stands down
+-- for: up at an intermission, down mid-match, down in a room with no clock,
+-- and down while a Ladder room is still looking for a rival, since that
+-- player is not benched.
+
+check("the arena can ask whether the ending is up",
+      ui.match_ended({playing = false, left = 23, score = {}}) == true
+      and ui.match_ended({playing = true, left = 96, score = {}}) == false
+      and ui.match_ended(nil) == false)
+check("and a Ladder room waiting for a rival keeps the pads",
+      ui.match_ended({playing = false, left = 180,
+                      ladder = {waiting = true}}) == false)
+
 -- --- the whole ending, against the text budget -----------------------------
 --
 -- The worst frame this interface draws is the one this file is about: a full

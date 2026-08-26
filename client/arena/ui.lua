@@ -3589,6 +3589,10 @@ local function match_ended(m)
     if m.ladder == nil then return true end
     return m.artifact ~= nil and not ladder_waiting(m)
 end
+-- The arena asks the same question, to keep the touch pads off the ending:
+-- the whistle benched every hull, so the pads have nothing to drive, and the
+-- board's foot keys land exactly where they draw.
+M.match_ended = match_ended
 
 -- The clock and the score, dead center at the top, which are the two facts a
 -- three minute match is about.
