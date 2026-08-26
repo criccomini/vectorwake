@@ -457,9 +457,14 @@ for _, who in ipairs({"you", "Kestrel", "Plinth", "Vesper"}) do
     check(who .. " is on the card", said(who) ~= nil)
 end
 
--- One mvp, and it is the pilot with the most kills rather than the first row
--- or the one on your side. Kestrel has five against everybody else's fewer.
+-- One mvp, and it is the pilot the winning side got the most out of rather
+-- than the first row or the one on your side. Caisson took it, and Kestrel
+-- comes out of it four ahead where Vesper is one.
 check("one pilot is marked mvp", counted("mvp") == 1, tostring(counted("mvp")))
+local wore = abutting("mvp")
+check("and it is the winner's best net", wore ~= nil
+      and string.lower(wore.s) == "kestrel",
+      wore and wore.s or "nobody")
 
 -- What the match paid is not said here at all. It was, as BANKED and a rivet
 -- in the corner, and it went where the wallet already is: an ending is about
@@ -467,13 +472,63 @@ check("one pilot is marked mvp", counted("mvp") == 1, tostring(counted("mvp")))
 check("the payout is not on the ending", said("banked") == nil,
       table.concat(words(), " | "))
 
--- Nobody is the best gun in a match where nothing was shot down.
+-- Nobody wears it in a match where nothing was shot down.
 room.kills = {[0] = 0, 0, 0, 0}
 frame({match = {playing = false, left = 23, artifact = 1, score = {[0] = 0, [1] = 0}},
        side_names = NAMES, side = 0})
 check("a scoreless match has no mvp", counted("mvp") == 0,
       tostring(counted("mvp")))
+
+-- The mark belongs to the side that took it, so a pilot on the side that did
+-- not cannot wear it however the match went for them personally. Here the
+-- reader has the best of both columns in the room, seven for one, and Pylon
+-- still lost by a kill.
+room.kills = {[0] = 7, 5, 1, 4}
+room.deaths = {[0] = 1, 2, 6, 3}
+frame({match = {playing = false, left = 23, artifact = 1,
+                score = {[0] = 8, [1] = 9}},
+       side_names = NAMES, side = 0})
+wore = abutting("mvp")
+check("the losing side cannot hold the mvp", counted("mvp") == 1
+      and wore ~= nil and string.lower(wore.s) == "kestrel",
+      wore and wore.s or "nobody")
+
+-- And nobody holds it in a draw, because there is no side to hand it out.
+room.kills = {[0] = 3, 3, 1, 1}
+room.deaths = {[0] = 1, 0, 5, 4}
+frame({match = {playing = false, left = 23, artifact = 1,
+                score = {[0] = 4, [1] = 4}},
+       side_names = NAMES, side = 0})
+check("a drawn match has no mvp", counted("mvp") == 0,
+      tostring(counted("mvp")))
+
+-- Inside the winning side it is the net and not the column: Kestrel lands
+-- seven and gives back seven, Vesper four for one, and the mark follows what
+-- the match was worth rather than the bigger number in the kills column.
+room.kills = {[0] = 2, 7, 1, 4}
+room.deaths = {[0] = 3, 7, 4, 1}
+frame({match = {playing = false, left = 23, artifact = 1,
+                score = {[0] = 3, [1] = 11}},
+       side_names = NAMES, side = 0})
+wore = abutting("mvp")
+check("net beats the kills column", counted("mvp") == 1
+      and wore ~= nil and string.lower(wore.s) == "vesper",
+      wore and wore.s or "nobody")
+
+-- Level on net, the one who was in more of it. Both come out two up; Kestrel
+-- did it over eight fights and Vesper over two.
+room.kills = {[0] = 1, 5, 1, 2}
+room.deaths = {[0] = 2, 3, 3, 0}
+frame({match = {playing = false, left = 23, artifact = 1,
+                score = {[0] = 2, [1] = 7}},
+       side_names = NAMES, side = 0})
+wore = abutting("mvp")
+check("and a tie on net goes to the busier gun", counted("mvp") == 1
+      and wore ~= nil and string.lower(wore.s) == "kestrel",
+      wore and wore.s or "nobody")
+
 room.kills = {[0] = 2, 5, 1, 3}
+room.deaths = {[0] = 4, 1, 6, 2}
 
 -- Names hanging off ships come down with it, for the reason the menu takes
 -- them down: text is drawn over every mesh, so nothing the card lays down can

@@ -3086,8 +3086,10 @@ countdown and one key.
 
 The list is the board's list, re-ordered once: the side that took it runs
 first, whether or not it is the reader's, so the line, the bar and the rows
-all read the same way down the page. Inside a side it is the best gun first,
-and that pilot wears the MVP mark wherever they flew.
+all read the same way down the page. Inside a side the pilot who did most for
+the result comes first, and on the winning side that pilot wears the MVP mark
+([decision 76](#76-the-mvp-is-the-winners-best-net) revises what the mark
+measures and who can hold it).
 
 One layout at every window size. The measure and the type change, and an
 upright phone hugs the foot of the window with the whole block so the key
@@ -3549,3 +3551,47 @@ stop of its own at home, so the walk is never the only route.
 needs the head, at which point the answer is a shorter head rather than no
 head: the line is a 26 point square at one end and a pill at the other, and
 there is air around both.
+
+## 76. The MVP is the winner's best net
+
+**Status:** accepted
+
+**Decision:** the mark on the ending's roster goes to the pilot with the
+highest kills less deaths on the side that took the match. A pilot on the side
+that lost cannot hold it, however the match went for them personally, and a
+draw hands out nothing because there is no side to hand it out. Level on net,
+it goes to the one with more kills. The two rules already on it stand: only at
+the whistle, and only once three or more pilots have scored, so a pilot who
+never shot anything down is not in the running.
+
+The ending's list sorts each side by the same number, so whoever wears the
+mark is the top row of their side and the page reads in one direction.
+
+**Why:** it was the most kills in the room, ties to the fewest deaths, which
+is a different question from the one the mark is asking. A side's score is the
+kills its pilots landed and nothing else, so a death is a kill handed to the
+other side: the pilot who took eight and gave back seven moved the match by
+one, and the pilot who took four and died twice moved it by two. The column
+was reporting how much of the fight somebody was seen in. The mark now reports
+what came of it.
+
+Restricting it to the winning side is the other half. The mark was landing on
+the losing side often enough to be its own reading, since the pilot carrying a
+side that still lost tends to have the busiest kill column in the room. That
+mark says the match was won by the wrong team, which is a thing a scoreboard
+should not be telling anybody: the match is the result, and the prize on it is
+the winner's to hand out.
+
+**Cost:** the reader's own row can now hold the best numbers on the board and
+no mark, which will read as a snub the first time it happens to somebody. It
+is the correct snub. Their side lost.
+
+Kills less deaths also goes negative, and most of a losing roster sits there,
+which is fine while the mark is winner-only but rules out ever showing the
+number itself in a column without deciding what a negative one looks like.
+
+**Reconsider if:** a zone turns up whose score is not the sum of its pilots'
+kills, at which point net is the wrong arithmetic rather than the right one
+and the mark has to ask that mode what a pilot contributed. Or if assists get
+priced into the score, since a pilot who does four fifths of the work on every
+kill in the match would still be nowhere on this measure.
