@@ -260,6 +260,70 @@ picked = ('<div class="lbl" style="margin-top:14px">add friend</div>'
           + dot_row("Sable 09"))
 write("Main.dc.html", board(picked))
 
+# ---- The invite banner: a door out of the game's own roster ----------------
+#
+# Chris's thought: a call to action at the foot for inviting somebody who is
+# not on the game at all. The mechanics already exist: the ending's INVITE
+# FRIEND key hands a URL to the phone's share sheet and copies it on a
+# desktop, so the banner reuses that and the words name the outcome rather
+# than the transport. Four wordings on the sheet board; the page board
+# carries the recommended one pinned above the rail.
+
+def banner(line, keylabel, wide=False, note=None):
+    n = (f'<div class="note" style="font-size:10px;margin-top:6px">{note}'
+         '</div>' if note else "")
+    if wide:
+        return ('<div style="padding-top:12px">'
+                '<div class="hrule" style="margin-bottom:12px"></div>'
+                f'<div class="key gokey" style="height:30px;width:100%">'
+                f'{keylabel}</div>' + n + '</div>')
+    return ('<div style="padding-top:12px">'
+            '<div class="hrule" style="margin-bottom:11px"></div>'
+            '<div class="row" style="gap:12px">'
+            f'<span style="font-size:12.5px;color:rgba(223,233,245,.8);'
+            f'flex:1;min-width:0">{line}</span>'
+            + key(keylabel, go=True) + '</div>' + n + '</div>')
+
+invited = ('<div class="lbl" style="margin-top:14px">add friend</div>'
+           + FIELD
+           + sect("received", 1, top=20)
+           + cur_row("Gantry 4", "Added you 2h ago",
+                     key("accept", go=True) + key("ignore"))
+           + sect("friends")
+           + dot_row("Halcyon 2", zone="Team Battle", lit=True)
+           + dot_row("Vireo 9")
+           + dot_row("Sable 09")
+           + '<div style="position:absolute;left:20px;right:20px;'
+           'bottom:14px">'
+           + banner("Get somebody you know into the game",
+                    "invite a friend") + '</div>')
+write("Invite.dc.html", board(invited))
+
+def caption(label, text):
+    return ('<div style="margin:22px 0 8px">'
+            f'<span class="lbl">{label}</span>'
+            f'<div class="note" style="font-size:10px;margin-top:3px;'
+            f'line-height:1.5">{text}</div></div>')
+
+words = ('<div class="lbl" style="margin-top:14px">the same banner, four'
+         ' ways</div>'
+         + caption("a", "Chris's wording. On a phone; a desktop would say"
+                   " send. Promises a transport the share sheet decides.")
+         + banner("Text a friend an invite", "invite")
+         + caption("b", "The key alone, full width, breathing like the"
+                   " ending's key. Quietest; the word friend carries both"
+                   " meanings.")
+         + banner("", "invite a friend", wide=True)
+         + caption("c", "An outcome line and the key. Names what the press"
+                   " is for without naming the channel.")
+         + banner("Get somebody you know into the game", "invite a friend")
+         + caption("d", "The mechanics-forward line. Needs the invite link"
+                   " to carry your account so signup lands with the edge"
+                   " already made; a real server feature, not just words.")
+         + banner("They sign up through your link and land with you"
+                  " already added", "invite a friend"))
+write("InviteWords.dc.html", board(words))
+
 # ---- A: deck watch. The page reorders around now ---------------------------
 #
 # A friend in a game is the fact this page exists for, so they get the play

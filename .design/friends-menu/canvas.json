@@ -23,6 +23,24 @@
       "h": 844
     },
     {
+      "file": "Invite.dc.html",
+      "title": "With the invite banner",
+      "page": "page-1",
+      "x": 980,
+      "y": 0,
+      "w": 390,
+      "h": 844
+    },
+    {
+      "file": "InviteWords.dc.html",
+      "title": "Banner wordings",
+      "page": "page-1",
+      "x": 1470,
+      "y": 0,
+      "w": 390,
+      "h": 844
+    },
+    {
       "file": "DeckWatch.dc.html",
       "title": "A - Deck watch",
       "page": "page-2",
@@ -84,6 +102,14 @@
       "y": -260,
       "w": 390,
       "text": "The pick, per Chris. The add box keeps its shipped style under ADD FRIEND. In this game, sent, the friends count and the ledger row are gone; incoming adds sit under RECEIVED. Friends are one head: a solid green dot and the zone (Team Battle, spelled as the catalog spells it) for a friend in a game, a hollow grey dot and nothing else for one who is off. No line is set all lower case, which is a design guideline now. The row press still raises the card, so join and unfriend live there for every input."
+    },
+    {
+      "id": "note-invite",
+      "page": "page-1",
+      "x": 980,
+      "y": -260,
+      "w": 390,
+      "text": "The invite banner, pinned above the rail: a door out of the game's own roster, for somebody who is not on the game at all. It reuses the ending key's share mechanics (the phone's share sheet, a copied link on a desktop, the key flipping to LINK COPIED), so the words name the outcome rather than the transport. Four wordings on the sheet beside this; the page wears C."
     },
     {
       "id": "note-brief",
