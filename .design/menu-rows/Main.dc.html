@@ -1,0 +1,67 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600&amp;family=Noto+Sans+Mono:wght@400;500;700&amp;display=swap">
+  <style>
+:root{
+  --ink:#dfe9f5; --dim:#6c7a90; --friend:#4fd6ff; --enemy:#ffa552;
+  --gold:#ffd166;
+  --mono:"DejaVu Sans Mono","Noto Sans Mono",ui-monospace,monospace;
+  --menu:"Chakra Petch","Segoe UI",system-ui,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:#05070c;color:var(--ink);font-family:var(--menu)}
+a{color:var(--friend)}a:hover{color:#8ee6ff}
+.lbl{font-family:var(--mono);font-size:9px;text-transform:uppercase;
+  letter-spacing:.13em;color:var(--dim)}
+.row{display:flex;align-items:center}
+.col{display:flex;flex-direction:column}
+.key{display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  border:1px solid rgba(63,88,120,.75);background:rgba(10,15,24,.6);
+  font-family:var(--mono);text-transform:uppercase;letter-spacing:.06em;
+  color:#9fb6d4}
+.name{font-size:18px;color:var(--ink)}
+.note{font-family:var(--mono);font-size:10px;color:var(--dim)}
+.mono{font-family:var(--mono)}
+</style>
+</helmet>
+<div style="position:relative;width:880px;height:470px;background:#05070c;overflow:hidden"><div style="position:absolute;left:96px;top:96px"><div style="position:relative;width:390px;background:rgba(3,5,10,.92);border:1px solid rgba(63,88,120,.6);padding:10px 14px"><div style="margin:0 -14px;padding:0 36px;"><div class="row" style="height:52px"><span style="font-size:17px;color:rgba(223,233,245,0.85)">A row at rest</span><div style="flex:1"></div><span class="mono" style="font-size:11.5px;color:rgba(223,233,245,.8)">value</span></div></div><div style="margin:0 -14px;padding:0 36px;background:linear-gradient(90deg,rgba(79,214,255,0.252),rgba(79,214,255,0.144) 130px,rgba(79,214,255,0.144));"><div class="row" style="height:52px"><span style="font-size:17px;color:rgba(223,233,245,1.0)">The row under the cursor</span><div style="flex:1"></div><span class="mono" style="font-size:11.5px;color:#dfe9f5">value</span></div></div><div style="margin:0 -14px;padding:0 36px;background:linear-gradient(90deg,rgba(79,214,255,0.098),rgba(79,214,255,0.056) 130px,rgba(79,214,255,0.056));"><div class="row" style="height:52px"><span style="font-size:17px;color:#4fd6ff">The row you are standing in</span><div style="flex:1"></div><span class="mono" style="font-size:11.5px;color:rgba(223,233,245,.95)">value</span></div></div></div></div>
+<svg width="880" height="470" viewBox="0 0 880 470"
+     style="position:absolute;inset:0;pointer-events:none"
+     font-family="DejaVu Sans Mono,monospace" font-size="10">
+  <g stroke="#6c7a90" stroke-width="1" fill="none" opacity=".9">
+    <path d="M97 92 V78 M133 92 V78 M97 84 H133"/>
+    <path d="M449 92 V78 M485 92 V78 M449 84 H485"/>
+    <path d="M97 280 V296 M485 280 V296 M97 288 H485"/>
+    <path d="M227 268 V278"/>
+  </g>
+  <g fill="#9fb6d4">
+    <text x="115" y="74" text-anchor="middle">36</text>
+    <text x="467" y="74" text-anchor="middle">36</text>
+    <text x="291" y="312" text-anchor="middle">the field and the hit box: the drawer span, edge to edge</text>
+    <text x="227" y="332" text-anchor="middle">skirt: +0.6a against the left rule, gone by 130</text>
+  </g>
+  <g fill="#6c7a90">
+    <text x="530" y="128">rest: no field, ink 0.85</text>
+    <text x="530" y="144">unpressable rows dim to 0.55, never lit</text>
+    <text x="530" y="180">cursor: wash(FRIEND, 0.18), ink to 1.0</text>
+    <text x="530" y="196">hover and the arrow cursor are the same fact</text>
+    <text x="530" y="232">here: wash(FRIEND, 0.07), label in FRIEND</text>
+    <text x="530" y="248">the game you fly, your hull, the loaded build;</text>
+    <text x="530" y="264">replaces the wedge, and the cursor outranks it</text>
+  </g>
+  <g stroke="#3f5878" stroke-width="1" opacity=".8">
+    <path d="M524 124 L490 124"/>
+    <path d="M524 176 L490 176"/>
+    <path d="M524 228 L490 228"/>
+  </g>
+</svg><div class="lbl" style="position:absolute;left:96px;top:36px;font-size:10px;color:#9fb6d4">one row grammar: the field</div><div class="note" style="position:absolute;left:96px;top:54px">wash() at the drawer span, two weights, one text column</div></div></x-dc>
+
+</body>
+</html>
