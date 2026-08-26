@@ -161,9 +161,23 @@ should read them, not know them.
 
 **I, spec stacks** (`SpecRows.dc.html`). Each fact is a label over a
 value with vrules between, the grammar the landing's room band wore for
-TIME and PLAYERS. The sentence stays under the name. The most house of
-the four and the cheapest. Cost: four stacks is the width; a fifth fact
-starts to squeeze.
+TIME and PLAYERS. The most house of the four and the cheapest.
+
+Iterated with Chris and now the leading candidate: three stacks, TEAMS
+rather than SIDES, the grounds stack cut. With the numbers in the
+strip, the sentence under the name stops restating them and carries the
+hook the strip cannot:
+
+- Duel: "every rung is a harder rival; a loss drops you two"
+- Team Battle: "the longer your run, the bigger the bounty on you"
+
+Both are true to the catalog: rungs are measured rivals in rating
+order, a loss drops two without crossing the last checkpoint, and a
+bounty is one plus one for every kill on the run. Alternates that lost
+the cut, kept in case either line reads better in place: for Duel,
+"one life; the checkpoint keeps what you have climbed" and "climb until
+somebody stops you"; for Team Battle, "kills pay; a pilot on a run pays
+more" and "melee with a running price on every pilot".
 
 **J, the table** (`FormatTable.dc.html`). One labeled header, every
 game measured in the same columns, so reading the list is comparing

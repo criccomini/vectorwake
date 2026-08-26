@@ -648,6 +648,13 @@ write("Surf.dc.html", surf_board())
 # Each fact is a small stack, label over value, vrules between, the way
 # the landing's room band wore TIME and PLAYERS. The sentence stays under
 # the name; the stacks answer the questions the sentence glosses over.
+#
+# Iterated with Chris: three stacks, TEAMS rather than SIDES, the grounds
+# stack cut. With the numbers in the strip, the sentence stops restating
+# them and carries the one thing the strip cannot: what makes the game
+# worth pressing. Both lines are true to the catalog: rungs are measured
+# rivals in rating order and a loss drops two, and a bounty is one plus
+# one for every kill on the run.
 def spec(label, value):
     return ('<div class="col" style="align-items:flex-start;min-width:0">'
             f'<span class="lbl">{label}</span>'
@@ -664,14 +671,17 @@ def spec_strip(cells):
     return ('<div class="row" style="gap:14px;margin-top:11px;'
             'align-items:stretch">' + "".join(out) + '</div>')
 
-DUEL_SPECS = [("sides", "1 v 1"), ("time", "one life"),
-              ("scoring", "rungs"), ("ground", "drydock")]
-TB_SPECS = [("sides", "4 v 4"), ("time", "3:00"),
-            ("scoring", "kills"), ("grounds", "6 rotate")]
+DUEL_SPECS = [("teams", "1 v 1"), ("time", "one life"),
+              ("scoring", "rungs")]
+TB_SPECS = [("teams", "4 v 4"), ("time", "3:00"),
+            ("scoring", "kills")]
+
+DUEL_LINE = "every rung is a harder rival; a loss drops you two"
+TB_LINE = "the longer your run, the bigger the bounty on you"
 
 specs_page = ('<div style="margin-top:6px">'
-              + bare_row("Duel", DUEL_NOTE, extra=spec_strip(DUEL_SPECS))
-              + bare_row("Team Battle", TB_NOTE, lit=True,
+              + bare_row("Duel", DUEL_LINE, extra=spec_strip(DUEL_SPECS))
+              + bare_row("Team Battle", TB_LINE, lit=True,
                          extra=spec_strip(TB_SPECS))
               + '</div>')
 write("SpecRows.dc.html", board(specs_page))
