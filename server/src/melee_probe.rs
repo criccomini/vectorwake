@@ -25,6 +25,15 @@
 //!                    it, so the fan can be taken away or opened to what the
 //!                    zone file asks for
 //!   VW_MELEE_PERSON  one personality for everybody, to tell a pilot from its kit
+//!   VW_MELEE_SWEEP   hold hull, personality and kit still and spread the skill
+//!                    dial evenly across the seats, which is the only way to
+//!                    read what the dial itself is worth: the roster varies
+//!                    hull, strategy and competence at once, so a column off it
+//!                    is three effects added together
+//!   VW_MELEE_HOLD    pin one half of the dial while the sweep moves the other,
+//!                    as `aim=0.6` or `judgment=0.6`. Skill is two parameters
+//!                    and they pull opposite ways, so a sweep of both together
+//!                    reports their sum and hides which one is doing what
 
 use crate::{ai, calibrate::spec_triggers, config, nav, pilots, shopper, sim};
 
@@ -154,7 +163,12 @@ fn play(
         // Dealt alternately rather than in blocks, so a shuffle that happens
         // to come out ordered still splits the strength across both sides.
         let team = (i % 2) as u8;
-        let id = world.spawn_on_map(spec.hull, team, (i / 2) as u32, 0);
+        let hull = if sweep() {
+            pilots::individual(0).hull
+        } else {
+            spec.hull
+        };
+        let id = world.spawn_on_map(hull, team, (i / 2) as u32, 0);
         if id < 0 {
             println!("melee: the map has no start for seat {i}");
             std::process::exit(1);
@@ -176,7 +190,22 @@ fn play(
         .zip(&playing)
         .enumerate()
         .map(|(i, (&s, &pilot))| {
-            let mut b = ai::Bot::new(s, &pilots::individual(pilot));
+            let spec = pilots::individual(pilot);
+            let config = pilots::BrainConfig {
+                competence: if sweep() {
+                    // The roster row still owns its place in the sweep, so a
+                    // pilot's skill does not follow the shuffle around.
+                    pilots::Competence::uniform(swept_skill(pilot, roster.len()))
+                } else {
+                    spec.competence
+                },
+                behavior: person_of(pilot),
+                configuration_seed: spec.configuration_seed,
+            };
+            let mut b = ai::Bot::new(s, config);
+            if let Some((knob, at)) = held() {
+                b.tune(knob, at);
+            }
             b.reseed(salt.wrapping_mul(2246822519) ^ (i as u32).wrapping_mul(2654435761));
             b
         })
@@ -186,7 +215,14 @@ fn play(
     // spec, so ask each hull's own table which trigger owns that spec.
     let trig_of: Vec<std::collections::HashMap<u8, usize>> = playing
         .iter()
-        .map(|&pilot| spec_triggers(&world.cfg, pilots::individual(pilot).hull))
+        .map(|&pilot| {
+            let hull = if sweep() {
+                pilots::individual(0).hull
+            } else {
+                pilots::individual(pilot).hull
+            };
+            spec_triggers(&world.cfg, hull)
+        })
         .collect();
 
     // A ship number reaches the roster row that is flying it.
@@ -352,6 +388,41 @@ fn forced_person() -> Option<pilots::Strategy> {
     }
 }
 
+/// The seats, when the run is sweeping the dial: one hull, one personality,
+/// and competence spread evenly from nearly blind to nearly perfect. `None`
+/// leaves every pilot its own.
+///
+/// A roster column cannot answer "what is skill worth" on its own, because the
+/// eight authored pilots differ in hull and strategy as well as competence and
+/// the three arrive added together. This holds the other two still.
+fn sweep() -> bool {
+    std::env::var("VW_MELEE_SWEEP").is_ok()
+}
+
+/// What a swept seat flies. The hull is the roster's first and the personality
+/// is a duelist unless `VW_MELEE_PERSON` names another, so the only thing that
+/// moves between seats is the dial.
+fn swept_skill(seat: usize, seats: usize) -> f32 {
+    let last = seats.saturating_sub(1).max(1) as f32;
+    0.05 + (seat as f32 / last) * 0.90
+}
+
+/// Which half of the dial the sweep is holding still, and where.
+fn held() -> Option<(ai::Knob, f32)> {
+    let spec = std::env::var("VW_MELEE_HOLD").ok()?;
+    let (name, at) = spec.split_once('=')?;
+    let at: f32 = at.parse().ok()?;
+    let knob = match name.trim() {
+        "aim" => ai::Knob::AimErr,
+        "judgment" | "permission" => ai::Knob::Permission,
+        other => {
+            println!("melee: {other:?} is not a half of the dial: aim, judgment");
+            std::process::exit(1);
+        }
+    };
+    Some((knob, at))
+}
+
 /// Every strategy the game ships, in roster order.
 const STRATEGIES: [pilots::Strategy; 8] = [
     pilots::Strategy::Duelist,
@@ -428,7 +499,11 @@ pub fn run() {
             let person = person_of(i);
             let kit = shopper::build(&shopper::wants(&person), &ceiling);
             Seat {
-                skill: (spec.competence.aim + spec.competence.judgment) / 2.0,
+                skill: if sweep() {
+                    swept_skill(i, ROSTER)
+                } else {
+                    (spec.competence.aim + spec.competence.judgment) / 2.0
+                },
                 name: spec.callsign,
                 strategy: person.strategy,
                 multi: kit[SPRAY],
