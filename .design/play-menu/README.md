@@ -15,6 +15,14 @@ on the canvas's Format page, where it opens. The sticky notes over each
 board carry its case and its cost. Boards are built by `build.py` and
 seeded with the design skill's helper:
 
+**Version I landed.** The strip travels on the directory reply beside
+label and description, derived by the catalog from what each zone
+declares (`ZoneDef::format`), and `ui.lua` draws it under the sentence in
+the room band's label-over-value grammar. The two descriptions in the
+catalog are the hook lines below. The reasoning is [decision
+71](../../docs/architecture/decisions.md); the boards stay as the drawing
+the layout was settled against.
+
     python3 build.py
     node seed-canvas.mjs --template payload.template.html \
       --out play-menu.html --title "Play Menu" \

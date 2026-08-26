@@ -3219,3 +3219,43 @@ alone.
 guests with stakes still losing pilots or fresh guests complaining of the
 band; or a second place grows that shows the career, at which point the
 page and `/pilots` need one shape.
+
+## 71. A game row states its format, and the catalog states the words
+
+**Status:** accepted
+
+**Decision:** every row of the games list carries a format strip under its
+sentence: three label-over-value stacks reading TEAMS, TIME and SCORING,
+with a thin rule between them, in the room band's own grammar. Team Battle
+reads 4 v 4, 3:00, kills; Duel reads 1 v 1, one life, rungs. The words
+travel on the directory reply beside the label and the description
+(`BrowseZone.teams/time/scoring`), derived by the catalog from what each
+zone already declares (`ZoneDef::format`): a mode the derivation has no
+words for, or a fact a zone never stated, sends an empty string and the
+row closes that stack up rather than inventing a number. A directory from
+before the strip sends none and the row is the name and the sentence, as
+decision 63 left it.
+
+With the numbers in the strip, the two shipped descriptions stopped
+restating them and carry the hook the strip cannot: "every rung is a
+harder rival; a loss drops you two" and "the longer your run, the bigger
+the bounty on you". Catalog v28.
+
+**Why:** the play page was two names and two sentences that never changed,
+and Chris's brief, after two rounds of alternatives in
+`.design/play-menu`, was a structured description of each zone's format.
+The facts live in the zone files, so the client reading them off the wire
+means a tuning edit that moves the clock or the side cap moves the strip
+with it, and a new zone gets a strip by declaring what it already had to
+declare. Liveness ideas lost to the room itself: the stands beside the
+drawer already show a game in flight.
+
+**Cost:** three more short strings per zone per browse reply, and a games
+list whose rows are a line taller. The derivation is per mode, so a new
+mode wants a `format` arm or its rows go without.
+
+**Reconsider if:** a zone wants words the derivation cannot say (a flag
+mode scoring something that is not kills), at which point the fields
+belong in zone.toml as overrides rather than in a longer match arm; or the
+fleet grows enough games that the rows want the aligned table that was
+version J of the mocks.

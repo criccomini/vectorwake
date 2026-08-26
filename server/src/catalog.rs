@@ -155,6 +155,34 @@ impl ZoneDef {
     pub fn max_bots_per_team(&self) -> u16 {
         self.max_bots_per_team.unwrap_or(255)
     }
+
+    /// The format strip a games-list row draws: teams, time, and scoring, as
+    /// the words a player reads under TEAMS, TIME and SCORING. Derived from
+    /// what the zone already declares, because the catalog is where the facts
+    /// live and a client should read them rather than know them. A mode this
+    /// has no words for sends empty strings and the row draws no strip.
+    pub fn format(&self) -> (String, String, String) {
+        match self.mode.as_str() {
+            // One life against one measured rival; a win is a rung. The
+            // shape is validated, so the words never have to be derived.
+            "ladder" => ("1 v 1".into(), "one life".into(), "rungs".into()),
+            "melee" => {
+                // Only what the zone actually states. A melee without a
+                // per-side cap or a clock has no honest number to print,
+                // and an empty stack beats an invented one.
+                let teams = match (self.max_humans_per_team, self.teams.len()) {
+                    (Some(h), 2) => format!("{h} v {h}"),
+                    _ => String::new(),
+                };
+                let time = match self.arena.match_seconds {
+                    Some(s) if s > 0 => format!("{}:{:02}", s / 60, s % 60),
+                    _ => String::new(),
+                };
+                (teams, time, "kills".into())
+            }
+            _ => (String::new(), String::new(), String::new()),
+        }
+    }
 }
 
 #[derive(Deserialize, Clone, Debug, Default)]
@@ -888,6 +916,38 @@ mod tests {
         // And a zone that sets none reads as its own key, which is what every
         // zone did before labels existed.
         assert_eq!(ZoneDef::default().label("chaos"), "chaos");
+
+        // The format strip the play page draws, off the same files: the
+        // words are derived from what each zone states, so a tuning edit
+        // that moves the clock or the side cap moves the strip with it.
+        assert_eq!(
+            read("melee").format(),
+            ("4 v 4".into(), "3:00".into(), "kills".into())
+        );
+        assert_eq!(
+            read("ladder").format(),
+            ("1 v 1".into(), "one life".into(), "rungs".into())
+        );
+    }
+
+    #[test]
+    fn a_format_is_stated_facts_or_nothing() {
+        // A mode the strip has no words for sends none, which is what the
+        // whole fleet did before the strip existed.
+        assert_eq!(
+            ZoneDef::default().format(),
+            (String::new(), String::new(), String::new())
+        );
+        // A melee that never stated a side cap or a clock prints neither:
+        // an empty stack beats an invented number.
+        let bare = ZoneDef {
+            mode: "melee".into(),
+            ..Default::default()
+        };
+        assert_eq!(
+            bare.format(),
+            (String::new(), String::new(), "kills".into())
+        );
     }
 
     #[test]
