@@ -6,7 +6,9 @@
 > the far end of the top line stays and opens the same page, because it is the
 > one thing on screen saying who you are signed in as; it used to be the only
 > way in, and a name in a pill does not look like a button. The stop stays
-> home, so the short row a match gets is unchanged. See
+> home, so the short row a match gets is unchanged. The name is a label with a
+> press on it rather than a stop the arrows walk, so it never lights for the
+> page: the rail stop is the one mark saying where you are. See
 > [decision 69](../architecture/decisions.md).
 
 > **A game row is one press, and leaving is a button on it.** Pressing a game
@@ -188,14 +190,18 @@ vectorwake
               had, because a name in a pill does not look like a button.
               The stop is the door a stranger finds and the name is the one
               a returning player knows, and it stays because it is the one
-              thing on screen saying who you are signed in as. Beside it,
+              thing on screen saying who you are signed in as. It is a
+              label with a press on it rather than a stop: the arrows walk
+              past it, and it never lights for the page, because the rail
+              stop already says you are there. Beside it,
               Discord, which opens a page about the room rather than the
               room: why there is one, one button that opens it, the address
               in words under that for when a popup blocker eats the button,
               and what actually happens in there. One thing on it answers a
               press, and it is drawn as a button rather than as a row, which
-              is what the four rows it replaced could not say. Both corner
-              stops are drawn as buttons
+              is what the four rows it replaced could not say. Both it and
+              the call sign are drawn as buttons, though only Discord is a
+              stop the arrows walk
 
 in a match
 ├ play        the same list, because the way out of the game you are in is a
@@ -237,9 +243,16 @@ hover is still the cursor, because there is one cursor and it is the list you
 are reading; on the rail, crossing the row on the way to somewhere else can
 no longer take a page off the screen.
 
-The two buttons at the far end of the row are stops on it, so they are lit on
-the same rule: the account button while the account page is up, the Discord
-button while its page is.
+Discord at the far end of the row is a stop on it, so it is lit on the same
+rule: the button while its page is up.
+
+The call sign beside it is not a stop and never lights for the page it opens.
+The rail carries the account page, and the rail's own stop is what says you
+are on it; a name lighting too would put "where you are" in two places on one
+row. So the name is a label with a press on it, brightening under a pointer
+that could take you somewhere and quiet once you are there. It stopped being
+a stop the moment the rail took the page: a control the arrows can rest on
+has to light to show the cursor, which is the half a shortcut does not want.
 
 ## What the window decides
 
@@ -259,19 +272,26 @@ at desktop size in 390 points of screen. Every page lost its bottom half.
 Landscape therefore takes the top row, which is the right answer for it: 56
 points of height against the bottom bar's 84, at the size a phone reads.
 
-The far end of the top line carries two buttons on both layouts, the account
+The far end of the top line carries two buttons on both layouts, the call sign
 and the way out to Discord, with the wordmark giving up size to make room and
 Discord wearing its mark alone where the word will not fit. The tab row is
 bounded by them and gives up its gaps before its type. Laid out from opposite
 ends and never told about each other, the two ran into the middle of a
 landscape phone and the last tab was drawn under a button that took its taps.
 
-They are on that row, which took saying. Right off the last tab lands on
-Discord and right again on the account, left walks back, and the row loops
-from either end. Enter presses one, and so does down, which is what down means
-on a tab: what is under one of these is a page or the place the talking
-happens. Before that a hand on the arrows could not reach either, so the way
-to an account was a mouse or nothing.
+Discord is on that row, which took saying. Right off the last tab lands on it,
+left walks back, and the row loops from either end. Enter presses it, and so
+does down, which is what down means on a tab: what is under it is the page
+about the place the talking happens.
+
+The call sign is not, and that is the difference between a stop and a
+shortcut. It was one while it was the only route to an account and a hand on
+the arrows could not reach it; the rail carries that page now, so the arrows
+walk past the name. What that buys is the lit mark staying in one place: a
+stop the cursor can rest on has to light to say the cursor is there, and this
+row's light means "where you are", which cannot be true of a tab and a name at
+the same time. The name brightens under a pointer that could take it somewhere
+and goes quiet on its own page.
 
 ## Behind it, the sky the game is played under
 

@@ -6632,7 +6632,15 @@ function pages.corner(v, right, cy, wordless)
     if v.pilot and v.pilot.name and v.pilot.name ~= "" then
         -- A name is quoted rather than said: it keeps the case its owner gave
         -- it, where every other word on this row is in the interface's.
-        button(v.pilot.name, v.pilot_hot or v.corner_sel == "pilot",
+        --
+        -- Lit by the pointer alone, and not while its own page is up. The rail
+        -- carries that page and lights the stop that leads to it, so a name
+        -- lighting as well would be the "you are here" mark in two places at
+        -- once, which is the one thing this row cannot say. What is left is a
+        -- label with a press on it: it tells you who you are signed in as,
+        -- brightens under a pointer that could take you somewhere, and stays
+        -- quiet once you are there.
+        button(v.pilot.name, v.pilot_hot and v.at ~= "pilot",
                "pilot_page", nil, true)
     end
     if v.discord then

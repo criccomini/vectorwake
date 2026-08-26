@@ -3134,11 +3134,13 @@ answer rather than the shared one.
 
 **Decision:** the home tab row carries a fifth stop, `pilot`, at its far end:
 the account page, wearing the helmet mark the interface already uses for a
-person. The call sign pill at the end of the top line stays, opens the same
-page, and lights along with the stop while that page is up. The stop is
-home-only. A benched or flying pilot's row does not carry it, which is the
-guard the pill's own press already wore: an account is not a thing to edit
-from inside a room.
+person. The call sign pill at the end of the top line stays and opens the
+same page, as a shortcut rather than a second stop: the arrows walk past it,
+and it never lights for the page, because the rail's stop is what says you
+are on it. It brightens under a pointer that could take it somewhere and goes
+quiet once you are there. The stop is home-only. A benched or flying pilot's
+row does not carry it, which is the guard the pill's own press already wore:
+an account is not a thing to edit from inside a room.
 
 **Why:** the page behind the name is the whole account model. "Keep this
 pilot" is the one control that makes a guest durable across machines, and it
@@ -3150,10 +3152,21 @@ actually reaches. The pill stays because it does the other half of the job,
 saying who you are signed in as at a glance, and dropping it would trade one
 answer for the other.
 
+The pill lit alongside the stop for one commit, and it was confusing on
+sight: this row's lit mark means "where you are", and two of them means the
+cursor is in two places. Fixing it settled what the name is. A control on
+this row is a stop the arrows walk and the light can rest on, or a shortcut a
+pointer presses; it cannot be half of each, because a stop the cursor can
+reach has to light to show the cursor. The name was only ever a stop because
+it was the sole route to an account, and the rail stop retired that job.
+
 **Cost:** the row is five stops in 390 points, so every label gives up a
-little room. Two controls open one page, and both light while it is up, which
-is the one place the row now says "you are here" twice.
+little room. Two controls open one page, which is one more thing to explain
+than a single door would be. Reaching the name without a pointer is gone; the
+rail stop is the keyboard route, and there is no longer a second one.
 
 **Reconsider if:** the row gains a sixth stop, at which point something has
 to leave; or career and stats grow into the client somewhere other than this
-page, at which point "pilot" is a name promising more than a password form.
+page, at which point "pilot" is a name promising more than a password form;
+or the name in the corner turns out to be pressed so rarely that it is worth
+keeping only as text.

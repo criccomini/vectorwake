@@ -266,11 +266,13 @@ do
     menu.stack, menu.sel = kept_stack, kept_sel
 end
 
--- --- and the two buttons at the end of that row are on the row -------------
+-- --- the button at the end of that row is on the row ----------------------
 --
--- They sit beside the tabs, they do what a tab does, and until now a hand on
--- the arrows could not reach either: the way to an account was a mouse or
--- nothing. The row is the tabs and then those, left to right, and it loops.
+-- Discord sits beside the tabs and does what a tab does. The call sign beside
+-- it does not: the rail carries the account page now, so the name is a label
+-- with a press on it rather than a stop the arrows walk. A stop the cursor
+-- can rest on has to light to say so, and this row's lit mark means "where
+-- you are", which cannot be true of two things at once.
 do
     local kept_name, kept_url = menu.name, _G.sys.open_url
     menu.name = "Tester 1"
@@ -294,42 +296,36 @@ do
           and (menu.view().rows[1] or {}).label == "join discord",
           menu.showing() .. "/" .. tostring((menu.view().rows[1] or {}).label))
     menu.step({right = true})
-    check("and the account is the next one along",
-          menu.view().corner_sel == "pilot",
-          tostring(menu.view().corner_sel))
-    check("previewing the pilot page and its call sign card",
-          menu.showing() == "pilot"
-          and ((menu.view().aside or {}).head == "call sign"),
-          menu.showing() .. "/" .. tostring((menu.view().aside or {}).head))
-    menu.step({right = true})
     check("and right again is the first tab, the way the row wraps",
           menu.view().corner_sel == nil and menu.sel.root == 1,
           tostring(menu.view().corner_sel) .. "/" .. tostring(menu.sel.root))
     menu.step({left = true})
     check("left off the first tab is the last of them",
-          menu.view().corner_sel == "pilot",
+          menu.view().corner_sel == "discord",
           tostring(menu.view().corner_sel))
     menu.step({left = true})
-    check("and walks back through them", menu.view().corner_sel == "discord",
-          tostring(menu.view().corner_sel))
-    menu.step({left = true})
-    check("and off their end onto the last tab",
+    check("and off its end onto the last tab",
           menu.view().corner_sel == nil and menu.sel.root == pilot_at,
           tostring(menu.view().corner_sel) .. "/" .. tostring(menu.sel.root))
 
-    -- Enter on the account is the account page.
-    menu.sel = {root = pilot_at}
+    -- The call sign is never a place the arrows can be, so nothing on that
+    -- row is ever lit for the account: the rail's own stop is the one mark
+    -- saying where you are. Both lit at once was the whole complaint.
+    menu.stack = {"root", "pilot"}
     menu.corner_sel = nil
-    menu.step({right = true})
-    menu.step({right = true})
-    menu.step({go = true})
-    check("enter on the account opens its page", menu.at() == "pilot",
-          table.concat(menu.stack, "/"))
-    -- And the button stays lit while you are on its page, which is what a tab
-    -- does. It went dark instead, so the one row on screen that says where
-    -- you are said nothing about the two stops at the end of it.
-    check("and the button stays lit while its page is up",
-          menu.view().corner_sel == "pilot", tostring(menu.view().corner_sel))
+    local on_pilot = menu.view()
+    check("the rail lights the pilot stop while its page is up",
+          on_pilot.rail_sel == pilot_at, tostring(on_pilot.rail_sel))
+    check("and the call sign in the corner does not light with it",
+          on_pilot.corner_sel == nil, tostring(on_pilot.corner_sel))
+
+    -- A pointer still opens it, which is the whole of what the name is for
+    -- besides saying who you are.
+    menu.stack = {"root"}
+    menu.sel = {}
+    menu.click_pilot()
+    check("and a press on the name still opens the page",
+          menu.at() == "pilot", table.concat(menu.stack, "/"))
     -- Not from a page a tab leads to, though: there the lit tab is the
     -- answer and a lit button beside it would be a cursor in two places.
     menu.stack = {"root"}

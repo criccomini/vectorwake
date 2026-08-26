@@ -2330,10 +2330,17 @@ local function rows_of(nd)
 end
 
 -- The stops on the far right of the tab row, in the order the arrows meet
--- them left to right. Two of them today: the way out to where the talking
--- happens, and who you are signed in as. The account one is only there when
--- there is a call sign to put on it, which is every session that has reached
--- the meta layer.
+-- them left to right. One of them today: the way out to where the talking
+-- happens.
+--
+-- The call sign beside it is not one. It was, while it was the only way to an
+-- account and a hand on the arrows could not reach it otherwise; the rail
+-- carries that page now, so the name is back to being what it looks like,
+-- which is a label saying who you are signed in as with a press on it for a
+-- pointer. A control is a stop or a shortcut and cannot be half: a stop the
+-- arrows can rest on has to light to say the cursor is there, and a second
+-- lit thing on a row whose lit mark means "where you are" is the one mark in
+-- this interface that must never be in two places.
 --
 -- The list is here rather than in the drawing because the arrows walk it, and
 -- a row a hand can walk has to be a list somewhere. ui.lua lays them out from
@@ -2341,9 +2348,7 @@ end
 -- `M.showing` because a corner stop under the cursor is a page on screen the
 -- same way a tab under the cursor is.
 local function corner_stops()
-    local out = {"discord"}
-    if (M.name or "") ~= "" then out[#out + 1] = "pilot" end
-    return out
+    return {"discord"}
 end
 
 -- Which page's rows are on screen. One level in that is the page you are
@@ -3062,13 +3067,17 @@ function M.tick(dt)
 end
 
 -- Which of the corner stops wears the lit mark, which is the tab row's own
--- rule read across the whole row: what is lit is where you are, and the two
--- buttons at the far end are stops on that row like any other.
+-- rule read across the whole row: what is lit is where you are, and the
+-- button at the far end is a stop on that row like any other.
 --
--- Inside one of their pages it is that page. The stop and the node share a
--- name, which is what lets this ask the question without a second table
--- mapping one onto the other. Otherwise it is wherever the arrows are, and
--- nobody while they are on a tab or down inside a page a tab leads to.
+-- Inside its page it is that page. The stop and the node share a name, which
+-- is what lets this ask the question without a second table mapping one onto
+-- the other. Otherwise it is wherever the arrows are, and nobody while they
+-- are on a tab or down inside a page a tab leads to.
+--
+-- Only Discord, whose page no tab carries. A stop the rail already lights is
+-- not lit again here: two lit things on one row, both meaning "you are here",
+-- is a cursor in two places.
 local function corner_lit()
     local stops = corner_stops()
     if #M.stack > 1 then
@@ -3081,9 +3090,9 @@ local function corner_lit()
 end
 
 -- One of them, pressed. Enter and down both land here, the way they both act
--- on a tab.
+-- on a tab. The call sign is not on this row: a pointer presses it and lands
+-- in `M.click_pilot` directly.
 local function press_corner(which)
-    if which == "pilot" then return M.click_pilot() end
     if which == "discord" then return M.open_discord() end
     return nil, false
 end
