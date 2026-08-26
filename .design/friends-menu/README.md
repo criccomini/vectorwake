@@ -11,13 +11,20 @@ word, and a ledger at the foot repeating names already listed above it.
 
 Round one put four directions beside the page as shipped, and Chris's answer
 was a simpler line than any of them, now on `Main` and the canvas's first
-page: the add box keeps its shipped style, in this game and sent are gone,
-and friends sit under one head with a solid green dot and their zone when
-they are in a game, a hollow grey dot and nothing else when they are off.
-Waiting on you stays because it is the only inbox this game has, and the
-ledger keeps the ignored recoverable behind one quiet row at the foot. The
-row press still raises the card, so join and unfriend live there for every
-input.
+page: the add box keeps its shipped style under an ADD FRIEND label, the in
+this game and sent sections are gone along with the friends count and the
+ledger row, incoming adds sit under RECEIVED, and friends are one head with
+a solid green dot and their zone when they are in a game, a hollow grey dot
+and nothing else when they are off. The row press still raises the card, so
+join and unfriend live there for every input. Two rules came with the pick
+and are recorded in [interface.md](../../docs/design/interface.md): a zone's
+name is spelled the way the catalog spells it (Team Battle, never team
+battle), and no line is set all lower case.
+
+An open question for the build: with the ledger gone, an ignored add has no
+page it can be accepted from later, so either ignore becomes final or the
+ledger returns somewhere quieter. The mock leaves that to the
+implementation round.
 
 The round-one boards stay on the canvas's second page. The people are the
 same eight on every board so the directions compare. Canvas artifact
