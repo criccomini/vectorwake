@@ -235,23 +235,25 @@ write("Current.dc.html", board(cur))
 
 # ---- Main: the guest page, settled: foot key, ship sections ----
 FOOT = ('<div style="position:absolute;left:14px;right:14px;bottom:14px">'
-        '<div class="note" style="text-transform:none;line-height:1.5">'
-        'Keep your points and log in on other devices</div>'
+        '<div class="note" style="text-transform:none;line-height:1.5;'
+        'text-align:center">Keep your points and log in on other devices'
+        '</div>'
         '<div class="key keylit" style="height:36px;width:100%;'
         'font-size:10.5px;margin-top:8px">sign up</div>'
         '<div class="row" style="justify-content:center;margin-top:10px;'
-        'gap:6px"><span class="note">already have a pilot?</span>'
+        'gap:6px"><span class="note">Already have a pilot?</span>'
         '<span class="note" style="color:#4fd6ff">log in</span></div></div>')
 mg = ident() + career() + FOOT
 write("Main.dc.html", board(mg))
 
 # ---- Claimed: the same page signed in ----
-cl = ident()
-cl += ('<div class="lbl" style="margin-top:4px">signed in</div>'
-       '<div class="row" style="gap:8px;margin-top:12px">'
-       + keychip("change password", False, 30)
-       + keychip("log out", False, 30) + '</div>')
-cl += career()
+cl = ident() + career()
+cl += ('<div class="row" style="position:absolute;left:14px;right:14px;'
+       'bottom:14px;gap:10px">'
+       '<div class="key" style="height:36px;flex:1;font-size:10.5px">'
+       'change password</div>'
+       '<div class="key" style="height:36px;flex:1;font-size:10.5px">'
+       'log out</div></div>')
 write("Claimed.dc.html", board(cl))
 
 # ---- The sign-up card over the page ----
@@ -286,16 +288,13 @@ DOT = ('<div style="position:absolute;right:26px;bottom:44px;width:5px;'
        'height:5px;border-radius:50%;background:#ffd166"></div>')
 
 band = ('<div style="position:absolute;left:0;right:0;bottom:78px;'
-        'height:46px;display:flex;align-items:center;gap:10px;'
+        'height:46px;display:flex;align-items:center;'
         'padding:0 14px;background:rgba(255,209,102,.08);'
         'border-top:1px solid rgba(255,209,102,.5)">'
-        '<span style="width:5px;height:5px;border-radius:50%;'
-        'background:#ffd166;flex:none"></span>'
         '<div class="col" style="gap:2px">'
         '<span style="font-size:12px">You are using a guest account.</span>'
         '<span class="note" style="text-transform:none">Press here to set '
-        'your password.</span></div>'
-        '<div style="flex:1"></div>' + CHEVRON + '</div>' + DOT)
+        'your password.</span></div></div>' + DOT)
 write("PlayBanner.dc.html", board(play_rows(), overlay=band, lit="play"))
 
 print("boards written")

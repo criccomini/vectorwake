@@ -14,20 +14,22 @@ the design skill's helper:
 The settled page, per Chris across three rounds:
 
 - The guest page is the name with a NEW NAME key, the career, and a
-  full-width SIGN UP foot key over "Keep your points and log in on other
-  devices", with "already have a pilot? log in" under it. No status line
-  under the name; the banner and the foot key say what state the account
-  is in.
+  full-width SIGN UP foot key under a centered "Keep your points and log
+  in on other devices", with "Already have a pilot? log in" below it. No
+  status line under the name; the banner and the foot key say what state
+  the account is in.
 - The career wears the ship page's section grammar (a rule edge to edge,
   the label under it) and shows bare totals: duel rating and tier, record,
   games, rivets. No season and no week. Rating, tier, record and games are
   one meta call; rivets is already on the client.
 - A guest with something to lose gets a gold banner in the drawer on every
   tab but pilot: "You are using a guest account. Press here to set your
-  password." Pressing it opens the pilot page; a gold dot rides the pilot
+  password." Words alone, no marks in the band; the whole band is the
+  press. Pressing it opens the pilot page; a gold dot rides the pilot
   rail stop regardless.
-- Signed in, the foot key goes; the page carries change password and log
-  out, with one small "signed in" line under the name.
+- Signed in, the foot key gives way to change password and log out as a
+  pair of keys at the same foot, and nothing under the name says a state:
+  the keys are the state.
 - Sign up keeps the transition: the card says "keep your points and log in
   on other devices" over one password field. "Claim" vocabulary is gone
   everywhere. The reroll lives behind NEW NAME; a press on the name no
