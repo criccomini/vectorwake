@@ -4205,16 +4205,19 @@ function END.foot(o, m, x, y, w)
         local kw = text_w(string.upper(a[1]), px) + lead + 26 * F.scale
         local kx = right - kw
         local col = i == 1 and pal.FRIEND or pal.RADAR_TILE
-        local fill = i == 1 and 0.16 or 0.06
-        local edge = i == 1 and 0.95 or 0.6
+        local fill = i == 1 and 0.10 or 0.06
+        local edge = i == 1 and 0.76 or 0.6
         if a[2] == "share" then
             -- The one act on the ending, so it breathes on the clock the
-            -- PLAY NOW key breathes on, floored the same way so the trough
-            -- never reads as a key that stopped working. `F.now` is 0 under
-            -- the test harness, which keeps the layout tests still.
+            -- PLAY NOW key breathes on, but under it: the ending's zoom
+            -- already grows these keys, and PLAY NOW's full wash on top of
+            -- that made the invite the loudest thing on the board. The
+            -- floor still keeps the trough from reading as a key that
+            -- stopped working. `F.now` is 0 under the test harness, which
+            -- keeps the layout tests still.
             local breath = 0.5 + 0.5 * math.sin(F.now * 2.6)
-            fill = 0.06 + 0.12 * breath
-            edge = 0.62 + 0.38 * breath
+            fill = 0.04 + 0.06 * breath
+            edge = 0.50 + 0.26 * breath
         end
         key_box(kx, y, kw, key_h, pal.a(col, fill), pal.a(col, edge))
         local ink = pal.a(i == 1 and pal.FRIEND or pal.INK, 0.95)

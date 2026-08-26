@@ -3595,3 +3595,51 @@ kills, at which point net is the wrong arithmetic rather than the right one
 and the mark has to ask that mode what a pilot contributed. Or if assists get
 priced into the score, since a pilot who does four fifths of the work on every
 kill in the match would still be nowhere on this measure.
+
+## 77. A duel that runs the clock out is a draw
+
+**Status:** accepted
+
+**Decision:** the Duel match timer ends the life. Whoever is ahead takes it,
+and a life nobody has scored in is a draw. A drawn leg is filed like any
+other: it goes on the run's board as its own row, it moves no rung, it breaks
+no streak, and the same rival is fought again. Sudden death is gone, along
+with the banner that announced it.
+
+The calibration harness keeps flying past the whistle, which is the one place
+in the game that now outlives the rule. It is measuring which pilot wins when
+the fight is played out, and a draw there would censor the matchups the
+ranking most needs to separate. That is stated at the constant so nobody
+tidies it into agreement with the mode.
+
+**Why:** a duel is one life at first-to-one, so no score exists until somebody
+dies. That is what put sudden death here: with nothing to compare at the
+whistle, the clock could not call the rung, so the fight carried on until a
+death did. It reads as the fair answer and plays as the wrong one. The timer
+was doing a job already, which is stopping a pilot from running out the clock
+on a rung they are losing, and overtime hands that same pilot the rest of the
+evening instead. Two pilots who have spent three minutes not closing are not
+usually thirty seconds from closing; they are flying a fight neither wants,
+and the room's answer was to keep them in it.
+
+A draw is also a result the mode already knew how to file. A double death has
+always produced one, so the leg, the byte on the wire and the "drew" the board
+draws were all in place; the whistle now reaches the same door.
+
+**Cost:** a rung can now end with nothing decided, which is a worse outcome
+than either pilot wanted and the only one honest about what happened. A
+climber meeting a rival they cannot beat and cannot lose to will draw them
+repeatedly and sit on the same rung, where sudden death would eventually have
+moved somebody. It moves them by handing the win to whoever blinks first,
+which is not the thing the ladder is trying to measure.
+
+The clock also becomes worth playing to. A pilot who is ahead can now sit on a
+lead, which is a tactic Duel has never had, and at first-to-one being ahead
+means having already won, so this costs nothing today. It would cost something
+the moment first-to rises above one, and the catalog refuses that.
+
+**Reconsider if:** draws turn out to be common between well-matched pilots
+rather than rare, at which point the timer is too short for the fight rather
+than the rule being wrong, and the answer is a longer clock. Or if the ladder
+starts wanting every rung settled, which would need a decider that measures
+something other than who dies first: damage dealt, or distance held.

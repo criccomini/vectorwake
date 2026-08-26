@@ -46,11 +46,18 @@ must observe the old seat vacant before it accepts a different slot as ready.
 That prevents a fast reconnect from opening the next life against the previous
 opponent.
 
-The configured match timer is a guard against stalling. No score exists before
-the deciding death, so an expired clock enters sudden death and the next death
-settles the rung. Calibration gives sudden death a recorded safety boundary so
-a broken or nonterminating leg cannot run forever. Any leg that reaches that
-boundary blocks certification; live play itself remains uncensored.
+The configured match timer ends the life. A life nobody has scored in is a
+draw: it is logged as one, it moves no rung and breaks no streak, and the same
+rival is fought again. Two pilots who spend three minutes refusing each other
+have said what they have to say, and the rung is no closer to settled for a
+fourth minute of it.
+
+Calibration does not draw. It flies each leg to a death, with a recorded
+safety boundary so a broken or nonterminating leg cannot run forever, because
+the question it asks is which pilot wins when the fight is played out, and
+stopping at the whistle would throw away exactly the matchups that are hardest
+to call. Any leg that reaches that boundary blocks certification; live play
+itself remains uncensored.
 
 ## A duel is always on
 
