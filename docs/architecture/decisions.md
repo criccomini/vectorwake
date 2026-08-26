@@ -3261,7 +3261,7 @@ belong in zone.toml as overrides rather than in a longer match arm; or the
 fleet grows enough games that the rows want the aligned table that was
 version J of the mocks.
 
-## 72. One field lights a row, at two weights
+## 72. One field lights a row, at two weights, in one column
 
 **Status:** accepted
 
@@ -3299,11 +3299,37 @@ defensible where it was written and none of them agreed, which is what a
 player sees walking from the games list into the hangar. The mocks are in
 `.design/menu-rows`.
 
-**Cost:** the kit page's rows light wider than their content, because the
-content on that page stops well short of the drawer's right edge and the
-field no longer does. The focused and unfocused weights on that page
-collapsed into one, so a kit page that has handed the arrows to the rail
-still shows its cursor at full strength.
+**And the column the field is lit behind.** The type has one measure too:
+`MENU_PAD`, twenty points in from each edge of the drawer, and every page is
+handed that column and draws inside it. A name, the rule of the section
+above it, a sentence, a price and a count all begin and end on the same two
+lines down the panel, and nothing a page sets may cross them.
+
+That was three numbers stacked on each other and it came out different at
+each edge and on each page. The panel kept a margin of 14; a gutter of 22
+went on top of it for the type; then fourteen points were held back at the
+right for the scroll tick and sixteen more on a row's own detail. A row's
+name stood 36 in from the left while its price stopped 50 short of the
+right, the hangar's names started six points outside the games list's, and a
+row's sentence was clamped by nothing at all: at the phone's width the two
+shipped zone descriptions ran to within eight and fifteen points of the
+glass, straight under the leave key on the row they belonged to. The scroll
+tick draws out in the margin now, where there is already room for it, and a
+sentence too long for what its row has left wraps inside the column, the
+list taking the height of the longest one so the pitch does not change
+halfway down.
+
+**Cost:** twenty points is tight enough that the longer of the two shipped
+descriptions clears the column by under four, so a description a few
+characters longer wraps to a second line and its row grows. That is the
+designed behavior rather than a failure, but it means the games list is one
+line taller the day somebody writes a longer hook. The head keeps the
+panel's own margin of 14 rather than the column: the x and the call sign are
+boxes, and a box sits a little outside the type it lines up with.
+
+The focused and unfocused weights on the kit page collapsed into one, so a
+kit page that has handed the arrows to the rail still shows its cursor at
+full strength.
 
 **Reconsider if:** a page turns up whose rows are genuinely not the width
 of the drawer, at which point the field wants to follow the page's own

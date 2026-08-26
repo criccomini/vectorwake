@@ -1,4 +1,5 @@
--- One way to light a row, held to across every page of the menu.
+-- One way to light a row and one column to set it in, held to across every
+-- page of the menu.
 --
 --     lua5.1 client/tests/row_field_test.lua
 --
@@ -10,10 +11,17 @@
 -- it was written and none of them agreed, which is what a player sees when
 -- they walk from the games list into the hangar.
 --
--- The rule is two weights and one extent, so that is what this measures. It
--- runs the real `M.menu` against a recording layer and reads the fields back
--- off it: nothing here works the panel's arithmetic out a second time, so a
--- page that moves takes its assertions with it.
+-- It answered "how far in does the type start" as many ways again, and worse
+-- at the right edge than at the left: a name stood 36 in from one and its
+-- price stopped 50 short of the other, and a row's sentence was clamped by
+-- nothing at all, so on a phone it ran to within eight points of the glass and
+-- straight under the key on its own row. That one was reported twice.
+--
+-- So there are two rules and this measures both: two weights at one extent for
+-- the field, and one column, MENU_PAD in from each edge of the drawer, that
+-- nothing a page draws may cross. It runs the real `M.menu` against a
+-- recording layer and reads both back off it, so a page that moves takes its
+-- assertions with it.
 
 package.path = "client/?.lua;" .. package.path
 
@@ -353,6 +361,95 @@ do
     check("and never brighter than the cursor's", hi <= 1.0, tostring(hi))
     check("and it moves", math.abs(hi - lo) > 0.05,
           tostring(lo) .. " to " .. tostring(hi))
+end
+
+-- --- and nothing a page draws leaves the column ---------------------------
+--
+-- The one that was reported twice. A sentence with nothing clamping it ran off
+-- the right of the panel; a price stopped fourteen points inside the line its
+-- own name began on. Both are the same question asked of every line of type
+-- the page sets, so ask it of every line of type the page sets.
+
+do
+    local menu_face = require("arena.menu_face")
+    local ADVANCE = 1233 / 2048
+    -- The two rules ui.lua measures with: the menu face's own advances for the
+    -- menu font, one fixed advance for the mono one.
+    local function measure(s, px, font)
+        if font ~= "menu" then return #s * px * ADVANCE end
+        local adv, w = menu_face.adv, 0
+        for i = 1, #s do
+            w = w + (adv[string.byte(s, i)] or menu_face.widest)
+        end
+        return w * px
+    end
+
+    local PAD = ui.MENU_PAD
+    check("the interface publishes its column inset", type(PAD) == "number",
+          tostring(PAD))
+
+    for _, page in ipairs(PAGES) do
+        local st = draw(page.view())
+        local dx, _, dw = ui.drawer_span()
+        local left, right = dx + PAD, dx + dw - PAD
+        local out = {}
+        for i = 1, st.n do
+            local t = st.text[i]
+            -- The page only, which is what the column governs: the head's own
+            -- furniture sits on the panel's margin above it and the rail's
+            -- labels are centered on their stops below it, and neither is type
+            -- set in the column.
+            if t and t.s and t.s ~= "" and t.y > 90 and t.y < H - 60 then
+                local w = measure(t.s, t.px, t.font)
+                local x0 = t.x
+                if t.pivot == "center" then x0 = t.x - w / 2
+                elseif t.pivot == "right" then x0 = t.x - w end
+                if x0 < left - 1 or x0 + w > right + 1 then
+                    out[#out + 1] = string.format("%s (%.0f..%.0f)",
+                                                  t.s, x0, x0 + w)
+                end
+            end
+        end
+        check(page.name .. " sets every line inside the column",
+              #out == 0,
+              string.format("column is %.0f..%.0f; outside it: %s",
+                            left, right, table.concat(out, ", ")))
+    end
+end
+
+-- --- a sentence too long for the column wraps rather than running on -------
+
+do
+    -- The row keeps its key clear too: the note wraps to what is left beside
+    -- it, which is what the leave key on the game you are flying needs.
+    local long = "The longer your run, the bigger the bounty on you, and the "
+        .. "longer the odds of getting home with it"
+    local st = draw({depth = 1, sel = 1, rail = RAIL, rail_sel = 1,
+                     focus = "stage", closable = true, rows = {
+        {label = "Team Battle", note = long, index = 1, pick = true,
+         acts = {{label = "leave"}},
+         specs = {{"teams", "4 v 4"}, {"time", "3:00"},
+                  {"scoring", "kills"}}},
+    }})
+    local pieces = 0
+    for i = 1, st.n do
+        local t = st.text[i]
+        if t and t.s and t.s:find("longer", 1, true) then pieces = pieces + 1 end
+    end
+    check("a sentence too long for its row is broken across lines", pieces > 1,
+          pieces .. " line(s)")
+    -- And the row grew for it rather than drawing the second line over the
+    -- stacks under it.
+    local note_y, spec_y
+    for i = 1, st.n do
+        local t = st.text[i]
+        if t and t.s == "TEAMS" then spec_y = t.y end
+        if t and t.s and t.s:find("odds", 1, true) then note_y = t.y end
+    end
+    check("and the line it grew into clears the stacks below it",
+          note_y and spec_y and note_y > spec_y + 8,
+          string.format("last note line at %s, stacks at %s",
+                        tostring(note_y), tostring(spec_y)))
 end
 
 if fails > 0 then

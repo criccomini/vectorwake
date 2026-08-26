@@ -113,22 +113,24 @@ local pen = marks.pen
 --
 -- Declared up here rather than beside the pages themselves, because the marks
 -- on it are drawn by things a long way above them.
--- One inset, used on both sides of everything in the menu: the gutter a row's
--- type is set in from its left edge, and the same number again as the inset
--- its numbers keep from its right.
+-- How far everything in the panel stands in from the drawer's edges: one
+-- number, and the same one at both edges. Every page is handed this column and
+-- draws inside it, so a name, a rule, a price and a sentence all begin and end
+-- on the same two lines down the panel.
 --
--- The right one was sixteen against a left of twenty-two, so the selection
--- field behind a row was padded further on one side than the other and the
--- group rule above it stopped somewhere between the two.
+-- It was a gutter of 22 laid on top of the panel's own margin of 14, and then
+-- a fourteen-point column held back at the right for the scroll tick, and then
+-- a sixteen-point one on a row's own detail. They added up differently at each
+-- edge and on each page: a row's name stood 36 in from the left while its
+-- counts and prices stopped 50 short of the right, and a row's sentence was
+-- clamped by nothing at all, so at the phone's width it ran to within eight
+-- points of the glass. The scroll tick lives out in the margin now, which is
+-- wide enough for it and is where a scrollbar goes anyway.
 --
--- Up here with the primitives rather than beside the marks, because the
--- pages reach it several hundred lines earlier and a local declared after its
--- first use is a global lookup that comes back nil.
-local GUTTER = 22
--- There was a ROW_PAD here, sixteen points, for how far a lit row reached past
--- the column of type it was about. It was the friends page's answer to a
--- question every other page answered differently, and the field is the drawer
--- now: see LIT.CURSOR below.
+-- Up here with the primitives rather than beside the marks, because the pages
+-- reach it several hundred lines earlier and a local declared after its first
+-- use is a global lookup that comes back nil.
+local MENU_PAD = 20
 
 local pages = {}
 
@@ -400,9 +402,10 @@ function LIT.breath(t)
     return 0.74 + 0.26 * (0.5 + 0.5 * math.sin((t or F.now) * 2.6))
 end
 
--- Published so the tests measure the rule rather than restating it. See
+-- Published so the tests measure the rules rather than restating them. See
 -- client/tests/row_field_test.lua.
 M.LIT = LIT
+M.MENU_PAD = MENU_PAD
 
 -- A count, as marks rather than as a number: it reads at a glance and never
 -- asks the eye to parse a digit.
@@ -4884,7 +4887,7 @@ function pages.kit(v, x, y, w, h, focused)
                 "stage", r.index)
         end
     end
-    hrule(x - GUTTER * F.scale, y + BAND, w + (GUTTER + 14) * F.scale)
+    hrule(x, y + BAND, w)
 
     -- --- the ladders, under it
     local kit_top = y + BAND + 6 * F.scale
@@ -5113,7 +5116,7 @@ function pages.back_row(v, x, y, w, place)
                 pal.a(pal.DIM, 0.9))
     lbl(place, bx + 15 * F.scale, mid, pal.a(pal.DIM, 0.9))
     hit(bx - 10 * F.scale, y, 130 * F.scale, 48 * F.scale, "back")
-    hrule(x - GUTTER * F.scale, y + 48 * F.scale, w + (GUTTER + 14) * F.scale)
+    hrule(x, y + 48 * F.scale, w)
     return y + 48 * F.scale + 8 * F.scale
 end
 
@@ -6143,6 +6146,42 @@ function pages.door(v, x, y, w, h, focused)
     M.page_room = h
 end
 
+-- How tall a line of a row's sentence is, and how that sentence breaks.
+--
+-- The sentence used to be drawn as one line from the column's left edge with
+-- nothing clamping it, so a zone description longer than the column ran on to
+-- whatever was beside it and then off the panel: at the phone's width the two
+-- shipped ones reached within eight and fifteen points of the glass, straight
+-- through the leave key on the row they belonged to. It wraps now, inside what
+-- the row actually has left, and the list gives every row the height of the
+-- longest one so nothing shifts as the cursor walks down.
+--
+-- On `pages` rather than in a local of its own, because this file is at the
+-- two hundred locals a Lua chunk may hold. See client/tests/upvalues_test.lua.
+pages.NOTE_PX = 11.5
+pages.NOTE_LINE = 15
+
+-- What a row keeps back at its right for the keys it carries, if any.
+function pages.acts_w(r)
+    local out = 0
+    for _, a in ipairs(r.acts or {}) do
+        out = out + row_button_w(a.label) + 8 * F.scale
+    end
+    return out
+end
+
+-- The sentence, broken to the room the row has for it. `w` is the column.
+--
+-- Cased once over the whole sentence and drawn raw, which is what the friends
+-- page learned the same way: left to `txt`, the case is applied to each line
+-- as it is drawn, and a sentence that wrapped came back with a capital in the
+-- middle of itself.
+function pages.note_lines(note, w, r)
+    if not note or note == "" then return nil end
+    return wrapped(cased(note), pages.NOTE_PX * F.scale,
+                   math.max(40 * F.scale, w - pages.acts_w(r)))
+end
+
 -- One row of the stage: a mark for the one you are on, the name, and
 -- whatever the row has to say about itself on the right.
 --
@@ -6165,10 +6204,9 @@ local function stage_row(x, y, w, h, r, hot, idx, warm)
     -- See docs/design/community.md.
     if r.button then
         local bh = math.min(h - 6 * F.scale, 38 * F.scale)
-        local bw = math.min(w - GUTTER * F.scale,
-                            text_w(r.label or "", 14 * F.scale)
-                                + 74 * F.scale)
-        local bx = x + GUTTER * F.scale
+        local bw = math.min(w, text_w(r.label or "", 14 * F.scale)
+                               + 74 * F.scale)
+        local bx = x
         local by = y + (h - bh) / 2
         local edge = pal.a(hot and pal.FRIEND or pal.RADAR_TILE,
                            hot and 0.95 or 0.6)
@@ -6211,7 +6249,7 @@ local function stage_row(x, y, w, h, r, hot, idx, warm)
     end
     -- One text column, whatever the row is, and it is the column the title
     -- above the list is set in.
-    local tx = x + GUTTER * F.scale
+    local tx = x
     local sel = hot or r.mark
     -- How bright the name is set. The row you are already on breathes, unless
     -- the cursor is also on it, in which case the cursor has it and the row is
@@ -6253,16 +6291,35 @@ local function stage_row(x, y, w, h, r, hot, idx, warm)
     if strip then ly = y + h * 0.20 end
     -- Drawn here unless the detail turns out not to fit beside it, in which
     -- case the pair is laid out as two lines below and this one is skipped.
+    --
+    -- Asked as the question it is: what is left of the column once the name
+    -- has had its share, against what the detail needs. It was the column's
+    -- width less three constants that between them stood for the name, and
+    -- they were measured against a column that has since changed width at
+    -- both edges, so a phone's help rows went back to being drawn over their
+    -- own labels the moment the column moved.
     local two_line = r.detail and r.detail ~= ""
         and not r.choice and not note
-        and text_w(r.detail, 12 * F.scale) > w - 32 * F.scale - (tx - x) - 12 * F.scale
+        and text_w(r.detail, 12 * F.scale)
+            > w - text_w(r.label or "", size, MENU_FONT) - 16 * F.scale
     if not two_line then
         txt(r.label or "", tx, ly, size,
             pal.a(col, label_a), nil, MENU_FONT, r.named)
     end
     if note then
-        txt(note, tx, y + h * (strip and 0.42 or 0.68), 11.5 * F.scale,
-            pal.a(pal.DIM, (hot and 1 or 0.75) * (r.waiting and 0.7 or 1)))
+        -- Centered on the line one line would have sat on, so a row whose
+        -- sentence fits is drawn exactly where it always was and a row whose
+        -- sentence takes two grows into the room the list gave it, evenly,
+        -- rather than hanging off the top of the gap.
+        local lines = pages.note_lines(note, w, r)
+        local ny = y + h * (strip and 0.42 or 0.68)
+            - (#lines - 1) * pages.NOTE_LINE * F.scale / 2
+        for _, line in ipairs(lines) do
+            txt(line, tx, ny, pages.NOTE_PX * F.scale,
+                pal.a(pal.DIM, (hot and 1 or 0.75) * (r.waiting and 0.7 or 1)),
+                nil, nil, true)
+            ny = ny + pages.NOTE_LINE * F.scale
+        end
     end
     if strip then
         -- Label over value, a thin rule between the stacks: the room band's
@@ -6274,7 +6331,7 @@ local function stage_row(x, y, w, h, r, hot, idx, warm)
         -- rest of itself.
         local dimmed = (r.waiting or r.full) and 0.6 or 1
         local sx2 = tx
-        local right = x + w - GUTTER * F.scale
+        local right = x + w
         for si, s in ipairs(strip) do
             local sw2 = math.max(
                 text_w(string.upper(s[1] or ""), LBL_PX * F.scale, nil, true),
@@ -6307,7 +6364,7 @@ local function stage_row(x, y, w, h, r, hot, idx, warm)
         -- means. Drawn with the friends page's own button, so the two lists
         -- that hang controls off a name cannot drift apart.
         local kh = math.min(h - 12 * F.scale, 26 * F.scale)
-        local edge = x + w - GUTTER * F.scale
+        local edge = x + w
         for k = #r.acts, 1, -1 do
             local a = r.acts[k]
             -- Published inside `row_button`, and before the row's own box, so
@@ -6320,7 +6377,7 @@ local function stage_row(x, y, w, h, r, hot, idx, warm)
         -- looks for a game says what the words did, in the room the numbers
         -- would have taken, and it keeps saying it while the list refreshes
         -- underneath: an arena can come back and this row is where it lands.
-        sweep_dial(x + w - GUTTER * F.scale - 11 * F.scale, ly, 11 * F.scale)
+        sweep_dial(x + w - 11 * F.scale, ly, 11 * F.scale)
     elseif r.choice then
         -- A setting drawn as its own range: one step per value, the one it
         -- is on filled. "half" is a word to read and hold against the word
@@ -6329,7 +6386,7 @@ local function stage_row(x, y, w, h, r, hot, idx, warm)
         local n = r.choices or 1
         local sw2 = 13 * F.scale
         local gap = 5 * F.scale
-        local x1 = x + w - GUTTER * F.scale
+        local x1 = x + w
         local x0 = x1 - (n * sw2 + (n - 1) * gap)
         if r.bar then
             -- A range too long to count is a bar instead: thirty pips is not
@@ -6378,7 +6435,7 @@ local function stage_row(x, y, w, h, r, hot, idx, warm)
             txt(r.detail, tx, y + h * 0.70, 11 * F.scale, pal.a(pal.DIM, 0.9),
                 nil, nil, r.verbatim)
         else
-            txt(r.detail, x + w - 16 * F.scale, ly, 12 * F.scale,
+            txt(r.detail, x + w, ly, 12 * F.scale,
                 pal.a(r.mark and pal.FRIEND or pal.DIM, 0.95), "right",
                 nil, r.verbatim)
         end
@@ -7514,12 +7571,13 @@ function M.menu(v)
     end
 
     -- --- the stage
-    -- Everything with type in it hangs off `tx`, a gutter in from the stage's
-    -- own left edge: the rule at the head of it, and every row's label. A
-    -- row's field starts back at `sx`, so what is lit reaches under the mark
-    -- and the words never sit against the edge of it.
-    local tx = sx + GUTTER * F.scale
-    local avail = sw - GUTTER * F.scale
+    -- Everything with type in it stands in the one column: MENU_PAD in from
+    -- edge of the drawer, so a row's name and a row's price begin and end on
+    -- the same two lines, and so does the rule of the section above them.
+    -- A row's lit field is still the whole drawer, which is what makes the
+    -- column read as type on a panel rather than as a box inside one.
+    local tx = dx + MENU_PAD * F.scale
+    local avail = dock - 2 * MENU_PAD * F.scale
     -- The stage is the stage, whatever is on it. A list used to be capped at
     -- 520 points against a row reading as two columns a screen apart, which
     -- was a rule written for a window rather than for this panel: the block
@@ -7528,10 +7586,13 @@ function M.menu(v)
     -- of hundred points short of the x, the rule and the scrollbar, and the
     -- pages that are drawings rather than lists went to the edge beside it.
     --
-    -- What is kept is a column at the right for the scroll tick, whether or
-    -- not there is one to draw, so a list does not shift sideways the moment
-    -- it outgrows the page. It puts a row's count directly under the x.
-    local lw = avail - 14 * F.scale
+    -- The column is the column, scroll tick or no scroll tick. It used to hold
+    -- fourteen points back at the right for one, so a list did not shift
+    -- sideways the moment it outgrew the page, which put every row's count
+    -- fourteen points inside the line its name started on. The tick draws out
+    -- in the margin MENU_PAD keeps clear instead, where nothing else is, and
+    -- that outgrows its page still does not move.
+    local lw = avail
     -- And a cap on a list, which came back when the tabs moved to the top.
     -- The cap was dropped while the block was a rail plus a stage and the
     -- widest a row could be was about 740 points; the stage is the whole
@@ -7558,7 +7619,12 @@ function M.menu(v)
     -- to spare, which is a thing that existed on a monitor and nowhere else.
     -- The column is 390 points on every window now, so what the aside held is
     -- drawn under the rows instead, where there is room for it. See `asidey`.
-    local panel_x, panel_w = sx, avail
+    -- A page is handed the column and nothing else, so the pages that draw
+    -- themselves and the list that draws rows begin and end on the same two
+    -- lines. It used to be handed the panel's own margin as its left edge and
+    -- a width short of the column at the right, which is how the hangar's
+    -- names came to start six points outside every name on the games list.
+    local panel_x, panel_w = tx, avail
     -- Where in its slide this page is, if it has just arrived. Everything the
     -- page draws and every box it publishes moves with it, which is what
     -- makes a press during the slide land on what the finger is over.
@@ -7672,38 +7738,30 @@ function M.menu(v)
         -- panel's own rule while the others began a gutter in from it, which
         -- is a quarter inch of difference nobody can name and everybody can
         -- see when they walk the tab row.
-        pages.kit(v, panel_x + GUTTER * F.scale, top,
-                  panel_w - 14 * F.scale - GUTTER * F.scale, room, focused)
+        pages.kit(v, panel_x, top, panel_w, room, focused)
     elseif v.social then
         -- Friends, as a field over sections whose rows carry buttons.
-        pages.friends(v, panel_x + GUTTER * F.scale, top,
-                      panel_w - 14 * F.scale - GUTTER * F.scale, room,
+        pages.friends(v, panel_x, top, panel_w, room,
                       focused)
     elseif v.builds then
         -- The library, behind the band's name key.
-        pages.builds(v, panel_x + GUTTER * F.scale, top,
-                     panel_w - 14 * F.scale - GUTTER * F.scale, room, focused)
+        pages.builds(v, panel_x, top, panel_w, room, focused)
     elseif v.newbuild then
         -- Naming one, a slide further right.
-        pages.newbuild(v, panel_x + GUTTER * F.scale, top,
-                       panel_w - 14 * F.scale - GUTTER * F.scale, room,
+        pages.newbuild(v, panel_x, top, panel_w, room,
                        focused)
     elseif v.points then
         -- What the thirty are, behind the band's meter.
-        pages.points(v, panel_x + GUTTER * F.scale, top,
-                     panel_w - 14 * F.scale - GUTTER * F.scale, room)
+        pages.points(v, panel_x, top, panel_w, room)
     elseif v.door then
         -- The room the game points at, as a page with one thing to press.
-        pages.door(v, panel_x + GUTTER * F.scale, top,
-                   panel_w - 14 * F.scale - GUTTER * F.scale, room, focused)
+        pages.door(v, panel_x, top, panel_w, room, focused)
     elseif v.item then
         -- One slot, read: where a press on a row's name lands.
-        pages.slot(v, panel_x + GUTTER * F.scale, top,
-                   panel_w - 14 * F.scale - GUTTER * F.scale, room, focused)
+        pages.slot(v, panel_x, top, panel_w, room, focused)
     elseif v.pilot_card then
         -- Who you are and the way to keep it, drawn rather than listed.
-        pages.pilot(v, panel_x + GUTTER * F.scale, top,
-                    panel_w - 14 * F.scale - GUTTER * F.scale, room, focused)
+        pages.pilot(v, panel_x, top, panel_w, room, focused)
     elseif v.rows and #v.rows > 0 and v.rows[1].hull then
         ship_grid(tx, top, avail, room, v, focused)
     else
@@ -7720,6 +7778,18 @@ function M.menu(v)
         for _, r in ipairs(v.rows) do
             if r.specs then specced = true break end
         end
+        -- Whatever the longest sentence in the list needs beyond one line. A
+        -- row is as tall as the tallest, so a list does not change pitch
+        -- halfway down; the sentence that wraps is usually the only one, and
+        -- the rows above it keep their own single line centered.
+        local wrapped_extra = 0
+        for _, r in ipairs(v.rows) do
+            local lines = pages.note_lines(r.note, lw, r)
+            if lines and #lines > 1 then
+                wrapped_extra = math.max(wrapped_extra,
+                                         (#lines - 1) * pages.NOTE_LINE)
+            end
+        end
         -- A section head above the row that opens one, which is how the mocks
         -- group a list: a small label and the map border's tick, and then the
         -- rows the label is about. Only where the whole list fits, because a
@@ -7730,8 +7800,8 @@ function M.menu(v)
             if r.sect then heads = heads + 1 end
         end
         local SECT = 24 * F.scale
-        local rowh = math.min((specced and 86 or noted and 58
-                               or (M.compact and 46 or 40)) * F.scale,
+        local rowh = math.min((wrapped_extra + (specced and 86 or noted and 58
+                               or (M.compact and 46 or 40))) * F.scale,
                               math.max(30 * F.scale,
                                        (room - heads * SECT)
                                        / math.max(#v.rows, 1)))
@@ -7791,7 +7861,7 @@ function M.menu(v)
                 -- stopped four points short of them, which is three
                 -- different right edges down one page once the selection
                 -- field is counted.
-                hrule(tx, at + SECT * 0.45, lw - GUTTER * F.scale)
+                hrule(tx, at + SECT * 0.45, lw)
                 lbl(r.sect, tx, at + SECT * 0.85)
                 at = at + SECT
             end
@@ -7807,7 +7877,7 @@ function M.menu(v)
                 -- lighting a second row, so `hover` only ever arrives on the
                 -- home screen, where the cursor belongs to the rail and the
                 -- stage is a preview of what the mark beside it holds.
-                local own = stage_row(sx, y, GUTTER * F.scale + lw, rowh, r,
+                local own = stage_row(tx, y, lw, rowh, r,
                                       (focused and i == v.sel) or i == v.hover,
                                       i, v.row_hot == i and v.row_hot_act)
                 if r.pick and not own then
@@ -7826,7 +7896,7 @@ function M.menu(v)
                 if r.link then
                     M.link_dom = string.format("%.1f,%.1f,%.1f,%.1f,%s",
                         sx / F.density, y / F.density,
-                        (GUTTER * F.scale + lw) / F.density,
+                        lw / F.density,
                         rowh / F.density, r.link)
                 end
             end
@@ -7838,9 +7908,13 @@ function M.menu(v)
             local hgt = math.max(30 * F.scale, room * room / full)
             local scrolled = (M.page_scroll / math.max(1, full - room))
                              * (room - hgt)
-            rect(tx + lw + 8 * F.scale, ty, bar, room, pal.a(pal.DIM, 0.14))
-            rect(tx + lw + 8 * F.scale, ty + scrolled, bar, hgt,
-                 pal.a(pal.RADAR_TILE, 0.85))
+            -- Out in the margin, centered in what MENU_PAD holds clear, rather
+            -- in a column cut out of the type. It is furniture about the page
+            -- rather than a thing on it, and the row that used to give up
+            -- fourteen points for it gets them back.
+            local bx = tx + lw + (MENU_PAD * F.scale - bar) / 2
+            rect(bx, ty, bar, room, pal.a(pal.DIM, 0.14))
+            rect(bx, ty + scrolled, bar, hgt, pal.a(pal.RADAR_TILE, 0.85))
         end
         -- What the page carries under its rows: the room this column is
         -- standing over, or what the call sign on this page means. It was a
@@ -7859,7 +7933,7 @@ function M.menu(v)
             -- to. It was a separately computed height and the two drifted
             -- apart the moment the list stopped being centred.
             local ey = at + 12 * F.scale
-            empty_state(sx, ey, GUTTER * F.scale + lw, top + room - ey, v.empty)
+            empty_state(tx, ey, lw, top + room - ey, v.empty)
         end
     end
 
@@ -7911,7 +7985,7 @@ function M.menu(v)
     -- Last, over all of it, because it is the only thing being read.
     -- It takes the screen, boxes included: a question is answered, not
     -- clicked past.
-    if v.ask then ask_card(sx, sy, GUTTER * F.scale + lw, sh, v.ask) end
+    if v.ask then ask_card(sx, sy, sw, sh, v.ask) end
     -- Everything this drew answers a press only while the menu is open. See
     -- `shutting`.
     if shutting then
