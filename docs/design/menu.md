@@ -219,18 +219,10 @@ vectorwake
               had, because a name in a pill does not look like a button.
               The stop is the door a stranger finds and the name is the one
               a returning player knows, and it stays because it is the one
-              thing on screen saying who you are signed in as. It is a
-              label with a press on it rather than a stop: the arrows walk
-              past it, and it never lights for the page, because the rail
-              stop already says you are there. Beside it,
-              Discord, which opens a page about the room rather than the
-              room: why there is one, one button that opens it, the address
-              in words under that for when a popup blocker eats the button,
-              and what actually happens in there. One thing on it answers a
-              press, and it is drawn as a button rather than as a row, which
-              is what the four rows it replaced could not say. Both it and
-              the call sign are drawn as buttons, though only Discord is a
-              stop the arrows walk
+              thing on screen saying who you are signed in as. It is drawn
+              as a button, and it is the only thing at that end of the line:
+              a Discord door stood beside it until the game stopped carrying
+              one at all, per decision 73
 
 in a match
 ├ play        the same list, because the way out of the game you are in is a
@@ -272,16 +264,13 @@ hover is still the cursor, because there is one cursor and it is the list you
 are reading; on the rail, crossing the row on the way to somewhere else can
 no longer take a page off the screen.
 
-Discord at the far end of the row is a stop on it, so it is lit on the same
-rule: the button while its page is up.
-
-The call sign beside it is not a stop and never lights for the page it opens.
+The call sign at the far end of the row never lights for the page it opens.
 The rail carries the account page, and the rail's own stop is what says you
 are on it; a name lighting too would put "where you are" in two places on one
 row. So the name is a label with a press on it, brightening under a pointer
-that could take you somewhere and quiet once you are there. It stopped being
-a stop the moment the rail took the page: a control the arrows can rest on
-has to light to show the cursor, which is the half a shortcut does not want.
+that could take you somewhere and quiet once you are there. The arrows do
+reach it, because a button no key can focus is broken for whoever is not
+holding a mouse, but the lit mark stays on the rail.
 
 ## What the window decides
 
@@ -301,26 +290,26 @@ at desktop size in 390 points of screen. Every page lost its bottom half.
 Landscape therefore takes the top row, which is the right answer for it: 56
 points of height against the bottom bar's 84, at the size a phone reads.
 
-The far end of the top line carries two buttons on both layouts, the call sign
-and the way out to Discord, with the wordmark giving up size to make room and
-Discord wearing its mark alone where the word will not fit. The tab row is
-bounded by them and gives up its gaps before its type. Laid out from opposite
-ends and never told about each other, the two ran into the middle of a
-landscape phone and the last tab was drawn under a button that took its taps.
+The far end of the top line carries the call sign on both layouts, with the
+wordmark giving up size to make room. The tab row is bounded by it and gives
+up its gaps before its type. Laid out from opposite ends and never told about
+each other, the two ran into the middle of a landscape phone and the last tab
+was drawn under a button that took its taps.
 
-Discord is on that row, which took saying. Right off the last tab lands on it,
-left walks back, and the row loops from either end. Enter presses it, and so
-does down, which is what down means on a tab: what is under it is the page
-about the place the talking happens.
+There were two buttons there until decision 73, the call sign and a way out
+to Discord, the second wearing its mark alone where the word would not fit.
+The community door is the site's now and the game carries none, so what is
+left is one label saying who is signed in.
 
-The call sign is not, and that is the difference between a stop and a
-shortcut. It was one while it was the only route to an account and a hand on
-the arrows could not reach it; the rail carries that page now, so the arrows
-walk past the name. What that buys is the lit mark staying in one place: a
-stop the cursor can rest on has to light to say the cursor is there, and this
-row's light means "where you are", which cannot be true of a tab and a name at
-the same time. The name brightens under a pointer that could take it somewhere
-and goes quiet on its own page.
+The call sign is on the row the arrows walk, which took saying. Right off the
+last tab lands on it, left walks back, and the row loops from either end.
+Enter presses it, and so does down, which is what down means on a tab.
+
+It does not light for its own page, and that is the rule the whole row is laid
+out under: this row's light means "where you are", which cannot be true of a
+tab and a name at the same time. The rail's stop is the one mark for the
+account page. The name brightens under a pointer or under the arrows resting
+on it, and goes quiet once you are there.
 
 ## Behind it, the sky the game is played under
 
@@ -344,7 +333,7 @@ help page draws a key as, so a hand that has learned one has learned
 all of them.
 
 Three controls used to say otherwise. Add on the friends page wore the
-chamfered bracket that holds a cluster together, and the account and Discord
+chamfered bracket that holds a cluster together, and the account and community
 buttons at the end of the top line were rounded pills, on the argument that a
 pill is the shape the web puts a link in. Each was a fair reading of its own
 shape and the wrong answer about the object: they do what MENU does, on pages
@@ -405,16 +394,15 @@ opens on the tab row.
 
 The zones, and nothing else. They were three sections at one point, zones and
 friends and community, because run together in one column they read as one list
-where Discord is a game you could join and friends is a room with nobody in it.
-Friends is a tab of its own now, and Discord is a corner button wherever there
-is a corner to put it in. The heading that survived those two went as well:
-with one list left, a label reading "zones" over it was the interface naming
-what the reader could already see.
+where a chat server is a game you could join and friends is a room with nobody
+in it. Friends is a tab of its own now, and the community section left the game
+with the rest of the Discord door, per decision 73. The heading that survived
+those two went as well: with one list left, a label reading "zones" over it was
+the interface naming what the reader could already see.
 
-Where Discord is drawn it is a button rather than a row, with its own mark on
-it and its name spelled the way Discord spells it. It is the one thing here
-that is not a place inside the game, and a row is how the menu writes places
-inside the game.
+Nothing on this page is a place outside the game any more, which is the rule
+the list wanted all along: a row is how the menu writes a place inside the
+game, and everything on the play page is one.
 
 `client/arena/directory.lua` asks a directory what is running. Opening the list
 asks at once, and it re-asks every three seconds for as long as the list is the

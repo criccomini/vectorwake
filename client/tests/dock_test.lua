@@ -74,8 +74,7 @@ local ROWS = {
 local function view(over)
     local v = {depth = 1, sel = 1, rail = RAIL, rail_sel = 1, focus = "rail",
                home = false, scenery = true, closable = true, rows = ROWS,
-               at = "play", pilot = {name = "Krait 4", rivets = 310},
-               discord = "https://discord.gg/x"}
+               at = "play", pilot = {name = "Krait 4", rivets = 310}}
     for k, val in pairs(over or {}) do v[k] = val end
     return v
 end

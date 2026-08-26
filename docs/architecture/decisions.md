@@ -1592,14 +1592,15 @@ is recorded.
 
 ## 39. The community lives on Discord, and the game only points at it
 
-**Status:** proposed
+**Status:** proposed, amended by [decision 73](#73-the-community-door-is-the-sites-not-the-games)
 
 [Decision 28](#28-no-chat) removed text between players and named its own
 cost: any future league or clan scene will organize on Discord, which means
 the community's real home is somewhere we do not control. This record accepts
 that cost deliberately instead of letting it happen to us. We create the
-Discord server, own it, and hold its admin keys, and the game's only
-connection to it is pointing at it.
+Discord server, own it, and hold its admin keys, and our only connection to it
+is pointing at it. Decision 73 moved that pointer off the game and onto the
+site; everything else here stands.
 
 The reasoning is the same one that removed chat, run forwards. We refused to
 carry text because moderation is a permanent commitment this project cannot
@@ -1615,9 +1616,9 @@ Discord user id would break both rules. Nothing in the
 fleet waits on Discord or fails when it is down.
 
 The one address that reaches the server is `vectorwake.net/discord`, a Caddy
-redirect, so the raw invite lives in exactly one editable line and never in a
-compiled client, a cached page, or the README. A leaked invite is rotated
-without a build.
+redirect, so the raw invite lives in one editable line and never in a compiled
+client, a cached page, or the README. A leaked invite is rotated without a
+build.
 
 [community.md](../design/community.md) is the working form of this record:
 the server's ownership and rules, the door, and the staged wire from fleet to
@@ -3344,3 +3345,68 @@ full strength.
 **Reconsider if:** a page turns up whose rows are genuinely not the width
 of the drawer, at which point the field wants to follow the page's own
 measure rather than the panel's, and `LIT.field` grows an argument for it.
+
+---
+
+## 73. The community door is the site's, not the game's
+
+**Status:** accepted
+
+**Decision:** the game carries no link to Discord. The corner button on the
+menu's tab row, the page it opened, the traced Clyde mark on the rail, the
+`DISCORD` constant, and the `/discord` redirect on the game origin are all
+gone. The community server is unchanged and so is everything in
+[decision 39](#39-the-community-lives-on-discord-and-the-game-only-points-at-it)
+about owning it; what moved is the door. It is on the site now, at
+`vectorwake.net/discord`, redirecting from the site block of
+`deploy/caddy/Caddyfile` rather than from `conf.d/central.caddy`, and the nav
+button, the founder's paragraph, the footer, support and the deletion
+instructions all point at it there.
+
+**Why:** Chris asked for it. The reasoning that survives the ask is that the
+door had been through four placements looking for one that fit, which is what
+a control with no home looks like: a section on the play page, then a row at
+the foot of it, then a corner button that opened a browser tab, then a corner
+button that opened a page about the room with the invite on it. Each move was
+a fair answer to the complaint about the one before, and none of them made a
+game with no chat into a place where the link belonged. The site is where
+somebody is reading about the game rather than playing it, which is the moment
+a link to a chat server is worth anything.
+
+It also takes real weight out of the client. The Discord page was the only
+outbound link in the menu, so it was the only reason menu rows and rail stops
+carried an address for the browser to lay a real anchor over, and the only
+reason a row could be drawn as a button rather than as a line of a list. Both
+mechanisms came out with it. The link bridge itself stays, because the match
+ending's share key still needs a real anchor to copy inside a gesture, so what
+was learned about phones and popup blockers is still in the tree and still
+exercised by a test.
+
+The tab row is one stop shorter at the corner: the call sign alone, which
+never lights for its own page because the rail carries that page and the lit
+mark on that row means "where you are". With Discord gone there is nothing on
+the row whose page the rail does not lead to, so `corner_lit` answers only
+while the cursor is standing on the row.
+
+**Cost:** a player who never leaves the client never learns the server exists.
+That is the trade being made and it is not a small one for a game whose whole
+social life is off the game. The bet is that the people who would join a chat
+server are people who read the site, and that the ones who would not are not
+converted by a button in a menu they opened to change the volume. It is
+recoverable: the page is in git history and the link machinery is intact, so
+putting a door back is a page and a corner stop rather than a rebuild.
+
+Two copies of the invite code exist rather than one, which was true before
+this and is worth writing down: the Caddy redirect, and `deploy/site/site.js`,
+which asks Discord for the member count beside the button. Rotating an invite
+is those two lines.
+
+**Reconsider if:** the server stops growing and the site turns out not to be
+where the audience is, at which point the question is where in the game a link
+belongs rather than whether one does, and this record's four placements are
+the list of answers already tried.
+
+**Cascades:** decision 39 stands, minus its sentence about the game pointing
+at the server; `community.md`, `menu.md`, `interface.md`, `friends.md` and
+`match-game.md` are updated. Decision 28 is untouched: this removes a link,
+not a reason.

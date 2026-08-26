@@ -113,9 +113,16 @@ http:// {
 		reverse_proxy 127.0.0.1:9400
 	}
 
-	# Keep the community door stable without copying the raw invite out of the
-	# game origin, where decision 39 says it lives.
-	redir /discord https://play.vectorwake.net/discord 302
+	# The one address that reaches the community's Discord. The raw invite
+	# lives here, so rotating it after a leak or a raid is editing this line
+	# rather than every page that links to it; site.js carries the code as
+	# well, to ask Discord for the member count beside the button.
+	#
+	# On the site rather than on the game origin, which is where it used to
+	# sit. The game carries no door to it at all now, so a redirect on
+	# play.vectorwake.net would be the last Discord-shaped thing left on an
+	# origin that serves the client and nothing else.
+	redir /discord https://discord.gg/jyb4YBcY5Z 302
 
 	# The landing page uses the exact display and instrument fonts from the
 	# client, plus its existing browser mark. They are mounted read-only beside

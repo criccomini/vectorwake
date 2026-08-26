@@ -85,7 +85,7 @@ local function friend_view(n)
     end
     return {depth = 2, sel = 1, rail = RAIL, rail_sel = 4, focus = "stage",
             home = true, closable = false, social = true, rows = rows,
-            pilot = {name = "Squall 586"}, discord = "https://example.invalid",
+            pilot = {name = "Squall 586"},
             add = {name = "", on = false, note = "", bad = false, found = {}}}
 end
 

@@ -52,12 +52,12 @@ local pal = require("arena.palette")
 
 local RAIL = {}
 -- The rail at its longest, which is what a pilot in a game with sides sees:
--- zones, ship, pilot, team, settings, help, discord, about. Every mark the
--- rail can wear is therefore drawn at least once here, and a mark that throws
--- is a menu that will not open. The change before this shipped a crash in a
+-- zones, ship, pilot, team, settings, help, about. Every mark the rail can
+-- wear is therefore drawn at least once here, and a mark that throws is a
+-- menu that will not open. The change before this shipped a crash in a
 -- drawing path no test ever ran.
 for i, n in ipairs({"zones", "ship", "pilot", "team", "settings", "controls",
-                    "discord", "about"}) do
+                    "about"}) do
     RAIL[i] = {label = n, icon = n, index = i}
 end
 
@@ -152,27 +152,6 @@ check("and not as a row of whatever page is showing", as_rows == 0,
       as_rows .. " rail stops published as rows")
 check("the rail names its stops", has(st, "zones") and has(st, "about"))
 
--- --- a button is a shape, not a line of the list --------------------------
---
--- The Discord row is drawn as a button because it is the one thing on the play
--- page that is not a place inside the game. A press has to land on the button:
--- published across the whole row, as every other row's is, the shape would be
--- decoration over a line that still behaved like a line.
-do
-    local btn = {label = "Talk on Discord", index = 1, pick = true,
-                 button = "discord", detail = ""}
-    draw({depth = 2, sel = 1, rail = RAIL, rail_sel = 1, focus = "stage",
-          home = true, closable = false, rows = {btn}})
-    local box = nil
-    for _, h in ipairs(ui.hits) do
-        if h.action == "stage" and h.value == 1 then box = h end
-    end
-    check("the button publishes a box", box ~= nil)
-    check("narrower than the row it sits in", box and box.w < W * 0.5,
-          box and string.format("%.0f of %d", box.w, W) or "none")
-    check("and no taller than a row", box and box.h <= 60, box and box.h)
-end
-
 -- --- the call sign in the corner takes a press ----------------------------
 --
 -- It is the only way to the pilot page: there is no stop for it on the tab
@@ -206,7 +185,7 @@ check("the stage shows what the rail points at", has(st, "zone1"))
 do
     local all = {}
     local names = {"zones", "ship", "pilot", "team", "settings", "controls",
-                   "discord", "about", "friends", "upgrades", "leave"}
+                   "about", "friends", "upgrades", "leave"}
     for i, name in ipairs(names) do
         all[i] = {label = name, icon = name, index = i}
     end
@@ -874,61 +853,6 @@ do
     end
     check("and every one of them is drawn", drawn == #pad_rows,
           drawn .. " of " .. #pad_rows)
-end
-
--- --- the page is told where to put the link -------------------------------
---
--- The stop that leaves the game is a real anchor laid over the canvas by the
--- page, because a tab opened a frame after a tap is a popup as far as every
--- phone is concerned. What the client owes the page is where that stop landed
--- and where it goes, in the CSS pixels the page lays out in.
-
-do
-    local RAIL2 = {}
-    for i, n in ipairs({"zones", "ship", "pilot", "settings", "controls",
-                        "discord", "about"}) do
-        RAIL2[i] = {label = n, icon = n, index = i}
-    end
-    RAIL2[6].link = "https://play.vectorwake.net/discord"
-
-    for _, shape in ipairs({{1280, 800, 1}, {844 * 2, 390 * 2, 2}}) do
-        draw({depth = 1, sel = 1, rail = RAIL2, rail_sel = 1, focus = "rail",
-              home = true, closable = false, rows = {}},
-             shape[1], shape[2], shape[3] == 2)
-        local box = ui.link_dom
-        check(string.format("%dx%d publishes a link box", shape[1], shape[2]),
-              box ~= nil, "none")
-        if box then
-            local x, y, w, h, url =
-                box:match("^([%d%.%-]+),([%d%.%-]+),([%d%.%-]+),([%d%.%-]+),(.+)$")
-            check("  and it parses into a box and an address",
-                  x and url == "https://play.vectorwake.net/discord",
-                  tostring(box))
-            -- Big enough for a finger, and inside the window it is drawn in.
-            -- ui.lua publishes CSS pixels by dividing by the density, and
-            -- this harness always draws at one, so here the two are the same
-            -- number and the window is compared as given.
-            if x then
-                x, y, w, h = tonumber(x), tonumber(y), tonumber(w), tonumber(h)
-                check("  and it is a target a thumb can hit",
-                      w >= 24 and h >= 24,
-                      string.format("%.0f by %.0f", w, h))
-                check("  and it is on the screen",
-                      x >= -1 and y >= -1
-                      and x + w <= shape[1] + 1 and y + h <= shape[2] + 1,
-                      string.format("%.0f,%.0f %.0fx%.0f in %dx%d",
-                                    x, y, w, h, shape[1], shape[2]))
-            end
-        end
-    end
-
-    -- And nothing is published when no stop on the rail is a link, or the
-    -- page would keep an invisible anchor over a menu that has none.
-    draw({depth = 1, sel = 1, rail = RAIL, rail_sel = 1, focus = "rail",
-          home = true, closable = false, rows = {}}, 1280, 800)
-    check("a rail with no link publishes none", ui.link_dom == nil,
-          tostring(ui.link_dom))
-
 end
 
 -- --- the ship page is a ship and its thirty points ------------------------

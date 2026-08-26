@@ -269,15 +269,14 @@ do
     menu.stack, menu.sel = kept_stack, kept_sel
 end
 
--- --- the buttons at the end of that row are on the row ---------------------
+-- --- the button at the end of that row is on the row -----------------------
 --
--- Both of them, now. Discord sits beside the tabs and does what a tab does,
--- and so does the call sign: the row is the tabs and then those two, left to
--- right, and it loops. The call sign was left off it on the grounds that the
--- rail carries the account page and a pointer can press the name directly,
--- which is true and does nothing for a hand on the arrows. A button that is
--- drawn like a button and cannot be reached by any key is broken for whoever
--- is not holding a mouse, and it was reported that way.
+-- The call sign sits beside the tabs and does what a tab does: the row is the
+-- tabs and then it, left to right, and it loops. It was left off on the
+-- grounds that the rail carries the account page and a pointer can press the
+-- name directly, which is true and does nothing for a hand on the arrows. A
+-- button that is drawn like a button and cannot be reached by any key is
+-- broken for whoever is not holding a mouse, and it was reported that way.
 --
 -- What that argument was really protecting is kept: this row's lit mark means
 -- "where you are" and cannot be true of two things at once, so a corner button
@@ -285,15 +284,15 @@ end
 -- mark for the account page; the corner lights only for the arrows resting on
 -- it at the root.
 do
-    local kept_name, kept_url = menu.name, _G.sys.open_url
+    local kept_name = menu.name
     menu.name = "Tester 1"
     menu.open, menu.home = true, true
     menu.stack = {"root"}
     menu.sel = {root = pilot_at}
     menu.corner_sel = nil
     menu.step({right = true})
-    check("right off the last tab reaches discord",
-          menu.view().corner_sel == "discord",
+    check("right off the last tab reaches the call sign",
+          menu.view().corner_sel == "pilot",
           tostring(menu.view().corner_sel))
     -- Standing on a corner stop is standing on it: the tab the cursor left
     -- goes dark, and the stage previews the stop's page the way it previews
@@ -302,28 +301,15 @@ do
     check("and the tab it left goes dark",
           (menu.view().rail_sel or 0) == 0,
           tostring(menu.view().rail_sel))
-    check("and the stage previews the discord page",
-          menu.showing() == "discord"
-          and (menu.view().rows[1] or {}).label == "join discord",
-          menu.showing() .. "/" .. tostring((menu.view().rows[1] or {}).label))
-    -- The call sign is the next stop along, which is where it is drawn: the
-    -- corner lays out from the right edge, name first, so Discord is the left
-    -- of the two and the row reads tabs, Discord, name.
-    menu.step({right = true})
-    check("and right again reaches the call sign",
-          menu.view().corner_sel == "pilot",
-          tostring(menu.view().corner_sel))
+    check("and the stage previews the pilot page",
+          menu.showing() == "pilot", menu.showing())
     menu.step({right = true})
     check("and right off its end is the first tab, the way the row wraps",
           menu.view().corner_sel == nil and menu.sel.root == 1,
           tostring(menu.view().corner_sel) .. "/" .. tostring(menu.sel.root))
     menu.step({left = true})
-    check("left off the first tab is the last of them",
+    check("left off the first tab is the call sign",
           menu.view().corner_sel == "pilot",
-          tostring(menu.view().corner_sel))
-    menu.step({left = true})
-    check("and left again is discord",
-          menu.view().corner_sel == "discord",
           tostring(menu.view().corner_sel))
     menu.step({left = true})
     check("and off its end onto the last tab",
@@ -370,20 +356,15 @@ do
     menu.stack = {"root"}
     menu.sel = {}
 
-    -- Down is the same press, the way it is on a tab: what is under one of
-    -- these is a page, and the Discord button has one now rather than a
-    -- browser tab it opens without warning.
-    local asked = nil
-    _G.sys.open_url = function(url) asked = url return true end
+    -- Down is the same press, the way it is on a tab: what is under a corner
+    -- stop is a page.
     menu.stack = {"root"}
     menu.sel = {root = pilot_at}
     menu.corner_sel = nil
     menu.step({right = true})
     menu.step({down = true})
-    check("down on discord opens its page", menu.at() == "discord",
+    check("down on the call sign opens its page", menu.at() == "pilot",
           table.concat(menu.stack, "/"))
-    check("and nothing has left for the browser", asked == nil,
-          tostring(asked))
     menu.stack = {"root"}
 
     -- A tap on a tab takes the cursor off them, so the row never looks like
@@ -394,7 +375,7 @@ do
           tostring(menu.corner_sel))
     menu.stack = {"root"}
     menu.sel = {}
-    menu.name, _G.sys.open_url = kept_name, kept_url
+    menu.name = kept_name
 end
 
 menu.click_rail(ship_at)
@@ -832,12 +813,11 @@ menu.zone = "chaos"
 menu.ask = nil
 menu.show("play")
 local zones = menu.view()
--- One game and the community row, headed as two. Discord is not a way out of
--- the game: it is where somebody thinking about who to play with already is,
--- which is the argument for it being here rather than on the tab row. Friends
--- was the third section and is a tab of its own now, because who is on is a
--- question asked from wherever you are standing rather than one you go to the
--- games page to ask. See docs/design/friends.md.
+-- The games and nothing else. This page carried a community section and a
+-- friends section beside them once; friends is a tab of its own now, because
+-- who is on is a question asked from wherever you are standing rather than
+-- one you go to the games page to ask, and the community section left the
+-- game with the rest of it. See docs/design/friends.md.
 local heads = {}
 for _, r in ipairs(zones.rows) do
     if r.sect then heads[#heads + 1] = r.sect end
@@ -847,14 +827,6 @@ end
 -- can already see.
 check("the play page is the zones and nothing else",
       #heads == 0, table.concat(heads, "/"))
--- Discord left this page for the same reason friends did: a row on a page is
--- a place you find by going somewhere else first. It is a button in the
--- corner of the top line now, on every page and both layouts, and the view
--- carries the address for it.
-check("and the way out to Discord is a corner button, not a row",
-      zones.discord ~= nil and zones.rows[1].button == nil,
-      tostring(zones.discord))
-
 check("nothing at the foot of the list leaves the game",
       #zones.rows == 1 and zones.rows[1].label == "chaos",
       table.concat(texts_of(zones), ", "))
@@ -1520,27 +1492,14 @@ do
     binds.reset()
 end
 
--- --- the discord stop leaves, rather than going somewhere in here ----------
+-- --- the only way out of the game is the two documents ---------------------
 --
--- Every other row pushes a page onto the stack. This one hands a URL to the
--- browser and leaves the stack where it was, so the two things worth pinning
--- are that it opens the right address in a new tab and that it does not
--- quietly navigate the menu somewhere as well.
---
--- It sits at the foot of the play page rather than on the tab row. That is
--- where somebody is already thinking about who to play with, and it is the one
--- outbound link in a game that carries no chat.
-
-local function discord_row()
-    menu.home = true
-    menu.stack = {"root"}
-    menu.sel = {}
-    menu.click_rail(top_index("play"))
-    for i, r in ipairs(menu.view().rows) do
-        if r.button == "discord" then return i end
-    end
-    return nil
-end
+-- The game carried a community door for a while: a corner button on the tab
+-- row that opened a page about the Discord server, with the invite on it as a
+-- link the browser laid a real anchor over. It is gone, and the site is where
+-- it lives now. What is left inside the game is privacy and terms, which are
+-- on the about page because the account is minted before a player has a
+-- reason to visit the bare site.
 
 local function open_about()
     menu.home = true
@@ -1560,98 +1519,27 @@ local function open_about()
     end
 end
 
-do
-    local asked = nil
-    _G.sys.open_url = function(url, attrs)
-        asked = {url = url, target = attrs and attrs.target}
-        return true
+local function about_row(label)
+    open_about()
+    for i, entry in ipairs(menu.view().rows) do
+        if entry.label == label then return i end
     end
+    return nil
+end
+
+do
+    local asked
 
     menu.open = true
-    -- No row to press any more: Discord is a button in the corner of the top
-    -- line, on every page and both layouts, and this is the press it takes.
-    check("the play page has no discord row left", discord_row() == nil,
-          "still a row")
-
-    -- And that press opens a page rather than a browser tab. What the button
-    -- used to do was leave the game for somewhere the player had not been
-    -- told about, which is a fine control once you know what is behind it and
-    -- a poor one the first time.
+    -- Nothing on the tab row but the tabs and the call sign, and no page
+    -- behind a stop that is not one of theirs.
     menu.home = true
     menu.stack = {"root"}
     menu.sel = {}
-    menu.open_discord()
-    check("the corner button opens a page about the server",
-          menu.at() == "discord", table.concat(menu.stack, "/"))
-    check("and nothing has left for the browser yet", asked == nil,
-          asked and asked.url or "")
+    check("no community door is left on the tab row",
+          menu.view().discord == nil and menu.open_discord == nil,
+          "one is")
 
-    -- One row, and it is the way out, so a hand on the arrows presses enter
-    -- twice and is there. Everything else the page says it says as words
-    -- rather than as rows: three of the four rows this used to have went
-    -- nowhere and were set in the face and size of rows that do.
-    local view = menu.view()
-    local page = view.rows
-    check("the page has one row and it is the invite",
-          #page == 1 and page[1].pick == true,
-          #page .. " rows")
-    check("carrying the address, so the browser can lay an anchor over it",
-          page[1] and page[1].link == "https://play.vectorwake.net/discord",
-          page[1] and tostring(page[1].link))
-    check("and it is drawn as the page about the door",
-          view.door == true, tostring(view.door))
-    check("which leads with the reason to use it",
-          view.door_head == "Rally for the next match.",
-          tostring(view.door_head))
-    check("and explains the room in one short block",
-          type(view.door_body) == "string"
-          and string.find(view.door_body, "Meet pilots", 1, true) ~= nil,
-          tostring(view.door_body))
-    check("with the tab behavior beside the action",
-          type(view.door_note) == "string"
-          and string.find(view.door_note, "new tab", 1, true) ~= nil,
-          tostring(view.door_note))
-    -- The one address, cut from the one constant. Two copies of an address is
-    -- one address that goes stale.
-    check("and the address a player can retype, with no scheme on it",
-          view.door_addr == "play.vectorwake.net/discord",
-          tostring(view.door_addr))
-    check("which is the address the button opens",
-          view.door_addr and page[1].link:sub(-#view.door_addr)
-              == view.door_addr,
-          tostring(view.door_addr) .. " against " .. tostring(page[1].link))
-
-    menu.step({go = true})
-    check("pressing it asks the browser to open the invite",
-          asked and asked.url == "https://play.vectorwake.net/discord",
-          asked and asked.url or "nothing asked")
-    check("in a new tab", asked and asked.target == "_blank",
-          asked and tostring(asked.target))
-    -- The redirect, not the invite: an invite that has to be reissued should
-    -- be one line of Caddy rather than a client release.
-    check("and it is the redirect rather than a discord.gg link",
-          asked and not asked.url:find("discord.gg", 1, true))
-    check("and the menu stays on the page", menu.at() == "discord",
-          table.concat(menu.stack, "/"))
-    check("which left is still the way out of",
-          select(1, menu.step({left = true})) == nil and menu.at() == "root",
-          table.concat(menu.stack, "/"))
-
-    menu.stack = {"root", "play"}
-
-    -- Nothing is put on screen when the browser says no, and there is no
-    -- browser here to say yes: a card with the address and an OK on it is
-    -- what a phone actually got, and a card is not a link.
-    menu.stack = {"root"}
-    menu.sel = {}
-    menu.note = nil
-    _G.sys.open_url = function() return false end
-    menu.click_rail(top_index("discord"))
-    check("a refusal puts nothing on screen", menu.view().ask == nil,
-          tostring(menu.view().ask and menu.view().ask.head))
-
-    -- The account is minted before a player has a reason to visit the bare
-    -- site, so the about page carries the two documents that govern it.
     for label, url in pairs({privacy = "https://vectorwake.net/privacy",
                              terms = "https://vectorwake.net/terms"}) do
         asked = nil
@@ -1660,11 +1548,7 @@ do
             asked = {url = got, target = attrs and attrs.target}
             return true
         end
-        open_about()
-        local row = nil
-        for i, entry in ipairs(menu.view().rows) do
-            if entry.label == label then row = i end
-        end
+        local row = about_row(label)
         check("about carries " .. label, row ~= nil, "absent")
         if row then menu.click_stage(row) end
         check(label .. " opens the public document",
@@ -1672,36 +1556,51 @@ do
               asked and asked.url or "nothing asked")
     end
 
+    -- Nothing is put on screen when the browser says no: a card with the
+    -- address and an OK on it is what a phone actually got, and a card is not
+    -- a link.
+    menu.ask = nil
+    menu.note = nil
+    _G.sys.open_url = function() return false end
+    local refused = about_row("terms")
+    if refused then menu.click_stage(refused) end
+    check("a refusal puts nothing on screen", menu.view().ask == nil,
+          tostring(menu.view().ask and menu.view().ask.head))
+
     -- And an engine with no open_url at all does not take the menu down.
     _G.sys.open_url = nil
-    local link = discord_row()
-    local ok = pcall(menu.click_stage, link)
+    local bare = about_row("privacy")
+    local ok = bare ~= nil and pcall(menu.click_stage, bare)
     check("an engine without open_url survives the tap", ok)
 end
 
--- --- and on the web the page holds a real link over it --------------------
+-- --- and no page asks the browser for an anchor over the canvas -----------
 --
--- Nothing the client does from its own loop is inside the tap that asked for
--- it, and a browser will not open a tab for anything else: desktop allowed a
--- frame-late window.open, every phone called it a popup and blocked it. So
--- the view carries the address for the page to lay an anchor over, and the
--- finger lands on that rather than on the canvas.
+-- One row did: the invite on the community page, because nothing the client
+-- does from its own loop is inside the tap that asked for it and every phone
+-- called a frame-late window.open a popup. No row in the menu leaves the game
+-- any more, so no row carries an address for the page to lay an anchor over,
+-- and a stray one would put a live link over a page of the game's own.
 
 do
     menu.open = true
-    menu.stack = {"root", "play"}
-    local view = menu.view()
-    check("the view carries the address", view.discord ~= nil, "none")
-    check("and it is the redirect",
-          view.discord == "https://play.vectorwake.net/discord",
-          tostring(view.discord))
-    -- No row does, or the page would put a link over a page of the game's
-    -- own. It is one button in the corner and nothing else.
+    menu.home = true
     local strays = {}
-    for _, r in ipairs(view.rows) do
-        if r.link then strays[#strays + 1] = r.label end
+    for _, page in ipairs({"play", "hangar", "friends", "settings",
+                           "pilot"}) do
+        menu.stack = {"root", page}
+        local view = menu.view()
+        for _, r in ipairs(view.rows or {}) do
+            if r.link then strays[#strays + 1] = page .. "/" .. r.label end
+        end
+        for _, r in ipairs(view.rail or {}) do
+            if r.link then strays[#strays + 1] = "rail/" .. r.label end
+        end
     end
-    check("and no row does", #strays == 0, table.concat(strays, ", "))
+    check("no row or rail stop carries an address", #strays == 0,
+          table.concat(strays, ", "))
+    menu.stack = {"root"}
+    menu.sel = {}
 end
 
 -- `about` is a page under settings rather than a tab of its own, on the same

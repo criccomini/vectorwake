@@ -5,9 +5,11 @@ vectorwake carries no text between players, permanently, per
 chat also priced it: any league or clan scene will organize on Discord, so the
 community's real home is somewhere we do not control. This document is about
 paying that price on purpose instead of being surprised by it. We create the
-server, we hold the keys, and the game points at it.
+server, we hold the keys, and the site points at it.
 [Decision 39](../architecture/decisions.md#39-the-community-lives-on-discord-and-the-game-only-points-at-it)
-records the choice; this is what it looks like in practice.
+records the choice, and
+[decision 73](../architecture/decisions.md#73-the-community-door-is-the-sites-not-the-games)
+took the door out of the game; this is what the two look like in practice.
 
 ## Why Discord
 
@@ -64,26 +66,34 @@ before it writes the PNG.
 
 ## The door
 
-One address reaches it: `vectorwake.net/discord`, a redirect in
-`deploy/caddy/conf.d/central.caddy` pointing at the current invite. The raw
-`discord.gg` code never appears in a client build, the README, or anything
-else compiled or cached. CI bakes the client into an image and browsers cache
-the page, so an invite embedded there would outlive every attempt to revoke
-it. Behind the redirect, rotating a leaked or raided invite is editing one
-Caddy line, and every place that ever named the address stays correct.
+One address reaches it: `vectorwake.net/discord`, a redirect in the site block
+of `deploy/caddy/Caddyfile` pointing at the current invite. The raw
+`discord.gg` code appears in exactly one other place, `deploy/site/site.js`,
+which asks Discord for the member count beside the button. It is not in a
+client build, the README, or anything else compiled or cached: CI bakes the
+client into an image and browsers cache the page, so an invite embedded there
+would outlive every attempt to revoke it. Behind the redirect, rotating a
+leaked or raided invite is editing two lines, and every place that ever named
+the address stays correct.
 
-In the client, the page about the room names the address in words, under the
-button that opens it: `play.vectorwake.net/discord`, set in the mono because
-an address is a machine reading and this interface quotes those verbatim. It
-is cut from the same constant the button carries, so the two cannot disagree.
-Making it tappable is a real question rather than a given. Browsers allow
-`window.open` only inside a user gesture, and Defold polls input once a frame.
-By the time Lua acts, the gesture may already be spent and the popup blocker
-eats the call. The page publishes a real DOM anchor over the drawn Join Discord
-button, the same approach the login card uses for its fields, per
+The door is on the site and not in the game, per decision 73. The landing
+page, the pilot pages and the support and deletion documents all link it, the
+nav carries it as a button with a live member count, and a player who wants
+the room is one click from it before they ever load the client.
+
+There was a Discord page inside the game for a while: a corner button on the
+menu's tab row that opened a page explaining the room, with the invite on it
+as a row. It cost more than it returned. A game with no chat has one job on
+screen, and the only outbound links left in the menu are the two documents the
+account is governed by. What that page taught is worth keeping written down,
+because a future outbound link will meet it again: browsers allow
+`window.open` only inside a user gesture, Defold polls input once a frame, and
+by the time Lua acts the gesture may already be spent and the popup blocker
+eats the call. Publishing a real DOM anchor over the drawn control, the same
+approach the login card uses for its fields, per
 [decision 37](../architecture/decisions.md#37-the-phones-own-keyboard-through-an-element-the-canvas-cannot-be),
-so the navigation happens inside the tap. The address remains on the page as a
-fallback a player can read and retype.
+is what makes a tap open a tab. The machinery for that is still in the client:
+`ui.link_dom` and `browser.lua` carry the match ending's share key.
 
 ## The wire
 
@@ -274,9 +284,10 @@ in the server grants anything in the game, and a pilot who never opens Discord
 is a complete player who missed some conversation.
 
 It is not a dependency. Nothing in the fleet reads from Discord, waits on it,
-or fails when it is down. The integration losing its platform would cost us a
-noticeboard, and the day Discord's terms or prices turn hostile, moving is
-rotating one redirect.
+or fails when it is down, and since decision 73 nothing in the game so much as
+names it. The integration losing its platform would cost us a noticeboard, and
+the day Discord's terms or prices turn hostile, moving is rotating one
+redirect and editing the site.
 
 One idea stays parked rather than planned: Discord Activities embed a web page
 in a voice channel, and this client is already a single file. But an Activity

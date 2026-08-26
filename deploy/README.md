@@ -258,4 +258,6 @@ DISCORD_BOT_TOKEN=<administrator bot token> \
   python3 deploy/discord/setup.py
 ```
 
-Set `DISCORD_GUILD_ID` when the bot belongs to more than one server. Pass `--icon` to replace an existing server icon. The script prints the invite it created or kept; update the `/discord` redirect in [`caddy/conf.d/central.caddy`](caddy/conf.d/central.caddy) if the code changes.
+Set `DISCORD_GUILD_ID` when the bot belongs to more than one server. Pass `--icon` to replace an existing server icon. The script prints the invite it created or kept; update the `/discord` redirect in the site block of [`caddy/Caddyfile`](caddy/Caddyfile) if the code changes.
+
+The game does not link to the server at all. The site does, at `vectorwake.net/discord`, so a reissued invite is one line of Caddy. The invite code appears in one other place, [`site/site.js`](site/site.js), which asks Discord for the member count beside the button.
