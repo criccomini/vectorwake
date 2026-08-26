@@ -35,30 +35,44 @@ function M.pen(k, ratio)
     return math.max(0.9 * S, k * ratio)
 end
 
--- A gun is a line with a dot on the end of it, and that is the whole mark.
--- One line, or three when the fan is on; a ring round each dot when the
--- rounds come back off walls. It was a tapered streak once, drawn the way the
--- arena draws a bolt in flight, and at the size a corner allows that came out
--- as a gray smudge with a speck on it. What survives being drawn small is a
--- line and a dot.
+-- A gun is the round the arena fires, frozen: the three passes world.weapons
+-- lays a bolt down with, a broad faint streak, a tighter bright one over the
+-- last stretch, a hot core into the head, then the halo and a hot head. It
+-- was a line with a dot for a long time, on the argument that only a line
+-- and a dot survive being drawn small; that predates the layered streak,
+-- whose bright core is exactly what the old tapered smudge lacked, and the
+-- corner was the one place in the game still drawing a round the arena
+-- never fires.
 M.BOLT_LEN = 1.4
-local BOLT_DOT, BOLT_FAN = 0.17, 0.47
+local BOLT_HEAD, BOLT_HALO, BOLT_FAN = 0.13, 0.26, 0.47
 
--- One barrel, from the muzzle out to its dot. Returns where the dot landed,
+-- One round in flight, from the muzzle out. Returns where the head landed,
 -- because both callers ring it when the rounds bounce.
-local function bolt_line(ox, oy, ang, k, col)
-    local d = k * M.BOLT_LEN
-    local dx, dy = ox + math.cos(ang) * d, oy + math.sin(ang) * d
-    u:seg(ox, oy, dx, dy, M.pen(k, 0.075), col)
-    u:disc(dx, dy, k * BOLT_DOT, 10, col)
+-- `len` and `wgt` are the second barrel's: it flies a touch behind the round
+-- and a step lighter, exactly as its line-and-dot drawing did.
+local function bolt_line(ox, oy, ang, k, col, len, wgt)
+    local ca, sa = math.cos(ang), math.sin(ang)
+    local d = k * (len or M.BOLT_LEN)
+    local w = wgt or 1
+    local dx, dy = ox + ca * d, oy + sa * d
+    local a = col[4] or 1
+    u:seg_fade(ox, oy, dx, dy, k * 0.06 * w, k * 0.30 * w, 0, a * 0.33, col)
+    u:seg_fade(dx - ca * d * 0.75, dy - sa * d * 0.75, dx, dy,
+               k * 0.05 * w, k * 0.16 * w, a * 0.22, a, col)
+    local hotc = pal.hot(col, 0.9, a)
+    u:seg_fade(dx - ca * d * 0.36, dy - sa * d * 0.36, dx, dy,
+               k * 0.04 * w, k * 0.11 * w, a * 0.4, a, hotc)
+    u:halo(dx, dy, k * BOLT_HALO * w, 10, pal.a(col, a * 0.45))
+    u:disc(dx, dy, k * BOLT_HEAD * w, 10, hotc)
     return dx, dy
 end
 
--- What a bouncing round wears: a ring round the dot, sized off the dot rather
--- than off whatever room the caller has left, so the two draws match.
+-- What a bouncing round wears: a ring round the head, sized off the head
+-- rather than off whatever room the caller has left, so the two draws match.
+-- Outside the halo, so it stays a ring on a light rather than a rim of it.
 local function bolt_bounce(dx, dy, k, col)
-    local r = k * (BOLT_DOT + 0.16)
-    u:ring(dx, dy, r, M.pen(k, 0.065), 12, col)
+    local r = k * (BOLT_HEAD + 0.17)
+    u:ring(dx, dy, r, M.pen(k, 0.055), 12, col)
     return r
 end
 
@@ -91,42 +105,58 @@ local function bomb_prox(hx, hy, r, col)
     u:disc(hx, hy, r, 28, pal.a(col, (col[4] or 1) * 0.24))
 end
 
--- The head, and the whole of the round.
+-- The head, and the whole of the round: the hot core in a ring the arena
+-- flies, under its own light. The halo and the bloom are world.weapons' own
+-- pair, the tight one sized to the thing and the wide faint one over it.
 --
--- It had a fading trail behind it for a while, drawn the way the arena draws a
--- bomb in flight. Two things were wrong with that. An icon is not a round in
+-- What it still does not have is the trail. An icon is not a round in
 -- flight: it says which weapon a trigger fires, and a streak of motion on a
--- thing sitting still in a corner is a picture of the wrong moment. And it
--- cannot be centered, because it fades to nothing along its length, so it drags
--- the drawing off to one side while a bounding box reports the mark as square
--- in the middle. Three separate attempts to bias it into place all landed
--- somewhere a screenshot said was still off. A ring about a point is centered
--- where it is drawn.
+-- thing sitting still in a corner is a picture of the wrong moment. It also
+-- cannot be centered, because it fades to nothing along its length, so it
+-- drags the drawing off to one side while a bounding box reports the mark as
+-- square in the middle; three separate attempts to bias it into place all
+-- landed somewhere a screenshot said was still off. The gun keeps its streak
+-- because the streak is the round; a bomb's identity is the lit ring, and
+-- light thrown equally in every direction is centered where it is drawn.
+--
 -- The core fills most of the ring, which is the proportion the arena draws a
--- bomb in flight at: a 3.6 core inside a 4.6 ring, so the two read as one
--- object with a lit rim. It was a fifth of that for a while, a small dot a
--- long way inside a ring, and a small dot a long way inside a ring is the
--- picture a proximity fuse used to draw, so a bare bomb looked loaded and a
--- loaded one looked doubly so.
+-- bomb in flight at: a 3.6 core inside a 4.6 ring, hot against the ring's
+-- own hue, so the two read as one object with a lit rim.
 local function bomb_head(hx, hy, k, col)
+    local a = col[4] or 1
+    u:halo(hx, hy, k * 0.78, 12, pal.a(col, a * 0.5))
+    -- The wide faint pass is world's bloom, spelled as a halo: the two are
+    -- the same triangles, and bloom's alpha-as-a-parameter exists for a loop
+    -- that draws thousands a frame, which a corner of four marks is not.
+    u:halo(hx, hy, k * 1.02, 12, pal.a(col, a * 0.18))
     u:ring(hx, hy, k * BOMB_R, M.pen(k, 0.122), 14, col)
-    u:disc(hx, hy, k * 0.34, 12, col)
+    u:disc(hx, hy, k * 0.35, 12, pal.hot(col, 0.8, a * 0.95))
 end
 
 -- The charges, drawn from what the thing does rather than from a name that
--- could disagree with it: a repel shoves and hurts nobody, so it is rings
--- going outward; a burst is many rounds at once, so it is a rosette. Anything
--- else a zone puts in a slot gets a plain disc, which says "a charge"
--- honestly rather than drawing a repel and being wrong.
+-- could disagree with it, and lit the way the arena lights the things they
+-- do: a repel shoves and hurts nobody, so it is rings going outward from a
+-- hot point; a burst is many rounds at once, so it is rounds leaving in
+-- every direction, each with the fade and the hot head a round in flight
+-- wears. Anything else a zone puts in a slot gets a plain disc, which says
+-- "a charge" honestly rather than drawing a repel and being wrong.
 function M.charge(slot, cx, cy, k, col)
+    local a = col[4] or 1
     if slot == 0 then
-        u:ring(cx, cy, k * 0.34, M.pen(k, 0.11), 14, col)
-        u:ring(cx, cy, k * 0.64, M.pen(k, 0.095), 18, col)
+        u:halo(cx, cy, k * 0.5, 10, pal.a(col, a * 0.45))
+        u:disc(cx, cy, k * 0.14, 8, pal.hot(col, 0.6, a))
+        u:ring(cx, cy, k * 0.36, M.pen(k, 0.11), 14, col)
+        u:ring(cx, cy, k * 0.66, M.pen(k, 0.09), 18, pal.a(col, a * 0.6))
     elseif slot == 1 then
+        u:halo(cx, cy, k * 0.45, 10, pal.a(col, a * 0.4))
         for i = 0, 7 do
             local t = i * math.pi / 4
-            u:disc(cx + math.cos(t) * k * 0.52, cy + math.sin(t) * k * 0.52,
-                   k * 0.135, 6, col)
+            local dx, dy = math.cos(t), math.sin(t)
+            u:seg_fade(cx + dx * k * 0.22, cy + dy * k * 0.22,
+                       cx + dx * k * 0.62, cy + dy * k * 0.62,
+                       M.pen(k, 0.05), M.pen(k, 0.09), a * 0.25, a, col)
+            u:disc(cx + dx * k * 0.62, cy + dy * k * 0.62, k * 0.10, 6,
+                   pal.hot(col, 0.5, a))
         end
     else
         u:disc(cx, cy, k * 0.28, 10, col)
@@ -145,7 +175,7 @@ end
 local function barrel(m, ang, col, held)
     local dx, dy = bolt_line(m.origin, m.y, ang, m.k, col)
     if not held then m.dots[#m.dots + 1] = {dx, dy} end
-    m.far = math.max(m.far, dx - m.x + m.k * BOLT_DOT)
+    m.far = math.max(m.far, dx - m.x + m.k * BOLT_HALO)
 end
 
 -- The two builders work out a mark's numbers and draw nothing, because one
@@ -154,19 +184,20 @@ end
 local function mk_bolt(hx, cy, k)
     return {x = hx, y = cy, k = k, bolt = true,
             tail = hx - k * M.BOLT_LEN, origin = hx - k * M.BOLT_LEN,
-            dots = {}, out = k * BOLT_DOT, far = k * BOLT_DOT,
+            dots = {}, out = k * BOLT_HALO, far = k * BOLT_HALO,
             -- Nothing on this mark rings the head except the add-ons that
             -- ring any mark. The fan hangs off the muzzle and the bounce
-            -- ring sits on a dot, so neither takes a share of the room.
+            -- ring sits on a head, so neither takes a share of the room.
             radial = {false, false, false, true, false, true}}
 end
 
 local function mk_bomb(hx, cy, k)
     -- `tail` is where a fan of them leaves from, which is the only thing
     -- behind the head on this mark and so is set at the edge the mark may
-    -- reach rather than at a length of its own.
+    -- reach rather than at a length of its own. `far` starts at the bloom,
+    -- the widest light the bare round sheds.
     return {x = hx, y = cy, k = k, tail = hx - k * M.MARK_REACH,
-            out = k * BOMB_R, far = k * BOMB_R}
+            out = k * BOMB_R, far = k * 1.02}
 end
 
 -- The round itself, once whatever it stands on has been drawn.
@@ -211,12 +242,11 @@ local function dec_multi(m, col, n)
             -- A second barrel, abreast and parallel. Declined, it stays on the
             -- mark and stops being a round: see barrel.
             local ox = m.origin + m.k * 0.10
-            local dy = -m.k * 0.16
-            local dx = ox + m.k * (M.BOLT_LEN - 0.10)
-            u:seg(ox, m.y + dy, dx, m.y + dy, M.pen(m.k, 0.068), col)
-            u:disc(dx, m.y + dy, m.k * BOLT_DOT * 0.8, 10, col)
-            if not m.off then m.dots[#m.dots + 1] = {dx, m.y + dy} end
-            m.far = math.max(m.far, dx - m.x + m.k * BOLT_DOT)
+            local py = m.y - m.k * 0.16
+            local dx = bolt_line(ox, py, 0, m.k, col,
+                                 M.BOLT_LEN - 0.10, 0.8)
+            if not m.off then m.dots[#m.dots + 1] = {dx, py} end
+            m.far = math.max(m.far, dx - m.x + m.k * BOLT_HALO * 0.8)
             return
         end
         -- Declined, the extra barrels stay on the mark and stop being rounds:
@@ -398,18 +428,22 @@ M.FIELD_MAX = M.MARK_REACH + 0.10
 --
 -- Measured rather than worked out, and measured as the mean of two answers
 -- that disagree. Weighing the drawing by how much of it there is puts the
--- center near the dot, because a solid disc outweighs the hairline that
--- reaches it; taking the drawing's extent puts the center near the middle of
--- the line, because the far tip of a hairline counts for as much as the dot.
+-- center near the head, because the bright end of the streak outweighs the
+-- faint one; taking the drawing's extent puts the center near the middle of
+-- the streak, because the far tip of a fade counts for as much as the head.
 -- Both are wrong in a direction, the eye lands between them, and a strip of
 -- the mark drawn at biases either side of the midpoint agrees with it. Then
 -- averaged over the loadouts a trigger can wear, since a fan pulls the weight
 -- back toward the muzzle and a bounce ring pulls it forward and no one case is
 -- the one to favor.
 --
--- The bomb wants nothing. It is a ring about a point, so the two answers are
+-- Re-measured when the line and dot became the flown streak: the bright core
+-- and halo moved a third of the old dot's weight up to the head, so the head
+-- stands a step nearer the middle than it did.
+--
+-- The bomb wants nothing. It is light about a point, so the two answers are
 -- the same answer and both are zero.
-M.BOLT_BIAS = 0.46
+M.BOLT_BIAS = 0.33
 local BOMB_BIAS = 0
 
 -- Reading a hull's loadout without minding whether there is a hull yet. A pad

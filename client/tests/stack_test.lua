@@ -100,7 +100,13 @@ function layer:disc(x, y, r, _, c)
     kind, tint = nil, nil
     mark(math.pi * r * r, x, y)
 end
-function layer:halo(x, y, r) box(x - r, y - r, x + r, y + r) end
+-- A halo keeps its hue: it is the round's own light, and the color checks
+-- below read a round's identity off it now that the core is drawn hot.
+function layer:halo(x, y, r, _, c)
+    kind, tint = "halo", c
+    box(x - r, y - r, x + r, y + r)
+    kind, tint = nil, nil
+end
 function layer:ring(x, y, r, w)
     box(x - r - w, y - r - w, x + r + w, y + r + w, nil, w)
     mark(2 * math.pi * r * w, x, y)
@@ -288,7 +294,10 @@ local function column_at(b)
     local at = nil
     for _, s in ipairs(shapes) do
         local mid = (s.y0 + s.y1) / 2
-        if mid > b.y0 and mid < b.y1 and s.tint
+        -- Solid discs only: the glyph beside the count wears the charge
+        -- color too now, halo and rings, and its core runs hot, so the
+        -- exact-hue filled circle is the count and nothing else is.
+        if mid > b.y0 and mid < b.y1 and s.tint and s.kind == "disc"
             and s.tint[1] == pal.CHARGE_COL[1]
             and s.tint[2] == pal.CHARGE_COL[2]
             and s.tint[3] == pal.CHARGE_COL[3] then
@@ -917,7 +926,7 @@ local function bomb_hues()
     if not b then return out end
     for _, sh in ipairs(shapes) do
         local mid = (sh.y0 + sh.y1) / 2
-        if sh.tint and sh.kind ~= "disc" and mid > b.y0 and mid < b.y1 then
+        if sh.tint and not sh.kind and mid > b.y0 and mid < b.y1 then
             out[hue(sh.tint)] = true
         end
     end
@@ -928,11 +937,14 @@ frame()
 local bomb_fan = bomb_hues()
 mods = {[1] = {}}
 frame()
+-- The round's own color, read off its halo: the disc at its middle is the
+-- core and runs hot the way a bomb in flight is drawn, so the light the
+-- round sheds is where its hue actually lives.
 local bare_bomb = nil
 for _, sh in ipairs(shapes) do
     local b = row_box("bomb")
     local mid = (sh.y0 + sh.y1) / 2
-    if b and sh.kind == "disc" and mid > b.y0 and mid < b.y1 then
+    if b and sh.kind == "halo" and mid > b.y0 and mid < b.y1 then
         bare_bomb = hue(sh.tint)
     end
 end

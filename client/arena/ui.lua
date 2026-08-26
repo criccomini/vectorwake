@@ -409,19 +409,6 @@ M.MENU_PAD = MENU_PAD
 
 -- A count, as marks rather than as a number: it reads at a glance and never
 -- asks the eye to parse a digit.
-local function pips(x, y, n, filled, col, r, pitch)
-    r = r or 2.2 * F.scale
-    pitch = pitch or 7.5 * F.scale
-    for k = 0, n - 1 do
-        local px = x + k * pitch
-        if k < filled then
-            F.layer:disc(px, ry(y), r, 8, col)
-        else
-            F.layer:ring(px, ry(y), r, 0.9 * F.scale, 8, pal.a(col, (col[4] or 1) * 0.3))
-        end
-    end
-end
-
 -- Who is in a seat, in two marks that answer one question.
 --
 -- A person wears a round helmet with a curved visor across it. A machine
@@ -2612,26 +2599,16 @@ end
 -- So there is one mark per trigger now, and an add-on is something drawn onto
 -- it: the round you fire, wearing what it has learned.
 
--- The repel's rings, which are also the push add-on's: the same force in
--- both places, so the same mark.
+-- The two shipped charges draw through marks.charge, which is the drawing a
+-- pad's control carries on a phone: the corner and the thumb must not teach
+-- two pictures for one thing, and for a while they did, plain rings here
+-- against the pad's own pair.
 local function gl_rings(cx, cy, k, col)
-    F.layer:ring(cx, ry(cy), k * 0.36, pen(k, 0.143), 10, col)
-    F.layer:ring(cx, ry(cy), k * 0.78, pen(k, 0.129), 12,
-           pal.a(col, (col[4] or 1) * 0.5))
+    marks.charge(0, cx, ry(cy), k, col)
 end
-
--- Rounds in every direction: the burst at eight spokes, shrapnel at six.
-local function gl_spokes(n)
-    return function(cx, cy, k, col)
-        for i = 0, n - 1 do
-            local a = (i + 0.5) * 2 * math.pi / n
-            local dx, dy = math.cos(a), math.sin(a)
-            F.layer:seg(cx + dx * k * 0.3, ry(cy + dy * k * 0.3),
-                  cx + dx * k, ry(cy + dy * k), pen(k, 0.143), col)
-        end
-    end
+local function gl_burst(cx, cy, k, col)
+    marks.charge(1, cx, ry(cy), k, col)
 end
-local gl_burst = gl_spokes(8)
 
 -- The rivet: what this game charges in.
 --
@@ -2732,7 +2709,7 @@ local function status(me, charges, lift)
     -- read.
     --
     -- The count still says how many, so a row appearing is the same event as
-    -- a pip lighting and reads as one.
+    -- a circle filling and reads as one.
     local slots = {}
     for _, c in ipairs(charges or {}) do
         if (c.count or 0) > 0 then slots[#slots + 1] = c end
@@ -2807,10 +2784,17 @@ local function status(me, charges, lift)
         local gc = CHARGE_GLYPHS[slot] or gl_diamond
         gc(mid, y + rows_h / 2, 7 * z,
            pal.a(CHARGE_HUES[slot] or pal.CHARGE_COL, 0.85))
+        -- The count in the ship page's own circle grammar, pages.dot: solid
+        -- is a charge in hand, a ring is the slot a spent one leaves. The
+        -- corner used its own smaller pips for this, which was a second
+        -- drawing for the one idea the hangar already taught.
         local slot_max = math.max(1, c.max or 3)
-        pips(val + 3 * z, y + rows_h / 2, slot_max, c.count,
-             pal.CHARGE_COL, 2.7 * z, 9 * z)
-        local pw = val + 3 * z + slot_max * 9 * z
+        for p = 1, slot_max do
+            pages.dot(val + 3 * z + (p - 1) * 13 * z, y + rows_h / 2,
+                      4.5 * z, p <= (c.count or 0) and "on" or "ring",
+                      pal.CHARGE_COL)
+        end
+        local pw = val + 3 * z + (slot_max - 1) * 13 * z + 4.5 * z
         if pw > wide then wide = pw end
         -- A row per charge rather than one bracket over all of them. A
         -- repel and a burst are different things and each has a card of
