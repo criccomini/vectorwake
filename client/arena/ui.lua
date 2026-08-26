@@ -6101,7 +6101,12 @@ local function stage_row(x, y, w, h, r, hot, idx, warm)
     -- That is the bug .luacheckrc exists to catch, and it caught this one.
     local size = (M.compact and 17 or 18) * F.scale
     if note and h >= 44 * F.scale then size = (M.compact and 19 or 21) * F.scale end
+    -- The format strip, where the row carries one and the list gave it the
+    -- third line of room. Everything moves up to make that room: the name
+    -- takes the top, the sentence the middle, the stacks the foot.
+    local strip = (h >= 74 * F.scale) and r.specs or nil
     local ly = note and (y + h * 0.36) or (y + h / 2)
+    if strip then ly = y + h * 0.20 end
     -- Drawn here unless the detail turns out not to fit beside it, in which
     -- case the pair is laid out as two lines below and this one is skipped.
     local two_line = r.detail and r.detail ~= ""
@@ -6112,8 +6117,39 @@ local function stage_row(x, y, w, h, r, hot, idx, warm)
             pal.a(col, sel and 1 or 0.82), nil, MENU_FONT, r.named)
     end
     if note then
-        txt(note, tx, y + h * 0.68, 11.5 * F.scale,
+        txt(note, tx, y + h * (strip and 0.42 or 0.68), 11.5 * F.scale,
             pal.a(pal.DIM, (hot and 1 or 0.75) * (r.waiting and 0.7 or 1)))
+    end
+    if strip then
+        -- Label over value, a thin rule between the stacks: the room band's
+        -- own grammar (TIME, PLAYERS), reading down the same columns on
+        -- every game because the rows share one height and one order. The
+        -- words are the catalog's; this only lays them out. Values keep
+        -- their authored case, since "4 v 4" is data rather than a
+        -- sentence, and a row nothing is serving dims its facts with the
+        -- rest of itself.
+        local dimmed = (r.waiting or r.full) and 0.6 or 1
+        local sx2 = tx
+        local right = x + w - GUTTER * F.scale
+        for si, s in ipairs(strip) do
+            local sw2 = math.max(
+                text_w(string.upper(s[1] or ""), LBL_PX * F.scale, nil, true),
+                text_w(s[2] or "", 13 * F.scale, nil, true))
+            -- Whole stacks only, rule included. A drawer too narrow for the
+            -- next one drops it rather than running the strip under the
+            -- dial at the right.
+            local at2 = sx2 + (si > 1 and 15 * F.scale or 0)
+            if at2 + sw2 > right then break end
+            if si > 1 then
+                F.layer:seg(sx2, ry(y + h * 0.58), sx2, ry(y + h * 0.92),
+                            1.0 * F.scale, pal.a(pal.RADAR_TILE, 0.45), true)
+            end
+            lbl(s[1], at2, y + h * 0.66,
+                pal.a(pal.DIM, (hot and 1 or 0.85) * dimmed))
+            txt(s[2], at2, y + h * 0.84, 13 * F.scale,
+                pal.a(pal.INK, (sel and 0.95 or 0.8) * dimmed), nil, nil, true)
+            sx2 = at2 + sw2 + 15 * F.scale
+        end
     end
     -- The right hand side is data, so it stays in the face the numbers in
     -- flight are set in: a call sign, a count, a hull's name.
@@ -7527,6 +7563,13 @@ function M.menu(v)
         for _, r in ipairs(v.rows) do
             if r.note then noted = true break end
         end
+        -- And a third line of room where a row carries its format strip:
+        -- name, sentence, and the stacks under both. One height for the
+        -- whole list, as above, so the games read down the same columns.
+        local specced = false
+        for _, r in ipairs(v.rows) do
+            if r.specs then specced = true break end
+        end
         -- A section head above the row that opens one, which is how the mocks
         -- group a list: a small label and the map border's tick, and then the
         -- rows the label is about. Only where the whole list fits, because a
@@ -7537,7 +7580,8 @@ function M.menu(v)
             if r.sect then heads = heads + 1 end
         end
         local SECT = 24 * F.scale
-        local rowh = math.min((noted and 58 or (M.compact and 46 or 40)) * F.scale,
+        local rowh = math.min((specced and 86 or noted and 58
+                               or (M.compact and 46 or 40)) * F.scale,
                               math.max(30 * F.scale,
                                        (room - heads * SECT)
                                        / math.max(#v.rows, 1)))

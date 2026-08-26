@@ -114,6 +114,17 @@ pub struct BrowseZone {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub label: String,
     pub description: String,
+    /// The format strip, as the words a games list draws under TEAMS, TIME
+    /// and SCORING: "4 v 4", "3:00", "kills". Stated by the catalog and
+    /// derived there (`ZoneDef::format`), so a client reads the format
+    /// rather than knowing it. Empty when the mode has no words for one,
+    /// and absent from an older directory, both of which draw no strip.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub teams: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub time: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub scoring: String,
     pub players: u32,
     pub bots: u32,
     /// Seats in one room of this zone, from the catalog's own `max_players`.
@@ -335,27 +346,19 @@ impl Directory {
             .catalog
             .order
             .iter()
-            .map(|n| BrowseZone {
-                name: n.clone(),
-                label: self
-                    .catalog
-                    .zones
-                    .get(n)
-                    .map(|z| z.label(n).to_string())
-                    .unwrap_or_default(),
-                description: self
-                    .catalog
-                    .zones
-                    .get(n)
-                    .map(|z| z.description.clone())
-                    .unwrap_or_default(),
-                seats: self
-                    .catalog
-                    .zones
-                    .get(n)
-                    .map(|z| z.max_players() as u32)
-                    .unwrap_or(0),
-                ..Default::default()
+            .map(|n| {
+                let z = self.catalog.zones.get(n);
+                let (teams, time, scoring) = z.map(|z| z.format()).unwrap_or_default();
+                BrowseZone {
+                    name: n.clone(),
+                    label: z.map(|z| z.label(n).to_string()).unwrap_or_default(),
+                    description: z.map(|z| z.description.clone()).unwrap_or_default(),
+                    teams,
+                    time,
+                    scoring,
+                    seats: z.map(|z| z.max_players() as u32).unwrap_or(0),
+                    ..Default::default()
+                }
             })
             .collect();
 
@@ -1331,6 +1334,36 @@ mod tests {
         assert_eq!(
             chaos.instances[0].players, 7,
             "fullest first concentrates by default"
+        );
+    }
+
+    #[test]
+    fn browse_carries_the_format_the_catalog_states() {
+        // The strip rides beside label and description, from the same
+        // place: the zone's own declaration. The client reads it rather
+        // than knowing it, so what travels is the words themselves.
+        let mut c = cat();
+        {
+            let z = c.zones.get_mut("chaos").unwrap();
+            z.mode = "melee".into();
+            z.teams = vec!["Pylon".into(), "Caisson".into()];
+            z.max_humans_per_team = Some(4);
+            z.arena.match_seconds = Some(180);
+        }
+        let d = Directory::new(c);
+        let b = d.browse();
+        let chaos = b.zones.iter().find(|z| z.name == "chaos").unwrap();
+        assert_eq!(chaos.teams, "4 v 4");
+        assert_eq!(chaos.time, "3:00");
+        assert_eq!(chaos.scoring, "kills");
+        // And a zone with no words serializes none, so an older client
+        // reading the reply sees exactly what it always saw.
+        let war = b.zones.iter().find(|z| z.name == "war").unwrap();
+        assert!(war.teams.is_empty() && war.scoring.is_empty());
+        let json = serde_json::to_string(&b).unwrap();
+        assert!(
+            !json.contains("\"scoring\":\"\""),
+            "an empty strip stays off the wire"
         );
     }
 

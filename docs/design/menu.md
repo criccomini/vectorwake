@@ -88,6 +88,18 @@
 > and no DEPLOY key at the foot. A row is the way in, by a tap or by enter, and
 > its lit field and its press run edge to edge of the panel rather than stopping
 > at the row's own measure.
+>
+> **A row states its format.** Under the sentence, three small stacks in the
+> room band's label-over-value grammar: TEAMS, TIME and SCORING, with a thin
+> rule between them, so Team Battle reads 4 v 4, 3:00, kills and Duel reads
+> 1 v 1, one life, rungs. The words ride the directory reply beside the label
+> and the description, derived by the catalog from what each zone declares
+> (`ZoneDef::format`), so a tuning edit that moves the clock moves the strip
+> and the client never knows a format. With the numbers in the strip, the
+> description stops restating them and carries the hook the strip cannot:
+> Duel's stakes, Team Battle's bounty rule. A directory from before the strip
+> sends none and the row is the name and the sentence, as it was. Mocked and
+> chosen in `.design/play-menu` (version I of three rounds).
 
 > **The landing is the game now.** Opening the client seats you in the stands
 > of a real melee room and draws the watcher's HUD; the front end is that

@@ -1750,6 +1750,18 @@ local function play_rows()
             live = r.live,
             act = "join", value = i,
         }
+        -- The format strip: label-over-value stacks under the sentence,
+        -- reading what the catalog states about the game rather than
+        -- anything this client knows. Only the stacks the directory sent,
+        -- in a fixed order, so two games read down the same columns; a
+        -- directory from before the strip sends none and the row stays the
+        -- name and the sentence. See docs/design/menu.md.
+        local specs = {}
+        for _, s in ipairs({{"teams", r.teams}, {"time", r.time},
+                            {"scoring", r.scoring}}) do
+            if s[2] ~= nil and s[2] ~= "" then specs[#specs + 1] = s end
+        end
+        if #specs > 0 then rows[i].specs = specs end
         -- The way out of a seat, on the row of the game the seat is in.
         --
         -- Only while you are flying one. Leaving is about a hull rather than
@@ -2390,6 +2402,9 @@ local function view_row(r, i)
     return {
         label = r.label, detail = d, note = r.note, help = r.help,
         waiting = r.waiting,
+        -- The format strip a games row carries: label-value stacks, drawn
+        -- under the sentence. See `play_rows`.
+        specs = r.specs,
         -- Whether this row's value is a string to be quoted rather than a
         -- word to be said, and whether its label is somebody's name. See the
         -- key on the pilot page and the sides on the team page.

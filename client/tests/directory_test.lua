@@ -366,6 +366,62 @@ check("and the rooms that were numbered are still listed",
       torn ~= nil and #torn == 2 and torn[1].n == 1 and torn[2].n == 3,
       "rooms: " .. tostring(torn and #torn))
 
+-- --- the format strip -------------------------------------------------------
+--
+-- The words a row's stacks say under TEAMS, TIME and SCORING travel on the
+-- reply beside the label and the description, in the catalog's own words. The
+-- client lays them out and never derives one, so what matters here is that
+-- they land on the row verbatim and that a directory from before the strip
+-- leaves the row without one.
+
+_G.NEXT_REPLY = {zones = {{
+    name = "melee", label = "Team Battle", description = "the bounty line",
+    teams = "4 v 4", time = "3:00", scoring = "kills",
+    players = 3, bots = 5, instances = {{address = "wss://x/m"}},
+}}}
+message(last(), "ignored")
+check("the format strip lands on the row in the catalog's words",
+      dir.rows[1] and dir.rows[1].teams == "4 v 4"
+      and dir.rows[1].time == "3:00" and dir.rows[1].scoring == "kills",
+      tostring(dir.rows[1] and dir.rows[1].teams))
+menu.show("play")
+local played = menu.view().rows
+check("and the play page reads it as stacks, in a fixed order",
+      played[1] and played[1].specs and #played[1].specs == 3
+      and played[1].specs[1][1] == "teams"
+      and played[1].specs[1][2] == "4 v 4"
+      and played[1].specs[2][1] == "time"
+      and played[1].specs[3][2] == "kills",
+      tostring(played[1] and played[1].specs and #played[1].specs))
+
+-- A directory that says nothing about a format is the fleet from before the
+-- strip, and the row is the name and the sentence, as it was.
+_G.NEXT_REPLY = {zones = {{
+    name = "old", description = "no strip", players = 0, bots = 0,
+    instances = {{address = "wss://x/a1"}},
+}}}
+message(last(), "ignored")
+check("a directory that states no format leaves the row bare",
+      dir.rows[1] and dir.rows[1].teams == "" and dir.rows[1].scoring == "",
+      tostring(dir.rows[1] and dir.rows[1].teams))
+check("and the play page draws no strip for it",
+      menu.view().rows[1] and menu.view().rows[1].specs == nil,
+      tostring(menu.view().rows[1] and menu.view().rows[1].specs))
+
+-- A zone whose mode has words for only part of the strip sends only that
+-- part, and the stacks close up rather than holding an empty column.
+_G.NEXT_REPLY = {zones = {{
+    name = "bare", description = "a melee with no stated clock",
+    scoring = "kills",
+    players = 0, bots = 0, instances = {{address = "wss://x/b"}},
+}}}
+message(last(), "ignored")
+local bare = menu.view().rows[1]
+check("a partial format is the stacks it stated and no more",
+      bare and bare.specs and #bare.specs == 1
+      and bare.specs[1][1] == "scoring" and bare.specs[1][2] == "kills",
+      tostring(bare and bare.specs and #bare.specs))
+
 -- Full is the instance's own answer to "am I out of room", and the row carries
 -- it so a full game keeps its counts instead of wearing the dial that means
 -- nobody is running one.

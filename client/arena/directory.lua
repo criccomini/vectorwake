@@ -219,6 +219,13 @@ local function on_message(s)
             name = (type(z.label) == "string" and z.label ~= "") and z.label
                 or z.name,
             detail = z.description or "",
+            -- The format strip: what the row's stacks say under TEAMS, TIME
+            -- and SCORING, in the catalog's own words. A directory from
+            -- before the strip sends none and the row is the name and the
+            -- sentence, as it was.
+            teams = type(z.teams) == "string" and z.teams or "",
+            time = type(z.time) == "string" and z.time or "",
+            scoring = type(z.scoring) == "string" and z.scoring or "",
             -- A zone with nobody running it is a row, not a gap: a player is
             -- better off seeing that Chaos exists and is down than wondering
             -- whether they misread the list. It says so without a sentence,

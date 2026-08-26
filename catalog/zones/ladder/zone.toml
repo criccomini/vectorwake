@@ -7,7 +7,9 @@
 # seat and gives it back the moment somebody wants it.
 
 label = "Duel"
-description = "one life at a time, climb the house pilot ladder"
+# The format strip beside this carries the numbers (teams, one life, rungs),
+# so the sentence carries the stakes the numbers cannot.
+description = "every rung is a harder rival; a loss drops you two"
 mode = "ladder"
 
 # Drydock is also the calibration ground. Keeping the live arena and the
