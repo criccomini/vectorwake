@@ -284,6 +284,13 @@ instrument), with POS on the dial's other shoulder and the feed hanging under
 it. Bottom left: the corner stack, what your triggers do and what you carry,
 growing upward.
 
+The top of that geography is a row, and everything standing in it shares one
+center: the corner key at the left, the band in the middle where there is room
+for it, and the LINK and POS readouts at the right. A key's height is what the
+row takes from, and the dial starts where the row ends. Anything up there that
+works its own vertical out of the padding drifts, because the padding is a
+horizontal measurement.
+
 The match ending is the board again rather than a page of its own: at the
 whistle it comes up whether or not anybody asked for it, in a column of its
 own up to 720 points wide, with a line saying who took the match, a bar under
