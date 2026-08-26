@@ -535,18 +535,38 @@ that has not started.
 
 Now the page starts without the engine. `client/tools/single_file.py` draws the
 same starfield, same three depths, same colors, same cell hash, in plain canvas
-2D, with the wordmark over it and one hairline of progress under that. When the
+2D, with the wordmark over it and one hairline of progress. When the
 engine's first real frame is on screen it fades out, into the same starfield
-drawn by the engine with the menu over it.
+drawn by the engine.
+
+Both are drawn where the game draws them: the lockup at the landing's own spot,
+the hairline filling the box `PLAY NOW` will take. The fade then crosses between
+two pictures that agree, instead of carrying the name from the middle of the
+window to the foot of it while a player watches. The loader works that out with
+the same arithmetic as `landing_geom` in `client/arena/ui.lua`, copied because
+there is no engine yet to ask, and `client/tests/preboot_landing_test.js` and
+`client/tests/landing_test.lua` pin both copies to one table of window shapes.
 
 The hand-off is triggered by the game, from `arena.script`, not by the loader.
 "The runtime initialized" is seconds before "there is something on screen", and
 fading out at the wrong one of those turns a seamless hand-off into a black
 flash.
 
-Half the progress bar is the embedded assets being decoded, which is measurable.
-The rest is compilation, which is not, so it creeps toward the end and only ever
-grows.
+The engine is not the end of the wait, though. A directory lookup, a dial and a
+first snapshot come after it, and that used to be two seconds of a wordmark on a
+drifting field with nothing else moving, which is what a client that has hung
+looks like. So the rail carries on: `frame.loading` picks the number up where
+the page left it and walks it through one mark for each of those three, and
+`ui.waiting` draws it in the same rectangle until the room lands and `PLAY NOW`
+takes the slot.
+
+The page owns the rail as far as `BOOT`, a number written into both files
+because the two have to agree or the bar shrinks at the hand-off. About half of
+that stretch is the embedded assets being decoded, which is measurable, and the
+rest is compilation, which is not. Nothing after it is measurable either, so
+between marks the fill creeps toward the next one without ever reaching it. It
+only ever grows, and it stops where it is when something has gone wrong, because
+the slot then carries a sentence saying what went wrong instead.
 
 ## Settings that had nowhere to live
 

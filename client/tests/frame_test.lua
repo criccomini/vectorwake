@@ -105,4 +105,73 @@ eq(frame.begin(hidden, 1, net, sfx, menu, sim), nil,
    "zero-width frame is skipped")
 eq(hidden.clock, nil, "skipped frame changes no clock")
 
+-- --- how far along the wait is ---------------------------------------------
+--
+-- The rail the waiting screen draws under the name. The page's own loader
+-- fills it to BOOT while the engine arrives, and this carries it through the
+-- three things the client can still be waiting on. See `landing_rail` in
+-- ui.lua for what is drawn and client/tools/single_file.py for the half of
+-- the rail that runs before there is an engine at all.
+local BOOT, FOUND, LINKED = 0.72, 0.82, 0.92
+
+local function near(actual, expected, label)
+    if math.abs(actual - expected) > 0.0005 then
+        error(string.format("%s: expected %s, got %s", label,
+                            tostring(expected), tostring(actual)))
+    end
+end
+
+local dialing = {vw = 1280, vh = 720}
+local dark = {connected = false}
+local silent = {answered = false}
+local heard = {answered = true}
+
+-- Nothing answered yet, so the rail picks up exactly where the page put it
+-- down. A first frame that started lower would be a bar that shrinks at the
+-- hand-off, which is the one thing this arrangement exists to prevent.
+near(frame.loading(dialing, 0, dark, silent, false), BOOT, "hand-off")
+
+-- And then it creeps, because a directory lookup is two seconds during which
+-- nothing else on this screen moves.
+local crept = frame.loading(dialing, 1 / 60, dark, silent, false)
+if crept <= BOOT then error("a waiting rail has to move: " .. crept) end
+if crept >= FOUND then error("and not past the mark it is waiting on") end
+
+-- A long way past its own stage and it still stops short of the next one: the
+-- rail may not say the directory has answered before the directory has.
+for _ = 1, 600 do
+    frame.loading(dialing, 1 / 60, dark, silent, false)
+end
+if dialing.load_bar >= FOUND then
+    error("the creep reached a mark nothing had landed: " .. dialing.load_bar)
+end
+
+-- Each answer is a step somebody can see, and each is the floor from there.
+near(frame.loading(dialing, 0, dark, heard, false), FOUND, "directory")
+near(frame.loading(dialing, 0, {connected = true}, heard, false), LINKED,
+     "welcome")
+
+-- Stopped once there is something to say instead. A rail still climbing under
+-- "no games are running" is a client that looks like it is still trying.
+local held = dialing.load_bar
+eq(frame.loading(dialing, 1, {connected = true}, heard, true), held,
+   "a stalled wait holds its rail")
+
+-- A session that drops comes back to the band it is actually in. It was left
+-- near the top by a room that had answered, and a redial drawn at nine tenths
+-- would be a handshake reporting itself nearly done before it was asked for.
+local redial = frame.loading(dialing, 0, dark, heard, false)
+if redial >= LINKED then
+    error("a redial kept the old rail: " .. redial)
+end
+if redial < FOUND then error("and lost the stage it is still past") end
+
+-- A tab that was in the background comes back with a whole second of dt on
+-- it, and one frame may not jump the rail to a mark nothing has reached.
+local woken = {vw = 1280, vh = 720}
+frame.loading(woken, 0, dark, silent, false)
+if frame.loading(woken, 90, dark, silent, false) >= FOUND then
+    error("a long frame jumped the rail past its mark")
+end
+
 print("frame tests pass")

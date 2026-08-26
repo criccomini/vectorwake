@@ -93,6 +93,51 @@ local function sample_link(self, dt, net)
     self.link_bars = self.link_meter:update(net.stats.rtt, dt)
 end
 
+-- --- how far along the wait is ----------------------------------------------
+--
+-- The waiting screen draws one hairline across the box its PLAY NOW key will
+-- take, and this is how full it is. The rail belongs to the page first:
+-- `client/tools/single_file.py` puts it there before the engine exists, four
+-- megabytes of runtime arriving and compiling under it, and hands over at
+-- `BOOT`. What is left by then is a directory lookup, a dial and a first
+-- snapshot, which is the stretch this owns.
+--
+-- Three marks rather than a clock, because three is all the client can
+-- honestly report: the directory has answered, the socket has been welcomed,
+-- and a room has sent a world. Between them the fill creeps toward the next
+-- mark without ever reaching it, the way the page creeps through a compile
+-- nothing can measure. The creep matters as much as the marks do. Those two
+-- seconds are otherwise a wordmark on a drifting field with nothing else
+-- moving on it, which is what a client that has hung looks like, and a fill
+-- that ran on to the next mark early would be reporting a stage that has not
+-- landed.
+--
+-- `BOOT` is written down in `single_file.py` too, as the ceiling its own
+-- creep stops at. The two have to agree or the rail shrinks at the hand-off.
+local BOOT, FOUND, LINKED = 0.72, 0.82, 0.92
+
+-- Short of the next mark, so arriving at one is still a step somebody sees.
+local SHORT = 0.02
+
+function M.loading(self, dt, net, directory, stalled)
+    local mark, next_mark = BOOT, FOUND
+    if directory.answered then mark, next_mark = FOUND, LINKED end
+    if net.connected then mark, next_mark = LINKED, 1 end
+    local ceiling = next_mark - SHORT
+    local at = self.load_bar or 0
+    -- Forward to the mark the connection has actually reached, and back to
+    -- the band it belongs in: a session that drops leaves the rail high, and
+    -- a redial drawn at nine tenths would be a handshake reporting itself
+    -- nearly done before it has been asked for.
+    if at < mark then at = mark end
+    if at > ceiling then at = ceiling end
+    -- Stopped once something has gone wrong. A rail still climbing under "no
+    -- games are running" is a client that looks like it is still trying.
+    if not stalled then at = at + (ceiling - at) * math.min(dt, 1) * 0.9 end
+    self.load_bar = at
+    return at
+end
+
 -- Sample the page and the local frame counters on their one-second cadence.
 function M.sample(self, dt, net, html5, locked)
     locked = poll_browser(self, dt, html5, locked)

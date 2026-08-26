@@ -2183,7 +2183,11 @@ function update(self, dt)
         if (not why or why == "") and directory.answered then
             why = directory.note
         end
-        ui.waiting(why)
+        -- And how far along the wait is, which is the hairline the page's
+        -- own loader was already filling. It stops the moment there is a
+        -- reason to draw in that slot instead: a stalled wait is not a wait.
+        ui.waiting(why, frame.loading(self, dt, net, directory,
+                                      why ~= nil and why ~= ""))
     end
     -- The panel, and the slide it leaves on.
     --

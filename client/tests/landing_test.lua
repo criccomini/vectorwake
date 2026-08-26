@@ -439,6 +439,138 @@ do
     end
 end
 
+-- --- the rail the wait fills ------------------------------------------------
+--
+-- What stood here was a name on a drifting field and nothing else, held for
+-- however long a directory lookup and a handshake take, which is a client
+-- that looks like it has hung. The rail is the page's own loading bar carried
+-- past the hand-off: it is drawn in the slot the key will take, so the room
+-- landing is the rail going and PLAY NOW appearing in the same rectangle.
+-- See `landing_rail` in ui.lua and `frame.loading` for the number it draws.
+do
+    -- The ground and its fill, as the pair of hairlines the waiting screen
+    -- lays down. Found by shape rather than by position in the list, since
+    -- the menu key draws rectangles of its own either side of them.
+    local function rail(w, h, p, note)
+        boxes, rects = {}, {}
+        state.n = 0
+        H = h
+        ui.begin(layer, w, h, 1, false, 0)
+        ui.waiting(note, p)
+        ui.finish()
+        local out = {}
+        for _, r in ipairs(rects) do
+            if r.h <= 2 and r.w > 100 then
+                -- Filed for the gui, which counts up from the bottom. Handed
+                -- back in the space the hit boxes are published in.
+                out[#out + 1] = {x = r.x, y = H - r.y - r.h, w = r.w, h = r.h}
+            end
+        end
+        return out[1], out[2]
+    end
+
+    for _, s in ipairs(SHAPES) do
+        local w, h, shape = s[1], s[2], s[3]
+        frame(w, h)
+        local key = box("play_now")
+        local ground, fill = rail(w, h, 0.5)
+        check(shape .. " waiting draws a rail", ground ~= nil)
+        if ground and key then
+            check(shape .. " puts the rail in the key's own slot",
+                  math.abs(ground.x - key.x) < 0.5
+                  and math.abs(ground.w - key.w) < 0.5,
+                  string.format("%.0f wide at %.0f against %.0f at %.0f",
+                                ground.w, ground.x, key.w, key.x))
+            check(shape .. " sits it on the line the key's word takes",
+                  math.abs((ground.y + ground.h / 2)
+                           - (key.y + key.h / 2)) < 1,
+                  string.format("%.1f against %.1f", ground.y + ground.h / 2,
+                                key.y + key.h / 2))
+        end
+        if ground and fill then
+            check(shape .. " fills the rail to what it was told",
+                  math.abs(fill.w - ground.w / 2) < 0.5,
+                  string.format("%.1f of %.1f", fill.w, ground.w))
+        end
+    end
+
+    -- The two ends, and past them. A wait that has got nowhere draws the
+    -- ground alone rather than a sliver of fill, and nothing a caller can
+    -- pass runs the fill off the end of its own rail.
+    local ground, fill = rail(1440, 810, 0)
+    check("an untouched rail is drawn empty", ground ~= nil and fill == nil)
+    ground, fill = rail(1440, 810, 1)
+    check("a finished one is drawn full",
+          fill ~= nil and math.abs(fill.w - ground.w) < 0.001)
+    ground, fill = rail(1440, 810, 4)
+    check("and no further than full",
+          fill ~= nil and math.abs(fill.w - ground.w) < 0.001)
+    ground, fill = rail(1440, 810, -1)
+    check("a rail below empty is a rail with no fill in it",
+          ground ~= nil and fill == nil)
+    ground = rail(1440, 810, nil)
+    check("and a caller with no number at all draws the ground",
+          ground ~= nil)
+
+    -- One thing in that slot. A rail still climbing under a sentence saying
+    -- the fleet is down would be two answers to the same question, and the
+    -- moving one is the wrong one.
+    ground = rail(1440, 810, 0.5, "no games are running")
+    check("a failure takes the slot from the rail", ground == nil)
+end
+
+-- --- the geometry the page draws too ----------------------------------------
+--
+-- The loader in client/tools/single_file.py puts the same lockup and the same
+-- rail on screen before the engine exists, and the hand-off between them is a
+-- cross fade, so anything that disagrees moves in full view. It cannot share
+-- this arithmetic: it runs before there is an engine to ask. So the shapes
+-- below are pinned from both ends, here and in
+-- client/tests/preboot_landing_test.js, and either copy drifting fails one of
+-- the two.
+do
+    -- w, h, kx, kw, the line the rail is drawn on, the lockup's size and the
+    -- middle of its line box.
+    local PINNED = {
+        {1440, 810, 560, 320, 761, 26, 701},
+        {1280, 800, 480, 320, 751, 26, 691},
+        {1920, 1080, 800, 320, 1031, 26, 971},
+        {620, 800, 150, 320, 751, 26, 691},
+        {600, 900, 14, 572, 853, 26, 795},
+        {390, 844, 14, 362, 801, 20, 750},
+        {844, 390, 302, 240, 350, 20, 302},
+        {479, 479, 14, 451, 436, 20, 385},
+    }
+    for _, p in ipairs(PINNED) do
+        local w, h = p[1], p[2]
+        boxes, rects = {}, {}
+        state.n = 0
+        H = h
+        ui.begin(layer, w, h, 1, false, 0)
+        ui.waiting(nil, 1)
+        ui.finish()
+        local ground
+        for _, r in ipairs(rects) do
+            if r.h <= 2 and r.w > 100 and not ground then
+                ground = {x = r.x, y = H - r.y - r.h, w = r.w, h = r.h}
+            end
+        end
+        local name = word("vectorwake")
+        local label = w .. "x" .. h .. " draws where the page drew"
+        check(label,
+              ground ~= nil and name ~= nil
+              and math.abs(ground.x - p[3]) < 0.001
+              and math.abs(ground.w - p[4]) < 0.001
+              and math.abs(ground.y + ground.h / 2 - p[5]) < 0.001
+              and math.abs(name.px - p[6]) < 0.001
+              and math.abs(name.y - p[7]) < 0.001,
+              ground and name and string.format(
+                  "x %.1f rail %.1f size %.1f wy %.1f",
+                  ground.x, ground.y + ground.h / 2, name.px, name.y)
+              or "nothing drawn")
+    end
+end
+
 -- --- the podium does not bury the key ---------------------------------------
 --
 -- Between matches the room puts up a podium, and the podium washes the whole

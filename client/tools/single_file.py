@@ -268,6 +268,39 @@ SHIM = """
       g.restore();
     }
 
+    // Where the game puts the two things this screen also draws.
+    //
+    // The same arithmetic as landing_geom in client/arena/ui.lua, in CSS
+    // pixels, which is the unit this canvas is drawn in and the unit that
+    // file calls a point. Copied rather than shared because there is no way
+    // to share it: one is Lua inside the engine and the other runs before the
+    // engine exists. What it buys is a hand-off that moves nothing. Drawn in
+    // the middle of the window here and at the foot of it there, the name
+    // jumped the length of the screen in the middle of a fade whose whole job
+    // is to hide the seam.
+    //
+    // The insets are the ones the page's own reconciler publishes as
+    // vwInsets. Before it has run they read zero, which is the right answer
+    // on every desktop and one frame stale on a phone, and this redraws every
+    // frame anyway.
+    // preboot-landing-test:start
+    function landing() {
+      var ins = (window.vwInsets || "").split(" ");
+      var sl = parseFloat(ins[0]) || 0;
+      var sr = parseFloat(ins[1]) || 0;
+      var sb = parseFloat(ins[3]) || 0;
+      var compact = Math.min(w, h) < 480, narrow = w < 620;
+      var kh = narrow ? 50 : (compact ? 44 : 54);
+      var kw = narrow ? (w - sl - sr - 28) : (compact ? 240 : 320);
+      var size = compact ? 20 : 26;
+      var ky = h - sb - (compact ? 18 : 22) - kh;
+      return {
+        kx: sl + (w - sl - sr - kw) / 2, ky: ky, kw: kw, kh: kh, size: size,
+        wy: ky - (compact ? 16 : 20) - size / 2
+      };
+    }
+    // preboot-landing-test:end
+
     // The same three depths world.lua uses, and the same colors, so the
     // moment the engine takes over nothing about the sky changes.
     var LAYERS = [
@@ -308,25 +341,21 @@ SHIM = """
       }
       g.globalAlpha = 1;
 
-      // The lockup. `cy` is the middle of the name's line box, which is what
-      // wordmark() is handed, and everything else hangs off it.
-      var cx = w / 2, cy = h / 2;
-      var size = Math.min(w / 11, 44);
+      // The lockup, where the game itself puts it. `cy` is the middle of the
+      // name's line box, which is what wordmark() is handed, and everything
+      // else hangs off it.
+      var L = landing();
+      var size = L.size, cy = L.wy;
       g.textAlign = "left";
       g.textBaseline = "alphabetic";
       g.font = "300 " + size + "px " + FACE;
       var m = g.measureText("vectorwake");
-      // Width scales with the size, so one measurement is enough to know what
-      // size fits a phone held upright.
+      // Width scales with the size, so one measurement is enough. Nothing
+      // caps it: the size is the game's own, chosen by the same screen
+      // classes, and it already fits the narrowest phone the game runs on.
       var span = size * (LOGO_EM * MK_SPAN + LOGO_GAP) + m.width;
-      if (span > w * 0.8) {
-        size = size * w * 0.8 / span;
-        g.font = "300 " + size + "px " + FACE;
-        m = g.measureText("vectorwake");
-        span = size * (LOGO_EM * MK_SPAN + LOGO_GAP) + m.width;
-      }
       var mh = size * LOGO_EM;
-      var x0 = cx - span / 2;
+      var x0 = L.kx + L.kw / 2 - span / 2;
 
       // Defold centers a string in its line box and canvas draws from a
       // baseline, so the box is measured and centered by hand. Old browsers do
@@ -338,12 +367,16 @@ SHIM = """
                  cy + (asc - desc) / 2);
       mark(x0, cy + size * LOGO_DROP + mh / 2, mh);
 
-      // One hairline, as wide as the lockup, that only ever grows.
-      var by = cy + size * 0.95;
+      // One hairline that only ever grows, in the slot the game's own key
+      // takes. It does not stop when the engine arrives: `ui.waiting` draws
+      // the same rail in the same rectangle and `frame.loading` carries the
+      // number on through the directory lookup and the handshake, and then
+      // PLAY NOW is drawn where both of them were.
+      var by = L.ky + L.kh / 2 - 1;
       g.fillStyle = "#1d2838";
-      g.fillRect(x0, by, span, 2);
+      g.fillRect(L.kx, by, L.kw, 2);
       g.fillStyle = FRIEND;
-      g.fillRect(x0, by, span * progress, 2);
+      g.fillRect(L.kx, by, L.kw * progress, 2);
 
       if (!done) requestAnimationFrame(frame);
     }
@@ -351,11 +384,19 @@ SHIM = """
 
     // Progress is what the loader knows; the last stretch is compilation,
     // which nothing can measure, so it creeps rather than sitting still.
+    //
+    // And it stops short of the end, at the value client/arena/frame.lua
+    // calls BOOT, because the engine is not the end of the wait: a directory
+    // lookup, a dial and a first snapshot come after it, and the waiting
+    // screen carries this same rail through them. A page that filled its bar
+    // and handed over to one starting again lower would be a rail that
+    // shrinks at the hand-off. The two numbers have to agree.
+    var BOOT = 0.72;
     window.vwProgress = function (p) {
       if (p > progress) progress = p;
     };
     setInterval(function () {
-      if (progress < 0.97) progress += (0.97 - progress) * 0.06;
+      if (progress < BOOT) progress += (BOOT - progress) * 0.06;
     }, 100);
 
     // Called from the game's own first frame.

@@ -300,8 +300,15 @@ check("the loading screen draws the canonical outer and shared edges",
       and has(loader, "g.moveTo(0, 67); g.lineTo(18, 78); g.lineTo(42, 53);")
       and has(loader, 'g.lineWidth = 3;')
       and has(loader, 'g.lineCap = "square";'))
-check("the loading progress bar still spans the complete lockup",
-      has(loader, "g.fillRect(x0, by, span * progress, 2);"))
+-- The rail is no longer measured off the lockup. It is drawn in the box the
+-- game's own PLAY NOW key takes, so the engine can carry the same bar through
+-- the directory lookup and the handshake and then put the key in its place.
+-- Both ends of that are pinned in client/tests/preboot_landing_test.js and
+-- client/tests/landing_test.lua; what is checked here is only that the page
+-- still draws it against the key rather than against the name.
+check("the loading progress bar still fills the key's own slot",
+      has(loader, "g.fillRect(L.kx, by, L.kw * progress, 2);")
+      and has(loader, "var by = L.ky + L.kh / 2 - 1;"))
 
 local function png_size(body)
     local function n32(i)

@@ -257,8 +257,10 @@ ui.begin(layer, W, H, 1, false, 0)
 -- engine until the stands arrive, which is what the hand-off lands on.
 if scenario == "waiting" then
     -- Silent, which is the normal case: a wait of a couple of seconds says
-    -- nothing and the line is kept for a fleet that is not there.
-    ui.waiting(nil)
+    -- nothing and the line is kept for a fleet that is not there. The rail
+    -- under the name is drawn part filled, at about where a client sits with
+    -- the directory answered and the handshake still out.
+    ui.waiting(nil, 0.86)
 else
 ui.hud({
     me = landing and 0 or 0,

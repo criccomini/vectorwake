@@ -4093,24 +4093,6 @@ local function podium(o, m, names)
     END.foot(o, m, x, bottom + gap, w)
 end
 
--- The landing: the game's name over the one key the screen exists for.
---
--- This is the whole of the front end now. Opening the client seats you in the
--- stands of a real room, so what a stranger meets is the game being played,
--- drawn by the same code that draws it to the people in it, with two things
--- laid over the bottom of it: what this is, and the way in.
---
--- The name goes directly over the key rather than into a corner or under the
--- clock. A stranger's eye ends on the pulsing thing at the foot of the screen,
--- and the name has to be where that look lands or it is a page that never says
--- what it is. Read as one object the two are a title and its button; read
--- apart they are a mark in a corner nobody looks at. Three placements were
--- drawn before this one was picked; see .design/spectator-landing.
---
--- Nothing else is added. The HUD a watcher already gets, corner keys and
--- clock and score and radar and feed, is the rest of this screen. See
--- decision 61 for why a spectator's view of a game beats a panel describing
--- one as a front page.
 -- Where the front end's two pieces sit. One function because the waiting
 -- screen draws the same wordmark in the same place as the landing does, and a
 -- logo that jumps when the room arrives is the reason this is shared rather
@@ -4142,6 +4124,34 @@ end
 local function landing_mark()
     local kx, _, kw, _, size, wy = landing_geom()
     M.wordmark(kx + kw / 2 - M.wordmark_w(size) / 2, wy, size)
+end
+
+-- How far along the wait is, drawn in the slot the key will take.
+--
+-- The rail starts on the page rather than here. `client/tools/single_file.py`
+-- draws it in plain canvas 2D over a starfield of its own while four
+-- megabytes of runtime arrive and compile, and the engine takes the frame
+-- with a directory lookup and a handshake still to go. So it carries on
+-- across the hand-off instead of stopping at it: same place, same width,
+-- same two colors, and `frame.loading` climbing from the number the page
+-- reached.
+--
+-- In the key's own box rather than under the name. Twenty points of air
+-- separate the lockup from the key, and a hairline through the middle of
+-- that reads as an underline on the word. In the key's slot it is the thing
+-- the key replaces: the room lands, the rail goes, PLAY NOW is drawn in the
+-- same rectangle.
+--
+-- A hairline rather than a spinner or a sweep, because how much of the wait
+-- is behind it is the one thing this screen can honestly say, and because
+-- the interface has no ornament anywhere else.
+local function landing_rail(p)
+    local kx, ky, kw, kh = landing_geom()
+    local t = 2 * F.scale
+    local y = ky + kh / 2 - t / 2
+    rect(kx, y, kw, t, pal.a(pal.BORDER, 1))
+    p = math.max(0, math.min(1, p or 0))
+    if p > 0 then rect(kx, y, kw * p, t, pal.a(pal.FRIEND, 1)) end
 end
 
 -- The landing: the game's name over the one key the screen exists for.
@@ -4190,8 +4200,17 @@ end
 -- loading screen held one beat longer and read as a third screen between the
 -- loader and the game. The logo moved when the game arrived, which is the one
 -- thing the hand-off should never do.
-function M.waiting(note)
+--
+-- `p` is how far along the wait is, from `frame.loading`. Without it a slow
+-- directory looks exactly like a client that has stopped, since the only
+-- other thing moving on this screen is the drift of the starfield.
+function M.waiting(note, p)
+    local said = note ~= nil and note ~= ""
     landing_mark()
+    -- One thing in the key's slot. A rail still climbing under a sentence
+    -- that says the fleet is down would be two answers to the same question,
+    -- and the wrong one is the one that moves.
+    if not said then landing_rail(p) end
     -- The one control, drawn here rather than through the corner row, which
     -- carries a roster this screen has not got.
     --
@@ -4210,12 +4229,13 @@ function M.waiting(note)
     if M.drawer_over(x, w) then return end
     burger_cap(x, y, F.menu_up)
     hit(x, y, w, KEY_H * F.scale, "open")
-    -- And a line where the key will be, but only when something has gone
-    -- wrong. Waiting says nothing: the wordmark on a starfield is what this
-    -- game looks like and a caption narrating a normal two second wait is
-    -- noise. A fleet that is down is different, and silence there would be a
-    -- client that looks like it is still trying.
-    if note and note ~= "" then
+    -- And a line where the key will be, in place of the rail, but only when
+    -- something has gone wrong. Waiting says nothing in words: the wordmark
+    -- on a starfield is what this game looks like, the rail says the wait is
+    -- still moving, and a caption narrating a normal two second wait on top
+    -- of both is noise. A fleet that is down is different, and silence there
+    -- would be a client that looks like it is still trying.
+    if said then
         local _, ky, _, kh = landing_geom()
         txt(note, F.w / 2, ky + kh / 2, (M.compact and 11 or 13) * F.scale,
             pal.a(pal.DIM, 0.9), "center", MENU_FONT, true)
