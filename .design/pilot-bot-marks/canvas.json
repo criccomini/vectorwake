@@ -1,0 +1,79 @@
+{
+  "artboards": [
+    {
+      "file": "Main.dc.html",
+      "title": "Six ways",
+      "x": 0,
+      "y": 0,
+      "w": 880,
+      "h": 700
+    },
+    {
+      "file": "Current.dc.html",
+      "title": "Current",
+      "x": 0,
+      "y": 830,
+      "w": 470,
+      "h": 560
+    },
+    {
+      "file": "Profiles.dc.html",
+      "title": "Profiles",
+      "x": 570,
+      "y": 830,
+      "w": 470,
+      "h": 560
+    },
+    {
+      "file": "Badges.dc.html",
+      "title": "Badges",
+      "x": 1140,
+      "y": 830,
+      "w": 470,
+      "h": 560
+    },
+    {
+      "file": "Blips.dc.html",
+      "title": "Blips",
+      "x": 0,
+      "y": 1520,
+      "w": 470,
+      "h": 560
+    },
+    {
+      "file": "Busts.dc.html",
+      "title": "Busts",
+      "x": 570,
+      "y": 1520,
+      "w": 470,
+      "h": 560
+    },
+    {
+      "file": "Signals.dc.html",
+      "title": "Signals",
+      "x": 1140,
+      "y": 1520,
+      "w": 470,
+      "h": 560
+    }
+  ],
+  "annotations": [
+    {
+      "id": "note-brief",
+      "x": 940,
+      "y": 40,
+      "w": 380,
+      "text": "The ask: alternatives to the current human and bot marks, whose style Chris doesn't like. Five directions, each moving on a different axis: turn the heads (Profiles), drop the heads for what they wear (Badges), go fully abstract in the radar's own language (Blips), draw the person rather than the hat (Busts), or draw the flying itself (Signals).\n\nEvery board shows the pair at the three sizes the client actually draws: 11 beside counts and names, 21 in the rail, large only for judging."
+    },
+    {
+      "id": "note-lean",
+      "x": 940,
+      "y": 420,
+      "w": 380,
+      "text": "A read on each, honestly: Badges is the most distinctive and the wings make the Pilot stop literal, but a chip is every second tech logo. Profiles keeps today's grown-vs-built logic with far more character at large sizes; it is the least legible at 11. Blips is the most native to a space game and the most abstract; it needs the pair side by side once to learn. Busts is the safest read at 11 and the least interesting large. Signals is the boldest idea and the biggest gamble."
+    }
+  ],
+  "launch": {
+    "view": "canvas"
+  }
+}
