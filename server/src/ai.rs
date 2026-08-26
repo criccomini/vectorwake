@@ -986,6 +986,62 @@ const CLEAN_LOOKS: f32 = 0.25;
 /// that leaked upward would invalidate every number measured there.
 const FLOOR: f32 = 0.30;
 
+/// Candidate repairs for a dial that measured flat.
+///
+/// Swept with hull, personality and kit held still, the shipped dial buys
+/// something between 0.05 and 0.18 and nothing above it, and its judgment half
+/// is noise end to end. These are the three suspects, each switchable alone so
+/// a run can say which one carried the result rather than which three did.
+///
+/// Read once into a static. The hot path reads a bool, never an environment,
+/// and a default `DialShape` is exactly what ships today.
+#[derive(Clone, Copy, Default)]
+struct DialShape {
+    /// Aim error ramps across the whole dial instead of clamping off at the
+    /// floor, and a good pilot's looks come out clean far more often than a
+    /// quarter of the time.
+    wide_aim: bool,
+    /// How hard the absolute aim error bites at the bottom of the dial, when
+    /// `wide_aim` is spreading it. The shipped shape reaches 0.35 of a turn at
+    /// skill zero and nothing at all above the floor.
+    aim_bite: Option<f32>,
+    /// Judgment stops buying caution. The reserve, the bomb cadence and the
+    /// self-blast margin all climb with the dial today, so a top pilot fires
+    /// less, bombs less and refuses more, and that is most of why 0.44 finished
+    /// ahead of 0.95.
+    nerve: bool,
+    /// A dodge a poor pilot misses. Flat for everybody today by a decision that
+    /// was measured twice, though both of those measurements were taken while
+    /// the rest of the dial was doing nothing either.
+    ///
+    /// Two numbers, because a dodge has two halves: how close a round has to be
+    /// before it counts as arriving, and how long before arrival the pilot
+    /// starts moving. `None` in either leaves that half flat.
+    dodge_reach: Option<(f32, f32)>,
+    dodge_window: Option<(f32, f32)>,
+}
+
+/// `lo,hi` out of an environment variable, read as what the dial buys between
+/// its bottom and its top.
+fn range(name: &str) -> Option<(f32, f32)> {
+    let spec = std::env::var(name).ok()?;
+    let (lo, hi) = spec.split_once(',')?;
+    Some((lo.trim().parse().ok()?, hi.trim().parse().ok()?))
+}
+
+fn shape() -> DialShape {
+    static SHAPE: std::sync::OnceLock<DialShape> = std::sync::OnceLock::new();
+    *SHAPE.get_or_init(|| DialShape {
+        wide_aim: std::env::var("VW_DIAL_AIM").is_ok() || std::env::var("VW_DIAL_BITE").is_ok(),
+        aim_bite: std::env::var("VW_DIAL_BITE")
+            .ok()
+            .and_then(|v| v.parse().ok()),
+        nerve: std::env::var("VW_DIAL_NERVE").is_ok(),
+        dodge_reach: range("VW_DIAL_REACH"),
+        dodge_window: range("VW_DIAL_WINDOW"),
+    })
+}
+
 /// How much of `CLEAN_LOOKS` this pilot keeps.
 ///
 /// A quarter of a mid-roster pilot's looks come out clean; below the floor
@@ -994,6 +1050,14 @@ const FLOOR: f32 = 0.30;
 /// clean share, so the mean error grows as the clean looks vanish rather than
 /// the bad looks quietly shrinking to compensate.
 fn clean_share(skill: f32) -> f32 {
+    if shape().wide_aim {
+        // The shipped share tops out at a quarter for everybody from the floor
+        // upward, so the best pilot in the game still misreads three looks in
+        // four. Spread it instead: almost never right at the bottom, almost
+        // always at the top. This deliberately breaks the mean preservation
+        // below, which is the point rather than an oversight.
+        return (0.03 + skill * 0.92).clamp(0.0, 0.95);
+    }
     CLEAN_LOOKS * (skill / FLOOR).clamp(0.0, 1.0)
 }
 
@@ -1006,11 +1070,27 @@ fn clean_share(skill: f32) -> f32 {
 /// angle drawn per look, up to a fifth of a turn's worth of wrong at the very
 /// bottom, and zero for the entire measured roster.
 fn bearing_err(skill: f32, u_mag: f32, u_sign: f32) -> f32 {
-    let deficit = ((FLOOR - skill) / FLOOR).clamp(0.0, 1.0);
+    let (deficit, scale) = if shape().wide_aim {
+        // Across the whole dial, squared so the middle stays nearly straight
+        // and only the bottom is wild. The absolute error is the only one that
+        // touches a target flying at you, so a dial that switches it off above
+        // the floor cannot tell a good pilot from a great one.
+        (
+            (1.0 - skill).clamp(0.0, 1.0),
+            shape().aim_bite.unwrap_or(0.20),
+        )
+    } else {
+        (((FLOOR - skill) / FLOOR).clamp(0.0, 1.0), 0.35)
+    };
     if deficit <= 0.0 {
         return 0.0;
     }
-    let mag = deficit * 0.35 * (0.3 + 0.7 * u_mag);
+    let deficit = if shape().wide_aim {
+        deficit * deficit
+    } else {
+        deficit
+    };
+    let mag = deficit * scale * (0.3 + 0.7 * u_mag);
     if u_sign < 0.5 {
         -mag
     } else {
@@ -1670,6 +1750,11 @@ impl Bot {
     /// found five of the dial's six knobs inert. Skill decided who was allowed
     /// to bomb and nothing at all about how well anybody fought.
     fn reserve(&self) -> f32 {
+        if shape().nerve {
+            // What it was before it became a skill parameter, which is also
+            // roughly what the dial averages over a roster.
+            return 0.20;
+        }
         0.10 + self.dial(Knob::Permission) * 0.24
     }
 
@@ -1714,9 +1799,15 @@ impl Bot {
 
     fn bomb_interval(&self) -> u32 {
         let preference = (1.35 - self.profile.bomb_preference * 0.70).clamp(0.50, 1.50);
-        (self.bomb_cadence(self.profile.strategy) as f32
-            * preference
-            * (0.45 + self.dial(Knob::Permission) * 0.55)) as u32
+        // The dial's share of the cadence, or the value it averages to over a
+        // roster, so taking skill out of it does not also change how much the
+        // room bombs.
+        let judged = if shape().nerve {
+            0.725
+        } else {
+            0.45 + self.dial(Knob::Permission) * 0.55
+        };
+        (self.bomb_cadence(self.profile.strategy) as f32 * preference * judged) as u32
     }
 
     /// How far from this pilot a bomb fired now is expected to meet its
@@ -1858,7 +1949,11 @@ impl Bot {
         // And leaves itself less room when it does. The margin a pilot wants
         // beyond its own blast is the clearest thing skill can be: a bad one
         // detonates its own round beside itself.
-        let margin = 24.0 + self.dial(Knob::Permission) * 120.0;
+        let margin = if shape().nerve {
+            84.0
+        } else {
+            24.0 + self.dial(Knob::Permission) * 120.0
+        };
         let impact_clearance = self.bomb_impact_clearance(o, foe, bomb);
         if impact_clearance.is_none_or(|d| d <= bomb.blast + o.radius + margin) {
             return approach;
@@ -2532,7 +2627,11 @@ impl Bot {
         // number that is already tuned does not become a skill parameter by
         // having pilots differ about it, whichever side of it they differ on.
         let age = self.timer.saturating_sub(self.seen_at) as f32;
-        if t.eta - age > 45.0 {
+        let window = match shape().dodge_window {
+            Some((lo, hi)) => lo + self.dial(Knob::Permission) * (hi - lo),
+            None => 45.0,
+        };
+        if t.eta - age > window {
             return (wx, wy);
         }
         let (rx, ry) = (t.x + t.vx * age - o.x, t.y + t.vy * age - o.y);
@@ -2552,7 +2651,12 @@ impl Bot {
         // room is full of rounds going somewhere else, and a pilot who flinches
         // at each of them never holds an aim: widening this by forty pixels cost
         // a third of the shots fired and bought no fewer deaths.
-        let want = t.blast + o.radius;
+        // A poor pilot only flinches at what is already dead on, a good one
+        // clears anything that would touch it.
+        let want = match shape().dodge_reach {
+            Some((lo, hi)) => (t.blast + o.radius) * (lo + self.dial(Knob::Permission) * (hi - lo)),
+            None => t.blast + o.radius,
+        };
         if d >= want {
             return (wx, wy);
         }
