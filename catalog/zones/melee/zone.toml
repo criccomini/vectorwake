@@ -174,10 +174,18 @@ damage = 515
 # crosses over: a bullet with a fuse is a bomb, and a rack that throws three at
 # a pull is a different game.
 #
-# Spray to five, which is six rounds at a pull. It was two ladders, multifire
-# and a second barrel, and both of them spelled "more bullets".
+# Spray to three, which is four rounds at a pull.
+#
+# This said five, and five is what the core allows, but the arena clamped every
+# add-on at three on its way in and nothing said so: the number here has never
+# been the number in the room. That clamp is fixed, so this is now the figure
+# it looks like, and three is deliberate rather than inherited. Four rounds
+# already fill a lane, and each rung above costs the room in bullets it does
+# not pay back in decisions: measured over forty matches, going from three to
+# five put another three rounds in the air across the room and narrowed the gap
+# between the best pilot on the roster and the worst.
 [arena.kit]
-gun_mods = { multi = 5, bounce = 1, freeze = 1 }
+gun_mods = { multi = 3, bounce = 1, freeze = 1 }
 bomb_mods = { prox = 1, shrapnel = 3, bounce = 2, freeze = 1 }
 
 # Three repels and three bursts for anyone who buys the rungs and is willing

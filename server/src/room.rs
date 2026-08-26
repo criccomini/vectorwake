@@ -1095,8 +1095,15 @@ impl Room {
             for (name, rungs) in mods {
                 match Room::mod_index(name) {
                     Some(m) => {
+                        // Each add-on's own ceiling, not one number for all of
+                        // them. Spray is a count of rounds rather than a rung
+                        // and climbs to five where everything else stops at
+                        // three, which `sim::mod_max` exists to say; clamping
+                        // every add-on at three instead meant a zone asking
+                        // for spray four or five got three and no warning,
+                        // and melee has been asking for five since it shipped.
                         world.cfg.kit_ceiling[sim::slot_mod(t, m) as usize] =
-                            (*rungs).min(sim::MOD_MAX);
+                            (*rungs).min(sim::mod_max(m));
                     }
                     None => warn.push(format!("\"{name}\" is not an add-on")),
                 }
