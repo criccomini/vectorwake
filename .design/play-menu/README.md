@@ -1,10 +1,14 @@
 # The play page, rethought
 
 Chris asked for ways to make the play page more interesting, with mocks of
-different ideas. Three directions are drawn beside the page as shipped, on
-canvas artifact fa3069ca; the sticky notes over each board carry its case
-and its cost. Nothing here is chosen yet. Boards are built by `build.py`
-and seeded with the design skill's helper:
+different ideas. The canvas (artifact fa3069ca) now holds two rounds. The
+first round drew three directions beside the page as shipped, all of them
+keeping the page as a list and enriching the rows; Chris called them
+derivative, which is fair. The second round, on the canvas's Wilder page,
+sketches five framings that change what the page is instead. The sticky
+notes over each board carry its case and its cost. Nothing here is chosen
+yet. Boards are built by `build.py` and seeded with the design skill's
+helper:
 
     python3 build.py
     node seed-canvas.mjs --template payload.template.html \
@@ -12,7 +16,9 @@ and seeded with the design skill's helper:
       --artboard Main.dc.html --artboard Current.dc.html \
       --artboard Tuner.dc.html --artboard TunerWide.dc.html \
       --artboard ChartRoom.dc.html --artboard Rooms.dc.html \
-      --canvas canvas.json
+      --artboard BoardingCall.dc.html --artboard ChannelWall.dc.html \
+      --artboard Surf.dc.html --artboard StarChart.dc.html \
+      --artboard Ticker.dc.html --canvas canvas.json
 
 ## One rule under all three: a row's figures are the landing room's
 
@@ -93,15 +99,61 @@ turns, which no other direction gives the page. Its costs: the directory
 reply does not carry the map today, so this is a wire change, name first
 and geometry after it, and two cards spend most of a phone.
 
+## Round two: framings, not rows
+
+The first round decorated a list. These five each answer the page's
+question, "what should I be in next?", with a different kind of page.
+Sketches on the canvas's Wilder page, drawn just far enough to judge.
+
+**D, boarding call** (`BoardingCall.dc.html`). The page is one question:
+the next whistle across the fleet, what it is, and one key that means
+deal me in. The fill ladder already picks the seat, so the page stops
+pretending the player has homework; browsing survives as two quiet lines
+underneath. Costs: hides the second game behind a default, and the big
+clock is only honest if joins land at whistles rather than mid-match.
+
+**E, channel wall** (`ChannelWall.dc.html`). No rows: one live window
+per game, the fight drawn small with its name and clock on a corner
+band, and pressing a window means be in that room. Two games means the
+whole fleet fits on a phone with no scroll. Costs: two delayed feeds at
+once, and it stops scaling past three or four games.
+
+**F, surf the stands** (`Surf.dc.html`). No page at all: the play stop
+drops the drawer, you are simply in some room's stands, chevrons flick
+between live rooms, and PLAY seats you in the one you are watching. The
+endpoint of the spectator-first landing (decision 61): choosing and
+watching become the same act. Costs: the games are never seen side by
+side, and a game nobody is running has no channel to land on.
+
+**G, star chart** (`StarChart.dc.html`). A game is a beacon on one
+chart, your mark at the foot, a plotted route to the one under the
+cursor and its card beside it. Going somewhere is the register the whole
+game is named in, and a chart has room for whatever the fleet grows.
+Costs: the most new drawing for the same two presses, and with two games
+the chart is mostly empty space.
+
+**H, the wire** (`Ticker.dc.html`). The page is what just happened
+across the fleet, each line pressable toward the room it happened in:
+streaks in the streak's gold, kills in the payout green, whistles in
+ink. You choose by story rather than by name, and the bare game rows
+sink to the foot. Costs: needs a new event feed on the directory wire,
+and at today's population the wire can go quiet.
+
 ## A recommendation
 
-Start with A: it is the one direction that is pure drawing, and it makes
-the page honest about what the press does. C's name line is the cheap
-second step once the directory carries the map's name, and the full chart
-can wait for the geometry. B is the strongest in feel and composes with
-either, since it is about the room behind the page rather than the rows;
-it is also the one with an unresolved phone story, so it should be
-decided on its own rather than ride along.
+From the first round, A is the one direction that is pure drawing, and
+it makes the page honest about what the press does; C's name line is the
+cheap second step once the directory carries the map's name, and B
+should be decided on its own because of its phone story.
+
+Across both rounds, the strongest pair is F and D, and they are really
+one design seen from two ends: the stands as the browser, with the
+boarding call as the words on top of it. F is where the spectator-first
+landing (decision 61) has been pointing, it needs no new wire, and it
+makes the two-game
+fleet feel bigger rather than smaller. E is the phone-native middle if
+F's one-at-a-time browsing feels blind. G and H are the ones to keep in
+a drawer until the fleet is big enough to need a map or a news page.
 
 ## What is here
 

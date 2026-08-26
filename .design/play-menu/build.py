@@ -420,4 +420,214 @@ cr = ('<div style="margin-top:6px">'
       + '</div>')
 write("ChartRoom.dc.html", board(cr))
 
+# ==== Round two: framings that change what the page is, not what a row ====
+# ==== says. Sketches, drawn in the drawer's chrome so they compare.     ====
+
+# ---- D: the boarding call. The page is one question, not a catalog ----
+#
+# The fleet already knows the next whistle and where the fill ladder would
+# seat this press, so the page can just ask. Browsing survives underneath
+# as two quiet lines, because being told is a default and not a cage.
+bigkey = ('<div class="key" style="height:46px;width:100%;font-size:13px;'
+          'border-color:rgba(79,214,255,.5);background:rgba(79,214,255,.07);'
+          'color:#4fd6ff">deal me in</div>')
+dcall = ('<div class="col" style="align-items:center;margin-top:120px">'
+         '<span class="lbl">next match</span>'
+         '<span class="mono" style="font-size:52px;margin-top:6px">0:42'
+         '</span>'
+         '<span style="font-size:15px;margin-top:10px">Team Battle '
+         '<span class="note" style="font-size:11px">on shoal</span></span>'
+         '</div>'
+         '<div style="margin-top:26px">' + bigkey + '</div>'
+         '<div style="margin-top:130px">'
+         + bare_row("or climb", "Duel, one life at a time, at your rung 23")
+         + bare_row("or just watch", "stay in the stands, keep the whistle")
+         + '</div>')
+write("BoardingCall.dc.html", board(dcall))
+
+# ---- E: the channel wall. The previews are the controls ----
+#
+# No rows at all: the page is one live window per game, the fight drawn
+# small with its name and clock on a corner band, and pressing a window
+# means be in that room. With two games the whole fleet fits on a phone.
+def tile(label, corner, w=362, h=300, oy=0, foot=""):
+    return ('<div style="position:relative;width:' + str(w) + 'px;height:'
+            + str(h) + 'px;overflow:hidden;border:1px solid '
+            'rgba(34,52,79,.9);' + stars(w, h) + '">'
+            + fight(w, h, ox=-20, oy=oy)
+            + '<div class="row" style="position:absolute;left:0;right:0;'
+            'top:0;height:26px;padding:0 10px;gap:8px;'
+            'background:rgba(3,5,10,.72)">'
+            f'<span style="font-size:13px">{label}</span>'
+            '<div style="flex:1"></div>' + corner + '</div>'
+            + foot + '</div>')
+
+tb_corner = ('<span class="mono" style="font-size:10px;color:var(--friend)">'
+             'Pylon 12</span>'
+             '<span class="mono" style="font-size:12px">1:28</span>'
+             '<span class="mono" style="font-size:10px;color:var(--enemy)">'
+             'Caisson 9</span>')
+duel_corner = ('<span class="mono" style="font-size:10px;color:var(--dim)">'
+               'rung 23</span>'
+               '<span class="mono" style="font-size:12px">2:04</span>')
+wall_page = ('<div class="col" style="gap:14px;margin-top:14px">'
+             + tile("Team Battle", tb_corner, oy=-160)
+             + tile("Duel", duel_corner, oy=-300)
+             + '</div>'
+             '<div class="note" style="text-align:center;margin-top:12px">'
+             'press a window to be in it</div>')
+write("ChannelWall.dc.html", board(wall_page, back=""))
+
+# ---- G: the star chart. A game is a place on one map ----
+#
+# The games drawn as beacons on a chart in the radar's grammar, your own
+# mark at the foot, and a plotted route to the beacon under the cursor,
+# whose card opens beside it. Choosing a game reads as going somewhere,
+# which is the register the whole game is named in.
+def beacon(x, y, r, label, lit):
+    c = "#4fd6ff" if lit else "#9fb6d4"
+    rings = (f'<circle cx="{x}" cy="{y}" r="{r + 8}" stroke="{c}" '
+             'fill="none" stroke-width="1" opacity=".35"/>' if lit else "")
+    return (f'<circle cx="{x}" cy="{y}" r="{r}" stroke="{c}" fill="none" '
+            'stroke-width="1.4"/>'
+            f'<circle cx="{x}" cy="{y}" r="2.2" fill="{c}"/>' + rings
+            + f'<text x="{x}" y="{y + r + 18}" text-anchor="middle" '
+            f'fill="{c}" font-size="11" font-family="DejaVu Sans Mono,'
+            f'monospace">{label}</text>')
+
+chart_page = ('<svg width="362" height="560" viewBox="0 0 362 560" '
+              'style="display:block;margin-top:14px;background:#060a10;'
+              'border:1px solid rgba(34,52,79,.9)">'
+              + beacon(96, 150, 9, "DUEL", False)
+              + beacon(252, 300, 12, "TEAM BATTLE", True)
+              + '<path d="M181 512 L252 300" stroke="#4fd6ff" '
+              'stroke-width="1" stroke-dasharray="3 5" opacity=".6"/>'
+              '<g transform="translate(181,512) rotate(-18)">'
+              '<path d="M0,-8 L9,5 L4,7 L0,5 L-4,7 L-9,5 Z" fill="#0b1220" '
+              'stroke="#4fd6ff" stroke-width="1.3"/></g>'
+              '<text x="181" y="536" text-anchor="middle" fill="#6c7a90" '
+              'font-size="9" font-family="DejaVu Sans Mono,monospace" '
+              'letter-spacing="2">YOU</text>'
+              '<g transform="translate(196,236)">'
+              '<rect width="152" height="52" fill="rgba(3,5,10,.85)" '
+              'stroke="rgba(63,88,120,.75)"/>'
+              '<text x="10" y="20" fill="#dfe9f5" font-size="12" '
+              'font-family="Chakra Petch,sans-serif">Team Battle</text>'
+              '<text x="10" y="38" fill="#6c7a90" font-size="9" '
+              'font-family="DejaVu Sans Mono,monospace">on shoal · '
+              'next match 0:42</text></g>'
+              '</svg>'
+              '<div class="note" style="text-align:center;margin-top:12px">'
+              'press a beacon to go</div>')
+write("StarChart.dc.html", board(chart_page))
+
+# ---- H: the wire. The page is what just happened, each line a door ----
+#
+# Choosing by story rather than by name: streaks in the streak's gold,
+# kills in the payout green, whistles and seats in ink and cyan, every
+# line pressable toward the room it happened in. The games are still one
+# press away; they are just no longer the subject.
+def wire_line(t, text, col="var(--ink)"):
+    return ('<div class="row" style="height:34px;margin:0 -14px;'
+            'padding:0 14px;gap:10px">'
+            f'<span class="mono" style="font-size:9px;color:var(--dim);'
+            f'width:30px">{t}</span>'
+            f'<span class="mono" style="font-size:11px;color:{col};'
+            'flex:1;white-space:nowrap;overflow:hidden;'
+            f'text-overflow:ellipsis">{text}</span>'
+            '<svg width="7" height="10" viewBox="0 0 10 14">'
+            '<path d="M2 1.5 L7.5 7 L2 12.5 Z" '
+            'fill="rgba(79,214,255,.45)"/></svg></div>')
+
+wire = ('<div class="lbl" style="margin:16px 0 8px">across the fleet, now'
+        '</div>'
+        + wire_line("0:04", "Vex is on a streak in Team Battle", "#ffc23d")
+        + wire_line("0:11", "a seat opened on Caisson", "var(--friend)")
+        + wire_line("0:26", "Halcyon 9 took Marrow 6", "#8dffb0")
+        + wire_line("0:42", "next match calls on shoal")
+        + wire_line("1:03", "Sable holds rung 31 in Duel", "#ffc23d")
+        + wire_line("1:19", "match on relay went to Pylon, 21 to 18")
+        + wire_line("1:40", "Chord 12 took a double", "#8dffb0")
+        + '<div style="margin-top:22px">'
+        + bare_row("Duel", DUEL_NOTE)
+        + bare_row("Team Battle", TB_NOTE)
+        + '</div>')
+write("Ticker.dc.html", board(wire))
+
+# ---- F: no page at all. The stands are the browser ----
+#
+# The play stop stops opening a drawer: you are always in some room's
+# stands, the chevrons flick between live rooms, and PLAY seats you in
+# the one you are watching. The endpoint of the spectator-first landing;
+# the drawer keeps everything else.
+def surf_board():
+    chev = ('<svg width="16" height="26" viewBox="0 0 16 26">'
+            '<path d="{d}" stroke="#9fb6d4" stroke-width="2" fill="none" '
+            'stroke-linecap="square"/></svg>')
+    left = ('<div class="key" style="position:absolute;left:10px;top:50%;'
+            'margin-top:-26px;width:34px;height:52px">'
+            + chev.format(d="M12 3 L4 13 L12 23") + '</div>')
+    right = ('<div class="key" style="position:absolute;right:10px;top:50%;'
+             'margin-top:-26px;width:34px;height:52px">'
+             + chev.format(d="M4 3 L12 13 L4 23") + '</div>')
+    band = ('<div class="row" style="position:absolute;left:0;right:0;'
+            'top:12px;justify-content:center;gap:14px">'
+            '<div class="col" style="align-items:flex-end">'
+            '<span class="mono" style="font-size:10px;color:var(--friend)">'
+            'Pylon</span>'
+            '<span class="mono" style="font-size:13px;color:var(--friend)">'
+            '12</span></div>'
+            '<span class="mono" style="font-size:24px">1:28</span>'
+            '<div class="col">'
+            '<span class="mono" style="font-size:10px;color:var(--enemy)">'
+            'Caisson</span>'
+            '<span class="mono" style="font-size:13px;color:var(--enemy)">'
+            '9</span></div></div>')
+    foot = ('<div class="col" style="position:absolute;left:0;right:0;'
+            'bottom:26px;align-items:center;gap:10px">'
+            '<div class="row" style="gap:8px">'
+            '<span style="width:5px;height:5px;border-radius:50%;'
+            'background:#dfe9f5"></span>'
+            '<span style="width:5px;height:5px;border-radius:50%;'
+            'border:1px solid #6c7a90"></span></div>'
+            '<span style="font-size:14px">Team Battle '
+            '<span class="note" style="font-size:10px">on shoal</span>'
+            '</span>'
+            '<div class="key" style="height:44px;width:250px;font-size:13px;'
+            'border-color:rgba(79,214,255,.5);'
+            'background:rgba(79,214,255,.07);color:#4fd6ff">play</div>'
+            '</div>')
+    burger = ('<div class="key" style="position:absolute;left:14px;top:11px;'
+              'width:26px;height:26px">'
+              '<svg width="12" height="10" viewBox="0 0 12 10">'
+              '<path d="M0 1 H12 M0 5 H12 M0 9 H12" stroke="#9fb6d4" '
+              'stroke-width="1.4"/></svg></div>')
+    return f"""<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600&amp;family=Noto+Sans+Mono:wght@400;500;700&amp;display=swap">
+  <style>{STYLE}</style>
+</helmet>
+<div style="position:relative;width:390px;height:844px;overflow:hidden;{stars(390, 844)}">
+{fight(390, 844, oy=-60)}
+{burger}
+{band}
+{left}
+{right}
+{foot}
+</div>
+</x-dc>
+
+</body>
+</html>
+"""
+
+write("Surf.dc.html", surf_board())
+
 print("boards written")

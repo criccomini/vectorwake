@@ -1,85 +1,32 @@
 {
+  "pages": [
+    { "id": "page-1", "name": "First round" },
+    { "id": "page-2", "name": "Wilder" }
+  ],
   "artboards": [
-    {
-      "file": "Current.dc.html",
-      "title": "As shipped",
-      "x": 0,
-      "y": 0,
-      "w": 390,
-      "h": 844
-    },
-    {
-      "file": "Main.dc.html",
-      "title": "A - Departures",
-      "x": 490,
-      "y": 0,
-      "w": 390,
-      "h": 844
-    },
-    {
-      "file": "Tuner.dc.html",
-      "title": "B - Tuner",
-      "x": 980,
-      "y": 0,
-      "w": 390,
-      "h": 844
-    },
-    {
-      "file": "ChartRoom.dc.html",
-      "title": "C - Chart room",
-      "x": 1470,
-      "y": 0,
-      "w": 390,
-      "h": 844
-    },
-    {
-      "file": "TunerWide.dc.html",
-      "title": "B - Tuner, beside the fight",
-      "x": 980,
-      "y": 990,
-      "w": 844,
-      "h": 390
-    },
-    {
-      "file": "Rooms.dc.html",
-      "title": "A - Departures, several rooms",
-      "x": 490,
-      "y": 990,
-      "w": 390,
-      "h": 844
-    }
+    { "file": "Current.dc.html", "title": "As shipped", "page": "page-1", "x": 0, "y": 0, "w": 390, "h": 844 },
+    { "file": "Main.dc.html", "title": "A - Departures", "page": "page-1", "x": 490, "y": 0, "w": 390, "h": 844 },
+    { "file": "Tuner.dc.html", "title": "B - Tuner", "page": "page-1", "x": 980, "y": 0, "w": 390, "h": 844 },
+    { "file": "ChartRoom.dc.html", "title": "C - Chart room", "page": "page-1", "x": 1470, "y": 0, "w": 390, "h": 844 },
+    { "file": "TunerWide.dc.html", "title": "B - Tuner, beside the fight", "page": "page-1", "x": 980, "y": 990, "w": 844, "h": 390 },
+    { "file": "Rooms.dc.html", "title": "A - Departures, several rooms", "page": "page-1", "x": 490, "y": 990, "w": 390, "h": 844 },
+    { "file": "BoardingCall.dc.html", "title": "D - Boarding call", "page": "page-2", "x": 0, "y": 0, "w": 390, "h": 844 },
+    { "file": "ChannelWall.dc.html", "title": "E - Channel wall", "page": "page-2", "x": 490, "y": 0, "w": 390, "h": 844 },
+    { "file": "Surf.dc.html", "title": "F - Surf the stands", "page": "page-2", "x": 980, "y": 0, "w": 390, "h": 844 },
+    { "file": "StarChart.dc.html", "title": "G - Star chart", "page": "page-2", "x": 1470, "y": 0, "w": 390, "h": 844 },
+    { "file": "Ticker.dc.html", "title": "H - The wire", "page": "page-2", "x": 1960, "y": 0, "w": 390, "h": 844 }
   ],
   "annotations": [
-    {
-      "id": "note-current",
-      "x": 0,
-      "y": -300,
-      "w": 390,
-      "text": "As shipped: two names and two sentences, then 600 points of nothing. The counts and the deploy key were removed on purpose (decision 63), but the page kept none of what the wire still offers."
-    },
-    {
-      "id": "note-a",
-      "x": 490,
-      "y": -300,
-      "w": 390,
-      "text": "A - Departures. Each row answers \"if I press now, what do I land in?\": the landing room's clock, its seats in the hangar's circle grammar (solid a person, ring a bot, dim nobody), friends on the row of their game, your Duel rung. Every figure is the landing room's, the room the fill ladder would put this press in, never the zone's totals: a zone running two arenas has twelve people and eight seats, and circles drawn from both at once would lie. The board below shows the same rows when a zone holds several joinable rooms: they unfold as numbered lines, each with its own clock and seats. Every fact is already in the directory reply the page polls. Costs: the busiest page of the three, and it half reverses the decision that stripped the counts."
-    },
-    {
-      "id": "note-b",
-      "x": 980,
-      "y": -300,
-      "w": 390,
-      "text": "B - Tuner. The room bleeding through the wash is the game under the cursor: resting on a row tunes the stands to it, so choosing a game is watching it, and the row carries one thin score line. Feed and score are the landing room's, the room the press would join. Uses the delayed spectator feed that already exists; the page itself stays almost as bare as shipped. Costs: a channel change per hover, and a phone has no hover, so there it is first press tunes, second press joins, which bends \"pressing a game means be in it\"."
-    },
-    {
-      "id": "note-c",
-      "x": 1470,
-      "y": -300,
-      "w": 390,
-      "text": "C - Chart room. A game is a place: each card carries a chart of the ground the landing room is on now, drawn in the radar's own grammar, with the rotation's next ground and the spawn tiles in the side colors. One room's ground, since rooms of one zone cycle their rotations apart. Costs: the directory reply does not carry the map yet, so this is a wire change, and two cards spend most of the phone."
-    }
+    { "id": "note-current", "page": "page-1", "x": 0, "y": -300, "w": 390, "text": "As shipped: two names and two sentences, then 600 points of nothing. The counts and the deploy key were removed on purpose (decision 63), but the page kept none of what the wire still offers." },
+    { "id": "note-a", "page": "page-1", "x": 490, "y": -300, "w": 390, "text": "A - Departures. Each row answers \"if I press now, what do I land in?\": the landing room's clock, its seats in the hangar's circle grammar (solid a person, ring a bot, dim nobody), friends on the row of their game, your Duel rung. Every figure is the landing room's, the room the fill ladder would put this press in, never the zone's totals: a zone running two arenas has twelve people and eight seats, and circles drawn from both at once would lie. The board below shows the same rows when a zone holds several joinable rooms: they unfold as numbered lines, each with its own clock and seats. Every fact is already in the directory reply the page polls. Costs: the busiest page of the three, and it half reverses the decision that stripped the counts." },
+    { "id": "note-b", "page": "page-1", "x": 980, "y": -300, "w": 390, "text": "B - Tuner. The room bleeding through the wash is the game under the cursor: resting on a row tunes the stands to it, so choosing a game is watching it, and the row carries one thin score line. Feed and score are the landing room's, the room the press would join. Uses the delayed spectator feed that already exists; the page itself stays almost as bare as shipped. Costs: a channel change per hover, and a phone has no hover, so there it is first press tunes, second press joins, which bends \"pressing a game means be in it\"." },
+    { "id": "note-c", "page": "page-1", "x": 1470, "y": -300, "w": 390, "text": "C - Chart room. A game is a place: each card carries a chart of the ground the landing room is on now, drawn in the radar's own grammar, with the rotation's next ground and the spawn tiles in the side colors. One room's ground, since rooms of one zone cycle their rotations apart. Costs: the directory reply does not carry the map yet, so this is a wire change, and two cards spend most of the phone." },
+    { "id": "note-round2", "page": "page-2", "x": -460, "y": 0, "w": 380, "text": "Round two, after \"these are all pretty derivative\": the first round kept the page as a list to read and decorated the rows. These five change what the page is. Sketches, not proposals: each is drawn just far enough to judge the framing." },
+    { "id": "note-d", "page": "page-2", "x": 0, "y": -300, "w": 390, "text": "D - Boarding call. The page is one question, not a catalog: the next whistle across the fleet, what it is, and one key that means deal me in. The fill ladder already picks the seat, so the page stops pretending the player has homework. Browsing survives as the two quiet lines underneath. Costs: hides the second game behind a default, and the big clock is only honest if joins land at whistles rather than mid-match." },
+    { "id": "note-e", "page": "page-2", "x": 490, "y": -300, "w": 390, "text": "E - Channel wall. No rows: the page is one live window per game and the previews are the controls, press the fight to be in it. Two games means the whole fleet fits on a phone with no scroll. Costs: two delayed feeds at once (bandwidth and battery), and it stops scaling past three or four games." },
+    { "id": "note-f", "page": "page-2", "x": 980, "y": -300, "w": 390, "text": "F - Surf the stands. No page at all: the play stop drops the drawer and you are simply in some room's stands, chevrons flick between live rooms, PLAY seats you in the one you are watching. The endpoint of the spectator-first landing (decision 61): choosing and watching become the same act. Costs: the games are never seen side by side, and a game nobody is running has no channel to land on." },
+    { "id": "note-g", "page": "page-2", "x": 1470, "y": -300, "w": 390, "text": "G - Star chart. A game is a beacon on one chart, your mark at the foot, a plotted route to the one under the cursor and its card beside it. Going somewhere is the register the whole game is named in, and the chart has room for whatever the fleet grows (events, private rooms, a hub). Costs: the most new drawing for the same two presses, and with two games the chart is mostly empty space." },
+    { "id": "note-h", "page": "page-2", "x": 1960, "y": -300, "w": 390, "text": "H - The wire. The page is what just happened across the fleet, each line pressable toward the room it happened in: streaks in the streak's gold, kills in the payout green, whistles in ink. You choose by story, not by name; the bare game rows sink to the foot. Costs: needs a new event feed on the directory wire, and at today's population the wire can go quiet." }
   ],
-  "launch": {
-    "view": "canvas"
-  }
+  "launch": { "view": "canvas", "page": "page-2" }
 }
