@@ -369,9 +369,13 @@ const NAMED_COMPETENCE: [Competence; 8] = [
     },
 ];
 
-/// These are the plans the shipped name-and-hull hash resolved before plans
-/// became explicit. Keeping them preserves every existing pilot's purchases.
 /// What each authored pilot saves up for, in roster order.
+///
+/// These began as the plans the shipped name-and-hull hash resolved before
+/// plans became explicit, kept as they were so that no existing pilot's
+/// purchases went to waste. Two have since moved for a reason worth more than
+/// that, and a moved pilot keeps everything it owns: a plan decides what an
+/// account buys next and how it spends thirty points, never what it may hold.
 ///
 /// A plan has to agree with the strategy beside it, because the brain decides
 /// when to throw a bomb and the plan decides whether there is one to throw.
