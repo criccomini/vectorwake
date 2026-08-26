@@ -63,10 +63,10 @@ that suddenly starts missing, and it insults them.
 
 **Bots are content.** The fleet has one deployment-wide roster and one shared
 controller. Each roster individual resolves from a versioned pilot
-specification with its own identity, behavior profile, competence, and build
-plan. Zones choose fill and simulation settings. Ladder also asks for a
-particular difficulty slot. [bot-ecosystem.md](bot-ecosystem.md) defines the
-split.
+specification with its own identity, behavior profile and competence, the
+profile carrying both how it flies and what it buys. Zones choose fill and
+simulation settings. Ladder also asks for a particular difficulty slot.
+[bot-ecosystem.md](bot-ecosystem.md) defines the split.
 
 ## Styles
 
@@ -343,12 +343,24 @@ again. Failed dials, refused joins, and reconnect churn do not turn one flight
 into several purchases. One rung at a time keeps saved bounty from changing a
 ship all at once.
 
-**Taste, so a room is not eight of one ship.** Each pilot specification names a
-gunner, bomber, or runner build plan. The plan decides what to buy next and how
-the thirty points are spent once the rungs are owned, so what a pilot saved for
-is what it flies. The choice no longer comes from hashing the call sign. That is
-what makes "Ozone throws shrapnel" a fact worth learning rather than a thing to
-say about all of them.
+**Taste, so a room is not eight of one ship.** What a pilot buys is read off
+its behavior profile. Where it wants to fight, how hard it chases, whether it
+stands or leaves, and how much it likes a bomb are the same questions a kit
+answers, so the kit is derived from them: `shopper::wants` weighs every slot
+against those numbers and hands back an order, and the same order decides what
+to save for next and how the thirty points are spent once the rungs are owned.
+Eight personalities therefore buy eight different things, and a test refuses
+two that come out the same.
+
+It was a separate gunner, bomber or runner plan named beside the behavior, and
+that is what "Ozone throws shrapnel" was supposed to rest on. It could not. A
+generated pilot drew its plan from different bits of the same hash that drew
+its strategy, so the two were uncorrelated: only a third of the pilots whose
+brains open the bombing gates owned a bomb, and Ozone, whose strategy is
+Bombardier, flew a runner kit with no bomb ladder on it at all. Three plans
+across eight strategies also meant the game held three kits. Deriving from the
+profile makes the claim true rather than aspirational, and keeps the behavior
+numbers the one place a pilot is described.
 
 A bought-up bot may win more, and its account rating then moves with its record.
 Ordinary fill does not select by rating, so a long-lived individual can still

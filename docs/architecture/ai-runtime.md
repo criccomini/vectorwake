@@ -398,8 +398,8 @@ endangering the property that makes the whole architecture work.
 ## Authored pilots
 
 Pilot behavior is compiled, versioned content today. `PilotSpec` separates
-identity, hull, aim, judgment, strategy, preference weights, build plan, and
-stable configuration seed. Zones can request ordinary fill, while Ladder can
+identity, hull, aim, judgment, strategy, preference weights, and stable
+configuration seed. Zones can request ordinary fill, while Ladder can
 request a particular measured archetype for one room. No runtime module or
 zone-authored controller sandbox ships yet. Adding one would need its own
 resource limits, trust boundary, and calibration fingerprint before a custom

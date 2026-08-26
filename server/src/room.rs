@@ -1249,7 +1249,7 @@ impl Room {
         for (top, base) in ceiling.iter_mut().zip(sim::World::base_entitlements()) {
             *top = (*top).min(base);
         }
-        Some(shopper::build(&shopper::wants(pilot.build), &ceiling))
+        Some(shopper::build(&shopper::wants(&pilot.behavior), &ceiling))
     }
 
     /// Seats visible to the mode on this tick. A Ladder rival does not count as

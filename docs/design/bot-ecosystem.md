@@ -21,7 +21,7 @@ and obey the same weapon and movement rules as a human.
 | Ship | hull | The class this pilot flies |
 | Competence | aim, judgment | How reliably the pilot executes the shared controller |
 | Behavior | strategy and preference weights | Which fights, ranges, objectives, and exits the pilot prefers |
-| Build | gunner, bomber, or runner | What the pilot buys and how it spends a kit budget |
+| Taste | derived from the behavior profile | What the pilot buys and how it spends a kit budget |
 | Configuration | stable seed | Repeatable variation that belongs to the pilot |
 
 The pilot ID owns identity. A call sign is a display name and can change later
@@ -112,7 +112,7 @@ persistent bot identity.
 ## Verification
 
 The specification layer has deterministic tests for stable IDs, generated
-pilots, build plans, and strategy profiles. Controller tests check that
+pilots, derived tastes, and strategy profiles. Controller tests check that
 competence changes execution while behavior changes preference. The two kinds
 of comparison stay separate because a profile can be distinctive without being
 stronger.

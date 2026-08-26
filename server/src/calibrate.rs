@@ -3562,7 +3562,10 @@ pub struct PilotCalibrationPlan {
 pub struct FixturePilotKit {
     pub pilot_id: u32,
     pub callsign: String,
-    pub build_plan: String,
+    /// The personality this kit was derived from. It was the name of a
+    /// separate build plan; a kit comes off the behavior profile now, so the
+    /// strategy is what a reader of a fixture needs to see beside the slots.
+    pub strategy: String,
     pub kit: Vec<u8>,
     pub spent: u32,
 }
@@ -3671,7 +3674,7 @@ impl PilotFixtureManifest {
         for pilot in &self.pilot_kits {
             if !pilots.insert(pilot.pilot_id)
                 || pilot.callsign.trim().is_empty()
-                || pilot.build_plan.trim().is_empty()
+                || pilot.strategy.trim().is_empty()
                 || pilot.kit.len() != sim::SLOT_COUNT
                 || pilot.spent != pilot.kit.iter().map(|level| u32::from(*level)).sum::<u32>()
                 || pilot.spent > sim::KIT_BUDGET
@@ -3843,11 +3846,11 @@ fn load_pilot_fixture(roster: &[PilotSpec]) -> Result<PilotFixtureRuntime, Pilot
     let pilot_kits: Vec<FixturePilotKit> = roster
         .iter()
         .map(|pilot| {
-            let kit = shopper::build(&shopper::wants(pilot.build), &effective_ceiling);
+            let kit = shopper::build(&shopper::wants(&pilot.behavior), &effective_ceiling);
             FixturePilotKit {
                 pilot_id: pilot.id.0,
                 callsign: pilot.callsign.clone(),
-                build_plan: format!("{:?}", pilot.build),
+                strategy: format!("{:?}", pilot.behavior.strategy),
                 spent: sim::World::kit_cost(&kit),
                 kit: kit.to_vec(),
             }
@@ -4028,7 +4031,7 @@ fn pilot_input_fingerprints(
         name: PILOT_MAP.into(),
         digest: fixture.manifest.map_fingerprint.clone(),
     }];
-    // The zone file, ownership ceiling, build planner, and simulation rules
+    // The zone file, ownership ceiling, derived taste, and simulation rules
     // decide what each persistent pilot carries into its one life.
     let account_ceiling = &fixture.manifest.account_entitlement_ceiling;
     let effective_ceiling = &fixture.manifest.effective_zone_entitlement_ceiling;
@@ -4572,7 +4575,7 @@ fn pilot_leg(
     // ownership is the prespecified base ceiling recorded in the fixture.
     for index in 0..2 {
         let kit = shopper::build(
-            &shopper::wants(seat_specs[index].build),
+            &shopper::wants(&seat_specs[index].behavior),
             &fixture.effective_entitlement_ceiling,
         );
         assert!(
@@ -6660,7 +6663,7 @@ mod pilot_certification_tests {
             .clone()
             .try_into()
             .expect("fixture ceiling width");
-        let mut plans = HashSet::new();
+        let mut tastes = HashSet::new();
         for pilot in &roster {
             let recorded = plan
                 .fixture
@@ -6668,11 +6671,11 @@ mod pilot_certification_tests {
                 .iter()
                 .find(|kit| kit.pilot_id == pilot.id.0)
                 .expect("pilot kit");
-            let expected = shopper::build(&shopper::wants(pilot.build), &ceiling);
+            let expected = shopper::build(&shopper::wants(&pilot.behavior), &ceiling);
             assert_eq!(recorded.kit, expected);
-            plans.insert(recorded.build_plan.as_str());
+            tastes.insert(recorded.strategy.as_str());
         }
-        assert!(plans.len() > 1, "the fixture contains personal build plans");
+        assert!(tastes.len() > 1, "the fixture contains personal tastes");
     }
 
     #[test]
@@ -6738,7 +6741,7 @@ mod pilot_certification_tests {
         ];
         for index in 0..2 {
             let kit = shopper::build(
-                &shopper::wants(specs[index].build),
+                &shopper::wants(&specs[index].behavior),
                 &fixture.effective_entitlement_ceiling,
             );
             assert!(world.set_kit(ships[index] as usize, &kit));

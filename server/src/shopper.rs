@@ -6,79 +6,128 @@
 //! the meta-layer sets those and refuses what an account cannot afford, exactly
 //! as it does for a person. See docs/design/ai-players.md.
 //!
-//! What is here is taste. Every persistent pilot spec names an explicit build
-//! plan, which is the difference between eight bots flying the same thirty
-//! points and a room with distinct specializations. The plan decides what to
-//! buy next and how the thirty points are spent once the rungs are owned.
+//! What is here is taste, and taste is read off the pilot's own behavior
+//! rather than named beside it. A `BehaviorProfile` already says where this
+//! pilot wants to fight, how hard it chases, whether it stands or leaves, and
+//! how much it likes a bomb. Those are the same questions a kit answers, so a
+//! kit is derived from them.
+//!
+//! It used to be a separate three-valued plan: gunner, bomber or runner. Two
+//! things were wrong with that. A generated pilot drew its plan from different
+//! bits of the same hash that drew its strategy, so the two were uncorrelated
+//! and only a third of the pilots whose brains open the bombing gates owned a
+//! bomb at all. And three plans over eight strategies meant the game held
+//! three kits, so "Ozone throws shrapnel" could not be a fact worth learning
+//! when Ozone's purchases had nothing to do with Ozone.
 
-use crate::{pilots::BuildPlan, sim};
+use crate::{pilots::BehaviorProfile, sim};
+
+/// Where a want has to reach before it is worth a point at all.
+///
+/// Below this the slot is left off the list rather than given a token rung,
+/// which is what lets a pilot who does not bomb own no bomb instead of one
+/// rung of a weapon it will never throw.
+const MIN_WANT: f32 = 0.18;
+
+/// How many times the list is laid down, each round keeping only the wants
+/// that clear a rising share of the strongest one.
+///
+/// This is how weight becomes repeats. `build` walks the list in passes and
+/// spends a point per appearance, so a want at the top appears in every round
+/// and takes a point every pass, while one just over the floor appears once.
+/// Laid down in rounds rather than as runs of one slot so the budget spreads
+/// across a pilot's whole taste instead of filling its favorite slot first.
+const ROUNDS: usize = 4;
+
+/// Read one profile field as a share of the span the shipped strategies use.
+/// Clamped, so a strategy authored outside that span still lands somewhere
+/// sensible rather than running the weights off their scale.
+fn span(v: f32, lo: f32, hi: f32) -> f32 {
+    ((v - lo) / (hi - lo)).clamp(0.0, 1.0)
+}
 
 /// A pilot's taste, as an order over slots with repeats for weight.
 ///
 /// Read twice. `next_buy` walks it to pick the next rung to pay for, and
 /// `build` walks it in passes to spend a kit's thirty points, so what a bot
-/// saves up for is what it flies. A slot appearing twice gets a point on each
-/// pass, which is how a build comes out weighted without a second table of
-/// numbers to keep in step with this one.
-///
-/// Every list opens with a rung on its own trigger. Rung zero is what a
-/// trigger already fires, so this is the first point that makes a pilot fire
-/// something better rather than more of the same.
-pub fn wants(plan: BuildPlan) -> Vec<usize> {
+/// saves up for is what it flies.
+pub fn wants(profile: &BehaviorProfile) -> Vec<usize> {
+    // The profile, as shares. Every weight below is written in these, so the
+    // behavior numbers stay the one place a pilot is described.
+    let close = 1.0 - span(profile.engagement_range, 105.0, 260.0);
+    let bombing = profile.bomb_preference.clamp(0.0, 1.0);
+    let gunning = 1.0 - bombing;
+    // A bomb is a commitment rather than a leaning, so this asks for a real
+    // preference before it buys any of the ladder. Below it a pilot carries
+    // the rung its trigger already fires and spends the points on the gun.
+    let bombs = (bombing - 0.30).max(0.0);
+    let stands = span(-profile.retreat_bias, 0.0, 0.08);
+    let leaves = span(profile.retreat_bias, 0.0, 0.08);
+    let chases = span(profile.pursuit, 0.45, 1.35);
+    let pushes = span(profile.aggression, 0.65, 1.25);
+    let errands = span(profile.objective, 0.55, 1.75);
+
     let gun = sim::slot_level(sim::TRIG_GUN) as usize;
     let bomb = sim::slot_level(sim::TRIG_BOMB) as usize;
     let m = |t: usize, k: usize| sim::slot_mod(t, k) as usize;
     let s = |u: usize| sim::slot_stat(u) as usize;
     let c = |k: usize| sim::slot_charge(k) as usize;
 
-    match plan {
-        // The gunner: bullets, and the energy to keep firing them.
-        BuildPlan::Gunner => vec![
-            gun,
-            s(sim::UP_ENERGY),
-            s(sim::UP_RECHARGE),
-            gun,
+    let mut scored: Vec<(usize, f32)> = vec![
+        // The weapons. A pilot's own trigger first, then what shapes it.
+        (gun, 0.55 + gunning * 0.70 + pushes * 0.25),
+        (bomb, bombs * 2.20),
+        // Spray covers a dodge, which is worth most where a dodge is short.
+        (
             m(sim::TRIG_GUN, sim::MOD_MULTI),
-            s(sim::UP_ENERGY),
-            m(sim::TRIG_GUN, sim::MOD_MULTI),
-            c(sim::CHARGE_REPEL),
-            s(sim::UP_SPEED),
+            gunning * (0.45 + close * 0.55),
+        ),
+        // A wall to shoot round is worth most to somebody holding one.
+        (
             m(sim::TRIG_GUN, sim::MOD_BOUNCE),
-            s(sim::UP_RECHARGE),
-            c(sim::CHARGE_BURST),
-        ],
-        // The bomber: one heavy answer, aimed at where somebody will be.
-        BuildPlan::Bomber => vec![
-            bomb,
-            m(sim::TRIG_BOMB, sim::MOD_PROX),
-            s(sim::UP_ENERGY),
-            bomb,
-            m(sim::TRIG_BOMB, sim::MOD_SHRAPNEL),
-            s(sim::UP_THRUST),
-            m(sim::TRIG_BOMB, sim::MOD_BOUNCE),
-            c(sim::CHARGE_REPEL),
-            s(sim::UP_RECHARGE),
-            gun,
-            c(sim::CHARGE_BURST),
-            s(sim::UP_ENERGY),
-        ],
-        // The runner: arrive, leave, and be somewhere else when the answer
-        // comes back.
-        BuildPlan::Runner => vec![
+            gunning * (0.20 + (1.0 - close) * 0.30),
+        ),
+        // Stalling a bar is a finisher's add-on.
+        (m(sim::TRIG_GUN, sim::MOD_FREEZE), gunning * pushes * 0.35),
+        (m(sim::TRIG_BOMB, sim::MOD_PROX), bombs * 1.50),
+        (m(sim::TRIG_BOMB, sim::MOD_SHRAPNEL), bombs * 1.20),
+        (m(sim::TRIG_BOMB, sim::MOD_BOUNCE), bombs * 0.70),
+        (m(sim::TRIG_BOMB, sim::MOD_FREEZE), bombs * 0.50),
+        // Energy is what a hull has instead of health, so everybody buys some
+        // and the pilots who take hits buy most: the ones who fight up close
+        // and the ones who do not leave.
+        (s(sim::UP_ENERGY), 0.45 + close * 0.55 + stands * 0.50),
+        // Recharge is the same bar bought by the minute rather than the
+        // exchange, which is what a pilot trading at range is doing.
+        (s(sim::UP_RECHARGE), 0.35 + (1.0 - close) * 0.45),
+        (
             s(sim::UP_SPEED),
-            s(sim::UP_THRUST),
-            gun,
-            s(sim::UP_ROTATION),
-            m(sim::TRIG_GUN, sim::MOD_BOUNCE),
-            s(sim::UP_SPEED),
-            c(sim::CHARGE_REPEL),
-            s(sim::UP_RECHARGE),
-            m(sim::TRIG_GUN, sim::MOD_MULTI),
-            c(sim::CHARGE_BURST),
-            s(sim::UP_THRUST),
-            gun,
-        ],
+            0.20 + chases * 0.45 + leaves * 0.45 + errands * 0.45,
+        ),
+        (s(sim::UP_THRUST), 0.20 + chases * 0.40 + close * 0.35),
+        (s(sim::UP_ROTATION), 0.15 + close * 0.45),
+        // The repel answers a bomb, and a bomb finds everybody.
+        (c(sim::CHARGE_REPEL), 0.50),
+        (c(sim::CHARGE_BURST), 0.20 + close * 0.30),
+    ];
+
+    scored.retain(|(_, w)| *w >= MIN_WANT);
+    // Strongest first, and by slot where two tie, so a list is the same list
+    // on every host that builds it.
+    scored.sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    let top = scored.first().map_or(1.0, |(_, w)| *w);
+
+    let mut list = Vec::new();
+    for round in 0..ROUNDS {
+        let bar = round as f32 / ROUNDS as f32;
+        list.extend(
+            scored
+                .iter()
+                .filter(|(_, w)| *w / top > bar)
+                .map(|(slot, _)| *slot),
+        );
     }
+    list
 }
 
 /// The next rung to pay for: the first slot this pilot wants that the shelf
@@ -163,6 +212,7 @@ pub fn build(wants: &[usize], ceiling: &[u8; sim::SLOT_COUNT]) -> [u8; sim::SLOT
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::pilots::Strategy;
 
     /// What an account that has bought everything flies under, which is the
     /// game's own row: the tests below are about taste, not entitlements.
@@ -170,24 +220,41 @@ mod tests {
         *sim::World::baseline_kit_ceiling()
     }
 
-    /// Plans are stable and the shipped roster carries more than one of them.
+    /// Every strategy the game ships, so a test over all of them stays over
+    /// all of them when a ninth is written.
+    const STRATEGIES: [Strategy; 8] = [
+        Strategy::Duelist,
+        Strategy::Bombardier,
+        Strategy::Skirmisher,
+        Strategy::Heavy,
+        Strategy::Ambusher,
+        Strategy::Brawler,
+        Strategy::Denier,
+        Strategy::Runner,
+    ];
+
+    fn taste(strategy: Strategy) -> Vec<usize> {
+        wants(&BehaviorProfile::for_strategy(strategy))
+    }
+
+    /// A taste is the same taste on every host that derives it, and no two
+    /// personalities want the same things in the same order.
     #[test]
     fn taste_is_personal_and_stable() {
-        let a = wants(BuildPlan::Runner);
-        assert_eq!(a, wants(BuildPlan::Runner), "a plan is stable");
-        let mut seen: Vec<Vec<usize>> = Vec::new();
-        for pilot in crate::pilots::roster() {
-            let list = wants(pilot.build);
-            assert!(!list.is_empty(), "{} wants nothing", pilot.callsign);
-            if !seen.contains(&list) {
-                seen.push(list);
-            }
-        }
-        assert!(
-            seen.len() >= 2,
-            "the whole roster flies one build: {} tastes over eight pilots",
-            seen.len()
+        assert_eq!(
+            taste(Strategy::Brawler),
+            taste(Strategy::Brawler),
+            "a taste is stable"
         );
+        let mut seen: Vec<(Strategy, Vec<usize>)> = Vec::new();
+        for strategy in STRATEGIES {
+            let list = taste(strategy);
+            assert!(!list.is_empty(), "{strategy:?} wants nothing");
+            if let Some((other, _)) = seen.iter().find(|(_, l)| *l == list) {
+                panic!("{strategy:?} and {other:?} shop from one list");
+            }
+            seen.push((strategy, list));
+        }
     }
 
     /// A bot buys what it is saving for rather than whatever is cheapest, and
@@ -223,37 +290,73 @@ mod tests {
     #[test]
     fn a_build_spends_thirty_points_where_it_wanted_them() {
         let ceiling = full_ceiling();
-        for plan in [BuildPlan::Gunner, BuildPlan::Bomber, BuildPlan::Runner] {
-            let list = wants(plan);
+        for strategy in STRATEGIES {
+            let list = taste(strategy);
             let kit = build(&list, &ceiling);
             let spent: u32 = kit.iter().map(|n| *n as u32).sum();
-            assert_eq!(spent, sim::KIT_BUDGET, "{plan:?} left points unspent");
+            assert_eq!(spent, sim::KIT_BUDGET, "{strategy:?} left points unspent");
             for slot in 0..sim::SLOT_COUNT {
-                assert!(kit[slot] <= ceiling[slot], "{plan:?} overran slot {slot}");
+                assert!(
+                    kit[slot] <= ceiling[slot],
+                    "{strategy:?} overran slot {slot}"
+                );
             }
-            assert!(kit[list[0]] > 0, "{plan:?} did not buy what it wanted most");
+            assert!(
+                kit[list[0]] > 0,
+                "{strategy:?} did not buy what it wanted most"
+            );
         }
     }
 
-    /// Deeper stat ladders must not quietly collapse three named tastes into
-    /// the same all-stat build. These counts are the intentional full-shelf
-    /// specializations that the authored pilot roster flies.
+    /// Energy is what a hull carries instead of health, so a personality that
+    /// buys none is a personality made of paper.
+    ///
+    /// The old runner plan bought exactly zero, against the gunner's seven,
+    /// and it lost at every skill level in every room the probe measured.
     #[test]
-    fn full_shelf_builds_keep_their_distinct_flight_tastes() {
+    fn every_personality_buys_a_bar_to_fight_from() {
         let ceiling = full_ceiling();
-        let stat_counts = |plan| {
-            let kit = build(&wants(plan), &ceiling);
-            [
-                kit[sim::slot_stat(sim::UP_ENERGY) as usize],
-                kit[sim::slot_stat(sim::UP_RECHARGE) as usize],
-                kit[sim::slot_stat(sim::UP_SPEED) as usize],
-                kit[sim::slot_stat(sim::UP_THRUST) as usize],
-                kit[sim::slot_stat(sim::UP_ROTATION) as usize],
-            ]
-        };
-        assert_eq!(stat_counts(BuildPlan::Gunner), [7, 6, 3, 0, 0]);
-        assert_eq!(stat_counts(BuildPlan::Bomber), [7, 3, 0, 4, 0]);
-        assert_eq!(stat_counts(BuildPlan::Runner), [0, 3, 6, 6, 3]);
+        let energy = sim::slot_stat(sim::UP_ENERGY) as usize;
+        for strategy in STRATEGIES {
+            let kit = build(&taste(strategy), &ceiling);
+            assert!(
+                kit[energy] >= 3,
+                "{strategy:?} flies on {} points of energy",
+                kit[energy]
+            );
+        }
+    }
+
+    /// What a personality asks for has to follow from what it is. A pilot who
+    /// wants the bomb buys more of that ladder than one who does not, and one
+    /// who fights up close buys more of a bar than one standing off.
+    #[test]
+    fn a_kit_follows_the_personality_it_came_from() {
+        let ceiling = full_ceiling();
+        let bomb = sim::slot_level(sim::TRIG_BOMB) as usize;
+        let energy = sim::slot_stat(sim::UP_ENERGY) as usize;
+        let speed = sim::slot_stat(sim::UP_SPEED) as usize;
+
+        let bombardier = build(&taste(Strategy::Bombardier), &ceiling);
+        let duelist = build(&taste(Strategy::Duelist), &ceiling);
+        assert!(
+            bombardier[bomb] > duelist[bomb],
+            "a bombardier and a duelist buy the same bomb"
+        );
+        assert_eq!(duelist[bomb], 0, "a duelist buys a bomb it never throws");
+
+        let brawler = build(&taste(Strategy::Brawler), &ceiling);
+        let denier = build(&taste(Strategy::Denier), &ceiling);
+        assert!(
+            brawler[energy] > denier[energy],
+            "a brawler in the blender buys no more bar than a pilot standing off"
+        );
+
+        let runner = build(&taste(Strategy::Runner), &ceiling);
+        assert!(
+            runner[speed] > brawler[speed],
+            "a runner buys no more speed than a brawler"
+        );
     }
 
     /// The ceiling is the account's as well as the arena's, so a pilot that
@@ -262,23 +365,17 @@ mod tests {
     #[test]
     fn a_build_inside_a_bare_account_still_flies() {
         let base = sim::World::base_entitlements();
-        let kit = build(&wants(BuildPlan::Runner), &base);
-        let spent: u32 = kit.iter().map(|n| *n as u32).sum();
-        assert!(spent > 0, "a bare account flies a bare hull");
-        assert!(spent <= sim::KIT_BUDGET, "and never past the budget");
-        for slot in 0..sim::SLOT_COUNT {
-            assert!(kit[slot] <= base[slot], "slot {slot} is not owned");
+        for strategy in STRATEGIES {
+            let kit = build(&taste(strategy), &base);
+            let spent: u32 = kit.iter().map(|n| *n as u32).sum();
+            assert!(spent > 0, "{strategy:?} on a bare account flies nothing");
+            assert!(spent <= sim::KIT_BUDGET, "{strategy:?} ran past the budget");
+            for slot in 0..sim::SLOT_COUNT {
+                assert!(
+                    kit[slot] <= base[slot],
+                    "{strategy:?} wears slot {slot} unowned"
+                );
+            }
         }
-        assert_eq!(
-            [
-                kit[sim::slot_stat(sim::UP_ENERGY) as usize],
-                kit[sim::slot_stat(sim::UP_RECHARGE) as usize],
-                kit[sim::slot_stat(sim::UP_SPEED) as usize],
-                kit[sim::slot_stat(sim::UP_THRUST) as usize],
-                kit[sim::slot_stat(sim::UP_ROTATION) as usize],
-            ],
-            [0, 3, 7, 7, 4],
-            "a new Runner commits to movement without inventing extra points"
-        );
     }
 }

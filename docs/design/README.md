@@ -13,7 +13,7 @@ engineering, see [docs/architecture](../architecture/README.md).
 | [menu.md](menu.md) | Landing in the game, the six tabs, changing hull, and the loading hand-off |
 | [interface.md](interface.md) | The design language: color, type, shape, marks, layout, motion, and words, across the menu and the flight HUD |
 | [ai-players.md](ai-players.md) | AI opponents that fill empty arenas and yield to humans: styles, skill, the long-lived roster, and the population director |
-| [bot-ecosystem.md](bot-ecosystem.md) | Versioned bot pilots: stable identity, behavior profiles, competence axes, build plans, rating, and the social boundary |
+| [bot-ecosystem.md](bot-ecosystem.md) | Versioned bot pilots: stable identity, behavior profiles, competence axes, derived taste, rating, and the social boundary |
 | [ladder-mode.md](ladder-mode.md) | A one-life climb through measured bot opponents: losses, checkpoints, persistence, and replacement rules |
 | [duel-mode.md](duel-mode.md) | One on one against a rating-matched human or bot: format, queue, rating, replays |
 | [bounty.md](bounty.md) | What you are worth and what you have been paid: bounty derived from what you carry, points paid as the victim's bounty |

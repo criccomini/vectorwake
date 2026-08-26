@@ -1,8 +1,12 @@
 //! Persistent bot pilots and the content that makes each one distinct.
 //!
-//! Identity, behavior, competence, hull, build, and rating are separate on
-//! purpose. This module owns the first five. Rating remains a career result in
-//! the meta-layer rather than a number a designer writes into a pilot.
+//! Identity, behavior, competence, hull, and rating are separate on purpose.
+//! This module owns the first four. Rating remains a career result in the
+//! meta-layer rather than a number a designer writes into a pilot.
+//!
+//! What a pilot buys is not among them. That was a build plan named beside the
+//! behavior and drawn independently of it; it is now read off the behavior
+//! itself, in `shopper::wants`.
 
 pub const PILOT_SPEC_VERSION: u16 = 1;
 /// Distinct ordinary house pilots the population director may claim.
@@ -176,14 +180,6 @@ impl BehaviorProfile {
     }
 }
 
-/// The specialization an account buys toward and flies within its ceiling.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum BuildPlan {
-    Gunner,
-    Bomber,
-    Runner,
-}
-
 /// Everything needed to resolve one persistent roster individual.
 #[derive(Clone, Debug, PartialEq)]
 pub struct PilotSpec {
@@ -193,7 +189,6 @@ pub struct PilotSpec {
     pub hull: u8,
     pub competence: Competence,
     pub behavior: BehaviorProfile,
-    pub build: BuildPlan,
     /// Stable seed for content generation. Match randomness has another seed.
     pub configuration_seed: u32,
 }
@@ -369,33 +364,6 @@ const NAMED_COMPETENCE: [Competence; 8] = [
     },
 ];
 
-/// What each authored pilot saves up for, in roster order.
-///
-/// These began as the plans the shipped name-and-hull hash resolved before
-/// plans became explicit, kept as they were so that no existing pilot's
-/// purchases went to waste. Two have since moved for a reason worth more than
-/// that, and a moved pilot keeps everything it owns: a plan decides what an
-/// account buys next and how it spends thirty points, never what it may hold.
-///
-/// A plan has to agree with the strategy beside it, because the brain decides
-/// when to throw a bomb and the plan decides whether there is one to throw.
-/// Halcyon and Ozone are the two strategies that open the bombing gates, and
-/// both carried Runner: the whole of a Team Battle room was six gun kits and
-/// two more, nobody owned a single rung of the bomb ladder the zone sells, and
-/// the two pilots whose brains asked for the weapon most were the two least
-/// equipped to answer. `named_builds_agree_with_named_strategies` keeps the two
-/// tables in step from here.
-const NAMED_BUILDS: [BuildPlan; 8] = [
-    BuildPlan::Runner,
-    BuildPlan::Bomber,
-    BuildPlan::Gunner,
-    BuildPlan::Gunner,
-    BuildPlan::Runner,
-    BuildPlan::Bomber,
-    BuildPlan::Runner,
-    BuildPlan::Runner,
-];
-
 fn calibrated(n: usize) -> Option<PilotSpec> {
     let &(callsign, hull, _) = CALIBRATED.get(n)?;
     Some(PilotSpec {
@@ -405,7 +373,6 @@ fn calibrated(n: usize) -> Option<PilotSpec> {
         hull,
         competence: NAMED_COMPETENCE[n],
         behavior: BehaviorProfile::for_strategy(NAMED_STRATEGIES[n]),
-        build: NAMED_BUILDS[n],
         configuration_seed: 0x6d2b_79f5 ^ (n as u32 + 1).wrapping_mul(0x9e37_79b9),
     })
 }
@@ -420,14 +387,6 @@ fn generated_strategy(h: u32) -> Strategy {
         5 => Strategy::Brawler,
         6 => Strategy::Denier,
         _ => Strategy::Runner,
-    }
-}
-
-fn generated_build(h: u32) -> BuildPlan {
-    match (h >> 17) % 3 {
-        0 => BuildPlan::Gunner,
-        1 => BuildPlan::Bomber,
-        _ => BuildPlan::Runner,
     }
 }
 
@@ -462,7 +421,6 @@ pub fn individual(n: usize) -> PilotSpec {
         hull: (h >> 11) as u8 % CLASS_NAMES.len() as u8,
         competence: generated_competence(h),
         behavior: BehaviorProfile::for_strategy(generated_strategy(h)),
-        build: generated_build(h),
         configuration_seed: 0xa511_e9b3 ^ h.rotate_left(11),
     }
 }
@@ -553,65 +511,82 @@ pub fn roster() -> Vec<PilotSpec> {
 mod tests {
     use super::*;
 
+    /// Every strategy the game ships, so a test over all of them stays over
+    /// all of them when a ninth is written.
+    const STRATEGIES: [Strategy; 8] = [
+        Strategy::Duelist,
+        Strategy::Bombardier,
+        Strategy::Skirmisher,
+        Strategy::Heavy,
+        Strategy::Ambusher,
+        Strategy::Brawler,
+        Strategy::Denier,
+        Strategy::Runner,
+    ];
+
     #[test]
-    fn shipped_pilots_keep_their_careers_and_builds() {
+    fn shipped_pilots_keep_their_careers() {
         let expected = [
-            ("Kestrel", 0, 0.05, BuildPlan::Runner),
-            ("Halcyon", 3, 0.35, BuildPlan::Bomber),
-            ("Vantage", 6, 0.65, BuildPlan::Gunner),
-            ("Ridgeline", 2, 0.82, BuildPlan::Gunner),
-            ("Sable", 5, 0.90, BuildPlan::Runner),
-            ("Ozone", 1, 0.54, BuildPlan::Bomber),
-            ("Tessellate", 4, 0.74, BuildPlan::Runner),
-            ("Cirrus", 2, 0.20, BuildPlan::Runner),
+            ("Kestrel", 0, 0.05),
+            ("Halcyon", 3, 0.35),
+            ("Vantage", 6, 0.65),
+            ("Ridgeline", 2, 0.82),
+            ("Sable", 5, 0.90),
+            ("Ozone", 1, 0.54),
+            ("Tessellate", 4, 0.74),
+            ("Cirrus", 2, 0.20),
         ];
-        for (n, &(name, hull, skill, build)) in expected.iter().enumerate() {
+        for (n, &(name, hull, skill)) in expected.iter().enumerate() {
             let spec = individual(n);
             assert_eq!(spec.id, PilotId(n as u32 + 1));
             assert_eq!(spec.callsign, name);
             assert_eq!(spec.hull, hull);
             let midpoint = (spec.competence.aim + spec.competence.judgment) / 2.0;
             assert!((midpoint - skill).abs() < 0.000_001);
-            assert_eq!(spec.build, build);
         }
     }
 
-    /// A pilot whose brain opens the bombing gates has to own a bomb.
+    /// A pilot whose brain opens the bombing gates owns a bomb.
     ///
     /// `choose_weapon` gives Bombardier and Heavy the short cadence and the
     /// energy license that let them initiate with the weapon; every other
-    /// strategy waits for a crowd or a finisher. A pilot in that pair on a gun
-    /// plan spends the match asking for a bomb it never bought, which is how
-    /// the shipped roster came to hold no bomb rung at all.
+    /// strategy waits for a crowd or a finisher. A pilot in that pair without a
+    /// bomb spends the match asking for one it never bought, which is what the
+    /// old separate build plan let happen to two thirds of them.
     #[test]
-    fn named_builds_agree_with_named_strategies() {
-        for (n, spec) in (0..CALIBRATED.len()).map(individual).enumerate() {
-            let wants_a_bomb = matches!(
-                spec.behavior.strategy,
-                Strategy::Bombardier | Strategy::Heavy
-            );
-            assert_eq!(
-                wants_a_bomb,
-                spec.build == BuildPlan::Bomber,
-                "{} is a {:?} on the {:?} plan: seat {n} of the roster",
-                spec.callsign,
-                spec.behavior.strategy,
-                spec.build
+    fn the_bombing_strategies_own_a_bomb() {
+        let bomb = crate::sim::slot_level(crate::sim::TRIG_BOMB) as usize;
+        for strategy in STRATEGIES {
+            let profile = BehaviorProfile::for_strategy(strategy);
+            let owns = crate::shopper::wants(&profile).contains(&bomb);
+            let opens_the_gates = matches!(strategy, Strategy::Bombardier | Strategy::Heavy);
+            assert!(
+                !opens_the_gates || owns,
+                "{strategy:?} initiates with a bomb it never buys"
             );
         }
     }
 
-    /// And the room a zone actually seats has to hold one of each plan, or a
-    /// ladder the shop sells is a ladder nobody in the room can be seen using.
+    /// And no two personalities buy the same thing, which is the whole claim
+    /// `docs/design/ai-players.md` makes for taste: a room is not eight of one
+    /// ship, and what a pilot throws is a fact worth learning about that pilot.
     #[test]
-    fn the_authored_roster_flies_every_plan() {
-        for plan in [BuildPlan::Gunner, BuildPlan::Bomber, BuildPlan::Runner] {
-            assert!(
-                (0..CALIBRATED.len())
-                    .map(individual)
-                    .any(|spec| spec.build == plan),
-                "no authored pilot flies {plan:?}"
+    fn every_strategy_has_a_kit_of_its_own() {
+        let ceiling = *crate::sim::World::baseline_kit_ceiling();
+        let mut seen: Vec<(Strategy, [u8; crate::sim::SLOT_COUNT])> = Vec::new();
+        for strategy in STRATEGIES {
+            let profile = BehaviorProfile::for_strategy(strategy);
+            let kit = crate::shopper::build(&crate::shopper::wants(&profile), &ceiling);
+            let spent: u32 = kit.iter().map(|n| *n as u32).sum();
+            assert_eq!(
+                spent,
+                crate::sim::KIT_BUDGET,
+                "{strategy:?} left points unspent"
             );
+            if let Some((other, _)) = seen.iter().find(|(_, k)| *k == kit) {
+                panic!("{strategy:?} and {other:?} fly the same thirty points");
+            }
+            seen.push((strategy, kit));
         }
     }
 
@@ -651,8 +626,8 @@ mod tests {
                 assert_eq!(replica.version, authored.version);
                 assert_eq!(replica.hull, authored.hull);
                 assert_eq!(replica.competence, authored.competence);
+                // Behavior carries taste as well: a kit is derived from it.
                 assert_eq!(replica.behavior, authored.behavior);
-                assert_eq!(replica.build, authored.build);
                 assert_eq!(replica.configuration_seed, authored.configuration_seed);
             }
             assert_ne!(first.id, authored.id);

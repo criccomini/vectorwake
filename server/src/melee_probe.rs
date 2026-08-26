@@ -9,8 +9,9 @@
 //! standing in.
 //!
 //! So this runs the shipped format exactly: the authored pilots at their own
-//! competences, in their own hulls, wearing the kit `shopper` builds for their
-//! build plan, four a side, three minutes, under melee tuning on a melee map.
+//! competences, in their own hulls, wearing the kit `shopper` derives from
+//! their behavior, four a side, three minutes, under melee tuning on a melee
+//! map.
 //! It reports each pilot's score beside the skill they were written with, how
 //! many rounds were in the air while they did it, how many guns were on them
 //! when they died, and how often they died without a fight to lose.
@@ -23,7 +24,7 @@
 //!   VW_MELEE_SPRAY   the spray ceiling outright, above the live one or below
 //!                    it, so the fan can be taken away or opened to what the
 //!                    zone file asks for
-//!   VW_MELEE_PLAN    one build for everybody, to tell a pilot from its kit
+//!   VW_MELEE_PERSON  one personality for everybody, to tell a pilot from its kit
 
 use crate::{ai, calibrate::spec_triggers, config, nav, pilots, shopper, sim};
 
@@ -69,7 +70,6 @@ fn open(map: &[u8], salt: u32, tuning: &config::ArenaConfig) -> sim::World {
 struct Seat {
     name: String,
     skill: f32,
-    plan: pilots::BuildPlan,
     strategy: pilots::Strategy,
     multi: u8,
     /// What the thirty points bought on each ladder. A rung of nothing is the
@@ -159,7 +159,7 @@ fn play(
             println!("melee: the map has no start for seat {i}");
             std::process::exit(1);
         }
-        let kit = shopper::build(&shopper::wants(plan_of(pilot)), ceiling);
+        let kit = shopper::build(&shopper::wants(&person_of(pilot)), ceiling);
         if !world.set_kit(id as usize, &kit) {
             println!("melee: seat {i} will not wear its kit");
             std::process::exit(1);
@@ -324,23 +324,51 @@ fn knob(name: &str) -> Option<u16> {
     std::env::var(name).ok().and_then(|v| v.parse().ok())
 }
 
-/// The build every seat flies, when the run is asking what a build is worth
-/// rather than what a pilot is. `None` is the shipped arrangement: each pilot
-/// flies the plan its spec names.
-fn forced_plan() -> Option<pilots::BuildPlan> {
-    match std::env::var("VW_MELEE_PLAN").ok()?.as_str() {
-        "gunner" => Some(pilots::BuildPlan::Gunner),
-        "bomber" => Some(pilots::BuildPlan::Bomber),
-        "runner" => Some(pilots::BuildPlan::Runner),
-        other => {
-            println!("melee: {other:?} is not a build plan: gunner, bomber, runner");
+/// The personality every seat flies, when the run is asking what a
+/// personality is worth rather than what a pilot is. `None` is the shipped
+/// arrangement: each pilot flies its own.
+///
+/// This forced a build plan when a kit came from one. A kit comes off the
+/// behavior profile now, so holding the kit still means holding the whole
+/// personality still, which is the more honest control anyway.
+fn forced_person() -> Option<pilots::Strategy> {
+    let name = std::env::var("VW_MELEE_PERSON").ok()?;
+    let found = STRATEGIES
+        .iter()
+        .find(|s| format!("{s:?}").eq_ignore_ascii_case(&name));
+    match found {
+        Some(&s) => Some(s),
+        None => {
+            println!(
+                "melee: {name:?} is not a strategy: {}",
+                STRATEGIES
+                    .iter()
+                    .map(|s| format!("{s:?}").to_lowercase())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
             std::process::exit(1);
         }
     }
 }
 
-fn plan_of(pilot: usize) -> pilots::BuildPlan {
-    forced_plan().unwrap_or_else(|| pilots::individual(pilot).build)
+/// Every strategy the game ships, in roster order.
+const STRATEGIES: [pilots::Strategy; 8] = [
+    pilots::Strategy::Duelist,
+    pilots::Strategy::Bombardier,
+    pilots::Strategy::Skirmisher,
+    pilots::Strategy::Heavy,
+    pilots::Strategy::Ambusher,
+    pilots::Strategy::Brawler,
+    pilots::Strategy::Denier,
+    pilots::Strategy::Runner,
+];
+
+fn person_of(pilot: usize) -> pilots::BehaviorProfile {
+    match forced_person() {
+        Some(s) => pilots::BehaviorProfile::for_strategy(s),
+        None => pilots::individual(pilot).behavior,
+    }
 }
 
 pub fn run() {
@@ -397,13 +425,12 @@ pub fn run() {
     let mut seats: Vec<Seat> = (0..ROSTER)
         .map(|i| {
             let spec = pilots::individual(i);
-            let plan = plan_of(i);
-            let kit = shopper::build(&shopper::wants(plan), &ceiling);
+            let person = person_of(i);
+            let kit = shopper::build(&shopper::wants(&person), &ceiling);
             Seat {
                 skill: (spec.competence.aim + spec.competence.judgment) / 2.0,
                 name: spec.callsign,
-                plan,
-                strategy: spec.behavior.strategy,
+                strategy: person.strategy,
                 multi: kit[SPRAY],
                 gun_rung: kit[GUN_RUNG],
                 bomb_rung: kit[BOMB_RUNG],
@@ -454,10 +481,9 @@ multi_delay {}, spray ceiling {}",
     println!("  {air:.1} rounds in the air on average across the whole room");
     println!();
     println!(
-        "  {:<11} {:>5} {:>7} {:>3} {:>6} {:>6} {:>6} {:>6} {:>6} {:>7} {:>5} {:>7}",
+        "  {:<11} {:>5} {:>3} {:>6} {:>6} {:>6} {:>6} {:>6} {:>7} {:>5} {:>7}",
         "pilot",
         "skill",
-        "plan",
         "spr",
         "kills",
         "deaths",
@@ -469,17 +495,11 @@ multi_delay {}, spray ceiling {}",
         "cold%"
     );
     for s in &seats {
-        let plan = match s.plan {
-            pilots::BuildPlan::Gunner => "gunner",
-            pilots::BuildPlan::Bomber => "bomber",
-            pilots::BuildPlan::Runner => "runner",
-        };
         println!(
-            "  {:<11} {:>5.2} {:>7} {:>3} {:>6} {:>6} {:>6.2} {:>6.1} {:>5.1}s {:>6.1}s \
+            "  {:<11} {:>5.2} {:>3} {:>6} {:>6} {:>6.2} {:>6.1} {:>5.1}s {:>6.1}s \
 {:>5.2} {:>6.0}%",
             s.name,
             s.skill,
-            plan,
             s.multi,
             s.kills,
             s.deaths,
@@ -495,20 +515,16 @@ multi_delay {}, spray ceiling {}",
     println!();
     println!(
         "  {:<11} {:>12} {:>7} {:>4} {:>4} {:>10} {:>11} {:>9}",
-        "pilot", "strategy", "plan", "gun", "bmb", "gun pulls", "bomb pulls", "gun:bomb"
+        "pilot", "strategy", "gun", "bmb", "spr", "gun pulls", "bomb pulls", "gun:bomb"
     );
     for s in &seats {
         println!(
             "  {:<11} {:>12} {:>7} {:>4} {:>4} {:>10} {:>11} {:>9}",
             s.name,
             format!("{:?}", s.strategy).to_lowercase(),
-            match s.plan {
-                pilots::BuildPlan::Gunner => "gunner",
-                pilots::BuildPlan::Bomber => "bomber",
-                pilots::BuildPlan::Runner => "runner",
-            },
             s.gun_rung,
             s.bomb_rung,
+            s.multi,
             s.gun_pulls,
             s.bomb_pulls,
             if s.bomb_pulls == 0 {

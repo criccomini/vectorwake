@@ -1644,7 +1644,7 @@ async fn spend(
 }
 
 fn next_purchase(who: &pilots::PilotSpec, offered: &[(usize, u32)], rivets: i64) -> Option<usize> {
-    crate::shopper::next_buy(&crate::shopper::wants(who.build), offered, rivets)
+    crate::shopper::next_buy(&crate::shopper::wants(&who.behavior), offered, rivets)
 }
 
 fn pilot_kit(
@@ -1658,7 +1658,7 @@ fn pilot_kit(
     for (slot, top) in ceiling.iter_mut().enumerate() {
         *top = (*top).min(owned[slot]);
     }
-    crate::shopper::build(&crate::shopper::wants(who.build), &ceiling)
+    crate::shopper::build(&crate::shopper::wants(&who.behavior), &ceiling)
 }
 
 /// The join a bot sends, built where something can check it.
@@ -3087,14 +3087,20 @@ mod tests {
     }
 
     #[test]
-    fn a_generated_pilot_shops_for_its_resolved_build_plan() {
+    fn a_generated_pilot_shops_for_its_own_behavior() {
         let who = pilots::individual(ai::CALIBRATED.len());
-        let wanted = crate::shopper::wants(who.build)[0];
-        let other = match who.build {
-            pilots::BuildPlan::Gunner => pilots::BuildPlan::Bomber,
-            pilots::BuildPlan::Bomber | pilots::BuildPlan::Runner => pilots::BuildPlan::Gunner,
-        };
-        let wrong = crate::shopper::wants(other)[0];
+        let wanted = crate::shopper::wants(&who.behavior)[0];
+        // Somebody who wants something else first. Taste comes off the profile
+        // now, so the contrast is another personality rather than another plan.
+        let other = pilots::BehaviorProfile::for_strategy(
+            if who.behavior.strategy == pilots::Strategy::Brawler {
+                pilots::Strategy::Denier
+            } else {
+                pilots::Strategy::Brawler
+            },
+        );
+        let wrong = crate::shopper::wants(&other)[0];
+        assert_ne!(wanted, wrong, "the two tastes must differ to be a test");
         let shelf = [(wrong, 1), (wanted, 1)];
         assert_eq!(
             next_purchase(&who, &shelf, 10),
@@ -3643,8 +3649,8 @@ mod tests {
         assert_eq!(second.id, pilots::ladder_replica(archetype, 1).unwrap().id);
         assert_eq!(first.hull, second.hull);
         assert_eq!(first.competence, second.competence);
+        // Behavior covers taste as well now: a kit is derived from it.
         assert_eq!(first.behavior, second.behavior);
-        assert_eq!(first.build, second.build);
         assert_eq!(first.configuration_seed, second.configuration_seed);
     }
 
