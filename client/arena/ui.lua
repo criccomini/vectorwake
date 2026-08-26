@@ -1949,11 +1949,20 @@ local function scores(me, pilots, watchers, viewer_name, always)
         end
         return wide
     end
-    local bw, pw, aw, dw, kw =
-        col_w("b", "BTY"), col_w("p", "PTS"), col_w("a", "A"),
-        col_w("d", "D"), col_w("k", "K")
-    local bx = x + w - 12 * F.scale
-    local px = bx - bw - GAP
+    local pw, aw, dw, kw =
+        col_w("p", "PTS"), col_w("a", "A"), col_w("d", "D"), col_w("k", "K")
+    -- The ending has no bounty column: a bounty prices the next kill, and at
+    -- the whistle there is no next kill. Points take the outer edge instead,
+    -- and their head is the rivet mark rather than a word, because what that
+    -- column is saying then is what the match paid.
+    local bw, bx, px
+    if always then
+        px = x + w - 12 * F.scale
+    else
+        bw = col_w("b", "BTY")
+        bx = x + w - 12 * F.scale
+        px = bx - bw - GAP
+    end
     local ax = px - pw - GAP
     local dx = ax - aw - GAP
     local kx = dx - dw - GAP
@@ -1980,8 +1989,17 @@ local function scores(me, pilots, watchers, viewer_name, always)
     -- in the box a row opens, because it is the same kind of fact as the two
     -- beside it and belongs where they are.
     head_col("assists", "A", ax, "right")
-    head_col("points", "PTS", px, "right")
-    head_col("bounty", "BTY", bx, "right")
+    if always then
+        -- The mark stands where the word stood, lit the same way when its
+        -- column is the sort.
+        local r = small * 0.5
+        pages.rivet_mark(px - r, top + 14 * F.scale, r,
+                         M.sort == "points" and pal.a(pal.FRIEND, 0.95)
+                             or pal.a(pal.DIM, 0.7))
+    else
+        head_col("points", "PTS", px, "right")
+        head_col("bounty", "BTY", bx, "right")
+    end
     -- Hit boxes over the headings. Each takes its whole column and the gap to
     -- its left, so the four tile without overlapping and the labels, which
     -- are one or three characters wide, are not the target.
@@ -1990,7 +2008,9 @@ local function scores(me, pilots, watchers, viewer_name, always)
     hit(dx - dw - GAP, top + 4 * F.scale, dw + GAP, 18 * F.scale, "sort_deaths")
     hit(ax - aw - GAP, top + 4 * F.scale, aw + GAP, 18 * F.scale, "sort_assists")
     hit(px - pw - GAP, top + 4 * F.scale, pw + GAP, 18 * F.scale, "sort_points")
-    hit(bx - bw - GAP, top + 4 * F.scale, bw + GAP, 18 * F.scale, "sort_bounty")
+    if not always then
+        hit(bx - bw - GAP, top + 4 * F.scale, bw + GAP, 18 * F.scale, "sort_bounty")
+    end
     ticks(x + 12 * F.scale, top + 20 * F.scale, w - 24 * F.scale,
           pal.a(pal.RADAR_TILE, 0.35), 14 * F.scale)
 
@@ -2067,7 +2087,8 @@ local function scores(me, pilots, watchers, viewer_name, always)
             -- watcher has not scored anything and three zeroes would say they
             -- had. One word instead, in the columns the numbers would have
             -- used, so the row is plainly a different kind of row.
-            txt("watching", bx, cy, small, pal.a(pal.DIM, 0.7), "right")
+            txt("watching", always and px or bx, cy, small,
+                pal.a(pal.DIM, 0.7), "right")
         else
             -- The one way to ask about a pilot. Published before the panel's
             -- own box below, which takes the wheel and would otherwise
@@ -2088,7 +2109,10 @@ local function scores(me, pilots, watchers, viewer_name, always)
             -- both on the row, one of them has to be the one that means
             -- bounty everywhere else.
             txt(tostring(r.p), px, cy, num, pal.a(pal.INK, 0.85), "right")
-            txt(tostring(r.b), bx, cy, num, pal.a(pal.BOUNTY, 0.9), "right")
+            if not always then
+                txt(tostring(r.b), bx, cy, num, pal.a(pal.BOUNTY, 0.9),
+                    "right")
+            end
         end
         y = y + LINE * F.scale
     end
@@ -3935,9 +3959,14 @@ end
 -- The proportion is the fight and the colors are the sides, so the bar carries
 -- the whole reading rather than labelling a stripe.
 function END.band(m, names, x, y, w, sides, grow)
+    -- The figures wear the ending's zoom; the bar between them keeps the
+    -- interface's own size, and so do the names set inside it, since they
+    -- have to fit the bar they are in. A band grown with the type read as a
+    -- banner rather than a reading.
+    local unz = M.podium_zoom or 1
     local px = (M.compact and 20 or 26) * F.scale
-    local name_px = (M.compact and 10 or 12) * F.scale
-    local bar_h = (M.compact and 18 or 26) * F.scale
+    local name_px = (M.compact and 10 or 12) * F.scale / unz
+    local bar_h = (M.compact and 18 or 26) * F.scale / unz
     local gap = 14 * F.scale
     local l, r = sides[1], sides[2]
     local ls = (l ~= nil and m.score and m.score[l]) or 0
@@ -3984,11 +4013,16 @@ end
 -- likely to want it.
 function END.foot(o, m, x, y, w)
     local px = (M.compact and 10 or 12) * F.scale
-    local clock_px = (M.compact and 17 or 21) * F.scale
+    -- The countdown and its caption keep the interface's own size while the
+    -- keys wear the zoom: the keys are the things to press, and the clock
+    -- grown with them read as a headline about waiting.
+    local unz = M.podium_zoom or 1
+    local cap_px = px / unz
+    local clock_px = (M.compact and 17 or 21) * F.scale / unz
     local key_h = KEY_H * F.scale
     local mid = y + key_h / 2
-    lbl("next match", x, mid, pal.a(pal.DIM, 0.9), nil, px)
-    local at = x + text_w("NEXT MATCH", px) + 12 * F.scale
+    lbl("next match", x, mid, pal.a(pal.DIM, 0.9), nil, cap_px)
+    local at = x + text_w("NEXT MATCH", cap_px) + 12 * F.scale / unz
     local left = m.left or 0
     txt(string.format("%d:%02d", math.floor(left / 60), left % 60),
         at, mid, clock_px, pal.a(pal.INK, 0.92))
@@ -4013,8 +4047,18 @@ function END.foot(o, m, x, y, w)
         local kw = text_w(string.upper(a[1]), px) + lead + 26 * F.scale
         local kx = right - kw
         local col = i == 1 and pal.FRIEND or pal.RADAR_TILE
-        key_box(kx, y, kw, key_h, pal.a(col, i == 1 and 0.16 or 0.06),
-                pal.a(col, i == 1 and 0.95 or 0.6))
+        local fill = i == 1 and 0.16 or 0.06
+        local edge = i == 1 and 0.95 or 0.6
+        if a[2] == "share" then
+            -- The one act on the ending, so it breathes on the clock the
+            -- PLAY NOW key breathes on, floored the same way so the trough
+            -- never reads as a key that stopped working. `F.now` is 0 under
+            -- the test harness, which keeps the layout tests still.
+            local breath = 0.5 + 0.5 * math.sin(F.now * 2.6)
+            fill = 0.06 + 0.12 * breath
+            edge = 0.62 + 0.38 * breath
+        end
+        key_box(kx, y, kw, key_h, pal.a(col, fill), pal.a(col, edge))
         local ink = pal.a(i == 1 and pal.FRIEND or pal.INK, 0.95)
         if mark then
             -- The mark and the words are centered together, so the key reads
@@ -4065,7 +4109,9 @@ local function podium(o, m, names)
         w = math.min(END.W * F.scale, room)
         x = F.safe_l + pad + (room - w) / 2
         title_px = (M.compact and 15 or 20) * F.scale
-        bar_h = (M.compact and 18 or 26) * F.scale
+        -- Divided by the zoom, because the bar does not wear it: see
+        -- `END.band`, which sizes the bar the same way.
+        bar_h = (M.compact and 18 or 26) * F.scale / (M.podium_zoom or 1)
         gap = (M.compact and 10 or 14) * F.scale
         head = title_px + gap + bar_h
         h = head + gap + roster_h(n) + gap + KEY_H * F.scale
@@ -4425,7 +4471,10 @@ function M.hud(o)
     -- you read between fights rather than during one, the scoreboard has it,
     -- and one figure in a corner of a phone is furniture for the sake of a
     -- corner not being empty.
-    if not (o.watch or M.touching) then
+    -- Nor at the ending: everybody is benched, so what the triggers do and
+    -- what is left to spend are facts about a fight that is over, drawn
+    -- through the board's own scrim.
+    if not (o.watch or M.touching or ending) then
         status(me, o.charges, lift)
     end
     -- A watcher is never the subject, so the tally can only be about a pilot
@@ -4446,7 +4495,7 @@ function M.hud(o)
     vignette(o.hurt or 0)
     -- After the stack, because it is hung off the rows the stack published,
     -- and after the tint so a hurt frame does not wash out the words.
-    if not (o.watch or M.touching) then
+    if not (o.watch or M.touching or ending) then
         stack_card(o, me)
     end
     -- Above the two big centered lines and above the menu's own early return:
