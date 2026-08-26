@@ -244,11 +244,36 @@ Nobody designed that and it is not obviously wrong, but it is worth knowing
 before anybody tunes a hull.
 
 Separation also appeared uneven along the dial. Chord at sixty greens, the block
-with the most bouts behind it, has 0.05 losing to everybody and then almost
+with the most bouts behind it, had 0.05 losing to everybody and then almost
 nothing between 0.45, 0.70 and 0.90: those three pairs read 47.6%, 49.0% and
 53.9%, the last of them favoring the weaker pilot. A room stocked from the top
-half of the dial would feel uniform. The difficulty lives at the bottom of the
-range, which is the argument for fielding it.
+half of the dial felt uniform, and the reading at the time was that the
+difficulty lives at the bottom of the range and the answer is to field it.
+
+**The flat half was the dial, not the game.** Swept in a live Team Battle room
+with hull, personality and kit held still, the dial bought something between
+0.05 and 0.18 and nothing at all above: a 0.31 pilot and a 0.95 one scored the
+same, and the whole range end to end was a factor of 1.5. Its judgment half was
+noise from bottom to top.
+
+Two things were wrong. Both mechanisms that make a pilot genuinely bad, the
+held bearing error and the starved clean look, switched off above a floor at
+0.30, which left lead error as the only thing separating seven eighths of the
+dial, and lead error scales with a target's crossing motion so it cannot touch
+something flying straight at you. And what judgment did vary was caution: the
+reserve, the bomb cadence and the self-blast margin all climbed with the dial,
+so a top pilot fired less, bombed less and refused more, which is why 0.44
+finished ahead of 0.95.
+
+So the aim error runs the length of the dial now, squared against the deficit
+so the middle stays nearly straight and the bottom is where the wildness lives.
+Judgment stopped buying caution, since how much risk to take is what
+`aggression` and `retreat_bias` are for. And the dodge grades, because a 0.95
+pilot already aims almost perfectly and there is no headroom left on that axis:
+a poor pilot flinches only at what is dead on, a good one clears anything that
+would touch it. Across the six match maps the roster now spans roughly a factor
+of five, 0.32 to 2.01 on kills over deaths, and skill correlates with it at
++0.82 to +0.91.
 
 **Error has to persist to matter.** Aim error was an angle drawn fresh around
 the correct bearing ten to twenty times a second, so a burst sprayed a cone
