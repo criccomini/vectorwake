@@ -238,11 +238,11 @@ FOOT = ('<div style="position:absolute;left:14px;right:14px;bottom:14px">'
         '<div class="note" style="text-transform:none;line-height:1.5;'
         'text-align:center">Keep your points and log in on other devices'
         '</div>'
-        '<div class="key keylit" style="height:36px;width:100%;'
-        'font-size:10.5px;margin-top:8px">sign up</div>'
-        '<div class="row" style="justify-content:center;margin-top:10px;'
+        '<div class="row" style="justify-content:center;margin-top:4px;'
         'gap:6px"><span class="note">Already have a pilot?</span>'
-        '<span class="note" style="color:#4fd6ff">log in</span></div></div>')
+        '<span class="note" style="color:#4fd6ff">log in</span></div>'
+        '<div class="key keylit" style="height:36px;width:100%;'
+        'font-size:10.5px;margin-top:10px">sign up</div></div>')
 mg = ident() + career() + FOOT
 write("Main.dc.html", board(mg))
 
