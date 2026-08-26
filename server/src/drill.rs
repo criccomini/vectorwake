@@ -43,16 +43,19 @@ pub struct Drill {
     /// energy or cooldown still shows. A weapon nobody presses and a weapon
     /// nobody is allowed to fire are different faults with the same symptom.
     pub gun_presses: u32,
-    /// Rounds that actually left a barrel, by weapon.
+    /// Trigger pulls the core honored, by weapon.
     ///
     /// The press counters below cannot be compared to each other: BTN_FIRE is
     /// held, so the brain sets it every tick the shot is on and a bot holding
     /// the trigger for a second books a hundred of them, while a bomb is one
     /// press per bomb. Dividing those two gives a ratio of several hundred to
-    /// one that means nothing. These count `EV_FIRE`, which the core raises
-    /// once per round that leaves, classified by the pattern's spec.
-    pub gun_rounds: u32,
-    pub bomb_rounds: u32,
+    /// one that means nothing. These count `EV_FIRE`, classified by the
+    /// pattern's spec. The core raises that once per pull, outside its
+    /// per-round loop, so a spray pull is one event however many rounds fan
+    /// out of it; this used to claim once per round, which quietly undercounts
+    /// the gun side of any comparison whenever spray is equipped.
+    pub gun_pulls: u32,
+    pub bomb_pulls: u32,
     pub bomb_presses: u32,
     /// Presses per hull, so "bots never bomb" can be asked of the hull that
     /// is supposed to and the six that are not.
@@ -130,10 +133,10 @@ impl Drill {
             self.shots
         );
         println!(
-            "  rounds   gun {}, bomb {}  (gun per bomb {:.0})",
-            self.gun_rounds,
-            self.bomb_rounds,
-            self.gun_rounds as f64 / self.bomb_rounds.max(1) as f64
+            "  pulls    gun {}, bomb {}  (gun per bomb {:.0})",
+            self.gun_pulls,
+            self.bomb_pulls,
+            self.gun_pulls as f64 / self.bomb_pulls.max(1) as f64
         );
         println!(
             "  presses  gun {}, bomb {}  (held, not comparable)",
@@ -247,8 +250,8 @@ pub fn run_on(map: std::sync::Arc<sim::sim_map>, bots: usize, ticks: u32, seed: 
         bounces: 0,
         shots: 0,
         gun_presses: 0,
-        gun_rounds: 0,
-        bomb_rounds: 0,
+        gun_pulls: 0,
+        bomb_pulls: 0,
         bomb_presses: 0,
         bomb_by_class: [0; 8],
         alive_by_class: [0; 8],
@@ -320,8 +323,8 @@ pub fn run_on(map: std::sync::Arc<sim::sim_map>, bots: usize, ticks: u32, seed: 
                 sim::EV_FIRE => {
                     d.shots += 1;
                     match spec_kind[ev.e[i].b as usize] {
-                        1 => d.bomb_rounds += 1,
-                        _ => d.gun_rounds += 1,
+                        1 => d.bomb_pulls += 1,
+                        _ => d.gun_pulls += 1,
                     }
                 }
                 sim::EV_HIT => d.hits += 1,

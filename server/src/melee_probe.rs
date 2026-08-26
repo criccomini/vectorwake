@@ -80,11 +80,13 @@ struct Seat {
     deaths: u32,
     shots: u32,
     hits: u32,
-    /// Rounds that actually left a barrel, split by which trigger threw them.
-    /// Counted off `EV_FIRE` rather than off the button word, because a gun is
-    /// held and a bomb is a press and the two press counts cannot be compared.
-    gun_rounds: u32,
-    bomb_rounds: u32,
+    /// Trigger pulls the core honored, split by which trigger it was. Counted
+    /// off `EV_FIRE`, which the core raises once per pull, outside its
+    /// per-round loop: a spray-3 gun pull is one event and four rounds, so
+    /// these are pulls and a projectile count wants the spray count multiplied
+    /// back in.
+    gun_pulls: u32,
+    bomb_pulls: u32,
     /// Trigger presses, which is the brain's opinion rather than the core's.
     /// A bomb nobody presses and a bomb nobody is allowed to throw are
     /// different faults with the same symptom.
@@ -193,6 +195,7 @@ fn play(
     let mut air = 0u64;
     let mut age = vec![0u32; n];
     let mut repelled = vec![false; n];
+    let mut match_repels = vec![0u32; n];
     // When each seat was last hit by each other seat, so the last second of a
     // life can be read off without keeping a log.
     let mut hit_at = vec![vec![0u32; n]; n];
@@ -226,19 +229,23 @@ fn play(
                         let s = &mut roster[playing[i]];
                         s.shots += 1;
                         match trig_of[i].get(&e.b) {
-                            Some(&sim::TRIG_BOMB) => s.bomb_rounds += 1,
-                            _ => s.gun_rounds += 1,
+                            Some(&sim::TRIG_BOMB) => s.bomb_pulls += 1,
+                            _ => s.gun_pulls += 1,
                         }
                     }
                 }
+                // a is the victim and b the attacker, the same order EV_DEATH
+                // uses. This was transposed once, which credited every pilot
+                // with the hits landed on it and read a dying pilot's own
+                // last-second output as the guns trained on it.
                 sim::EV_HIT => {
                     if e.a == e.b {
                         continue;
                     }
-                    if let Some(i) = seat_of(e.a) {
+                    if let Some(i) = seat_of(e.b) {
                         roster[playing[i]].hits += 1;
                     }
-                    if let (Some(shooter), Some(victim)) = (seat_of(e.a), seat_of(e.b)) {
+                    if let (Some(victim), Some(shooter)) = (seat_of(e.a), seat_of(e.b)) {
                         hit_at[victim][shooter] = now;
                     }
                 }
@@ -247,10 +254,14 @@ fn play(
                     // game ships.
                     if e.b == 0 {
                         if let Some(i) = seat_of(e.a) {
+                            // This match's count, not the roster row's total:
+                            // the row accumulates across matches, so indexing
+                            // the rack by it recorded only each pilot's first
+                            // match and starved every later one out of the
+                            // timing average.
+                            let nth = match_repels[i] as usize;
+                            match_repels[i] += 1;
                             let s = &mut roster[playing[i]];
-                            // The count is still the one before this charge,
-                            // so it is this charge's place in the rack.
-                            let nth = s.repels as usize;
                             if nth < s.spent_at.len() {
                                 s.spent_at[nth] += now as u64;
                                 s.spent_n[nth] += 1;
@@ -400,8 +411,8 @@ pub fn run() {
                 deaths: 0,
                 shots: 0,
                 hits: 0,
-                gun_rounds: 0,
-                bomb_rounds: 0,
+                gun_pulls: 0,
+                bomb_pulls: 0,
                 bomb_presses: 0,
                 repels: 0,
                 life_ticks: 0,
@@ -484,7 +495,7 @@ multi_delay {}, spray ceiling {}",
     println!();
     println!(
         "  {:<11} {:>12} {:>7} {:>4} {:>4} {:>10} {:>11} {:>9}",
-        "pilot", "strategy", "plan", "gun", "bmb", "gun rounds", "bomb rounds", "gun:bomb"
+        "pilot", "strategy", "plan", "gun", "bmb", "gun pulls", "bomb pulls", "gun:bomb"
     );
     for s in &seats {
         println!(
@@ -498,12 +509,12 @@ multi_delay {}, spray ceiling {}",
             },
             s.gun_rung,
             s.bomb_rung,
-            s.gun_rounds,
-            s.bomb_rounds,
-            if s.bomb_rounds == 0 {
+            s.gun_pulls,
+            s.bomb_pulls,
+            if s.bomb_pulls == 0 {
                 "never".to_string()
             } else {
-                format!("{:.0}:1", s.gun_rounds as f64 / s.bomb_rounds as f64)
+                format!("{:.0}:1", s.gun_pulls as f64 / s.bomb_pulls as f64)
             },
         );
     }
@@ -529,15 +540,15 @@ multi_delay {}, spray ceiling {}",
         guns as f64 / deaths.max(1) as f64,
         100.0 * cold as f64 / deaths.max(1) as f64,
     );
-    let gun_rounds: u32 = seats.iter().map(|s| s.gun_rounds).sum();
-    let bomb_rounds: u32 = seats.iter().map(|s| s.bomb_rounds).sum();
+    let gun_pulls: u32 = seats.iter().map(|s| s.gun_pulls).sum();
+    let bomb_pulls: u32 = seats.iter().map(|s| s.bomb_pulls).sum();
     let bomb_presses: u32 = seats.iter().map(|s| s.bomb_presses).sum();
     println!(
-        "  {gun_rounds} gun rounds against {bomb_rounds} bomb, which is {}, off {bomb_presses} presses of the bomb",
-        if bomb_rounds == 0 {
+        "  {gun_pulls} gun pulls against {bomb_pulls} bomb, which is {}, off {bomb_presses} presses of the bomb",
+        if bomb_pulls == 0 {
             "a room that never bombs".to_string()
         } else {
-            format!("{:.0} to one", gun_rounds as f64 / bomb_rounds as f64)
+            format!("{:.0} to one", gun_pulls as f64 / bomb_pulls as f64)
         },
     );
     let nth = |k: usize| {
