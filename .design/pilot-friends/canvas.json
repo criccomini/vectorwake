@@ -1,0 +1,25 @@
+{
+  "artboards": [
+    { "file": "Current.dc.html",    "x": 0,    "y": 0,    "w": 390, "h": 844, "title": "Current" },
+    { "file": "DirectionA.dc.html", "x": 470,  "y": 0,    "w": 390, "h": 844, "title": "A - one page" },
+    { "file": "DirectionB.dc.html", "x": 940,  "y": 0,    "w": 390, "h": 844, "title": "B - drill-down" },
+    { "file": "BFriends.dc.html",   "x": 1410, "y": 0,    "w": 390, "h": 844, "title": "B - one level in" },
+    { "file": "Main.dc.html",       "x": 470,  "y": 1160, "w": 390, "h": 844, "title": "C - band head" },
+    { "file": "CCard.dc.html",      "x": 940,  "y": 1160, "w": 390, "h": 844, "title": "C - the password card" }
+  ],
+  "annotations": [
+    { "id": "brief", "x": 0, "y": -210, "w": 420,
+      "text": "Friends folds into the pilot page, and the account chrome shrinks to match what it actually is: a name and a password.\n\nEvery direction takes the rail back to four stops (play, ship, pilot, settings) and moves the friends badge onto the pilot stop. One consequence is shared: pilot has to ride the match row now, since who is on is a mid-match question; the account controls stand down there, the same guard the page had." },
+    { "id": "note-current", "x": 0, "y": 884, "w": 390,
+      "text": "CURRENT. A whole page and a reading column for three rows. The explainer says everything twice, and friends spends a rail stop of its own." },
+    { "id": "note-a", "x": 470, "y": 884, "w": 390,
+      "text": "A - ONE PAGE, SECTIONED. The settings grammar: a pilot section, then the friends sections inline. Account is one row with two keys.\n\nFor: everything is one rail tap away, nothing new to learn.\nAgainst: the page opens on you when the live question is them; the account row rides into a match dimmed." },
+    { "id": "note-b", "x": 940, "y": 884, "w": 860,
+      "text": "B - DRILL-DOWN. The slot-reading grammar: the pilot page stays an account page, and a friends row slides the full list in from the right.\n\nFor: each page does one job; friends keeps its layout untouched.\nAgainst: join, the commonest act, costs an extra press; and the top page is still mostly empty, which was the complaint." },
+    { "id": "note-c", "x": 470, "y": 2044, "w": 390,
+      "text": "C - BAND HEAD (leading). The ship-page grammar: the account is a 64pt band, and the page is the people. Name press rerolls, the small keys claim or log in, and both of those were always cards, so no page is lost. Claimed, the keys read password / log out.\n\nFor: both complaints answered at once; the live list starts at the top.\nAgainst: the explainer prose loses its home and has to live in the cards; the band cannot take a third key." },
+    { "id": "note-ccard", "x": 940, "y": 2044, "w": 390,
+      "text": "The claim card over C, unchanged from today. Login and claim never needed a page; the page was standing around the card." }
+  ],
+  "launch": { "view": "canvas" }
+}
