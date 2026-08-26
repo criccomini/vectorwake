@@ -3160,10 +3160,20 @@ pointer presses; it cannot be half of each, because a stop the cursor can
 reach has to light to show the cursor. The name was only ever a stop because
 it was the sole route to an account, and the rail stop retired that job.
 
+**Revised, later:** the name is a stop the arrows walk after all. What the
+paragraph above got wrong is that a lit button says one thing. It says two,
+and they are separable: "the cursor is resting here" and "this is the page
+you are on". The rail owns the second for every page it carries, so the call
+sign never wears it; the first is the arrows' own, and withholding it left a
+button drawn like a button that no key could reach. That was reported as the
+account button being unselectable, which is what it was. The corner row is
+Discord and then the name, left to right, and both take the light only while
+the arrows are on them at the root.
+
 **Cost:** the row is five stops in 390 points, so every label gives up a
 little room. Two controls open one page, which is one more thing to explain
-than a single door would be. Reaching the name without a pointer is gone; the
-rail stop is the keyboard route, and there is no longer a second one.
+than a single door would be, and walking the row to its end now passes two
+buttons rather than one.
 
 **Reconsider if:** the row gains a sixth stop, at which point something has
 to leave; or career and stats grow into the client somewhere other than this

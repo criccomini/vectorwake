@@ -316,6 +316,58 @@ do
           wait_frame(5.50, false) == 1, "the key did not come back")
 end
 
+-- --- a page does not slide in from the tabs it is already previewing -------
+--
+-- At the root the stage is a preview of the page the lit tab leads to, so
+-- stepping into that page changes which row the cursor is on and nothing else:
+-- the rows are the same rows. It slid the width of the drawer for that, which
+-- reads as a second drawer arriving over the first and was reported as one. It
+-- happened on every step, so walking up out of the tabs and back down into
+-- them flapped a full-width panel twice.
+--
+-- Deeper than that it is a reading arriving over the page that opened it,
+-- which is a different surface and still slides.
+
+do
+    local state = package.loaded["arena.state"]
+    -- Where the page's own type is standing this frame. The row's field is the
+    -- drawer's width and does not move; the type inside it rides the slide.
+    local function page_at(depth, now)
+        state.n = 0
+        ui.page_scroll = 0
+        ui.begin(harness.layer(), 1440, 810, 1, false, now)
+        local v = view(true)
+        v.depth = depth
+        ui.menu(v)
+        ui.finish()
+        for i = 1, state.n do
+            local t = state.text[i]
+            if t and t.s == "Melee" then return t.x end
+        end
+        return nil
+    end
+
+    -- Let the drawer finish arriving, so its own slide is not read as a page's.
+    for k = 1, 8 do page_at(1, 20 + k * 0.05) end
+    local settled = page_at(1, 21)
+    check("the page has somewhere to stand", settled ~= nil, tostring(settled))
+
+    local moved = false
+    for _, now in ipairs({21.01, 21.04, 21.08}) do
+        if page_at(2, now) ~= settled then moved = true end
+    end
+    check("stepping from the tabs into their page does not slide",
+          not moved, "it moved")
+
+    page_at(2, 22)
+    local slid = false
+    for _, now in ipairs({22.01, 22.04}) do
+        if page_at(3, now) ~= settled then slid = true end
+    end
+    check("and a reading opened over a page still does", slid,
+          "it arrived without one")
+end
+
 print(fails == 0 and "all drawer checks passed"
       or (fails .. " drawer checks failed"))
 os.exit(fails == 0 and 0 or 1)

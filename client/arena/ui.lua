@@ -7010,14 +7010,15 @@ function pages.corner(v, right, cy, wordless)
         -- A name is quoted rather than said: it keeps the case its owner gave
         -- it, where every other word on this row is in the interface's.
         --
-        -- Lit by the pointer alone, and not while its own page is up. The rail
-        -- carries that page and lights the stop that leads to it, so a name
-        -- lighting as well would be the "you are here" mark in two places at
-        -- once, which is the one thing this row cannot say. What is left is a
-        -- label with a press on it: it tells you who you are signed in as,
-        -- brightens under a pointer that could take you somewhere, and stays
-        -- quiet once you are there.
-        button(v.pilot.name, v.pilot_hot and v.at ~= "pilot",
+        -- Lit by whichever hand is on it, and not while its own page is up.
+        -- The rail carries that page and lights the stop that leads to it, so
+        -- a name lighting as well would be the "you are here" mark in two
+        -- places at once, which is the one thing this row cannot say. What is
+        -- left is a label with a press on it: it says who you are signed in
+        -- as, brightens under a pointer or under the arrows standing on it,
+        -- and stays quiet once you are there.
+        button(v.pilot.name,
+               (v.pilot_hot or v.corner_sel == "pilot") and v.at ~= "pilot",
                "pilot_page", nil, true)
     end
     if v.discord then
@@ -7151,7 +7152,18 @@ local page_depth, page_at, page_dir = 1, 0, 0
 
 local function page_slide(depth)
     if depth ~= page_depth then
-        page_dir = depth > page_depth and 1 or -1
+        -- A step onto or off the root does not slide. At the root the stage is
+        -- already a preview of the page the lit tab leads to, so stepping into
+        -- that page changes which row the cursor is on and nothing else: the
+        -- rows are the same rows. Sliding a panel the width of the drawer for
+        -- that reads as a second drawer arriving over the first, which is what
+        -- it was reported as, and it happened every time a hand walked up out
+        -- of the tabs and back down into them.
+        --
+        -- Deeper than that it is a reading arriving over the page that opened
+        -- it, which is a different surface and does slide.
+        local shallow = depth <= 2 and page_depth <= 2
+        page_dir = (not shallow) and (depth > page_depth and 1 or -1) or 0
         page_depth, page_at = depth, F.now
     end
     if F.now <= 0 or page_dir == 0 then return 0 end

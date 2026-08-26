@@ -269,13 +269,21 @@ do
     menu.stack, menu.sel = kept_stack, kept_sel
 end
 
--- --- the button at the end of that row is on the row ----------------------
+-- --- the buttons at the end of that row are on the row ---------------------
 --
--- Discord sits beside the tabs and does what a tab does. The call sign beside
--- it does not: the rail carries the account page now, so the name is a label
--- with a press on it rather than a stop the arrows walk. A stop the cursor
--- can rest on has to light to say so, and this row's lit mark means "where
--- you are", which cannot be true of two things at once.
+-- Both of them, now. Discord sits beside the tabs and does what a tab does,
+-- and so does the call sign: the row is the tabs and then those two, left to
+-- right, and it loops. The call sign was left off it on the grounds that the
+-- rail carries the account page and a pointer can press the name directly,
+-- which is true and does nothing for a hand on the arrows. A button that is
+-- drawn like a button and cannot be reached by any key is broken for whoever
+-- is not holding a mouse, and it was reported that way.
+--
+-- What that argument was really protecting is kept: this row's lit mark means
+-- "where you are" and cannot be true of two things at once, so a corner button
+-- whose page a tab already carries never wears it. The rail's stop is the one
+-- mark for the account page; the corner lights only for the arrows resting on
+-- it at the root.
 do
     local kept_name, kept_url = menu.name, _G.sys.open_url
     menu.name = "Tester 1"
@@ -298,12 +306,23 @@ do
           menu.showing() == "discord"
           and (menu.view().rows[1] or {}).label == "join discord",
           menu.showing() .. "/" .. tostring((menu.view().rows[1] or {}).label))
+    -- The call sign is the next stop along, which is where it is drawn: the
+    -- corner lays out from the right edge, name first, so Discord is the left
+    -- of the two and the row reads tabs, Discord, name.
     menu.step({right = true})
-    check("and right again is the first tab, the way the row wraps",
+    check("and right again reaches the call sign",
+          menu.view().corner_sel == "pilot",
+          tostring(menu.view().corner_sel))
+    menu.step({right = true})
+    check("and right off its end is the first tab, the way the row wraps",
           menu.view().corner_sel == nil and menu.sel.root == 1,
           tostring(menu.view().corner_sel) .. "/" .. tostring(menu.sel.root))
     menu.step({left = true})
     check("left off the first tab is the last of them",
+          menu.view().corner_sel == "pilot",
+          tostring(menu.view().corner_sel))
+    menu.step({left = true})
+    check("and left again is discord",
           menu.view().corner_sel == "discord",
           tostring(menu.view().corner_sel))
     menu.step({left = true})
@@ -311,9 +330,19 @@ do
           menu.view().corner_sel == nil and menu.sel.root == pilot_at,
           tostring(menu.view().corner_sel) .. "/" .. tostring(menu.sel.root))
 
-    -- The call sign is never a place the arrows can be, so nothing on that
-    -- row is ever lit for the account: the rail's own stop is the one mark
-    -- saying where you are. Both lit at once was the whole complaint.
+    -- Enter on the call sign opens the page a press on it opens, which is the
+    -- page the pilot tab leads to. Two doors onto one page, on purpose.
+    menu.stack = {"root"}
+    menu.sel = {root = 1}
+    menu.corner_sel = nil
+    menu.step({left = true})
+    menu.step({go = true})
+    check("enter on the call sign opens the account page",
+          menu.at() == "pilot", table.concat(menu.stack, "/"))
+
+    -- Reachable is not the same as lit for the page: the rail's own stop is
+    -- the one mark saying where you are, and both lit at once was the whole
+    -- complaint the call sign was taken off this row for.
     menu.stack = {"root", "pilot"}
     menu.corner_sel = nil
     local on_pilot = menu.view()
@@ -3029,6 +3058,53 @@ do
           menu.view().banner ~= true and menu.view().guest_dot ~= true)
     account.claimed, account.friends = kept.claimed, kept.friends
     menu.home, menu.stack, menu.sel = kept.home, kept.stack, kept.sel
+end
+
+-- --- up out of the tabs walks into the page from underneath ----------------
+--
+-- The tab row is at the foot of the drawer and the page is above it, so up is
+-- the direction the page is in and the row it reaches first is the last one.
+-- It used to land wherever that page was last left, and on its first row if it
+-- had never been opened, so a hand pressing up at the foot of the panel was
+-- thrown to the top of the list: the one direction the arrow does not point.
+--
+-- Enter and down are not steps in a direction, so they still land where the
+-- page was left. That is what makes walking down off the foot of a list and
+-- straight back up land you where you were.
+
+do
+    local kept = {home = menu.home, stack = menu.stack, sel = menu.sel,
+                  corner = menu.corner_sel}
+    menu.open, menu.home = true, true
+
+    for _, tab in ipairs({"ship", "settings", "pilot"}) do
+        menu.stack = {"root"}
+        menu.sel = {root = top_index(tab)}
+        menu.corner_sel = nil
+        local n = #menu.view().rows
+        menu.step({up = true})
+        local landed = menu.sel[menu.stack[#menu.stack]]
+        check("up into " .. tab .. " lands on its last row",
+              n > 1 and landed == n,
+              tostring(landed) .. " of " .. tostring(n))
+    end
+
+    -- Down off the foot of a list reaches the tabs, and up goes back to the
+    -- row it left rather than to the last one: the cursor was not stepping
+    -- into the page from underneath, it was returning to where it stood.
+    menu.stack = {"root"}
+    menu.sel = {root = top_index("settings")}
+    menu.corner_sel = nil
+    menu.step({up = true})
+    local page = menu.stack[#menu.stack]
+    menu.sel[page] = 2
+    menu.step({go = true})
+    check("enter still lands where the page was left",
+          menu.sel[menu.stack[#menu.stack]] == 2,
+          tostring(menu.sel[menu.stack[#menu.stack]]))
+
+    menu.home, menu.stack, menu.sel = kept.home, kept.stack, kept.sel
+    menu.corner_sel = kept.corner
 end
 
 print(fails == 0 and "all good" or (fails .. " failed"))

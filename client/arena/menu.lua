@@ -2362,8 +2362,28 @@ end
 -- the right edge in the reverse of this order; both read this. Above
 -- `M.showing` because a corner stop under the cursor is a page on screen the
 -- same way a tab under the cursor is.
+-- Left to right as the drawing lays them out, which is how the row the arrows
+-- walk reads. `pages.corner` builds from the right edge inwards, call sign
+-- first, so on screen Discord is the left of the two.
+--
+-- The call sign was not on this row for a while, on the grounds that the rail
+-- carries its page and a pointer can press it directly. Both are true and
+-- neither helps a hand on the arrows: it is a button, it is lit like a button,
+-- and there was no key that reached it. A control nobody can focus is a
+-- control that is broken for whoever is not holding a mouse.
 local function corner_stops()
-    return {"discord"}
+    return {"discord", "pilot"}
+end
+
+-- Whether a tab already leads to this page, which decides whether the button
+-- at the end of the row may wear the lit mark for it. Asked of the rail's own
+-- rows rather than answered from a list kept beside them, so a stop that moves
+-- onto or off the rail takes this with it.
+local function rail_carries(go)
+    for _, r in ipairs(rows_of(NODES.root)) do
+        if r.go == go then return true end
+    end
+    return false
 end
 
 -- Which page's rows are on screen. One level in that is the page you are
@@ -3107,7 +3127,13 @@ local function corner_lit()
     local stops = corner_stops()
     if #M.stack > 1 then
         for _, which in ipairs(stops) do
-            if M.stack[2] == which then return which end
+            -- Only a stop no tab carries. The pilot page has a tab of its own
+            -- and the rail lights it, so lighting the call sign as well would
+            -- put the "you are here" mark in two places on one row. Discord is
+            -- the one page the rail does not lead to.
+            if M.stack[2] == which and not rail_carries(which) then
+                return which
+            end
         end
         return nil
     end
@@ -3115,10 +3141,11 @@ local function corner_lit()
 end
 
 -- One of them, pressed. Enter and down both land here, the way they both act
--- on a tab. The call sign is not on this row: a pointer presses it and lands
--- in `M.click_pilot` directly.
+-- on a tab. The call sign goes where a pointer on it goes, which is the same
+-- page the pilot tab leads to: two doors onto one page, on purpose.
 local function press_corner(which)
     if which == "discord" then return M.open_discord() end
+    if which == "pilot" then return M.click_pilot() end
     return nil, false
 end
 
@@ -4032,14 +4059,26 @@ function M.step(keys)
         if keys.go or keys.down or keys.up then
             -- Up as well as down. The page is drawn above the stops, so up is
             -- the direction it is in: a hand that walked out of the foot of a
-            -- list by pressing down has to be able to walk back in. The
-            -- cursor lands where it was left, which is that last row.
+            -- list by pressing down has to be able to walk back in.
             --
             -- Silent where the page is still coming. A tick under a press
             -- that changed nothing is the menu saying it did something.
             local r = rows[row_index(rows)]
             if r and r.go and not enterable(r.go) then return nil, false end
-            return activate(), true
+            local act = activate()
+            -- Up walks in from underneath, so it lands on the row nearest the
+            -- tabs, which is the last one. It used to land wherever that page
+            -- was last left and on its first row if it had never been opened,
+            -- so a hand pressing up at the foot of the panel was thrown to the
+            -- top of the list: the one direction the arrow does not point.
+            -- Enter and down still land where the page was left, because
+            -- neither of them is a step in a direction.
+            if keys.up and #M.stack > 1 then
+                local into = M.stack[#M.stack]
+                local page = rows_of(node())
+                if #page > 0 then M.sel[into] = next_stop(page, 1, -1) end
+            end
+            return act, true
         end
         return nil, false
     end
