@@ -215,9 +215,10 @@ vectorwake
 │             spend on them. A rung you do not own is dim with its price on
 │             the end of the row; pressing the row reads it and buys it.
 │             Slots, never strength: see match-game.md
-├ friends     a field you type a call sign into, who is waiting on you, who
-│             is on, the room you are in, and everybody who ever added you.
-│             See friends.md
+├ friends     a field you type a call sign into, the adds waiting on an
+│             answer, and your friends: a green dot and the game they are
+│             in, or a hollow one. A key at the foot invites somebody who
+│             has never played. See friends.md
 ├ settings    sound · music · frames · fullscreen · bindings · about
 └ pilot       who you are and the way to keep it: the name large with a NEW
               NAME key beside it, the career as bare totals under a ship-page
@@ -241,7 +242,7 @@ vectorwake
 in a match
 ├ play        the same list, because the way out of the game you are in is a
 │             button on that game's own row
-├ friends     the people you are flying with, and who else is on
+├ friends     the same page: who is on, and who is waiting on an answer
 └ settings    the same page, because sound and fullscreen are needed there
 ```
 

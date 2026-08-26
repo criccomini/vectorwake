@@ -1031,6 +1031,10 @@ do
                 pilot = {name = "Vantage 7", rivets = 0},
                 add = {name = "", on = false, note = "", bad = false,
                        found = {}},
+                -- The key at the foot, which the page always has and which
+                -- takes its room out of the list's: a fixture without one
+                -- measures a page this client never draws.
+                invite = "https://vectorwake.net/",
                 rows = friend_rows(n)}
     end
 
@@ -1042,15 +1046,18 @@ do
           ui.page_room > 0 and ui.page_room < 844,
           tostring(ui.page_room))
 
-    -- A phone-sized page eleven names long overflows by less than a heading,
-    -- which is exactly the case that would not move at all.
+    -- A phone-sized page twelve names long overflows by less than one row,
+    -- which is exactly the case that would not move at all. It was eleven
+    -- when a friend's row was two lines tall and the page had no key at the
+    -- foot; the number is whatever the first count past the bottom is, and
+    -- the case it is here for is that the overflow is small.
     ui.page_scroll = 0
-    draw(friend_view(11), 390, 844, true)
+    draw(friend_view(12), 390, 844, true)
     local over = ui.page_extent - ui.page_room
     check("a page that overflows by a little still has somewhere to go",
           over > 0, "overflow " .. string.format("%.0f", over))
     ui.page_scroll = 9999
-    draw(friend_view(11), 390, 844, true)
+    draw(friend_view(12), 390, 844, true)
     check("and a finger can reach all of it",
           math.abs(ui.page_scroll - over) < 1,
           string.format("%.0f of %.0f", ui.page_scroll, over))
