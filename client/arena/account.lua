@@ -32,6 +32,11 @@ M.note = ""
 -- screen.
 M.rivets = 0
 M.entitlements = {}
+-- The career, as the meta-layer tells it: the most-flown class's rating and
+-- tier (absent while provisional), rated games across every class, and the
+-- durable kill and death totals. Nil until a session has one, which is also
+-- what the pilot page draws while the answer is on its way.
+M.career = nil
 -- The kit this pilot has chosen, per hull, by the hull's own name. A hull with
 -- no entry has never been taken to the ship page, and the arena deals it a
 -- starter kit.
@@ -203,6 +208,11 @@ local function session(done, force)
         M.note = ""
         refreshed_at = now()
         publish_account()
+        -- The career rides every fresh session rather than waiting for the
+        -- pilot page to ask: the guest banner reads it from any tab, and a
+        -- warning that only arms after you have visited the page it points
+        -- at warns nobody.
+        M.refresh_career()
         if done then done(true) end
     end)
 end
@@ -495,6 +505,24 @@ function M.refresh_friends()
     post("/v1/friends", {secret = secret}, function(r) take_friends(r) end)
 end
 
+-- The caller's own record, for the pilot page and the guest banner. One
+-- request per session plus one per pilot-page visit; the reply is small and
+-- the page only moves when a match ends.
+function M.refresh_career()
+    if M.base == "" then return end
+    post("/v1/career", {secret = secret}, function(r)
+        if type(r) ~= "table" then return end
+        M.career = {
+            class = type(r.class) == "string" and r.class or nil,
+            rating = tonumber(r.rating),
+            tier = type(r.tier) == "string" and r.tier or nil,
+            games = tonumber(r.games) or 0,
+            kills = tonumber(r.kills) or 0,
+            deaths = tonumber(r.deaths) or 0,
+        }
+    end)
+end
+
 -- One edge, made or dropped. The reply is the page, so a press redraws
 -- without a second request and without this client guessing what the edge did
 -- to lists it does not compute.
@@ -617,6 +645,7 @@ function M.logout()
     M.name = ""
     M.rivets = 0
     M.entitlements = {}
+    M.career = nil
     M.kits = {}
     M.profiles = {}
     M.catalog = nil

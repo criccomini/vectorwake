@@ -624,9 +624,10 @@ and grids, and the menu tree was deliberately one narrow column that
 [menu.md](menu.md) says "falls apart at 390 points wide". So there are two
 surfaces now rather than one:
 
-- **Four tabs** at the front end, which is where you are between matches and
-  where there is time to read: play, ship, friends, settings. Your call sign
-  at the far end of the row is the way into your account. Standings was one of
+- **Five tabs** at the front end, which is where you are between matches and
+  where there is time to read: play, ship, friends, settings, pilot. Pilot is
+  your account, and your call sign at the far end of the row opens the same
+  page. Standings was one of
   them until the week's table came out. Upgrades was another for a while,
   drawing the same slots in the same order for the
   other question; the ship page is the shelf now, with the price of the next

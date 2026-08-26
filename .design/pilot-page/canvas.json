@@ -1,0 +1,63 @@
+{
+  "artboards": [
+    {
+      "file": "Current.dc.html",
+      "x": 0,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "Current"
+    },
+    {
+      "file": "Main.dc.html",
+      "x": 470,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "Guest"
+    },
+    {
+      "file": "Claimed.dc.html",
+      "x": 940,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "Signed in"
+    },
+    {
+      "file": "PlayBanner.dc.html",
+      "x": 1410,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "The banner"
+    },
+    {
+      "file": "SignUpCard.dc.html",
+      "x": 1880,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "The sign-up card"
+    }
+  ],
+  "annotations": [
+    {
+      "id": "brief",
+      "x": 0,
+      "y": -300,
+      "w": 500,
+      "text": "The pilot page, settled per Chris: foot keys in both states, ship-page section styling on the career (a rule edge to edge, the label under it), nothing under the name in either state, and the copy as given. The centered line over SIGN UP reads Keep your points and log in on other devices, with Already have a pilot? log in below it; signed in, the foot carries change password and log out instead. The banner is words alone, no marks in the band: You are using a guest account. Press here to set your password.\n\nStill standing from earlier rounds: the reroll behind NEW NAME, career as bare totals (rating, tier, record and games are one meta call; rivets is on the client), the banner only once a guest has something to lose, on every tab but pilot, and the gold dot on the pilot rail stop."
+    },
+    {
+      "id": "note-open",
+      "x": 2350,
+      "y": 0,
+      "w": 340,
+      "text": "Open questions before build: does the banner also stand over the arena HUD or only in the drawer; and does sign up ask for the password twice or once (once, plus log out asking for confirmation, is the lean answer)."
+    }
+  ],
+  "launch": {
+    "view": "canvas"
+  }
+}
