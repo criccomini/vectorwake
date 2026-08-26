@@ -1,8 +1,13 @@
 {
+  "pages": [
+    { "id": "page-1", "name": "The pick" },
+    { "id": "page-2", "name": "Round one" }
+  ],
   "artboards": [
     {
       "file": "Current.dc.html",
       "title": "As shipped",
+      "page": "page-1",
       "x": 0,
       "y": 0,
       "w": 390,
@@ -10,8 +15,18 @@
     },
     {
       "file": "Main.dc.html",
-      "title": "A - Deck watch",
+      "title": "Friends",
+      "page": "page-1",
       "x": 490,
+      "y": 0,
+      "w": 390,
+      "h": 844
+    },
+    {
+      "file": "DeckWatch.dc.html",
+      "title": "A - Deck watch",
+      "page": "page-2",
+      "x": 0,
       "y": 0,
       "w": 390,
       "h": 844
@@ -19,7 +34,8 @@
     {
       "file": "Manifest.dc.html",
       "title": "B - The manifest",
-      "x": 980,
+      "page": "page-2",
+      "x": 490,
       "y": 0,
       "w": 390,
       "h": 844
@@ -27,7 +43,8 @@
     {
       "file": "CrewWall.dc.html",
       "title": "C - The crew wall",
-      "x": 1470,
+      "page": "page-2",
+      "x": 980,
       "y": 0,
       "w": 390,
       "h": 844
@@ -35,7 +52,8 @@
     {
       "file": "Channels.dc.html",
       "title": "D - By game",
-      "x": 1960,
+      "page": "page-2",
+      "x": 1470,
       "y": 0,
       "w": 390,
       "h": 844
@@ -43,64 +61,81 @@
     {
       "file": "FirstFriend.dc.html",
       "title": "A - The first friend",
-      "x": 490,
-      "y": 990,
+      "page": "page-2",
+      "x": 1960,
+      "y": 0,
       "w": 390,
       "h": 844
     }
   ],
   "annotations": [
     {
-      "id": "note-brief",
-      "x": -450,
-      "y": 0,
-      "w": 380,
-      "text": "The brief: the friends menu looks like garbage; make it look awesome. What the page owes a player is friends.md's three things: add somebody, see which friends are on, join them in one press. Every direction here keeps those three and changes what the page looks like while it answers them."
-    },
-    {
       "id": "note-current",
+      "page": "page-1",
       "x": 0,
       "y": -260,
       "w": 390,
-      "text": "As shipped: five sections in one row grammar, a button or two on every row, and the fact the page exists for, a friend flying right now, is a six-point dot and a dim word. Unfriend is drawn three times as loudly as the one join. The add field holds the best 90 points of the page even for a pilot who is not adding anybody, and the ledger at the foot repeats names already listed above it."
+      "text": "As shipped, for comparison: five sections in one row grammar, a button or two on every row, and a friend flying right now reduced to a six-point dot and a dim word."
+    },
+    {
+      "id": "note-main",
+      "page": "page-1",
+      "x": 490,
+      "y": -260,
+      "w": 390,
+      "text": "The pick, per Chris after round one. The add box keeps its shipped style. In this game and sent are gone. Friends sit under one head: a solid green dot and the zone they are in for a friend in a game, a hollow grey dot and nothing else for a friend who is off. Waiting on you stays because it is the only inbox this game has, and the ledger keeps the ignored recoverable behind the one quiet row at the foot. The row press still raises the card, so join and unfriend live there for every input."
+    },
+    {
+      "id": "note-brief",
+      "page": "page-2",
+      "x": -450,
+      "y": 0,
+      "w": 380,
+      "text": "Round one: four directions beside the page as shipped, each keeping friends.md's three things (add somebody, see who is on, join in one press) and changing what the page looks like while it answers them. Chris picked a simpler line than any of them; the pick is on the first page."
     },
     {
       "id": "note-a",
-      "x": 490,
+      "page": "page-2",
+      "x": 0,
       "y": -260,
       "w": 390,
-      "text": "A - Deck watch. The page reorders around now. A friend in a game gets the play page's live-row grammar: name large, game and clock and ground as stacks, the whole row lit, the whole row the join. Everything else quiets down: off friends are a plain roll with no keys (the card keeps accept, ignore, unfriend and join for every input), an add waiting on you is a hail band answered in place, the field folds behind the ADD key, and the ledger is one drill-in row at the foot. Cost: the field and the ledger are each a press further away."
+      "text": "A - Deck watch. The page reorders around now. A friend in a game gets the play page's live-row grammar: name large, game and clock and ground as stacks, the whole row lit, the whole row the join. Off friends are a plain roll, an add waiting on you is a hail band answered in place, the field folds behind the ADD key, and the ledger is one drill-in row at the foot. Cost: the field and the ledger are each a press further away."
     },
     {
       "id": "note-b",
-      "x": 980,
+      "page": "page-2",
+      "x": 490,
       "y": -260,
       "w": 390,
-      "text": "B - The manifest. One aligned roster, every person one line: a mark carries the state, the WHERE column carries the game, at most one key rides a line. The five sections become a sort order, so the page scales to the hundred-edge cap without a second screen. The densest honest answer. Cost: the marks are a vocabulary nobody has been taught (the legend pays that tax forever), and one-line rows leave no room for the ago words."
+      "text": "B - The manifest. One aligned roster, every person one line: a mark carries the state, the WHERE column carries the game, at most one key rides a line. The five sections become a sort order, so the page scales to the hundred-edge cap without a second screen. Cost: the marks are a vocabulary nobody has been taught, and one-line rows leave no room for the ago words."
     },
     {
       "id": "note-c",
-      "x": 1470,
+      "page": "page-2",
+      "x": 980,
       "y": -260,
       "w": 390,
-      "text": "C - The crew wall. Friends drawn as crew rather than listed: a plaque each with the helmet mark from the pilot stop, lit in team blue when flying with the join on the plaque, gold-edged when they are asking. The one direction that looks like the game instead of a table. Cost: six plaques fill a screen, so it is thin at two friends and crowded at forty, and the plaque has no room for anything a row says in words."
+      "text": "C - The crew wall. Friends drawn as crew rather than listed: a plaque each with the helmet mark from the pilot stop, lit in team blue when flying with the join on the plaque, gold-edged when they are asking. Cost: six plaques fill a screen, so it is thin at two friends and crowded at forty, and the plaque has no room for anything a row says in words."
     },
     {
       "id": "note-d",
-      "x": 1960,
+      "page": "page-2",
+      "x": 1470,
       "y": -260,
       "w": 390,
-      "text": "D - By game. The page answers where instead of who: each zone holding a friend is a band with its clock and its names and the join on the band, and the people without a place fall into quiet rolls underneath. The strongest read when somebody is on. Cost: nobody on, which is most opens, leaves a page of rolls under no band, and the band grammar re-draws the play page one tab over."
+      "text": "D - By game. The page answers where instead of who: each zone holding a friend is a band with its clock and its names and the join on the band. Cost: nobody on, which is most opens, leaves a page of rolls under no band, and the band grammar re-draws the play page one tab over."
     },
     {
       "id": "note-first",
-      "x": 490,
-      "y": 1880,
+      "page": "page-2",
+      "x": 1960,
+      "y": -260,
       "w": 390,
-      "text": "The page most pilots actually meet, drawn in direction A: no friends yet. The ADD key is pressed, the field is open with the completions the meta-layer answers from the first letter, and the room you are flying with is the second way in. Whichever direction wins, this state is the one two thirds of accounts see first, so it is on the canvas as a board and not a footnote."
+      "text": "The empty state drawn in direction A: the field open with the completions the meta-layer answers from the first letter. Two thirds of accounts meet this page first, whichever direction wins."
     }
   ],
   "launch": {
-    "view": "canvas"
+    "view": "canvas",
+    "page": "page-1"
   }
 }

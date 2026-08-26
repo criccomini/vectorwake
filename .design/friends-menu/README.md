@@ -9,8 +9,17 @@ button or two on every row with unfriend drawn three times as loudly as the
 one join, the fact the page exists for reduced to a six-point dot and a dim
 word, and a ledger at the foot repeating names already listed above it.
 
-Four directions beside the page as shipped, plus the empty state, which two
-thirds of accounts meet before they meet anything else. The people are the
+Round one put four directions beside the page as shipped, and Chris's answer
+was a simpler line than any of them, now on `Main` and the canvas's first
+page: the add box keeps its shipped style, in this game and sent are gone,
+and friends sit under one head with a solid green dot and their zone when
+they are in a game, a hollow grey dot and nothing else when they are off.
+Waiting on you stays because it is the only inbox this game has, and the
+ledger keeps the ignored recoverable behind one quiet row at the foot. The
+row press still raises the card, so join and unfriend live there for every
+input.
+
+The round-one boards stay on the canvas's second page. The people are the
 same eight on every board so the directions compare. Canvas artifact
 3bb97182; boards are built by `build.py` and seeded with the design skill's
 helper:
@@ -19,11 +28,11 @@ helper:
     node seed-canvas.mjs --template payload.template.html \
       --out friends-menu.html --title "Friends Menu" \
       --artboard Main.dc.html --artboard Current.dc.html \
-      --artboard Manifest.dc.html --artboard CrewWall.dc.html \
-      --artboard Channels.dc.html --artboard FirstFriend.dc.html \
-      --canvas canvas.json
+      --artboard DeckWatch.dc.html --artboard Manifest.dc.html \
+      --artboard CrewWall.dc.html --artboard Channels.dc.html \
+      --artboard FirstFriend.dc.html --canvas canvas.json
 
-- **A, deck watch** (`Main`, and `FirstFriend` for the empty state): the
+- **A, deck watch** (`DeckWatch`, and `FirstFriend` for the empty state): the
   page reorders around now. A friend in a game gets the play page's
   live-row grammar, name large with the game, clock and ground as stacks,
   and the whole row is the join. Off friends are a plain roll with no

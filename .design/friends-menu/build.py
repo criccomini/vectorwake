@@ -217,6 +217,56 @@ cur = ('<div class="lbl" style="margin-top:14px">add a pilot</div>'
               "The ones you ignored, and the ones it came to something"))
 write("Current.dc.html", board(cur))
 
+# ---- The pick: the add box as shipped, then friends under one head ---------
+#
+# Chris's spec after round one: in this game and sent are gone, the add box
+# keeps its shipped style, and a friend is a line with a dot. Solid green
+# for a friend in a game, with the zone they are in and nothing else;
+# hollow grey for a friend who is off. Waiting on you stays, because it is
+# the only inbox this game has, and the ledger keeps the ignored
+# recoverable behind one quiet row at the foot.
+
+CHEV = ('<svg width="7" height="10" viewBox="0 0 10 14">'
+        '<path d="M2 1.5 L7.5 7 L2 12.5 Z" fill="rgba(79,214,255,.45)"/>'
+        '</svg>')
+
+ON_DOT = ('<span style="width:8px;height:8px;border-radius:50%;'
+          'background:#62cc35;flex:none"></span>')
+OFF_DOT = ('<span style="width:8px;height:8px;border-radius:50%;'
+           'border:1.4px solid rgba(108,122,144,.6);flex:none"></span>')
+
+def dot_row(name, zone=None, lit=False):
+    bg = ("background:linear-gradient(90deg,rgba(79,214,255,.14),"
+          "rgba(79,214,255,0) 85%);" if lit else "")
+    ink = "var(--ink)" if zone else "rgba(223,233,245,.75)"
+    z = (f'<span class="mono" style="font-size:11px;color:var(--dim)">'
+         f'{zone}</span>' if zone else "")
+    return (f'<div class="row" style="height:42px;margin:0 -20px;'
+            f'padding:0 20px;gap:11px;{bg}">'
+            + (ON_DOT if zone else OFF_DOT)
+            + f'<span class="name" style="font-size:15px;color:{ink}">{name}'
+            '</span><div style="flex:1"></div>' + z + '</div>')
+
+picked = ('<div class="lbl" style="margin-top:14px">add a pilot</div>'
+          + FIELD
+          + sect("waiting on you", 1,
+                 "They added you; accept and you are friends, ignore and"
+                 " they go to everybody", top=20)
+          + cur_row("Gantry 4", "added you 2h ago",
+                    key("accept", go=True) + key("ignore"))
+          + sect("friends", "3, 1 flying")
+          + dot_row("Halcyon 2", zone="team battle", lit=True)
+          + dot_row("Vireo 9")
+          + dot_row("Sable 09")
+          + '<div style="margin-top:20px"><div class="hrule"></div>'
+          '<div class="row" style="height:40px">'
+          '<span class="mono" style="font-size:11px;color:var(--dim)">'
+          'everybody who added you</span>'
+          '<span class="mono" style="font-size:9px;color:var(--friend);'
+          'margin-left:10px">3</span>'
+          '<div style="flex:1"></div>' + CHEV + '</div></div>')
+write("Main.dc.html", board(picked))
+
 # ---- A: deck watch. The page reorders around now ---------------------------
 #
 # A friend in a game is the fact this page exists for, so they get the play
@@ -271,10 +321,6 @@ HAIL = ('<div style="border-left:1px solid rgba(255,209,102,.55);'
         + key("accept", go=True) + '<span style="width:8px"></span>'
         + key("ignore") + '</div></div>')
 
-CHEV = ('<svg width="7" height="10" viewBox="0 0 10 14">'
-        '<path d="M2 1.5 L7.5 7 L2 12.5 Z" fill="rgba(79,214,255,.45)"/>'
-        '</svg>')
-
 deck = ('<div class="row" style="margin-top:14px">'
         '<span class="lbl">friends</span>'
         '<span class="mono" style="font-size:9px;color:var(--friend);'
@@ -303,7 +349,7 @@ deck = ('<div class="row" style="margin-top:14px">'
         '<span class="mono" style="font-size:9px;color:var(--friend);'
         'margin-left:10px">3</span>'
         '<div style="flex:1"></div>' + CHEV + '</div></div>')
-write("Main.dc.html", board(deck))
+write("DeckWatch.dc.html", board(deck))
 
 # ---- B: the manifest. One roster, a mark carries the state -----------------
 #
