@@ -75,7 +75,7 @@ M.said = {}
 -- The client wire's own version, checked by the zone before it reads anything
 -- else in a join. A stale build is told its build is stale rather than left to
 -- misparse snapshots.
-local CLIENT_PROTOCOL = 24
+local CLIENT_PROTOCOL = 25
 -- Published, because the about page says what this build talks, and a second
 -- copy of the number is a second thing to forget to bump.
 M.PROTOCOL = CLIENT_PROTOCOL
@@ -803,7 +803,7 @@ local function on_match(s)
     end
     local ladder = nil
     if math.floor(flags / 4) % 2 == 1 then
-        if #s < at + 31 then return end
+        if #s < at + 35 then return end
         local status = string.byte(s, at)
         ladder = {
             opponent_ready = status % 2 == 1,
@@ -811,30 +811,36 @@ local function on_match(s)
             waiting = math.floor(status / 4) % 2 == 1,
             rung = u32(string.byte(s, at + 1, at + 4)),
             streak = u32(string.byte(s, at + 5, at + 8)),
-            checkpoint = u32(string.byte(s, at + 9, at + 12)),
-            best = u32(string.byte(s, at + 13, at + 16)),
-            active_opponent = u32(string.byte(s, at + 17, at + 20)),
-            desired_opponent = u32(string.byte(s, at + 21, at + 24)),
-            first_to = u16(string.byte(s, at + 25, at + 26)),
+            -- The longest this run has managed, which is the reading a broken
+            -- streak does not take away.
+            best_streak = u32(string.byte(s, at + 9, at + 12)),
+            checkpoint = u32(string.byte(s, at + 13, at + 16)),
+            best = u32(string.byte(s, at + 17, at + 20)),
+            active_opponent = u32(string.byte(s, at + 21, at + 24)),
+            desired_opponent = u32(string.byte(s, at + 25, at + 28)),
+            first_to = u16(string.byte(s, at + 29, at + 30)),
             -- Every life this run has finished, which is larger than the log
             -- once a long evening outruns the window the room carries.
-            legs = u32(string.byte(s, at + 27, at + 30)),
+            legs = u32(string.byte(s, at + 31, at + 34)),
             log = {},
         }
-        local logged = string.byte(s, at + 31)
-        -- A body that promises more legs than it carries is a truncated
-        -- message rather than a short run, and half a log is worse than none:
-        -- the panel would draw an evening that stopped where the packet did.
-        if #s < at + 31 + logged * 11 then return end
+        local logged = string.byte(s, at + 35)
+        -- Walked rather than indexed, because a leg carries a call sign and a
+        -- call sign is as long as its owner made it. A body that promises more
+        -- legs than it carries is a truncated message rather than a short run,
+        -- and half a log is worse than none: the panel would draw an evening
+        -- that stopped where the packet did.
+        local o = at + 36
         for k = 1, logged do
-            local o = at + 32 + (k - 1) * 11
+            if #s < o + 3 then return end
+            local n = string.byte(s, o + 3)
+            if #s < o + 3 + n then return end
             ladder.log[k] = {
-                rung = u32(string.byte(s, o, o + 3)),
-                result = LEG_RESULT[string.byte(s, o + 4)] or "drawn",
-                kills = u16(string.byte(s, o + 5, o + 6)),
-                deaths = u16(string.byte(s, o + 7, o + 8)),
-                seconds = u16(string.byte(s, o + 9, o + 10)),
+                result = LEG_RESULT[string.byte(s, o)] or "drawn",
+                seconds = u16(string.byte(s, o + 1, o + 2)),
+                rival = string.sub(s, o + 4, o + 3 + n),
             }
+            o = o + 4 + n
         end
     end
     M.match = {

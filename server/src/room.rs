@@ -683,6 +683,7 @@ fn match_message(
     for value in [
         ladder.rung,
         ladder.streak,
+        ladder.best_streak,
         ladder.checkpoint,
         ladder.best,
         ladder.active_opponent_slot,
@@ -698,12 +699,16 @@ fn match_message(
     out.extend_from_slice(&ladder.legs.to_le_bytes());
     let logged = (ladder.logged as usize).min(modes::LADDER_LOG_LEGS);
     out.push(logged as u8);
+    // A leg is who, what, and how long. The rung it was fought at and the
+    // scoreline both left with the columns that drew them: a rung is not a
+    // word this game says, and a duel is first to one, so the scoreline only
+    // ever said that somebody died.
     for leg in &ladder.log[..logged] {
-        out.extend_from_slice(&leg.rung.to_le_bytes());
         out.push(leg.result.to_byte());
-        out.extend_from_slice(&leg.kills.to_le_bytes());
-        out.extend_from_slice(&leg.deaths.to_le_bytes());
         out.extend_from_slice(&leg.seconds.to_le_bytes());
+        let name = leg.rival.as_str().as_bytes();
+        out.push(name.len().min(modes::CallSign::MAX) as u8);
+        out.extend_from_slice(&name[..name.len().min(modes::CallSign::MAX)]);
     }
     out
 }
@@ -1163,6 +1168,15 @@ impl Room {
         self.names
             .iter()
             .find_map(|(ship, seat)| is_house_rival(seat).then_some(*ship))
+    }
+
+    /// What that rival is called. A mode files a leg naming whoever was across
+    /// the arena, and a rung is over in seconds, so the name has to travel
+    /// with the tick rather than be looked up after the seat changes hands.
+    pub(crate) fn ladder_rival_name(&self) -> Option<&str> {
+        self.ladder_rival()
+            .and_then(|ship| self.names.get(&ship))
+            .map(|seat| seat.name.as_str())
     }
 
     /// The stand-in climbing while nobody is here, if one is seated.
@@ -3041,11 +3055,13 @@ impl Room {
             // that is leaving.
             let seats: Vec<u8> = self.names.keys().copied().collect();
             let rival = self.ladder_rival();
+            let rival_name = self.ladder_rival_name().map(str::to_owned);
             let team_names = self.public_team_names();
             let mut ctx = modes::ModeCtx {
                 world: &mut self.world,
                 seats: &seats,
                 rival,
+                rival_name: rival_name.as_deref(),
                 team_names: &team_names,
                 banner: std::mem::take(&mut self.banner),
                 finished: false,
@@ -3430,11 +3446,13 @@ impl Room {
 
         let seats = self.ready_mode_seats();
         let rival = self.ladder_rival();
+        let rival_name = self.ladder_rival_name().map(str::to_owned);
         let names = self.public_team_names();
         let mut ctx = modes::ModeCtx {
             world: &mut self.world,
             seats: &seats,
             rival,
+            rival_name: rival_name.as_deref(),
             team_names: &names,
             banner: std::mem::take(&mut self.banner),
             finished: false,
@@ -3985,11 +4003,13 @@ impl Room {
         if !deaths.is_empty() {
             let seats = self.ready_mode_seats();
             let rival = self.ladder_rival();
+            let rival_name = self.ladder_rival_name().map(str::to_owned);
             let names = self.public_team_names();
             let mut ctx = modes::ModeCtx {
                 world: &mut self.world,
                 seats: &seats,
                 rival,
+                rival_name: rival_name.as_deref(),
                 team_names: &names,
                 banner: std::mem::take(&mut self.banner),
                 finished: false,
@@ -4748,6 +4768,7 @@ mod ladder_wire_tests {
                 cleared: true,
                 rung: 0x0102_0304,
                 streak: 0x1112_1314,
+                best_streak: 0x2223_2425,
                 checkpoint: 0x2122_2324,
                 best: 0x3132_3334,
                 score: [1, 0],
@@ -4760,7 +4781,9 @@ mod ladder_wire_tests {
             }),
         );
 
-        assert_eq!(message.len(), 43 + 5 + 2 * 11);
+        // Four bytes wider than it was, for the best streak, and a leg is now
+        // as wide as the call sign on it.
+        assert_eq!(message.len(), 47 + 5 + 2 * (4 + 12) - 2);
         assert_eq!(message[0], S2C_MATCH);
         assert_eq!(message[1], 6, "artifact and Ladder are present");
         assert_eq!(message[2], 0x50);
@@ -4777,26 +4800,27 @@ mod ladder_wire_tests {
         );
         assert_eq!(u32_at(&message, 17), 0x0102_0304);
         assert_eq!(u32_at(&message, 21), 0x1112_1314);
-        assert_eq!(u32_at(&message, 25), 0x2122_2324);
-        assert_eq!(u32_at(&message, 29), 0x3132_3334);
-        assert_eq!(u32_at(&message, 33), 0x4142_4344);
-        assert_eq!(u32_at(&message, 37), 0x6162_6364);
+        assert_eq!(u32_at(&message, 25), 0x2223_2425, "the run's best streak");
+        assert_eq!(u32_at(&message, 29), 0x2122_2324);
+        assert_eq!(u32_at(&message, 33), 0x3132_3334);
+        assert_eq!(u32_at(&message, 37), 0x4142_4344);
+        assert_eq!(u32_at(&message, 41), 0x6162_6364);
         assert_eq!(
-            u16::from_le_bytes(message[41..43].try_into().unwrap()),
+            u16::from_le_bytes(message[45..47].try_into().unwrap()),
             0x5152
         );
-        assert_eq!(u32_at(&message, 43), 0x7182_7384, "legs the run has had");
-        assert_eq!(message[47], 2, "legs the window still holds");
-        assert_eq!(u32_at(&message, 48), 4, "the oldest leg first");
+        assert_eq!(u32_at(&message, 47), 0x7182_7384, "legs the run has had");
+        assert_eq!(message[51], 2, "legs the window still holds");
+        // A leg is a result, a duration, and the call sign it was fought
+        // against, which is as long as its owner made it.
         assert_eq!(message[52], modes::LegResult::Cleared.to_byte());
-        assert_eq!(u16::from_le_bytes(message[53..55].try_into().unwrap()), 1);
-        assert_eq!(u16::from_le_bytes(message[55..57].try_into().unwrap()), 0);
-        assert_eq!(u16::from_le_bytes(message[57..59].try_into().unwrap()), 41);
-        assert_eq!(u32_at(&message, 59), 5);
-        assert_eq!(message[63], modes::LegResult::Lost.to_byte());
-        assert_eq!(u16::from_le_bytes(message[64..66].try_into().unwrap()), 0);
-        assert_eq!(u16::from_le_bytes(message[66..68].try_into().unwrap()), 1);
-        assert_eq!(u16::from_le_bytes(message[68..70].try_into().unwrap()), 7);
+        assert_eq!(u16::from_le_bytes(message[53..55].try_into().unwrap()), 41);
+        assert_eq!(message[55], 12);
+        assert_eq!(&message[56..68], b"Vantage 0001");
+        assert_eq!(message[68], modes::LegResult::Lost.to_byte());
+        assert_eq!(u16::from_le_bytes(message[69..71].try_into().unwrap()), 7);
+        assert_eq!(message[71], 10);
+        assert_eq!(&message[72..82], b"Sable 0001");
     }
 
     /// A body with no run behind it still says so, rather than leaving the
@@ -4812,9 +4836,9 @@ mod ladder_wire_tests {
             None,
             Some(a_state()),
         );
-        assert_eq!(message.len(), 8 + 32, "the body with no legs on it");
-        assert_eq!(u32_at(&message, 35), 0, "no leg has finished");
-        assert_eq!(message[39], 0, "and none is carried");
+        assert_eq!(message.len(), 8 + 36, "the body with no legs on it");
+        assert_eq!(u32_at(&message, 39), 0, "no leg has finished");
+        assert_eq!(message[43], 0, "and none is carried");
     }
 
     /// Only the legs the window holds are written. A run longer than the
@@ -4834,13 +4858,15 @@ mod ladder_wire_tests {
             None,
             Some(state),
         );
+        // Two named legs and the rest of the window at its default, which is
+        // a result, a duration and an empty call sign.
         assert_eq!(
             message.len(),
-            8 + 32 + modes::LADDER_LOG_LEGS * 11,
+            8 + 36 + 2 * 4 + 12 + 10 + (modes::LADDER_LOG_LEGS - 2) * 4,
             "a claim past the window is clamped to it"
         );
-        assert_eq!(message[39], modes::LADDER_LOG_LEGS as u8);
-        assert_eq!(u32_at(&message, 35), 300, "and the real count still rides");
+        assert_eq!(message[43], modes::LADDER_LOG_LEGS as u8);
+        assert_eq!(u32_at(&message, 39), 300, "and the real count still rides");
     }
 
     fn a_state() -> modes::LadderState {
@@ -4851,6 +4877,7 @@ mod ladder_wire_tests {
             cleared: false,
             rung: 0,
             streak: 0,
+            best_streak: 0,
             checkpoint: 0,
             best: 0,
             score: [0, 0],
@@ -4863,21 +4890,17 @@ mod ladder_wire_tests {
         }
     }
 
-    /// A rung taken and the next one lost, which is the shape of every run.
+    /// One rival taken and the next one lost, which is the shape of every run.
     fn two_legs() -> [modes::LadderLeg; modes::LADDER_LOG_LEGS] {
         let mut log = [modes::LadderLeg::default(); modes::LADDER_LOG_LEGS];
         log[0] = modes::LadderLeg {
-            rung: 4,
+            rival: modes::CallSign::new("Vantage 0001"),
             result: modes::LegResult::Cleared,
-            kills: 1,
-            deaths: 0,
             seconds: 41,
         };
         log[1] = modes::LadderLeg {
-            rung: 5,
+            rival: modes::CallSign::new("Sable 0001"),
             result: modes::LegResult::Lost,
-            kills: 0,
-            deaths: 1,
             seconds: 7,
         };
         log

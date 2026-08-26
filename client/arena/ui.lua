@@ -2098,14 +2098,26 @@ local function scores(me, pilots, watchers, viewer_name, always)
     -- Who wears the mark, worked out once rather than per row. Only at the
     -- ending: mid-fight the board is a list of who is here, and a prize on it
     -- is a reading nobody asked for while they are being shot at.
+    --
+    -- And only in a room big enough for the mark to say something. A duel is
+    -- first to one, so the winner is the only pilot with a kill and the best
+    -- gun in the room is always whoever just won: the mark would be the bar
+    -- over it said a second time. Three scorers is where a prize starts
+    -- picking somebody out rather than restating the result.
     local best = nil
     if top_side ~= nil then
+        local scored = 0
         for i = 1, n do
-            local r = rows[i]
-            if not r.watch and r.k > 0
-               and (best == nil or r.k > best.k
-                    or (r.k == best.k and r.d < best.d)) then
-                best = r
+            if not rows[i].watch and rows[i].k > 0 then scored = scored + 1 end
+        end
+        if scored >= 3 then
+            for i = 1, n do
+                local r = rows[i]
+                if not r.watch and r.k > 0
+                   and (best == nil or r.k > best.k
+                        or (r.k == best.k and r.d < best.d)) then
+                    best = r
+                end
             end
         end
     end
@@ -2238,19 +2250,30 @@ local LEG_WORD = {
 
 -- The run so far, under the roster, for the one game that is a run.
 --
--- Ladder is an evening of ten-second fights and the only part of it the screen
--- keeps is the rung you are standing on. This is the rest of it: which
--- opponents you took, which ones took you, and how long each fight lasted. The
--- room is the only thing that sees a whole run, so the room is where it comes
--- from; this draws what arrived.
+-- Two sections, in the order a duel is read: where the run stands, and then
+-- the fights that got it there. Ladder is an evening of ten-second fights and
+-- what a climber is playing for is how many they take without dying; the room
+-- is the only thing that sees a whole run, so the room is where both come
+-- from and this draws what arrived.
 --
--- Behind the scoreboard's own toggle, because it answers the same kind of
--- question and a player who opened one wants the other.
+-- Behind the scoreboard's own toggle, because they answer the same kind of
+-- question and a player who opened one wants the others.
 --
--- Newest first. The room sends a window rather than a whole evening and this
--- draws as much of that window as the column has room for, so a long run loses
--- one end of itself either way. The end worth keeping is the one you just flew.
--- How many legs the column has room for, and so how tall the run section
+-- What used to be here was a rung number at the head and another on every
+-- row, with a scoreline between them. None of the three said anything a
+-- player could act on: a rung is a roster slot, the floor beside it was the
+-- checkpoint a loss cannot cross and was never explained on screen, and the
+-- scoreline is 1-0 or 0-1 in a mode that is first to one. See decision 74.
+
+-- One table for the run's two sections, because ui.lua sits on Lua's ceiling
+-- of two hundred locals in a chunk and four names here would put it over.
+-- `SHOWN` is how many fights the panel draws, which is exactly what the room
+-- sends, and `READ_H` is the height of the readings band. Both are published
+-- because the ending measures the whole block before it places any of it.
+local RUN = {SHOWN = 5, READ_H = 44}
+M.RUN = RUN
+
+-- How many legs the column has room for, and so how tall the fights section
 -- comes out. Two thirds of the screen is the ceiling, because the pilot box
 -- hangs under whatever this returns and the corner stack grows up from the
 -- bottom left into the same column. A phone gets fewer rows rather than a
@@ -2258,44 +2281,84 @@ local LEG_WORD = {
 --
 -- Its own function because the match ending measures the whole block before
 -- it places any of it, exactly as it does with the roster above this.
-local function run_shown(o, y0, cap)
+function RUN.shown(o, y0, cap)
     local ladder = o.match and o.match.ladder
     local log = ladder and ladder.log or {}
-    local head = 24 * F.scale
-    local room = math.floor((F.h * 0.66 - y0 - head) / (LINE * F.scale))
-    if cap then room = math.min(room, cap) end
-    return math.min(#log, math.max(0, room))
+    -- The ending hands down a cap, and that cap is the answer: it was measured
+    -- against the whole block before any of it was placed, and the block is
+    -- centered rather than hung off the top of the screen. Intersecting it
+    -- with the rule below cost the ending three of its five rows, because
+    -- two thirds of the screen is above where a centered block's list starts.
+    if cap then return math.min(#log, RUN.SHOWN, math.max(0, cap)) end
+    local room = math.floor((F.h * 0.66 - y0 - RUN.READ_H * F.scale
+                             - 8 * F.scale) / (LINE * F.scale))
+    return math.min(#log, RUN.SHOWN, math.max(0, room))
 end
 
-local function run_log(o, top, always, cap)
-    if not (M.details or always) then return top end
-    local ladder = o.match and o.match.ladder
-    if not ladder then return top end
-    local log = ladder.log or {}
+-- Where the run stands: three readings, label over value, with a thin rule
+-- between the stacks.
+--
+-- The grammar is the play page's format strip and the band's own TIME and
+-- PLAYERS: a reading is a label over a number, and a heading is a word in a
+-- row of words above columns. These were drawn as the second thing for a
+-- while, sitting where the roster's own K D A sit, at the same size under the
+-- same ticked rule, heading columns they had nothing to do with. A shape is
+-- read before the words in it are.
+--
+-- Above the fights rather than below them, because the streak is what the
+-- mode is played for and the fights are how it got there.
+function RUN.readings(o, top)
+    local ladder = o.match.ladder
+    local x, w = board.x, board.w
+    local h = RUN.READ_H * F.scale
+    local small = LBL_PX * F.scale
+    local num = (FONT) * F.scale
+    rect(x, top, w, h, pal.a(pal.BG, 0.62))
+    vrule(x, top, h, pal.a(pal.RADAR_TILE, 0.7))
 
-    local small = (FONT - 3) * F.scale
+    local at = x + 12 * F.scale
+    local streak = ladder.streak or 0
+    local stacks = {
+        {"streak", streak, streak > 0 and pal.FRIEND or pal.DIM},
+        {"best", math.max(ladder.best_streak or 0, streak), pal.INK},
+        {"fights", ladder.legs or #(ladder.log or {}), pal.INK},
+    }
+    for i, stack in ipairs(stacks) do
+        if i > 1 then
+            -- Between the stacks rather than around them, and the height of
+            -- the pair it separates: the strip is one instrument with three
+            -- readings on it, not three boxes.
+            F.layer:seg(at, ry(top + 11 * F.scale), at,
+                        ry(top + h - 11 * F.scale), 1.0 * F.scale,
+                        pal.a(pal.RADAR_TILE, 0.45))
+            at = at + 15 * F.scale
+        end
+        lbl(stack[1], at, top + 15 * F.scale, pal.a(pal.DIM, 0.85), nil, small)
+        txt(tostring(stack[2]), at, top + 31 * F.scale, num,
+            pal.a(stack[3], 0.9))
+        at = at + math.max(text_w(string.upper(stack[1]), small, nil, true),
+                           text_w(tostring(stack[2]), num)) + 15 * F.scale
+    end
+
+    hit(x, top, w, h, "run_readings", nil, nil, -1)
+    return top + h
+end
+
+-- And the fights themselves, newest first, one row each: who was across the
+-- arena, what came of it, and how long it took.
+--
+-- No head. Everything that was ever in one is either gone or in the section
+-- above, and a column of "won", "lost" and "drew" is labelled by its own rows,
+-- as is a column of "0:44". The rival is set in the menu face because it is a
+-- name being read, and the two beside it in the mono every number wears.
+function RUN.fights(o, top, shown)
+    local log = o.match.ladder.log or {}
     local num = (FONT - 2) * F.scale
-    local x = board.x
-    local w = board.w
-    local head = 24 * F.scale
-    local y0 = top + 8 * F.scale
-    local shown = run_shown(o, y0, cap)
-    -- The standing is drawn even with nothing under it. A run that has not
-    -- finished a fight yet is still standing on a rung, and the rung is the
-    -- whole question this mode asks: it used to be a line in the band, and
-    -- taking it off the band without putting it here would have left the one
-    -- number a climber is playing for nowhere on the screen.
-    local h = head + shown * LINE * F.scale + 6 * F.scale
+    local x, w = board.x, board.w
+    local h = shown * LINE * F.scale + 12 * F.scale
+    rect(x, top, w, h, pal.a(pal.BG, 0.62))
+    vrule(x, top, h, pal.a(pal.RADAR_TILE, 0.7))
 
-    rect(x, y0, w, h, pal.a(pal.BG, 0.62))
-    vrule(x, y0, h, pal.a(pal.RADAR_TILE, 0.7))
-
-    -- Right-aligned off the panel's own edge, each column as wide as the
-    -- widest thing in it, which is the rule the roster above follows and the
-    -- reason a five-digit score there does not eat the names. The floor is a
-    -- thumb rather than a heading now that the headings are gone: a column of
-    -- single digits collapses to a few points otherwise, and the rows either
-    -- side of it stop lining up with anything.
     local GAP = 7 * F.scale
     local function col_w(of)
         local wide = 26 * F.scale
@@ -2304,65 +2367,31 @@ local function run_log(o, top, always, cap)
         end
         return wide
     end
-    local function scored(leg)
-        return string.format("%d-%d", leg.kills or 0, leg.deaths or 0)
-    end
     local function clocked(leg)
         local secs = leg.seconds or 0
         return string.format("%d:%02d", math.floor(secs / 60), secs % 60)
     end
+    local function verdict(leg)
+        return (LEG_WORD[leg.result] or LEG_WORD.drawn)[1]
+    end
     local tw = col_w(clocked)
-    local sw = col_w(scored)
+    local vw = col_w(verdict)
     local tx = x + w - 12 * F.scale
-    local sx = tx - tw - GAP
-    local wx = sx - sw - GAP
-    local rung_x = x + 12 * F.scale
+    local vx = tx - tw - GAP
+    local name_x = x + 12 * F.scale
+    -- Cut to what the column has left, the way the roster cuts a call sign
+    -- against its own mark column.
+    local name_n = math.max(3, math.floor((vx - vw - GAP - name_x) /
+                                          (num * ADVANCE)))
 
-    -- Where the run stands, and then what it cost to get there.
-    --
-    -- The standing was a line under the clock, "RUNG 5  STREAK 4  FLOOR 1",
-    -- in the band, over the fight it was about. It reads here instead, at
-    -- the head of the rows that are the rest of the same story, and it keeps
-    -- the rule it had there: a streak of none is not a streak, and floor one
-    -- is the ground a run starts on, so neither is said until it has happened.
-    -- Every run opened saying both, which taught the eye to skip the line.
-    local standing = string.format("RUNG %d", (ladder.rung or 0) + 1)
-    if (ladder.streak or 0) > 0 then
-        standing = standing .. string.format("  STREAK %d", ladder.streak)
-    end
-    if (ladder.checkpoint or 0) > 0 then
-        standing = standing .. string.format("  FLOOR %d", ladder.checkpoint + 1)
-    end
-    txt(standing, rung_x, y0 + 14 * F.scale, small, pal.a(pal.INK, 0.85))
-    -- How many fights the run has cost, at the other end of the same line.
-    -- That is the part of the list which scrolled off the top of the window
-    -- the room keeps: a count rather than a promise, so eight rows under
-    -- "run: 19 fights" says plainly that this is the end of a longer evening.
-    -- Only once there is a list for it to be a count of.
-    --
-    -- No column headings over the rows. There were three, and the argument
-    -- that dropped the fourth takes all of them: a column of "won", "lost"
-    -- and "drew" is already labelled by its own rows, and so are a column of
-    -- "1-0" and a column of "0:44". What the head has room for is where the
-    -- run stands and how long it has been going, which is the pair a reader
-    -- came up here for, and at 248 points the headings were what left no room
-    -- for the count.
-    if shown > 0 then
-        txt(string.format("run: %d fights", ladder.legs or #log),
-            tx, y0 + 14 * F.scale, small, pal.a(pal.DIM, 0.7), "right")
-    end
-    ticks(rung_x, y0 + 20 * F.scale, w - 24 * F.scale,
-          pal.a(pal.RADAR_TILE, 0.35), 14 * F.scale)
-
-    local y = y0 + head
+    local y = top + 6 * F.scale
     for k = 1, shown do
         local leg = log[#log - k + 1]
         local cy = y + LINE * F.scale / 2
         local said = LEG_WORD[leg.result] or LEG_WORD.drawn
-        txt(string.format("rung %d", (leg.rung or 0) + 1), rung_x, cy, num,
-            pal.a(pal.INK, 0.85))
-        txt(said[1], wx, cy, num, pal.a(said[2], 0.9), "right")
-        txt(scored(leg), sx, cy, num, pal.a(pal.INK, 0.8), "right")
+        txt(string.sub(leg.rival or "", 1, name_n), name_x, cy, num,
+            pal.a(pal.INK, 0.85), nil, MENU_FONT, true)
+        txt(said[1], vx, cy, num, pal.a(said[2], 0.9), "right")
         txt(clocked(leg), tx, cy, num, pal.a(pal.INK, 0.8), "right")
         y = y + LINE * F.scale
     end
@@ -2370,8 +2399,23 @@ local function run_log(o, top, always, cap)
     -- A backdrop, the way the roster's own is one: nothing in here is a
     -- control, and a press landing on the arena behind a solid panel is the
     -- kind of thing that shoots a wall.
-    hit(x, y0, w, h, "run_log", nil, nil, -1)
-    return y0 + h
+    hit(x, top, w, h, "run_log", nil, nil, -1)
+    return top + h
+end
+
+local function run_log(o, top, always, cap)
+    if not (M.details or always) then return top end
+    local ladder = o.match and o.match.ladder
+    if not ladder then return top end
+    -- The readings draw with nothing under them. A run that has not finished a
+    -- fight yet is still a run, and a streak of zero is a reading rather than
+    -- an absence: the shipped panel hid it at zero, so the one number this
+    -- mode is played for went missing exactly on the screen a player reads
+    -- after losing.
+    local y = RUN.readings(o, top + 8 * F.scale)
+    local shown = RUN.shown(o, top + 8 * F.scale, cap)
+    if shown > 0 then y = RUN.fights(o, y + 8 * F.scale, shown) end
+    return y
 end
 
 -- The notification feed: kills, arrivals, departures and flags. Newest first.
@@ -4031,27 +4075,27 @@ function END.result(o, m, names)
         elseif n == best then drawn = true end
     end
     if m.ladder then
-        -- A run says what the fight did to it, which is the reading a climber
-        -- came for and the one a side's name cannot give.
+        -- A duel's result is about the two people in it, so it is said the way
+        -- melee says one: a name and a verb. The name comes off the leg the
+        -- room just filed rather than off the roster, because the rival's seat
+        -- is handed to the next rung within seconds of the whistle and a name
+        -- read late is the wrong one.
+        local log = m.ladder.log or {}
+        local rival = log[#log] and log[#log].rival or ""
         if m.ladder.cleared then
-            return "Ladder cleared", pal.PAID, best_at, false
+            return "every rival beaten", pal.PAID, best_at, false
         end
-        if drawn then
-            return string.format("rung %d drawn",
-                                 (m.ladder.active_opponent or 0) + 1),
-                   pal.DIM, best_at, false
+        if drawn or rival == "" then
+            return "drawn", pal.DIM, best_at, false
         end
         -- Against the climber's own seat rather than the camera's side. One
         -- person climbs and the house rival holds the other side, so a run is
-        -- cleared or dropped whoever is watching it; a viewer behind the
-        -- rival is still watching somebody else's run.
+        -- taken or dropped whoever is watching it; a viewer behind the rival
+        -- is still watching somebody else's run.
         if best_at == 0 then
-            return string.format("rung %d cleared",
-                                 (m.ladder.active_opponent or 0) + 1),
-                   pal.FRIEND, best_at, false
+            return rival, pal.FRIEND, best_at, "beaten"
         end
-        return string.format("back to rung %d", (m.ladder.rung or 0) + 1),
-               pal.ENEMY, best_at, false
+        return rival, pal.ENEMY, best_at, "takes it"
     end
     if drawn or best_at == nil then return "drawn", pal.INK, nil, false end
     -- The side keeps the case it was supplied in; the verb is the interface
@@ -4239,20 +4283,24 @@ local function podium(o, m, names)
         measure()
     end
 
-    -- The zone's own section under the roster, for the mode that keeps one:
-    -- a duel's ending is about the run, and the run is what the board puts
-    -- under the two rows. Measured off the room the window has left rather
-    -- than off where this block lands, since where it lands depends on how
-    -- tall it comes out.
+    -- The zone's own sections under the roster, for the mode that keeps them:
+    -- a duel's ending is about the run, so the board puts where the run stands
+    -- and the fights that got it there under the two rows. Measured off the
+    -- room the window has left rather than off where this block lands, since
+    -- where it lands depends on how tall it comes out.
+    --
+    -- The readings are a fixed band and go up whenever there is a run at all,
+    -- including one with no finished fight in it. The fights under them take
+    -- whatever is left.
     local legs = 0
-    local log = m.ladder and m.ladder.log or {}
-    if #log > 0 then
-        local spare = F.h - 2 * (F.safe_t + 18 * F.scale) - h
-            - gap - END.CHROME * F.scale
+    if m.ladder then
+        local log = m.ladder.log or {}
+        h = h + gap + RUN.READ_H * F.scale
+        local spare = F.h - 2 * (F.safe_t + 18 * F.scale) - h - 8 * F.scale
         legs = math.max(0, math.floor(spare / (LINE * F.scale)))
-        legs = math.min(legs, #log)
+        legs = math.min(legs, #log, RUN.SHOWN)
         if legs > 0 then
-            h = h + gap + END.CHROME * F.scale + legs * LINE * F.scale
+            h = h + 8 * F.scale + legs * LINE * F.scale + 12 * F.scale
         end
     end
 
@@ -4281,8 +4329,10 @@ local function podium(o, m, names)
     -- Said once, over the bar it is the sentence for.
     local ty = y + title_px * 0.5
     if verbed then
-        -- The side keeps its supplied case; the verb is the interface talking.
-        local verb = "takes it"
+        -- The name keeps its supplied case; the verb is the interface talking.
+        -- A duel supplies its own, since one pilot beating another and one
+        -- taking it off them are two results rather than one.
+        local verb = verbed == true and "takes it" or verbed
         local word_gap = title_px * 0.42
         local nw = text_w(said, title_px, MENU_FONT, true)
         local total = nw + word_gap + text_w(verb, title_px, MENU_FONT)
@@ -4312,7 +4362,9 @@ local function podium(o, m, names)
     top_side = winner
     local bottom = scores(o.me, o.pilots, o.watchers, o.viewer_name, true)
     top_side = nil
-    if legs > 0 then bottom = run_log(o, bottom, true, legs) end
+    -- Both sections, or the readings alone where the window had no room for
+    -- a fight under them. `legs` is what the measure above found space for.
+    if m.ladder then bottom = run_log(o, bottom, true, legs) end
     END.foot(o, m, x, bottom + gap, w)
     F.scale = was_scale
 end

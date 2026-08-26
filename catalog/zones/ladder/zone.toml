@@ -1,5 +1,7 @@
-# One life against one measured house pilot. A win advances one rung. A loss
-# drops two rungs without crossing the last five-rung checkpoint.
+# One life against one measured house pilot. A win puts a harder one across the
+# arena; a loss puts back an easier one, but never further back than the last
+# checkpoint. Neither number reaches a screen: what the board says is the
+# streak, and who you beat to get it.
 #
 # With nobody here the room climbs anyway, against the same rivals, so the play
 # page has a fight to show whoever is deciding what to press. That is why both
@@ -7,9 +9,9 @@
 # seat and gives it back the moment somebody wants it.
 
 label = "Duel"
-# The format strip beside this carries the numbers (teams, one life, rungs),
+# The format strip beside this carries the numbers (teams, one life, streak),
 # so the sentence carries the stakes the numbers cannot.
-description = "every rung is a harder rival; a loss drops you two"
+description = "every win is a harder rival; one death ends the streak"
 mode = "ladder"
 
 # Drydock is also the calibration ground. Keeping the live arena and the

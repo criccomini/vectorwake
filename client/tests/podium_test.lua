@@ -275,13 +275,24 @@ check("an overdue old rival becomes a waiting state",
       said("--:--") ~= nil and said("rung 1 cleared") == nil,
       table.concat(words(), " | "))
 
+-- A duel's result is the two people in it, so it reads the way melee's does:
+-- a name and a verb. The name comes off the leg the room just filed rather
+-- than off the roster, because the rival's seat goes to the next one within
+-- seconds of the whistle.
+local function a_leg(rival, result)
+    return {rival = rival, result = result, seconds = 26}
+end
+
 frame({match = {playing = false, left = 8, artifact = 1,
                 score = {[0] = 1, [1] = 0},
-                ladder = {rung = 7, active_opponent = 6,
+                ladder = {rung = 7, active_opponent = 6, streak = 3,
+                          best_streak = 3, legs = 9,
+                          log = {a_leg("Vantage 0001", "cleared")},
                           opponent_ready = false, waiting = false}},
        side_names = NAMES, side = 0})
 check("a Ladder result remains up while the next rival leaves",
-      said("rung 7 cleared") ~= nil and said("FINDING RIVAL") == nil,
+      said("Vantage 0001") ~= nil and said("beaten") ~= nil
+      and said("FINDING RIVAL") == nil,
       table.concat(words(), " | "))
 
 ui.podium_at = nil
@@ -304,33 +315,91 @@ check("play releases the prior podium entrance", ui.podium_at == nil,
 
 frame({match = {playing = false, left = 8, artifact = 1,
                 score = {[0] = 1, [1] = 0},
-                ladder = {rung = 7, active_opponent = 6}},
+                ladder = {rung = 7, active_opponent = 6,
+                          log = {a_leg("Vantage 0001", "cleared")}}},
        side_names = NAMES, side = 1, watch = {subject = 1}})
 check("a watcher sees the climber's result rather than their viewing side",
-      said("rung 7 cleared") ~= nil, table.concat(words(), " | "))
+      said("beaten") ~= nil and said("takes it") == nil,
+      table.concat(words(), " | "))
 
 frame({match = {playing = false, left = 8, artifact = 1,
                 score = {[0] = 0, [1] = 1},
-                ladder = {rung = 5, active_opponent = 7}},
+                ladder = {rung = 5, active_opponent = 7,
+                          log = {a_leg("Sable 0001", "lost")}}},
        side_names = NAMES, side = 0})
-check("a Ladder loss names the new rung",
-      said("back to rung 6") ~= nil, table.concat(words(), " | "))
+check("a Ladder loss names whoever took it",
+      said("Sable 0001") ~= nil and said("takes it") ~= nil,
+      table.concat(words(), " | "))
 
 frame({match = {playing = false, left = 8, artifact = 1,
                 score = {[0] = 1, [1] = 1},
-                ladder = {rung = 7, active_opponent = 7}},
+                ladder = {rung = 7, active_opponent = 7,
+                          log = {a_leg("Sable 0001", "drawn")}}},
        side_names = NAMES, side = 0})
-check("a mutual kill replays the rung as a draw",
-      said("rung 8 drawn") ~= nil, table.concat(words(), " | "))
+-- The row for that fight still names who it was against; the line over the
+-- bar does not, because a draw has nobody to put a verb on.
+check("a mutual kill is a draw with nobody named over the bar",
+      said("drawn") ~= nil and said("takes it") == nil
+      and said("beaten") == nil, table.concat(words(), " | "))
 
 frame({match = {playing = false, left = 8, artifact = 1,
                 score = {[0] = 1, [1] = 0},
                 ladder = {rung = 5, checkpoint = 5,
                           active_opponent = 7, desired_opponent = 5,
+                          log = {a_leg("Sable 0001", "cleared")},
                           cleared = true}},
        side_names = NAMES, side = 0})
-check("the top rung gets a distinct clear",
-      said("Ladder cleared") ~= nil, table.concat(words(), " | "))
+check("clearing the roster gets its own line",
+      said("every rival beaten") ~= nil, table.concat(words(), " | "))
+
+-- A duel's ending grows two sections the roster does not have: where the run
+-- stands, and the fights that got it there. The block measures all of it
+-- before it places any of it, so both windows draw the whole run rather than
+-- the two rows the mid-fight rule leaves room for.
+local A_RUN = {
+    a_leg("Kestrel 0001", "cleared"), a_leg("Cirrus 0001", "drawn"),
+    a_leg("Halcyon 0001", "cleared"), a_leg("Ozone 0001", "lost"),
+    a_leg("Vantage 0001", "cleared"),
+}
+local function a_run_ending(w, h)
+    frame({w = w, h = h,
+           match = {playing = false, left = 6, artifact = 1,
+                    score = {[0] = 1, [1] = 0},
+                    ladder = {rung = 5, streak = 3, best_streak = 4,
+                              checkpoint = 0, active_opponent = 5,
+                              legs = 11, log = A_RUN}},
+           side_names = NAMES, side = 0})
+    local head
+    for i = 1, state.n do
+        if state.text[i].s == "STREAK" then head = state.text[i].y end
+    end
+    -- Only the call signs under the readings: the line over the bar names the
+    -- rival too, and it is not a row of the run.
+    local rows, foot = 0, nil
+    for i = 1, state.n do
+        local t = state.text[i]
+        if head and t.y < head and string.match(t.s, "0001$") then
+            rows = rows + 1
+            foot = math.min(foot or t.y, t.y)
+        end
+    end
+    return rows, head, foot
+end
+
+local run_rows, run_head, run_foot = a_run_ending(1280, 800)
+check("a desktop ending draws the whole run", run_rows == 5,
+      tostring(run_rows))
+check("with the readings over it",
+      run_head and run_foot and run_head > run_foot,
+      tostring(run_head) .. " vs " .. tostring(run_foot))
+
+run_rows, run_head, run_foot = a_run_ending(390, 844)
+check("and so does an upright phone", run_rows == 5, tostring(run_rows))
+check("without running off the foot of it", run_foot and run_foot > 0,
+      tostring(run_foot))
+check("and the readings still lead",
+      run_head and run_foot and run_head > run_foot,
+      tostring(run_head) .. " vs " .. tostring(run_foot))
 
 frame({match = {playing = false, left = 23,
                 score = {[0] = 11, [1] = 14}},

@@ -214,7 +214,7 @@ pub(crate) const JOIN_WATCH: u8 = 2;
 /// 24 changes what the five flight-stat counts mean. Old tabs would send a
 /// legal byte vector that resolves to a different ship, so they must reload
 /// before joining or saving a kit under the new row.
-pub(crate) const CLIENT_PROTOCOL: u8 = 24;
+pub(crate) const CLIENT_PROTOCOL: u8 = 25;
 
 /// The biggest message a client may send. The largest legitimate one is a join:
 /// tag, class, protocol, a zone name and a call sign. 8 KB is two orders of

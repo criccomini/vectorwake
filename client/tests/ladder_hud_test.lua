@@ -148,24 +148,24 @@ local function exactly(what)
     return nil
 end
 
-local function leg(rung, result, kills, deaths, seconds)
-    return {rung = rung, result = result, kills = kills, deaths = deaths,
-            seconds = seconds}
+local function leg(rival, result, seconds)
+    return {rival = rival, result = result, seconds = seconds}
 end
 
+-- One evening, newest last, which is the order the room sends. The window is
+-- five now, because five is what the panel draws.
 local A_RUN = {
-    leg(0, "cleared", 1, 0, 33),
-    leg(1, "cleared", 1, 0, 58),
-    leg(2, "drawn", 1, 1, 12),
-    leg(2, "cleared", 1, 0, 71),
-    leg(3, "lost", 0, 1, 9),
-    leg(1, "cleared", 1, 0, 25),
-    leg(2, "cleared", 1, 0, 44),
+    leg("Kestrel 0001", "cleared", 33),
+    leg("Cirrus 0001", "drawn", 12),
+    leg("Cirrus 0001", "cleared", 71),
+    leg("Halcyon 0001", "lost", 9),
+    leg("Kestrel 0001", "cleared", 44),
 }
 
 local function a_fight(over)
     local m = {playing = true, left = 166, score = {[0] = 0, [1] = 0},
-               ladder = {rung = 4, streak = 2, checkpoint = 0,
+               ladder = {rung = 4, streak = 1, best_streak = 3,
+                         checkpoint = 0,
                          active_opponent = 4, desired_opponent = 4,
                          opponent_ready = true, waiting = false,
                          legs = 19, log = A_RUN}}
@@ -212,25 +212,26 @@ check("a match with no run draws no ratings beside its clock",
 -- --- what the band no longer says ------------------------------------------
 --
 -- The rung, the streak and the floor were a line under the clock, in the band
--- itself. They are on the board behind it now, where they were always drawn
--- better: the rung is the row at the top of the run, the streak is the run of
--- wins under it, and the floor is where those rows stop falling. A band that
--- repeated them was the same fight stated a third time.
+-- itself. The rung and the floor have left the client entirely: a rung is a
+-- roster slot and a floor is the checkpoint a loss cannot cross, and neither
+-- was ever explained on the screen that named them. What is left of the three
+-- is the streak, and it is a reading on the board rather than a word in the
+-- band. See decision 74.
 ui.details = false
 frame({match = a_fight({rung = 7, streak = 2, checkpoint = 5}),
        ratings = {[0] = 1183, [1] = 1347}})
-check("the band says nothing about rungs",
-      said("RUNG 8") == nil and said("STREAK") == nil and said("FLOOR") == nil,
+check("the band says nothing about a run at all",
+      said("RUNG") == nil and said("STREAK") == nil and said("FLOOR") == nil,
       table.concat(words(), " | "))
 
--- And the board says all of it, at the head of the run it belongs to: the
--- rung a climber is standing on is what this mode is played for, so taking it
--- off the band had to put it somewhere rather than nowhere.
 ui.details = true
 frame({match = a_fight({rung = 7, streak = 2, checkpoint = 5}),
        ratings = {[0] = 1183, [1] = 1347}})
-check("the board carries the standing the band gave up",
-      said("RUNG 8  STREAK 2  FLOOR 6") ~= nil,
+check("the board carries the streak the band gave up",
+      said("STREAK") ~= nil and exactly("2") ~= nil,
+      table.concat(words(), " | "))
+check("and says neither of the two words that went with it",
+      said("RUNG") == nil and said("FLOOR") == nil,
       table.concat(words(), " | "))
 ui.details = false
 
@@ -298,79 +299,105 @@ check("a side is as tall as the clock",
       tall <= clock.px + 0.5 and tall > clock.px * 0.9,
       tall .. " vs " .. clock.px)
 
--- --- the run log -----------------------------------------------------------
+-- --- the run ---------------------------------------------------------------
+--
+-- Two sections, in the order a duel is read: where the run stands, and then
+-- the fights that got it there.
 
 ui.details = false
 frame({match = a_fight(), ratings = {[0] = 1200, [1] = 1200}})
-check("the run log is asked for rather than assumed",
-      said("run: 19 fights") == nil, table.concat(words(), " | "))
+check("the run is asked for rather than assumed",
+      said("STREAK") == nil and said("Kestrel 0001") == nil,
+      table.concat(words(), " | "))
 
 ui.details = true
 frame({match = a_fight(), ratings = {[0] = 1200, [1] = 1200}})
-check("the scoreboard's toggle opens it with the roster",
-      said("run: 19 fights") ~= nil, table.concat(words(), " | "))
 
--- Newest first: the window is fixed, so the leg that just happened has to be
--- the one that cannot fall off it.
+-- The readings, in the grammar every other machine reading in this interface
+-- is set in: a label over a value. They used to be a line where the roster's
+-- own K D A sit, at the same size under the same ticked rule, heading columns
+-- they had nothing to do with.
+check("the readings say where the run stands",
+      said("STREAK") ~= nil and said("BEST") ~= nil and said("FIGHTS") ~= nil,
+      table.concat(words(), " | "))
+check("and carry the run's own numbers",
+      exactly("1") ~= nil and exactly("3") ~= nil and exactly("19") ~= nil,
+      table.concat(words(), " | "))
+
+-- Above the fights, not below them: the streak is what the mode is played for
+-- and the fights are how it got there. state.text counts y up from the
+-- bottom, so the higher number is the higher thing on screen.
+local head, first = exactly("STREAK"), nil
+for i = 1, state.n do
+    if state.text[i].s == "Kestrel 0001" then first = state.text[i] break end
+end
+check("the readings stand above the fights",
+      head and first and head.y > first.y,
+      head and first and (head.y .. " vs " .. first.y) or "missing")
+
+-- Newest first: the window is fixed, so the fight that just happened has to
+-- be the one that cannot fall off it.
 local order = {}
 for _, s in ipairs(words()) do
-    local n = string.match(s, "^RUNG (%d+)$")
-    if n then order[#order + 1] = tonumber(n) end
+    if string.match(s, "0001$") then order[#order + 1] = s end
 end
--- The run in A_RUN climbs to rung 4, loses it, and climbs back. A desktop has
--- room for all seven legs the room sent, newest first.
-check("every leg that arrived is drawn, newest first",
-      table.concat(order, ",") == "3,2,4,3,3,2,1",
+check("every fight that arrived is drawn, newest first",
+      table.concat(order, ",") == "Kestrel 0001,Halcyon 0001,Cirrus 0001,"
+          .. "Cirrus 0001,Kestrel 0001",
       table.concat(order, ","))
 
-check("a leg says what it was", said("won") ~= nil and said("lost") ~= nil
-      and said("drew") ~= nil, table.concat(words(), " | "))
-check("a leg says what it cost", exactly("1-0") ~= nil
-      and exactly("0-1") ~= nil and exactly("1-1") ~= nil,
+check("a fight says what came of it",
+      said("won") ~= nil and said("lost") ~= nil and said("drew") ~= nil,
       table.concat(words(), " | "))
 check("and how long it took, on the clock's own reading",
       exactly("0:44") ~= nil and exactly("0:09") ~= nil
       and exactly("1:11") ~= nil, table.concat(words(), " | "))
-
--- A run shorter than the window draws what it has, and the count agrees with
--- the rows rather than promising more of them.
-frame({match = a_fight({legs = 2, log = {A_RUN[1], A_RUN[5]}}),
-       ratings = {[0] = 1200, [1] = 1200}})
-check("a short run draws every leg it has", said("run: 2 fights") ~= nil
-      and said("RUNG 1") ~= nil and said("RUNG 4") ~= nil,
+-- The scoreline went with the column that drew it: this mode is first to one,
+-- so it only ever said that somebody died.
+check("and not a scoreline",
+      exactly("1-0") == nil and exactly("0-1") == nil and exactly("1-1") == nil,
       table.concat(words(), " | "))
 
--- A run with nothing behind it yet still says where it stands. There is no
--- count, because there is nothing to count, and no columns, because there are
--- no rows under them.
-frame({match = a_fight({legs = 0, log = {}, rung = 0, streak = 0,
-                        checkpoint = 0}),
+-- A run shorter than the window draws what it has, and the count is the
+-- run's own rather than the number of rows.
+frame({match = a_fight({legs = 2, log = {A_RUN[1], A_RUN[4]}}),
        ratings = {[0] = 1200, [1] = 1200}})
-check("a run with no finished leg still says which rung it is on",
-      said("RUNG 1") ~= nil and said("run: ") == nil
-      and said("score") == nil, table.concat(words(), " | "))
-check("and a run at the bottom says only the rung",
-      said("STREAK") == nil and said("FLOOR") == nil,
+check("a short run draws every fight it has",
+      said("Kestrel 0001") ~= nil and said("Halcyon 0001") ~= nil
+      and exactly("2") ~= nil, table.concat(words(), " | "))
+
+-- A run with nothing behind it yet still says where it stands. The shipped
+-- head hid the streak at zero, so the one number this mode is played for went
+-- missing exactly on the screen a player reads after losing.
+frame({match = a_fight({legs = 0, log = {}, streak = 0, best_streak = 0}),
+       ratings = {[0] = 1200, [1] = 1200}})
+check("a run with no finished fight still draws its readings",
+      said("STREAK") ~= nil and exactly("0") ~= nil,
       table.concat(words(), " | "))
+check("and a broken streak reads zero rather than going quiet",
+      said("STREAK") ~= nil, table.concat(words(), " | "))
 
 frame({match = {playing = true, left = 166, score = {[0] = 2, [1] = 1}},
        ratings = {[0] = 1200, [1] = 1200}})
-check("and a mode that is not a run has none either", said("run: ") == nil,
+check("and a mode that is not a run has none of it",
+      said("STREAK") == nil and said("FIGHTS") == nil,
       table.concat(words(), " | "))
 
--- A phone in landscape is where the column stops fitting. Fewer rows rather
--- than a panel over the loadout, and the newest leg is still the top one.
+-- A phone in landscape is where the column stops fitting. Fewer fights rather
+-- than a panel over the loadout, the newest still on top, and the readings
+-- never dropped: they are the section the mode is played for.
 ui.details = true
 frame({w = 844, h = 390, match = a_fight(),
        ratings = {[0] = 1200, [1] = 1200}})
 local narrow = {}
 for _, s in ipairs(words()) do
-    local n = string.match(s, "^RUNG (%d+)$")
-    if n then narrow[#narrow + 1] = tonumber(n) end
+    if string.match(s, "0001$") then narrow[#narrow + 1] = s end
 end
-check("a short screen draws fewer legs rather than running off the bottom",
-      #narrow > 0 and #narrow < #A_RUN and narrow[1] == 3,
+check("a short screen draws fewer fights rather than running off the bottom",
+      #narrow > 0 and #narrow < #A_RUN and narrow[1] == "Kestrel 0001",
       table.concat(narrow, ","))
+check("and keeps the readings whatever it drops",
+      said("STREAK") ~= nil, table.concat(words(), " | "))
 
 if fails > 0 then
     print(fails .. " failed")

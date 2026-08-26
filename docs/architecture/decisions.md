@@ -3410,3 +3410,66 @@ the list of answers already tried.
 at the server; `community.md`, `menu.md`, `interface.md`, `friends.md` and
 `match-game.md` are updated. Decision 28 is untouched: this removes a link,
 not a reason.
+## 74. The duel counts a streak, and names who it beat
+
+**What:** the Duel's board drops the rung and the floor, and the panel under
+its roster becomes two sections. The readings say where the run stands, as a
+label over a value with a thin rule between the stacks: `STREAK`, `BEST`,
+`FIGHTS`. Under them, the last five fights, one row each, naming the rival in
+the menu face with what came of it in that word's own color and how long it
+took.
+
+The line over the bar reads the way melee's does, a name and a verb:
+"Vantage 0001 beaten", "Tessellate 0001 takes it", "drawn", and "every rival
+beaten" for a cleared roster. The play page's format strip says `streak`
+where it said `rungs`, the zone's hook line is "every win is a harder rival;
+one death ends the streak", and the two `Ladder::banner` lines that named a
+rung and a checkpoint say neither.
+
+The MVP mark is withheld unless three or more pilots scored.
+
+**Why:** the shipped panel headed a list of fights with `RUNG 6  FLOOR 6` and
+put a rung number on every row. A rung is a roster slot and a floor is the
+checkpoint a loss cannot cross, and the screen that named them explained
+neither. The rung was then said a third time over the bar. The rival, the one
+thing on the panel that is a person, was nowhere: the roster names whoever you
+just fought and forgets them at the next whistle, so a run of twelve fights
+was twelve slot numbers and no opponents.
+
+Two smaller faults went with it. The middle column read `1-0` or `0-1` on
+every row, because `ladder_first_to` is 1 and catalog validation refuses any
+other value, so all it ever said was that somebody died. And the streak, the
+one number a climber says out loud, was hidden at zero under a rule that a
+streak of none is not a streak, so it was missing exactly on the screen a
+player reads after losing. It reads zero now.
+
+The MVP mark had the same shape of fault. In a first-to-one duel the winner is
+the only pilot with a kill, so the best gun in the room is always whoever just
+won and the mark was the bar over it said again. Three scorers is where a
+prize starts picking somebody out rather than restating the result.
+
+The readings sit above the fights and not inside their head. They were drawn
+in the head first, where the roster's own `K D A` sit, at the same size under
+the same ticked rule, and a shape is read before the words in it are: three
+readings in the heading slot are read as headings for the columns under them.
+The list has no head at all now. Mocks and the passed-over drawings are in
+`.design/duel-run`.
+
+**Cost:** a leg has to carry a call sign, because by the time the board draws
+one the rival's seat belongs to the next rung. That is `CallSign` on
+`modes::LadderLeg`, `rival_name` on `ModeCtx`, and a variable-width leg on
+`S2C_MATCH`: a result byte, two seconds, a length and the name. The window
+shrank from twelve legs to five, which is what the panel draws, and the
+scoreline left the wire with the column, so the packet is smaller than it was
+despite the names. Protocol 25, catalog v30.
+
+`best_streak` is a number the run did not keep. It is a max over the streak,
+one `u32` on the wire, and it is what gives the readings something to say the
+moment a streak breaks.
+
+**Reconsider if:** the floor stops being a kindness nobody reads. It is still
+there, unnamed: a loss drops two rungs and stops at the last checkpoint, so a
+run deep enough cannot fall to the bottom. Either that stays an unstated
+mercy, or the streak becomes the mechanic outright, a win putting a harder
+rival across the arena and a loss putting back the first. The board draws the
+same either way, which is why this decision does not settle it.

@@ -163,9 +163,10 @@ impl ZoneDef {
     /// has no words for sends empty strings and the row draws no strip.
     pub fn format(&self) -> (String, String, String) {
         match self.mode.as_str() {
-            // One life against one measured rival; a win is a rung. The
-            // shape is validated, so the words never have to be derived.
-            "ladder" => ("1 v 1".into(), "one life".into(), "rungs".into()),
+            // One life against one measured rival, and what a run is played
+            // for is how many of them you take without dying. The shape is
+            // validated, so the words never have to be derived.
+            "ladder" => ("1 v 1".into(), "one life".into(), "streak".into()),
             "melee" => {
                 // Only what the zone actually states. A melee without a
                 // per-side cap or a clock has no honest number to print,
@@ -926,7 +927,7 @@ mod tests {
         );
         assert_eq!(
             read("ladder").format(),
-            ("1 v 1".into(), "one life".into(), "rungs".into())
+            ("1 v 1".into(), "one life".into(), "streak".into())
         );
     }
 

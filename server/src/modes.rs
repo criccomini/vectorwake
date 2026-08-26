@@ -26,6 +26,10 @@ pub struct ModeCtx<'a> {
     /// nobody is. `None` in every other mode, and in a Ladder room still
     /// waiting on its rival.
     pub rival: Option<u8>,
+    /// And what that seat is called. The mode files a leg naming whoever was
+    /// across the arena, and cannot ask the room for a name after the fact:
+    /// the rung is over in seconds and the seat goes to the next rival.
+    pub rival_name: Option<&'a str>,
     /// The zone's own sides, by name, in the order it scores them. A mode
     /// writes banners about the game, and a side is a name to everybody
     /// reading one: "Vantage holds all four flags" is news, "team 1 holds all
@@ -104,6 +108,7 @@ impl Default for LadderRules {
 pub struct LadderProgression {
     rung: u32,
     streak: u32,
+    best_streak: u32,
     checkpoint: u32,
     best: u32,
     rules: LadderRules,
@@ -114,6 +119,7 @@ impl LadderProgression {
         Self {
             rung: 0,
             streak: 0,
+            best_streak: 0,
             checkpoint: 0,
             best: 0,
             rules,
@@ -128,6 +134,10 @@ impl LadderProgression {
         Self {
             rung,
             streak,
+            // A resumed session is a fresh run, and the best streak is about
+            // the run rather than the account, so it starts at whatever the
+            // restored streak already is.
+            best_streak: streak,
             checkpoint: checkpoint.min(rung),
             best: best.max(rung).min(rung_count),
             rules,
@@ -150,6 +160,14 @@ impl LadderProgression {
         self.best
     }
 
+    /// The longest streak this run has managed, which is the one number on the
+    /// board that a broken streak does not take away. The rung and the floor
+    /// are the machine's own bookkeeping and no longer reach a screen; this
+    /// does, so it is kept rather than derived.
+    pub fn best_streak(&self) -> u32 {
+        self.best_streak
+    }
+
     /// Advance once, returning true when that win cleared the finite roster.
     /// A clear starts the next run at the durable floor instead of silently
     /// repeating the strongest band under a larger rung number.
@@ -158,6 +176,10 @@ impl LadderProgression {
         let next = self.rung.saturating_add(1);
         self.best = self.best.max(next).min(rung_count);
         if next >= rung_count {
+            // Clearing the roster is still a win, so the streak it finished on
+            // counts before the next run starts from nothing.
+            self.streak = self.streak.saturating_add(1);
+            self.best_streak = self.best_streak.max(self.streak);
             self.rung = self.checkpoint.min(rung_count.saturating_sub(1));
             self.streak = 0;
             return true;
@@ -165,6 +187,7 @@ impl LadderProgression {
 
         self.rung = next;
         self.streak = self.streak.saturating_add(1);
+        self.best_streak = self.best_streak.max(self.streak);
         let interval = self.rules.checkpoint_interval;
         if interval != 0 && self.rung.is_multiple_of(interval) {
             self.checkpoint = self.rung;
@@ -201,27 +224,62 @@ impl LegResult {
     }
 }
 
+/// A call sign as a leg keeps it.
+///
+/// Fixed width rather than a `String`, because `LadderState` is a snapshot the
+/// room copies whole out of the mode every tick it sends a clock. A heap
+/// string in it would make that read a clone, and the widest thing that can
+/// land here is a name the meta-layer already caps at `MAX` bytes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub struct CallSign {
+    bytes: [u8; Self::MAX],
+    len: u8,
+}
+
+impl CallSign {
+    pub const MAX: usize = 24;
+
+    /// Truncated on a character boundary, so a name too long for the buffer
+    /// loses its tail rather than becoming bytes nothing can decode.
+    pub fn new(name: &str) -> Self {
+        let mut end = name.len().min(Self::MAX);
+        while end > 0 && !name.is_char_boundary(end) {
+            end -= 1;
+        }
+        let mut bytes = [0u8; Self::MAX];
+        bytes[..end].copy_from_slice(&name.as_bytes()[..end]);
+        Self {
+            bytes,
+            len: end as u8,
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        // Written only through `new`, which cuts on a boundary of a string
+        // that was already valid.
+        std::str::from_utf8(&self.bytes[..self.len as usize]).unwrap_or("")
+    }
+}
+
 /// One finished life of the run in progress.
 ///
-/// A rung is over in a few seconds and a run is an evening of them, so the
-/// thing a climber wants back is not the rung they are on but the shape of how
-/// they got there: which opponents cost them a life, how long each fight ran,
-/// where the run turned around. The room is the only thing that sees all of
-/// that, so it keeps it.
+/// A run is an evening of ten second fights, so the thing a climber wants back
+/// is the shape of how it went: who they took, who took them, how long each
+/// one ran. The room is the only thing that sees all of that, so it keeps it.
+///
+/// The rival's name is captured here rather than looked up when the board
+/// draws, because by then they may have left the room: a rung is over in
+/// seconds and the seat is handed to the next one.
 ///
 /// Void lives are not legs. A rival who leaves mid-fight files no result and
 /// changes no progress, and a log that recorded it would be a log of things
 /// that did not count.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct LadderLeg {
-    /// The opponent slot fought, zero-based like every other rung here.
-    pub rung: u32,
+    /// Who was across the arena. Empty only for a leg filed with no rival
+    /// seated, which the mode does not do.
+    pub rival: CallSign,
     pub result: LegResult,
-    /// The scoreline, the climber's side first. A point is the other side
-    /// dying, and `first_to` is one under this mode, so these are almost
-    /// always one and zero. The mode does not assume it.
-    pub kills: u16,
-    pub deaths: u16,
     /// How long the life lasted, in whole seconds, rounded the way the clock
     /// rounds. Sudden death is included, so this can exceed the match timer.
     pub seconds: u16,
@@ -230,10 +288,8 @@ pub struct LadderLeg {
 impl Default for LadderLeg {
     fn default() -> Self {
         Self {
-            rung: 0,
+            rival: CallSign::default(),
             result: LegResult::Lost,
-            kills: 0,
-            deaths: 0,
             seconds: 0,
         }
     }
@@ -244,10 +300,12 @@ impl Default for LadderLeg {
 /// is bounded at the most recent legs and the total count says what fell off
 /// the end.
 ///
-/// Twelve because that is about what the panel drawing it can hold on a screen
-/// with room to spare, and a window larger than any screen shows is bytes a
-/// second nobody reads.
-pub const LADDER_LOG_LEGS: usize = 12;
+/// Five, because five is what the board draws. It used to be twelve, sized to
+/// what a desktop column could hold, and a desktop column could hold twelve
+/// rows of a rung number nobody could read anything into. A list of the last
+/// five fights is the whole of what the panel is now, so a window wider than
+/// that is bytes a second nobody sees.
+pub const LADDER_LOG_LEGS: usize = 5;
 
 /// A structured Ladder snapshot for the room, bot assignment, and future
 /// client message. Scores are always `[human, bot]`.
@@ -258,6 +316,9 @@ pub struct LadderState {
     pub waiting: bool,
     pub rung: u32,
     pub streak: u32,
+    /// The longest streak this run has had, which is the reading that survives
+    /// a broken one.
+    pub best_streak: u32,
     pub checkpoint: u32,
     pub best: u32,
     pub score: [u16; 2],
@@ -613,12 +674,10 @@ impl Ladder {
     /// File a finished life. The window keeps the most recent legs, so a run
     /// long enough to fill it drops its oldest rather than its newest: what a
     /// climber is looking back at is the stretch they are in.
-    fn log_leg(&mut self, result: LegResult) {
+    fn log_leg(&mut self, result: LegResult, rival: &str) {
         let leg = LadderLeg {
-            rung: self.active_opponent_slot,
+            rival: CallSign::new(rival),
             result,
-            kills: self.score[0],
-            deaths: self.score[1],
             seconds: self.elapsed.div_ceil(TICKS_PER_SECOND).min(u16::MAX as u32) as u16,
         };
         self.legs = self.legs.saturating_add(1);
@@ -684,11 +743,14 @@ impl Ladder {
         if !self.playing {
             return;
         }
-        self.log_leg(if human_won {
-            LegResult::Cleared
-        } else {
-            LegResult::Lost
-        });
+        self.log_leg(
+            if human_won {
+                LegResult::Cleared
+            } else {
+                LegResult::Lost
+            },
+            ctx.rival_name.unwrap_or_default(),
+        );
         self.cleared = if human_won {
             self.run.win()
         } else {
@@ -707,7 +769,7 @@ impl Ladder {
         if !self.playing {
             return;
         }
-        self.log_leg(LegResult::Drawn);
+        self.log_leg(LegResult::Drawn, ctx.rival_name.unwrap_or_default());
         self.playing = false;
         self.left = self.intermission_ticks;
         self.result = None;
@@ -751,21 +813,19 @@ impl Ladder {
     /// behind the band cannot already say.
     ///
     /// It used to read "Ladder rung 5: first to 1, 0 to 0" through every second
-    /// of every life. The rung is on the board, the score is on either side of
-    /// the clock, and first-to is a rule of the mode that never moves: three
-    /// facts already on screen, in the largest type on it, over the fight they
-    /// are about. So an ordinary life gets no banner.
+    /// of every life: the score is on either side of the clock and first-to is
+    /// a rule of the mode that never moves, so it was facts already on screen,
+    /// in the largest type on it, over the fight they were about. An ordinary
+    /// life gets no banner.
     ///
-    /// Nor does an ordinary result. "Rung 3 cleared. Next rung 4, streak 3"
-    /// was every one of those numbers a second time: the rung and the streak
-    /// head the run on the board, and the fight that just ended is its top
-    /// row, saying won or lost, by what, and how long it took. A sentence
-    /// restating a panel a press away is the same reading twice, and it was
-    /// the largest type on the screen while a player was still flying.
+    /// Nor does an ordinary result. The fight that just ended is the top row
+    /// of the run on the board, saying who and won or lost, and the streak is
+    /// the section under it. A sentence restating a panel a press away is the
+    /// same reading twice.
     ///
     /// What is left is what nothing else says: that the clock has run out and
     /// the next death settles it, that the rival went away mid-life, and that
-    /// the whole ladder has been climbed.
+    /// every rival has been beaten.
     fn banner(&self) -> String {
         if !self.opened || (self.playing && !self.opponent_ready) {
             // The clock reads dashes and the room is looking for a rival. A
@@ -779,15 +839,11 @@ impl Ladder {
                 String::new()
             }
         } else if self.interrupted {
-            format!(
-                "Rival disconnected. Replaying rung {}",
-                self.active_opponent_slot.saturating_add(1)
-            )
+            // Named rather than numbered, because a rung is not a word this
+            // game says any more and the replacement is a person either way.
+            "Rival disconnected. Replaying that fight".to_string()
         } else if self.cleared {
-            format!(
-                "Ladder cleared. New run starts at checkpoint {}",
-                self.run.checkpoint().saturating_add(1)
-            )
+            "Every rival beaten. A new run starts now".to_string()
         } else {
             String::new()
         }
@@ -913,6 +969,7 @@ impl Mode for Ladder {
             waiting,
             rung: self.run.rung(),
             streak: self.run.streak(),
+            best_streak: self.run.best_streak(),
             checkpoint: self.run.checkpoint(),
             best: self.run.best(),
             score: self.score,
@@ -1089,6 +1146,7 @@ mod melee_tests {
             world,
             seats: &[],
             rival: None,
+            rival_name: None,
             team_names: names,
             banner: String::new(),
             finished: false,
@@ -1268,6 +1326,9 @@ mod ladder_tests {
             world,
             seats,
             rival: seats.contains(&RIVAL).then_some(RIVAL),
+            // Every rung in these tests is the same seat, so it is the same
+            // name: what matters here is that a leg gets one at all.
+            rival_name: seats.contains(&RIVAL).then_some("Tessellate 0001"),
             team_names: &[],
             banner: String::new(),
             finished: false,
@@ -1454,18 +1515,34 @@ mod ladder_tests {
         assert_eq!(state.logged, 2);
 
         let won = state.log[0];
-        assert_eq!(won.rung, 0, "the first rung, zero-based like the rest");
         assert_eq!(won.result, LegResult::Cleared);
-        assert_eq!(won.kills, 1);
-        assert_eq!(won.deaths, 0);
+        assert_eq!(
+            won.rival.as_str(),
+            "Tessellate 0001",
+            "the leg names whoever was across the arena, since by the time \
+             the board draws it the seat belongs to the next rival"
+        );
         assert_eq!(won.seconds, 3, "250 ticks is two and a half seconds of it");
 
         let lost = state.log[1];
-        assert_eq!(lost.rung, 1, "and the rung the win moved the run to");
         assert_eq!(lost.result, LegResult::Lost);
-        assert_eq!(lost.kills, 0);
-        assert_eq!(lost.deaths, 1);
+        assert_eq!(lost.rival.as_str(), "Tessellate 0001");
         assert_eq!(lost.seconds, 11, "and a life is rounded up, like the clock");
+    }
+
+    /// A call sign longer than the buffer loses its tail rather than becoming
+    /// bytes nothing can decode, and the cut lands on a character boundary.
+    #[test]
+    fn a_call_sign_is_cut_on_a_character_boundary() {
+        assert_eq!(CallSign::new("Sable 0001").as_str(), "Sable 0001");
+        assert_eq!(CallSign::default().as_str(), "");
+        let long = "x".repeat(CallSign::MAX + 6);
+        assert_eq!(CallSign::new(&long).as_str().len(), CallSign::MAX);
+        // Three-byte characters over a boundary that does not divide by three.
+        let wide = "\u{4e16}".repeat(CallSign::MAX);
+        let cut = CallSign::new(&wide);
+        assert!(cut.as_str().len() <= CallSign::MAX);
+        assert_eq!(cut.as_str().chars().count(), CallSign::MAX / 3);
     }
 
     /// A rival who leaves mid-life voids it. Nothing is filed, nothing is
@@ -1489,7 +1566,7 @@ mod ladder_tests {
     }
 
     /// A draw is a real result at this table: both pilots died on the same
-    /// tick, the rung is replayed, and the log says it happened.
+    /// tick, the same rival is fought again, and the log says it happened.
     #[test]
     fn a_double_death_logs_a_drawn_leg() {
         let seats = [3, RIVAL];
@@ -1500,8 +1577,7 @@ mod ladder_tests {
         let state = ladder.ladder_state().unwrap();
         assert_eq!(state.logged, 1);
         assert_eq!(state.log[0].result, LegResult::Drawn);
-        assert_eq!(state.log[0].kills, 1);
-        assert_eq!(state.log[0].deaths, 1);
+        assert_eq!(state.log[0].rival.as_str(), "Tessellate 0001");
         assert_eq!(state.rung, 0, "a draw moves nothing");
     }
 
@@ -1540,15 +1616,48 @@ mod ladder_tests {
             "the finite roster is finished"
         );
         assert_eq!(
+            ladder.ladder_state().unwrap().legs,
+            pilots::PROVISIONAL_LADDER_RUNG_COUNT as u32,
+            "and the card that reports it still counts the whole run"
+        );
+        assert_eq!(
             ladder.ladder_state().unwrap().logged,
-            pilots::PROVISIONAL_LADDER_RUNG_COUNT as u8,
-            "and the card that reports it still has the whole run"
+            LADDER_LOG_LEGS as u8,
+            "with the window's worth of it to look at"
         );
 
         one_life(&mut ladder, &mut world, &seats, 100, true);
         let state = ladder.ladder_state().unwrap();
         assert_eq!(state.legs, 1, "the next run counts from its own first life");
         assert_eq!(state.logged, 1);
+    }
+
+    /// The streak is what the board is played for, so the run keeps the
+    /// longest it managed. A loss takes the streak and leaves the best.
+    #[test]
+    fn a_run_remembers_its_longest_streak() {
+        let seats = [3, RIVAL];
+        let mut world = World::new(7);
+        let mut ladder = Ladder::new(LadderRules::default(), 100_000, 2);
+        for _ in 0..3 {
+            one_life(&mut ladder, &mut world, &seats, 100, true);
+        }
+        let climbing = ladder.ladder_state().unwrap();
+        assert_eq!(climbing.streak, 3);
+        assert_eq!(climbing.best_streak, 3);
+
+        one_life(&mut ladder, &mut world, &seats, 100, false);
+        let broken = ladder.ladder_state().unwrap();
+        assert_eq!(broken.streak, 0, "a loss ends the streak");
+        assert_eq!(
+            broken.best_streak, 3,
+            "and leaves the reading that says how big it was"
+        );
+
+        one_life(&mut ladder, &mut world, &seats, 100, true);
+        let again = ladder.ladder_state().unwrap();
+        assert_eq!(again.streak, 1);
+        assert_eq!(again.best_streak, 3, "a shorter run does not lower it");
     }
 
     /// A new session resumes at the saved checkpoint with a streak of zero,
@@ -1901,6 +2010,7 @@ mod warzone_tests {
             world,
             seats: &[],
             rival: None,
+            rival_name: None,
             team_names: &[],
             banner: String::new(),
             finished: false,

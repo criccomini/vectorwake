@@ -1,0 +1,174 @@
+{
+  "pages": [
+    {
+      "id": "page-1",
+      "name": "As built"
+    },
+    {
+      "id": "page-2",
+      "name": "Drawn and not taken"
+    }
+  ],
+  "artboards": [
+    {
+      "file": "Current.dc.html",
+      "title": "As shipped",
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "page": "page-1"
+    },
+    {
+      "file": "Main.dc.html",
+      "title": "Its own section",
+      "x": 1560,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "page": "page-1"
+    },
+    {
+      "file": "Broken.dc.html",
+      "title": "As built · the run breaks",
+      "x": 3120,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "page": "page-1"
+    },
+    {
+      "file": "Live.dc.html",
+      "title": "Mid-fight, 340 wide",
+      "x": 4680,
+      "y": 0,
+      "w": 420,
+      "h": 340,
+      "page": "page-1"
+    },
+    {
+      "file": "Portrait.dc.html",
+      "title": "Phone",
+      "x": 5220,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "Joined.dc.html",
+      "title": "Under the fights, in their panel",
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "page": "page-2"
+    },
+    {
+      "file": "Stack.dc.html",
+      "title": "Above the fights, as a heading",
+      "x": 1560,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "page": "page-2"
+    },
+    {
+      "file": "Spine.dc.html",
+      "title": "The streak on the list",
+      "x": 3120,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "page": "page-2"
+    },
+    {
+      "file": "B.dc.html",
+      "title": "B · the shape leads",
+      "x": 4680,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "page": "page-2"
+    },
+    {
+      "file": "C.dc.html",
+      "title": "C · the number leads",
+      "x": 6240,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "page": "page-2"
+    }
+  ],
+  "annotations": [
+    {
+      "id": "note-shipped",
+      "x": 0,
+      "y": -320,
+      "w": 620,
+      "page": "page-1",
+      "text": "As shipped, at the moment in Chris's screenshot. Twelve fights in, Tessellate 0001 has just taken the life.\n\nThe head is RUNG 6  FLOOR 6 and every row under it is a rung number. Neither word is ever defined on screen: a floor is the checkpoint the mode will not let a loss push you below, and a rung is a roster slot. The rung is said a third time in the line over the bar. The rival is nowhere in the run, even though the run is a list of fights against people. The middle column is 1-0 or 0-1 on every row, because a duel is first to one, so all it ever says is that somebody died.\n\nThe MVP mark goes with them. In a first-to-one duel the winner is the only pilot with a kill, so the best gun in the room is always whoever just won and the mark is the bar above it said again. The rule that keeps it honest in a bigger room: no mark unless three or more pilots scored."
+    },
+    {
+      "id": "note-built",
+      "x": 1560,
+      "y": -400,
+      "w": 1440,
+      "page": "page-1",
+      "text": "As built. Decision 74.\n\nThree sections down one column, and the countdown and the invite key under them.\n\nPILOTS is unchanged. THE READINGS say where the run stands, label over value with a thin rule between the stacks, which is the grammar the play page sets a zone's format in and the band sets TIME and PLAYERS in. THE FIGHTS lose their head entirely: no rung, no floor, no scoreline, no count. Each row names the rival in the menu face because it is a name being read, and says won or lost in that word's own color, with how long the fight took. Five rows, which is exactly what the room now sends.\n\nThe line over the bar reads the way melee's does, a name and a verb, off the leg the room just filed rather than off the roster: the rival's seat goes to the next one within seconds of the whistle."
+    },
+    {
+      "id": "note-broken",
+      "x": 3120,
+      "y": -180,
+      "w": 620,
+      "page": "page-1",
+      "text": "The run breaking\n\nOne fight later, which is the moment in the screenshot: Tessellate takes the life and the three ends. STREAK drops to 0 and dims, BEST holds at 3, FIGHTS goes to 12.\n\nWorth drawing because the shipped head does not survive this moment. It hides the streak at zero under a rule that a streak of none is not a streak, so the one number this is all about goes missing exactly on the screen you read after losing. A reading that is always there can go to zero and still be read."
+    },
+    {
+      "id": "note-small",
+      "x": 4680,
+      "y": -180,
+      "w": 900,
+      "page": "page-1",
+      "text": "The two small windows.\n\nMid-fight the board is asked for rather than raised at the whistle: no zoom, no result line, no foot, and 340 points wide. All three stacks fit that measure with room over, and the roster keeps its PTS and BTY columns there, which the ending swaps for points under the rivet.\n\nThe phone draws the same three sections in the same order, anchored to the foot so the invite key stays under a thumb. Both draw the whole five: the ending measures its block before it places any of it."
+    },
+    {
+      "id": "note-wire",
+      "x": 1560,
+      "y": 1180,
+      "w": 620,
+      "page": "page-1",
+      "text": "What it cost to build\n\nThe leg the room files carried a rung, a result, a scoreline and a duration, and no name. The rival's call sign is captured when the leg is filed, since by the time the board draws it the rival may have left the room: CallSign on modes::LadderLeg, rival_name on ModeCtx, and a variable-width leg on S2C_MATCH (a result byte, two seconds, a length, the name).\n\nThe window shrank from twelve legs to five, which is what the panel draws, and the scoreline left the wire with the column, so the packet is smaller than it was despite carrying names. Protocol 25, catalog v30.\n\nbest_streak is a number the run did not keep: a max over the streak, one u32, and what gives the readings something to say the moment a streak breaks."
+    },
+    {
+      "id": "note-elsewhere",
+      "x": 2260,
+      "y": 1180,
+      "w": 620,
+      "page": "page-1",
+      "text": "The word is not only in this panel, and all of it went.\n\nEND.result said rung 6 cleared and back to rung 6 over the bar. The play page's format strip said scoring: rungs and says streak. The zone's hook line was every rung is a harder rival; a loss drops you two, and is every win is a harder rival; one death ends the streak. Two Ladder::banner lines named a rung and a checkpoint and name neither."
+    },
+    {
+      "id": "note-open",
+      "x": 2960,
+      "y": 1180,
+      "w": 620,
+      "page": "page-1",
+      "text": "The one question this does not answer\n\nThe floor is real whether or not it is named. A loss drops two rungs and cannot push you below the last checkpoint, so a run deep enough cannot fall to the bottom however badly it goes. The word is off the screen and the kindness is still there, unread.\n\nEither that stays an unstated mercy, or the streak becomes the mechanic outright: a win puts a harder rival across the arena, a loss puts back the first, and there is no floor to explain because there is not one. That is what \"just track streaks\" says most plainly, and it is a harsher game.\n\nThe board draws the same either way, which is why decision 74 leaves it."
+    },
+    {
+      "id": "note-notaken",
+      "x": -560,
+      "y": 0,
+      "w": 460,
+      "page": "page-2",
+      "text": "Drawn and not taken, kept for the record as they were proposed, MVP mark and all.\n\nUnder the fights and inside their panel, across a ticked rule, the way a table carries its totals. It reads well and it is two panels rather than three, but the readings were asked for as a section of their own.\n\nAbove the fights as a heading is the drawing that started this round: the same three stacks, sitting where the roster's own column headings sit, at the same size under the same ticked rule. A shape is read before the words in it are.\n\nThe streak on the list lit the panel's own left rule over the rows the streak was.\n\nB and C are the first round, on what should lead the panel at all: the run drawn as one mark per fight, and the streak as a figure in a column beside the rows."
+    }
+  ],
+  "launch": {
+    "view": "canvas",
+    "page": "page-1"
+  }
+}
