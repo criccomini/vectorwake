@@ -577,9 +577,10 @@ rated seat exclusive, so the presence table exists and is kept honest by the
 thing that most wants it right. And there is no invite, because there is
 nothing to accept: one row per direction, and the friendship is the pair.
 
-No chat, per `decision 28`. Discord carries the talking, per
-`community.md`, and with nothing to say to anybody there is nearly nothing to
-moderate: what one stranger can do to another is appear on a list.
+No chat, per `decision 28`. The talking happens on the community's Discord,
+which the game does not link to and does not know about, per `community.md`.
+With nothing to say to anybody there is nearly nothing to moderate: what one
+stranger can do to another is appear on a list.
 
 The part that is still real work is seating a party together on one side of a
 filling match, which is matchmaking logic that does not exist yet. Friends
@@ -659,11 +660,10 @@ settings.** Same chrome as the front end, full screen, with the tab row on top;
 what differs is which tabs are on it, not how any of it looks or works. That
 is the point. A player learns one screen and meets it in both places.
 
-Discord is not a tab. It sits in the friends panel on the play screen,
-which is where somebody is already thinking about who to play with, and it is
-the only outbound link in the game. [community.md](community.md) has the rest
-of that argument; what matters here is that the game carries no chat and the
-friends panel is honest about where the talking happens.
+Discord is not one of them, and is nowhere else in the game either. The
+community has a server and the site is where a player finds it;
+[community.md](community.md) has the rest of that argument. What matters here
+is that the game carries no chat and points at nothing that does.
 
 Nothing you cannot act on right now is on that row, which follows from a rule
 [menu.md](menu.md) already has and is proud of: nothing pauses, you can be

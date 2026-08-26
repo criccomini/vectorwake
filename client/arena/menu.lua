@@ -150,12 +150,6 @@ M.cols = 4
 -- is. The one piece of focus this client moves on anybody's behalf is the
 -- caret into the first line as a card comes up, and it hands it straight back
 -- to the canvas when the card goes.
--- Where the community is. The Caddy redirect rather than the invite itself,
--- so an invite that has to be reissued is one line of configuration and not a
--- client release every open tab is behind. The rail row carries it for the
--- page to lay a link over, and `activate` opens it where there is no page.
-local DISCORD = "https://play.vectorwake.net/discord"
-
 M.name = "pilot"
 M.directory = "ws://127.0.0.1:9000"
 M.zone = ""
@@ -1778,11 +1772,6 @@ local function play_rows()
     -- a row on a page is a place you find by going somewhere else first, and
     -- who is on is a question asked from wherever you are standing.
     -- See docs/design/friends.md.
-    -- No community section here either, and for the reason the friends row
-    -- went: a row on a page is a place you find by going somewhere else
-    -- first. Discord is a button in the corner of the top line now, on every
-    -- page and on both layouts, which is where the one outbound link in this
-    -- game belongs. See docs/design/community.md.
     -- Nothing about leaving down here either. The way out of a game is the
     -- button on that game's own row, above.
     return rows
@@ -1977,35 +1966,6 @@ local NODES = {
                 note = "this device becomes a fresh guest"}
         end
         return rows
-    end},
-
-    -- Where the game is talked about, reached from the button at the end of
-    -- the tab row.
-    --
-    -- The button used to be the link: press it, a tab opens, and whatever you
-    -- were doing is behind a browser window you did not ask for. That is a
-    -- fine control for somebody who already knows what is on the other side
-    -- of it and a poor one for everybody else, which on a game with eight
-    -- players in a match is most of the people who see it. A page costs one
-    -- press and answers the question the button was silently assuming.
-    --
-    -- It was four rows and it should never have been a list. Three of the
-    -- four answered nothing: they were set in the same face at the same size
-    -- as every row in the game that goes somewhere, and a hand walking down
-    -- them with the arrows found one control and three impersonations of one.
-    -- Each also carried a note underneath finishing its own sentence, which
-    -- is the caption the design language does not have.
-    --
-    -- So it is a page rather than a list, with one thing to press on it. The
-    -- row below is that one thing, kept as a row so the cursor and the key
-    -- still work the way they do everywhere; `pages.door` draws it as the
-    -- button it always was. See docs/design/community.md, which is where the
-    -- words come from and why the address is on it.
-    discord = {off_rail = true, rows = function()
-        return {
-            {label = "join discord", act = "discord", link = DISCORD,
-             pick = true},
-        }
     end},
 
     -- Settings carry a `choice`, where a value sits along its range, as well
@@ -2317,19 +2277,17 @@ local function rows_of(nd)
     return r
 end
 
--- The stops on the far right of the tab row, in the order the arrows meet
--- them left to right. Two of them today: the way out to where the talking
--- happens, and who you are signed in as. The account one is only there when
--- there is a call sign to put on it, which is every session that has reached
--- the meta layer.
+-- The stops on the far right of the tab row. One today: who you are signed in
+-- as, and only where there is a call sign to put on it, which is every
+-- session that has reached the meta layer.
 --
--- The list is here rather than in the drawing because the arrows walk it, and
--- a row a hand can walk has to be a list somewhere. ui.lua lays them out from
--- the right edge in the reverse of this order; both read this. Above
--- `M.showing` because a corner stop under the cursor is a page on screen the
--- same way a tab under the cursor is.
+-- A list rather than a name, because the arrows walk it and a row a hand can
+-- walk has to be a list somewhere. ui.lua lays them out from the right edge in
+-- the reverse of this order; both read this. Above `M.showing` because a
+-- corner stop under the cursor is a page on screen the same way a tab under
+-- the cursor is.
 local function corner_stops()
-    local out = {"discord"}
+    local out = {}
     if (M.name or "") ~= "" then out[#out + 1] = "pilot" end
     return out
 end
@@ -2421,12 +2379,6 @@ local function view_row(r, i)
         -- library says beside the name and the delete key reads as a rule.
         starter = r.starter,
         mark = r.mark and r.mark() or false,
-        -- A row that leaves the game gets a real anchor laid over it by the
-        -- page. Nothing the client does from its own loop is inside the tap
-        -- that asked for it, and a browser will not open a tab for anything
-        -- else, so the finger has to land on the anchor rather than on the
-        -- canvas. Only the community row carries one.
-        link = r.link,
     }
 end
 
@@ -3072,7 +3024,6 @@ end
 -- on a tab.
 local function press_corner(which)
     if which == "pilot" then return M.click_pilot() end
-    if which == "discord" then return M.open_discord() end
     return nil, false
 end
 
@@ -3114,14 +3065,6 @@ function M.view()
                  -- button over a page nobody is at the top of would be a
                  -- cursor in two places. See `corner_lit`.
                  corner_sel = corner_lit(),
-                 -- The one outbound link in this game, as the address the
-                 -- corner button carries. On every layout: a phone drew it as
-                 -- a row on the play page and had no account button anywhere,
-                 -- which is two different answers to one question and no
-                 -- answer at all to the other. Both buttons ride the line the
-                 -- wordmark is on now, wherever that line happens to be.
-                 discord = DISCORD,
-                 discord_hot = M.discord_hot,
                  carousel_hot = M.carousel_hot,
                  -- The question, if one is up. Everything else in the view is
                  -- still filled in: the panel is drawn and then stood down
@@ -3218,22 +3161,6 @@ function M.view()
     if page == "builds" then out.builds = true end
     if page == "points" then out.points = true end
     if page == "newbuild" then out.newbuild = true end
-    -- The Discord page has one job: explain why to go and provide the way in.
-    -- The renderer gives these few lines the page rather than turning them into
-    -- a list of separate claims.
-    if page == "discord" then
-        out.door = true
-        out.door_head = "Rally for the next match."
-        out.door_body = "Meet pilots before the whistle. The people building "
-            .. "Vectorwake read bug reports and talk through new ships, maps, "
-            .. "and rules there."
-        out.door_note = "opens a new tab; your game keeps running"
-        -- The address, in words, because a link that a popup blocker eats is
-        -- not a way in and this is. Cut from the one constant rather than
-        -- written out again: two copies of an address is one address that
-        -- goes stale. The scheme comes off because nobody types it.
-        out.door_addr = (DISCORD:gsub("^https?://", ""))
-    end
     -- One slot as a page: the row travels as `item` and the generic list
     -- stands down, so the drawing is the reading at page size with the buy as
     -- its key. The row list stays a row long for the arrows where there is
@@ -3325,7 +3252,7 @@ function M.view()
         local d = r.detail
         if type(d) == "function" then d = d() end
         out.rail[i] = {label = r.label, icon = r.icon or "about",
-                       detail = d, index = i, link = r.link}
+                       detail = d, index = i}
     end
     if #M.stack == 1 then
         -- No tab is lit while the cursor stands on a corner stop: the lit
@@ -3640,29 +3567,6 @@ local function activate(by)
             or "this game"
         M.confirm("leave " .. place .. "?",
                   {{label = "leave", act = "leave"}, {label = "stay"}})
-        return nil
-    elseif r.act == "discord" then
-        -- A new tab, and the game keeps running behind it: nothing here is
-        -- paused, and a player who came to ask a question has not asked to
-        -- leave the room they are in.
-        --
-        -- The redirect rather than the invite itself. `deploy/caddy` owns
-        -- /discord and the site's own button points at the same path, so an
-        -- invite that has to be reissued is one line of Caddy and not a
-        -- client release that every open tab is behind.
-        --
-        -- Off the web, or from a key. In a browser the page keeps a real
-        -- anchor over this stop, so a tap never arrives here at all: nothing
-        -- the client does from its own loop is inside the gesture, and a tab
-        -- opened outside one is what a popup blocker stops. Two attempts went
-        -- that way first, sys.open_url and then an anchor clicked from Lua,
-        -- and both worked on a desktop and were blocked on every phone.
-        --
-        -- The result is not checked. There is nothing better to do with a no,
-        -- and asking is what put a card with the address on it up before.
-        -- Only ever reached off the web, or from a key. In a browser the
-        -- page has a real anchor over this stop and the tap never gets here.
-        M.click_discord()
         return nil
     elseif r.act == "bind" then
         -- The row stops saying where its control is and starts asking where
@@ -4253,11 +4157,9 @@ end
 -- Whether the pointer is on that button, so it can light the way a lit tab
 -- does. The arena sets it from the same hit list the press comes off.
 M.pilot_hot = false
--- And which of the two the arrows are on, as an index into `corner_stops`.
+-- And which corner stop the arrows are on, as an index into `corner_stops`.
 -- Nil is the usual answer: the cursor is on a tab, or somewhere in a page.
 M.corner_sel = nil
--- And the same for the button beside it.
-M.discord_hot = false
 -- And for the friends page: the add button, and one button on one row.
 M.add_hot = false
 M.found_hot = nil
@@ -4424,26 +4326,6 @@ end
 -- The x on the panel. It shuts the menu rather than stepping back a level,
 -- which is what a cross means everywhere else, and it is drawn only where
 -- there is a game behind to shut it onto.
--- The corner button on the tab row, pressed, which is the same act the play
--- page's own button carries. Off the web, or from a key: in a browser an
--- anchor sits over it and the tap never arrives here at all.
-function M.click_discord()
-    pcall(sys.open_url, DISCORD, {target = "_blank"})
-    return nil, true
-end
-
--- And what the button on the tab row does now: opens the page about the
--- server rather than the server. The row on that page is the link, and it
--- carries the address so the browser can lay a real anchor over it, which is
--- the only way a tab opens from a tap on a phone.
-function M.open_discord()
-    if not M.open then return nil, false end
-    M.stack = {"root", "discord"}
-    M.corner_sel = nil
-    M.note = nil
-    return nil, true
-end
-
 function M.click_close()
     if not M.open then return nil, false end
     return nil, M.close()

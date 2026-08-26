@@ -135,96 +135,6 @@ function M.new(context)
         F.layer:seg(cx, ry(cy - r * 0.05), cx, ry(cy + r * 0.45), 1.4 * F.scale, col, true)
     end
 
-    -- Discord's mark, traced from Discord's own file and drawn the way this rail
-    -- draws everything: a faint fill and an outline, in whatever color the stop is
-    -- wearing.
-    --
-    -- It was a solid Blurple silhouette for a commit, because discord.com/branding
-    -- says "please do not edit, change, distort, recolor, or reconfigure the
-    -- Discord logo" and names three colors it may appear in. Chris has that call
-    -- and made it: a stop that neither lights with its neighbors nor is drawn like
-    -- them is a foreign object on the rail, and a recognizable outline linking to
-    -- somebody's own server is what half the web does. The shape is exact; only
-    -- the ink and the fill are the rail's.
-    --
-    -- The geometry is the official path, sampled into rings and triangulated with
-    -- the eyes as holes, because the layer has no path, no bezier and no even-odd
-    -- rule to do it with at runtime. Baked rather than computed at load: it is the
-    -- same answer every time, and an ear clipper in the client would be a hundred
-    -- lines to arrive at a constant.
-    --
-    -- The triangles are still what fills it. Stroking the rings alone would leave
-    -- the eyes as unfilled shapes rather than holes, which is the same picture on
-    -- this background and the wrong one the moment anything is behind it.
-    --
-    -- Forty samples around the body and twelve around each eye. Eighty was tried
-    -- and is indistinguishable at the thirteen points the rail gives this, which
-    -- is the only size it is ever drawn at.
-    --
-    -- A unit box, y down, x from -1 to 1. Indices are one-based triples into it.
-    local CLYDE_V = {
-        0.6930, -0.6418, 0.5295, -0.7066, 0.3600, -0.7536, 0.2374, -0.6812,
-        0.0754, -0.6762, -0.1000, -0.6750, -0.2474, -0.7018, -0.3826, -0.7487,
-        -0.5515, -0.6995, -0.7087, -0.6219, -0.8084, -0.4523, -0.8856, -0.2838,
-        -0.9418, -0.1164, -0.9785, 0.0501, -0.9974, 0.2158, -1.0000, 0.3806,
-        -0.9505, 0.5322, -0.7921, 0.6299, -0.6363, 0.7041, -0.4828, 0.7536,
-        -0.3896, 0.6045, -0.5178, 0.5176, -0.4173, 0.5048, -0.2470, 0.5547,
-        -0.0746, 0.5787, 0.0982, 0.5770, 0.2697, 0.5496, 0.4382, 0.4963,
-        0.4956, 0.5287, 0.3990, 0.6248, 0.5009, 0.7527, 0.6551, 0.6956,
-        0.8112, 0.6188, 0.9698, 0.5178, 1.0000, 0.3409, 0.9924, 0.1609,
-        0.9664, -0.0123, 0.9228, -0.1790, 0.8623, -0.3394, 0.7857, -0.4938,
-        -0.3322, 0.2720, -0.4228, 0.2444, -0.4874, 0.1718, -0.5120, 0.0699,
-        -0.4875, -0.0317, -0.4230, -0.1039, -0.3318, -0.1313, -0.2401, -0.1034,
-        -0.1758, -0.0309, -0.1524, 0.0703, -0.1767, 0.1720, -0.2411, 0.2444,
-        0.3327, 0.2720, 0.2421, 0.2444, 0.1774, 0.1718, 0.1528, 0.0699,
-        0.1774, -0.0317, 0.2419, -0.1040, 0.3332, -0.1313, 0.4248, -0.1034,
-        0.4891, -0.0308, 0.5125, 0.0705, 0.4883, 0.1721, 0.4241, 0.2445,
-    }
-
-    local CLYDE_T = {
-        49, 56, 55, 57, 56, 49, 45, 44, 15, 15, 14, 13,
-        13, 12, 11, 11, 10, 9, 9, 8, 7, 4, 3, 2,
-        2, 1, 40, 40, 39, 38, 38, 37, 36, 36, 35, 34,
-        34, 33, 32, 32, 31, 30, 28, 27, 26, 26, 25, 24,
-        22, 21, 20, 20, 19, 18, 18, 17, 16, 16, 15, 44,
-        50, 49, 55, 58, 57, 49, 46, 45, 15, 15, 13, 11,
-        11, 9, 7, 4, 2, 40, 40, 38, 36, 36, 34, 32,
-        32, 30, 29, 28, 26, 24, 22, 20, 18, 18, 16, 44,
-        51, 50, 55, 59, 58, 49, 46, 15, 11, 11, 7, 6,
-        5, 4, 40, 40, 36, 32, 28, 24, 23, 22, 18, 44,
-        52, 51, 55, 59, 49, 48, 47, 46, 11, 11, 6, 5,
-        40, 32, 29, 23, 22, 44, 41, 52, 55, 59, 48, 47,
-        47, 11, 5, 40, 29, 28, 23, 44, 43, 41, 55, 54,
-        59, 47, 5, 23, 43, 42, 41, 54, 53, 60, 59, 5,
-        23, 42, 41, 61, 60, 5, 28, 23, 41, 61, 5, 40,
-        28, 41, 53, 62, 61, 40, 28, 53, 64, 63, 62, 40,
-        28, 64, 63, 63, 40, 28,
-    }
-
-    -- Where each closed ring begins and ends in CLYDE_V, in vertices: the body,
-    -- then an eye each. Ranges rather than a second copy of the points, since the
-    -- triangulation was built by laying the rings out in exactly this order.
-    local CLYDE_RINGS = {{1, 40}, {41, 52}, {53, 64}}
-
-    local function mark_discord(cx, cy, r, col)
-        for i = 1, #CLYDE_T, 3 do
-            local t = {CLYDE_T[i] * 2 - 1, CLYDE_T[i + 1] * 2 - 1,
-                       CLYDE_T[i + 2] * 2 - 1}
-            F.layer:tri(cx + CLYDE_V[t[1]] * r, ry(cy + CLYDE_V[t[1] + 1] * r),
-                  cx + CLYDE_V[t[2]] * r, ry(cy + CLYDE_V[t[2] + 1] * r),
-                  cx + CLYDE_V[t[3]] * r, ry(cy + CLYDE_V[t[3] + 1] * r),
-                  pal.a(col, 0.10))
-        end
-        for _, ring in ipairs(CLYDE_RINGS) do
-            local pts = {}
-            for k = ring[1], ring[2] do
-                pts[#pts + 1] = cx + CLYDE_V[k * 2 - 1] * r
-                pts[#pts + 1] = ry(cy + CLYDE_V[k * 2] * r)
-            end
-            F.layer:outline(pts, 1.2 * F.scale, col, true)
-        end
-    end
-
     local function mark_leave(cx, cy, r, col)
         -- A doorway with the arrow going out of it, drawn open on the side the
         -- arrow leaves by so the shape says which way it means.
@@ -257,7 +167,7 @@ function M.new(context)
 
     local MARKS = {zones = mark_zones, pilot = mark_pilot, team = mark_team,
                    settings = mark_settings, controls = mark_controls,
-                   about = mark_about, discord = mark_discord, leave = mark_leave,
+                   about = mark_about, leave = mark_leave,
                    friends = mark_friends, upgrades = mark_upgrades}
 
     local function draw_mark(kind, cx, cy, r, col, cls)

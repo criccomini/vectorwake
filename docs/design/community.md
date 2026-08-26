@@ -5,9 +5,12 @@ vectorwake carries no text between players, permanently, per
 chat also priced it: any league or clan scene will organize on Discord, so the
 community's real home is somewhere we do not control. This document is about
 paying that price on purpose instead of being surprised by it. We create the
-server, we hold the keys, and the game points at it.
+server, we hold the keys, and the site is where a player finds it.
 [Decision 39](../architecture/decisions.md#39-the-community-lives-on-discord-and-the-game-only-points-at-it)
-records the choice; this is what it looks like in practice.
+records the choice and
+[decision 69](../architecture/decisions.md#69-discord-is-off-the-game-and-on-the-site)
+took the pointer out of the client; this is what the two look like in
+practice.
 
 ## Why Discord
 
@@ -72,18 +75,25 @@ the page, so an invite embedded there would outlive every attempt to revoke
 it. Behind the redirect, rotating a leaked or raided invite is editing one
 Caddy line, and every place that ever named the address stays correct.
 
-In the client, the page about the room names the address in words, under the
-button that opens it: `play.vectorwake.net/discord`, set in the mono because
-an address is a machine reading and this interface quotes those verbatim. It
-is cut from the same constant the button carries, so the two cannot disagree.
-Making it tappable is a real question rather than a given. Browsers allow
-`window.open` only inside a user gesture, and Defold polls input once a frame.
-By the time Lua acts, the gesture may already be spent and the popup blocker
-eats the call. The page publishes a real DOM anchor over the drawn Join Discord
+The door is on the site, and only on the site. `deploy/site` carries it in the
+top bar of every page, in the letter on the front page, in the footer, and in
+the support and deletion routes that need a private contact. The game carries
+nothing: no button, no page, no address, no mark, per
+[decision 69](../architecture/decisions.md#69-discord-is-off-the-game-and-on-the-site).
+Somebody who never opens the site never learns from the client that there is a
+server, which is the price of that and is paid on purpose. What it buys is a
+game with no way out of it.
+
+That took a fight with the browser while it lasted, and the record is worth
+keeping because the next outbound link will meet the same wall. Browsers allow
+`window.open` only inside a user gesture, and Defold polls input once a frame,
+so by the time Lua acts the gesture may already be spent and the popup blocker
+eats the call. The way through was a real DOM anchor laid over the drawn
 button, the same approach the login card uses for its fields, per
-[decision 37](../architecture/decisions.md#37-the-phones-own-keyboard-through-an-element-the-canvas-cannot-be),
-so the navigation happens inside the tap. The address remains on the page as a
-fallback a player can read and retype.
+[decision 37](../architecture/decisions.md#37-the-phones-own-keyboard-through-an-element-the-canvas-cannot-be).
+The about page's privacy and terms rows do not need it: they navigate the tab
+the game is already in rather than opening a second one, and a same-tab
+navigation is not a popup.
 
 ## The wire
 
@@ -271,7 +281,8 @@ bounded signals that record's reconsider clause describes, not text.
 
 It is not identity. Nobody's Discord name means anything in an arena, no role
 in the server grants anything in the game, and a pilot who never opens Discord
-is a complete player who missed some conversation.
+is a complete player who missed some conversation. The game does not mention
+it, so that pilot is the default rather than the exception.
 
 It is not a dependency. Nothing in the fleet reads from Discord, waits on it,
 or fails when it is down. The integration losing its platform would cost us a

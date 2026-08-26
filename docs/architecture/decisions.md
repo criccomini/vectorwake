@@ -1599,7 +1599,9 @@ cost: any future league or clan scene will organize on Discord, which means
 the community's real home is somewhere we do not control. This record accepts
 that cost deliberately instead of letting it happen to us. We create the
 Discord server, own it, and hold its admin keys, and the game's only
-connection to it is pointing at it.
+connection to it is pointing at it. (The game stopped pointing at it in
+[decision 69](#69-discord-is-off-the-game-and-on-the-site); the site does the
+pointing now, and everything else in this record stands.)
 
 The reasoning is the same one that removed chat, run forwards. We refused to
 carry text because moderation is a permanent commitment this project cannot
@@ -3129,3 +3131,63 @@ reader wanted it, which is the point but is also one fewer thing they control.
 which point the ending has room it does not need; or a zone turns up whose
 ending is not a roster and a score, which would make this a melee-and-duel
 answer rather than the shared one.
+
+## 69. Discord is off the game, and on the site
+
+**Status:** accepted, superseding the client's half of decision 39
+
+**Decision:** every trace of Discord comes out of the client. The corner button
+on the tab row, the page it opened, the copy on that page explaining why to go,
+the invite address printed under it, the traced mark that stood beside the
+word, the constant holding the redirect, and the anchor machinery the page laid
+over the drawn button. Before the corner it was a row at the foot of the play
+page, drawn as a button rather than as a line of the list because it was the
+one row that did not lead anywhere inside the game. That shape goes too:
+nothing else ever wore it.
+
+The community keeps its server and the door stays open. `deploy/site` carries
+the invite in the top bar of every page, in the letter on the front page, in
+the footer, and in the support and account-deletion routes, and both Caddy
+redirects stay exactly as they were, so rotating a leaked invite is still one
+line and nothing shipped carries a `discord.gg` code. What changed is which
+surface points at it.
+
+**Why:** asked for. The argument for it being in the client was that the game
+carries no chat and should be honest about where the talking happens. The
+argument against is that it was the one control in a game about flying that
+took a player out of the game, and it sat in the corner of every page and both
+layouts. A stranger's first session met a button leaving for somewhere they had
+not been told about, which is why it grew a page explaining itself first, and a
+control that needs a page to justify its existence is a control worth
+questioning.
+
+What comes out with it is more than the surface. `pages.door` was a whole page
+renderer with one caller. The button-shaped stage row had no page left that
+used it. The rail and the stage each published a DOM anchor for a link no row
+carries any more. `menu.lua` no longer has an outbound constant, and the corner
+of the tab row went from two stops to one, which means it can now be empty: a
+session before a call sign is minted has no button there at all, and the arrows
+wrap between the two ends of the tabs alone.
+
+**Cost:** the game is reachable without the site. Somebody handed
+`play.vectorwake.net` and nothing else now has no way to learn there is a
+community at all, where a button in the corner of every page used to tell them.
+That is the whole of the trade. Decision 39's cascade about the game's social
+life happening off the game still holds and holds harder now: the game must
+read complete to a player who never finds the server, because nothing in the
+game will mention that one exists.
+
+The client also keeps two outbound links, the privacy notice and the terms on
+the about page, so "nothing leaves the game" is not quite the rule. Those
+navigate the tab the game is already in rather than opening a second one, which
+is what let the popup machinery go with Discord.
+
+**Reconsider if:** the server turns out to be where players are retained and
+the site is not carrying enough of them to it, in which case the thing to build
+is smaller than a page: the ending is already the screen a player reads after a
+match, and it already has one key on it.
+
+**Cascades:** decision 39 keeps everything about the server, the ownership, the
+one-way wire and the redirect; the sentence in it that says the game's only
+connection to the community is pointing at it is what this supersedes. The game
+has no connection to it now. Decision 28 is untouched.

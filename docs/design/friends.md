@@ -155,10 +155,10 @@ a friend is made: you played, it was good, and their name is in front of you.
 **Seeing and joining** happen on the friends page too, at the top. A friend in
 a game reads as their name, the game, and a press that puts you in it.
 
-**The page** is a tab of its own. It was a row on the play page first, for the
-reason [menu.md](menu.md) gives about Discord: "this is where somebody is
-already thinking about who to play with", and a tab would have put "who is on"
-beside "how loud is the music" in a row of equals.
+**The page** is a tab of its own. It was a row on the play page first, on the
+argument that this is where somebody is already thinking about who to play
+with, and that a tab would put "who is on" beside "how loud is the music" in a
+row of equals.
 
 That argument had it backwards. The play page is somewhere you go in order to
 join a game, so a row on it answers "who is on" only for a player who was

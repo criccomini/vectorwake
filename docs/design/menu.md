@@ -170,16 +170,8 @@ vectorwake
 
               your call sign sits at the far end of the row and is the way
               into your account and career: a page reached from the one
-              place already naming it, rather than a fifth stop. Beside it,
-              Discord, which opens a page about the room rather than the
-              room: why there is one, one button that opens it, the address
-              in words under that for when a popup blocker eats the button,
-              and what actually happens in there. One thing on it answers a
-              press, and it is drawn as a button rather than as a row, which
-              is what the four rows it replaced could not say. Both corner
-              stops are drawn as buttons, which on a phone there is no
-              corner for: there the play page carries the Discord one and the
-              top of the screen is the wordmark alone
+              place already naming it, rather than a fifth stop. It is drawn
+              as a button, and it is the only thing on that end of the row
 
 in a match
 ├ play        the same list, because the way out of the game you are in is a
@@ -221,9 +213,8 @@ hover is still the cursor, because there is one cursor and it is the list you
 are reading; on the rail, crossing the row on the way to somewhere else can
 no longer take a page off the screen.
 
-The two buttons at the far end of the row are stops on it, so they are lit on
-the same rule: the account button while the account page is up, the Discord
-button while its page is.
+The button at the far end of the row is a stop on it, so it is lit on the same
+rule as a tab: the account button while the account page is up.
 
 ## What the window decides
 
@@ -243,19 +234,20 @@ at desktop size in 390 points of screen. Every page lost its bottom half.
 Landscape therefore takes the top row, which is the right answer for it: 56
 points of height against the bottom bar's 84, at the size a phone reads.
 
-The far end of the top line carries two buttons on both layouts, the account
-and the way out to Discord, with the wordmark giving up size to make room and
-Discord wearing its mark alone where the word will not fit. The tab row is
-bounded by them and gives up its gaps before its type. Laid out from opposite
-ends and never told about each other, the two ran into the middle of a
-landscape phone and the last tab was drawn under a button that took its taps.
+The far end of the top line carries the account button on both layouts, with
+the wordmark giving up size to make room for it. The tab row is bounded by it
+and gives up its gaps before its type. Laid out from opposite ends and never
+told about each other, the two ran into the middle of a landscape phone and the
+last tab was drawn under a button that took its taps. There were two buttons
+there until the way out to Discord came off the row, and the one left is still
+laid out and walked as a row, because that is what the arrows treat it as.
 
-They are on that row, which took saying. Right off the last tab lands on
-Discord and right again on the account, left walks back, and the row loops
-from either end. Enter presses one, and so does down, which is what down means
-on a tab: what is under one of these is a page or the place the talking
-happens. Before that a hand on the arrows could not reach either, so the way
-to an account was a mouse or nothing.
+It is on that row, which took saying. Right off the last tab lands on the
+account, left walks back, and the row loops from either end. Enter presses it,
+and so does down, which is what down means on a tab: what is under it is a
+page. Before that a hand on the arrows could not reach it, so the way to an
+account was a mouse or nothing. A session with no call sign yet has no button
+there, and the arrows wrap between the two ends of the tabs alone.
 
 ## Behind it, the sky the game is played under
 
@@ -279,11 +271,11 @@ help page draws a key as, so a hand that has learned one has learned
 all of them.
 
 Three controls used to say otherwise. Add on the friends page wore the
-chamfered bracket that holds a cluster together, and the account and Discord
-buttons at the end of the top line were rounded pills, on the argument that a
-pill is the shape the web puts a link in. Each was a fair reading of its own
-shape and the wrong answer about the object: they do what MENU does, on pages
-where MENU itself is one press away.
+chamfered bracket that holds a cluster together, and the two buttons then at
+the end of the top line were rounded pills, on the argument that a pill is the
+shape the web puts a link in. Each was a fair reading of its own shape and the
+wrong answer about the object: they do what MENU does, on pages where MENU
+itself is one press away.
 
 The bracket keeps everything that is not a button, which is a field, a card or
 a panel. So the two shapes now say which of those a rectangle is, and that is
@@ -340,16 +332,16 @@ opens on the tab row.
 
 The zones, and nothing else. They were three sections at one point, zones and
 friends and community, because run together in one column they read as one list
-where Discord is a game you could join and friends is a room with nobody in it.
-Friends is a tab of its own now, and Discord is a corner button wherever there
-is a corner to put it in. The heading that survived those two went as well:
-with one list left, a label reading "zones" over it was the interface naming
-what the reader could already see.
+where a chat server is a game you could join and friends is a room with nobody
+in it. Friends is a tab of its own now, and the community section is out of the
+client altogether. The heading that survived those two went as well: with one
+list left, a label reading "zones" over it was the interface naming what the
+reader could already see.
 
-Where Discord is drawn it is a button rather than a row, with its own mark on
-it and its name spelled the way Discord spells it. It is the one thing here
-that is not a place inside the game, and a row is how the menu writes places
-inside the game.
+So every row on this page is a place inside the game, which is what a row in
+this menu means. The community row was drawn as a button instead, because it
+was the one thing here that was not; there is nothing left in the menu that
+needs that shape.
 
 `client/arena/directory.lua` asks a directory what is running. Opening the list
 asks at once, and it re-asks every three seconds for as long as the list is the
