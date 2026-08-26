@@ -19,6 +19,7 @@ mod experiment;
 mod fleet;
 mod growth;
 mod mapforge;
+mod melee_probe;
 mod meta;
 mod metrics;
 mod modes;
@@ -915,6 +916,11 @@ async fn main() {
     // What the ladder cannot see: the roster on a real map, with walls in it.
     if std::env::args().nth(1).as_deref() == Some("drill") {
         drill::run_check();
+        return;
+    }
+    // What a team battle looks like from inside, per pilot.
+    if std::env::args().nth(1).as_deref() == Some("melee") {
+        melee_probe::run();
         return;
     }
     if std::env::args().nth(1).as_deref() == Some("mapforge") {
@@ -7754,6 +7760,28 @@ mod tests {
             0,
             "and an add-on the map leaves out is a slot this arena does not have"
         );
+        // Each add-on is clamped at its own ceiling. Spray is a count of
+        // rounds rather than a rung and climbs to five where the rest stop at
+        // three, so one number for all of them silently capped it: melee asked
+        // for five from the day it shipped and flew three without a warning.
+        let (w, warn) = tuned(
+            r#"
+            [arena.kit]
+            gun_mods = { multi = 5, freeze = 9 }
+        "#,
+        );
+        assert!(warn.is_empty(), "{warn:?}");
+        assert_eq!(
+            w.cfg.kit_ceiling[sim::slot_mod(sim::TRIG_GUN, sim::MOD_MULTI) as usize],
+            sim::MOD_MULTI_MAX,
+            "spray reaches its own ceiling of five"
+        );
+        assert_eq!(
+            w.cfg.kit_ceiling[sim::slot_mod(sim::TRIG_GUN, sim::MOD_FREEZE) as usize],
+            sim::MOD_MAX,
+            "and a rung add-on still stops at three"
+        );
+
         // Named add-ons are checked, not guessed at.
         let (_, warn) = tuned(
             r#"

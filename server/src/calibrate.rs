@@ -318,7 +318,10 @@ fn wear(world: &mut sim::World, ship: usize, stage: &Stage) -> u32 {
 /// that was pulled, and the report needs the trigger: "the shrapnel stage won
 /// nothing" and "the shrapnel stage never threw a bomb" are different findings
 /// that look identical from the win column.
-fn spec_triggers(cfg: &sim::sim_settings, class: u8) -> std::collections::HashMap<u8, usize> {
+pub(crate) fn spec_triggers(
+    cfg: &sim::sim_settings,
+    class: u8,
+) -> std::collections::HashMap<u8, usize> {
     let mut m = std::collections::HashMap::new();
     let c = &cfg.classes[class as usize];
     for t in 0..sim::TRIG_COUNT {

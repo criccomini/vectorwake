@@ -953,6 +953,18 @@ end
 -- and PLAYERS grew the row the day it stopped being INFO.
 local chip_right = 0
 
+-- The middle of the top row, which everything standing in it lines up on.
+--
+-- The row is the way into the menu at the left, the band in the middle and
+-- the dial's readouts at the right, and a key's height sets it: the corner
+-- key is KEY_H tall and the band is drawn to match. The readouts each worked
+-- out a baseline of their own from the padding, which left them four points
+-- high on a monitor and ten on a phone, and the padding is a horizontal
+-- measurement that has no business setting a vertical one.
+local function row_mid()
+    return F.safe_t + PAD * F.scale + KEY_H * F.scale / 2
+end
+
 -- The map is about a quarter of the frame, capped three ways: against the
 -- window's width so it cannot run off the left edge, against its height so
 -- there is still room for the feed under it, and against the corner the MENU
@@ -971,8 +983,10 @@ local function dial()
     -- origin landing on a half pixel would put the fraction back into every
     -- blip it was taken out of. Density is not always a whole number and
     -- neither, then, is the padding.
+    -- The strip above the dial is the readouts', so the dial starts where
+    -- their row ends rather than at a padding of its own.
     local ix, iy = math.floor(F.w - F.safe_r - pad - side),
-                   math.floor(F.safe_t + pad + 18 * F.scale)
+                   math.floor(row_mid() + KEY_H * F.scale / 2)
     side = math.floor(side)
     -- Filed here rather than in the two functions that draw into it, because
     -- the dial and the map are the same corner and want the same word beside
@@ -987,8 +1001,8 @@ end
 -- How much vertical room it takes, so the feed under it can be told rather
 -- than guess.
 function M.radar_span()
-    local _, _, side = dial()
-    return F.safe_t + PAD * F.scale * 2 + side + 18 * F.scale
+    local _, iy, side = dial()
+    return iy + side + 14 * F.scale
 end
 
 -- You, as an arrow. On any view of the arena the one thing worth knowing
@@ -3334,14 +3348,19 @@ end
 local function link(q)
     local pad = (M.compact and 8 or PAD) * F.scale
     local right = F.w - F.safe_r - pad
-    local base = F.safe_t + pad + 13 * F.scale
+    local mid = row_mid()
+    -- The bars are one block on the row rather than four things each centered
+    -- on it. A meter is a staircase standing on a floor, so the floor is what
+    -- gets placed: the tallest bar is centered and the rest rest on its line.
+    local tall = (3 + 3 * 2.6) * F.scale
+    local foot = mid + tall / 2
     for k = 0, 3 do
         local bh = (3 + k * 2.6) * F.scale
         local bx = right - (26 - k * 6) * F.scale
-        rect(bx, base - bh, 4 * F.scale, bh,
+        rect(bx, foot - bh, 4 * F.scale, bh,
              k < q and pal.a(pal.PAID, 0.85) or pal.a(pal.DIM, 0.22))
     end
-    txt("LINK", right - 34 * F.scale, base - 4 * F.scale, (FONT - 3) * F.scale,
+    txt("LINK", right - 34 * F.scale, mid, (FONT - 3) * F.scale,
         pal.a(pal.DIM, 0.8), "right")
     -- Pointing at this one names nothing. Four bars labeled LINK beside a
     -- millisecond count are already a sentence about the connection, and a
@@ -3525,13 +3544,12 @@ end
 -- long that nobody can hold in their head or call across a room.
 local function coords(me)
     if not me then return end
-    local pad = (M.compact and 8 or PAD) * F.scale
     local x = dial()
-    local base = F.safe_t + pad + 13 * F.scale
-    txt("POS", x, base - 4 * F.scale, (FONT - 3) * F.scale, pal.a(pal.DIM, 0.8))
+    local mid = row_mid()
+    txt("POS", x, mid, (FONT - 3) * F.scale, pal.a(pal.DIM, 0.8))
     txt(string.format("%d,%d", math.floor(sim.ship_x(me) / 16),
                       math.floor(sim.ship_y(me) / 16)),
-        x + 26 * F.scale, base - 4 * F.scale, (FONT - 3) * F.scale, pal.a(pal.INK, 0.85))
+        x + 26 * F.scale, mid, (FONT - 3) * F.scale, pal.a(pal.INK, 0.85))
 end
 
 -- The flags, as flags.

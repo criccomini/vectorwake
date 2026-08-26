@@ -1500,13 +1500,18 @@ impl Bot {
         out
     }
 
-    /// The charges, which every hull carries three of and no bot has ever
-    /// spent. A repel is the answer to something already too close to outrun,
-    /// and a burst is what you throw when the answer to that did not work.
+    /// The charges. A repel is the answer to something already too close to
+    /// outrun, and a burst is what you throw when the answer to that did not
+    /// work.
     ///
     /// Slot zero is the repel and slot one the burst, which is what the
     /// baseline builds and what every shipped zone keeps. A hull whose slot is
     /// empty simply never passes the count test.
+    ///
+    /// A match deals the rack once and a death re-deals only the frame, so
+    /// these three are a pilot's whole supply for three minutes. Spending them
+    /// on anything but a round that is actually arriving is spending the rest
+    /// of the match.
     fn charge(&mut self, o: &Own) -> u16 {
         if !o.alive || o.in_safe {
             return 0;
@@ -1519,10 +1524,28 @@ impl Bot {
         // How late a pilot leaves the push. A good one reads the round coming
         // and spends the charge on it; a poor one fires the moment anything is
         // in the air, which is a charge gone and the round still arriving.
+        //
         let notice = 45.0 + (1.0 - dial) * 90.0;
-        let shoved = threat.is_some_and(|t| t.eta < notice && t.miss < t.blast + 24.0);
-        let crowded = self.dist < 150.0 && matches!(self.mode, Mode::Fight(_));
-        if o.charges[0] > 0 && (shoved || (crowded && o.energy < 0.45)) {
+        let arriving = threat.filter(|t| t.eta < notice && t.miss < t.blast + 24.0);
+        // And which arriving rounds are worth one of the three.
+        //
+        // A bomb on sight: it is the round a hull cannot absorb and the one a
+        // turn cannot outrun, and shoving it wide is the whole reason the
+        // charge exists. A bullet only once there is no bar left to spend on
+        // it, because a bullet costs an eighth of a hull and a charge is a
+        // third of the match's supply.
+        //
+        // Arriving alone used to be the test, next to a second one that asked
+        // for no incoming round at all: close range and under 45% energy, which
+        // in a room carrying ninety rounds means "am I in a fight". Between
+        // them every pilot at every skill emptied the rack by sixteen seconds
+        // of a hundred and eighty and played the other hundred and sixty with
+        // nothing. Dropping the second one moved that by three seconds, because
+        // in a firefight a round that will genuinely hit is always seconds
+        // away; what was missing is that most of them are worth taking.
+        // Measured with `vectorwake-server melee`.
+        let worth_a_charge = arriving.is_some_and(|t| t.blast > 0.0 || o.energy < 0.30);
+        if o.charges[0] > 0 && worth_a_charge {
             return sim::BTN_USE;
         }
         // A burst: sixteen rounds in every direction, which is a weapon only at
@@ -1791,12 +1814,13 @@ impl Bot {
         // outside the blast is not safe if the plan immediately carries the
         // hull back into it.
         let near = bomb.blast + o.radius + 160.0;
-        // How far out a bomb is still worth throwing. These were 700, 650,
-        // 560 and 520, which is inside the range a pilot acquires a target
-        // at: sight is sixty tiles, so a bot spends most of its approach
-        // beyond the window and the funnel's largest rejection on a built
-        // hull was "too far", 3126 of 7235 calls. A bomb is safest at range
-        // and the numbers forbade it exactly there.
+        // How far out a bomb is still worth throwing, as reach beyond the
+        // standoff rather than a fixed ring. These were 700, 650, 560 and 520,
+        // which is inside the range a pilot acquires a target at: sight is
+        // sixty tiles, so a bot spent most of its approach beyond the window
+        // and the funnel's largest rejection on a built hull was "too far",
+        // 3126 of 7235 calls. A bomb is safest at range and the numbers
+        // forbade it exactly there.
         //
         // Alpha, forty bots, ten minutes, a thirty-point kit: 303 bomb
         // rounds against 164, which is z 6.6, and the gun-to-bomb ratio goes
@@ -1804,12 +1828,26 @@ impl Bot {
         // suicide, so the wider window is not pilots blowing themselves up.
         // What binds now is cadence and the self-blast clearance, which are
         // the two things that should bind a bomb.
-        let far = (near + 180.0).max(match strategy {
-            Strategy::Bombardier => 900.0,
-            Strategy::Heavy => 850.0,
-            Strategy::Denier => 800.0,
-            _ => 800.0,
-        });
+        //
+        // Reach rather than a ring because `near` climbs with the blast and a
+        // ring does not, so the window used to be squeezed from below by
+        // exactly what a rung bought. A bomb rung buys blast and nothing else,
+        // the damage at the center being flat across the ladder, which made
+        // every point spent on the ladder a narrower permission to use it.
+        // Measured: putting the whole roster on the bomber build threw fewer
+        // bombs than leaving them on bare rungs, 1297 pulls against 1895.
+        //
+        // Each number is its old ring less what a rung-zero hull stands off
+        // by, which is an eighty-pixel blast and about twenty of hull on top
+        // of the fixed hundred and sixty, rounded to the nearest fifty. So a
+        // bare bomb keeps the window it had and every rung above it widens
+        // rather than narrows.
+        let far = near
+            + match strategy {
+                Strategy::Bombardier => 650.0,
+                Strategy::Heavy => 600.0,
+                _ => 550.0,
+            };
         if dist <= near || dist >= far {
             return approach;
         }

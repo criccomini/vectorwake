@@ -232,6 +232,38 @@ if pylon and fifteen and caisson and nineteen and clock then
               or "no menu key")
 end
 
+-- --- the top row is a row ---------------------------------------------------
+
+-- Three things can stand on the top row: the way into the menu at the left,
+-- the band in the middle and the dial's readouts at the right. Whichever of
+-- them is up there lines up on one center. Each worked its own vertical out
+-- of the padding once, which is a horizontal measurement, and left the
+-- readouts four points high on a monitor and ten on a phone.
+--
+-- Measured against the key's published box, because that is the height the
+-- row takes from and the one thing here that cannot drift out of step with
+-- itself. `band` says whether the band is up there to be measured: a phone
+-- drops it to a line of its own, which is the shape that leaves the key and
+-- the readouts alone in the row.
+local function row_shares_a_center(where, band)
+    local key = box("open")
+    local pos, bars = drawn("POS"), drawn("LINK")
+    local tick = band and drawn("0:33") or nil
+    if not (key and pos and bars) or (band and not tick) then
+        check("the row is drawn on " .. where, false,
+              table.concat(words(), " | "))
+        return
+    end
+    local mid = key.y + key.h / 2
+    local off = math.max(math.abs(down(pos) - mid),
+                         math.abs(down(bars) - mid),
+                         tick and math.abs(down(tick) - mid) or 0)
+    check("the row shares one center on " .. where, off < 0.5,
+          string.format("%.1f off a center of %.1f", off, mid))
+end
+
+row_shares_a_center("a monitor", true)
+
 -- A phone is the same drawing at its own size, and the sides stay on it: the
 -- band came off the corner row's line to make room for them once, and the
 -- key that crowded it is gone.
@@ -249,6 +281,9 @@ if small_clock and clock then
           math.abs(small_clock.px - clock.px) < 0.5,
           string.format("%.0f against %.0f", small_clock.px, clock.px))
 end
+-- The band drops to a line of its own here, so this is the key against the
+-- readouts. That is the pair the padding pulled ten points apart.
+row_shares_a_center("a phone", false)
 
 -- --- the band is the control -----------------------------------------------
 

@@ -369,15 +369,29 @@ const NAMED_COMPETENCE: [Competence; 8] = [
     },
 ];
 
-/// These are the plans the shipped name-and-hull hash resolved before plans
-/// became explicit. Keeping them preserves every existing pilot's purchases.
+/// What each authored pilot saves up for, in roster order.
+///
+/// These began as the plans the shipped name-and-hull hash resolved before
+/// plans became explicit, kept as they were so that no existing pilot's
+/// purchases went to waste. Two have since moved for a reason worth more than
+/// that, and a moved pilot keeps everything it owns: a plan decides what an
+/// account buys next and how it spends thirty points, never what it may hold.
+///
+/// A plan has to agree with the strategy beside it, because the brain decides
+/// when to throw a bomb and the plan decides whether there is one to throw.
+/// Halcyon and Ozone are the two strategies that open the bombing gates, and
+/// both carried Runner: the whole of a Team Battle room was six gun kits and
+/// two more, nobody owned a single rung of the bomb ladder the zone sells, and
+/// the two pilots whose brains asked for the weapon most were the two least
+/// equipped to answer. `named_builds_agree_with_named_strategies` keeps the two
+/// tables in step from here.
 const NAMED_BUILDS: [BuildPlan; 8] = [
     BuildPlan::Runner,
-    BuildPlan::Runner,
+    BuildPlan::Bomber,
     BuildPlan::Gunner,
     BuildPlan::Gunner,
     BuildPlan::Runner,
-    BuildPlan::Runner,
+    BuildPlan::Bomber,
     BuildPlan::Runner,
     BuildPlan::Runner,
 ];
@@ -543,11 +557,11 @@ mod tests {
     fn shipped_pilots_keep_their_careers_and_builds() {
         let expected = [
             ("Kestrel", 0, 0.05, BuildPlan::Runner),
-            ("Halcyon", 3, 0.35, BuildPlan::Runner),
+            ("Halcyon", 3, 0.35, BuildPlan::Bomber),
             ("Vantage", 6, 0.65, BuildPlan::Gunner),
             ("Ridgeline", 2, 0.82, BuildPlan::Gunner),
             ("Sable", 5, 0.90, BuildPlan::Runner),
-            ("Ozone", 1, 0.54, BuildPlan::Runner),
+            ("Ozone", 1, 0.54, BuildPlan::Bomber),
             ("Tessellate", 4, 0.74, BuildPlan::Runner),
             ("Cirrus", 2, 0.20, BuildPlan::Runner),
         ];
@@ -559,6 +573,45 @@ mod tests {
             let midpoint = (spec.competence.aim + spec.competence.judgment) / 2.0;
             assert!((midpoint - skill).abs() < 0.000_001);
             assert_eq!(spec.build, build);
+        }
+    }
+
+    /// A pilot whose brain opens the bombing gates has to own a bomb.
+    ///
+    /// `choose_weapon` gives Bombardier and Heavy the short cadence and the
+    /// energy license that let them initiate with the weapon; every other
+    /// strategy waits for a crowd or a finisher. A pilot in that pair on a gun
+    /// plan spends the match asking for a bomb it never bought, which is how
+    /// the shipped roster came to hold no bomb rung at all.
+    #[test]
+    fn named_builds_agree_with_named_strategies() {
+        for (n, spec) in (0..CALIBRATED.len()).map(individual).enumerate() {
+            let wants_a_bomb = matches!(
+                spec.behavior.strategy,
+                Strategy::Bombardier | Strategy::Heavy
+            );
+            assert_eq!(
+                wants_a_bomb,
+                spec.build == BuildPlan::Bomber,
+                "{} is a {:?} on the {:?} plan: seat {n} of the roster",
+                spec.callsign,
+                spec.behavior.strategy,
+                spec.build
+            );
+        }
+    }
+
+    /// And the room a zone actually seats has to hold one of each plan, or a
+    /// ladder the shop sells is a ladder nobody in the room can be seen using.
+    #[test]
+    fn the_authored_roster_flies_every_plan() {
+        for plan in [BuildPlan::Gunner, BuildPlan::Bomber, BuildPlan::Runner] {
+            assert!(
+                (0..CALIBRATED.len())
+                    .map(individual)
+                    .any(|spec| spec.build == plan),
+                "no authored pilot flies {plan:?}"
+            );
         }
     }
 
