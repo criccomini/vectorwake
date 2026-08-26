@@ -44,26 +44,23 @@ end
 -- corner was the one place in the game still drawing a round the arena
 -- never fires.
 M.BOLT_LEN = 1.4
-local BOLT_HEAD, BOLT_HALO, BOLT_FAN = 0.13, 0.26, 0.47
+local BOLT_HEAD, BOLT_HALO = 0.13, 0.26
 
 -- One round in flight, from the muzzle out. Returns where the head landed,
 -- because both callers ring it when the rounds bounce.
--- `len` and `wgt` are the second barrel's: it flies a touch behind the round
--- and a step lighter, exactly as its line-and-dot drawing did.
-local function bolt_line(ox, oy, ang, k, col, len, wgt)
+local function bolt_line(ox, oy, ang, k, col)
     local ca, sa = math.cos(ang), math.sin(ang)
-    local d = k * (len or M.BOLT_LEN)
-    local w = wgt or 1
+    local d = k * M.BOLT_LEN
     local dx, dy = ox + ca * d, oy + sa * d
     local a = col[4] or 1
-    u:seg_fade(ox, oy, dx, dy, k * 0.06 * w, k * 0.30 * w, 0, a * 0.33, col)
+    u:seg_fade(ox, oy, dx, dy, k * 0.06, k * 0.30, 0, a * 0.33, col)
     u:seg_fade(dx - ca * d * 0.75, dy - sa * d * 0.75, dx, dy,
-               k * 0.05 * w, k * 0.16 * w, a * 0.22, a, col)
+               k * 0.05, k * 0.16, a * 0.22, a, col)
     local hotc = pal.hot(col, 0.9, a)
     u:seg_fade(dx - ca * d * 0.36, dy - sa * d * 0.36, dx, dy,
-               k * 0.04 * w, k * 0.11 * w, a * 0.4, a, hotc)
-    u:halo(dx, dy, k * BOLT_HALO * w, 10, pal.a(col, a * 0.45))
-    u:disc(dx, dy, k * BOLT_HEAD * w, 10, hotc)
+               k * 0.04, k * 0.11, a * 0.4, a, hotc)
+    u:halo(dx, dy, k * BOLT_HALO, 10, pal.a(col, a * 0.45))
+    u:disc(dx, dy, k * BOLT_HEAD, 10, hotc)
     return dx, dy
 end
 
@@ -221,64 +218,51 @@ end
 -- actually got drawn. They are not the same number: a mark that spends less
 -- than its share should not claim the width it did not use.
 
--- Spray: one rung is a pair, and everything above it is a fan.
+-- Spray: the volley a pull actually throws, at the angles the core throws
+-- it. One more round per rung, so the mark counts bullets exactly as the
+-- arena does: two at the first rung, three at the second, five at the
+-- fourth, symmetric about the aim. The angles are the baseline's own,
+-- mod_pair_spread and mod_spread, seven and a half degrees across the pair
+-- and fifteen between rounds of the fan; the core does not export a zone's
+-- retuned spread, so a zone that changes it is off here by the difference.
 --
--- This was two decorations because it was two add-ons, and the split survives
--- as the shape of the first rung. A pair leaves from beside the round and does
--- not spread, so its strokes are parallel and offset sideways; a fan leaves
--- from the one muzzle and opens out. The mark says the difference the arena
--- says, which is the spacing: a pair covers a line and a fan covers ground.
+-- It drew a fixed three-line fan above the first rung for a while, on the
+-- argument that a count of lines is a tally rather than a shape. What that
+-- bought was a corner disagreeing with the arena about the one fact a
+-- volley carries, and at the true angles even five rounds stay inside the
+-- row, so the tally is the shape.
 --
--- Above the first rung it is the fan and stays the fan, at one angle however
--- deep the ladder runs. Two reasons, and either would do. A corner that
--- answers "how many rounds" with a count of lines stops being a shape and
--- starts being a tally; and the fan at its current angle already reaches the
--- top and bottom of the row it lives in, so opening it further would draw over
--- the rows either side. How many rounds a pull throws is on the ship page,
--- where there is room to read a number.
+-- The whole volley draws here, the center round included, because a pair
+-- has no center round: dressed() skips draw_round when the trigger wears
+-- any spray. Declined, the geometry holds and the color goes: the one
+-- round that would still fire stays lit and the rest dim, so a fan that
+-- stopped fanning is visibly the same weapon holding its fire.
+local PAIR_STEP, FAN_STEP = 2 * math.pi / 48, 2 * math.pi / 24
 local function dec_multi(m, col, n)
-    if m.bolt then
-        if n == 1 then
-            -- A second barrel, abreast and parallel. Declined, it stays on the
-            -- mark and stops being a round: see barrel.
-            local ox = m.origin + m.k * 0.10
-            local py = m.y - m.k * 0.16
-            local dx = bolt_line(ox, py, 0, m.k, col,
-                                 M.BOLT_LEN - 0.10, 0.8)
-            if not m.off then m.dots[#m.dots + 1] = {dx, py} end
-            m.far = math.max(m.far, dx - m.x + m.k * BOLT_HALO * 0.8)
-            return
-        end
-        -- Declined, the extra barrels stay on the mark and stop being rounds:
-        -- see barrel.
-        barrel(m, -BOLT_FAN, col, m.off)
-        barrel(m, BOLT_FAN, col, m.off)
-        return
-    end
-    -- On a bomb, heads abreast at one rung and rounds leaving together above
-    -- it, from where this one came from. Those strokes are the only ones a
-    -- bomb mark has now that the body is gone, and that is the right way
-    -- round: a lone bomb is a thing, and several of them are several things
-    -- going somewhere at once.
-    --
-    -- No shipped arena racks bombs in pairs, but the slot is per trigger and a
-    -- zone may fill it, so the bomb answers the same sentence in its own
-    -- alphabet.
-    if n == 1 then
-        u:ring(m.x, m.y - m.k * BOMB_R * 0.9, m.k * BOMB_R * 0.62,
-               M.pen(m.k, 0.1), 12, col)
-        return
-    end
+    local count = n + 1
+    local step = n == 1 and PAIR_STEP or FAN_STEP
+    -- The round nearest the aim, which is the one a declined fan still
+    -- fires. A pair straddles the aim, so its upper round stands in.
+    local center = math.floor(count / 2)
+    -- Several shells drawn whole want to be smaller than one alone, and the
+    -- outermost, light and all, must stay inside the reach the caller sized
+    -- for, so the scale comes off the fan's own geometry: what is left of
+    -- MARK_REACH above the outer round's offset is what a shell may fill.
+    local out_ang = count > 1 and step * (count - 1) / 2 or 0
+    local s = math.min(0.78,
+                       M.MARK_REACH * (1 - math.sin(out_ang)) / 1.02 * 0.95)
     local len = m.x - m.tail
-    for i = 1, math.min(n, 3) do
-        local a = 0.26 * i
-        local d = len * (1 - 0.14 * i)
-        for _, s in ipairs({-1, 1}) do
-            u:seg_fade(m.tail, m.y,
-                       m.tail + math.cos(a) * d,
-                       m.y + s * math.sin(a) * d,
-                       M.pen(m.k, 0.078), M.pen(m.k, 0.222), 0,
-                       (col[4] or 1) * 0.85, col)
+    for i = 0, count - 1 do
+        local off = step * (2 * i - (count - 1)) / 2
+        local declined = m.off and i ~= center
+        local c = declined and col or m.base
+        if m.bolt then
+            barrel(m, off, c, declined)
+        else
+            local hx = m.tail + math.cos(off) * len
+            local hy = m.y + math.sin(off) * len
+            bomb_head(hx, hy, m.k * s, c)
+            m.far = math.max(m.far, hx - m.x + m.k * s * 1.02)
         end
     end
 end
@@ -347,6 +331,12 @@ end
 -- A bolt's body is its streak and a bomb's is its shell, so the ticks cross
 -- the streak on one and the shell on the other, and neither takes a ring of
 -- room from anything that does.
+--
+-- The bomb's spikes cross its ring and reach into the halo, needle points
+-- out. They used to stop at the ring's own radius, which was legible on a
+-- plain shell and invisible on a lit one: a hot tick ending on a hot ring is
+-- the ring. What still tells them from shrapnel is where they stand: rime
+-- grows out of the shell, fragments are thrown clear of it.
 local function dec_freeze(m, col, n)
     local rungs = 2 + math.min(n, 2)
     if m.bolt then
@@ -358,13 +348,14 @@ local function dec_freeze(m, col, n)
         end
         return
     end
-    local r0, r1 = m.k * BOMB_R * 0.58, m.k * BOMB_R
+    local r0, r1 = m.k * 0.26, m.k * 0.68
     for i = 0, rungs * 2 - 1 do
         local a = (i + 0.5) * math.pi / rungs
         local dx, dy = math.cos(a), math.sin(a)
         u:seg(m.x + dx * r0, m.y + dy * r0,
-              m.x + dx * r1, m.y + dy * r1, M.pen(m.k, 0.085), col)
+              m.x + dx * r1, m.y + dy * r1, M.pen(m.k, 0.095), col)
     end
+    m.far = math.max(m.far, r1)
 end
 
 -- A shove standing off the head, and a rung is another wave of it. The repel
@@ -550,6 +541,10 @@ local function dressed(cx, cy, k, gun, lvl, modn, gun_lvl, off)
     -- it, and a fan that quietly stopped fanning with nothing on screen to say
     -- so is a weapon that looks broken.
     m.off = off and true or false
+    -- The round's own color, kept on the mark for the one decorator that
+    -- draws rounds: a declined fan is handed the dim color, and the round
+    -- it still fires is drawn in this.
+    m.base = base
     -- What goes under the round goes down first, in the round's own color
     -- rather than the add-on's hot one: a fuse is not a thing stuck on a bomb,
     -- it is how far the bomb reaches, so it is the bomb faintly over the area
@@ -558,7 +553,9 @@ local function dressed(cx, cy, k, gun, lvl, modn, gun_lvl, off)
         local n = modn[i] or 0
         if n > 0 and MOD_GROUND[i] then MOD_GROUND[i](m, base, n) end
     end
-    draw_round(m, base)
+    -- A sprayed trigger's rounds are all the spray decorator's to draw: a
+    -- pair has no center round, so there is nothing to put down first.
+    if (modn[1] or 0) == 0 then draw_round(m, base) end
     -- The round's hue run toward white, which is how this palette makes
     -- anything hotter, so an add-on is the same weapon louder rather than a
     -- different color stuck on the side of it.

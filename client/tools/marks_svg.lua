@@ -200,25 +200,28 @@ for _, d in ipairs(depth) do
     dx = dx + 16
 end
 
--- The gun's own loadouts, the declined fan included, which only the ship
--- path can draw.
+-- The gun's ladder of rounds, one bullet per rung climbed, at the angles
+-- the core fires them; then bounce, freeze, and the declined fan, which
+-- only the ship path can draw.
 y = y - 104
-head(40, y, "the gun: pair, fan, bounce, freeze, and a declined fan")
+head(40, y, "the gun: 1 to 5 bullets, then bounce, freeze, a declined fan")
 y = y - 62
 local gun_loads = {
-    {"bare", {}},
-    {"pair", {[0] = 1}},
-    {"fan", {[0] = 2}},
+    {"1 round", {}},
+    {"spray 1: 2", {[0] = 1}},
+    {"spray 2: 3", {[0] = 2}},
+    {"spray 3: 4", {[0] = 3}},
+    {"spray 4: 5", {[0] = 4}},
     {"fan+bounce", {[0] = 2, [1] = 1}},
     {"freeze 2", {[4] = 2}},
 }
-dx = 90
+dx = 80
 for _, g in ipairs(gun_loads) do
     ship.level = {[0] = 2}
     ship.mods = {[0] = g[2]}
     marks.weapon(dx, y, K, 0, 0)
     label(dx, y - 44, g[1], 8)
-    dx = dx + 130
+    dx = dx + 138
 end
 ship.level = {[0] = 2}
 ship.mods = {[0] = {[0] = 2, [1] = 1}}

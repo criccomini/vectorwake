@@ -918,15 +918,15 @@ check("a declined fan tells the two apart", distinct(off_dots) == 2,
       distinct(off_dots) .. " colors across " .. #off_dots .. " dots")
 
 -- The bomb's fan is the same argument: rounds leaving together, in the color
--- of the round. Measured on the strokes, since a bomb's fan has no dots, and
--- taken at the second rung, since the first is the pair rather than the fan.
+-- of the round. A sprayed bomb draws whole shells now, so the volley's hue
+-- is read off their halos, the same place a bare round's hue lives.
 local function bomb_hues()
     local b = row_box("bomb")
     local out = {}
     if not b then return out end
     for _, sh in ipairs(shapes) do
         local mid = (sh.y0 + sh.y1) / 2
-        if sh.tint and not sh.kind and mid > b.y0 and mid < b.y1 then
+        if sh.tint and sh.kind == "halo" and mid > b.y0 and mid < b.y1 then
             out[hue(sh.tint)] = true
         end
     end
