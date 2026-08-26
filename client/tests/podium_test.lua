@@ -559,6 +559,40 @@ do
               or "no key")
 end
 
+-- --- drawn zoomed ----------------------------------------------------------
+--
+-- The ending borrowed the board's own type, sized for a corner of a live
+-- fight, and at the whistle it read as a footnote: the one thing on screen,
+-- set in the smallest type on it. So the whole block draws larger than the
+-- instruments around it, held back only by the window's height, and a finger
+-- dragging its roster is measured against the rows as drawn.
+
+frame({match = {playing = false, left = 23, artifact = 1,
+                score = {[0] = 11, [1] = 14}},
+       side_names = NAMES, side = 0, w = 1280, h = 800})
+check("a roomy window draws the ending at full zoom",
+      math.abs(ui.podium_zoom - 1.45) < 0.001, tostring(ui.podium_zoom))
+local zoomed = nil
+for i = 1, state.n do
+    local t = state.text[i]
+    if t.s == "14" and t.px > 30 then zoomed = t end
+end
+check("and the score figures wear the zoom", zoomed ~= nil)
+check("as does the pitch a dragging finger is measured by",
+      ui.row_pitch() > 18 * 1.4, tostring(ui.row_pitch()))
+
+frame({match = {playing = false, left = 23, artifact = 1,
+                score = {[0] = 11, [1] = 14}},
+       side_names = NAMES, side = 0, w = 710, h = 300})
+check("a short window takes only the zoom it has room for",
+      ui.podium_zoom > 1 and ui.podium_zoom < 1.45,
+      tostring(ui.podium_zoom))
+
+frame({match = {playing = true, left = 96, score = {[0] = 4, [1] = 7}},
+       side_names = NAMES, side = 0})
+check("and play puts the pitch back", ui.row_pitch() == 18,
+      tostring(ui.row_pitch()))
+
 -- --- the foot --------------------------------------------------------------
 --
 -- The countdown as a reading rather than a draining bar, and one key beside

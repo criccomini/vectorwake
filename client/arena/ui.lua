@@ -924,6 +924,10 @@ function M.begin(layer, w, h, density, touching, now)
     if not M.menu_drawn then M.drawer_shut() end
     M.menu_drawn = false
     M.touching = touching or false
+    -- Back to a row's ordinary height until the ending says otherwise this
+    -- frame. Left set, a menu opened over the whistle would keep scrolling
+    -- its own lists at the ending's pitch.
+    M.podium_zoom = 1
     M.hits = {}
     -- The lines the page is asked to hold, if any card raised this frame
     -- asks for typing. Cleared here rather than by whoever raised it, for
@@ -1510,7 +1514,10 @@ end
 -- what a row measures. The wheel never needed it: a notch is one row by
 -- definition, which is why the list could only ever be scrolled by a mouse.
 function M.row_pitch()
-    return LINE * F.scale
+    -- Times the ending's zoom, because a finger drags the rows as drawn: at
+    -- the whistle the board's rows are taller, and a pitch read off the bare
+    -- scale scrolled them faster than the finger moved.
+    return LINE * F.scale * (M.podium_zoom or 1)
 end
 
 -- Where the left column starts: under the menu chip, since the chip owns the
@@ -3844,7 +3851,22 @@ M.SAY_LIFE = 4.0
 -- opens mid-match because a roster row is a name and five numbers and the
 -- ending owns the window rather than a corner of it. `CHROME` is what a run
 -- section costs before any leg is drawn.
-local END = {W = 720, CHROME = 38}
+--
+-- `ZOOM` is how much larger the whole block draws than the instruments
+-- around it. The ending borrowed the board's own type, sized to sit in a
+-- corner of a live fight, and at the whistle that read as a footnote: the
+-- one thing on screen, set in the smallest type on it. The block is one
+-- drawing, so it is grown as one, the way a pinch would grow it, rather
+-- than by reweighing every size on it against its neighbors. A window too
+-- short for the full zoom takes what it has room for instead, and never
+-- less than the old size.
+local END = {W = 720, CHROME = 38, ZOOM = 1.45}
+
+-- What the ending is currently zoomed by, for the one reader outside this
+-- file: a finger dragging the roster is turned into rows by `M.row_pitch`,
+-- and a row on the ending is this much taller than a row anywhere else.
+-- Reset every frame by `M.begin` so it never outlives the board it measures.
+M.podium_zoom = 1
 
 -- The mark on the key that hands this match to somebody else: a tray with an
 -- arrow leaving it. Every phone puts this glyph on that control, and a mark
@@ -4032,17 +4054,38 @@ local function podium(o, m, names)
 
     -- The measure and the block's own height, both known before anything is
     -- drawn: the ending is placed as one block and there is no second pass to
-    -- discover how tall it came out.
-    local pad = PAD * F.scale
-    local room = F.w - F.safe_l - F.safe_r - 2 * pad
-    local w = math.min(END.W * F.scale, room)
-    local x = F.safe_l + pad + (room - w) / 2
+    -- discover how tall it came out. In a function because it runs twice,
+    -- once at the interface's own scale and once at the ending's, and two
+    -- copies of the same measurements is how the pads and their hit test
+    -- drifted apart once already.
+    local pad, room, w, x, title_px, bar_h, gap, head, h
+    local function measure()
+        pad = PAD * F.scale
+        room = F.w - F.safe_l - F.safe_r - 2 * pad
+        w = math.min(END.W * F.scale, room)
+        x = F.safe_l + pad + (room - w) / 2
+        title_px = (M.compact and 15 or 20) * F.scale
+        bar_h = (M.compact and 18 or 26) * F.scale
+        gap = (M.compact and 10 or 14) * F.scale
+        head = title_px + gap + bar_h
+        h = head + gap + roster_h(n) + gap + KEY_H * F.scale
+    end
+    measure()
 
-    local title_px = (M.compact and 15 or 20) * F.scale
-    local bar_h = (M.compact and 18 or 26) * F.scale
-    local gap = (M.compact and 10 or 14) * F.scale
-    local head = title_px + gap + bar_h
-    local h = head + gap + roster_h(n) + gap + KEY_H * F.scale
+    -- The zoom, and everything after this line draws at it. Scaling F.scale
+    -- itself is what grows the block as one drawing: every size below, the
+    -- roster's rows and the foot's keys included, is a multiple of it, and
+    -- the hit boxes are published off the same numbers, so the targets grow
+    -- with the ink. Clamped by the window's height rather than its width,
+    -- since the measure already gives way to a narrow screen on its own.
+    local was_scale = F.scale
+    local slack = F.h - 2 * (F.safe_t + 18 * F.scale)
+    local zoom = math.max(1, math.min(END.ZOOM, slack / h))
+    M.podium_zoom = zoom
+    if zoom > 1 then
+        F.scale = was_scale * zoom
+        measure()
+    end
 
     -- The zone's own section under the roster, for the mode that keeps one:
     -- a duel's ending is about the run, and the run is what the board puts
@@ -4119,6 +4162,7 @@ local function podium(o, m, names)
     top_side = nil
     if legs > 0 then bottom = run_log(o, bottom, true, legs) end
     END.foot(o, m, x, bottom + gap, w)
+    F.scale = was_scale
 end
 
 -- The landing: the game's name over the one key the screen exists for.
