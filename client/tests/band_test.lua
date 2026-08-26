@@ -234,39 +234,60 @@ end
 
 -- --- the top row is a row ---------------------------------------------------
 
--- Three things can stand on the top row: the way into the menu at the left,
--- the band in the middle and the dial's readouts at the right. Whichever of
--- them is up there lines up on one center. Each worked its own vertical out
--- of the padding once, which is a horizontal measurement, and left the
--- readouts four points high on a monitor and ten on a phone.
+-- The way into the menu at the left, the band in the middle and the link bars
+-- at the right, on one line, at every window size. The readouts each worked
+-- their own vertical out of the padding once, which is a horizontal
+-- measurement, and came out four points high on a monitor and ten on a phone.
+-- The band then spent a while dropping off the row on a phone, which put it
+-- through the radar instead and cost the row the alignment it is for.
 --
 -- Measured against the key's published box, because that is the height the
 -- row takes from and the one thing here that cannot drift out of step with
--- itself. `band` says whether the band is up there to be measured: a phone
--- drops it to a line of its own, which is the shape that leaves the key and
--- the readouts alone in the row.
-local function row_shares_a_center(where, band)
+-- itself. `pos_on_row` is the one thing that differs between the two: the
+-- tile readout is up here on a monitor and under the dial on a phone, which
+-- is what leaves a 390-point row wide enough for the band.
+local function row_shares_a_center(where, pos_on_row)
     local key = box("open")
-    local pos, bars = drawn("POS"), drawn("LINK")
-    local tick = band and drawn("0:33") or nil
-    if not (key and pos and bars) or (band and not tick) then
+    local pos, bars, tick = drawn("POS"), drawn("LINK"), drawn("0:33")
+    if not (key and pos and bars and tick) then
         check("the row is drawn on " .. where, false,
               table.concat(words(), " | "))
         return
     end
     local mid = key.y + key.h / 2
-    local off = math.max(math.abs(down(pos) - mid),
-                         math.abs(down(bars) - mid),
-                         tick and math.abs(down(tick) - mid) or 0)
+    local off = math.max(math.abs(down(bars) - mid),
+                         math.abs(down(tick) - mid),
+                         pos_on_row and math.abs(down(pos) - mid) or 0)
     check("the row shares one center on " .. where, off < 0.5,
           string.format("%.1f off a center of %.1f", off, mid))
+    if not pos_on_row then
+        -- Under the instrument that says the same thing in a picture, and
+        -- above where the feed starts, rather than over either of them.
+        check("and the tile readout is under the dial on " .. where,
+              ui.row_at(pos.x + 1, down(pos)) ~= "radar"
+                  and down(pos) < ui.radar_span(),
+              string.format("POS at %.0f, dial ends %.0f",
+                            down(pos), ui.radar_span()))
+    end
+    -- The band grows outward from the middle and the row's two ends are
+    -- controls, so it is only aligned with them for as long as it stays off
+    -- them. `debug` is the box the link cluster publishes over itself, which
+    -- is where the right end of the row is.
+    local press, bell = box("details"), box("debug")
+    if press and bell then
+        check("and the band keeps out of both ends of it on " .. where,
+              press.x > key.x + key.w and press.x + press.w < bell.x,
+              string.format("band %.0f..%.0f between %.0f and %.0f",
+                            press.x, press.x + press.w,
+                            key.x + key.w, bell.x))
+    end
 end
 
 row_shares_a_center("a monitor", true)
 
 -- A phone is the same drawing at its own size, and the sides stay on it: the
--- band came off the corner row's line to make room for them once, and the
--- key that crowded it is gone.
+-- band came off the corner row's line to make room for them once, and both the
+-- key that crowded it and the readout that crowded it are out of its way now.
 frame({w = 390, h = 844})
 local small_clock = drawn("0:33")
 check("a phone draws the same band, sides and all",
@@ -275,15 +296,32 @@ check("a phone draws the same band, sides and all",
       table.concat(words(), " | "))
 if small_clock and clock then
     -- At the same size, since the key it matches is the same size on both.
-    -- The phone's band still drops off the corner row, which is where it
-    -- differs; how tall it is is not.
     check("and at the same size a monitor draws it",
           math.abs(small_clock.px - clock.px) < 0.5,
           string.format("%.0f against %.0f", small_clock.px, clock.px))
 end
--- The band drops to a line of its own here, so this is the key against the
--- readouts. That is the pair the padding pulled ten points apart.
 row_shares_a_center("a phone", false)
+
+-- A call sign runs to twenty four characters and the band grows with it, so
+-- the longest one a pilot can register is what decides whether the band fits
+-- the row. It gives up the name rather than the row: the number under it is
+-- the reading, and a name drawn through the way into the menu is what put the
+-- band on a line of its own the first time.
+local SHORT = NAMES
+NAMES = {[0] = string.rep("W", 24), [1] = string.rep("M", 24)}
+frame({w = 390, h = 844})
+check("a name with nowhere to go is dropped rather than drawn over the row",
+      drawn(NAMES[0]) == nil and drawn(NAMES[1]) == nil
+          and drawn("15") ~= nil and drawn("19") ~= nil,
+      table.concat(words(), " | "))
+row_shares_a_center("a phone with the longest names there are", false)
+-- And kept where the row has the width for it, which is the whole point of
+-- asking rather than dropping the name on every phone.
+frame()
+check("a monitor has the room and keeps them",
+      drawn(NAMES[0]) ~= nil and drawn(NAMES[1]) ~= nil,
+      table.concat(words(), " | "))
+NAMES = SHORT
 
 -- --- the band is the control -----------------------------------------------
 
