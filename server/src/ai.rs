@@ -1500,13 +1500,18 @@ impl Bot {
         out
     }
 
-    /// The charges, which every hull carries three of and no bot has ever
-    /// spent. A repel is the answer to something already too close to outrun,
-    /// and a burst is what you throw when the answer to that did not work.
+    /// The charges. A repel is the answer to something already too close to
+    /// outrun, and a burst is what you throw when the answer to that did not
+    /// work.
     ///
     /// Slot zero is the repel and slot one the burst, which is what the
     /// baseline builds and what every shipped zone keeps. A hull whose slot is
     /// empty simply never passes the count test.
+    ///
+    /// A match deals the rack once and a death re-deals only the frame, so
+    /// these three are a pilot's whole supply for three minutes. Spending them
+    /// on anything but a round that is actually arriving is spending the rest
+    /// of the match.
     fn charge(&mut self, o: &Own) -> u16 {
         if !o.alive || o.in_safe {
             return 0;
@@ -1519,10 +1524,28 @@ impl Bot {
         // How late a pilot leaves the push. A good one reads the round coming
         // and spends the charge on it; a poor one fires the moment anything is
         // in the air, which is a charge gone and the round still arriving.
+        //
         let notice = 45.0 + (1.0 - dial) * 90.0;
-        let shoved = threat.is_some_and(|t| t.eta < notice && t.miss < t.blast + 24.0);
-        let crowded = self.dist < 150.0 && matches!(self.mode, Mode::Fight(_));
-        if o.charges[0] > 0 && (shoved || (crowded && o.energy < 0.45)) {
+        let arriving = threat.filter(|t| t.eta < notice && t.miss < t.blast + 24.0);
+        // And which arriving rounds are worth one of the three.
+        //
+        // A bomb on sight: it is the round a hull cannot absorb and the one a
+        // turn cannot outrun, and shoving it wide is the whole reason the
+        // charge exists. A bullet only once there is no bar left to spend on
+        // it, because a bullet costs an eighth of a hull and a charge is a
+        // third of the match's supply.
+        //
+        // Arriving alone used to be the test, next to a second one that asked
+        // for no incoming round at all: close range and under 45% energy, which
+        // in a room carrying ninety rounds means "am I in a fight". Between
+        // them every pilot at every skill emptied the rack by sixteen seconds
+        // of a hundred and eighty and played the other hundred and sixty with
+        // nothing. Dropping the second one moved that by three seconds, because
+        // in a firefight a round that will genuinely hit is always seconds
+        // away; what was missing is that most of them are worth taking.
+        // Measured with `vectorwake-server melee`.
+        let worth_a_charge = arriving.is_some_and(|t| t.blast > 0.0 || o.energy < 0.30);
+        if o.charges[0] > 0 && worth_a_charge {
             return sim::BTN_USE;
         }
         // A burst: sixteen rounds in every direction, which is a weapon only at
