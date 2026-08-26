@@ -35,3 +35,12 @@ zone/instance-id
 # (.github/workflows/client.yml), not committed: it was 5 MB of git history per
 # release and a step somebody had to remember, and forgetting it cost an outage.
 client/dist/
+
+# The seeded design canvases under .design/. Each is the whole canvas editor
+# with the boards baked into it, two and a half megabytes for boards that come
+# to a hundred kilobytes of source beside it, and `build.py` plus the design
+# skill's seeder rebuild one whenever it is wanted. Same argument as
+# client/dist above. The hand-written mocks that are a page rather than a
+# canvas, .design/friends/friends-v2.html and its like, are small and stay.
+.design/*/[a-z]*-*.html
+!.design/friends/friends-v2.html

@@ -1,0 +1,19 @@
+{
+  "artboards": [
+    { "file": "Current.dc.html", "title": "As shipped", "x": 0, "y": 0, "w": 390, "h": 844 },
+    { "file": "Main.dc.html", "title": "The rule", "x": 490, "y": 0, "w": 880, "h": 470 },
+    { "file": "Play.dc.html", "title": "Play", "x": 490, "y": 570, "w": 390, "h": 844 },
+    { "file": "Settings.dc.html", "title": "Settings", "x": 980, "y": 570, "w": 390, "h": 844 },
+    { "file": "Ship.dc.html", "title": "Ship", "x": 1470, "y": 570, "w": 390, "h": 844 },
+    { "file": "Elsewhere.dc.html", "title": "Everywhere else", "x": 1960, "y": 570, "w": 390, "h": 844 }
+  ],
+  "annotations": [
+    { "id": "note-current", "x": 0, "y": -240, "w": 390, "text": "As shipped, a cursor resting on a row is drawn eight ways: the stage's full-bleed wash at 0.18, the kit rows' left-bleed at 0.2 (0.1 when the page is unfocused, with two points shaved off the top), the friends rows' floating band at 0.16, the builds rows' overhang past the panel edge at 0.2, the ship grid's inset cell at 0.14, the rail stop's inset slot at 0.16, and the call sign dropdown's flat row at 0.16. Text starts at 0, 11, 14 or 36 from the edge depending on the page." },
+    { "id": "note-rule", "x": 490, "y": -240, "w": 500, "text": "The proposal, one rule: the lit field is wash(FRIEND) across the full drawer span, at the row's full height, and the hit box is exactly the field. Two weights only. 0.18 is the cursor, whether it arrived by pointer or by arrows. 0.07 is the row you are already standing in (the game you are flying, the hull you fly, the loaded build), which replaces the wedge, and the cursor outranks it on the same row. All row text lives in one column, 36 in from either edge; ink steps 0.85 to 1.0 with the cursor, unpressable rows sit at 0.55 and never light. Every other alpha (0.1, 0.13, 0.14, 0.16, 0.2), every other extent, and the kit rows' focused/unfocused split are deleted." },
+    { "id": "note-play", "x": 490, "y": 1480, "w": 390, "text": "The games list. Duel carries the cursor; Team Battle is the game being flown, so it holds the 0.07 field with its name in FRIEND, and the leave key rides the row unchanged. Today this page already washes edge to edge but marks yours with a wedge in the gutter; the standing field replaces the wedge, so the gutter carries nothing." },
+    { "id": "note-settings", "x": 980, "y": 1480, "w": 390, "text": "Settings rows are already stage rows, so this page is the proposal's baseline: it only picks up the one text column and the two weights. Values and pips keep the right edge of the same column." },
+    { "id": "note-ship", "x": 1470, "y": 1480, "w": 390, "text": "The kit page is the big migration: rows move from a 14 inset onto the 36 column, the field runs the full span instead of stopping 14 short of the right edge, the two-point shave off the row top goes, and the focused/unfocused alpha split collapses into the one cursor weight. Ladders, charge keys and prices sit inside the column like every other row's data. The name column narrows by 22; the widest row (six circles, a charge key, a price) still fits at 390." },
+    { "id": "note-elsewhere", "x": 1960, "y": 1480, "w": 390, "text": "The rule travels. Friends and builds rows drop their floating bands and overhangs for the same field; the loaded build shows the 0.07 standing weight. The two shapes that are not rows keep the two weights but light their own hit shapes: a ship grid cell fills its cell, a rail stop under the pointer fills its slot (the lit stop keeps its tab gradient, which answers a different question). The skirt accent belongs only to rows against the panel's left rule." }
+  ],
+  "launch": { "view": "canvas" }
+}

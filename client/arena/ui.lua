@@ -125,15 +125,10 @@ local pen = marks.pen
 -- pages reach it several hundred lines earlier and a local declared after its
 -- first use is a global lookup that comes back nil.
 local GUTTER = 22
--- How far a lit row reaches past the column of type it is about, either side.
---
--- The field used to run from the panel's own edge to the far end of the
--- stage, which is a gutter wider than the content on the left and a gutter
--- wider on the right. Against a section head, whose rule and label sit on the
--- content column exactly, that reads as a button nudged out of line with the
--- heading over it, and it was reported that way. Sixteen points is padding
--- around a control; a gutter is a column somebody else's type lives in.
-local ROW_PAD = 16
+-- There was a ROW_PAD here, sixteen points, for how far a lit row reached past
+-- the column of type it was about. It was the friends page's answer to a
+-- question every other page answered differently, and the field is the drawer
+-- now: see LIT.CURSOR below.
 
 local pages = {}
 
@@ -354,6 +349,60 @@ local function wash(x, y, w, h, col)
     F.layer:skirt(x, ry(y), x, ry(y + h),
                   math.min(w, 130 * F.scale), 0, a * 0.6, col)
 end
+
+-- How a row of the menu is lit, in one place.
+--
+-- The menu used to answer this eight different ways: a wash at the drawer span
+-- for the stage's rows, the kit page's at 0.2 falling to 0.1 while the page
+-- was unfocused, the friends page's band inset sixteen points either side, the
+-- builds page's field hanging past the panel's right edge, and three more on
+-- their own shapes at 0.13, 0.14 and 0.16. Nothing was decided by any of it:
+-- they are one idea drawn by whoever wrote the page.
+--
+-- One table rather than a constant apiece, which is what this file's own
+-- upvalue ceiling asks for. See client/tests/upvalues_test.lua.
+local LIT = {
+    -- Where a press would land, from either hand. A pointer resting on a row
+    -- and the arrows standing on it are the same fact about the same row, so
+    -- they share the weight, and whether the page holds the arrows does not
+    -- change it: a page that dims its own cursor is a page saying "not this
+    -- one" about the only row it is saying anything about.
+    CURSOR = 0.18,
+    -- Where you already are: the game you are flying, the hull you fly, the
+    -- build that is loaded. It replaces the lit wedge that used to sit out in
+    -- the gutter, where it pushed its own row's label right of every other
+    -- label on the page. Both can be true of one row; the cursor outranks it,
+    -- because what a press does next is the more urgent of the two.
+    HERE = 0.07,
+}
+
+-- One row of the menu, lit. The field is the drawer, edge to edge, and the hit
+-- box every page publishes is the same span: what lights up is what a press
+-- lands on. It follows the drawer, so a row lit while the panel is sliding
+-- travels with it.
+function LIT.field(y, h, weight)
+    local wx, _, ww = M.drawer_span()
+    wash(wx, y, ww, h, pal.a(pal.FRIEND, weight))
+end
+
+-- How bright the label on a standing row is this frame. It breathes on the
+-- clock the landing key breathes on, floored well clear of dark so the trough
+-- never reads as a row that has gone out. `F.now` is zero under the test
+-- harness, which is what keeps the layout tests still.
+--
+-- The cursor does not breathe: a row under the cursor is at full ink and
+-- still, so the one row moving on the page is always the one you left running
+-- somewhere else.
+--
+-- The clock is an argument so a test can sample the curve rather than a single
+-- frame of it, and every drawing leaves it out and gets `F.now`.
+function LIT.breath(t)
+    return 0.74 + 0.26 * (0.5 + 0.5 * math.sin((t or F.now) * 2.6))
+end
+
+-- Published so the tests measure the rule rather than restating it. See
+-- client/tests/row_field_test.lua.
+M.LIT = LIT
 
 -- A count, as marks rather than as a number: it reads at a glance and never
 -- asks the eye to parse a digit.
@@ -640,7 +689,7 @@ local function row_button(bx, cy, h, label, go, hot, action, val, lev)
     local by = cy - h / 2
     local edge = go and pal.FRIEND or pal.RADAR_TILE
     rect(bx - bw, by, bw, h, pal.rgb(0x070b12, hot and 0.85 or 0.55))
-    if hot then rect(bx - bw, by, bw, h, pal.a(pal.FRIEND, 0.18)) end
+    if hot then rect(bx - bw, by, bw, h, pal.a(pal.FRIEND, LIT.CURSOR)) end
     -- The wash goes down before the outline, so the stroke is the last
     -- thing drawn on the shape rather than a line under a field.
     key_box(bx - bw, by, bw, h, nil,
@@ -4790,7 +4839,7 @@ function pages.kit(v, x, y, w, h, focused)
         local kh = 26 * F.scale
         local hot = cursor(r)
         key_box(bx, mid - kh / 2, kw, kh,
-                hot and pal.a(pal.FRIEND, 0.18) or nil,
+                hot and pal.a(pal.FRIEND, LIT.CURSOR) or nil,
                 pal.a(pal.FRIEND, hot and (focused and 1 or 0.55) or 0.5))
         txt(label, bx + kw / 2, mid, px, pal.a(pal.INK, hot and 1 or 0.9),
             "center", MENU_FONT)
@@ -4823,10 +4872,12 @@ function pages.kit(v, x, y, w, h, focused)
         rect(mx, by - 2 * F.scale, bw, 4 * F.scale, pal.a(pal.DIM, 0.25))
         rect(mx, by - 2 * F.scale, bw * (v.kit_spent / math.max(total, 1)),
              4 * F.scale, pal.a(pal.FRIEND, 0.85))
+        -- The meter is furniture in the band rather than a row of the list, so
+        -- it lights its own shape; the weight is the one every cursor wears.
         if hot then
             wash(mx - 8 * F.scale, mid - 18 * F.scale,
                  right - mx + 16 * F.scale, 34 * F.scale,
-                 pal.a(pal.FRIEND, focused and 0.16 or 0.08))
+                 pal.a(pal.FRIEND, LIT.CURSOR))
         end
         if live then
             hit(mx - 8 * F.scale, y, right - mx + 12 * F.scale, BAND,
@@ -4872,13 +4923,9 @@ function pages.kit(v, x, y, w, h, focused)
             return
         end
         local hot = cursor(r)
-        if hot then
-            wash(x - 14 * F.scale, cy - srow / 2 + 2 * F.scale,
-                 w + 14 * F.scale, srow - 2 * F.scale,
-                 pal.a(pal.FRIEND, focused and 0.2 or 0.1))
-        end
+        if hot then LIT.field(cy - srow / 2, srow, LIT.CURSOR) end
         txt(r.label, x, cy, 12.5 * F.scale,
-            pal.a(pal.INK, hot and 0.95 or 0.8), nil, MENU_FONT)
+            pal.a(pal.INK, hot and 1 or 0.85), nil, MENU_FONT)
         -- The ladder. Every circle this account owns takes a press of its
         -- own, so a tap on the fourth asks for four; the one it is already on
         -- takes the point back. The dim ones are not controls: a press there
@@ -4945,10 +4992,12 @@ function pages.kit(v, x, y, w, h, focused)
         end
         -- The name and everything past the ladder ask the same question,
         -- and it is the one the row cannot answer itself. Published last, so
-        -- the circles this account owns keep the presses that land on them.
+        -- the circles this account owns keep the presses that land on them,
+        -- and across the whole field, so a press that landed where the row lit
+        -- up is a press that landed on the row.
         if live then
-            hit(x - 14 * F.scale, cy - srow / 2, w + 14 * F.scale, srow,
-                "read_row", r.index)
+            local hx, _, hw = M.drawer_span()
+            hit(hx, cy - srow / 2, hw, srow, "read_row", r.index)
         end
         cy = cy + srow
     end
@@ -4960,13 +5009,9 @@ function pages.kit(v, x, y, w, h, focused)
             return
         end
         local hot = cursor(r)
-        if hot then
-            wash(x - 14 * F.scale, cy - srow / 2 + 2 * F.scale,
-                 w + 14 * F.scale, srow - 2 * F.scale,
-                 pal.a(pal.FRIEND, focused and 0.2 or 0.1))
-        end
+        if hot then LIT.field(cy - srow / 2, srow, LIT.CURSOR) end
         txt(r.label, x, cy, 12.5 * F.scale,
-            pal.a(pal.INK, hot and 0.95 or 0.8), nil, MENU_FONT)
+            pal.a(pal.INK, hot and 1 or 0.85), nil, MENU_FONT)
         local vx = x + NAMEW + 14 * F.scale
         local vw = text_w(r.detail or "", 12.5 * F.scale, MENU_FONT)
         txt(r.detail or "", vx, cy, 12.5 * F.scale,
@@ -4990,8 +5035,8 @@ function pages.kit(v, x, y, w, h, focused)
                 pal.a(pal.DIM, 0.7), "right")
         end
         if live then
-            hit(x - 14 * F.scale, cy - srow / 2, w + 14 * F.scale, srow,
-                "stage", r.index)
+            local hx, _, hw = M.drawer_span()
+            hit(hx, cy - srow / 2, hw, srow, "stage", r.index)
         end
         cy = cy + srow
     end
@@ -5035,7 +5080,7 @@ function pages.kit(v, x, y, w, h, focused)
         local ky = y + h - kh
         local hot = cursor(save)
         key_box(x, ky, w, kh,
-                pal.a(pal.FRIEND, hot and 0.18 or 0.10),
+                pal.a(pal.FRIEND, hot and LIT.CURSOR or 0.10),
                 pal.a(pal.FRIEND, hot and (focused and 1 or 0.7) or 0.85))
         txt("save", x + w / 2, ky + kh / 2, 13 * F.scale,
             pal.a(pal.INK, 1), "center", MENU_FONT)
@@ -5192,19 +5237,24 @@ function pages.builds(v, x, y, w, h, focused)
     local ROW = 30 * F.scale
     for _, r in ipairs(list) do
         local hot = focused and r.index == v.sel
-        if hot then
-            wash(x - 14 * F.scale, ry0, w + 28 * F.scale, ROW,
-                 pal.a(pal.FRIEND, 0.2))
-        end
         -- The one the kit in hand actually is, in the color this menu uses
-        -- for yours.
+        -- for yours. It is where you already are, so it wears the standing
+        -- field and breathes; the cursor outranks it.
+        local loaded = (r.choice or 0) > 0
+        if hot then
+            LIT.field(ry0, ROW, LIT.CURSOR)
+        elseif loaded then
+            LIT.field(ry0, ROW, LIT.HERE)
+        end
         txt(r.label or "", x, ry0 + ROW / 2, 13 * F.scale,
-            pal.a((r.choice or 0) > 0 and pal.FRIEND or pal.INK,
-                  hot and 1 or 0.85), nil, MENU_FONT, true)
+            pal.a(loaded and pal.FRIEND or pal.INK,
+                  hot and 1 or (loaded and LIT.breath() or 0.85)),
+            nil, MENU_FONT, true)
         if r.starter then
             lbl("starter", x + w, ry0 + ROW / 2, pal.a(pal.DIM, 0.7), "right")
         end
-        hit(x - 14 * F.scale, ry0, w + 28 * F.scale, ROW, "stage", r.index)
+        local hx, _, hw = M.drawer_span()
+        hit(hx, ry0, hw, ROW, "stage", r.index)
         ry0 = ry0 + ROW
     end
     -- The two keys, side by side under the last name.
@@ -5216,7 +5266,7 @@ function pages.builds(v, x, y, w, h, focused)
         local hot = focused and r.index == v.sel
         local dim = r.dim
         key_box(kx, ky, kw, kh,
-                (not dim) and (hot and pal.a(pal.FRIEND, 0.2)
+                (not dim) and (hot and pal.a(pal.FRIEND, LIT.CURSOR)
                                or (i == 1 and pal.a(pal.FRIEND, 0.08) or nil))
                 or nil,
                 pal.a(pal.FRIEND, dim and 0.2 or (hot and 1 or 0.55)))
@@ -5394,8 +5444,10 @@ function pages.friends(v, x, y, w, h, focused)
             -- Lit by a pointer resting on it or by the arrows standing on
             -- it, which are the same fact about the same row.
             local on = v.found_hot == i or a.sel == i
+            -- The list hangs off a field rather than filling the drawer, so
+            -- it lights its own shape at the cursor's weight.
             if on then
-                rect(fx, ry0, lw, rh, pal.a(pal.FRIEND, 0.16))
+                rect(fx, ry0, lw, rh, pal.a(pal.FRIEND, LIT.CURSOR))
             end
             txt(p.name or "?", fx + 11 * F.scale, ry0 + rh / 2, 14 * F.scale,
                 pal.a(pal.INK, on and 1 or 0.85), nil, MENU_FONT, true)
@@ -5475,9 +5527,7 @@ function pages.friends(v, x, y, w, h, focused)
             -- it. Two lit things on one page is a page that cannot say where
             -- a press would go.
             local hot = (focused and not a.on and i == v.sel) or i == v.hover
-            if hot then wash(x - ROW_PAD * F.scale, ry0,
-                             w + 2 * ROW_PAD * F.scale, rowh,
-                             pal.a(pal.FRIEND, 0.16)) end
+            if hot then LIT.field(ry0, rowh, LIT.CURSOR) end
             local cy = ry0 + rowh / 2
             local col = pal.a(pal.INK, r.dim and 0.6 or (hot and 1 or 0.9))
             -- The buttons first, from the right, because the name is what
@@ -5516,10 +5566,11 @@ function pages.friends(v, x, y, w, h, focused)
                 end
             end
             -- The row itself, after its buttons, so a press on one of them
-            -- does not raise the card as well.
+            -- does not raise the card as well. Across the field it lit up,
+            -- which is the whole drawer.
             if r.pick then
-                hit(x - GUTTER * F.scale, ry0, w + GUTTER * F.scale, rowh,
-                    "stage", i)
+                local hx, _, hw = M.drawer_span()
+                hit(hx, ry0, hw, rowh, "stage", i)
             end
         end
     end
@@ -6058,7 +6109,7 @@ function pages.door(v, x, y, w, h, focused)
     local hot = focused and (v.sel or 1) == 1
     local bw = math.min(compact and col or 280 * F.scale, col)
     local bh = 50 * F.scale
-    key_box(x, at, bw, bh, pal.a(pal.FRIEND, hot and 0.18 or 0.08),
+    key_box(x, at, bw, bh, pal.a(pal.FRIEND, hot and LIT.CURSOR or 0.08),
             pal.a(pal.FRIEND, hot and 1 or 0.72))
     txt("join discord", x + bw / 2, at + bh / 2, 17 * F.scale,
         pal.a(pal.INK, hot and 1 or 0.9), "center", MENU_FONT)
@@ -6124,7 +6175,7 @@ local function stage_row(x, y, w, h, r, hot, idx, warm)
         rect(bx, by, bw, bh, pal.rgb(0x070b12, hot and 0.85 or 0.6))
         -- Lit the way every other selection in this menu is lit: a field, not
         -- a brighter word inside the same dark box.
-        if hot then rect(bx, by, bw, bh, pal.a(pal.FRIEND, 0.18)) end
+        if hot then rect(bx, by, bw, bh, pal.a(pal.FRIEND, LIT.CURSOR)) end
         -- The outline every button wears. See `key_box`.
         key_box(bx, by, bw, bh, nil, edge)
         draw_mark(r.button, bx + 22 * F.scale, by + bh / 2, 9.5 * F.scale,
@@ -6151,27 +6202,23 @@ local function stage_row(x, y, w, h, r, hot, idx, warm)
     -- field, and a flat field on a page that has a lit edge reads as a second
     -- panel laid over the first.
     if hot then
-        -- Edge to edge of the panel rather than inset to the row's own
-        -- measure. A field that stops short of both sides reads as a box
-        -- floating on the page; the row is the thing you are on, and the
-        -- panel is how wide that is. It follows the drawer, so a selection
-        -- lit while the panel is sliding travels with it.
-        local wx, _, ww = M.drawer_span()
-        wash(wx, y, ww, h, pal.a(pal.FRIEND, 0.18))
+        LIT.field(y, h, LIT.CURSOR)
+    elseif r.mark then
+        -- Where you already are, at the standing weight. This was a lit wedge
+        -- out in the gutter; the field says the same thing without spending a
+        -- mark on it, and without pushing its own label out of the column.
+        LIT.field(y, h, LIT.HERE)
     end
     -- One text column, whatever the row is, and it is the column the title
-    -- above the list is set in. The wedge that says "this is the one you are
-    -- already on" lives in the gutter to the left of that column, off the type
-    -- entirely: drawn inline it pushed its own label right of every other
-    -- label, so the one row worth finding was the one out of line.
+    -- above the list is set in.
     local tx = x + GUTTER * F.scale
-    if r.mark then
-        -- A lit wedge, the same one the corner stack uses to say a slot is
-        -- the ready one.
-        F.layer:tri(x + 7 * F.scale, ry(y + h / 2 - 4.5 * F.scale), x + 14 * F.scale, ry(y + h / 2),
-              x + 7 * F.scale, ry(y + h / 2 + 4.5 * F.scale), pal.FRIEND)
-    end
     local sel = hot or r.mark
+    -- How bright the name is set. The row you are already on breathes, unless
+    -- the cursor is also on it, in which case the cursor has it and the row is
+    -- still: one thing moves on a page, and it is the thing you are not
+    -- looking at.
+    local label_a = sel and 1 or 0.82
+    if r.mark and not hot then label_a = LIT.breath() end
     -- A row nothing is serving is a place that exists and cannot be flown to
     -- yet, so it is written a shade back from the ones that can.
     -- Two kinds of row you cannot press, written the same shade back from the
@@ -6211,7 +6258,7 @@ local function stage_row(x, y, w, h, r, hot, idx, warm)
         and text_w(r.detail, 12 * F.scale) > w - 32 * F.scale - (tx - x) - 12 * F.scale
     if not two_line then
         txt(r.label or "", tx, ly, size,
-            pal.a(col, sel and 1 or 0.82), nil, MENU_FONT, r.named)
+            pal.a(col, label_a), nil, MENU_FONT, r.named)
     end
     if note then
         txt(note, tx, y + h * (strip and 0.42 or 0.68), 11.5 * F.scale,
@@ -6327,7 +6374,7 @@ local function stage_row(x, y, w, h, r, hot, idx, warm)
         -- at all, the day somebody edits one of them.
         if two_line then
             txt(r.label or "", tx, y + h * 0.32, size,
-                pal.a(col, sel and 1 or 0.82), nil, MENU_FONT, r.named)
+                pal.a(col, label_a), nil, MENU_FONT, r.named)
             txt(r.detail, tx, y + h * 0.70, 11 * F.scale, pal.a(pal.DIM, 0.9),
                 nil, nil, r.verbatim)
         else
@@ -6621,15 +6668,17 @@ local function ship_grid(x, y, w, h, v, focused)
         local cy = y + rr * ch + ch / 2
         local hot = (focused and i == v.sel) or i == v.hover
         local col = r.mark and pal.FRIEND or pal.INK
-        -- The hull you are flying keeps a wash of its own, so a cursor moved
-        -- off it does not take the answer to "which one am I in" with it.
+        -- The hull you are flying keeps a field of its own, so a cursor moved
+        -- off it does not take the answer to "which one am I in" with it. A
+        -- cell is not a row, so it lights its own shape rather than the
+        -- drawer; the two weights are the list's.
         if r.mark then
             rect(x + c * cw + 4 * F.scale, y + rr * ch + 2 * F.scale, cw - 8 * F.scale,
-                 ch - 4 * F.scale, pal.a(pal.FRIEND, 0.07))
+                 ch - 4 * F.scale, pal.a(pal.FRIEND, LIT.HERE))
         end
         if hot then
             rect(x + c * cw + 4 * F.scale, y + rr * ch + 2 * F.scale, cw - 8 * F.scale,
-                 ch - 4 * F.scale, pal.a(pal.FRIEND, 0.14))
+                 ch - 4 * F.scale, pal.a(pal.FRIEND, LIT.CURSOR))
         end
         -- The hull, its name and its trade, held clear of the bottom of the
         -- lit cell. The role used to sit on that edge, its descenders over the
@@ -6651,8 +6700,11 @@ local function ship_grid(x, y, w, h, v, focused)
                   pal.a(col, (hot or r.mark) and 1 or 0.7), ch / 116,
                   hot and F.now * 1.7 or nil)
         end
+        -- The name of the hull you fly breathes the way every standing row
+        -- does, unless the cursor is on it, in which case the cursor has it.
         txt(r.label or "", cx, cy + ch * 0.20, (M.compact and 14 or 15) * F.scale,
-            pal.a(col, (hot or r.mark) and 1 or 0.8), "center", MENU_FONT)
+            pal.a(col, hot and 1 or (r.mark and LIT.breath() or 0.8)),
+            "center", MENU_FONT)
         if r.role then
             txt(r.role, cx, cy + ch * 0.34, 10 * F.scale, pal.a(pal.DIM, 0.9),
                 "center")
@@ -7413,11 +7465,12 @@ function M.menu(v)
         local col = (sel or hot) and pal.FRIEND or pal.a(pal.DIM, 0.9)
         local r = 13 * F.scale
         if hot then
-            -- The stage's own hover weight, and only the field: the lit stop
+            -- The list's own cursor weight, and only the field: the lit stop
             -- says which page the panel belongs to, and a pointer passing
-            -- over says nothing of the kind.
+            -- over says nothing of the kind. A stop is not a row, so the
+            -- field is its own slot.
             rect(cx - pitch / 2 + 3 * F.scale, ry_, pitch - 6 * F.scale,
-                 tab_h, pal.a(pal.FRIEND, 0.16))
+                 tab_h, pal.a(pal.FRIEND, LIT.CURSOR))
         end
         if sel then
             -- The lit one. Brighter while the arrows are in the rail, down to
