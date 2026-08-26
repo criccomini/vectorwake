@@ -2209,8 +2209,11 @@ function update(self, dt)
     ui.room_card(my_rooms())
     -- Not over the menu: the stick and the pads belong to flight, and drawn
     -- under a panel they read as buttons that do nothing. Not while watching
-    -- either, for the same reason: there is nothing for them to drive.
-    if live and not menu.open and not watching then
+    -- either, for the same reason: there is nothing for them to drive. And
+    -- not between matches: the whistle benched every hull, and the ending's
+    -- foot keys sit exactly where the pads draw.
+    if live and not menu.open and not watching
+        and not ui.match_ended(net.match) then
         touch.draw(layers.ui, ww, wh, density)
     end
     session.browser.finish(self, dt, wh, html5, touch, ui, menu, sfx, apply_menu)
