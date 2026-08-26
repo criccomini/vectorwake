@@ -1,0 +1,23 @@
+{
+  "artboards": [
+    { "file": "Current.dc.html",    "x": 0,    "y": 0,    "w": 390, "h": 844, "title": "Current" },
+    { "file": "DirectionA.dc.html", "x": 470,  "y": 0,    "w": 390, "h": 844, "title": "A - plain words" },
+    { "file": "Main.dc.html",       "x": 0,    "y": 1160, "w": 390, "h": 844, "title": "B - pilot card, guest" },
+    { "file": "BClaimed.dc.html",   "x": 470,  "y": 1160, "w": 390, "h": 844, "title": "B - claimed" },
+    { "file": "DirectionC.dc.html", "x": 0,    "y": 2320, "w": 390, "h": 844, "title": "C - the form, guest" },
+    { "file": "CClaimed.dc.html",   "x": 470,  "y": 2320, "w": 390, "h": 844, "title": "C - claimed" }
+  ],
+  "annotations": [
+    { "id": "brief", "x": 940, "y": 0, "w": 430,
+      "text": "The pilot page, rethought. Friends stays a tab of its own; this is only the account page.\n\nWhat every direction fixes:\n\nKEEP THIS PILOT becomes SET A PASSWORD. The old label named a consequence and hid the act; the new one is the act, and it pairs with CHANGE PASSWORD once claimed.\n\nThe info box is gone everywhere. It said the call sign a third time, the password sentence a second time, and a paragraph of lore over an empty gap. What it knew now rides the controls that need it: one status line under the name, one note under the password key, and the rest lives in the claim card, where it was already written.\n\nThe reroll moves behind a NEW NAME key. Today a press on your own call sign rerolls it on the spot, rate cap or not, which is a landmine on the row a curious player presses first." },
+    { "id": "note-a", "x": 470, "y": 884, "w": 390,
+      "text": "A - PLAIN WORDS. The smallest change: same list grammar, honest labels, the box deleted, reroll behind its key.\n\nFor: shippable in an afternoon, and nothing new to learn.\nAgainst: the page is three rows over an empty column; cleaner, but still a room with nothing in it." },
+    { "id": "note-b", "x": 940, "y": 1160, "w": 430,
+      "text": "B - PILOT CARD (leading). Identity leads: the name large, the status line under it, the one warning a guest needs, and the acts as keys. Under it, the career: the facts that make the page worth opening.\n\nEvery career field already exists. Rating, tier, games, kills and deaths are published per pilot at /pilots today, and rivets is already on the client; showing them here is one meta call. Guests have careers too, which is quietly the best claim pitch on the page: a record worth keeping is standing right above the key that keeps it.\n\nFor: the page finally answers a question (how am I doing) instead of only asking one; both complaints fixed as a side effect.\nAgainst: needs that meta call; without it the career section must wait, and B collapses to A with a bigger head." },
+    { "id": "note-c", "x": 940, "y": 2320, "w": 430,
+      "text": "C - THE FORM IS THE PAGE. For a guest the page is the claim form itself: password field inline, one lit key, log in below as the alternative. No card opens over an empty page.\n\nFor: the emptiness becomes the form's room; the claim flow loses a step.\nAgainst: a form pointed at every guest reads as a demand, and the house rule is that a password is offered, never demanded. Claimed, the form has nothing to ask and the page is back to being thin." },
+    { "id": "note-copy", "x": 0, "y": 884, "w": 390,
+      "text": "CURRENT, for scale. Three rows, then a box that repeats them with a paragraph of lore over 170 points of nothing. The name appears three times on one screen." }
+  ],
+  "launch": { "view": "canvas" }
+}

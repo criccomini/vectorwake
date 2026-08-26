@@ -1,5 +1,9 @@
 # Pilot and friends, one page
 
+Rejected 2026-08-26: Chris was not crazy about either option, and friends
+stays a tab of its own. The account page rethink moved to
+`.design/pilot-page`.
+
 Seven boards for moving the friends page inside the pilot page, the two
 ways Chris named, with the account chrome reconsidered in both. Canvas
 artifact f6bd35e5; boards are built by `build.py` and seeded with the
