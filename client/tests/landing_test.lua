@@ -287,31 +287,38 @@ check("the landing carries no TAKE SEAT chip",
 -- the front page's first line was two readings on top of each other. The band
 -- came off that row to get clear, and gave up the side names on the way down.
 --
--- PLAYERS is gone, since the band is what opens the roster now, but the top
--- right of a phone still carries the link bars and the tile readout, and a
--- centered band with two names on it reaches them. So the band keeps a line of
--- its own down there. What it no longer gives up to fit is the names.
+-- PLAYERS is gone, since the band is what opens the roster now, and the tile
+-- readout that still crowded it sits under the dial. That leaves a phone's row
+-- the same three things a monitor's has, and the band is back on it. Coming off
+-- the row had only moved the collision: the line under it is where the radar
+-- starts, so the front page read as three headings on two lines with one of
+-- them over an instrument. A side gives up its name when the row runs out of
+-- width for it, which is a name rather than the line the whole band stands on.
 do
     frame(390, 844)
     local menu_key, clock = box("open"), word("1:47")
     check("portrait draws the corner key and the clock",
           menu_key and clock, "missing one of them")
     if menu_key and clock then
-        check("portrait drops the band below the corner key",
-              clock.y > menu_key.y + menu_key.h,
+        check("portrait keeps the band on the corner key's own line",
+              math.abs(clock.y - (menu_key.y + menu_key.h / 2)) < 1,
+              string.format("clock at %.0f, key mid %.0f",
+                            clock.y, menu_key.y + menu_key.h / 2))
+        check("and to the right of the key rather than through it",
+              clock.x > menu_key.x + menu_key.w,
               string.format("clock at %.0f, key ends %.0f",
-                            clock.y, menu_key.y + menu_key.h))
+                            clock.x, menu_key.x + menu_key.w))
     end
-    check("and keeps the side names down there",
+    check("and keeps the side names on it",
           word("PYLON") ~= nil and word("CAISSON") ~= nil,
           "a name is missing")
     check("and both figures", word("3") ~= nil and word("5") ~= nil)
-    -- The corner the band is clearing: LINK and the tile readout own the top
-    -- right, and the band's own line starts under them.
+    -- The other end of the row. LINK owns the top right corner, and the band
+    -- is level with it rather than starting under it.
     local link = word("LINK")
     if link and clock then
-        check("clear of the dial's own readouts",
-              clock.y > link.y,
+        check("level with the dial's own readout",
+              math.abs(clock.y - link.y) < 1,
               string.format("clock at %.0f, LINK at %.0f", clock.y, link.y))
     end
 

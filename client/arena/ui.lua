@@ -1004,21 +1004,46 @@ end
 -- keeping a second copy of where it is, which is how the touch pads and their
 -- own hit test drifted apart once.
 --
--- How far the MENU and PLAYERS keys reach across the top left, filed by the
--- thing that draws them rather than written down twice. It is a word's width,
--- and PLAYERS grew the row the day it stopped being INFO.
-local chip_right = 0
-
--- The middle of the top row, which everything standing in it lines up on.
+-- The top row: where its line is, and how far the things standing in it are
+-- allowed to reach.
 --
--- The row is the way into the menu at the left, the band in the middle and
--- the dial's readouts at the right, and a key's height sets it: the corner
--- key is KEY_H tall and the band is drawn to match. The readouts each worked
--- out a baseline of their own from the padding, which left them four points
--- high on a monitor and ten on a phone, and the padding is a horizontal
--- measurement that has no business setting a vertical one.
-local function row_mid()
+-- One table rather than four names at this scope, because the file is at
+-- Lua's ceiling of two hundred locals in a chunk and because these are one
+-- fact between them. The row is the way into the menu at the left, the clock
+-- band in the middle and the dial's readouts at the right; it has a center
+-- all of them share and an end at each side where a control stands, and a
+-- window too narrow for all of it hands the readout a line under the dial.
+local TOP = {
+    -- How far the corner keys reach across the top left, filed by the thing
+    -- that draws them rather than written down twice. It is a word's width,
+    -- and PLAYERS grew the row the day it stopped being INFO.
+    chip_right = 0,
+}
+
+-- The middle of the row, which everything standing in it lines up on.
+--
+-- A key's height sets it: the corner key is KEY_H tall and the band is drawn
+-- to match. The readouts each worked out a baseline of their own from the
+-- padding, which left them four points high on a monitor and ten on a phone,
+-- and the padding is a horizontal measurement that has no business setting a
+-- vertical one.
+function TOP.mid()
     return F.safe_t + PAD * F.scale + KEY_H * F.scale / 2
+end
+
+-- Where the link cluster starts, which is where the row's right end is. Asked
+-- by the readout for its own press box and by the clock band for how far it
+-- is allowed to grow, so it is worked out once rather than twice.
+function TOP.link_left()
+    local pad = (M.compact and 8 or PAD) * F.scale
+    return F.w - F.safe_r - pad - 34 * F.scale
+        - text_w("LINK", (FONT - 3) * F.scale)
+end
+
+-- The line the tile readout takes under the dial on a phone, and nothing on a
+-- monitor, where the row itself has the width for that readout. See `coords`.
+function TOP.coord_line()
+    return M.compact and 22 * F.scale or 0
 end
 
 -- The map is about a quarter of the frame, capped three ways: against the
@@ -1032,7 +1057,7 @@ local function dial()
     if M.map then
         side = math.max(side,
                         math.min(math.min(F.w, F.h) * 0.66, F.h * 0.66,
-                                 F.w - F.safe_r - pad - math.max(chip_right + 8 * F.scale,
+                                 F.w - F.safe_r - pad - math.max(TOP.chip_right + 8 * F.scale,
                                                          124 * F.scale)))
     end
     -- Whole pixels. The dial snaps its contents to its own origin, so an
@@ -1042,7 +1067,7 @@ local function dial()
     -- The strip above the dial is the readouts', so the dial starts where
     -- their row ends rather than at a padding of its own.
     local ix, iy = math.floor(F.w - F.safe_r - pad - side),
-                   math.floor(row_mid() + KEY_H * F.scale / 2)
+                   math.floor(TOP.mid() + KEY_H * F.scale / 2)
     side = math.floor(side)
     -- Filed here rather than in the two functions that draw into it, because
     -- the dial and the map are the same corner and want the same word beside
@@ -1055,10 +1080,12 @@ local function dial()
 end
 
 -- How much vertical room it takes, so the feed under it can be told rather
--- than guess.
+-- than guess. Its furniture counts: on a phone the tile readout hangs off the
+-- dial's foot, and a feed measured off the instrument alone was drawn through
+-- it.
 function M.radar_span()
     local _, iy, side = dial()
-    return iy + side + 14 * F.scale
+    return iy + side + TOP.coord_line() + 14 * F.scale
 end
 
 -- You, as an arrow. On any view of the arena the one thing worth knowing
@@ -1603,19 +1630,21 @@ local function band_type()
     return clock, name, clock - name - gap
 end
 
--- A monitor has room for the band on the same line as the corner keys: the
--- way into the menu is one square key at the left and the dial's readouts are
--- at the right, with the middle of a 1440-point window empty between them.
+-- The top row's own line, at every window size. The way into the menu is at
+-- the left of it and the link bars are at the right, and the band is what
+-- stands between them.
 --
--- A phone does not. The band is centered and grows outward with two names and
--- two numbers, and the top right of a 390-point screen already carries the
--- link bars and the tile readout: at that width the rival's name was drawn
--- straight through the coordinates. So there the band takes a line of its own
--- under the row, which is what the old one did on a narrow screen. It gave
--- up the side names to do it, and this does not have to.
+-- A phone dropped it a line for a while. The band is centered and grows
+-- outward with two names and two numbers, and the top right of a 390-point
+-- screen carried the link bars and the tile readout both: at that width the
+-- rival's name was drawn straight through the coordinates. The line under the
+-- row is where the dial is, though, so what that bought was the same
+-- collision against a bigger instrument, and it cost the one alignment the
+-- row is for. The tile readout went under the dial instead (see `coords`) and
+-- a side with nowhere left to grow drops its name rather than the whole band
+-- dropping a line (see `match_clock`).
 local function band_top()
-    local under = M.compact and (KEY_H + 12) * F.scale or 0
-    return F.safe_t + PAD * F.scale + under
+    return F.safe_t + PAD * F.scale
 end
 
 local function band_bottom()
@@ -3394,7 +3423,7 @@ local function menu_button(on_air, watch, room, landed)
     -- round. This is about you, like the keys beside it, and it is chrome
     -- rather than anything happening in the arena.
     --
-    -- Counted into `chip_right` like the keys are, so the map that opens
+    -- Counted into `TOP.chip_right` like the keys are, so the map that opens
     -- across this corner keeps clear of it by the rule that already keeps it
     -- clear of them.
     if on_air then
@@ -3417,7 +3446,7 @@ local function menu_button(on_air, watch, room, landed)
     -- and this was a label on the obvious. Every hull on screen wears somebody
     -- else's call sign and none of them wears yours, which is the whole of
     -- what the word was there to say. Removed at Chris's request.
-    chip_right = cx - KEY_GAP * F.scale
+    TOP.chip_right = cx - KEY_GAP * F.scale
 end
 
 -- How good the line is, above the dial. It belongs up here with the
@@ -3431,7 +3460,7 @@ end
 local function link(q)
     local pad = (M.compact and 8 or PAD) * F.scale
     local right = F.w - F.safe_r - pad
-    local mid = row_mid()
+    local mid = TOP.mid()
     -- The bars are one block on the row rather than four things each centered
     -- on it. A meter is a staircase standing on a floor, so the floor is what
     -- gets placed: the tallest bar is centered and the rest rest on its line.
@@ -3470,7 +3499,7 @@ local function link(q)
     -- and one control does not get to eat another.
     if not F.menu_up then
         local _, dial_y = dial()
-        local x0 = right - 34 * F.scale - text_w("LINK", (FONT - 3) * F.scale) - 6 * F.scale
+        local x0 = TOP.link_left() - 6 * F.scale
         hit(x0, F.safe_t, F.w - x0, math.max(dial_y - F.safe_t, 24 * F.scale), "debug")
     end
 end
@@ -3620,15 +3649,30 @@ local function debug_hud(o, top)
     if not F.menu_up then hit(x, y, w, h, "debug", nil, nil, -1) end
 end
 
--- Where you are, over the dial's other top corner from the link readout.
+-- Where you are, off the dial's left edge: above it on a monitor, under it on
+-- a phone.
 --
 -- In tiles, because that is the unit the map is laid out in and the unit a
 -- player says out loud. Pixels would be the same place in numbers six digits
 -- long that nobody can hold in their head or call across a room.
-local function coords(me)
+--
+-- The strip above the dial is the top row, and a phone's is 390 points with
+-- the way into the menu at one end, the link bars at the other and the clock
+-- band between them. Room for two of those three, and this is the third: it
+-- is the one thing up there the radar under it already says, so it goes and
+-- reads as that instrument's caption instead. On a monitor the row has the
+-- width for all of it and nothing moves.
+local function coords(me, boarded)
     if not me then return end
-    local x = dial()
-    local mid = row_mid()
+    -- Not while the board is up over it. On a phone this hangs off the dial's
+    -- foot, and the board opens down the middle of the window from the band
+    -- above it, so the two want the same strip. The blips beside it get away
+    -- with standing on a roster row because a mark is not a word; a line of
+    -- type does not. The board is the thing being read while it is up, and
+    -- this is the reading that waits.
+    if boarded and M.compact then return end
+    local x, y, side = dial()
+    local mid = M.compact and (y + side + TOP.coord_line() / 2) or TOP.mid()
     txt("POS", x, mid, (FONT - 3) * F.scale, pal.a(pal.DIM, 0.8))
     txt(string.format("%d,%d", math.floor(sim.ship_x(me) / 16),
                       math.floor(sim.ship_y(me) / 16)),
@@ -3828,18 +3872,28 @@ local function match_clock(o, m, names, alone)
         -- Right-aligned against the clock on the left of it and left-aligned
         -- on the right, so both lines of a side run away from the middle and
         -- the numbers that matter sit against the numerals they are read with.
-        local edge, pivot
+        --
+        -- And only as far as the row lets it. The band is centered and grows
+        -- with whatever the sides are called, and the two things it grows
+        -- toward are controls: a call sign runs to twenty four characters, and
+        -- on a phone that reached the link bars at one end and the way into
+        -- the menu at the other. A name with nowhere to go is dropped, the way
+        -- the ending's bar drops one that will not fit its share. The number
+        -- under it always draws: it is the reading, and it is four characters.
+        local edge, pivot, room
         if i == 1 then
             edge = F.w / 2 - half - (M.compact and 14 or 22) * F.scale
             pivot = "right"
-            reach(edge - math.max(text_w(label, name_px),
-                                  text_w(under, under_px)))
+            room = edge - TOP.chip_right - KEY_GAP * F.scale
         else
             edge = F.w / 2 + half + (M.compact and 14 or 22) * F.scale
             pivot = nil
-            reach(edge + math.max(text_w(label, name_px),
-                                  text_w(under, under_px)))
+            room = TOP.link_left() - KEY_GAP * F.scale - edge
         end
+        if label ~= "" and text_w(label, name_px) > room then label = "" end
+        local wide = math.max(label ~= "" and text_w(label, name_px) or 0,
+                              text_w(under, under_px))
+        reach(i == 1 and edge - wide or edge + wide)
         if label ~= "" then
             txt(label, edge, name_y, name_px, pal.a(col, 0.85 * dim), pivot,
                 nil, quoted)
@@ -4495,7 +4549,10 @@ function M.hud(o)
     if not M.drawer_over(dial_x, F.w - dial_x) then
         if M.map then overview(me) else radar(o.cam_x, o.cam_y, me) end
         link(o.link_bars or 4)
-        coords(me)
+        -- The roster is the board a press on the band opens, and the whistle
+        -- brings up the same panel without being asked. Either is a board over
+        -- the corner this readout drops into on a phone.
+        coords(me, M.details or ending)
     end
     -- Under the dial, wherever the dial now ends: it lost its panel and its
     -- padding, so a constant here would have left a gap or an overlap. Not on
