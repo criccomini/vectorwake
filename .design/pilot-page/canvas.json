@@ -1,23 +1,22 @@
 {
   "artboards": [
     { "file": "Current.dc.html",    "x": 0,    "y": 0,    "w": 390, "h": 844, "title": "Current" },
-    { "file": "DirectionA.dc.html", "x": 470,  "y": 0,    "w": 390, "h": 844, "title": "A - plain words" },
-    { "file": "Main.dc.html",       "x": 0,    "y": 1160, "w": 390, "h": 844, "title": "B - pilot card, guest" },
-    { "file": "BClaimed.dc.html",   "x": 470,  "y": 1160, "w": 390, "h": 844, "title": "B - claimed" },
-    { "file": "DirectionC.dc.html", "x": 0,    "y": 2320, "w": 390, "h": 844, "title": "C - the form, guest" },
-    { "file": "CClaimed.dc.html",   "x": 470,  "y": 2320, "w": 390, "h": 844, "title": "C - claimed" }
+    { "file": "Main.dc.html",       "x": 470,  "y": 0,    "w": 390, "h": 844, "title": "Guest - keys in the head" },
+    { "file": "FootKey.dc.html",    "x": 940,  "y": 0,    "w": 390, "h": 844, "title": "Guest - foot key" },
+    { "file": "Claimed.dc.html",    "x": 1410, "y": 0,    "w": 390, "h": 844, "title": "Signed in" },
+    { "file": "PlayBanner.dc.html", "x": 0,    "y": 1160, "w": 390, "h": 844, "title": "Banner - band" },
+    { "file": "PlayQuiet.dc.html",  "x": 470,  "y": 1160, "w": 390, "h": 844, "title": "Banner - one line" },
+    { "file": "SignUpCard.dc.html", "x": 940,  "y": 1160, "w": 390, "h": 844, "title": "The sign-up card" }
   ],
   "annotations": [
-    { "id": "brief", "x": 940, "y": 0, "w": 430,
-      "text": "The pilot page, rethought. Friends stays a tab of its own; this is only the account page.\n\nWhat every direction fixes:\n\nKEEP THIS PILOT becomes SET A PASSWORD. The old label named a consequence and hid the act; the new one is the act, and it pairs with CHANGE PASSWORD once claimed.\n\nThe info box is gone everywhere. It said the call sign a third time, the password sentence a second time, and a paragraph of lore over an empty gap. What it knew now rides the controls that need it: one status line under the name, one note under the password key, and the rest lives in the claim card, where it was already written.\n\nThe reroll moves behind a NEW NAME key. Today a press on your own call sign rerolls it on the spot, rate cap or not, which is a landmine on the row a curious player presses first." },
-    { "id": "note-a", "x": 470, "y": 884, "w": 390,
-      "text": "A - PLAIN WORDS. The smallest change: same list grammar, honest labels, the box deleted, reroll behind its key.\n\nFor: shippable in an afternoon, and nothing new to learn.\nAgainst: the page is three rows over an empty column; cleaner, but still a room with nothing in it." },
-    { "id": "note-b", "x": 940, "y": 1160, "w": 430,
-      "text": "B - PILOT CARD (leading). Identity leads: the name large, the status line under it, the one warning a guest needs, and the acts as keys. Under it, the career: the facts that make the page worth opening.\n\nEvery career field already exists. Rating, tier, games, kills and deaths are published per pilot at /pilots today, and rivets is already on the client; showing them here is one meta call. Guests have careers too, which is quietly the best claim pitch on the page: a record worth keeping is standing right above the key that keeps it.\n\nFor: the page finally answers a question (how am I doing) instead of only asking one; both complaints fixed as a side effect.\nAgainst: needs that meta call; without it the career section must wait, and B collapses to A with a bigger head." },
-    { "id": "note-c", "x": 940, "y": 2320, "w": 430,
-      "text": "C - THE FORM IS THE PAGE. For a guest the page is the claim form itself: password field inline, one lit key, log in below as the alternative. No card opens over an empty page.\n\nFor: the emptiness becomes the form's room; the claim flow loses a step.\nAgainst: a form pointed at every guest reads as a demand, and the house rule is that a password is offered, never demanded. Claimed, the form has nothing to ask and the page is back to being thin." },
-    { "id": "note-copy", "x": 0, "y": 884, "w": 390,
-      "text": "CURRENT, for scale. Three rows, then a box that repeats them with a paragraph of lore over 170 points of nothing. The name appears three times on one screen." }
+    { "id": "brief", "x": 1880, "y": 0, "w": 430,
+      "text": "The settled proposal, drawn a few ways.\n\nWords: sign up / log in, guest / signed in. The mechanics stay the transition; sign up is the story, and the card says what it keeps. Claim vocabulary is gone.\n\nThe career is totals and says so by saying nothing: no season, no week. Rating, tier, record, games are one meta call; rivets is already on the client.\n\nThe reroll lives behind NEW NAME on every board.\n\nTwo shapes are still open, so each is drawn twice: where the sign-up act sits on the page (keys in the head, or a foot key), and how loud the drawer banner is (a band, or one line)." },
+    { "id": "note-page", "x": 470, "y": 884, "w": 860,
+      "text": "THE GUEST PAGE, TWO WAYS.\n\nKeys in the head (left, leading): the act sits beside the identity it acts on, and the claimed page is the same drawing with different keys, so the page keeps one shape across states.\n\nFoot key (right): the menu's big-act grammar, DEPLOY and SAVE. Strongest possible sign-up, and the career sits between you and it as the argument. But the banner already carries the loud call, and a page with a lit foot key AND a banner elsewhere is the same voice twice; log in also ends up as small print, which it does not deserve on a shared machine." },
+    { "id": "note-banner", "x": 0, "y": 2044, "w": 860,
+      "text": "THE BANNER, TWO WAYS. Shown once a guest has something to lose: an upgrade bought, a friend made, a rating banked. Before that it stays away, because a warning over an empty account is nagging. It rides every tab except the pilot page, which carries the act itself; pressing it goes there. The gold dot on the pilot stop is the permanent, quiet half of the reminder and stays either way.\n\nThe band (left, leading): the caution color at the menu's usual weights, standing on the rail where a thumb passes. Findable is its job.\n\nOne line (right): the same words at whisper. Calmer, and easy to never see, which is how pilots get lost." },
+    { "id": "note-card", "x": 940, "y": 2044, "w": 390,
+      "text": "The sign-up card. One field, and the note is the transition promise: keeps Delta 154 and everything it has flown. Log in stays its own card, unchanged but for the head." }
   ],
   "launch": { "view": "canvas" }
 }

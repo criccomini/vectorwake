@@ -109,7 +109,7 @@ def rail(lit="pilot"):
             'border-top:1px solid rgba(63,88,120,.6);display:flex">'
             + "".join(cells) + '</div>')
 
-def board(body, overlay=""):
+def board(body, overlay="", lit="pilot"):
     return f"""<!doctype html>
 <html>
 <head>
@@ -129,7 +129,7 @@ def board(body, overlay=""):
 {topline()}
 {body}
 </div>
-{rail()}
+{rail(lit)}
 {overlay}
 </div>
 </x-dc>
@@ -169,6 +169,10 @@ RIVET = ('<svg width="11" height="11" viewBox="0 0 16 16" fill="none">'
 
 NEWNAME = keychip("new name")
 
+CHEVRON = ('<svg width="9" height="12" viewBox="0 0 10 14">'
+           '<path d="M2 1.5 L7.5 7 L2 12.5 Z" fill="rgba(79,214,255,.55)"/>'
+           '</svg>')
+
 def field(placeholder, discs=False):
     inner = ("".join('<span style="width:6px;height:6px;border-radius:50%;'
                      'background:#dfe9f5"></span>' for _ in range(6))
@@ -182,6 +186,28 @@ def field(placeholder, discs=False):
 
 def write(name, html):
     pathlib.Path(OUT, name).write_text(html)
+
+# The career, labeled for what it is: totals, no invented season.
+def career():
+    h = sect("career")
+    h += fact("Duel rating", "1487, ace")
+    h += fact("Record", "231 kills, 188 deaths")
+    h += fact("Games", "419")
+    h += fact("Rivets", "1,264", RIVET)
+    return h
+
+# The identity head shared by every pilot-page board: the name large with
+# NEW NAME beside it, and what the name is under it.
+def ident(status):
+    return ('<div style="margin-top:14px">'
+            '<div class="row" style="gap:10px">'
+            '<span style="font-size:24px">Delta 154</span>'
+            '<div style="flex:1"></div>' + NEWNAME + '</div>'
+            f'<div class="lbl" style="margin-top:4px">{status}</div></div>')
+
+GUEST_LINE = ('<div class="note" style="text-transform:none;line-height:1.5;'
+              'margin-top:8px">signing up keeps this pilot and its record on '
+              'any machine</div>')
 
 # ---- Current: the page as shipped, for scale ----
 cur = ('<div class="row" style="height:32px;margin:0 -14px;padding:0 14px;'
@@ -208,78 +234,91 @@ cur += ('<div style="border-left:1px solid rgba(79,214,255,.35);'
         'lives on this one</p></div>')
 write("Current.dc.html", board(cur))
 
-# ---- A: plain words, and the box deleted ----
-a = ('<div class="row" style="height:34px;margin:0 -14px;padding:0 14px;'
-     'gap:8px"><span class="name">Call sign</span>'
-     '<span class="note" style="text-transform:none;margin-left:10px">'
-     'Delta 154</span><div style="flex:1"></div>' + NEWNAME + '</div>')
-a += vrow("Set a password", "makes Delta 154 yours on any machine")
-a += vrow("Log in", "already have a pilot")
-write("DirectionA.dc.html", board(a))
+# ---- Main: the guest page, sign up and log in as keys in the head ----
+mg = ident("a guest on this device")
+mg += GUEST_LINE
+mg += ('<div class="row" style="gap:8px;margin:12px 0 2px">'
+       + keychip("sign up", True, 30) + keychip("log in", False, 30) + '</div>')
+mg += career()
+write("Main.dc.html", board(mg))
 
-# ---- B, leading: the pilot card, and the career under it ----
-def b_head(status, warn, keys):
-    h = ('<div style="margin:14px -14px 0;padding:0 14px 14px;'
-         'border-bottom:1px solid rgba(63,88,120,.45)">'
-         '<div class="row" style="gap:10px">'
-         '<span style="font-size:24px">Delta 154</span>'
-         '<div style="flex:1"></div>' + NEWNAME + '</div>'
-         f'<div class="lbl" style="margin-top:4px">{status}</div>')
-    if warn:
-        h += ('<div class="note" style="text-transform:none;line-height:1.5;'
-              f'margin-top:8px">{warn}</div>')
-    h += ('<div class="row" style="gap:8px;margin-top:12px">' + keys
-          + '</div></div>')
-    return h
+# ---- The same page with sign up as the foot key ----
+ft = ident("a guest on this device")
+ft += career()
+ft += ('<div style="position:absolute;left:14px;right:14px;bottom:14px">'
+       + GUEST_LINE +
+       '<div class="key keylit" style="height:36px;width:100%;'
+       'font-size:10.5px;margin-top:8px">sign up</div>'
+       '<div class="row" style="justify-content:center;margin-top:10px;'
+       'gap:6px"><span class="note">already have a pilot?</span>'
+       '<span class="note" style="color:#4fd6ff">log in</span></div></div>')
+write("FootKey.dc.html", board(ft))
 
-def career():
-    h = sect("career", "the season so far")
-    h += fact("Duel rating", "1487, ace")
-    h += fact("Record", "231 kills, 188 deaths")
-    h += fact("Games", "419")
-    h += fact("Rivets", "1,264", RIVET)
-    return h
+# ---- Claimed: the same page signed in ----
+cl = ident("signed in")
+cl += ('<div class="row" style="gap:8px;margin:12px 0 2px">'
+       + keychip("change password", False, 30)
+       + keychip("log out", False, 30) + '</div>')
+cl += career()
+write("Claimed.dc.html", board(cl))
 
-bg = b_head("a guest on this device",
-            "a password makes this name yours on any machine; without one "
-            "it lives here",
-            keychip("set password", True, 30) + keychip("log in", False, 30))
-bg += career()
-write("Main.dc.html", board(bg))
+# ---- The sign-up card over the page, with the new words ----
+card = ('<div style="position:absolute;inset:0;background:rgba(3,5,10,.55)">'
+        '</div>'
+        '<div style="position:absolute;left:30px;right:30px;top:270px;'
+        'background:#080d16;border:1px solid rgba(63,88,120,.75);'
+        'padding:18px 18px 16px">'
+        '<div style="font-size:16px;margin-bottom:4px">Sign up</div>'
+        '<div class="note" style="text-transform:none;line-height:1.5">'
+        'keeps Delta 154 and everything it has flown; log back in from any '
+        'machine</div>'
+        '<div style="margin-top:14px">' + field("choose a password") + '</div>'
+        '<div class="row" style="gap:8px;margin-top:14px;'
+        'justify-content:flex-end">'
+        + keychip("cancel") + keychip("sign up", True) + '</div></div>')
+write("SignUpCard.dc.html", board(mg, overlay=card))
 
-bc = b_head("signed in", None,
-            keychip("change password", False, 30) + keychip("log out", False, 30))
-bc += career()
-write("BClaimed.dc.html", board(bc))
+# ---- The play page twice, wearing the two banner treatments ----
+def play_rows():
+    return ('<div style="margin:0 -14px">'
+            '<div style="padding:10px 14px;background:linear-gradient(90deg,'
+            'rgba(79,214,255,.14),rgba(79,214,255,0) 85%)">'
+            '<div style="font-size:18px">Duel</div>'
+            '<div class="note" style="text-transform:none">One life at a '
+            'time, climb the house pilot ladder</div></div>'
+            '<div style="padding:10px 14px">'
+            '<div style="font-size:18px">Team Battle</div>'
+            '<div class="note" style="text-transform:none">Four a side, '
+            'three minutes</div></div></div>')
 
-# ---- C: the form is the page ----
-c = ('<div style="margin-top:14px">'
-     '<span class="lbl">flying as</span>'
-     '<div class="row" style="gap:10px;margin-top:4px">'
-     '<span style="font-size:24px">Delta 154</span>'
-     '<div style="flex:1"></div>' + NEWNAME + '</div>'
-     '<div class="lbl" style="margin-top:4px">a guest on this device</div>'
-     '</div>')
-c += sect("keep this name anywhere")
-c += field("choose a password")
-c += ('<div class="key keylit" style="height:34px;margin-top:10px;'
-      'width:100%;font-size:10px">set password</div>')
-c += sect("or")
-c += vrow("Log in to another pilot", None,
-          '<svg width="9" height="12" viewBox="0 0 10 14">'
-          '<path d="M2 1.5 L7.5 7 L2 12.5 Z" '
-          'fill="rgba(79,214,255,.55)"/></svg>')
-write("DirectionC.dc.html", board(c))
+# A small mark on the pilot stop, carried on both treatments: the quiet,
+# permanent half of the warning.
+DOT = ('<div style="position:absolute;right:26px;bottom:44px;width:5px;'
+       'height:5px;border-radius:50%;background:#ffd166"></div>')
 
-cc = ('<div style="margin-top:14px">'
-      '<span class="lbl">flying as</span>'
-      '<div class="row" style="gap:10px;margin-top:4px">'
-      '<span style="font-size:24px">Delta 154</span>'
-      '<div style="flex:1"></div>' + NEWNAME + '</div>'
-      '<div class="lbl" style="margin-top:4px">signed in</div></div>'
-      '<div style="height:10px"></div>')
-cc += vrow("Change password")
-cc += vrow("Log out", "this device becomes a fresh guest")
-write("CClaimed.dc.html", board(cc))
+# Loud: a band standing on the rail, in the caution color at the menu's
+# usual weights.
+band = ('<div style="position:absolute;left:0;right:0;bottom:78px;'
+        'height:40px;display:flex;align-items:center;gap:10px;'
+        'padding:0 14px;background:rgba(255,209,102,.08);'
+        'border-top:1px solid rgba(255,209,102,.5)">'
+        '<span style="width:5px;height:5px;border-radius:50%;'
+        'background:#ffd166;flex:none"></span>'
+        '<span style="font-size:12.5px">Guest pilot</span>'
+        '<span class="note" style="text-transform:none">sign up to keep '
+        'your record</span><div style="flex:1"></div>' + CHEVRON + '</div>'
+        + DOT)
+write("PlayBanner.dc.html", board(play_rows(), overlay=band, lit="play"))
+
+# Quiet: one dim line in the same place, the dot doing the pointing.
+quiet = ('<div style="position:absolute;left:0;right:0;bottom:78px;'
+         'height:30px;display:flex;align-items:center;gap:8px;'
+         'padding:0 14px;border-top:1px solid rgba(63,88,120,.45)">'
+         '<span style="width:5px;height:5px;border-radius:50%;'
+         'background:#ffd166;flex:none"></span>'
+         '<span class="note" style="text-transform:none">guest pilot; sign '
+         'up to keep your record</span><div style="flex:1"></div>'
+         + CHEVRON + '</div>' + DOT)
+write("PlayQuiet.dc.html", board(play_rows(), overlay=quiet, lit="play"))
 
 print("boards written")
