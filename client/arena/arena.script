@@ -887,7 +887,8 @@ end
 -- in a sentence belongs here rather than in a second widget: it is already
 -- the place they look to find out what just happened.
 -- `mine` marks a line as being about this pilot rather than about the room.
--- A phone has room for one line at a time and shows only these. A desktop also
+-- A phone has room for one line at a time and spends it on these, plus every
+-- streak line, which the toast admits by its gleam. A desktop also
 -- carries arena arrivals and departures, but kill lines have already been
 -- limited to this pilot's own kills and deaths by the network queue.
 -- `gleam` marks a line as shimmering rather than sitting in `col`. One thing
@@ -979,18 +980,18 @@ end
 -- somebody who is still flying, and it is the fact that decides who the room
 -- goes after next.
 --
--- Marked `mine` when it is yours, so a phone shows it: the one line a
--- thumb-sized screen has is spent on things this pilot can act on, and being
--- told the room has just been told about you is one of them.
+-- A phone shows every one of these. Its toast keeps kill lines to this
+-- pilot's own, but a streak names the pilot the whole room is about to go
+-- after, which any player can act on, so the line is not marked `mine`: the
+-- gleam is what carries it through the toast's filter, yours or not.
 --
 -- The alert is not attenuated and does not care where the pilot is. Every
 -- other sound in this game is a thing happening somewhere; this one is an
 -- announcement, and an announcement that fades with distance is a rumour.
 local function drain_streaks()
     for _, k in ipairs(net.streaks) do
-        local mine = not watching and k.ship == me
         notify({pilot_named(k.ship, true), " is on a streak"},
-               nil, mine, true)
+               nil, nil, true)
         sfx.ui("streak")
     end
     if #net.streaks > 0 then net.streaks = {} end

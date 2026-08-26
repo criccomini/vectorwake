@@ -462,8 +462,10 @@ cannot be used is not drawn: a scrollbar on a list that fits, a spent
 charge's row, empty charge slots.
 
 On a phone, the pads carry the weapon marks themselves, so the stack stands
-down to nothing and the one feed line that is about you appears as a short
-toast in the empty band of the screen, far from the thumbs.
+down to nothing and the feed becomes a short toast in the empty band of the
+screen, far from the thumbs: one line at a time, and only lines about you,
+except that a streak line shows whoever it names, since who the room goes
+after next is news every pilot steers by.
 
 ## Where this lives
 

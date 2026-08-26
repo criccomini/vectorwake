@@ -1697,13 +1697,17 @@ local top_side = nil
 
 local function by_column(a, b)
     if top_side ~= nil then
-        -- Winner's side first, then the best gun on each, which is the order
-        -- the ending's own head reads in.
+        -- Winner's side first, then by what each pilot did to the result:
+        -- kills less deaths, since a side's score is the kills its pilots
+        -- landed and every death is one of those handed to the other side.
+        -- Level on that, the one who was in more of it. It is the measure the
+        -- mark is picked by, so whoever wears it is the top row of its side.
         if a.watch ~= b.watch then return b.watch end
         local at, bt = a.team == top_side, b.team == top_side
         if at ~= bt then return at end
+        local an, bn = a.k - a.d, b.k - b.d
+        if an ~= bn then return an > bn end
         if a.k ~= b.k then return a.k > b.k end
-        if a.d ~= b.d then return a.d < b.d end
         return (ahead(a, b))
     end
     -- Watchers last, under everybody who is actually flying, whatever column
@@ -2086,11 +2090,21 @@ local function scores(me, pilots, watchers, viewer_name, always)
     -- ending: mid-fight the board is a list of who is here, and a prize on it
     -- is a reading nobody asked for while they are being shot at.
     --
+    -- On the side that took it, and never on the other one. A match is won by
+    -- a side and the mark is the winner's to hand out; the best pilot on a
+    -- side that lost is a reading about a fight that did not go their way.
+    --
+    -- Kills less deaths, which is what that pilot was worth to the result
+    -- rather than how much of it they were seen doing. The score is the kills
+    -- a side's pilots landed, so a death is a point handed to the other side
+    -- and the pilot who took five and gave back four moved the match by one.
+    -- Level on that, the one with more kills: the same net through more of
+    -- the fight is more of the fight.
+    --
     -- And only in a room big enough for the mark to say something. A duel is
-    -- first to one, so the winner is the only pilot with a kill and the best
-    -- gun in the room is always whoever just won: the mark would be the bar
-    -- over it said a second time. Three scorers is where a prize starts
-    -- picking somebody out rather than restating the result.
+    -- first to one, so the winner is the only pilot with a kill and the mark
+    -- would be the bar over it said a second time. Three scorers is where a
+    -- prize starts picking somebody out rather than restating the result.
     local best = nil
     if top_side ~= nil then
         local scored = 0
@@ -2098,12 +2112,18 @@ local function scores(me, pilots, watchers, viewer_name, always)
             if not rows[i].watch and rows[i].k > 0 then scored = scored + 1 end
         end
         if scored >= 3 then
+            local best_net = 0
             for i = 1, n do
                 local r = rows[i]
-                if not r.watch and r.k > 0
-                   and (best == nil or r.k > best.k
-                        or (r.k == best.k and r.d < best.d)) then
-                    best = r
+                -- Something shot down, still. A pilot who stayed out of every
+                -- fight comes out level at nothing, which beats a wingman who
+                -- traded four for five, and the mark is not for hiding.
+                if not r.watch and r.team == top_side and r.k > 0 then
+                    local net = r.k - r.d
+                    if best == nil or net > best_net
+                       or (net == best_net and r.k > best.k) then
+                        best, best_net = r, net
+                    end
                 end
             end
         end
@@ -2145,11 +2165,11 @@ local function scores(me, pilots, watchers, viewer_name, always)
         local cy = y + LINE * F.scale / 2
         txt(name, name_x, cy, num, pal.a(col, mine and 1.0 or 0.8),
             nil, nil, true)
-        -- The best gun in the room, at the ending only, and on whichever side
-        -- it flew for. Nobody in a scoreless match, because a mark on a pilot
-        -- with no kills is a prize for turning up, and the fewer deaths where
-        -- two are level, so it lands in the same place on every machine
-        -- rather than on whoever the roster happened to name first.
+        -- Who moved the match most, at the ending only and on the side that
+        -- took it. Nobody in a scoreless match, because a mark on a pilot
+        -- with no kills is a prize for turning up, and the more kills where
+        -- two are level on net, so it lands in the same place on every
+        -- machine rather than on whoever the roster happened to name first.
         if best ~= nil and r == best then
             local at = name_x + text_w(name, num) + 8 * F.scale
             if at + text_w("MVP", small) < mark_x then
@@ -2512,12 +2532,16 @@ end
 -- player wants there. Which left a phone with no way at all to learn that
 -- somebody had just killed them.
 --
--- So the phone gets the same feed, filtered to one line. Only lines the arena
+-- So the phone gets the same feed, filtered to one line. Lines the arena
 -- marked as being about this pilot: their kills and their deaths. A stranger
 -- killing a stranger is news, and it is news a player in a fight cannot use.
--- And only the newest of those at once, because two
--- lines stacked over the middle of the screen is a panel, and a panel over
--- the fight is the thing the corner feed was moved out of the way to avoid.
+-- A streak line passes whoever it names, because it is the one piece of room
+-- news a fight runs on: it says who everybody goes after next, and a phone
+-- that only played the announcement sound left its player hearing that
+-- somebody was streaking with no way to learn who. And only the newest at
+-- once, because two lines stacked over the middle of the screen is a panel,
+-- and a panel over the fight is the thing the corner feed was moved out of
+-- the way to avoid.
 --
 -- Shorter-lived than a feed line, too. Nine seconds is right for a column
 -- that is read at a glance and scrolls; the same nine seconds in the middle
@@ -2550,7 +2574,7 @@ end
 local function toast(lines, reach)
     local f = nil
     for i = 1, #lines do
-        if lines[i].mine and lines[i].t < TOAST_LIFE then
+        if (lines[i].mine or lines[i].gleam) and lines[i].t < TOAST_LIFE then
             f = lines[i]
             break
         end
