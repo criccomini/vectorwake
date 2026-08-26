@@ -5794,6 +5794,121 @@ end
 -- behind the button because a browser hands a popup blocker every tab a game
 -- opens for you, and an address a player can read and retype is the floor
 -- that always works. It is cut from the same constant the button carries.
+-- The pilot page: who you are, what you have flown, and the way to keep it.
+-- The name leads with NEW NAME as a key beside it, the career sits under a
+-- ship-page section rule as bare totals, and the account acts stand at the
+-- foot the way DEPLOY and SAVE do: a guest gets one lit SIGN UP under two
+-- centered lines, a signed-in pilot gets the password and the way out as a
+-- pair. The node's rows are the arrows' side of these controls, in the order
+-- they are met walking down: the name key, the lit act, the line under it.
+function pages.pilot(v, x, y, w, h, focused)
+    local c = v.pilot_card or {}
+    local sel = focused and (v.sel or 0) or 0
+    local at = y + 10 * F.scale
+
+    -- The name in its owner's case. A press on it does nothing any more; it
+    -- used to reroll it, which cost a curious pilot their call sign.
+    local kh = 26 * F.scale
+    txt(c.name or "", x, at + kh / 2, 24 * F.scale, pal.a(pal.INK, 1),
+        nil, MENU_FONT, true)
+    local kw = text_w("new name", 8.5 * F.scale, MENU_FONT) + 22 * F.scale
+    local hot = sel == 1
+    key_box(x + w - kw, at, kw, kh,
+            pal.rgb(0x0a0f18, hot and 0.95 or 0.7),
+            pal.a(hot and pal.FRIEND or pal.RADAR_TILE, hot and 0.95 or 0.7))
+    txt("new name", x + w - kw / 2, at + kh / 2, 8.5 * F.scale,
+        pal.a(hot and pal.FRIEND or pal.INK, hot and 1 or 0.6), "center",
+        MENU_FONT)
+    hit(x + w - kw, at, kw, kh, "stage", 1)
+    at = at + kh + 16 * F.scale
+
+    -- The career, in the ship page's section grammar: a rule edge to edge of
+    -- the page and the label under it, then the totals. Bare totals with no
+    -- clock on them, because there is no season and the week belongs to the
+    -- site's ladder. The rating names the class it was earned in and is
+    -- withheld while provisional, the way /pilots withholds it.
+    hrule(x, at, w)
+    at = at + 13 * F.scale
+    lbl("career", x, at)
+    at = at + 24 * F.scale
+    local function fact(label, value)
+        txt(label, x, at, 14 * F.scale, pal.a(pal.INK, 0.85))
+        txt(value, x + w, at, 11 * F.scale, pal.a(pal.PANEL_INK, 0.95),
+            "right", nil, true)
+        at = at + 26 * F.scale
+    end
+    local career = c.career
+    if career and career.class then
+        local word = career.class == "ladder" and "Duel rating"
+            or "Arena rating"
+        local val = "provisional"
+        if career.rating then
+            val = string.format("%d, %s", math.floor(career.rating + 0.5),
+                                string.lower(career.tier or ""))
+        end
+        fact(word, val)
+    end
+    if career then
+        fact("Record", career.kills .. " kills, " .. career.deaths
+             .. " deaths")
+        fact("Games", tostring(career.games))
+    end
+    txt("Rivets", x, at, 14 * F.scale, pal.a(pal.INK, 0.85))
+    pages.priced(c.rivets or 0, x + w, at, 11.5 * F.scale,
+                 pal.a(pal.CHARGE_COL, 0.95), "right")
+    at = at + 26 * F.scale
+
+    -- The foot. Signing up is the one big act a guest has here, so it gets
+    -- the DEPLOY treatment: full width, lit, under the line saying what it
+    -- buys and the line for the pilot who already has one. Signed in, the
+    -- same room holds the password and the way out as a pair, and nothing
+    -- has to say which state the account is in: the keys are the state.
+    local fh = 36 * F.scale
+    local ky = y + h - fh - 6 * F.scale
+    if c.online and not c.claimed then
+        local mid = x + w / 2
+        local l2 = ky - 16 * F.scale
+        local l1 = l2 - 19 * F.scale
+        txt("Keep your points and log in on other devices", mid, l1,
+            10.5 * F.scale, pal.a(pal.DIM, 1), "center")
+        local ask = "Already have a pilot? "
+        local act = "log in"
+        local px2 = 10.5 * F.scale
+        local aw = text_w(ask, px2)
+        local vw = text_w(act, px2)
+        local sx2 = mid - (aw + vw) / 2
+        local hot3 = sel == 3
+        txt(ask, sx2, l2, px2, pal.a(pal.DIM, 1))
+        txt(act, sx2 + aw, l2, px2,
+            pal.a(pal.FRIEND, hot3 and 1 or 0.85), nil, nil, true)
+        hit(x, l2 - 10 * F.scale, w, 20 * F.scale, "stage", 3)
+        local hot2 = sel == 2
+        key_box(x, ky, w, fh, pal.a(pal.FRIEND, hot2 and 0.18 or 0.10),
+                pal.a(pal.FRIEND, hot2 and 1 or 0.85))
+        txt("sign up", mid, ky + fh / 2, 12.5 * F.scale,
+            pal.a(pal.INK, 1), "center", MENU_FONT)
+        hit(x, ky, w, fh, "stage", 2)
+    elseif c.online then
+        local half = (w - 10 * F.scale) / 2
+        for i, word in ipairs({"change password", "log out"}) do
+            local bx = x + (i - 1) * (half + 10 * F.scale)
+            local on = sel == i + 1
+            key_box(bx, ky, half, fh,
+                    pal.rgb(0x0a0f18, on and 0.95 or 0.7),
+                    pal.a(on and pal.FRIEND or pal.RADAR_TILE,
+                          on and 0.95 or 0.7))
+            txt(word, bx + half / 2, ky + fh / 2, 10.5 * F.scale,
+                pal.a(on and pal.FRIEND or pal.INK, on and 1 or 0.75),
+                "center", MENU_FONT)
+            hit(bx, ky, half, fh, "stage", i + 1)
+        end
+    end
+    -- Head and foot are pinned, the career fits between them on any window
+    -- this drawer runs at, so the page never scrolls.
+    M.page_extent = h
+    M.page_room = h
+end
+
 function pages.door(v, x, y, w, h, focused)
     local col = math.min(w, 760 * F.scale)
     local compact = col < 500 * F.scale
@@ -6271,7 +6386,9 @@ local function ask_card(x, y, w, h, a)
     if a.fields then
         local fx = cx + 26 * F.scale
         local fw = cw - 52 * F.scale
-        local fy = cy + 58 * F.scale
+        -- Under the note where the card carries one: the sign-up card is
+        -- the first to want both, and without this they overprinted.
+        local fy = cy + (a.note and 88 or 58) * F.scale
         if dom then M.ask_dom = ask_spec(fx, fy, fw, a) end
         for i, f in ipairs(a.fields) do
             local lit = not a.sending and i == (a.field or 1)
@@ -7007,6 +7124,24 @@ function M.menu(v)
     sx, sw = dx + margin, dock - 2 * margin
     sy = bare and hy or (hy + head + 8 * F.scale)
     sh = ry_ - 14 * F.scale - sy
+    -- The guest banner: a band in the caution color standing on the rail,
+    -- for a guest with something to lose, on every page but the one it
+    -- points at. Words alone, and the whole band is the press. It takes its
+    -- room off the page so no list runs underneath it.
+    if v.banner then
+        local bh = 46 * F.scale
+        sh = sh - bh
+        local by = ry_ - bh
+        rect(dx, by, dock, bh, pal.a(pal.CHARGE_COL, 0.08))
+        F.layer:seg(dx, ry(by), dx + dock, ry(by), F.scale,
+                    pal.a(pal.CHARGE_COL, 0.5), true)
+        txt("You are using a guest account.", dx + margin,
+            by + 16 * F.scale, 12.5 * F.scale, pal.a(pal.INK, 0.95), nil,
+            MENU_FONT)
+        txt("Press here to set your password.", dx + margin,
+            by + 33 * F.scale, 10 * F.scale, pal.a(pal.DIM, 1))
+        hit(dx, by, dock, bh, "pilot_page")
+    end
     -- A rule under the head, so the name and the call sign read as a bar over
     -- the page rather than as the page's own first line. Edge to edge, since
     -- it is the underside of a head rather than the top of a list. A page
@@ -7158,6 +7293,12 @@ function M.menu(v)
                 tab_h / F.density, e.link)
         end
         draw_mark(e.icon, cx, cy, r, col, v.class or 0)
+        -- The quiet half of the guest warning: a spark on the stop the
+        -- banner points at, carried wherever the banner itself is not.
+        if v.guest_dot and e.label == "pilot" then
+            F.layer:disc(cx + 11 * F.scale, ry(cy - 9 * F.scale),
+                         2.4 * F.scale, 10, pal.CHARGE_COL)
+        end
         txt(e.label, cx, cy + 24 * F.scale, label_px,
             pal.a((sel or hot) and pal.FRIEND or pal.DIM,
                   (sel or hot) and 1 or 0.8),
@@ -7355,6 +7496,10 @@ function M.menu(v)
         -- One slot, read: where a press on a row's name lands.
         pages.slot(v, panel_x + GUTTER * F.scale, top,
                    panel_w - 14 * F.scale - GUTTER * F.scale, room, focused)
+    elseif v.pilot_card then
+        -- Who you are and the way to keep it, drawn rather than listed.
+        pages.pilot(v, panel_x + GUTTER * F.scale, top,
+                    panel_w - 14 * F.scale - GUTTER * F.scale, room, focused)
     elseif v.rows and #v.rows > 0 and v.rows[1].hull then
         ship_grid(tx, top, avail, room, v, focused)
     else

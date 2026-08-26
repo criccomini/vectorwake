@@ -3170,3 +3170,52 @@ to leave; or career and stats grow into the client somewhere other than this
 page, at which point "pilot" is a name promising more than a password form;
 or the name in the corner turns out to be pressed so rarely that it is worth
 keeping only as text.
+
+## 70. Sign up, and the pilot page is the career
+
+**Decision:** the account's player-facing words are sign up and log in, and
+the pilot page is rebuilt around what the account holds rather than around
+the offer. The name leads, large, with the reroll behind a NEW NAME key;
+under a ship-page section rule sits the career as bare totals, served by a
+new session-authenticated `/v1/career`: the most-flown class's rating and
+tier, withheld while provisional the way `/pilots` withholds them, rated
+games across every class, the kill and death record, and the rivets already
+on the client. At the foot, the one act each state has: a guest's lit SIGN
+UP under "Keep your points and log in on other devices" and "Already have a
+pilot? log in"; signed in, the password and the way out as a pair of keys.
+The reading column is gone, and the sign-up card carries the one explaining
+line.
+
+A guest with something to lose, an upgrade bought past the baseline, a
+friend made, a rated game flown, gets a band in the caution color standing
+on the rail on every tab but the pilot page: "You are using a guest
+account. Press here to set your password." The whole band is the press, it
+takes its room off the page rather than covering it, and a gold spark rides
+the pilot rail stop under the same rule. Before there is anything to lose,
+both stay away.
+
+Claiming keeps its name on the wire and in accounts.md; nothing about the
+mechanism moved. Sign up attaches a password to the account the guest
+already is, and the card says what that keeps.
+
+**Why:** "keep this pilot" named a consequence and hid the act, and the
+page around it spent a whole column saying the call sign a third time and
+the password sentence a second, over an empty gap. The claim flow is the
+one control a surviving player most needs to find, and it lived on a page
+nobody had a reason to open. The career gives the page that reason, and a
+guest's record standing directly above the key that keeps it is the best
+sign-up pitch the game can make. The reroll moved behind a key because a
+press on your own name destroying it is a landmine on the row a curious
+player presses first.
+
+**Cost:** one more meta call per session and per pilot-page visit. The
+banner is chrome that shows up uninvited, which this menu otherwise never
+does; the something-to-lose gate is what keeps it from being nagging, and
+it is drawer-only, so a guest who never opens the menu never sees it. A
+client older than the meta, or the reverse, degrades to a career of rivets
+alone.
+
+**Reconsider if:** the banner's gate proves wrong in either direction,
+guests with stakes still losing pilots or fresh guests complaining of the
+band; or a second place grows that shows the career, at which point the
+page and `/pilots` need one shape.

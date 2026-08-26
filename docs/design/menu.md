@@ -1,5 +1,19 @@
 # Landing, and the menu
 
+> **The pilot page is the career and the way to keep it.** The name leads
+> with the reroll behind a NEW NAME key, because a press on your own call
+> sign used to reroll it on the spot. Under a ship-page section rule, the
+> career as bare totals: the most-flown class's rating and tier, the record,
+> rated games, rivets, all served by the meta-layer's `/v1/career`. At the
+> foot, the one act each state has: a guest's lit SIGN UP under "Keep your
+> points and log in on other devices" and "Already have a pilot? log in", or
+> the password and log out as a pair. "Keep this pilot" and the reading
+> column that said everything twice are gone; sign up and log in are the
+> words everywhere, and the sign-up card carries the one explaining line. A
+> guest with something to lose gets a gold banner on every tab but this one:
+> "You are using a guest account. Press here to set your password." See
+> [decision 70](../architecture/decisions.md).
+
 > **The account page is a stop on the rail.** The home row is play, ship,
 > friends, settings and pilot: the account page as the fifth stop, wearing the
 > helmet mark the interface already uses for a person. The call sign pill at
@@ -179,9 +193,12 @@ vectorwake
 │             is on, the room you are in, and everybody who ever added you.
 │             See friends.md
 ├ settings    sound · music · frames · fullscreen · bindings · about
-└ pilot       your account and career: the call sign and its reroll, the
-              password that claims this pilot or lets another one in, and
-              the way out of it
+└ pilot       who you are and the way to keep it: the name large with a NEW
+              NAME key beside it, the career as bare totals under a ship-page
+              section rule, and the account acts at the foot. A guest gets
+              one lit SIGN UP under "Keep your points and log in on other
+              devices"; signed in, the same foot holds the password and the
+              way out
 
               your call sign still sits at the far end of the top line and
               opens the same page. It was the only way in for a long time,

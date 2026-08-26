@@ -1967,26 +1967,29 @@ local NODES = {
     -- are and the stop looks like a button. Away from home the row stops
     -- carrying it, and the sweep in `M.tick` puts a pilot back out of it
     -- then, the same as the hangar when the whistle goes.
+    -- Drawn by `pages.pilot` rather than as a list: the name large with a
+    -- NEW NAME key beside it, the career under a ship-page section rule, and
+    -- the account acts at the foot. These rows are the arrows' side of that
+    -- drawing, in the order the controls are met walking down.
+    --
+    -- The reroll is a key rather than a press on the name. It used to be the
+    -- row itself, and a curious player pressing their own call sign to see
+    -- what it did lost it on the spot.
     pilot = {rows = function()
         local rows = {
-            {label = "call sign", detail = function() return M.name end,
-             -- A call sign is upper, lower and numeric as its owner has it.
-             verbatim = true, act = "reroll"},
+            {label = "new name", act = "reroll"},
         }
         -- A password is offered rather than demanded, and it is the whole
-        -- account model: set one and this name is yours anywhere, skip it
+        -- account model: sign up and this name is yours anywhere, skip it
         -- and the pilot lives on this device until a quiet week reclaims
-        -- it. No rows at all without a meta-layer, because then there is
-        -- nothing behind them to talk to.
+        -- it. No account rows at all without a meta-layer, because then
+        -- there is nothing behind them to talk to.
         if account.base ~= "" and not account.claimed then
-            rows[#rows + 1] = {label = "keep this pilot", act = "claim",
-                note = "a password brings this pilot back anywhere"}
-            rows[#rows + 1] = {label = "log in", act = "enter_login",
-                note = "call sign and password"}
+            rows[#rows + 1] = {label = "sign up", act = "claim"}
+            rows[#rows + 1] = {label = "log in", act = "enter_login"}
         elseif account.claimed then
             rows[#rows + 1] = {label = "change password", act = "claim"}
-            rows[#rows + 1] = {label = "log out", act = "logout",
-                note = "this device becomes a fresh guest"}
+            rows[#rows + 1] = {label = "log out", act = "logout"}
         end
         return rows
     end},
@@ -2712,10 +2715,14 @@ end
 -- file a password under a user name, and this card has no line for one
 -- because the name is not in question here.
 function M.ask_password()
-    local head = account.claimed and "Choose a new password."
-        or ("Keep " .. M.name .. ". Choose a password.")
+    local head = account.claimed and "Choose a new password." or "Sign up."
     M.ask = {head = head,
-             keys = {{label = "keep", act = "do_claim"}, {label = "cancel"}},
+             -- The one line the old page said in three places, kept where
+             -- the act is: what signing up buys.
+             note = not account.claimed
+                 and "keep your points and log in on other devices" or nil,
+             keys = {{label = account.claimed and "change" or "sign up",
+                      act = "do_claim"}, {label = "cancel"}},
              sel = 1, field = 1, ghost = M.name,
              fields = {{label = "password", value = "", mask = true,
                         kind = "new-password", max = PASSWORD_MAX}}}
@@ -3025,6 +3032,9 @@ function M.tick(dt)
         if at == "hangar" or at == "slot" then
             account.refresh_upgrades(M.zone)
         end
+        -- The career, re-asked when its page comes up: the session already
+        -- fetched one, and this catches the matches flown since.
+        if at == "pilot" then account.refresh_career() end
         was_at = at
     end
     -- Friends is asked for on two pages rather than one, and again while
@@ -3095,6 +3105,24 @@ end
 local function press_corner(which)
     if which == "discord" then return M.open_discord() end
     return nil, false
+end
+
+-- Whether this guest has anything a lost account would cost: an upgrade
+-- bought past the baseline, a friend made, or a rated game flown. This is
+-- what arms the banner and the rail dot; before there is anything to lose
+-- they stay away, because a warning over an empty account is nagging.
+local function guest_stakes()
+    if account.base == "" or account.claimed then return false end
+    if #(account.friends or {}) > 0 then return true end
+    if ((account.career or {}).games or 0) > 0 then return true end
+    local own = account.entitlements or {}
+    local core = _G.sim
+    local base = (core and core.base_entitlements and core.base_entitlements())
+        or {}
+    for i = 1, simn("SLOT_COUNT", 23) do
+        if (tonumber(own[i]) or 0) > (base[i] or 0) then return true end
+    end
+    return false
 end
 
 -- What the drawing code needs, and nothing about how it is drawn. `detail` is
@@ -3281,19 +3309,15 @@ function M.view()
                            and rows_of(NODES.root)[sel].go)
                        or nil
     if M.at() == "pilot" or previewing == "pilot" then
-        -- Who you are, beside what you can do about it. The call sign is the
-        -- page, and the rows are three things you might do to it.
-        out.aside = {
-            head = "call sign",
-            label = M.name,
-            sub = account.claimed and "claimed" or "a guest on this device",
-            note = "dealt to you on arrival, and yours until you reroll it. "
-                   .. "A name of your own is something to buy once you have "
-                   .. "flown enough to want one.",
-            foot = account.claimed
-                and "this pilot comes back anywhere you sign in"
-                or "a password brings this pilot back on any machine; without "
-                   .. "one it lives on this one",
+        -- Everything the drawing needs, and no aside: the reading column
+        -- that used to stand here said the call sign a third time and the
+        -- password sentence a second, over an empty gap.
+        out.pilot_card = {
+            name = M.name,
+            claimed = account.claimed,
+            online = account.base ~= "",
+            career = account.career,
+            rivets = account.rivets or 0,
         }
     end
     -- No roster under the games. The room the menu stands over used to draw
@@ -3339,6 +3363,11 @@ function M.view()
     -- the root it is the cursor and says nothing new; one level in it is the
     -- only thing on screen that says what a click would land on, which is the
     -- job it does for the stage on the home screen.
+    -- The guest warning: a dot on the pilot stop whenever there is
+    -- something to lose, and a band over the rail on every page but the one
+    -- the band points at. Home only, which is where the pilot page is.
+    out.guest_dot = guest_stakes()
+    out.banner = out.guest_dot and M.home and M.showing() ~= "pilot"
     out.rail_hover = M.rail_hover
     local top = rows_of(NODES.root)
     out.rail = {}

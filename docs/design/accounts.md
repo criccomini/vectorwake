@@ -60,7 +60,10 @@ is the next section.
 
 Claiming turns a guest into a durable identity by attaching a way back in: a
 password on the call sign they already hold. Name and password are the whole
-of it. Nothing moves at the moment of claiming; it is the same account with
+of it. The interface says "sign up" for this, because that is the pair every
+player already knows with "log in", and it said "keep this pilot" for a
+while, which named the consequence and hid the act; claiming stays this
+document's and the wire's word for the mechanism. Nothing moves at the moment of claiming; it is the same account with
 the same name, the same rating and the same history. What changes is that
 losing the device no longer loses the pilot, and the account is never swept.
 A password is a person saying they mean to come back.
@@ -88,7 +91,12 @@ can attach to one account, which is what lets the web build and the Steam
 build be the same pilot.
 
 The client offers the claim on the pilot page and never blocks play on it. A
-player who declines stays a guest and loses nothing but durability.
+player who declines stays a guest and loses nothing but durability. Once a
+guest has something a sweep would cost them, an upgrade bought, a friend
+made, a rated game flown, the menu carries a banner on every tab but the
+pilot page itself: you are using a guest account, press here to set your
+password. Before there is anything to lose it stays away, because a warning
+over an empty account is nagging.
 
 A seat is bound to one identity for the life of its connection. The zone
 reads the name and the token once, at the join, and what it binds there is

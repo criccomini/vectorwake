@@ -45,6 +45,9 @@ local account = {
 function account.refresh_friends()
     account.asked_friends = account.asked_friends + 1
 end
+function account.refresh_career()
+    account.asked_career = (account.asked_career or 0) + 1
+end
 function account.friend(who, add)
     account.friended = {who = who, add = add}
 end
@@ -931,17 +934,27 @@ menu.click_pilot()
 check("and pressing the name opens the page",
       menu.at() == "pilot", table.concat(menu.stack, "/"))
 local v_guest = menu.view()
-check("a guest is offered the claim and the login",
-      texts_of(v_guest)[2] == "keep this pilot"
+check("a guest is offered the sign up and the login",
+      texts_of(v_guest)[2] == "sign up"
           and texts_of(v_guest)[3] == "log in",
       table.concat(texts_of(v_guest), ", "))
+check("with the reroll behind its own key rather than the name",
+      texts_of(v_guest)[1] == "new name",
+      table.concat(texts_of(v_guest), ", "))
+check("and the page travels as a card, not an aside",
+      v_guest.pilot_card ~= nil and v_guest.aside == nil
+          and v_guest.pilot_card.claimed == false,
+      tostring(v_guest.pilot_card))
 
 menu.sel.pilot = 2
 menu.step({go = true})
-check("keeping this pilot asks for a password, discs and all",
+check("signing up asks for a password, discs and all",
       menu.ask ~= nil and menu.ask.fields ~= nil
           and #menu.ask.fields == 1 and menu.ask.fields[1].mask == true,
       tostring(menu.ask and menu.ask.fields and #menu.ask.fields))
+check("and the card says what signing up buys",
+      menu.ask.note == "keep your points and log in on other devices",
+      tostring(menu.ask.note))
 check("with the sending answer under the cursor", menu.ask.sel == 1
           and menu.ask.keys[1].act == "do_claim",
       tostring(menu.ask.sel))
@@ -2986,6 +2999,36 @@ do
     menu.home, menu.scenery, menu.watching = kept.home, kept.scenery,
                                              kept.watching
     menu.open, menu.stack, menu.sel = kept.open, kept.stack, kept.sel
+end
+
+-- --- the guest banner arms only when there is something to lose ----------
+do
+    local kept = {claimed = account.claimed, friends = account.friends,
+                  home = menu.home, stack = menu.stack, sel = menu.sel}
+    menu.open, menu.home = true, true
+    menu.stack, menu.sel = {"root"}, {}
+    account.claimed = false
+    account.friends = {}
+    account.career = nil
+    check("a fresh guest gets no banner and no dot",
+          menu.view().banner ~= true and menu.view().guest_dot ~= true)
+    account.friends = {{name = "Sable"}}
+    check("a friend made arms the banner",
+          menu.view().banner == true and menu.view().guest_dot == true)
+    menu.stack = {"root", "pilot"}
+    check("but not over the page it points at",
+          menu.view().banner ~= true and menu.view().guest_dot == true,
+          tostring(menu.view().banner))
+    menu.stack = {"root"}
+    menu.home = false
+    check("and not away from home, where the page is not",
+          menu.view().banner ~= true)
+    menu.home = true
+    account.claimed = true
+    check("signing up takes it down",
+          menu.view().banner ~= true and menu.view().guest_dot ~= true)
+    account.claimed, account.friends = kept.claimed, kept.friends
+    menu.home, menu.stack, menu.sel = kept.home, kept.stack, kept.sel
 end
 
 print(fails == 0 and "all good" or (fails .. " failed"))

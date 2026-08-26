@@ -130,6 +130,19 @@ do
     check("an open drawer publishes its stops", boxes("rail") == #RAIL,
           boxes("rail") .. " of " .. #RAIL)
     check("and a way out", boxes("close") > 0, "no close")
+
+    -- The guest banner: a band on the rail whose whole surface is a way to
+    -- the pilot page, beside the one the call sign pill always publishes.
+    -- Drawn only when the view says so.
+    check("no banner box without the flag", boxes("pilot_page") == 1,
+          boxes("pilot_page") .. " boxes")
+    ui.begin(harness.layer(), 1440, 810, 1, false, 4.00)
+    local banded = view(true)
+    banded.banner = true
+    ui.menu(banded)
+    ui.finish()
+    check("the banner publishes its press", boxes("pilot_page") == 2,
+          boxes("pilot_page") .. " boxes")
     frame(4.04, false)
     check("a closing drawer publishes no stops", boxes("rail") == 0,
           boxes("rail") .. " left")
