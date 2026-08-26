@@ -202,6 +202,9 @@ local function draw_round(m, col)
     if m.bolt then barrel(m, 0, col) else bomb_head(m.x, m.y, m.k, col) end
 end
 
+-- What a declined round is drawn in: still on the mark, no longer a round.
+local DECLINED = pal.a(pal.DIM, 0.45)
+
 -- Every add-on takes the mark, a color and how many rungs deep it is, and
 -- draws its rungs rather than reporting them. A number beside a symbol was
 -- what the stack did before, and it made a corner of arithmetic out of six
@@ -219,12 +222,9 @@ end
 -- than its share should not claim the width it did not use.
 
 -- Spray: the volley a pull actually throws, at the angles the core throws
--- it. One more round per rung, so the mark counts bullets exactly as the
--- arena does: two at the first rung, three at the second, five at the
--- fourth, symmetric about the aim. The angles are the baseline's own,
--- mod_pair_spread and mod_spread, seven and a half degrees across the pair
--- and fifteen between rounds of the fan; the core does not export a zone's
--- retuned spread, so a zone that changes it is off here by the difference.
+-- it, so the mark counts bullets exactly as the arena does: two at the
+-- first rung, three at the second, five at the fourth, symmetric about the
+-- aim.
 --
 -- It drew a fixed three-line fan above the first rung for a while, on the
 -- argument that a count of lines is a tally rather than a shape. What that
@@ -232,15 +232,20 @@ end
 -- volley carries, and at the true angles even five rounds stay inside the
 -- row, so the tally is the shape.
 --
+-- Both numbers come off `m`, asked of the core in `dressed` rather than
+-- worked out here: see `shape` below for why they cannot be constants.
+--
 -- The whole volley draws here, the center round included, because a pair
 -- has no center round: dressed() skips draw_round when the trigger wears
 -- any spray. Declined, the geometry holds and the color goes: the one
 -- round that would still fire stays lit and the rest dim, so a fan that
 -- stopped fanning is visibly the same weapon holding its fire.
-local PAIR_STEP, FAN_STEP = 2 * math.pi / 48, 2 * math.pi / 24
-local function dec_multi(m, col, n)
-    local count = n + 1
-    local step = n == 1 and PAIR_STEP or FAN_STEP
+local function draw_volley(m, col)
+    local count, step = m.count or 1, m.spacing or 0
+    if count <= 1 then
+        draw_round(m, col)
+        return
+    end
     -- The round nearest the aim, which is the one a declined fan still
     -- fires. A pair straddles the aim, so its upper round stands in.
     local center = math.floor(count / 2)
@@ -255,7 +260,7 @@ local function dec_multi(m, col, n)
     for i = 0, count - 1 do
         local off = step * (2 * i - (count - 1)) / 2
         local declined = m.off and i ~= center
-        local c = declined and col or m.base
+        local c = declined and DECLINED or col
         if m.bolt then
             barrel(m, off, c, declined)
         else
@@ -390,7 +395,11 @@ end
 -- that rings the head takes the next ring of room out from the last, so the
 -- fragments sit inside the shove. Reorder this list and they land on top of
 -- each other.
-local MOD_DECOR = {dec_multi, dec_bounce, nil, dec_shrap, dec_freeze, dec_push}
+-- Spray has no entry. Its rungs are more of the round rather than something
+-- worn on it, so the volley is drawn by the round itself: see draw_volley,
+-- which also covers a zone whose pattern already throws several with no
+-- spray bought at all.
+local MOD_DECOR = {nil, dec_bounce, nil, dec_shrap, dec_freeze, dec_push}
 -- And the one that goes down before the round rather than onto it.
 local MOD_GROUND = {nil, nil, ground_prox}
 -- Which of them ring the head, and so want a share of the room around it.
@@ -474,6 +483,57 @@ local function ship_multi_off(me)
     return me and sim.ship_multi_off and sim.ship_multi_off(me)
 end
 
+local function ship_cls(me)
+    if held then return held.cls or 0 end
+    return (me and sim.ship_class) and sim.ship_class(me) or 0
+end
+
+-- How many rounds a pull throws and how far apart they leave, asked of the
+-- core rather than worked out here.
+--
+-- Three facts decide it and none of them belongs to a drawing: what the
+-- pattern this rung fires already throws, how many rounds a rung of spray
+-- adds, and the two spreads a zone opens a pair and a fan at. The baseline
+-- answers one round, one a rung, seven and a half degrees and fifteen, and
+-- a zone is free to answer differently on all four; a mark carrying those
+-- as constants would go on drawing the baseline in a room that had left it.
+--
+-- The fallback is the baseline, and it is for a caller with no engine under
+-- it: the SVG tools and the tests draw marks against a stubbed core. A
+-- count of zero means the core has no pattern at that rung to describe, and
+-- takes the fallback for the same reason.
+-- The core counts a full turn in 65536 heading units and hands its spacing
+-- over in those, so the conversion to the radians this file draws in happens
+-- here rather than in the binding.
+local TURN = 65536
+local PAIR_STEP, FAN_STEP = 2 * math.pi / 48, 2 * math.pi / 24
+
+-- Which trigger a mark is about, for the one question that has to be asked
+-- of the core by index. Which of the two is being drawn stays the caller's
+-- explicit boolean: a mark that worked that out by comparing indexes would
+-- draw a bomb as a gun anywhere the two constants are missing, since in Lua
+-- one absent constant equals another.
+local function trig(gun)
+    if gun then return sim.TRIG_GUN or 0 end
+    return sim.TRIG_BOMB or 1
+end
+local function shape(cls, t, lvl, n)
+    if sim.spray_shape then
+        local count, spacing = sim.spray_shape(cls, t, lvl, n)
+        if count and count > 0 then
+            spacing = (spacing or 0) * 2 * math.pi / TURN
+            -- Several rounds at no spacing is the core's scatter encoding,
+            -- which is a roll rather than an angle. A still mark cannot draw
+            -- a roll, so it spreads them at the fan's own step and says how
+            -- many, which are the two facts a scattered volley still has.
+            if count > 1 and spacing == 0 then spacing = FAN_STEP end
+            return count, spacing
+        end
+    end
+    if n <= 0 then return 1, 0 end
+    return n + 1, (n == 1) and PAIR_STEP or FAN_STEP
+end
+
 -- The rung a trigger is on, for a caller that colors something around a
 -- mark rather than drawing the mark itself. Exported because the pads ring
 -- themselves in the round's own color, and reading the core for that while
@@ -524,10 +584,14 @@ end
 --
 -- Returns how far right the whole thing reached, since a hull holding three
 -- add-ons draws a good deal wider than one holding none.
-local function dressed(cx, cy, k, gun, lvl, modn, gun_lvl, off)
+local function dressed(cx, cy, k, gun, cls, lvl, modn, gun_lvl, off)
     local base = pal.a(pal.rung(lvl), 0.9)
     local at = cx + k * (gun and M.BOLT_BIAS or BOMB_BIAS)
     local m = gun and mk_bolt(at, cy, k) or mk_bomb(at, cy, k)
+    -- The volley, before anything is drawn: how many rounds leave and at
+    -- what angle is the round itself rather than something worn on it, and
+    -- the spray rungs are only one of the things that decide it.
+    m.count, m.spacing = shape(cls, trig(gun), lvl, modn[1] or 0)
     -- Which add-ons want a ring of room is a fact about the mark, not about
     -- the add-on: the fan and the bounce ring cost a gun nothing, and cost a
     -- bomb a share each.
@@ -541,10 +605,6 @@ local function dressed(cx, cy, k, gun, lvl, modn, gun_lvl, off)
     -- it, and a fan that quietly stopped fanning with nothing on screen to say
     -- so is a weapon that looks broken.
     m.off = off and true or false
-    -- The round's own color, kept on the mark for the one decorator that
-    -- draws rounds: a declined fan is handed the dim color, and the round
-    -- it still fires is drawn in this.
-    m.base = base
     -- What goes under the round goes down first, in the round's own color
     -- rather than the add-on's hot one: a fuse is not a thing stuck on a bomb,
     -- it is how far the bomb reaches, so it is the bomb faintly over the area
@@ -553,9 +613,7 @@ local function dressed(cx, cy, k, gun, lvl, modn, gun_lvl, off)
         local n = modn[i] or 0
         if n > 0 and MOD_GROUND[i] then MOD_GROUND[i](m, base, n) end
     end
-    -- A sprayed trigger's rounds are all the spray decorator's to draw: a
-    -- pair has no center round, so there is nothing to put down first.
-    if (modn[1] or 0) == 0 then draw_round(m, base) end
+    draw_volley(m, base)
     -- The round's hue run toward white, which is how this palette makes
     -- anything hotter, so an add-on is the same weapon louder rather than a
     -- different color stuck on the side of it.
@@ -572,9 +630,6 @@ local function dressed(cx, cy, k, gun, lvl, modn, gun_lvl, off)
             -- above; on a hull whose two ladders are level they come out the
             -- same color as the rest, which is the honest answer.
             if i == 4 then col = frag end
-            -- Except when you have declined it, which is the one time the
-            -- rounds either side really are not the round you are firing.
-            if off and i == 1 then col = pal.a(pal.DIM, 0.45) end
             if MOD_DECOR[i] then MOD_DECOR[i](m, col, n) end
         end
     end
@@ -584,7 +639,8 @@ end
 function M.weapon(cx, cy, k, me, t)
     local modn = {}
     for i = 1, #pal.MODS do modn[i] = ship_mod(me, t, i - 1) end
-    return dressed(cx, cy, k, t == sim.TRIG_GUN, ship_lvl(me, t), modn,
+    return dressed(cx, cy, k, t == sim.TRIG_GUN, ship_cls(me),
+                   ship_lvl(me, t), modn,
                    ship_lvl(me, sim.TRIG_GUN), ship_multi_off(me))
 end
 
@@ -593,8 +649,13 @@ end
 -- shelf that read a live hull would be selling whatever the pilot happened
 -- to be flying. `modn` is counts in sim_mod order, and fragments take the
 -- round's own rung, which on a mark about one trigger is the honest answer.
+--
+-- The volley is asked against the first hull, since a shelf is selling to
+-- nobody in particular. Every shipped zone builds one gun ladder for all of
+-- them, so that is the whole roster's answer; a zone that gave its hulls
+-- different patterns would be selling against the first one's.
 function M.round(cx, cy, k, gun, lvl, modn)
-    return dressed(cx, cy, k, gun, lvl, modn or {}, lvl, false)
+    return dressed(cx, cy, k, gun, 0, lvl, modn or {}, lvl, false)
 end
 
 return M

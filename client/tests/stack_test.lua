@@ -193,6 +193,17 @@ local sim = {
     -- says how many fragments. Nothing here doubles 4, 8, 16 by arithmetic,
     -- because the drawing must not either.
     shrap_count = function(n) return ({2, 4, 8})[math.min(n, 3)] or 0 end,
+    -- The zone's own answer to what a pull throws, which is what the mark
+    -- draws rounds off. The baseline's numbers, spelled rather than
+    -- computed for the same reason shrapnel's are: the drawing must not be
+    -- doing this arithmetic itself. Spacing is the core's own unit, 65536
+    -- to the turn, so a pair leaves at 65536/48 and a fan at 65536/24. It
+    -- is rewritten below to prove the mark reads the core rather than a
+    -- constant of its own.
+    spray_shape = function(_, _, _, n)
+        if n <= 0 then return 1, 0 end
+        return n + 1, (n == 1) and (65536 / 48) or (65536 / 24)
+    end,
     has_trigger = function() return true end,
     tick = function() return 1000 end,
     weapon_count = function() return 0 end,
@@ -908,6 +919,33 @@ check("a fan draws three rounds", #fanned == 3, #fanned .. " dots")
 check("and all three are the round the gun fires", distinct(fanned) == 1
       and fanned[1] == plain_dot,
       table.concat(fanned, "  vs plain ") .. " " .. tostring(plain_dot))
+
+-- And the count is the zone's rather than the drawing's.
+--
+-- Every number in a volley belongs to the core: what the rung's own pattern
+-- throws before any add-on, how many rounds a rung of spray adds, and the
+-- two spreads a pair and a fan open at. The mark carried the baseline's
+-- answers as constants for a day, which drew four rounds correctly and for
+-- the wrong reason, and would have gone on drawing them in a zone that had
+-- retuned every one of those numbers. So the core is asked, and the way to
+-- prove it is asked is to have it answer something else.
+local was_shape = sim.spray_shape
+sim.spray_shape = function(_, _, _, n)
+    -- A zone whose gun already throws a pair before anything is bought, and
+    -- which adds two rounds a rung rather than one.
+    return 2 + n * 2, 65536 / 24
+end
+mods = {[0] = {}}
+frame()
+local zone_bare = dots_on_gun()
+mods = {[0] = {[0] = 1}}
+frame()
+local zone_rung = dots_on_gun()
+sim.spray_shape = was_shape
+check("a pattern that already throws a pair draws two with nothing bought",
+      #zone_bare == 2, #zone_bare .. " dots")
+check("and the zone's own step decides what a rung adds",
+      #zone_rung == 4, #zone_rung .. " dots")
 
 -- The one time they really are not the round you are firing.
 multi_off = true

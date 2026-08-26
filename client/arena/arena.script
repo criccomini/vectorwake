@@ -146,7 +146,7 @@ local multi_was = nil
 -- One table, filled in place rather than built per frame: this runs on every
 -- frame of every game and a fresh table sixty times a second is garbage the
 -- collector has to walk in the middle of a fight.
-local flown = {level = {}, mods = {}, charge = {}, multi_off = false}
+local flown = {level = {}, mods = {}, charge = {}, multi_off = false, cls = 0}
 local flown_ok = false
 -- This frame's answer, set once in update before anything draws: charge_row
 -- and the pads both read it, so the two cannot disagree about what is held.
@@ -165,6 +165,10 @@ local function loadout_held()
             flown.charge[k] = sim.ship_charge(me, k)
         end
         flown.multi_off = sim.ship_multi_off(me)
+        -- The hull, because the volley a trigger throws is read off the
+        -- pattern its class flies at that rung: without it a mark drawn
+        -- through the respawn wait asks the core about hull zero.
+        flown.cls = sim.ship_class(me)
         flown_ok = true
         return nil
     end

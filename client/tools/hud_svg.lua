@@ -149,6 +149,13 @@ _G.sim = {
         if n <= 0 then return 0 end
         return 2 ^ math.min(n, 3)
     end,
+    -- What a pull throws, which a zone owns rather than the drawing: the
+    -- baseline's round a rung, a pair at seven and a half degrees and the
+    -- fan at fifteen.
+    spray_shape = function(_, _, _, n)
+        if n <= 0 then return 1, 0 end
+        return n + 1, (n == 1) and (65536 / 48) or (65536 / 24)
+    end,
     ship_vel = function() return 0, 0 end,
     has_trigger = function() return true end,
     TRIG_GUN = 0,

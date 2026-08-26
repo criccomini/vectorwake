@@ -13,8 +13,11 @@
 -- draws the two rounds at every rung, every subset of the six add-ons on a
 -- bomb, the depth ladders, the gun's loadouts, and the charges.
 --
--- The one engine fact the marks ask for is sim.shrap_count, which reads the
--- zone's pattern shelf; this stubs the shipped baseline, 2 then 4 then 8.
+-- The marks ask the core two things a zone owns rather than the drawing:
+-- sim.shrap_count, how many fragments a rung throws, and sim.spray_shape,
+-- how many rounds a pull throws and how far apart. Both stub the shipped
+-- baseline here: fragments double 2, 4, 8, and spray adds a round a rung at
+-- seven and a half degrees for the pair and fifteen for the fan.
 
 local out_path = assert(arg[1], "an output path")
 local root = arg[2] or "client"
@@ -111,9 +114,14 @@ end
 local ship = {level = {}, mods = {}, off = false}
 _G.sim = {
     TRIG_GUN = 0,
+    TRIG_BOMB = 1,
     shrap_count = function(n)
         if n <= 0 then return 0 end
         return 2 ^ math.min(n, 3)
+    end,
+    spray_shape = function(_, _, _, n)
+        if n <= 0 then return 1, 0 end
+        return n + 1, (n == 1) and (65536 / 48) or (65536 / 24)
     end,
     ship_level = function(_, t) return ship.level[t] or 0 end,
     ship_mod = function(_, t, i) return (ship.mods[t] or {})[i] or 0 end,
