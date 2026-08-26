@@ -157,13 +157,23 @@ menu.sel = {}
 
 local ship_at = top_index("ship")
 local settings_at = top_index("settings")
+local pilot_at = top_index("pilot")
 local tabs = {}
 for _, r in ipairs(menu.view().rail) do tabs[#tabs + 1] = r.label end
-check("the tab row is play, ship, friends, settings",
-      table.concat(tabs, "/") == "play/ship/friends/settings",
+check("the tab row is play, ship, friends, settings, pilot",
+      table.concat(tabs, "/") == "play/ship/friends/settings/pilot",
       table.concat(tabs, "/"))
-check("the rail carries the destinations", ship_at and settings_at,
-      "ship " .. tostring(ship_at) .. ", settings " .. tostring(settings_at))
+check("the rail carries the destinations", ship_at and settings_at and pilot_at,
+      "ship " .. tostring(ship_at) .. ", settings " .. tostring(settings_at)
+      .. ", pilot " .. tostring(pilot_at))
+
+-- The pilot stop is the account page: the same page the corner call sign
+-- opens, one press from the rail. Two doors onto one page, on purpose.
+menu.click_rail(pilot_at)
+check("a rail tap on pilot opens the account page", menu.stack[2] == "pilot",
+      table.concat(menu.stack, "/"))
+menu.stack = {"root"}
+menu.sel = {}
 
 -- Right is enter on a list of places and nothing on a list of games. An arrow
 -- is how a list is read, and reading the third game on it should not put you
@@ -243,6 +253,14 @@ do
     check("a game you are only watching carries none",
           benched.rows[1] and benched.rows[1].acts == nil)
 
+    -- The pilot stop stays home: an account is not a thing to edit from
+    -- inside a room, which is the guard the corner press wears too.
+    local away = {}
+    for _, r in ipairs(benched.rail) do away[#away + 1] = r.label end
+    check("the rail carries no pilot stop away from home",
+          not table.concat(away, "/"):find("pilot"),
+          table.concat(away, "/"))
+
     menu.zone, menu.home = kept_zone, kept_home
     menu.watching = false
     menu.stack, menu.sel = kept_stack, kept_sel
@@ -258,7 +276,7 @@ do
     menu.name = "Tester 1"
     menu.open, menu.home = true, true
     menu.stack = {"root"}
-    menu.sel = {root = settings_at}
+    menu.sel = {root = pilot_at}
     menu.corner_sel = nil
     menu.step({right = true})
     check("right off the last tab reaches discord",
@@ -296,11 +314,11 @@ do
           tostring(menu.view().corner_sel))
     menu.step({left = true})
     check("and off their end onto the last tab",
-          menu.view().corner_sel == nil and menu.sel.root == settings_at,
+          menu.view().corner_sel == nil and menu.sel.root == pilot_at,
           tostring(menu.view().corner_sel) .. "/" .. tostring(menu.sel.root))
 
     -- Enter on the account is the account page.
-    menu.sel = {root = settings_at}
+    menu.sel = {root = pilot_at}
     menu.corner_sel = nil
     menu.step({right = true})
     menu.step({right = true})
@@ -330,7 +348,7 @@ do
     local asked = nil
     _G.sys.open_url = function(url) asked = url return true end
     menu.stack = {"root"}
-    menu.sel = {root = settings_at}
+    menu.sel = {root = pilot_at}
     menu.corner_sel = nil
     menu.step({right = true})
     menu.step({down = true})
@@ -457,13 +475,13 @@ check("the lit stop at the root still goes in",
 menu.stack = {"root"}
 menu.sel = {}
 
--- --- the call sign in the corner is the way to the pilot page -------------
+-- --- the call sign in the corner is a way to the pilot page ----------------
 --
--- There is no pilot stop on the tab row. The name at the far end of that row
--- is the one thing on screen already naming the pilot, so it is the way in.
--- What that has to survive is the guard that shuts a page the row has stopped
--- carrying: it read the second level of the stack against the row and found
--- nothing, so the corner let a pilot in and the next frame put them out.
+-- The rail carries a pilot stop at home now, and the name at the far end of
+-- the top line opens the same page: two doors, because the name says who you
+-- are and the stop looks like a button. The corner press has to survive the
+-- guard that shuts a page the row has stopped carrying, which it does by the
+-- row actually carrying it at home.
 
 menu.home = true
 menu.stack = {"root"}
@@ -476,8 +494,8 @@ check("and it is still open a frame later", menu.at() == "pilot",
       table.concat(menu.stack, "/"))
 local rail_names = {}
 for _, r in ipairs(menu.view().rail) do rail_names[#rail_names + 1] = r.label end
-check("with no pilot stop on the row itself",
-      table.concat(rail_names, "/"):find("pilot") == nil,
+check("with the pilot stop on the row beside it",
+      table.concat(rail_names, "/"):find("pilot") ~= nil,
       table.concat(rail_names, "/"))
 menu.stack = {"root"}
 menu.sel = {}
@@ -907,11 +925,11 @@ menu.home = true
 menu.stack = {"root"}
 menu.sel = {}
 account.claimed = false
--- The call sign in the corner of the tab row rather than a stop on it. There
--- is no pilot tab: a tab whose whole detail is the name written beside it says
--- the name twice, so the name is the control.
-check("the tab row has no pilot stop",
-      top_index("pilot") == nil,
+-- The call sign in the corner of the tab row, beside the stop that opens the
+-- same page: the stop is the door a stranger finds, and the name is the one a
+-- returning player knows.
+check("the tab row carries the pilot stop",
+      top_index("pilot") ~= nil,
       table.concat(texts_of(menu.view()), ", "))
 menu.click_pilot()
 check("and pressing the name opens the page",
@@ -2938,8 +2956,8 @@ do
         return menu.view().closable == true
     end)())
 
-    -- The tab set follows the cockpit, not the zone. Four stops with no hull,
-    -- wherever you are standing; the short row only once you are flying one.
+    -- The tab set follows the cockpit, not the zone. Five stops with no hull
+    -- at home; the short row only once you are flying one.
     local function labels()
         local out = {}
         for _, r in ipairs(menu.view().rail) do out[#out + 1] = r.label end
@@ -2949,7 +2967,7 @@ do
     menu.home, menu.scenery, menu.watching = true, true, false
     menu.open, menu.stack, menu.sel = true, {"root"}, {}
     check("the stands carry the whole row",
-          labels() == "play ship friends settings",
+          labels() == "play ship friends settings pilot",
           labels())
 
     -- The short row keeps the games, because that is where the way out of the
@@ -2960,9 +2978,10 @@ do
           labels() == "play friends settings", labels())
 
     -- A pilot the room benched is in the stands too: same empty cockpit, same
-    -- time to read, so the same four stops. What they keep that the landing
-    -- does not is `leave`: they are in a zone, and no row of the list carries
-    -- a way out of one you are not flying.
+    -- time to read, so the same stops. What they keep that the landing does
+    -- not is `leave`: they are in a zone, and no row of the list carries a
+    -- way out of one you are not flying. What they lose is `pilot`, which
+    -- needs there to be no zone: an account is not edited from inside a room.
     menu.home, menu.watching = false, true
     check("a benched pilot gets the whole row back",
           labels() == "play ship friends settings leave",

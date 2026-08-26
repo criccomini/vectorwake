@@ -1,5 +1,14 @@
 # Landing, and the menu
 
+> **The account page is a stop on the rail.** The home row is play, ship,
+> friends, settings and pilot: the account page as the fifth stop, wearing the
+> helmet mark the interface already uses for a person. The call sign pill at
+> the far end of the top line stays and opens the same page, because it is the
+> one thing on screen saying who you are signed in as; it used to be the only
+> way in, and a name in a pill does not look like a button. The stop stays
+> home, so the short row a match gets is unchanged. See
+> [decision 69](../architecture/decisions.md).
+
 > **A game row is one press, and leaving is a button on it.** Pressing a game
 > means be in that game, wherever this client happens to be: already there and
 > the panel goes, anywhere else and the stands dial it and keep dialing while a
@@ -104,10 +113,11 @@ once.
 ## The only difference between the two
 
 Whether you are in a hull. That is `menu.home`, and the tab row follows it:
-four stops with no hull, the short row with one. A pilot the room benched is in
-the stands too, same empty cockpit and same time to read, so they get the four
+five stops with no hull, the short row with one. A pilot the room benched is in
+the stands too, same empty cockpit and same time to read, so they get the row
 back with `leave` added, which is the one stop that needs a zone to mean
-anything.
+anything, and `pilot` withheld, which is the one that needs there not to be
+one: an account is not a thing to edit from inside a room.
 
 The short row keeps the games. It did not, and leaving was a stop of its own
 called `leave`, which filed the way out of a game beside the way to the sound
@@ -145,7 +155,7 @@ are what walk back through the tree.
 
 ## A tab row, and a page under it
 
-Four tabs at the front end and three in a match, with one page under whichever
+Five tabs at the front end and three in a match, with one page under whichever
 is lit. Left and right walk the row; down or up enters the page, and up from
 its first row or down off its last comes back to the row, which makes the
 column a ring a thumb can walk either way. Left and right on a row set that
@@ -166,20 +176,26 @@ vectorwake
 ├ friends     a field you type a call sign into, who is waiting on you, who
 │             is on, the room you are in, and everybody who ever added you.
 │             See friends.md
-└ settings    sound · music · frames · fullscreen · bindings · about
+├ settings    sound · music · frames · fullscreen · bindings · about
+└ pilot       your account and career: the call sign and its reroll, the
+              password that claims this pilot or lets another one in, and
+              the way out of it
 
-              your call sign sits at the far end of the row and is the way
-              into your account and career: a page reached from the one
-              place already naming it, rather than a fifth stop. Beside it,
+              your call sign still sits at the far end of the top line and
+              opens the same page. It was the only way in for a long time,
+              on the argument that a stop repeating the name beside it said
+              it twice; what that bought was an account nobody knew they
+              had, because a name in a pill does not look like a button.
+              The stop is the door a stranger finds and the name is the one
+              a returning player knows, and it stays because it is the one
+              thing on screen saying who you are signed in as. Beside it,
               Discord, which opens a page about the room rather than the
               room: why there is one, one button that opens it, the address
               in words under that for when a popup blocker eats the button,
               and what actually happens in there. One thing on it answers a
               press, and it is drawn as a button rather than as a row, which
               is what the four rows it replaced could not say. Both corner
-              stops are drawn as buttons, which on a phone there is no
-              corner for: there the play page carries the Discord one and the
-              top of the screen is the wordmark alone
+              stops are drawn as buttons
 
 in a match
 ├ play        the same list, because the way out of the game you are in is a

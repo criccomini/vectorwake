@@ -3129,3 +3129,31 @@ reader wanted it, which is the point but is also one fewer thing they control.
 which point the ending has room it does not need; or a zone turns up whose
 ending is not a roster and a score, which would make this a melee-and-duel
 answer rather than the shared one.
+
+## 69. The account page is a stop on the rail
+
+**Decision:** the home tab row carries a fifth stop, `pilot`, at its far end:
+the account page, wearing the helmet mark the interface already uses for a
+person. The call sign pill at the end of the top line stays, opens the same
+page, and lights along with the stop while that page is up. The stop is
+home-only. A benched or flying pilot's row does not carry it, which is the
+guard the pill's own press already wore: an account is not a thing to edit
+from inside a room.
+
+**Why:** the page behind the name is the whole account model. "Keep this
+pilot" is the one control that makes a guest durable across machines, and it
+lived behind a pill that reads as a status chip: a name in the corner does
+not look like a button, and the one flow a new player most needs to find was
+behind the least button-looking control in the menu. A stop on the bottom
+rail is the pattern every phone user already knows, in the strip a thumb
+actually reaches. The pill stays because it does the other half of the job,
+saying who you are signed in as at a glance, and dropping it would trade one
+answer for the other.
+
+**Cost:** the row is five stops in 390 points, so every label gives up a
+little room. Two controls open one page, and both light while it is up, which
+is the one place the row now says "you are here" twice.
+
+**Reconsider if:** the row gains a sixth stop, at which point something has
+to leave; or career and stats grow into the client somewhere other than this
+page, at which point "pilot" is a name promising more than a password form.
