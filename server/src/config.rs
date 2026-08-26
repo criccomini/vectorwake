@@ -251,7 +251,7 @@ pub struct KitConfig {
 ///
 /// Every field is optional and means "leave it alone". Tuning `anvil-bomb`
 /// to bounce is two lines; the rest of the bomb stays the bomb.
-#[derive(Deserialize, Clone, Debug, Default)]
+#[derive(Deserialize, Clone, Debug, Default, PartialEq)]
 #[serde(default, deny_unknown_fields)]
 pub struct WeaponConfig {
     pub name: String,

@@ -46,6 +46,11 @@ ladder_checkpoint_interval = 5
 # The same movement, collision, weapon, and kit economy used in melee. A rung
 # should measure the opponent, not a private ruleset the player never sees in
 # the main game.
+#
+# `a_duel_runs_the_melee_economy` holds every line below against melee's own,
+# because this was prose and prose does not fail a build: melee's spray tuning
+# moved and these did not, and for a while a rung was measuring a ruleset
+# nobody played anywhere else.
 bounce = 12
 friction = 12
 respawn_delay = 200
@@ -56,7 +61,7 @@ bounty_per_kill = 1
 points_per_flag = 0
 mod_spread = 5
 multi_energy = 25
-multi_delay = 25
+multi_delay = 100
 prox_step = 16
 prox_delay = 150
 bomb_safety = true
@@ -74,6 +79,6 @@ name = "burst"
 damage = 515
 
 [arena.kit]
-gun_mods = { multi = 5, bounce = 1, freeze = 1 }
+gun_mods = { multi = 3, bounce = 1, freeze = 1 }
 bomb_mods = { prox = 1, shrapnel = 3, bounce = 2, freeze = 1 }
 charges = [3, 3]

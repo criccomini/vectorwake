@@ -8189,6 +8189,66 @@ the room"
     ///
     /// It is worth an assertion for the reason the old one was: nothing in
     /// any column this harness prints would look wrong.
+    /// A rung measures the opponent, not a private ruleset.
+    ///
+    /// Ladder's zone file says in prose that it runs melee's movement,
+    /// collision, weapon and kit economy, and prose does not fail a build.
+    /// Melee's spray tuning moved and Ladder's did not, so for a while a climb
+    /// was scored under numbers nobody played in the main game. Both files are
+    /// already compiled in, so hold them against each other.
+    ///
+    /// Only the shared economy. What a mode legitimately owns stays out:
+    /// the clocks, the rung rules, the maps, and how many seats there are.
+    #[test]
+    fn a_duel_runs_the_melee_economy() {
+        let read = |bytes: &[u8]| -> crate::config::ArenaConfig {
+            let text = std::str::from_utf8(bytes).expect("a zone file is text");
+            let zone: crate::catalog::ZoneDef = toml::from_str(text).expect("a zone parses");
+            zone.arena.clone()
+        };
+        let melee = read(PROFILE_POWERED_ZONE);
+        let duel = read(PILOT_ZONE_BYTES);
+
+        // The space and what a hull does in it.
+        assert_eq!(duel.bounce, melee.bounce, "bounce");
+        assert_eq!(duel.friction, melee.friction, "friction");
+        assert_eq!(duel.respawn_delay, melee.respawn_delay, "respawn_delay");
+        assert_eq!(duel.spawn_radius, melee.spawn_radius, "spawn_radius");
+        assert_eq!(duel.safe_limit, melee.safe_limit, "safe_limit");
+
+        // What a kill is worth.
+        assert_eq!(duel.bounty_base, melee.bounty_base, "bounty_base");
+        assert_eq!(
+            duel.bounty_per_kill, melee.bounty_per_kill,
+            "bounty_per_kill"
+        );
+        assert_eq!(
+            duel.points_per_flag, melee.points_per_flag,
+            "points_per_flag"
+        );
+
+        // The weapons, which is where this actually went wrong.
+        assert_eq!(duel.mod_spread, melee.mod_spread, "mod_spread");
+        assert_eq!(duel.multi_energy, melee.multi_energy, "multi_energy");
+        assert_eq!(duel.multi_delay, melee.multi_delay, "multi_delay");
+        assert_eq!(duel.prox_step, melee.prox_step, "prox_step");
+        assert_eq!(duel.prox_delay, melee.prox_delay, "prox_delay");
+        assert_eq!(duel.bomb_safety, melee.bomb_safety, "bomb_safety");
+        assert_eq!(duel.bbomb_damage, melee.bbomb_damage, "bbomb_damage");
+        assert_eq!(duel.shrap_inactive, melee.shrap_inactive, "shrap_inactive");
+        assert_eq!(
+            duel.shrap_inactive_ticks, melee.shrap_inactive_ticks,
+            "shrap_inactive_ticks"
+        );
+        assert_eq!(duel.mod_step, melee.mod_step, "mod_step");
+        assert_eq!(duel.weapons, melee.weapons, "weapons");
+
+        // And what a pilot may carry, which is the other half of it.
+        assert_eq!(duel.kit.gun_mods, melee.kit.gun_mods, "gun_mods");
+        assert_eq!(duel.kit.bomb_mods, melee.kit.bomb_mods, "bomb_mods");
+        assert_eq!(duel.kit.charges, melee.kit.charges, "charges");
+    }
+
     #[test]
     fn a_zones_kit_ceiling_reaches_the_kits_it_deals() {
         let cipher = ai::class_index("Cipher").unwrap() as u8;
