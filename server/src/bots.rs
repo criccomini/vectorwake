@@ -242,6 +242,17 @@ fn fresh_brain(
 
 /// Apply one authoritative match state and say whether a new match began.
 /// Duplicate packets do not advance the number or reset a brain.
+/// Seconds left on the match clock, off the room's own broadcast.
+///
+/// `[S2C_MATCH, flags, seconds left, sides, ...]`, and only while the match is
+/// running: between matches that byte counts an intermission down rather than a
+/// match, and there is no rack to spend during one.
+fn seconds_left(data: &[u8]) -> Option<f32> {
+    let playing = data.get(1)? & crate::MATCH_PLAYING != 0;
+    let left = *data.get(2)? as f32;
+    playing.then_some(left)
+}
+
 fn match_transition(playing: &mut bool, match_number: &mut u32, next: bool) -> bool {
     let began = !*playing && next;
     if began {
@@ -264,6 +275,11 @@ struct Seat {
     flight_seed: u32,
     match_number: u32,
     playing: bool,
+    /// Seconds left on the match clock, as the room last broadcast it. A rack
+    /// of charges is a match's supply rather than a life's, so the pilot
+    /// deciding whether to spend one needs the same clock every player in the
+    /// room is reading off the top of their screen.
+    match_left: Option<f32>,
     route: Arc<nav::Nav>,
     yielding: Arc<AtomicBool>,
     asked: Option<std::time::Instant>,
@@ -276,8 +292,9 @@ impl Seat {
     /// Follow the connection's authoritative match state. A false-to-true
     /// transition replaces the whole controller, including its timers, route,
     /// recovery state, departure state, and random stream.
-    fn set_match(&mut self, playing: bool, match_number: u32) -> bool {
+    fn set_match(&mut self, playing: bool, match_number: u32, left: Option<f32>) -> bool {
         let reset = playing && self.match_number != match_number;
+        self.match_left = left;
         if reset {
             self.brain = fresh_brain(
                 self.brain.ship,
@@ -471,12 +488,12 @@ impl Rig {
     /// packet. Taking the crew lock makes the transition atomic with respect
     /// to the shared driver: once this returns, the old brain cannot think
     /// again.
-    fn set_match(&self, ship: u8, id: u64, playing: bool, match_number: u32) {
+    fn set_match(&self, ship: u8, id: u64, playing: bool, match_number: u32, left: Option<f32>) {
         let mut crew = self.lock_crew();
         let Some(seat) = crew.get_mut(&ship).filter(|seat| seat.id == id) else {
             return;
         };
-        let reset = seat.set_match(playing, match_number);
+        let reset = seat.set_match(playing, match_number, left);
         if !playing || reset {
             self.buttons[ship as usize].store(0, Ordering::Relaxed);
         }
@@ -580,6 +597,7 @@ async fn drive(rig: std::sync::Weak<Rig>, generation: u64) {
                     continue;
                 }
                 let mut own = ai::own(&w, ship);
+                own.match_left = seat.match_left;
                 let mut fresh = seat.brain.looks_due().then(|| ai::scan(&w, ship));
                 if let Ok(st) = standings.as_ref() {
                     st.apply(ship, &mut own, fresh.as_mut());
@@ -1839,6 +1857,7 @@ where
     let mut welcomed_at: Option<std::time::Instant> = None;
     let mut outcome = FlightEnd::Closed { welcomed: false };
     let mut match_playing = true;
+    let mut match_left: Option<f32> = None;
     let mut match_number = 0u32;
     // Set at a seat collision; flown after this loop ends.
     let mut go_private: Option<(sim::World, ai::Bot)> = None;
@@ -2061,6 +2080,7 @@ where
                                 flight_seed: match_seed,
                                 match_number,
                                 playing: match_playing,
+                                match_left,
                                 route: r,
                                 yielding: Arc::clone(&yielding),
                                 asked: None,
@@ -2120,7 +2140,7 @@ where
                         let next = data[1] & crate::MATCH_PLAYING != 0;
                         match_transition(&mut match_playing, &mut match_number, next);
                         if let Sight::Shared(rig) = &sight {
-                            rig.set_match(ship, me, match_playing, match_number);
+                            rig.set_match(ship, me, match_playing, match_number, seconds_left(&data));
                         }
                         if !match_playing && yielding.load(Ordering::Relaxed) {
                             outcome = FlightEnd::Departed;
@@ -2278,6 +2298,7 @@ where
                         Some(crate::S2C_ROSTER) => standings.read(&data),
                         Some(crate::S2C_MATCH) => {
                             let next = data[1] & crate::MATCH_PLAYING != 0;
+                            match_left = seconds_left(&data);
                             if match_transition(&mut match_playing, &mut match_number, next) {
                                 b = fresh_brain(ship, who.brain(), match_seed, match_number);
                                 sent = None;
@@ -2319,6 +2340,7 @@ where
                         continue;
                     }
                     let mut own = ai::own(&w, ship);
+                    own.match_left = match_left;
                     let mut fresh = b.looks_due().then(|| ai::scan(&w, ship));
                     standings.apply(ship, &mut own, fresh.as_mut());
                     if b.wants_refuge() {
@@ -2464,6 +2486,7 @@ mod tests {
             flight_seed: 19,
             match_number: 0,
             playing,
+            match_left: None,
             route,
             yielding: Arc::new(AtomicBool::new(false)),
             asked: None,
@@ -2497,13 +2520,13 @@ mod tests {
 
         seat.brain.stand_down();
         assert_eq!(seat.brain.doing(), 4, "the old brain carries exit state");
-        assert!(!seat.set_match(false, 0));
+        assert!(!seat.set_match(false, 0, None));
         assert_eq!(
             seat.brain.doing(),
             4,
             "pausing does not spend or rewrite controller state"
         );
-        assert!(seat.set_match(true, 1));
+        assert!(seat.set_match(true, 1, None));
         assert_ne!(
             seat.brain.doing(),
             4,
@@ -2511,14 +2534,14 @@ mod tests {
         );
 
         seat.brain.stand_down();
-        assert!(!seat.set_match(true, 1));
+        assert!(!seat.set_match(true, 1, None));
         assert_eq!(
             seat.brain.doing(),
             4,
             "a duplicate playing packet cannot reset a live match"
         );
-        assert!(!seat.set_match(false, 1));
-        assert!(seat.set_match(true, 2));
+        assert!(!seat.set_match(false, 1, None));
+        assert!(seat.set_match(true, 2, None));
         assert_ne!(seat.brain.doing(), 4, "the next rematch is fresh too");
     }
 
@@ -2541,7 +2564,7 @@ mod tests {
                 .is_err(),
             "a paused controller produces no input frame"
         );
-        rig.set_match(ship, 71, true, 1);
+        rig.set_match(ship, 71, true, 1, None);
         let frame = tokio::time::timeout(std::time::Duration::from_secs(1), rx.recv())
             .await
             .expect("a started controller thinks promptly")
@@ -2936,6 +2959,7 @@ mod tests {
                     flight_seed: 19,
                     match_number: 0,
                     playing: true,
+                    match_left: None,
                     route: Arc::clone(&road),
                     yielding: Arc::new(AtomicBool::new(false)),
                     asked: None,

@@ -152,6 +152,16 @@ pub struct Own {
     /// carried to the grave. Three of each, on every hull, and until now not
     /// one of them was ever used.
     pub charges: [u8; sim::MAX_CHARGES],
+    /// Seconds left on the match clock, for the one decision that is about the
+    /// match rather than the moment. A rack is dealt once and never at a spawn,
+    /// so what a charge is worth depends on how much match it still has to
+    /// cover, and a pilot carrying one past the whistle has wasted it.
+    ///
+    /// Filled by whoever has a clock, like `standing`, and `None` in a room
+    /// that has none. It is the same clock every player in the room is reading
+    /// off the band at the top of their own screen, which is what keeps this
+    /// inside decision 29.
+    pub match_left: Option<f32>,
     /// What each trigger would do if pulled now, at the rung this pilot is on.
     /// A pilot knows their own loadout, and the numbers behind it are in the
     /// settings table every client is sent.
@@ -239,6 +249,11 @@ pub struct Threat {
     pub vy: f32,
     /// Px of blast, so a bomb is given more room than a bullet.
     pub blast: f32,
+    /// Share of a full bar this round takes at the center. A bullet is about a
+    /// quarter and a bomb about a half, which is the difference between a
+    /// round worth flinching at and one worth a charge. Solved here rather
+    /// than in the decision because the spec table is the scan's to read.
+    pub bite: f32,
     /// Ticks until it is nearest, and how near that is. Solved in the scan
     /// because it is the same arithmetic for every candidate and only the
     /// winner is worth carrying.
@@ -384,6 +399,7 @@ pub fn own(w: &World, ship: u8) -> Own {
         carrying_flag,
         standing: None,
         charges: me.charge,
+        match_left: None,
         gun,
         bomb,
         bomb_ready: me.fire_cooldown[sim::TRIG_BOMB] == 0,
@@ -551,6 +567,10 @@ fn incoming(w: &World, mx: f32, my: f32, team: u8, ship: u8) -> Option<Threat> {
     let mut best: Option<Threat> = None;
     let me = &w.state.ships[ship as usize];
     let (mvx, mvy) = (me.vx as f32 / 65536.0, me.vy as f32 / 65536.0);
+    // What a round costs is only meaningful against the bar it is coming at,
+    // so damage is carried out of here as a share of this pilot's own full
+    // one. Same figure `own` divides energy by, for the same reason.
+    let max_e = w.eff_max_energy(ship as usize).max(1) as f32;
     for i in 0..w.state.weapon_count as usize {
         let p = &w.state.weapons[i];
         if p.life == 0 || p.owner == ship || p.team == team {
@@ -574,7 +594,8 @@ fn incoming(w: &World, mx: f32, my: f32, team: u8, ship: u8) -> Option<Threat> {
         }
         let (cx, cy) = (px + rvx * t, py + rvy * t);
         let miss = (cx * cx + cy * cy).sqrt();
-        let blast = w.cfg.specs[p.spec as usize].blast as f32 / 256.0;
+        let spec = &w.cfg.specs[p.spec as usize];
+        let blast = spec.blast as f32 / 256.0;
         // Anything that misses by more than its blast and a hull's width is a
         // round to ignore, and ignoring it is what keeps a pilot from flinching
         // at every shot in a crowded room.
@@ -588,12 +609,52 @@ fn incoming(w: &World, mx: f32, my: f32, team: u8, ship: u8) -> Option<Threat> {
                 vx,
                 vy,
                 blast,
+                bite: spec.damage as f32 / max_e,
                 eta: t,
                 miss,
             });
         }
     }
     best
+}
+
+/// What an arriving round is worth spending a charge on, from nothing at all
+/// to everything a pilot has.
+///
+/// Two questions, multiplied, because either one on its own excuses the round.
+/// A bomb that will land squarely on somebody at full energy is survivable, and
+/// a bullet they can step off is free, and neither is worth a third of the
+/// match's supply. It takes both to be a round a repel is the answer to.
+fn danger(o: &Own, t: &Threat) -> f32 {
+    // How much of it a pilot cannot simply fly out of. `incoming` has already
+    // dropped whatever misses by more than its blast and a hull's width, so
+    // what is left is the room still wanted against the room thrust can buy in
+    // the time there is: half a t squared, which is five pixels at a quarter
+    // second of warning and eighty at a whole one. Enough to step off a bullet,
+    // nowhere near enough to leave the blast of a bomb.
+    let want = t.blast + o.radius - t.miss;
+    if want <= 0.0 {
+        // It is already going past. `incoming` keeps a round until it misses by
+        // more than its blast and a hull's width, which is deliberately wider
+        // than a hit, so most of what it hands over is in this line.
+        return 0.0;
+    }
+    let cornered = (1.0 - 0.5 * o.accel * t.eta * t.eta / want).clamp(0.0, 1.0);
+    // And whether landing would end the life, against the bar this pilot is
+    // holding rather than a full one. A bomb takes about half of a full bar and
+    // a bullet about a quarter, so the same round is a scratch on the way into
+    // a fight and the end of one on the way out of it.
+    //
+    // Nothing until the round takes half of what is left, everything once it
+    // takes all of it. The share itself is the wrong reading, straight or
+    // squared, and both were tried: energy in here is the ammunition as well as
+    // the health, so a pilot who is shooting sits between a third and a half of
+    // a bar all match and never looks like a pilot in trouble by that measure.
+    // What a charge is for is the round that ends the life, not the one that
+    // costs a quarter of it.
+    let lethal = t.bite / o.energy.max(0.05);
+    let hurt = ((lethal - 0.5) * 2.0).clamp(0.0, 1.0);
+    cornered * hurt
 }
 
 /// Whether the straight line between two points crosses a wall.
@@ -1523,35 +1584,54 @@ impl Bot {
             return 0;
         }
         let dial = self.dial(Knob::Permission);
-        let threat = self.seen.threat;
         // A repel: something is arriving and there is no time to be elsewhere.
         // The push is hostile-only, so this costs the pilot nothing but the
         // charge.
-        // How late a pilot leaves the push. A good one reads the round coming
-        // and spends the charge on it; a poor one fires the moment anything is
-        // in the air, which is a charge gone and the round still arriving.
         //
-        let notice = 45.0 + (1.0 - dial) * 90.0;
-        let arriving = threat.filter(|t| t.eta < notice && t.miss < t.blast + 24.0);
-        // And which arriving rounds are worth one of the three.
+        // Whether a round was arriving used to be the whole test: first beside
+        // a second one that asked only for a fight, then alone and asking for a
+        // bomb on sight or a bullet under 30% energy. Every version of it
+        // emptied the rack into the opening joust, because in a room of eight
+        // there is always a round arriving. The three went at 20s, 34s and 46s
+        // of a hundred and eighty, 89% of the room's whole supply inside the
+        // first third, and the two minutes that decided the match were flown
+        // with none. Taking either half of the test away only slowed it down,
+        // to 41s on bombs alone and 27s on energy alone, which is what says it
+        // was the wrong question rather than the wrong threshold.
         //
-        // A bomb on sight: it is the round a hull cannot absorb and the one a
-        // turn cannot outrun, and shoving it wide is the whole reason the
-        // charge exists. A bullet only once there is no bar left to spend on
-        // it, because a bullet costs an eighth of a hull and a charge is a
-        // third of the match's supply.
+        // The question is what the round is worth, because a charge is a third
+        // of the match's supply and `docs/design/weapons.md` is explicit that
+        // it does not come back at a spawn. `danger` prices the round; the two
+        // lines below price the charge; the push happens when the first is
+        // worth the second.
         //
-        // Arriving alone used to be the test, next to a second one that asked
-        // for no incoming round at all: close range and under 45% energy, which
-        // in a room carrying ninety rounds means "am I in a fight". Between
-        // them every pilot at every skill emptied the rack by sixteen seconds
-        // of a hundred and eighty and played the other hundred and sixty with
-        // nothing. Dropping the second one moved that by three seconds, because
-        // in a firefight a round that will genuinely hit is always seconds
-        // away; what was missing is that most of them are worth taking.
+        // Judgment sets what a pilot asks. A poor one flinches at anything that
+        // will connect, a good one waits for the round that would take them out
+        // of the match, and the ask runs past what any single round can be
+        // worth. That is deliberate rather than a dead zone: at the rack's own
+        // pace a good pilot has no price the opening can meet, and the same
+        // pilot with the match running out has one that nearly anything meets.
+        // Keeping the ask inside reach at both ends was tried and gave back two
+        // thirds of the opening.
+        //
+        // The clock sets what the charge is worth against that ask. Three of
+        // them covering three minutes is one a minute, so a pilot on the rack's
+        // own pace pays in full, and one still holding all three in the last
+        // thirty seconds is about to waste them. That is the half that empties
+        // the opening: the room is never denser than at the whistle, when eight
+        // pilots spawn at once, and that is exactly when a charge has the whole
+        // match still to cover. A room with no match clock has no pace to keep
+        // and pays the asking price throughout.
+        //
+        // Together they put the rack at 59s, 97s and 130s, and the room's
+        // supply at 31/34/34 across the thirds, on all six melee maps.
         // Measured with `vectorwake-server melee`.
-        let worth_a_charge = arriving.is_some_and(|t| t.blast > 0.0 || o.energy < 0.30);
-        if o.charges[0] > 0 && worth_a_charge {
+        let pace = o
+            .match_left
+            .map(|left| (o.charges[0] as f32 / (left / 60.0).max(0.2)).clamp(0.5, 6.0))
+            .unwrap_or(1.0);
+        let price = (0.35 + dial * 1.45) / pace;
+        if o.charges[0] > 0 && self.seen.threat.is_some_and(|t| danger(o, &t) > price) {
             return sim::BTN_USE;
         }
         // A burst: sixteen rounds in every direction, which is a weapon only at
@@ -3655,6 +3735,109 @@ apart after six seconds"
         let threat = incoming(&w, mx, my, 0, me).expect("the pilot is flying into the round");
         assert!((threat.eta - 50.0).abs() < 0.1, "eta was {}", threat.eta);
         assert!(threat.miss < 0.1);
+    }
+
+    /// A bomb aimed squarely at a pilot, close enough that thrust cannot carry
+    /// them clear of the blast, which is the round the charge exists for. The
+    /// same round, the same pilot, the same competence: all that moves is how
+    /// much match the rack still has to cover, and how whole the pilot is.
+    fn bomb_on_the_nose(energy: f32, left: Option<f32>) -> (Own, Threat) {
+        let mut w = sim::World::with_map(0x5eed, |_| {});
+        let ship = w.spawn(0, 0, 500, 500, 0) as u8;
+        let full = w.eff_max_energy(ship as usize);
+        w.state.ships[ship as usize].energy = (full as f32 * energy) as i32;
+        // A rack is dealt at the start of a match, and this fixture spawns a
+        // ship rather than running one, so it deals its own.
+        w.state.ships[ship as usize].charge[0] = 3;
+        let mut o = own(&w, ship);
+        o.match_left = left;
+        // Half a second out, dead on the nose, with a blast wider than the
+        // eighty pixels a hull can add to a miss in that time.
+        let t = Threat {
+            x: o.x + 100.0,
+            y: o.y,
+            vx: -2.0,
+            vy: 0.0,
+            blast: 240.0,
+            bite: 0.5,
+            eta: 50.0,
+            miss: 0.0,
+        };
+        (o, t)
+    }
+
+    #[test]
+    fn a_charge_is_priced_against_the_match_it_still_has_to_cover() {
+        // Three charges are dealt once a match and never at a spawn, so the
+        // opening joust is the worst moment in the match to spend one and the
+        // last thirty seconds the best. Before this, a bot emptied the rack
+        // into the first minute on every map: 89% of a room's whole supply went
+        // in the opening third, and the rack was gone by 46s of 180.
+        let hurt = 0.35;
+
+        // Whole, at the whistle, with everything still to play for: the round
+        // cannot buy a charge off anybody.
+        let (o, t) = bomb_on_the_nose(1.0, Some(180.0));
+        assert!(
+            danger(&o, &t) < 0.2,
+            "a bomb is survivable at full energy, so it is not worth a third of the match"
+        );
+
+        // The same bomb on a pilot who cannot take it. Now it is worth one, but
+        // only once the match has stopped being worth saving for.
+        let (o, t) = bomb_on_the_nose(hurt, Some(180.0));
+        let d = danger(&o, &t);
+        assert!(d > 0.5, "a bomb that ends the life is worth a charge, {d}");
+
+        // The ship number is not part of this decision; the threat and the
+        // clock are.
+        let mut bot = Bot::new(0, 0.6);
+        bot.seen.threat = Some(t);
+        assert_eq!(
+            bot.charge(&o),
+            0,
+            "not with three charges and a whole match to cover with them"
+        );
+
+        // Same pilot, same round, twenty seconds left and the rack still full:
+        // a charge carried past the whistle is a charge wasted.
+        let (late, t) = bomb_on_the_nose(hurt, Some(20.0));
+        bot.seen.threat = Some(t);
+        assert_eq!(
+            bot.charge(&late),
+            sim::BTN_USE,
+            "a charge is worth nothing once there is no match left to spend it on"
+        );
+
+        // And a room with no match clock keeps the asking price throughout
+        // rather than inventing a pace it cannot know.
+        let (loose, t) = bomb_on_the_nose(hurt, None);
+        bot.seen.threat = Some(t);
+        assert_eq!(bot.charge(&loose), 0);
+    }
+
+    #[test]
+    fn a_round_that_is_already_going_past_is_worth_no_charge_at_all() {
+        // `incoming` keeps a round until it misses by more than its blast and a
+        // hull's width, which is deliberately wider than a hit, so most of what
+        // it hands over is already going past. Reading those as threats is what
+        // made the first attempt at this spend faster than the test it
+        // replaced.
+        let (o, mut t) = bomb_on_the_nose(0.2, Some(20.0));
+        t.miss = t.blast + o.radius + 1.0;
+        assert_eq!(danger(&o, &t), 0.0);
+    }
+
+    #[test]
+    fn a_round_a_pilot_can_fly_out_of_is_worth_no_charge_either() {
+        // Two seconds of warning buys about three hundred pixels of sideways
+        // room under thrust, which is more than any blast in the game.
+        let (o, mut t) = bomb_on_the_nose(0.2, Some(20.0));
+        t.eta = 200.0;
+        assert!(
+            danger(&o, &t) < 0.05,
+            "a pilot with two seconds turns instead of spending a third of the match"
+        );
     }
 
     #[test]

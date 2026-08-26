@@ -114,6 +114,14 @@ struct Seat {
     /// these are the three moments it is gone.
     spent_at: [u64; 3],
     spent_n: [u32; 3],
+    /// Repels spent in each third of the match. `spent_at` averages only over
+    /// the pilots who got that far down the rack, so it says nothing once most
+    /// of them stop at one, and the question a player asks is not when the
+    /// third charge went but how much of the room's whole supply landed on
+    /// them in the opening. Three charges across three minutes should read
+    /// roughly level; a front-loaded row is the rack going into the first
+    /// joust and two minutes played with none.
+    by_third: [u32; 3],
     /// Distinct enemies who landed something in the last second of a life,
     /// summed over deaths. One is a duel lost; three is a crossfire.
     guns_on_me: u32,
@@ -240,7 +248,11 @@ fn play(
     for _ in 0..ticks {
         let mut inputs: Vec<sim::sim_input> = Vec::with_capacity(ships.len());
         for i in 0..ships.len() {
-            let own = ai::own(&world, ships[i]);
+            let mut own = ai::own(&world, ships[i]);
+            // The clock every pilot in a real room reads off the band. A rack
+            // is a match's supply, so the decision that spends one needs to
+            // know how much match is left to spend it on.
+            own.match_left = Some(ticks.saturating_sub(world.state.tick) as f32 / HZ as f32);
             let look = bots[i].looks_due().then(|| ai::scan(&world, ships[i]));
             let buttons = bots[i].think(&own, &route, look);
             doing[i] = bots[i].doing();
@@ -303,6 +315,7 @@ fn play(
                                 s.spent_n[nth] += 1;
                             }
                             s.repels += 1;
+                            s.by_third[(now as usize * 3 / ticks as usize).min(2)] += 1;
                             if !repelled[i] {
                                 repelled[i] = true;
                                 s.first_repel_ticks += age[i] as u64;
@@ -523,6 +536,7 @@ pub fn run() {
                 first_repels: 0,
                 spent_at: [0; 3],
                 spent_n: [0; 3],
+                by_third: [0; 3],
                 guns_on_me: 0,
                 died_out_of_fight: 0,
             }
@@ -653,6 +667,18 @@ multi_delay {}, spray ceiling {}",
         nth(1),
         nth(2),
         ticks / HZ,
+    );
+    let third = |k: usize| seats.iter().map(|s| s.by_third[k]).sum::<u32>();
+    let (t0, t1, t2) = (third(0), third(1), third(2));
+    println!(
+        "  {t0}, {t1} and {t2} repels by third of the match, which is {}",
+        match (t0 + t1 + t2, t0) {
+            (0, _) => "a room that never repels".to_string(),
+            (all, front) => format!(
+                "{:.0}% of the room's supply in the opening minute",
+                100.0 * front as f64 / all as f64
+            ),
+        },
     );
     println!(
         "  k/d spread {:.2} to {:.2}, skill against k/d correlates {:+.2}",

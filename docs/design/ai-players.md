@@ -300,6 +300,15 @@ but immediate enemy pressure wins the decision and sends the pilot away instead.
 The type is still unknown until pickup, so the bot never chooses a green with
 information a player does not have.
 
+Charges are spent against the match rather than the moment. A rack of three is
+dealt at the start of a match and never at a spawn, so a repel is a third of a
+three-minute supply rather than something a life comes with. A pilot prices one
+accordingly: near the whistle, with the whole match still to cover, only a round
+that would end the life is worth spending on, and in the last thirty seconds a
+charge still in hand is about to be wasted, so nearly anything buys it. Asking
+instead whether a round was arriving empties every rack into the opening joust,
+because in a room of eight there is always a round arriving.
+
 ## The roster: bots as long-lived individuals
 
 The bot server holds one deterministic roster for the deployment. Each
