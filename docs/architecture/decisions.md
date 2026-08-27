@@ -4101,3 +4101,36 @@ both go instead of the long one alone.
 have to give up about a third of its width to pay for one, and it was cropped
 to 112 points on a phone already; the reach that crop bought back is worth
 more than a name that is on the board one press away.
+
+## 86. The tile readout goes
+
+**Status:** accepted
+
+**Decision:** POS and the pair of numbers beside it are gone from the arena.
+Nothing is captioned in that corner now. The radar keeps its whole square, the
+feed starts a gap under it rather than under a line of type, and `radar_span`
+is the instrument and that gap.
+
+**Why:** asked for, one commit after decision 85 moved the readout under the
+dial's foot. Moving it was what made it worth looking at, and what a look
+found is that the instrument it now hangs off already answers the question.
+The dial is a picture of where you are, sixty tiles wide with the terrain in
+it. A pair of tile numbers is the same fact written out, and written out is
+not the form a reading gets taken in mid-fight.
+
+Two things go with it. `TOP.coord_line` measured a line for the caption alone
+and has no other reader, and the hover zone the dial published was placed so
+that a word beside it could be hung off the square's full height rather than
+off one line of type. Nothing in the client reads a zone called `radar`: the
+card that reads zones knows the corner stack's rows and nothing else.
+
+**Cost:** the exact figures are not on screen anywhere now. Nothing else
+writes them out: the debug readout behind the link meter is frame times and
+wire statistics, and the map draws you as an arrow over the whole arena rather
+than as a number. A pilot who was calling a position across a room has the
+dial to read by eye and nothing to read off, which is the whole of what this
+takes away.
+
+**Reconsider if:** a mode arrives where a named place matters, a flag post or
+a base to call, in which case the answer is probably a name on the dial rather
+than the numbers back in the corner.

@@ -1109,11 +1109,6 @@ function TOP.row_right()
         - RADAR.side * RADAR.factor() * F.scale - KEY_GAP * F.scale
 end
 
--- The line the tile readout takes under the dial. See `coords`.
-function TOP.coord_line()
-    return 22 * F.scale
-end
-
 -- Both instruments this corner holds, since they are the same corner and one
 -- replaces the other: the radar at rest, and the map when a player has asked
 -- for it. They differ in the line they start on and in nothing else.
@@ -1156,22 +1151,16 @@ local function dial()
     local ix = math.floor(F.w - F.safe_r - pad - side)
     iy = math.floor(iy)
     side = math.floor(side)
-    -- Filed here rather than in the two functions that draw into it, because
-    -- the dial and the map are the same corner and want the same word beside
-    -- them.
-    -- The left edge and the whole vertical run of it, because the word beside
-    -- the dial wears a bar as tall as the dial: an instrument this size is not
-    -- named by a mark the height of one line of type.
-    zone("radar", ix, iy, side, side)
     return ix, iy, side
 end
 
 -- How much vertical room it takes, so the feed under it can be told rather
--- than guess. Its furniture counts: the tile readout hangs off the dial's
--- foot, and a feed measured off the instrument alone was drawn through it.
+-- than guess. The square and a gap: nothing hangs off the dial's foot now
+-- that the tile readout has gone, so this is the instrument's own extent
+-- again.
 function M.radar_span()
     local _, iy, side = dial()
-    return iy + side + TOP.coord_line() + 14 * F.scale
+    return iy + side + 14 * F.scale
 end
 
 -- You, as an arrow. On any view of the arena the one thing worth knowing
@@ -1732,14 +1721,15 @@ end
 --
 -- A phone dropped it a line for a while. The band is centered and grows
 -- outward with two names and two numbers, and the top right of a 390-point
--- screen carried the link bars and the tile readout both: at that width the
+-- screen carried the link bars and a tile readout both: at that width the
 -- rival's name was drawn straight through the coordinates. The line under the
 -- row is where the dial is, though, so what that bought was the same
 -- collision against a bigger instrument, and it cost the one alignment the
--- row is for. The tile readout went under the dial instead (see `coords`),
--- the bars went into the menu's head (see `pages.link`), the dial came up
--- into the corner they left, and a side with nowhere left to grow drops its
--- name rather than the whole band dropping a line (see `match_clock`).
+-- row is for. Everything that was crowding it has since left the corner: the
+-- readout is gone outright, the bars went into the menu's head (see
+-- `pages.link`), and the dial came up into the space they left. A side with
+-- nowhere to grow drops its name rather than the whole band dropping a line
+-- (see `match_clock`).
 local function band_top()
     return F.safe_t + PAD * F.scale
 end
@@ -3765,38 +3755,6 @@ local function debug_hud(o, top)
     if not F.menu_up then hit(x, y, w, h, "debug", nil, nil, -1) end
 end
 
--- Where you are, off the dial's left edge and under its foot: this
--- instrument's own caption, at every window size.
---
--- In tiles, because that is the unit the map is laid out in and the unit a
--- player says out loud. Pixels would be the same place in numbers six digits
--- long that nobody can hold in their head or call across a room.
---
--- It used to stand in the strip above the dial on a monitor and drop under it
--- on a phone, where 390 points of top row would not hold the way into the
--- menu, the clock band and a readout as well. There is no strip above the
--- dial any more: the instrument is in the corner and this would be drawn
--- through it. So a phone's arrangement is what every window gets, and it was
--- the better one anyway, since a caption belongs against the thing it names
--- rather than a row away from it. The branch that chose has gone.
-local function coords(me, boarded)
-    if not me then return end
-    -- Not while the board is up over it. On a phone this hangs off the dial's
-    -- foot, and the board opens down the middle of the window from the band
-    -- above it, so the two want the same strip. The blips beside it get away
-    -- with standing on a roster row because a mark is not a word; a line of
-    -- type does not. The board is the thing being read while it is up, and
-    -- this is the reading that waits. A monitor's board is a column down the
-    -- middle and never reaches this corner, so only a phone stands down.
-    if boarded and M.compact then return end
-    local x, y, side = dial()
-    local mid = y + side + TOP.coord_line() / 2
-    txt("POS", x, mid, (FONT - 3) * F.scale, pal.a(pal.DIM, 0.8))
-    txt(string.format("%d,%d", math.floor(sim.ship_x(me) / 16),
-                      math.floor(sim.ship_y(me) / 16)),
-        x + 26 * F.scale, mid, (FONT - 3) * F.scale, pal.a(pal.INK, 0.85))
-end
-
 -- The flags, as flags.
 --
 -- This was a sentence -- "flags  you 2 - 1 them   1 loose" -- which is three
@@ -4552,8 +4510,8 @@ end
 -- place, and the same MENU in the same corner, so when the stands arrive the
 -- only thing that happens is that the room and the key appear. Nothing already
 -- on screen moves. The instruments a watcher gets are all about a room this
--- client has not found yet, so the radar, the coordinates and the roster are
--- simply absent rather than drawn empty.
+-- client has not found yet, so the radar and the roster are simply absent
+-- rather than drawn empty.
 --
 -- What used to be here was a lockup centered in the window, which was the
 -- loading screen held one beat longer and read as a third screen between the
@@ -4685,18 +4643,14 @@ function M.hud(o)
     -- whole thousand tiles, so it stands where the radar stands rather than
     -- somewhere else with the radar still lit beside it.
     -- The dial's corner, and nothing in it while the drawer is over it. On a
-    -- phone the drawer is the whole window, so the radar and the coordinates
-    -- were both drawn through the panel standing on top of them. On a monitor
+    -- phone the drawer is the whole window, so the radar was drawn straight
+    -- through the panel standing on top of it. On a monitor
     -- the drawer is 390 points of 1440 and never reaches this corner, so
     -- nothing there changes: the question is the overlap rather than whether a
     -- menu is open. See `M.drawer_over`.
     local dial_x = dial()
     if not M.drawer_over(dial_x, F.w - dial_x) then
         if M.map then overview(me) else radar(o.cam_x, o.cam_y, me) end
-        -- The roster is the board a press on the band opens, and the whistle
-        -- brings up the same panel without being asked. On a phone either is
-        -- a board over the strip this readout hangs in.
-        coords(me, M.details or ending)
     end
     -- Under the dial, wherever the dial now ends: it lost its panel and its
     -- padding, so a constant here would have left a gap or an overlap. Not on

@@ -24,7 +24,7 @@ mid-fight, out of the corner of an eye. The menu is read, parked, between
 matches. Everything else in this document follows from that split.
 
 The HUD speaks in capitals, because capitals are the case an instrument is
-labeled in: LINK, POS, MENU, PILOTS, DESTROYED. The menu speaks in a
+labeled in: MENU, PILOTS, STREAK, DESTROYED. The menu speaks in a
 sentence's case, one capital at the front of a line and nothing else, because
 a page of capitals is a page nobody reads twice. The switch is made in one
 place (`cased` in ui.lua), set by whichever surface is drawing, never written
@@ -344,12 +344,14 @@ The constants that repeat, from ui.lua:
 
 The HUD has a fixed geography, and it is the prototype's. Top left: the button
 row (MENU, ROOM, the on-air or watching chip) and the rooms panel under it.
-Top right: the radar or the map (one corner, one instrument), with POS under
-the dial's foot and the feed hanging under that. The radar is hard into the
-corner at the same PAD the button row keeps from the other one; the map, which
-is two thirds of the window's short side and reaches past the middle of an
-upright phone, starts on the line under the row instead. Bottom left: the
-corner stack, what your triggers do and what you carry, growing upward.
+Top right: the radar or the map (one corner, one instrument), with the feed
+hanging under it. The radar is hard into the corner at the same PAD the button
+row keeps from the other one; the map, which is two thirds of the window's
+short side and reaches past the middle of an upright phone, starts on the line
+under the row instead. Nothing is captioned up there. The instrument draws
+where you are, and a pair of tile numbers beside it was the same fact in the
+form nobody reads. Bottom left: the corner stack, what your triggers do and
+what you carry, growing upward.
 
 The top of that geography is a row with an instrument at each end. The corner
 key and the band share one center, a key's height is what that center is taken

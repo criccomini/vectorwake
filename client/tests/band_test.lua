@@ -246,17 +246,16 @@ end
 --
 -- The link meter used to be the right end of this row and is in the menu's
 -- head now. What took the corner it left is the dial, which used to start a
--- line lower, so the row is a key, a band and an instrument, and the tile
--- readout hangs under the dial at every size rather than standing up here on
--- the windows wide enough for it.
+-- line lower, so the row is a key, a band and an instrument and nothing else:
+-- the tile readout that stood up here on the wider windows is gone from the
+-- interface entirely.
 --
 -- Measured against the key's published box, because that is the height the
 -- row takes from and the one thing here that cannot drift out of step with
 -- itself.
 local function row_shares_a_center(where)
-    local key = box("open")
-    local pos, tick = drawn("POS"), drawn("0:33")
-    if not (key and pos and tick) then
+    local key, tick = box("open"), drawn("0:33")
+    if not (key and tick) then
         check("the row is drawn on " .. where, false,
               table.concat(words(), " | "))
         return
@@ -265,17 +264,15 @@ local function row_shares_a_center(where)
     -- up here is the box it would publish over itself.
     check("and the link meter is not on it on " .. where,
           box("debug") == nil, "the meter is still in the corner")
+    -- And no tile readout anywhere on the screen, not merely off this row.
+    -- Where you are was a caption on the dial and then a word in this corner
+    -- before that, and the instrument under it draws the same fact.
+    check("and nothing writes out where you are on " .. where,
+          drawn("POS") == nil, "the tile readout is back")
     local mid = key.y + key.h / 2
     check("the row shares one center on " .. where,
           math.abs(down(tick) - mid) < 0.5,
           string.format("%.1f off a center of %.1f", down(tick), mid))
-    -- Under the instrument that says the same thing in a picture, and above
-    -- where the feed starts, rather than over either of them.
-    check("and the tile readout is under the dial on " .. where,
-          ui.row_at(pos.x + 1, down(pos)) ~= "radar"
-              and down(pos) < ui.radar_span(),
-          string.format("POS at %.0f, dial ends %.0f",
-                        down(pos), ui.radar_span()))
     -- Both ends of the row are instruments and the band grows outward from
     -- the middle, so it is aligned with neither for longer than it stays off
     -- them.
