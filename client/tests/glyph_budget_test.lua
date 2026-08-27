@@ -71,8 +71,8 @@ end
 
 -- --- the friends page, which is the longest list in the menu ---------------
 --
--- Sixty names because a room holds fewer than that and the page carries the
--- room on top of the friends; the drawing only publishes the rows that land
+-- Sixty names because a hundred edges is the cap and a tall window draws a
+-- good share of them at once; the drawing only publishes the rows that land
 -- inside the panel, so the number that matters is how many fit rather than
 -- how many came back.
 local function friend_view(n)

@@ -33,7 +33,9 @@ into the strings themselves: case is how a thing is set, not what it says.
 Three kinds of string opt out of both voices, and they are quoted rather than
 said. A name keeps the case its owner gave it, everywhere: a call sign on a
 nameplate, a side's name on the team list, a hull spelled the way the shop
-spells it. A reading off a machine is verbatim: a key cap, a build number, a
+spells it, a zone spelled the way the catalog spells it (Team Battle, never
+team battle). And no line is set all lower case: a sentence opens on a
+capital wherever it is drawn, per Chris. A reading off a machine is verbatim: a key cap, a build number, a
 URL. And the feed sets its lines in lower case with names as the only
 capitals, because "OZONE KILLED KESTREL" is an announcement and the feed
 reports things that happened to people.
