@@ -465,8 +465,9 @@ generated fill pilots have no separate calibrated prior.
 
 Ladder asks for one stable opponent at a measured difficulty slot. Its normal
 format is one life, with a win advancing one rung and a loss dropping two by
-default without crossing the last checkpoint. The opponent changes between
-lives and never changes competence inside one. An idle Ladder room climbs with
+default, down to the bottom of the roster and with nothing banked on the way
+up. The opponent changes between lives and never changes competence inside
+one. An idle Ladder room climbs with
 a stand-in in the player's seat, so the zone is never an empty arena on the
 menu of somebody deciding whether to play it. See
 [ladder-mode.md](ladder-mode.md).

@@ -2368,9 +2368,10 @@ local LEG_WORD = {
 --
 -- What used to be here was a rung number at the head and another on every
 -- row, with a scoreline between them. None of the three said anything a
--- player could act on: a rung is a roster slot, the floor beside it was the
--- checkpoint a loss cannot cross and was never explained on screen, and the
--- scoreline is 1-0 or 0-1 in a mode that is first to one. See decision 74.
+-- player could act on: a rung is a roster slot, the floor beside it was a save
+-- point a loss could not cross and was never explained on screen, and the
+-- scoreline is 1-0 or 0-1 in a mode that is first to one. See decision 74. The
+-- floor is gone from the game as well now, under decision 91.
 
 -- One table for the run's two sections, because ui.lua sits on Lua's ceiling
 -- of two hundred locals in a chunk and four names here would put it over.

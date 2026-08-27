@@ -1,6 +1,6 @@
 # One life against one measured house pilot. A win puts a harder one across the
-# arena; a loss puts back an easier one, but never further back than the last
-# checkpoint. Neither number reaches a screen: what the board says is the
+# arena and a loss puts back an easier one, all the way down to the first if a
+# run keeps losing. Neither number reaches a screen: what the board says is the
 # streak, and who you beat to get it.
 #
 # With nobody here the room climbs anyway, against the same rivals, so the play
@@ -40,11 +40,12 @@ max_teams = 2
 max_humans_per_team = 1
 max_bots_per_team = 1
 
-# A guest is an account: the meta-layer mints one per device, and a run's
-# checkpoint and best rung hang off whatever account id is flying. Nobody has to
-# claim a pilot before their first climb. A guest account is swept after a week
-# away and its progress goes with it; claiming the pilot is what makes a
-# checkpoint permanent, and it keeps whatever was already climbed.
+# A guest is an account: the meta-layer mints one per device, and the best rung
+# a climb reaches hangs off whatever account id is flying. Nobody has to claim a
+# pilot before their first climb. A guest account is swept after a week away and
+# its record goes with it; claiming the pilot is what makes that record
+# permanent. The run itself is one sitting either way, and always opens on the
+# first rung.
 admission = "any"
 max_watchers = 8
 
@@ -53,9 +54,13 @@ match_seconds = 180
 intermission_seconds = 8
 
 # Ladder is one life. Catalog validation refuses any other value for this mode.
+#
+# Nothing floors the drop. Rungs used to be banked every five, which on an
+# eight-rung ladder is one save point sitting exactly `ladder_loss_drop` below
+# the top, so every loss from the last three rungs landed on the same opponent
+# and a climber met two names for ever. See decision 91.
 ladder_first_to = 1
 ladder_loss_drop = 2
-ladder_checkpoint_interval = 5
 
 # The same movement, collision, weapon, and kit economy used in melee. A rung
 # should measure the opponent, not a private ruleset the player never sees in

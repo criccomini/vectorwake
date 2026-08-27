@@ -165,7 +165,7 @@ local A_RUN = {
 local function a_fight(over)
     local m = {playing = true, left = 166, score = {[0] = 0, [1] = 0},
                ladder = {rung = 4, streak = 1, best_streak = 3,
-                         checkpoint = 0,
+                         best = 6,
                          active_opponent = 4, desired_opponent = 4,
                          opponent_ready = true, waiting = false,
                          legs = 19, log = A_RUN}}
@@ -213,19 +213,19 @@ check("a match with no run draws no ratings beside its clock",
 --
 -- The rung, the streak and the floor were a line under the clock, in the band
 -- itself. The rung and the floor have left the client entirely: a rung is a
--- roster slot and a floor is the checkpoint a loss cannot cross, and neither
+-- roster slot, the floor was a save point a loss could not cross, and neither
 -- was ever explained on the screen that named them. What is left of the three
 -- is the streak, and it is a reading on the board rather than a word in the
--- band. See decision 74.
+-- band. See decision 74. The floor itself went with decision 91.
 ui.details = false
-frame({match = a_fight({rung = 7, streak = 2, checkpoint = 5}),
+frame({match = a_fight({rung = 7, streak = 2}),
        ratings = {[0] = 1183, [1] = 1347}})
 check("the band says nothing about a run at all",
       said("RUNG") == nil and said("STREAK") == nil and said("FLOOR") == nil,
       table.concat(words(), " | "))
 
 ui.details = true
-frame({match = a_fight({rung = 7, streak = 2, checkpoint = 5}),
+frame({match = a_fight({rung = 7, streak = 2}),
        ratings = {[0] = 1183, [1] = 1347}})
 check("the board carries the streak the band gave up",
       said("STREAK") ~= nil and exactly("2") ~= nil,

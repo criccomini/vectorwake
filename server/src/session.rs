@@ -580,8 +580,8 @@ pub(crate) async fn serve_client(
                 if let Some(new_id) =
                     a.join_with_presence(seat_of, class, cap, tx.clone(), presence.clone())
                 {
-                    if let Some((checkpoint, best)) = ladder {
-                        a.restore_ladder(checkpoint, best);
+                    if let Some(best) = ladder {
+                        a.restore_ladder(best);
                     }
                     credential_expires = presented_expires;
                     let ship = a.players[&new_id].ship;
@@ -802,8 +802,8 @@ pub(crate) async fn serve_client(
                         }
                         let flew = z.rooms[index].fly(member, cls, cap).is_some();
                         if flew {
-                            if let Some((checkpoint, best)) = ladder {
-                                z.rooms[index].restore_ladder(checkpoint, best);
+                            if let Some(best) = ladder {
+                                z.rooms[index].restore_ladder(best);
                             }
                             // A human entered the game count.
                             z.push_status();

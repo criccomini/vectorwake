@@ -79,7 +79,6 @@ pub const TICKS_PER_SECOND: u32 = 100;
 
 pub const DEFAULT_LADDER_FIRST_TO: u16 = 1;
 pub const DEFAULT_LADDER_LOSS_DROP: u32 = 2;
-pub const DEFAULT_LADDER_CHECKPOINT_INTERVAL: u32 = 5;
 
 /// The rules that turn one completed Ladder series into run progress.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -88,8 +87,6 @@ pub struct LadderRules {
     pub first_to: u16,
     /// Rungs lost after a defeat in the ordinary mode.
     pub loss_drop: u32,
-    /// A checkpoint is unlocked at each multiple. Zero disables new checkpoints.
-    pub checkpoint_interval: u32,
 }
 
 impl Default for LadderRules {
@@ -97,19 +94,24 @@ impl Default for LadderRules {
         Self {
             first_to: DEFAULT_LADDER_FIRST_TO,
             loss_drop: DEFAULT_LADDER_LOSS_DROP,
-            checkpoint_interval: DEFAULT_LADDER_CHECKPOINT_INTERVAL,
         }
     }
 }
 
 /// Pure Ladder progression. Rung zero is the base opponent, and the rung is
 /// also the roster slot requested for the next series.
+///
+/// There is no floor under a loss and no ground a run resumes on: every run
+/// opens at rung zero, and a defeat falls the full drop. Rungs used to be
+/// banked at an interval and a loss stopped at the last one, which on an
+/// eight-rung ladder meant one checkpoint five rungs up, exactly the loss drop
+/// below the top. Losses above it cost nothing, so the last three rungs
+/// collapsed into two names a climber saw for ever. See decision 91.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct LadderProgression {
     rung: u32,
     streak: u32,
     best_streak: u32,
-    checkpoint: u32,
     best: u32,
     rules: LadderRules,
 }
@@ -120,26 +122,21 @@ impl LadderProgression {
             rung: 0,
             streak: 0,
             best_streak: 0,
-            checkpoint: 0,
             best: 0,
             rules,
         }
     }
 
-    /// Restore persisted progress while keeping its floor internally valid.
-    pub fn restore(rules: LadderRules, rung: u32, streak: u32, checkpoint: u32, best: u32) -> Self {
-        let rung_count = pilots::PROVISIONAL_LADDER_RUNG_COUNT as u32;
-        let last_rung = rung_count.saturating_sub(1);
-        let rung = rung.min(last_rung);
+    /// Open a run for a pilot who has climbed here before. The climb itself is
+    /// not restored: they start at the bottom like everybody else, and the only
+    /// thing carried across a session is the highest rung the account has ever
+    /// reached, which is a record rather than a position.
+    pub fn restore(rules: LadderRules, best: u32) -> Self {
         Self {
-            rung,
-            streak,
-            // A resumed session is a fresh run, and the best streak is about
-            // the run rather than the account, so it starts at whatever the
-            // restored streak already is.
-            best_streak: streak,
-            checkpoint: checkpoint.min(rung),
-            best: best.max(rung).min(rung_count),
+            rung: 0,
+            streak: 0,
+            best_streak: 0,
+            best: best.min(pilots::PROVISIONAL_LADDER_RUNG_COUNT as u32),
             rules,
         }
     }
@@ -150,10 +147,6 @@ impl LadderProgression {
 
     pub fn streak(&self) -> u32 {
         self.streak
-    }
-
-    pub fn checkpoint(&self) -> u32 {
-        self.checkpoint
     }
 
     pub fn best(&self) -> u32 {
@@ -169,8 +162,8 @@ impl LadderProgression {
     }
 
     /// Advance once, returning true when that win cleared the finite roster.
-    /// A clear starts the next run at the durable floor instead of silently
-    /// repeating the strongest band under a larger rung number.
+    /// A clear starts the next run at the bottom instead of silently repeating
+    /// the strongest band under a larger rung number.
     pub fn win(&mut self) -> bool {
         let rung_count = pilots::PROVISIONAL_LADDER_RUNG_COUNT as u32;
         let next = self.rung.saturating_add(1);
@@ -180,7 +173,7 @@ impl LadderProgression {
             // counts before the next run starts from nothing.
             self.streak = self.streak.saturating_add(1);
             self.best_streak = self.best_streak.max(self.streak);
-            self.rung = self.checkpoint.min(rung_count.saturating_sub(1));
+            self.rung = 0;
             self.streak = 0;
             return true;
         }
@@ -188,19 +181,12 @@ impl LadderProgression {
         self.rung = next;
         self.streak = self.streak.saturating_add(1);
         self.best_streak = self.best_streak.max(self.streak);
-        let interval = self.rules.checkpoint_interval;
-        if interval != 0 && self.rung.is_multiple_of(interval) {
-            self.checkpoint = self.rung;
-        }
         false
     }
 
     pub fn loss(&mut self) {
         self.streak = 0;
-        self.rung = self
-            .rung
-            .saturating_sub(self.rules.loss_drop)
-            .max(self.checkpoint);
+        self.rung = self.rung.saturating_sub(self.rules.loss_drop);
     }
 }
 
@@ -319,7 +305,8 @@ pub struct LadderState {
     /// The longest streak this run has had, which is the reading that survives
     /// a broken one.
     pub best_streak: u32,
-    pub checkpoint: u32,
+    /// The highest rung this account has ever reached, which is the one number
+    /// that outlives a run. Every run itself starts at rung zero.
     pub best: u32,
     pub score: [u16; 2],
     pub first_to: u16,
@@ -427,9 +414,17 @@ pub trait Mode: Send {
     fn ladder_state(&self) -> Option<LadderState> {
         None
     }
-    /// Restore the durable part of a Ladder run. Returns false for modes that
-    /// do not own Ladder progression.
-    fn restore_ladder(&mut self, _checkpoint: u32, _best: u32) -> bool {
+    /// Restore the durable part of a Ladder run, which is the account's best
+    /// rung and nothing else. Returns false for modes that do not own Ladder
+    /// progression.
+    fn restore_ladder(&mut self, _best: u32) -> bool {
+        false
+    }
+    /// Open a run already standing on a chosen rung. The only way to reach one
+    /// in play is to win the series below it, which a test about rival
+    /// replacement should not have to fly first.
+    #[cfg(test)]
+    fn set_ladder_rung(&mut self, _rung: u32) -> bool {
         false
     }
     /// A room went from bots only to holding a person. A mode whose contest is
@@ -694,9 +689,8 @@ impl Ladder {
 
     /// Put a fresh run on the board and take the room back to the edge it
     /// starts from: nothing flying, the full clock, and the first life of that
-    /// run waiting on its rival. The floor is whatever the run was opened
-    /// with, which is rung one for anybody starting over and the saved
-    /// checkpoint for a session resuming one.
+    /// run waiting on its rival. Every run opens on the bottom rung, whether
+    /// the pilot is new or has cleared the roster twice.
     fn open_run(&mut self, run: LadderProgression) {
         self.active_opponent_slot = run.rung();
         self.run = run;
@@ -712,9 +706,9 @@ impl Ladder {
         self.opened = false;
     }
 
-    /// Start the run's log over. A run is the unit the log is about, so the
-    /// session that resumes at a checkpoint starts with an empty one rather
-    /// than with the tail of somebody else's evening.
+    /// Start the run's log over. A run is the unit the log is about, so a new
+    /// session starts with an empty one rather than with the tail of somebody
+    /// else's evening.
     fn clear_log(&mut self) {
         self.log = [LadderLeg::default(); LADDER_LOG_LEGS];
         self.logged = 0;
@@ -969,7 +963,6 @@ impl Mode for Ladder {
             rung: self.run.rung(),
             streak: self.run.streak(),
             best_streak: self.run.best_streak(),
-            checkpoint: self.run.checkpoint(),
             best: self.run.best(),
             score: self.score,
             first_to: self.rules.first_to,
@@ -988,10 +981,20 @@ impl Mode for Ladder {
         true
     }
 
-    fn restore_ladder(&mut self, checkpoint: u32, best: u32) -> bool {
-        self.open_run(LadderProgression::restore(
-            self.rules, checkpoint, 0, checkpoint, best,
-        ));
+    fn restore_ladder(&mut self, best: u32) -> bool {
+        self.open_run(LadderProgression::restore(self.rules, best));
+        true
+    }
+
+    #[cfg(test)]
+    fn set_ladder_rung(&mut self, rung: u32) -> bool {
+        // Climbed rather than assigned, so the record and the rung agree the
+        // way they would have if somebody had really flown it.
+        let mut run = LadderProgression::new(self.rules);
+        for _ in 0..rung {
+            run.win();
+        }
+        self.open_run(run);
         true
     }
 }
@@ -1344,7 +1347,6 @@ mod ladder_tests {
         run.win();
         assert_eq!(run.rung(), 2);
         assert_eq!(run.streak(), 2);
-        assert_eq!(run.checkpoint(), 0);
     }
 
     #[test]
@@ -1353,54 +1355,48 @@ mod ladder_tests {
             loss_drop: 3,
             ..LadderRules::default()
         };
-        let mut run = LadderProgression::restore(rules, 6, 6, 0, 6);
+        let mut run = LadderProgression::new(rules);
+        for _ in 0..6 {
+            run.win();
+        }
         run.loss();
         assert_eq!(run.rung(), 3);
         assert_eq!(run.streak(), 0);
-        assert_eq!(run.checkpoint(), 0);
     }
 
+    /// Nothing holds a loss up. The drop applies at every height and the run
+    /// walks all the way back to the first opponent, which is what makes the
+    /// rungs above the middle of the ladder reachable by more than one route.
     #[test]
-    fn an_unlocked_checkpoint_is_a_loss_floor() {
+    fn a_loss_has_no_floor_under_it() {
         let rules = LadderRules {
             loss_drop: 2,
-            checkpoint_interval: 3,
             ..LadderRules::default()
         };
         let mut run = LadderProgression::new(rules);
-        for _ in 0..3 {
+        for _ in 0..5 {
             run.win();
         }
-        assert_eq!(run.checkpoint(), 3, "the third rung unlocks its floor");
-        run.win();
-        run.win();
         assert_eq!(run.rung(), 5);
         run.loss();
-        assert_eq!(run.rung(), 3, "the configured drop reaches the floor");
+        assert_eq!(run.rung(), 3, "the configured drop, with nothing under it");
         run.loss();
-        assert_eq!(run.rung(), 3, "another loss cannot cross the floor");
+        assert_eq!(run.rung(), 1, "and the one below that");
+        run.loss();
+        assert_eq!(run.rung(), 0, "down to the bottom rung");
+        run.loss();
+        assert_eq!(run.rung(), 0, "which is as far as a run can fall");
         assert_eq!(run.streak(), 0);
     }
 
     #[test]
-    fn a_zero_interval_disables_new_checkpoints() {
-        let rules = LadderRules {
-            checkpoint_interval: 0,
-            ..LadderRules::default()
-        };
-        let mut run = LadderProgression::new(rules);
-        for _ in 0..20 {
+    fn clearing_the_top_starts_the_next_run_at_the_bottom() {
+        let mut run = LadderProgression::new(LadderRules::default());
+        for _ in 0..pilots::PROVISIONAL_LADDER_RUNG_COUNT - 1 {
             run.win();
         }
-        assert_eq!(run.checkpoint(), 0);
-    }
-
-    #[test]
-    fn clearing_the_top_starts_the_next_run_at_the_floor() {
-        let last = pilots::PROVISIONAL_LADDER_RUNG_COUNT as u32 - 1;
-        let mut run = LadderProgression::restore(LadderRules::default(), last, 9, 5, last);
         assert!(run.win(), "the last opponent completes the finite roster");
-        assert_eq!(run.rung(), 5, "the next run starts at its saved floor");
+        assert_eq!(run.rung(), 0, "the next run starts over");
         assert_eq!(run.streak(), 0);
         assert_eq!(
             run.best(),
@@ -1409,11 +1405,20 @@ mod ladder_tests {
         );
     }
 
+    /// The only thing a returning pilot brings back is the record. A run they
+    /// abandoned six rungs up is not a place they resume from.
     #[test]
-    fn restore_cannot_put_a_checkpoint_above_the_run() {
-        let run = LadderProgression::restore(LadderRules::default(), 4, 2, 9, 0);
-        assert_eq!(run.rung(), 4);
-        assert_eq!(run.checkpoint(), 4);
+    fn restore_opens_at_the_bottom_and_carries_only_the_record() {
+        let run = LadderProgression::restore(LadderRules::default(), 6);
+        assert_eq!(run.rung(), 0);
+        assert_eq!(run.streak(), 0);
+        assert_eq!(run.best(), 6);
+    }
+
+    #[test]
+    fn restore_cannot_claim_a_record_above_the_roster() {
+        let run = LadderProgression::restore(LadderRules::default(), 900);
+        assert_eq!(run.best(), pilots::PROVISIONAL_LADDER_RUNG_COUNT as u32);
     }
 
     #[test]
@@ -1730,8 +1735,8 @@ mod ladder_tests {
         assert_eq!(again.best_streak, 3, "a shorter run does not lower it");
     }
 
-    /// A new session resumes at the saved checkpoint with a streak of zero,
-    /// and with nobody else's evening behind it.
+    /// A new session opens at the bottom rung with a streak of zero, and with
+    /// nobody else's evening behind it.
     #[test]
     fn restoring_progress_starts_a_fresh_log() {
         let seats = [3, RIVAL];
@@ -1740,7 +1745,7 @@ mod ladder_tests {
         one_life(&mut ladder, &mut world, &seats, 100, true);
         assert_eq!(ladder.ladder_state().unwrap().logged, 1);
 
-        assert!(ladder.restore_ladder(0, 3));
+        assert!(ladder.restore_ladder(3));
         let state = ladder.ladder_state().unwrap();
         assert_eq!(state.legs, 0);
         assert_eq!(state.logged, 0);
@@ -1919,7 +1924,11 @@ mod ladder_tests {
         let mut world = World::new(7);
         let mut ladder = Ladder::new(LadderRules::default(), 1_000, 2);
         let last = pilots::PROVISIONAL_LADDER_RUNG_COUNT as u32 - 1;
-        ladder.run = LadderProgression::restore(LadderRules::default(), last, 9, 5, last);
+        let mut climbed = LadderProgression::new(LadderRules::default());
+        for _ in 0..last {
+            climbed.win();
+        }
+        ladder.run = climbed;
         ladder.tick(&mut ctx(&mut world, &seats));
 
         let mut point = ctx(&mut world, &seats);
@@ -1928,9 +1937,9 @@ mod ladder_tests {
         let state = ladder.ladder_state().unwrap();
         assert!(state.cleared);
         assert_eq!(state.active_opponent_slot, last);
-        assert_eq!(state.desired_opponent_slot, 5);
+        assert_eq!(state.desired_opponent_slot, 0);
         assert_eq!(state.best, last + 1);
-        assert_eq!(state.rung, 5);
+        assert_eq!(state.rung, 0, "a cleared roster starts over at the bottom");
 
         let rival_gone = [3];
         ladder.tick(&mut ctx(&mut world, &rival_gone));
@@ -1939,23 +1948,24 @@ mod ladder_tests {
         assert!(replacement.open_match);
         let next = ladder.ladder_state().unwrap();
         assert!(!next.cleared);
-        assert_eq!(next.active_opponent_slot, 5);
+        assert_eq!(next.active_opponent_slot, 0);
     }
 
+    /// A returning pilot's record comes back. Their position does not: the
+    /// room opens them on the first rung and asks for its opponent.
     #[test]
-    fn restore_starts_at_the_saved_checkpoint_with_no_streak() {
+    fn restore_starts_at_the_bottom_rung_with_no_streak() {
         let mut ladder = Ladder::new(LadderRules::default(), 1_000, 2);
-        assert!(ladder.restore_ladder(5, 7));
+        assert!(ladder.restore_ladder(7));
         let state = ladder.ladder_state().unwrap();
         assert!(!state.playing);
-        assert_eq!(state.rung, 5);
-        assert_eq!(state.checkpoint, 5);
+        assert_eq!(state.rung, 0);
         assert_eq!(state.streak, 0);
         assert_eq!(state.best, 7);
         assert_eq!(state.score, [0, 0]);
-        assert_eq!(state.active_opponent_slot, 5);
-        assert_eq!(state.desired_opponent_slot, 5);
-        assert!(!FreeForAll.restore_ladder(5, 7));
+        assert_eq!(state.active_opponent_slot, 0);
+        assert_eq!(state.desired_opponent_slot, 0);
+        assert!(!FreeForAll.restore_ladder(7));
     }
 
     #[test]
@@ -2002,7 +2012,6 @@ mod ladder_tests {
         assert_eq!(stopped.score, [0, 0]);
         assert_eq!(stopped.rung, before.rung);
         assert_eq!(stopped.streak, before.streak);
-        assert_eq!(stopped.checkpoint, before.checkpoint);
         assert_eq!(stopped.best, before.best);
 
         for _ in 0..20 {

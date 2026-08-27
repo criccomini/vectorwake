@@ -215,13 +215,11 @@ pub(crate) const JOIN_WATCH: u8 = 2;
 /// legal byte vector that resolves to a different ship, so they must reload
 /// before joining or saving a kit under the new row.
 ///
-/// 26 puts each charge kind's own cooldown in the owner-only tail of a
-/// snapshot. A burst now shuts its key behind it, and that clock is set at a
-/// press that may be older than the tick a snapshot starts from, so a client
-/// that could not read it would predict a key the zone has shut. An older tab
-/// would also read the tail eight bytes short from the kit onward, which is
-/// the class of fault this number exists to refuse.
-pub(crate) const CLIENT_PROTOCOL: u8 = 26;
+/// 27 takes the checkpoint out of the Ladder body. A run has no floor to
+/// report any more, and an older tab would read the four bytes that carried it
+/// as the account's best rung and then take every field after it, the leg
+/// count and the whole run log included, from the wrong offset.
+pub(crate) const CLIENT_PROTOCOL: u8 = 27;
 
 /// The biggest message a client may send. The largest legitimate one is a join:
 /// tag, class, protocol, a zone name and a call sign. 8 KB is two orders of
@@ -301,17 +299,17 @@ pub(crate) const S2C_ONAIR: u8 = 13;
 ///
 /// Flag bit 0 says the match is playing, bit 1 says an artifact follows the
 /// scores, and bit 2 says the Ladder body follows that. The Ladder body is
-/// `[status, rung, streak, checkpoint, best, active opponent, desired
+/// `[status, rung, streak, best streak, best, active opponent, desired
 /// opponent, first-to, legs, logged, log[logged]]`. Status bit 0 says the
 /// requested rival is seated, bit 1 says the finite roster was cleared, and bit
 /// 2 says the room is waiting for a rival rather than counting down. The six
 /// progression fields are u32 and first-to is u16.
 ///
 /// `legs` is a u32 count of every life this run has finished and `logged` is a
-/// byte saying how many of them the window still holds, oldest first. Each of
-/// those is eleven bytes: `[rung as u32, result, kills as u16, deaths as u16,
-/// seconds as u16]`, where result is 0 lost, 1 cleared, 2 drawn. So the body is
-/// 32 bytes plus eleven a leg, and a full window of 12 makes it 164.
+/// byte saying how many of them the window still holds, oldest first. A leg is
+/// `[result, seconds as u16, call sign length, call sign]`, where result is 0
+/// lost, 1 cleared, 2 drawn, so it is four bytes plus a name as long as its
+/// owner made it. The body is 32 bytes before the first of them.
 ///
 /// One packet owns the clock, result artifact, Ladder transition, and the run
 /// log. Queue pressure can delay the newest answer, but it cannot combine

@@ -1971,16 +1971,14 @@ mod tests {
         seat.carried_ladders = vec![
             token::LadderProgress {
                 zone: "other-ladder".into(),
-                checkpoint: 20,
                 best: 25,
             },
             token::LadderProgress {
                 zone: "ladder".into(),
-                checkpoint: 5,
                 best: 9,
             },
         ];
-        assert_eq!(z.token_ladder(&seat), Some((5, 9)));
+        assert_eq!(z.token_ladder(&seat), Some(9));
 
         z.zone_name = "unranked".into();
         assert_eq!(z.token_ladder(&seat), None);
@@ -2696,7 +2694,7 @@ mod tests {
             "an in-seat hull request cannot make the rival ineligible"
         );
 
-        assert!(z.rooms[0].restore_ladder(5, 7));
+        assert!(z.rooms[0].mode.set_ladder_rung(5));
         assert!(z.rooms[0].leave(old_id, pilot::why::EVICTED));
         let stale = signed_ladder_replica(&z, 5_012, 0, 1);
         let replacement = signed_ladder_replica(&z, 5_013, 5, 0);
@@ -2906,7 +2904,7 @@ mod tests {
         let anchor_slot = (0..pilots::PROVISIONAL_LADDER_RUNG_COUNT as u32)
             .find(|slot| bots::ladder_archetype_for_slot(*slot) == Some(anchor_archetype))
             .expect("the provisional order contains the anchor");
-        assert!(z.rooms[0].restore_ladder(anchor_slot, anchor_slot));
+        assert!(z.rooms[0].mode.set_ladder_rung(anchor_slot));
         let anchor = signed_ladder_replica(&z, 5_020, anchor_slot, 0);
         let (tx, _rx) = mpsc::channel(OUT_QUEUE);
         let anchor_id = z.rooms[0]
@@ -2970,7 +2968,7 @@ mod tests {
             "a seat with an unknown slot cannot survive the run boundary"
         );
 
-        assert!(z.rooms[0].restore_ladder(5, 7));
+        assert!(z.rooms[0].mode.set_ladder_rung(5));
         assert_eq!(
             z.status().bot_requests,
             Some(vec![fleet::BotRequest {
@@ -2978,7 +2976,7 @@ mod tests {
                 count: 1,
                 target_slot: Some(5),
             }]),
-            "the replacement request uses the restored checkpoint"
+            "the replacement request asks for the rung the run stands on"
         );
     }
 
@@ -3093,7 +3091,6 @@ mod tests {
         assert!(!interrupted.playing);
         assert_eq!(interrupted.rung, before.rung);
         assert_eq!(interrupted.streak, before.streak);
-        assert_eq!(interrupted.checkpoint, before.checkpoint);
         assert_eq!(interrupted.best, before.best);
         assert_eq!(z.rooms[0].artifact_id, None);
         assert_eq!(z.spools.matches.lock().unwrap().len(), artifacts_before);
@@ -3159,7 +3156,6 @@ mod tests {
         );
         assert_eq!(interrupted.rung, before.rung);
         assert_eq!(interrupted.streak, before.streak);
-        assert_eq!(interrupted.checkpoint, before.checkpoint);
         assert_eq!(interrupted.best, before.best);
         assert_eq!(
             z.rooms[0].rating.log.len(),
@@ -3184,7 +3180,6 @@ mod tests {
         let after = z.rooms[0].ladder_state().expect("Ladder state").state;
         assert_eq!(after.rung, before.rung);
         assert_eq!(after.streak, before.streak);
-        assert_eq!(after.checkpoint, before.checkpoint);
         assert_eq!(after.best, before.best);
     }
 

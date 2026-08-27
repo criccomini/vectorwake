@@ -17,16 +17,20 @@ one for slot zero.
 | Result | Ordinary Ladder | Default |
 |---|---|---|
 | Win | Advance one rung and add one to the streak | `+1` |
-| Loss | Clear the streak and move back, stopping at the saved checkpoint | `-2` rungs |
-| Checkpoint | Save a floor after clearing each interval | Every 5 cleared rungs |
+| Loss | Clear the streak and move back | `-2` rungs |
 
-The loss rule is `max(checkpoint, rung - ladder_loss_drop)`. With the defaults,
-a loss on the opponent at rung eight sends the next fight to rung six, the
-floor earned after clearing the first five opponents.
+The loss rule is `rung - ladder_loss_drop`, with nothing under it but rung one.
+A loss on the opponent at rung eight sends the next fight to rung six, and
+losing there sends it to rung four.
 
-`ladder_checkpoint_interval = 0` disables new checkpoints. All progression
-arithmetic saturates at its numeric bounds, so an unusual zone setting cannot
-wrap a run from the top to the bottom.
+Nothing banks a rung. There were save points at an interval for a while, and on
+a ladder of eight rungs that meant one of them five rungs up, exactly the loss
+drop below the top. Every loss from the top three rungs landed back on the same
+opponent, so the whole of the upper ladder was two names a climber saw over and
+over, and the drop cost nothing where the fights were hardest. See decision 91.
+
+All progression arithmetic saturates at its numeric bounds, so an unusual zone
+setting cannot wrap a run from the top to the bottom.
 
 ## One opponent for one life
 
@@ -105,10 +109,12 @@ climb. What a guest gives up is the week: an unclaimed account that goes seven
 days without a session is swept and its progress goes with it. Claiming the
 pilot stops that clock and keeps every rung already climbed.
 
-An unfinished stretch above the checkpoint is intentionally temporary. A new
-session resumes at the saved checkpoint with a streak of zero, while best rung
-remains available for the player's record. This gives checkpoints a real job
-and prevents reconnecting from becoming a way to preserve every attempt.
+A run is one sitting and does not outlive it. A new session starts on the
+bottom rung with a streak of zero, whoever is flying and however far they got
+last time. What crosses the gap is the record: best rung is kept per account
+per zone, so an evening that reached rung seven is still on the books after it
+ends. Reconnecting is therefore never a way to preserve an attempt, and the
+climb is the same climb for a returning player as for a new one.
 
 ## The run behind the rung
 
@@ -127,8 +133,8 @@ no progress, and a log that recorded it would make the run read as longer and
 worse than it was.
 
 The log belongs to one run. Clearing the roster ends a run and the next life
-starts the log over, and so does resuming at a checkpoint in a new session,
-which is the rule the streak already follows.
+starts the log over, and so does a new session, which is the rule the streak
+already follows.
 
 The client draws the log under the roster, behind the same toggle, newest leg
 first: the window is fixed, so the end worth keeping on screen is the one just
@@ -137,7 +143,8 @@ what that side is rated. That number is about the fight in front of the player
 rather than the ones behind them, and the roster already carries it for every
 seat, so nothing new travels for it. It shares the name's line rather than
 taking one of its own because the band under the clock belongs to the readout,
-which is centered and reaches out past the clock once a run has a floor.
+which is centered and reaches out past the clock once a run has legs behind
+it.
 
 Ladder progress is not Elo. Rung records progress through a run. Rating
 estimates strength across rated results. The bot roster may use calibrated Elo
@@ -164,8 +171,8 @@ experiment measured.
 
 The provisional roster has eight rungs. Clearing its final opponent records
 best rung eight, marks the run as cleared, and starts the next run from the
-saved checkpoint after the podium. The server never turns a larger rung number
-into a hidden rematch against the strongest pilot. A certified roster artifact
+bottom after the podium. The server never turns a larger rung number into a
+hidden rematch against the strongest pilot. A certified roster artifact
 may replace the provisional order only when its content fingerprints and
 statistical release gates pass together and its release signature verifies.
 Until such an artifact ships, the
@@ -176,9 +183,11 @@ behavior prior.
 
 The single-life format makes every engagement legible and keeps rematches fast.
 The two-rung loss supplies tension without making one bomb erase a long run.
-Checkpoints turn a sequence of short fights into an evening-scale objective.
+Starting every session at the bottom makes the whole roster the thing a run is
+played against, rather than the two opponents nearest wherever it stalled.
 
 Those are design hypotheses. Bot tournaments can verify population ordering
-under their fixture and measure how noisy one life is. Only play with people can tell us whether the
-loss feels fair, whether the checkpoint interval creates useful tension, and
-whether players choose another run because they enjoyed the previous one.
+under their fixture and measure how noisy one life is. Only play with people
+can tell us whether the loss feels fair, whether a fresh start each session
+reads as a reset or as the game, and whether players choose another run because
+they enjoyed the previous one.

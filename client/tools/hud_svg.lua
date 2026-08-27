@@ -209,29 +209,29 @@ local RUN = {
 }
 
 local ladder = {
-    rung = 4, streak = 4, checkpoint = 0,
+    rung = 4, streak = 4, best = 6,
     active_opponent = 4, desired_opponent = 4,
     opponent_ready = true, waiting = false, cleared = false,
     first_to = 1, legs = 8, log = RUN,
 }
 
--- The frame from the screenshot: rung 5, streak 4, floor 1, 2:46 on the clock,
--- nobody dead yet.
+-- The frame from the screenshot: rung 5, streak 4, 2:46 on the clock, nobody
+-- dead yet.
 local match = {playing = true, left = 166, score = {[0] = 0, [1] = 0},
                ladder = ladder}
 
 -- The first life of a run, which is what every run opens on. Nothing behind
--- it: no streak, no floor above the ground, no legs to look back at.
+-- it: no streak, no record, no legs to look back at.
 if scenario == "fresh" then
-    ladder.rung, ladder.streak, ladder.checkpoint = 0, 0, 0
+    ladder.rung, ladder.streak, ladder.best = 0, 0, 0
     ladder.active_opponent, ladder.desired_opponent = 0, 0
     ladder.legs, ladder.log = 0, {}
     match.left = 180
 end
 
--- A run deep enough to have a floor under it, so the readout says all three.
+-- A run far enough up the ladder to have an evening behind it.
 if scenario == "deep" then
-    ladder.rung, ladder.streak, ladder.checkpoint = 7, 2, 5
+    ladder.rung, ladder.streak, ladder.best = 7, 2, 7
     ladder.active_opponent, ladder.desired_opponent = 7, 7
     ladder.legs = 23
     match.left = 91

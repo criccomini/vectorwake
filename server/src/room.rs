@@ -699,7 +699,6 @@ fn match_message(
         ladder.rung,
         ladder.streak,
         ladder.best_streak,
-        ladder.checkpoint,
         ladder.best,
         ladder.active_opponent_slot,
         ladder.desired_opponent_slot,
@@ -1160,9 +1159,6 @@ impl Room {
                 loss_drop: c
                     .ladder_loss_drop
                     .unwrap_or(modes::DEFAULT_LADDER_LOSS_DROP),
-                checkpoint_interval: c
-                    .ladder_checkpoint_interval
-                    .unwrap_or(modes::DEFAULT_LADDER_CHECKPOINT_INTERVAL),
             },
         }
     }
@@ -1308,10 +1304,12 @@ impl Room {
                 .is_some_and(|expected| self.world.state.ships[ship as usize].kit == expected)
     }
 
-    /// Restore a claimed pilot's durable Ladder floor before their first
-    /// series opens. False means this room is not running Ladder.
-    pub(crate) fn restore_ladder(&mut self, checkpoint: u32, best: u32) -> bool {
-        self.mode.restore_ladder(checkpoint, best)
+    /// Restore a claimed pilot's durable Ladder record before their first
+    /// series opens. The run itself always starts on the bottom rung, so this
+    /// carries the number and not a position. False means this room is not
+    /// running Ladder.
+    pub(crate) fn restore_ladder(&mut self, best: u32) -> bool {
+        self.mode.restore_ladder(best)
     }
 
     /// The weapons that belong to a settings slot rather than to a hull, under
@@ -1832,8 +1830,8 @@ impl Room {
         // that the requested opponent is ready. The room cannot identify its
         // roster slot from a seat, and the supervisor deliberately lets an
         // ordinary surplus bot live briefly. Remove it synchronously before a
-        // new run restores its checkpoint, then let the room-specific request
-        // seat the right rival.
+        // new run opens, then let the room-specific request seat the right
+        // rival.
         if !bot && self.humans() == 0 && self.mode.ladder_state().is_some() {
             while self.evict_bot().is_some() {}
         }
@@ -3773,7 +3771,6 @@ impl Room {
             if !seat.bot {
                 if let Some(ladder) = self.mode.ladder_state() {
                     detail["ladder"] = serde_json::json!({
-                        "checkpoint": ladder.checkpoint,
                         "best": ladder.best,
                         "rung": ladder.rung,
                         "streak": ladder.streak,
@@ -4854,7 +4851,6 @@ mod ladder_wire_tests {
                 rung: 0x0102_0304,
                 streak: 0x1112_1314,
                 best_streak: 0x2223_2425,
-                checkpoint: 0x2122_2324,
                 best: 0x3132_3334,
                 score: [1, 0],
                 first_to: 0x5152,
@@ -4866,9 +4862,10 @@ mod ladder_wire_tests {
             }),
         );
 
-        // Four bytes wider than it was, for the best streak, and a leg is now
-        // as wide as the call sign on it.
-        assert_eq!(message.len(), 47 + 5 + 2 * (4 + 12) - 2);
+        // Header, scores, artifact, status byte, six u32 of progression, the
+        // first-to, the leg count and the window size, then a leg for each
+        // call sign in the window.
+        assert_eq!(message.len(), 16 + 1 + 6 * 4 + 2 + 4 + 1 + (4 + 12) + (4 + 10));
         assert_eq!(message[0], S2C_MATCH);
         assert_eq!(message[1], 6, "artifact and Ladder are present");
         assert_eq!(message[2], 0x50);
@@ -4886,26 +4883,25 @@ mod ladder_wire_tests {
         assert_eq!(u32_at(&message, 17), 0x0102_0304);
         assert_eq!(u32_at(&message, 21), 0x1112_1314);
         assert_eq!(u32_at(&message, 25), 0x2223_2425, "the run's best streak");
-        assert_eq!(u32_at(&message, 29), 0x2122_2324);
-        assert_eq!(u32_at(&message, 33), 0x3132_3334);
-        assert_eq!(u32_at(&message, 37), 0x4142_4344);
-        assert_eq!(u32_at(&message, 41), 0x6162_6364);
+        assert_eq!(u32_at(&message, 29), 0x3132_3334);
+        assert_eq!(u32_at(&message, 33), 0x4142_4344);
+        assert_eq!(u32_at(&message, 37), 0x6162_6364);
         assert_eq!(
-            u16::from_le_bytes(message[45..47].try_into().unwrap()),
+            u16::from_le_bytes(message[41..43].try_into().unwrap()),
             0x5152
         );
-        assert_eq!(u32_at(&message, 47), 0x7182_7384, "legs the run has had");
-        assert_eq!(message[51], 2, "legs the window still holds");
+        assert_eq!(u32_at(&message, 43), 0x7182_7384, "legs the run has had");
+        assert_eq!(message[47], 2, "legs the window still holds");
         // A leg is a result, a duration, and the call sign it was fought
         // against, which is as long as its owner made it.
-        assert_eq!(message[52], modes::LegResult::Cleared.to_byte());
-        assert_eq!(u16::from_le_bytes(message[53..55].try_into().unwrap()), 41);
-        assert_eq!(message[55], 12);
-        assert_eq!(&message[56..68], b"Vantage 0001");
-        assert_eq!(message[68], modes::LegResult::Lost.to_byte());
-        assert_eq!(u16::from_le_bytes(message[69..71].try_into().unwrap()), 7);
-        assert_eq!(message[71], 10);
-        assert_eq!(&message[72..82], b"Sable 0001");
+        assert_eq!(message[48], modes::LegResult::Cleared.to_byte());
+        assert_eq!(u16::from_le_bytes(message[49..51].try_into().unwrap()), 41);
+        assert_eq!(message[51], 12);
+        assert_eq!(&message[52..64], b"Vantage 0001");
+        assert_eq!(message[64], modes::LegResult::Lost.to_byte());
+        assert_eq!(u16::from_le_bytes(message[65..67].try_into().unwrap()), 7);
+        assert_eq!(message[67], 10);
+        assert_eq!(&message[68..78], b"Sable 0001");
     }
 
     /// A body with no run behind it still says so, rather than leaving the
@@ -4921,9 +4917,9 @@ mod ladder_wire_tests {
             None,
             Some(a_state()),
         );
-        assert_eq!(message.len(), 8 + 36, "the body with no legs on it");
-        assert_eq!(u32_at(&message, 39), 0, "no leg has finished");
-        assert_eq!(message[43], 0, "and none is carried");
+        assert_eq!(message.len(), 8 + 32, "the body with no legs on it");
+        assert_eq!(u32_at(&message, 35), 0, "no leg has finished");
+        assert_eq!(message[39], 0, "and none is carried");
     }
 
     /// Only the legs the window holds are written. A run longer than the
@@ -4947,11 +4943,11 @@ mod ladder_wire_tests {
         // a result, a duration and an empty call sign.
         assert_eq!(
             message.len(),
-            8 + 36 + 2 * 4 + 12 + 10 + (modes::LADDER_LOG_LEGS - 2) * 4,
+            8 + 32 + 2 * 4 + 12 + 10 + (modes::LADDER_LOG_LEGS - 2) * 4,
             "a claim past the window is clamped to it"
         );
-        assert_eq!(message[43], modes::LADDER_LOG_LEGS as u8);
-        assert_eq!(u32_at(&message, 39), 300, "and the real count still rides");
+        assert_eq!(message[39], modes::LADDER_LOG_LEGS as u8);
+        assert_eq!(u32_at(&message, 35), 300, "and the real count still rides");
     }
 
     fn a_state() -> modes::LadderState {
@@ -4963,7 +4959,6 @@ mod ladder_wire_tests {
             rung: 0,
             streak: 0,
             best_streak: 0,
-            checkpoint: 0,
             best: 0,
             score: [0, 0],
             first_to: 1,

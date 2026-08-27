@@ -235,7 +235,7 @@ check("nothing is settled while the clock is running",
       tostring(said("takes it") or said("next match in")))
 
 frame({match = {playing = true, left = 96, score = {[0] = 0, [1] = 0},
-                ladder = {rung = 7, streak = 3, checkpoint = 5,
+                ladder = {rung = 7, streak = 3, best = 7,
                           opponent_ready = true, waiting = false}},
        side_names = NAMES, side = 0})
 -- The rung, the streak and the floor were a line under the clock. They are
@@ -246,7 +246,7 @@ check("a live Ladder fight keeps the rung off the band",
       table.concat(words(), " | "))
 
 frame({match = {playing = false, left = 180, score = {[0] = 0, [1] = 0},
-                ladder = {rung = 0, streak = 0, checkpoint = 0,
+                ladder = {rung = 0, streak = 0, best = 0,
                           active_opponent = 0, desired_opponent = 0,
                           opponent_ready = false, waiting = true}},
        side_names = NAMES, side = 0})
@@ -266,7 +266,7 @@ check("and says nothing about the rung while it waits",
 
 frame({match = {playing = false, left = 0, artifact = 1,
                 score = {[0] = 1, [1] = 0},
-                ladder = {rung = 1, streak = 1, checkpoint = 0,
+                ladder = {rung = 1, streak = 1, best = 1,
                           active_opponent = 0, desired_opponent = 1,
                           opponent_ready = true, waiting = true}},
        side_names = NAMES, side = 0})
@@ -343,8 +343,8 @@ check("a mutual kill is a draw with nobody named over the bar",
 
 frame({match = {playing = false, left = 8, artifact = 1,
                 score = {[0] = 1, [1] = 0},
-                ladder = {rung = 5, checkpoint = 5,
-                          active_opponent = 7, desired_opponent = 5,
+                ladder = {rung = 0, best = 8,
+                          active_opponent = 7, desired_opponent = 0,
                           log = {a_leg("Sable 0001", "cleared")},
                           cleared = true}},
        side_names = NAMES, side = 0})
@@ -365,7 +365,7 @@ local function a_run_ending(w, h)
            match = {playing = false, left = 6, artifact = 1,
                     score = {[0] = 1, [1] = 0},
                     ladder = {rung = 5, streak = 3, best_streak = 4,
-                              checkpoint = 0, active_opponent = 5,
+                              best = 6, active_opponent = 5,
                               legs = 11, log = A_RUN}},
            side_names = NAMES, side = 0})
     local head

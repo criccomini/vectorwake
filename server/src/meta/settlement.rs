@@ -123,7 +123,7 @@ pub(super) async fn route(
                     let ladders = if claimed {
                         match db
                             .query(
-                                "select zone, checkpoint, best from ladder_progress where account = $1",
+                                "select zone, best from ladder_progress where account = $1",
                                 &[&account],
                             )
                             .await
@@ -133,8 +133,7 @@ pub(super) async fn route(
                                 .map(|row| {
                                     serde_json::json!({
                                         "zone": row.get::<_, String>(0),
-                                        "checkpoint": row.get::<_, i32>(1).max(0),
-                                        "best": row.get::<_, i32>(2).max(0),
+                                        "best": row.get::<_, i32>(1).max(0),
                                     })
                                 })
                                 .collect::<Vec<_>>(),
@@ -700,19 +699,11 @@ pub(super) fn validate_pilot_event(event: &serde_json::Value) -> Result<(), Stri
         return Err("invalid tick".into());
     }
     if let Some(ladder) = event.get("detail").and_then(|detail| detail.get("ladder")) {
-        let checkpoint = ladder
-            .get("checkpoint")
-            .and_then(|value| value.as_u64())
-            .filter(|value| *value <= u16::MAX as u64)
-            .ok_or("invalid Ladder checkpoint")?;
-        let best = ladder
+        ladder
             .get("best")
             .and_then(|value| value.as_u64())
             .filter(|value| *value <= u16::MAX as u64)
             .ok_or("invalid Ladder best")?;
-        if best < checkpoint {
-            return Err("Ladder best is below its checkpoint".into());
-        }
     }
     Ok(())
 }
@@ -829,24 +820,18 @@ async fn ingest_pilot(
             pilot,
             detail.get("ladder").and_then(|value| value.as_object()),
         ) {
-            let checkpoint = ladder
-                .get("checkpoint")
-                .and_then(|value| value.as_u64())
-                .unwrap_or(0)
-                .min(u16::MAX as u64) as i32;
             let best = ladder
                 .get("best")
                 .and_then(|value| value.as_u64())
-                .unwrap_or(checkpoint as u64)
+                .unwrap_or(0)
                 .min(u16::MAX as u64) as i32;
             db.execute(
-                "insert into ladder_progress (account, zone, checkpoint, best, updated)
-                 select id, $2, $3, $4, now() from accounts where id = $1
+                "insert into ladder_progress (account, zone, best, updated)
+                 select id, $2, $3, now() from accounts where id = $1
                  on conflict (account, zone) do update
-                 set checkpoint = greatest(ladder_progress.checkpoint, excluded.checkpoint),
-                     best = greatest(ladder_progress.best, excluded.best),
+                 set best = greatest(ladder_progress.best, excluded.best),
                      updated = now()",
-                &[&account, &zone, &checkpoint, &best],
+                &[&account, &zone, &best],
             )
             .await
             .map_err(|error| format!("cannot save Ladder progress: {error}"))?;

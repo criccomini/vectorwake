@@ -126,12 +126,11 @@ pub struct ArenaConfig {
     /// a bad one is nearly over. Melee and Ladder both read them.
     pub match_seconds: Option<u16>,
     pub intermission_seconds: Option<u16>,
-    /// Ladder series and run rules. Missing values are single-life play, a
-    /// two-rung loss, checkpoints every five rungs, and ordinary checkpointed
-    /// play. An interval of zero disables new checkpoints.
+    /// Ladder series and run rules. Missing values are single-life play and a
+    /// two-rung loss. Nothing floors that loss: a run always opens on the
+    /// bottom rung and can fall back to it.
     pub ladder_first_to: Option<u16>,
     pub ladder_loss_drop: Option<u32>,
-    pub ladder_checkpoint_interval: Option<u32>,
     /// What a pilot is worth the moment they spawn, and what each kill on a
     /// run adds to that. A bounty is the run rather than the kit: the kit is
     /// the same every life, so it is what a pilot has done since their last
@@ -450,13 +449,11 @@ gun_mods = { multi = 2, barrel = 2 }
 mode = "ladder"
 ladder_first_to = 5
 ladder_loss_drop = 1
-ladder_checkpoint_interval = 4
 "#;
         let c: ZoneConfig = toml::from_str(src).expect("Ladder settings parse");
         assert_eq!(c.arena.mode, "ladder");
         assert_eq!(c.arena.ladder_first_to, Some(5));
         assert_eq!(c.arena.ladder_loss_drop, Some(1));
-        assert_eq!(c.arena.ladder_checkpoint_interval, Some(4));
     }
 
     #[test]

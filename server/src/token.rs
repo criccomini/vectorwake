@@ -91,13 +91,12 @@ pub struct ClassRating {
     pub games: u32,
 }
 
-/// Durable progress in one Ladder zone. The current run is deliberately not a
-/// checkpoint: reconnecting resumes at earned ground, not in the middle of a
-/// series whose opponent and score no longer exist.
+/// Durable progress in one Ladder zone, which is a record and not a position.
+/// Every run starts on the bottom rung, so nothing here says where a pilot
+/// resumes; `best` is the highest rung the account has ever taken.
 #[derive(Clone, Debug, PartialEq)]
 pub struct LadderProgress {
     pub zone: String,
-    pub checkpoint: u16,
     pub best: u16,
 }
 
@@ -124,8 +123,8 @@ pub struct Claims {
     /// Empty from an older meta-layer, which an arena reads as the baseline
     /// rather than as an account that owns nothing.
     pub entitlements: Vec<u8>,
-    /// Earned checkpoints per Ladder zone. Empty for an account that has never
-    /// played one.
+    /// The best rung taken in each Ladder zone. Empty for an account that has
+    /// never played one.
     pub ladders: Vec<LadderProgress>,
 }
 
@@ -167,7 +166,6 @@ impl Claims {
         p.push(self.ladders.len().min(255) as u8);
         for progress in self.ladders.iter().take(255) {
             push_str(&mut p, &progress.zone);
-            p.extend_from_slice(&progress.checkpoint.to_le_bytes());
             p.extend_from_slice(&progress.best.to_le_bytes());
         }
         p
@@ -275,14 +273,6 @@ pub fn verify(key: &VerifyingKey, token: &str, now: u64) -> Result<Claims, Bad> 
     let mut ladders = Vec::with_capacity(n);
     for _ in 0..n {
         let zone = take_str(payload, &mut at).ok_or(Bad::Malformed)?;
-        let checkpoint = u16::from_le_bytes(
-            payload
-                .get(at..at + 2)
-                .ok_or(Bad::Malformed)?
-                .try_into()
-                .unwrap(),
-        );
-        at += 2;
         let best = u16::from_le_bytes(
             payload
                 .get(at..at + 2)
@@ -291,11 +281,7 @@ pub fn verify(key: &VerifyingKey, token: &str, now: u64) -> Result<Claims, Bad> 
                 .unwrap(),
         );
         at += 2;
-        ladders.push(LadderProgress {
-            zone,
-            checkpoint,
-            best,
-        });
+        ladders.push(LadderProgress { zone, best });
     }
 
     // Expiry last. A signature check on an expired token still tells us the
@@ -396,7 +382,6 @@ mod tests {
             entitlements: vec![6, 6, 6, 6, 6, 1, 1],
             ladders: vec![LadderProgress {
                 zone: "ladder".into(),
-                checkpoint: 8,
                 best: 11,
             }],
         }

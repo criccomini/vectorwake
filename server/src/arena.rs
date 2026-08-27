@@ -208,8 +208,8 @@ impl RatedLease {
                 }
             }
             // A failed settlement must not age out the exclusion and let a
-            // second session load the old checkpoint. Renew while the spool
-            // or meta-layer recovers, then try the acknowledgment again.
+            // second session load a stale record. Renew while the spool or
+            // meta-layer recovers, then try the acknowledgment again.
             if matches!(self.renew().await, Ok(false)) {
                 println!(
                     "rated settlement lost its lease for account {}",
@@ -739,15 +739,15 @@ impl ArenaServer {
         Some((r.rating, r.games))
     }
 
-    /// The durable floor this account earned in the zone currently served.
-    /// A checkpoint from another Ladder zone is a different progression and
-    /// never crosses over by accident.
-    pub(crate) fn token_ladder(&self, seat: &Seat) -> Option<(u32, u32)> {
+    /// The best rung this account has taken in the zone currently served. A
+    /// record from another Ladder zone is a different progression and never
+    /// crosses over by accident.
+    pub(crate) fn token_ladder(&self, seat: &Seat) -> Option<u32> {
         let saved = seat
             .carried_ladders
             .iter()
             .find(|progress| progress.zone == self.zone_name)?;
-        Some((saved.checkpoint as u32, saved.best as u32))
+        Some(saved.best as u32)
     }
 
     /// Tell the spool where to send, which cannot be known until a catalog

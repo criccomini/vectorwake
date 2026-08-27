@@ -135,11 +135,15 @@ create table if not exists ratings (
 create table if not exists ladder_progress (
     account     bigint not null references accounts(id) on delete cascade,
     zone        text not null,
-    checkpoint  integer not null default 0,
     best        integer not null default 0,
     updated     timestamptz not null default now(),
     primary key (account, zone)
 );
+-- The save point went with decision 91. A run opens on the bottom rung
+-- whoever is flying it, so the only durable thing left about a climb is how
+-- high it ever got, and a column nothing reads is a column that misleads the
+-- next person to read the schema.
+alter table ladder_progress drop column if exists checkpoint;
 create table if not exists rated_events (
     id             bigserial primary key,
     at             timestamptz not null default now(),
@@ -1306,7 +1310,7 @@ async fn claims_for(db: &Client, account: i64) -> Result<Claims, String> {
 
     let rows = db
         .query(
-            "select zone, checkpoint, best from ladder_progress where account = $1",
+            "select zone, best from ladder_progress where account = $1",
             &[&account],
         )
         .await
@@ -1315,8 +1319,7 @@ async fn claims_for(db: &Client, account: i64) -> Result<Claims, String> {
         .iter()
         .map(|row| LadderProgress {
             zone: row.get(0),
-            checkpoint: row.get::<_, i32>(1).clamp(0, u16::MAX as i32) as u16,
-            best: row.get::<_, i32>(2).clamp(0, u16::MAX as i32) as u16,
+            best: row.get::<_, i32>(1).clamp(0, u16::MAX as i32) as u16,
         })
         .collect();
 
@@ -4987,7 +4990,6 @@ pub async fn claim_rated_session(
                 .filter_map(|row| {
                     Some(LadderProgress {
                         zone: row.get("zone")?.as_str()?.to_string(),
-                        checkpoint: row.get("checkpoint")?.as_u64()?.min(u16::MAX as u64) as u16,
                         best: row.get("best")?.as_u64()?.min(u16::MAX as u64) as u16,
                     })
                 })
@@ -5728,23 +5730,24 @@ mod tests {
     }
 
     #[test]
-    fn ladder_progress_is_bounded_and_ordered() {
+    fn ladder_progress_is_bounded() {
         let mut event = pilot_event();
         event["detail"] = serde_json::json!({
-            "ladder": { "checkpoint": 10, "best": 14 }
+            "ladder": { "best": 14 }
         });
         assert_eq!(settlement::validate_pilot_event(&event), Ok(()));
 
-        event["detail"]["ladder"]["best"] = serde_json::json!(9);
+        event["detail"]["ladder"]["best"] = serde_json::json!(u16::MAX as u64 + 1);
         assert_eq!(
             settlement::validate_pilot_event(&event),
-            Err("Ladder best is below its checkpoint".into())
+            Err("invalid Ladder best".into())
         );
 
-        event["detail"]["ladder"]["checkpoint"] = serde_json::json!(u16::MAX as u64 + 1);
+        event["detail"]["ladder"] = serde_json::json!({});
         assert_eq!(
             settlement::validate_pilot_event(&event),
-            Err("invalid Ladder checkpoint".into())
+            Err("invalid Ladder best".into()),
+            "a run that files no record files nothing this route can store"
         );
     }
 

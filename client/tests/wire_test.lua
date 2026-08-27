@@ -268,7 +268,7 @@ check("the whistle carries its public match film",
 
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
             message = string.char(14, 4, 180, 2, 0, 0, 0, 0, 4)
-                .. u32le(0) .. u32le(0) .. u32le(0) .. u32le(0)
+                .. u32le(0) .. u32le(0) .. u32le(0)
                 .. u32le(0) .. u32le(0) .. u32le(0) .. string.char(1, 0)
                 .. u32le(0) .. string.char(0)})
 check("an unopened Ladder arrives as one waiting match state",
@@ -292,7 +292,7 @@ end
 wt.cb(nil, {event = webtransport.EVENT_MESSAGE,
             message = string.char(14, 6, 24, 2, 3, 0, 5, 0)
                 .. u32le(123456) .. u32le(1) .. string.char(3)
-                .. u32le(7) .. u32le(3) .. u32le(4) .. u32le(5) .. u32le(9)
+                .. u32le(7) .. u32le(3) .. u32le(4) .. u32le(9)
                 .. u32le(7) .. u32le(8) .. string.char(1, 0)
                 .. u32le(19) .. string.char(2)
                 .. leg("Vantage 0001", 1, 41) .. leg("Sable 0001", 0, 7)})
@@ -304,7 +304,6 @@ check("a Ladder result replaces clock, film, and progress atomically",
       and net.match.ladder.rung == 7
       and net.match.ladder.streak == 3
       and net.match.ladder.best_streak == 4
-      and net.match.ladder.checkpoint == 5
       and net.match.ladder.best == 9
       and net.match.ladder.active_opponent == 7
       and net.match.ladder.desired_opponent == 8

@@ -690,7 +690,7 @@ mod tests {
         }
     }
 
-    fn ladder_event(account: u64, checkpoint: u32, best: u32) -> crate::pilot::Event {
+    fn ladder_event(account: u64, rung: u32, best: u32) -> crate::pilot::Event {
         crate::pilot::Event {
             id: rand::random(),
             at: 1_700_000_000_000,
@@ -708,9 +708,8 @@ mod tests {
                 "assists": 0,
                 "played_ticks": 4_000,
                 "ladder": {
-                    "checkpoint": checkpoint,
                     "best": best,
-                    "rung": checkpoint,
+                    "rung": rung,
                     "streak": 0,
                 },
             }),
@@ -1073,11 +1072,11 @@ mod tests {
 
         settle_ladder_account(&spool, &base, "tok", 11)
             .await
-            .expect("meta acknowledged the checkpoint before lease release");
+            .expect("meta acknowledged the record before lease release");
 
         let request = server.join().unwrap();
         assert!(request.starts_with("POST /v1/pilot-events HTTP/1.1"));
-        assert!(request.contains("\"checkpoint\":10"));
+        assert!(request.contains("\"rung\":10"));
         assert!(!request.contains("Somebody else"));
         assert!(!request.contains("\"kind\":\"join\""));
         assert_eq!(

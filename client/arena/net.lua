@@ -75,7 +75,7 @@ M.said = {}
 -- The client wire's own version, checked by the zone before it reads anything
 -- else in a join. A stale build is told its build is stale rather than left to
 -- misparse snapshots.
-local CLIENT_PROTOCOL = 26
+local CLIENT_PROTOCOL = 27
 -- Published, because the about page says what this build talks, and a second
 -- copy of the number is a second thing to forget to bump.
 M.PROTOCOL = CLIENT_PROTOCOL
@@ -803,7 +803,7 @@ local function on_match(s)
     end
     local ladder = nil
     if math.floor(flags / 4) % 2 == 1 then
-        if #s < at + 35 then return end
+        if #s < at + 31 then return end
         local status = string.byte(s, at)
         ladder = {
             opponent_ready = status % 2 == 1,
@@ -814,23 +814,24 @@ local function on_match(s)
             -- The longest this run has managed, which is the reading a broken
             -- streak does not take away.
             best_streak = u32(string.byte(s, at + 9, at + 12)),
-            checkpoint = u32(string.byte(s, at + 13, at + 16)),
-            best = u32(string.byte(s, at + 17, at + 20)),
-            active_opponent = u32(string.byte(s, at + 21, at + 24)),
-            desired_opponent = u32(string.byte(s, at + 25, at + 28)),
-            first_to = u16(string.byte(s, at + 29, at + 30)),
+            -- The highest rung the account has ever taken. A run always opens
+            -- on the first one, so this is a record and never a position.
+            best = u32(string.byte(s, at + 13, at + 16)),
+            active_opponent = u32(string.byte(s, at + 17, at + 20)),
+            desired_opponent = u32(string.byte(s, at + 21, at + 24)),
+            first_to = u16(string.byte(s, at + 25, at + 26)),
             -- Every life this run has finished, which is larger than the log
             -- once a long evening outruns the window the room carries.
-            legs = u32(string.byte(s, at + 31, at + 34)),
+            legs = u32(string.byte(s, at + 27, at + 30)),
             log = {},
         }
-        local logged = string.byte(s, at + 35)
+        local logged = string.byte(s, at + 31)
         -- Walked rather than indexed, because a leg carries a call sign and a
         -- call sign is as long as its owner made it. A body that promises more
         -- legs than it carries is a truncated message rather than a short run,
         -- and half a log is worse than none: the panel would draw an evening
         -- that stopped where the packet did.
-        local o = at + 36
+        local o = at + 32
         for k = 1, logged do
             if #s < o + 3 then return end
             local n = string.byte(s, o + 3)
