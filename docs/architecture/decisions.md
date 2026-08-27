@@ -3595,3 +3595,112 @@ kills, at which point net is the wrong arithmetic rather than the right one
 and the mark has to ask that mode what a pilot contributed. Or if assists get
 priced into the score, since a pilot who does four fifths of the work on every
 kill in the match would still be nowhere on this measure.
+
+## 77. A duel that runs the clock out is a draw
+
+**Status:** accepted
+
+**Decision:** the Duel match timer ends the life. Whoever is ahead takes it,
+and a life nobody has scored in is a draw. A drawn leg is filed like any
+other: it goes on the run's board as its own row, it moves no rung, it breaks
+no streak, and the same rival is fought again. Sudden death is gone, along
+with the banner that announced it.
+
+The calibration harness keeps flying past the whistle, which is the one place
+in the game that now outlives the rule. It is measuring which pilot wins when
+the fight is played out, and a draw there would censor the matchups the
+ranking most needs to separate. That is stated at the constant so nobody
+tidies it into agreement with the mode.
+
+**Why:** a duel is one life at first-to-one, so no score exists until somebody
+dies. That is what put sudden death here: with nothing to compare at the
+whistle, the clock could not call the rung, so the fight carried on until a
+death did. It reads as the fair answer and plays as the wrong one. The timer
+was doing a job already, which is stopping a pilot from running out the clock
+on a rung they are losing, and overtime hands that same pilot the rest of the
+evening instead. Two pilots who have spent three minutes not closing are not
+usually thirty seconds from closing; they are flying a fight neither wants,
+and the room's answer was to keep them in it.
+
+A draw is also a result the mode already knew how to file. A double death has
+always produced one, so the leg, the byte on the wire and the "drew" the board
+draws were all in place; the whistle now reaches the same door.
+
+**Cost:** a rung can now end with nothing decided, which is a worse outcome
+than either pilot wanted and the only one honest about what happened. A
+climber meeting a rival they cannot beat and cannot lose to will draw them
+repeatedly and sit on the same rung, where sudden death would eventually have
+moved somebody. It moves them by handing the win to whoever blinks first,
+which is not the thing the ladder is trying to measure.
+
+The clock also becomes worth playing to. A pilot who is ahead can now sit on a
+lead, which is a tactic Duel has never had, and at first-to-one being ahead
+means having already won, so this costs nothing today. It would cost something
+the moment first-to rises above one, and the catalog refuses that.
+
+**Reconsider if:** draws turn out to be common between well-matched pilots
+rather than rare, at which point the timer is too short for the fight rather
+than the rule being wrong, and the answer is a longer clock. Or if the ladder
+starts wanting every rung settled, which would need a decider that measures
+something other than who dies first: damage dealt, or distance held.
+## 78. The friends page is who is on, and one way to reach who is not
+
+**Status:** accepted
+
+**Decision:** the page is four things down the screen: a field that takes a
+call sign, the adds waiting on an answer under RECEIVED, your friends, and a
+key at the foot that hands the game's address to whatever the device shares
+with.
+
+A friend is one line: a dot, a name, and the game they are in. The dot is
+solid green while they are flying and a hollow grey ring while they are not,
+and the game is named the way the games list names it, so a friend is in Team
+Battle rather than in melee. A friend who is off carries nothing beside their
+name. No key is drawn on those rows; join and unfriend are on the card the row
+raises, which is where five inputs always had to find them.
+
+Three sections are gone: the roster of the room you are flying in, the adds
+you had sent and nobody had answered, and the ledger of everybody who had ever
+added you. `/v1/friends` stops computing them as well as the page stopping
+drawing them.
+
+**Why:** the page answered its three questions and looked like none of them.
+Five headings deep before it said who was on, an identical row grammar for
+every one of them, a key or two on every row with unfriend drawn three times
+for each join, and the fact the page exists for reduced to a six-point square
+and a dim word. The one thing worth crossing the room for was the quietest
+thing on it.
+
+The sent list was a receipt for a press whose consequence is a row on somebody
+else's screen. The ledger was context under a heading nobody opened this page
+to read. The room roster is the one with a real job, and the cost of cutting
+it is below.
+
+**Cost:** adding somebody you have just flown with is now typing their call
+sign rather than pressing a key beside their name. The room roster was where
+most friends were made, and the in-match pilot box's key is a team invitation
+rather than an add, so nothing else in the client offers a name to add. The
+completions take most of the sting out of it, since a letter is enough to
+start and pressing a name adds that pilot by number, and a call sign is
+readable off the scoreboard the match just showed. It is still the press this
+decision spends, and the first thing to put back if adding falls off.
+
+Ignoring is final now. The ledger was where an ignored add could
+still be accepted, and with it gone the ignore is the end of that ask: nothing
+draws it and nothing can take it back. `friend_ignores` still holds the row,
+so the pilot who was ignored cannot ask again, which is what it is for.
+
+Joining a friend is two presses rather than one, since the row raises the card
+and the card carries the join. A one-press join needs a key on the row, and a
+key on the row is the grammar this decision is spending to be rid of.
+
+The invite key sends the site's front page rather than anything that knows who
+sent it, so a pilot who invites four people and gets one is told nothing about
+it, and the new player arrives with an empty friends page rather than with the
+person who invited them already on it.
+
+**Reconsider if:** the invite is worth closing the loop on, which is a token
+on the link and a signup that seeds the edge, and would turn the key at the
+foot into the thing that actually fills the page above it. Or if somebody
+reports being unable to undo an ignore, at which point the ledger comes back
+somewhere quieter than the page it used to close.

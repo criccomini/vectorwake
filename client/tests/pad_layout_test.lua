@@ -335,19 +335,17 @@ for _, load in ipairs({
     end
 end
 
--- No round wears a trail. The tail is what put the bomb off center in the
--- first place: it faded to nothing along its length, so a box straddled the
--- pad while everything visible crowded one side. It belongs to a round in
--- flight, and a control is not showing a round going anywhere.
+-- Every round wears its streak now: the mark is the round as the arena
+-- flies it, layered fades into a hot head, so a control drawing fading
+-- strokes is the design rather than a leak. The rule that used to live here
+-- said no trails at all, and what it was really guarding still stands: a
+-- fade reaching past the rim reads as a drawing that has outgrown its
+-- control, and a fade is the shape most likely to do it, because its far
+-- tip is invisible in any centring measurement.
 --
--- Checked over every loadout the catalog hands out rather than at one, because
--- a trail could come back through an add-on rather than through the body, and
--- through the body it could come back symmetrically, one either side say, and
--- pass every centring measurement while being wrong for the same reason.
--- Multifire is the exception and is why this is a list rather than a sweep of
--- all sixty-four: several rounds leaving together are several strokes, which
--- is that add-on's whole mark and is what a gun draws for it too. No zone in
--- the catalog puts it on a bomb.
+-- So the pin is containment: at every shipped loadout, both tips of every
+-- fading stroke stay inside the control it is drawn on, gun and bomb pads
+-- at their own rings and charge cells at their own reach.
 local SHIPPED = {
     {"bare", {}},
     {"a fan and bouncing rounds", {[0] = {[0] = 2, [1] = 1}}},
@@ -358,13 +356,33 @@ local SHIPPED = {
 for _, load in ipairs(SHIPPED) do
     local w, h, s = reset(unpack(LAND))
     MODS = load[2]
-    draw(w, h, s)
-    local n = 0
+    local l = draw(w, h, s)
+    local wells = {}
+    if l.guns then wells[#wells + 1] = l.guns end
+    if l.bombs then wells[#wells + 1] = l.bombs end
+    for _, c in ipairs(l.charge or {}) do wells[#wells + 1] = c end
+    local n, out = 0, 0
     for _, sh in ipairs(shapes) do
-        if sh.kind == "trail" then n = n + 1 end
+        if sh.kind == "trail" then
+            n = n + 1
+            -- The control this stroke belongs to: the nearest well to its
+            -- brighter tip, which is the end a player actually sees.
+            local best, at = math.huge, nil
+            for _, well in ipairs(wells) do
+                local d = math.sqrt((sh.tips[2][1] - well.x) ^ 2
+                                    + (sh.tips[2][2] - well.y) ^ 2)
+                if d < best then best, at = d, well end
+            end
+            for _, tip in ipairs(sh.tips) do
+                local d = math.sqrt((tip[1] - at.x) ^ 2
+                                    + (tip[2] - at.y) ^ 2) + tip[3]
+                if at and d > at.r * 1.02 then out = out + 1 end
+            end
+        end
     end
-    check("no round trails on a pad with " .. load[1], n == 0,
-          n .. " fading strokes on the controls")
+    check("every streak stays inside its control with " .. load[1],
+          n > 0 and out == 0,
+          out .. " tips past a rim across " .. n .. " strokes")
 end
 
 do

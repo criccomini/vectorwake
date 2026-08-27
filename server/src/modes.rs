@@ -281,7 +281,7 @@ pub struct LadderLeg {
     pub rival: CallSign,
     pub result: LegResult,
     /// How long the life lasted, in whole seconds, rounded the way the clock
-    /// rounds. Sudden death is included, so this can exceed the match timer.
+    /// rounds. Bounded by the match timer, which a drawn leg reads exactly.
     pub seconds: u16,
 }
 
@@ -636,10 +636,6 @@ pub struct Ladder {
     opponent_ready: bool,
     /// A changed slot is not accepted until the old seat has gone away once.
     replacement_vacated: bool,
-    /// Ticks the life on the field has actually been flown. Counted up rather
-    /// than read off `left`, which stops at zero and then stays there for the
-    /// whole of sudden death.
-    elapsed: u32,
     /// The run so far, oldest first, and how many legs it has really had.
     log: [LadderLeg; LADDER_LOG_LEGS],
     logged: usize,
@@ -664,7 +660,6 @@ impl Ladder {
             interrupted: false,
             opponent_ready: false,
             replacement_vacated: false,
-            elapsed: 0,
             log: [LadderLeg::default(); LADDER_LOG_LEGS],
             logged: 0,
             legs: 0,
@@ -674,11 +669,18 @@ impl Ladder {
     /// File a finished life. The window keeps the most recent legs, so a run
     /// long enough to fill it drops its oldest rather than its newest: what a
     /// climber is looking back at is the stretch they are in.
+    ///
+    /// The seconds come off the clock rather than being counted beside it.
+    /// `left` moves only while a rival is seated, and this runs while the life
+    /// is still live, before the intermission clock takes `left` over, so the
+    /// difference is exactly what was flown. A drawn life files the whole
+    /// match timer.
     fn log_leg(&mut self, result: LegResult, rival: &str) {
+        let flown = self.match_ticks.saturating_sub(self.left);
         let leg = LadderLeg {
             rival: CallSign::new(rival),
             result,
-            seconds: self.elapsed.div_ceil(TICKS_PER_SECOND).min(u16::MAX as u32) as u16,
+            seconds: flown.div_ceil(TICKS_PER_SECOND).min(u16::MAX as u32) as u16,
         };
         self.legs = self.legs.saturating_add(1);
         if self.logged == LADDER_LOG_LEGS {
@@ -699,7 +701,6 @@ impl Ladder {
         self.active_opponent_slot = run.rung();
         self.run = run;
         self.clear_log();
-        self.elapsed = 0;
         self.playing = false;
         self.left = self.match_ticks;
         self.score = [0, 0];
@@ -729,7 +730,6 @@ impl Ladder {
         }
         self.playing = true;
         self.left = self.match_ticks;
-        self.elapsed = 0;
         self.score = [0, 0];
         self.active_opponent_slot = self.run.rung();
         self.result = None;
@@ -819,25 +819,20 @@ impl Ladder {
     /// life gets no banner.
     ///
     /// Nor does an ordinary result. The fight that just ended is the top row
-    /// of the run on the board, saying who and won or lost, and the streak is
-    /// the section under it. A sentence restating a panel a press away is the
-    /// same reading twice.
+    /// of the run on the board, saying who and won, lost or drew, and the
+    /// streak is the section under it. A sentence restating a panel a press
+    /// away is the same reading twice. A drawn life is an ordinary result on
+    /// that same row, so the whistle says nothing either.
     ///
-    /// What is left is what nothing else says: that the clock has run out and
-    /// the next death settles it, that the rival went away mid-life, and that
-    /// every rival has been beaten.
+    /// What is left is what nothing else says: that the rival went away
+    /// mid-life, and that every rival has been beaten.
     fn banner(&self) -> String {
-        if !self.opened || (self.playing && !self.opponent_ready) {
-            // The clock reads dashes and the room is looking for a rival. A
-            // sentence repeating that is the interface reading its own label
-            // back.
+        if !self.opened || self.playing {
+            // A life being flown says nothing over the fight it is about, and
+            // before the room opens the clock reads dashes while it looks for
+            // a rival. A sentence repeating either is the interface reading
+            // its own label back.
             String::new()
-        } else if self.playing {
-            if self.left == 0 {
-                "Sudden death".to_string()
-            } else {
-                String::new()
-            }
         } else if self.interrupted {
             // Named rather than numbered, because a rung is not a word this
             // game says any more and the replacement is a person either way.
@@ -868,9 +863,15 @@ impl Mode for Ladder {
                 self.interrupt_series(ctx);
             } else if opponent_ready {
                 self.left = self.left.saturating_sub(1);
-                self.elapsed = self.elapsed.saturating_add(1);
-                if self.left == 0 && self.score[0] != self.score[1] {
-                    self.finish_series(self.score[0] > self.score[1], ctx);
+                // The whistle settles the life: whoever is ahead takes it, and
+                // a life nobody has scored in is a draw, which moves no rung
+                // and breaks no streak.
+                if self.left == 0 {
+                    if self.score[0] == self.score[1] {
+                        self.draw_series(ctx);
+                    } else {
+                        self.finish_series(self.score[0] > self.score[1], ctx);
+                    }
                 }
             }
         } else {
@@ -903,9 +904,7 @@ impl Mode for Ladder {
             return;
         };
         self.score[side] = self.score[side].saturating_add(1);
-        let reached_target = self.score[side] >= self.rules.first_to;
-        let won_overtime = self.left == 0 && self.score[0] != self.score[1];
-        if reached_target || won_overtime {
+        if self.score[side] >= self.rules.first_to {
             self.finish_series(side == 0, ctx);
         }
         ctx.banner = self.banner();
@@ -1563,6 +1562,77 @@ mod ladder_tests {
         let state = ladder.ladder_state().unwrap();
         assert_eq!(state.legs, 0);
         assert_eq!(state.logged, 0);
+    }
+
+    /// The whistle settles a life the pilots did not. Two who never land the
+    /// kill get a draw and the timer they spent, rather than an overtime that
+    /// runs until one of them makes a mistake.
+    #[test]
+    fn a_full_clock_with_nobody_dead_is_a_draw() {
+        let seats = [3, RIVAL];
+        let mut world = World::new(7);
+        let match_ticks = 3 * 60 * TICKS_PER_SECOND;
+        let mut ladder = Ladder::new(LadderRules::default(), match_ticks, 200);
+        ladder.tick(&mut ctx(&mut world, &seats));
+        for _ in 0..match_ticks {
+            ladder.tick(&mut ctx(&mut world, &seats));
+        }
+
+        let state = ladder.ladder_state().unwrap();
+        assert!(!state.playing, "the whistle ends the life");
+        assert_eq!(state.logged, 1);
+        assert_eq!(state.log[0].result, LegResult::Drawn);
+        assert_eq!(state.log[0].seconds, 180, "the leg lasted the whole timer");
+        assert_eq!(state.rung, 0, "a draw moves nothing");
+    }
+
+    /// A whistle with somebody ahead hands them the life rather than drawing
+    /// it. Nothing reaches this at first-to-one, where the leading death has
+    /// already ended the fight, so it takes a configured first-to to see.
+    #[test]
+    fn a_lead_at_the_whistle_takes_the_life() {
+        let seats = [3, RIVAL];
+        let mut world = World::new(7);
+        let match_ticks = 400;
+        let mut ladder = Ladder::new(
+            LadderRules {
+                first_to: 3,
+                ..LadderRules::default()
+            },
+            match_ticks,
+            200,
+        );
+        ladder.tick(&mut ctx(&mut world, &seats));
+        ladder.on_death(&mut ctx(&mut world, &seats), 9, 3);
+        for _ in 0..match_ticks {
+            ladder.tick(&mut ctx(&mut world, &seats));
+        }
+
+        let state = ladder.ladder_state().unwrap();
+        assert!(!state.playing);
+        assert_eq!(state.log[0].result, LegResult::Cleared);
+        assert_eq!(state.rung, 1, "the lead took the rung");
+    }
+
+    /// Nothing is said over a fight that is still being flown, and the whistle
+    /// that draws it says nothing either: the drawn leg is the board's own top
+    /// row.
+    #[test]
+    fn a_drawn_life_says_nothing_over_the_arena() {
+        let seats = [3, RIVAL];
+        let mut world = World::new(7);
+        let match_ticks = 400;
+        let mut ladder = Ladder::new(LadderRules::default(), match_ticks, 200);
+        ladder.tick(&mut ctx(&mut world, &seats));
+        for _ in 0..match_ticks {
+            let mut c = ctx(&mut world, &seats);
+            ladder.tick(&mut c);
+            assert!(c.banner.is_empty(), "banner: {:?}", c.banner);
+        }
+        assert_eq!(
+            ladder.ladder_state().unwrap().log[0].result,
+            LegResult::Drawn
+        );
     }
 
     /// A draw is a real result at this table: both pilots died on the same

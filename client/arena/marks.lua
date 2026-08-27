@@ -35,30 +35,41 @@ function M.pen(k, ratio)
     return math.max(0.9 * S, k * ratio)
 end
 
--- A gun is a line with a dot on the end of it, and that is the whole mark.
--- One line, or three when the fan is on; a ring round each dot when the
--- rounds come back off walls. It was a tapered streak once, drawn the way the
--- arena draws a bolt in flight, and at the size a corner allows that came out
--- as a gray smudge with a speck on it. What survives being drawn small is a
--- line and a dot.
+-- A gun is the round the arena fires, frozen: the three passes world.weapons
+-- lays a bolt down with, a broad faint streak, a tighter bright one over the
+-- last stretch, a hot core into the head, then the halo and a hot head. It
+-- was a line with a dot for a long time, on the argument that only a line
+-- and a dot survive being drawn small; that predates the layered streak,
+-- whose bright core is exactly what the old tapered smudge lacked, and the
+-- corner was the one place in the game still drawing a round the arena
+-- never fires.
 M.BOLT_LEN = 1.4
-local BOLT_DOT, BOLT_FAN = 0.17, 0.47
+local BOLT_HEAD, BOLT_HALO = 0.13, 0.26
 
--- One barrel, from the muzzle out to its dot. Returns where the dot landed,
+-- One round in flight, from the muzzle out. Returns where the head landed,
 -- because both callers ring it when the rounds bounce.
 local function bolt_line(ox, oy, ang, k, col)
+    local ca, sa = math.cos(ang), math.sin(ang)
     local d = k * M.BOLT_LEN
-    local dx, dy = ox + math.cos(ang) * d, oy + math.sin(ang) * d
-    u:seg(ox, oy, dx, dy, M.pen(k, 0.075), col)
-    u:disc(dx, dy, k * BOLT_DOT, 10, col)
+    local dx, dy = ox + ca * d, oy + sa * d
+    local a = col[4] or 1
+    u:seg_fade(ox, oy, dx, dy, k * 0.06, k * 0.30, 0, a * 0.33, col)
+    u:seg_fade(dx - ca * d * 0.75, dy - sa * d * 0.75, dx, dy,
+               k * 0.05, k * 0.16, a * 0.22, a, col)
+    local hotc = pal.hot(col, 0.9, a)
+    u:seg_fade(dx - ca * d * 0.36, dy - sa * d * 0.36, dx, dy,
+               k * 0.04, k * 0.11, a * 0.4, a, hotc)
+    u:halo(dx, dy, k * BOLT_HALO, 10, pal.a(col, a * 0.45))
+    u:disc(dx, dy, k * BOLT_HEAD, 10, hotc)
     return dx, dy
 end
 
--- What a bouncing round wears: a ring round the dot, sized off the dot rather
--- than off whatever room the caller has left, so the two draws match.
+-- What a bouncing round wears: a ring round the head, sized off the head
+-- rather than off whatever room the caller has left, so the two draws match.
+-- Outside the halo, so it stays a ring on a light rather than a rim of it.
 local function bolt_bounce(dx, dy, k, col)
-    local r = k * (BOLT_DOT + 0.16)
-    u:ring(dx, dy, r, M.pen(k, 0.065), 12, col)
+    local r = k * (BOLT_HEAD + 0.17)
+    u:ring(dx, dy, r, M.pen(k, 0.055), 12, col)
     return r
 end
 
@@ -91,42 +102,58 @@ local function bomb_prox(hx, hy, r, col)
     u:disc(hx, hy, r, 28, pal.a(col, (col[4] or 1) * 0.24))
 end
 
--- The head, and the whole of the round.
+-- The head, and the whole of the round: the hot core in a ring the arena
+-- flies, under its own light. The halo and the bloom are world.weapons' own
+-- pair, the tight one sized to the thing and the wide faint one over it.
 --
--- It had a fading trail behind it for a while, drawn the way the arena draws a
--- bomb in flight. Two things were wrong with that. An icon is not a round in
+-- What it still does not have is the trail. An icon is not a round in
 -- flight: it says which weapon a trigger fires, and a streak of motion on a
--- thing sitting still in a corner is a picture of the wrong moment. And it
--- cannot be centered, because it fades to nothing along its length, so it drags
--- the drawing off to one side while a bounding box reports the mark as square
--- in the middle. Three separate attempts to bias it into place all landed
--- somewhere a screenshot said was still off. A ring about a point is centered
--- where it is drawn.
+-- thing sitting still in a corner is a picture of the wrong moment. It also
+-- cannot be centered, because it fades to nothing along its length, so it
+-- drags the drawing off to one side while a bounding box reports the mark as
+-- square in the middle; three separate attempts to bias it into place all
+-- landed somewhere a screenshot said was still off. The gun keeps its streak
+-- because the streak is the round; a bomb's identity is the lit ring, and
+-- light thrown equally in every direction is centered where it is drawn.
+--
 -- The core fills most of the ring, which is the proportion the arena draws a
--- bomb in flight at: a 3.6 core inside a 4.6 ring, so the two read as one
--- object with a lit rim. It was a fifth of that for a while, a small dot a
--- long way inside a ring, and a small dot a long way inside a ring is the
--- picture a proximity fuse used to draw, so a bare bomb looked loaded and a
--- loaded one looked doubly so.
+-- bomb in flight at: a 3.6 core inside a 4.6 ring, hot against the ring's
+-- own hue, so the two read as one object with a lit rim.
 local function bomb_head(hx, hy, k, col)
+    local a = col[4] or 1
+    u:halo(hx, hy, k * 0.78, 12, pal.a(col, a * 0.5))
+    -- The wide faint pass is world's bloom, spelled as a halo: the two are
+    -- the same triangles, and bloom's alpha-as-a-parameter exists for a loop
+    -- that draws thousands a frame, which a corner of four marks is not.
+    u:halo(hx, hy, k * 1.02, 12, pal.a(col, a * 0.18))
     u:ring(hx, hy, k * BOMB_R, M.pen(k, 0.122), 14, col)
-    u:disc(hx, hy, k * 0.34, 12, col)
+    u:disc(hx, hy, k * 0.35, 12, pal.hot(col, 0.8, a * 0.95))
 end
 
 -- The charges, drawn from what the thing does rather than from a name that
--- could disagree with it: a repel shoves and hurts nobody, so it is rings
--- going outward; a burst is many rounds at once, so it is a rosette. Anything
--- else a zone puts in a slot gets a plain disc, which says "a charge"
--- honestly rather than drawing a repel and being wrong.
+-- could disagree with it, and lit the way the arena lights the things they
+-- do: a repel shoves and hurts nobody, so it is rings going outward from a
+-- hot point; a burst is many rounds at once, so it is rounds leaving in
+-- every direction, each with the fade and the hot head a round in flight
+-- wears. Anything else a zone puts in a slot gets a plain disc, which says
+-- "a charge" honestly rather than drawing a repel and being wrong.
 function M.charge(slot, cx, cy, k, col)
+    local a = col[4] or 1
     if slot == 0 then
-        u:ring(cx, cy, k * 0.34, M.pen(k, 0.11), 14, col)
-        u:ring(cx, cy, k * 0.64, M.pen(k, 0.095), 18, col)
+        u:halo(cx, cy, k * 0.5, 10, pal.a(col, a * 0.45))
+        u:disc(cx, cy, k * 0.14, 8, pal.hot(col, 0.6, a))
+        u:ring(cx, cy, k * 0.36, M.pen(k, 0.11), 14, col)
+        u:ring(cx, cy, k * 0.66, M.pen(k, 0.09), 18, pal.a(col, a * 0.6))
     elseif slot == 1 then
+        u:halo(cx, cy, k * 0.45, 10, pal.a(col, a * 0.4))
         for i = 0, 7 do
             local t = i * math.pi / 4
-            u:disc(cx + math.cos(t) * k * 0.52, cy + math.sin(t) * k * 0.52,
-                   k * 0.135, 6, col)
+            local dx, dy = math.cos(t), math.sin(t)
+            u:seg_fade(cx + dx * k * 0.22, cy + dy * k * 0.22,
+                       cx + dx * k * 0.62, cy + dy * k * 0.62,
+                       M.pen(k, 0.05), M.pen(k, 0.09), a * 0.25, a, col)
+            u:disc(cx + dx * k * 0.62, cy + dy * k * 0.62, k * 0.10, 6,
+                   pal.hot(col, 0.5, a))
         end
     else
         u:disc(cx, cy, k * 0.28, 10, col)
@@ -145,7 +172,7 @@ end
 local function barrel(m, ang, col, held)
     local dx, dy = bolt_line(m.origin, m.y, ang, m.k, col)
     if not held then m.dots[#m.dots + 1] = {dx, dy} end
-    m.far = math.max(m.far, dx - m.x + m.k * BOLT_DOT)
+    m.far = math.max(m.far, dx - m.x + m.k * BOLT_HALO)
 end
 
 -- The two builders work out a mark's numbers and draw nothing, because one
@@ -154,25 +181,29 @@ end
 local function mk_bolt(hx, cy, k)
     return {x = hx, y = cy, k = k, bolt = true,
             tail = hx - k * M.BOLT_LEN, origin = hx - k * M.BOLT_LEN,
-            dots = {}, out = k * BOLT_DOT, far = k * BOLT_DOT,
+            dots = {}, out = k * BOLT_HALO, far = k * BOLT_HALO,
             -- Nothing on this mark rings the head except the add-ons that
             -- ring any mark. The fan hangs off the muzzle and the bounce
-            -- ring sits on a dot, so neither takes a share of the room.
+            -- ring sits on a head, so neither takes a share of the room.
             radial = {false, false, false, true, false, true}}
 end
 
 local function mk_bomb(hx, cy, k)
     -- `tail` is where a fan of them leaves from, which is the only thing
     -- behind the head on this mark and so is set at the edge the mark may
-    -- reach rather than at a length of its own.
+    -- reach rather than at a length of its own. `far` starts at the bloom,
+    -- the widest light the bare round sheds.
     return {x = hx, y = cy, k = k, tail = hx - k * M.MARK_REACH,
-            out = k * BOMB_R, far = k * BOMB_R}
+            out = k * BOMB_R, far = k * 1.02}
 end
 
 -- The round itself, once whatever it stands on has been drawn.
 local function draw_round(m, col)
     if m.bolt then barrel(m, 0, col) else bomb_head(m.x, m.y, m.k, col) end
 end
+
+-- What a declined round is drawn in: still on the mark, no longer a round.
+local DECLINED = pal.a(pal.DIM, 0.45)
 
 -- Every add-on takes the mark, a color and how many rungs deep it is, and
 -- draws its rungs rather than reporting them. A number beside a symbol was
@@ -190,65 +221,53 @@ end
 -- actually got drawn. They are not the same number: a mark that spends less
 -- than its share should not claim the width it did not use.
 
--- Spray: one rung is a pair, and everything above it is a fan.
+-- Spray: the volley a pull actually throws, at the angles the core throws
+-- it, so the mark counts bullets exactly as the arena does: two at the
+-- first rung, three at the second, five at the fourth, symmetric about the
+-- aim.
 --
--- This was two decorations because it was two add-ons, and the split survives
--- as the shape of the first rung. A pair leaves from beside the round and does
--- not spread, so its strokes are parallel and offset sideways; a fan leaves
--- from the one muzzle and opens out. The mark says the difference the arena
--- says, which is the spacing: a pair covers a line and a fan covers ground.
+-- It drew a fixed three-line fan above the first rung for a while, on the
+-- argument that a count of lines is a tally rather than a shape. What that
+-- bought was a corner disagreeing with the arena about the one fact a
+-- volley carries, and at the true angles even five rounds stay inside the
+-- row, so the tally is the shape.
 --
--- Above the first rung it is the fan and stays the fan, at one angle however
--- deep the ladder runs. Two reasons, and either would do. A corner that
--- answers "how many rounds" with a count of lines stops being a shape and
--- starts being a tally; and the fan at its current angle already reaches the
--- top and bottom of the row it lives in, so opening it further would draw over
--- the rows either side. How many rounds a pull throws is on the ship page,
--- where there is room to read a number.
-local function dec_multi(m, col, n)
-    if m.bolt then
-        if n == 1 then
-            -- A second barrel, abreast and parallel. Declined, it stays on the
-            -- mark and stops being a round: see barrel.
-            local ox = m.origin + m.k * 0.10
-            local dy = -m.k * 0.16
-            local dx = ox + m.k * (M.BOLT_LEN - 0.10)
-            u:seg(ox, m.y + dy, dx, m.y + dy, M.pen(m.k, 0.068), col)
-            u:disc(dx, m.y + dy, m.k * BOLT_DOT * 0.8, 10, col)
-            if not m.off then m.dots[#m.dots + 1] = {dx, m.y + dy} end
-            m.far = math.max(m.far, dx - m.x + m.k * BOLT_DOT)
-            return
-        end
-        -- Declined, the extra barrels stay on the mark and stop being rounds:
-        -- see barrel.
-        barrel(m, -BOLT_FAN, col, m.off)
-        barrel(m, BOLT_FAN, col, m.off)
+-- Both numbers come off `m`, asked of the core in `dressed` rather than
+-- worked out here: see `shape` below for why they cannot be constants.
+--
+-- The whole volley draws here, the center round included, because a pair
+-- has no center round: dressed() skips draw_round when the trigger wears
+-- any spray. Declined, the geometry holds and the color goes: the one
+-- round that would still fire stays lit and the rest dim, so a fan that
+-- stopped fanning is visibly the same weapon holding its fire.
+local function draw_volley(m, col)
+    local count, step = m.count or 1, m.spacing or 0
+    if count <= 1 then
+        draw_round(m, col)
         return
     end
-    -- On a bomb, heads abreast at one rung and rounds leaving together above
-    -- it, from where this one came from. Those strokes are the only ones a
-    -- bomb mark has now that the body is gone, and that is the right way
-    -- round: a lone bomb is a thing, and several of them are several things
-    -- going somewhere at once.
-    --
-    -- No shipped arena racks bombs in pairs, but the slot is per trigger and a
-    -- zone may fill it, so the bomb answers the same sentence in its own
-    -- alphabet.
-    if n == 1 then
-        u:ring(m.x, m.y - m.k * BOMB_R * 0.9, m.k * BOMB_R * 0.62,
-               M.pen(m.k, 0.1), 12, col)
-        return
-    end
+    -- The round nearest the aim, which is the one a declined fan still
+    -- fires. A pair straddles the aim, so its upper round stands in.
+    local center = math.floor(count / 2)
+    -- Several shells drawn whole want to be smaller than one alone, and the
+    -- outermost, light and all, must stay inside the reach the caller sized
+    -- for, so the scale comes off the fan's own geometry: what is left of
+    -- MARK_REACH above the outer round's offset is what a shell may fill.
+    local out_ang = count > 1 and step * (count - 1) / 2 or 0
+    local s = math.min(0.78,
+                       M.MARK_REACH * (1 - math.sin(out_ang)) / 1.02 * 0.95)
     local len = m.x - m.tail
-    for i = 1, math.min(n, 3) do
-        local a = 0.26 * i
-        local d = len * (1 - 0.14 * i)
-        for _, s in ipairs({-1, 1}) do
-            u:seg_fade(m.tail, m.y,
-                       m.tail + math.cos(a) * d,
-                       m.y + s * math.sin(a) * d,
-                       M.pen(m.k, 0.078), M.pen(m.k, 0.222), 0,
-                       (col[4] or 1) * 0.85, col)
+    for i = 0, count - 1 do
+        local off = step * (2 * i - (count - 1)) / 2
+        local declined = m.off and i ~= center
+        local c = declined and DECLINED or col
+        if m.bolt then
+            barrel(m, off, c, declined)
+        else
+            local hx = m.tail + math.cos(off) * len
+            local hy = m.y + math.sin(off) * len
+            bomb_head(hx, hy, m.k * s, c)
+            m.far = math.max(m.far, hx - m.x + m.k * s * 1.02)
         end
     end
 end
@@ -317,6 +336,12 @@ end
 -- A bolt's body is its streak and a bomb's is its shell, so the ticks cross
 -- the streak on one and the shell on the other, and neither takes a ring of
 -- room from anything that does.
+--
+-- The bomb's spikes cross its ring and reach into the halo, needle points
+-- out. They used to stop at the ring's own radius, which was legible on a
+-- plain shell and invisible on a lit one: a hot tick ending on a hot ring is
+-- the ring. What still tells them from shrapnel is where they stand: rime
+-- grows out of the shell, fragments are thrown clear of it.
 local function dec_freeze(m, col, n)
     local rungs = 2 + math.min(n, 2)
     if m.bolt then
@@ -328,13 +353,14 @@ local function dec_freeze(m, col, n)
         end
         return
     end
-    local r0, r1 = m.k * BOMB_R * 0.58, m.k * BOMB_R
+    local r0, r1 = m.k * 0.26, m.k * 0.68
     for i = 0, rungs * 2 - 1 do
         local a = (i + 0.5) * math.pi / rungs
         local dx, dy = math.cos(a), math.sin(a)
         u:seg(m.x + dx * r0, m.y + dy * r0,
-              m.x + dx * r1, m.y + dy * r1, M.pen(m.k, 0.085), col)
+              m.x + dx * r1, m.y + dy * r1, M.pen(m.k, 0.095), col)
     end
+    m.far = math.max(m.far, r1)
 end
 
 -- A shove standing off the head, and a rung is another wave of it. The repel
@@ -369,7 +395,11 @@ end
 -- that rings the head takes the next ring of room out from the last, so the
 -- fragments sit inside the shove. Reorder this list and they land on top of
 -- each other.
-local MOD_DECOR = {dec_multi, dec_bounce, nil, dec_shrap, dec_freeze, dec_push}
+-- Spray has no entry. Its rungs are more of the round rather than something
+-- worn on it, so the volley is drawn by the round itself: see draw_volley,
+-- which also covers a zone whose pattern already throws several with no
+-- spray bought at all.
+local MOD_DECOR = {nil, dec_bounce, nil, dec_shrap, dec_freeze, dec_push}
 -- And the one that goes down before the round rather than onto it.
 local MOD_GROUND = {nil, nil, ground_prox}
 -- Which of them ring the head, and so want a share of the room around it.
@@ -398,18 +428,22 @@ M.FIELD_MAX = M.MARK_REACH + 0.10
 --
 -- Measured rather than worked out, and measured as the mean of two answers
 -- that disagree. Weighing the drawing by how much of it there is puts the
--- center near the dot, because a solid disc outweighs the hairline that
--- reaches it; taking the drawing's extent puts the center near the middle of
--- the line, because the far tip of a hairline counts for as much as the dot.
+-- center near the head, because the bright end of the streak outweighs the
+-- faint one; taking the drawing's extent puts the center near the middle of
+-- the streak, because the far tip of a fade counts for as much as the head.
 -- Both are wrong in a direction, the eye lands between them, and a strip of
 -- the mark drawn at biases either side of the midpoint agrees with it. Then
 -- averaged over the loadouts a trigger can wear, since a fan pulls the weight
 -- back toward the muzzle and a bounce ring pulls it forward and no one case is
 -- the one to favor.
 --
--- The bomb wants nothing. It is a ring about a point, so the two answers are
+-- Re-measured when the line and dot became the flown streak: the bright core
+-- and halo moved a third of the old dot's weight up to the head, so the head
+-- stands a step nearer the middle than it did.
+--
+-- The bomb wants nothing. It is light about a point, so the two answers are
 -- the same answer and both are zero.
-M.BOLT_BIAS = 0.46
+M.BOLT_BIAS = 0.33
 local BOMB_BIAS = 0
 
 -- Reading a hull's loadout without minding whether there is a hull yet. A pad
@@ -447,6 +481,57 @@ end
 local function ship_multi_off(me)
     if held then return held.multi_off end
     return me and sim.ship_multi_off and sim.ship_multi_off(me)
+end
+
+local function ship_cls(me)
+    if held then return held.cls or 0 end
+    return (me and sim.ship_class) and sim.ship_class(me) or 0
+end
+
+-- How many rounds a pull throws and how far apart they leave, asked of the
+-- core rather than worked out here.
+--
+-- Three facts decide it and none of them belongs to a drawing: what the
+-- pattern this rung fires already throws, how many rounds a rung of spray
+-- adds, and the two spreads a zone opens a pair and a fan at. The baseline
+-- answers one round, one a rung, seven and a half degrees and fifteen, and
+-- a zone is free to answer differently on all four; a mark carrying those
+-- as constants would go on drawing the baseline in a room that had left it.
+--
+-- The fallback is the baseline, and it is for a caller with no engine under
+-- it: the SVG tools and the tests draw marks against a stubbed core. A
+-- count of zero means the core has no pattern at that rung to describe, and
+-- takes the fallback for the same reason.
+-- The core counts a full turn in 65536 heading units and hands its spacing
+-- over in those, so the conversion to the radians this file draws in happens
+-- here rather than in the binding.
+local TURN = 65536
+local PAIR_STEP, FAN_STEP = 2 * math.pi / 48, 2 * math.pi / 24
+
+-- Which trigger a mark is about, for the one question that has to be asked
+-- of the core by index. Which of the two is being drawn stays the caller's
+-- explicit boolean: a mark that worked that out by comparing indexes would
+-- draw a bomb as a gun anywhere the two constants are missing, since in Lua
+-- one absent constant equals another.
+local function trig(gun)
+    if gun then return sim.TRIG_GUN or 0 end
+    return sim.TRIG_BOMB or 1
+end
+local function shape(cls, t, lvl, n)
+    if sim.spray_shape then
+        local count, spacing = sim.spray_shape(cls, t, lvl, n)
+        if count and count > 0 then
+            spacing = (spacing or 0) * 2 * math.pi / TURN
+            -- Several rounds at no spacing is the core's scatter encoding,
+            -- which is a roll rather than an angle. A still mark cannot draw
+            -- a roll, so it spreads them at the fan's own step and says how
+            -- many, which are the two facts a scattered volley still has.
+            if count > 1 and spacing == 0 then spacing = FAN_STEP end
+            return count, spacing
+        end
+    end
+    if n <= 0 then return 1, 0 end
+    return n + 1, (n == 1) and PAIR_STEP or FAN_STEP
 end
 
 -- The rung a trigger is on, for a caller that colors something around a
@@ -499,10 +584,14 @@ end
 --
 -- Returns how far right the whole thing reached, since a hull holding three
 -- add-ons draws a good deal wider than one holding none.
-local function dressed(cx, cy, k, gun, lvl, modn, gun_lvl, off)
+local function dressed(cx, cy, k, gun, cls, lvl, modn, gun_lvl, off)
     local base = pal.a(pal.rung(lvl), 0.9)
     local at = cx + k * (gun and M.BOLT_BIAS or BOMB_BIAS)
     local m = gun and mk_bolt(at, cy, k) or mk_bomb(at, cy, k)
+    -- The volley, before anything is drawn: how many rounds leave and at
+    -- what angle is the round itself rather than something worn on it, and
+    -- the spray rungs are only one of the things that decide it.
+    m.count, m.spacing = shape(cls, trig(gun), lvl, modn[1] or 0)
     -- Which add-ons want a ring of room is a fact about the mark, not about
     -- the add-on: the fan and the bounce ring cost a gun nothing, and cost a
     -- bomb a share each.
@@ -524,7 +613,7 @@ local function dressed(cx, cy, k, gun, lvl, modn, gun_lvl, off)
         local n = modn[i] or 0
         if n > 0 and MOD_GROUND[i] then MOD_GROUND[i](m, base, n) end
     end
-    draw_round(m, base)
+    draw_volley(m, base)
     -- The round's hue run toward white, which is how this palette makes
     -- anything hotter, so an add-on is the same weapon louder rather than a
     -- different color stuck on the side of it.
@@ -541,9 +630,6 @@ local function dressed(cx, cy, k, gun, lvl, modn, gun_lvl, off)
             -- above; on a hull whose two ladders are level they come out the
             -- same color as the rest, which is the honest answer.
             if i == 4 then col = frag end
-            -- Except when you have declined it, which is the one time the
-            -- rounds either side really are not the round you are firing.
-            if off and i == 1 then col = pal.a(pal.DIM, 0.45) end
             if MOD_DECOR[i] then MOD_DECOR[i](m, col, n) end
         end
     end
@@ -553,7 +639,8 @@ end
 function M.weapon(cx, cy, k, me, t)
     local modn = {}
     for i = 1, #pal.MODS do modn[i] = ship_mod(me, t, i - 1) end
-    return dressed(cx, cy, k, t == sim.TRIG_GUN, ship_lvl(me, t), modn,
+    return dressed(cx, cy, k, t == sim.TRIG_GUN, ship_cls(me),
+                   ship_lvl(me, t), modn,
                    ship_lvl(me, sim.TRIG_GUN), ship_multi_off(me))
 end
 
@@ -562,8 +649,13 @@ end
 -- shelf that read a live hull would be selling whatever the pilot happened
 -- to be flying. `modn` is counts in sim_mod order, and fragments take the
 -- round's own rung, which on a mark about one trigger is the honest answer.
+--
+-- The volley is asked against the first hull, since a shelf is selling to
+-- nobody in particular. Every shipped zone builds one gun ladder for all of
+-- them, so that is the whole roster's answer; a zone that gave its hulls
+-- different patterns would be selling against the first one's.
 function M.round(cx, cy, k, gun, lvl, modn)
-    return dressed(cx, cy, k, gun, lvl, modn or {}, lvl, false)
+    return dressed(cx, cy, k, gun, 0, lvl, modn or {}, lvl, false)
 end
 
 return M

@@ -164,6 +164,15 @@ M.PAID      = rgb(0x8dffb0)
 -- the feed is spent on how old a line is, and a color that arrived faded
 -- would read as a kill of yours from nine seconds ago.
 M.ASSIST    = rgb(0x5aa874)
+-- A friend who is in a game, on the friends page, and nothing else. Green
+-- because green is what a light on a panel means by being lit, which is a
+-- convention older than this game and not worth being clever about. Not
+-- FRIEND: that cyan is the menu's cursor and the color of your own side, so a
+-- dot wearing it would be the fourth thing on the page saying "here", and not
+-- PAID, which is what a kill was worth and belongs to the feed. The mark is
+-- solid where this is lit and a hollow ring where it is not, so the fact
+-- survives a screen that shows the two of them as one grey.
+M.ONLINE    = rgb(0x62cc35)
 -- Charges: things you carry a count of and spend.
 -- Display names for the charge-kind space the core can represent. A kit may
 -- carry two kinds; the two slots above them are reserved for a zone that
