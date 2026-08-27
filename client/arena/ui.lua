@@ -454,45 +454,68 @@ local function pilot_mark(cx, cy, col, k, line)
     local function px(t) return cx + t * k end
     local function py(t) return ry(cy + t * k) end
     -- The ship the badge is issued for, which is what a pilot's wings have
-    -- in the middle of them.
+    -- in the middle of them. This is the Apex's own outline, a little
+    -- under half the mark's width: nose, wings swept back to tips near the tail, and a
+    -- trailing edge cut into prongs by the engine block between them.
     --
-    -- This was a diamond first, and a diamond is the one shape that cannot
-    -- be a ship: it is as pointed at the back as at the front, so nothing
-    -- about it says which way it is flying. What the game's own hulls do is
-    -- come to a point at the nose, sweep their wings back off it, and end on
-    -- a trailing edge that is cut about rather than straight.
+    -- Three shapes were drawn before it and each failed for its own reason,
+    -- which is worth writing down because they all looked reasonable on the
+    -- way past. A diamond says nothing about which way it is flying, being
+    -- as pointed at the back as at the front. An arrowhead with a stem under
+    -- it is an up arrow, and nothing else, however much the stem is called
+    -- an engine. A delta with a flat trailing edge is a triangle: no worse
+    -- than the arrow but no better than generic.
     --
-    -- Two quads, and the second is the whole of the difference. A quad here
-    -- draws the triangles 1-2-3 and 1-3-4, so nose, wingtip, tail, wingtip
-    -- gives an arrowhead with the notch between the wings already in it. The
-    -- block hung under the wingline is the engine, and it turns that one
-    -- notch into two, which is the jagged trailing edge every hull in this
-    -- game is drawn with.
+    -- What none of them had is the cut tail, and that turns out to be the
+    -- whole of it. A pointed nose is shared with a great many shapes and a
+    -- swept wing with a few, but a shape that forks at the back is read as a
+    -- craft with engines in it and almost nothing else. The rail's own Ship
+    -- stop has been proving that all along, drawing this same hull two sizes
+    -- up.
     --
-    -- Half the mark's width, and it has to be. Cut narrow it reads as a
-    -- stem with a fan either side rather than as a ship: at the size the
-    -- rail draws, the taper from nose to wingtip is two pixels of widening
-    -- and the eye takes the whole thing for an upright bar. The wings need
-    -- room to be wings before the feathers start.
+    -- Three quads, because a quad here draws the triangles 1-2-3 and 1-3-4
+    -- and the silhouette is concave twice. The fuselage runs nose to tail
+    -- through the two notches; each wing is its own piece from the leading
+    -- edge out to the tip and back in. The notches are the gaps left between
+    -- them, which is why they are drawn apart rather than as one run.
     --
-    -- What that costs is feather. The mark is one width whatever is inside
-    -- it, so every point the ship takes comes off the strokes, and the
-    -- innermost of the three is short now. Three cuts wider were drawn and
-    -- the feathers stop reading as three before the ship stops improving,
-    -- which is where this one sits.
-    F.layer:quad(px(0), py(-0.23), px(0.25), py(0.14),
-                 px(0), py(0.02), px(-0.25), py(0.14), col)
-    F.layer:quad(px(0.065), py(0), px(0.065), py(0.23),
-                 px(-0.065), py(0.23), px(-0.065), py(0), col)
+    -- Taller than the fan it sits in, on purpose. Every earlier cut kept the
+    -- ship inside the feathers and every one of them read as a lump between
+    -- two wings. The badge is a ship that wings are pinned to, so the ship
+    -- is the thing that should be seen first.
+    F.layer:quad(px(0), py(-0.325), px(0.070), py(0.225),
+                 px(0), py(0.325), px(-0.070), py(0.225), col)
+    for _, f in ipairs({1, -1}) do
+        F.layer:quad(px(f * 0.052), py(-0.005), px(f * 0.220), py(0.275),
+                     px(f * 0.170), py(0.325), px(f * 0.070), py(0.225), col)
+    end
     -- Swept back and fanned, longest on top. A rank of parallel strokes is a
     -- chevron; what makes a wing is that the three of them disagree about
     -- where they are going.
-    for _, s in ipairs({1, -1}) do
-        F.layer:seg(px(s * 0.270), py(-0.06), px(s * 0.500), py(-0.30),
+    --
+    -- Each one starts off the hull's own edge rather than at a shared
+    -- distance from the middle. They all began at one x, which is a straight
+    -- line down a shape that has no straight line in it: the hull is a hair
+    -- wide under the nose and four times that by the wingtip, so a root set
+    -- clear of it at the bottom left the top two hanging in space.
+    --
+    -- The roots are the leading edge's x at each height plus the same small
+    -- clearance, so the gap behind a feather is the same gap whichever
+    -- feather you look at. Drawn touching first, and touching is worse: the
+    -- three run into the hull and the badge reads as one blob with spines.
+    -- What it wants is to sit just off, near enough to belong to the ship
+    -- and far enough that the eye finds the edge.
+    --
+    -- Which makes these numbers the hull's, and they have to move when it
+    -- does. Set wrong they do not fall off the mark or cross anything, they
+    -- just reopen the gap unevenly, which is the kind of fault that lasts
+    -- because nothing about it looks broken.
+    for _, w in ipairs({1, -1}) do
+        F.layer:seg(px(w * 0.118), py(-0.06), px(w * 0.500), py(-0.30),
                     line, col, true)
-        F.layer:seg(px(s * 0.270), py(0.06), px(s * 0.463), py(-0.10),
+        F.layer:seg(px(w * 0.166), py(0.06), px(w * 0.463), py(-0.10),
                     line, col, true)
-        F.layer:seg(px(s * 0.270), py(0.18), px(s * 0.389), py(0.09),
+        F.layer:seg(px(w * 0.238), py(0.18), px(w * 0.389), py(0.09),
                     line, col, true)
     end
     return k

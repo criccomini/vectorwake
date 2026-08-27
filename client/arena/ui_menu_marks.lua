@@ -64,19 +64,20 @@ function M.new(context)
     -- beside your name, so the stop about everybody else cannot wear the same
     -- mark.
     --
-    -- Stacked rather than set side by side, and that is the wings' own shape
+    -- Stacked rather than set side by side, and that is the badge's own shape
     -- deciding it. Two helmets stood beside each other because a helmet is
-    -- taller than it is wide and a step across separated them. Wings are twice
-    -- as wide as they are tall, so the same step left two spreads crossing
-    -- through each other and reading as one wide tangle. Clear air between them
-    -- is above and below, which is also how badges sit on a uniform.
+    -- taller than it is wide and a step across separated them. This mark is
+    -- wider than it is tall, so the same step left two fans crossing through
+    -- each other and reading as one wide tangle. Clear air between them is
+    -- above and below, which is also how badges sit on a uniform.
     --
     -- Smaller than the single stop's, because two of these have to fit the
-    -- height one of them was sized against.
+    -- height one of them was sized against, and the ship in the middle of
+    -- each is taller than the fan around it.
     local function mark_friends(cx, cy, r, col)
-        pilot_mark(cx - r * 0.12, cy - r * 0.42, pal.a(col, 0.55), r * 1.15,
+        pilot_mark(cx - r * 0.12, cy - r * 0.46, pal.a(col, 0.55), r * 0.95,
                    RAIL_PEN * F.scale)
-        pilot_mark(cx + r * 0.12, cy + r * 0.42, col, r * 1.25,
+        pilot_mark(cx + r * 0.12, cy + r * 0.46, col, r * 1.05,
                    RAIL_PEN * F.scale)
     end
 

@@ -1595,10 +1595,14 @@ end
 -- at a glance across a room that is the whole difference between the two.
 -- An asteroid's shape, in its own space and built once.
 --
--- Rocks turn, so their geometry cannot live in the static mesh with the walls
--- and cannot be rebuilt from scratch sixty times a second either. This is the
--- hull treatment applied to terrain: the random shape is drawn once out of the
--- seed and kept, and a frame does nothing but rotate it.
+-- Rocks stand still, which is what lets their geometry live in the terrain
+-- mesh with the walls. They used to tumble, and a body that tumbles has to be
+-- rebuilt every frame: maelstrom lays 446 of them, so a window's worth came to
+-- 27k vertices against a fill layer holding 6144 and 106k against a glow layer
+-- holding 40960. A layer past its capacity says nothing, it stops drawing, so
+-- what that actually cost was the hulls and the blasts queued behind the rocks
+-- on nearly half the map. At rest they are built once per window like the
+-- walls, and a frame does not touch them at all.
 --
 -- Cached on the seed, so two rocks that would have looked alike still do, and
 -- a map with a hundred of them holds a hundred small tables.
@@ -1612,7 +1616,6 @@ local ROCK_FACETS = {
 }
 local ROCK_RIDGE = pal.a(pal.ROCK_EDGE, 0.20)
 local ROCK_CRACK = pal.a(pal.ROCK_DARK, 0.95)
-local ROCK_CRATER = pal.a(pal.ROCK_EDGE, 0.17)
 local ROCK_ORE = pal.a(pal.ROCK_ORE, 0.52)
 
 local function rock_shape(seed, sides, r)
@@ -1633,72 +1636,34 @@ local function rock_shape(seed, sides, r)
         nrm[i * 2 + 1] = math.cos(a)
         nrm[i * 2 + 2] = math.sin(a)
     end
-    -- How it turns, out of the same seed: a rate, a direction, and a phase, so
-    -- a field of rocks is a field of rocks rather than a rank of them turning
-    -- in step. Slowest is a full revolution in about a minute and fastest in
-    -- about twenty seconds, which still reads as adrift rather than as
-    -- machinery. The other three numbers are the tumble: how deeply the
-    -- silhouette foreshortens, how fast that cycle runs, and how fast the
-    -- axis it happens about wanders round the screen plane.
-    local q = (seed % 97) / 97
-    local craters = {}
-    local crater_count = sides >= 10 and 2 or 1
-    for _ = 1, crater_count do
-        local a = rnd() * TAU
-        local d = r * (0.18 + rnd() * 0.24)
-        craters[#craters + 1] = math.cos(a) * d
-        craters[#craters + 1] = math.sin(a) * d
-        craters[#craters + 1] = r * (0.10 + rnd() * 0.07)
-    end
     local ridges = {}
     local ridge_count = sides >= 10 and 3 or 1
     for _ = 1, ridge_count do
         ridges[#ridges + 1] = math.floor(rnd() * sides)
     end
+    -- No orientation is kept, because none is wanted: the vertex angles above
+    -- are jittered per seed, so a field of these is already a field of rocks
+    -- rather than one shape stamped in a rank. The normals are the shape's
+    -- own and never turn now, so there is no second scratch beside `tmp`.
     s = {pts = pts, nrm = nrm, sides = sides, seed = seed,
-         rate = ((seed % 2 == 0) and 1 or -1) * (0.10 + q * 0.22),
-         depth = 0.14 + q * 0.16,
-         trate = 0.23 + q * 0.30,
-         drift = ((seed % 3 == 0) and 1 or -1) * (0.05 + q * 0.07),
-         phase = q * TAU,
-         craters = craters, ridges = ridges,
-         tmp = {}, ntmp = {}}
+         ridges = ridges, tmp = {}}
     rock_shapes[k] = s
     return s
 end
 
--- One asteroid, turned to where it is this frame.
-local function draw_rock(fill, glow, cx, cy, s, now)
-    local ang = now * s.rate
-    -- A rock is not a wheel. The silhouette foreshortens along one direction,
-    -- which is what rotation about an axis lying in the screen plane does to
-    -- an irregular body -- and that axis wanders slowly round the plane
-    -- instead of riding the outline, so the squeeze crosses the shape rather
-    -- than breathing with it. Spin, foreshorten and precession run on three
-    -- unrelated clocks, which is the whole tell of a tumble against a turn.
-    --
-    -- One 2x2 matrix carries all of it: rotate by the spin, foreshorten
-    -- along the axis, and each vertex costs what plain rotation cost.
-    local axis = now * s.drift + s.phase * 2
-    local squash = 1 - s.depth * (0.5 + 0.5 * math.cos(now * s.trate + s.phase))
-    local cf, sf = math.cos(axis), math.sin(axis)
-    local cb, sb = math.cos(ang - axis), math.sin(ang - axis)
-    local m11 = cf * squash * cb - sf * sb
-    local m12 = -(cf * squash * sb + sf * cb)
-    local m21 = sf * squash * cb + cf * sb
-    local m22 = cf * cb - sf * squash * sb
-    -- Normals only turn. Foreshortening them too would swing the lit side
-    -- with the tumble, and the light does not tumble.
-    local ca, sa = math.cos(ang), math.sin(ang)
-    local src, pts, nrm = s.pts, s.tmp, s.ntmp
-    local sn = s.nrm
+-- One asteroid, where it stands.
+--
+-- Written into the terrain mesh rather than into the frame, so `bg` and `glow`
+-- here are the two static layers and not the two the fight draws into. It runs
+-- once per window build, which is why nothing in it reads a clock.
+local function draw_rock(bg, glow, cx, cy, s)
+    -- The outline, carried out to where the rock stands. The scratch is kept
+    -- with the shape rather than made here: one table shared between shapes
+    -- would report the length of whichever rock had the most sides.
+    local src, pts = s.pts, s.tmp
     for i = 1, #src, 2 do
-        local px, py = src[i], src[i + 1]
-        pts[i] = cx + px * m11 + py * m12
-        pts[i + 1] = cy + px * m21 + py * m22
-        local nx, ny = sn[i], sn[i + 1]
-        nrm[i] = nx * ca - ny * sa
-        nrm[i + 1] = nx * sa + ny * ca
+        pts[i] = cx + src[i]
+        pts[i + 1] = cy + src[i + 1]
     end
     -- Fanned from the center, not from a vertex: the outline is star-shaped
     -- about its own center and nothing else, and a vertex fan on a shape with
@@ -1706,9 +1671,9 @@ local function draw_rock(fill, glow, cx, cy, s, now)
     local sides = s.sides
     for i = 0, sides - 1 do
         local j = (i + 1) % sides
-        fill:tri(cx, cy, pts[i * 2 + 1], pts[i * 2 + 2],
-                 pts[j * 2 + 1], pts[j * 2 + 2],
-                 ROCK_FACETS[(s.seed + i * 5) % #ROCK_FACETS + 1])
+        bg:tri(cx, cy, pts[i * 2 + 1], pts[i * 2 + 2],
+               pts[j * 2 + 1], pts[j * 2 + 2],
+               ROCK_FACETS[(s.seed + i * 5) % #ROCK_FACETS + 1])
     end
 
     -- Facet ridges do not all meet at the center. Each joins two interior
@@ -1726,31 +1691,22 @@ local function draw_rock(fill, glow, cx, cy, s, now)
                  0.7, ROCK_RIDGE)
     end
 
-    -- Pits and one mineral seam survive the tumble because their centers are
-    -- passed through the same matrix as the silhouette. They stay subordinate
-    -- to the collision outline; a rock is still one dark mass at speed.
-    local craters = s.craters
-    for i = 1, #craters, 3 do
-        local px, py = craters[i], craters[i + 1]
-        local x = cx + px * m11 + py * m12
-        local y = cy + px * m21 + py * m22
-        local rr = craters[i + 2] * (0.75 + squash * 0.25)
-        fill:disc(x, y, rr, 8, ROCK_FACETS[1])
-        glow:ring(x, y, rr, 0.6, 8, ROCK_CRATER)
-    end
+    -- One mineral seam, subordinate to the collision outline: a rock is one
+    -- dark mass at speed and the seam is what says it is stone rather than a
+    -- hole cut in the floor.
     local vi = s.seed % sides
     local vj = (vi + math.floor(sides / 3)) % sides
     local vx, vy = pts[vi * 2 + 1], pts[vi * 2 + 2]
     local wx, wy = pts[vj * 2 + 1], pts[vj * 2 + 2]
     local mx, my = cx + (vx - cx) * 0.30, cy + (vy - cy) * 0.30
     local ex, ey = cx + (wx - cx) * 0.66, cy + (wy - cy) * 0.66
-    fill:seg(mx, my, ex, ey, 1.1, ROCK_CRACK)
+    bg:seg(mx, my, ex, ey, 1.1, ROCK_CRACK)
     if sides >= 10 then
         glow:seg(mx, my, ex, ey, 0.55, ROCK_ORE)
         glow:seg(mx + (vx - cx) * 0.12, my + (vy - cy) * 0.12,
                  mx, my, 0.5, ROCK_ORE)
     end
-    glow:glow_band(pts, nrm, 5, 0.12, pal.a(pal.ROCK_EDGE, 1))
+    glow:glow_band(pts, s.nrm, 5, 0.12, pal.a(pal.ROCK_EDGE, 1))
     glow:outline(pts, 1.2, pal.a(pal.hot(pal.ROCK_EDGE, 0.15, 1), 0.8), true)
 end
 
@@ -2039,28 +1995,24 @@ local function build_terrain(bg, glow, x0, y0, x1, y1)
     for i = 1, #unders, 3 do
         under_mark(glow, unders[i], unders[i + 1], unders[i + 2])
     end
-    -- Rocks are not built into this mesh. They turn, so they are drawn per
-    -- frame like the doors and the wells; what happens here is that the
-    -- window's worth of them is found once and their shapes baked, instead of
-    -- the whole map being searched every frame for a dozen asteroids.
-    local found = {}
-    for i = 1, #rocks, 3 do
-        local tx, ty, var = rocks[i], rocks[i + 1], rocks[i + 2]
-        local e
-        if var == V_ROCK_BIG then
-            e = {x = (tx + 1) * TILE, y = (ty + 1) * TILE,
-                 s = rock_shape(60413 + tx * 7 + ty * 13, 11, 14.5)}
-        else
-            e = {x = (tx + 0.5) * TILE, y = (ty + 0.5) * TILE,
-                 s = rock_shape((var == V_ROCK_B and 977 or 12345)
-                                + tx * 31 + ty * 17,
-                                var == V_ROCK_B and 7 or 8, 7)}
-        end
-        found[#found + 1] = e
-    end
-    M.rocks = found
     for i = 1, #stations, 2 do
         station(bg, glow, stations[i], stations[i + 1])
+    end
+    -- Rocks after the stations, because this layer composites in write order
+    -- and a rock lying over one has to read as the body in front. That came
+    -- free while they were drawn on the fight's own layer, which is a later
+    -- pass than this one; here it is a matter of which loop runs second.
+    for i = 1, #rocks, 3 do
+        local tx, ty, var = rocks[i], rocks[i + 1], rocks[i + 2]
+        if var == V_ROCK_BIG then
+            draw_rock(bg, glow, (tx + 1) * TILE, (ty + 1) * TILE,
+                      rock_shape(60413 + tx * 7 + ty * 13, 11, 14.5))
+        else
+            draw_rock(bg, glow, (tx + 0.5) * TILE, (ty + 0.5) * TILE,
+                      rock_shape((var == V_ROCK_B and 977 or 12345)
+                                 + tx * 31 + ty * 17,
+                                 var == V_ROCK_B and 7 or 8, 7))
+        end
     end
     for i = 1, #turfs, 2 do
         turf_stand(glow, turfs[i], turfs[i + 1])
@@ -2382,20 +2334,6 @@ end
 -- Doors and the tiles that mark a place rather than block one. These cannot
 -- go in the static mesh: a door is a wall on a clock, and a wall nobody can
 -- see is the worst thing in the game.
--- The asteroids, turning. Drawn before the ships rather than with the doors,
--- because a rock's body is opaque and the fill layer composites in the order
--- it was written: after them it would paint over anything flying past one.
-function M.draw_rocks(fill, glow, now, cull)
-    local list = M.rocks
-    if not list then return end
-    for n = 1, #list do
-        local e = list[n]
-        if not outside(cull, e.x, e.y) then
-            draw_rock(fill, glow, e.x, e.y, e.s, now)
-        end
-    end
-end
-
 function M.draw_tiles(fill, glow, now, cull)
     local list = M.moving_tiles
     local seen = {}
