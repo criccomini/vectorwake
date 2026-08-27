@@ -19,6 +19,11 @@ function M.new(state)
         layer = nil,
         text = nil,
         text_count = 0,
+        -- The right edge everything drawn is cut against, or nil for the
+        -- usual case of nothing being cut. The menu sets one while a page is
+        -- sliding in, so a reading arrives from behind the column's own edge
+        -- rather than across the fight beside it. See `vec.Layer:clip`.
+        clip_r = nil,
         menu_up = false,
         text_dim = 1,
         case = "upper",
@@ -51,6 +56,9 @@ function M:begin(layer, w, h, density, now)
     self.text_count = 0
     self.zones = {}
     layer:reset()
+    -- Nothing is cut until something asks. The reset above uncovers the
+    -- layer's own writers, so the two cannot come into a frame disagreeing.
+    self.clip_r = nil
 end
 
 function M:finish()

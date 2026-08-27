@@ -167,6 +167,9 @@ local empty_state
 -- aside wears it beside a zone nobody is serving, and the aside is written
 -- long before the dial is.
 local sweep_dial
+-- And the one that cuts a run of type against the column's edge, which `txt`
+-- reaches several hundred lines before there is a way to measure a string.
+local clip_run
 
 -- `font` names one of the faces the gui scene carries: nil for the mono
 -- everything in flight is set in, "menu" for the menu's own. It is passed
@@ -196,6 +199,15 @@ end
 -- the wordmark, which is a drawing of a name rather than a label.
 local function txt(s, x, y, px, col, pivot, font, raw)
     if not raw then s = cased(s) end
+    -- Cut against the column's edge, where the menu has set one. A run that
+    -- has not reached it stands as it is; one that crosses it loses the
+    -- letters past the line and hangs off its own left edge instead, since
+    -- that is the edge the cut did not move.
+    if F.clip_r then
+        local kept, left = clip_run(s, x, px, font, pivot)
+        if not kept then return end
+        if kept ~= s then s, x, pivot = kept, left, "left" end
+    end
     F.text_count = F.text_count + 1
     local t = F.text[F.text_count]
     if not t then t = {} F.text[F.text_count] = t end
@@ -234,6 +246,13 @@ end
 -- panel that swallows the press between two rows, the screen-wide box that
 -- shuts the menu. See `M.pick`.
 local function hit(x, y, w, h, action, value, level, pri)
+    -- A box goes with the pixels it was drawn under. What the column has cut
+    -- away is not on screen to be pressed: over a game the glass on that side
+    -- of the edge is the arena, and a row that has slid past it is not there.
+    if F.clip_r then
+        if x >= F.clip_r then return end
+        if x + w > F.clip_r then w = F.clip_r - x end
+    end
     M.hits[#M.hits + 1] = {x = x, y = y, w = w, h = h,
                            action = action, value = value, level = level,
                            pri = pri}
@@ -607,6 +626,42 @@ local function text_w(s, px, font, raw)
         w = w + (adv[string.byte(s, i)] or menu_face.widest)
     end
     return w * px
+end
+
+-- What is left of a run of type once the column's edge has cut it: the
+-- letters that fall inside and where their left edge stands, or nil if the
+-- edge took the whole run.
+--
+-- A mesh is cut anywhere; a glyph is not, so this cuts at the nearest letter.
+-- The run is measured from its own left edge whatever it is hung on, so a
+-- price pivoted off the right of a row loses its tail exactly the way a name
+-- does, and what comes back is pivoted left because that is the end of it the
+-- cut has not touched.
+clip_run = function(s, x, px, font, pivot)
+    local edge = F.clip_r
+    -- Already cased by the caller, so measured raw: measuring it again as
+    -- written would be a letter short of what lands.
+    local w = text_w(s, px, font, true)
+    local left = x
+    if pivot == "right" then left = x - w
+    elseif pivot == "center" then left = x - w / 2 end
+    if left >= edge then return nil end
+    if left + w <= edge then return s, left end
+    local room = edge - left
+    if font ~= MENU_FONT then
+        local n = math.floor(room / (px * ADVANCE))
+        if n < 1 then return nil end
+        return string.sub(s, 1, n), left
+    end
+    local adv, run = menu_face.adv, 0
+    for i = 1, #s do
+        run = run + (adv[string.byte(s, i)] or menu_face.widest) * px
+        if run > room then
+            if i == 1 then return nil end
+            return string.sub(s, 1, i - 1), left
+        end
+    end
+    return s, left
 end
 
 -- A key with a word in it: the shape every page presses to do a thing.
@@ -7672,6 +7727,25 @@ function M.menu(v)
     -- makes a press during the slide land on what the finger is over.
     local slid = page_slide(v.depth or 1) * dock
     panel_x, tx = panel_x + slid, tx + slid
+    -- And cut against the column's own right edge while it moves.
+    --
+    -- A page arriving from the right starts a full drawer width outside the
+    -- column, and on a window wider than the column there is nothing at that
+    -- edge to hide it: the reading was drawn over the fight and then walked
+    -- back in over it. Cut against that edge, the page comes out from behind
+    -- the column instead.
+    --
+    -- Only while it moves. A settled page stands inside the column and has
+    -- nothing to lose to a cut, and every layout check in the suite draws on
+    -- a clock that never advances, so what they measure is what ships.
+    --
+    -- One edge, not two. The column is docked against the leading edge of the
+    -- window, so a page stepping back leaves past the glass rather than past
+    -- the fight, and there is nothing on that side worth cutting against.
+    if slid ~= 0 then
+        F.clip_r = dx + dock
+        F.layer:clip(F.clip_r)
+    end
     if listy then lw = math.min(lw, 560 * F.scale) end
     -- No title over the stage. The rail is lit at the stop you are inside and
     -- says its name there, so a heading repeating it is the same answer
@@ -7925,10 +7999,10 @@ function M.menu(v)
             end
             local y = at
             at = at + rowh
-            -- Whole rows only. There is no scissor to clip a half row
-            -- against, and type comes from the gui, which draws over every
-            -- mesh this file lays down, so nothing behind the heading can
-            -- cover a row that has slid under it.
+            -- Whole rows only. The column's scissor is a vertical edge and
+            -- cuts nothing off the top of a list, and type comes from the gui,
+            -- which draws over every mesh this file lays down, so nothing
+            -- behind the heading can cover a row that has slid under it.
             if y >= ty - F.scale and y + rowh <= ty + room + F.scale then
                 -- The cursor, from whichever hand is on it. A pointer resting
                 -- on a row of a page moves the cursor there rather than
@@ -7972,6 +8046,12 @@ function M.menu(v)
             local ey = at + 12 * F.scale
             empty_state(tx, ey, lw, top + room - ey, v.empty)
         end
+    end
+    -- The page is drawn, so whatever was cutting it stops here: the foot and
+    -- the way out below stand still and belong to the column either way.
+    if F.clip_r then
+        F.clip_r = nil
+        F.layer:unclip()
     end
 
     -- One line at the foot of the stage: why something did not work. Nothing

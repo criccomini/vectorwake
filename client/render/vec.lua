@@ -61,6 +61,10 @@ end
 
 function Layer:reset()
     reset(self.id)
+    -- A scissor belongs to the frame that set it. Uncovering the writers here
+    -- means one cannot outlive the frame that asked for it, however that frame
+    -- ended. See `Layer:clip`.
+    self.tri, self.tri_fade, self.quad, self.rect = nil, nil, nil, nil
 end
 
 -- Give this layer a different capacity, keeping the id every draw call holds.
@@ -457,6 +461,123 @@ function Layer:fan(pts, col)
     for i = 3, n - 2, 2 do
         self:tri(x0, y0, pts[i], pts[i + 1], pts[i + 2], pts[i + 3], col)
     end
+end
+
+-- --- the scissor -----------------------------------------------------------
+--
+-- Cut everything drawn from here on against a vertical edge, until `unclip`.
+--
+-- One edge is the whole of it, because the one thing in this game that needs
+-- cutting is the menu's column: it is docked against the left of the window
+-- and a page arriving over it comes in from the right, with the fight and
+-- nothing else on that side to hide it.
+--
+-- The cut is installed by shadowing the four writers on the instance rather
+-- than by asking on every shape. Everything above and below this line ends up
+-- a triangle, a quad or a rect, so cutting those four cuts strokes, discs and
+-- outlines with them, and a layer nobody has clipped pays nothing at all: the
+-- world pushes tens of thousands of triangles a frame through these same
+-- functions and must not grow a branch for a menu animation.
+
+-- The shape being cut, and the scratch it is cut into. One draw call is
+-- clipped at a time, so one pair of these is enough for the whole client.
+local kx, ky, ka = {}, {}, {}
+local jx, jy, ja = {}, {}, {}
+
+-- Sutherland-Hodgman against the one plane there is: keep what is left of
+-- `edge`. Reads `n` corners from k and writes the survivors to j, in order,
+-- returning how many there are. A convex shape cut by one plane comes back
+-- with at most one corner more than it went in with.
+local function cut(n, edge)
+    local out = 0
+    local ax, ay, aa = kx[n], ky[n], ka[n]
+    local ain = ax <= edge
+    for i = 1, n do
+        local bx, by, ba = kx[i], ky[i], ka[i]
+        local bin = bx <= edge
+        -- The corner where this side crosses, which belongs to both halves
+        -- and is kept by this one whichever way the crossing runs.
+        if ain ~= bin then
+            local t = (edge - ax) / (bx - ax)
+            out = out + 1
+            jx[out], jy[out], ja[out] =
+                edge, ay + (by - ay) * t, aa + (ba - aa) * t
+        end
+        if bin then
+            out = out + 1
+            jx[out], jy[out], ja[out] = bx, by, ba
+        end
+        ax, ay, aa, ain = bx, by, ba, bin
+    end
+    return out
+end
+
+local function clip_tri(self, x1, y1, x2, y2, x3, y3, col)
+    local edge = self.clip_r
+    if x1 <= edge and x2 <= edge and x3 <= edge then
+        return w_tri(self.id, x1, y1, x2, y2, x3, y3, col)
+    end
+    if x1 > edge and x2 > edge and x3 > edge then return end
+    kx[1], ky[1], ka[1] = x1, y1, 1
+    kx[2], ky[2], ka[2] = x2, y2, 1
+    kx[3], ky[3], ka[3] = x3, y3, 1
+    -- What is left is a quadrilateral as often as a triangle, so it goes out
+    -- as a fan off the first corner.
+    for i = 3, cut(3, edge) do
+        w_tri(self.id, jx[1], jy[1], jx[i - 1], jy[i - 1], jx[i], jy[i], col)
+    end
+end
+
+-- The alpha rides along the cut edge the way the GPU carries it across the
+-- face, so a falloff that crosses the line keeps its gradient rather than
+-- ending on whatever the nearest corner happened to hold.
+local function clip_tri_fade(self, x1, y1, a1, x2, y2, a2, x3, y3, a3, col)
+    local edge = self.clip_r
+    if x1 <= edge and x2 <= edge and x3 <= edge then
+        return w_tri_fade(self.id, x1, y1, a1, x2, y2, a2, x3, y3, a3, col)
+    end
+    if x1 > edge and x2 > edge and x3 > edge then return end
+    kx[1], ky[1], ka[1] = x1, y1, a1
+    kx[2], ky[2], ka[2] = x2, y2, a2
+    kx[3], ky[3], ka[3] = x3, y3, a3
+    for i = 3, cut(3, edge) do
+        w_tri_fade(self.id, jx[1], jy[1], ja[1],
+                   jx[i - 1], jy[i - 1], ja[i - 1],
+                   jx[i], jy[i], ja[i], col)
+    end
+end
+
+local function clip_quad(self, x1, y1, x2, y2, x3, y3, x4, y4, col)
+    local edge = self.clip_r
+    if x1 <= edge and x2 <= edge and x3 <= edge and x4 <= edge then
+        return w_quad(self.id, x1, y1, x2, y2, x3, y3, x4, y4, col)
+    end
+    if x1 > edge and x2 > edge and x3 > edge and x4 > edge then return end
+    kx[1], ky[1], ka[1] = x1, y1, 1
+    kx[2], ky[2], ka[2] = x2, y2, 1
+    kx[3], ky[3], ka[3] = x3, y3, 1
+    kx[4], ky[4], ka[4] = x4, y4, 1
+    for i = 3, cut(4, edge) do
+        w_tri(self.id, jx[1], jy[1], jx[i - 1], jy[i - 1], jx[i], jy[i], col)
+    end
+end
+
+local function clip_rect(self, x, y, w, h, col)
+    if x + w > self.clip_r then w = self.clip_r - x end
+    if w <= 0 then return end
+    w_rect(self.id, x, y, w, h, col)
+end
+
+function Layer:clip(right)
+    self.clip_r = right
+    self.tri, self.tri_fade, self.quad, self.rect =
+        clip_tri, clip_tri_fade, clip_quad, clip_rect
+end
+
+-- Back to the layer's own writers. Nil uncovers them: the methods live on the
+-- metatable and the scissor was only ever shadowing them from the instance.
+function Layer:unclip()
+    self.tri, self.tri_fade, self.quad, self.rect = nil, nil, nil, nil
 end
 
 return M

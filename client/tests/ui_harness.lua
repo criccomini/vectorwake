@@ -7,10 +7,10 @@ function M.noop() end
 function M.layer()
     local layer = {}
     for _, name in ipairs({
-        "arc", "bloom", "disc", "fan", "flush", "frame", "glow_band",
+        "arc", "bloom", "clip", "disc", "fan", "flush", "frame", "glow_band",
         "halo", "outline", "quad", "rect", "reset", "resize", "ring",
         "ring_fade", "seg", "seg_fade", "seg_flat", "seg_glow", "skirt",
-        "tri", "tri_fade",
+        "tri", "tri_fade", "unclip",
     }) do
         layer[name] = M.noop
     end

@@ -368,6 +368,107 @@ do
           "it arrived without one")
 end
 
+-- --- and what arrives from the right stays inside the column ---------------
+--
+-- The drawer is docked against the leading edge of the window and a reading
+-- opened over a page comes in from the other side of it. It used to come in
+-- across the fight: the page was drawn a full drawer width out and walked
+-- back in over the arena, so on anything wider than a phone the type was read
+-- over the game for the sixteenth of a second the slide takes. The column
+-- cuts what it draws while a page moves, so a reading comes out from behind
+-- its own right edge and a press lands on whatever is showing.
+
+do
+    local state = package.loaded["arena.state"]
+    local DEEP = {{label = "wormhole", detail = "gantry", index = 1},
+                  {label = "rung", detail = "ace", index = 2}}
+
+    -- One frame of a page at a depth: what it said, how much of that stood
+    -- outside the column, and how many of its boxes reached past the edge.
+    local function page(depth, rows, now)
+        state.n = 0
+        ui.page_scroll = 0
+        ui.begin(harness.layer(), 1440, 810, 1, false, now)
+        local v = view(true)
+        v.depth, v.rows = depth, rows
+        ui.menu(v)
+        ui.finish()
+        local dx, _, dw = ui.drawer_span()
+        local said, loose = {}, 0
+        for i = 1, state.n do
+            local t = state.text[i]
+            said[#said + 1] = t.s
+            if t.x > dx + dw + 0.01 or t.x < dx - 0.01 then loose = loose + 1 end
+        end
+        -- Controls only. The two backdrops are ranked rather than ordered
+        -- and are meant to reach past the column: the way out is the whole
+        -- screen, which is the point of it.
+        local reaching = 0
+        for _, h in ipairs(ui.hits) do
+            if not h.pri and h.x + h.w > dx + dw + 0.01 then
+                reaching = reaching + 1
+            end
+        end
+        return table.concat(said, "|"), loose, reaching
+    end
+    local function has(s, word) return s:find(word, 1, true) ~= nil end
+
+    for k = 1, 8 do page(2, view(true).rows, 30 + k * 0.05) end
+    local _, loose, reaching = page(2, view(true).rows, 31)
+    check("a settled page is inside the column",
+          loose == 0 and reaching == 0,
+          loose .. " words and " .. reaching .. " boxes outside")
+
+    -- The step in. The page starts a full drawer width out, so the first
+    -- frame of it is entirely behind the edge and says nothing at all.
+    local first = page(3, DEEP, 31.005)
+    check("the first frame of a reading is still behind the edge",
+          not has(first, "Wormhole"), first)
+
+    local arrived = false
+    for _, now in ipairs({31.005, 31.02, 31.05, 31.09}) do
+        local words, out, hits = page(3, DEEP, now)
+        check("nothing of it is drawn over the fight at " .. now,
+              out == 0, out .. " words outside: " .. words)
+        check("and nothing is pressable out there either at " .. now,
+              hits == 0, hits .. " boxes outside")
+        if has(words, "Wormhole") then arrived = true end
+    end
+    check("and it does arrive while the slide runs", arrived,
+          "the page never showed")
+
+    local done = page(3, DEEP, 31.30)
+    check("and stands whole once it has settled",
+          has(done, "Wormhole") and has(done, "Gantry"), done)
+    check("and the page it left is gone", not has(done, "Melee"), done)
+
+    -- A word is cut at the nearest letter rather than dropped whole. The mesh
+    -- can be cut anywhere and a glyph cannot, so what a run crossing the edge
+    -- leaves behind is the letters that fit: somewhere in the slide a word
+    -- stands that is the front of one the settled page says in full.
+    local whole = {}
+    for word in done:gmatch("[^|]+") do whole[word] = true end
+    -- Back to the page it came from and in again, since a slide starts on the
+    -- frame the depth changes and this one is long over.
+    page(2, view(true).rows, 31.40)
+    page(2, view(true).rows, 31.60)
+    page(3, DEEP, 31.61)
+    local cut = false
+    for _, now in ipairs({31.611, 31.613, 31.615, 31.617, 31.62, 31.63}) do
+        for word in (page(3, DEEP, now)):gmatch("[^|]+") do
+            if not whole[word] then
+                for full in pairs(whole) do
+                    if #word < #full and full:sub(1, #word) == word then
+                        cut = true
+                    end
+                end
+            end
+        end
+    end
+    check("and a word crossing the edge is cut at a letter, not dropped",
+          cut, "every word arrived whole")
+end
+
 print(fails == 0 and "all drawer checks passed"
       or (fails .. " drawer checks failed"))
 os.exit(fails == 0 and 0 or 1)
