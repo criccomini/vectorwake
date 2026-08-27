@@ -3831,3 +3831,50 @@ strip of nothing for a rare step under a sentence somebody just caused.
 **Reconsider if:** the two bands on the friends page prove to be one too many
 in a real hand, at which point the invite is the one that gives way, since the
 empty state above it already offers the same act in words.
+
+## 81. Settings is the last stop on every row
+
+**Status:** accepted
+
+**Decision:** the tab row ends with settings wherever the panel draws it. At
+home that is play, ship, friends, pilot, settings. A benched pilot gets play,
+ship, friends, leave, settings. A pilot in a hull gets play, friends, settings,
+with ship back in the window between matches where the hull is not locked. The
+fourth slot is the stop that answers where you are standing, `pilot` at home
+and `leave` in a room, and settings sits behind it at the end.
+
+**Why:** asked for. Settings was fourth of five at home and last in a match, so
+the one stop that is on the row in every state was in a different place
+depending on the state, and the code comment beside it claimed the opposite:
+"Last, in the place it holds on the row a pilot sees everywhere else." Nobody
+chose the order. The account stop arrived with decision 69 and was appended to
+a row that already finished with settings, and the append is the whole of the
+reason.
+
+The outside argument says the same thing twice. A phone's tab bar either ends
+with settings or does not carry it at all: WhatsApp and Telegram close the row
+with it, while Instagram, TikTok and YouTube keep it off the row and put it
+inside the account page, which is also Apple's guidance, that a tab bar carries
+top-level content areas rather than a drawer somebody opens twice a year.
+Ordering a row by how often each stop gets pressed lands settings at the end
+either way, because it is the least pressed stop we have and the only one that
+is not part of the game.
+
+The second of those conventions is closed to us, and the row itself is why.
+`pilot` is off the row a match gets, since an account is not a thing to edit
+from inside a room, and settings is the only route to sound, to fullscreen and
+to the controls reference on a phone in a match. Folding one into the other
+would strand a player who needs to mute the game.
+
+**Cost:** the call sign at the far right of the top line is the second door
+onto the pilot page, and a pilot stop at the far right of the tab row rhymed
+with it. That pairing is gone.
+
+`leave` moves with `pilot`, because the two share the slot. It had been last on
+the benched row, which is where a way out usually goes. Holding it there would
+have meant fixing the order at home by breaking it one state over, which is the
+thing this decision is about.
+
+**Reconsider if:** the pilot page is ever wanted on the row a match gets. That
+is the one change that would let settings fold into it the way most phones do
+it, and the row would drop a stop rather than reorder one.

@@ -1,5 +1,18 @@
 # Landing, and the menu
 
+> **Settings is the last stop on every row.** The home row is play, ship,
+> friends, pilot and settings. Settings had been fourth of five, because the
+> account stop was appended to a row that already ended with it, so the tab
+> sat in one place at home and another in a match. It is the least pressed
+> stop there is and the only one that is not part of the game, so it takes the
+> end of the row in both, and the stop that varies with where you are standing
+> takes the fourth slot: `pilot` at home, `leave` in a room. The tab bars most
+> players already know either end with settings or keep it off the row
+> altogether, inside the account page. Ours cannot do the second: `pilot` is
+> off the row a match gets, and settings is the only route to sound and
+> fullscreen on a phone mid-match. See
+> [decision 81](../architecture/decisions.md).
+
 > **The x and the call sign are a row of their own.** The two controls on the
 > drawer's top line are the head, and the arrows reach them by pressing up off
 > the first row of a page: left and right walk between them and loop, down goes
@@ -219,25 +232,25 @@ vectorwake
 │             answer, and your friends: a green dot and the game they are
 │             in, or a hollow one. A band at the foot invites somebody who
 │             has never played. See friends.md
-├ settings    sound · music · frames · fullscreen · bindings · about
-└ pilot       who you are and the way to keep it: the name large with a NEW
-              NAME key beside it, the career as bare totals under a ship-page
-              section rule, and the account acts at the foot. A guest gets
-              one lit SIGN UP under "Keep your points and log in on other
-              devices"; signed in, the same foot holds the password and the
-              way out
-
-              your call sign still sits at the far end of the top line and
-              opens the same page. It was the only way in for a long time,
-              on the argument that a stop repeating the name beside it said
-              it twice; what that bought was an account nobody knew they
-              had, because a name in a pill does not look like a button.
-              The stop is the door a stranger finds and the name is the one
-              a returning player knows, and it stays because it is the one
-              thing on screen saying who you are signed in as. It is drawn
-              as a button, and it is the only thing at that end of the line:
-              a Discord door stood beside it until the game stopped carrying
-              one at all, per decision 73
+├ pilot       who you are and the way to keep it: the name large with a NEW
+│             NAME key beside it, the career as bare totals under a ship-page
+│             section rule, and the account acts at the foot. A guest gets
+│             one lit SIGN UP under "Keep your points and log in on other
+│             devices"; signed in, the same foot holds the password and the
+│             way out
+│
+│             your call sign still sits at the far end of the top line and
+│             opens the same page. It was the only way in for a long time,
+│             on the argument that a stop repeating the name beside it said
+│             it twice; what that bought was an account nobody knew they
+│             had, because a name in a pill does not look like a button.
+│             The stop is the door a stranger finds and the name is the one
+│             a returning player knows, and it stays because it is the one
+│             thing on screen saying who you are signed in as. It is drawn
+│             as a button, and it is the only thing at that end of the line:
+│             a Discord door stood beside it until the game stopped carrying
+│             one at all, per decision 73
+└ settings    sound · music · frames · fullscreen · bindings · about
 
 in a match
 ├ play        the same list, because the way out of the game you are in is a

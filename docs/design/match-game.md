@@ -626,7 +626,7 @@ and grids, and the menu tree was deliberately one narrow column that
 surfaces now rather than one:
 
 - **Five tabs** at the front end, which is where you are between matches and
-  where there is time to read: play, ship, friends, settings, pilot. Pilot is
+  where there is time to read: play, ship, friends, pilot, settings. Pilot is
   your account, and your call sign at the far end of the row opens the same
   page. Standings was one of
   them until the week's table came out. Upgrades was another for a while,

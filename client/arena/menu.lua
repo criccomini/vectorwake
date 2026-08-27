@@ -1748,7 +1748,7 @@ local NODES = {
     --
     -- Which of the two you get is decided by whether you are in a hull, not by
     -- whether you are in a zone. Five with no hull: play, ship, friends,
-    -- settings, and pilot at home. Flying: play, friends, settings, and ship
+    -- pilot, and settings at home. Flying: play, friends, settings, and ship
     -- in the window between matches where a hull is not locked. Friends stays
     -- out when the account service is absent. The row keeps the same place and
     -- chrome in both contexts.
@@ -1840,20 +1840,17 @@ local NODES = {
             -- they are standing. See docs/design/friends.md.
             {label = "friends", icon = "friends", go = "friends",
              detail = friends_detail},
-            -- Everything about the machine rather than about a match, in one
-            -- column: audio, video, the bindings, and about. Help folded into
-            -- it because the controls board and the rebinding screen were
-            -- always the same list read two ways.
-            {label = "settings", icon = "settings", go = "settings"},
         }
-        -- Who you are, as the last stop. The call sign at the far end of the
-        -- top line opens the same page and stays there, because it is the one
-        -- thing on screen saying who you are signed in as; what it never
-        -- looked like was a button, and the claim flow behind it is the thing
-        -- a new player most needs to find. Two doors onto one page, on
-        -- purpose. For a long time the name was the only way in, on the
-        -- argument that a tab repeating it said it twice; what that bought was
-        -- an account nobody knew they had.
+        -- Who you are, in the fourth slot: the one stop on this row that
+        -- answers where you are standing rather than what you came to do,
+        -- which is this at home and `leave` in a room. The call sign at the
+        -- far end of the top line opens the same page and stays there,
+        -- because it is the one thing on screen saying who you are signed in
+        -- as; what it never looked like was a button, and the claim flow
+        -- behind it is the thing a new player most needs to find. Two doors
+        -- onto one page, on purpose. For a long time the name was the only
+        -- way in, on the argument that a tab repeating it said it twice; what
+        -- that bought was an account nobody knew they had.
         --
         -- Only at home, which is the guard the corner press already wears: an
         -- account is not a thing to edit from inside a room. See
@@ -1861,12 +1858,25 @@ local NODES = {
         if M.home then
             rows[#rows + 1] = {label = "pilot", icon = "pilot", go = "pilot"}
         end
-        -- And the way out, for a pilot watching from a seat the room is still
-        -- holding. Never at home: the stands there are where leaving goes.
+        -- The same slot away from home: the way out, for a pilot watching
+        -- from a seat the room is still holding. Never at home, where the
+        -- stands are what leaving goes back to.
         if not M.home then
             rows[#rows + 1] = {label = "leave", icon = "zones",
                                detail = "back to the stands", act = "leave"}
         end
+        -- Everything about the machine rather than about a match, in one
+        -- column: audio, video, the bindings, and about. Help folded into it
+        -- because the controls board and the rebinding screen were always the
+        -- same list read two ways.
+        --
+        -- Last, which is where it sits on the row a match gets and where a
+        -- phone's own tab bars put it when they carry one at all. It is the
+        -- least pressed stop here and the only one that is not part of the
+        -- game, so it takes the end of the row and the stop that varies with
+        -- where you are standing takes the slot before it. See decision 81.
+        rows[#rows + 1] = {label = "settings", icon = "settings",
+                           go = "settings"}
         return rows
     end},
 

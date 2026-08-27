@@ -170,8 +170,8 @@ local settings_at = top_index("settings")
 local pilot_at = top_index("pilot")
 local tabs = {}
 for _, r in ipairs(menu.view().rail) do tabs[#tabs + 1] = r.label end
-check("the tab row is play, ship, friends, settings, pilot",
-      table.concat(tabs, "/") == "play/ship/friends/settings/pilot",
+check("the tab row is play, ship, friends, pilot, settings",
+      table.concat(tabs, "/") == "play/ship/friends/pilot/settings",
       table.concat(tabs, "/"))
 check("the rail carries the destinations", ship_at and settings_at and pilot_at,
       "ship " .. tostring(ship_at) .. ", settings " .. tostring(settings_at)
@@ -296,14 +296,15 @@ do
     menu.name = "Tester 1"
     menu.open, menu.home = true, true
     menu.stack = {"root"}
-    menu.sel = {root = pilot_at}
+    -- From the last stop, which is settings on every row the panel draws.
+    menu.sel = {root = settings_at}
     menu.head_sel = nil
     menu.step({right = true})
     check("the rail row is the tabs alone, and it wraps",
           menu.head_sel == nil and menu.sel.root == 1,
           tostring(menu.head_sel) .. "/" .. tostring(menu.sel.root))
     menu.step({left = true})
-    check("and back the other way", menu.sel.root == pilot_at,
+    check("and back the other way", menu.sel.root == settings_at,
           tostring(menu.sel.root))
 
     -- Up off the first row of a page is the way onto that line, and it lands
@@ -2959,7 +2960,7 @@ do
     menu.home, menu.scenery, menu.watching = true, true, false
     menu.open, menu.stack, menu.sel = true, {"root"}, {}
     check("the stands carry the whole row",
-          labels() == "play ship friends settings pilot",
+          labels() == "play ship friends pilot settings",
           labels())
 
     -- The short row keeps the games, because that is where the way out of the
@@ -2974,10 +2975,28 @@ do
     -- not is `leave`: they are in a zone, and no row of the list carries a
     -- way out of one you are not flying. What they lose is `pilot`, which
     -- needs there to be no zone: an account is not edited from inside a room.
+    -- The two share the fourth slot, so `leave` arrives where `pilot` went.
     menu.home, menu.watching = false, true
     check("a benched pilot gets the whole row back",
-          labels() == "play ship friends settings leave",
+          labels() == "play ship friends leave settings",
           labels())
+
+    -- And the thing all three rows agree on: settings closes every one of
+    -- them. It is the least pressed stop on the row and the only one that is
+    -- not part of the game, which is the place a phone's own tab bar has
+    -- already taught its owner to look. A stop appended after it walks that
+    -- back without anybody deciding to, which is how it ended up fourth of
+    -- five in the first place: `pilot` was tacked on the end of a row that
+    -- already finished with settings. See decision 81.
+    for _, state in ipairs({{home = true, watching = false},
+                            {home = false, watching = false},
+                            {home = false, watching = true}}) do
+        menu.home, menu.watching = state.home, state.watching
+        local row = menu.view().rail
+        check("settings is the last stop with home " .. tostring(state.home)
+              .. " and watching " .. tostring(state.watching),
+              row[#row].label == "settings", labels())
+    end
 
     menu.home, menu.scenery, menu.watching = kept.home, kept.scenery,
                                              kept.watching
