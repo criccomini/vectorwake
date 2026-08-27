@@ -47,7 +47,31 @@ local LINE = 18
 -- from `sim` per frame: the panel's height needs it before it draws.
 local SIM_TRIGGERS = 2
 local COL_W = 248      -- the width of the three stacked side panels
-local RADAR = 168
+
+-- The dial, and the smaller one a phone draws.
+--
+-- `crop` comes off the side and off the reach by the same factor, so a small
+-- screen gets a crop of the full dial rather than a scaled copy of it. A tile
+-- is worth 1.4 pixels either way, which leaves a blip, a contact and the
+-- space between two contacts reading as they do on a monitor; all that
+-- changes is how much ground the square covers. Cropping the side alone would
+-- have squeezed sixty tiles into two thirds of the pixels and cost every mark
+-- on the dial a third of its separation.
+--
+-- Two thirds leaves forty tiles of reach, which is two screens of world
+-- across on a phone: render/zoom.lua guarantees its short axis forty tiles,
+-- so the dial reaches one screen past the glass in every direction. Uncropped
+-- it reached three screens across there, against two and a half on an eight
+-- hundred point window that sees fifty tiles at once. The smallest screen had
+-- the most reach and the least room to draw it in.
+local RADAR = {side = 168, crop = 2 / 3}
+
+-- What this window draws the dial at. Asked by the side and by the reach,
+-- because a dial cropped by one number and sized by another is a dial whose
+-- contents no longer agree with its own scale.
+function RADAR.factor()
+    return M.compact and RADAR.crop or 1
+end
 
 M.hits = {}            -- clickable rectangles the menu published, top-left px
 M.map = false          -- the whole map, in the radar's corner
@@ -965,7 +989,7 @@ end
 -- pointer can no longer reach.
 local function dial()
     local pad = (M.compact and 8 or PAD) * F.scale
-    local side = RADAR * F.scale
+    local side = RADAR.side * RADAR.factor() * F.scale
     if M.map then
         side = math.max(side,
                         math.min(math.min(F.w, F.h) * 0.66, F.h * 0.66,
@@ -1073,7 +1097,15 @@ local function radar(cx, cy, me)
     -- Sixty tiles out, so the reference arena nearly fills the dial. At a
     -- hundred and fifty it sat in the middle quarter with the rest of the
     -- radar showing empty space nobody can fly to.
+    --
+    -- Sixty is also what the zone culls a snapshot to and what a bot sees by,
+    -- and constant_drift_test holds those three copies together, so the number
+    -- stays written down whole here and the crop is taken on the next line
+    -- instead. Short of the filter is the safe direction: the dial then shows
+    -- less than the client was told, where a longer one would carry a band of
+    -- empty square the zone has never reported a ship into.
     local SPAN = 60 * 16
+    SPAN = SPAN * RADAR.factor()
     local k = r / (2 * SPAN)
     -- The dial is a diagram, not a window, and it is worth snapping to the
     -- pixel grid it is drawn on.
