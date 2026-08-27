@@ -1,0 +1,4 @@
+material: "/render/vw_skyglow.material"
+vertices: "/render/skyglow.buffer"
+primitive_type: PRIMITIVE_TRIANGLES
+position_stream: "position"

@@ -1046,18 +1046,19 @@ do
           ui.page_room > 0 and ui.page_room < 844,
           tostring(ui.page_room))
 
-    -- A phone-sized page twelve names long overflows by less than one row,
+    -- A phone-sized page thirteen names long overflows by less than one row,
     -- which is exactly the case that would not move at all. It was eleven
-    -- when a friend's row was two lines tall and the page had no key at the
-    -- foot; the number is whatever the first count past the bottom is, and
-    -- the case it is here for is that the overflow is small.
+    -- when a friend's row was two lines tall and the page had no band at the
+    -- foot, and twelve until the page's floor moved down onto the rail; the
+    -- number is whatever the first count past the bottom is, and the case it
+    -- is here for is that the overflow is small.
     ui.page_scroll = 0
-    draw(friend_view(12), 390, 844, true)
+    draw(friend_view(13), 390, 844, true)
     local over = ui.page_extent - ui.page_room
     check("a page that overflows by a little still has somewhere to go",
           over > 0, "overflow " .. string.format("%.0f", over))
     ui.page_scroll = 9999
-    draw(friend_view(12), 390, 844, true)
+    draw(friend_view(13), 390, 844, true)
     check("and a finger can reach all of it",
           math.abs(ui.page_scroll - over) < 1,
           string.format("%.0f of %.0f", ui.page_scroll, over))

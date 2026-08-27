@@ -98,6 +98,14 @@ pilot page itself: you are using a guest account, press here to set your
 password. Before there is anything to lose it stays away, because a warning
 over an empty account is nagging.
 
+Two of those three arrive on their own. The friends list and the entitlements
+are re-read while the panel is open, so a friend made or a rung bought arms
+the banner within seconds. Rated games do not: the career is one request, and
+for most of a session the client's copy of it was fetched before the game that
+would have armed the warning was flown. So the panel asks again, on a slow
+beat, for as long as a guest's answer is still nothing to lose. That is the
+population the ask is cheap for, and it stops the moment the answer changes.
+
 A seat is bound to one identity for the life of its connection. The zone
 reads the name and the token once, at the join, and what it binds there is
 what the roster shows everyone and what every kill is filed against until

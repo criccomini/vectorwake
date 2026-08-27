@@ -217,7 +217,7 @@ vectorwake
 │             Slots, never strength: see match-game.md
 ├ friends     a field you type a call sign into, the adds waiting on an
 │             answer, and your friends: a green dot and the game they are
-│             in, or a hollow one. A key at the foot invites somebody who
+│             in, or a hollow one. A band at the foot invites somebody who
 │             has never played. See friends.md
 ├ settings    sound · music · frames · fullscreen · bindings · about
 └ pilot       who you are and the way to keep it: the name large with a NEW

@@ -7,13 +7,13 @@
 --
 -- This exists because of how a layer fails. A vertex buffer that is too small
 -- does not raise and does not warn: the geometry past the cap stops being
--- written and the frame is drawn without it. The fill layer was fixed at 6144
+-- written and the frame is drawn without it. The sky's layer was fixed at 6144
 -- vertices, which is a window about 2100 points wide; past that the far and
 -- middle depths fill the buffer on their own and the near stars, the big
--- bright ones, disappear. Whether they come back at all depends on how much
--- of the field is behind rock right then, which changes as you fly, so on a
--- 2240-point iMac they flickered. Nobody could have found that from the code:
--- the budget was a constant with no relationship to the thing it bounded.
+-- bright ones, disappear. Whether they came back depended on where the camera
+-- was sitting, which changes as you fly, so on a 2240-point iMac they
+-- flickered. Nobody could have found that from the code: the budget was a
+-- constant with no relationship to the thing it bounded.
 --
 -- So the budget is derived from the same table the drawing reads, and this
 -- checks the derivation by drawing. Anything that changes a star's size, its
@@ -22,8 +22,9 @@
 
 package.path = "client/?.lua;" .. package.path
 
--- Nothing is behind rock. Occlusion only ever removes stars, so an empty map
--- is the worst case and the one a bound has to hold for.
+-- The sky draws under the map now, so nothing about the terrain changes what
+-- it costs: a wall hides stars by being drawn on top of them rather than by
+-- taking them out of the buffer. The stub is what the module wants at load.
 _G.sim = {solid = function() return false end}
 
 local world = require("arena.world")
@@ -141,7 +142,7 @@ for _, v in ipairs(VIEWS) do
     check(name .. ": stars reach both layers", got_f > 0 and got_g > 0,
           string.format("fill %d, glow %d", got_f, got_g))
 
-    local bf, bg = world.world_budget(hw, hh)
+    local bf, bg = world.sky_budget(hw, hh)
     check(name .. ": the layer budget covers the field", bf > got_f and bg > got_g,
           string.format("fill %d of %d, glow %d of %d", got_f, bf, got_g, bg))
     print(string.format("   %-22s fill %6d drawn, %6d bound, layer %6d" ..
@@ -155,14 +156,14 @@ check("every halo drawn costs what the budget pays for it",
 -- The budget has to grow with the window, which is the whole point of it, and
 -- it has to grow in steps rather than continuously so that dragging a window
 -- edge is not a buffer allocation per frame.
-local small = select(1, world.world_budget(640, 400))
-local large = select(1, world.world_budget(1920, 1080))
+local small = select(1, world.sky_budget(640, 400))
+local large = select(1, world.sky_budget(1920, 1080))
 check("a bigger window gets a bigger budget", large > small * 2,
       string.format("640x400 got %d, 1920x1080 got %d", small, large))
 check("budgets land on a step", small % 1024 == 0 and large % 1024 == 0,
       string.format("%d and %d", small, large))
-local a = select(1, world.world_budget(960, 540))
-local b = select(1, world.world_budget(961, 540))
+local a = select(1, world.sky_budget(960, 540))
+local b = select(1, world.sky_budget(961, 540))
 check("a pixel of drag does not move the budget", a == b,
       string.format("%d became %d", a, b))
 

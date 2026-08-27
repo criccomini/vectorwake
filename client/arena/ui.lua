@@ -5352,42 +5352,59 @@ end
 --
 -- See docs/design/friends.md.
 
--- How big the dot beside a friend is, and how much of the foot the invite key
--- takes. Both hang off `pages` beside FIELD_TALL rather than standing as
--- locals of their own: this file is at Lua's ceiling of two hundred locals in
--- its main chunk, and a page's own measurements belong to the page anyway.
+-- How big the dot beside a friend is, and how tall a band pinned at the foot
+-- of the column stands. Both hang off `pages` beside FIELD_TALL rather than
+-- standing as locals of their own: this file is at Lua's ceiling of two
+-- hundred locals in its main chunk, and a page's own measurements belong to
+-- the page anyway.
+--
+-- One height for both bands: the invite here, and the guest warning the menu
+-- itself draws on the same line of the same column. Where a guest opens this
+-- page the two are stacked, and two heights would read as two kinds of thing.
 pages.ON_R = 4
-pages.INVITE_H = 52
+pages.BAND_H = 46
 
--- The way out of a roster that can only hold people already here: a key that
+-- The way out of a roster that can only hold people already here: a band that
 -- hands the game's own address to whatever the device shares with, which on a
--- phone is the share sheet and on a desktop is the clipboard. It is the
--- ending's INVITE FRIEND key in the menu's own furniture, and it is pinned at
+-- phone is the share sheet and on a desktop is the clipboard. It is pinned at
 -- the foot rather than scrolled to, because a page with three friends on it
 -- has nothing else down there and a page with forty would bury it.
 --
--- The line says what the press is for and never how it travels: the sheet
+-- The guest warning's shape, in the friends page's color: a band standing on
+-- the rail, edge to edge of the column, two lines of words and the whole of it
+-- the press. It was a labeled key floating over a rule with the page's ground
+-- under it, which read as the last row of a list that had run out rather than
+-- as the foot of the panel. One band grammar for the two things this menu
+-- pins at a foot, and the color says which of them you are looking at: gold
+-- warns, green offers.
+--
+-- The lines say what the press is for and never how it travels: the sheet
 -- decides that, and a key promising a text message on a machine that copies a
 -- link is a key that lied.
-function pages.invite_banner(v, x, y, w)
-    local kh = 26 * F.scale
-    local cy = y + pages.INVITE_H * F.scale / 2 + 4 * F.scale
-    hrule(x, y, w)
-    -- The word flips once the browser says the link went somewhere, which is
-    -- the only acknowledgement a copy gets: nothing else on screen moves.
+function pages.invite_banner(v, y)
+    local bx, _, bw = M.drawer_span()
+    local bh = pages.BAND_H * F.scale
+    local hot = v.invite_hot == true
+    rect(bx, y, bw, bh, pal.a(pal.FRIEND, hot and 0.14 or 0.08))
+    F.layer:seg(bx, ry(y), bx + bw, ry(y), F.scale,
+                pal.a(pal.FRIEND, 0.5), true)
+    local margin = MENU_PAD * F.scale
+    txt("Get somebody you know into the game.", bx + margin,
+        y + 16 * F.scale, 12.5 * F.scale, pal.a(pal.INK, 0.95), nil,
+        MENU_FONT)
+    -- The second line flips once the browser says the link went somewhere,
+    -- which is the only acknowledgment a copy gets: nothing else on screen
+    -- moves.
     local copied = M.share_result == "copied"
-    local label = copied and "link copied" or "invite"
-    local left = row_button(x + w, cy, kh, label, not copied,
-                            v.invite_hot == true, "invite")
-    txt("get somebody you know into the game", x, cy, 12.5 * F.scale,
-        pal.a(pal.INK, 0.8))
-    -- The browser lays a real anchor over the key: a share sheet and a
-    -- clipboard write both have to happen inside a gesture the page itself
-    -- saw, and a press routed through the engine is not one. The rectangle
-    -- travels in page points, which is what the shell lays out in.
+    txt(copied and "Link copied." or "Press here to share an invite.",
+        bx + margin, y + 33 * F.scale, 10 * F.scale, pal.a(pal.DIM, 1))
+    hit(bx, y, bw, bh, "invite")
+    -- The browser lays a real anchor over it: a share sheet and a clipboard
+    -- write both have to happen inside a gesture the page itself saw, and a
+    -- press routed through the engine is not one. The rectangle travels in
+    -- page points, which is what the shell lays out in.
     M.link_dom = string.format("%.1f,%.1f,%.1f,%.1f,%s",
-        left / F.density, (cy - kh / 2) / F.density,
-        (x + w - left) / F.density, kh / F.density,
+        bx / F.density, y / F.density, bw / F.density, bh / F.density,
         "vwshare:" .. v.invite)
 end
 
@@ -5466,14 +5483,14 @@ function pages.friends(v, x, y, w, h, focused)
         BAND = BAND + #hits * rh + 6 * F.scale
     end
 
-    -- --- the sections, scrolling under it, and the key under them
+    -- --- the sections, scrolling under it, and the band under them
     local top = y + BAND
-    -- The page's own floor: everything below it belongs to the invite key,
+    -- The page's own floor: everything below it belongs to the invite band,
     -- which is pinned there whatever the list does. No address to hand out
-    -- means no key and no floor: the page has the whole panel, rather than
-    -- fifty points of nothing under a key that could not do anything.
+    -- means no band and no floor: the page has the whole panel, rather than
+    -- fifty points of nothing under a band that could not do anything.
     local foot = (v.invite and v.invite ~= "")
-        and pages.INVITE_H * F.scale or 0
+        and pages.BAND_H * F.scale or 0
     local floor = y + h - foot
     -- Two heights, because the two rows say different amounts. A received add
     -- carries a line about when it arrived and two keys; a friend carries a
@@ -5612,18 +5629,18 @@ function pages.friends(v, x, y, w, h, focused)
 
     -- Nothing at all, which is a different page from a page with one empty
     -- section on it. Under the field rather than instead of it: the field is
-    -- how somebody with no friends gets their first one, and the key at the
+    -- how somebody with no friends gets their first one, and the band at the
     -- foot is how they get one who has never played.
     if #(v.rows or {}) == 0 and v.empty then
         empty_state(x, top, w, floor - top, v.empty)
     end
 
-    if foot > 0 then pages.invite_banner(v, x, floor, w) end
+    if foot > 0 then pages.invite_banner(v, floor) end
 
-    -- The room the list has is the room above the key, so a page that would
+    -- The room the list has is the room above the band, so a page that would
     -- have just fitted scrolls rather than running its last row under it.
     --
-    -- No breathing room past the last row: the key at the foot is the
+    -- No breathing room past the last row: the band at the foot is the
     -- breathing room now, and sixteen points of nothing under the list is
     -- sixteen points the scroll has to travel and cannot show. On a window
     -- short enough to hold one row that was the difference between reaching
@@ -5925,6 +5942,12 @@ end
 -- the middle of the list.
 local STAGE_TOP = 30
 
+-- And how much the foot of the stage keeps back for the one line drawn across
+-- it, on the frames where there is one. On `pages` rather than beside
+-- STAGE_TOP because this file is at the two hundred locals a Lua chunk may
+-- hold. See client/tests/upvalues_test.lua.
+pages.FOOT_LINE = 26
+
 -- The strip down the left of the stage that the type does not enter. The mark
 -- on the row you are already in sits there, off the column rather than in it,
 -- and it is what gives a lit row its left margin.
@@ -6072,7 +6095,12 @@ function pages.pilot(v, x, y, w, h, focused)
     -- same room holds the password and the way out as a pair, and nothing
     -- has to say which state the account is in: the keys are the state.
     local fh = 36 * F.scale
-    local ky = y + h - fh - 6 * F.scale
+    -- Off the rail by the gutter the column keeps at its sides, which is the
+    -- one margin this drawer has. It was six points off a floor that stopped
+    -- forty short of the rule, so the pair stood in a strip of ground half
+    -- again as tall as the keys themselves: a foot that had come away from
+    -- the bottom of the panel it belongs to.
+    local ky = y + h - fh - 14 * F.scale
     if c.online and not c.claimed then
         local mid = x + w / 2
         local l2 = ky - 16 * F.scale
@@ -7302,22 +7330,36 @@ function M.menu(v)
     logo_y = hy + head / 2
     sx, sw = dx + margin, dock - 2 * margin
     sy = hy + head + 8 * F.scale
-    sh = ry_ - 14 * F.scale - sy
+    -- Down to the rail. The stage used to stop fourteen points short of it
+    -- and the room handed to a page took another twenty-six under that, so a
+    -- key pinned at the foot of a page stood forty points clear of the tab
+    -- row while the guest band beside it sat on the rule. Two of the three
+    -- things this menu pins at a foot are bands, and a band with a strip of
+    -- ground under it is a band that came loose. The page's floor is the rail
+    -- now, and what wants air above the rule asks for it: see `room` below,
+    -- and the two pages that pin furniture of their own.
+    sh = ry_ - sy
     -- The guest banner: a band in the caution color standing on the rail,
     -- for a guest with something to lose, on every page but the one it
     -- points at. Words alone, and the whole band is the press. It takes its
     -- room off the page so no list runs underneath it.
+    --
+    -- The words stand in the column every page's type stands in rather than
+    -- against the panel's own margin, six points further out. The friends
+    -- page pins a band of the same shape, and where a guest opens that page
+    -- the two are stacked: two bands beginning on two different lines, under
+    -- a page beginning on a third.
     if v.banner then
-        local bh = 46 * F.scale
+        local bh = pages.BAND_H * F.scale
         sh = sh - bh
         local by = ry_ - bh
         rect(dx, by, dock, bh, pal.a(pal.CHARGE_COL, 0.08))
         F.layer:seg(dx, ry(by), dx + dock, ry(by), F.scale,
                     pal.a(pal.CHARGE_COL, 0.5), true)
-        txt("You are using a guest account.", dx + margin,
+        txt("You are using a guest account.", dx + MENU_PAD * F.scale,
             by + 16 * F.scale, 12.5 * F.scale, pal.a(pal.INK, 0.95), nil,
             MENU_FONT)
-        txt("Press here to set your password.", dx + margin,
+        txt("Press here to set your password.", dx + MENU_PAD * F.scale,
             by + 33 * F.scale, 10 * F.scale, pal.a(pal.DIM, 1))
         hit(dx, by, dock, bh, "pilot_page")
     end
@@ -7572,7 +7614,15 @@ function M.menu(v)
     -- than under the whole of what a list gets.
     local banded = v.kit or v.builds or v.newbuild or v.points or v.item
     local top = sy + ((v.head or banded) and 10 or STAGE_TOP) * F.scale
-    local room = sh - (top - sy) - 26 * F.scale
+    -- And the room under it is the rest of the stage, less the one line
+    -- drawn across the foot of it. That line is a refusal on the ship page or
+    -- a confirmation on the bindings page, both of them answers to a press
+    -- somebody just made, so nearly every frame of nearly every page has
+    -- nothing to put there. The room is kept back when there is something to
+    -- say rather than on every page forever, which is what it was: twenty-six
+    -- points of nothing at the bottom of every screen in the menu.
+    local room = sh - (top - sy)
+                 - ((v.note or v.foot) and pages.FOOT_LINE or 0) * F.scale
     -- A heading, on the one page that has one. The lit stop on the tab row is
     -- the title everywhere else, and it stops being one as soon as a page is
     -- about a thing you chose on the page before: over the kit it says
@@ -7843,7 +7893,10 @@ function M.menu(v)
         -- would capitalise each line it was handed and a wrapped sentence
         -- would come out with a capital in the middle of itself.
         local lines = wrapped(cased(said), px, sw - 8 * F.scale)
-        local fy = sy + sh - 4 * F.scale - (#lines - 1) * 16 * F.scale
+        -- Standing in the room `room` kept back for it, which is measured
+        -- from the rail: the stage runs to the rule now, so a line four
+        -- points off the end of it would be drawn half under the tab row.
+        local fy = sy + sh - 14 * F.scale - (#lines - 1) * 16 * F.scale
         for _, line in ipairs(lines) do
             txt(line, tx, fy, px, col, nil, nil, true)
             fy = fy + 16 * F.scale

@@ -1,0 +1,9 @@
+name: "vw_skyglow"
+tags: "vwskyglow"
+vertex_program: "/render/vector.vp"
+fragment_program: "/render/vector.fp"
+vertex_space: VERTEX_SPACE_LOCAL
+vertex_constants {
+  name: "mtx_worldviewproj"
+  type: CONSTANT_TYPE_WORLDVIEWPROJ
+}

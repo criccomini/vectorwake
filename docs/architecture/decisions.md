@@ -3728,6 +3728,10 @@ map, which is wallpaper in the corner of the screen for three minutes. At a
 quarter and two fifths of the camera's rate they arrive and leave as you fly,
 which is what lets a side be told to regroup under the comet.
 
+The sky draws under the map, in two passes of its own that the render script
+puts before the wall interiors. That is where its occlusion comes from: a wall
+interior is opaque and is drawn on top, so the sky behind it is not there.
+
 **Why:** the old field was correct and boring. It had real depth in it, from
 parallax that costs nothing to store, and nothing to look at: a flat sprinkle
 over a flat black, the same in every room of every zone. The constraint that
@@ -3738,13 +3742,24 @@ there. So the clouds stay faint enough to read as distance, the sun is dim and
 thrown far enough out to sit at the rim of the view instead of over the fight,
 and the band's grain is no brighter than the far stars already were.
 
+That pass order is a correction rather than the original plan. The sky shipped
+sharing the fill layer with everything else, over the wall interiors, and each
+star asked the core whether it stood on a solid tile so it could take itself
+out of the drawing. That works for a star and cannot work for a sun: two
+hundred pixels of set piece is over a wall and behind it at the same time, and
+no single answer about its center covers that, so the sun and the comet drew
+straight over the map. Under the map the question does not come up, the clip is
+to the wall's real edge rather than to the tile it stands in, and the eight
+hundred and seventy crossings into the core the culling cost every frame are
+gone with it.
+
 The band is the one that had to be argued with twice. Written with a half
 width of eight hundred pixels it put the whole window inside itself, which
 draws as a starfield with the density turned up rather than as a band; it
 needs to end somewhere inside the window, with plain sky on both sides. And it
-is the expensive part: the whole sky costs 0.63 ms a frame in plain Lua at
+is the expensive part: the whole sky costs 0.52 ms a frame in plain Lua at
 1280 by 800 against 0.20 before, and reserves about half a megabyte of vertex
-buffer on a laptop against two hundred kilobytes. Four percent of a frame at
+buffer on a laptop against two hundred kilobytes. Three percent of a frame at
 sixty is a fair price for the room looking like somewhere.
 
 **Reconsider if:** a zone wants a sky of its own rather than one derived from
@@ -3752,3 +3767,57 @@ its map names, which is the open question identity.md already carries about
 how much a zone gets to change. Or if the band's grain turns up in a profile
 on a real phone, where the crossings into the core to ask what is behind each
 star are the part that would show first.
+
+## 80. What the menu pins at a foot stands on the rail
+
+**Status:** accepted
+
+**Decision:** the column's page runs down to the rule the tab row hangs
+under, and the three things pinned at the foot of it are drawn against that
+rule: the guest warning, the friends page's invite, and the pilot page's
+account keys.
+
+The invite becomes a band of the guest warning's shape. Edge to edge of the
+column, standing on the rail, a line saying what the press is for over a line
+saying to press, the whole of it the target, and the browser's share anchor
+laid over the whole of it rather than over a key inside it. Both bands are 46
+points tall and both begin their words in the column every page's type stands
+in. The color is what tells them apart where a guest opens the friends page
+and gets both: gold warns, green offers.
+
+The keys at the foot of the pilot page stay keys, because a full-width band
+that is really two buttons is neither. They clear the rule by the twenty
+points the column keeps at its sides, which is the only margin this drawer
+has.
+
+**Why:** the guest warning sat on the rule and the other two stood forty
+points clear of it, which on a phone looks like furniture that has come away
+from the bottom of the panel it belongs to. The forty points were two numbers
+nobody had put beside each other. The stage stopped fourteen points short of
+the rail, and the room handed to a page took another twenty-six under that for
+the one line of notice drawn across the foot of the stage. That line is a
+refusal on the ship page or a confirmation on the bindings page, both of them
+answers to a press somebody just made, so nearly every frame of nearly every
+page had nothing to put there and paid for it anyway. The reservation is taken
+when there is something to say, and the pages get the rest.
+
+The invite had a second problem the spacing was hiding. It was a labeled key
+floating over a rule with the page's own ground under it, which reads as the
+last row of a list that has run out rather than as the foot of the panel, and
+it was the only thing in the menu shaped that way.
+
+**Cost:** two bands stacked is a lot of foot for one page, and the friends
+page is where it happens. A guest with something to lose loses 92 points of
+list to them on the one page whose list is the point. The alternative is
+suppressing one of the two, and neither is the one to suppress: the warning is
+about an account that can be swept, and the band under it is the page's only
+answer to an empty friends list.
+
+The one-line notice can now move a page. A frame that has something to say
+pulls the foot up 26 points for as long as it says it, where before the room
+was always missing and nothing ever moved. What that trades is a permanent
+strip of nothing for a rare step under a sentence somebody just caused.
+
+**Reconsider if:** the two bands on the friends page prove to be one too many
+in a real hand, at which point the invite is the one that gives way, since the
+empty state above it already offers the same act in words.
