@@ -115,6 +115,30 @@ check("the band ends somewhere", least == 0,
 print(string.format("   across the map the band ran from %d grains to %d",
                     least, most))
 
+-- --- the sky does not stop where the map does ------------------------------
+
+-- Past a map's declared edge the core answers solid for every tile, because
+-- that is what closes the world to a hull. The sky used to read that answer
+-- and take itself out of the drawing, so a pilot flying the corner of a room
+-- saw the field end at the outer wall with nothing but cloud beyond it. It
+-- draws under the map now and asks the core nothing, which is what this holds:
+-- with every tile solid, a camera outside the room still gets a sky.
+local closed = {
+    solid = function() return true end,
+    map_size = function() return 160, 160 end,
+}
+local open = _G.sim
+_G.sim = closed
+world.sky_seed("drydock")
+local out = recorder()
+world.stars(out, out, MID + 3000, MID + 3000, HW, HH)
+out = recorder()
+world.stars(out, out, MID + 3000, MID + 3000, HW, HH)
+_G.sim = open
+check("a sky the core calls solid is still drawn", #out.log > 200,
+      "drew " .. #out.log .. " pieces past the edge of the map")
+print(string.format("   outside the room, %d pieces of sky", #out.log))
+
 -- --- dust knows flying from being moved ------------------------------------
 
 -- Same camera both times, so every other layer draws exactly the same thing
