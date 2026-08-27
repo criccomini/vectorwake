@@ -3728,6 +3728,16 @@ map, which is wallpaper in the corner of the screen for three minutes. At a
 quarter and two fifths of the camera's rate they arrive and leave as you fly,
 which is what lets a side be told to regroup under the comet.
 
+The sun throws a lens flare, which is the one thing here that is not out in the
+world: a flare happens inside the camera, so its ghosts are laid out on the
+frame rather than in the sky, sitting on the line from the sun through the
+middle of the view. They are hexagons because a six-bladed iris is a hexagon,
+warm on the sun's side of the middle and cool past it. The chain swings about
+that middle as the sun crosses the frame, passes through it and comes out the
+other side, and goes out as the sun leaves. It draws on the sky's own layer
+with everything else, so a wall cuts it: over the map would be truer to a
+camera and would put bright geometry across the fight.
+
 The sky draws under the map, in two passes of its own that the render script
 puts before the wall interiors. That is where its occlusion comes from: a wall
 interior is opaque and is drawn on top, so the sky behind it is not there.
