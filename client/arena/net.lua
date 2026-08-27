@@ -774,9 +774,10 @@ end
 
 -- What a finished Ladder life was, in the mode's own words rather than in the
 -- byte it arrives as. Three values, because a single-life rung can also be
--- drawn: both pilots died on the same tick and the rung is replayed. Named
--- here for the same reason a rating becomes a tier here, which is that the
--- wire is where a number stops being a number.
+-- drawn: both pilots died inside the two seconds a duel stays open after the
+-- first of them, and the rung is replayed. Named here for the same reason a
+-- rating becomes a tier here, which is that the wire is where a number stops
+-- being a number.
 local LEG_RESULT = {[0] = "lost", [1] = "cleared", [2] = "drawn"}
 
 -- The clock and the score. Replaces whatever was held rather than queueing,
