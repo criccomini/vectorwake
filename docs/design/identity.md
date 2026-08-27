@@ -110,8 +110,8 @@ constraints that shaped the original's art.
 washes beneath everything, clouds drawn as runs of knots rather than round
 smudges, a band of fine grain along one diagonal, three depths of star in four
 temperatures with a rare one burning, a sun and a comet anchored in the map,
-and a near layer of dust that streaks along the camera's own motion. Nothing is
-stored. Every part of it is hashed from position, so a map twice the size costs
+the flare the sun throws inside the camera, and a near layer of dust that
+streaks along the camera's own motion. Nothing is stored. Every part of it is hashed from position, so a map twice the size costs
 the same, and the band and the set pieces are placed from the map's name, so a
 room has a sky of its own and the same one every time it is played.
 

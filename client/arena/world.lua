@@ -547,6 +547,61 @@ local SUN_CORE = pal.a(pal.rgb(0xfff4e0), 0.50)
 local SUN_MID = pal.a(pal.rgb(0xffe6bc), 0.13)
 local SUN_WIDE = pal.a(pal.rgb(0xffd7a0), 0.06)
 local SUN_FLARE = pal.a(pal.rgb(0xffeac6), 0.18)
+-- And the flare, which is the one thing in this file that is not out there in
+-- the world at all. A flare is what happens inside the camera when a bright
+-- light is pointed at it, so it is laid out on the screen rather than in the
+-- sky: the ghosts are the aperture repeated down the line from the light
+-- through the middle of the view, which is where a real iris throws them, and
+-- they are hexagons because a six-bladed iris is a hexagon. Warm on the
+-- light's side of the middle, cool past it, the way the coatings split it.
+--
+-- It draws on the sky's own layer, under the map, with everything else. Over
+-- the map would be truer to what a camera does, and it would put bright
+-- geometry across the fight, which is the line identity.md draws and the same
+-- reason the sun is thrown out to the rim in the first place. Under the map a
+-- ghost only shows where there is sky to see it through, which reads as light
+-- coming through rather than as a mistake.
+local IRIS_SEGS = 6
+local FLARE_WARM = pal.rgb(0xffd9a4)
+local FLARE_COOL = pal.rgb(0x9fc4ff)
+local FLARE_IRIS = pal.rgb(0xc7a8ff)
+-- Where each ghost sits along the line, how big it is, how thick a ring, and
+-- what color. `w` of nil is a filled one. Past 1 is the far side of the
+-- middle of the screen.
+--
+-- Mostly filled, because a filled one is solid at its middle and gone at its
+-- rim, which is what a ghost looks like. Drawn as outlines they were crisp
+-- hexagons hanging in open space, and a crisp hexagon in this game is a thing
+-- in the room rather than a smudge on the lens. The two that keep an outline
+-- are the aperture sitting on the sun, where it is read against the light, and
+-- the wide faint one at the far end, dim enough to be a whisper.
+local FLARE = {
+    {t = 0.00, r = 27, w = 1.5, col = pal.a(FLARE_WARM, 0.15)},
+    {t = 0.30, r = 8, col = pal.a(FLARE_WARM, 0.10)},
+    {t = 0.55, r = 20, col = pal.a(FLARE_COOL, 0.06)},
+    {t = 0.80, r = 5, col = pal.a(FLARE_WARM, 0.09)},
+    {t = 1.16, r = 15, col = pal.a(FLARE_IRIS, 0.055)},
+    {t = 1.44, r = 33, w = 1.6, col = pal.a(FLARE_COOL, 0.035)},
+    {t = 1.78, r = 10, col = pal.a(FLARE_WARM, 0.07)},
+}
+-- Where the flare comes up and where it is gone, as the sun's distance from
+-- the middle of the view in half extents: lit while it is inside the frame,
+-- out by the time it has left. A ghost is only legible as a ghost while the
+-- light throwing it is on screen to be read against, and a lone hexagon over
+-- an empty corner is a piece of debris rather than a flare, which is what a
+-- looser gate than this one actually drew.
+local FLARE_IN = 0.85
+local FLARE_OUT = 1.02
+
+-- One table for every color this file dims on the way past. The layer reads a
+-- color during the call and keeps no reference to it, which is the bargain
+-- fx.lua's own scratch relies on.
+local dimmed = {0, 0, 0, 0}
+local function fade_to(col, a)
+    dimmed[1], dimmed[2], dimmed[3], dimmed[4] = col[1], col[2], col[3], a
+    return dimmed
+end
+
 local COMET = {k = 0.40, head = 4, tail = 280}
 local COMET_HEAD = pal.a(pal.rgb(0xe4f4ff), 0.75)
 local COMET_GLOW = pal.rgb(0xbfe4ff)
@@ -655,16 +710,22 @@ local WIDE_VERTS = WIDE_SEGS * 3
 local SEG_VERTS = 12
 local BLOOM_VERTS = 18
 M.STAR_VERTS, M.HALO_SEGS, M.WIDE_SEGS = STAR_VERTS, HALO_SEGS, WIDE_SEGS
+-- The iris the flare's ghosts are cut from, published for the same reason.
+M.IRIS_SEGS = IRIS_SEGS
 
--- Room for everything in the world that is not a star, in vertices, on each
--- of the two per-frame layers.
+-- Room for everything in the world that is not sky, in vertices, on each of
+-- the two per-frame layers.
 --
--- Unlike the starfield these do not follow the window: what fills them is
--- hulls, bolts and blasts, and how many of those are on screen is a
--- property of the room. Sixty-four seats of detailed hull is past the glow
--- figure already and always has been; see the ceiling note where the layers
--- are made.
-local FILL_FIGHT = 3072
+-- Unlike the sky these do not follow the window: what fills them is hulls,
+-- bolts and blasts, and how many of those are on screen is a property of the
+-- room. Sixty-four seats of detailed hull is past the glow figure already and
+-- always has been; see the ceiling note where the layers are made.
+--
+-- The fill figure carries its own headroom now. It used to be an allowance
+-- added on top of a sky several times its size, so the layer it sized was
+-- never anywhere near full; standing alone against a heavy frame's measured
+-- 2.8k it would have been a couple of hundred vertices of margin.
+local FILL_FIGHT = 6144
 -- Grown when the trails and the wall light arrived: sixty-four ribbons at
 -- M.TRAIL_VERTS each and ten lights' worth of lit edges are about seven
 -- thousand vertices on a bad frame, and a glow layer that runs out does not
@@ -751,9 +812,14 @@ function M.star_cost(hw, hh)
     local nd = cell_count(hw, hh, DUST.cell)
     f = f + nd * STAR_VERTS
     g = g + nd * SEG_VERTS
-    -- The sun and the comet, which cost the same wherever the camera is.
+    -- The sun and the comet, which cost the same wherever the camera is, and
+    -- the flare's ghosts, priced as drawn: a ring is a quad a blade, a filled
+    -- one a triangle.
     g = g + HALO_VERTS + 2 * WIDE_VERTS + 4 * SEG_VERTS
     g = g + HALO_VERTS + BLOOM_VERTS + 2 * SEG_VERTS
+    for i = 1, #FLARE do
+        g = g + (FLARE[i].w and IRIS_SEGS * 6 or IRIS_SEGS * 3)
+    end
     return f, g
 end
 
@@ -950,6 +1016,27 @@ function M.stars(fill, glow, cam_x, cam_y, hw, hh)
     glow:seg_fade(sx + fl, sy, sx, sy, 0.5, 2.0, 0, 0.5, SUN_FLARE)
     glow:seg_fade(sx, sy - fl * 0.42, sx, sy, 0.5, 1.5, 0, 0.36, SUN_FLARE)
     glow:seg_fade(sx, sy + fl * 0.42, sx, sy, 0.5, 1.5, 0, 0.36, SUN_FLARE)
+    -- The ghosts, down the line from the sun through the middle of the view.
+    -- How far outside the view the sun has gone, in half extents, which is
+    -- what the flare fades on.
+    local ex = math.abs(sx - cam_x) / hw
+    local ey = math.abs(sy - cam_y) / hh
+    local edge = ex > ey and ex or ey
+    local vis = (FLARE_OUT - edge) / (FLARE_OUT - FLARE_IN)
+    if vis > 1 then vis = 1 end
+    if vis > 0 then
+        local gx, gy = cam_x - sx, cam_y - sy
+        for i = 1, #FLARE do
+            local F = FLARE[i]
+            local px, py = sx + gx * F.t, sy + gy * F.t
+            local col = fade_to(F.col, F.col[4] * vis)
+            if F.w then
+                glow:ring(px, py, F.r, F.w, IRIS_SEGS, col)
+            else
+                glow:halo(px, py, F.r, IRIS_SEGS, col)
+            end
+        end
+    end
     -- A tail is blown off a sun, so it is drawn away from this one rather than
     -- along any course of the comet's own. The two sit at different depths and
     -- drift against each other, which means the angle is worth recomputing

@@ -5,15 +5,20 @@
 -- The budget is watched next door in star_budget_test.lua, which asks whether
 -- the drawing fits. This asks whether it is the right drawing.
 --
--- Three claims, each of which broke at least once while it was being written.
--- A room's sky is the room's: placed from the map's name, so it is the same
+-- Five claims, every one of which broke at least once while it was written.
+--
+-- A room's sky is the room's, placed from the map's name, so it is the same
 -- every time that map is played and not the same as anybody else's. The band
 -- is a band rather than a density bump, which means there is somewhere you can
 -- stand and not be in it: the first version used a half width wider than the
--- window and the whole view was always inside it, which draws as a starfield
--- with the density turned up and nothing else. And the dust knows the
--- difference between flying and being put somewhere, because a camera that
--- teleports on a respawn would otherwise draw one frame of white rain.
+-- window, so the whole view was always inside it, which draws as a starfield
+-- with the density turned up and nothing else. The sky does not stop where the
+-- map does, because past a declared edge every tile answers solid and anything
+-- that reads that answer erases itself out there. The flare hangs off the
+-- middle of the frame rather than off anything in the world, which is what
+-- makes it a flare. And the dust knows the difference between flying and being
+-- put somewhere, because a camera that teleports on a respawn would otherwise
+-- draw one frame of white rain.
 
 package.path = "client/?.lua;" .. package.path
 
@@ -43,6 +48,10 @@ local function recorder()
     function L:halo(x, y, r, _, col)
         self.log[#self.log + 1] = string.format("h%.1f,%.1f,%.0f,%.3f",
                                                 x, y, r, col[4])
+    end
+    function L:ring(x, y, r, w, _, col)
+        self.log[#self.log + 1] = string.format("o%.1f,%.1f,%.0f,%.1f,%.3f",
+                                                x, y, r, w, col[4])
     end
     function L:seg_fade(x1, y1, x2, y2)
         self.segs = self.segs + 1
@@ -138,6 +147,62 @@ _G.sim = open
 check("a sky the core calls solid is still drawn", #out.log > 200,
       "drew " .. #out.log .. " pieces past the edge of the map")
 print(string.format("   outside the room, %d pieces of sky", #out.log))
+
+-- --- the flare hangs off the middle of the view ----------------------------
+
+-- A lens flare is not out in the sky, it is inside the camera: the ghosts sit
+-- on the line from the light through the middle of the frame, so the chain
+-- swings about that middle as the light crosses it and goes out when the light
+-- leaves. Anchored in the world instead they would drift along with the stars,
+-- which is the one thing a smudge on the lens never does, and nothing else in
+-- this file would notice.
+local function ghosts(cx, cy)
+    local seen = {}
+    local L = {}
+    function L:rect() end
+    function L:seg_fade() end
+    function L:bloom() end
+    function L:halo(x, y, _, segs)
+        if segs == world.IRIS_SEGS then seen[#seen + 1] = {x - cx, y - cy} end
+    end
+    function L:ring(x, y, _, _, segs)
+        if segs == world.IRIS_SEGS then seen[#seen + 1] = {x - cx, y - cy} end
+    end
+    world.stars(L, L, cx, cy, HW, HH)
+    return seen
+end
+
+world.sky_seed("drydock")
+local chain = ghosts(MID, MID)
+check("the sun throws a chain of ghosts", #chain >= 5,
+      "drew " .. #chain .. " of them")
+
+-- The first is the aperture, drawn on the sun itself, so everything else is
+-- measured against where that sits.
+local sun = chain[1] or {0, 0}
+local bent = nil
+for i = 2, #chain do
+    local g = chain[i]
+    -- Zero cross product against the sun's own offset means on the line.
+    local cross = sun[1] * g[2] - sun[2] * g[1]
+    if not bent and (cross > 0.5 or cross < -0.5) then bent = i end
+end
+check("every ghost is on the line from the sun through the middle",
+      bent == nil, "ghost " .. tostring(bent) .. " is off it")
+
+local swung = ghosts(MID + 1600, MID)
+local across = math.abs((swung[1] or {0})[1] - sun[1])
+check("flying swings the chain", across > 200,
+      "the sun moved " .. string.format("%.0f", across) .. " across the frame")
+
+-- Away from the sun rather than past it: fly far enough along its own bearing
+-- and it comes back into frame on the other side, which is right and is not
+-- what this is asking about.
+local gone = ghosts(MID, MID + 3000)
+check("a flare goes out with the light that throws it", #gone == 0,
+      "still drew " .. #gone .. " with the sun off the frame")
+print(string.format("   the chain swings %.0f px across the frame over 1600" ..
+                    " of flight", across))
 
 -- --- dust knows flying from being moved ------------------------------------
 
