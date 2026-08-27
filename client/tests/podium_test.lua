@@ -37,8 +37,7 @@ for _, name in ipairs({"arc", "disc", "flush", "frame", "halo", "outline", "quad
 end
 
 -- Rectangles are kept as well as counted, because one question here is
--- whether a box covers a drawing rather than whether a drawing happened:
--- the LINK bars are rects, and a toggle that misses them is the fault.
+-- whether a box covers a drawing rather than whether a drawing happened.
 -- Bottom-up, the way the mesh takes them.
 local rects = {}
 layer.rect = function(self, x, y, w, h)

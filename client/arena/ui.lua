@@ -82,9 +82,9 @@ M.stage_cols = 4
 -- Which pilot is being read about, by ship index, or nil. One at a time: this
 -- answers "who is that", and two of them open at once is a filing cabinet.
 M.inspect = nil
--- The connection, in numbers, behind the link bars. Off by default and not in
--- the menu, because it is for whoever is working on the client rather than for
--- whoever is flying.
+-- The connection, in numbers, behind the link bars in the menu's head. Off by
+-- default and on no page, because it is for whoever is working on the client
+-- rather than for whoever is flying.
 M.debug = false
 -- Whether the rooms panel is down. Its key lives in the corner beside PLAYERS,
 -- and like PLAYERS it opens a panel here rather than walking into the menu.
@@ -1022,13 +1022,14 @@ function TOP.mid()
     return F.safe_t + PAD * F.scale + KEY_H * F.scale / 2
 end
 
--- Where the link cluster starts, which is where the row's right end is. Asked
--- by the readout for its own press box and by the clock band for how far it
--- is allowed to grow, so it is worked out once rather than twice.
-function TOP.link_left()
+-- Where the row ends, which is what the clock band may grow into.
+--
+-- It used to stop short of the link bars, which stood in this corner and are
+-- in the menu's head now. Nothing is out here any more, so the band grows to
+-- the same padding every other instrument keeps from the edge.
+function TOP.row_right()
     local pad = (M.compact and 8 or PAD) * F.scale
-    return F.w - F.safe_r - pad - 34 * F.scale
-        - text_w("LINK", (FONT - 3) * F.scale)
+    return F.w - F.safe_r - pad
 end
 
 -- The line the tile readout takes under the dial on a phone, and nothing on a
@@ -1141,7 +1142,9 @@ local function radar(cx, cy, me)
     --
     -- A faint wash stays, because dots over a starfield are dots lost in a
     -- starfield -- but it is a wash rather than a panel.
-    -- Under the link readout, which owns the top right corner now.
+    -- The whole corner is the dial's. The link bars used to stand in the strip
+    -- above it and are in the menu's head now, so the only thing that strip
+    -- still holds is this instrument's own caption on a phone.
     local ix, iy, r = dial()
     rect(ix, iy, r, r, pal.a(pal.RADAR_BG, 0.55))
     -- The dial is the way in to the map: a thing you point at to see more of
@@ -1630,8 +1633,7 @@ local function band_type()
 end
 
 -- The top row's own line, at every window size. The way into the menu is at
--- the left of it and the link bars are at the right, and the band is what
--- stands between them.
+-- the left of it, and the band is what stands to the right of that.
 --
 -- A phone dropped it a line for a while. The band is centered and grows
 -- outward with two names and two numbers, and the top right of a 390-point
@@ -1639,9 +1641,10 @@ end
 -- rival's name was drawn straight through the coordinates. The line under the
 -- row is where the dial is, though, so what that bought was the same
 -- collision against a bigger instrument, and it cost the one alignment the
--- row is for. The tile readout went under the dial instead (see `coords`) and
--- a side with nowhere left to grow drops its name rather than the whole band
--- dropping a line (see `match_clock`).
+-- row is for. The tile readout went under the dial instead (see `coords`),
+-- the bars went into the menu's head (see `pages.link`), and a side with
+-- nowhere left to grow drops its name rather than the whole band dropping a
+-- line (see `match_clock`).
 local function band_top()
     return F.safe_t + PAD * F.scale
 end
@@ -3513,61 +3516,6 @@ local function menu_button(on_air, watch, room, landed)
     TOP.chip_right = cx - KEY_GAP * F.scale
 end
 
--- How good the line is, above the dial. It belongs up here with the
--- instrument rather than down in the corner with what the ship is carrying:
--- it is a fact about the connection, not about the ship.
---
--- Four bars from the connection's smoothed quality. It replaces
--- "online  err 0.0 / 1 px", which was the client's own debugging left on a
--- player's screen: nobody flying has ever made a decision on a prediction
--- error in pixels.
-local function link(q)
-    local pad = (M.compact and 8 or PAD) * F.scale
-    local right = F.w - F.safe_r - pad
-    local mid = TOP.mid()
-    -- The bars are one block on the row rather than four things each centered
-    -- on it. A meter is a staircase standing on a floor, so the floor is what
-    -- gets placed: the tallest bar is centered and the rest rest on its line.
-    local tall = (3 + 3 * 2.6) * F.scale
-    local foot = mid + tall / 2
-    for k = 0, 3 do
-        local bh = (3 + k * 2.6) * F.scale
-        local bx = right - (26 - k * 6) * F.scale
-        rect(bx, foot - bh, 4 * F.scale, bh,
-             k < q and pal.a(pal.PAID, 0.85) or pal.a(pal.DIM, 0.22))
-    end
-    txt("LINK", right - 34 * F.scale, mid, (FONT - 3) * F.scale,
-        pal.a(pal.DIM, 0.8), "right")
-    -- Pointing at this one names nothing. Four bars labeled LINK beside a
-    -- millisecond count are already a sentence about the connection, and a
-    -- word saying so is the interface reading its own label back.
-    -- The bars are the readout a player wants and the whole of it. Everything
-    -- behind them is for whoever is working on this, so it hides behind the
-    -- one thing on screen that is already about the connection.
-    --
-    -- What answers that press is the whole cluster and the strip it stands
-    -- in. It was 46 by 20 points hung off the right edge, which covered the
-    -- four bars and the last quarter of the word beside them: three quarters
-    -- of the only thing on screen labeled LINK did nothing when pressed,
-    -- and twenty points is half the height a thumb is usually given. It also
-    -- took its top from the window while the drawing took it from the safe
-    -- area, so a phone with an island drew the readout below the box meant
-    -- to open it.
-    --
-    -- The strip above the dial is reserved for this readout already, so the
-    -- box takes all of it: from the word's left edge to the screen's own,
-    -- and from the top of the safe area down to where the dial starts. The
-    -- corner does as much work as the size, since a thumb aimed there cannot
-    -- overshoot upward or to the right off the screen. Taller would mean
-    -- taking a strip off the dial, which is the control that opens the map,
-    -- and one control does not get to eat another.
-    if not F.menu_up then
-        local _, dial_y = dial()
-        local x0 = TOP.link_left() - 6 * F.scale
-        hit(x0, F.safe_t, F.w - x0, math.max(dial_y - F.safe_t, 24 * F.scale), "debug")
-    end
-end
-
 -- The connection in numbers, for whoever is debugging it.
 --
 -- Deliberately plain: labeled lines of text, no instrument, no color doing
@@ -3699,12 +3647,12 @@ local function debug_hud(o, top)
             pal.a(pal.INK, 0.9), "right")
     end
     -- The way out is the thing itself. What opens this is the LINK bars in
-    -- the far corner, which is a fine place to keep a switch nobody needs
-    -- and a poor place to look for one: on a phone the readout lands under
-    -- the dial, a screen's width from the four bars that put it there, and a
-    -- player who has finished reading it has no reason to think the answer
-    -- is back up in the corner. So a press anywhere on the panel closes it,
-    -- which is what every other slab of text in this interface does.
+    -- the menu's head, which is a fine place to keep a switch nobody needs
+    -- and a poor place to look for one: the readout lands under the dial with
+    -- the panel that opened it shut over the top of it, and a player who has
+    -- finished reading it has no reason to think the answer is back inside
+    -- the menu. So a press anywhere on the panel closes it, which is what
+    -- every other slab of text in this interface does.
     --
     -- Filed here rather than beside the bars, because it is this rectangle,
     -- and it is this rectangle only once the wrapping above has decided how
@@ -3722,11 +3670,12 @@ end
 -- long that nobody can hold in their head or call across a room.
 --
 -- The strip above the dial is the top row, and a phone's is 390 points with
--- the way into the menu at one end, the link bars at the other and the clock
--- band between them. Room for two of those three, and this is the third: it
--- is the one thing up there the radar under it already says, so it goes and
--- reads as that instrument's caption instead. On a monitor the row has the
--- width for all of it and nothing moves.
+-- the way into the menu at one end and the clock band beside it. This is the
+-- one thing up there the radar under it already says, so it goes and reads as
+-- that instrument's caption instead. On a monitor the row has the width for
+-- both and nothing moves. It stayed under the dial when the link bars left
+-- the corner: what it collides with at 390 points is the band, which grows
+-- from the middle, and that is unchanged.
 local function coords(me, boarded)
     if not me then return end
     -- Not while the board is up over it. On a phone this hangs off the dial's
@@ -3939,12 +3888,14 @@ local function match_clock(o, m, names, alone)
         -- the numbers that matter sit against the numerals they are read with.
         --
         -- And only as far as the row lets it. The band is centered and grows
-        -- with whatever the sides are called, and the two things it grows
-        -- toward are controls: a call sign runs to twenty four characters, and
-        -- on a phone that reached the link bars at one end and the way into
-        -- the menu at the other. A name with nowhere to go is dropped, the way
-        -- the ending's bar drops one that will not fit its share. The number
-        -- under it always draws: it is the reading, and it is four characters.
+        -- with whatever the sides are called, and what it grows toward on the
+        -- left is a control: a call sign runs to twenty four characters, and on
+        -- a phone that reached the way into the menu. To the right there is
+        -- nothing left to reach but the edge of the screen, since the link
+        -- bars that used to stand there are in the menu's head. A name with
+        -- nowhere to go is dropped, the way the ending's bar drops one that
+        -- will not fit its share. The number under it always draws: it is the
+        -- reading, and it is four characters.
         local edge, pivot, room
         if i == 1 then
             edge = F.w / 2 - half - (M.compact and 14 or 22) * F.scale
@@ -3953,7 +3904,7 @@ local function match_clock(o, m, names, alone)
         else
             edge = F.w / 2 + half + (M.compact and 14 or 22) * F.scale
             pivot = nil
-            room = TOP.link_left() - KEY_GAP * F.scale - edge
+            room = TOP.row_right() - KEY_GAP * F.scale - edge
         end
         if label ~= "" and text_w(label, name_px) > room then label = "" end
         local wide = math.max(label ~= "" and text_w(label, name_px) or 0,
@@ -4483,8 +4434,8 @@ end
 -- place, and the same MENU in the same corner, so when the stands arrive the
 -- only thing that happens is that the room and the key appear. Nothing already
 -- on screen moves. The instruments a watcher gets are all about a room this
--- client has not found yet, so the radar, the coordinates, the link bars and
--- the roster are simply absent rather than drawn empty.
+-- client has not found yet, so the radar, the coordinates and the roster are
+-- simply absent rather than drawn empty.
 --
 -- What used to be here was a lockup centered in the window, which was the
 -- loading screen held one beat longer and read as a third screen between the
@@ -4616,15 +4567,14 @@ function M.hud(o)
     -- whole thousand tiles, so it stands where the radar stands rather than
     -- somewhere else with the radar still lit beside it.
     -- The dial's corner, and nothing in it while the drawer is over it. On a
-    -- phone the drawer is the whole window, so the radar, the link bars and
-    -- the coordinates were all drawn through the panel standing on top of
-    -- them. On a monitor the drawer is 390 points of 1440 and never reaches
-    -- this corner, so nothing there changes: the question is the overlap
-    -- rather than whether a menu is open. See `M.drawer_over`.
+    -- phone the drawer is the whole window, so the radar and the coordinates
+    -- were both drawn through the panel standing on top of them. On a monitor
+    -- the drawer is 390 points of 1440 and never reaches this corner, so
+    -- nothing there changes: the question is the overlap rather than whether a
+    -- menu is open. See `M.drawer_over`.
     local dial_x = dial()
     if not M.drawer_over(dial_x, F.w - dial_x) then
         if M.map then overview(me) else radar(o.cam_x, o.cam_y, me) end
-        link(o.link_bars or 4)
         -- The roster is the board a press on the band opens, and the whistle
         -- brings up the same panel without being asked. Either is a board over
         -- the corner this readout drops into on a phone.
@@ -7077,6 +7027,11 @@ function M.wordmark(x, y, size)
         MENU_FONT, true)
 end
 
+-- How tall a control on the head's line stands. The account button sets it,
+-- and the link readout beside it takes its press box from the same number, so
+-- the two answer over one band rather than each guessing at a height.
+pages.HEAD_KEY = 30
+
 -- The button at the far end of the top line: who you are signed in as.
 --
 -- It had the way out to the community beside it, on every layout, until the
@@ -7091,7 +7046,7 @@ end
 -- onto a table, since a table is one name however much it holds. See
 -- client/tests/upvalues_test.lua.
 function pages.corner(v, right, cy)
-    local bh = 30 * F.scale
+    local bh = pages.HEAD_KEY * F.scale
     local by = cy - bh / 2
     local rt = right
     if not (v.pilot and v.pilot.name and v.pilot.name ~= "") then
@@ -7120,6 +7075,75 @@ function pages.corner(v, right, cy)
         MENU_FONT, true)
     hit(bx, by, bw, bh, "pilot_page")
     return bx
+end
+
+-- How good the line is, to the left of the account button in the head.
+--
+-- Four bars from the connection's smoothed quality, with the word beside
+-- them. It replaces "online  err 0.0 / 1 px", which was the client's own
+-- debugging left on a player's screen: nobody flying has ever made a decision
+-- on a prediction error in pixels.
+--
+-- It stood in the top right of the arena for a long time, above the dial. That
+-- corner belongs to the dial, and a connection is not a thing that happens in
+-- the arena: it is a fact about this client, like the call sign beside it and
+-- the wallet behind that, and the head of the menu is where this game keeps
+-- those. What the corner bought was four bars on screen for every second of
+-- every match. Nobody asks that question while flying, and everybody asks it
+-- the moment the game stutters, which is a moment somebody opens the menu
+-- anyway.
+--
+-- `right` is the edge to hang it off, which is the account button's left, and
+-- `mid` is the line that button is centered on. `floor` is the far end of what
+-- the near side of the row is already holding. All three come from the caller
+-- because the head lays itself out from the right and this is one more thing
+-- in that row.
+--
+-- Returns the left edge it reached, the way `pages.corner` does, so anything
+-- put in this row later knows where the row already ends.
+function pages.link(q, right, mid, floor)
+    local px = LBL_PX * F.scale
+    local left = right - 34 * F.scale - text_w("LINK", px) - 6 * F.scale
+    -- Nothing at all, where the row has nowhere to put it. A call sign runs to
+    -- twenty four characters and the button carrying it grows with it, so on a
+    -- phone the longest one leaves this cluster standing over the x at the
+    -- other end of the head. `M.pick` answers on publish order and the head
+    -- publishes before the page does, so what that costs is not a crowded row:
+    -- it is the way out of the menu, taken by a readout. The band across the
+    -- top of the arena drops a side's name for the same reason and by the same
+    -- rule, and this is a readout rather than a name.
+    if left < floor then return right end
+    -- The bars are one block on the row rather than four things each centered
+    -- on it. A meter is a staircase standing on a floor, so the floor is what
+    -- gets placed: the tallest bar is centered and the rest rest on its line.
+    local tall = (3 + 3 * 2.6) * F.scale
+    local foot = mid + tall / 2
+    for k = 0, 3 do
+        local bh = (3 + k * 2.6) * F.scale
+        local bx = right - (26 - k * 6) * F.scale
+        rect(bx, foot - bh, 4 * F.scale, bh,
+             k < q and pal.a(pal.PAID, 0.85) or pal.a(pal.DIM, 0.22))
+    end
+    -- The register every group on every page is labeled in, since that is
+    -- what this is now: a small word naming the thing drawn beside it.
+    lbl("LINK", right - 34 * F.scale, mid, pal.a(pal.DIM, 0.8), "right", px)
+    -- Pointing at this one names nothing. Four bars labeled LINK beside a
+    -- millisecond count are already a sentence about the connection, and a
+    -- word saying so is the interface reading its own label back.
+    -- The bars are the readout a player wants and the whole of it. Everything
+    -- behind them is for whoever is working on this, so it hides behind the
+    -- one thing on screen that is already about the connection.
+    --
+    -- What answers that press is the whole cluster: the word, the bars, and
+    -- the head's full height around them. It was 46 by 20 points hung off the
+    -- right edge of the screen, which covered the bars and the last quarter of
+    -- the word beside them, so three quarters of the only thing on screen
+    -- labeled LINK did nothing when pressed. A cluster this small is under
+    -- what a fingertip is owed either way, and `M.pick` is what makes up the
+    -- difference.
+    local kh = pages.HEAD_KEY * F.scale
+    hit(left, mid - kh / 2, right - left + 6 * F.scale, kh, "debug")
+    return left
 end
 
 -- --- the whole thing -------------------------------------------------------
@@ -7540,7 +7564,18 @@ function M.menu(v)
     -- because the corner stack held that corner. The column covers the corner
     -- stack now, so this head is the only place it can be and it carries it
     -- whatever is behind the panel.
-    pages.corner(v, dx + dock - margin, logo_y)
+    local head_end = pages.corner(v, dx + dock - margin, logo_y)
+    -- And the state of the line just inside it. It used to stand in the top
+    -- right of the arena, which is the corner the dial owns; it is a fact
+    -- about this client rather than about the fight, so it belongs on the row
+    -- that already carries who you are. See `pages.link`.
+    --
+    -- What the near end of this line is holding is the way out, in the square
+    -- the menu key had at the same inset, and it is drawn below with the page
+    -- rather than here. The readout is told where that ends so it can stand
+    -- down rather than be laid over it.
+    pages.link(v.link_bars or 4, head_end - 10 * F.scale, logo_y,
+               dx + margin + (KEY_H + KEY_GAP) * F.scale)
     -- The x is at the other end of it, drawn below with the page it belongs
     -- to. Nothing between them: the wordmark sat there on every page of the
     -- menu, turning, a picture of a name everybody reading this screen has

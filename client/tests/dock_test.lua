@@ -29,6 +29,15 @@ end
 local harness = require("tests.ui_harness")
 local layer = harness.layer()
 
+-- The mesh is counted rather than drawn everywhere else in this file, and one
+-- question here is not about a count: the link meter in the head is four
+-- rectangles, and a press box that misses them is the fault. Kept bottom-up,
+-- the way the mesh takes them, and cleared with the text at the top of a frame.
+local rects = {}
+layer.rect = function(_, x, y, w, h)
+    rects[#rects + 1] = {x = x, y = y, w = w, h = h}
+end
+
 -- Eight seats, four a side, so the HUD behind the menu has a room to draw.
 local SEATS = {}
 for i = 0, 7 do
@@ -94,6 +103,7 @@ end
 local function frame(w, h, over)
     local st = package.loaded["arena.state"]
     st.n = 0
+    rects = {}
     ui.begin(layer, w, h, 1, false, 0)
     ui.hud({
         me = 0, watch = {subject = 0}, landing = true, side = 0,
@@ -116,6 +126,7 @@ end
 local function page(w, h, over)
     local st = package.loaded["arena.state"]
     st.n = 0
+    rects = {}
     ui.begin(layer, w, h, 1, false, 0)
     ui.menu(view(over))
     ui.finish()
@@ -231,6 +242,134 @@ check("a press on the fight beside it is the way out",
       press(1000, 400) == "close", tostring(press(1000, 400)))
 check("and a press on the column's own ground is not",
       press(120, 400) ~= "close", tostring(press(120, 400)))
+
+-- --- the state of the line, in the head ------------------------------------
+--
+-- The link meter stood in the top right of the arena, above the dial, for as
+-- long as there was a HUD to stand in. It is a fact about this client rather
+-- than about the fight, like the call sign it now sits beside, so it moved
+-- into the head of the panel that carries the rest of them.
+--
+-- Three things are worth pinning. It is on the head's line and inside the
+-- column, at every window, because a readout hung off the drawer's right edge
+-- would be drawn over the fight. It is to the left of the account button
+-- rather than through it, because both are laid out from the same end and
+-- neither is told about the other, which is exactly how the tab row and this
+-- same button once ran into each other. And the box it publishes covers the
+-- whole cluster, since the old one took the bars and the last quarter of the
+-- word and left most of the label dead.
+
+for _, shape in ipairs(SHAPES) do
+    local name, w, h = shape[1], shape[2], shape[3]
+    local st = page(w, h)
+    local word
+    for k = 1, st.n do
+        if st.text[k].s == "LINK" then word = st.text[k] end
+    end
+    local switch, acct = box("debug"), box("pilot_page")
+    check(name .. " draws the link readout in the head",
+          word ~= nil and switch ~= nil, "no LINK")
+    if word and switch and acct then
+        -- On the button's own line: the word is right-pivoted and stored
+        -- bottom-up, so it is flipped back through the window's height.
+        check(name .. " keeps it on the account button's line",
+              math.abs((h - word.y) - (acct.y + acct.h / 2)) < 1,
+              string.format("word at %.1f, button mid %.1f",
+                            h - word.y, acct.y + acct.h / 2))
+        check(name .. " puts it to the left of the account button",
+              switch.x + switch.w <= acct.x + 0.01,
+              string.format("cluster ends %.1f, button starts %.1f",
+                            switch.x + switch.w, acct.x))
+        -- Inside the column, which is docked to the left edge and is 390
+        -- points wide wherever there is room for it.
+        local dock = math.min(DOCK, w)
+        check(name .. " keeps the whole cluster inside the column",
+              switch.x >= -0.01 and switch.x + switch.w <= dock + 0.01,
+              string.format("%.1f..%.1f of %d", switch.x,
+                            switch.x + switch.w, dock))
+        -- And the press covers what it looks like: the word, and the four
+        -- bars beside it.
+        local wx1 = word.x
+        local wx0 = word.x - #word.s * word.px * (1233 / 2048)
+        check(name .. " covers the whole word with its press",
+              wx0 >= switch.x - 0.01 and wx1 <= switch.x + switch.w + 0.01,
+              string.format("word %.1f..%.1f, box %.1f..%.1f",
+                            wx0, wx1, switch.x, switch.x + switch.w))
+        -- The meter's own rectangles: four narrow ones on the head's line,
+        -- between the word and the button.
+        local bars = 0
+        for _, r in ipairs(rects) do
+            local top = h - (r.y + r.h)
+            if r.w < 8 and r.x > wx1 and r.x < acct.x
+                and top >= switch.y - 0.01 and top < switch.y + switch.h then
+                bars = bars + 1
+                check(name .. " has a bar at " .. math.floor(r.x)
+                          .. " inside the press",
+                      r.x >= switch.x - 0.01
+                          and r.x + r.w <= switch.x + switch.w + 0.01)
+            end
+        end
+        check(name .. " draws all four bars", bars == 4, bars .. " bars")
+    end
+end
+
+-- A press on it is the way into the numbers behind it, which is the one thing
+-- this cluster is a control for.
+do
+    page(1440, 810)
+    local switch = box("debug")
+    if switch then
+        check("a press on the cluster reaches the debug readout",
+              press(switch.x + switch.w / 2, switch.y + switch.h / 2)
+                  == "debug",
+              tostring(press(switch.x + switch.w / 2,
+                             switch.y + switch.h / 2)))
+    end
+end
+
+-- A call sign runs to twenty four characters and the button carrying it grows
+-- with it, so on a phone the longest one leaves nothing between that button
+-- and the x at the other end of the head. The readout goes rather than being
+-- laid over the way out: `M.pick` answers on publish order and the head
+-- publishes before the page does, so a cluster reaching that square would take
+-- the presses meant for it and strand a player inside the menu.
+do
+    local st = page(390, 844, {pilot = {name = string.rep("W", 24),
+                                        rivets = 310}})
+    local word
+    for k = 1, st.n do
+        if st.text[k].s == "LINK" then word = st.text[k] end
+    end
+    check("the longest call sign leaves no room and the readout goes",
+          word == nil and box("debug") == nil,
+          "the readout is still drawn")
+    local x = box("close")
+    check("and the way out is what a press on that square reaches",
+          x ~= nil and press(x.x + x.w / 2, x.y + x.h / 2) == "close",
+          x and tostring(press(x.x + x.w / 2, x.y + x.h / 2)) or "no x")
+end
+
+-- A head with no account button has nothing for the readout to sit inside, so
+-- it takes the end of the row itself rather than hanging off a control that
+-- was not drawn. `false` rather than nil: the view is merged with `pairs`, and
+-- a nil never reaches it to clear anything.
+do
+    local st = page(1440, 810, {pilot = false})
+    local word
+    for k = 1, st.n do
+        if st.text[k].s == "LINK" then word = st.text[k] end
+    end
+    local switch = box("debug")
+    check("a head with no account button still carries the readout",
+          word ~= nil and switch ~= nil, "no LINK")
+    check("and there is no button for it to run into",
+          box("pilot_page") == nil, "a call sign was drawn")
+    if switch then
+        check("and it stays inside the column",
+              switch.x + switch.w <= DOCK + 0.01,
+              string.format("ends %.1f of %d", switch.x + switch.w, DOCK))
+    end
+end
 
 -- --- the way in ------------------------------------------------------------
 --

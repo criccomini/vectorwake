@@ -201,12 +201,15 @@ end
 --
 -- The clock band and the dial's corner are the two instruments the menu does
 -- not otherwise stand down for, on the argument that a player reading a panel
--- still wants to know the time and the state of the line. On a phone the
--- drawer is the whole window and both were drawn straight through it.
+-- still wants to know the time and where the ship is. On a phone the drawer is
+-- the whole window and both were drawn straight through it.
 --
 -- The question each asks is the overlap, not whether a menu is open, so the
 -- answer differs by window: a phone held sideways has the drawer over the
 -- clock band and nowhere near the dial.
+--
+-- The link bars are the other way round now. They are in the panel's own head,
+-- so they arrive with it whatever the window and leave with it again.
 
 do
     local SEATS = {}
@@ -254,15 +257,12 @@ do
         return before, during, hud_frame(w, h, 3.50, false)
     end
 
-    -- A phone held upright: the drawer is the window, so both go.
+    -- A phone held upright: the drawer is the window, so the band goes.
     local before, during, after = sweep(390, 844)
     check("upright, the clock band is there before the drawer",
           has(before, "2:49"), before)
     check("and gone under it", not has(during, "2:49"), during)
     check("and back once it has left", has(after, "2:49"), after)
-    check("upright, the dial's corner goes with it",
-          has(before, "LINK") and not has(during, "LINK")
-              and has(after, "LINK"), during)
 
     -- Sideways: the drawer is 390 of 844. It reaches the band, which grows
     -- outward from the middle with the scores and the ratings, and it does not
@@ -271,13 +271,24 @@ do
     check("sideways, the drawer covers the clock band",
           has(before, "2:49") and not has(during, "2:49")
               and has(after, "2:49"), during)
-    check("and leaves the dial's corner alone",
-          has(during, "LINK"), "the dial went with it")
 
-    -- A monitor: the drawer is 390 of 1440 and reaches neither.
+    -- And the link bars, at every one of those windows: nowhere while the
+    -- panel is shut, and in its head while it is open. They are the panel's
+    -- now rather than the arena's, so the overlap has nothing to say about
+    -- them.
+    for _, size in ipairs({{390, 844}, {844, 390}, {1440, 810}}) do
+        before, during, after = sweep(size[1], size[2])
+        check(string.format("%dx%d has no link bars without the menu",
+                            size[1], size[2]),
+              not has(before, "LINK") and not has(after, "LINK"), before)
+        check("and carries them in the panel's head with it",
+              has(during, "LINK"), during)
+    end
+
+    -- A monitor: the drawer is 390 of 1440 and reaches neither instrument.
     during = select(2, sweep(1440, 810))
-    check("a monitor keeps both, the drawer being nowhere near them",
-          has(during, "2:49") and has(during, "LINK"), during)
+    check("a monitor keeps the clock band, the drawer being nowhere near it",
+          has(during, "2:49"), during)
 end
 
 -- --- and the screen with no room behind it stands its key down too ---------
