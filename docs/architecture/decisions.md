@@ -3831,3 +3831,63 @@ strip of nothing for a rare step under a sentence somebody just caused.
 **Reconsider if:** the two bands on the friends page prove to be one too many
 in a real hand, at which point the invite is the one that gives way, since the
 empty state above it already offers the same act in words.
+
+## 81. The menu's pages all begin one margin under the head
+
+**Status:** accepted
+
+**Decision:** the air between the bar at the top of the menu and the page
+under it is MENU_PAD, on every page, and it is written once. The stage begins
+at the head's rule, `STAGE_TOP` is the whole of what a page holds back from
+it, and there is no second number and no branch on what kind of page it is.
+
+MENU_PAD because that is what the column already keeps back from each of its
+two side edges. A page is inset the same from the bar over it as from the
+edges beside it, so the drawer has one margin rather than one for the sides
+and another for the top.
+
+What stands on that line is whatever object the page opens with: a row's lit
+field on a list, the ship page's band, the box on the friends page. Where an
+object centers something inside itself, the type falls where the object puts
+it, which is why the first word on a page is not at the same height on all of
+them and should not be made to be. A name centered in a row tall enough for a
+sentence and a strip of figures sits lower than a label near the top of a
+section head, and both are right.
+
+The friends page's add box goes with it. Its label sat eight points down while
+every other label on that page sits where a section head puts one, so it is a
+section head now like the rest, with the head's own rule left to the one
+already drawn under the bar.
+
+**Why:** the gap was three numbers with a branch in the middle. Eight points
+were taken where the stage begins, thirty more where the page begins, and ten
+instead of the thirty for a page carrying a band or a head of its own. Nobody
+reading either site could say what the air under the head was meant to be,
+because neither site held the whole of it.
+
+The thirty was room held for two things that had moved out from under it: the
+ticked rule that used to introduce a list, and the way out, which sits on the
+head row now beside the call sign. Its own comment still said so. What it left
+behind was thirty-eight points of nothing over the games list against eighteen
+over the hangar, and then each page's own lead-in on top of whichever it got.
+Measured off the head rule, the first word on a page landed anywhere from 42
+to 64 points under it depending on which stop you were standing on. Walking
+the tab row, the panel appeared to change height under a hand that had not
+moved.
+
+This is the same fault decision 80 found at the other end of the column, and
+the same sentence answers it: two numbers nobody had put beside each other.
+
+**Cost:** the pages that carried a band gain two points rather than losing
+any, since eighteen was under the new twenty. Nothing else in the menu moves
+sideways or changes size, and the room a page has grows by what the gap gave
+back, which on a list is another row and a half on a phone.
+
+Tying the top margin to MENU_PAD means a change to the column's side margin
+moves the head's gap with it. That is the point, and it is worth saying out
+loud, because it is also the way this comes back: a future edit that wants the
+sides wider and the top where it is has to say so, and say why.
+
+**Reconsider if:** a page turns up whose first object cannot stand on that
+line, at which point the answer is the object's own shape rather than a second
+number here.

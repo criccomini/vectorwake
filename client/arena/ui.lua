@@ -5440,12 +5440,22 @@ function pages.friends(v, x, y, w, h, focused)
     local packed = w < 470 * F.scale
     local bh = pages.FIELD_TALL * F.scale
     local kh = 26 * F.scale
+    -- How tall a section head is here, and therefore how far into one its
+    -- label sits. Declared up here because the box at the top of the page is
+    -- a section head like any other on it: the same label on the same line,
+    -- with the head's rule left to the one already drawn under the bar.
+    local SECT = 24 * F.scale
 
     -- One button. Returns its left edge, so a row can lay them out from the
     -- right and stop where it stops.
     -- --- the field, pinned at the top
-    lbl("add friend", x, y + 8 * F.scale, pal.a(pal.DIM, 0.85))
-    local fy = y + 22 * F.scale + bh / 2
+    --
+    -- Its label stands where every other label on this page stands, and the
+    -- box under it where a section's first row goes. It used to sit eight
+    -- points down, which is a page whose first line is higher than its second
+    -- section's for no reason either of them could give.
+    lbl("add friend", x, y + SECT * 0.82, pal.a(pal.DIM, 0.85))
+    local fy = y + SECT + bh / 2
     local aw = text_w("add", 12 * F.scale) + 26 * F.scale
     local fw = math.min(300 * F.scale, w - aw - 12 * F.scale)
     local fx = x
@@ -5465,7 +5475,7 @@ function pages.friends(v, x, y, w, h, focused)
         txt("enter their call sign exactly",
             x + fw + aw + 24 * F.scale, fy, 12 * F.scale, pal.a(pal.DIM, 0.8))
     end
-    local BAND = 22 * F.scale + bh + 24 * F.scale
+    local BAND = SECT + bh + 24 * F.scale
 
     -- --- what the box found, under it
     --
@@ -5522,7 +5532,6 @@ function pages.friends(v, x, y, w, h, focused)
         if r.state == "asked" then return (packed and 52 or 44) * F.scale end
         return 44 * F.scale
     end
-    local SECT = 24 * F.scale
     -- Laid out unscrolled and drawn shifted, so the height this page came to
     -- is a number and not that number minus wherever the finger left it.
     local at = top
@@ -5959,11 +5968,20 @@ end
 -- the stage publishes its own hit boxes. Resting on a row is the other: it
 -- lights, because it moves the same cursor the arrows move.
 
--- How far under the top of the block the stage's first row sits: the rule
--- that introduces the list, and the way out sitting over it. The rail starts
--- there too, so a mark is level with the row it would open rather than with
--- the middle of the list.
-local STAGE_TOP = 30
+-- How far under the head's rule a page begins, on every page in the menu.
+--
+-- The column keeps MENU_PAD from each of its side edges, so the page is inset
+-- the same from the bar over it as it is from the two edges beside it. One
+-- measure for the panel, rather than one for the sides and another for the
+-- top.
+--
+-- It was thirty, plus eight more in `sy`, and a page carrying a band of its
+-- own got ten instead. Thirty was room held for two things that have since
+-- moved out from under it: the ticked rule that used to introduce a list, and
+-- the way out, which is on the head row now beside the call sign. What was
+-- left was thirty-eight points of nothing over a games list and eighteen over
+-- the hangar, which is the same panel measured two ways.
+local STAGE_TOP = MENU_PAD
 
 -- And how much the foot of the stage keeps back for the one line drawn across
 -- it, on the frames where there is one. On `pages` rather than beside
@@ -7352,7 +7370,12 @@ function M.menu(v)
     local hy = F.safe_t
     logo_y = hy + head / 2
     sx, sw = dx + margin, dock - 2 * margin
-    sy = hy + head + 8 * F.scale
+    -- The stage begins at the rule, and what a page holds back from it is
+    -- STAGE_TOP alone. Eight points used to be taken here and the rest taken
+    -- again where the page starts, which is one gap written as two numbers in
+    -- two places, and it is why nobody could say what the air under the head
+    -- was meant to be.
+    sy = hy + head
     -- Down to the rail. The stage used to stop fourteen points short of it
     -- and the room handed to a page took another twenty-six under that, so a
     -- key pinned at the foot of a page stood forty points clear of the tab
@@ -7627,16 +7650,13 @@ function M.menu(v)
         hit(dx + margin, logo_y - box / 2, box, box, "close")
     end
     -- A page with a heading starts its heading where a page without one
-    -- starts its first row, near enough: the air over the list is what the
-    -- heading is standing in. Taking the full band and then the heading on
-    -- top of it cost the kit page its last row.
-    --
-    -- The same for a page carrying its own band: the ship page's build name
-    -- and points, and the way back out that the four screens it opens wear.
-    -- A band is a heading, so it stands in the air a heading stands in rather
-    -- than under the whole of what a list gets.
-    local banded = v.kit or v.builds or v.newbuild or v.points or v.item
-    local top = sy + ((v.head or banded) and 10 or STAGE_TOP) * F.scale
+    -- starts its first row, which is what this used to spend a second number
+    -- on getting near: ten under the stage for a page carrying a band or a
+    -- head, thirty for a list. Both wanted the same line and neither landed on
+    -- it. One line now, and each page's first object stands on it: a row's
+    -- lit field, the ship page's band, the friends box's label. What that
+    -- object centers inside itself falls where it falls.
+    local top = sy + STAGE_TOP * F.scale
     -- And the room under it is the rest of the stage, less the one line
     -- drawn across the foot of it. That line is a refusal on the ship page or
     -- a confirmation on the bindings page, both of them answers to a press
