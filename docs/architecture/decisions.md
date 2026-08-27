@@ -4054,3 +4054,50 @@ carries it now, which cannot be discarded by the next hand that sets an alpha.
 **Reconsider if:** a page turns up that needs a size between two rungs. The
 answer is to move a rung rather than add one, since fifteen sizes is what
 adding one looks like fifty edits later.
+
+## 85. The dial hugs the corner the link bars left
+
+**Status:** accepted
+
+**Decision:** the radar sits hard in the top right, one PAD from the top edge
+and one from the right, which is the margin the way into the menu keeps from
+the corner opposite. Same margin on both axes and at every window size. Its
+POS caption hangs under its foot everywhere rather than standing above it on
+the windows wide enough for that, and the clock band, which used to grow to
+the screen's own edge, stops at the radar's left side again.
+
+The map keeps the lower line both of them used to start on. It is two thirds
+of the window's short side, which on an upright phone reaches past the middle,
+so a map on the row would have the clock drawn over it, and capping its width
+to clear the band leaves something narrower at 390 points than the radar it
+grew from. The row's end stays the radar's resting edge for the same reason,
+so opening the map does not take a name off the band.
+
+**Why:** asked for. The dial used to start a key's height lower because the
+LINK bars stood in the strip above it, and the bars went into the head of the
+menu a day before this. Nothing replaced them, so the instrument was left
+indented off a row that no longer existed, which reads as having slipped down
+the screen rather than as leaving room for something.
+
+Both instruments anchored to the top of the window now hang off one padding
+instead of one of them hanging off the other, which is the whole of what
+`PAD` was already for.
+
+**Cost:** an upright phone gives up the two side names on the band. 390 points
+hold the way into the menu, a centered clock and a 112-point dial, and a call
+sign does not fit in the eighteen points left over. The figures under the
+names always draw, the board a press on the band opens carries both names, and
+a phone held sideways has 844 points of row and keeps them.
+
+The band gives up both names or neither, which is new. Each side used to be
+measured against the end of the row it faced, and those ends are not the same
+width: a small key at one and a square a third of a phone across at the other.
+So the left name drew while the right one was dropped, which reads as a fault
+rather than as a band that has run out of room. The pair is the unit now, and
+the cost is a monitor with one very long call sign and one short one, where
+both go instead of the long one alone.
+
+**Reconsider if:** a phone's band is wanted with names on it. The dial would
+have to give up about a third of its width to pay for one, and it was cropped
+to 112 points on a phone already; the reach that crop bought back is worth
+more than a name that is on the board one press away.

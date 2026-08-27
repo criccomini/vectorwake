@@ -294,6 +294,11 @@ check("the landing carries no TAKE SEAT chip",
 -- starts, so the front page read as three headings on two lines with one of
 -- them over an instrument. A side gives up its name when the row runs out of
 -- width for it, which is a name rather than the line the whole band stands on.
+--
+-- At 390 points it does. This row is a key, a clock and a dial hard into the
+-- far corner, and what is left over is not a call sign, so a phone's front
+-- page is the clock with a figure either side of it. The names are on the
+-- board a press opens, and on a window with the width for them.
 do
     frame(390, 844)
     local menu_key, clock = box("open"), word("1:47")
@@ -309,16 +314,25 @@ do
               string.format("clock at %.0f, key ends %.0f",
                             clock.x, menu_key.x + menu_key.w))
     end
-    check("and keeps the side names on it",
-          word("PYLON") ~= nil and word("CAISSON") ~= nil,
-          "a name is missing")
+    check("and gives up the side names, the row being 390 points",
+          word("PYLON") == nil and word("CAISSON") == nil,
+          "a name is drawn where the row has no width for one")
     check("and both figures", word("3") ~= nil and word("5") ~= nil)
-    -- And the other end of the row is empty. The link meter stood in that
-    -- corner until it went into the menu's head, which is the whole reason the
-    -- band has the width it has here. It draws no caption, so what answers
-    -- for it is the box it would publish over its bars.
-    check("and nothing in the far corner of the row", box("debug") == nil,
-          "the link meter is still on the landing")
+    -- The far end of the row is the dial, at the same margin from its corner
+    -- that the way into the menu keeps from the opposite one. The link meter
+    -- stood out here until it went into the menu's head and the dial came up
+    -- into the corner it left. The meter draws no caption, so what answers for
+    -- it is the box it would publish over its bars.
+    check("and nothing in the far corner of the row but the dial",
+          box("debug") == nil, "the link meter is still on the landing")
+    local corner = box("map")
+    if menu_key and corner then
+        check("which hugs it at the corner key's own margin",
+              math.abs(corner.y - menu_key.y) < 0.5
+                  and math.abs((390 - (corner.x + corner.w)) - menu_key.x) < 0.5,
+              string.format("dial at %.0f,%.0f ending %.0f of 390",
+                            corner.x, corner.y, corner.x + corner.w))
+    end
 
     -- The band is the control, so the press that opens the roster is on the
     -- band rather than in the corner beside the way into the menu.

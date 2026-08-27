@@ -2170,8 +2170,8 @@ function update(self, dt)
             lag_notice = net.lag_notice,
             -- The round trip belongs to the connection module. The frame
             -- layer slows its noisy estimate into the stable number of bars
-            -- that the readout above the dial needs. Input scheduling margin
-            -- is separate and lives in the debug readout.
+            -- the meter in the menu's head needs. Input scheduling margin is
+            -- separate and lives in the debug readout.
             link_bars = self.link_bars,
             stats = net.stats, zone = net.zone,
             -- Every room of this game and which one we are in, for the chip
