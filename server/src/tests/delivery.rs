@@ -25,6 +25,7 @@ fn a_player() -> Player {
         rid: "probe".into(),
         bot: false,
         safe: 0,
+        owes_map: false,
         joined: 0,
         tx,
         presence: PresenceHandle::new(),

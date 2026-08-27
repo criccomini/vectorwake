@@ -587,14 +587,23 @@ pub(crate) async fn serve_client(
                     let ship = a.players[&new_id].ship;
                     let mut m = vec![S2C_MAP];
                     m.extend_from_slice(&a.world.packed_map());
-                    let _ = tx.try_send(Message::Binary(m));
+                    let mut landed = tx.try_send(Message::Binary(m)).is_ok();
                     if let Some(n) = a.map_name_msg() {
-                        let _ = tx.try_send(Message::Binary(n));
+                        landed &= tx.try_send(Message::Binary(n)).is_ok();
                     }
                     let mut c = vec![S2C_SETTINGS];
                     c.extend_from_slice(&a.settings_generation.to_le_bytes());
                     c.extend_from_slice(&a.world.packed_settings());
-                    let _ = tx.try_send(Message::Binary(c));
+                    landed &= tx.try_send(Message::Binary(c)).is_ok();
+                    // A fresh socket has an empty queue, so this practically
+                    // always lands. When it does not, the room owes them the
+                    // ground and keeps offering it rather than seating a pilot
+                    // who has no map to predict against at all.
+                    if !landed {
+                        if let Some(p) = a.players.get_mut(&new_id) {
+                            p.owes_map = true;
+                        }
+                    }
                     if let Some(m) = a.match_msg() {
                         let _ = tx.try_send(Message::Binary(m));
                     }

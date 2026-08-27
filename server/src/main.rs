@@ -4312,6 +4312,74 @@ mod tests {
         assert_eq!((sh.x, sh.y), (sh.spawn_x, sh.spawn_y), "on a start");
     }
 
+    /// A pilot whose queue was full at the whistle is not left flying the
+    /// last match's walls.
+    ///
+    /// The map used to be sent once, best effort, and never mentioned again.
+    /// `try_send` refuses rather than waits, and a client that missed a
+    /// rotation had no way to find out: it went on predicting and drawing the
+    /// previous round's ground while the server bounced it off the new one.
+    ///
+    /// Both halves are pinned here. While the map is outstanding the tuning is
+    /// held back with it, so the client keeps refusing frames instead of
+    /// predicting the new match on the old ground; once its socket reads
+    /// again, a tick hands over the map, the name and the rules together.
+    #[test]
+    fn a_refused_map_is_owed_rather_than_lost() {
+        let mut a = match_room(1, 1);
+        let (tx, mut rx) = mpsc::channel(OUT_QUEUE);
+        let id = a
+            .join(Seat::guest("pilot".to_string(), false), 0, 32, tx.clone())
+            .expect("a seat");
+        let before = a.map_msg();
+
+        // Their socket has stopped reading. Nothing else is contrived here:
+        // this is a queue that has run out of room, which is the whole
+        // condition.
+        while tx.try_send(Message::Binary(vec![0])).is_ok() {}
+
+        // A second of play, a second of podium, and the next match opens on
+        // the other map.
+        while a.match_no < 2 {
+            a.tick();
+        }
+        assert_ne!(a.map_msg(), before, "the room rotated its ground");
+        assert!(
+            a.players[&id].owes_map,
+            "and the room knows this pilot did not take it"
+        );
+
+        // Their socket reads again, which is what makes the rest of this about
+        // the hold-back rule rather than about a queue with no room in it.
+        while rx.try_recv().is_ok() {}
+        a.broadcast_settings();
+        assert!(
+            !drain(&mut rx)
+                .iter()
+                .any(|m| m.first() == Some(&S2C_SETTINGS)),
+            "no rules for a generation whose ground they have not been given"
+        );
+
+        // And the next tick makes them whole.
+        a.tick();
+        let got = drain(&mut rx);
+        assert!(!a.players[&id].owes_map, "the debt is paid");
+        assert_eq!(
+            got.iter().find(|m| m.first() == Some(&S2C_MAP)),
+            Some(&a.map_msg()),
+            "and it was paid with the ground the room is standing on"
+        );
+        assert!(
+            got.iter().any(|m| m.first() == Some(&S2C_MAPNAME)),
+            "the name the sky and the label are drawn from rides with it"
+        );
+        assert!(
+            got.iter().any(|m| m.first() == Some(&S2C_SETTINGS)
+                && m[1..5] == a.settings_generation.to_le_bytes()),
+            "and the rules that generation of frames is packed under"
+        );
+    }
+
     /// Deploying from the menu joins the fight the menu was showing.
     ///
     /// The landing dials the room a deploy would land in and plays it behind
