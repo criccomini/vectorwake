@@ -366,8 +366,10 @@ d-pad was kept afterward as a second steering setting beside the stick, on a
 north-up screen like everybody else's. Both that and the reverse that came with
 it are gone now. One push of a thumb meant one thing on the pad and another on
 the stick, and on the stick it changed again while the guns were up, so a phone
-flies with the stick alone and a pilot who wants to be going the other way turns
-the ship around. See `arena/touch.lua`.
+flies with the stick alone. Reverse came back later as a stance the pilot sets
+rather than a push the stick reads into, which is
+[decision 88](#88-a-phones-reverse-is-a-stance-not-a-push); the d-pad did not.
+See `arena/touch.lua`.
 
 
 **Status:** accepted
@@ -4205,6 +4207,106 @@ takes away.
 **Reconsider if:** a mode arrives where a named place matters, a flag post or
 a base to call, in which case the answer is probably a name on the dial rather
 than the numbers back in the corner.
+
+
+## 88. A phone's reverse is a stance, not a push
+
+**Status:** accepted
+
+**Decision:** a double tap anywhere on the stick's half of the screen flips the
+ship into reverse, and it holds until another double tap flips it back. The
+stick names the course either way. Reversed, the nose is held at the far end of
+that course rather than on it, so a pilot backs away from their own thumb with
+the guns still on whatever they are backing away from. Everything else about
+the stick is unchanged, the rule that the engine waits for the nose included.
+
+The stance is drawn twice over. The stick turns the color the ship's plumes are
+drawn in, and the middle of its resting mark becomes the down arrow the
+keyboard's reverse key already wears; while a thumb is on it, a headed spur out
+the far side of the press says where the nose is being carried. The ship has
+drawn retros off its bow all along, and the note in `arena/world.lua` saying
+they exist for a touchscreen reverse was written for the one that had gone. A
+watch, a lost window or a shutdown drops the stance with the rest of the
+controls.
+
+**Why:** [decision 13](#13-the-camera-holds-a-fixed-zoom) took two reverses out
+of this client, and both went for the same reason: the stick was guessing. Down
+on the d-pad and a rearward push on the stick were one thumb movement meaning
+two different things, and on the stick the meaning changed again mid-burst,
+since it read as backing out only when the guns were up or a hostile sat ahead.
+What was wrong was never that a phone had a reverse. It was that nothing the
+pilot did decided which reading they got.
+
+A latch has none of that. The pilot sets the stance, the screen says which one
+is up, and a push means what it has always meant. It costs the simulation
+nothing: the core has had `SIM_BTN_REVERSE` from the start and still receives
+the bitfield a keyboard sends.
+
+Holding the nose opposite rather than on the thumb is the other half of this,
+and the half worth arguing. The alternative reads better in source and worse in
+the hand, because the same push would name a course going forward and a target
+going back, which is the mid-burst change wearing a switch. It is also the only
+reason to fly backward at all. A ship that can reverse only straight away from
+where it is pointed has a slower way of turning around, not a way of retreating
+under fire.
+
+**Cost:** a mode a pilot can forget they set. The drawing is the whole answer to
+that, which is why the arrow on the resting mark is counted in
+`client/tests/touch_test.lua` rather than left to a look. An indicator that goes
+quiet leaves a ship flying backward for a reason nothing on screen explains.
+
+It is also a gesture nobody stumbles on. The controls page a phone reads names
+it and that is all there is, so a pilot who never opens that page never finds
+reverse. The keyboard has the same problem and answers it the same way.
+
+And `arena/touch.lua` keeps a clock again, which was one of the three costs
+listed when the last reverse went. It is one number set at the single call site
+rather than a timer the module runs, and the gesture asks that time have passed
+rather than merely that not too much of it has, so a caller that stops setting
+it loses the flip instead of firing it on every pair of quick presses.
+
+**Reconsider if:** nobody finds it. The gesture is named on the controls page
+and nowhere else, and a stance no one sets is worth less than the corner of the
+screen it colors; the answer then is a control that says what it is rather than
+a longer sentence about this one.
+
+## 89. The landing carries the choices, and their lists open in place
+
+**What:** the landing's foot is a column now: the wordmark, three stops at the
+key's own width, and PLAY NOW. The stops are the choices the screen can make,
+in the order you would say them. Account shows the call sign and opens the
+drawer on the pilot page. Zone shows the game the stands are dialed to and
+drops the games list in place; picking one re-dials the stands to it, and PLAY
+NOW stays the press that commits. Ship shows the build the next deploy flies
+and drops the pilot's saved builds by name, no hulls anywhere in the list, with
+SPECTATE as the last row; picking a build saves it as the hull's kit exactly as
+the ship page's own row does, and picking SPECTATE is the ship page's old
+eighth cell moved to where it can be seen. PLAY NOW no longer forces a
+remembered spectate off, because the stop right over it says SPECTATE out loud.
+Three directions were mocked in `.design/start-flow`, a column, a rail along
+the foot and a sentence of pressable words; the column won on being the one a
+first visit cannot miss and the one that degrades best to a phone.
+
+**Why:** three observations from watching arrivals. The drawer went
+undiscovered, so most first visits never learned there was a second game or a
+different ship to be: PLAY NOW and a hamburger were the whole offer, and the
+hamburger lost. Choosing anything meant a round trip through the drawer that
+ended back on the landing, where a zone pressed in the games list left the
+player exactly where they started, in front of a key they had to press again.
+And there was no way to say what you would arrive as without finding the ship
+page. The stops put every choice on the screen the choice is about.
+
+**Cost:** the landing is taller, and the column covers fight the old two-piece
+landing left open. An open list stands the stops above it down, and the
+wordmark with them when it climbs that far, because glyphs draw over every
+mesh: a panel cannot cover text, so the text has to come off. The waiting
+screen keeps only the name and MENU, so the column is one more thing that
+appears when the room answers.
+
+**Reconsider if:** the stops outgrow three, at which point this is the drawer
+drawn twice and the landing should send people to the real one; or spectating
+via PLAY NOW turns out to read as a dead key despite the stop naming it, which
+is the trap the old forced `spectate = false` existed to avoid.
 
 ## 90. A duel stays open for two seconds after the death that decides it
 

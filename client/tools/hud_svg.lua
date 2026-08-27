@@ -5,7 +5,8 @@
 -- Scenarios: after (a Ladder run five rungs in), fresh (its first life), deep
 -- (far enough to have a floor), before (with the banner the server used to
 -- send), ending and duel-ending (a room at the whistle), landing (the front end,
--- watched from the stands), waiting (what the loader hands off to before a
+-- watched from the stands; landing-zones and landing-ships open a stop's
+-- list), waiting (what the loader hands off to before a
 -- room answers), loadout (a loaded hull with charges in hand, for the corner
 -- stack). Rasterize with any browser:
 --
@@ -271,12 +272,34 @@ if scenario == "ending" then
              score = {[0] = 17, [1] = 20}}
 end
 
-local landing = scenario == "landing"
+-- Three frames of the front end: the stops closed, the zone list down, the
+-- ship list down.
+local landing = scenario == "landing" or scenario == "landing-zones"
+    or scenario == "landing-ships"
 if landing then
     room.count = 8
     room.teams = {[0] = 0, 0, 0, 0, 1, 1, 1, 1}
     match = {playing = true, left = 107, score = {[0] = 3, [1] = 5}}
 end
+-- The landing's stops, as the arena builds them: the pilot, the games with
+-- their one-line formats, and the builds with sitting out as the last row.
+local land = landing and {
+    name = "Kestrel 8",
+    zone = "Team Battle",
+    ship = "Gunner",
+    zones = {
+        {label = "Team Battle", zone = "melee", live = true,
+         format = "4v4 · 3:00", here = true},
+        {label = "Duel", zone = "ladder", live = true, format = "1v1"},
+    },
+    ships = {
+        {label = "Gunner", value = 1, here = true},
+        {label = "Bomber", value = 2},
+        {label = "spectate", value = "spectate"},
+    },
+} or nil
+ui.land_open = (scenario == "landing-zones" and "zone")
+    or (scenario == "landing-ships" and "ship") or nil
 
 ui.details = true
 state.n = 0
@@ -299,6 +322,7 @@ ui.hud({
     -- landing is a watch nobody deployed from.
     watch = landing and {subject = 0} or nil,
     landing = landing or nil,
+    land = land,
     side = 0,
     viewer_name = scenario == "ending" and "DRiFT" or "Kestrel 8",
     class_names = {"Apex", "Wedge", "Chord", "Anvil", "Facet", "Cipher", "Lattice"},

@@ -1,0 +1,36 @@
+{
+  "artboards": [
+    { "file": "Main.dc.html", "title": "Column · closed", "x": 0, "y": 0, "w": 1440, "h": 810 },
+    { "file": "ColumnOpen.dc.html", "title": "Column · zones open", "x": 0, "y": 950, "w": 1440, "h": 810 },
+    { "file": "ColumnPhone.dc.html", "title": "Column · phone", "x": 525, "y": 1920, "w": 390, "h": 844 },
+    { "file": "Rail.dc.html", "title": "Rail · closed", "x": 1720, "y": 0, "w": 1440, "h": 810 },
+    { "file": "RailOpen.dc.html", "title": "Rail · ships open", "x": 1720, "y": 950, "w": 1440, "h": 810 },
+    { "file": "RailPhone.dc.html", "title": "Rail · phone", "x": 2245, "y": 1920, "w": 390, "h": 844 },
+    { "file": "Line.dc.html", "title": "Sentence · closed", "x": 3440, "y": 0, "w": 1440, "h": 810 },
+    { "file": "LineOpen.dc.html", "title": "Sentence · account open", "x": 3440, "y": 950, "w": 1440, "h": 810 },
+    { "file": "LinePhone.dc.html", "title": "Sentence · phone", "x": 3965, "y": 1920, "w": 390, "h": 844 }
+  ],
+  "annotations": [
+    {
+      "id": "note-column",
+      "x": 0, "y": -210, "w": 350,
+      "text": "A · Column\n\nThe three stops stack over PLAY NOW in the order you would say them: who, where, what, go. Everything the screen can do reads top to bottom in one place, at the key's own width.\n\nCost: the tallest of the three. The card covers fight the shipped landing leaves open, and an open list covers more."
+    },
+    {
+      "id": "note-rail",
+      "x": 1720, "y": -210, "w": 350,
+      "text": "B · Rail\n\nOne console band along the foot: mark, the three stops as labeled chips, PLAY NOW at the end of the line. The fight stays clear above it; lists open upward like a console.\n\nCost: the chips are small beside the key, and a phone cannot hold the band, so the labels come off and the word gives way to the mark."
+    },
+    {
+      "id": "note-line",
+      "x": 3440, "y": -210, "w": 350,
+      "text": "C · Sentence\n\nThe shipped landing untouched, plus one line of pressable words between the lockup and the key: VESPER 412 · TEAM BATTLE · APEX. Quietest of the three.\n\nCost: pressable words are the least discoverable rendering, which is the observation this whole set answers, and a long call sign stretches the line."
+    },
+    {
+      "id": "note-constants",
+      "x": -430, "y": 0, "w": 370,
+      "text": "Held constant on every board: the shipped watcher HUD (MENU, PLAYERS, CHANNEL, radar, feed), the melee room Pylon vs Caisson behind the glass, the PLAY NOW breath, and the drawer behind MENU for everything else (friends, settings, standings).\n\nThe player is a guest called Vesper 412 bound for Team Battle, arriving as their Gunner build. The account menu is the guest's: SIGN UP in the offer green, LOG IN, NEW NAME. The ship list is the pilot's saved builds by the names they gave them, no hulls, plus SPECTATE, the ship page's own last cell. The zone list is the play page's rows with one-line formats, and a press on one means fly there, not watch it.\n\nOpen lists wear the menu's row states from decision 72: cursor at 0.18, the row you are already in at 0.07."
+    }
+  ],
+  "launch": { "view": "canvas" }
+}
