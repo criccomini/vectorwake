@@ -268,13 +268,35 @@ SHIM = """
       g.restore();
     }
 
-    // The same three depths world.lua uses, and the same colors, so the
-    // moment the engine takes over nothing about the sky changes.
+    // The same three depths of star world.lua uses, at the same density and
+    // in the same colors, so the moment the engine takes over the sky carries
+    // on looking like itself. The engine draws more than this behind them,
+    // clouds and a band and whatever set pieces the map hangs out at its rim,
+    // and those arrive with the first real frame.
     var LAYERS = [
       {k: 0.18, cell: 54, size: 1.1, col: "#2a3a58", fill: 13},
       {k: 0.36, cell: 92, size: 1.6, col: "#4a6089", fill: 11},
       {k: 0.60, cell: 168, size: 2.3, col: "#93a9c8", fill: 9}
     ];
+    // Star temperature, and it is worked out here the way world.lua works it
+    // out: each color scaled to the luminance its layer already had, so what
+    // changes between one star and the next is hue and not brightness.
+    var TEMPS = ["#9fbcff", "#f2f5ff", "#ffd08a", "#ff9a52"];
+    var PICK = [0, 1, 0, 1, 1, 2, 0, 1, 0, 0, 1, 2, 0, 1, 3, 1];
+    var FAT = [0, 0, 0.4, 0.6];
+    function bits(hex) {
+      var n = parseInt(hex.slice(1), 16);
+      return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+    }
+    function lum(c) { return 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]; }
+    for (var li = 0; li < LAYERS.length; li++) {
+      var base = bits(LAYERS[li].col);
+      LAYERS[li].cols = TEMPS.map(function (t) {
+        var c = bits(t), k = lum(base) / lum(c);
+        return "rgb(" + Math.round(c[0] * k) + "," + Math.round(c[1] * k) +
+               "," + Math.round(c[2] * k) + ")";
+      });
+    }
     function lcg(s) { return (s * 48271) % 2147483647; }
 
     function frame() {
@@ -290,7 +312,6 @@ SHIM = """
       for (var li = 0; li < LAYERS.length; li++) {
         var L = LAYERS[li], c = L.cell;
         var ox = -t * 14 * L.k, oy = -t * 5 * L.k;
-        g.fillStyle = L.col;
         var i0 = Math.floor(-ox / c) - 1, i1 = Math.floor((w - ox) / c) + 1;
         var j0 = Math.floor(-oy / c) - 1, j1 = Math.floor((h - oy) / c) + 1;
         for (var j = j0; j <= j1; j++) {
@@ -301,8 +322,14 @@ SHIM = """
             var px = (i + s / 2147483647) * c + ox;
             s = lcg(s);
             var py = (j + s / 2147483647) * c + oy;
+            // A draw of its own for the color and the shade, which is what
+            // world.lua spends here too.
+            s = lcg(s);
+            var tmp = PICK[s % 16];
+            g.fillStyle = L.cols[tmp];
             g.globalAlpha = 0.45 + (s % 8) / 8 * 0.55;
-            g.fillRect(px, py, L.size, L.size);
+            var size = L.size + FAT[tmp];
+            g.fillRect(px, py, size, size);
           }
         }
       }

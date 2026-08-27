@@ -1779,6 +1779,11 @@ function update(self, dt)
         if net.map_epoch ~= (self.map_epoch or 0) then
             self.map_epoch = net.map_epoch
             rebuild_static()
+            -- The sky is the map's as much as the walls are: the band's angle,
+            -- the two washes and where the sun and the comet hang are all
+            -- placed from the name, so a room looks like itself every time it
+            -- is played and like nowhere else.
+            world.sky_seed(net.map_name)
             -- The map view is the one thing that reads all thousand tiles, so
             -- it is built here with the terrain and never again. Doing it on
             -- the first press instead would put a scan of the whole arena in

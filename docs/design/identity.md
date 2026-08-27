@@ -106,8 +106,22 @@ glance what every dot on your screen was and whose side it was on. Clean vector
 gets us that clarity through a different look, without the sprite-sheet
 constraints that shaped the original's art.
 
-**Field.** Near-black, with a sparse parallax starfield and no busy nebula
-texture. The background never competes with a projectile for attention.
+**Field.** Near-black, under a parallax sky with real depth in it: two vast
+washes beneath everything, clouds drawn as runs of knots rather than round
+smudges, a band of fine grain along one diagonal, three depths of star in four
+temperatures with a rare one burning, a sun and a comet anchored in the map,
+and a near layer of dust that streaks along the camera's own motion. Nothing is
+stored. Every part of it is hashed from position, so a map twice the size costs
+the same, and the band and the set pieces are placed from the map's name, so a
+room has a sky of its own and the same one every time it is played.
+
+This replaces a rule asking for a sparse starfield and no nebula texture. The
+reasoning under that rule is the part worth keeping and it has not moved: the
+background never competes with a projectile for attention. It is why the clouds
+stay faint enough to read as distance rather than as objects, why the sun is dim
+and sits out at the rim of the view instead of over the fight, and why the
+band's grain is no brighter than the far stars already were. What changed is the
+belief that the only safe background is an empty one.
 
 **Ships.** Crisp geometric silhouettes with thin bright outlines and a darker
 fill. Each class has a distinct shape read at a glance, and each shape stays

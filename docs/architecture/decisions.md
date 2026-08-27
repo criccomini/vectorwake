@@ -3595,3 +3595,51 @@ kills, at which point net is the wrong arithmetic rather than the right one
 and the mark has to ask that mode what a pilot contributed. Or if assists get
 priced into the score, since a pilot who does four fifths of the work on every
 kill in the match would still be nowhere on this measure.
+
+## 77. The sky is the map's, and it has weather in it
+
+**Status:** accepted
+
+**Decision:** the background is no longer three layers of star and a round
+fade. It draws, from the back forward: two enormous washes under everything, a
+band of fine grain and dust filaments along one diagonal, clouds strung out as
+runs of knots rather than round smudges, a sun and a comet, three depths of
+star in four temperatures with a rare one burning a four-point cross, and a
+near layer of dust that draws as dots standing still and as streaks under way.
+
+Everything that is not hashed from its own position is placed from the map's
+name: the band's angle and where it runs, the two washes, and where the sun
+and the comet hang. So a room has a sky of its own, and has the same one every
+time it is played.
+
+The two set pieces sit at middling depth rather than out with the band. A
+match room is a hundred and sixty tiles across, and anything drawn at the
+band's depth moves a couple of hundred pixels while a pilot crosses the whole
+map, which is wallpaper in the corner of the screen for three minutes. At a
+quarter and two fifths of the camera's rate they arrive and leave as you fly,
+which is what lets a side be told to regroup under the comet.
+
+**Why:** the old field was correct and boring. It had real depth in it, from
+parallax that costs nothing to store, and nothing to look at: a flat sprinkle
+over a flat black, the same in every room of every zone. The constraint that
+shaped it is still the right one, and it is not a constraint against having a
+sky. It is a constraint against a sky that competes with a projectile, which
+is a question about brightness and placement rather than about how much is
+there. So the clouds stay faint enough to read as distance, the sun is dim and
+thrown far enough out to sit at the rim of the view instead of over the fight,
+and the band's grain is no brighter than the far stars already were.
+
+The band is the one that had to be argued with twice. Written with a half
+width of eight hundred pixels it put the whole window inside itself, which
+draws as a starfield with the density turned up rather than as a band; it
+needs to end somewhere inside the window, with plain sky on both sides. And it
+is the expensive part: the whole sky costs 0.63 ms a frame in plain Lua at
+1280 by 800 against 0.20 before, and reserves about half a megabyte of vertex
+buffer on a laptop against two hundred kilobytes. Four percent of a frame at
+sixty is a fair price for the room looking like somewhere.
+
+**Reconsider if:** a zone wants a sky of its own rather than one derived from
+its map names, which is the open question identity.md already carries about
+how much a zone gets to change. Or if the band's grain turns up in a profile
+on a real phone, where the crossings into the core to ask what is behind each
+star are the part that would show first.
