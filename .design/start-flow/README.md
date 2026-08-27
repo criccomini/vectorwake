@@ -3,8 +3,8 @@
 Nine boards for the proposal that the landing's foot grows three stops
 between the lockup and PLAY NOW: account, zone, ship. Pressing account opens
 the account menu, pressing zone drops the games list, pressing ship drops
-the hulls with SPECTATE as the last row, and PLAY NOW stays the one
-celebrated key. The question the boards ask is how the stops are rendered,
+the pilot's saved builds by name with SPECTATE as the last row, and PLAY NOW
+stays the one celebrated key. The question the boards ask is how the stops are rendered,
 three directions by three states:
 
 - **A · Column** the stops stack over PLAY NOW like a boarding card

@@ -4,11 +4,12 @@
 The proposal: the landing's foot grows three stops between the lockup and
 PLAY NOW, so a first visit sees every choice the screen can make without
 opening the drawer. In the order you would say them: who you are (account),
-where you are going (zone), what you arrive as (ship, with SPECTATE as the
-last row of that list, exactly as the ship page's eighth cell has it).
-Pressing account opens the account menu; pressing zone drops the games list;
-pressing ship drops the hulls. PLAY NOW stays the one celebrated key, and a
-press on a zone in the list means fly there, not watch it.
+where you are going (zone), what you arrive as (ship, listing the pilot's
+saved builds by the names they gave them, with SPECTATE as the last row,
+exactly as the ship page's own last cell has it). Pressing account opens the
+account menu; pressing zone drops the games list; pressing ship drops the
+builds. PLAY NOW stays the one celebrated key, and a press on a zone in the
+list means fly there, not watch it.
 
 Three directions, each drawn closed, open, and on a phone held upright:
 
@@ -231,13 +232,6 @@ def ship_at(name, x, y, rot, col, k=1.0, trail=True):
             f'stroke-width="1.5" stroke-linejoin="round"/></g>')
 
 
-def hull_icon(name, col="#9fb6d4", k=20):
-    return (f'<svg width="{k}" height="{k}" viewBox="-19 -19 38 38" '
-            f'fill="none" style="flex:none"><path d="{HULLS[name]}" '
-            f'stroke="{col}" stroke-width="1.8" stroke-linejoin="round" '
-            f'transform="scale(0.78)"/></svg>')
-
-
 # --- the room behind the glass, from ../spectator-landing --------------------
 FRIEND, ENEMY = "#4fd6ff", "#ffa552"
 SHIPS = [
@@ -430,9 +424,13 @@ def play_key(w, h, px, extra_style=""):
 
 # --- the three stops and their open lists ------------------------------------
 # What the player currently is, on every board: a guest called Vesper 412,
-# bound for Team Battle, arriving in an Apex.
+# bound for Team Battle, arriving as their Gunner build.
 
-NAME, ZONE, SHIP = "Vesper 412", "Team Battle", "Apex"
+NAME, ZONE, SHIP = "Vesper 412", "Team Battle", "Gunner"
+
+# The pilot's own saved builds from the hangar, by the names they gave them.
+# Which hull each rides is the hangar's business, not this list's.
+PROFILES = ["Gunner", "Bomber", "Brawler", "Scout"]
 
 ZONES = [
     ("Team Battle", "4V4 · 3:00"),
@@ -491,16 +489,15 @@ def zone_rows(px=12):
 
 
 def ship_rows(px=12):
-    """The seven hulls and SPECTATE, the ship page's eighth cell: what you
-    will arrive as."""
+    """The pilot's saved builds and SPECTATE, the ship page's own last cell:
+    what you will arrive as. Names alone, no hulls: which hull a build rides
+    is the hangar's business."""
     rows = []
-    for name in HULLS:
+    for name in PROFILES:
         cur = name == SHIP
-        col = "var(--friend)" if cur else "#9fb6d4"
-        val = (f'{hull_icon(name, col)}'
-               f'<span style="color:{"var(--friend)" if cur else "inherit"}">'
+        val = (f'<span style="color:{"var(--friend)" if cur else "inherit"}">'
                f'{name.upper()}</span>')
-        rows.append((val, "here" if cur else ("cursor" if name == "Cipher"
+        rows.append((val, "here" if cur else ("cursor" if name == "Bomber"
                                               else None)))
     rows.append(("", "rule"))
     rows.append((f'{eye()}<span>SPECTATE</span>', None))
@@ -559,8 +556,7 @@ def column(form, open_list=None):
     gap = 8
     body.append(play_key(kw, kh, 16 if portrait else 19, center(22, kw)))
     stops = [
-        ("SHIP", f'{hull_icon(SHIP, "var(--ink)", 18)}'
-                 f'<span style="margin-left:2px">{SHIP.upper()}</span>'),
+        ("SHIP", SHIP.upper()),
         ("ZONE", ZONE.upper()),
         ("ACCOUNT", f'{NAME.upper()}<span style="margin-left:6px">'
                     f'</span>{guest_tag()}'),
@@ -605,7 +601,7 @@ def rail(form, open_list=None):
             f'<div class="field" style="height:40px;padding:0 10px;gap:8px;'
             f'font-size:11px;'
             f'{"border-color:rgba(79,214,255,.85)" if open_list == "ship" else ""}">'
-            f'{hull_icon(SHIP, "#dfe9f5", 20)}{caret()}</div></div>')
+            f'{SHIP.upper()}{caret()}</div></div>')
         body.append(chips)
         if open_list == "ship":
             body.append(drop_rows(ship_rows(), 210, 34, 12,
@@ -621,8 +617,7 @@ def rail(form, open_list=None):
                 f'<span class="row" style="gap:8px;font-size:12px;'
                 f'white-space:nowrap">{value}{caret()}</span></div>')
 
-    ship_val = (hull_icon(SHIP, "#dfe9f5", 16)
-                + f'<span style="margin-left:2px">{SHIP.upper()}</span>')
+    ship_val = SHIP.upper()
     band = (
         f'<div class="row" style="position:absolute;left:50%;'
         f'transform:translateX(-50%);bottom:22px;gap:10px;align-items:center">'

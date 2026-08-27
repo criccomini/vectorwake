@@ -29,7 +29,7 @@
     {
       "id": "note-constants",
       "x": -430, "y": 0, "w": 370,
-      "text": "Held constant on every board: the shipped watcher HUD (MENU, PLAYERS, CHANNEL, radar, feed), the melee room Pylon vs Caisson behind the glass, the PLAY NOW breath, and the drawer behind MENU for everything else (friends, settings, standings).\n\nThe player is a guest called Vesper 412 bound for Team Battle in an Apex. The account menu is the guest's: SIGN UP in the offer green, LOG IN, NEW NAME. The ship list is the seven hulls plus SPECTATE, the ship page's eighth cell. The zone list is the play page's rows with one-line formats, and a press on one means fly there, not watch it.\n\nOpen lists wear the menu's row states from decision 72: cursor at 0.18, the row you are already in at 0.07."
+      "text": "Held constant on every board: the shipped watcher HUD (MENU, PLAYERS, CHANNEL, radar, feed), the melee room Pylon vs Caisson behind the glass, the PLAY NOW breath, and the drawer behind MENU for everything else (friends, settings, standings).\n\nThe player is a guest called Vesper 412 bound for Team Battle, arriving as their Gunner build. The account menu is the guest's: SIGN UP in the offer green, LOG IN, NEW NAME. The ship list is the pilot's saved builds by the names they gave them, no hulls, plus SPECTATE, the ship page's own last cell. The zone list is the play page's rows with one-line formats, and a press on one means fly there, not watch it.\n\nOpen lists wear the menu's row states from decision 72: cursor at 0.18, the row you are already in at 0.07."
     }
   ],
   "launch": { "view": "canvas" }
