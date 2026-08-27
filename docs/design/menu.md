@@ -487,7 +487,7 @@ foot of it, in the order you would say it: the wordmark, three stops the key's
 own width (account, zone, ship), and a PLAY NOW key that takes a seat in the
 room already on screen.
 
-The stops are decision 84, and they exist because the drawer went
+The stops are decision 89, and they exist because the drawer went
 undiscovered: a first visit met PLAY NOW and a hamburger, deployed into
 whatever the stands were showing, and never learned there was another game or
 another ship to be. Each stop is the question at its left edge and the current

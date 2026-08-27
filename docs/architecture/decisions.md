@@ -4000,7 +4000,7 @@ thing this decision is about.
 is the one change that would let settings fold into it the way most phones do
 it, and the row would drop a stop rather than reorder one.
 
-## 84. The landing carries the choices, and their lists open in place
+## 89. The landing carries the choices, and their lists open in place
 
 **What:** the landing's foot is a column now: the wordmark, three stops at the
 key's own width, and PLAY NOW. The stops are the choices the screen can make,
