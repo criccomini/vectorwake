@@ -3014,6 +3014,37 @@ do
     menu.home, menu.stack, menu.sel = kept.home, kept.stack, kept.sel
 end
 
+-- --- and a guest's career is re-asked until there is one -------------------
+--
+-- The figure the warning arms on is rated games, and a guest's first one is
+-- filed while they are flying: the copy fetched when the session woke says
+-- none for the whole of the session the game was flown in. So the panel asks
+-- again while the answer is still nothing, and stops the moment it is not.
+do
+    local kept = {claimed = account.claimed, friends = account.friends,
+                  career = account.career, asked = account.asked_career,
+                  stack = menu.stack, sel = menu.sel}
+    menu.open, menu.stack, menu.sel = true, {"root"}, {}
+    account.claimed, account.friends, account.career = false, {}, nil
+    account.asked_career = 0
+    menu.tick(20)
+    check("a guest with nothing recorded re-asks for their career",
+          account.asked_career > 0, tostring(account.asked_career))
+    local asked = account.asked_career
+    account.career = {games = 2, kills = 3, deaths = 1}
+    menu.tick(20)
+    check("and stops once a game has been flown",
+          account.asked_career == asked, tostring(account.asked_career))
+    account.career, account.asked_career = nil, 0
+    account.claimed = true
+    menu.tick(20)
+    check("a signed-in pilot is never asked on this timer",
+          account.asked_career == 0, tostring(account.asked_career))
+    account.claimed, account.friends = kept.claimed, kept.friends
+    account.career, account.asked_career = kept.career, kept.asked
+    menu.stack, menu.sel = kept.stack, kept.sel
+end
+
 -- --- an arrow off the tabs walks into the page at the end it came in at -----
 --
 -- The tab row is at the foot of the drawer and the page is above it, so up is
