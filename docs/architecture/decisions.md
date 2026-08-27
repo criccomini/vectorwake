@@ -4089,11 +4089,11 @@ The number prices the cadence and not the fight. Emptying the rack takes three
 seconds now, where three presses took a tenth of one, which is long enough that
 the second and third bursts are flown between and aimed separately, and short
 enough that all three are still available inside the exchange the first one was
-thrown into. A
-wait that pushed the next burst into the next fight is several times this: five
-seconds was written first and rejected, because it decides what a rack is for
-as well as how fast it may be spent, and that is a bigger rule than this one
-needs to be. The number to move if the fly-in survives is this one.
+thrown into. A wait that pushed the next burst into the next fight is several
+times this: five seconds was written first and rejected, because it decides
+what a rack is for as well as how fast it may be spent, and that is a bigger
+rule than this one needs to be. The number to move if the fly-in survives is
+this one.
 
 Per kind, because the two kinds are opposite things. A repel is the answer to a
 round already in the air and is wanted precisely when a fight is going badly,
@@ -4102,9 +4102,9 @@ moment it is asked for. It also does no damage, which makes chaining repels a
 way of wasting them rather than a way of winning.
 
 **Cost:** a pilot who wants two bursts in one fight still has them, a second
-and a half apart. This does not end the fly-in on its own; it makes the pilot fly
-it for three seconds under fire rather than press a key three times, and
-whether that is enough is the open question here.
+and a half apart. This does not end the fly-in on its own. It makes the pilot
+fly for three seconds under fire to spend the rack rather than press a key
+three times, and whether that is enough is the open question here.
 
 The number is also argued rather than measured. The authored bots throw a burst
 only at close range on a nearly empty bar, so the melee probe has nothing to
@@ -4120,11 +4120,11 @@ is what the protocol number is for.
 
 **Reconsider if:** a pilot can still fly in and end somebody on two bursts a
 second and a half apart, which would be this number too short rather than the
-rule wrong, and the answer is a longer one. Or if matches start ending with bursts
-still in the rack, which is the same lever the other way. Or if the fly-in
-comes back off one burst alone, which would be what a burst does at contact
-range rather than how often it may be thrown, and the answer is its damage
-instead.
+rule wrong, and the answer is a longer one. Or if matches start ending with
+bursts still in the rack, which is the same lever the other way. Or if the
+fly-in comes back off one burst alone, which would be what a burst does at
+contact range rather than how often it may be thrown, and the answer is its
+damage instead.
 
 ## 86. The dial hugs the corner the link bars left
 
