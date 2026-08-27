@@ -475,11 +475,14 @@ carries no hatches, pipes, braces, warning marks, panels, or interior seams.
 Thin partitions and deep walls use the same treatment, so walls stay quiet
 while the objects around them carry the arena's mechanical detail.
 
-A rock is warmer, faceted, cratered, and carries sparse mineral seams while it
-tumbles. A station fills the whole six-tile square the simulation collides
-with, then cuts docking throats, armor quarters, trusses, and a cold reactor
-into that mass. The detail is subordinate to the outside edge at combat zoom.
-A player reads collision first and fiction on the second look.
+A rock is warmer, faceted, cratered, and carries sparse mineral seams. It does
+not turn: an asteroid that tumbles cannot be built into the terrain mesh, and a
+map laying a few hundred of them then costs more of a frame's vertex budget
+than the fight it is a backdrop for. A station fills the whole six-tile square
+the simulation collides with, then cuts docking throats, armor quarters,
+trusses, and a cold reactor into that mass. The detail is subordinate to the
+outside edge at combat zoom. A player reads collision first and fiction on the
+second look.
 
 The thick perimeter mass uses the same plain treatment. Its broad dark body
 distinguishes the arena boundary from an interior partition.

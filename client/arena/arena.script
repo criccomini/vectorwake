@@ -1893,9 +1893,6 @@ function update(self, dt)
         -- blinking empty rather than as a slow frame.
         local cull = {x0 = cx - self.hw - 96, x1 = cx + self.hw + 96,
                       y0 = cy - self.hh - 96, y1 = cy + self.hh + 96}
-        -- Before anything that flies. A rock's body is opaque and the fill
-        -- layer composites in write order, so drawn later it would paint over
-        -- a ship passing in front of one.
         -- Light is collected before anything is drawn, because a hull lit by
         -- a blast has to know about it while drawing itself, and effects are
         -- drawn last of all. The walls read the same list at the end of the
@@ -1903,7 +1900,6 @@ function update(self, dt)
         -- theirs.
         world.lights_begin()
         fx.gather_lights(world.light)
-        world.draw_rocks(fill, glow, t, cull)
         world.weapons(fill, glow, t, cull)
 
         for i = 0, sim.ship_count() - 1 do
