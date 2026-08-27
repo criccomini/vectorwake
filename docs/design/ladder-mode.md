@@ -35,7 +35,8 @@ climber, and nobody else. The match clock waits at its full value while the
 first opponent is being seated.
 If the rival leaves during play, that life is void. The room files no result,
 pays no completion reward, and changes no progress or rating. Both ships reset
-before the same rung reopens against a replacement. A damaged rival cannot
+before the same rung reopens against a replacement. A life already decided is
+the exception and is filed rather than voided: see the two seconds below. A damaged rival cannot
 return with a fresh ship while the player keeps the damage from the abandoned
 fight.
 
@@ -51,6 +52,36 @@ draw: it is logged as one, it moves no rung and breaks no streak, and the same
 rival is fought again. Two pilots who spend three minutes refusing each other
 have said what they have to say, and the rung is no closer to settled for a
 fourth minute of it.
+
+## The last two seconds
+
+A duel is not filed on the death that decides it. The arena runs for two more
+seconds, and if the other ship goes down inside that window the life is a draw
+rather than a win.
+
+Two seconds is a bomb's flight, which is the exchange the window is there for.
+Firing into somebody at close range and taking their last shot on the way past
+is a trade, and a trade is a draw: the pilot who died second is as dead as the
+one who died first.
+
+It is also the zone's respawn delay, so the pilot who went down is still down
+when the fight is filed. The whistle cannot cut the window short either. A kill
+in the last second of regulation is as tradeable as one in the first, so the
+clock running out inside a window neither ends the life early nor takes the
+draw away.
+
+Nothing is announced over any of it. The score already says who is ahead, and
+the two seconds are for finding out whether that holds.
+
+A draw here is the draw the whistle gives: logged, no rung moved, no streak
+broken, the same rival fought again.
+
+A seat that goes away inside the window does not void the life the way a seat
+that goes away mid-fight does. Whoever left had already lost it, and the only
+thing the window could still have done is draw the fight, which needs both
+pilots on the field. So the result is filed. A rival that drops in the two
+seconds after it dies does not hand a climber's win back, and a pilot who has
+just died cannot dodge the loss by pulling the plug.
 
 Calibration does not draw. It flies each leg to a death, with a recorded
 safety boundary so a broken or nonterminating leg cannot run forever, because
