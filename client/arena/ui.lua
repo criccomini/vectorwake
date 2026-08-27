@@ -6259,7 +6259,17 @@ local function stage_row(x, y, w, h, r, hot, idx, warm)
     -- squeeze its rows has neither, and drew the note over the label rather
     -- than dropping it: the shelf's descriptions landed on top of the names
     -- they described.
-    local note = (h >= 44 * F.scale) and r.note or nil
+    --
+    -- An empty sentence is not one. A row's note arrives as "" rather than
+    -- absent wherever the thing behind it has the field and nothing in it,
+    -- which on the games list is a zone whose catalog left the hook line
+    -- blank. `note` is read three times below, for the label's size, for
+    -- where the label sits, and for whether the sentence is drawn at all, and
+    -- only the third asked `note_lines`, which answers nil for an empty
+    -- string exactly as it does for a missing one. The length of that nil is
+    -- where the page stopped drawing, and the menu came up empty over the
+    -- arena with nothing on screen saying why.
+    local note = (h >= 44 * F.scale) and r.note ~= "" and r.note or nil
     -- A row carrying a sentence is a row about a thing you are choosing
     -- between rather than a value you are setting, and the mocks set those
     -- names half again as large: it is the name that is being read, and the

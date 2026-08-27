@@ -69,6 +69,15 @@ local ROWS = {
      note = "four a side, three minutes"},
     {label = "ladder", detail = "1 + 1 AI", index = 2, pick = true,
      players = 1, bots = 1, live = true, note = "one life at a time"},
+    -- A row whose sentence is there and empty, which is what a game whose
+    -- catalog left the hook line blank hands the list. It read as a row with
+    -- a sentence everywhere the size and the position of the label are
+    -- decided, and as a row without one where the lines are counted, so the
+    -- page threw on the length of nothing and the menu came up blank over a
+    -- live arena. Kept on the list rather than checked on its own, because
+    -- the row this happens to is an ordinary row of an ordinary page.
+    {label = "trial", detail = "2 + 2 AI", index = 3, pick = true,
+     players = 2, bots = 2, live = true, note = ""},
 }
 
 local function view(over)
