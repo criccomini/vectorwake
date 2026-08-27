@@ -218,11 +218,9 @@ local function on_message(s)
             -- player reads cannot move either.
             name = (type(z.label) == "string" and z.label ~= "") and z.label
                 or z.name,
-            detail = z.description or "",
             -- The format strip: what the row's stacks say under TEAMS, TIME
             -- and SCORING, in the catalog's own words. A directory from
-            -- before the strip sends none and the row is the name and the
-            -- sentence, as it was.
+            -- before the strip sends none and the row is its name alone.
             teams = type(z.teams) == "string" and z.teams or "",
             time = type(z.time) == "string" and z.time or "",
             scoring = type(z.scoring) == "string" and z.scoring or "",

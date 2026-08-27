@@ -116,17 +116,18 @@
 > its lit field and its press run edge to edge of the panel rather than stopping
 > at the row's own measure.
 >
-> **A row states its format.** Under the sentence, three small stacks in the
-> room band's label-over-value grammar: TEAMS, TIME and SCORING, with a thin
-> rule between them, so Team Battle reads 4 v 4, 3:00, kills and Duel reads
-> 1 v 1, one life, rungs. The words ride the directory reply beside the label
-> and the description, derived by the catalog from what each zone declares
+> **A row is a name and its format.** Under the name, three small stacks in
+> the room band's label-over-value grammar: TEAMS, TIME and SCORING, with a
+> thin rule between them, so Team Battle reads 4 v 4, 3:00, kills and Duel
+> reads 1 v 1, one life, streak. The words ride the directory reply beside the
+> label, derived by the catalog from what each zone declares
 > (`ZoneDef::format`), so a tuning edit that moves the clock moves the strip
-> and the client never knows a format. With the numbers in the strip, the
-> description stops restating them and carries the hook the strip cannot:
-> Duel's stakes, Team Battle's bounty rule. A directory from before the strip
-> sends none and the row is the name and the sentence, as it was. Mocked and
-> chosen in `.design/play-menu` (version I of three rounds).
+> and the client never knows a format. Each game carried a sentence between
+> its name and its stacks until [decision 82](../architecture/decisions.md):
+> the strip answers what the sentence answered, in the zone's own numbers, and
+> the sentence was the half nobody had to read. A directory from before the
+> strip sends none and the row is its name alone. Mocked and chosen in
+> `.design/play-menu` (version I of three rounds).
 
 > **The landing is the game now.** Opening the client seats you in the stands
 > of a real melee room and draws the watcher's HUD; the front end is that
@@ -458,16 +459,18 @@ room, and joining takes that head. The address is never shown. The zone's name
 travels with the join, so arriving at an instance that has since changed game is
 a refusal rather than a surprise.
 
-One column: the name, with the sentence saying what the game is set under it on
-the same row. It went three ways before that. Both on one line does not fit,
-because "everybody against everybody" beside "5 playing, 3 AI" is 45 characters
-against the 40 a phone has room for. The description then moved under the list,
-as a line about whichever row was selected, which is not reading three
-sentences: it is reading one at a time, a long way from the name it belongs to.
-What settled it was dropping the count. How many people and how many machines
-are in a room is a fact about the next thirty seconds rather than about which
-game to pick, and taking it out left the row wide enough for the sentence that
-explains.
+One column: the name, with the format strip set under it on the same row. A
+sentence saying what the game is held that place first, and it went three ways
+before it landed there. Both on one line does not fit, because "everybody
+against everybody" beside "5 playing, 3 AI" is 45 characters against the 40 a
+phone has room for. The description then moved under the list, as a line about
+whichever row was selected, which is not reading three sentences: it is reading
+one at a time, a long way from the name it belongs to. What settled its place
+was dropping the count. How many people and how many machines are in a room is
+a fact about the next thirty seconds rather than about which game to pick, and
+taking it out left the row wide enough for a second line under the name. The
+strip is what stands on that line now, per decision 82, and the sentence is
+gone: the stacks say what it said, in the numbers the zone already declares.
 
 The game you played last is marked and the cursor opens on it, so coming back is
 one press. A zone nobody is running is still a row, because a player is better

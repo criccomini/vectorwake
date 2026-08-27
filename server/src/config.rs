@@ -16,7 +16,6 @@ use std::path::{Path, PathBuf};
 #[serde(default, deny_unknown_fields)]
 pub struct ZoneConfig {
     pub name: String,
-    pub description: String,
     pub listen: String,
     /// PEM certificate chain and private key. Set both and the zone serves
     /// wss instead of ws, which a page delivered over https is required to
@@ -304,7 +303,6 @@ impl Default for ZoneConfig {
     fn default() -> Self {
         ZoneConfig {
             name: "vectorwake".into(),
-            description: "an unconfigured zone".into(),
             listen: "127.0.0.1:9010".into(),
             maps: Vec::new(),
             tls_cert: String::new(),

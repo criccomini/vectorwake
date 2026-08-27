@@ -141,12 +141,15 @@ local PAGES = {
         view = function()
             return {depth = 1, sel = 2, rail = RAIL, rail_sel = 1,
                     focus = "stage", closable = true, rows = {
-                {label = "Duel", note = "a rung at a time", index = 1,
-                 pick = true},
-                {label = "Team Battle", note = "four a side", index = 2,
-                 pick = true},
-                {label = "Shoal", note = "a wider room", index = 3,
-                 pick = true, mark = true},
+                {label = "Duel", index = 1, pick = true,
+                 specs = {{"teams", "1 v 1"}, {"time", "one life"},
+                          {"scoring", "streak"}}},
+                {label = "Team Battle", index = 2, pick = true,
+                 specs = {{"teams", "4 v 4"}, {"time", "3:00"},
+                          {"scoring", "kills"}}},
+                {label = "Shoal", index = 3, pick = true, mark = true,
+                 specs = {{"teams", "8 v 8"}, {"time", "5:00"},
+                          {"scoring", "kills"}}},
             }}
         end,
     },
@@ -285,9 +288,8 @@ do
     -- one of each weight.
     draw({depth = 1, sel = 1, rail = RAIL, rail_sel = 1, focus = "stage",
           closable = true, rows = {
-        {label = "Duel", note = "a rung at a time", index = 1, pick = true},
-        {label = "Team Battle", note = "four a side", index = 2, pick = true,
-         mark = true},
+        {label = "Duel", index = 1, pick = true},
+        {label = "Team Battle", index = 2, pick = true, mark = true},
     }})
     local lit = row_fields()
     check("a flown row and a cursor elsewhere light two rows", #lit == 2,
@@ -305,9 +307,8 @@ do
     -- a row lit twice.
     draw({depth = 1, sel = 2, rail = RAIL, rail_sel = 1, focus = "stage",
           closable = true, rows = {
-        {label = "Duel", note = "a rung at a time", index = 1, pick = true},
-        {label = "Team Battle", note = "four a side", index = 2, pick = true,
-         mark = true},
+        {label = "Duel", index = 1, pick = true},
+        {label = "Team Battle", index = 2, pick = true, mark = true},
     }})
     lit = row_fields()
     check("a row that is both is lit once", #lit == 1, #lit .. " fields")
@@ -316,8 +317,7 @@ do
     if #lit == 1 then
         draw({depth = 1, sel = 0, rail = RAIL, rail_sel = 1, focus = "rail",
               closable = true, rows = {
-            {label = "Team Battle", note = "four a side", index = 1,
-             pick = true, mark = true},
+            {label = "Team Battle", index = 1, pick = true, mark = true},
         }})
         local standing = row_fields()
         check("and lit as the cursor rather than as standing",
@@ -338,8 +338,7 @@ do
     layer.tri = function() tris = tris + 1 end
     draw({depth = 1, sel = 0, rail = RAIL, rail_sel = 1, focus = "rail",
           closable = true, rows = {
-        {label = "Duel", note = "a rung at a time", index = 1, pick = true,
-         mark = true},
+        {label = "Duel", index = 1, pick = true, mark = true},
     }})
     layer.tri = harness.noop
     check("the row you are on draws no wedge beside it", tris == 0,
@@ -427,9 +426,8 @@ do
     local st = draw({depth = 1, sel = 1, rail = RAIL, rail_sel = 1,
                      focus = "stage", closable = true, rows = {
         {label = "Team Battle", note = long, index = 1, pick = true,
-         acts = {{label = "leave"}},
-         specs = {{"teams", "4 v 4"}, {"time", "3:00"},
-                  {"scoring", "kills"}}},
+         acts = {{label = "leave"}}},
+        {label = "Duel", index = 2, pick = true},
     }})
     local pieces = 0
     for i = 1, st.n do
@@ -438,18 +436,18 @@ do
     end
     check("a sentence too long for its row is broken across lines", pieces > 1,
           pieces .. " line(s)")
-    -- And the row grew for it rather than drawing the second line over the
-    -- stacks under it.
-    local note_y, spec_y
+    -- And the list grew every row for it rather than running the second line
+    -- into the row underneath.
+    local note_y, next_y
     for i = 1, st.n do
         local t = st.text[i]
-        if t and t.s == "TEAMS" then spec_y = t.y end
+        if t and t.s == "Duel" then next_y = t.y end
         if t and t.s and t.s:find("odds", 1, true) then note_y = t.y end
     end
-    check("and the line it grew into clears the stacks below it",
-          note_y and spec_y and note_y > spec_y + 8,
-          string.format("last note line at %s, stacks at %s",
-                        tostring(note_y), tostring(spec_y)))
+    check("and the line it grew into clears the row below it",
+          note_y and next_y and note_y > next_y + 8,
+          string.format("last note line at %s, next row at %s",
+                        tostring(note_y), tostring(next_y)))
 end
 
 if fails > 0 then

@@ -124,6 +124,21 @@ pub(crate) struct Player {
     /// draw the same countdown. Reset the moment the hull is outside, so this
     /// is dwell rather than a total.
     pub(crate) safe: u16,
+    /// This pilot has not been handed the ground the room is standing on.
+    ///
+    /// A client predicts collisions against its own copy of the map and draws
+    /// the walls from that same copy, so one that misses a rotation flies the
+    /// previous round's map for the whole of the next one: bouncing off walls
+    /// it cannot see, passing through the ones it can, and corrected by the
+    /// server on every snapshot. Nothing on the wire says so, because the
+    /// hash a client verifies rides inside the map message it never received.
+    ///
+    /// `try_send` refuses rather than waits, so the room keeps offering until
+    /// it lands. The tuning is held back meanwhile and travels with the map
+    /// when it goes: a client that takes the new generation without the new
+    /// ground stops refusing snapshots and starts predicting on the old
+    /// walls.
+    pub(crate) owes_map: bool,
     /// The room's tick when this pilot took the seat, so a departure can say
     /// how long they held it. A room's own tick rather than a clock, because
     /// the two things anybody compares this against, a golden trace and the
@@ -2006,6 +2021,9 @@ impl Room {
                 rid,
                 bot,
                 safe: 0,
+                // The join hands over the map itself, and sets this if the
+                // socket refused it.
+                owes_map: false,
                 joined: self.world.state.tick,
                 tx,
                 presence,
@@ -3369,6 +3387,9 @@ impl Room {
     }
 
     pub(crate) fn tick(&mut self) -> bool {
+        // Before anything is stepped: a pilot owed the ground is a pilot whose
+        // client is refusing every frame this room sends.
+        self.retry_owed_maps();
         let mut player_count_changed = false;
         // A Ladder result changes which named bot this room wants without
         // changing its population. Treat that as a status edge too, or the
@@ -3848,17 +3869,43 @@ impl Room {
         m
     }
 
+    /// Hand one pilot the map and the name beside it. False if their queue
+    /// refused either. The name goes with the map rather than on its own, so
+    /// the sky and the label a room is drawn under always belong to it.
+    fn offer_map(p: &Player, m: &[u8], name: &Option<Vec<u8>>) -> bool {
+        if p.tx.try_send(Message::Binary(m.to_vec())).is_err() {
+            return false;
+        }
+        match name {
+            Some(n) => p.tx.try_send(Message::Binary(n.clone())).is_ok(),
+            None => true,
+        }
+    }
+
     /// The ground everybody is playing on. Sent at a join and again whenever a
     /// match opens on a different map, which is the only time it changes. The
     /// name rides beside it, when the room has one.
+    ///
+    /// Anybody whose queue refuses it is marked, held back from the tuning,
+    /// and offered both again every tick until they land. See `Player::owes_map`
+    /// for why this one message is worth the bookkeeping.
     pub(crate) fn broadcast_map(&mut self) {
         let m = self.map_msg();
         let name = self.map_name_msg();
-        for p in self.players.values() {
-            let _ = p.tx.try_send(Message::Binary(m.clone()));
-            if let Some(n) = &name {
-                let _ = p.tx.try_send(Message::Binary(n.clone()));
+        let mut refused = 0;
+        for p in self.players.values_mut() {
+            if !Self::offer_map(p, &m, &name) {
+                p.owes_map = true;
+                refused += 1;
+                metrics::SEND_DROPPED.inc();
             }
+        }
+        if refused > 0 {
+            println!(
+                "room {}: {refused} client(s) refused the map; holding their tuning \
+                 and retrying",
+                self.number
+            );
         }
         // The ground the delayed picture is packed on. Sent live it changed
         // under a watcher five seconds before the frames drawn on it arrived,
@@ -4697,6 +4744,32 @@ impl Room {
         }
     }
 
+    /// Offer the map again to anybody whose queue refused it, with the tuning
+    /// behind it, and clear the debt only when the whole set lands.
+    ///
+    /// Every tick rather than on a clock. A queue that refused a message is a
+    /// queue that is draining, so this is normally one retry a tick or two
+    /// later. While it is outstanding that client refuses snapshots for a
+    /// generation it has no map for and its screen stops, which is the better
+    /// of the two failures: the other is a whole match flown on the previous
+    /// round's walls.
+    fn retry_owed_maps(&mut self) {
+        if !self.players.values().any(|p| p.owes_map) {
+            return;
+        }
+        let m = self.map_msg();
+        let name = self.map_name_msg();
+        let settings = self.settings_msg();
+        for p in self.players.values_mut() {
+            if p.owes_map
+                && Self::offer_map(p, &m, &name)
+                && p.tx.try_send(Message::Binary(settings.clone())).is_ok()
+            {
+                p.owes_map = false;
+            }
+        }
+    }
+
     pub(crate) fn settings_msg(&self) -> Vec<u8> {
         let mut m = vec![S2C_SETTINGS];
         m.extend_from_slice(&self.settings_generation.to_le_bytes());
@@ -4709,8 +4782,20 @@ impl Room {
     /// it was when they joined.
     pub(crate) fn broadcast_settings(&mut self) {
         let m = self.settings_msg();
-        for p in self.players.values() {
-            let _ = p.tx.try_send(Message::Binary(m.clone()));
+        for p in self.players.values_mut() {
+            // Held back from anybody still owed the map. The generation this
+            // carries is what a client checks every snapshot against, so a
+            // pilot who takes it without the ground it belongs to stops
+            // refusing frames and starts predicting the new match on the last
+            // match's walls. Refused here for the same reason: both halves
+            // arrive together on a later tick or neither does.
+            if p.owes_map {
+                continue;
+            }
+            if p.tx.try_send(Message::Binary(m.clone())).is_err() {
+                p.owes_map = true;
+                metrics::SEND_DROPPED.inc();
+            }
         }
         // A watcher decodes snapshots through the same core, so stale rules
         // would have it drawing a different game than the one it is shown.

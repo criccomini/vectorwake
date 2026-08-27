@@ -6701,7 +6701,6 @@ mod pilot_certification_tests {
             toml::from_str(text).expect("the Ladder zone parses");
         let exact = crate::fleet::WireZone {
             name: PILOT_ZONE.into(),
-            description: definition.description.clone(),
             mode: definition.mode.clone(),
             max_ships: definition.max_ships.unwrap_or(64),
             max_players: definition.max_players() as u32,
@@ -7171,7 +7170,7 @@ mod tests {
         assert!(!is_powered_profile_fixture(
             PROFILE_POWERED_PAIRS,
             "melee",
-            "description = 'changed'",
+            "label = 'changed'",
             0.50,
             &definition.arena,
             &maps

@@ -1713,16 +1713,18 @@ impl ArenaServer {
     /// The name a joining player is shown. The catalog's when this process is
     /// serving a catalog zone, because that is the game they picked; the local
     /// file's only when no directory was ever reached.
+    ///
+    /// The name and nothing else. A sentence about the game rode a second
+    /// line of this for as long as a zone had one, and the client dropped it
+    /// at both places it draws this: what a game is gets said on the games
+    /// list, in the format the catalog states.
     pub(crate) fn zone_msg(&self) -> Vec<u8> {
         let mut m = vec![S2C_ZONE];
-        let (name, desc) = match self.wire_zone() {
-            Some(z) => (z.name.clone(), z.description.clone()),
-            None => (
-                self.cfg.current.name.clone(),
-                self.cfg.current.description.clone(),
-            ),
+        let name = match self.wire_zone() {
+            Some(z) => z.name.clone(),
+            None => self.cfg.current.name.clone(),
         };
-        m.extend_from_slice(format!("{name}\n{desc}").as_bytes());
+        m.extend_from_slice(name.as_bytes());
         m
     }
 }
