@@ -3712,14 +3712,25 @@ somewhere quieter than the page it used to close.
 **Decision:** the background is no longer three layers of star and a round
 fade. It draws, from the back forward: two enormous washes under everything, a
 band of fine grain and dust filaments along one diagonal, clouds strung out as
-runs of knots rather than round smudges, a sun and a comet, three depths of
+runs of knots rather than round smudges, suns and comets, three depths of
 star in four temperatures with a rare one burning a four-point cross, and a
 near layer of dust that draws as dots standing still and as streaks under way.
 
 Everything that is not hashed from its own position is placed from the map's
-name: the band's angle and where it runs, the two washes, and where the sun
-and the comet hang. So a room has a sky of its own, and has the same one every
-time it is played.
+name: the band's angle and where it runs, the two washes, and how many set
+pieces there are with the size, color, depth and distance of each. A map may
+get two suns, or none, and a sky with nothing in it but stars is a fine sky.
+So a room has a sky of its own, and has the same one every time it is played.
+
+One of each at one size in one color made every room look like the last one
+seen from a slightly different chair, which is the same complaint the band
+drew: its density test ran off a Lehmer hash, and Lehmer is affine, so walking
+a grid a cell at a time walked the output by a constant and the test landed on
+a lattice sixteen cells wide. Measured over a grid, a two by two block of cells
+all carrying a star came up 0.250 of the time where independent draws give
+0.436. Squaring the value between two Lehmer steps breaks the line, because the
+cross term depends on what is being squared rather than only on the step; the
+same measurement then comes to 0.440 against 0.440.
 
 The two set pieces sit at middling depth rather than out with the band. A
 match room is a hundred and sixty tiles across, and anything drawn at the
