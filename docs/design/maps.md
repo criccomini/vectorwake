@@ -385,17 +385,27 @@ make -C sim build/mapdump
 
 ## The match maps
 
-Six ship in the first melee rotation. They cross four topologies, four visual
-themes, three aspect ratios, and two arena silhouettes:
+Five ship, and Team Battle and Duel play the same five, so a pilot who learns
+a room learns it once. One theme apiece, because a theme is a whole geometry
+rather than a texture: these are five rooms a pilot can tell apart from the
+radar corner.
 
-| Map | Topology | Theme | Envelope |
+| Map | Theme | Envelope | What it is |
 |---|---|---|---|
-| drydock | three lanes | dockyard | 192 by 144, offset bays |
-| relay | ring and spokes | relay ring | 160 square, cut corners |
-| convoy | twin hubs | derelict convoy | 144 by 192, cut corners |
-| shoal | archipelago | asteroid reef | 192 by 144, offset bays |
-| breakwater | three lanes | asteroid reef | 160 square, cut corners |
-| switchyard | ring and spokes | dockyard | 144 by 192, cut corners |
+| maelstrom | spiral nebula | 160 square | two asteroid arms winding out of a wormhole core |
+| gantry | station yard | 192 by 144 | stations on a grid, gantry stubs, doored bays |
+| warren | maze | 160 square | brick-bond corridors, every third shortcut on a door |
+| redoubt | twin fortresses | 192 by 144 | a walled keep around each home, open ground between |
+| ringworks | rings | 160 square | concentric rings, gaps rotated, warps off the corridor |
+
+Between them they place every element a melee map is allowed. Maelstrom and
+ringworks carry the wormholes; gantry, warren, redoubt and ringworks the
+doors. Safe, goal and turf tiles stay out by gate, for the reasons under
+"what the reference arenas use".
+
+They replaced a rotation of six drawn by the scatter generator, which measured
+correctly and read as one room with six coats of paint. The old maps and their
+recipes are still in the tree and still verify; nothing plays them.
 
 They come from `mapforge`, the server binary's offline map tool. Each `.vwmap`
 has three files beside it: a `.recipe.toml` source, a `.metrics.json` review
@@ -411,23 +421,52 @@ cargo run --manifest-path server/Cargo.toml -- \
 
 ### The generation pipeline
 
-A map starts as a `MapBrief`: mode, topology, theme, arena envelope, symmetry,
-route count, minimum opening, and contact-time window. The seed chooses small
-details inside that brief. It does not choose what sort of map is being made.
+A map starts as a brief: mode, theme, arena envelope, symmetry, route count,
+minimum opening, and contact-time window. The seed chooses small details
+inside that brief. It does not choose what sort of map is being made.
 
-The brief becomes a `LayoutGraph`. Homes, junctions, landmarks, and edges are
-named before a tile is placed. Geometry reserves every graph edge at the
-brief's opening width, draws the topology's deliberate wall skeleton, and
-shapes the perimeter. There is no connectivity repair. A layout that fails is
-rejected instead of having a random tunnel cut through it after the fact.
+The brief becomes a `LayoutGraph`. Homes, junctions, and edges are named
+before a tile is placed, and the junctions hug the home ends so each reserved
+lane crosses the field as one straight, clean channel. Geometry reserves
+every graph edge at the brief's opening width. There is no connectivity
+repair. A layout that fails is rejected instead of having a random tunnel cut
+through it after the fact.
 
-The theme pass uses the same reserved graph and contributes its own material
-language:
+**A theme owns its geometry.** The first version of this pipeline paired a
+topology with a theme that scattered materials over it, up to a hundred and
+ten placements at random coordinates, and every map came out as the same
+rubble in a different texture. Now the theme is the topology: every shape
+sits on a module grid, placement runs along lattices, bands, and rings, and
+the seed varies texture inside the pattern rather than the pattern itself.
+Each theme also declares which elements it uses and what cover fraction it is
+held to, which is how doors and wormholes reach generated maps and how a maze
+is allowed five times the wall of a nebula.
 
-- Dockyard uses gantries, stations, and under-floor service marks.
-- Asteroid reef uses small rocks and complete two-tile rock objects.
-- Derelict convoy uses station hulls, broken spars, and overhead debris.
-- Relay ring uses stations, signal marks, and paired slope runs.
+Five themes ship, one per map in the rotation: spiral-nebula, station-yard,
+maze, twin-fortresses, and rings. Thirteen were drawn and reviewed as
+pictures; the five that survived are the ones worth a slot, and the rest are
+in the history rather than in the enum, because a theme nothing plays is a
+pattern to maintain for nobody.
+
+A wormhole is a hazard and an ejector seat, not a gate. The core sends a ship
+that touches one back to its own team's start, so a warp is a way out of a
+fight rather than a way across the map, and making one lead anywhere else is
+a simulation decision no map brief can take. That fact drew the nebula: its
+core wears a rock collar with four diagonal mouths, and the middle lane bows
+around it, because a wormhole sitting on the shortest home-to-home route is a
+trap the route gate cannot see. A path search reads a warp as open ground.
+
+The spiral is integer arithmetic against a baked table of headings rather
+than a call to `sin`. A recipe pins the hash of the map it draws, and a libm
+that rounds one heading differently would move a rock a tile and fail
+verification on a machine that was not the one that pinned it. Same reason
+the simulation core has no floats in it.
+
+The scatter generator is frozen beside the new one, in
+`server/src/mapforge/legacy.rs`, and still reproduces the six maps that
+preceded this rotation. It is the same arrangement `sim/tools/mapgen.c` has
+with the maps that preceded those: kept to reproduce, never the source of new
+maps.
 
 The client gives those materials one visual grammar without flattening them
 into one tileset. A bulkhead is deliberately plain: a dark solid body, a
@@ -445,10 +484,8 @@ A player reads collision first and fiction on the second look.
 The thick perimeter mass uses the same plain treatment. Its broad dark body
 distinguishes the arena boundary from an interior partition.
 
-This keeps theme and topology independent. Ring and spokes can be a relay or a
-dockyard without becoming the same room with a different seed. Large objects
-are stamped as objects, so a station's six-tile body cannot be mistaken for
-accidental wall thickness.
+Large objects are stamped as objects, so a station's six-tile body cannot be
+mistaken for accidental wall thickness.
 
 ### Gates and review scores
 
@@ -456,9 +493,10 @@ Every candidate first passes `sim_map_check`, the same hull-sized validator the
 server and editor use. Mapforge then requires exactly four starts per side,
 exact half-turn competitive symmetry, the brief's two or three separated
 routes at least seven tiles wide, two spawn exits, the requested home-flight
-time, and no mode-incompatible features. Generic wall in playable space must
-remain a centerline. Perimeter masses and complete rocks or stations are
-intentional solids and are measured separately.
+time, no elements the brief does not call for, and the theme's own cover
+band, with a slope counting as half a tile of wall. Generic wall in playable
+space must remain a centerline. Perimeter masses and complete rocks or
+stations are intentional solids and are measured separately.
 
 Passing is not the same as being good. The report also scores route balance,
 line-of-sight distribution, dead ends, cover balance by quadrant, landmark
@@ -466,12 +504,20 @@ count, material mix, theme fidelity, and spawn exits. A batch can add two short
 bot drills, recording travel, fighting, crawling, bounces, weapon use, and map
 coverage across seeds.
 
-The review command produces 48 candidates, one for every combination of four
-topologies, four themes, and three envelopes:
+Those scores compare seeds inside a theme, not themes against each other. A
+maze scores lower than a station yard on dead ends alone, and a maze without
+pockets is a set of rows. What decides whether a map is worth a slot is
+`vectorwake-server melee 20 <map>`, which flies the roster on it: the first
+draw of warren answered skill with a +0.69 correlation against the rotation's
++0.87 and threw a third fewer rounds, because its cross walls ran the whole
+way between rows and every pocket closed to three sides. Shortening them put
+it back at +0.89. That is the measurement a picture cannot make.
+
+The review command produces ten candidates, two seeds of each theme:
 
 ```sh
 cargo run --manifest-path server/Cargo.toml -- \
-  mapforge batch /tmp/vectorwake-maps 20260823
+  mapforge batch /tmp/vectorwake-maps 20260826
 ```
 
 `index.html` is the contact sheet. Each card links through the files beside
@@ -768,7 +814,7 @@ does and refuses anything whose bytes do not match the hash in its own header.
 A zone names its own in `zone.toml`, relative to the zone's directory:
 
 ```toml
-maps = ["drydock.vwmap", "relay.vwmap", "convoy.vwmap"]
+maps = ["maelstrom.vwmap", "gantry.vwmap", "warren.vwmap"]
 ```
 
 More than one is a rotation, and the room takes the next one at every whistle.
