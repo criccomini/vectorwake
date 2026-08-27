@@ -672,7 +672,7 @@ local BUDGET_STEP = 1024
 -- How many cells of this size a view this wide can touch. `floor(u + d) -
 -- floor(u)` is at most `floor(d) + 1` whatever `u` is, so the count holds
 -- wherever the camera happens to sit inside a cell.
-local function cells(hw, hh, cell)
+local function cell_count(hw, hh, cell)
     return (math.floor(2 * hw / cell) + 2) * (math.floor(2 * hh / cell) + 2)
 end
 
@@ -696,7 +696,7 @@ local function stripe_cells(hw, hh, cell, half)
     local dy = math.ceil(2 * hh / cell) * cell + 1.5 * cell
     local long = math.sqrt(dx * dx + dy * dy)
     local n = math.ceil(wide * long / (cell * cell))
-    local all = cells(hw, hh, cell)
+    local all = cell_count(hw, hh, cell)
     return n < all and n or all
 end
 
@@ -721,7 +721,7 @@ function M.star_cost(hw, hh)
     -- The two washes under everything.
     f = f + 2 * WIDE_VERTS
     -- Clouds, priced with every cell carrying one.
-    f = f + cells(hw, hh, NEBULA.cell) * (NEB_KNOTS * HALO_VERTS + SEG_VERTS)
+    f = f + cell_count(hw, hh, NEBULA.cell) * (NEB_KNOTS * HALO_VERTS + SEG_VERTS)
     -- The band: grain, then the filaments strung through it. Both are gated on
     -- the same stripe by the drawing, so both are priced by it here.
     f = f + stripe_cells(hw, hh, BAND.cell, BAND.half) * STAR_VERTS
@@ -729,7 +729,7 @@ function M.star_cost(hw, hh)
             * BAND_FILS.knots * HALO_VERTS
     for li = 1, #STARS do
         local L = STARS[li]
-        local n = cells(hw, hh, L.cell)
+        local n = cell_count(hw, hh, L.cell)
         f = f + n * STAR_VERTS
         if L.k > 0.5 then
             -- A bloom for every one of them, and a burn as well: both are
@@ -739,7 +739,7 @@ function M.star_cost(hw, hh)
     end
     -- Dust lands on the fill layer standing still and on the glow layer under
     -- way, and the bound has to hold either way round.
-    local nd = cells(hw, hh, DUST.cell)
+    local nd = cell_count(hw, hh, DUST.cell)
     f = f + nd * STAR_VERTS
     g = g + nd * SEG_VERTS
     -- The sun and the comet, which cost the same wherever the camera is.

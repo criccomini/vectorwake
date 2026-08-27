@@ -95,7 +95,7 @@ check("the nameless sky is a sky", #m1.log > 0, "nothing was drawn")
 -- only thing in the sky drawn at BAND.size. A band that is everywhere and a
 -- band that is nowhere are both failures, and they fail in opposite
 -- directions, so both ends are checked.
-local BAND_SIZE = 1.2
+local BAND_SIZE = string.format(",%.2f,", 1.2)
 local most, least = 0, math.huge
 world.sky_seed("drydock")
 for i = -40, 40 do
@@ -103,7 +103,7 @@ for i = -40, 40 do
     world.stars(L, L, MID + i * 220, MID + i * 90, HW, HH)
     local n = 0
     for _, s in ipairs(L.log) do
-        if s:sub(1, 1) == "r" and s:find(",1.20,", 1, true) then n = n + 1 end
+        if s:sub(1, 1) == "r" and s:find(BAND_SIZE, 1, true) then n = n + 1 end
     end
     if n > most then most = n end
     if n < least then least = n end
