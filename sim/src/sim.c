@@ -1855,9 +1855,10 @@ void sim_step(sim_state *next, const sim_state *prev, const sim_input *inputs,
                  * a burst nothing in energy, and three of them together is
                  * seventy-two rounds off one muzzle: a fly-in that ends
                  * whoever it reaches and asks nothing of the pilot after the
-                 * first press. The clock makes the next one a decision of
-                 * its own, in a later fight. It is per kind, so this says
-                 * nothing about the repel, whose delay is zero. */
+                 * first press. The clock puts a wait between them, so the
+                 * three are three presses to fly between and aim separately
+                 * rather than one gesture with a number on it. It is per kind,
+                 * so this says nothing about the repel, whose delay is zero. */
                 sh->charge_cooldown[k] = cp.delay;
                 emit(ev, SIM_EV_CHARGE, (uint8_t)i, (uint8_t)k, sh->charge[k]);
             }

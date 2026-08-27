@@ -173,7 +173,8 @@ static const uint16_t hull_extent[SIM_MAX_CLASSES][3] = {
 #define CHARGE_REPEL_MAX 3
 #define CHARGE_BURST_MAX 3
 
-/* How long a burst shuts its own key for. Five seconds.
+/* How long a burst shuts its own key for. A second and a half, which is the
+ * bomb's own clock and the longest wait any weapon in this game asks for.
  *
  * The original has no such setting and did not need one: a burst is loot
  * there, and a pilot holding three has had a good afternoon. Here the rack is
@@ -183,16 +184,18 @@ static const uint16_t hull_extent[SIM_MAX_CLASSES][3] = {
  * 700 a round against a bar of 1475 it takes three of the seventy-two to end
  * anybody. What that asked of the pilot was one approach.
  *
- * Five seconds is chosen against the fight rather than against the rack. A
- * bomb clock is a second and a half and a hull crosses its own length in well
- * under one, so the exchange a burst was thrown into is settled long before
- * this runs out: whatever the first one was going to do, it has done. The
- * second is then a thing you spend on the next fight, which is what three of
- * them lasting three minutes was supposed to mean.
+ * This prices the cadence rather than the fight. Emptying the rack takes
+ * three seconds now, where three presses of a thumb took a tenth of one, and
+ * three seconds is long enough that the second and third bursts are flown
+ * between and aimed separately, and short enough that both are still
+ * available in the fight the first one was thrown into. A wait that pushed
+ * the next burst into the next engagement would be several times this, and
+ * that is a different rule about what a rack is for rather than a longer
+ * version of this one.
  *
  * The repel keeps none of this. It does no damage, chaining it only wastes
  * it, and it is the answer to a round already in the air. */
-#define CHARGE_BURST_DELAY 500
+#define CHARGE_BURST_DELAY 150
 
 /* The above, over the flat slot space: the most this arena will let a kit put
  * in each slot, and zero for a slot it does not have at all. */

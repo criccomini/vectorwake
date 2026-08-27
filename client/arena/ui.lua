@@ -2893,9 +2893,9 @@ local function status(me, charges, lift)
         -- which key is which row is the help page's job, not a label
         -- worn in the corner of every fight.
         --
-        -- What the row does carry is the wait. A burst shuts its own key for
-        -- five seconds after it goes, so the row goes out with it and comes
-        -- back as the clock runs down, which is the same event drawn twice:
+        -- What the row does carry is the wait. A burst shuts its own key
+        -- behind it, so the row goes out with it and comes back as the clock
+        -- runs down, which is the same event drawn twice:
         -- one pip fewer says it was spent, and the row returning says when
         -- the next one may go. A blink would say the first and not the
         -- second, and a key that simply did nothing would say neither.

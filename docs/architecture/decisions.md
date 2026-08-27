@@ -4055,12 +4055,13 @@ carries it now, which cannot be discarded by the next hand that sets an alpha.
 answer is to move a rung rather than add one, since fifteen sizes is what
 adding one looks like fifty edits later.
 
-## 85. A burst shuts its own key for five seconds
+## 85. A burst shuts its own key for a second and a half
 
 **Status:** accepted
 
 **Decision:** every charge kind keeps a firing clock of its own, read off the
-same `delay` a trigger's pattern uses, and the burst's is 500 ticks. The
+same `delay` a trigger's pattern uses, and the burst's is 150 ticks, which is
+the bomb's own delay and the longest wait any weapon here asks for. The
 repel's stays at zero. Nothing else about a burst moves: the same twenty-four
 rounds at the same damage, the same rack of three, still dealt once a match and
 still not handed back by a death.
@@ -4084,12 +4085,15 @@ somebody and empty the rack, and what it asked of the pilot was one approach:
 the second and third bursts asked nothing the first had not already asked. That
 is a weapon that beats a better pilot without out-flying them.
 
-Five seconds is measured against the fight rather than against the rack. The
-longest weapon clock in the game is a bomb at a second and a half, and a hull
-crosses its own length in well under one, so the exchange a burst was thrown
-into is settled long before this runs out: whatever the first one was going to
-do, it has done. The second is then something you spend on the next fight,
-which is what three of them lasting three minutes was always supposed to mean.
+The number prices the cadence and not the fight. Emptying the rack takes three
+seconds now, where three presses took a tenth of one, which is long enough that
+the second and third bursts are flown between and aimed separately, and short
+enough that all three are still available inside the exchange the first one was
+thrown into. A
+wait that pushed the next burst into the next fight is several times this: five
+seconds was written first and rejected, because it decides what a rack is for
+as well as how fast it may be spent, and that is a bigger rule than this one
+needs to be. The number to move if the fly-in survives is this one.
 
 Per kind, because the two kinds are opposite things. A repel is the answer to a
 round already in the air and is wanted precisely when a fight is going badly,
@@ -4097,21 +4101,27 @@ so shutting it because a burst had just gone would take the answer away at the
 moment it is asked for. It also does no damage, which makes chaining repels a
 way of wasting them rather than a way of winning.
 
-**Cost:** the number is argued rather than measured. The authored bots throw a
-burst only at close range on a nearly empty bar, so the melee probe has nothing
-to say about the case this fixes, and the evidence for five seconds is the
-arithmetic above and not a run. Twenty matches on gantry either side of the
-change say only that the room still plays the same: 59.5 rounds in the air
-against 59.1, the repel rack spent at 61s, 102s and 131s against 60s, 100s and
-130s, skill against k/d at +0.86 against +0.88. A pilot who genuinely needed
-the whole rack in one moment, cornered by three, no longer has it.
+**Cost:** a pilot who wants two bursts in one fight still has them, a second
+and a half apart. This does not end the fly-in on its own; it makes the pilot fly
+it for three seconds under fire rather than press a key three times, and
+whether that is enough is the open question here.
+
+The number is also argued rather than measured. The authored bots throw a burst
+only at close range on a nearly empty bar, so the melee probe has nothing to
+say about the case this fixes, and the evidence is the arithmetic above and not
+a run. Twenty matches on gantry either side of the change say only that the
+room still plays the same: 59.5 rounds in the air against 60.1, the repel rack
+spent at 61s, 102s and 131s against 58s, 100s and 129s, skill against k/d at
++0.86 against +0.93.
 
 The wire and the mirrors also grow: eight bytes on every owner record, one more
 array on the ship, and one more thing the two ends have to agree about, which
 is what the protocol number is for.
 
-**Reconsider if:** matches start ending with bursts still in the rack, which
-would be the number too long rather than the rule wrong, and the answer is a
-shorter delay rather than no delay. Or if the same fly-in comes back off one
-burst alone, which would be what a burst does at contact range rather than how
-often it may be thrown, and the answer is its damage.
+**Reconsider if:** a pilot can still fly in and end somebody on two bursts a
+second and a half apart, which would be this number too short rather than the
+rule wrong, and the answer is a longer one. Or if matches start ending with bursts
+still in the rack, which is the same lever the other way. Or if the fly-in
+comes back off one burst alone, which would be what a burst does at contact
+range rather than how often it may be thrown, and the answer is its damage
+instead.

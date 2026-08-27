@@ -2,7 +2,7 @@
 --
 --     lua5.1 client/tests/charge_wait_test.lua
 --
--- A burst holds its own key for five seconds after it goes. Without a sign of
+-- A burst holds its own key shut for a while after it goes. Without a sign of
 -- that, the corner draws a full row over a key that does nothing. So the row
 -- goes out on the tick the burst leaves and comes back as the clock runs down,
 -- and this reads the alpha the interface actually drew its pips at rather than
@@ -112,9 +112,13 @@ local function pips(charges)
     return n, alpha
 end
 
+-- The shipped delay is 150 ticks. The wash is a fraction of whatever the
+-- pattern says, so what is pinned here is the fraction; the arena's own number
+-- is pinned in sim/tests/test_sim.c.
+local DELAY = 150
 local function burst(wait)
     return {{name = "burst", short = "BST", count = 2, max = 3,
-             wait = wait, delay = 500}}
+             wait = wait, delay = DELAY}}
 end
 
 -- --- what a shut key looks like --------------------------------------------
@@ -123,13 +127,13 @@ local open_n, open_a = pips(burst(0))
 check("a ready burst draws its rack", open_n == 2, tostring(open_n))
 check("at full strength", open_a and open_a > 0.99, tostring(open_a))
 
-local shut_n, shut_a = pips(burst(500))
+local shut_n, shut_a = pips(burst(DELAY))
 check("a burst just thrown still says how many are left", shut_n == 2,
       tostring(shut_n))
 check("but the row is washed out", shut_a and shut_a < 0.4, tostring(shut_a))
 check("and not washed away", shut_a and shut_a > 0.15, tostring(shut_a))
 
-local half_n, half_a = pips(burst(250))
+local half_n, half_a = pips(burst(DELAY / 2))
 check("half way through the wait it is half way back", half_n == 2,
       tostring(half_n))
 check("brighter than the tick it went", half_a > shut_a + 0.1,

@@ -515,16 +515,22 @@ during a weapon delay or on the same tick as a shot. That half is deliberate:
 a repel answers a round that is already arriving, and a repel you cannot throw
 because your guns are hot is not an answer to anything.
 
-**Each kind keeps a clock of its own, though, and the burst's is five
-seconds.** It used to keep none, and inventory turned out not to be a limit at
+**Each kind keeps a clock of its own, though, and the burst's is a second and
+a half.** It used to keep none, and inventory turned out not to be a limit at
 the scale a hand works at: three presses is a tenth of a second, the burst
 costs no energy, and three rosettes from one standing position is seventy-two
 rounds, of which three end anybody. What that asked of a pilot was one
 approach, and the second and third bursts asked nothing the first had not
-already asked. The clock does not change what a burst does. It decides when
-the next one may be a decision, and five seconds is longer than the exchange
-the first one was thrown into: a bomb clock is a second and a half, and a hull
-crosses its own length in well under one.
+already asked.
+
+The clock does not change what a burst does, and it is deliberately short. A
+second and a half is the bomb's own delay, the longest wait any weapon here
+asks for, and it prices the cadence rather than the fight: emptying the rack
+takes three seconds where three presses took a tenth of one, so the bursts are
+flown between and aimed separately, and all three are still available inside
+the exchange the first one was thrown into. Pushing the next burst into the next
+fight would take several times this, and that is a different rule about what a
+rack is for rather than a longer version of this one.
 
 The repel has no delay, which is the reason the clock is per kind rather than
 one over the rack. It does no damage, chaining it only wastes it, and shutting

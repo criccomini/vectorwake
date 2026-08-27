@@ -3355,7 +3355,7 @@ static void test_tech_tree(const sim_settings *base) {
         const uint16_t use =
             (uint16_t)(SIM_BTN_USE | ((uint16_t)BURST << SIM_BTN_SLOT_SHIFT));
         const uint16_t wait = cfg.patterns[cfg.charge[BURST]].delay;
-        CHECK(wait >= 300, "the shipped burst is shut for seconds, not ticks");
+        CHECK(wait >= 100, "the shipped burst waits a real interval, not ticks");
 
         static sim_state s;
         sim_init(&s, 1);
