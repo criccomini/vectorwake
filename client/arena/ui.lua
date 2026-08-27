@@ -492,12 +492,26 @@ local function pilot_mark(cx, cy, col, k, line)
     -- Swept back and fanned, longest on top. A rank of parallel strokes is a
     -- chevron; what makes a wing is that the three of them disagree about
     -- where they are going.
+    --
+    -- Each one starts on the hull rather than at a shared distance from the
+    -- middle. They all began at one x, which is a straight line down through
+    -- a shape that has no straight line in it: the hull is a hair wide under
+    -- the nose and four times that by the wingtip, so a root that cleared it
+    -- at the bottom left the top two hanging in space with a gap behind
+    -- them. The roots are the leading edge's own x at each height now, a
+    -- shade inside it, so the feathers meet the ship and read as coming off
+    -- it rather than as floating beside it.
+    --
+    -- Which means these three numbers are the hull's and have to move when
+    -- it does. Wrong, they do not fall off the mark or overlap anything;
+    -- they just open the gap again, which is the kind of fault that survives
+    -- a long time because nothing about it looks broken.
     for _, w in ipairs({1, -1}) do
-        F.layer:seg(px(w * 0.270), py(-0.06), px(w * 0.500), py(-0.30),
+        F.layer:seg(px(w * 0.034), py(-0.06), px(w * 0.500), py(-0.30),
                     line, col, true)
-        F.layer:seg(px(w * 0.270), py(0.06), px(w * 0.463), py(-0.10),
+        F.layer:seg(px(w * 0.078), py(0.06), px(w * 0.463), py(-0.10),
                     line, col, true)
-        F.layer:seg(px(w * 0.270), py(0.18), px(w * 0.389), py(0.09),
+        F.layer:seg(px(w * 0.150), py(0.18), px(w * 0.389), py(0.09),
                     line, col, true)
     end
     return k
